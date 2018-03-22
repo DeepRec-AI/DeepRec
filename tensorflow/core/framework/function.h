@@ -670,6 +670,7 @@ class FunctionLibraryRuntime {
     const int64 step_id = -std::abs(static_cast<int64>(random::New64()));
 
     Rendezvous* rendezvous = nullptr;
+    Rendezvous* global_rendezvous = nullptr;
     CancellationManager* cancellation_manager = nullptr;
     CollectiveExecutor* collective_executor = nullptr;
     ScopedStepContainer* step_container = nullptr;

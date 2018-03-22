@@ -182,6 +182,7 @@ Status GraphRunner::Run(Graph* graph, FunctionLibraryRuntime* function_library,
   args.step_id = LogMemory::CONSTANT_FOLDING_STEP_ID;
   args.runner = runner;
   args.rendezvous = rendez;
+  args.global_rendezvous = rendez;
   // NOTE: Use of graph runner is limited to single-device executions
   // so a CollectiveExecutor should never be required.
   args.collective_executor = nullptr;

@@ -1253,6 +1253,7 @@ class ExecutorState {
   // Not owned.
   Rendezvous* rendezvous_;
   Executor::RendezvousFactory* create_rendezvous_ = nullptr;
+  Rendezvous* global_rendezvous_;
   CollectiveExecutor* collective_executor_ = nullptr;
   SessionState* session_state_;
   string session_handle_;
@@ -1390,6 +1391,7 @@ ExecutorState::ExecutorState(const Executor::Args& args, ExecutorImpl* impl)
       step_id_(args.step_id),
       rendezvous_(args.rendezvous),
       create_rendezvous_(&impl->params_.rendezvous_factory),
+      global_rendezvous_(args.global_rendezvous),
       collective_executor_(args.collective_executor),
       session_state_(args.session_state),
       session_handle_(args.session_handle),
@@ -1642,6 +1644,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
   params.record_tensor_accesses = impl_->device_record_tensor_accesses_;
   params.rendezvous = rendezvous_;
   params.create_rendezvous = create_rendezvous_;
+  params.global_rendezvous = global_rendezvous_;
   params.collective_executor = collective_executor_;
   params.session_state = session_state_;
   params.session_handle = session_handle_;

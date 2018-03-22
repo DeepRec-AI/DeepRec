@@ -182,6 +182,7 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
   // Status given by StartAbort() if any.
   Status status_ GUARDED_BY(mu_);
   WorkerSession* session_ GUARDED_BY(mu_);  // Not owned.
+  string worker_name_ GUARDED_BY(mu_);
 
   // Data structures to handle calls when partially initialized.
   struct DeferredCall {

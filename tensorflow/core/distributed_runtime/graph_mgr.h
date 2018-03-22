@@ -164,6 +164,7 @@ class GraphMgr {
 
   void StartParallelExecutors(const string& handle, int64 step_id, Item* item,
                               Rendezvous* rendezvous,
+                              Rendezvous* global_rendezvous,
                               CollectiveExecutor::Handle* ce_handle,
                               StepStatsCollector* collector,
                               CostGraphDef* cost_graph,

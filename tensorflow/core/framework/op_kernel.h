@@ -676,6 +676,9 @@ class OpKernelContext {
     const std::function<Status(const int64, const DeviceMgr*, Rendezvous** r)>*
         create_rendezvous;
 
+    // Global rendezvous.
+    Rendezvous* global_rendezvous = nullptr;
+
     // Mechanism for executing a collective op that needs to coordinate
     // with parallel instances running on other devices.
     CollectiveExecutor* collective_executor = nullptr;
@@ -1119,6 +1122,9 @@ class OpKernelContext {
                            Rendezvous** r) const {
     return (*params_->create_rendezvous)(step_id, device_mgr, r);
   }
+
+  // Global rendezvous.
+  Rendezvous* global_rendezvous() const { return params_->global_rendezvous; }
 
   CollectiveExecutor* collective_executor() const {
     return params_->collective_executor;

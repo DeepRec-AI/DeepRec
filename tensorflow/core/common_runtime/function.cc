@@ -513,6 +513,7 @@ class CallOp : public AsyncOpKernel {
                       done);
     FunctionLibraryRuntime::Options opts;
     opts.rendezvous = ctx->rendezvous();
+    opts.global_rendezvous = ctx->global_rendezvous();
     opts.cancellation_manager = ctx->cancellation_manager();
     opts.step_container = ctx->step_container();
     opts.stats_collector = ctx->stats_collector();
@@ -991,6 +992,7 @@ void FunctionLibraryRuntimeImpl::ExecutorArgsFromOptions(
   // Inherit the step_id from the caller.
   exec_args->step_id = run_opts.step_id;
   exec_args->rendezvous = run_opts.rendezvous;
+  exec_args->global_rendezvous = run_opts.global_rendezvous;
   exec_args->stats_collector = run_opts.stats_collector;
   exec_args->cancellation_manager = run_opts.cancellation_manager;
   exec_args->step_container = run_opts.step_container;

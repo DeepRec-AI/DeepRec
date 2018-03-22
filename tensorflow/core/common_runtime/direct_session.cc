@@ -567,6 +567,7 @@ Status DirectSession::RunInternal(
   args.step_id = step_id;
   args.call_frame = call_frame;
   args.rendezvous = run_state.rendez;
+  args.global_rendezvous = run_state.rendez;
   args.collective_executor =
       (run_state.collective_executor ? run_state.collective_executor->get()
                                      : nullptr);
@@ -933,6 +934,7 @@ Status DirectSession::PRunSetup(const std::vector<string>& input_names,
       });
 
   args.rendezvous = run_state->rendez;
+  args.global_rendezvous = run_state->rendez;
   args.cancellation_manager = cancellation_manager_;
   // Note that Collectives are not supported in partial runs
   // because RunOptions is not passed in so we can't know whether

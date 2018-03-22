@@ -120,12 +120,22 @@ void BaseRendezvousMgr::Cleanup(int64 step_id) {
 
 void BaseRendezvousMgr::CleanupAll() {
   std::vector<Rendezvous*> rendezs;
+  BaseRemoteRendezvous* inter_step_rendez = nullptr;
   {
     mutex_lock l(mu_);
     for (const auto& entry : table_) {
-      rendezs.push_back(entry.second);
+      if (kGlobalStepId == entry.first) {
+        inter_step_rendez = entry.second;
+      } else {
+        rendezs.push_back(entry.second);
+      }
     }
     table_.clear();
+    // NOTE(yuanman.ym): InterStepRendezvous should not be cleared since
+    // one session run might recv from a session run already finished.
+    if (nullptr != inter_step_rendez) {
+      table_.insert({kGlobalStepId, inter_step_rendez});
+    }
   }
   for (auto rendez : rendezs) {
     StartAbortRendevous(rendez, errors::Aborted("Shutdown"));
@@ -157,17 +167,16 @@ Status BaseRemoteRendezvous::Initialize(WorkerSession* session) {
   {
     mutex_lock l(mu_);
     if (session_ != nullptr) {
-      if (session_->worker_name == session->worker_name) {
-        LOG(INFO) << "Skipping rendezvous re-initialization.";
-        return Status::OK();
+      if (worker_name_ != session->worker_name) {
+        Status s = errors::Internal(
+            "Double init! Worker names would have changed from: ",
+            worker_name_, " -> ", session->worker_name);
+        LOG(WARNING) << s;
+        return s;
       }
-      Status s = errors::Internal(
-          "Double init! Worker names would have changed from: ",
-          session_->worker_name, " -> ", session->worker_name);
-      LOG(WARNING) << s;
-      return s;
     }
     session_ = session;
+    worker_name_ = session->worker_name;
     std::swap(deferred_calls, deferred_calls_);
   }
   for (auto& call : deferred_calls) {

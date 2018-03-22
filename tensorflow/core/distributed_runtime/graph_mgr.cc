@@ -482,9 +482,14 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
     return;
   }
 
-  StartParallelExecutors(handle, step_id, item, rendezvous, ce_handle,
+  const static uint64 kGlobalStepId = 0x100000000000000uLL;
+  RemoteRendezvous* global_rendezvous =
+    worker_env_->rendezvous_mgr->Find(kGlobalStepId);
+  global_rendezvous->Initialize(session);
+
+  StartParallelExecutors(handle, step_id, item, rendezvous, global_rendezvous, ce_handle,
                          collector, cost_graph, cancellation_manager, session,
-                         [item, rendezvous, ce_handle, done, start_time_usecs,
+                         [item, rendezvous, global_rendezvous, ce_handle, done, start_time_usecs,
                           input_size, activity](const Status& s) {
                            done(s);
                            metrics::RecordGraphInputTensors(input_size);
@@ -499,6 +504,7 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
 
 void GraphMgr::StartParallelExecutors(
     const string& handle, int64 step_id, Item* item, Rendezvous* rendezvous,
+    Rendezvous* global_rendezvous,
     CollectiveExecutor::Handle* ce_handle, StepStatsCollector* collector,
     CostGraphDef* cost_graph, CancellationManager* cancellation_manager,
     WorkerSession* session, StatusCallback done) {
@@ -519,6 +525,7 @@ void GraphMgr::StartParallelExecutors(
   Executor::Args args;
   args.step_id = step_id;
   args.rendezvous = rendezvous;
+  args.global_rendezvous = global_rendezvous;
   args.collective_executor = ce_handle ? ce_handle->get() : nullptr;
   args.cancellation_manager = cancellation_manager;
   args.stats_collector = collector;

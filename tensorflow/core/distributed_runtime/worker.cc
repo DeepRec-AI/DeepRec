@@ -439,7 +439,8 @@ Status Worker::PrepareRecvTensor(const Rendezvous::ParsedKey& parsed,
   TF_RETURN_IF_ERROR(env_->device_mgr->LookupDevice(local_name, src_dev));
 
   // Does the device have the right incarnation number we expect?
-  if ((*src_dev)->attributes().incarnation() != parsed.src_incarnation) {
+  if (0 != parsed.src_incarnation &&
+      (*src_dev)->attributes().incarnation() != parsed.src_incarnation) {
     return errors::Aborted(
         "RecvTensor expects a different device incarnation: ",
         parsed.src_incarnation, " vs. ", (*src_dev)->attributes().incarnation(),
