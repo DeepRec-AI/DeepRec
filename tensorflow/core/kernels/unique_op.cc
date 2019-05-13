@@ -194,6 +194,7 @@ class UniqueOp : public OpKernel {
   }
 };
 
+/* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_UNIQUE(type)                                    \
   REGISTER_KERNEL_BUILDER(Name("Unique")                         \
                               .Device(DEVICE_CPU)                \
@@ -311,4 +312,5 @@ REGISTER_KERNEL_BUILDER(Name("Unique")
                             .HostMemory("idx"),
                         UniqueOp<int64, int64>);
 #endif  // TENSORFLOW_USE_SYCL
+================= End of KERNEL registering COMMENTED block. ================ */
 }  // namespace tensorflow

@@ -29,7 +29,7 @@ from tensorflow.python.platform import test
 class UniqueTest(test.TestCase):
 
   def testInt32(self):
-    x = np.random.randint(2, high=10, size=7000)
+    x = np.random.randint(0, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx = array_ops.unique(x)
       tf_y, tf_idx = self.evaluate([y, idx])
@@ -40,7 +40,7 @@ class UniqueTest(test.TestCase):
       self.assertEqual(x[i], tf_y[tf_idx[i]])
 
   def testInt32OutIdxInt64(self):
-    x = np.random.randint(2, high=10, size=7000)
+    x = np.random.randint(2, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx = array_ops.unique(x, out_idx=dtypes.int64)
       tf_y, tf_idx = self.evaluate([y, idx])
@@ -51,7 +51,7 @@ class UniqueTest(test.TestCase):
       self.assertEqual(x[i], tf_y[tf_idx[i]])
 
   def testString(self):
-    indx = np.random.randint(65, high=122, size=7000)
+    indx = np.random.randint(65, high=122, size=70000)
     x = [chr(i) for i in indx]
     with self.cached_session() as sess:
       y, idx = array_ops.unique(x)
@@ -114,7 +114,7 @@ class UniqueTest(test.TestCase):
 class UniqueWithCountsTest(test.TestCase):
 
   def testInt32(self):
-    x = np.random.randint(2, high=10, size=7000)
+    x = np.random.randint(2, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx, count = array_ops.unique_with_counts(x)
       tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
@@ -127,7 +127,7 @@ class UniqueWithCountsTest(test.TestCase):
       self.assertEqual(count, np.sum(x == value))
 
   def testInt32OutIdxInt64(self):
-    x = np.random.randint(2, high=10, size=7000)
+    x = np.random.randint(2, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx, count = array_ops.unique_with_counts(x, out_idx=dtypes.int64)
       tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])

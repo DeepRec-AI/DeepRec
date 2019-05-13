@@ -93,6 +93,11 @@ REGISTER_OP("StringToHashBucket")
     .Attr("num_buckets: int >= 1")
     .SetShapeFn(shape_inference::UnchangedShape);
 
+REGISTER_OP("StringToHash64")
+    .Input("input: string")
+    .Output("output: int64")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
 REGISTER_OP("ReduceJoin")
     .Input("inputs: string")
     .Input("reduction_indices: int32")

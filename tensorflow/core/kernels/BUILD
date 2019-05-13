@@ -1030,6 +1030,7 @@ cc_library(
         ":tile_ops",
         ":transpose_op",
         ":unique_op",
+        ":unique_ali_op",
         ":unpack_op",
         ":unravel_index_op",
         ":where_op",
@@ -2206,7 +2207,7 @@ tf_cc_test(
     deps = [
         ":ops_testutil",
         ":ops_util",
-        ":unique_op",
+        ":unique_ali_op",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
@@ -6574,6 +6575,7 @@ filegroup(
         "transpose_functor_cpu.cc",
         "transpose_op.cc",
         "unique_op.cc",
+        "unique_ali_op.cc",
         "where_op.cc",
         "xent_op.cc",
         ":android_extended_ops_headers",
@@ -8101,6 +8103,17 @@ tf_kernel_library(
     name = "string_to_hash_bucket_ali_op",
     prefix = "string_to_hash_bucket_ali_op",
     deps = STRING_DEPS,
+)
+
+tf_kernel_library(
+    name = "unique_ali_op",
+    prefix = "unique_ali_op",
+    copts = ["-fexceptions"],
+    nocopts = "-fno-exceptions",
+    deps = ARRAY_DEPS + [
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@sparsehash_c11//:dense_hash_map",
+    ],
 )
 
 # Library to link with when compiling the cwise_op kernels directly,

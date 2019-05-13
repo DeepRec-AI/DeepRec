@@ -165,6 +165,17 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
+        name = "sparsehash_c11",
+        urls = [
+            "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/mirror.bazel.build/github.com/sparsehash-c11/sparsehash-c11.tar.gz",
+            "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/github.com/sparsehash-c11/sparsehash-c11.tar.gz",
+        ],
+        sha256 = "882efd8c9325c84497a05cf6de3c1be8a66015c689024f75b4474e2c782a53d7",
+        strip_prefix = "sparsehash-c11",
+        build_file = str(Label("//third_party:sparsehash_c11.BUILD")),
+    )
+
+    tf_http_archive(
         name = "com_google_absl",
         patch_file = clean_dep("//third_party:string_view_h.patch"),
         build_file = clean_dep("//third_party:com_google_absl.BUILD"),
