@@ -1646,6 +1646,7 @@ inline uint32_t get_color(unsigned hash) {
 }
 
 inline nvtxRangeId_t nvtxRangeStart(const char* msg,
+                                    nvtxDomainHandle_t nvtx_domain,
                                     uint32_t color = 0x008D9BAF,
                                     uint32_t category = 0) {
   nvtxEventAttributes_t attrs = {};
@@ -1656,15 +1657,17 @@ inline nvtxRangeId_t nvtxRangeStart(const char* msg,
   attrs.messageType = NVTX_MESSAGE_TYPE_ASCII;
   attrs.message.ascii = msg;
   attrs.category = category;
-  return ::nvtxRangeStartEx(&attrs);
+  return ::nvtxDomainRangeStartEx(nvtx_domain, &attrs);
 }
 
-inline nvtxRangeId_t nvtxRangeStart(const char* msg, const char* type,
+inline nvtxRangeId_t nvtxRangeStart(const char* msg,
+                                    const char* type,
+                                    nvtxDomainHandle_t nvtx_domain,
                                     bool set_category = true) {
   unsigned h = hash_string(type);
   uint32_t color = get_color(h);
   uint32_t category = set_category ? h : 0;
-  return nvtxRangeStart(msg, color, category);
+  return nvtxRangeStart(msg, nvtx_domain, color, category);
 }
 
 }  // namespace nvtx_helper
@@ -1955,8 +1958,9 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       } else {
         msg = node->def().op() + ": " + node->name();
       }
+      nvtxDomainHandle_t nvtx_domain = nvtxDomainCreateA("TensorFlow");
       nvtx_range =
-          nvtx_helper::nvtxRangeStart(msg.c_str(), node->def().op().c_str());
+          nvtx_helper::nvtxRangeStart(msg.c_str(), node->def().op().c_str(), nvtx_domain);
     }
 #endif  // GOOGLE_CUDA
 
@@ -1984,7 +1988,8 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         completed = NodeDone(s, item.node, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
         if (NvtxRangesEnabled()) {
-          nvtxRangeEnd(nvtx_range);
+          nvtxDomainRangeEnd(nvtx_domain, nvtx_range);
+          nvtxDomainDestroy(nvtx_domain);
         }
 #endif  // GOOGLE_CUDA
         continue;
