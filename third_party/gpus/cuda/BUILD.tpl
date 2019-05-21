@@ -68,6 +68,17 @@ cc_library(
 )
 
 cc_library(
+    name = "nvtools",
+    srcs = ["cuda/lib/%{nvtools_lib}"],
+    data = ["cuda/lib/%{nvtools_lib}"],
+    includes = [
+        ".",
+        "cuda/include",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "cudart",
     srcs = ["cuda/lib/%{cudart_lib}"],
     data = ["cuda/lib/%{cudart_lib}"],
@@ -136,6 +147,7 @@ cc_library(
         ":cudnn",
         ":cufft",
         ":curand",
+        ":nvtools",
     ],
 )
 
