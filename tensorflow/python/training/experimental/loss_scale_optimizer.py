@@ -60,6 +60,11 @@ class MixedPrecisionLossScaleOptimizer(optimizer.Optimizer):
     if not isinstance(opt, optimizer.Optimizer):
       raise ValueError('"opt" must be an instance of Optimizer, but got: %s' %
                        type(opt))
+    if opt.doing_loss_scaling():
+      raise RuntimeError('"opt" already configured for loss scaling via '
+                         'environment variable. Please use only one of '
+                         'TF_ENABLE_AUTO_MIXED_PRECISION or '
+                         'enable_mixed_precision_graph_rewrite().')
     self._optimizer = opt
 
     use_locking = opt._use_locking  # pylint: disable=protected-access

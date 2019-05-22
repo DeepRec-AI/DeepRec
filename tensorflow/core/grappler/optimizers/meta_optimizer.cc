@@ -50,6 +50,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/map_util.h"
 #include "tensorflow/core/util/dump_graph.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/ptr_util.h"
 
 namespace tensorflow {
@@ -123,7 +124,24 @@ bool AutoMixedPrecisionEnabled(RewriterConfig::Toggle opt_level) {
       opt_level == RewriterConfig::AGGRESSIVE) {
     return true;
   }
-  return false;
+  if (opt_level == RewriterConfig::OFF) return false;
+  // Default is to check env var, otherwise off.
+  static bool is_enabled = [] {
+    string primary_env_var;
+    TF_CHECK_OK(ReadStringFromEnvVar(
+        "TF_ENABLE_AUTO_MIXED_PRECISION_GRAPH_REWRITE", "", &primary_env_var));
+    bool ret = false;
+    if (!primary_env_var.empty()) {
+      TF_CHECK_OK(
+          ReadBoolFromEnvVar("TF_ENABLE_AUTO_MIXED_PRECISION_GRAPH_REWRITE",
+                             /*default_val=*/false, &ret));
+    } else {
+      TF_CHECK_OK(ReadBoolFromEnvVar("TF_ENABLE_AUTO_MIXED_PRECISION",
+                                     /*default_val=*/false, &ret));
+    }
+    return ret;
+  }();
+  return is_enabled;
 }
 
 }  // namespace
