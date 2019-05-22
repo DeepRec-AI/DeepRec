@@ -597,6 +597,20 @@ bool TensorOpMathEnabled() {
   return is_enabled;
 }
 
+// A helper function to decide whether to enable the
+// TENSOR_OP_MATH_ALLOW_CONVERSION math type, which allows casts from fp32 to
+// fp16.
+bool TensorOpFp32MathEnabled() {
+  static bool is_enabled = [] {
+    bool ret;
+    TF_CHECK_OK(
+        tensorflow::ReadBoolFromEnvVar("TF_ENABLE_CUDNN_TENSOR_OP_MATH_FP32",
+                                       /*default=*/false, &ret));
+    return ret;
+  }();
+  return is_enabled;
+}
+
 // A helper function to decide whether to enable the TENSOR_OP_MATH math type
 // for RNNs.
 bool RnnTensorOpMathEnabled() {
@@ -606,6 +620,20 @@ bool RnnTensorOpMathEnabled() {
         tensorflow::ReadBoolFromEnvVar("TF_DISABLE_CUDNN_RNN_TENSOR_OP_MATH",
                                        /*default_val=*/false, &is_disabled));
     return !is_disabled;
+  }();
+  return is_enabled;
+}
+
+// A helper function to decide whether to enable the
+// TENSOR_OP_MATH_ALLOW_CONVERSION math type for RNNs, which allows casts from
+// fp32 to fp16.
+bool RnnTensorOpFp32MathEnabled() {
+  static bool is_enabled = [] {
+    bool ret;
+    TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar(
+        "TF_ENABLE_CUDNN_RNN_TENSOR_OP_MATH_FP32",
+        /*default=*/false, &ret));
+    return ret;
   }();
   return is_enabled;
 }
@@ -704,6 +732,11 @@ class CudnnConvolutionDescriptor {
 #if CUDNN_VERSION >= 7000
     cudnnMathType_t math_type =
         (use_tensor_op_math ? CUDNN_TENSOR_OP_MATH : CUDNN_DEFAULT_MATH);
+#if CUDNN_VERSION >= 7200
+    if (math_type == CUDNN_TENSOR_OP_MATH && TensorOpFp32MathEnabled()) {
+      math_type = CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION;
+    }
+#endif
     if (TensorOpMathEnabled()) {
       CHECK_CUDNN_OK(cudnnSetConvolutionMathType(handle_.get(), math_type));
     }
@@ -1127,6 +1160,11 @@ class CudnnRnnDescriptor : public dnn::RnnDescriptor {
         math_type = CUDNN_DEFAULT_MATH;
 #endif  // CUDNN_VERSION >= 7201
       }
+#if CUDNN_VERSION >= 7200
+      if (math_type == CUDNN_TENSOR_OP_MATH && RnnTensorOpFp32MathEnabled()) {
+        math_type = CUDNN_TENSOR_OP_MATH_ALLOW_CONVERSION;
+      }
+#endif // CUDNN_VERSION >= 7200
       CHECK_CUDNN_OK(cudnnSetRNNMatrixMathType(rnn_desc.get(), math_type));
     }
 #endif  // CUDNN_VERSION >= 7000
