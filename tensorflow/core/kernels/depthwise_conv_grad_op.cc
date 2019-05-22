@@ -570,7 +570,7 @@ class DepthwiseConv2dNativeBackpropInputOp : public OpKernel {
     // For in_depth == 1 and grouped convolutions.
     use_cudnn_ = CanUseCudnn() && std::is_same<Device, GPUDevice>::value;
     cudnn_use_autotune_ = CudnnUseAutotune();
-    use_cudnn_grouped_conv_ = false;
+    use_cudnn_grouped_conv_ = true;
     dtype_ = DataTypeToEnum<T>::value;
   }
 
@@ -1044,7 +1044,7 @@ class DepthwiseConv2dNativeBackpropFilterOp : public OpKernel {
     // For in_depth == 1 and grouped convolutions.
     use_cudnn_ = CanUseCudnn() && std::is_same<Device, GPUDevice>::value;
     cudnn_use_autotune_ = CudnnUseAutotune();
-    use_cudnn_grouped_conv_ = false;
+    use_cudnn_grouped_conv_ = true;
 
     if (std::is_same<T, Eigen::half>::value) {
       dtype_ = DT_HALF;
