@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import collections
 import numbers
+import os
 
 import numpy as np
 
@@ -2682,6 +2683,17 @@ def conv_transpose(input,  # pylint: disable=redefined-builtin
         name=name)
 
 
+# TODO(duncanriach): implement deterministic functionality at CUDA kernel level
+def _tf_deterministic_ops():
+  if _tf_deterministic_ops.value is None:
+    tf_deterministic_ops = os.environ.get('TF_DETERMINISTIC_OPS')
+    _tf_deterministic_ops.value = (
+        tf_deterministic_ops == 'true' or
+        tf_deterministic_ops == '1')
+  return _tf_deterministic_ops.value
+_tf_deterministic_ops.value = None
+
+
 @tf_export("nn.bias_add")
 def bias_add(value, bias, data_format=None, name=None):
   """Adds `bias` to `value`.
@@ -2715,7 +2727,19 @@ def bias_add(value, bias, data_format=None, name=None):
     if not context.executing_eagerly():
       value = ops.convert_to_tensor(value, name="input")
       bias = ops.convert_to_tensor(bias, dtype=value.dtype, name="bias")
-    return gen_nn_ops.bias_add(value, bias, data_format=data_format, name=name)
+
+    if _tf_deterministic_ops():
+      if data_format == 'NCHW':
+        rank_of_value = array_ops.rank(value)
+        broadcast_shape_head = [1, array_ops.size(bias)]
+        broadcast_shape_tail = array_ops.ones(rank_of_value - 2, dtype=dtypes.int32)
+        broadcast_shape = array_ops.concat([broadcast_shape_head, broadcast_shape_tail], 0)
+        value = math_ops.add(value, array_ops.reshape(bias, broadcast_shape), name=name)
+      else: # data_format == 'NHWC' or data_format == None
+        value = math_ops.add(value, bias, name=name)
+      return value
+    else:
+      return gen_nn_ops.bias_add(value, bias, data_format=data_format, name=name)
 
 
 def bias_add_v1(value, bias, name=None):
