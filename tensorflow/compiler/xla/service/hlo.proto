@@ -35,7 +35,7 @@ import "tensorflow/compiler/xla/xla_data.proto";
 option cc_enable_arenas = true;
 
 // Serialization of HloInstruction.
-// Next ID: 68
+// Next ID: 70
 message HloInstructionProto {
   reserved 10;
   reserved "parameter_name";
@@ -234,6 +234,11 @@ message HloInstructionProto {
   // Specifies if the gather/scatter indices are guaranteed to be sorted by the
   // caller.
   bool indices_are_sorted = 67;
+
+  // Specifies if the scatter should use atomic operation or not. If
+  // there is duplicate index, then it should be true to compute the
+  // right answer.
+  bool use_atomic = 69;
 }
 
 // Serialization of HloComputation.
