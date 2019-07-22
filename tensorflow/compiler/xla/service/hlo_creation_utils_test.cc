@@ -41,6 +41,21 @@ class HloCreationUtilsTest : public HloTestBase {
     *param = (*entry_computation)->parameter_instruction(0);
     return module;
   }
+
+  std::unique_ptr<VerifiedHloModule> CreateModuleWithProgramShape(
+      PrimitiveType primitive_type, absl::Span<const int64> input_shape_dims,
+      absl::Span<const int64> output_shape_dims, HloInstruction** param,
+      HloComputation** entry_computation, PrimitiveType primitive_type_output) {
+    Shape input_shape = ShapeUtil::MakeShape(primitive_type, input_shape_dims);
+    Shape output_shape =
+        ShapeUtil::MakeShape(primitive_type_output, output_shape_dims);
+    auto module = CreateNewVerifiedModule("test");
+    *entry_computation = module->AddEntryComputation(
+        CreateComputationWithSignature({&input_shape}, output_shape, "entry")
+            .ValueOrDie());
+    *param = (*entry_computation)->parameter_instruction(0);
+    return module;
+  }
 };
 
 TEST_F(HloCreationUtilsTest, CollapseFirst1Dim) {
