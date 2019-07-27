@@ -299,16 +299,34 @@ cuda_py_test(
     xla_enable_strict_auto_jit = True,
 )
 
-cuda_py_test(
-    name = "cudnn_determinism_test",
-    size = "small",
-    srcs = ["cudnn_determinism_test.py"],
-    additional_deps = [
+py_library(
+    name = "cudnn_deterministic_base",
+    srcs = ["cudnn_deterministic_base.py"],
+    deps = [
         "//third_party/py/numpy",
         "//tensorflow/python:constant_op",
         "//tensorflow/python:dtypes",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:nn_ops",
+    ],
+)
+
+cuda_py_test(
+    name = "cudnn_deterministic_ops_test",
+    size = "small",
+    srcs = ["cudnn_deterministic_ops_test.py"],
+    additional_deps = [
+        ":cudnn_deterministic_base",
+    ],
+    xla_enable_strict_auto_jit = True,
+)
+
+cuda_py_test(
+    name = "cudnn_deterministic_test",
+    size = "small",
+    srcs = ["cudnn_deterministic_test.py"],
+    additional_deps = [
+        ":cudnn_deterministic_base",
     ],
     xla_enable_strict_auto_jit = True,
 )

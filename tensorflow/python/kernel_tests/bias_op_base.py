@@ -165,11 +165,11 @@ class BiasAddTestBase(test.TestCase):
           output_tensor, np_input.shape, bias_add_grad, bias.shape)
 
       if dtype == np.float16:
-        # Compare fp16 theoretical gradients to fp32 numerical gradients,
+        # Compare fp16 analytical gradients to fp32 numerical gradients,
         # since fp16 numerical gradients are too imprecise unless great
         # care is taken with choosing the inputs and the delta. This is
-        # a weaker check (in particular, it does not test the op itself,
-        # only its gradient), but it's much better than nothing.
+        # a weaker, but pragmatic, check (in particular, it does not test
+        # the op itself, only its gradient).
         input_tensor = constant_op.constant(
             np_input, shape=np_input.shape, dtype=np.float32)
         bias_tensor = constant_op.constant(

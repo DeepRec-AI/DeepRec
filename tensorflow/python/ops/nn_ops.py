@@ -2683,10 +2683,11 @@ def conv_transpose(input,  # pylint: disable=redefined-builtin
         name=name)
 
 
-# TODO(duncanriach): implement deterministic functionality at CUDA kernel level
 def _tf_deterministic_ops():
   if _tf_deterministic_ops.value is None:
     tf_deterministic_ops = os.environ.get('TF_DETERMINISTIC_OPS')
+    if tf_deterministic_ops is not None:
+      tf_deterministic_ops = tf_deterministic_ops.lower()
     _tf_deterministic_ops.value = (
         tf_deterministic_ops == 'true' or
         tf_deterministic_ops == '1')
@@ -2709,11 +2710,19 @@ def bias_add(value, bias, data_format=None, name=None):
     bias: A 1-D `Tensor` with size matching the channel dimension of `value`.
       Must be the same type as `value` unless `value` is a quantized type,
       in which case a different quantized type may be used.
-    data_format: A string. 'N...C' and 'NC...' are supported.
+    data_format: A string. 'N...C' and 'NC...' are supported. If `None` (the
+      default) is specified then 'N..C' is assumed.
     name: A name for the operation (optional).
 
   Returns:
     A `Tensor` with the same type as `value`.
+
+  Raises:
+    ValueError if data format is unrecognized, if `value` has less than two
+    dimensions when `data_format` is 'N..C'/`None` or `value` has less
+    then three dimensions when `data_format` is `NC..`, if `bias` does not
+    have exactly one dimension (is a vector), or if the size of `bias`
+    does not match the size of the channel dimension of `value`.
   """
   with ops.name_scope(name, "BiasAdd", [value, bias]) as name:
     if data_format is not None:
@@ -2728,16 +2737,21 @@ def bias_add(value, bias, data_format=None, name=None):
       value = ops.convert_to_tensor(value, name="input")
       bias = ops.convert_to_tensor(bias, dtype=value.dtype, name="bias")
 
+    # TODO(duncanriach): Implement deterministic functionality at CUDA kernel
+    #   level.
     if _tf_deterministic_ops():
+      # Note that this code does not implement the same error checks as the
+      # pre-existing C++ ops.
       if data_format == 'NCHW':
-        rank_of_value = array_ops.rank(value)
         broadcast_shape_head = [1, array_ops.size(bias)]
-        broadcast_shape_tail = array_ops.ones(rank_of_value - 2, dtype=dtypes.int32)
-        broadcast_shape = array_ops.concat([broadcast_shape_head, broadcast_shape_tail], 0)
-        value = math_ops.add(value, array_ops.reshape(bias, broadcast_shape), name=name)
+        broadcast_shape_tail = array_ops.ones(array_ops.rank(value) - 2,
+                                              dtype=dtypes.int32)
+        broadcast_shape = array_ops.concat(
+            [broadcast_shape_head, broadcast_shape_tail], 0)
+        return math_ops.add(
+            value, array_ops.reshape(bias, broadcast_shape), name=name)
       else: # data_format == 'NHWC' or data_format == None
-        value = math_ops.add(value, bias, name=name)
-      return value
+        return math_ops.add(value, bias, name=name)
     else:
       return gen_nn_ops.bias_add(value, bias, data_format=data_format, name=name)
 
