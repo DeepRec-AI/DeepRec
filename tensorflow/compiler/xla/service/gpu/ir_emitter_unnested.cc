@@ -403,7 +403,7 @@ Status IrEmitterUnnested::HandleFusion(HloInstruction* fusion) {
               scatter_fused_emitter.GetGenerator(root->operand(1)),
               /*updates_gen=*/
               scatter_fused_emitter.GetGenerator(root->operand(2)),
-              root->use_atomic()));
+              root->unique_indices()));
         }
         AddThunkToThunkSequence(
             absl::make_unique<SequentialThunk>(std::move(thunks), fusion));
@@ -836,7 +836,7 @@ Status IrEmitterUnnested::HandleScatter(HloInstruction* scatter) {
         return GetIrArray(*updates, *scatter)
             .EmitReadArrayElement(index, &b_, "update");
       },
-      scatter->use_atomic()));
+      scatter->unique_indices()));
 
   // Elide the sequential thunk if there's no copy.
   if (thunks.size() == 1) {
@@ -853,7 +853,7 @@ Status IrEmitterUnnested::EmitScatter(
     Thunk* thunk, HloInstruction* scatter,
     const llvm_ir::ElementGenerator& scatter_indices_gen,
     const llvm_ir::ElementGenerator& updates_gen,
-    bool use_atomic) {
+    bool unique_indices) {
   const HloInstruction* operand = scatter->operand(0);
   const HloInstruction* scatter_indices = scatter->operand(1);
   const HloInstruction* updates = scatter->operand(2);
@@ -963,7 +963,7 @@ Status IrEmitterUnnested::EmitScatter(
     TF_ASSIGN_OR_RETURN(llvm::Value* const input_ir_value, updates_gen(index));
     Store(input_ir_value, input_address);
 
-    if (scatter->use_atomic()) {
+    if (!scatter->unique_indices()) {
       return EmitAtomicOperationForNestedComputation(
           *scatter->to_apply(), output_address, input_address);
     } else {

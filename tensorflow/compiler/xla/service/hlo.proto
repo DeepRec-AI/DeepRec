@@ -235,10 +235,9 @@ message HloInstructionProto {
   // caller.
   bool indices_are_sorted = 67;
 
-  // Specifies if the scatter should use atomic operation or not. If
-  // there is duplicate index, then it should be true to compute the
-  // right answer.
-  bool use_atomic = 69;
+  // Specifies if all elements updated are guaranteed to be unique by
+  // the caller.
+  bool unique_indices = 69;
 }
 
 // Serialization of HloComputation.
