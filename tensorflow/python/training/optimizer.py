@@ -610,13 +610,13 @@ class Optimizer(
           self._distributed_apply, args=(grads_and_vars, global_step, name))
 
     name = name if name is not None else self.get_name()
+    grads_and_vars = tuple(grads_and_vars)  # Make sure repeat iteration works.
     def apply_fn():
       # No DistributionStrategy case.
-      tgrads_and_vars = tuple(grads_and_vars)  # Make sure repeat iteration works.
-      if not tgrads_and_vars:
+      if not grads_and_vars:
         raise ValueError("No variables provided.")
       converted_grads_and_vars = []
-      for g, v in tgrads_and_vars:
+      for g, v in grads_and_vars:
         if g is not None:
           try:
             # Convert the grad to Tensor or IndexedSlices if necessary.
