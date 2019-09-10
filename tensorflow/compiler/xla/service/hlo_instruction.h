@@ -1152,6 +1152,13 @@ class HloInstruction {
   // function, e.g. the signature of an F32 add is (F32, F32) -> F32.
   string SignatureString() const;
 
+  // Returns a string that is the node op for the node associated with this hlo
+  string NvtxNodeOpString() const;
+
+  // Returns a string that is the node name for the node associated with this
+  // hlo
+  string NvtxNodeNameString() const;
+
   // Returns a debugging string that represents this instruction.
   //
   // (We express the default options using an overload rather than a default

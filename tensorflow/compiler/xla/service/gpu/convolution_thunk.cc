@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/types.h"
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/platform/nvtx.h"
 #include "tensorflow/core/platform/stream_executor_no_cuda.h"
 
 namespace xla {
@@ -57,9 +58,13 @@ Status ConvolutionThunk::ExecuteOnStream(const ExecuteParams& params) {
 
   auto op_profiler =
       params.profiler->MakeScopedInstructionProfiler(hlo_instruction());
+  auto nvtx_range = tensorflow::nvtx::MaybeNvtxRangeStart(
+      hlo_instruction()->NvtxNodeOpString(),
+      hlo_instruction()->NvtxNodeNameString());
   TF_RETURN_IF_ERROR(RunCudnnConv(cudnn_call_,
                                   absl::MakeSpan(operand_se_buffers),
                                   result_buffer, scratch, params.stream));
+  tensorflow::nvtx::MaybeNvtxRangeEnd(nvtx_range);
 
   // Write the output tuple.
   const int kNumOutputs = 2;
