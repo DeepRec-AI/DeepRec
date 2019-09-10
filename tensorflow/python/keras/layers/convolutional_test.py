@@ -58,6 +58,8 @@ class Conv1DTest(keras_parameterized.TestCase):
   def test_conv1d(self, kwargs, expected_output_shape):
     kwargs['filters'] = 2
     kwargs['kernel_size'] = 3
+    if test.is_gpu_available():
+      kwargs['fused'] = True
     self._run_test(kwargs, expected_output_shape)
 
   def test_conv1d_regularizers(self):
@@ -126,6 +128,8 @@ class Conv2DTest(keras_parameterized.TestCase):
   def test_conv2d(self, kwargs, expected_output_shape=None):
     kwargs['filters'] = 2
     kwargs['kernel_size'] = (3, 3)
+    if test.is_gpu_available():
+      kwargs['fused'] = True
     if 'data_format' not in kwargs or test.is_gpu_available(cuda_only=True):
       self._run_test(kwargs, expected_output_shape)
 

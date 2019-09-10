@@ -134,7 +134,7 @@ def _non_atrous_convolution(
     input_shape = input.get_shape()
     filter = ops.convert_to_tensor(filter, name="filter")  # pylint: disable=redefined-builtin
     filter_shape = filter.get_shape()
-    op = _NonAtrousConvolution(
+    op = _Convolution(
         input_shape,
         filter_shape=filter_shape,
         padding=padding,
@@ -144,12 +144,14 @@ def _non_atrous_convolution(
     return op(input, filter)
 
 
-class _NonAtrousConvolution(object):
-  """Helper class for _non_atrous_convolution.
+class _Convolution(object):
+  """Helper class for conducting non_atrous convolution or atrous convolution.
 
   Note that this class assumes that shapes of input and filter passed to
   __call__ are compatible with input_shape and filter_shape passed to the
   constructor.
+  
+  Note Atrous convolution with 3D convolutions might meet "no algorithm worked".
 
   Arguments:
     input_shape: static input shape, i.e. input.get_shape().
@@ -157,6 +159,8 @@ class _NonAtrousConvolution(object):
     padding: see _non_atrous_convolution.
     data_format: see _non_atrous_convolution.
     strides: see _non_atrous_convolution.
+    dilation_rate: Dilation rate. List of N ints >= 1. N is space dim. Defaults
+      to [1]*N.  
     name: see _non_atrous_convolution.
   """
 
@@ -167,6 +171,7 @@ class _NonAtrousConvolution(object):
       padding,
       data_format=None,
       strides=None,
+      dilation_rate=None,
       name=None):
     filter_shape = filter_shape.with_rank(input_shape.ndims)
     self.padding = padding
@@ -183,6 +188,8 @@ class _NonAtrousConvolution(object):
     elif len(strides) != conv_dims:
       raise ValueError("len(strides)=%d, but should be %d" % (len(strides),
                                                               conv_dims))
+    self.dilations = dilation_rate
+
     if conv_dims == 1:
       # conv1d uses the 2-d data format names
       if data_format is None:
@@ -211,6 +218,9 @@ class _NonAtrousConvolution(object):
       else:
         raise ValueError("data_format must be \"NDHWC\" or \"NCDHW\". Have: %s"
                          % data_format)
+      channel_index = 1 if data_format.startswith("NC") else 4
+      self.dilations = _get_sequence(dilation_rate, 3, channel_index,
+                                     "dilations")
       self.strides = strides
       self.data_format = data_format
       self.conv_op = gen_nn_ops.conv3d
@@ -218,13 +228,15 @@ class _NonAtrousConvolution(object):
   # Note that we need this adapter since argument names for conv1d don't match
   # those for gen_nn_ops.conv2d and gen_nn_ops.conv3d.
   # pylint: disable=redefined-builtin
-  def _conv1d(self, input, filter, strides, padding, data_format, name):
+  def _conv1d(self, input, filter, strides, padding, data_format, dilations,
+              name):
     return conv1d(
         value=input,
         filters=filter,
         stride=strides,
         padding=padding,
         data_format=data_format,
+        dilations=dilations,
         name=name)
 
   # pylint: enable=redefined-builtin
@@ -236,6 +248,7 @@ class _NonAtrousConvolution(object):
         strides=self.strides,
         padding=self.padding,
         data_format=self.data_format,
+        dilations=self.dilations,
         name=self.name)
 
 
@@ -509,7 +522,8 @@ class _WithSpaceToBatch(object):
                build_op,
                filter_shape=None,
                spatial_dims=None,
-               data_format=None):
+               data_format=None,
+               fused=False):
     """Helper class for _with_space_to_batch."""
     dilation_rate = ops.convert_to_tensor(
         dilation_rate, dtypes.int32, name="dilation_rate")
@@ -551,11 +565,19 @@ class _WithSpaceToBatch(object):
 
     const_rate = tensor_util.constant_value(dilation_rate)
     rate_or_const_rate = dilation_rate
+    can_use_fused = False
+    if input_shape.ndims is not None:
+      conv_dims = input_shape.ndims - 2
+      can_use_fused = fused and conv_dims <= 2
     if const_rate is not None:
       rate_or_const_rate = const_rate
       if np.any(const_rate < 1):
         raise ValueError("dilation_rate must be positive")
-      if np.all(const_rate == 1):
+      # We call CUDNN convolutions when dealing with convolutions with 1D/2D
+      # space + dilation or convolutions with no dilation. CUDNN is not used for
+      # 3D convolutions with dilation because that would result in "no algorithm
+      # worked" errors from CUDNN.
+      if can_use_fused or np.all(const_rate == 1):
         self.call = build_op(num_spatial_dims, padding)
         return
 
@@ -1051,7 +1073,8 @@ class Convolution(object):
                strides=None,
                dilation_rate=None,
                name=None,
-               data_format=None):
+               data_format=None,
+               fused=False):
     """Helper function for convolution."""
     num_total_dims = filter_shape.ndims
     if num_total_dims is None:
@@ -1098,22 +1121,40 @@ class Convolution(object):
     self.padding = padding
     self.name = name
     self.dilation_rate = dilation_rate
+    # We call CUDNN convolutions when dealing with convolutions with 1D/2D
+    # space + dilation or convolutions with no dilation. CUDNN is not used for
+    # 3D convolutions with dilation because that would result in "no algorithm
+    # worked" errors from CUDNN.
+    conv_dims = input_shape.ndims - 2
+    build_op = (self._build_op_atrous if fused and conv_dims <= 2 else
+                self._build_op_non_atrous)
     self.conv_op = _WithSpaceToBatch(
         input_shape,
         dilation_rate=dilation_rate,
         padding=padding,
-        build_op=self._build_op,
+        build_op=build_op,
         filter_shape=filter_shape,
         spatial_dims=spatial_dims,
-        data_format=data_format)
+        data_format=data_format,
+        fused=fused)
 
-  def _build_op(self, _, padding):
-    return _NonAtrousConvolution(
+  def _build_op_non_atrous(self, _, padding):
+    return _Convolution(
         self.input_shape,
         filter_shape=self.filter_shape,
         padding=padding,
         data_format=self.data_format,
         strides=self.strides,
+        name=self.name)
+
+  def _build_op_atrous(self, _, padding):
+    return _Convolution(
+        self.input_shape,
+        filter_shape=self.filter_shape,
+        padding=padding,
+        data_format=self.data_format,
+        strides=self.strides,
+        dilation_rate=self.dilation_rate,
         name=self.name)
 
   def __call__(self, inp, filter):  # pylint: disable=redefined-builtin
