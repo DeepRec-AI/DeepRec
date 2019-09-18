@@ -24,6 +24,7 @@ import tempfile
 
 import numpy as np
 
+from tensorflow.compiler.tf2tensorrt.wrap_py_utils import get_linked_tensorrt_version
 from tensorflow.compiler.tf2tensorrt.wrap_py_utils import is_tensorrt_enabled
 from tensorflow.core.framework import graph_pb2
 from tensorflow.core.protobuf import config_pb2
@@ -76,10 +77,19 @@ class TrtConvertTest(test_util.TensorFlowTestCase):
     """Test case for TrtGraphConverter.get_tensorrt_rewriter_config()."""
     if not is_tensorrt_enabled():
       return
-    conversion_params = trt_convert.DEFAULT_TRT_CONVERSION_PARAMS._replace(
+    TRT_VERSION = get_linked_tensorrt_version()
+    if TRT_VERSION >= (5, 0, 0):
+      conversion_params = trt_convert.DEFAULT_TRT_CONVERSION_PARAMS._replace(
         max_batch_size=128,
         max_workspace_size_bytes=1234,
         precision_mode="INT8",
+        minimum_segment_size=10,
+        is_dynamic_op=True,
+        maximum_cached_engines=2)
+    else:
+      conversion_params = trt_convert.DEFAULT_TRT_CONVERSION_PARAMS._replace(
+        max_batch_size=128,
+        max_workspace_size_bytes=1234,
         minimum_segment_size=10,
         is_dynamic_op=True,
         maximum_cached_engines=2)
@@ -105,7 +115,8 @@ class TrtConvertTest(test_util.TensorFlowTestCase):
     self.assertEqual(True, trt_optimizer.parameter_map["is_dynamic_op"].b)
     self.assertEqual(1234,
                      trt_optimizer.parameter_map["max_workspace_size_bytes"].i)
-    self.assertEqual(
+    if TRT_VERSION >= (5, 0, 0):
+      self.assertEqual(
         trt_convert._to_bytes("INT8"),
         trt_optimizer.parameter_map["precision_mode"].s)
     self.assertEqual(2, trt_optimizer.parameter_map["maximum_cached_engines"].i)
@@ -300,7 +311,13 @@ class TrtConvertTest(test_util.TensorFlowTestCase):
     input_saved_model_dir = self.mkdtemp()
     self._WriteInputSavedModel(input_saved_model_dir)
 
-    for need_calibration in [False, True]:
+    TRT_VERSION = get_linked_tensorrt_version()
+    if TRT_VERSION >= (5, 0, 0):
+      calibration_opts = [False, True]
+    else:
+      calibration_opts = [False]
+
+    for need_calibration in calibration_opts:
       # Use GraphDef as input.
       self._TestTrtGraphConverter()
 
