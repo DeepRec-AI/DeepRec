@@ -251,21 +251,21 @@ def _get_config(auto_mixed_precision=True):
   return config
 
 
-def _is_cast_to_fp16(node_name):
-  return node_name.endswith('-CastToFp16-AutoMixedPrecision')
+def _is_cast_to_fp16(node_name, node_op):
+  return node_name.endswith('-CastToFp16-AutoMixedPrecision') and node_op == "Cast"
 
 
-def _is_cast_to_fp32(node_name):
-  return node_name.endswith('-CastToFp32-AutoMixedPrecision')
+def _is_cast_to_fp32(node_name, node_op):
+  return node_name.endswith('-CastToFp32-AutoMixedPrecision') and node_op == "Cast"
 
 
-def _count_casts(nodes):
+def _count_casts(partition_graph):
   num_to_fp16 = 0
   num_to_fp32 = 0
-  for node in nodes:
-    if _is_cast_to_fp16(node.name):
+  for node in partition_graph.node:
+    if _is_cast_to_fp16(node.name, node.op):
       num_to_fp16 += 1
-    elif _is_cast_to_fp32(node.name):
+    elif _is_cast_to_fp32(node.name, node.op):
       num_to_fp32 += 1
   return num_to_fp16, num_to_fp32
 
@@ -340,9 +340,10 @@ class AutoMixedPrecisionTest(test.TestCase):
     with session.Session(config=_get_config()) as sess:
       sess.run(variables.global_variables_initializer())
       metadata = config_pb2.RunMetadata()
-      output_val = sess.run(fetches, run_metadata=metadata)
+      run_opts = config_pb2.RunOptions(output_partition_graphs=True)
+      output_val = sess.run(fetches, run_metadata=metadata, options=run_opts)
 
-    return output_val_ref, output_val, metadata.cost_graph
+    return output_val_ref, output_val, metadata.cost_graph, metadata.partition_graphs
 
   def _run_simple_loop_test(self, inp, body, out):
     """Runs a test of a simple loop.
@@ -377,7 +378,7 @@ class AutoMixedPrecisionTest(test.TestCase):
         expected_types.append(section_expected_types)
 
       a = _build_simple_loop_graph(inp, body, out)
-      output_val_ref, output_val, cost_graph = self._run(a)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(a)
       node_map = _build_node_map(cost_graph.node)
 
       section_names = ['input', 'while/body', 'output']
@@ -405,9 +406,9 @@ class AutoMixedPrecisionTest(test.TestCase):
         x = _conv_bn(x)
         output = _conv_bn(x)
 
-        output_val_ref, output_val, cost_graph = self._run(output)
+        output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
         node_map = _build_node_map(cost_graph.node)
-        num_to_fp16, num_to_fp32 = _count_casts(cost_graph.node)
+        num_to_fp16, num_to_fp32 = _count_casts(partition_graphs[0])
 
         self._assert_output_fp16(node_map, 'Conv2D')
         self._assert_output_fp16(node_map, 'FusedBatchNormV3')
@@ -428,9 +429,9 @@ class AutoMixedPrecisionTest(test.TestCase):
         x = _conv3d_bn(x)
         output = _conv3d_bn(x)
 
-        output_val_ref, output_val, cost_graph = self._run(output)
+        output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
         node_map = _build_node_map(cost_graph.node)
-        num_to_fp16, num_to_fp32 = _count_casts(cost_graph.node)
+        num_to_fp16, num_to_fp32 = _count_casts(partition_graphs[0])
 
         self._assert_output_fp16(node_map, 'Conv3D')
         self._assert_output_fp16(node_map, 'FusedBatchNormV3')
@@ -455,7 +456,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(y, [x, f])
       output = (y, g)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
       self._assert_output_fp16(node_map, 'Conv3D')
       self._assert_output_fp16(node_map,
@@ -482,14 +483,14 @@ class AutoMixedPrecisionTest(test.TestCase):
         g = optimizer.compute_gradients(y, [x])
         output = (y, g)
 
-        output_val_ref, output_val, cost_graph = self._run(output)
+        output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
         node_map = _build_node_map(cost_graph.node)
         self._assert_output_fp16(node_map, 'Conv2D')
         self._assert_output_fp16(node_map, 'FusedBatchNormV3')
         self._assert_output_fp16(node_map, 'dropout/mul')
         self._assert_output_fp16(node_map, 'Conv2D_1')
 
-        output_val_ref, output_val, cost_graph = self._run(output)
+        output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
         self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
 
   @test_util.run_deprecated_v1
@@ -501,15 +502,15 @@ class AutoMixedPrecisionTest(test.TestCase):
       x = _input([2, 8, 8, 1])
       output = _conv_pool(x)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
-      num_to_fp16, num_to_fp32 = _count_casts(cost_graph.node)
+      num_to_fp16, num_to_fp32 = _count_casts(partition_graphs[0])
 
       self._assert_output_fp16(node_map, 'Conv2D')
       self._assert_output_fp16(node_map, 'Relu')
       self._assert_output_fp16(node_map, 'MaxPool')
       self._assert_output_fp16(node_map, 'Conv2D_1')
-      self.assertEqual(num_to_fp16, 4)
+      self.assertEqual(num_to_fp16, 3)
       self.assertEqual(num_to_fp32, 1)
       self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
 
@@ -525,7 +526,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(y, [x])
       output = (y, g)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'while/MatMul')
@@ -545,7 +546,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(k, [x])
       output = (k, l, g)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'while/MatMul')
@@ -571,7 +572,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(y, [x])
       output = (y, g)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'split')
@@ -596,7 +597,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(y, [x])
       output = (g, y)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'MatMul')
@@ -618,7 +619,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(h, [init_c, init_h])
       output = (h, g)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'while/concat')
@@ -687,7 +688,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(y, [x])
       output = (g, y)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'MatMul')
@@ -731,7 +732,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       loss, _ = control_flow_ops.while_loop(
           lambda loss, i: math_ops.less(i, end), body, [0.0, begin])
 
-      output_val_ref, output_val, cost_graph = self._run(loss)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(loss)
       node_map = _build_node_map(cost_graph.node)
 
       self._assert_output_fp16(node_map, 'while/dense/MatMul')
@@ -750,9 +751,9 @@ class AutoMixedPrecisionTest(test.TestCase):
           with auto_mixed_precision_scope(True):
             x = _conv_bn(x)
         output = gradients.gradients(x, [y])
-        output_val_ref, output_val, cost_graph = self._run(output)
+        output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
         node_map = _build_node_map(cost_graph.node)
-        num_to_fp16, num_to_fp32 = _count_casts(cost_graph.node)
+        num_to_fp16, num_to_fp32 = _count_casts(partition_graphs[0])
 
         self._assert_output_fp32(node_map, 'Conv2D')
         self._assert_output_fp32(node_map, 'FusedBatchNormV3')
