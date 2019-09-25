@@ -64,7 +64,7 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
       result_b = operation[0].eval(feed_dict=feed_dict)
       self.assertAllEqual(result_a, result_b)
 
-  def _testGradientsCase(self, data_layout, data_rank, data_type):
+  def _testDeterministicGradientsCase(self, data_layout, data_rank, data_type):
     seed = (hash(data_layout) % 256 +
             hash(data_rank) % 256 +
             hash(data_type) % 256)
@@ -95,12 +95,16 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
       feed_dict = {upstream_gradients: self._random_ndarray(out_shape)}
       self._assert_reproducible(bias_gradients_op, feed_dict=feed_dict)
 
+  # TODO(duncanriach): add test coverage for deterministic gradients
+  #   in eager mode
+  @test_util.run_deprecated_v1
   @test_util.run_cuda_only
-  def testGradients(self):
+  def testDeterministicGradients(self):
     for data_layout in ('channels_first', 'channels_last'):
       for data_rank in (1, 2, 3):
         for data_type in (dtypes.float16, dtypes.float32, dtypes.float64):
-          self._testGradientsCase(data_layout, data_rank, data_type)
+          self._testDeterministicGradientsCase(data_layout, data_rank,
+                                               data_type)
 
   # TODO(duncanriach): Re-enable the following three tests for the error checks
   #   after deterministic functionality is implemented at the CUDA kernel level.

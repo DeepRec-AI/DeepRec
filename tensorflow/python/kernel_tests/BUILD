@@ -303,11 +303,11 @@ py_library(
     name = "cudnn_deterministic_base",
     srcs = ["cudnn_deterministic_base.py"],
     deps = [
-        "//third_party/py/numpy",
+        "//tensorflow/python:client_testlib",
         "//tensorflow/python:constant_op",
         "//tensorflow/python:dtypes",
-        "//tensorflow/python:client_testlib",
         "//tensorflow/python:nn_ops",
+        "//third_party/py/numpy",
     ],
 )
 
@@ -1691,13 +1691,13 @@ py_library(
     name = "bias_op_base",
     srcs = ["bias_op_base.py"],
     deps = [
-        "//third_party/py/numpy",
         "//tensorflow/python:array_ops",
         "//tensorflow/python:client_testlib",
         "//tensorflow/python:framework_for_generated_wrappers",
         "//tensorflow/python:gradients",
         "//tensorflow/python:nn_grad",
         "//tensorflow/python:nn_ops",
+        "//third_party/py/numpy",
     ],
 )
 
