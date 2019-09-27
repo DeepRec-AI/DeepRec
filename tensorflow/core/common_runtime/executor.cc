@@ -26,7 +26,6 @@ limitations under the License.
 #include "absl/strings/string_view.h"
 
 #if GOOGLE_CUDA
-#include "cuda/include/cuda_profiler_api.h"
 #include "cuda/include/nvToolsExt.h"
 #endif  // GOOGLE_CUDA
 
@@ -1672,6 +1671,23 @@ inline nvtxRangeId_t nvtxRangeStart(const char* msg,
 
 }  // namespace nvtx_helper
 
+class NvtxDomain {
+ public:
+  explicit NvtxDomain(const char* name) : handle_(nvtxDomainCreateA(name)) {}
+  ~NvtxDomain() { nvtxDomainDestroy(handle_); }
+  operator nvtxDomainHandle_t() const { return handle_; }
+
+ private:
+  TF_DISALLOW_COPY_AND_ASSIGN(NvtxDomain);
+  nvtxDomainHandle_t handle_;
+};
+
+static const NvtxDomain& GetNvtxTensorFlowDomain() {
+  // Singleton because we want the same domain for the lifetime of the process.
+  static NvtxDomain nvtx_domain("TensorFlow");
+  return nvtx_domain;
+}
+
 // A helper function to decide whether to enable CUDA NVTX profiling ranges.
 static bool NvtxRangesEnabled() {
   static bool is_enabled = [] {
@@ -1958,9 +1974,8 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       } else {
         msg = node->def().op() + ": " + node->name();
       }
-      nvtxDomainHandle_t nvtx_domain = nvtxDomainCreateA("TensorFlow");
-      nvtx_range =
-          nvtx_helper::nvtxRangeStart(msg.c_str(), node->def().op().c_str(), nvtx_domain);
+      nvtx_range = nvtx_helper::nvtxRangeStart(
+          msg.c_str(), node->def().op().c_str(), GetNvtxTensorFlowDomain());
     }
 #endif  // GOOGLE_CUDA
 
@@ -1987,9 +2002,8 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         // Continue to process the nodes in 'inline_ready'.
         completed = NodeDone(s, item.node, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
-        if (NvtxRangesEnabled()) {
-          nvtxDomainRangeEnd(nvtx_domain, nvtx_range);
-          nvtxDomainDestroy(nvtx_domain);
+        if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
+          nvtxDomainRangeEnd(GetNvtxTensorFlowDomain(), nvtx_range);
         }
 #endif  // GOOGLE_CUDA
         continue;
@@ -2058,8 +2072,8 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
           const bool completed =
               NodeDone(s, state->item->node, ready, stats, nullptr);
 #if GOOGLE_CUDA
-          if (NvtxRangesEnabled()) {
-            nvtxRangeEnd(nvtx_range);
+          if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
+            nvtxDomainRangeEnd(GetNvtxTensorFlowDomain(), nvtx_range);
           }
 #endif  // GOOGLE_CUDA
           delete state;
@@ -2149,8 +2163,8 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       // Postprocess.
       completed = NodeDone(s, item.node, ready, stats, &inline_ready);
 #if GOOGLE_CUDA
-      if (NvtxRangesEnabled()) {
-        nvtxRangeEnd(nvtx_range);
+      if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
+        nvtxDomainRangeEnd(GetNvtxTensorFlowDomain(), nvtx_range);
       }
 #endif  // GOOGLE_CUDA
     }
