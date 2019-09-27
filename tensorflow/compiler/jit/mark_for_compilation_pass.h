@@ -20,6 +20,8 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_JIT_MARK_FOR_COMPILATION_PASS_H_
 #define TENSORFLOW_COMPILER_JIT_MARK_FOR_COMPILATION_PASS_H_
 
+#include "absl/container/flat_hash_set.h"
+
 #include "tensorflow/compiler/jit/compilability_check_util.h"
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 
@@ -57,11 +59,16 @@ bool IsCompilable(
     std::vector<RecursiveCompilabilityChecker::UncompilableNodeInfo>*
         uncompilable_node_info = nullptr);
 
+absl::flat_hash_map<string, std::vector<string>> *GetWhitelistTable();
+
 namespace testing {
 // DO NOT USE IN PRODUCTION.
 //
 // Resets some internal state to let us write reliable unit tests.
 void ResetClusterSequenceNumber();
+
+// Return a list of operation that we choose not to put into the whitelist.
+absl::flat_hash_set<string> GetKnownXLAWhitelistOp();
 }  // namespace testing
 }  // namespace tensorflow
 
