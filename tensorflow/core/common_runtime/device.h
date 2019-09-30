@@ -160,10 +160,6 @@ class Device : public DeviceBase {
     return Status::OK();
   }
 
-  // DEPRECATED: Use TryGetDeviceContext instead.
-  Status FillContextMap(const Graph* graph,
-                        DeviceContextMap* device_context_map);
-
   // Returns the op segment of this device.  The caller can reuse op
   // kernels registered for the same session running on this device.
   OpSegment* op_segment() { return &op_seg_; }
