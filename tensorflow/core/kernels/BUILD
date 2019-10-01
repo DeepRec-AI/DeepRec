@@ -2802,6 +2802,7 @@ cc_library(
         ":adjust_hue_op",
         ":adjust_saturation_op",
         ":attention_ops",
+        ":batched_non_max_suppression_op",
         ":colorspace_op",
         ":crop_and_resize_op",
         ":decode_bmp_op",
@@ -2913,6 +2914,15 @@ tf_kernel_library(
     name = "extract_jpeg_shape_op",
     prefix = "extract_jpeg_shape_op",
     deps = IMAGE_DEPS,
+)
+
+tf_kernel_library(
+    name = "batched_non_max_suppression_op",
+    gpu_srcs = [
+        "batched_non_max_suppression_op.cu.cc",
+        "batched_non_max_suppression_op.h",
+    ],
+    deps = IMAGE_DEPS + if_cuda(["@cub_archive//:cub"]) + [":transpose_functor"],
 )
 
 tf_kernel_library(
@@ -3166,6 +3176,24 @@ tf_cuda_cc_test(
 tf_cuda_cc_test(
     name = "non_max_suppression_op_gpu_test",
     srcs = ["non_max_suppression_op_gpu_test.cc"],
+    tags = tf_cuda_tests_tags() + ["no_cuda_on_cpu_tap"],
+    deps = [
+        ":image",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cuda_cc_test(
+    name = "batched_non_max_suppression_op_gpu_test",
+    srcs = ["batched_non_max_suppression_op_gpu_test.cc"],
     tags = tf_cuda_tests_tags() + ["no_cuda_on_cpu_tap"],
     deps = [
         ":image",
