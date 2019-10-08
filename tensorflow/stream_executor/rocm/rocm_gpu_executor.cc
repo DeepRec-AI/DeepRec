@@ -503,8 +503,8 @@ port::Status GpuExecutor::SynchronousMemcpyDeviceToDevice(
                                          AsROCmDevicePtr(gpu_src), size);
 }
 
-bool GpuExecutor::MemZero(Stream* stream, DeviceMemoryBase* location,
-                          uint64 size) {
+port::Status GpuExecutor::MemZero(Stream* stream, DeviceMemoryBase* location,
+                                  uint64 size) {
   if (reinterpret_cast<uintptr_t>(location->opaque()) % 4 == 0 &&
       size % 4 == 0) {
     return Memset32(stream, location, 0x0, size);
@@ -513,8 +513,8 @@ bool GpuExecutor::MemZero(Stream* stream, DeviceMemoryBase* location,
   }
 }
 
-bool GpuExecutor::Memset(Stream* stream, DeviceMemoryBase* location,
-                         uint8 pattern, uint64 size) {
+port::Status GpuExecutor::Memset(Stream* stream, DeviceMemoryBase* location,
+                                 uint8 pattern, uint64 size) {
   VLOG(2) << "enqueueing memset8 operation onto stream " << stream
           << " at location " << location << " with size " << size
           << " and pattern " << std::hex << pattern;
@@ -523,8 +523,8 @@ bool GpuExecutor::Memset(Stream* stream, DeviceMemoryBase* location,
                                             AsGpuStreamValue(stream));
 }
 
-bool GpuExecutor::Memset32(Stream* stream, DeviceMemoryBase* location,
-                           uint32 pattern, uint64 size) {
+port::Status GpuExecutor::Memset32(Stream* stream, DeviceMemoryBase* location,
+                                   uint32 pattern, uint64 size) {
   VLOG(2) << "enqueueing memset32 operation onto stream " << stream
           << " at location " << location << " with size " << size
           << " and pattern " << std::hex << pattern;
