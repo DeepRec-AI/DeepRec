@@ -279,16 +279,8 @@ StatusOr<AutotuneResult> CudnnConvAlgorithmPicker::PickBestAlgorithmNoCache(
     allocator = &*se_allocator;
   }
 
-  absl::optional<se::Stream> stream_opt;
-  se::Stream* stream = [&] {
-    if (allocator->GetStream()) {
-      return allocator->GetStream();
-    }
-    stream_opt.emplace(stream_exec_);
-    stream_opt->Init();
-    return &stream_opt.value();
-  }();
-
+  TF_ASSIGN_OR_RETURN(se::Stream* const stream,
+		      allocator->GetStream(stream_exec_->device_ordinal()));
   int64 rng_state = 0;
 
   const HloModuleConfig& hlo_module_config = instr->GetModule()->config();

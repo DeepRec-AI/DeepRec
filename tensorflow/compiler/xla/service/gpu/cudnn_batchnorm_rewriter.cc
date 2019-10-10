@@ -382,15 +382,9 @@ StatusOr<bool> CudnnBatchNormRewriter::Run(HloModule* module) {
   if (allocator_ == nullptr) {
     allocator_ = stream_exec_->GetAllocator();
   }
-  absl::optional<se::Stream> stream_opt;
-  se::Stream* stream = [&]() {
-    if (allocator_->GetStream()) {
-      return allocator_->GetStream();
-    }
-    stream_opt.emplace(stream_exec_);
-    stream_opt->Init();
-    return &stream_opt.value();
-  }();
+
+  TF_ASSIGN_OR_RETURN(se::Stream* const stream,
+		      allocator_->GetStream(stream_exec_->device_ordinal()));
 
   bool changed = false;
   for (auto* comp : module->MakeNonfusionComputations()) {
