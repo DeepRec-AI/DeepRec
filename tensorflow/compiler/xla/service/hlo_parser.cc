@@ -1457,7 +1457,8 @@ bool HloParser::ParseInstructionRhs(HloComputation::Builder* builder,
     case HloOpcode::kRngGetAndUpdateState: {
       optional<int64> delta;
       attrs["delta"] = {/*required=*/true, AttrTy::kInt64, &delta};
-      if (!ParseAttributes(attrs)) {
+      if (!ParseOperands(&operands, /*expected_size=*/0) ||
+          !ParseAttributes(attrs)) {
         return false;
       }
       instruction = builder->AddInstruction(
