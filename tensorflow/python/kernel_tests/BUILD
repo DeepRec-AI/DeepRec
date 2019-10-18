@@ -1703,17 +1703,17 @@ py_library(
 
 cuda_py_test(
     name = "bias_op_deterministic_test",
-    size = "small",
+    size = "medium",
     srcs = ["bias_op_deterministic_test.py"],
     additional_deps = [
         ":bias_op_base",
     ],
-    xla_enable_strict_auto_jit = True,
+    xla_enable_strict_auto_jit = False,
 )
 
 cuda_py_test(
     name = "bias_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["bias_op_test.py"],
     additional_deps = [
         ":bias_op_base",
