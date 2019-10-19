@@ -1266,7 +1266,9 @@ class CudnnCtcLossDescriptor : public dnn::CtcLossDescriptor {
 
   static port::StatusOr<CudnnCtcLossDescriptor> Create(
       cudnnDataType_t data_type,
+#if CUDNN_VERSION >= 7604
       cudnnLossNormalizationMode_t norm_mode=CUDNN_LOSS_NORMALIZATION_SOFTMAX,
+#endif
       cudnnNanPropagation_t grad_mode=CUDNN_NOT_PROPAGATE_NAN) {
 #if CUDNN_VERSION >= 7604
     gpu::CtcLossDescriptor ctc_loss_desc = CreateCtcLossDescriptor();
@@ -1286,17 +1288,17 @@ class CudnnCtcLossDescriptor : public dnn::CtcLossDescriptor {
 
 #if CUDNN_VERSION >= 7604
   cudnnCTCLossDescriptor_t handle() const { return ctc_loss_desc_.get(); }
+  cudnnLossNormalizationMode_t lnorm_mode() const { return norm_mode_; }
 #endif
   cudnnDataType_t data_type() const { return data_type_; }
-  cudnnLossNormalizationMode_t lnorm_mode() const { return norm_mode_; }
   cudnnNanPropagation_t grad_mode() const { return grad_mode_; }
 
  private:
 #if CUDNN_VERSION >= 7604
   gpu::CtcLossDescriptor ctc_loss_desc_;
+  cudnnLossNormalizationMode_t norm_mode_;
 #endif
   cudnnDataType_t data_type_;
-  cudnnLossNormalizationMode_t norm_mode_;
   cudnnNanPropagation_t grad_mode_;
   SE_DISALLOW_COPY_AND_ASSIGN(CudnnCtcLossDescriptor);
 };
