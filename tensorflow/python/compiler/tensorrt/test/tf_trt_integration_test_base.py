@@ -30,7 +30,6 @@ import warnings
 import numpy as np
 import six
 
-from tensorflow.compiler.tf2tensorrt.wrap_py_utils import get_linked_tensorrt_version
 from tensorflow.compiler.tf2tensorrt.wrap_py_utils import is_tensorrt_enabled
 from tensorflow.core.framework import graph_pb2
 from tensorflow.core.protobuf import config_pb2
@@ -55,7 +54,6 @@ from tensorflow.python.saved_model import utils
 from tensorflow.python.tools import saved_model_utils
 from tensorflow.python.training.tracking import tracking
 from tensorflow.python.util import nest
-
 
 TfTrtIntegrationTestParams = namedtuple(
     "TfTrtIntegrationTestParams",
@@ -91,11 +89,7 @@ RunParams = namedtuple(
 FP32 = "FP32"
 FP16 = "FP16"
 INT8 = "INT8"
-TRT_VERSION = get_linked_tensorrt_version()
-if TRT_VERSION >= (5, 0, 0):
-  PRECISION_MODES = [FP32, FP16, INT8]
-else:
-  PRECISION_MODES = [FP32, FP16]
+PRECISION_MODES = [FP32, FP16, INT8]
 
 
 def IsQuantizationMode(mode):
@@ -143,16 +137,13 @@ def OptimizerDisabledRewriterConfig():
 class TfTrtIntegrationTestBase(test_util.TensorFlowTestCase):
   """Class to test Tensorflow-TensorRT integration."""
 
-  TRT_VERSION = get_linked_tensorrt_version()
   @property
   def trt_incompatible_op(self):
     return math_ops.erf
 
   @property
   def precision_modes(self):
-    if TRT_VERSION >= (5, 0, 0):
-      return ["FP32", "FP16", "INT8"]
-    return ["FP32", "FP16"]
+    return ["FP32", "FP16", "INT8"]
 
   # str is bytes in py2, but unicode in py3.
   def _ToUnicode(self, s):
@@ -791,17 +782,12 @@ def _GetTestConfigsV1():
   # whether to run specific ones with ShouldRunTest().
   #
   # Note: INT8 without calibration behaves like FP32/FP16.
-  if TRT_VERSION >= (5, 0, 0):
-    opts = list(
+  opts = list(
       itertools.product([FP32, FP16, INT8], [convert_online, convert_offline],
                         [dynamic_engine, static_engine], [no_calibration]))
-    # We always run calibration with offline tool.
-    # TODO(aaroey): static calibration engine is not supported yet.
-    opts.append((INT8, convert_offline, dynamic_engine, use_calibration))
-  else:
-    opts = list(
-      itertools.product([FP32, FP16], [convert_online, convert_offline],
-                        [dynamic_engine, static_engine], [no_calibration]))
+  # We always run calibration with offline tool.
+  # TODO(aaroey): static calibration engine is not supported yet.
+  opts.append((INT8, convert_offline, dynamic_engine, use_calibration))
   return opts
 
 
@@ -822,17 +808,12 @@ def _GetTestConfigsV2():
   # - For simplicity we don't test online conversion which requires setting the
   #   Grappler config in default eager context.
   # - INT8 without calibration behaves like FP32/FP16.
-  if TRT_VERSION >= (5, 0, 0):
-    opts = list(
+  opts = list(
       itertools.product([FP32, FP16, INT8], [convert_offline], [dynamic_engine],
                         [no_calibration]))
-    # We always run calibration with offline tool.
-    # TODO(aaroey): INT8+calibration is not supported yet in V2.
-    # opts.append((INT8, convert_offline, dynamic_engine, use_calibration))
-  else:
-    opts = list(
-      itertools.product([FP32, FP16], [convert_offline], [dynamic_engine],
-                        [no_calibration]))
+  # We always run calibration with offline tool.
+  # TODO(aaroey): INT8+calibration is not supported yet in V2.
+  # opts.append((INT8, convert_offline, dynamic_engine, use_calibration))
   return opts
 
 

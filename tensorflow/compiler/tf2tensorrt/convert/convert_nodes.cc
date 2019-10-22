@@ -1176,7 +1176,6 @@ Status TrtNodeValidator::ConvertConstToWeights(
   return status;
 }
 
-#if IS_TRT_VERSION_GE(5, 0, 0, 0)
 static void InitializeTrtPlugins() {
   static mutex plugin_mutex(LINKER_INITIALIZED);
   static bool plugin_initialized = false;
@@ -1209,16 +1208,13 @@ static void InitializeTrtPlugins() {
     }
   }
 }
-#endif
 
 Converter::Converter(nvinfer1::INetworkDefinition* trt_network,
                      TrtPrecisionMode precision_mode, bool use_calibration)
     : trt_network_(trt_network),
       precision_mode_(precision_mode),
       use_calibration_(use_calibration) {
-#if IS_TRT_VERSION_GE(5, 0, 0, 0)
   InitializeTrtPlugins();
-#endif
   this->RegisterOpConverters();
 }
 
@@ -4700,9 +4696,6 @@ Status ConvertMatMulHelper(OpConverterParams* params,
       !transpose_a && input_a.is_tensor() && input_b.is_weights();
   const bool should_use_fc = can_use_fc && input_a.GetTrtDims().nbDims >= 3 &&
                              input_b.GetTrtDims().nbDims == 2;
-  // If TRT < 5, a fully connected layer must be used as the matmul op is
-  // unsupported
-#if IS_TRT_VERSION_GE(5, 0, 0, 0)
   // If int8 is specified, FC must be used unless it is not compatible, as MM
   // does not support int8 at this time.
   if (should_use_fc || (can_use_fc && params->converter->precision_mode() ==
@@ -4753,10 +4746,6 @@ Status ConvertMatMulHelper(OpConverterParams* params,
   nvinfer1::ITensor* output_tensor = layer->getOutput(0);
   params->outputs->push_back(TRT_TensorOrWeights(output_tensor));
   return Status::OK();
-#else
-  return ConvertFullyConnectedHelper(
-      params, input_a.tensor(), input_b.weights(), transpose_b, node_name);
-#endif
 }
 
 // inputs are both two dimensional (ops::MatMul)
