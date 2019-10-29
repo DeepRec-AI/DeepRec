@@ -40,7 +40,7 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
     elif data_layout == 'channels_last':
       shape = (batch_size,) + data_dims + (channel_count,)
     else:
-      raise ValueError("Unknown data format")
+      raise ValueError('Unknown data format')
     return shape
 
   def _data_format_from_data_layout(self, data_layout=None):
@@ -49,7 +49,7 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
     elif data_layout == 'channels_last':
       return 'NHWC'
     else:
-      raise ValueError("Unknown data_layout")
+      raise ValueError('Unknown data_layout')
 
   def _random_data_op(self, shape, data_type):
     return constant_op.constant(
@@ -65,9 +65,8 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
       self.assertAllEqual(result_a, result_b)
 
   def _testDeterministicGradientsCase(self, data_layout, data_rank, data_type):
-    seed = (hash(data_layout) % 256 +
-            hash(data_rank) % 256 +
-            hash(data_type) % 256)
+    seed = (
+        hash(data_layout) % 256 + hash(data_rank) % 256 + hash(data_type) % 256)
     np.random.seed(seed)
     batch_size = 10
     channel_count = 8
