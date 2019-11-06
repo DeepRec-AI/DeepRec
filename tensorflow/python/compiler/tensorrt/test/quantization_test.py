@@ -72,19 +72,11 @@ class QuantizationMissingAllRangesTest(trt_test.TfTrtIntegrationTestBase):
 
   def ExpectedEnginesToBuild(self, run_params):
     """Return the expected engines to build."""
-    trt_version = get_linked_tensorrt_version()
-    if trt_version >= (6, 0, 1):
-      # In TensorRT6, missing quantization ranges do not cause failure, instead
-      # layers with missing ranges run in FP16.
-      return ["TRTEngineOp_0"]
-    else:
-      if run_params.use_calibration:
-        # In static engine mode with calibration, it should build a calibration
-        # engine.
-        return ["TRTEngineOp_0"]
-      # In static engine mode without calibration, the engine building will fail
-      # since no quantization ranges are set, which results in no TRT nodes.
-      return []
+    # In static engine mode with calibration, it should build a calibration
+    # engine.
+    # In static engine mode without calibration, the engine building will
+    # succeed but fall back to non-quantized ops.
+    return ["TRTEngineOp_0"]
 
 
 class QuantizationWithRangesTest(trt_test.TfTrtIntegrationTestBase):
