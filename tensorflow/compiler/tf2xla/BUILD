@@ -7,7 +7,7 @@ load(
     "//tensorflow/core/platform:default/build_config.bzl",
     "tf_proto_library_cc",
 )
-load("//tensorflow/compiler/xla:xla.bzl", "xla_proto_library", "xla_py_proto_library")
+load("//tensorflow/compiler/xla:xla.bzl", "xla_py_proto_library")
 load("//tensorflow:tensorflow.bzl", "tf_portable_proto_library")
 
 package(
@@ -92,13 +92,14 @@ xla_py_proto_library(
     deps = [":tf2xla_proto"],
 )
 
-xla_proto_library(
+tf_proto_library_cc(
     name = "host_compute_metadata_proto",
     srcs = ["host_compute_metadata.proto"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//tensorflow/core:protos_all_cc",
+    cc_api_version = 2,
+    protodeps = [
+        "//tensorflow/core:protos_all",
     ],
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
@@ -208,7 +209,7 @@ cc_library(
     visibility = [":friends"],
     deps = [
         ":common",
-        ":host_compute_metadata_proto",
+        ":host_compute_metadata_proto_cc",
         ":sharding_util",
         ":side_effect_util",
         ":tf2xla_util",
