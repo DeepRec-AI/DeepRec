@@ -529,6 +529,7 @@ tf_cuda_library(
     ] + if_cuda([
         "//tensorflow/stream_executor/cuda:redzone_allocator",
         "//tensorflow/stream_executor/cuda:ptxas_utils",
+        "//tensorflow/stream_executor/cuda:cuda_helpers",
     ]),
 )
 
