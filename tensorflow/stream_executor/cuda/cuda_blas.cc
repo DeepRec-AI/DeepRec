@@ -116,17 +116,6 @@ static bool TensorOpMathEnabled() {
   return is_enabled;
 }
 
-static bool TensorOpFp32MathEnabled() {
-  static bool is_enabled = [] {
-    bool ret;
-    TF_CHECK_OK(
-        tensorflow::ReadBoolFromEnvVar("TF_ENABLE_CUBLAS_TENSOR_OP_MATH_FP32",
-                                       /*default=*/false, &ret));
-    return ret;
-  }();
-  return is_enabled;
-}
-
 // cuBLAS has interfaces that permit pointers to be passed from either the host
 // memory space or the device memory space; however, you must instruct it as to
 // which address space those pointers are in with cublasSetPointerMode.
@@ -1666,21 +1655,18 @@ bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
   }
 
 #if CUDA_VERSION >= 9000
-  bool use_tensor_ops = false;
   int cc_major, cc_minor;
   stream->parent()->GetDeviceDescription().cuda_compute_capability(&cc_major,
                                                                    &cc_minor);
 
   // GPUs < sm_70 don't support tensor cores.
   if (cc_major >= 7) {
-    use_tensor_ops = TensorOpMathEnabled() && TensorOpFp32MathEnabled();
-
     return DoBlasInternalImpl(
         cublasSgemmEx, stream, true /* = pointer_mode_host */,
-        true /* = err_on_failure= */, use_tensor_ops, CUDABlasTranspose(transa),
-        CUDABlasTranspose(transb), m, n, k, &alpha, GpuMemory(a),
-        SE_CUDA_DATA_FLOAT, lda, GpuMemory(b), SE_CUDA_DATA_FLOAT, ldb, &beta,
-        GpuMemoryMutable(c), SE_CUDA_DATA_FLOAT, ldc);
+        true /* = err_on_failure */, false /* = use_tensor_op_math */,
+        CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
+        GpuMemory(a), SE_CUDA_DATA_FLOAT, lda, GpuMemory(b), SE_CUDA_DATA_FLOAT,
+        ldb, &beta, GpuMemoryMutable(c), SE_CUDA_DATA_FLOAT, ldc);
   }
 #endif
 
@@ -2382,9 +2368,7 @@ port::Status CUDABlas::DoBlasGemmBatchedInternalV2(
           &cc_major, &cc_minor) &&
       cc_major >= 5) {
     bool use_tensor_ops =
-        TensorOpMathEnabled() &&
-        ((data_type == CUDA_R_32F && TensorOpFp32MathEnabled()) ||
-         data_type == CUDA_R_16F);
+        TensorOpMathEnabled() && data_type == CUDA_R_16F;
     cublasGemmAlgo_t algo =
         (use_tensor_ops ? CUBLAS_GEMM_DFALT_TENSOR_OP : CUBLAS_GEMM_DFALT);
     bool ok;
