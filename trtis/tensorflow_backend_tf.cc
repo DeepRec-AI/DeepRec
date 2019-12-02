@@ -399,7 +399,7 @@ TensorImpl::Init()
     cudaError_t err = cudaPointerGetAttributes(&attributes, nonstring_base_);
     gpu_tensor_ =
         ((err == cudaSuccess) &&
-         (attributes.memoryType == cudaMemoryTypeDevice));
+         (attributes.type == cudaMemoryTypeDevice));
   }
 }
 

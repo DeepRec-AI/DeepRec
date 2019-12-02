@@ -197,13 +197,6 @@ class TridiagonalSolveOpGpuLinalg : public LinearAlgebraOp<Scalar> {
                      const Scalar* superdiag, const Scalar* diag,
                      const Scalar* subdiag, Scalar* rhs, const int num_eqs,
                      const int num_rhs) const {
-#if CUDA_VERSION < 9000
-    auto function = pivoting_ ? &CudaSparse::Gtsv<Scalar>
-                              : &CudaSparse::GtsvNoPivot<Scalar>;
-    OP_REQUIRES_OK(
-        context, (cusparse_solver.get()->*function)(
-                     num_eqs, num_rhs, subdiag, diag, superdiag, rhs, num_eqs));
-#else
     auto buffer_function = pivoting_
                                ? &CudaSparse::Gtsv2BufferSizeExt<Scalar>
                                : &CudaSparse::Gtsv2NoPivotBufferSizeExt<Scalar>;
@@ -222,7 +215,6 @@ class TridiagonalSolveOpGpuLinalg : public LinearAlgebraOp<Scalar> {
     OP_REQUIRES_OK(context, (cusparse_solver.get()->*solver_function)(
                                 num_eqs, num_rhs, subdiag, diag, superdiag, rhs,
                                 num_eqs, buffer));
-#endif  // CUDA_VERSION < 9000
   }
 
   void SolveForSizeOneOrTwo(OpKernelContext* context, const Scalar* diagonals,
@@ -315,11 +307,6 @@ class TridiagonalSolveOpGpu : public OpKernel {
     std::unique_ptr<CudaSparse> cusparse_solver(new CudaSparse(context));
 
     OP_REQUIRES_OK(context, cusparse_solver->Initialize());
-#if CUDA_VERSION < 9000
-    OP_REQUIRES_OK(context, cusparse_solver->GtsvStridedBatch(
-                                matrix_size, subdiag, diag, superdiag, x,
-                                batch_size, matrix_size));
-#else
     size_t buffer_size;
     OP_REQUIRES_OK(context, cusparse_solver->Gtsv2StridedBatchBufferSizeExt(
                                 matrix_size, subdiag, diag, superdiag, x,
@@ -332,7 +319,6 @@ class TridiagonalSolveOpGpu : public OpKernel {
     OP_REQUIRES_OK(context, cusparse_solver->Gtsv2StridedBatch(
                                 matrix_size, subdiag, diag, superdiag, x,
                                 batch_size, matrix_size, buffer));
-#endif  // CUDA_VERSION < 9000
   }
 
   void TransposeLhsForGtsvBatched(OpKernelContext* context, const Tensor& lhs,

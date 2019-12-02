@@ -1970,8 +1970,16 @@ bool CUDABlas::DoBlasGemmWithAlgorithmImpl(
   // If 'alpha' and 'beta' are host scalars and CompT is Eigen::half, we
   // essentially reinterpet_cast to __half, which is safe because Eigen::half
   // inherits from __half.
+
+  cublasStatus_t (*gemm)(cublasHandle_t, cublasOperation_t, cublasOperation_t,
+                         int, int, int, const void*, const void*,
+                         cudaDataType, int, const void*,
+                         cudaDataType, int, const void*, void*,
+                         cudaDataType, int, cudaDataType,
+                         cublasGemmAlgo_t) = cublasGemmEx;
+
   bool result = DoBlasInternalFailureOK(
-      cublasGemmEx, stream, /* pointer_mode_host = */ !alpha.is_pointer(),
+      gemm, stream, /* pointer_mode_host = */ !alpha.is_pointer(),
       CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
       alpha.is_pointer() ? GpuMemory(alpha.pointer()) : &alpha.value(),
       GpuMemory(a), cuda_in_type, lda, GpuMemory(b), cuda_in_type, ldb,
@@ -2244,8 +2252,17 @@ port::Status CUDABlas::DoBlasGemmBatchedInternal(
     void **c_void_ptrs =
         reinterpret_cast<void **>(const_cast<CUDA_T **>(GpuMemory(c)));
     bool ok;
+    
+
+    cublasStatus_t (*gemm)(cublasHandle_t, cublasOperation_t, cublasOperation_t,
+                            int, int, int, const void*, const void *const [],
+                            cudaDataType, int, const void *const [],
+                            cudaDataType, int, const void*, void *const [],
+                            cudaDataType, int, int, cudaDataType,
+                            cublasGemmAlgo_t) = cublasGemmBatchedEx;
+
     ok = DoBlasInternalImpl(
-        cublasGemmBatchedEx, stream, true /* = pointer_mode_host */,
+        gemm, stream, true /* = pointer_mode_host */,
         true /* = err_on_failure */, use_tensor_ops, CUDABlasTranspose(transa),
         CUDABlasTranspose(transb), m, n, k, &alpha, a_void_ptrs, data_type, lda,
         b_void_ptrs, data_type, ldb, &beta, c_void_ptrs, data_type, ldc,
@@ -2372,8 +2389,14 @@ port::Status CUDABlas::DoBlasGemmBatchedInternalV2(
     cublasGemmAlgo_t algo =
         (use_tensor_ops ? CUBLAS_GEMM_DFALT_TENSOR_OP : CUBLAS_GEMM_DFALT);
     bool ok;
+    cublasStatus_t (*gemm)(cublasHandle_t, cublasOperation_t, cublasOperation_t,
+                            int, int, int, const void*, const void *const [],
+                            cudaDataType, int, const void *const [],
+                            cudaDataType, int, const void*, void *const [],
+                            cudaDataType, int, int, cudaDataType,
+                            cublasGemmAlgo_t) = cublasGemmBatchedEx;
     ok = DoBlasInternalImpl(
-        cublasGemmBatchedEx, stream, true /* = pointer_mode_host */,
+        gemm, stream, true /* = pointer_mode_host */,
         true /* = err_on_failure */, use_tensor_ops, CUDABlasTranspose(transa),
         CUDABlasTranspose(transb), m, n, k, &alpha,
         const_cast<const void **>(GpuMemory(a)), data_type, lda,
@@ -2510,8 +2533,14 @@ bool CUDABlas::DoBlasGemmStridedBatched(
     if (cc_major >= 5) {
       cublasGemmAlgo_t algo =
           (use_tensor_ops ? CUBLAS_GEMM_DFALT_TENSOR_OP : CUBLAS_GEMM_DFALT);
+    cublasStatus_t (*bgemm) (cublasHandle_t, cublasOperation_t, cublasOperation_t,
+                             int, int, int, const void*, const void*, cudaDataType,
+                             int, long long int, const void*, cudaDataType, int,
+                             long long int, const void*, void*, cudaDataType, int,
+                             long long int, int, cudaDataType,
+                             cublasGemmAlgo_t algo) = cublasGemmStridedBatchedEx;
       bool ok = DoBlasInternalImpl(
-          cublasGemmStridedBatchedEx, stream, true /* = pointer_mode_host */,
+          bgemm, stream, true /* = pointer_mode_host */,
           true /* = err_on_failure */, use_tensor_ops,
           CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
           GpuMemory(a), CUDA_R_16F, lda, stride_a, GpuMemory(b), CUDA_R_16F,
