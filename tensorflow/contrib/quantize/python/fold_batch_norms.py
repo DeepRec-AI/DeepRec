@@ -123,6 +123,13 @@ def _FoldFusedBatchNorms(graph, is_training, freeze_batch_norm_delay):
       new_layer_tensor = _CloneWithNewOperands(
           match.layer_op, match.input_tensor, scaled_weight_tensor,
           match.batch_to_space_op)
+          
+      # Support for NCHW data format in quantization API. 
+      # Need to reshape bias tensor as NCHW otherwise the following 
+      # otherwise add layer would complain.
+      if match.layer_op.get_attr('data_format').decode()=='NCHW':
+          bias_shape = bias_tensor.shape.as_list()[0]
+          bias_tensor = array_ops.reshape(bias_tensor, [1, bias_shape, 1, 1])
 
       if correction_recip is not None:
         new_layer_tensor = math_ops.multiply(
@@ -472,6 +479,7 @@ def _CloneWithNewOperands(layer_op, input_tensor, weight_tensor,
         weight_tensor,
         strides=layer_op.get_attr('strides'),
         padding=layer_op.get_attr('padding'),
+        data_format=layer_op.get_attr('data_format').decode(),
         name=new_layer_name)
     # Copy the batch to space operation if we have a atrous convolution.
     if batch_to_space_op:

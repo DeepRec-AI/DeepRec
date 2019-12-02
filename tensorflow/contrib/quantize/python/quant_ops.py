@@ -69,7 +69,8 @@ def LastValueQuantize(inputs,
                       is_training=True,
                       num_bits=8,
                       narrow_range=False,
-                      symmetric=False):
+                      symmetric=False,
+                      use_qdq=False):
   """Adds a layer that collects quantization ranges as last input ranges.
 
   LastValueQuantize creates variables called 'min' and 'max', representing the
@@ -92,6 +93,8 @@ def LastValueQuantize(inputs,
       [1; 2^num_bits - 1] or wide range [0; 2^num_bits - 1].
     symmetric: If true, use symmetric quantization limits instead of training
       the minimum and maximum of each quantization range separately.
+    use_qdq: Use tf.quantize_and_dequantize_v3 op instead of fake_quant_with_min_max_vars
+      for quantization. The qdq op is used for scaling with no zero point.
   Returns:
     a tensor containing quantized values.
   """
@@ -128,7 +131,8 @@ def LastValueQuantize(inputs,
           max_var,
           per_channel=per_channel,
           num_bits=num_bits,
-          narrow_range=narrow_range)
+          narrow_range=narrow_range,
+          use_qdq=use_qdq)
 
     if per_channel:
       if input_dim == 2:
@@ -180,7 +184,8 @@ def LastValueQuantize(inputs,
         assign_max,
         per_channel=per_channel,
         num_bits=num_bits,
-        narrow_range=narrow_range)
+        narrow_range=narrow_range,
+        use_qdq=use_qdq)
 
 
 def MovingAvgQuantize(inputs,
@@ -194,7 +199,8 @@ def MovingAvgQuantize(inputs,
                       is_training=True,
                       num_bits=8,
                       narrow_range=False,
-                      symmetric=False):
+                      symmetric=False,
+                      use_qdq=False):
   """Adds a layer that collects quantization ranges as EMAs of input ranges.
 
   MovingAvgQuantize creates variables called 'min' and 'max', representing the
@@ -218,6 +224,8 @@ def MovingAvgQuantize(inputs,
       [1; 2^num_bits - 1] or wide range [0; 2^num_bits - 1].
     symmetric: If true, use symmetric quantization limits instead of training
       the minimum and maximum of each quantization range separately.
+    use_qdq: Use tf.quantize_and_dequantize_v3 op instead of fake_quant_with_min_max_vars
+      for quantization. The qdq op is used for scaling with no zero point.
   Returns:
     a tensor containing quantized values.
   """
@@ -254,7 +262,8 @@ def MovingAvgQuantize(inputs,
           max_var,
           per_channel=per_channel,
           num_bits=num_bits,
-          narrow_range=narrow_range)
+          narrow_range=narrow_range,
+          use_qdq=use_qdq)
     if per_channel:
       if input_dim == 2:
         reduce_dims = [0]
@@ -307,11 +316,12 @@ def MovingAvgQuantize(inputs,
         assign_max,
         per_channel=per_channel,
         num_bits=num_bits,
-        narrow_range=narrow_range)
+        narrow_range=narrow_range,
+        use_qdq=use_qdq)
 
 
 def _FakeQuantWithMinMaxVars(inputs, min_var, max_var, per_channel, num_bits,
-                             narrow_range):
+                             narrow_range, use_qdq=False):
   """Adds a fake quantization operation.
 
   Depending on value of per_channel, this operation may do global quantization
@@ -326,6 +336,8 @@ def _FakeQuantWithMinMaxVars(inputs, min_var, max_var, per_channel, num_bits,
     num_bits: Number of bits to use for quantization, must be between 2 and 8.
     narrow_range: Whether to use the narrow quantization range
       [1; 2^num_bits - 1] or wide range [0; 2^num_bits - 1].
+    use_qdq: Use tf.quantize_and_dequantize_v3 op instead of fake_quant_with_min_max_vars
+      for quantization. The qdq op is used for scaling with no zero point.
   Returns:
     a tensor containing quantized values.
   """
@@ -338,5 +350,8 @@ def _FakeQuantWithMinMaxVars(inputs, min_var, max_var, per_channel, num_bits,
   else:
     assert min_var.get_shape() == []  # pylint: disable=g-explicit-bool-comparison
     assert max_var.get_shape() == []  # pylint: disable=g-explicit-bool-comparison
+    if use_qdq:
+        return array_ops.quantize_and_dequantize_v3(inputs, min_var, max_var, num_bits=num_bits)
+
     return array_ops.fake_quant_with_min_max_vars(
         inputs, min_var, max_var, num_bits=num_bits, narrow_range=narrow_range)
