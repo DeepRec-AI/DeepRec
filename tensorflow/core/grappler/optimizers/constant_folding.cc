@@ -961,7 +961,9 @@ bool ConstantFolding::IsFoldable(const NodeDef& node,
       op.find("Reader") != string::npos) {
     return false;
   }
-  if (op.find("Quant") != string::npos || op.find("Sparse") == 0) {
+  if (op.find("Quantized") != string::npos ||
+      op.find("FakeQuantWithMinMaxVars") != string::npos ||
+      op.find("Sparse") == 0) {
     return false;
   }
 
