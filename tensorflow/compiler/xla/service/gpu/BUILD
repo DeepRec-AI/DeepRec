@@ -1026,6 +1026,7 @@ cc_library(
         ":gpu_layout_assignment",
         ":gpu_sanitize_constant_names",
         ":gpu_scatter_expander",
+        ":horizontal_fusion",
         ":instruction_fusion",
         ":ir_emission_utils",
         ":ir_emitter",
@@ -1563,5 +1564,39 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/stream_executor:dnn",
+    ],
+)
+
+cc_library(
+    name = "horizontal_fusion",
+    srcs = ["horizontal_fusion.cc"],
+    hdrs = ["horizontal_fusion.h"],
+    deps = [
+        "//tensorflow/compiler/xla/service:hlo",
+        "//tensorflow/compiler/xla/service:hlo_creation_utils",
+        "//tensorflow/compiler/xla/service:hlo_pass",
+        "//tensorflow/compiler/xla/service:hlo_reachability",
+        "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla:util",
+        "//tensorflow/core:lib",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+tf_cc_test(
+    name = "horizontal_fusion_test",
+    srcs = ["horizontal_fusion_test.cc"],
+    deps = [
+        ":fusion_merger",
+        ":horizontal_fusion",
+        ":instruction_fusion",
+        ":multi_output_fusion",
+        "//tensorflow/compiler/jit:xla_gpu_jit",
+        "//tensorflow/compiler/xla/tests:hlo_test_base",
+        "//tensorflow/compiler/xla/tests:test_utils",
+        "//tensorflow/compiler/xla/tests:xla_internal_test_main",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:test",
     ],
 )
