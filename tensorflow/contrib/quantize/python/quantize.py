@@ -101,10 +101,10 @@ def Quantize(graph,
       _InsertQuantOp(
           context,
           'weights_quant',
-          per_channel=per_channel_wt,
           layer_match.weight_tensor.op,
           input_to_ops_map.ConsumerOperations(layer_match.weight_tensor.op),
           is_training,
+          per_channel=per_channel_wt,
           moving_avg=False,
           ema_decay=ema_decay,
           quant_delay=quant_delay,
@@ -113,7 +113,6 @@ def Quantize(graph,
           bits=weight_bits,
           symmetric=symmetric,
           consumer_scope=scope,
-          per_channel=per_channel_wt,
           use_qdq=use_qdq)
 
     # Quantize the activations.
@@ -132,10 +131,10 @@ def Quantize(graph,
       _InsertQuantOp(
           add_context,
           'act_quant',
-          per_channel=per_channel_act,
           layer_match.activation_op,
           consumer_ops,
           is_training,
+          per_channel=per_channel_act,
           moving_avg=True,
           ema_decay=ema_decay,
           quant_delay=quant_delay,
@@ -144,7 +143,6 @@ def Quantize(graph,
           symmetric=symmetric,
           init_min=0.0,
           producer_scope=scope,
-          per_channel=per_channel_act,
           use_qdq=use_qdq)
       quantized_ops.add(layer_match.activation_op)
 
