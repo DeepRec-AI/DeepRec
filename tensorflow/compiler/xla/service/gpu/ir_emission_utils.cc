@@ -235,7 +235,7 @@ bool IsInputFusibleSlices(const HloInstruction& unnested_hlo,
     return absl::c_all_of(strides, [](int stride) { return stride == 1; });
   };
 
-  const auto root = unnested_hlo.fused_expression_root();
+  const HloInstruction* root = unnested_hlo.fused_expression_root();
   if (root->opcode() == HloOpcode::kSlice) {
     return !verify_no_strides || is_non_strided(root->slice_strides());
   }
@@ -249,11 +249,8 @@ bool IsInputFusibleSlices(const HloInstruction& unnested_hlo,
         return insn->opcode() == HloOpcode::kSlice &&
                (!verify_no_strides || is_non_strided(insn->slice_strides()));
       });
-  if (!all_non_strided_slices) {
-    return false;
-  }
 
-  return true;
+  return all_non_strided_slices;
 }
 
 std::pair<bool, DimensionVector> GetReductionKindAndContiguousComponents(
