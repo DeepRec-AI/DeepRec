@@ -963,6 +963,7 @@ bool ConstantFolding::IsFoldable(const NodeDef& node,
   }
   if (op.find("Quantized") != string::npos ||
       op.find("FakeQuantWithMinMaxVars") != string::npos ||
+      op.find("QuantizeAndDequantizeV3") != string::npos ||
       op.find("Sparse") == 0) {
     return false;
   }
