@@ -749,13 +749,13 @@ REGISTER_KERNEL_BUILDER(Name("NonMaxSuppressionV3")
                             .HostMemory("score_threshold"),
                         NonMaxSuppressionV3GPUOp);
 
-REGISTER_KERNEL_BUILDER(Name("NonMaxSuppressionV4")
-                            .TypeConstraint<float>("T")
-                            .Device(DEVICE_GPU)
-                            .HostMemory("iou_threshold")
-                            .HostMemory("max_output_size")
-                            .HostMemory("score_threshold"),
-                        NonMaxSuppressionV4GPUOp);
+// REGISTER_KERNEL_BUILDER(Name("NonMaxSuppressionV4")
+//                             .TypeConstraint<float>("T")
+//                             .Device(DEVICE_GPU)
+//                             .HostMemory("iou_threshold")
+//                             .HostMemory("max_output_size")
+//                             .HostMemory("score_threshold"),
+//                         NonMaxSuppressionV4GPUOp);
 
 }  // namespace tensorflow
 #endif
