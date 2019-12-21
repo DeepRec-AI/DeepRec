@@ -2095,24 +2095,37 @@ Status ConvertConv2DHelper(OpConverterParams* params, int group,
     layer->setDilation(dilation);
     conv_layer = layer;
   }
-  nvinfer1::ITensor* conv_output_tensor = conv_layer->getOutput(0);
-  nvinfer1::ITensor* output_tensor;
-  // Add an extra padding in case of Deconv because TRT doesn't accept
+  nvinfer1::ITensor* output_tensor = conv_layer->getOutput(0);
+  // Add an extra padding for Deconv because TRT doesn't accept the
   // argument output_shape and thus the TRT output shape could be wrong
   // in case of strides>1.
   if (is_conv2d_backprop_input) {
-    auto trt_dims = backprop_output_size.GetTrtDims();
-    nvinfer1::Dims conv_output_dims = conv_output_tensor->getDimensions();
-    const int heightDiff = trt_dims.d[h_index - 1] - conv_output_dims.d[1];
-    const int widthDiff = trt_dims.d[w_index - 1] - conv_output_dims.d[2];
-    nvinfer1::DimsHW pre_padding(0, 0);
-    nvinfer1::DimsHW post_padding(heightDiff, widthDiff);
-    nvinfer1::IPaddingLayer* padding_layer = params->converter->network()->addPadding(
-        *conv_output_tensor, pre_padding, post_padding);
-    output_tensor = padding_layer->getOutput(0);
-  }
-  else {
-    output_tensor = conv_output_tensor;
+    auto tf_output_shape =
+        static_cast<int*>(backprop_output_size.weights().GetValues());
+    nvinfer1::Dims trt_output_shape = output_tensor->getDimensions();
+    // What determines the padding size is the difference between the given
+    // input_sizes (tf_output_shape) and TRT computed size.
+    const int height_diff = tf_output_shape[h_index] - trt_output_shape.d[1];
+    const int width_diff = tf_output_shape[w_index] - trt_output_shape.d[2];
+    if ((height_diff < 0) || (width_diff < 0)) {
+      return errors::InvalidArgument(
+          "input_sizes argument of Conv2DBackprop (i.e. output_shape argument "
+          "of conv2d_transpose) ",
+          "is too small for the given out_backprop argument of Conv2DBackprop "
+          "(i.e. input argument of conv2d_transpose). Expect: ",
+          "(", tf_output_shape[h_index], ", ", tf_output_shape[w_index],
+          ") >= ", "(", trt_output_shape.d[1], ", ", trt_output_shape.d[2],
+          ") for op ", node_def.name());
+    }
+    // Only add a padding layer if padding sizes are larger than 0
+    if ((height_diff > 0) || (width_diff > 0)) {
+      nvinfer1::DimsHW pre_padding(0, 0);
+      nvinfer1::DimsHW post_padding(height_diff, width_diff);
+      nvinfer1::IPaddingLayer* padding_layer =
+          params->converter->network()->addPadding(*output_tensor, pre_padding,
+                                                   post_padding);
+      output_tensor = padding_layer->getOutput(0);
+    }
   }
   // Restore transpose.
   if (need_transpose) {
