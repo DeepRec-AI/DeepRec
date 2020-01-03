@@ -614,6 +614,10 @@ tf_cc_shared_object(
         # contrib operations
         "//tensorflow/contrib:contrib_kernels",
         "//tensorflow/contrib:contrib_ops_op_lib",
+        "//tensorflow/contrib/tensor_forest:stats_ops_lib",
+        "//tensorflow/contrib/tensor_forest:model_ops_lib",
+        "//tensorflow/contrib/tensor_forest:forest_proto_impl",
+        "//tensorflow/contrib/tensor_forest/kernels/v4:decision-tree-resource_impl",
         # TRTIS API
         "//trtis:trtis_tf",
         # tensorflow_cc objects
