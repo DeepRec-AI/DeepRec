@@ -1501,7 +1501,7 @@ void AutoMixedPrecisionImpl::PropagateBlackFwdThroughClearAndGray(
           fp16_graylist_.count(root.node->op()))) {
       continue;
     }
-    if (fp16_blacklist_.count(root.node->op())) { ++*blacklist_nodes; }
+    if (fp16_blacklist_.count(root.node->op())) ++*blacklist_nodes;
     DfsTypeTraversal(graph_type_view_, {&root},
                      TypeTraversalDirection::kFollowInputs,
                      DfsTypePredicates::Enter([&](int idx) -> bool {
