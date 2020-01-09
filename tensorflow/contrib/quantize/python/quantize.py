@@ -81,7 +81,7 @@ def Quantize(graph,
       quantization interval ends.
     scope: The scope to be transformed. If it's not None, only the ops which
       are in this scope will be transformed.
-    use_qdq: Use tf.quantize_and_dequantize_v3 op instead of fake_quant_with_min_max_vars
+    use_qdq: Use tf.quantize_and_dequantize_v3 (qdq) op instead of fake_quant_with_min_max_vars
       for quantization. The qdq op is used for scaling with no zero point.
   Raises:
     ValueError: When quantization fails.
@@ -235,7 +235,8 @@ def Quantize(graph,
       ema_decay,
       quant_delay,
       vars_collection,
-      scope=scope)
+      scope=scope,
+      use_qdq=use_qdq)
 
 
 def _QuantizeActivationLayers(quantized_ops,
@@ -245,7 +246,8 @@ def _QuantizeActivationLayers(quantized_ops,
                               ema_decay=0.999,
                               quant_delay=None,
                               vars_collection=ops.GraphKeys.GLOBAL_VARIABLES,
-                              scope=None):
+                              scope=None,
+                              use_qdq=False):
   """Quantize intermediate activation tensors after addition and multiplication.
 
   Args:
@@ -263,6 +265,8 @@ def _QuantizeActivationLayers(quantized_ops,
       quantization interval ends.
     scope: The scope to be transformed. If it's not None, only the ops which are
       in this scope will be transformed.
+    use_qdq: Use tf.quantize_and_dequantize_v3 (qdq) op instead of fake_quant_with_min_max_vars
+      for quantization. The qdq op is used for scaling with no zero point.
 
   Raises:
     ValueError: When quantization fails.
