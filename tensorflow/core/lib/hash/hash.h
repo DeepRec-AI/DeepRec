@@ -22,6 +22,7 @@ limitations under the License.
 #include <stdint.h>
 
 #include <functional>
+#include <immintrin.h>
 #include <string>
 
 #include "tensorflow/core/lib/core/stringpiece.h"
@@ -31,6 +32,46 @@ namespace tensorflow {
 
 extern uint32 Hash32(const char* data, size_t n, uint32 seed);
 extern uint64 Hash64(const char* data, size_t n, uint64 seed);
+
+extern uint64 Hash64V3(const char* data, size_t n, uint64 seed);
+
+#if defined(__AVX512F__)
+extern inline __m256i _mm256_mullo_epi64_hand(__m256i __A, __m256i __B);
+extern inline __m128i _mm_mullo_epi64_hand (__m128i __A, __m128i __B);
+extern inline __m512i _mm512_mullo_epi64_hand (__m512i __A, __m512i __B);
+extern inline void pack_mul_int64_256(__m256i& a, __m256i& b, __m256i& bswap, 
+                                      __m256i& zero, __m256i& res);
+extern inline void pack_mul_int64_128(__m128i& a, __m128i& b, __m128i& bswap, 
+                                      __m128i& zero, __m128i& res);
+extern inline void swap_int64_256(__m256i& input);
+extern inline void swap_int64_128(__m128i& input);
+extern inline void Hash64AVX_64_Impl(const char*& data, size_t& n, uint64& h, 
+                                     const uint64& m, const int& r);
+extern inline void Hash64AVX_512_Impl(const char*& data, size_t& n, uint64& h, 
+                                      const uint64& m, const int& r);
+extern inline void Hash64AVX_128_Impl(const char*& data, size_t& n, uint64& h, 
+                                      const uint64& m, const int& r);
+extern inline void Hash64AVX_256_Impl(const char*& data, size_t& n, uint64& h, 
+                                      const uint64& m, const int& r);
+// for farmhash batch-vectorized implementation
+extern inline __m512i Fetch64Batch(const char** data, size_t offset);
+extern inline __m512i Fetch32Batch(const char** data, size_t offset);
+extern inline __m512i Fetch8Batch(const char** data, size_t offset);
+extern inline __m512i Rotate64Batch(__m512i in, int shift);
+extern inline __m512i ShiftMixBatch(__m512i val);
+extern inline std::pair<__m512i, __m512i> WeakHashLen32WithSeedsBatch(
+    __m512i w, __m512i x, __m512i y, __m512i z, __m512i a, __m512i b);
+extern inline __m512i HashLen16Batch(__m512i u, __m512i v, __m512i mul);
+extern inline void HashLen0to16Batch(const char** data, uint64_t* h_out, 
+                                     size_t len);
+extern inline void HashLen17to32Batch(const char** data, uint64_t* h_out, 
+                                      size_t len);
+extern inline void HashLen33to64Batch(const char** data, uint64_t* h_out, 
+                                      size_t len);
+extern void Hash64V3_Batch512(const char** data, uint64* h_out, 
+                              size_t n, uint64 seed);
+extern void Hash64Farm_Batch512(const char** data, uint64_t* h_out, size_t n);
+#endif
 
 inline uint64 Hash64(const char* data, size_t n) {
   return Hash64(data, n, 0xDECAFCAFFE);
