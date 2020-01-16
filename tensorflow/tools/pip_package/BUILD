@@ -160,6 +160,7 @@ filegroup(
         "//third_party/fft2d:LICENSE",
         "//third_party/hadoop:LICENSE.txt",
         "@arm_neon_2_x86_sse//:LICENSE",
+        "@astunparse_archive//:LICENSE",
         "@astor_archive//:LICENSE",
         "@boringssl//:LICENSE",
         "@com_google_absl//:LICENSE",

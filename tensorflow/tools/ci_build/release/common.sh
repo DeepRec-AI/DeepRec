@@ -137,6 +137,7 @@ function install_pip_deps {
   # Please change dependencies in `install_ubuntu_16_pip_deps` as well.
   # ===================================================================
   ${SUDO_CMD} ${PIP_CMD} install keras_applications==1.0.8 --no-deps
+  ${SUDO_CMD} ${PIP_CMD} install astunparse==1.6.3
   ${SUDO_CMD} ${PIP_CMD} install keras_preprocessing==1.1.0 --no-deps
   ${SUDO_CMD} ${PIP_CMD} install gast==0.2.2
   ${SUDO_CMD} ${PIP_CMD} install h5py==2.8.0
@@ -169,6 +170,7 @@ function install_ubuntu_16_pip_deps {
   # ===================================================================
   # Please change dependencies in `install_pip_deps` as well.
   # ===================================================================
+  "${PIP_CMD}" install astunparse==1.6.3 --user
   "${PIP_CMD}" install --user --upgrade attrs
   "${PIP_CMD}" install keras_applications==1.0.8 --no-deps --user
   "${PIP_CMD}" install keras_preprocessing==1.1.0 --no-deps --user
