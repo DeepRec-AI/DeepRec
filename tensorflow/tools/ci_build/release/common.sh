@@ -140,7 +140,7 @@ function install_pip_deps {
   ${SUDO_CMD} ${PIP_CMD} install astunparse==1.6.3
   ${SUDO_CMD} ${PIP_CMD} install keras_preprocessing==1.1.0 --no-deps
   ${SUDO_CMD} ${PIP_CMD} install gast==0.3.3
-  ${SUDO_CMD} ${PIP_CMD} install h5py==2.8.0
+  ${SUDO_CMD} ${PIP_CMD} install h5py==2.10.0
   ${SUDO_CMD} ${PIP_CMD} install six==1.12.0
   ${SUDO_CMD} ${PIP_CMD} install grpcio
   ${SUDO_CMD} ${PIP_CMD} install portpicker
@@ -177,7 +177,7 @@ function install_ubuntu_16_pip_deps {
   "${PIP_CMD}" install numpy==1.14.5 --user
   "${PIP_CMD}" install --user --upgrade "future>=0.17.1"
   "${PIP_CMD}" install gast==0.3.3 --user
-  "${PIP_CMD}" install h5py==2.8.0 --user
+  "${PIP_CMD}" install h5py==2.10.0 --user
   "${PIP_CMD}" install six==1.12.0 --user
   "${PIP_CMD}" install grpcio --user
   "${PIP_CMD}" install portpicker --user
@@ -219,10 +219,10 @@ function install_macos_pip_deps {
   ${SUDO_CMD} ${PIP_CMD} install keras_preprocessing==1.1.0 --no-deps
   ${SUDO_CMD} ${PIP_CMD} install --upgrade mock portpicker scipy grpcio
   ${SUDO_CMD} ${PIP_CMD} install six==1.12.0
-  ${SUDO_CMD} ${PIP_CMD} install scikit-learn==0.20.3
+  ${SUDO_CMD} ${PIP_CMD} install scikit-learn
   ${SUDO_CMD} ${PIP_CMD} install numpy==1.14.5
   ${SUDO_CMD} ${PIP_CMD} install gast==0.3.3
-  ${SUDO_CMD} ${PIP_CMD} install h5py==2.8.0
+  ${SUDO_CMD} ${PIP_CMD} install h5py==2.10.0
   ${SUDO_CMD} ${PIP_CMD} install --upgrade grpcio
   ${SUDO_CMD} ${PIP_CMD} install --upgrade tb-nightly==2.1.0a20190927
   ${PIP_CMD} install --user --upgrade attrs
