@@ -56,7 +56,7 @@ REQUIRED_PACKAGES = [
     'enum34 >= 1.1.6;python_version<"3.4"',
     # functools comes with python3, need to install the backport for python2
     'functools32 >= 3.2.3;python_version<"3"',
-    'gast == 0.2.2',
+    'gast == 0.3.3',
     'google_pasta >= 0.1.6',
     'keras_applications >= 1.0.8',
     'keras_preprocessing >= 1.0.5',
