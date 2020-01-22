@@ -941,6 +941,7 @@ tf_cc_test(
     deps = [
         ":refcounting_hash_map",
         ":test",
+        ":types",
         "//tensorflow/core:test_main",
     ],
 )
