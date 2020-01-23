@@ -67,6 +67,10 @@ static StatusOr<absl::optional<se::blas::AlgorithmType>> DoUncachedGemmAutotune(
 
   GemmBackendConfig backend_config =
       gemm->backend_config<GemmBackendConfig>().ValueOrDie();
+  const int32 cublas_autotune_level =
+      gemm->GetModule()->config().debug_options().xla_gpu_autotune_level();
+  const bool reinit_cublas_data = cublas_autotune_level > 2;
+  const bool check_cublas = cublas_autotune_level > 3;
 
   VLOG(3) << "Starting autotune of GemmThunk " << gemm->ToString();
 
@@ -79,7 +83,7 @@ static StatusOr<absl::optional<se::blas::AlgorithmType>> DoUncachedGemmAutotune(
   for (se::blas::AlgorithmType algorithm : algorithms) {
     // Make sure the output buffer always has the same value if we use
     // the bias parameter.
-    if (backend_config.beta() != 0) {
+    if (reinit_cublas_data && backend_config.beta() != 0) {
       int64 rng_state = 0;
       InitializeBuffer(stream, gemm->shape().element_type(), &rng_state,
                        output_buffer);
@@ -111,6 +115,10 @@ static StatusOr<absl::optional<se::blas::AlgorithmType>> DoUncachedGemmAutotune(
 
     *result.mutable_run_time() = tensorflow::proto_utils::ToDurationProto(
         absl::Milliseconds(profile_result.elapsed_time_in_ms()));
+
+    if (!check_cublas) {
+      continue;
+    }
 
     TF_ASSIGN_OR_RETURN(
         se::cuda::RedzoneAllocator::RedzoneCheckStatus rz_check_status,
@@ -253,8 +261,11 @@ static StatusOr<bool> RunOnInstruction(HloInstruction* instr,
   }();
 
   const HloModuleConfig& hlo_module_config = instr->GetModule()->config();
+  const bool init_cublas_data =
+      hlo_module_config.debug_options().xla_gpu_autotune_level() > 1;
   se::cuda::RedzoneAllocator input_output_allocator(
-      stream, allocator, PtxOptsFromConfig(hlo_module_config));
+      stream, allocator, PtxOptsFromConfig(hlo_module_config),
+      /*memory_limit=*/std::numeric_limits<int64>::max());
 
   BufferComparator comparator(instr->shape(), hlo_module_config);
 
@@ -264,7 +275,9 @@ static StatusOr<bool> RunOnInstruction(HloInstruction* instr,
     TF_ASSIGN_OR_RETURN(se::DeviceMemoryBase buffer,
                         input_output_allocator.AllocateBytes(
                             ShapeUtil::ByteSizeOf(op->shape())));
-    InitializeBuffer(stream, op->shape().element_type(), &rng_state, buffer);
+    if (init_cublas_data) {
+      InitializeBuffer(stream, op->shape().element_type(), &rng_state, buffer);
+    }
     return buffer;
   };
 
@@ -320,7 +333,7 @@ static StatusOr<bool> RunOnComputation(HloComputation* computation,
 StatusOr<bool> GemmAlgorithmPicker::Run(HloModule* module) {
   XLA_SCOPED_LOGGING_TIMER("GemmAlgorithmPicker");
 
-  if (module->config().debug_options().xla_gpu_disable_autotune()) {
+  if (module->config().debug_options().xla_gpu_autotune_level() == 0) {
     VLOG(2) << "GEMM auto-tuning disabled, GemmAlgorithmPicker returning early";
     return false;
   }
