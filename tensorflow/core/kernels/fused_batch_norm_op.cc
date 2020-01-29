@@ -303,6 +303,7 @@ struct FusedBatchNorm<CPUDevice, T, U> {
     Eigen::Tensor<U, 1, Eigen::RowMajor> mean(depth);
     Eigen::Tensor<U, 1, Eigen::RowMajor> variance(depth);
     if (is_training) {
+      // TODO(b/137108598): Extend kernel to allow use of exponential averaging.
       mean.device(d) = (x_rest_by_depth.sum(reduce_dims) * rest_size_inv);
       batch_mean.device(d) = mean;
       saved_mean.device(d) = mean;
@@ -780,12 +781,25 @@ struct FusedBatchNorm<GPUDevice, T, U> {
       InvVarianceToVariance<U>()(d, epsilon, sample_size, channels, variance);
     };
 
+    std::unique_ptr<functor::CudnnBatchNormAllocatorInOutput<U>>
+        reserve_space_allocator;
+    std::unique_ptr<functor::CudnnBatchNormAllocatorInTemp<uint8>>
+        workspace_allocator;
+    if (use_reserved_space) {
+      reserve_space_allocator.reset(
+          new functor::CudnnBatchNormAllocatorInOutput<U>(context, 5));
+      workspace_allocator.reset(
+          new functor::CudnnBatchNormAllocatorInTemp<uint8>(context));
+    }
+    // TODO(b/137108598): Extend kernel to allow use of exponential averaging.
+    const double exponential_average_factor = 1.0;
     bool cudnn_launch_status =
         stream
             ->ThenBatchNormalizationForward(
                 x_ptr, scale_ptr, offset_ptr, estimated_mean_ptr,
                 estimated_variance_ptr, side_input_ptr, x_desc,
                 scale_offset_desc, static_cast<double>(epsilon),
+                exponential_average_factor,
                 AsDnnActivationMode(activation_mode), &y_ptr, &batch_mean_ptr,
                 &batch_var_ptr, &saved_mean_ptr, &saved_inv_var_ptr,
                 is_training, std::move(var_to_inv_var),
