@@ -697,9 +697,8 @@ cc_library(
     name = "exhaustive_op_test_utils",
     testonly = True,
     srcs = ["exhaustive_op_test_utils.cc"],
-    hdrs = [
-        "exhaustive_op_test_utils.h",
-    ],
+    hdrs = ["exhaustive_op_test_utils.h"],
+    tags = ["no_pip"],
     deps = [
         ":client_library_test_base",
         ":literal_test_util",
@@ -709,6 +708,7 @@ cc_library(
         "//tensorflow/compiler/xla/client:xla_builder",
         "//tensorflow/compiler/xla/client/lib:constants",
         "//tensorflow/compiler/xla/client/lib:math",
+        "@com_google_absl//absl/strings",
     ],
 )
 

@@ -20,6 +20,7 @@ limitations under the License.
 #endif
 
 namespace xla {
+namespace exhaustive_op_test {
 namespace {
 
 template <PrimitiveType T>
@@ -389,4 +390,5 @@ INSTANTIATE_TEST_SUITE_P(
 
 #endif
 }  // namespace
+}  // namespace exhaustive_op_test
 }  // namespace xla
