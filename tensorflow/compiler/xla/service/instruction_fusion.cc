@@ -166,6 +166,7 @@ bool IsAlwaysDuplicable(const HloInstruction& instruction) {
     case HloOpcode::kReduceWindow:
     case HloOpcode::kRng:
     case HloOpcode::kRngGetAndUpdateState:
+    case HloOpcode::kRngBitGenerator:
     case HloOpcode::kRsqrt:
     case HloOpcode::kScatter:
     case HloOpcode::kSelectAndScatter:

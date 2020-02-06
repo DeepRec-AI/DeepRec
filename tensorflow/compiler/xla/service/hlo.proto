@@ -35,7 +35,7 @@ import "tensorflow/compiler/xla/xla_data.proto";
 option cc_enable_arenas = true;
 
 // Serialization of HloInstruction.
-// Next ID: 70
+// Next ID: 71
 // NV Next ID: 1002
 message HloInstructionProto {
   reserved 10;
@@ -239,6 +239,9 @@ message HloInstructionProto {
   // Specifies if all elements updated are guaranteed to be unique by
   // the caller.
   bool unique_indices = 69;
+
+  // RNG algorithm used by kRngBitGenerator.
+  xla.RandomAlgorithm rng_algorithm = 70;
 
   // Represents unique tag for each AsyncOutSend and AsyncOutRecv pair.
   string rendezvous_key = 1000;

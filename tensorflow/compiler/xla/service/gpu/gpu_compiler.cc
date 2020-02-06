@@ -81,6 +81,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/mem_wasted_on_passthrough_params.h"
 #include "tensorflow/compiler/xla/service/reduce_precision_insertion.h"
 #include "tensorflow/compiler/xla/service/reshape_mover.h"
+#include "tensorflow/compiler/xla/service/rng_bit_generator_expander.h"
 #include "tensorflow/compiler/xla/service/rng_expander.h"
 #include "tensorflow/compiler/xla/service/slice_sinker.h"
 #include "tensorflow/compiler/xla/service/slow_operation_alarm.h"
@@ -128,6 +129,7 @@ Status GpuCompiler::OptimizeHloModule(
 
     // Expand random number generation.
     pipeline.AddPass<RngExpander>();
+    pipeline.AddPass<RngBitGeneratorExpander>(RandomAlgorithm::RNG_PHILOX);
 
     // Remove zero-sized HLO from the input so that other passes don't have to
     // handle it.

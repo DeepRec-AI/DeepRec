@@ -20,6 +20,7 @@ limitations under the License.
 
 #include "absl/memory/memory.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
+#include "tensorflow/compiler/xla/xla_data.pb.h"
 
 namespace xla {
 
@@ -1673,6 +1674,28 @@ class HloAsyncOutSendInstruction : public HloInstruction {
   Shape async_out_send_shape_;
   // Key for rendezvous with AsyncOutRecv.
   string rendezvous_key_;
+};
+
+class HloRngBitGeneratorInstruction : public HloInstruction {
+ public:
+  HloRngBitGeneratorInstruction(const Shape& shape, HloInstruction* state,
+                                RandomAlgorithm algorithm);
+
+  RandomAlgorithm algorithm() const { return algorithm_; }
+  HloInstructionProto ToProto() const override;
+
+ private:
+  std::vector<string> ExtraAttributesToStringImpl(
+      const HloPrintOptions& options) const override;
+  bool IdenticalSlowPath(
+      const HloInstruction& other,
+      const std::function<bool(const HloComputation*, const HloComputation*)>&
+          eq_computations) const override;
+  std::unique_ptr<HloInstruction> CloneWithNewOperandsImpl(
+      const Shape& shape, absl::Span<HloInstruction* const> new_operands,
+      HloCloneContext* context) const override;
+
+  RandomAlgorithm algorithm_;
 };
 
 }  // namespace xla

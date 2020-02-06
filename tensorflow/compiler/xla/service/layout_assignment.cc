@@ -2161,6 +2161,7 @@ bool LayoutAssignment::InstructionCanChangeLayout(
     case HloOpcode::kReplicaId:
     case HloOpcode::kReshape:
     case HloOpcode::kRng:
+    case HloOpcode::kRngBitGenerator:
     case HloOpcode::kRngGetAndUpdateState:
     case HloOpcode::kSend:
     case HloOpcode::kSendDone:

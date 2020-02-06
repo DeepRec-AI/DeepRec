@@ -1090,6 +1090,7 @@ cc_library(
         "//tensorflow/compiler/xla/service:mem_wasted_on_passthrough_params",
         "//tensorflow/compiler/xla/service:reduce_precision_insertion",
         "//tensorflow/compiler/xla/service:reshape_mover",
+        "//tensorflow/compiler/xla/service:rng_bit_generator_expander",
         "//tensorflow/compiler/xla/service:rng_expander",
         "//tensorflow/compiler/xla/service:slice_sinker",
         "//tensorflow/compiler/xla/service:slow_operation_alarm",
