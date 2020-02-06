@@ -241,12 +241,10 @@ class KernelSupportLibrary {
             return Status::OK();
           }));
     } else {
-      TF_CHECK_OK(IfWithStatus(
-          name, condition,
-          [&]() {
-            true_block_generator();
-            return Status::OK();
-          }));
+      TF_CHECK_OK(IfWithStatus(name, condition, [&]() {
+        true_block_generator();
+        return Status::OK();
+      }));
     }
   }
 
