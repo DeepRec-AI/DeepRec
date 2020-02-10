@@ -240,6 +240,14 @@ bool CUDABlas::Init() {
     return false;
   }
 
+#if CUBLAS_VER_MAJOR >= 11
+  ret = cublasSetMathMode(blas_, CUBLAS_TF32_TENSOR_OP_MATH);
+  if (ret != CUBLAS_STATUS_SUCCESS) {
+    LOG(ERROR) << "failed to set cublas default math mode: " << ToString(ret);
+    return false;
+  }
+#endif  // CUBLAS_VER_MAJOR >= 11
+
   return true;
 }
 
