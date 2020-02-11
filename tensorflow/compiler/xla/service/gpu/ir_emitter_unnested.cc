@@ -347,8 +347,8 @@ StatusOr<Shape> GetConsistentInputShapeForRootSlices(
   for (size_t i = 1; i < root.operands().size(); ++i) {
     const HloInstruction* slice = root.operands()[i];
     const Shape& operand_shape = slice->operands()[0]->shape();
-    if (!ShapeUtil::EqualIgnoringElementType(first_slice_operand_shape,
-                                             operand_shape)) {
+    if (!Shape::Equal().IgnoreElementType()(first_slice_operand_shape,
+                                            operand_shape)) {
       return FailedPrecondition(
           "Fused slices do not have the same input shape, fused computation = "
           "%s.",
