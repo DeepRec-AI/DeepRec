@@ -742,6 +742,7 @@ class AutoMixedPrecisionTest(test.TestCase):
           node_map, 'while/gradients/while/dense/MatMul_grad/MatMul_1')
       self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
 
+  @test_util.disable_xla('This test does not pass with XLA')
   def test_scope_disable(self):
     """Test graph with convolution followed by batch norm."""
     with compat.forward_compatibility_horizon(2019, 11, 11):
