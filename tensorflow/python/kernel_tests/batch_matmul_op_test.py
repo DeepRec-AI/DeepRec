@@ -64,13 +64,15 @@ class BatchMatmulOpTest(test.TestCase):
     tol = 100 * np.finfo(x.dtype).eps if is_floating else 0
     with self.cached_session(use_gpu=is_floating) as sess:
       if static_shape:
-        z0 = math_ops.matmul(x, y, adjoint_a=adjoint_a, adjoint_b=adjoint_b)
+        with ops.device("/cpu:0"):
+          z0 = math_ops.matmul(x, y, adjoint_a=adjoint_a, adjoint_b=adjoint_b)
         z0_val = self.evaluate(z0)
       else:
         x_ph = array_ops.placeholder(x.dtype)
         y_ph = array_ops.placeholder(y.dtype)
-        z0 = math_ops.matmul(
-            x_ph, y_ph, adjoint_a=adjoint_a, adjoint_b=adjoint_b)
+        with ops.device("/cpu:0"):
+          z0 = math_ops.matmul(
+              x_ph, y_ph, adjoint_a=adjoint_a, adjoint_b=adjoint_b)
         z0_val = sess.run(z0, feed_dict={x_ph: x, y_ph: y})
       z1 = self._npBatchMatmul(x, y, adjoint_a, adjoint_b)
       self.assertAllClose(z0_val, z1, rtol=tol, atol=tol)
