@@ -96,6 +96,7 @@ class BiasAddDeterministicTest(bias_op_base.BiasAddTestBase):
 
   # TODO(duncanriach): add test coverage for deterministic gradients
   #   in eager mode
+  @test_util.disable_xla('This test does not pass with XLA')
   @test_util.run_deprecated_v1
   @test_util.run_cuda_only
   def testDeterministicGradients(self):
