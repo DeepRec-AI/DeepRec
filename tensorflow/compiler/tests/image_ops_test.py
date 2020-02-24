@@ -588,7 +588,8 @@ class ResizeBilinearTest(parameterized.TestCase, xla_test.XLATestCase):
       ("64x64To299x299", 64, 64, 299, 299),
       ("128x128To299x299", 128, 128, 299, 299),
       ("256x256To299x299", 256, 256, 299, 299),
-      ("512x512To299x299", 512, 512, 299, 299),
+      # Disable due to OOM on TitanV: nvbug 2838964
+      #("512x512To299x299", 512, 512, 299, 299),
       ("224x224To224x224", 224, 224, 224, 224),
       # This test is disabled because it is very slow. It is slow because
       # 383 is prime, 383 and 2047 are coprime, and 2048 is large.
