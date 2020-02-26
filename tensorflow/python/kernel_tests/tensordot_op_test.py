@@ -24,6 +24,7 @@ from tensorflow.python import tf2
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
@@ -175,7 +176,8 @@ def _get_tensordot_tests(dtype_, rank_a_, rank_b_, num_dims_, dynamic_shape_):
           a = array_ops.placeholder(dtype_)
           b = array_ops.placeholder(dtype_)
           axes = array_ops.placeholder(dtypes.int32)
-          c = math_ops.tensordot(a, b, axes)
+          with ops.device("/cpu:0"):
+            c = math_ops.tensordot(a, b, axes)
           tf_ans = sess.run(
               c, feed_dict={
                   a: a_np,
@@ -183,7 +185,8 @@ def _get_tensordot_tests(dtype_, rank_a_, rank_b_, num_dims_, dynamic_shape_):
                   axes: (a_dims_np, b_dims_np)
               })
         else:
-          tf_ans = math_ops.tensordot(a_np, b_np, (a_dims_np, b_dims_np))
+          with ops.device("/cpu:0"):
+            tf_ans = math_ops.tensordot(a_np, b_np, (a_dims_np, b_dims_np))
       self.assertAllClose(tf_ans, np_ans, rtol=tol, atol=tol)
       self.assertAllEqual(tf_ans.shape, np_ans.shape)
 
@@ -210,10 +213,12 @@ def _get_tensordot_tests(dtype_, rank_a_, rank_b_, num_dims_, dynamic_shape_):
         if dynamic_shape_:
           a = array_ops.placeholder(dtype_)
           b = array_ops.placeholder(dtype_)
-          c = math_ops.tensordot(a, b, axes=axes)
+          with ops.device("/cpu:0"):
+            c = math_ops.tensordot(a, b, axes=axes)
           tf_ans = sess.run(c, feed_dict={a: a_np, b: b_np})
         else:
-          tf_ans = math_ops.tensordot(a_np, b_np, axes=axes)
+          with ops.device("/cpu:0"):
+            tf_ans = math_ops.tensordot(a_np, b_np, axes=axes)
       self.assertAllClose(tf_ans, np_ans, rtol=tol, atol=tol)
       self.assertAllEqual(tf_ans.shape, np_ans.shape)
 

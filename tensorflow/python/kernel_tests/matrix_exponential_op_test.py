@@ -52,7 +52,8 @@ class ExponentialOpTest(test.TestCase):
   def _verifyExponential(self, x, np_type):
     inp = x.astype(np_type)
     with test_util.use_gpu():
-      tf_ans = linalg_impl.matrix_exponential(inp)
+      with ops.device("/cpu:0"):
+        tf_ans = linalg_impl.matrix_exponential(inp)
       if x.size == 0:
         np_ans = np.empty(x.shape, dtype=np_type)
       else:

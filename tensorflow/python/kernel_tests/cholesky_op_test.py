@@ -108,7 +108,8 @@ class CholeskyOpTest(test.TestCase):
     # Verify that LL^T == x.
     with self.cached_session(use_gpu=True) as sess:
       chol = linalg_ops.cholesky(x)
-      verification = math_ops.matmul(chol, chol, adjoint_b=True)
+      with ops.device("/cpu:0"):
+        verification = math_ops.matmul(chol, chol, adjoint_b=True)
       self._verifyCholeskyBase(sess, x, chol, verification)
 
   def testBasic(self):
@@ -260,8 +261,9 @@ class CholeskyGradTest(test.TestCase):
                 data = data.astype(np.complex64)
                 data += 1j * np.random.randn(shape[0], shape[1])
               x = constant_op.constant(data, dtype)
-              tensor = math_ops.matmul(
-                  x, math_ops.conj(array_ops.transpose(x))) / shape[0]
+              with ops.device("/cpu:0"):
+                tensor = math_ops.matmul(
+                    x, math_ops.conj(array_ops.transpose(x))) / shape[0]
             else:
               # This is designed to be a faster test for larger matrices.
               data = np.random.randn()
@@ -282,8 +284,9 @@ class CholeskyGradTest(test.TestCase):
             y = linalg_ops.cholesky(tensor)
             if scalarTest:
               y = math_ops.reduce_mean(y)
-            error = gradient_checker.compute_gradient_error(
-                x, x._shape_as_list(), y, y._shape_as_list())
+            with ops.device("/cpu:0"):
+              error = gradient_checker.compute_gradient_error(
+                  x, x._shape_as_list(), y, y._shape_as_list())
             tf_logging.info("error = %f", error)
             if dtype == dtypes_lib.float64:
               self.assertLess(error, 1e-5)
