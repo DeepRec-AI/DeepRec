@@ -4138,17 +4138,35 @@ cuda_py_test(
 )
 
 cuda_py_test(
+    name = "image_grad_deterministic_test",
+    size = "medium",
+    srcs = ["ops/image_grad_deterministic_test.py"],
+    additional_deps = [
+        ":image_grad_test_base",
+    ],
+    xla_enable_strict_auto_jit = True,
+)
+
+cuda_py_test(
     name = "image_grad_test",
     size = "medium",
     srcs = ["ops/image_grad_test.py"],
     additional_deps = [
+        ":image_grad_test_base",
+    ],
+    xla_enable_strict_auto_jit = True,
+)
+
+py_library(
+    name = "image_grad_test_base",
+    srcs = ["ops/image_grad_test_base.py"],
+    deps = [
         ":client_testlib",
         ":framework_for_generated_wrappers",
         ":gradients",
         ":image_ops",
         "//third_party/py/numpy",
     ],
-    xla_enable_strict_auto_jit = True,
 )
 
 cuda_py_test(
