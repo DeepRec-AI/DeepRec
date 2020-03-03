@@ -29,7 +29,6 @@ py_test(
     srcs_version = "PY2AND3",
     tags = [
         "no_mac",  # fails on the branch, failed at release time too
-        "no_oss_py38",
         "no_pip",
         "no_rocm",
     ],
