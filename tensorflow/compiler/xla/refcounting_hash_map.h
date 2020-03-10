@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_COMPILER_XLA_REFCOUNTING_HASH_MAP_H_
 #define TENSORFLOW_COMPILER_XLA_REFCOUNTING_HASH_MAP_H_
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 
