@@ -69,7 +69,7 @@ inline nvtxRangeId_t nvtxRangeStartHelper(const char* msg,
 }
 
 // A helper function to decide whether to enable CUDA NVTX profiling ranges.
-bool NvtxRangesEnabled() {
+inline bool NvtxRangesEnabled() {
   static bool is_enabled = [] {
     bool is_disabled = false;
     TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("TF_DISABLE_NVTX_RANGES",
@@ -82,7 +82,7 @@ bool NvtxRangesEnabled() {
 
 // A helper function to decide whether to enable CUDA NVTX profiling ranges
 // with detailed node information.
-bool NvtxRangesDetailedEnabled() {
+inline bool NvtxRangesDetailedEnabled() {
   static bool is_enabled = [] {
     bool _is_enabled = false;
     TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("TF_ENABLE_NVTX_RANGES_DETAILED",
@@ -93,7 +93,7 @@ bool NvtxRangesDetailedEnabled() {
   return is_enabled;
 }
 
-string DataTypeToNumpyString(DataType dtype) {
+inline string DataTypeToNumpyString(DataType dtype) {
   int dtype_i = static_cast<int>(dtype);
   bool is_ref = false;
   if (dtype_i > 100) {
@@ -134,7 +134,7 @@ string DataTypeToNumpyString(DataType dtype) {
 }
 
 // TODO(benbarsdell): This is a bit crude and hacky (and inefficient).
-string AttrValueToJson(const AttrValue& attr_value) {
+inline string AttrValueToJson(const AttrValue& attr_value) {
   switch (attr_value.value_case()) {
     case AttrValue::kS:
       return SummarizeAttrValue(attr_value);
@@ -205,7 +205,7 @@ string AttrValueToJson(const AttrValue& attr_value) {
   return "\"<Unknown AttrValue type>\"";  // Prevent missing return warning
 }
 
-nvtxRangeId_t MaybeNvtxRangeStart(string node_op, string node_name) {
+inline nvtxRangeId_t MaybeNvtxRangeStart(string node_op, string node_name) {
   nvtxRangeId_t nvtx_range;
   if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
     string msg;
@@ -220,7 +220,7 @@ nvtxRangeId_t MaybeNvtxRangeStart(string node_op, string node_name) {
   return nvtx_range;
 }
 
-void MaybeNvtxRangeEnd(nvtxRangeId_t nvtx_range) {
+inline void MaybeNvtxRangeEnd(nvtxRangeId_t nvtx_range) {
   if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
     ::nvtxRangeEnd(nvtx_range);
   }
@@ -244,7 +244,7 @@ static const NvtxDomain& GetNvtxTensorFlowCoreDomain() {
 }
 
 // Sets the nvtx domain and associates all the nvtx ranges to it.
-nvtxRangeId_t MaybeNvtxDomainRangeStartMsg(string msg, string node_op) {
+inline nvtxRangeId_t MaybeNvtxDomainRangeStartMsg(string msg, string node_op) {
   nvtxRangeId_t nvtx_range;
   if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
     nvtx_range = nvtxRangeStartHelper(msg.c_str(), node_op.c_str(),
@@ -253,7 +253,7 @@ nvtxRangeId_t MaybeNvtxDomainRangeStartMsg(string msg, string node_op) {
   return nvtx_range;
 }
 
-void MaybeNvtxDomainRangeEnd(nvtxRangeId_t nvtx_range) {
+inline void MaybeNvtxDomainRangeEnd(nvtxRangeId_t nvtx_range) {
   if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
     ::nvtxDomainRangeEnd(GetNvtxTensorFlowCoreDomain(), nvtx_range);
   }
