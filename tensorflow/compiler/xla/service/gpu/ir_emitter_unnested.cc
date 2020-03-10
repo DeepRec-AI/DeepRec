@@ -1212,10 +1212,7 @@ Status IrEmitterUnnested::HandleCollectivePermute(HloInstruction* hlo) {
   return Status::OK();
 }
 
-namespace {
-
-
-}  // namespace
+namespace {}  // namespace
 
 Status IrEmitterUnnested::HandleAllReduce(HloInstruction* crs) {
   VLOG(2) << "AllReduce; replica count: " << hlo_module_config_.replica_count()
@@ -1964,32 +1961,32 @@ void IrEmitterUnnested::EmitTile(
   //
   // TODO(cheshire): Once ptxas is fixed and TF switches to it, remove the
   // workaround.
-  ksl->For(
-      loop_name + "_y_in_tile",
-      /*start=*/constant(0),
-      /*end=*/
-      ceil_of_ratio(b_.CreateSub(tile_height, thread_id_info.thread_id_y),
-                    num_threads_y),
-      /*step=*/constant(1), [&](llvm::Value* y_indvar) {
-        llvm::Value* y_loc = b_.CreateAdd(
-            thread_id_info.thread_id_y, b_.CreateMul(y_indvar, num_threads_y));
-        for (int64 j = 0; j < x_num_steps; j++) {
-          llvm::Value* x_loc =
-              b_.CreateAdd(constant(j * step_x), start_offset_x, "x_loc");
-          IrArray::Index source_idx_x =
-              source_idx.AddOffsetToDim(y_loc, kDimY, &b_)
-                  .AddOffsetToDim(constant(j * step_x), kDimX, &b_);
-          auto emit_element = [&] {
-            return emit_elem_function(source_idx_x, y_loc, x_loc, j);
-          };
-          if (!x_tile_fits) {
-            ksl->If(loop_name + "_x_in_tile",
-                    b_.CreateICmpULT(x_loc, tile_width), emit_element);
-          } else {
-            emit_element();
-          }
-        }
-      });
+  ksl->For(loop_name + "_y_in_tile",
+           /*start=*/constant(0),
+           /*end=*/
+           ceil_of_ratio(b_.CreateSub(tile_height, thread_id_info.thread_id_y),
+                         num_threads_y),
+           /*step=*/constant(1), [&](llvm::Value* y_indvar) {
+             llvm::Value* y_loc =
+                 b_.CreateAdd(thread_id_info.thread_id_y,
+                              b_.CreateMul(y_indvar, num_threads_y));
+             for (int64 j = 0; j < x_num_steps; j++) {
+               llvm::Value* x_loc =
+                   b_.CreateAdd(constant(j * step_x), start_offset_x, "x_loc");
+               IrArray::Index source_idx_x =
+                   source_idx.AddOffsetToDim(y_loc, kDimY, &b_)
+                       .AddOffsetToDim(constant(j * step_x), kDimX, &b_);
+               auto emit_element = [&] {
+                 return emit_elem_function(source_idx_x, y_loc, x_loc, j);
+               };
+               if (!x_tile_fits) {
+                 ksl->If(loop_name + "_x_in_tile",
+                         b_.CreateICmpULT(x_loc, tile_width), emit_element);
+               } else {
+                 emit_element();
+               }
+             }
+           });
 }
 
 // Emits code to process a tensor element in a tile for the given kCopy HLO that
