@@ -1270,7 +1270,8 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
 
   return ShapeUtil::MakeTupleShape({operand_shape,
                                     output_shape_for_mean_and_var,
-                                    output_shape_for_mean_and_var});
+                                    output_shape_for_mean_and_var, 
+                                    ShapeUtil::MakeShape(U8, {0})});
 }
 
 /* static */ StatusOr<Shape> ShapeInference::InferBatchNormInferenceShape(

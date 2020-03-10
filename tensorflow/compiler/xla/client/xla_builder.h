@@ -584,7 +584,7 @@ class XlaBuilder {
 
   XlaOp BatchNormGrad(const XlaOp& operand, const XlaOp& scale,
                       const XlaOp& batch_mean, const XlaOp& batch_var,
-                      const XlaOp& grad_output, float epsilon,
+                      const XlaOp& grad_output, const XlaOp& reserve_space, float epsilon,
                       int64 feature_index);
 
   XlaOp GetDimensionSize(const XlaOp& operand, int64 dimension);
@@ -985,7 +985,7 @@ class XlaBuilder {
                                   XlaOp mean, XlaOp variance, float epsilon,
                                   int64 feature_index);
   friend XlaOp BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
-                             XlaOp batch_var, XlaOp grad_output, float epsilon,
+                             XlaOp batch_var, XlaOp grad_output, XlaOp reserve_space, float epsilon,
                              int64 feature_index);
   friend XlaOp SendWithToken(XlaOp operand, XlaOp token,
                              const ChannelHandle& handle);
@@ -1898,7 +1898,7 @@ XlaOp BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset, XlaOp mean,
 //   - grad_offset: Gradient with respect to input `offset`
 //   - grad_scale: Gradient with respect to input `scale`
 XlaOp BatchNormGrad(XlaOp operand, XlaOp scale, XlaOp batch_mean,
-                    XlaOp batch_var, XlaOp grad_output, float epsilon,
+                    XlaOp batch_var, XlaOp grad_output, XlaOp reserve_space, float epsilon,
                     int64 feature_index);
 
 // Returns the size of the given dimension of the operand. The operand must be

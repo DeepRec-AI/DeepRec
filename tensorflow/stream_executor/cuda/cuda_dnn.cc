@@ -3585,6 +3585,7 @@ port::Status CudnnSupport::DoBatchNormalizationForwardImpl(
     ScratchAllocator* workspace_allocator,
     std::function<const DeviceMemory<U>&()> var_to_inv_var,
     std::function<void()> inv_var_to_var) {
+  VLOG(1) << x_desc.ToString();
   CudnnTensorDescriptor x_descriptor(x_desc, ToCudnnDataType(input_data_type));
   CudnnTensorDescriptor scale_offset_descriptor(
       scale_offset_desc, ToCudnnDataType(scale_data_type));
@@ -3592,6 +3593,7 @@ port::Status CudnnSupport::DoBatchNormalizationForwardImpl(
 #if CUDNN_VERSION >= 7000
   if (BatchnormSpatialPersistentEnabled() && is_training) {
     mode = CUDNN_BATCHNORM_SPATIAL_PERSISTENT;
+    VLOG(1)<< "Mode set to CUDNN_BATCHNORM_SPATIAL_PERSISTENT";
   }
 #endif
   float one = 1.0;

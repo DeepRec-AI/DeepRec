@@ -1051,6 +1051,7 @@ class FusedBatchNormOpBase : public OpKernel {
   // If use_reserved_space is false, we don't have 5th output.
   virtual void ComputeWithReservedSpace(OpKernelContext* context,
                                         bool use_reserved_space) {
+    VLOG(1) << "use_reserved_space: " << use_reserved_space;
     const Tensor& x = context->input(0);
     const Tensor& scale = context->input(1);
     const Tensor& offset = context->input(2);
@@ -1201,6 +1202,7 @@ class FusedBatchNormGradOpBase : public OpKernel {
 
   virtual void ComputeWithReservedSpace(OpKernelContext* context,
                                         bool use_reserved_space) {
+    VLOG(1) << "use_reserved_space: " << use_reserved_space;
     const Tensor& y_backprop = context->input(0);
     const Tensor& x = context->input(1);
     const Tensor& scale = context->input(2);

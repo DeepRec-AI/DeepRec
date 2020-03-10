@@ -68,6 +68,8 @@ class FusedBatchNormOp : public XlaOpKernel {
 
  protected:
   virtual void CompileImpl(XlaOpKernelContext* ctx) {
+    VLOG(1) << "No. of Inputs FusedBatchNormOp: " << ctx->num_inputs();
+    VLOG(1) << "No. of Outputs FusedBatchNormOp: " << ctx->num_outputs();
     xla::PrimitiveType input_type;
     OP_REQUIRES_OK(ctx,
                    DataTypeToPrimitiveType(ctx->input_type(0), &input_type));
@@ -133,6 +135,7 @@ class FusedBatchNormOp : public XlaOpKernel {
       } else {
         ctx->SetOutput(4, variance);
       }
+      batch_norm_training_ = output;
     } else {
       xla::XlaOp output = xla::BatchNormInference(
           input, ctx->Input(1), ctx->Input(2), ctx->Input(3), ctx->Input(4),
@@ -153,7 +156,10 @@ class FusedBatchNormOp : public XlaOpKernel {
       ctx->SetOutput(3, ctx->Input(3));
       ctx->SetOutput(4, ctx->Input(4));
     }
+    VLOG(1) << "No. of Outputs FusedBatchNormOp after setting outputs: " << ctx->num_outputs();
   }
+protected:
+  xla::XlaOp batch_norm_training_;
 
  private:
   float epsilon_;
@@ -174,7 +180,9 @@ class FusedBatchNormOpV3 : public FusedBatchNormOp {
     if (!ctx->status().ok()) {
       return;
     }
-    ctx->SetConstantOutput(5, Tensor());
+    //ctx->SetConstantOutput(5, Tensor());
+
+    ctx->SetOutput(3,xla::GetTupleElement(batch_norm_training_, 3));
   }
 };
 
@@ -188,6 +196,7 @@ class FusedBatchNormOpEx : public FusedBatchNormOp {
     if (!ctx->status().ok()) {
       return;
     }
+    //ctx->SetOutput(5,xla::GetTupleElement(batch_norm_training_, 5));
     ctx->SetConstantOutput(5, Tensor());
   }
 };
@@ -209,8 +218,11 @@ class FusedBatchNormGradOp : public XlaOpKernel {
         errors::InvalidArgument("Invalid data format: ", data_format_str));
     is_on_gpu_ = ctx->device_type().type_string() == DEVICE_GPU_XLA_JIT;
   }
+  void Compile(XlaOpKernelContext* ctx) override { CompileImpl(ctx, false); }
 
-  void Compile(XlaOpKernelContext* ctx) override {
+  virtual void CompileImpl(XlaOpKernelContext* ctx, bool use_reserved_space ) {
+    VLOG(1) << "No. of Inputs FusedBatchNormGradOp: " << ctx->num_inputs();
+    VLOG(1) << "No. of Outputs FusedBatchNormGradOp: " << ctx->num_outputs();
     xla::XlaBuilder* const b = ctx->builder();
     DataType input_dtype = ctx->input_type(0);
     DataType scale_dtype = ctx->input_type(2);
@@ -249,11 +261,13 @@ class FusedBatchNormGradOp : public XlaOpKernel {
         xla::XlaOp epsilon = xla::ScalarLike(var, epsilon_);
         var = xla::Sub(one / (var * var), epsilon);
       }
-
+      xla::XlaOp reserve_space;
+      if (use_reserved_space) {
+        reserve_space = ctx->Input(5);
+      }
       xla::XlaOp output =
-          xla::BatchNormGrad(activations, scale, mean, var, grad_backprop,
+          xla::BatchNormGrad(activations, scale, mean, var, grad_backprop, reserve_space, 
                              epsilon_, feature_index);
-
       x_backprop = xla::GetTupleElement(output, 0);
       scale_backprop = xla::GetTupleElement(output, 1);
       offset_backprop = xla::GetTupleElement(output, 2);
@@ -300,6 +314,7 @@ class FusedBatchNormGradOp : public XlaOpKernel {
     ctx->SetOutput(2, offset_backprop);
     ctx->SetConstantOutput(3, Tensor());
     ctx->SetConstantOutput(4, Tensor());
+    VLOG(1) << "No. of Outputs FusedBatchNormGradOp after setting outputs: " << ctx->num_outputs();
   }
 
  private:
@@ -309,9 +324,22 @@ class FusedBatchNormGradOp : public XlaOpKernel {
   bool is_on_gpu_;
 };
 
+class FusedBatchNormGradOpV3 : public FusedBatchNormGradOp {
+ public:
+  explicit FusedBatchNormGradOpV3(OpKernelConstruction* ctx)
+      : FusedBatchNormGradOp(ctx) {}
+
+  void Compile(XlaOpKernelContext* ctx) override {
+    FusedBatchNormGradOp::CompileImpl(ctx, true);
+    if (!ctx->status().ok()) {
+      return;
+    }
+  }
+};
+
 REGISTER_XLA_OP(Name("FusedBatchNormGrad"), FusedBatchNormGradOp);
 REGISTER_XLA_OP(Name("FusedBatchNormGradV2"), FusedBatchNormGradOp);
-REGISTER_XLA_OP(Name("FusedBatchNormGradV3"), FusedBatchNormGradOp);
+REGISTER_XLA_OP(Name("FusedBatchNormGradV3"), FusedBatchNormGradOpV3);
 
 }  // namespace
 }  // namespace tensorflow
