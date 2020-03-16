@@ -2138,23 +2138,6 @@ void IrEmitterUnnested::EmitTileElementForFusion(
   }
 }
 
-// Gets the number of partial results accumulated by a single thread performing
-// reduction.
-static int GetNumberOfPartialResults(
-    const ReductionCodegenInfo& reduction_info) {
-  const KernelMappingScheme& mapping_scheme =
-      reduction_info.GetKernelMappingScheme();
-  if (reduction_info.IsRowReduction()) {
-    return 1;
-  }
-  int64 num_partial_results =
-      mapping_scheme.GetIndexingOrder() == kLinearIndexingX ? 2 : 1;
-
-  CHECK_EQ(num_partial_results,
-           (mapping_scheme.GetTileSizeX() / mapping_scheme.GetNumThreadsX()));
-  return num_partial_results;
-}
-
 void IrEmitterUnnested::EmitPrologueForReduction(
     HloInstruction* unnested_hlo, ReductionCodegenInfo* reduction_info,
     absl::Span<HloInstruction* const> reduce_instructions,
@@ -2181,7 +2164,7 @@ void IrEmitterUnnested::EmitPrologueForReduction(
     llvm::AllocaInst* reduction_input_address = Alloca(element_type);
     reduction_input_addresses->push_back(reduction_input_address);
 
-    int num_partial_results = GetNumberOfPartialResults(*reduction_info);
+    int num_partial_results = reduction_info->GetNumPartialResults();
     AddressVector* partial_result_addresses =
         reduction_info->GetMutablePartialResultAddresses();
     llvm::AllocaInst* partial_result_address =
@@ -2333,7 +2316,7 @@ void IrEmitterUnnested::EmitEpilogueForReduction(
   absl::Span<llvm::AllocaInst* const> partial_result_addresses =
       reduction_info.GetPartialResultAddresses();
 
-  int num_partial_results = GetNumberOfPartialResults(reduction_info);
+  int num_partial_results = reduction_info.GetNumPartialResults();
 
   // Emit an atomic operation that accumulates the partial reduction to the
   // output element. For row reduction, this is only for lane 0 due to the
@@ -2547,7 +2530,7 @@ void IrEmitterUnnested::EmitTileElementForReduction(
   // GetElementPointer with array types. This enables the vectorization of
   // the computation for different partial results. Use this index if
   // 'num_partial_results > 1'.
-  int num_partial_results = GetNumberOfPartialResults(reduction_info);
+  int num_partial_results = reduction_info.GetNumPartialResults();
   auto index_without_linear = IrArray::Index(
       input_index.multidim(), reduction_operand_shape, input_index.GetType());
 
@@ -3199,6 +3182,7 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
   ir_emitter_context_->device_description().cuda_compute_capability(&cc_major,
                                                                     &cc_minor);
 
+  int num_partial_results = 1;
   KernelMappingScheme::IndexingOrder indexing_order = [&]() {
     if (reduction_dimensions.is_row_reduction &&
         // P100, only ttry to vectorize+coales memory access when the
@@ -3213,7 +3197,8 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
                IsUnrollingColumnReductionBeneficial(
                    unnested_hlo, input_shape,
                    reduction_dimensions.dimensions[2])) {
-      reduction_tiling[2] *= 2;
+      num_partial_results = 2;
+      reduction_tiling[2] *= num_partial_results;
       return kLinearIndexingX;
     } else {
       return kStridedIndexingX;
@@ -3236,7 +3221,7 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
       {reduction_tiling[0], reduction_tiling[1] * num_threads_y,
        reduction_tiling[2] * num_threads_x},
       num_threads_y, num_threads_x, indexing_order, vector_size);
-  return ReductionCodegenInfo(mapping_scheme,
+  return ReductionCodegenInfo(mapping_scheme, num_partial_results,
                               reduction_dimensions.is_row_reduction);
 }
 
