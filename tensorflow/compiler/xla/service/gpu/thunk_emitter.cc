@@ -34,6 +34,33 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+// namespace {
+// std::vector<BufferAllocation::Slice> GetBatchNormOperandSlices(
+//     ThunkEmitter* emitter, HloInstruction* batch_norm) {
+//   std::vector<BufferAllocation::Slice> operand_slices;
+//   // The last 2 operands in the custom call are epsilon
+//   // and feature_index, so no allocation slice.
+//   auto num_inputs_slices = batch_norm->operand_count() - 2;
+//   operand_slices.reserve(num_inputs_slices);
+//   for (int id = 0; id < num_inputs_slices; id++) {
+//     operand_slices.push_back(emitter->GetAllocationSlice(*batch_norm->operand(id)));
+//   }
+//   return operand_slices;
+// }
+
+// std::vector<BufferAllocation::Slice> GetBatchNormOutputSlices(
+//     ThunkEmitter* emitter, HloInstruction* batch_norm) {
+//   auto num_outputs = batch_norm->shape().tuple_shapes_size();
+//   std::vector<BufferAllocation::Slice> output_slices;
+//   output_slices.reserve(num_outputs);
+//   for (int index = 0; index < num_outputs; index++) {
+//     output_slices.push_back(emitter->GetAllocationSlice(*batch_norm,
+//     {index}));
+//   }
+//   return output_slices;
+// }
+// }  // namespace
+
 std::unique_ptr<Thunk> ThunkEmitter::BuildFftThunk(const HloInstruction* inst) {
   const HloInstruction* operand = inst->operand(0);
   return absl::make_unique<FftThunk>(
@@ -161,6 +188,28 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
     return Status::OK();
   }
 
+  auto get_batch_norm_operand_slices = [&](const HloInstruction* batch_norm) {
+    std::vector<BufferAllocation::Slice> operand_slices;
+    // The last 2 operands in the custom call are epsilon
+    // and feature_index, so no allocation slice.
+    auto num_inputs_slices = batch_norm->operand_count() - 2;
+    operand_slices.reserve(num_inputs_slices);
+    for (int id = 0; id < num_inputs_slices; id++) {
+      operand_slices.push_back(GetAllocationSlice(*batch_norm->operand(id)));
+    }
+    return operand_slices;
+  };
+
+  auto get_batch_norm_output_slices = [&](const HloInstruction* batch_norm) {
+    auto num_outputs = batch_norm->shape().tuple_shapes_size();
+    std::vector<BufferAllocation::Slice> output_slices;
+    output_slices.reserve(num_outputs);
+    for (int index = 0; index < num_outputs; index++) {
+      output_slices.push_back(GetAllocationSlice(*batch_norm, {index}));
+    }
+    return output_slices;
+  };
+
   if (custom_call->custom_call_target() ==
       kCudnnBatchNormForwardTrainingCallTarget) {
     const HloInstruction* epsilon = custom_call->operand(3);
@@ -212,20 +261,31 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
 
     // BatchNormGrad returns a tuple of three elements: grad_data, grad_scale,
     // grad_offset.
-    auto output_grad_data = GetAllocationSlice(*custom_call, {0});
-    auto output_grad_scale = GetAllocationSlice(*custom_call, {1});
-    auto output_grad_offset = GetAllocationSlice(*custom_call, {2});
+    // auto output_grad_data = GetAllocationSlice(*custom_call, {0});
+    // auto output_grad_scale = GetAllocationSlice(*custom_call, {1});
+    // auto output_grad_offset = GetAllocationSlice(*custom_call, {2});
+    // AddThunkToThunkSequence(absl::make_unique<CudnnBatchNormBackwardThunk>(
+    //     /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
+    //     /*scale=*/GetAllocationSlice(*custom_call->operand(1)),
+    //     /*mean=*/GetAllocationSlice(*custom_call->operand(2)),
+    //     /*inv_stddev=*/GetAllocationSlice(*custom_call->operand(3)),
+    //     /*grad_output=*/GetAllocationSlice(*custom_call->operand(4)),
+    //     /*epsilon=*/epsilon_value,
+    //     /*feature_index=*/feature_index_value,
+    //     /*output_grad_data=*/output_grad_data,
+    //     /*output_grad_scale=*/output_grad_scale,
+    //     /*output_grad_offset=*/output_grad_offset,
+    //     /*output_tuple=*/GetAllocationSlice(*custom_call),
+    //     /*hlo=*/custom_call));
+    std::vector<BufferAllocation::Slice> operand_slices =
+        get_batch_norm_operand_slices(custom_call);
+    std::vector<BufferAllocation::Slice> output_slices =
+        get_batch_norm_output_slices(custom_call);
     AddThunkToThunkSequence(absl::make_unique<CudnnBatchNormBackwardThunk>(
-        /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
-        /*scale=*/GetAllocationSlice(*custom_call->operand(1)),
-        /*mean=*/GetAllocationSlice(*custom_call->operand(2)),
-        /*inv_stddev=*/GetAllocationSlice(*custom_call->operand(3)),
-        /*grad_output=*/GetAllocationSlice(*custom_call->operand(4)),
+        /*operands=*/std::move(operand_slices),
+        /*outputs=*/std::move(output_slices),
         /*epsilon=*/epsilon_value,
         /*feature_index=*/feature_index_value,
-        /*output_grad_data=*/output_grad_data,
-        /*output_grad_scale=*/output_grad_scale,
-        /*output_grad_offset=*/output_grad_offset,
         /*output_tuple=*/GetAllocationSlice(*custom_call),
         /*hlo=*/custom_call));
     return Status::OK();

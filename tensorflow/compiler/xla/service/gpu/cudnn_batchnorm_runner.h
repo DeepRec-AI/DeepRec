@@ -49,6 +49,7 @@ Status RunCudnnBatchNormBackward(
     se::DeviceMemory<float> output_grad_scale,
     se::DeviceMemory<float> output_grad_offset, se::DeviceMemory<float> scale,
     se::DeviceMemory<float> mean, se::DeviceMemory<float> inv_stddev,
+    se::DeviceMemory<uint8> reserve_space, se::DeviceMemoryBase workspace,
     float epsilon, int64 feature_index, se::Stream* stream);
 }  // namespace gpu
 }  // namespace xla

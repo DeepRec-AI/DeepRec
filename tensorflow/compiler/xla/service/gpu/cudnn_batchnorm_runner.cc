@@ -193,9 +193,14 @@ void RunCudnnBatchNormForwardTrainingImpl(
 }
 
 template <typename ElemType>
-void RunCudnnBatchNormBackwardImpl(CudnnBatchNormBackwardParams* params, 
-                                  se::Stream* stream) {
+void RunCudnnBatchNormBackwardImpl(CudnnBatchNormBackwardParams* params,
+                                   se::DeviceMemory<uint8> reserve_space,
+                                   se::ScratchAllocator* workspace_allocator,
+                                   se::Stream* stream) {
   se::DeviceMemory<float> null_device_ptr(nullptr);
+  if (dynamic_cast<ScratchBufAllocator*>(workspace_allocator)->IsBufferNull()) {
+    workspace_allocator = nullptr;
+  }
   auto output_grad_data = se::DeviceMemory<ElemType>(params->output_grad_data);
   stream->ThenBatchNormalizationBackward(
       se::DeviceMemory<ElemType>(params->grad_output),     //
@@ -209,8 +214,8 @@ void RunCudnnBatchNormBackwardImpl(CudnnBatchNormBackwardParams* params,
       &output_grad_data,                                   //
       &params->output_grad_scale,                          //
       &params->output_grad_offset,                         //
-      /*reserve_space_allocator=*/nullptr,                 //
-      /*workspace_allocator=*/nullptr);
+      /*reserve_space_allocator=*/&reserve_space,          //
+      /*workspace_allocator=*/workspace_allocator);
 }
 
 }  // namespace
@@ -290,8 +295,10 @@ Status RunCudnnBatchNormBackward(
     se::DeviceMemory<float> output_grad_scale,
     se::DeviceMemory<float> output_grad_offset, se::DeviceMemory<float> scale,
     se::DeviceMemory<float> mean, se::DeviceMemory<float> inv_stddev,
+    se::DeviceMemory<uint8> reserve_space, se::DeviceMemoryBase workspace,
     float epsilon, int64 feature_index, se::Stream* stream) {
   CudnnBatchNormBackwardParams backward_params;
+  ScratchBufAllocator workspace_scratch_allocator(workspace);
   AssignCommonParams(batchnorm, &backward_params.common, operand, scale,
                      epsilon, feature_index);
   backward_params.output_grad_data = output_grad_data;
@@ -305,10 +312,14 @@ Status RunCudnnBatchNormBackward(
       batchnorm->shape().tuple_shapes(0).element_type();
   switch (output_primitive_type) {
     case F16:
-      RunCudnnBatchNormBackwardImpl<Eigen::half>(&backward_params, stream);
+      RunCudnnBatchNormBackwardImpl<Eigen::half>(
+          &backward_params, reserve_space, &workspace_scratch_allocator,
+          stream);
       break;
     case F32:
-      RunCudnnBatchNormBackwardImpl<float>(&backward_params, stream);
+      RunCudnnBatchNormBackwardImpl<float>(&backward_params, reserve_space,
+                                           &workspace_scratch_allocator,
+                                           stream);
       break;
     default:
       return Unimplemented("Primitive type not implemented for \"%s\" ",

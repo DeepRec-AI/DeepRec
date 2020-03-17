@@ -294,8 +294,9 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
   bool use_reserve_space = (num_inputs == 6) ? true : false;
   // When batch-norm-grad hlo has been lowered from
   // either FusedBatchnormGradV3 or FusedBatchNormGradEx, the hlo has
-  // an extra reserve space input i.e, 6 inputs {operand, scale, mean, variance, out_grad, reserve_space}. 
-  // This implies that an extra temp workspace also needs to be allocated.
+  // an extra reserve space input i.e, 6 inputs {operand, scale, mean,
+  // variance, out_grad, reserve_space}. This implies that an extra
+  // temp workspace also needs to be allocated.
 
   std::cout << "(batch_norm->operand_count() = " << batch_norm->operand_count()
             << std::endl;
