@@ -64,10 +64,10 @@ class FusedBatchNormOp : public XlaOpKernel {
     is_on_gpu_ = ctx->device_type().type_string() == DEVICE_GPU_XLA_JIT;
   }
 
-  void Compile(XlaOpKernelContext* ctx) override { CompileImpl(ctx); }
+  void Compile(XlaOpKernelContext* ctx) override { CompileImpl(ctx, false); }
 
  protected:
-  virtual void CompileImpl(XlaOpKernelContext* ctx) {
+  virtual void CompileImpl(XlaOpKernelContext* ctx, bool use_reserved_space) {
     VLOG(1) << "No. of Inputs FusedBatchNormOp: " << ctx->num_inputs();
     VLOG(1) << "No. of Outputs FusedBatchNormOp: " << ctx->num_outputs();
     xla::PrimitiveType input_type;
@@ -89,8 +89,9 @@ class FusedBatchNormOp : public XlaOpKernel {
     input = xla::ConvertElementType(input, scale_type);
 
     if (is_training_) {
-      xla::XlaOp output = xla::BatchNormTraining(
-          input, ctx->Input(1), ctx->Input(2), epsilon_, feature_index);
+      xla::XlaOp output =
+          xla::BatchNormTraining(input, ctx->Input(1), ctx->Input(2), epsilon_,
+                                 feature_index, use_reserved_space);
 
       // In training mode, outputs the normalized value as well as the
       // calculated mean and variance. Optionally we add side input and apply
@@ -176,13 +177,13 @@ class FusedBatchNormOpV3 : public FusedBatchNormOp {
       : FusedBatchNormOp(ctx) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormOp::CompileImpl(ctx);
+    FusedBatchNormOp::CompileImpl(ctx, true);
     if (!ctx->status().ok()) {
       return;
     }
     //ctx->SetConstantOutput(5, Tensor());
 
-    ctx->SetOutput(3,xla::GetTupleElement(batch_norm_training_, 3));
+    ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
   }
 };
 
@@ -192,12 +193,13 @@ class FusedBatchNormOpEx : public FusedBatchNormOp {
       : FusedBatchNormOp(ctx, /*is_batch_norm_ex=*/true) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormOp::CompileImpl(ctx);
+    FusedBatchNormOp::CompileImpl(ctx, true);
     if (!ctx->status().ok()) {
       return;
     }
-    //ctx->SetOutput(5,xla::GetTupleElement(batch_norm_training_, 5));
-    ctx->SetConstantOutput(5, Tensor());
+    ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
+
+    // ctx->SetConstantOutput(5, Tensor());
   }
 };
 
@@ -265,6 +267,9 @@ class FusedBatchNormGradOp : public XlaOpKernel {
       if (use_reserved_space) {
         reserve_space = ctx->Input(5);
       }
+      std::string Str = (reserve_space.IsUninitialized()) ? "Is Uninitialized"
+                                                          : "Initialized";
+      VLOG(1) << Str;
       xla::XlaOp output =
           xla::BatchNormGrad(activations, scale, mean, var, grad_backprop, reserve_space, 
                              epsilon_, feature_index);

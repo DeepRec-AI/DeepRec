@@ -55,7 +55,7 @@ namespace xla {
   V(kAllReduce, "all-reduce", kHloOpcodeIsVariadic)                    \
   V(kAllToAll, "all-to-all", kHloOpcodeIsVariadic)                     \
   V(kAtan2, "atan2", 2)                                                \
-  V(kBatchNormGrad, "batch-norm-grad", 5)                              \
+  V(kBatchNormGrad, "batch-norm-grad", kHloOpcodeIsVariadic)           \
   V(kBatchNormInference, "batch-norm-inference", 5)                    \
   V(kBatchNormTraining, "batch-norm-training", 3)                      \
   V(kBitcast, "bitcast", 1)                                            \

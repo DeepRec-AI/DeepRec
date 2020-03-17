@@ -39,7 +39,8 @@ Status RunCudnnBatchNormForwardTraining(
     const HloInstruction* batchnorm, se::DeviceMemoryBase operand,
     se::DeviceMemoryBase output_data, se::DeviceMemory<float> output_mean,
     se::DeviceMemory<float> output_inv_stddev, se::DeviceMemory<float> scale,
-    se::DeviceMemory<float> offset, float epsilon, int64 feature_index,
+    se::DeviceMemory<float> offset, se::DeviceMemoryBase reserve_space,
+    se::DeviceMemoryBase workspace, float epsilon, int64 feature_index,
     se::Stream* stream);
 
 Status RunCudnnBatchNormBackward(

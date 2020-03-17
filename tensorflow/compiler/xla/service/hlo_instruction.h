@@ -713,9 +713,13 @@ class HloInstruction {
 
   // Creates a batch-norm-grad instruction.
   static std::unique_ptr<HloInstruction> CreateBatchNormGrad(
-      const Shape& shape, HloInstruction* operand, HloInstruction* scale,
+      const Shape& shape, HloInstruction* operand_0, 
+      HloInstruction* scale,
+      absl::Span<HloInstruction* const> other_operands,
+      /*HloInstruction* operand, HloInstruction* scale,
       HloInstruction* mean, HloInstruction* variance,
-      HloInstruction* grad_output, float epsilon, int64 feature_index);
+      HloInstruction* grad_output, HloInstruction* reserve_space,*/
+      float epsilon, int64 feature_index);
 
   // Creates a scatter computation that scatters the `source` array to the
   // selected indices of each window.

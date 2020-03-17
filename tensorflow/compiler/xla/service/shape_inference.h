@@ -88,7 +88,8 @@ class ShapeInference {
   static StatusOr<Shape> InferBatchNormTrainingShape(const Shape& operand_shape,
                                                      const Shape& scale_shape,
                                                      const Shape& offset_shape,
-                                                     int64 feature_index);
+                                                     int64 feature_index,
+                                                     bool use_reserve_space);
 
   // Infers the shape produced by InferBatchNormInference with the given
   // operands.

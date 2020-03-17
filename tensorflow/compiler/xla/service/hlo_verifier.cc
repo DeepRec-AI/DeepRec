@@ -866,12 +866,15 @@ Status ShapeVerifier::HandleRecvDone(HloInstruction* recv_done) {
 
 Status ShapeVerifier::HandleBatchNormTraining(
     HloInstruction* batch_norm_training) {
-  return CheckShape(batch_norm_training,
-                    ShapeInference::InferBatchNormTrainingShape(
-                        batch_norm_training->operand(0)->shape(),
-                        batch_norm_training->operand(1)->shape(),
-                        batch_norm_training->operand(2)->shape(),
-                        batch_norm_training->feature_index()));
+  auto num_outputs = batch_norm_training->shape().tuple_shapes_size();
+  bool use_reserve_space = (num_outputs == 4) ? true : false;
+  return CheckShape(
+      batch_norm_training,
+      ShapeInference::InferBatchNormTrainingShape(
+          batch_norm_training->operand(0)->shape(),
+          batch_norm_training->operand(1)->shape(),
+          batch_norm_training->operand(2)->shape(),
+          batch_norm_training->feature_index(), use_reserve_space));
 }
 
 Status ShapeVerifier::HandleBatchNormInference(

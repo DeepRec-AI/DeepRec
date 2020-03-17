@@ -142,21 +142,50 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
 
   switch (opcode) {
     // Ops migrated to subclasses.
-    case HloOpcode::kBatchNormTraining:
+    case HloOpcode::kBatchNormTraining: {
+      std::cout << "Number of BatchNormTraining operands in CreateFromProto: " <<  proto.operand_ids_size() << std::endl;
+      std::cout << "Out Shape of BatchNormTrainming in CreateFromProto: " << shape.ToString() << std::endl;
       instruction =
           CreateBatchNormTraining(shape, operands(0), operands(1), operands(2),
                                   proto.epsilon(), proto.feature_index());
       break;
+    }
     case HloOpcode::kBatchNormInference:
       instruction = CreateBatchNormInference(
           shape, operands(0), operands(1), operands(2), operands(3),
           operands(4), proto.epsilon(), proto.feature_index());
       break;
-    case HloOpcode::kBatchNormGrad:
-      instruction = CreateBatchNormGrad(shape, operands(0), operands(1),
-                                        operands(2), operands(3), operands(4),
+    case HloOpcode::kBatchNormGrad: {
+      std::cout << "Number of BatchNormGrad operands in CreateFromProto: " << proto.operand_ids_size() << std::endl;
+      std::cout << "Out Shape of BatchNormGrad in CreateFromProto: " << shape.ToString() << std::endl;
+      for (int i = 0; i < proto.operand_ids_size(); i++){
+        std::cout << "operands(): " << operands(i)->ToString() << std::endl;
+      }
+      std::cout << std::endl;
+      // instruction = CreateBatchNormGrad(shape, operands(0), operands(1),
+      //                                   operands(2), operands(3), operands(4), operands(5),
+      //                                   proto.epsilon(), proto.feature_index());
+      auto operand_0 = operands(0);
+      auto scale = operands(1);
+      std::vector<HloInstruction*> other_operands(proto.operand_ids_size()-2);
+      std::transform(std::next(std::next(proto.operand_ids().begin())), proto.operand_ids().end(),
+                   other_operands.begin(), [&instruction_map](int64 operand_id) {
+                     return instruction_map.at(operand_id);
+                   });
+      // other_operands.reserve(proto.operand_ids_size()-1);
+      // for(auto it = std::next(all_operands().begin()); it != all_operands().end(); it++){
+      //   other_operands.push_back(*it)
+      // }
+      std::cout << "operand_0: " << operand_0->ToString() << std::endl;
+      std::cout << "scale operand_1: " << scale->ToString() << std::endl;
+      for(auto oper : other_operands) {
+        std::cout << oper->ToString() << std::endl;
+      }
+      std::cout << "Num other_operands: " << other_operands.size() << std::endl;
+      instruction = CreateBatchNormGrad(shape, operand_0, scale, other_operands,
                                         proto.epsilon(), proto.feature_index());
       break;
+    }
     case HloOpcode::kFft: {
       std::vector<int64> fft_length(proto.fft_length().begin(),
                                     proto.fft_length().end());
@@ -1143,13 +1172,19 @@ HloInstruction::CreateBatchNormInference(
 }
 
 /* static */ std::unique_ptr<HloInstruction>
-HloInstruction::CreateBatchNormGrad(const Shape& shape, HloInstruction* operand,
-                                    HloInstruction* scale, HloInstruction* mean,
+HloInstruction::CreateBatchNormGrad(const Shape& shape, HloInstruction* operand_0,
+                                    HloInstruction* scale, /*HloInstruction* mean,
                                     HloInstruction* variance,
-                                    HloInstruction* grad_output, float epsilon,
+                                    HloInstruction* grad_output, 
+                                    HloInstruction* reserve_space,*/
+                                    absl::Span<HloInstruction* const> other_operands,
+                                    float epsilon,
                                     int64 feature_index) {
+  // return absl::make_unique<HloBatchNormGradInstruction>(
+  //     shape, operand, scale, mean, variance, grad_output, reserve_space, epsilon,
+  //     feature_index);
   return absl::make_unique<HloBatchNormGradInstruction>(
-      shape, operand, scale, mean, variance, grad_output, epsilon,
+      shape, operand_0, scale, other_operands, epsilon,
       feature_index);
 }
 

@@ -1170,7 +1170,7 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
 
 /* static */ StatusOr<Shape> ShapeInference::InferBatchNormTrainingShape(
     const Shape& operand_shape, const Shape& scale_shape,
-    const Shape& offset_shape, int64 feature_index) {
+    const Shape& offset_shape, int64 feature_index, bool use_reserve_space) {
   TF_RETURN_IF_ERROR(
       ExpectArray(operand_shape, "operand of batch norm training"));
   TF_RETURN_IF_ERROR(
@@ -1268,10 +1268,15 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
         ShapeUtil::GetDimension(scale_shape, 0), feature_count);
   }
 
+  if (use_reserve_space) {
+    return ShapeUtil::MakeTupleShape(
+        {operand_shape, output_shape_for_mean_and_var,
+         output_shape_for_mean_and_var, ShapeUtil::MakeShape(U8, {4096})});
+  }
+
   return ShapeUtil::MakeTupleShape({operand_shape,
                                     output_shape_for_mean_and_var,
-                                    output_shape_for_mean_and_var, 
-                                    ShapeUtil::MakeShape(U8, {0})});
+                                    output_shape_for_mean_and_var});
 }
 
 /* static */ StatusOr<Shape> ShapeInference::InferBatchNormInferenceShape(

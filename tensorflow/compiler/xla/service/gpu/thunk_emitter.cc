@@ -161,6 +161,36 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
     return Status::OK();
   }
 
+  // if (custom_call->custom_call_target() ==
+  //     kCudnnBatchNormForwardTrainingCallTarget) {
+  //   const HloInstruction* epsilon = custom_call->operand(3);
+  //   CHECK(epsilon->IsConstant());
+  //   float epsilon_value = epsilon->literal().Get<float>({});
+
+  //   const HloInstruction* feature_index = custom_call->operand(4);
+  //   CHECK(feature_index->IsConstant());
+  //   int64 feature_index_value = feature_index->literal().Get<int64>({});
+
+  //   // BatchNormTraining returns a tuple of three elements: data, calculated
+  //   // mean, and calculated 1/sqrt(variance + epsilon).
+  //   auto output_data = GetAllocationSlice(*custom_call, {0});
+  //   auto output_mean = GetAllocationSlice(*custom_call, {1});
+  //   auto output_inv_stddev = GetAllocationSlice(*custom_call, {2});
+  //   AddThunkToThunkSequence(
+  //       absl::make_unique<CudnnBatchNormForwardTrainingThunk>(
+  //           /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
+  //           /*scale=*/GetAllocationSlice(*custom_call->operand(1)),
+  //           /*offset=*/GetAllocationSlice(*custom_call->operand(2)),
+  //           /*epsilon=*/epsilon_value,
+  //           /*feature_index=*/feature_index_value,
+  //           /*output_data=*/output_data,
+  //           /*output_mean=*/output_mean,
+  //           /*output_inv_stddev=*/output_inv_stddev,
+  //           /*output_tuple=*/GetAllocationSlice(*custom_call),
+  //           /*hlo=*/custom_call));
+  //   return Status::OK();
+  // }
+
   if (custom_call->custom_call_target() ==
       kCudnnBatchNormForwardTrainingCallTarget) {
     const HloInstruction* epsilon = custom_call->operand(3);
@@ -171,32 +201,42 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
     CHECK(feature_index->IsConstant());
     int64 feature_index_value = feature_index->literal().Get<int64>({});
 
-    // BatchNormTraining returns a tuple of three elements: data, calculated
-    // mean, and calculated 1/sqrt(variance + epsilon).
-    auto output_data = GetAllocationSlice(*custom_call, {0});
-    auto output_mean = GetAllocationSlice(*custom_call, {1});
-    auto output_inv_stddev = GetAllocationSlice(*custom_call, {2});
+    std::vector<BufferAllocation::Slice> operand_slices;
+    // The last 2 operands in the custom call are epsilon 
+    // and feature_index, so no allocation slice.
+    auto num_inputs_slices = custom_call->operand_count()-2;
+    operand_slices.reserve(num_inputs_slices);
+    for (int id = 0; id < num_inputs_slices; id++) {
+      operand_slices.push_back(GetAllocationSlice(*custom_call->operand(id)));
+    }
+
+    auto num_outputs = custom_call->shape().tuple_shapes_size();
+    std::vector<BufferAllocation::Slice> output_slices;
+    output_slices.reserve(num_outputs);
+    for (int index = 0; index < num_outputs; index++){
+      output_slices.push_back(GetAllocationSlice(*custom_call, {index}));
+    }
+
     AddThunkToThunkSequence(
         absl::make_unique<CudnnBatchNormForwardTrainingThunk>(
-            /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
-            /*scale=*/GetAllocationSlice(*custom_call->operand(1)),
-            /*offset=*/GetAllocationSlice(*custom_call->operand(2)),
+            /*operands=*/std::move(operand_slices),
+            /*outputs=*/std::move(output_slices),
             /*epsilon=*/epsilon_value,
             /*feature_index=*/feature_index_value,
-            /*output_data=*/output_data,
-            /*output_mean=*/output_mean,
-            /*output_inv_stddev=*/output_inv_stddev,
             /*output_tuple=*/GetAllocationSlice(*custom_call),
             /*hlo=*/custom_call));
     return Status::OK();
   }
 
   if (custom_call->custom_call_target() == kCudnnBatchNormBackwardCallTarget) {
-    const HloInstruction* epsilon = custom_call->operand(5);
+    bool use_reserve_space = (custom_call->operand_count() == 8) ? true : false;
+    int epsilon_dim =  (use_reserve_space) ? 6 : 5;
+    int feature_index_dim = epsilon_dim+1;
+    const HloInstruction* epsilon = custom_call->operand(epsilon_dim);
     CHECK(epsilon->IsConstant());
     float epsilon_value = epsilon->literal().Get<float>({});
 
-    const HloInstruction* feature_index = custom_call->operand(6);
+    const HloInstruction* feature_index = custom_call->operand(feature_index_dim);
     CHECK(feature_index->IsConstant());
     int64 feature_index_value = feature_index->literal().Get<int64>({});
 

@@ -32,6 +32,40 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+// A StreamExecutor ScratchAllocator that wraps a single XLA allocation,
+// returning it (in its entirety) the first time Allocate() is called.
+class ScratchBufAllocator : public se::ScratchAllocator {
+ public:
+  explicit ScratchBufAllocator(se::DeviceMemoryBase scratch)
+      : scratch_(scratch) {}
+
+  ~ScratchBufAllocator() override = default;
+
+  int64 GetMemoryLimitInBytes() override { return scratch_.size(); }
+
+  se::port::StatusOr<se::DeviceMemory<uint8>> AllocateBytes(
+      int64 byte_size) override {
+    if (allocated_) {
+      return se::port::InternalError(
+          "Can't allocate twice from a ScratchBufAllocator.");
+    }
+    if (byte_size > scratch_.size()) {
+      return se::port::InternalError(absl::StrCat(
+          "Can't allocate ", byte_size,
+          " bytes from a ScratchBufAllocator of size ", scratch_.size()));
+    }
+
+    allocated_ = true;
+    return se::DeviceMemory<uint8>(scratch_);
+  }
+
+  bool IsBufferNull() {return scratch_.is_null();}
+
+ private:
+  se::DeviceMemoryBase scratch_;
+  bool allocated_ = false;
+};
+
 // Returns true if the given StreamExecutor is for a Volta or newer nvidia GPU.
 bool IsVoltaOrLater(const se::StreamExecutor& stream_exec);
 

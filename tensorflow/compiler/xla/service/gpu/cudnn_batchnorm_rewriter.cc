@@ -133,7 +133,6 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   if (!EpsilonInRange(batch_norm)) {
     return Status::OK();
   }
-
   HloInstruction* epsilon =
       computation_->AddInstruction(HloInstruction::CreateConstant(
           LiteralUtil::CreateR0(batch_norm->epsilon())));
@@ -157,6 +156,18 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   for (int i = 1; i < batch_norm->shape().tuple_shapes_size(); i++) {
     batch_norm_tuple_shape.push_back(batch_norm->shape().tuple_shapes(i));
   }
+
+  auto num_outputs = batch_norm_tuple_shape.size();
+  bool use_reserve_space = (num_outputs == 4) ? true : false;
+  // When batch-norm-training hlo has been lowered from
+  // either FusedBatchnormV3 or FusedBatchNormEx, the hlo has
+  // an extra reserve space output i.e, 4 outputs. This implies that an extra
+  // temp workspace also needs to be allocated.
+  if (use_reserve_space) {
+    // Workspace -  TODO get correct size via stream_executor
+    batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {4096}));
+  }
+
   const Shape& batch_norm_shape =
       ShapeUtil::MakeTupleShape(batch_norm_tuple_shape);
 
@@ -195,12 +206,19 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   }
   // Repackage the results. Athough this tuple is redundant when convert is not
   // inserted, TupleSimplifier eliminates the Tuple eventually
-  std::unique_ptr<HloInstruction> replacing_tuple = HloInstruction::CreateTuple(
-      {new_gte,
-       computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
-           libcall->shape().tuple_shapes(1), libcall, 1)),
-       variance});
+  HloInstruction::InstructionVector replacing_tuple_elements = {
+      new_gte,
+      computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
+          libcall->shape().tuple_shapes(1), libcall, 1)),
+      variance};
 
+  if (use_reserve_space) {
+    replacing_tuple_elements.push_back(
+        computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
+            libcall->shape().tuple_shapes(3), libcall, 3)));
+  }
+  std::unique_ptr<HloInstruction> replacing_tuple =
+      HloInstruction::CreateTuple(replacing_tuple_elements);
   TF_RETURN_IF_ERROR(computation_->ReplaceWithNewInstruction(
       batch_norm, std::move(replacing_tuple)));
   changed_ = true;
@@ -208,6 +226,7 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
 }
 
 Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
+  VLOG(1) << batch_norm->ToString();
   if (batch_norm->operand(0)->shape().element_type() != F32) {
     VLOG(1) << "Not rewriting op with non-F32 element type: "
             << batch_norm->ToString();
@@ -269,6 +288,24 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
   for (int i = 1; i < batch_norm->shape().tuple_shapes_size(); i++) {
     batch_norm_tuple_shape.push_back(batch_norm->shape().tuple_shapes(i));
   }
+
+  auto num_inputs = batch_norm->operand_count();
+  bool use_reserve_space = (num_inputs == 6) ? true : false;
+  // When batch-norm-grad hlo has been lowered from
+  // either FusedBatchnormGradV3 or FusedBatchNormGradEx, the hlo has
+  // an extra reserve space input i.e, 6 inputs {operand, scale, mean, variance, out_grad, reserve_space}. 
+  // This implies that an extra temp workspace also needs to be allocated.
+
+  std::cout << "(batch_norm->operand_count() = " << batch_norm->operand_count()
+            << std::endl;
+  std::cout << "operands.size() = " << operands.size() << std::endl;
+  // TO DO if (batch_norm->operand_count() == )
+  // Workspace -  TODO get correct size via stream_executor
+  if (use_reserve_space) {
+      batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {4096}));
+  }
+  
+
   const Shape& batch_norm_shape =
       ShapeUtil::MakeTupleShape(batch_norm_tuple_shape);
   HloInstruction* libcall =
