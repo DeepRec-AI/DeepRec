@@ -716,9 +716,6 @@ class HloInstruction {
       const Shape& shape, HloInstruction* operand_0, 
       HloInstruction* scale,
       absl::Span<HloInstruction* const> other_operands,
-      /*HloInstruction* operand, HloInstruction* scale,
-      HloInstruction* mean, HloInstruction* variance,
-      HloInstruction* grad_output, HloInstruction* reserve_space,*/
       float epsilon, int64 feature_index);
 
   // Creates a scatter computation that scatters the `source` array to the

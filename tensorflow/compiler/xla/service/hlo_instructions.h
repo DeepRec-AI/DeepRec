@@ -33,12 +33,6 @@ class HloBatchNormInstruction : public HloInstruction {
   // number added to the variance to avoid divide-by-zero error.
   float epsilon() const { return epsilon_; }
 
-  // Returns bool to determine whether the op requires reserve space.
-  // bool use_reserve_space() const {return use_reserve_space_;}
-
-  // Set flag whether op requires reserved space
-  // void set_use_reserve_space(bool reserve) {use_reserve_space_ =  reserve;}
-
   // Returns a serialized representation of this instruction.
   HloInstructionProto ToProto() const override;
 
@@ -60,11 +54,6 @@ class HloBatchNormInstruction : public HloInstruction {
 
   // An integer value representing the index of the feature dimension.
   int64 feature_index_ = -1;
-
-  // Flag to determine whether to use reserve space. FusedBatchNorm(Grad)V3
-  // and FusedBatchNorm(Grad)Ex make use of a reserve space to forward bits from
-  // forward to the backward pass.
-  // bool use_reserve_space_ = false;
 };
 
 class HloBatchNormTrainingInstruction : public HloBatchNormInstruction {
@@ -98,11 +87,6 @@ class HloBatchNormInferenceInstruction : public HloBatchNormInstruction {
 
 class HloBatchNormGradInstruction : public HloBatchNormInstruction {
  public:
-//   explicit HloBatchNormGradInstruction(
-//       const Shape& shape, HloInstruction* operand, HloInstruction* scale,
-//       HloInstruction* mean, HloInstruction* variance,
-//       HloInstruction* grad_output, HloInstruction* reserve_space,
-//       float epsilon, int64 feature_index);
   explicit HloBatchNormGradInstruction(
       const Shape& shape, HloInstruction* operand_0, HloInstruction* scale,
       absl::Span<HloInstruction* const> other_operands,

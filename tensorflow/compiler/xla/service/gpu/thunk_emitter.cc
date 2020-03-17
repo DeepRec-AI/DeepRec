@@ -161,36 +161,6 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
     return Status::OK();
   }
 
-  // if (custom_call->custom_call_target() ==
-  //     kCudnnBatchNormForwardTrainingCallTarget) {
-  //   const HloInstruction* epsilon = custom_call->operand(3);
-  //   CHECK(epsilon->IsConstant());
-  //   float epsilon_value = epsilon->literal().Get<float>({});
-
-  //   const HloInstruction* feature_index = custom_call->operand(4);
-  //   CHECK(feature_index->IsConstant());
-  //   int64 feature_index_value = feature_index->literal().Get<int64>({});
-
-  //   // BatchNormTraining returns a tuple of three elements: data, calculated
-  //   // mean, and calculated 1/sqrt(variance + epsilon).
-  //   auto output_data = GetAllocationSlice(*custom_call, {0});
-  //   auto output_mean = GetAllocationSlice(*custom_call, {1});
-  //   auto output_inv_stddev = GetAllocationSlice(*custom_call, {2});
-  //   AddThunkToThunkSequence(
-  //       absl::make_unique<CudnnBatchNormForwardTrainingThunk>(
-  //           /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
-  //           /*scale=*/GetAllocationSlice(*custom_call->operand(1)),
-  //           /*offset=*/GetAllocationSlice(*custom_call->operand(2)),
-  //           /*epsilon=*/epsilon_value,
-  //           /*feature_index=*/feature_index_value,
-  //           /*output_data=*/output_data,
-  //           /*output_mean=*/output_mean,
-  //           /*output_inv_stddev=*/output_inv_stddev,
-  //           /*output_tuple=*/GetAllocationSlice(*custom_call),
-  //           /*hlo=*/custom_call));
-  //   return Status::OK();
-  // }
-
   if (custom_call->custom_call_target() ==
       kCudnnBatchNormForwardTrainingCallTarget) {
     const HloInstruction* epsilon = custom_call->operand(3);

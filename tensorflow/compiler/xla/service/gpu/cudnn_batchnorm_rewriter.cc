@@ -133,6 +133,7 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   if (!EpsilonInRange(batch_norm)) {
     return Status::OK();
   }
+
   HloInstruction* epsilon =
       computation_->AddInstruction(HloInstruction::CreateConstant(
           LiteralUtil::CreateR0(batch_norm->epsilon())));

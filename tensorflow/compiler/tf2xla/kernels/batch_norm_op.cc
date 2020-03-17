@@ -157,7 +157,6 @@ class FusedBatchNormOp : public XlaOpKernel {
       ctx->SetOutput(3, ctx->Input(3));
       ctx->SetOutput(4, ctx->Input(4));
     }
-    VLOG(1) << "No. of Outputs FusedBatchNormOp after setting outputs: " << ctx->num_outputs();
   }
 protected:
   xla::XlaOp batch_norm_training_;
@@ -181,8 +180,6 @@ class FusedBatchNormOpV3 : public FusedBatchNormOp {
     if (!ctx->status().ok()) {
       return;
     }
-    //ctx->SetConstantOutput(5, Tensor());
-
     ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
   }
 };
@@ -198,8 +195,6 @@ class FusedBatchNormOpEx : public FusedBatchNormOp {
       return;
     }
     ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
-
-    // ctx->SetConstantOutput(5, Tensor());
   }
 };
 
@@ -267,9 +262,6 @@ class FusedBatchNormGradOp : public XlaOpKernel {
       if (use_reserved_space) {
         reserve_space = ctx->Input(5);
       }
-      std::string Str = (reserve_space.IsUninitialized()) ? "Is Uninitialized"
-                                                          : "Initialized";
-      VLOG(1) << Str;
       xla::XlaOp output =
           xla::BatchNormGrad(activations, scale, mean, var, grad_backprop, reserve_space, 
                              epsilon_, feature_index);
@@ -319,7 +311,6 @@ class FusedBatchNormGradOp : public XlaOpKernel {
     ctx->SetOutput(2, offset_backprop);
     ctx->SetConstantOutput(3, Tensor());
     ctx->SetConstantOutput(4, Tensor());
-    VLOG(1) << "No. of Outputs FusedBatchNormGradOp after setting outputs: " << ctx->num_outputs();
   }
 
  private:

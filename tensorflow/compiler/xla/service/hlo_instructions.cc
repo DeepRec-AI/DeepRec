@@ -142,19 +142,6 @@ HloBatchNormInferenceInstruction::CloneWithNewOperandsImpl(
       new_operands[4], epsilon(), feature_index());
 }
 
-// HloBatchNormGradInstruction::HloBatchNormGradInstruction(
-//     const Shape& shape, HloInstruction* operand, HloInstruction* scale,
-//     HloInstruction* mean, HloInstruction* variance, HloInstruction* grad_output,
-//     HloInstruction* reserve_space, float epsilon, int64 feature_index)
-//     : HloBatchNormInstruction(HloOpcode::kBatchNormGrad, shape, operand, scale,
-//                               epsilon, feature_index) {
-//   AppendOperand(mean);
-//   AppendOperand(variance);
-//   AppendOperand(grad_output);
-//   CHECK_NE(reserve_space, nullptr);
-//   AppendOperand(reserve_space);
-// }
-
 HloBatchNormGradInstruction::HloBatchNormGradInstruction(
       const Shape& shape, HloInstruction* operand_0, HloInstruction* scale,
       absl::Span<HloInstruction* const> other_operands,
@@ -165,16 +152,6 @@ HloBatchNormGradInstruction::HloBatchNormGradInstruction(
     AppendOperand(operand);
   }
 }
-
-// std::unique_ptr<HloInstruction>
-// HloBatchNormGradInstruction::CloneWithNewOperandsImpl(
-//     const Shape& shape, absl::Span<HloInstruction* const> new_operands,
-//     HloCloneContext* context) const {
-//   CHECK_EQ(new_operands.size(), 5);
-//   return absl::make_unique<HloBatchNormGradInstruction>(
-//       shape, new_operands[0], new_operands[1], new_operands[2], new_operands[3],
-//       new_operands[4], new_operands[5], epsilon(), feature_index());
-// }
 
 std::unique_ptr<HloInstruction>
 HloBatchNormGradInstruction::CloneWithNewOperandsImpl(

@@ -73,36 +73,6 @@ class CudnnBatchNormForwardInferenceThunk : public Thunk {
   BufferAllocation::Slice output_;
 };
 
-// class CudnnBatchNormForwardTrainingThunk : public Thunk {
-//  public:
-//   CudnnBatchNormForwardTrainingThunk(
-//       const BufferAllocation::Slice& operand,
-//       const BufferAllocation::Slice& scale,
-//       const BufferAllocation::Slice& offset, float epsilon, int64
-//       feature_index, const BufferAllocation::Slice& output_data, const
-//       BufferAllocation::Slice& output_mean, const BufferAllocation::Slice&
-//       output_inv_stddev, const BufferAllocation::Slice& output_tuple, const
-//       HloInstruction* hlo);
-
-//   CudnnBatchNormForwardTrainingThunk(
-//       const CudnnBatchNormForwardTrainingThunk&) = delete;
-//   CudnnBatchNormForwardTrainingThunk& operator=(
-//       const CudnnBatchNormForwardTrainingThunk&) = delete;
-
-//   Status ExecuteOnStream(const ExecuteParams& params) override;
-
-//  private:
-//   BufferAllocation::Slice operand_;
-//   BufferAllocation::Slice scale_;
-//   BufferAllocation::Slice offset_;
-//   float epsilon_;
-//   int64 feature_index_;
-//   BufferAllocation::Slice output_data_;
-//   BufferAllocation::Slice output_mean_;
-//   BufferAllocation::Slice output_inv_stddev_;
-//   BufferAllocation::Slice output_tuple_;
-// };
-
 class CudnnBatchNormForwardTrainingThunk : public Thunk {
  public:
   CudnnBatchNormForwardTrainingThunk(
