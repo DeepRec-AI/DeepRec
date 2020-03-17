@@ -231,6 +231,8 @@ class CuptiTracer {
 
   bool activity_tracing_enabled_ = false;
 
+  bool subscriber_existed_ = false;
+
   TF_DISALLOW_COPY_AND_ASSIGN(CuptiTracer);
 };
 
