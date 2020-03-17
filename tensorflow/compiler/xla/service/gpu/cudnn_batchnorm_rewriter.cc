@@ -166,7 +166,7 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   // temp workspace also needs to be allocated.
   if (use_reserve_space) {
     // Workspace -  TODO get correct size via stream_executor
-    batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {4096}));
+    batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {1728656}));
   }
 
   const Shape& batch_norm_shape =
@@ -298,13 +298,13 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
   // variance, out_grad, reserve_space}. This implies that an extra
   // temp workspace also needs to be allocated.
 
-  std::cout << "(batch_norm->operand_count() = " << batch_norm->operand_count()
-            << std::endl;
-  std::cout << "operands.size() = " << operands.size() << std::endl;
+  // std::cout << "(batch_norm->operand_count() = " << batch_norm->operand_count()
+  //           << std::endl;
+  // std::cout << "operands.size() = " << operands.size() << std::endl;
   // TO DO if (batch_norm->operand_count() == )
   // Workspace -  TODO get correct size via stream_executor
   if (use_reserve_space) {
-      batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {4096}));
+      batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {3212336}));
   }
   
 

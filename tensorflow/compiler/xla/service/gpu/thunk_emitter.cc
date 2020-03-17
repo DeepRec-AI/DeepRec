@@ -261,22 +261,6 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
 
     // BatchNormGrad returns a tuple of three elements: grad_data, grad_scale,
     // grad_offset.
-    // auto output_grad_data = GetAllocationSlice(*custom_call, {0});
-    // auto output_grad_scale = GetAllocationSlice(*custom_call, {1});
-    // auto output_grad_offset = GetAllocationSlice(*custom_call, {2});
-    // AddThunkToThunkSequence(absl::make_unique<CudnnBatchNormBackwardThunk>(
-    //     /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
-    //     /*scale=*/GetAllocationSlice(*custom_call->operand(1)),
-    //     /*mean=*/GetAllocationSlice(*custom_call->operand(2)),
-    //     /*inv_stddev=*/GetAllocationSlice(*custom_call->operand(3)),
-    //     /*grad_output=*/GetAllocationSlice(*custom_call->operand(4)),
-    //     /*epsilon=*/epsilon_value,
-    //     /*feature_index=*/feature_index_value,
-    //     /*output_grad_data=*/output_grad_data,
-    //     /*output_grad_scale=*/output_grad_scale,
-    //     /*output_grad_offset=*/output_grad_offset,
-    //     /*output_tuple=*/GetAllocationSlice(*custom_call),
-    //     /*hlo=*/custom_call));
     std::vector<BufferAllocation::Slice> operand_slices =
         get_batch_norm_operand_slices(custom_call);
     std::vector<BufferAllocation::Slice> output_slices =

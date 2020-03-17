@@ -1271,7 +1271,7 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
   if (use_reserve_space) {
     return ShapeUtil::MakeTupleShape(
         {operand_shape, output_shape_for_mean_and_var,
-         output_shape_for_mean_and_var, ShapeUtil::MakeShape(U8, {4096})});
+         output_shape_for_mean_and_var, ShapeUtil::MakeShape(U8, {12846080})});
   }
 
   return ShapeUtil::MakeTupleShape({operand_shape,

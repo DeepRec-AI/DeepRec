@@ -98,19 +98,6 @@ class CudnnBatchNormForwardTrainingThunk : public Thunk {
 
 class CudnnBatchNormBackwardThunk : public Thunk {
  public:
-  //   CudnnBatchNormBackwardThunk(const BufferAllocation::Slice& operand,
-  //                               const BufferAllocation::Slice& scale,
-  //                               const BufferAllocation::Slice& mean,
-  //                               const BufferAllocation::Slice& inv_stddev,
-  //                               const BufferAllocation::Slice& grad_output,
-  //                               float epsilon, int64 feature_index,
-  //                               const BufferAllocation::Slice&
-  //                               output_grad_data, const
-  //                               BufferAllocation::Slice& output_grad_scale,
-  //                               const BufferAllocation::Slice&
-  //                               output_grad_offset, const
-  //                               BufferAllocation::Slice& output_tuple, const
-  //                               HloInstruction* hlo);
   CudnnBatchNormBackwardThunk(
       std::vector<BufferAllocation::Slice> operand_slices,
       std::vector<BufferAllocation::Slice> output_slices, float epsilon,

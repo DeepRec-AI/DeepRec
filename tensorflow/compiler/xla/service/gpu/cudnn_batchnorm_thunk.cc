@@ -222,37 +222,6 @@ Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
   return Status::OK();
 }
 
-// CudnnBatchNormBackwardThunk::CudnnBatchNormBackwardThunk(
-//     const BufferAllocation::Slice& operand,
-//     const BufferAllocation::Slice& scale, const BufferAllocation::Slice&
-//     mean, const BufferAllocation::Slice& inv_stddev, const
-//     BufferAllocation::Slice& grad_output, float epsilon, int64 feature_index,
-//     const BufferAllocation::Slice& output_grad_data, const
-//     BufferAllocation::Slice& output_grad_scale, const
-//     BufferAllocation::Slice& output_grad_offset, const
-//     BufferAllocation::Slice& output_tuple, const HloInstruction* hlo) :
-//     Thunk(Thunk::Kind::kCudnnBatchNormBackward, hlo),
-//       operand_(operand),
-//       scale_(scale),
-//       mean_(mean),
-//       inv_stddev_(inv_stddev),
-//       grad_output_(grad_output),
-//       epsilon_(epsilon),
-//       feature_index_(feature_index),
-//       output_grad_data_(output_grad_data),
-//       output_grad_scale_(output_grad_scale),
-//       output_grad_offset_(output_grad_offset),
-//       output_tuple_(output_tuple) {
-//   CHECK_EQ(hlo->opcode(), HloOpcode::kCustomCall);
-//   CHECK_EQ(hlo->custom_call_target(), kCudnnBatchNormBackwardCallTarget);
-//   CHECK_LE(hlo->shape().tuple_shapes_size(), 4);
-//   CHECK(LayoutUtil::LayoutsInShapesEqual(hlo->shape().tuple_shapes(0),
-//                                          hlo->operand(0)->shape()));
-//   CHECK(LayoutUtil::LayoutsInShapesEqual(hlo->shape().tuple_shapes(0),
-//                                          hlo->operand(4)->shape()));
-//   CheckInputOutputPrimitivetypeAreValid(hlo);
-// }
-
 CudnnBatchNormBackwardThunk::CudnnBatchNormBackwardThunk(
     std::vector<BufferAllocation::Slice> operand_slices,
     std::vector<BufferAllocation::Slice> output_slices, float epsilon,
@@ -274,54 +243,13 @@ CudnnBatchNormBackwardThunk::CudnnBatchNormBackwardThunk(
   CheckInputOutputPrimitivetypeAreValid(hlo);
 }
 
-// Status CudnnBatchNormBackwardThunk::ExecuteOnStream(
-//     const ExecuteParams& params) {
-//   auto& buffer_allocations = *params.buffer_allocations;
-//   se::DeviceMemoryBase operand =
-//   buffer_allocations.GetDeviceAddress(operand_); se::DeviceMemoryBase
-//   output_grad_data =
-//       buffer_allocations.GetDeviceAddress(output_grad_data_);
-//   se::DeviceMemoryBase grad_output =
-//       buffer_allocations.GetDeviceAddress(grad_output_);
-//   se::DeviceMemory<float> output_grad_scale(
-//       buffer_allocations.GetDeviceAddress(output_grad_scale_));
-//   se::DeviceMemory<float> output_grad_offset(
-//       buffer_allocations.GetDeviceAddress(output_grad_offset_));
-
-//   auto op_profiler =
-//       params.profiler->MakeScopedInstructionProfiler(hlo_instruction());
-//   se::Stream* stream = params.stream;
-//   TF_RETURN_IF_ERROR(RunCudnnBatchNormBackward(
-//       hlo_instruction(), operand, output_grad_data, grad_output,
-//       output_grad_scale, output_grad_offset,
-//       se::DeviceMemory<float>(buffer_allocations.GetDeviceAddress(scale_)),
-//       se::DeviceMemory<float>(buffer_allocations.GetDeviceAddress(mean_)),
-//       se::DeviceMemory<float>(buffer_allocations.GetDeviceAddress(inv_stddev_)),
-//       epsilon_, feature_index_, stream));
-
-//   // Write the output tuple.
-//   const int kNumOutputs = 3;
-//   auto ptrs = absl::make_unique<void*[]>(kNumOutputs);
-//   ptrs[0] = output_grad_data.opaque();
-//   ptrs[1] = output_grad_scale.opaque();
-//   ptrs[2] = output_grad_offset.opaque();
-//   se::DeviceMemory<void*> tuple_addr(
-//       buffer_allocations.GetDeviceAddress(output_tuple_));
-//   SafeH2DMemcpy(tuple_addr, std::move(ptrs), kNumOutputs, stream);
-
-//   if (!stream->ok()) {
-//     return InternalError("BatchNormalizationBackward call failed.");
-//   }
-//   return Status::OK();
-// }
-
 Status CudnnBatchNormBackwardThunk::ExecuteOnStream(
     const ExecuteParams& params) {
   auto& buffer_allocations = *params.buffer_allocations;
   CHECK_LE(operand_slices_.size(), 6);
   CHECK_GE(operand_slices_.size(), 5);
   CHECK_LE(output_slices_.size(), 4);
-  CHECK_LE(output_slices_.size(), 3);
+  CHECK_GE(output_slices_.size(), 3);
 
   // Operand Slices
   se::DeviceMemoryBase operand =

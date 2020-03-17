@@ -156,12 +156,12 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
           operands(4), proto.epsilon(), proto.feature_index());
       break;
     case HloOpcode::kBatchNormGrad: {
-      std::cout << "Number of BatchNormGrad operands in CreateFromProto: " << proto.operand_ids_size() << std::endl;
-      std::cout << "Out Shape of BatchNormGrad in CreateFromProto: " << shape.ToString() << std::endl;
-      for (int i = 0; i < proto.operand_ids_size(); i++){
-        std::cout << "operands(): " << operands(i)->ToString() << std::endl;
-      }
-      std::cout << std::endl;
+      // std::cout << "Number of BatchNormGrad operands in CreateFromProto: " << proto.operand_ids_size() << std::endl;
+      // std::cout << "Out Shape of BatchNormGrad in CreateFromProto: " << shape.ToString() << std::endl;
+      // for (int i = 0; i < proto.operand_ids_size(); i++){
+      //   std::cout << "operands(): " << operands(i)->ToString() << std::endl;
+      // }
+      // std::cout << std::endl;
       auto operand_0 = operands(0);
       auto scale = operands(1);
       std::vector<HloInstruction*> other_operands(proto.operand_ids_size()-2);
@@ -169,12 +169,12 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
                    other_operands.begin(), [&instruction_map](int64 operand_id) {
                      return instruction_map.at(operand_id);
                    });
-      std::cout << "operand_0: " << operand_0->ToString() << std::endl;
-      std::cout << "scale operand_1: " << scale->ToString() << std::endl;
-      for(auto oper : other_operands) {
-        std::cout << oper->ToString() << std::endl;
-      }
-      std::cout << "Num other_operands: " << other_operands.size() << std::endl;
+      // std::cout << "operand_0: " << operand_0->ToString() << std::endl;
+      // std::cout << "scale operand_1: " << scale->ToString() << std::endl;
+      // for(auto oper : other_operands) {
+      //   std::cout << oper->ToString() << std::endl;
+      // }
+      // std::cout << "Num other_operands: " << other_operands.size() << std::endl;
       instruction = CreateBatchNormGrad(shape, operand_0, scale, other_operands,
                                         proto.epsilon(), proto.feature_index());
       break;
