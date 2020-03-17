@@ -950,6 +950,8 @@ class AutoMixedPrecisionImpl {
   bool NodeImplicitlyReadsNonResourceVariable(const NodeDef& node) const;
   void ConvertBatchNormOpsToV2();
   bool SupportsFloat16(const NodeTypeId& node_type) const;
+  void CountRecognizedNodes(int* num_processable_nodes,
+                            int* num_recognized_nodes) const;
   const NodeTypeId* GetTensorListFloat32NodeTypeId(const NodeDef& node) const;
   bool IsSourceOrSinkOp(const string& op) const;
   void FindFloat32TensorListOpClustersAndBlacklistUnsafe(
@@ -960,7 +962,7 @@ class AutoMixedPrecisionImpl {
       std::vector<NodeTypeIdEdge>* implicit_data_edges) const;
   void AddWhitelistOps(absl::flat_hash_set<int>* white_set) const;
   void PropagateBlackFwdThroughClearAndGray(
-      absl::flat_hash_set<int>* black_set) const;
+      absl::flat_hash_set<int>* black_set, int* num_blacklist_nodes) const;
   void ForceColorMatchBetweenTensorListOps(
       const absl::flat_hash_set<const NodeDef*>& tensor_list_nodes,
       absl::flat_hash_set<int>* white_set,
@@ -1333,6 +1335,7 @@ Status AutoMixedPrecisionImpl::Optimize() {
   for (const auto& cluster : tensor_list_clusters) {
     ForceColorMatchBetweenTensorListOps(cluster, &white_set, &black_set);
   }
+  int num_blacklist_affected_nodes = black_set.size() - num_blacklist_nodes;
 
   VLOG(2) << "Beginning pass 3 to set clear and gray nodes to white if they "
              "are between white ops";
