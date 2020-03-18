@@ -149,24 +149,42 @@ Status FusedIrEmitter::HandleGetTupleElement(
 }
 
 Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
+  std::vector<llvm::Value*> buffer;
   indexed_generators_[parameter] =
-      [=](const IrArray::Index& index) -> llvm::Value* {
+      [=](const IrArray::Index& index) mutable -> llvm::Value* {
     int64 param_num = parameter->parameter_number();
-    if (param_shmem_buffers_.size() > param_num) {
-      if (llvm::Value* param_tile_buffer = param_shmem_buffers_[param_num]) {
-        // TODO(jlebar): Add AA metadata to this load.  Tile buffers are global
-        // variables, so LLVM's points-to analysis doesn't help us much.  And we
-        // want the AA info to be present before address spaces are inferred
-        // (which is pretty late in the pipeline), so even if we had
-        // address-space-based AA in LLVM, it wouldn't help us much here.
-        return b_->CreateLoad(
-            b_->CreateGEP(param_tile_buffer, {index.GetConstantWithIndexType(0),
-                                              thread_id_x_, thread_id_y_}),
-            "tiled_buffer");
+    if (vector_size_.count(parameter) == 0) {
+      CHECK_EQ(buffer.size(), 0);
+      if (param_shmem_buffers_.size() > param_num) {
+        if (llvm::Value* param_tile_buffer = param_shmem_buffers_[param_num]) {
+          // TODO(jlebar): Add AA metadata to this load.  Tile buffers are
+          // global variables, so LLVM's points-to analysis doesn't help us
+          // much.  And we want the AA info to be present before address spaces
+          // are inferred (which is pretty late in the pipeline), so even if we
+          // had address-space-based AA in LLVM, it wouldn't help us much here.
+          return b_->CreateLoad(
+              b_->CreateGEP(param_tile_buffer,
+                            {index.GetConstantWithIndexType(0), thread_id_x_,
+                             thread_id_y_}),
+              "tiled_buffer");
+        }
       }
+      // TODO: Load by vector size and return the next value at the next call.
+      // TOOD: only load by vector size when enough elements are left to read.
+      return GetIrArrayForFusedParameter(param_num).EmitReadArrayElement(index,
+                                                                         b_);
+    } else {
+      CHECK(param_shmem_buffers_.size() <= param_num ||
+            !param_shmem_buffers_[param_num]);
+      if (buffer.size() == 0) {
+        buffer = GetIrArrayForFusedParameter(param_num)
+                     .EmitReadConsecutiveArrayElement(index, b_, "", true,
+                                                      vector_size_[parameter]);
+      }
+      auto val = buffer.front();
+      buffer.erase(buffer.begin());
+      return val;
     }
-    return GetIrArrayForFusedParameter(param_num).EmitReadArrayElement(index,
-                                                                       b_);
   };
   return Status::OK();
 }

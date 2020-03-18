@@ -58,11 +58,12 @@ class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
   using GeneratorForOperandIrArrays =
       std::function<std::vector<llvm_ir::IrArray>()>;
 
-  FusedIrEmitter(GeneratorForOperandIrArrays operand_arrays_generator,
-                 ElementalIrEmitter* elemental_emitter,
-                 llvm::Value* thread_id_x = nullptr,
-                 llvm::Value* thread_id_y = nullptr,
-                 absl::Span<llvm::Value* const> param_shmem_buffers = {})
+  FusedIrEmitter(
+      GeneratorForOperandIrArrays operand_arrays_generator,
+      ElementalIrEmitter* elemental_emitter, llvm::Value* thread_id_x = nullptr,
+      llvm::Value* thread_id_y = nullptr,
+      absl::Span<llvm::Value* const> param_shmem_buffers = {},
+      std::unordered_map<const HloInstruction*, int> vector_size = {})
       : operand_arrays_(),
         operand_arrays_generator_(std::move(operand_arrays_generator)),
         thread_id_x_(thread_id_x),
@@ -71,7 +72,8 @@ class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
                              param_shmem_buffers.end()),
         elemental_emitter_(elemental_emitter),
         b_(elemental_emitter->b()),
-        module_(elemental_emitter->module()) {}
+        module_(elemental_emitter->module()),
+        vector_size_(vector_size) {}
 
   Status DefaultAction(const HloInstruction* hlo) override;
 
@@ -157,6 +159,8 @@ class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
       const HloInstruction*,
       absl::flat_hash_map<std::vector<llvm::Value*>, llvm::Value*>>
       generated_value_cache_;
+
+  std::unordered_map<const HloInstruction*, int> vector_size_;
 };
 
 }  // namespace xla

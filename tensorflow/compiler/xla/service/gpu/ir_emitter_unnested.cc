@@ -2525,14 +2525,24 @@ void IrEmitterUnnested::EmitTileElementForReduction(
   VLOG(10) << "Emit tile element for reduce " << unnested_hlo->ToString();
   bool returns_tuple = output_instructions.size() > 1;
   int partial_result_index = reduction_info.IsRowReduction() ? 0 : x_iter_num;
-
+  int vector_size_load = 1;
+  if (preload) {
+    vector_size_load = vector_size;
+  }
   InlinedVector<llvm_ir::ElementGenerator, 1> input_gens;
   std::vector<std::pair<llvm_ir::ElementGenerator, ShapeIndex>>
       extra_output_gens;
   GpuElementalIrEmitter elem_emitter(hlo_module_config_, module_, &b_,
                                      GetNestedComputer());
+  std::unordered_map<const HloInstruction*, int> vector_size_map;
+  for (auto hlo : unnested_hlo->operands()) {
+    if (vector_size > 1 && hlo->shape() == reduction_operand_shape) {
+      vector_size_map[hlo] = vector_size;
+    }
+  }
   FusedIrEmitter fused_emitter(GetGeneratorForOperandIrArrays(unnested_hlo),
-                               &elem_emitter);
+                               &elem_emitter, nullptr, nullptr, {},
+                               vector_size_map);
   // Construct the ElementGenerator for each reduction and extra output in the
   // the group of output instructions.
   if (unnested_hlo->opcode() == HloOpcode::kFusion) {
@@ -2549,9 +2559,17 @@ void IrEmitterUnnested::EmitTileElementForReduction(
       }
     }
   } else {
-    input_gens.push_back([&](const IrArray::Index& index) {
-      return GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
-          .EmitReadArrayElement(index, &b_);
+    std::vector<llvm::Value*> buffer;
+    input_gens.push_back([&, buffer](const IrArray::Index& index) mutable {
+      // The load is generated here.
+      if (buffer.empty()) {
+        buffer = GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
+                     .EmitReadConsecutiveArrayElement(index, &b_, "", true,
+                                                      vector_size_load);
+      }
+      auto val = buffer.front();
+      buffer.erase(buffer.begin());
+      return val;
     });
   }
 
@@ -2566,40 +2584,21 @@ void IrEmitterUnnested::EmitTileElementForReduction(
 
   // Emit code to generate the input and perform the reduction computation for
   // each reduction instruction.
-  if (vector_size > 1 && preload &&
-      unnested_hlo->opcode() != HloOpcode::kFusion) {
-    CHECK_EQ(1, reducers.size());
-    CHECK_EQ(num_partial_results, 1);
-    //    CHECK_NE(unnested_hlo->opcode(), HloOpcode::kFusion);
-    // TODO: load all the data.
-    // TODO: unpack element j.
-    llvm::AllocaInst* input_address =
-        reduction_info.GetReductionInputAddresses()[0];
-    llvm::AllocaInst* partial_reduction_result_address =
-        reduction_info.GetPartialResultAddresses()[0];
-    std::vector<llvm::Value*> input_ir_values =
-        GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
-            .EmitReadConsecutiveArrayElement(input_index, &b_, "", true,
-                                             vector_size);
-    llvm::Value* partial_result_address = InBoundsGEP(
-        partial_reduction_result_address, {b_.getInt32(partial_result_index)});
-    for (llvm::Value* input_ir_value : input_ir_values) {
-      Store(input_ir_value, input_address);
-      TF_CHECK_OK(EmitCallToNestedComputation(
-          *reducers[0], {partial_result_address, input_address},
-          partial_result_address));
-    }
-  } else {
-    auto index_without_linear = IrArray::Index(
-        input_index.multidim(), reduction_operand_shape, input_index.GetType());
-    for (int i = 0; i != reducers.size(); ++i) {
+  for (int i = 0; i != reducers.size(); ++i) {
+    for (int j = 0; j < vector_size; ++j) {
+      IrArray::Index current_input_index = input_index.AddOffsetToDim(
+          llvm::ConstantInt::get(input_index.GetType(), j),
+          input_index.size() - 1, &b_);
+      auto index_without_linear = IrArray::Index(current_input_index.multidim(),
+                                                 reduction_operand_shape,
+                                                 current_input_index.GetType());
       llvm::AllocaInst* input_address =
           reduction_info.GetReductionInputAddresses()[i];
       llvm::AllocaInst* partial_reduction_result_address =
           reduction_info.GetPartialResultAddresses()[i];
       llvm::Value* const input_ir_value =
           input_gens[i](num_partial_results > 1 ? index_without_linear
-                                                : input_index)
+                                                : current_input_index)
               .ValueOrDie();
       Store(input_ir_value, input_address);
       llvm::Value* partial_result_address =
