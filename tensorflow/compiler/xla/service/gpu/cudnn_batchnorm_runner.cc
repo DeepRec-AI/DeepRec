@@ -92,13 +92,18 @@ DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
   for (; physical_dim < shape.dimensions_size(); ++physical_dim) {
     y_size *= physical_dim_size(physical_dim);
   }
+  // batch_size = physical_dim_size(0);
+  // y_size = physical_dim_size(1);
+  // int64 width = physical_dim_size(2);
 
   DnnBatchDescriptors batch_descs;
-  batch_descs.input_desc.set_layout(se::dnn::DataLayout::kBatchDepthYX)
+  batch_descs.input_desc
+      .set_layout(se::dnn::DataLayout::
+                      kBatchYXDepth /*se::dnn::DataLayout::kBatchDepthYX*/)
       .set_count(batch_size)
       .set_feature_map_count(shape.dimensions(feature_index))
       .set_height(y_size)
-      .set_width(1);
+      .set_width(1 /*width*/);
 
   batch_descs.scale_offset_desc.set_layout(se::dnn::DataLayout::kBatchDepthYX)
       .set_feature_map_count(batch_descs.input_desc.feature_map_count())

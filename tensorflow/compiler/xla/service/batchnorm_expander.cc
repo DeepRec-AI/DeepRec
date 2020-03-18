@@ -263,7 +263,15 @@ Status BatchNormExpanderVisitor::HandleBatchNormTraining(
   auto shifted_normalized = add_binary(operand_shape, HloOpcode::kAdd,
                                        scaled_normalized, offset_broadcasted);
 
-  auto tuple = HloInstruction::CreateTuple({shifted_normalized, mean, var});
+  HloInstruction::InstructionVector replacing_tuple_elements = {
+      shifted_normalized, mean, var};
+  if (batch_norm->shape().tuple_shapes_size() == 4) {
+    HloInstruction* dummy_instr =
+        computation_->AddInstruction(HloInstruction::CreateConstant(
+            Literal::CreateFromShape(batch_norm->shape().tuple_shapes(3))));
+    replacing_tuple_elements.push_back(dummy_instr);
+  }
+  auto tuple = HloInstruction::CreateTuple(replacing_tuple_elements);
 
   if (batch_norm->has_sharding()) {
     int64 instruction_count_after = computation_->instruction_count();

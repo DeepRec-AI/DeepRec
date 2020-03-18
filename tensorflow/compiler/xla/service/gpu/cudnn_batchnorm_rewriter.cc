@@ -166,6 +166,10 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   // temp workspace also needs to be allocated.
   if (use_reserve_space) {
     // Workspace -  TODO get correct size via stream_executor
+    batch_norm_tuple_shape.pop_back();
+    // Reserve space
+    batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {12846080}));
+    // Scratch Workspace
     batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {1728656}));
   }
 
