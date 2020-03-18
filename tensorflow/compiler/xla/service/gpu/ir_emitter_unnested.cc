@@ -1945,16 +1945,44 @@ static void UnrollInnerTileLoop(
     return llvm::ConstantInt::get(index_ty, val);
   };
   for (int j = 0; j < x_num_steps / vector_size; j++) {
-    for (int i = 0; i < vector_size; i++) {
-      int linear_index = j * vector_size + i;
-      llvm::Value* x_loc = b_.CreateAdd(constant(j * step_x * vector_size + i),
-                                        start_offset_x, "x_loc");
+    if (vector_size == 1 || check_x_tile_bounds) {
+      for (int i = 0; i < vector_size; i++) {
+        int linear_index = j * vector_size + i;
+        llvm::Value* x_loc = b_.CreateAdd(
+            constant(j * step_x * vector_size + i), start_offset_x, "x_loc");
+        IrArray::Index source_idx_x =
+            source_idx.AddOffsetToDim(y_loc, kDimY, &b_)
+                .AddOffsetToDim(constant(j * step_x * vector_size + i), kDimX,
+                                &b_);
+        auto emit_element = [&] {
+          return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
+                                       1, /*preload*/ false);
+        };
+        if (check_x_tile_bounds) {
+          ksl->If(loop_name + "_x_in_tile", b_.CreateICmpULT(x_loc, tile_width),
+                  emit_element);
+        } else {
+          emit_element();
+        }
+      }
+    } else {
+      // CHECK(!check_x_tile_bounds);
+      // TODO We only check the bonds for the first elements. Can we do better?
+      // Can we do a CHECK?
+      //      for (int i = 0; i < vector_size; i++) {
+      int linear_index = j * vector_size;  // + i;
+      llvm::Value* x_loc =
+          b_.CreateAdd(constant(j * step_x * vector_size),  // + i),
+                       start_offset_x, "x_loc");
       IrArray::Index source_idx_x =
           source_idx.AddOffsetToDim(y_loc, kDimY, &b_)
-              .AddOffsetToDim(constant(j * step_x * vector_size + i), kDimX,
+              .AddOffsetToDim(constant(j * step_x * vector_size),
+                              kDimX,  // + i), kDimX,
                               &b_);
       auto emit_element = [&] {
-        return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index);
+        return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
+                                     vector_size,
+                                     /*preload*/ !check_x_tile_bounds);
       };
       if (check_x_tile_bounds) {
         ksl->If(loop_name + "_x_in_tile", b_.CreateICmpULT(x_loc, tile_width),
@@ -2492,7 +2520,8 @@ void IrEmitterUnnested::EmitTileElementForReduction(
     absl::Span<HloInstruction* const> output_instructions,
     const llvm_ir::IrArray::Index& index,
     const ReductionCodegenInfo& reduction_info,
-    absl::Span<HloComputation* const> reducers, int64 x_iter_num) {
+    absl::Span<HloComputation* const> reducers, int64 x_iter_num,
+    int vector_size, bool preload) {
   VLOG(10) << "Emit tile element for reduce " << unnested_hlo->ToString();
   bool returns_tuple = output_instructions.size() > 1;
   int partial_result_index = reduction_info.IsRowReduction() ? 0 : x_iter_num;
@@ -2534,26 +2563,52 @@ void IrEmitterUnnested::EmitTileElementForReduction(
   // the computation for different partial results. Use this index if
   // 'num_partial_results > 1'.
   int num_partial_results = reduction_info.GetNumPartialResults();
-  auto index_without_linear = IrArray::Index(
-      input_index.multidim(), reduction_operand_shape, input_index.GetType());
 
   // Emit code to generate the input and perform the reduction computation for
   // each reduction instruction.
-  for (int i = 0; i != reducers.size(); ++i) {
+  if (vector_size > 1 && preload &&
+      unnested_hlo->opcode() != HloOpcode::kFusion) {
+    CHECK_EQ(1, reducers.size());
+    CHECK_EQ(num_partial_results, 1);
+    //    CHECK_NE(unnested_hlo->opcode(), HloOpcode::kFusion);
+    // TODO: load all the data.
+    // TODO: unpack element j.
     llvm::AllocaInst* input_address =
-        reduction_info.GetReductionInputAddresses()[i];
+        reduction_info.GetReductionInputAddresses()[0];
     llvm::AllocaInst* partial_reduction_result_address =
-        reduction_info.GetPartialResultAddresses()[i];
-    llvm::Value* const input_ir_value =
-        input_gens[i](num_partial_results > 1 ? index_without_linear
-                                              : input_index)
-            .ValueOrDie();
-    Store(input_ir_value, input_address);
+        reduction_info.GetPartialResultAddresses()[0];
+    std::vector<llvm::Value*> input_ir_values =
+        GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
+            .EmitReadConsecutiveArrayElement(input_index, &b_, "", true,
+                                             vector_size);
     llvm::Value* partial_result_address = InBoundsGEP(
         partial_reduction_result_address, {b_.getInt32(partial_result_index)});
-    TF_CHECK_OK(EmitCallToNestedComputation(
-        *reducers[i], {partial_result_address, input_address},
-        partial_result_address));
+    for (llvm::Value* input_ir_value : input_ir_values) {
+      Store(input_ir_value, input_address);
+      TF_CHECK_OK(EmitCallToNestedComputation(
+          *reducers[0], {partial_result_address, input_address},
+          partial_result_address));
+    }
+  } else {
+    auto index_without_linear = IrArray::Index(
+        input_index.multidim(), reduction_operand_shape, input_index.GetType());
+    for (int i = 0; i != reducers.size(); ++i) {
+      llvm::AllocaInst* input_address =
+          reduction_info.GetReductionInputAddresses()[i];
+      llvm::AllocaInst* partial_reduction_result_address =
+          reduction_info.GetPartialResultAddresses()[i];
+      llvm::Value* const input_ir_value =
+          input_gens[i](num_partial_results > 1 ? index_without_linear
+                                                : input_index)
+              .ValueOrDie();
+      Store(input_ir_value, input_address);
+      llvm::Value* partial_result_address =
+          InBoundsGEP(partial_reduction_result_address,
+                      {b_.getInt32(partial_result_index)});
+      TF_CHECK_OK(EmitCallToNestedComputation(
+          *reducers[i], {partial_result_address, input_address},
+          partial_result_address));
+    }
   }
 
   // Emit code to generate the output for the non-reduction instructions in the
@@ -2770,7 +2825,8 @@ void IrEmitterUnnested::EmitHlo021Tile(
 
   EmitElementFunction element_generator =
       [&](const llvm_ir::IrArray::Index& index, llvm::Value* y_loc,
-          llvm::Value* x_loc, int64 x_iter_num) {
+          llvm::Value* x_loc, int64 x_iter_num, int /*vector_size*/,
+          bool /*preload*/) {
         if (hlo->opcode() == HloOpcode::kCopy) {
           EmitTileElementForCopy(hlo, index, mapping_scheme, y_loc, x_loc,
                                  param_shmem_buffers);
@@ -2801,7 +2857,8 @@ void IrEmitterUnnested::EmitHlo021Tile(
           EmitTile(mapping_scheme, input_tile_origin, "input", ksl,
                    thread_id_info, tile_width, tile_height,
                    [&](const IrArray::Index& index, llvm::Value* y_loc,
-                       llvm::Value* x_loc, int64 /*x_iter_num*/) {
+                       llvm::Value* x_loc, int64 /*x_iter_num*/,
+                       int /*vector_size*/, bool /*preload*/) {
                      for (int64 id : tiled_param_ids) {
                        IrArray& input_in_logical_shape =
                            param_in_reduced_shape_arrays[id];
@@ -3287,10 +3344,10 @@ Status IrEmitterUnnested::EmitReductionFromOrToContiguousDimensions(
                            index_ty);
   EmitElementFunction emit_reduction_tile =
       [&](const llvm_ir::IrArray::Index& index, llvm::Value* y_loc,
-          llvm::Value* x_loc, int64 x_iter_num) {
+          llvm::Value* x_loc, int64 x_iter_num, int vector_size, bool preload) {
         EmitTileElementForReduction(unnested_hlo, input_shape,
                                     output_instructions, index, reduction_info,
-                                    reducers, x_iter_num);
+                                    reducers, x_iter_num, vector_size, preload);
       };
 
   TilingKernelInfo tiling_kernel_info = EmitTilingKernel(

@@ -111,6 +111,7 @@ CHECK: ld.global.nc.v2.f32
 CHECK: ld.global.nc.v2.f32
 CHECK: ld.global.nc.v2.f32
 CHECK: ld.global.nc.v2.f32
+CHECK-NOT: ld.global.nc.v2.f32
 )";
   } else {
     expected_ptx = R"(
@@ -157,13 +158,16 @@ ENTRY %main {
     expected_ptx = R"(
 CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
-CHECK: ld.global.nc.v2.f32
-CHECK: ld.global.nc.v2.f32
-CHECK: ld.global.nc.v2.f32
-CHECK-NOT: ld.global.nc.v2.f32
-// TODO: Make this a vectorized load
 CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
+CHECK: ld.global.nc.f32
+CHECK: ld.global.nc.f32
+CHECK: ld.global.nc.f32
+CHECK: ld.global.nc.f32
+CHECK: ld.global.nc.v2.f32
+CHECK: ld.global.nc.v2.f32
+CHECK: ld.global.nc.v2.f32
+CHECK: ld.global.nc.v2.f32
 )";
   } else {
     expected_ptx = R"(

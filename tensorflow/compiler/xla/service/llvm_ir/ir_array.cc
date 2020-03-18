@@ -401,6 +401,26 @@ llvm::Value* IrArray::EmitReadArrayElement(const Index& index,
   return load;
 }
 
+std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(const Index& index,
+                                                      llvm::IRBuilder<>* b,
+                                                      absl::string_view name,
+                                                      bool use_linear_index,
+                                                      int vector_size) const {
+  std::vector<llvm::Value*> values;
+  for (int i = 0; i < vector_size; ++i) {
+    // TODO: check alignement, check layout.
+    Index new_index = index;
+    new_index = new_index.AddOffsetToDim(llvm::ConstantInt::get(index.GetType(), i),
+                                         index.size()-1, b);
+    llvm::Value* element_address =
+        EmitArrayElementAddress(new_index, b, name, use_linear_index);
+    llvm::LoadInst* load = b->CreateLoad(element_address);
+    AnnotateLoadStoreInstructionWithMetadata(load);
+    values.push_back(load);
+  }
+  return values;
+}
+
 void IrArray::EmitWriteArrayElement(const Index& index, llvm::Value* value,
                                     llvm::IRBuilder<>* b,
                                     bool use_linear_index) const {
