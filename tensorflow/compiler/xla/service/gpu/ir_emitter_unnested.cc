@@ -3242,8 +3242,10 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
                                                                     &cc_minor);
 
   int num_partial_results = 1;
+  int vector_size = 1;
   KernelMappingScheme::IndexingOrder indexing_order = [&]() {
     if (reduction_dimensions.is_row_reduction &&
+        !MayPreventVectorization(*unnested_hlo) &&
         // P100, only try to vectorize+coales memory access when the
         // tile size fits exactly and dtypes <= 32 bits
         ((cc_major == 6 && smallest_input_dtype_bits <= 32 && tile_fit) ||
@@ -3251,6 +3253,7 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
          // rows of even size.  For odd row sizes, every other row
          // isn't aligned, so it can't be vectorized.
          (cc_major >= 7 && reduction_dimensions.dimensions[2] % 2 == 0))) {
+      vector_size = 2;
       return kLinearStridedIndexingX;
     } else if (!reduction_dimensions.is_row_reduction &&
                IsUnrollingColumnReductionBeneficial(
@@ -3264,17 +3267,6 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
     }
   }();
 
-  int vector_size = 1;
-  if (indexing_order == kLinearStridedIndexingX) {
-    if (reduction_dimensions.dimensions[2] % 2 == 0 &&
-        // Assuming XLA will perform the unrolling and LLVM will vectorize,
-        // disable the unroll for the cases that LLVM doesn't vectorize.
-        !MayPreventVectorization(*unnested_hlo)) {
-      vector_size = 2;
-    } else {
-      indexing_order = kStridedIndexingX;
-    }
-  }
   KernelMappingScheme mapping_scheme(
       reduction_dimensions.dimensions,
       {reduction_tiling[0], reduction_tiling[1] * num_threads_y,
