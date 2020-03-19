@@ -2059,11 +2059,8 @@ XlaOp XlaBuilder::BatchNormGrad(const XlaOp& operand, const XlaOp& scale,
                                    grad_output};
     if (!reserve_space.IsUninitialized()) {
       operands.push_back(reserve_space);
-      // instr.set_use_reserve_space(true);
+      TF_ASSIGN_OR_RETURN(const Shape& reserve_shape, GetShape(reserve_space));
     }
-    // else {
-    //   instr.set_use_reserve_space(false);
-    // }
     return AddInstruction(std::move(instr), HloOpcode::kBatchNormGrad,
                           operands);
   });
