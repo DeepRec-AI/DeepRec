@@ -26,10 +26,11 @@ package(default_visibility = ["//visibility:public"])
 
 llvm_host_triple = "x86_64-unknown-linux_gnu"
 
+# Disable some LLVM target that aren't supported to speed up compilation.
 llvm_targets = [
     "AArch64",
-    "AMDGPU",
-    "ARM",
+#    "AMDGPU",
+#    "ARM",
     "NVPTX",
     "PowerPC",
     "X86",

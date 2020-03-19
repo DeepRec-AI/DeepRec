@@ -163,11 +163,13 @@ CpuCompiler::CpuCompiler() {
   LLVMInitializeX86TargetMC();
   LLVMInitializeX86AsmPrinter();
   LLVMInitializeX86Disassembler();
-  LLVMInitializeARMTarget();
-  LLVMInitializeARMTargetInfo();
-  LLVMInitializeARMTargetMC();
-  LLVMInitializeARMAsmPrinter();
-  LLVMInitializeARMDisassembler();
+  // Platform not support in our container.
+  // So disable them to speed up compilation.
+  // LLVMInitializeARMTarget();
+  // LLVMInitializeARMTargetInfo();
+  // LLVMInitializeARMTargetMC();
+  // LLVMInitializeARMAsmPrinter();
+  // LLVMInitializeARMDisassembler();
   LLVMInitializeAArch64Target();
   LLVMInitializeAArch64TargetInfo();
   LLVMInitializeAArch64TargetMC();
