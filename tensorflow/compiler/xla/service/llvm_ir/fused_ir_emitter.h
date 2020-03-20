@@ -63,7 +63,8 @@ class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
       ElementalIrEmitter* elemental_emitter, llvm::Value* thread_id_x = nullptr,
       llvm::Value* thread_id_y = nullptr,
       absl::Span<llvm::Value* const> param_shmem_buffers = {},
-      std::unordered_map<const HloInstruction*, int> vector_size = {})
+      std::unordered_map<const HloInstruction*, int> vector_size = {},
+      bool manually_vectorize = false)
       : operand_arrays_(),
         operand_arrays_generator_(std::move(operand_arrays_generator)),
         thread_id_x_(thread_id_x),
@@ -73,7 +74,8 @@ class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
         elemental_emitter_(elemental_emitter),
         b_(elemental_emitter->b()),
         module_(elemental_emitter->module()),
-        vector_size_(vector_size) {}
+        vector_size_(vector_size),
+        manually_vectorize_(manually_vectorize) {}
 
   Status DefaultAction(const HloInstruction* hlo) override;
 
@@ -161,6 +163,7 @@ class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
       generated_value_cache_;
 
   std::unordered_map<const HloInstruction*, int> vector_size_;
+  bool manually_vectorize_;
 };
 
 }  // namespace xla

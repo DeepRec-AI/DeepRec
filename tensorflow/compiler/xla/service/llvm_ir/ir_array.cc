@@ -378,6 +378,37 @@ llvm::Value* IrArray::EmitArrayElementAddress(const IrArray::Index& index,
                               llvm_ir::AsStringRef(name));
 }
 
+// Caller must make sure the data is aligned and this make sense with
+// respect to the memory layout.
+llvm::Value* IrArray::EmitVectorArrayElementAddress(const IrArray::Index& index,
+                                                    llvm::IRBuilder<>* b,
+                                                    absl::string_view name,
+                                                    bool use_linear_index,
+                                                    int vector_size) const {
+  CHECK(vector_size > 1);
+  CHECK(!ShapeUtil::IsScalar(shape_));
+
+  CHECK_EQ(index.size(), shape_.rank());
+  CHECK(index.ShapeIsCompatible(shape_));
+  llvm::Value* indice = nullptr;
+  if (use_linear_index && index.LinearValidOnShape(shape_)) {
+    VLOG(0) << "EmitVectorArrayElementAddress LINEAR!";
+    indice = index.linear();
+  } else {
+    VLOG(0) << "EmitVectorArrayElementAddress NO LINEAR!";
+    indice = index.Linearize(index.dims(), b);
+  }
+
+  llvm::Module* module = b->GetInsertBlock()->getParent()->getParent();
+  llvm::Value* vector_index =
+      b->CreateUDiv(indice, index.GetConstantWithIndexType(vector_size));
+  llvm::VectorType* VecTy = llvm::VectorType::get(
+      PrimitiveTypeToIrType(shape_.element_type(), module), vector_size);
+  return b->CreateInBoundsGEP(
+      b->CreateBitCast(base_ptr_, VecTy->getPointerTo()), {vector_index},
+      llvm_ir::AsStringRef(name));
+}
+
 void IrArray::AnnotateLoadStoreInstructionWithMetadata(
     llvm::Instruction* instruction) const {
   CHECK(llvm::isa<llvm::LoadInst>(instruction) ||
@@ -401,22 +432,34 @@ llvm::Value* IrArray::EmitReadArrayElement(const Index& index,
   return load;
 }
 
-std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(const Index& index,
-                                                      llvm::IRBuilder<>* b,
-                                                      absl::string_view name,
-                                                      bool use_linear_index,
-                                                      int vector_size) const {
+std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(
+    const Index& index, llvm::IRBuilder<>* b, absl::string_view name,
+    bool use_linear_index, int vector_size, bool manually_vectorize) const {
   std::vector<llvm::Value*> values;
-  for (int i = 0; i < vector_size; ++i) {
-    // TODO: check alignement, check layout.
-    Index new_index = index;
-    new_index = new_index.AddOffsetToDim(llvm::ConstantInt::get(index.GetType(), i),
-                                         index.size()-1, b);
-    llvm::Value* element_address =
-        EmitArrayElementAddress(new_index, b, name, use_linear_index);
-    llvm::LoadInst* load = b->CreateLoad(element_address);
+
+  if (manually_vectorize) {
+    llvm::Value* element_address = EmitVectorArrayElementAddress(
+        index, b, name, use_linear_index, vector_size);
+    int Alignment = vector_size;
+    llvm::LoadInst* load =
+        b->CreateAlignedLoad(element_address, llvm::MaybeAlign(Alignment));
     AnnotateLoadStoreInstructionWithMetadata(load);
-    values.push_back(load);
+    for (int i = 0; i < vector_size; ++i) {
+      values.push_back(
+          b->CreateExtractElement(load, b->getInt32(i), StrCat(name, i)));
+    }
+
+  } else {
+    for (int i = 0; i < vector_size; ++i) {
+      Index new_index = index;
+      new_index = new_index.AddOffsetToDim(
+          llvm::ConstantInt::get(index.GetType(), i), index.size() - 1, b);
+      llvm::Value* element_address =
+          EmitArrayElementAddress(new_index, b, name, use_linear_index);
+      llvm::LoadInst* load = b->CreateLoad(element_address);
+      AnnotateLoadStoreInstructionWithMetadata(load);
+      values.push_back(load);
+    }
   }
   return values;
 }
