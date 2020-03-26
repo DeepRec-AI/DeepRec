@@ -441,8 +441,7 @@ std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(
     llvm::Value* element_address = EmitVectorArrayElementAddress(
         index, b, name, use_linear_index, vector_size);
     int Alignment = vector_size;
-    llvm::LoadInst* load =
-        b->CreateAlignedLoad(element_address, llvm::MaybeAlign(Alignment));
+    llvm::LoadInst* load = b->CreateAlignedLoad(element_address, Alignment);
     AnnotateLoadStoreInstructionWithMetadata(load);
     for (int i = 0; i < vector_size; ++i) {
       values.push_back(
