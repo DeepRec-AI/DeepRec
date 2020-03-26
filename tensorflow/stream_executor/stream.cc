@@ -252,6 +252,8 @@ Stream::Stream(StreamExecutor *parent)
       allocated_(false),
       ok_(false),
       temporary_memory_manager_(this) {
+  std::cout << "Stream -> " << this << " is created using StreamExecutor "
+            << parent << std::endl;
   VLOG_CALL(PARAM(parent));
 }
 
@@ -262,6 +264,8 @@ Stream::Stream(StreamExecutor *parent,
       allocated_(false),
       ok_(false),
       temporary_memory_manager_(this) {
+  std::cout << "Stream -> " << this << " is created using StreamInterface "
+            << parent << std::endl;
   VLOG_CALL(PARAM(parent), PARAM(implementation));
 }
 
@@ -336,6 +340,41 @@ Stream &Stream::ThenRecordEvent(Event *event) {
 
   return *this;
 }
+
+Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
+    int64 batch_size, int64 feature_count, int64 y_size,
+    const std::string &layout, dnn::DataType input_type,
+    size_t *reserve_space_size) {
+  stream_executor::dnn::BatchDescriptor input_desc;
+  stream_executor::dnn::DataLayout data_layout;
+  if (layout == "NHWC" || layout == "NHWC_VECT_W") {
+    data_layout = stream_executor::dnn::DataLayout::kBatchYXDepth;
+  } else if (layout == "NCHW" || "NCHW_VECT_C") {
+    data_layout = stream_executor::dnn::DataLayout::kBatchDepthYX;
+  } else {
+    LOG(ERROR) << "Invalid or unimplemented data type while computing "
+                  "BatchNormalization training reserve space size";
+  }
+  input_desc.set_layout(data_layout)
+      .set_count(batch_size)
+      .set_feature_map_count(feature_count)
+      .set_height(y_size)
+      .set_width(1 /*width*/);
+  if (ok()) {
+    if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
+      CheckError(dnn->GetBatchNormalizationReserveSpaceSize(
+          this, input_type, input_desc, reserve_space_size));
+    } else {
+      SetErrorAndLogNoDnnSupport();
+    }
+  }
+  return *this;
+}
+
+// Stream &Stream::ThenFindBatchNormForwardWorkspaceSize() {
+//   se::dnn::BatchDescriptor input_desc;
+//   dnn::DataType
+// }
 
 Stream &Stream::ThenBatchNormalizationForward(
     const DeviceMemory<float> &x, const DeviceMemory<float> &scale,

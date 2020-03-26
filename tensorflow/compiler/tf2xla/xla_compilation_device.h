@@ -62,6 +62,7 @@ class XlaCompilationDevice : public LocalDevice {
 
  private:
   std::unique_ptr<XlaCompilationAllocator> allocator_;
+  GpuDeviceInfo* gpu_device_info_ = nullptr;
 };
 
 }  // namespace tensorflow

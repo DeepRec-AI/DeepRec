@@ -130,7 +130,8 @@ Status ExecuteGraph(XlaContext* xla_context, std::unique_ptr<Graph> graph,
   TF_RETURN_IF_ERROR(device->resource_manager()->Create(
       step_container->name(), XlaContext::kXlaContextResourceName,
       xla_context));
-
+  std::cout << "xla_compiler.cc: XlaCompilationDevice*: " << device
+            << std::endl;
   GraphCompiler graph_compiler(device, graph.get(), flib, step_container.get());
   TF_RETURN_IF_ERROR(graph_compiler.Compile());
   // Explicitly clean up the step container, to capture the cleanup status.
@@ -458,6 +459,13 @@ XlaCompiler::XlaCompiler(XlaCompiler::Options options)
       next_step_id_(1),
       device_(new XlaCompilationDevice(SessionOptions(), options_.device_type)),
       device_mgr_(absl::WrapUnique(device_)) {
+  std::cout << "xla_compiler.cc: device_: " << device_ << std::endl;
+  std::cout << "xla_compiler.cc: options_.device_allocator: "
+            << options_.device_allocator << std::endl;
+  std::cout << "xla_compiler.cc: options_.device_allocator->GetStream(): "
+            << options_.device_allocator->GetStream() << std::endl;
+  std::cout << "xla_compiler.cc: options_.device_type : "
+            << options_.device_type << std::endl;
   CHECK(!options_.device_type.type_string().empty());
   if (options_.populate_resource_manager) {
     initialization_status_ =
@@ -486,6 +494,7 @@ XlaCompiler::XlaCompiler(XlaCompiler::Options options)
       return xla_shape;
     };
   }
+  device_->set_gpu_device_info_stream(options_.device_allocator->GetStream());
 }
 
 XlaCompiler::~XlaCompiler() = default;

@@ -1008,6 +1008,16 @@ class DnnSupport {
         "DnnSupport::GetVersion not implemented on this platform.");
   }
 
+  virtual bool GetBatchNormalizationReserveSpaceSize(
+      Stream* stream, dnn::DataType input_data_type,
+      const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes);
+
+  virtual bool GetBatchNormalizationForwardWorkspaceSize(
+      Stream* stream, dnn::DataType input_data_type,
+      dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
+      const dnn::BatchDescriptor& scale_offset_desc,
+      size_t* workspace_size_in_bytes);
+
   // Performs a single-precision forward batch normalization operation onto
   // the stream.
   //

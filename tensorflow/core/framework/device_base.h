@@ -68,7 +68,9 @@ class PerOpGpuDevice {
 // Device-specific context to OpKernels.
 class DeviceContext : public core::RefCounted {
  public:
-  ~DeviceContext() override {}
+  ~DeviceContext() override {
+    std::cout << "Device Context " << this << " Destructed" << std::endl;
+  }
   virtual stream_executor::Stream* stream() const { return nullptr; }
   virtual void MaintainLifetimeOnStream(const Tensor* t,
                                         stream_executor::Stream* stream) const {
@@ -156,8 +158,22 @@ class DeviceBase {
     int gpu_id = -1;
   };
 
+  stream_executor::Stream* get_gpu_device_info_stream() {
+    if (gpu_device_info_) {
+      return gpu_device_info_->stream;
+    }
+    return nullptr;
+  }
+
+  void set_gpu_device_info_stream(stream_executor::Stream* s) {
+    gpu_device_info_->stream = s;
+  }
+
   // Does not take ownership.
   void set_tensorflow_gpu_device_info(GpuDeviceInfo* g) {
+    std::cout << "GpuDeviceInfo is SET " << std::endl;
+    std::cout << "Stream set to: " << g->stream << std::endl;
+    std::cout << "Device: " << this << std::endl;
     gpu_device_info_ = g;
   }
 

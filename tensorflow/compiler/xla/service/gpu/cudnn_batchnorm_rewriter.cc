@@ -166,12 +166,12 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   // temp workspace also needs to be allocated.
   if (use_reserve_space) {
     // Workspace -  TODO get correct size via stream_executor
-    // The last shape in this tuple was set in xla_builder as u8{0}.
-    // Hence, this needs to be poped out and the correct size re-inserted.
-    batch_norm_tuple_shape.pop_back();
-    // Reserve space
-    batch_norm_tuple_shape.push_back(
-        ShapeUtil::MakeShape(U8, {12846080 /*0*/}));
+    // // The last shape in this tuple was set in xla_builder as u8{0}.
+    // // Hence, this needs to be poped out and the correct size re-inserted.
+    // batch_norm_tuple_shape.pop_back();
+    // // Reserve space
+    // batch_norm_tuple_shape.push_back(
+    //     ShapeUtil::MakeShape(U8, {12846080 /*0*/}));
     // Scratch Workspace
     batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {1728656}));
   }
@@ -221,11 +221,12 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
       variance};
 
   if (use_reserve_space) {
-    // replacing_tuple_elements.push_back(
-    //     computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
-    //         libcall->shape().tuple_shapes(3), libcall, 3)));
-    replacing_tuple_elements.push_back(computation_->AddInstruction(
-        HloInstruction::CreateConstant(LiteralUtil::CreateR1<uint8>({}))));
+    replacing_tuple_elements.push_back(
+        computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
+            libcall->shape().tuple_shapes(3), libcall, 3)));
+    // replacing_tuple_elements.push_back(computation_->AddInstruction(
+    //     HloInstruction::CreateConstant(Literal::CreateFromShape(ShapeUtil::MakeShape(U8,
+    //     {/*12846080*/ 4096})))));
   }
   std::unique_ptr<HloInstruction> replacing_tuple =
       HloInstruction::CreateTuple(replacing_tuple_elements);
@@ -234,20 +235,29 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   TF_RETURN_IF_ERROR(computation_->ReplaceWithNewInstruction(
       batch_norm, std::move(replacing_tuple)));
 
-  if (use_reserve_space) {
-    TF_RETURN_IF_ERROR(replacing_tuple_ptr->ReplaceOperandWithDifferentShape(
-        3, computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
-               libcall->shape().tuple_shapes(3), libcall, 3))));
+  // if (use_reserve_space) {
+  //   TF_RETURN_IF_ERROR(replacing_tuple_ptr->ReplaceOperandWithDifferentShape(
+  //       3,
+  //       computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
+  //              libcall->shape().tuple_shapes(3), libcall, 3))));
 
-    // Creating the outshape of the tuple.
-    std::vector<Shape> replacing_tuple_shape_vector;
-    for (int i = 0; i < replacing_tuple_ptr->operand_count(); i++) {
-      replacing_tuple_shape_vector.push_back(
-          replacing_tuple_ptr->operand(i)->shape());
-    }
-    *replacing_tuple_ptr->mutable_shape() =
-        ShapeUtil::MakeTupleShape(replacing_tuple_shape_vector);
-  }
+  //   // Creating the outshape of the tuple.
+  //   std::vector<Shape> replacing_tuple_shape_vector;
+  //   for (int i = 0; i < replacing_tuple_ptr->operand_count(); i++) {
+  //     replacing_tuple_shape_vector.push_back(
+  //         replacing_tuple_ptr->operand(i)->shape());
+  //   }
+  //   *replacing_tuple_ptr->mutable_shape() =
+  //       ShapeUtil::MakeTupleShape(replacing_tuple_shape_vector);
+  // }
+  // auto users = replacing_tuple_ptr->users();
+  // for (auto user : users) {
+  //   if (user->opcode() == HloOpcode::kGetTupleElement && user->tuple_index()
+  //   == 3) {
+  //     *user->mutable_shape() = replacing_tuple_ptr->shape().tuple_shapes(3);
+
+  //   }
+  // }
   changed_ = true;
   return Status::OK();
 }
@@ -326,9 +336,14 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
 
   // Workspace -  TODO get correct size via stream_executor
   if (use_reserve_space) {
-    std::cout
-        << "In cudnn_batchnorm_rewriter - HandleBatchNormGrad reserve space: "
-        << batch_norm->operand(5)->shape() << std::endl;
+    // TF_RETURN_IF_ERROR(batch_norm->ReplaceOperandWithDifferentShape(
+    //     5,
+    //     computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
+    //            libcall->shape().tuple_shapes(3), libcall, 3))));
+    // std::cout
+    //     << "In cudnn_batchnorm_rewriter - HandleBatchNormGrad reserve space:
+    //     "
+    //     << batch_norm->operand(5)->shape() << std::endl;
     batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {3212336}));
   }
   

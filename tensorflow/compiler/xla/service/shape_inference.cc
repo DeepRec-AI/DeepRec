@@ -1267,12 +1267,11 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
         "and the feature count is %d.",
         ShapeUtil::GetDimension(scale_shape, 0), feature_count);
   }
-
+  // Infer reserve space from StreamExecutor
   if (use_reserve_space) {
     return ShapeUtil::MakeTupleShape(
         {operand_shape, output_shape_for_mean_and_var,
-         output_shape_for_mean_and_var,
-         ShapeUtil::MakeShape(U8, {/*12846080*/ 0})});
+         output_shape_for_mean_and_var, ShapeUtil::MakeShape(U8, {12846080})});
   }
 
   return ShapeUtil::MakeTupleShape({operand_shape,

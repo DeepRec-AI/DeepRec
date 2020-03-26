@@ -192,9 +192,9 @@ Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
   se::DeviceMemoryBase workspace(nullptr);
   if (use_reserve_space) {
       reserve_space = buffer_allocations.GetDeviceAddress(output_slices_[3]);
-      std::cout << "Reserve space device address in "
-                   "CudnnBatchNormForwardTrainingThunk: "
-                << reserve_space.opaque() << std::endl;
+      VLOG(1) << "Reserve space device address in "
+                 "CudnnBatchNormForwardTrainingThunk: "
+              << reserve_space.opaque() << std::endl;
       workspace = buffer_allocations.GetDeviceAddress(output_slices_[4]);
   }
   auto op_profiler =
@@ -282,8 +282,8 @@ Status CudnnBatchNormBackwardThunk::ExecuteOnStream(
     workspace = buffer_allocations.GetDeviceAddress(output_slices_[3]);
   }
   se::DeviceMemory<uint8> reserve_space(reserve_space_base);
-  std::cout << "Reserve space device address in CudnnBatchNormBackwardThunk: "
-            << reserve_space.opaque() << std::endl;
+  VLOG(1) << "Reserve space device address in CudnnBatchNormBackwardThunk: "
+          << reserve_space.opaque() << std::endl;
   auto op_profiler =
       params.profiler->MakeScopedInstructionProfiler(hlo_instruction());
   se::Stream* stream = params.stream;

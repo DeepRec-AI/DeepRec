@@ -218,6 +218,17 @@ class CudnnSupport : public dnn::DnnSupport {
       bool with_winograd_nonfused, int cc_major, int cc_minor,
       std::vector<dnn::AlgorithmDesc>* out_algorithms) override;
 
+  bool GetBatchNormalizationReserveSpaceSize(
+      Stream* stream, dnn::DataType input_data_type,
+      const dnn::BatchDescriptor& x_desc,
+      size_t* reserve_size_in_bytes) override;
+
+  bool GetBatchNormalizationForwardWorkspaceSize(
+      Stream* stream, dnn::DataType input_data_type,
+      dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
+      const dnn::BatchDescriptor& scale_offset_desc,
+      size_t* workspace_size_in_bytes) override;
+
   bool DoBatchNormalizationForward(
       Stream* stream, const DeviceMemory<float>& x,
       const DeviceMemory<float>& scale, const DeviceMemory<float>& offset,
@@ -590,6 +601,16 @@ class CudnnSupport : public dnn::DnnSupport {
 
   // Provides access to the cuDNN handle.
   std::unique_ptr<class CudnnAccess> cudnn_;
+
+  port::Status GetBatchNormalizationReserveSpaceSizeImpl(
+      Stream* stream, dnn::DataType input_data_type,
+      const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes);
+
+  port::Status GetBatchNormalizationForwardWorkspaceSizeImpl(
+      Stream* stream, dnn::DataType input_data_type,
+      dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
+      const dnn::BatchDescriptor& scale_offset_desc,
+      size_t* workspace_size_in_bytes);
 
   template <class T, class U>
   port::Status DoBatchNormalizationForwardImpl(

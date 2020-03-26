@@ -68,8 +68,6 @@ class FusedBatchNormOp : public XlaOpKernel {
 
  protected:
   virtual void CompileImpl(XlaOpKernelContext* ctx, bool use_reserved_space) {
-    VLOG(1) << "No. of Inputs FusedBatchNormOp: " << ctx->num_inputs();
-    VLOG(1) << "No. of Outputs FusedBatchNormOp: " << ctx->num_outputs();
     xla::PrimitiveType input_type;
     OP_REQUIRES_OK(ctx,
                    DataTypeToPrimitiveType(ctx->input_type(0), &input_type));
@@ -87,7 +85,59 @@ class FusedBatchNormOp : public XlaOpKernel {
     // operators. As a workaround, cast everything to the statistics type (which
     // may be more precise than the input type).
     input = xla::ConvertElementType(input, scale_type);
+    size_t reserve_space_size = 0;
+    if (is_on_gpu_ && use_reserved_space) {
+      OpKernelContext* opkernel_ctx = ctx->op_kernel_context();
+      // The device is an XlaCompilation device which is a 'dummy' TensorFlow
+      // device that is only used to execute a
+      // subgraph of XLA compilation Ops to construct a compiled version
+      // of the subgraph's computation.
+      CHECK_NE(opkernel_ctx->device(), nullptr);
+      VLOG(2) << "XlaCompilation Device* " << opkernel_ctx->device();
+      // Stream (shared by the XlaDevice) is set during the construction of the
+      // above device that can be used here.
+      se::Stream* stream = opkernel_ctx->device()->get_gpu_device_info_stream();
+      VLOG(2) << "Stream* "
+              << opkernel_ctx->device()->get_gpu_device_info_stream();
+      int64 batch_index =
+          GetTensorBatchDimIndex(input_shape.dims(), data_format_);
+      int64 batch_size = input_shape.dim_size(batch_index);
+      int64 feature_count = input_shape.dim_size(feature_index);
 
+      int num_spatial_dims =
+          GetTensorSpatialDims(input_shape.dims(), data_format_);
+      int64 y_size = 1;
+      for (int i = 0; i < num_spatial_dims; i++) {
+        y_size *= input_shape.dim_size(
+            GetTensorSpatialDimIndex(input_shape.dims(), data_format_, i));
+      }
+      std::string input_type_str =
+          (input_type == xla::PrimitiveType::F16) ? "F16" : "F32";
+      std::string scale_type_str =
+          (scale_type == xla::PrimitiveType::F32) ? "F32" : "F16";
+      //std::string input_type_str_1 = ToString(input_type);
+      VLOG(1) << "Batch index: " << batch_index << " Batch Size: " << batch_size
+              << " Feature index: " << feature_index
+              << " Feature count: " << feature_count
+              << " Num Dims: " << input_shape.dims()
+              << " Input type: " << input_type_str
+              << " Scale type: " << scale_type_str
+              << " y_size = " << y_size;
+
+      if (input_type == xla::PrimitiveType::F16) {
+        stream
+            ->ThenFindBatchNormalizationTrainingExReserveSpaceSize<Eigen::half>(
+                batch_size, feature_count, y_size,
+                ::tensorflow::ToString(data_format_), &reserve_space_size);
+      } else if (input_type == xla::PrimitiveType::F32) {
+        stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<float>(
+            batch_size, feature_count, y_size,
+            ::tensorflow::ToString(data_format_), &reserve_space_size);
+      } else {
+        errors::Unimplemented("Unimplemented data type for batchnorm input");
+      }
+    }
+    VLOG(1) << "Reserved space required: " << reserve_space_size << " bytes";
     if (is_training_) {
       xla::XlaOp output =
           xla::BatchNormTraining(input, ctx->Input(1), ctx->Input(2), epsilon_,
@@ -218,8 +268,6 @@ class FusedBatchNormGradOp : public XlaOpKernel {
   void Compile(XlaOpKernelContext* ctx) override { CompileImpl(ctx, false); }
 
   virtual void CompileImpl(XlaOpKernelContext* ctx, bool use_reserved_space ) {
-    VLOG(1) << "No. of Inputs FusedBatchNormGradOp: " << ctx->num_inputs();
-    VLOG(1) << "No. of Outputs FusedBatchNormGradOp: " << ctx->num_outputs();
     xla::XlaBuilder* const b = ctx->builder();
     DataType input_dtype = ctx->input_type(0);
     DataType scale_dtype = ctx->input_type(2);

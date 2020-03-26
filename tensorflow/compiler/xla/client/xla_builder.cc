@@ -2001,7 +2001,6 @@ XlaOp XlaBuilder::BatchNormTraining(const XlaOp& operand, const XlaOp& scale,
 
     instr.set_epsilon(epsilon);
     instr.set_feature_index(feature_index);
-    // instr.set_use_reserve_space(use_reserve_space);
 
     return AddInstruction(std::move(instr), HloOpcode::kBatchNormTraining,
                           {operand, scale, offset});

@@ -223,11 +223,24 @@ class Stream {
   // The stream does not take ownership of event - meaning that event's lifetime
   // must extend past the point at which it is marked complete!
   Stream &ThenRecordEvent(Event *event);
-
   ////////////////
   // DNN support
-  //
   // See DnnSupport::* for comments on the following methods.
+  Stream &ThenFindBatchNormalizationTrainingExReserveSpaceSize(
+      int64 batch_size, int64 feature_count, int64 y_size,
+      const std::string &layout, dnn::DataType input_type,
+      size_t *reserve_space_size);
+
+  template <typename InElemT>
+  Stream &ThenFindBatchNormalizationTrainingExReserveSpaceSize(
+      int64 batch_size, int64 feature_count, int64 y_size,
+      const std::string &layout, size_t *reserve_space_size) {
+    return ThenFindBatchNormalizationTrainingExReserveSpaceSize(
+        batch_size, feature_count, y_size, layout,
+        dnn::ToDataType<InElemT>::value, reserve_space_size);
+  }
+
+  // Stream &ThenFindBatchNormForwardWorkspaceSize();
 
   Stream &ThenBatchNormalizationForward(
       const DeviceMemory<float> &x, const DeviceMemory<float> &scale,

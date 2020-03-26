@@ -193,26 +193,12 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
     CHECK(feature_index->IsConstant());
     int64 feature_index_value = feature_index->literal().Get<int64>({});
 
-    // std::vector<BufferAllocation::Slice> operand_slices;
-    // // The last 2 operands in the custom call are epsilon
-    // // and feature_index, so no allocation slice.
-    // auto num_inputs_slices = custom_call->operand_count()-2;
-    // operand_slices.reserve(num_inputs_slices);
-    // for (int id = 0; id < num_inputs_slices; id++) {
-    //   operand_slices.push_back(GetAllocationSlice(*custom_call->operand(id)));
-    // }
-
-    // auto num_outputs = custom_call->shape().tuple_shapes_size();
-    // std::vector<BufferAllocation::Slice> output_slices;
-    // output_slices.reserve(num_outputs);
-    // for (int index = 0; index < num_outputs; index++){
-    //   output_slices.push_back(GetAllocationSlice(*custom_call, {index}));
-    // }
     std::vector<BufferAllocation::Slice> operand_slices =
         get_batch_norm_operand_slices(custom_call);
     std::vector<BufferAllocation::Slice> output_slices =
         get_batch_norm_output_slices(custom_call);
-
+    VLOG(1) << "Reserve space slice in Thunk Emitter BatchNorm Forward: "
+            << output_slices[3].size() << std::endl;
     AddThunkToThunkSequence(
         absl::make_unique<CudnnBatchNormForwardTrainingThunk>(
             /*operands=*/std::move(operand_slices),
@@ -242,8 +228,8 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
         get_batch_norm_operand_slices(custom_call);
     std::vector<BufferAllocation::Slice> output_slices =
         get_batch_norm_output_slices(custom_call);
-    std::cout << "Reserve space slice in Thunk Emitter BN Backward: "
-              << operand_slices[operand_slices.size() - 1].size() << std::endl;
+    VLOG(1) << "Reserve space slice in Thunk Emitter BatchNorm Backward: "
+            << operand_slices[5].size() << std::endl;
     AddThunkToThunkSequence(absl::make_unique<CudnnBatchNormBackwardThunk>(
         /*operands=*/std::move(operand_slices),
         /*outputs=*/std::move(output_slices),
