@@ -77,7 +77,7 @@ CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
 )";
   }
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module), expected_ptx);
+  CompileAndVerifyPtx(std::move(optimized_module), expected_ptx);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
 }
@@ -125,7 +125,7 @@ CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
 )";
   }
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module), expected_ptx);
+  CompileAndVerifyPtx(std::move(optimized_module), expected_ptx);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
 }
@@ -179,7 +179,7 @@ CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
 )";
   }
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module), expected_ptx);
+  CompileAndVerifyPtx(std::move(optimized_module), expected_ptx);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
 }
@@ -202,8 +202,8 @@ ENTRY %main {
 )";
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> optimized_module,
                           ParseAndReturnVerifiedModule(hlo_text));
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module),
-                                R"(
+  CompileAndVerifyPtx(std::move(optimized_module),
+                      R"(
 CHECK-NOT: ld.global.nc.v2.f32
 CHECK-NOT: ld.global.nc.v4.f32
 CHECK-NOT: ld.global.nc.u64
@@ -258,7 +258,7 @@ CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
 )";
   }
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module), expected_ptx);
+  CompileAndVerifyPtx(std::move(optimized_module), expected_ptx);
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
 }
@@ -283,8 +283,8 @@ ENTRY %main {
 
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> optimized_module,
                           ParseAndReturnVerifiedModule(hlo_text));
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module),
-                                R"(
+  CompileAndVerifyPtx(std::move(optimized_module),
+                      R"(
 CHECK-NOT: ld.global.nc.v2.f32
 CHECK-NOT: ld.global.nc.v4.f32
 CHECK-NOT: ld.global.nc.u64
