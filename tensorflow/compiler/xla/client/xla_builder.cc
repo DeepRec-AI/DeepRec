@@ -1986,6 +1986,7 @@ XlaOp XlaBuilder::ReduceWindowWithGeneralPadding(
 XlaOp XlaBuilder::BatchNormTraining(const XlaOp& operand, const XlaOp& scale,
                                     const XlaOp& offset, float epsilon,
                                     int64 feature_index,
+                                    size_t reserve_space_size,
                                     bool use_reserve_space) {
   return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
     HloInstructionProto instr;
@@ -1993,10 +1994,10 @@ XlaOp XlaBuilder::BatchNormTraining(const XlaOp& operand, const XlaOp& scale,
     TF_ASSIGN_OR_RETURN(const Shape& operand_shape, GetShape(operand));
     TF_ASSIGN_OR_RETURN(const Shape& scale_shape, GetShape(scale));
     TF_ASSIGN_OR_RETURN(const Shape& offset_shape, GetShape(offset));
-    TF_ASSIGN_OR_RETURN(Shape shape,
-                        ShapeInference::InferBatchNormTrainingShape(
-                            operand_shape, scale_shape, offset_shape,
-                            feature_index, use_reserve_space));
+    TF_ASSIGN_OR_RETURN(
+        Shape shape, ShapeInference::InferBatchNormTrainingShape(
+                         operand_shape, scale_shape, offset_shape,
+                         feature_index, reserve_space_size, use_reserve_space));
     *instr.mutable_shape() = shape.ToProto();
 
     instr.set_epsilon(epsilon);
@@ -3449,9 +3450,10 @@ XlaOp AfterAll(XlaBuilder* builder, absl::Span<const XlaOp> tokens) {
 
 XlaOp BatchNormTraining(const XlaOp operand, const XlaOp scale,
                         const XlaOp offset, float epsilon, int64 feature_index,
-                        bool use_reserve_space) {
+                        size_t reserve_space_size, bool use_reserve_space) {
   return operand.builder()->BatchNormTraining(operand, scale, offset, epsilon,
-                                              feature_index, use_reserve_space);
+                                              feature_index, reserve_space_size,
+                                              use_reserve_space);
 }
 
 XlaOp BatchNormInference(const XlaOp operand, const XlaOp scale,

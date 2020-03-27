@@ -89,6 +89,7 @@ class ShapeInference {
                                                      const Shape& scale_shape,
                                                      const Shape& offset_shape,
                                                      int64 feature_index,
+                                                     size_t reserve_space_size,
                                                      bool use_reserve_space);
 
   // Infers the shape produced by InferBatchNormInference with the given
