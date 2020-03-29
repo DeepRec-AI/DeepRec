@@ -73,6 +73,7 @@ class AlgorithmDesc;
 
 class StreamExecutor;
 class ScratchAllocator;
+enum BatchNormalizationKind;
 
 // Convert a type to the corresponding QuantizedActivationMode.
 template <typename ElementType>
@@ -229,18 +230,52 @@ class Stream {
   Stream &ThenFindBatchNormalizationTrainingExReserveSpaceSize(
       int64 batch_size, int64 feature_count, int64 y_size,
       const std::string &layout, dnn::DataType input_type,
-      size_t *reserve_space_size);
+      size_t *reserve_space_size, dnn::ActivationMode activation_mode,
+      bool apply_side_input);
 
   template <typename InElemT>
   Stream &ThenFindBatchNormalizationTrainingExReserveSpaceSize(
       int64 batch_size, int64 feature_count, int64 y_size,
-      const std::string &layout, size_t *reserve_space_size) {
+      const std::string &layout, size_t *reserve_space_size, bool apply_relu,
+      bool apply_side_input) {
+    // activation_mode must be dnn::ActivationMode::kRelu only if apply_relu is
+    // true and apply_side_input is false. All other combinations of apply_relu
+    // & apply_relu should lead to activation_mode being
+    // dnn::ActivationMode::kNone.
+    dnn::ActivationMode activation_mode = dnn::ActivationMode::kNone;
+    if (apply_relu && !apply_side_input) {
+      dnn::ActivationMode activation_mode = dnn::ActivationMode::kRelu;
+    }
     return ThenFindBatchNormalizationTrainingExReserveSpaceSize(
         batch_size, feature_count, y_size, layout,
-        dnn::ToDataType<InElemT>::value, reserve_space_size);
+        dnn::ToDataType<InElemT>::value, reserve_space_size, activation_mode,
+        apply_side_input);
   }
 
-  // Stream &ThenFindBatchNormForwardWorkspaceSize();
+  Stream &ThenFindBatchNormWorkspaceSize(
+      dnn::DataType input_data_type, dnn::DataType scale_data_type,
+      const dnn::BatchDescriptor &x_desc,
+      const dnn::BatchDescriptor &scale_offset_desc,
+      size_t *workspace_size_in_bytes,
+      stream_executor::BatchNormalizationKind kind,
+      dnn::ActivationMode activation_mode, bool apply_side_input);
+
+  template <typename InElemT, typename ScaleElemT>
+  Stream &ThenFindBatchNormWorkspaceSize(
+      const dnn::BatchDescriptor &x_desc,
+      const dnn::BatchDescriptor &scale_offset_desc,
+      size_t *workspace_size_in_bytes,
+      stream_executor::BatchNormalizationKind kind, bool apply_relu,
+      bool apply_side_input) {
+    dnn::ActivationMode activation_mode = dnn::ActivationMode::kNone;
+    if (apply_relu && !apply_side_input) {
+      dnn::ActivationMode activation_mode = dnn::ActivationMode::kRelu;
+    }
+    return ThenFindBatchNormWorkspaceSize(
+        dnn::ToDataType<InElemT>::value, dnn::ToDataType<ScaleElemT>::value,
+        x_desc, scale_offset_desc, workspace_size_in_bytes, kind,
+        activation_mode, apply_side_input);
+  }
 
   Stream &ThenBatchNormalizationForward(
       const DeviceMemory<float> &x, const DeviceMemory<float> &scale,

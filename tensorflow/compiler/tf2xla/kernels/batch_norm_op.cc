@@ -108,6 +108,15 @@ class FusedBatchNormOp : public XlaOpKernel {
 
         int num_spatial_dims =
             GetTensorSpatialDims(input_shape.dims(), data_format_);
+
+        // Valid only for TPUs
+        CHECK_NE(data_format_, ::tensorflow::TensorFormat::FORMAT_HWNC);
+        CHECK_NE(data_format_, ::tensorflow::TensorFormat::FORMAT_HWCN);
+        // Batchnorm only cares about the location of the depth (aka "feature")
+        // dim.
+        // The other dims are all treated the same.  Thus we can
+        // rewrite/interpret [N,H,W,..,C] as [N,(H*W*..),1,C] and [N,C,H,W,..]
+        // as [N,C,(H*W*..),1]
         int64 y_size = 1;
         for (int i = 0; i < num_spatial_dims; i++) {
           y_size *= input_shape.dim_size(
@@ -117,7 +126,6 @@ class FusedBatchNormOp : public XlaOpKernel {
             (input_type == xla::PrimitiveType::F16) ? "F16" : "F32";
         std::string scale_type_str =
             (scale_type == xla::PrimitiveType::F32) ? "F32" : "F16";
-        // std::string input_type_str_1 = ToString(input_type);
         VLOG(1) << "Batch index: " << batch_index
                 << " Batch Size: " << batch_size
                 << " Feature index: " << feature_index
@@ -125,18 +133,33 @@ class FusedBatchNormOp : public XlaOpKernel {
                 << " Num Dims: " << input_shape.dims()
                 << " Input type: " << input_type_str
                 << " Scale type: " << scale_type_str << " y_size = " << y_size;
-
-        if (input_type == xla::PrimitiveType::F16) {
-          stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<
-              Eigen::half>(batch_size, feature_count, y_size,
-                           ::tensorflow::ToString(data_format_),
-                           &reserve_space_size);
-        } else if (input_type == xla::PrimitiveType::F32) {
-          stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<float>(
-              batch_size, feature_count, y_size,
-              ::tensorflow::ToString(data_format_), &reserve_space_size);
+        // Since in tf2xla, a fused batchnorm with activation or with
+        // activation+add gets expanded to batchnorm and activation and add, the
+        // boolean apply_relu and apply_side_input are set to false here while
+        // querying the reserve space. This can be modified the bridge decides
+        // to do otherwise.
+        bool apply_relu = false;
+        bool apply_side_input = false;
+        // Stream can be null here since DeviceMemory allocator can be null in
+        // XlaCompiler. In such case, correct reserved_space cannot be queried.
+        // This is not the optimum case but will be functionally correct.
+        if (stream) {
+          if (input_type == xla::PrimitiveType::F16) {
+            stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<
+                Eigen::half>(batch_size, feature_count, y_size,
+                             ::tensorflow::ToString(data_format_),
+                             &reserve_space_size, apply_relu, apply_side_input);
+          } else if (input_type == xla::PrimitiveType::F32) {
+            stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<float>(
+                batch_size, feature_count, y_size,
+                ::tensorflow::ToString(data_format_), &reserve_space_size,
+                apply_relu, apply_side_input);
+          } else {
+            errors::Unimplemented(
+                "Unimplemented data type for batchnorm input");
+          }
         } else {
-          errors::Unimplemented("Unimplemented data type for batchnorm input");
+          VLOG(1) << "Stream is nullptr. Hence reserve space not queried. ";
         }
         VLOG(1) << "Reserved space required: " << reserve_space_size
                 << " bytes";

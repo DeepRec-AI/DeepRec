@@ -218,16 +218,20 @@ class CudnnSupport : public dnn::DnnSupport {
       bool with_winograd_nonfused, int cc_major, int cc_minor,
       std::vector<dnn::AlgorithmDesc>* out_algorithms) override;
 
-  bool GetBatchNormalizationReserveSpaceSize(
-      Stream* stream, dnn::DataType input_data_type,
-      const dnn::BatchDescriptor& x_desc,
-      size_t* reserve_size_in_bytes) override;
+  bool GetBatchNormalizationReserveSpaceSize(Stream* stream,
+                                             dnn::DataType input_data_type,
+                                             const dnn::BatchDescriptor& x_desc,
+                                             size_t* reserve_size_in_bytes,
+                                             dnn::ActivationMode mode,
+                                             bool apply_side_input) override;
 
-  bool GetBatchNormalizationForwardWorkspaceSize(
+  bool GetBatchNormalizationWorkspaceSize(
       Stream* stream, dnn::DataType input_data_type,
       dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
       const dnn::BatchDescriptor& scale_offset_desc,
-      size_t* workspace_size_in_bytes) override;
+      size_t* workspace_size_in_bytes,
+      stream_executor::BatchNormalizationKind kind, dnn::ActivationMode mode,
+      bool apply_side_input) override;
 
   bool DoBatchNormalizationForward(
       Stream* stream, const DeviceMemory<float>& x,
@@ -604,13 +608,16 @@ class CudnnSupport : public dnn::DnnSupport {
 
   port::Status GetBatchNormalizationReserveSpaceSizeImpl(
       Stream* stream, dnn::DataType input_data_type,
-      const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes);
+      const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes,
+      dnn::ActivationMode mode, bool apply_side_input);
 
-  port::Status GetBatchNormalizationForwardWorkspaceSizeImpl(
+  port::Status GetBatchNormalizationWorkspaceSizeImpl(
       Stream* stream, dnn::DataType input_data_type,
       dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
       const dnn::BatchDescriptor& scale_offset_desc,
-      size_t* workspace_size_in_bytes);
+      size_t* workspace_size_in_bytes,
+      stream_executor::BatchNormalizationKind kind, dnn::ActivationMode mode,
+      bool apply_side_input);
 
   template <class T, class U>
   port::Status DoBatchNormalizationForwardImpl(

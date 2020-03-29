@@ -344,7 +344,8 @@ Stream &Stream::ThenRecordEvent(Event *event) {
 Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
     int64 batch_size, int64 feature_count, int64 y_size,
     const std::string &layout, dnn::DataType input_type,
-    size_t *reserve_space_size) {
+    size_t *reserve_space_size, dnn::ActivationMode activation_mode,
+    bool apply_side_input) {
   stream_executor::dnn::BatchDescriptor input_desc;
   stream_executor::dnn::DataLayout data_layout;
   if (layout == "NHWC" || layout == "NHWC_VECT_W") {
@@ -363,7 +364,8 @@ Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
   if (ok()) {
     if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
       CheckError(dnn->GetBatchNormalizationReserveSpaceSize(
-          this, input_type, input_desc, reserve_space_size));
+          this, input_type, input_desc, reserve_space_size, activation_mode,
+          apply_side_input));
     } else {
       SetErrorAndLogNoDnnSupport();
     }
@@ -371,10 +373,24 @@ Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
   return *this;
 }
 
-// Stream &Stream::ThenFindBatchNormForwardWorkspaceSize() {
-//   se::dnn::BatchDescriptor input_desc;
-//   dnn::DataType
-// }
+Stream &Stream::ThenFindBatchNormWorkspaceSize(
+    dnn::DataType input_data_type, dnn::DataType scale_data_type,
+    const dnn::BatchDescriptor &x_desc,
+    const dnn::BatchDescriptor &scale_offset_desc,
+    size_t *workspace_size_in_bytes,
+    stream_executor::BatchNormalizationKind kind,
+    dnn::ActivationMode activation_mode, bool apply_side_input) {
+  if (ok()) {
+    if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
+      CheckError(dnn->GetBatchNormalizationWorkspaceSize(
+          this, input_data_type, scale_data_type, x_desc, scale_offset_desc,
+          workspace_size_in_bytes, kind, activation_mode, apply_side_input));
+    } else {
+      SetErrorAndLogNoDnnSupport();
+    }
+  }
+  return *this;
+}
 
 Stream &Stream::ThenBatchNormalizationForward(
     const DeviceMemory<float> &x, const DeviceMemory<float> &scale,

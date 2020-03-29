@@ -172,7 +172,7 @@ Status GpuCompiler::OptimizeHloModule(
           /*rewrite_training_op=*/false,
           /*rewrite_inference_op=*/true,
           /*rewrite_grad_op=*/false);
-        pass.AddPass<CudnnBatchNormRewriter>();
+        pass.AddPass<CudnnBatchNormRewriter>(stream_exec, device_allocator);
       }
       pass.AddPass<BatchNormExpander>(
           /*rewrite_training_op=*/true,

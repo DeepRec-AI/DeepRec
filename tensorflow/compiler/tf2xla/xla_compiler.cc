@@ -494,7 +494,12 @@ XlaCompiler::XlaCompiler(XlaCompiler::Options options)
       return xla_shape;
     };
   }
-  device_->set_gpu_device_info_stream(options_.device_allocator->GetStream());
+  // DeviceMemoryAllocator may be a nullptr. In such case, stream can be
+  // initialized using stream_executor. Since (as it seems) stream_executor is
+  // not accessible from here, the stream* in GpuDeviceInfo is null.
+  if (options_.device_allocator) {
+    device_->set_gpu_device_info_stream(options_.device_allocator->GetStream());
+  }
 }
 
 XlaCompiler::~XlaCompiler() = default;

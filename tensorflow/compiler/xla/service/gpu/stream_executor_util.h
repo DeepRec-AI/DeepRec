@@ -121,6 +121,13 @@ se::cuda::PtxCompilationOptions PtxOptsFromConfig(
 void InitializeBuffer(se::Stream* stream, PrimitiveType buffer_type,
                       int64* rng_state, se::DeviceMemoryBase buffer);
 
+struct DnnBatchDescriptors {
+  se::dnn::BatchDescriptor input_desc;
+  se::dnn::BatchDescriptor scale_offset_desc;
+};
+
+DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
+                                             int64 feature_index);
 }  // namespace gpu
 }  // namespace xla
 

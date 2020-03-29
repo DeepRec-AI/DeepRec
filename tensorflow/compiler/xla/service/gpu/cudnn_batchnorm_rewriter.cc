@@ -19,6 +19,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/service/dfs_hlo_visitor_with_default.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emission_utils.h"
+#include "tensorflow/compiler/xla/service/gpu/stream_executor_util.h"
 
 namespace xla {
 namespace gpu {
@@ -26,10 +27,11 @@ namespace {
 
 class Visitor : public DfsHloVisitorWithDefault {
  public:
-  explicit Visitor(HloComputation* computation) : computation_(computation) {}
+  explicit Visitor(HloComputation* computation, se::Stream* stream)
+      : computation_(computation), stream_(stream) {}
 
-  static bool Run(HloComputation* computation) {
-    Visitor visitor(computation);
+  static bool Run(HloComputation* computation, se::Stream* stream) {
+    Visitor visitor(computation, stream);
     TF_CHECK_OK(computation->Accept(&visitor));
     return visitor.changed_;
   }
@@ -45,6 +47,7 @@ class Visitor : public DfsHloVisitorWithDefault {
  private:
   bool changed_ = false;
   HloComputation* computation_;
+  se::Stream* stream_;
   HloInstruction* AddConvert(HloInstruction* hlo, PrimitiveType elem_type) {
     Shape shape = ShapeUtil::ChangeElementType(hlo->shape(), elem_type);
     return this->computation_->AddInstruction(
@@ -64,6 +67,36 @@ bool IsF32BatchNormWithFP16Inputs(HloInstruction* batch_norm) {
     return false;
   }
   return convert->operand(0)->shape().element_type() == F16;
+}
+
+size_t GetWorkspaceSize(se::Stream* stream, HloInstruction* batch_norm,
+                        bool is_batchnorm_with_fp16_inputs) {
+  DnnBatchDescriptors batch_descs = MakeBatchNormDescriptors(
+      batch_norm->operand(0)->shape(), batch_norm->feature_index());
+  se::dnn::BatchDescriptor input_desc = batch_descs.input_desc;
+  se::dnn::BatchDescriptor scale_offset_desc = batch_descs.scale_offset_desc;
+  se::BatchNormalizationKind kind;
+  if (batch_norm->opcode() == HloOpcode::kBatchNormTraining) {
+    kind = se::BatchNormalizationKind::kBatchnormForward;
+  } else if (batch_norm->opcode() == HloOpcode::kBatchNormGrad) {
+    kind = se::BatchNormalizationKind::kBatchnormBackward;
+  } else {
+    LOG(ERROR) << "Workspace can only be queried for Batchnorm training "
+                  "forward and gradient.";
+  }
+  size_t workspace_size = 0;
+  if (stream) {
+    if (is_batchnorm_with_fp16_inputs) {
+      stream->ThenFindBatchNormWorkspaceSize<Eigen::half, float>(
+          input_desc, scale_offset_desc, &workspace_size, kind, false, false);
+    } else {
+      stream->ThenFindBatchNormWorkspaceSize<float, float>(
+          input_desc, scale_offset_desc, &workspace_size, kind, false, false);
+    }
+  } else {
+    VLOG(1) << "Stream is nullptr. Hence workspace not queried. ";
+  }
+  return workspace_size;
 }
 
 Status Visitor::HandleBatchNormInference(HloInstruction* batch_norm) {
@@ -165,15 +198,11 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   // an extra reserve space output i.e, 4 outputs. This implies that an extra
   // temp workspace also needs to be allocated.
   if (use_reserve_space) {
-    // Workspace -  TODO get correct size via stream_executor
-    // // The last shape in this tuple was set in xla_builder as u8{0}.
-    // // Hence, this needs to be poped out and the correct size re-inserted.
-    // batch_norm_tuple_shape.pop_back();
-    // // Reserve space
-    // batch_norm_tuple_shape.push_back(
-    //     ShapeUtil::MakeShape(U8, {12846080 /*0*/}));
-    // Scratch Workspace
-    batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {1728656}));
+    size_t workspace_size =
+        GetWorkspaceSize(stream_, batch_norm, is_batchnorm_with_fp16_inputs);
+    VLOG(1) << "Forward workspace required: " << workspace_size << " bytes";
+    batch_norm_tuple_shape.push_back(
+        ShapeUtil::MakeShape(U8, {workspace_size}));
   }
 
   const Shape& batch_norm_shape =
@@ -224,9 +253,6 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
     replacing_tuple_elements.push_back(
         computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
             libcall->shape().tuple_shapes(3), libcall, 3)));
-    // replacing_tuple_elements.push_back(computation_->AddInstruction(
-    //     HloInstruction::CreateConstant(Literal::CreateFromShape(ShapeUtil::MakeShape(U8,
-    //     {/*12846080*/ 4096})))));
   }
   std::unique_ptr<HloInstruction> replacing_tuple =
       HloInstruction::CreateTuple(replacing_tuple_elements);
@@ -234,30 +260,6 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   CHECK_NE(replacing_tuple_ptr, nullptr);
   TF_RETURN_IF_ERROR(computation_->ReplaceWithNewInstruction(
       batch_norm, std::move(replacing_tuple)));
-
-  // if (use_reserve_space) {
-  //   TF_RETURN_IF_ERROR(replacing_tuple_ptr->ReplaceOperandWithDifferentShape(
-  //       3,
-  //       computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
-  //              libcall->shape().tuple_shapes(3), libcall, 3))));
-
-  //   // Creating the outshape of the tuple.
-  //   std::vector<Shape> replacing_tuple_shape_vector;
-  //   for (int i = 0; i < replacing_tuple_ptr->operand_count(); i++) {
-  //     replacing_tuple_shape_vector.push_back(
-  //         replacing_tuple_ptr->operand(i)->shape());
-  //   }
-  //   *replacing_tuple_ptr->mutable_shape() =
-  //       ShapeUtil::MakeTupleShape(replacing_tuple_shape_vector);
-  // }
-  // auto users = replacing_tuple_ptr->users();
-  // for (auto user : users) {
-  //   if (user->opcode() == HloOpcode::kGetTupleElement && user->tuple_index()
-  //   == 3) {
-  //     *user->mutable_shape() = replacing_tuple_ptr->shape().tuple_shapes(3);
-
-  //   }
-  // }
   changed_ = true;
   return Status::OK();
 }
@@ -333,18 +335,12 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
   // an extra reserve space input i.e, 6 inputs {operand, scale, mean,
   // variance, out_grad, reserve_space}. This implies that an extra
   // temp workspace also needs to be allocated.
-
-  // Workspace -  TODO get correct size via stream_executor
   if (use_reserve_space) {
-    // TF_RETURN_IF_ERROR(batch_norm->ReplaceOperandWithDifferentShape(
-    //     5,
-    //     computation_->AddInstruction(HloInstruction::CreateGetTupleElement(
-    //            libcall->shape().tuple_shapes(3), libcall, 3))));
-    // std::cout
-    //     << "In cudnn_batchnorm_rewriter - HandleBatchNormGrad reserve space:
-    //     "
-    //     << batch_norm->operand(5)->shape() << std::endl;
-    batch_norm_tuple_shape.push_back(ShapeUtil::MakeShape(U8, {3212336}));
+    size_t workspace_size =
+        GetWorkspaceSize(stream_, batch_norm, is_batchnorm_with_fp16_inputs);
+    VLOG(1) << "Backward workspace required: " << workspace_size << " bytes";
+    batch_norm_tuple_shape.push_back(
+        ShapeUtil::MakeShape(U8, {workspace_size}));
   }
   
 
@@ -382,9 +378,22 @@ StatusOr<bool> CudnnBatchNormRewriter::Run(HloModule* module) {
   VLOG(2) << "CudnnBatchNormRewriter::Run(), before:";
   XLA_VLOG_LINES(2, module->ToString());
 
+  if (allocator_ == nullptr) {
+    allocator_ = stream_exec_->GetAllocator();
+  }
+  absl::optional<se::Stream> stream_opt;
+  se::Stream* stream = [&]() {
+    if (allocator_->GetStream()) {
+      return allocator_->GetStream();
+    }
+    stream_opt.emplace(stream_exec_);
+    stream_opt->Init();
+    return &stream_opt.value();
+  }();
+
   bool changed = false;
   for (auto* comp : module->MakeNonfusionComputations()) {
-    if (Visitor::Run(comp)) {
+    if (Visitor::Run(comp, stream)) {
       changed = true;
     }
   }

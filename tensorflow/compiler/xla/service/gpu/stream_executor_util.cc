@@ -313,5 +313,53 @@ void InitializeBuffer(se::Stream* stream, PrimitiveType buffer_type,
   }
 }
 
+DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
+                                             int64 feature_index) {
+  std::vector<int64> logical_to_physical =
+      LayoutUtil::MakeLogicalToPhysical(shape.layout());
+
+  auto physical_dim_size = [&](int64 physical_dim) {
+    return shape.dimensions(LayoutUtil::Major(shape.layout(), physical_dim));
+  };
+
+  // Batchnorm only cares about the location of the depth (aka "feature") dim.
+  // The other dims are all treated the same.  Thus we can use the kBatchDepthYX
+  // cudnn layout for any XLA shape+layout, even XLA shapes that don't have
+  // exactly 4 dimensions: We put everything that comes before the feature dim
+  // into "batch", and everything that comes after the feature dim into "Y".
+  int64 batch_size = 1;
+  int64 y_size = 1;
+  int64 physical_dim;
+  for (physical_dim = 0; physical_dim != logical_to_physical[feature_index];
+       ++physical_dim) {
+    CHECK_LT(physical_dim, shape.dimensions_size());
+    batch_size *= physical_dim_size(physical_dim);
+  }
+  ++physical_dim;  // Skip the feature dimension.
+  for (; physical_dim < shape.dimensions_size(); ++physical_dim) {
+    y_size *= physical_dim_size(physical_dim);
+  }
+  // batch_size = physical_dim_size(0);
+  // y_size = physical_dim_size(1);
+  // int64 width = physical_dim_size(2);
+
+  DnnBatchDescriptors batch_descs;
+  batch_descs.input_desc
+      .set_layout(se::dnn::DataLayout::
+                      kBatchYXDepth /*se::dnn::DataLayout::kBatchDepthYX*/)
+      .set_count(batch_size)
+      .set_feature_map_count(shape.dimensions(feature_index))
+      .set_height(y_size)
+      .set_width(1 /*width*/);
+
+  batch_descs.scale_offset_desc.set_layout(se::dnn::DataLayout::kBatchDepthYX)
+      .set_feature_map_count(batch_descs.input_desc.feature_map_count())
+      .set_height(1)
+      .set_width(1)
+      .set_count(1);
+
+  return batch_descs;
+}
+
 }  // namespace gpu
 }  // namespace xla

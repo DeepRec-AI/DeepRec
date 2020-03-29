@@ -48,6 +48,12 @@ class HostBuffer;
 class Stream;
 class ScratchAllocator;
 
+// Enum for batchnorm kind
+enum BatchNormalizationKind {
+  kBatchnormForward,
+  kBatchnormBackward,
+};
+
 namespace dnn {
 
 // Specifies an index to use when accessing specific spatial dimensions.
@@ -1010,13 +1016,16 @@ class DnnSupport {
 
   virtual bool GetBatchNormalizationReserveSpaceSize(
       Stream* stream, dnn::DataType input_data_type,
-      const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes);
+      const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes,
+      dnn::ActivationMode mode, bool apply_side_input);
 
-  virtual bool GetBatchNormalizationForwardWorkspaceSize(
+  virtual bool GetBatchNormalizationWorkspaceSize(
       Stream* stream, dnn::DataType input_data_type,
       dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
       const dnn::BatchDescriptor& scale_offset_desc,
-      size_t* workspace_size_in_bytes);
+      size_t* workspace_size_in_bytes,
+      stream_executor::BatchNormalizationKind kind, dnn::ActivationMode mode,
+      bool apply_side_input);
 
   // Performs a single-precision forward batch normalization operation onto
   // the stream.

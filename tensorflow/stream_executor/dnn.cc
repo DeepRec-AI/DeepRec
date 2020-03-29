@@ -35,15 +35,18 @@ uint64 AlgorithmDesc::hash() const {
 
 bool DnnSupport::GetBatchNormalizationReserveSpaceSize(
     Stream* stream, dnn::DataType input_data_type,
-    const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes) {
+    const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes,
+    dnn::ActivationMode mode, bool apply_side_input) {
   return false;
 }
 
-bool DnnSupport::GetBatchNormalizationForwardWorkspaceSize(
+bool DnnSupport::GetBatchNormalizationWorkspaceSize(
     Stream* stream, dnn::DataType input_data_type,
     dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
     const dnn::BatchDescriptor& scale_offset_desc,
-    size_t* workspace_size_in_bytes) {
+    size_t* workspace_size_in_bytes,
+    stream_executor::BatchNormalizationKind kind, dnn::ActivationMode mode,
+    bool apply_side_input) {
   return false;
 }
 
