@@ -1958,7 +1958,7 @@ static void UnrollInnerTileLoop(
         auto emit_element = [&] {
           return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
                                        1, /*preload*/ false,
-                                       manually_vectorize);
+                                       /*manually_vectorize*/ false);
         };
         if (check_x_tile_bounds) {
           ksl->If(loop_name + "_x_in_tile", b_.CreateICmpULT(x_loc, tile_width),
@@ -2082,10 +2082,12 @@ void IrEmitterUnnested::EmitTile(
                   // elements left.
                   b_.CreateICmpEQ(constant(mapping_scheme.GetTileSizeX()),
                                   tile_width),
-                  [&] { unrollInnerTileLoop(/*check_x_tile_bounds=*/false); },
+                  [&] { unrollInnerTileLoop(/*check_x_tile_bounds=*/false,
+					    /*manually_vectorize=*/true); },
                   [&] { unrollInnerTileLoop(/*check_x_tile_bounds=*/true); });
         } else {
-          unrollInnerTileLoop(/*check_x_tile_bounds=*/!x_tile_fits);
+          unrollInnerTileLoop(/*check_x_tile_bounds=*/!x_tile_fits,
+                              /*manually_vectorize=*/x_tile_fits);
         }
       });
 }
