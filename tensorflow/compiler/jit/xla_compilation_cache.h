@@ -173,9 +173,13 @@ class XlaCompilationCache : public ResourceBase {
     // Cumulative time spent compiling the cluster.
     int64 cumulative_compile_time_us = 0;
 
+    // Maximum time spent compiling the cluster.
+    uint64 max_compile_time_s = 0;
+
     // True if we have decided that this cluster is too dynamic (i.e. its shapes
-    // change too frequently) to profitably JIT compile.  Once a cluster is
-    // tagged megamorphic, it stays megamorphic forever.
+    // change too frequently) to profitably JIT compile, or when it takes too long
+    // to compile the cluster.  Once a cluster is tagged megamorphic, it stays
+    // megamorphic forever.
     bool is_megamorphic = false;
   };
 
@@ -187,7 +191,7 @@ class XlaCompilationCache : public ResourceBase {
 
   // The number of times a lazy compilation must be requested for a specific
   // signature before  we attempt to compile it.
-  static constexpr int64 kDefaultCompilationThreshold = 2;
+  static constexpr int64 kDefaultCompilationThreshold = 3;
 
   TF_DISALLOW_COPY_AND_ASSIGN(XlaCompilationCache);
 };

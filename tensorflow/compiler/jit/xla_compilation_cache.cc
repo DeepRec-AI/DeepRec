@@ -188,15 +188,20 @@ Status XlaCompilationCache::Compile(
                      out_compilation_result, out_executable);
 }
 
-static bool IsMegamorphic(int64 compile_count, int64 execution_count) {
+static bool IsMegamorphic(
+    int64 compile_count,
+    int64 execution_count,
+    uint64 max_compile_time_s) {
   const int64 kCompileThreshold = 10;
   const int64 kMinExecutionsPerCompile = 50;
+  const uint64 kMaxCompileTimeThreshold = 30;
 
   // This heuristic is trying to capture the following property: have we sunk a
   // certain minimum amount of compile time into the cluster that didn't quite
   // "pay off"?
-  return compile_count > kCompileThreshold &&
-         execution_count < kMinExecutionsPerCompile * compile_count;
+  return (compile_count > kCompileThreshold &&
+          execution_count < kMinExecutionsPerCompile * compile_count) ||
+          max_compile_time_s > kMaxCompileTimeThreshold;
 }
 
 Status XlaCompilationCache::CompileSingleOp(
@@ -252,15 +257,16 @@ Status XlaCompilationCache::CompileImpl(
   DCHECK_NE(out_executable, nullptr);
   VLOG(2) << "XlaCompilationCache::Compile " << DebugString();
 
-  if (VLOG_IS_ON(2)) {
-    VLOG(2) << "num_inputs=" << args.size();
+  VLOG(2) << "num_inputs=" << args.size();
+  if (VLOG_IS_ON(3)) {
     for (int i = 0; i < args.size(); i++) {
-      VLOG(2) << i << ": " << args[i].HumanString();
+      VLOG(3) << i << ": " << args[i].HumanString();
     }
   }
 
   TF_ASSIGN_OR_RETURN(Signature signature, BuildSignature(function, args));
-  VLOG(2) << "Signature: " << signature.HumanString();
+  string human_signature = VLOG_IS_ON(3) ? signature.HumanString() : function.name();
+  VLOG(2) << "Signature: " << human_signature;
 
   // The outer lock protects the existence of the cache entry. It does not
   // protect the contents of the cache entry.
@@ -275,13 +281,6 @@ Status XlaCompilationCache::CompileImpl(
     entry = e.get();
   }
 
-  // We always compile a cluster the very first time it is executed.  This is an
-  // optimistic guess that pays off for statically shaped TensorFlow graphs
-  // (since they get the benefit of XLA right away without waiting for warmup)
-  // and doesn't hurt much for dynamically shaped TensorFlow graphs (we "pay" at
-  // most one cluster-compilation's worth of compile time).
-  bool is_first_execution;
-
   // We avoid compiling clusters that have "gone megamorphic" i.e. have an
   // excessive amount of shape dynamism.
   bool is_megamorphic;
@@ -291,13 +290,13 @@ Status XlaCompilationCache::CompileImpl(
     auto it =
         cluster_compile_stats_.emplace(function.name(), ClusterCompileStats{})
             .first;
-    is_first_execution = it->second.execution_count++ == 0;
 
     // The is_megamorphic bit is "sticky".  We assume clusters that have been
     // observed to be megamorphic once stay megamorphic forever.
     it->second.is_megamorphic |=
         IsMegamorphic(/*compile_count=*/it->second.compile_count,
-                      /*execution_count=*/it->second.execution_count);
+                      /*execution_count=*/it->second.execution_count,
+                      /*max_compile_time_s=*/it->second.max_compile_time_s);
     is_megamorphic = it->second.is_megamorphic;
   }
 
@@ -307,7 +306,7 @@ Status XlaCompilationCache::CompileImpl(
   mutex_lock entry_lock(entry->mu);
   int64 current_request_count = ++entry->request_count;
   VLOG(2) << "Compilation cache entry hit: " << entry->compiled
-          << " signature: " << signature.HumanString() << " with request count "
+          << " signature: " << human_signature << " with request count "
           << current_request_count << " and compile threshold "
           << compile_threshold.value_or(0);
   if (!entry->compiled) {
@@ -321,19 +320,15 @@ Status XlaCompilationCache::CompileImpl(
         BroadcastOptimizationRemark(XlaOptimizationRemark::MEGAMORPHIC_FUNCTION,
                                     function.name())
             .IgnoreError();
-        VLOG(3) << "Not compiling cluster " << function.name()
+        VLOG(2) << "Not compiling cluster " << function.name()
                 << " because it is megamorphic.";
         return false;
-      }
-
-      if (is_first_execution) {
-        return true;
       }
 
       bool reached_compile_threshold =
           current_request_count >= *compile_threshold;
       if (!reached_compile_threshold) {
-        VLOG(3)
+        VLOG(2)
             << "Not compiling cluster " << function.name()
             << " because it has not reached compile threshold; threshold is "
             << *compile_threshold << " execution count "
@@ -343,7 +338,7 @@ Status XlaCompilationCache::CompileImpl(
     }();
 
     if (!should_compile) {
-      VLOG(2) << "Not compiling for signature: " << signature.HumanString();
+      VLOG(2) << "Not compiling for signature: " << human_signature;
       *out_compilation_result = nullptr;
       *out_executable = nullptr;
       return Status::OK();
@@ -370,16 +365,18 @@ Status XlaCompilationCache::CompileImpl(
     {
       mutex_lock lock(cluster_compile_stats_mu_);
       auto it = cluster_compile_stats_.find(function.name());
+      const uint64 compile_time_s = compile_time_us / 1.0e6;
       it->second.compile_count++;
       it->second.cumulative_compile_time_us += compile_time_us;
+      it->second.max_compile_time_s = std::max(it->second.max_compile_time_s,
+                                               compile_time_s);
       LogOnceXlaCompiledFirstCluster();
       VLOG(1) << "compiled " << function.name() << " "
               << it->second.compile_count
               << " times, compile time: " << compile_time_us
               << " us, cumulative: " << it->second.cumulative_compile_time_us
               << " us ("
-              << tensorflow::strings::HumanReadableElapsedTime(compile_time_us /
-                                                               1.0e6)
+              << tensorflow::strings::HumanReadableElapsedTime(compile_time_s)
               << " / "
               << tensorflow::strings::HumanReadableElapsedTime(
                      it->second.cumulative_compile_time_us / 1.0e6)
