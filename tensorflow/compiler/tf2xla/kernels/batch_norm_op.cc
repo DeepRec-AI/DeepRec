@@ -122,17 +122,13 @@ class FusedBatchNormOp : public XlaOpKernel {
           y_size *= input_shape.dim_size(
               GetTensorSpatialDimIndex(input_shape.dims(), data_format_, i));
         }
-        std::string input_type_str =
-            (input_type == xla::PrimitiveType::F16) ? "F16" : "F32";
-        std::string scale_type_str =
-            (scale_type == xla::PrimitiveType::F32) ? "F32" : "F16";
+
         VLOG(1) << "Batch index: " << batch_index
                 << " Batch Size: " << batch_size
                 << " Feature index: " << feature_index
                 << " Feature count: " << feature_count
                 << " Num Dims: " << input_shape.dims()
-                << " Input type: " << input_type_str
-                << " Scale type: " << scale_type_str << " y_size = " << y_size;
+                << " y_size = " << y_size;
         // Since in tf2xla, a fused batchnorm with activation or with
         // activation+add gets expanded to batchnorm and activation and add, the
         // boolean apply_relu and apply_side_input are set to false here while

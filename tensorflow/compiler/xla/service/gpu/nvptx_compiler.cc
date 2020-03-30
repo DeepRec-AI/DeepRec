@@ -106,9 +106,6 @@ string GetLibdeviceDir(const HloModuleConfig& hlo_module_config) {
 Status NVPTXCompiler::OptimizeHloConvolutionCanonicalization(
     HloModule* hlo_module, se::StreamExecutor* stream_exec,
     se::DeviceMemoryAllocator* device_allocator) {
-  std::cout
-      << "NVPTXCompiler::OptimizeHloConvolutionCanonicalization Stream -> "
-      << device_allocator->GetStream() << std::endl;
   // Convert convolutions into CustomCalls to cudnn, then canonicalize them
   // (CudnnConvPaddingLegalization). Also expand cuSolver calls.
   HloPassPipeline pipeline("conv_canonicalization");
@@ -151,8 +148,6 @@ Status NVPTXCompiler::OptimizeHloConvolutionCanonicalization(
 Status NVPTXCompiler::OptimizeHloPostLayoutAssignment(
     HloModule* hlo_module, se::StreamExecutor* stream_exec,
     se::DeviceMemoryAllocator* device_allocator) {
-  std::cout << "NVPTXCompiler::OptimizeHloPostLayoutAssignment -> Stream: "
-            << device_allocator->GetStream() << std::endl;
   HloPassPipeline pipeline("post-layout_assignment");
   /* TODO(b/117531509): Use LayoutAssignment::InstructionCanChangeLayout after
    * fixing the ticket. */

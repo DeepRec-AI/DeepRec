@@ -252,8 +252,6 @@ Stream::Stream(StreamExecutor *parent)
       allocated_(false),
       ok_(false),
       temporary_memory_manager_(this) {
-  std::cout << "Stream -> " << this << " is created using StreamExecutor "
-            << parent << std::endl;
   VLOG_CALL(PARAM(parent));
 }
 
@@ -264,8 +262,6 @@ Stream::Stream(StreamExecutor *parent,
       allocated_(false),
       ok_(false),
       temporary_memory_manager_(this) {
-  std::cout << "Stream -> " << this << " is created using StreamInterface "
-            << parent << std::endl;
   VLOG_CALL(PARAM(parent), PARAM(implementation));
 }
 

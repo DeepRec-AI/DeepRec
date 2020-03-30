@@ -936,10 +936,6 @@ struct FusedBatchNormGrad<GPUDevice, T, U> {
       auto reserve_space_uint8 = functor::CastDeviceMemory<uint8, U>(
           const_cast<Tensor*>(reserve_space));
       reserve_space_data = &reserve_space_uint8;
-      std::cout << "In fused_batch_norm_op.cc: " << std::endl;
-      std::cout << "TF reserve space ptr in BN Backwward: "
-                << reserve_space_data->opaque()
-                << "  Size: " << reserve_space_data->size() << std::endl;
     }
     bool cudnn_launch_status =
         stream
@@ -1055,7 +1051,6 @@ class FusedBatchNormOpBase : public OpKernel {
   // If use_reserved_space is false, we don't have 5th output.
   virtual void ComputeWithReservedSpace(OpKernelContext* context,
                                         bool use_reserved_space) {
-    VLOG(1) << "use_reserved_space: " << use_reserved_space;
     const Tensor& x = context->input(0);
     const Tensor& scale = context->input(1);
     const Tensor& offset = context->input(2);
@@ -1206,7 +1201,6 @@ class FusedBatchNormGradOpBase : public OpKernel {
 
   virtual void ComputeWithReservedSpace(OpKernelContext* context,
                                         bool use_reserved_space) {
-    VLOG(1) << "use_reserved_space: " << use_reserved_space;
     const Tensor& y_backprop = context->input(0);
     const Tensor& x = context->input(1);
     const Tensor& scale = context->input(2);

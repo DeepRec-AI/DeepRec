@@ -158,11 +158,6 @@ Status XlaCompilationCache::BuildExecutable(
                                        : client_->default_device_ordinal());
   build_options.set_result_layout(result.xla_output_shape);
   build_options.set_device_allocator(options.device_allocator);
-  std::cout << "xla_compilation_cache.cc: options_.device_allocator: "
-            << options.device_allocator << std::endl;
-  std::cout
-      << "xla_compilation_cache.cc: options_.device_allocator->GetStream(): "
-      << options.device_allocator->GetStream() << std::endl;
 
   auto compile_result =
       client_->Compile(*result.computation, argument_layouts, build_options);

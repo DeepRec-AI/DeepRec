@@ -170,12 +170,7 @@ class DeviceBase {
   }
 
   // Does not take ownership.
-  void set_tensorflow_gpu_device_info(GpuDeviceInfo* g) {
-    std::cout << "GpuDeviceInfo is SET " << std::endl;
-    std::cout << "Stream set to: " << g->stream << std::endl;
-    std::cout << "Device: " << this << std::endl;
-    gpu_device_info_ = g;
-  }
+  void set_tensorflow_gpu_device_info(GpuDeviceInfo* g);
 
   virtual const GpuDeviceInfo* tensorflow_gpu_device_info() const {
     return gpu_device_info_;

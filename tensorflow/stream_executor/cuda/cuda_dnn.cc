@@ -1700,7 +1700,6 @@ port::StatusOr<size_t> GetBatchNormalizationReserveSpaceSizeInternal(
       /*activationDesc=*/activation_desc,
       /*xDesc=*/x_descriptor.handle(),
       /*sizeInBytes=*/&reserve_space_size_in_bytes));
-  std::cout << "cuda_dnn.cc: reserve_space_size_in_bytes = " << reserve_space_size_in_bytes << std::endl;
   return reserve_space_size_in_bytes;
 }
 
@@ -3815,26 +3814,6 @@ port::Status CudnnSupport::DoBatchNormalizationForwardImpl(
 #if CUDNN_VERSION >= 7402
     if (reserve_space_allocator != nullptr && workspace_allocator != nullptr) {
       called = true;
-      static uint64 forward_workspace_size = 0;
-      static uint64 forward_reserve_space_size = 0;
-      std::stringstream ss_vlog;
-      ss_vlog << "cudnnBatchNormalizationForwardTrainingEx: " << std::endl;
-      ss_vlog << "workspace.size(): " << workspace.size() << std::endl;
-      ss_vlog << "reserve_space.size(): " << reserve_space.size() << std::endl;
-      forward_workspace_size =
-          std::max(workspace.size(), forward_workspace_size);
-      forward_reserve_space_size =
-          std::max(reserve_space.size(), forward_reserve_space_size);
-      ss_vlog << "Max Fwd workspace size = " << forward_workspace_size
-              << std::endl;
-      ss_vlog << "Max Fwd reserve space size = " << forward_reserve_space_size
-              << std::endl;
-      ss_vlog << std::endl;
-      VLOG(1) << ss_vlog.str();
-      // std::cout << "In cuda_dnn.cc: " << std::endl;
-      // std::cout << "TF reserve space ptr in BatchNorm Forward: "
-      //          << reserve_space.opaque() << " Size: " << reserve_space.size()
-      //          << std::endl;
       RETURN_IF_CUDNN_ERROR(cudnnBatchNormalizationForwardTrainingEx(
           /*handle=*/cudnn.handle(),
           /*mode=*/mode,
@@ -3954,27 +3933,6 @@ port::Status CudnnSupport::DoBatchNormalizationBackwardImpl(
                         CreateBatchNormBackwardWorkspace(
                             stream, cudnn, mode, bn_ops, x_descriptor,
                             scale_offset_descriptor, workspace_allocator))
-    static uint64 backward_workspace_size = 0;
-    static uint64 backward_reserve_space_size = 0;
-    std::stringstream ss_vlog;
-    ss_vlog << "cudnnBatchNormalizationBackwardEx: " << std::endl;
-    ss_vlog << "workspace.size(): " << workspace.size() << std::endl;
-    ss_vlog << "reserve_space_data->size(): " << reserve_space_data->size()
-            << std::endl;
-    backward_workspace_size =
-        std::max(workspace.size(), backward_workspace_size);
-    backward_reserve_space_size =
-        std::max(reserve_space_data->size(), backward_reserve_space_size);
-    ss_vlog << "Max bwd workspace size = " << backward_workspace_size
-            << std::endl;
-    ss_vlog << "Max bwd reserve space size = " << backward_reserve_space_size
-            << std::endl;
-    ss_vlog << std::endl;
-    VLOG(1) << ss_vlog.str();
-    // std::cout << "In cuda_dnn.cc: " << std::endl;
-    // std::cout << "TF reserve space ptr in BatchNorm Backward: "
-    //          << reserve_space_data->opaque()
-    //          << " Size: " << reserve_space_data->size() << std::endl;
     RETURN_IF_CUDNN_ERROR(cudnnBatchNormalizationBackwardEx(
         /*handle=*/cudnn.handle(),
         /*mode=*/mode,
