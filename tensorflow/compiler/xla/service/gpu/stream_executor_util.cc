@@ -327,6 +327,11 @@ DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
   // cudnn layout for any XLA shape+layout, even XLA shapes that don't have
   // exactly 4 dimensions: We put everything that comes before the feature dim
   // into "batch", and everything that comes after the feature dim into "Y".
+  // However, if the last dimension is the feature_index, NHWC fast cudnn
+  // kernels can be leveraged. For such a configuration, the first physical
+  // dimension (dim 0) is assumed to be the "batch" dimension. The last
+  // dimension is the feature dimension. All other dimensions are put
+  // together(squashed) into "Y".
   int64 batch_size = 1;
   int64 y_size = 1;
   int64 physical_dim;
@@ -339,14 +344,22 @@ DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
   for (; physical_dim < shape.dimensions_size(); ++physical_dim) {
     y_size *= physical_dim_size(physical_dim);
   }
-  // batch_size = physical_dim_size(0);
-  // y_size = physical_dim_size(1);
-  // int64 width = physical_dim_size(2);
 
+  se::dnn::DataLayout data_layout = se::dnn::DataLayout::kBatchDepthYX;
+  // For a general NHWC data layout (i.e, feature index is that last index),
+  // [N, X1, X2, X3,...Xn, Y1, Y2,..., Ym, C], the above computation will
+  // produce batch_size = N*X1*X2....Xn*Y1*Y2*..Ym; y_size = 1. For an NHWC
+  // layout, without loss of generality, we can assume that dim 0 is the batch
+  // dim. Note even if it is a spatial dimension, this assumption would not
+  // alter the results since anyway batchnorm only cares about the location of
+  // the depth (aka "feature" dim).
+  if (logical_to_physical[feature_index] == shape.dimensions_size() - 1) {
+    data_layout = se::dnn::DataLayout::kBatchYXDepth;
+    y_size = batch_size / physical_dim_size(0);
+    batch_size = physical_dim_size(0);
+  }
   DnnBatchDescriptors batch_descs;
-  batch_descs.input_desc
-      .set_layout(se::dnn::DataLayout::
-                      kBatchYXDepth /*se::dnn::DataLayout::kBatchDepthYX*/)
+  batch_descs.input_desc.set_layout(data_layout)
       .set_count(batch_size)
       .set_feature_map_count(shape.dimensions(feature_index))
       .set_height(y_size)

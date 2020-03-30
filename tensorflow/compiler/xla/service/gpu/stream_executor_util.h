@@ -126,6 +126,8 @@ struct DnnBatchDescriptors {
   se::dnn::BatchDescriptor scale_offset_desc;
 };
 
+// This helper function is used by cudnn_batchnorm_rewriter and
+// cudnn_batchnorm_runner.
 DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
                                              int64 feature_index);
 }  // namespace gpu

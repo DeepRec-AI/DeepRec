@@ -936,6 +936,10 @@ struct FusedBatchNormGrad<GPUDevice, T, U> {
       auto reserve_space_uint8 = functor::CastDeviceMemory<uint8, U>(
           const_cast<Tensor*>(reserve_space));
       reserve_space_data = &reserve_space_uint8;
+      std::cout << "In fused_batch_norm_op.cc: " << std::endl;
+      std::cout << "TF reserve space ptr in BN Backwward: "
+                << reserve_space_data->opaque()
+                << "  Size: " << reserve_space_data->size() << std::endl;
     }
     bool cudnn_launch_status =
         stream

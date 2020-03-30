@@ -87,6 +87,9 @@ XlaDeviceContext::XlaDeviceContext(
       transfer_manager_(client->backend().transfer_manager()),
       shape_representation_fn_(std::move(shape_representation_fn)),
       thread_pool_(thread_pool) {
+  std::cout << "XlaDeviceContext " << this << " constructed" << std::endl;
+  std::cout << "Xla Device Context Constructed->Stream: " << stream_.get()
+            << std::endl;
   CHECK(host_to_device_stream_ != nullptr);
   CHECK(stream_ != nullptr);
   if (!shape_representation_fn_) {
