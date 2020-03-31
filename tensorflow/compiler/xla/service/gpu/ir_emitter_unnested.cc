@@ -1941,6 +1941,8 @@ static void UnrollInnerTileLoop(
     IrArray::Index& source_idx, llvm::IRBuilder<>& b_,
     const IrEmitterUnnested::EmitElementFunction* emit_elem_function,
     bool manually_vectorize) {
+  CHECK_EQ(x_num_steps % vector_size, 0);
+
   llvm::Type* index_ty = tile_width->getType();
   auto constant = [&](int64 val) {
     return llvm::ConstantInt::get(index_ty, val);
@@ -1968,18 +1970,15 @@ static void UnrollInnerTileLoop(
         }
       }
     } else {
-      // CHECK(!check_x_tile_bounds);
-      // TODO We only check the bonds for the first elements. Can we do better?
-      // Can we do a CHECK?
-      //      for (int i = 0; i < vector_size; i++) {
-      int linear_index = j * vector_size;  // + i;
+      CHECK(!check_x_tile_bounds);
+      int linear_index = j * vector_size;
       llvm::Value* x_loc =
-          b_.CreateAdd(constant(j * step_x * vector_size),  // + i),
+          b_.CreateAdd(constant(j * step_x * vector_size),
                        start_offset_x, "x_loc");
       IrArray::Index source_idx_x =
           source_idx.AddOffsetToDim(y_loc, kDimY, &b_)
               .AddOffsetToDim(constant(j * step_x * vector_size),
-                              kDimX,  // + i), kDimX,
+                              kDimX,
                               &b_);
       auto emit_element = [&] {
         return (*emit_elem_function)(
@@ -2533,10 +2532,7 @@ void IrEmitterUnnested::EmitTileElementForReduction(
   VLOG(10) << "Emit tile element for reduce " << unnested_hlo->ToString();
   bool returns_tuple = output_instructions.size() > 1;
   int partial_result_index = reduction_info.IsRowReduction() ? 0 : x_iter_num;
-  int vector_size_load = 1;
-  if (preload) {
-    vector_size_load = vector_size;
-  }
+
   InlinedVector<llvm_ir::ElementGenerator, 1> input_gens;
   std::vector<std::pair<llvm_ir::ElementGenerator, ShapeIndex>>
       extra_output_gens;
@@ -2556,7 +2552,8 @@ void IrEmitterUnnested::EmitTileElementForReduction(
     }
   }
   FusedIrEmitter fused_emitter(GetGeneratorForOperandIrArrays(unnested_hlo),
-                               &elem_emitter, nullptr, nullptr, {},
+                               &elem_emitter, /*thread_id_x*/ nullptr,
+                               /*thread_id_y*/ nullptr, /*param_shmem_buffers*/ {},
                                vector_size_map, manually_vectorize);
   // Construct the ElementGenerator for each reduction and extra output in the
   // the group of output instructions.
@@ -2588,7 +2585,7 @@ void IrEmitterUnnested::EmitTileElementForReduction(
         buffer =
             GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
                 .EmitReadConsecutiveArrayElement(
-                    index, &b_, "", true, vector_size_load, manually_vectorize);
+                    index, &b_, "", true, vector_size, manually_vectorize);
       }
       auto val = buffer.front();
       buffer.erase(buffer.begin());

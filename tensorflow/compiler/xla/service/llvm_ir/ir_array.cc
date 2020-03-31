@@ -385,17 +385,15 @@ llvm::Value* IrArray::EmitVectorArrayElementAddress(const IrArray::Index& index,
                                                     absl::string_view name,
                                                     bool use_linear_index,
                                                     int vector_size) const {
-  CHECK(vector_size > 1);
+  CHECK_GT(vector_size, 1);
   CHECK(!ShapeUtil::IsScalar(shape_));
-
   CHECK_EQ(index.size(), shape_.rank());
   CHECK(index.ShapeIsCompatible(shape_));
+
   llvm::Value* indice = nullptr;
   if (use_linear_index && index.LinearValidOnShape(shape_)) {
-    VLOG(0) << "EmitVectorArrayElementAddress LINEAR!";
     indice = index.linear();
   } else {
-    VLOG(0) << "EmitVectorArrayElementAddress NO LINEAR!";
     indice = index.Linearize(index.dims(), b);
   }
 
