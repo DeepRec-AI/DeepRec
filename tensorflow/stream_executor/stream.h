@@ -224,8 +224,10 @@ class Stream {
   // The stream does not take ownership of event - meaning that event's lifetime
   // must extend past the point at which it is marked complete!
   Stream &ThenRecordEvent(Event *event);
+
   ////////////////
   // DNN support
+  //
   // See DnnSupport::* for comments on the following methods.
   Stream &ThenFindBatchNormalizationTrainingExReserveSpaceSize(
       int64 batch_size, int64 feature_count, int64 y_size,

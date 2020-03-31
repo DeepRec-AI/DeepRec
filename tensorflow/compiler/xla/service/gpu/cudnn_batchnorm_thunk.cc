@@ -66,6 +66,13 @@ void CheckInputOutputPrimitivetypeAreValid(const HloInstruction* hlo) {
           << "Invalid datatype";
       continue;
     }
+    // num_operands = 8 implies that a reserve space in the 6th input(i=5)
+    // If bothe the forward and the grad are in the same cluster,
+    // this input can either be UNIT8. Otherwise it is gets converted to F32
+    // at the entry of the cluster.
+    if (num_operands == 8 && i == 5) {
+      continue;
+    }
     CHECK_EQ(hlo->operand(i)->shape().element_type(), F32)
         << "Not yet implemented";
   }

@@ -69,7 +69,6 @@ class PerOpGpuDevice {
 class DeviceContext : public core::RefCounted {
  public:
   ~DeviceContext() override {
-    std::cout << "Device Context " << this << " Destructed" << std::endl;
   }
   virtual stream_executor::Stream* stream() const { return nullptr; }
   virtual void MaintainLifetimeOnStream(const Tensor* t,

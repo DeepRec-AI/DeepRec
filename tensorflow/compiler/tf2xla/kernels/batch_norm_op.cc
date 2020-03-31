@@ -231,14 +231,14 @@ class FusedBatchNormOp : public XlaOpKernel {
   }
 protected:
   xla::XlaOp batch_norm_training_;
+  bool is_training_;
+  bool is_on_gpu_;
 
  private:
   float epsilon_;
   TensorFormat data_format_;
-  bool is_training_;
   bool add_side_input_;
   bool apply_relu_;
-  bool is_on_gpu_;
 };
 
 class FusedBatchNormOpV3 : public FusedBatchNormOp {
@@ -247,11 +247,18 @@ class FusedBatchNormOpV3 : public FusedBatchNormOp {
       : FusedBatchNormOp(ctx) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormOp::CompileImpl(ctx, true);
+    // Use reserve space only applicable for gpu. Retaining the original
+    // behaviour for non-gpu backends.
+    FusedBatchNormOp::CompileImpl(ctx, is_on_gpu_);
     if (!ctx->status().ok()) {
       return;
     }
-    ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
+    // Reserve space only set for training on gpu.
+    if (is_on_gpu_ && is_training_) {
+      ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
+    } else {
+      ctx->SetConstantOutput(5, Tensor());
+    }
   }
 };
 
@@ -261,11 +268,16 @@ class FusedBatchNormOpEx : public FusedBatchNormOp {
       : FusedBatchNormOp(ctx, /*is_batch_norm_ex=*/true) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormOp::CompileImpl(ctx, true);
+    FusedBatchNormOp::CompileImpl(ctx, is_on_gpu_);
     if (!ctx->status().ok()) {
       return;
     }
-    ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
+    // Reserve space only set for training on gpu.
+    if (is_on_gpu_ && is_training_) {
+      ctx->SetOutput(5, xla::GetTupleElement(batch_norm_training_, 3));
+    } else {
+      ctx->SetConstantOutput(5, Tensor());
+    }
   }
 };
 
@@ -382,11 +394,13 @@ class FusedBatchNormGradOp : public XlaOpKernel {
     ctx->SetConstantOutput(4, Tensor());
   }
 
+ protected:
+  bool is_on_gpu_;
+
  private:
   TensorFormat data_format_;
   float epsilon_;
   bool is_training_;
-  bool is_on_gpu_;
 };
 
 class FusedBatchNormGradOpV3 : public FusedBatchNormGradOp {
@@ -395,7 +409,7 @@ class FusedBatchNormGradOpV3 : public FusedBatchNormGradOp {
       : FusedBatchNormGradOp(ctx) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormGradOp::CompileImpl(ctx, true);
+    FusedBatchNormGradOp::CompileImpl(ctx, is_on_gpu_);
     if (!ctx->status().ok()) {
       return;
     }
