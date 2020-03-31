@@ -2529,6 +2529,7 @@ void IrEmitterUnnested::EmitTileElementForReduction(
     const ReductionCodegenInfo& reduction_info,
     absl::Span<HloComputation* const> reducers, int64 x_iter_num,
     int vector_size, bool preload, bool manually_vectorize) {
+  CHECK_GE(vector_size, 1);
   VLOG(10) << "Emit tile element for reduce " << unnested_hlo->ToString();
   bool returns_tuple = output_instructions.size() > 1;
   int partial_result_index = reduction_info.IsRowReduction() ? 0 : x_iter_num;
@@ -2542,9 +2543,16 @@ void IrEmitterUnnested::EmitTileElementForReduction(
   GpuElementalIrEmitter elem_emitter(hlo_module_config_, module_, &b_,
                                      GetNestedComputer());
   std::unordered_map<const HloInstruction*, int> vector_size_map;
-  for (auto hlo : unnested_hlo->operands()) {
-    if (vector_size > 1 && hlo->shape() == reduction_operand_shape) {
-      vector_size_map[hlo] = vector_size;
+  if (unnested_hlo->opcode() == HloOpcode::kFusion && vector_size > 1) {
+    HloComputation* computation =
+        unnested_hlo->fused_instructions_computation();
+    for (int i = 0; i < computation->num_parameters(); ++i) {
+      HloInstruction* hlo = computation->parameter_instruction(i);
+      if (ShapeUtil::EqualIgnoringElementType(hlo->shape(),
+                                              reduction_operand_shape) &&
+          hlo->shape().layout().minor_to_major().back() == 0) {
+        vector_size_map[hlo] = vector_size;
+      }
     }
   }
   FusedIrEmitter fused_emitter(GetGeneratorForOperandIrArrays(unnested_hlo),
@@ -2565,7 +2573,14 @@ void IrEmitterUnnested::EmitTileElementForReduction(
                                        std::move(idx));
       }
     }
+  } else if (vector_size == 1) {
+    // We do not vectorize that input load
+    input_gens.push_back([&](const IrArray::Index& index) {
+      return GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
+          .EmitReadArrayElement(index, &b_);
+    });
   } else {
+    // Generate a vectozized load.
     std::vector<llvm::Value*> buffer;
     input_gens.push_back([&, buffer](const IrArray::Index& index) mutable {
       // The load is generated here.
@@ -3211,15 +3226,22 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
            << " " << reduction_dimensions.dimensions[0] << " "
            << reduction_dimensions.dimensions[1] << " "
            << reduction_dimensions.dimensions[2];
-  auto get_dtype_bits = [](const HloInstruction *i) {
-    return primitive_util::BitWidth(i->shape().element_type());};
+  auto get_dtype_bits = [](const HloInstruction* i) {
+    return primitive_util::BitWidth(i->shape().element_type());
+  };
 
   // For fusion with multiple inputs, use the smallest input dtype to
   // select the reduction_tiling.
   int smallest_input_dtype_bits = get_dtype_bits(first_reduce->operand(0));
-  for (xla::HloInstruction* input: unnested_hlo->operands()) {
-    smallest_input_dtype_bits = std::min(get_dtype_bits(input),
-                                         smallest_input_dtype_bits);
+  bool have_inner_contiguous_layout = false;
+  for (xla::HloInstruction* input : unnested_hlo->operands()) {
+    smallest_input_dtype_bits =
+        std::min(get_dtype_bits(input), smallest_input_dtype_bits);
+    const Layout layout = input->shape().layout();
+    if (layout.minor_to_major_size() > 0 &&
+        layout.minor_to_major().back() == 0) {
+      have_inner_contiguous_layout = true;
+    }
   }
   std::array<int64, 3> reduction_tiling =
       GetReductionTiling(reduction_dimensions, smallest_input_dtype_bits,
@@ -3254,6 +3276,8 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
   KernelMappingScheme::IndexingOrder indexing_order = [&]() {
     if (reduction_dimensions.is_row_reduction &&
         !MayPreventVectorization(*unnested_hlo) &&
+        // At least one input has the inner most dimensions contiguous.
+        have_inner_contiguous_layout &&
         // P100, only try to vectorize+coales memory access when the
         // tile size fits exactly and dtypes <= 32 bits
         ((cc_major == 6 && smallest_input_dtype_bits <= 32 && tile_fit) ||
