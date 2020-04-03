@@ -1938,7 +1938,7 @@ static void UnrollInnerTileLoop(
     bool check_x_tile_bounds, int64 x_num_steps, int64 step_x,
     int64 vector_size, const string& loop_name, KernelSupportLibrary* ksl,
     llvm::Value* start_offset_x, llvm::Value* y_loc, llvm::Value* tile_width,
-    const IrArray::Index& source_idx, llvm::IRBuilder<>* b_,
+    const IrArray::Index& source_idx, llvm::IRBuilder<>* b,
     const IrEmitterUnnested::EmitElementFunction* emit_elem_function,
     bool manually_vectorize) {
   CHECK_EQ(x_num_steps % vector_size, 0);
@@ -1950,22 +1950,22 @@ static void UnrollInnerTileLoop(
 
   for (int64 j = 0; j < x_num_steps / vector_size; j++) {
     IrArray::Index source_idx_x_base =
-        source_idx.AddOffsetToDim(y_loc, kDimY, b_);
+        source_idx.AddOffsetToDim(y_loc, kDimY, b);
     if (vector_size == 1 || check_x_tile_bounds) {
       for (int64 i = 0; i < vector_size; i++) {
         int linear_index = j * vector_size + i;
-        llvm::Value* x_loc = b_->CreateAdd(
+        llvm::Value* x_loc = b->CreateAdd(
             constant(j * step_x * vector_size + i), start_offset_x, "x_loc");
         IrArray::Index source_idx_x =
             source_idx_x_base.AddOffsetToDim(
-                constant(j * step_x * vector_size + i), kDimX, b_);
+                constant(j * step_x * vector_size + i), kDimX, b);
         auto emit_element = [&] {
           return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
                                        1, /*preload*/ false,
                                        /*manually_vectorize*/ false);
         };
         if (check_x_tile_bounds) {
-          ksl->If(loop_name + "_x_in_tile", b_->CreateICmpULT(x_loc, tile_width),
+          ksl->If(loop_name + "_x_in_tile", b->CreateICmpULT(x_loc, tile_width),
                   emit_element);
         } else {
           emit_element();
@@ -1975,22 +1975,17 @@ static void UnrollInnerTileLoop(
       CHECK(!check_x_tile_bounds);
       int linear_index = j * vector_size;
       llvm::Value* x_loc =
-          b_->CreateAdd(constant(j * step_x * vector_size),
+          b->CreateAdd(constant(j * step_x * vector_size),
                        start_offset_x, "x_loc");
       IrArray::Index source_idx_x =
           source_idx_x_base.AddOffsetToDim(constant(j * step_x * vector_size),
-                                           kDimX, b_);
+                                           kDimX, b);
       auto emit_element = [&] {
         return (*emit_elem_function)(
             source_idx_x, y_loc, x_loc, linear_index, vector_size,
             /*preload*/ !check_x_tile_bounds, manually_vectorize);
       };
-      if (check_x_tile_bounds) {
-        ksl->If(loop_name + "_x_in_tile", b_->CreateICmpULT(x_loc, tile_width),
-                emit_element);
-      } else {
-        emit_element();
-      }
+      emit_element();
     }
   }
 }
@@ -2062,7 +2057,7 @@ void IrEmitterUnnested::EmitTile(
             thread_id_info.thread_id_y, b_.CreateMul(y_indvar, num_threads_y));
         auto unroll_inner_tile_loop = [&](bool check_x_tile_bounds,
                                        bool manually_vectorize = false) {
-          // We can't vectorize is we need to check the bouds.
+          // We can't vectorize as we need to check the bounds.
           CHECK(!(check_x_tile_bounds && manually_vectorize));
           return UnrollInnerTileLoop(
               check_x_tile_bounds, x_num_steps, step_x, vector_size, loop_name,
