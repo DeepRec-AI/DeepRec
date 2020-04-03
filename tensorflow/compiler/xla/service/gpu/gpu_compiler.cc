@@ -168,7 +168,10 @@ Status GpuCompiler::OptimizeHloModule(
       if (hlo_module->config().debug_options().xla_gpu_use_cudnn_batchnorm()) {
         // Since BatchNorm inference is essentially pointwise operations, it is
         // always advantageous to use kernel fusion rather than cudnn.
-        std::cout << "USE_CUDNN_BATCHNORM" << std::endl;
+        static bool use_cudnn = true;
+        if (use_cudnn){
+          std::cout << "USE_CUDNN_BATCHNORM" << std::endl;
+        }
         pass.AddPass<BatchNormExpander>(
           /*rewrite_training_op=*/false,
           /*rewrite_inference_op=*/true,
