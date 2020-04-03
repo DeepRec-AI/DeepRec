@@ -265,8 +265,19 @@ Status RunGemm(const HloInstruction *gemm,
   complex128 alpha = {backend_config.alpha_real(), backend_config.alpha_imag()};
   double beta = backend_config.beta();
 
-  auto nvtx_range = tensorflow::nvtx::MaybeNvtxRangeStart(
-      gemm->NvtxNodeOpString(), gemm->NvtxNodeNameString());
+  string msg;
+  string op = gemm->NvtxNodeOpString();
+  string name = gemm->NvtxNodeNameString();
+  if (tensorflow::nvtx::NvtxRangesEnabled() ||
+      tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
+    if (tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
+      msg = strings::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
+                            "\",\"args\":[],\"attrs\":{}}");
+    } else {
+      msg = op + ": " + name;
+    }
+  }
+  auto nvtx_range = tensorflow::nvtx::MaybeNvtxDomainRangeStartMsg(msg, op);
 
   bool launch_ok = [&]() {
     switch (output_shape.element_type()) {
@@ -303,7 +314,7 @@ Status RunGemm(const HloInstruction *gemm,
     }
   }();
 
-  tensorflow::nvtx::MaybeNvtxRangeEnd(nvtx_range);
+  tensorflow::nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
 
   if (!launch_ok) {
     return InternalError("Unable to launch cuBLAS gemm on stream %p", stream);
