@@ -108,8 +108,8 @@ const auto kDimTot = KernelMappingScheme::DimTot;
 
 const auto kLinearIndexingX = KernelMappingScheme::LinearIndexingX;
 const auto kStridedIndexingX = KernelMappingScheme::StridedIndexingX;
-const auto kLinearStridedIndexingX =
-    KernelMappingScheme::LinearStridedIndexingX;
+const auto kStridedLinearIndexingX =
+    KernelMappingScheme::StridedLinearIndexingX;
 
 // If a dimensions is smaller than this, untiled transposition may be more
 // efficient.
@@ -1915,7 +1915,7 @@ static llvm::Value* GetStartOffsetX(const KernelMappingScheme& mapping_scheme,
   };
   if (mapping_scheme.GetIndexingOrder() == kStridedIndexingX) {
     return thread_id_x;
-  } else if (mapping_scheme.GetIndexingOrder() == kLinearStridedIndexingX) {
+  } else if (mapping_scheme.GetIndexingOrder() == kStridedLinearIndexingX) {
     return b->CreateMul(thread_id_x, constant(mapping_scheme.GetVectorSize()));
   }
   CHECK_EQ(mapping_scheme.GetIndexingOrder(), kLinearIndexingX);
@@ -2070,7 +2070,7 @@ void IrEmitterUnnested::EmitTile(
         // row size. For odd row size every other row isn't aligned to the
         // vectorized size, so it can't be vectorized by LLVM.
         if (!x_tile_fits &&
-            mapping_scheme.GetIndexingOrder() == kLinearStridedIndexingX) {
+            mapping_scheme.GetIndexingOrder() == kStridedLinearIndexingX) {
           ksl->If(loop_name + "_is_full_tile",
                   // For the last block, tile_width will be the number of
                   // elements left.
@@ -3274,7 +3274,7 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
          // isn't aligned, so it can't be vectorized.
          (cc_major >= 7 && reduction_dimensions.dimensions[2] % 2 == 0))) {
       vector_size = 2;
-      return kLinearStridedIndexingX;
+      return kStridedLinearIndexingX;
     } else if (!reduction_dimensions.is_row_reduction &&
                IsUnrollingColumnReductionBeneficial(
                    unnested_hlo, input_shape,
