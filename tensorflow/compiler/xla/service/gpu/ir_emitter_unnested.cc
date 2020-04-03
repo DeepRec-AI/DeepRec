@@ -1957,7 +1957,7 @@ static void UnrollInnerTileLoop(
         llvm::Value* x_loc = b_->CreateAdd(
             constant(j * step_x * vector_size + i), start_offset_x, "x_loc");
         IrArray::Index source_idx_x =
-            source_idx_base.AddOffsetToDim(
+            source_idx_x_base.AddOffsetToDim(
                 constant(j * step_x * vector_size + i), kDimX, b_);
         auto emit_element = [&] {
           return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
@@ -1978,8 +1978,8 @@ static void UnrollInnerTileLoop(
           b_->CreateAdd(constant(j * step_x * vector_size),
                        start_offset_x, "x_loc");
       IrArray::Index source_idx_x =
-          source_idx_base.AddOffsetToDim(constant(j * step_x * vector_size),
-                                         kDimX, b_);
+          source_idx_x_base.AddOffsetToDim(constant(j * step_x * vector_size),
+                                           kDimX, b_);
       auto emit_element = [&] {
         return (*emit_elem_function)(
             source_idx_x, y_loc, x_loc, linear_index, vector_size,
@@ -2060,7 +2060,7 @@ void IrEmitterUnnested::EmitTile(
       /*step=*/constant(1), [&](llvm::Value* y_indvar) {
         llvm::Value* y_loc = b_.CreateAdd(
             thread_id_info.thread_id_y, b_.CreateMul(y_indvar, num_threads_y));
-        auto unrollInnerTileLoop = [&](bool check_x_tile_bounds,
+        auto unroll_inner_tile_loop = [&](bool check_x_tile_bounds,
                                        bool manually_vectorize = false) {
           // We can't vectorize is we need to check the bouds.
           CHECK(!(check_x_tile_bounds && manually_vectorize));
