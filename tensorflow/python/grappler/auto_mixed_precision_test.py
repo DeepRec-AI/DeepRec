@@ -428,9 +428,9 @@ class AutoMixedPrecisionTest(test.TestCase):
         x = _conv3d_bn(x)
         output = _conv3d_bn(x)
 
-        output_val_ref, output_val, cost_graph = self._run(output)
+        output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
         node_map = _build_node_map(cost_graph.node)
-        num_to_fp16, num_to_fp32 = _count_casts(cost_graph.node)
+        num_to_fp16, num_to_fp32 = _count_casts(partition_graphs[0])
 
         self._assert_output_fp16(node_map, 'Conv3D')
         self._assert_output_fp16(node_map, 'FusedBatchNormV3')
@@ -455,7 +455,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       g = optimizer.compute_gradients(y, [x, f])
       output = (y, g)
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       node_map = _build_node_map(cost_graph.node)
       self._assert_output_fp16(node_map, 'Conv3D')
       self._assert_output_fp16(node_map,
@@ -463,7 +463,7 @@ class AutoMixedPrecisionTest(test.TestCase):
       self._assert_output_fp16(node_map,
                                'gradients/Conv3D_grad/Conv3DBackpropFilterV2')
 
-      output_val_ref, output_val, cost_graph = self._run(output)
+      output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
       self.assertAllClose(output_val_ref, output_val, atol=1e-3, rtol=1e-3)
 
   @test_util.run_deprecated_v1
