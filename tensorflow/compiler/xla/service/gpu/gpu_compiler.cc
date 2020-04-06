@@ -171,6 +171,7 @@ Status GpuCompiler::OptimizeHloModule(
         static bool use_cudnn = true;
         if (use_cudnn){
           std::cout << "USE_CUDNN_BATCHNORM" << std::endl;
+          use_cudnn = false;
         }
         pass.AddPass<BatchNormExpander>(
           /*rewrite_training_op=*/false,
