@@ -1956,9 +1956,8 @@ static void UnrollInnerTileLoop(
         int linear_index = j * vector_size + i;
         llvm::Value* x_loc = b->CreateAdd(
             constant(j * step_x * vector_size + i), start_offset_x, "x_loc");
-        IrArray::Index source_idx_x =
-            source_idx_x_base.AddOffsetToDim(
-                constant(j * step_x * vector_size + i), kDimX, b);
+        IrArray::Index source_idx_x = source_idx_x_base.AddOffsetToDim(
+            constant(j * step_x * vector_size + i), kDimX, b);
         auto emit_element = [&] {
           return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
                                        1, /*preload*/ false,
@@ -1974,12 +1973,10 @@ static void UnrollInnerTileLoop(
     } else {
       CHECK(!check_x_tile_bounds);
       int linear_index = j * vector_size;
-      llvm::Value* x_loc =
-          b->CreateAdd(constant(j * step_x * vector_size),
-                       start_offset_x, "x_loc");
-      IrArray::Index source_idx_x =
-          source_idx_x_base.AddOffsetToDim(constant(j * step_x * vector_size),
-                                           kDimX, b);
+      llvm::Value* x_loc = b->CreateAdd(constant(j * step_x * vector_size),
+                                        start_offset_x, "x_loc");
+      IrArray::Index source_idx_x = source_idx_x_base.AddOffsetToDim(
+          constant(j * step_x * vector_size), kDimX, b);
       auto emit_element = [&] {
         return (*emit_elem_function)(
             source_idx_x, y_loc, x_loc, linear_index, vector_size,
@@ -2021,8 +2018,7 @@ void IrEmitterUnnested::EmitTile(
 
   // True when all threads will always execute all instructions.
   // So we do not need to emit condition.
-  bool always_full_tile =
-      mapping_scheme.GetDimsInElems()[2] % tile_size_x == 0;
+  bool always_full_tile = mapping_scheme.GetDimsInElems()[2] % tile_size_x == 0;
 
   auto ceil_of_ratio = [&](llvm::Value* a, llvm::Value* b) {
     return b_.CreateUDiv(b_.CreateAdd(b_.CreateAdd(a, b), constant(-1)), b);
@@ -2056,7 +2052,7 @@ void IrEmitterUnnested::EmitTile(
         llvm::Value* y_loc = b_.CreateAdd(
             thread_id_info.thread_id_y, b_.CreateMul(y_indvar, num_threads_y));
         auto unroll_inner_tile_loop = [&](bool check_x_tile_bounds,
-                                       bool manually_vectorize = false) {
+                                          bool manually_vectorize = false) {
           // We can't vectorize as we need to check the bounds.
           CHECK(!(check_x_tile_bounds && manually_vectorize));
           return UnrollInnerTileLoop(
@@ -2071,17 +2067,20 @@ void IrEmitterUnnested::EmitTile(
         // vectorized size, so it can't be vectorized by LLVM.
         if (!x_tile_fits &&
             mapping_scheme.GetIndexingOrder() == kStridedLinearIndexingX) {
-          ksl->If(loop_name + "_is_full_tile",
-                  // For the last block, tile_width will be the number of
-                  // elements left.
-                  b_.CreateICmpEQ(constant(mapping_scheme.GetTileSizeX()),
-                                  tile_width),
-                  [&] { unroll_inner_tile_loop(/*check_x_tile_bounds=*/false,
-					    /*manually_vectorize=*/true); },
-                  [&] { unroll_inner_tile_loop(/*check_x_tile_bounds=*/true); });
+          ksl->If(
+              loop_name + "_is_full_tile",
+              // For the last block, tile_width will be the number of
+              // elements left.
+              b_.CreateICmpEQ(constant(mapping_scheme.GetTileSizeX()),
+                              tile_width),
+              [&] {
+                unroll_inner_tile_loop(/*check_x_tile_bounds=*/false,
+                                       /*manually_vectorize=*/true);
+              },
+              [&] { unroll_inner_tile_loop(/*check_x_tile_bounds=*/true); });
         } else {
           unroll_inner_tile_loop(/*check_x_tile_bounds=*/!x_tile_fits,
-                              /*manually_vectorize=*/x_tile_fits);
+                                 /*manually_vectorize=*/x_tile_fits);
         }
       });
 }
@@ -2548,8 +2547,9 @@ void IrEmitterUnnested::EmitTileElementForReduction(
   }
   FusedIrEmitter fused_emitter(GetGeneratorForOperandIrArrays(unnested_hlo),
                                &elem_emitter, /*thread_id_x*/ nullptr,
-                               /*thread_id_y*/ nullptr, /*param_shmem_buffers*/ {},
-                               vector_size_map, manually_vectorize);
+                               /*thread_id_y*/ nullptr,
+                               /*param_shmem_buffers*/ {}, vector_size_map,
+                               manually_vectorize);
   // Construct the ElementGenerator for each reduction and extra output in the
   // the group of output instructions.
   if (unnested_hlo->opcode() == HloOpcode::kFusion) {
@@ -2577,10 +2577,9 @@ void IrEmitterUnnested::EmitTileElementForReduction(
     input_gens.push_back([&, buffer](const IrArray::Index& index) mutable {
       // The load is generated here.
       if (buffer.empty()) {
-        buffer =
-            GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
-                .EmitReadConsecutiveArrayElement(
-                    index, &b_, "", true, vector_size, manually_vectorize);
+        buffer = GetIrArray(*unnested_hlo->operand(0), *unnested_hlo)
+                     .EmitReadConsecutiveArrayElement(
+                         index, &b_, "", true, vector_size, manually_vectorize);
       }
       auto val = buffer.front();
       buffer.erase(buffer.begin());
