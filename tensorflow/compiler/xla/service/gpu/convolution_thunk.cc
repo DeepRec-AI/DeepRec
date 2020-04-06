@@ -60,9 +60,9 @@ Status ConvolutionThunk::ExecuteOnStream(const ExecuteParams& params) {
       params.profiler->MakeScopedInstructionProfiler(hlo_instruction());
   string msg;
   string op = hlo_instruction()->NvtxNodeOpString();
-  string name = hlo_instruction()->NvtxNodeNameString();
   if (tensorflow::nvtx::NvtxRangesEnabled() ||
       tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
+    string name = hlo_instruction()->NvtxNodeNameString();
     if (tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
       msg = strings::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
                             "\",\"args\":[],\"attrs\":{}}");

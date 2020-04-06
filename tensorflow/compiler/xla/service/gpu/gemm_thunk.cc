@@ -267,9 +267,9 @@ Status RunGemm(const HloInstruction *gemm,
 
   string msg;
   string op = gemm->NvtxNodeOpString();
-  string name = gemm->NvtxNodeNameString();
   if (tensorflow::nvtx::NvtxRangesEnabled() ||
       tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
+    string name = gemm->NvtxNodeNameString();
     if (tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
       msg = strings::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
                             "\",\"args\":[],\"attrs\":{}}");
