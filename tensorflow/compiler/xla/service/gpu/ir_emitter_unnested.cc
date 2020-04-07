@@ -1926,14 +1926,15 @@ static llvm::Value* GetStartOffsetX(const KernelMappingScheme& mapping_scheme,
 
 // Calls `emit_elem_function()` `x_num_steps` times.  If
 // `vector_size`==1, then each element index passed to
-// `emit_elem_function()` will be separated by `step_x`. If `vector_size`>1,
-// then it must be a multiple of `x_num_steps`.  In that case, it
-// triggers a different indexing order that is vectorizable by
-// LLVM. It generates many groups of calls to `emit_elem_function`. Each
-// group is separated by `step_x` elements.  Inside a group, elements
-// are consecutive. If `check_x_tile_bounds` is true, then it will check
-// if the element index is in bound compared to `tile_width` before
-// calling `emit_elem_function`.
+// `emit_elem_function()` will be separated by `step_x`. If
+// `vector_size`>1, then `vector_size` must be a multiple of
+// `x_num_steps`.  In that case, it triggers a different indexing
+// order that is vectorizable by LLVM. It generates many groups of
+// calls to `emit_elem_function`. Each group is separated by `step_x`
+// elements.  Inside a group, elements are consecutive. If
+// `check_x_tile_bounds` is true, then it will check if the element
+// index is in bound compared to `tile_width` before calling
+// `emit_elem_function`.
 static void UnrollInnerTileLoop(
     bool check_x_tile_bounds, int64 x_num_steps, int64 step_x,
     int64 vector_size, const string& loop_name, KernelSupportLibrary* ksl,
