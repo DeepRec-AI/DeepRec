@@ -18,6 +18,7 @@ limitations under the License.
 #include <functional>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/strings/str_cat.h"
 #include "absl/types/optional.h"
 #include "tensorflow/compiler/xla/primitive_util.h"
 #include "tensorflow/compiler/xla/service/gpu/backend_configs.pb.h"
@@ -271,7 +272,7 @@ Status RunGemm(const HloInstruction *gemm,
       tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
     string name = gemm->NvtxNodeNameString();
     if (tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
-      msg = strings::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
+      msg = absl::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
                             "\",\"args\":[],\"attrs\":{}}");
     } else {
       msg = op + ": " + name;

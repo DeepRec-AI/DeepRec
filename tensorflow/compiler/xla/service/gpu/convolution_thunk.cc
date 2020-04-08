@@ -64,7 +64,7 @@ Status ConvolutionThunk::ExecuteOnStream(const ExecuteParams& params) {
       tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
     string name = hlo_instruction()->NvtxNodeNameString();
     if (tensorflow::nvtx::NvtxRangesDetailedEnabled()) {
-      msg = strings::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
+      msg = absl::StrCat("{\"op\":\"", op, "\",\"name\":\"", name,
                             "\",\"args\":[],\"attrs\":{}}");
     } else {
       msg = op + ": " + name;
