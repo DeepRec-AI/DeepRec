@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/service/hlo_instructions.h"
 #include "tensorflow/compiler/xla/service/hlo_pass_interface.h"
+#include "tensorflow/core/platform/stream_executor_no_cuda.h"
 
 namespace xla {
 namespace gpu {
@@ -58,11 +59,17 @@ namespace gpu {
 
 class CudnnFusedConvRewriter : public HloModulePass {
  public:
+  CudnnFusedConvRewriter(se::StreamExecutor* stream_exec)
+      : stream_exec_(stream_exec) {}
+
   absl::string_view name() const override {
     return "cudnn-fused-convolution-rewriter";
   }
 
   StatusOr<bool> Run(HloModule* module) override;
+
+ private:
+  se::StreamExecutor* stream_exec_;                   // never null
 };
 
 }  // namespace gpu
