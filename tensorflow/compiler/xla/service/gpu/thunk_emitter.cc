@@ -197,8 +197,13 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
         get_batch_norm_operand_slices(custom_call);
     std::vector<BufferAllocation::Slice> output_slices =
         get_batch_norm_output_slices(custom_call);
-    VLOG(1) << "Reserve space slice in Thunk Emitter BatchNorm Forward: "
-            << output_slices[3].size() << std::endl;
+    // If batchnorm does not have a reserve space and workspace, the number of
+    // outputs will be 3.
+    if (custom_call->shape().tuple_shapes_size() > 3) {
+      VLOG(1) << "BatchNorm forward reserve space buffer slice: "
+              << output_slices[3].ToString();
+    }
+
     AddThunkToThunkSequence(
         absl::make_unique<CudnnBatchNormForwardTrainingThunk>(
             /*operands=*/std::move(operand_slices),
@@ -228,8 +233,26 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
         get_batch_norm_operand_slices(custom_call);
     std::vector<BufferAllocation::Slice> output_slices =
         get_batch_norm_output_slices(custom_call);
-    VLOG(1) << "Reserve space slice in Thunk Emitter BatchNorm Backward: "
-            << operand_slices[5].size() << std::endl;
+    // When BN-Grad is in a separate cluster, the argument for reserve space is
+    // converted to F32 at entry. This causes thunk_emitter to request for a
+    // slice 4 times bigger than what is required and allocated by BN-Forward
+    // (reserve space in bn-fwd is say U8{N} while the reserve space
+    // argument to bn-grad is F32{N} => num_bytes requested is 4N). Scaling down
+    // the number of bytes requested in BN-Grad by a factor of num_bytes in
+    // data-type (4 bytes for F32).
+    if (use_reserve_space) {
+      VLOG(2)
+          << "BatchNorm backward reserve space buffer slice before correction: "
+          << operand_slices[5].ToString();
+      auto bytes_size_reserve_space_type = ShapeUtil::ByteSizeOfPrimitiveType(
+          custom_call->operand(5)->shape().element_type());
+      auto actual_reserve_space_size =
+          operand_slices[5].size() / bytes_size_reserve_space_type;
+      operand_slices[5].set_size(actual_reserve_space_size);
+      VLOG(1) << "BatchNorm backward reserve space buffer slice: "
+              << operand_slices[5].ToString();
+    }
+
     AddThunkToThunkSequence(absl::make_unique<CudnnBatchNormBackwardThunk>(
         /*operands=*/std::move(operand_slices),
         /*outputs=*/std::move(output_slices),
