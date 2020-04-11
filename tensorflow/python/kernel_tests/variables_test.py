@@ -174,6 +174,8 @@ class VariablesTestCase(test.TestCase, parameterized.TestCase):
                                    "Shapes.*and.*are incompatible"):
         var.assign(np.zeros(shape=[2, 2]))
 
+  @test_util.disable_xla("XLA doesn't allow changing shape at assignment, as "
+                         "dictated by tf2xla/xla_resource.cc:SetTypeAndShape")
   @test_util.run_in_graph_and_eager_modes
   def testAssignDifferentShapesAllowed(self):
     var = variables.Variable(np.zeros(shape=[1, 1]),

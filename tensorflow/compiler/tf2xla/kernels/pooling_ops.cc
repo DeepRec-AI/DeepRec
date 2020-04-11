@@ -157,6 +157,13 @@ class MaxPoolOp : public PoolingOp {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("data_format", &data_format_str));
     OP_REQUIRES(ctx, FormatFromString(data_format_str, &data_format_),
                 errors::InvalidArgument("Invalid data format"));
+    OP_REQUIRES(
+        ctx,
+        data_format_ != FORMAT_NCHW_VECT_C &&
+            data_format_ != FORMAT_NHWC_VECT_W,
+        errors::Unimplemented("XLA does not support the VECT_* data formats. "
+                              "Returning unimplemented from MaxPool to keep "
+                              "Tensorflow's intended optimized MaxPool here."));
   }
 
   void Compile(XlaOpKernelContext* ctx) override {
