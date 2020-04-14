@@ -1270,10 +1270,6 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
   }
   // Infer reserve space from StreamExecutor
   if (use_reserve_space) {
-    // Hack to make sure reserve_space is not a nullptr
-    if (reserve_space_size == 0) {
-      reserve_space_size += 1;
-    }
     return ShapeUtil::MakeTupleShape(
         {operand_shape, output_shape_for_mean_and_var,
          output_shape_for_mean_and_var,

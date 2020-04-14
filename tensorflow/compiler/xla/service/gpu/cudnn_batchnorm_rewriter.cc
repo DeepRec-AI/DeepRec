@@ -152,6 +152,7 @@ Status Visitor::HandleBatchNormInference(HloInstruction* batch_norm) {
 }
 
 Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
+  VLOG(1) << batch_norm->ToString();
   if (batch_norm->operand(0)->shape().element_type() != F32) {
     VLOG(1) << "Not rewriting op with non-F32 element type: "
             << batch_norm->ToString();

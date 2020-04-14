@@ -116,11 +116,15 @@ void RunCudnnBatchNormForwardTrainingImpl(
     se::ScratchAllocator* workspace_allocator, se::Stream* stream) {
   se::DeviceMemory<float> null_device_ptr(nullptr);
   auto output_data = se::DeviceMemory<ElemType>(params->output_data);
-  if (dynamic_cast<ScratchBufAllocator*>(reserve_space_allocator)->IsBufferNull() ||
-  dynamic_cast<ScratchBufAllocator*>(workspace_allocator)->IsBufferNull()) {
-    reserve_space_allocator = nullptr;
-    workspace_allocator = nullptr;
-  }
+  auto allocator =
+      [&](se::ScratchAllocator* space_allocator) -> se::ScratchAllocator* {
+    if (dynamic_cast<ScratchBufAllocator*>(space_allocator)->IsBufferNull()) {
+      return nullptr;
+    }
+    return space_allocator;
+  };
+  reserve_space_allocator = allocator(reserve_space_allocator);
+  workspace_allocator = allocator(workspace_allocator);
   stream->ThenBatchNormalizationForward(
       se::DeviceMemory<ElemType>(params->common.operand),
       params->common.scale,                          //
