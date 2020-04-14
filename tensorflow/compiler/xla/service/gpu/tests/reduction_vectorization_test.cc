@@ -180,7 +180,6 @@ CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
 CHECK: ld.global.nc.f32
-CHECK: ld.global.nc.f32
 )";
   }
   CompileAndVerifyPtx(std::move(optimized_module), expected_ptx);
