@@ -1949,9 +1949,9 @@ static void UnrollInnerTileLoop(
     return llvm::ConstantInt::get(index_ty, val);
   };
 
+  IrArray::Index source_idx_x_base =
+      source_idx.AddOffsetToDim(y_loc, kDimY, b);
   for (int64 j = 0; j < x_num_steps / vector_size; j++) {
-    IrArray::Index source_idx_x_base =
-        source_idx.AddOffsetToDim(y_loc, kDimY, b);
     if (vector_size == 1 || check_x_tile_bounds) {
       for (int64 i = 0; i < vector_size; i++) {
         int linear_index = j * vector_size + i;
