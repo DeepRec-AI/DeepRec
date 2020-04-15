@@ -340,8 +340,8 @@ ENTRY %cluster {
 
   TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> optimized_module,
                           ParseAndReturnVerifiedModule(hlo_text));
-  CompileAndOptionallyVerifyPtx(std::move(optimized_module),
-                                R"(
+  CompileAndVerifyPtx(std::move(optimized_module),
+                      R"(
 CHECK: ld.global.nc.v2.f32
 CHECK: st.global.v2.f32
 CHECK: st.global.v2.f32
