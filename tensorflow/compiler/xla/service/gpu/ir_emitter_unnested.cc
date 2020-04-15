@@ -1961,8 +1961,7 @@ static void UnrollInnerTileLoop(
             constant(j * step_x * vector_size + i), kDimX, b);
         auto emit_element = [&] {
           return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
-                                       1, /*preload*/ false,
-                                       /*manually_vectorize*/ false);
+                                       1, /*manually_vectorize*/ false);
         };
         if (check_x_tile_bounds) {
           ksl->If(loop_name + "_x_in_tile", b->CreateICmpULT(x_loc, tile_width),
@@ -1981,7 +1980,7 @@ static void UnrollInnerTileLoop(
       auto emit_element = [&] {
         return (*emit_elem_function)(
             source_idx_x, y_loc, x_loc, linear_index, vector_size,
-            /*preload*/ !check_x_tile_bounds, manually_vectorize);
+            manually_vectorize);
       };
       emit_element();
     }
@@ -2522,7 +2521,7 @@ void IrEmitterUnnested::EmitTileElementForReduction(
     const llvm_ir::IrArray::Index& index,
     const ReductionCodegenInfo& reduction_info,
     absl::Span<HloComputation* const> reducers, int64 x_iter_num,
-    int vector_size, bool preload, bool manually_vectorize) {
+    int vector_size, bool manually_vectorize) {
   CHECK_GE(vector_size, 1);
   VLOG(10) << "Emit tile element for reduce " << unnested_hlo->ToString();
   bool returns_tuple = output_instructions.size() > 1;
@@ -2840,7 +2839,7 @@ void IrEmitterUnnested::EmitHlo021Tile(
   EmitElementFunction element_generator =
       [&](const llvm_ir::IrArray::Index& index, llvm::Value* y_loc,
           llvm::Value* x_loc, int64 x_iter_num, int /*vector_size*/,
-          bool /*preload*/, bool /*manually_vectorize*/) {
+          bool /*manually_vectorize*/) {
         if (hlo->opcode() == HloOpcode::kCopy) {
           EmitTileElementForCopy(hlo, index, mapping_scheme, y_loc, x_loc,
                                  param_shmem_buffers);
@@ -2873,7 +2872,7 @@ void IrEmitterUnnested::EmitHlo021Tile(
               tile_width, tile_height,
               [&](const IrArray::Index& index, llvm::Value* y_loc,
                   llvm::Value* x_loc, int64 /*x_iter_num*/, int /*vector_size*/,
-                  bool /*preload*/, bool /*manually_vectorize*/) {
+                  bool /*manually_vectorize*/) {
                 for (int64 id : tiled_param_ids) {
                   IrArray& input_in_logical_shape =
                       param_in_reduced_shape_arrays[id];
@@ -3355,11 +3354,11 @@ Status IrEmitterUnnested::EmitReductionFromOrToContiguousDimensions(
                            index_ty);
   EmitElementFunction emit_reduction_tile =
       [&](const llvm_ir::IrArray::Index& index, llvm::Value* y_loc,
-          llvm::Value* x_loc, int64 x_iter_num, int vector_size, bool preload,
+          llvm::Value* x_loc, int64 x_iter_num, int vector_size,
           bool manually_vectorize) {
         EmitTileElementForReduction(unnested_hlo, input_shape,
                                     output_instructions, index, reduction_info,
-                                    reducers, x_iter_num, vector_size, preload,
+                                    reducers, x_iter_num, vector_size,
                                     manually_vectorize);
       };
 
