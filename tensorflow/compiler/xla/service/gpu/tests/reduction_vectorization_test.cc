@@ -345,14 +345,20 @@ CHECK: ld.global.nc.v2.f32
 CHECK: st.global.v2.f32
 CHECK: st.global.v2.f32
 CHECK: ld.global.nc.v2.f32
-CHECK: st.global.v2.f32
-CHECK: st.global.v2.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
 CHECK: ld.global.nc.v2.f32
-CHECK: st.global.v2.f32
-CHECK: st.global.v2.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
 CHECK: ld.global.nc.v2.f32
-CHECK: st.global.v2.f32
-CHECK: st.global.v2.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
+CHECK: st.global.f32
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));

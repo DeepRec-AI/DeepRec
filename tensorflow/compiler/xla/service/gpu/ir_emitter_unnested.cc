@@ -2623,9 +2623,14 @@ void IrEmitterUnnested::EmitTileElementForReduction(
 
   // Emit code to generate the output for the non-reduction instructions in the
   // fusion, if any.
-  TF_CHECK_OK(EmitExtraOutputsForReduce(
-      unnested_hlo, input_index,
-      /*use_linear_index=*/num_partial_results == 1, extra_output_gens));
+  for (int i = 0; i < vector_size; ++i) {
+    IrArray::Index current_input_index = input_index.AddOffsetToDim(
+        llvm::ConstantInt::get(input_index.GetType(), i),
+        input_index.size() - 1, &b_);
+    TF_CHECK_OK(EmitExtraOutputsForReduce(
+        unnested_hlo, current_input_index,
+        /*use_linear_index=*/num_partial_results == 1, extra_output_gens));
+  }
 }
 
 llvm::Value* IrEmitterUnnested::EmitThreadId(int64 threads_per_block,
