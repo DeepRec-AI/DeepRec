@@ -804,6 +804,10 @@ Status NcclAllReduceThunk::ExecuteOnStream(const ExecuteParams& params) {
 
 NcclAllReduceThunk::~NcclAllReduceThunk() = default;
 
+/*static*/ bool NcclAllReduceThunk::CanImplement(const HloInstruction* crs) {
+  return false;
+}
+
 /*static*/ absl::flat_hash_set<int>
 NcclAllReduceThunk::DevicesWithOpenNcclChannels() {
   return {};
