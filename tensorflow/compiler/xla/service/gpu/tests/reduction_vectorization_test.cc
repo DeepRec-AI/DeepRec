@@ -266,7 +266,7 @@ CHECK: ld.global.nc.f32
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
 }
 
-TEST_F(ReductionVectorizationTest, DisableSin) {
+TEST_F(ReductionVectorizationTest, EnableSin) {
   const char* hlo_text = R"(
 HloModule DisableSin
 
@@ -288,10 +288,7 @@ ENTRY %main {
                           ParseAndReturnVerifiedModule(hlo_text));
   CompileAndVerifyPtx(std::move(optimized_module),
                       R"(
-CHECK-NOT: ld.global.nc.v2.f32
-CHECK-NOT: ld.global.nc.v4.f32
-CHECK-NOT: ld.global.nc.u64
-CHECK-NOT: ld.global.u64
+CHECK: ld.global.nc.v2.f32
 )");
 
   EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
