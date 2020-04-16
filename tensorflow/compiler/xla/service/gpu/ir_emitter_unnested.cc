@@ -1924,8 +1924,8 @@ static llvm::Value* GetStartOffsetX(const KernelMappingScheme& mapping_scheme,
 // Calls `emit_elem_function()` `x_num_steps` times.  If
 // `vector_size`==1, then each element index passed to
 // `emit_elem_function()` will be separated by `step_x`. If
-// `vector_size`>1, then `vector_size` must be a multiple of
-// `x_num_steps`.  In that case, it triggers a different indexing
+// `vector_size` > 1, then `x_num_steps` must be a multiple of
+// `vector_size`.  In that case, it triggers a different indexing
 // order that is vectorizable by LLVM. It generates many groups of
 // calls to `emit_elem_function`. Each group is separated by `step_x`
 // elements.  Inside a group, elements are consecutive. If
