@@ -1953,8 +1953,7 @@ static void UnrollInnerTileLoop(
     return llvm::ConstantInt::get(index_ty, val);
   };
 
-  IrArray::Index source_idx_x_base =
-      source_idx.AddOffsetToDim(y_loc, kDimY, b);
+  IrArray::Index source_idx_x_base = source_idx.AddOffsetToDim(y_loc, kDimY, b);
   for (int64 j = 0; j < x_num_steps / vector_size; j++) {
     if (vector_size == 1 || check_x_tile_bounds) {
       for (int64 i = 0; i < vector_size; i++) {
@@ -1982,9 +1981,8 @@ static void UnrollInnerTileLoop(
       IrArray::Index source_idx_x = source_idx_x_base.AddOffsetToDim(
           constant(j * step_x * vector_size), kDimX, b);
       auto emit_element = [&] {
-        return (*emit_elem_function)(
-            source_idx_x, y_loc, x_loc, linear_index, vector_size,
-            manually_vectorize);
+        return (*emit_elem_function)(source_idx_x, y_loc, x_loc, linear_index,
+                                     vector_size, manually_vectorize);
       };
       emit_element();
     }
@@ -2286,7 +2284,7 @@ void IrEmitterUnnested::EmitFullWarpShuffleDownLoopForReduce(
         element_type->isStructTy() ? b_.getIntNTy(bit_width) : element_type;
     auto convert_pointer_for_shuffle = [&](llvm::Value* ptr) {
       return b_.CreatePointerBitCastOrAddrSpaceCast(
-            ptr, shuffled_value_type->getPointerTo());
+          ptr, shuffled_value_type->getPointerTo());
     };
     llvm::Value* partial_result =
         Load(convert_pointer_for_shuffle(partial_result_address),
