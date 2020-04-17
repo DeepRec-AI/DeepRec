@@ -445,17 +445,12 @@ std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(
       values.push_back(
           b->CreateExtractElement(load, b->getInt32(i), StrCat(name, i)));
     }
-
   } else {
     for (int i = 0; i < vector_size; ++i) {
-      Index new_index = index;
-      new_index = new_index.AddOffsetToDim(
+      Index new_index = index.AddOffsetToDim(
           llvm::ConstantInt::get(index.GetType(), i), index.size() - 1, b);
-      llvm::Value* element_address =
-          EmitArrayElementAddress(new_index, b, name, use_linear_index);
-      llvm::LoadInst* load = b->CreateLoad(element_address);
-      AnnotateLoadStoreInstructionWithMetadata(load);
-      values.push_back(load);
+      values.push_back(
+          EmitReadArrayElement(new_index, b, name, use_linear_index));
     }
   }
   return values;
