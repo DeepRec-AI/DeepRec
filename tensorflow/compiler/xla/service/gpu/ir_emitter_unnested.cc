@@ -539,14 +539,21 @@ Status IrEmitterUnnested::HandleCopy(HloInstruction* copy) {
 
 Status IrEmitterUnnested::EmitExtraOutputsForReduce(
     const HloInstruction* unnested_hlo, const IrArray::Index& index,
-    bool use_linear_index,
+    bool use_linear_index, int vector_size,
     absl::Span<const std::pair<llvm_ir::ElementGenerator, ShapeIndex>>
         extra_output_gens) {
   for (int i = 0; i != extra_output_gens.size(); ++i) {
-    TF_ASSIGN_OR_RETURN(llvm::Value* const extra_output_ir_value,
-                        extra_output_gens[i].first(index));
+    std::vector<llvm::Value*> values;
+    for (int v = 0; v < vector_size; ++v) {
+      IrArray::Index current_index = index.AddOffsetToDim(
+          llvm::ConstantInt::get(index.GetType(), v), index.size() - 1, &b_);
+      TF_ASSIGN_OR_RETURN(llvm::Value* const extra_output_ir_value,
+                          extra_output_gens[i].first(current_index));
+      values.push_back(extra_output_ir_value);
+    }
     GetIrArray(*unnested_hlo, *unnested_hlo, extra_output_gens[i].second)
-        .EmitWriteArrayElement(index, extra_output_ir_value, &b_, use_linear_index);
+        .EmitWriteConsecutiveArrayElement(index, values, &b_, use_linear_index,
+                                          vector_size);
   }
   return Status::OK();
 }
@@ -2623,14 +2630,10 @@ void IrEmitterUnnested::EmitTileElementForReduction(
 
   // Emit code to generate the output for the non-reduction instructions in the
   // fusion, if any.
-  for (int i = 0; i < vector_size; ++i) {
-    IrArray::Index current_input_index = input_index.AddOffsetToDim(
-        llvm::ConstantInt::get(input_index.GetType(), i),
-        input_index.size() - 1, &b_);
-    TF_CHECK_OK(EmitExtraOutputsForReduce(
-        unnested_hlo, current_input_index,
-        /*use_linear_index=*/num_partial_results == 1, extra_output_gens));
-  }
+  TF_CHECK_OK(
+      EmitExtraOutputsForReduce(unnested_hlo, input_index,
+                                /*use_linear_index=*/num_partial_results == 1,
+                                vector_size, extra_output_gens));
 }
 
 llvm::Value* IrEmitterUnnested::EmitThreadId(int64 threads_per_block,

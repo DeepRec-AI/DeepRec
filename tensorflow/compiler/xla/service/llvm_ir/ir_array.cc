@@ -456,6 +456,16 @@ std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(
   return values;
 }
 
+void IrArray::EmitWriteConsecutiveArrayElement(
+    const Index& index, absl::Span<llvm::Value* const> values,
+    llvm::IRBuilder<>* b, bool use_linear_index, int vector_size) const {
+  for (int i = 0; i < vector_size; ++i) {
+    IrArray::Index current_index = index.AddOffsetToDim(
+        llvm::ConstantInt::get(index.GetType(), i), index.size() - 1, b);
+    EmitWriteArrayElement(current_index, values[i], b, use_linear_index);
+  }
+}
+
 void IrArray::EmitWriteArrayElement(const Index& index, llvm::Value* value,
                                     llvm::IRBuilder<>* b,
                                     bool use_linear_index) const {
