@@ -304,6 +304,10 @@ Status HloCostAnalysis::HandleOutfeed(const HloInstruction*) {
   return Status::OK();
 }
 
+Status HloCostAnalysis::HandleAsyncOutSend(const HloInstruction*) {
+  return Status::OK();
+}
+
 Status HloCostAnalysis::HandleMap(const HloInstruction* map) {
   // Compute properties of the mapped function.
   TF_ASSIGN_OR_RETURN(const Properties sub_properties,

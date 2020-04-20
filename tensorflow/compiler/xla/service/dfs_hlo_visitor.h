@@ -271,6 +271,8 @@ class DfsHloVisitorBase {
   virtual Status HandleAddDependency(HloInstructionPtr add_dependency) = 0;
   virtual Status HandleAfterAll(HloInstructionPtr token) = 0;
 
+  virtual Status HandleAsyncOutSend(HloInstructionPtr hlo) = 0;
+
   // Invoked to inform the visitor that the traversal has completed, and that
   // the root was "root".
   virtual Status FinishVisit(HloInstructionPtr root) = 0;

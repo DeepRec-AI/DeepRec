@@ -533,6 +533,16 @@ StatusOr<std::unique_ptr<HloAliasAnalysis>> HloAliasAnalysis::Run(
         }
       });
 
+  // Declare all inputs of XlaAsyncOutSend as live_out.
+  for (auto* instr : module->entry_computation()->instructions()) {
+    if (instr->opcode() != HloOpcode::kAsyncOutSend) {
+      continue;
+    }
+    const HloInstruction* opnd = instr->operand(0);
+    const HloBuffer& buffer = alias_analysis->GetUniqueBufferAt(opnd);
+    alias_analysis->live_out_buffers_.insert(&buffer);
+  }
+
   XLA_VLOG_LINES(2, alias_analysis->ToString());
   return std::move(alias_analysis);
 }

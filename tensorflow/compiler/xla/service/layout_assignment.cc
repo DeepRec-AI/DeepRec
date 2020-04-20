@@ -460,6 +460,11 @@ Status LayoutAssignment::AddMandatoryConstraints(
       // layout of the Outfeed.
       TF_RETURN_IF_ERROR(constraints->SetOperandLayout(
           instruction->outfeed_shape(), instruction, 0));
+    } else if (instruction->opcode() == HloOpcode::kAsyncOutSend) {
+      // Constrain the input to the AsyncOutSend instruction to be the expected
+      // layout of the AsyncOutSend.
+      TF_RETURN_IF_ERROR(constraints->SetOperandLayout(
+          instruction->async_out_send_shape(), instruction, 0));
     } else if (instruction->opcode() == HloOpcode::kParameter) {
       if (computation_layout != nullptr) {
         const ShapeLayout& parameter_layout =
@@ -2127,6 +2132,7 @@ bool LayoutAssignment::InstructionCanChangeLayout(
     case HloOpcode::kTupleSelect:
     case HloOpcode::kWhile:
       return false;
+    case HloOpcode::kAsyncOutSend:
     case HloOpcode::kBatchNormGrad:
     case HloOpcode::kBatchNormInference:
     case HloOpcode::kBatchNormTraining:

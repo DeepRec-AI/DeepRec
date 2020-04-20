@@ -1,3 +1,4 @@
+load("//tensorflow:tensorflow.bzl", "cc_header_only_library", "tf_cc_test")
 package(
     default_visibility = [
         "//tensorflow/compiler/tf2xla:internal",
@@ -7,9 +8,16 @@ package(
 
 cc_library(
     name = "xla_ops",
-    srcs = ["xla_ops.cc"],
-    hdrs = ["xla_ops.h"],
+    srcs = [
+        "async_io_ops.cc",
+        "xla_ops.cc",
+    ],
+    hdrs = [
+        "async_io_ops.h",
+        "xla_ops.h",
+    ],
     deps = [
+        ":async_io_rendezvous",
         "//tensorflow/compiler/jit:common",
         "//tensorflow/compiler/jit:flags",
         "//tensorflow/compiler/jit:xla_activity_listener",
@@ -37,4 +45,40 @@ cc_library(
         "@com_google_absl//absl/memory",
     ],
     alwayslink = 1,
+)
+
+cc_library(
+    name = "async_io_rendezvous",
+    srcs = [
+        "async_io_rendezvous.cc",
+    ],
+    hdrs = [
+        "async_io_rendezvous.h",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/compiler/xla:literal",
+        "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla:statusor",
+        "//tensorflow/compiler/xla:xla_data_proto",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+    ],
+)
+
+tf_cc_test(
+    name = "async_io_ops_test",
+    srcs = [
+        "async_io_ops_test.cc",
+    ],
+    deps = [
+        ":xla_ops",
+        "//tensorflow/compiler/tf2xla:common",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:testlib",
+        "//tensorflow/core:test_main",
+    ],
 )

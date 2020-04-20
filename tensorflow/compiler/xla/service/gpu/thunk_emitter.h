@@ -50,6 +50,7 @@ class ThunkEmitter {
   Status HandleTriangularSolve(HloInstruction* hlo);
   Status HandleInfeed(HloInstruction* xla_infeed);
   Status HandleOutfeed(HloInstruction* outfeed);
+  Status HandleAsyncOutSend(HloInstruction* async_out_sen);
 
  private:
   EmissionContext* context_;
@@ -92,6 +93,10 @@ class ThunkEmitter {
   // Returns an OutfeedThunk that performs a device-to-host memcpy to implement
   // `inst`.
   std::unique_ptr<Thunk> BuildOutfeedThunk(const HloInstruction* inst);
+
+  // Returns an AsyncOutSendThunk that carries out asynchronous send via
+  // Rendezvous mechanism
+  std::unique_ptr<Thunk> BuildAsyncOutSendThunk(const HloInstruction* inst);
 };
 
 }  // namespace gpu

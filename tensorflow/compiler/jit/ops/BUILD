@@ -23,3 +23,10 @@ py_library(
     srcs = ["xla_ops_grad.py"],
     deps = ["//tensorflow/python:framework_ops"],
 )
+
+cc_library(
+    name = "async_io_ops",
+    srcs = ["async_io_ops.cc"],
+    deps = ["//tensorflow/core:framework"],
+    alwayslink = 1,
+)

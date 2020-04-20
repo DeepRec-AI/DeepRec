@@ -197,6 +197,17 @@ void HloLiveRange::CalculateBufferStartEndMap() {
             value->instruction()->parameter_number(), value->index())) {
       buffer_end_time = schedule_end_time_;
     }
+    // Extend the live ranges of the AsyncOutSend (operand) values, as they are
+    // liveouts. This avoids illegal uses of the buffer allocation.
+    bool is_async_out_value =
+        absl::c_any_of(value->uses(), [](const HloUse& use) {
+          return use.instruction->opcode() == HloOpcode::kAsyncOutSend;
+        });
+    if (is_async_out_value) {
+      VLOG(2) << "Extend the live ranges of AsyncOutSend values"
+              << " as they are liveouts: " << value->instruction()->ToString();
+      buffer_end_time = schedule_end_time_;
+    }
 
     CHECK(buffer_start_time <= buffer_end_time)
         << buffer_start_time << ", " << buffer_end_time

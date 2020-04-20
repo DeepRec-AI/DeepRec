@@ -126,6 +126,7 @@ class IrEmitterUnnested : public IrEmitter,
   Status HandleAfterAll(HloInstruction* after_all) override;
   Status HandleReplicaId(HloInstruction* hlo) override;
   Status HandleCollectivePermute(HloInstruction* hlo) override;
+  Status HandleAsyncOutSend(HloInstruction* async_out_send) override;
 
   Status EmitTargetElementLoop(
       const HloInstruction& hlo,

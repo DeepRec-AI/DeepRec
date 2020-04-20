@@ -200,6 +200,14 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
     case HloOpcode::kSendDone:
       instruction = CreateSendDone(operands(0), proto.is_host_transfer());
       break;
+
+    case HloOpcode::kAsyncOutSend: {
+      Shape async_out_shape(proto.async_out_send_shape());
+      TF_RETURN_IF_ERROR(ShapeUtil::ValidateShape(async_out_shape));
+      instruction = CreateAsyncOutSend(async_out_shape, operands(0),
+                                       proto.rendezvous_key());
+      break;
+    }
     case HloOpcode::kRecv:
       instruction = CreateRecv(shape.tuple_shapes(0), operands(0),
                                proto.channel_id(), proto.is_host_transfer());
@@ -954,6 +962,13 @@ HloInstruction::CreatePartitionId() {
                                                    is_host_transfer);
 }
 
+/* static */ std::unique_ptr<HloInstruction> HloInstruction::CreateAsyncOutSend(
+    const Shape& async_out_send_shape, HloInstruction* operand,
+    const string& rendezvous_key) {
+  return absl::make_unique<HloAsyncOutSendInstruction>(async_out_send_shape,
+                                                       operand, rendezvous_key);
+}
+
 /* static */ std::unique_ptr<HloInstruction> HloInstruction::CreateRecv(
     const Shape& shape, HloInstruction* token, int64 channel_id,
     bool is_host_transfer) {
@@ -1307,6 +1322,7 @@ void HloInstruction::SetupDerivedInstruction(
 
 bool HloInstruction::HasSideEffectNoRecurse() const {
   switch (opcode_) {
+    case HloOpcode::kAsyncOutSend:
     case HloOpcode::kSend:
     case HloOpcode::kSendDone:
     case HloOpcode::kRecv:
@@ -2826,6 +2842,8 @@ Status HloInstruction::Visit(DfsHloVisitorBase<HloInstructionPtr>* visitor) {
       return visitor->HandleTriangularSolve(this);
     case HloOpcode::kCholesky:
       return visitor->HandleCholesky(this);
+    case HloOpcode::kAsyncOutSend:
+      return visitor->HandleAsyncOutSend(this);
 
     // These opcodes are not handled here.
     case HloOpcode::kTrace:
@@ -3657,6 +3675,14 @@ absl::optional<int64> HloInstruction::channel_id() const {
 
 void HloInstruction::set_channel_id(const absl::optional<int64>& channel_id) {
   return Cast<HloChannelInstruction>(this)->set_channel_id(channel_id);
+}
+
+const Shape& HloInstruction::async_out_send_shape() const {
+  return Cast<HloAsyncOutSendInstruction>(this)->async_out_send_shape();
+}
+
+const string& HloInstruction::rendezvous_key() const {
+  return Cast<HloAsyncOutSendInstruction>(this)->rendezvous_key();
 }
 
 const ConvolutionDimensionNumbers&

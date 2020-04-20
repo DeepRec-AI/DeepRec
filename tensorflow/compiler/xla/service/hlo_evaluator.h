@@ -265,6 +265,10 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
     return Unimplemented("Outfeed HLO is unsupported by the evaluator.");
   };
 
+  Status HandleAsyncOutSend(HloInstruction* async_out_send) override {
+    return Unimplemented("AsyncOutSend HLO is unsupported by the evaluator.");
+  };
+
   // Returns the already-evaluated literal result for the instruction.
   //
   // A Constant instruction is considered evaluated and its literal will be

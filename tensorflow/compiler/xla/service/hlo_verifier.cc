@@ -148,6 +148,10 @@ Status ShapeVerifier::HandleCopy(HloInstruction* copy) {
   return CheckUnaryShape(copy);
 }
 
+Status ShapeVerifier::HandleAsyncOutSend(HloInstruction* async_out_send) {
+  return CheckShape(async_out_send, ShapeUtil::MakeNil());
+}
+
 Status ShapeVerifier::HandleDot(HloInstruction* dot) {
   TF_ASSIGN_OR_RETURN(const Shape expected,
                       ShapeInference::InferDotOpShape(

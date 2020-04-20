@@ -135,6 +135,7 @@ void AllocateAndParseFlags() {
   build_ops_flags->tf_xla_check_cluster_input_numerics = false;
   build_ops_flags->tf_xla_check_cluster_output_numerics = false;
   build_ops_flags->tf_xla_disable_constant_folding = false;
+  build_ops_flags->tf_xla_async_io_level = 0;
 
   mark_for_compilation_flags = new MarkForCompilationPassFlags;
   mark_for_compilation_flags->xla_auto_jit_flag.optimization_level_single_gpu =
@@ -181,6 +182,9 @@ void AllocateAndParseFlags() {
             &build_ops_flags->tf_xla_check_cluster_output_numerics,
             "If true then insert CheckNumerics nodes to to check all cluster "
             "outputs."),
+       Flag("tf_xla_async_io_level", &build_ops_flags->tf_xla_async_io_level,
+            "1 to turn on async io based on some heuristic; 2 to turn on for"
+            " all outputs of XLA clusters; off if 0."),
 
        Flag("tf_xla_compile_on_demand", &device_flags->tf_xla_compile_on_demand,
             "Switch a device into 'on-demand' mode, where instead of "

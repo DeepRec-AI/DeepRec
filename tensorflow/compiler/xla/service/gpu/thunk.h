@@ -43,6 +43,7 @@ class GpuExecutable;
 class Thunk {
  public:
   enum Kind {
+    kAsyncOutSend,
     kCholesky,
     kCollectivePermute,
     kConditional,

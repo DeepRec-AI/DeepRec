@@ -1083,6 +1083,71 @@ Status CopyInsertion::AddSpecialCaseCopies(const CallGraph& call_graph,
     }
   }
 
+  // Identify copies for AsyncOutSend. Two cases:
+  // 1) If AsyncOutSends share the same input values, inserting copies to
+  //    duplicate the buffers, as we require each Tensor from AsyncOutSend
+  //    to have an independent buffer.
+  // 2) When the input value to AsyncOutSend is readonly.
+  std::vector<HloInstruction*> all_async_outs;
+  for (HloComputation* computation : module->computations()) {
+    const CallGraphNode& node = call_graph.GetNode(computation);
+    if (node.context() == CallContext::kParallel) {
+      continue;
+    }
+    TF_RET_CHECK(node.context() == CallContext::kSequential);
+
+    for (auto* instr : computation->instructions()) {
+      if (instr->opcode() == HloOpcode::kAsyncOutSend) {
+        all_async_outs.push_back(instr);
+      }
+    }
+  }
+  absl::flat_hash_set<const HloBuffer*> async_out_seen;
+  for (auto* async_out : all_async_outs) {
+    HloInstruction* opnd = async_out->mutable_operand(0);
+    TF_RET_CHECK(opnd->shape().IsArray());
+
+    std::vector<const HloBuffer*> buffers_at_index =
+        alias_analysis->ComputeBuffersAt(opnd, {});
+    TF_RET_CHECK(buffers_at_index.size() == 1)
+        << " AsyncOutSend cannot have a tuple input.";
+
+    bool buffer_seen_before =
+        !async_out_seen.insert(*buffers_at_index.begin()).second;
+    if (buffer_seen_before) {
+      VLOG(2) << "AsyncOutSend " << async_out->ToString()
+              << " has ambiguous or non-distinct input buffer. Copying.";
+      HloInstruction* copy = opnd->parent()->AddInstruction(
+          HloInstruction::CreateUnary(opnd->shape(), HloOpcode::kCopy, opnd));
+      TF_RETURN_IF_ERROR(opnd->ReplaceUseWith(async_out, copy));
+      continue;
+    }
+
+    const HloValueSet& value_set =
+        alias_analysis->dataflow_analysis().GetValueSet(opnd, {});
+    TF_RET_CHECK(value_set.values().size() == 1);
+    const HloValue* value = *value_set.values().begin();
+    if (ValueIsReadOnly(*value)) {
+      VLOG(2) << "AsyncOutSend " << async_out->ToString()
+              << " has read-only input buffer. Copying.";
+      HloInstruction* copy = opnd->parent()->AddInstruction(
+          HloInstruction::CreateUnary(opnd->shape(), HloOpcode::kCopy, opnd));
+      TF_RETURN_IF_ERROR(opnd->ReplaceUseWith(async_out, copy));
+    }
+  }
+  // In addition, make sure AsyncOutSend executes after all users of its operand
+  // value are done with using the value by adding control dependencies. We
+  // need to constrain the order because the ownership of the AsyncOutSend
+  // buffer is transferred to Tensorflow after AsyncOutSend.
+  for (auto* async_out : all_async_outs) {
+    HloInstruction* opnd = async_out->mutable_operand(0);
+    for (auto* user : opnd->users()) {
+      if (user != async_out) {
+        user->AddControlDependencyTo(async_out);
+      }
+    }
+  }
+
   // Add copy instructions indicated in 'instructions_to_copy' to the module.
   for (const auto& pair : instructions_to_copy) {
     HloInstruction* instruction = pair.first;

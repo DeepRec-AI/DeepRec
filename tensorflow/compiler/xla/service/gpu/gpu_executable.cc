@@ -426,6 +426,20 @@ StatusOr<ScopedShapedBuffer> GpuExecutable::Execute(
         buffers_in_result.insert(src_base);
         return Status::OK();
       }));
+  // Also put all input operands of AsyncOutSend into buffers_in_result to
+  // prevent XLA from releasing the buffers.
+  for (auto* instr : hlo_module_->entry_computation()->instructions()) {
+    if (instr->opcode() != HloOpcode::kAsyncOutSend) {
+      continue;
+    }
+    const HloInstruction* opnd = instr->operand(0);
+    TF_ASSIGN_OR_RETURN(const BufferAllocation::Slice slice,
+                        this->assignment_->GetUniqueSlice(opnd, {}));
+    se::DeviceMemoryBase src_base =
+        buffer_allocations->GetDeviceAddress(slice.index());
+    CHECK(!src_base.is_null() || src_base.size() == 0);
+    buffers_in_result.insert(src_base);
+  }
   TF_RETURN_IF_ERROR(buffer_allocations->TearDown(buffers_in_result));
 
   return std::move(shaped_buffer);

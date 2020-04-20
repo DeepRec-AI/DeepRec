@@ -428,6 +428,7 @@ tf_cc_test(
 cc_library(
     name = "gpu_executable",
     srcs = [
+        "async_out_thunk.cc",
         "collective_permute_thunk.cc",
         "conditional_thunk.cc",
         "convolution_thunk.cc",
@@ -452,6 +453,7 @@ cc_library(
         "cholesky_thunk.cc",
     ]),
     hdrs = [
+        "async_out_thunk.h",
         "collective_permute_thunk.h",
         "conditional_thunk.h",
         "convolution_thunk.h",
@@ -491,6 +493,7 @@ cc_library(
         ":stream_assignment",
         ":stream_executor_util",
         ":thunk",
+        "//tensorflow/compiler/jit/kernels:async_io_rendezvous",
         "//tensorflow/compiler/xla:array2d",
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:refcounting_hash_map",

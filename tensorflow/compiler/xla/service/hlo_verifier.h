@@ -49,6 +49,7 @@ class ShapeVerifier : public DfsHloVisitor {
   Status HandleConvert(HloInstruction* convert) override;
   Status HandleBitcastConvert(HloInstruction* convert) override;
   Status HandleCopy(HloInstruction* copy) override;
+  Status HandleAsyncOutSend(HloInstruction* async_out_send) override;
   Status HandleDot(HloInstruction* dot) override;
   Status HandleConvolution(HloInstruction* convolution) override;
   Status HandleFft(HloInstruction* fft) override;

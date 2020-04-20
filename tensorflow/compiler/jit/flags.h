@@ -117,6 +117,11 @@ struct BuildXlaOpsPassFlags {
   // Disables all constant folding. The primary use for this is for testing to
   // guarantee that tests are run on XLA and not on TF's CPU implementation.
   bool tf_xla_disable_constant_folding;
+
+  // If 1, replaces retvals with _XlaAsyncOutSend and _XlaAsyncOutRecv
+  // for asynchronous outputs based on some heuristic. If 2, replaces all
+  // retvals with async outputs whenever legal. Off if 0.
+  int tf_xla_async_io_level;
 };
 
 // Flags for the IntroduceFloatingPointJitter pass.

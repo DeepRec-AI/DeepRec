@@ -101,6 +101,7 @@ class IrEmitter : public DfsHloVisitorWithDefault,
   Status HandleBatchNormTraining(HloInstruction* batch_norm) override;
   Status HandleBatchNormGrad(HloInstruction* batch_norm) override;
   Status HandleAddDependency(HloInstruction* add_dependency) override;
+  Status HandleAsyncOutSend(HloInstruction* async_out_send) override;
 
   Status FinishVisit(HloInstruction* root) override { return Status::OK(); }
 

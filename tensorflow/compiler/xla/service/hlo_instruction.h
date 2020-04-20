@@ -624,6 +624,12 @@ class HloInstruction {
   static std::unique_ptr<HloInstruction> CreateSendDone(
       HloInstruction* operand, bool is_host_transfer = false);
 
+  // Creates an asynchronous send instruction with the parse key, which
+  // initiates sending the operand data into a rendezvous queue.
+  static std::unique_ptr<HloInstruction> CreateAsyncOutSend(
+      const Shape& async_out_send_shape, HloInstruction* operand,
+      const string& rendezvous_key);
+
   // Creates an asynchronous receive instruction with the given channel id,
   // which allocates resources to receive data of the given shape from a unique
   // send instruction in another computation that has the same channel id.  If
@@ -1474,6 +1480,10 @@ class HloInstruction {
   // Delegates to HloChannelInstruction::channel_id.
   absl::optional<int64> channel_id() const;
   void set_channel_id(const absl::optional<int64>& channel_id);
+
+  // Delegates to HloAsyncOutSendInstruction.
+  const Shape& async_out_send_shape() const;
+  const string& rendezvous_key() const;
 
   // Returns the dimension sizes or numbers associated with this instruction.
   virtual const std::vector<int64>& dimensions() const {

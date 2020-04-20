@@ -378,6 +378,10 @@ Status IrEmitterUnnested::HandleTriangularSolve(HloInstruction* hlo) {
   return ThunkEmitter(this).HandleTriangularSolve(hlo);
 }
 
+Status IrEmitterUnnested::HandleAsyncOutSend(HloInstruction* hlo) {
+  return ThunkEmitter(this).HandleAsyncOutSend(hlo);
+}
+
 Status IrEmitterUnnested::HandleFusion(HloInstruction* fusion) {
   HloInstruction* root = fusion->fused_expression_root();
   if (fusion->IsInputFusion()) {

@@ -2790,6 +2790,10 @@ Status IrEmitter::HandleRngGetAndUpdateState(HloInstruction* rng_state) {
   return Status::OK();
 }
 
+Status IrEmitter::HandleAsyncOutSend(HloInstruction*) {
+  return Unimplemented("AsyncOutSend is not supported on CPU.");
+}
+
 Status IrEmitter::FinishVisit(HloInstruction* root) {
   // When this method is called, we should have already emitted an IR value for
   // the root (return) op. The IR value holds the address of the buffer holding

@@ -2825,4 +2825,34 @@ HloRngGetAndUpdateStateInstruction::CloneWithNewOperandsImpl(
   return absl::make_unique<HloRngGetAndUpdateStateInstruction>(shape, delta());
 }
 
+HloAsyncOutSendInstruction::HloAsyncOutSendInstruction(
+    const Shape& async_out_send_shape, HloInstruction* operand,
+    const string& rendezvous_key)
+    : HloInstruction(HloOpcode::kAsyncOutSend, ShapeUtil::MakeNil()),
+      async_out_send_shape_(async_out_send_shape),
+      rendezvous_key_(rendezvous_key) {
+  AppendOperand(operand);
+}
+
+std::vector<string> HloAsyncOutSendInstruction::ExtraAttributesToStringImpl(
+    const HloPrintOptions& /*options*/) const {
+  return {StrCat("rendezvous_key={", rendezvous_key(), "}")};
+}
+
+std::unique_ptr<HloInstruction>
+HloAsyncOutSendInstruction::CloneWithNewOperandsImpl(
+    const Shape& shape, absl::Span<HloInstruction* const> new_operands,
+    HloCloneContext* context) const {
+  CHECK_EQ(new_operands.size(), 1);
+  return absl::make_unique<HloAsyncOutSendInstruction>(
+      async_out_send_shape(), new_operands[0], rendezvous_key_);
+}
+
+HloInstructionProto HloAsyncOutSendInstruction::ToProto() const {
+  HloInstructionProto proto = HloInstruction::ToProto();
+  *proto.mutable_async_out_send_shape() = async_out_send_shape().ToProto();
+  proto.set_rendezvous_key(rendezvous_key_);
+  return proto;
+}
+
 }  // namespace xla

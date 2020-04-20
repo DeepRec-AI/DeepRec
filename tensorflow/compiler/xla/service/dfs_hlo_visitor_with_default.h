@@ -229,6 +229,9 @@ class DfsHloVisitorWithDefaultBase
   Status HandleAddDependency(HloInstructionPtr add_dependency) override {
     return DefaultAction(add_dependency);
   }
+  Status HandleAsyncOutSend(HloInstructionPtr async_out_send) override {
+    return DefaultAction(async_out_send);
+  }
 
   // Invoked to inform the visitor that the traversal has completed, and that
   // the root was "root".
