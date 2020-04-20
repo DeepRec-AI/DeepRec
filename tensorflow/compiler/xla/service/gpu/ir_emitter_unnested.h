@@ -76,7 +76,7 @@ class IrEmitterUnnested : public IrEmitter,
   using EmitElementFunction = std::function<void(
       const llvm_ir::IrArray::Index& index, llvm::Value* y_loc,
       llvm::Value* x_loc, int64 x_iter_num, int vector_size,
-      bool manually_vectorize)>;
+      bool gen_vector_inst)>;
 
   using ConstantGenerator = std::function<llvm::Value*(int64)>;
 
@@ -366,7 +366,7 @@ class IrEmitterUnnested : public IrEmitter,
       const llvm_ir::IrArray::Index& index,
       const ReductionCodegenInfo& reduction_info,
       absl::Span<HloComputation* const> reducers, int64 x_iter_num,
-      int vector_size, bool manually_vectorize);
+      int vector_size, bool gen_vector_inst);
 
   // Prepares for the code generation for a tile block of a reduction kernel.
   //

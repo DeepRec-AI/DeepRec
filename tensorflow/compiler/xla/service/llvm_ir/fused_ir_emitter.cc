@@ -180,7 +180,7 @@ Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
         buffer = GetIrArrayForFusedParameter(param_num)
                      .EmitReadConsecutiveArrayElement(index, b_, "", true,
                                                       vector_size_[parameter],
-                                                      manually_vectorize_);
+                                                      gen_vector_inst_);
       }
       auto val = buffer.front();
       buffer.erase(buffer.begin());

@@ -432,10 +432,10 @@ llvm::Value* IrArray::EmitReadArrayElement(const Index& index,
 
 std::vector<llvm::Value*> IrArray::EmitReadConsecutiveArrayElement(
     const Index& index, llvm::IRBuilder<>* b, absl::string_view name,
-    bool use_linear_index, int vector_size, bool manually_vectorize) const {
+    bool use_linear_index, int vector_size, bool gen_vector_inst) const {
   std::vector<llvm::Value*> values;
 
-  if (manually_vectorize) {
+  if (gen_vector_inst) {
     llvm::Value* element_address = EmitVectorArrayElementAddress(
         index, b, name, use_linear_index, vector_size);
     int Alignment = vector_size;

@@ -232,12 +232,12 @@ class IrArray {
   void AnnotateLoadStoreInstructionWithMetadata(
       llvm::Instruction* instruction) const;
 
-  // When manually_vectorize is true, the caller must make sure the
+  // When gen_vector_inst is true, the caller must make sure the
   // data is aligned.
   std::vector<llvm::Value*> EmitReadConsecutiveArrayElement(
       const Index& index, llvm::IRBuilder<>* b, absl::string_view name = "",
       bool use_linear_index = true, int vector_size = 1,
-      bool manually_vectorize = false) const;
+      bool gen_vector_inst = false) const;
 
   // Emit IR to read an array element at the given index. Returns the read
   // result (effectively, a Value loaded from memory). This method seamlessly
