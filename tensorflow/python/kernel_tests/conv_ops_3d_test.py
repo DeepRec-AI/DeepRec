@@ -24,6 +24,7 @@ import numpy as np
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import gradient_checker
@@ -396,7 +397,7 @@ class Conv3DTest(test.TestCase):
 
   def _ConstructAndTestGradientForConfig(
       self, batch, input_shape, filter_shape, in_depth, out_depth, stride,
-      padding, test_input, data_format, use_gpu):
+      padding, test_input, data_format, use_gpu, maybe_numerical_cpu=False):
 
     input_planes, input_rows, input_cols = input_shape
     filter_planes, filter_rows, filter_cols = filter_shape
@@ -463,18 +464,36 @@ class Conv3DTest(test.TestCase):
             padding,
             data_format=data_format,
             name="conv")
+        
+        # CPU Conv3D only supports NDHWC
+        with ops.device("/cpu:0"):
+          conv_cpu = nn_ops.conv3d(
+              orig_input_tensor,
+              filter_tensor,
+              strides,
+              padding,
+              data_format="NDHWC",
+              name="conv")
 
         if data_format == "NCDHW":
           conv = test_util.NCHWToNHWC(conv)
 
         self.assertEqual(conv.shape, tensor_shape.TensorShape(output_shape))
 
+        numerical_cpu = (maybe_numerical_cpu if data_type == dtypes.float32 and
+                         use_gpu else False)
         if test_input:
           jacob_t, jacob_n = gradient_checker.compute_gradient(
               orig_input_tensor, input_shape, conv, output_shape)
+          if numerical_cpu:
+            _, jacob_n = gradient_checker.compute_gradient(
+                orig_input_tensor, input_shape, conv_cpu, output_shape)
         else:
           jacob_t, jacob_n = gradient_checker.compute_gradient(
               filter_tensor, filter_shape, conv, output_shape)
+          if numerical_cpu:
+            _, jacob_n = gradient_checker.compute_gradient(
+                filter_tensor, filter_shape, conv_cpu, output_shape)
 
         if data_type != dtypes.float16:
           reference_jacob_t = jacob_t
@@ -487,10 +506,11 @@ class Conv3DTest(test.TestCase):
       print("conv3d gradient error = ", err)
       self.assertLess(err, tolerance)
 
-  def ConstructAndTestGradient(self, **kwargs):
+  def ConstructAndTestGradient(self, maybe_numerical_cpu=False, **kwargs):
     for data_format, use_gpu in GetTestConfigs():
-      self._ConstructAndTestGradientForConfig(data_format=data_format,
-                                              use_gpu=use_gpu, **kwargs)
+      self._ConstructAndTestGradientForConfig(
+          maybe_numerical_cpu=maybe_numerical_cpu, data_format=data_format,
+          use_gpu=use_gpu, **kwargs)
 
   @test_util.run_deprecated_v1
   def testInputGradientValidPaddingStrideOne(self):
@@ -651,6 +671,7 @@ class Conv3DTest(test.TestCase):
   @test_util.run_deprecated_v1
   def testFilterGradientKernelSizeMatchesInputSize(self):
     self.ConstructAndTestGradient(
+        maybe_numerical_cpu=True,
         batch=2,
         input_shape=(5, 4, 3),
         filter_shape=(5, 4, 3),
@@ -663,6 +684,7 @@ class Conv3DTest(test.TestCase):
   @test_util.run_deprecated_v1
   def testInputGradientKernelSizeMatchesInputSize(self):
     self.ConstructAndTestGradient(
+        maybe_numerical_cpu=True,
         batch=2,
         input_shape=(5, 4, 3),
         filter_shape=(5, 4, 3),
