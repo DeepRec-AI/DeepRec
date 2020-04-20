@@ -238,12 +238,6 @@ class IrArray {
       const Index& index, llvm::IRBuilder<>* b, absl::string_view name = "",
       bool use_linear_index = true, int vector_size = 1,
       bool manually_vectorize = false) const;
-  // manually_vectorize isn't implemented only because it wasn't needed up to now.
-  void EmitWriteConsecutiveArrayElement(const Index& index,
-                                        absl::Span<llvm::Value* const> values,
-                                        llvm::IRBuilder<>* b,
-                                        bool use_linear_index = true,
-                                        int vector_size = 1) const;
 
   // Emit IR to read an array element at the given index. Returns the read
   // result (effectively, a Value loaded from memory). This method seamlessly
