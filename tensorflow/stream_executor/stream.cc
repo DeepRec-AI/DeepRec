@@ -195,6 +195,28 @@ string ToVlogString(dnn::DataType data_type) {
   }
 }
 
+string ToVlogString(stream_executor::BatchNormalizationKind kind) {
+  switch (kind) {
+    case stream_executor::BatchNormalizationKind::kBatchnormForward:
+      return "stream_executor::BatchNormalizationKind::kBatchnormForward";
+    case stream_executor::BatchNormalizationKind::kBatchnormBackward:
+      return "stream_executor::BatchNormalizationKind::kBatchnormBackward";
+    default:
+      LOG(FATAL) << "Unknown BatchNormalizationKind "
+                 << static_cast<int32>(kind);
+  }
+  return "Unknown BatchNormalizationKind";
+}
+
+string ToVlogString(bool b) {
+  if (b) {
+    return "True";
+  }
+  return "false";
+}
+
+string ToVlogString(string str) { return str; }
+
 // Used together with PARAM to VLOG calls made to the stream. Intended
 // to be used like this:
 //
@@ -342,7 +364,9 @@ Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
     const std::string &layout, dnn::DataType input_type,
     size_t *reserve_space_size, dnn::ActivationMode activation_mode,
     bool apply_side_input) {
-  stream_executor::dnn::BatchDescriptor input_desc;
+  VLOG_CALL(PARAM(batch_size), PARAM(feature_count), PARAM(y_size),
+            PARAM(input_type), PARAM(layout), PARAM(activation_mode),
+            PARAM(apply_side_input));
   stream_executor::dnn::DataLayout data_layout;
   if (layout == "NHWC" || layout == "NHWC_VECT_W") {
     data_layout = stream_executor::dnn::DataLayout::kBatchYXDepth;
@@ -352,6 +376,7 @@ Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
     LOG(ERROR) << "Invalid or unimplemented data type while computing "
                   "BatchNormalization training reserve space size";
   }
+  stream_executor::dnn::BatchDescriptor input_desc;
   input_desc.set_layout(data_layout)
       .set_count(batch_size)
       .set_feature_map_count(feature_count)
@@ -376,6 +401,9 @@ Stream &Stream::ThenFindBatchNormWorkspaceSize(
     size_t *workspace_size_in_bytes,
     stream_executor::BatchNormalizationKind kind,
     dnn::ActivationMode activation_mode, bool apply_side_input) {
+  VLOG_CALL(PARAM(input_data_type), PARAM(scale_data_type), PARAM(x_desc),
+            PARAM(scale_offset_desc), PARAM(kind), PARAM(activation_mode),
+            PARAM(apply_side_input));
   if (ok()) {
     if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
       CheckError(dnn->GetBatchNormalizationWorkspaceSize(

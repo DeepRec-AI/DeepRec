@@ -49,7 +49,7 @@ class Stream;
 class ScratchAllocator;
 
 // Enum for batchnorm kind
-enum BatchNormalizationKind {
+enum class BatchNormalizationKind {
   kBatchnormForward,
   kBatchnormBackward,
 };

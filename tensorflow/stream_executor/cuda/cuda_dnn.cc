@@ -3572,6 +3572,9 @@ bool CudnnSupport::GetConvolveBackwardFilterAlgorithms(
   return true;
 }
 
+// This function used to query reserve space size in bytes. This function can be
+// called via stream executor during compilation. Note one use case for this is
+// when the reserve space gets queried by the tf2xla bridge.
 bool CudnnSupport::GetBatchNormalizationReserveSpaceSize(
     Stream* stream, dnn::DataType input_data_type,
     const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes,
@@ -3608,6 +3611,9 @@ port::Status CudnnSupport::GetBatchNormalizationReserveSpaceSizeImpl(
   return port::Status::OK();
 }
 
+// This function used to query workspace (scratch space) size in bytes. One of
+// the use of this function during the compilation process is when it gets
+// called via the stream executor from cudnn_conv_rewriter.
 bool CudnnSupport::GetBatchNormalizationWorkspaceSize(
     Stream* stream, dnn::DataType input_data_type,
     dnn::DataType scale_data_type, const dnn::BatchDescriptor& x_desc,
@@ -3734,7 +3740,6 @@ port::Status CudnnSupport::DoBatchNormalizationForwardImpl(
     ScratchAllocator* workspace_allocator,
     std::function<const DeviceMemory<U>&()> var_to_inv_var,
     std::function<void()> inv_var_to_var) {
-  VLOG(1) << "Batchnorm Forward: " << x_desc.ToString();
   CudnnTensorDescriptor x_descriptor(x_desc, ToCudnnDataType(input_data_type));
   CudnnTensorDescriptor scale_offset_descriptor(
       scale_offset_desc, ToCudnnDataType(scale_data_type));
@@ -3752,9 +3757,8 @@ port::Status CudnnSupport::DoBatchNormalizationForwardImpl(
   DeviceMemory<uint8> reserve_space;
 
 #if CUDNN_VERSION >= 7402
-  bool apply_side_input = !side_input.is_null();
   const cudnnBatchNormOps_t bn_ops =
-      GetBNOps(apply_side_input, activation_mode);
+      GetBNOps(!side_input.is_null(), activation_mode);
   // We use Nan propagation to be consistent with CudnnSupport::DoActivate(...).
   CudnnActivationDescriptor activation_desc(
       activation_mode, CUDNN_PROPAGATE_NAN, x_desc.value_max());

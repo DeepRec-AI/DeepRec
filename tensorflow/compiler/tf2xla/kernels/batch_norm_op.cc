@@ -94,13 +94,12 @@ class FusedBatchNormOp : public XlaOpKernel {
         // subgraph of XLA compilation Ops to construct a compiled version
         // of the subgraph's computation.
         CHECK_NE(opkernel_ctx->device(), nullptr);
-        VLOG(2) << "XlaCompilation Device* " << opkernel_ctx->device();
+        VLOG(2) << "XlaCompilation Device ptr " << opkernel_ctx->device();
         // Stream (shared by the XlaDevice) is set during the construction of
         // the above device that can be used here.
         se::Stream* stream =
             opkernel_ctx->device()->get_gpu_device_info_stream();
-        VLOG(2) << "Stream* "
-                << opkernel_ctx->device()->get_gpu_device_info_stream();
+        VLOG(2) << "Stream " << stream;
         int64 batch_index =
             GetTensorBatchDimIndex(input_shape.dims(), data_format_);
         int64 batch_size = input_shape.dim_size(batch_index);
@@ -155,7 +154,10 @@ class FusedBatchNormOp : public XlaOpKernel {
                 "Unimplemented data type for batchnorm input");
           }
         } else {
-          VLOG(1) << "Stream is nullptr. Hence reserve space not queried. ";
+          LOG(WARNING) << "Stream is nullptr. Hence reserve space not queried. "
+                          "When using cuDNN for batch normalization on GPUs, "
+                          "this may cause a performance regression. Trying "
+                          "running XLA without using cudnn for batchnorm.";
         }
         VLOG(1) << "Reserved space required: " << reserve_space_size
                 << " bytes";

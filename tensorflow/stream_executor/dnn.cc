@@ -89,6 +89,8 @@ string QuantizedActivationModeString(QuantizedActivationMode mode) {
 
 string ActivationModeString(ActivationMode mode) {
   switch (mode) {
+    case ActivationMode::kNone:
+      return "identity";
     case ActivationMode::kSigmoid:
       return "sigmoid";
     case ActivationMode::kRelu:
