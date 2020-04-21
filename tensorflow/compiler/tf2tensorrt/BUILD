@@ -422,6 +422,8 @@ cc_library(
     copts = tf_copts(),
     deps = [
         "//tensorflow/core:graph",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
         "//tensorflow/core:lib_proto_parsing",
         "//tensorflow/core:protos_all_cc",
         "@com_google_absl//absl/strings",
