@@ -543,7 +543,8 @@ Status IrEmitterUnnested::EmitExtraOutputsForReduce(
     absl::Span<const std::pair<llvm_ir::ElementGenerator, ShapeIndex>>
         extra_output_gens) {
   for (int i = 0; i != extra_output_gens.size(); ++i) {
-    auto array = GetIrArray(*unnested_hlo, *unnested_hlo, extra_output_gens[i].second);
+    auto array =
+        GetIrArray(*unnested_hlo, *unnested_hlo, extra_output_gens[i].second);
     for (int v = 0; v < vector_size; ++v) {
       IrArray::Index current_index = index.AddOffsetToDim(
           llvm::ConstantInt::get(index.GetType(), v), index.size() - 1, &b_);
@@ -3376,10 +3377,9 @@ Status IrEmitterUnnested::EmitReductionFromOrToContiguousDimensions(
       [&](const llvm_ir::IrArray::Index& index, llvm::Value* y_loc,
           llvm::Value* x_loc, int64 x_iter_num, int vector_size,
           bool gen_vector_inst) {
-        EmitTileElementForReduction(unnested_hlo, input_shape,
-                                    output_instructions, index, reduction_info,
-                                    reducers, x_iter_num, vector_size,
-                                    gen_vector_inst);
+        EmitTileElementForReduction(
+            unnested_hlo, input_shape, output_instructions, index,
+            reduction_info, reducers, x_iter_num, vector_size, gen_vector_inst);
       };
 
   TilingKernelInfo tiling_kernel_info = EmitTilingKernel(
