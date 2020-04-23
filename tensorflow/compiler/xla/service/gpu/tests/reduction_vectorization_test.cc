@@ -228,9 +228,9 @@ HloModule DisableSin
 
 ENTRY %main {
   %arg0.1 = f32[5,131072] parameter(0)
-  %sine = f32[5,131072] exponential(f32[5,131072] %arg0.1)
+  %exp = f32[5,131072] exponential(f32[5,131072] %arg0.1)
   %constant.0 = f32[] constant(0)
-  ROOT %reduce.18 = f32[5] reduce(f32[5,131072] %sine, f32[] %constant.0), dimensions={1}, to_apply=%add_float
+  ROOT %reduce.18 = f32[5] reduce(f32[5,131072] %exp, f32[] %constant.0), dimensions={1}, to_apply=%add_float
 }
 )";
 
