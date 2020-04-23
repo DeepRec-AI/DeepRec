@@ -331,9 +331,8 @@ ENTRY %main {
 
   CompileAndVerifyPtx(std::move(optimized_module),
                       R"(
-CHECK-NOT: ld.global.nc.v2.f32
-CHECK: ld.global.nc.f32
-CHECK-NOT: ld.global.nc.v2.f32
+CHECK-COUNT-8: ld.global.nc.v2.f32
+CHECK-NOT: ld.global.
 )");
 
 }
@@ -370,9 +369,8 @@ ENTRY %main {
 
   CompileAndVerifyPtx(std::move(optimized_module),
                       R"(
-CHECK-NOT: ld.global.nc.v2.f32
-CHECK: ld.global.nc.f32
-CHECK-NOT: ld.global.nc.v2.f32
+CHECK-COUNT-8: ld.global.nc.v2.f32
+CHECK-NOT: ld.global.
 )");
 
 }
@@ -408,7 +406,8 @@ ENTRY %main {
 
   CompileAndVerifyPtx(std::move(optimized_module),
                       R"(
-CHECK: ld.global.nc.v2.f32
+CHECK-COUNT-16: ld.global.nc.v2.f32
+CHECK-NOT: ld.global.
 )");
 
 }

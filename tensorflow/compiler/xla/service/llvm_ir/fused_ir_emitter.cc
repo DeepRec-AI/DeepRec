@@ -149,7 +149,7 @@ Status FusedIrEmitter::HandleGetTupleElement(
 }
 
 Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
-  std::vector<llvm::Value*> buffer;
+  std::unordered_map<llvm::Value*, std::vector<llvm::Value*> > buffer;
   indexed_generators_[parameter] =
       [=](const IrArray::Index& index) mutable -> llvm::Value* {
     int64 param_num = parameter->parameter_number();
@@ -169,22 +169,39 @@ Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
               "tiled_buffer");
         }
       }
-      // TODO: Load by vector size and return the next value at the next call.
-      // TOOD: only load by vector size when enough elements are left to read.
       return GetIrArrayForFusedParameter(param_num).EmitReadArrayElement(index,
                                                                          b_);
     } else {
+      CHECK(index.size() > 0);
       CHECK(param_shmem_buffers_.size() <= param_num ||
             !param_shmem_buffers_[param_num]);
-      if (buffer.size() == 0) {
-        buffer = GetIrArrayForFusedParameter(param_num)
-                     .EmitReadConsecutiveArrayElement(index, b_, "", true,
-                                                      vector_size_[parameter],
-                                                      gen_vector_inst_);
+      // We match the patter `add llvm::Value, cst`.  The first time
+      // the object x is found, cst must be 0.  That time, we load
+      // vector_size data in one instruction.  Then when `add
+      // llvm::Value, cst` is called again with the same object, we
+      // take the corresponding `cst` element in the vector.
+
+      auto* key_inst = llvm::dyn_cast<llvm::BinaryOperator>(
+          index.multidim()[index.size() - 1]);
+      CHECK(key_inst);
+      CHECK(key_inst->getOpcode() == llvm::Instruction::Add);
+
+      llvm::Value* index_base = key_inst->getOperand(0);
+      // Must be a constant AND is the index in the vector.
+      llvm::ConstantInt* index_vec = llvm::dyn_cast<llvm::ConstantInt>(
+          key_inst->getOperand(1));
+      CHECK(index_vec);
+      int vec_ind = index_vec->getZExtValue();
+      if (buffer.count(index_base) == 0) {
+        // The following check is probably not needed, but it isn't
+        // tested, so do not enable it for now.
+        CHECK_EQ(vec_ind, 0);
+        buffer[index_base] = GetIrArrayForFusedParameter(param_num)
+            .EmitReadConsecutiveArrayElement(index, b_, "", true,
+                                             vector_size_[parameter],
+                                             gen_vector_inst_);
       }
-      auto val = buffer.front();
-      buffer.erase(buffer.begin());
-      return val;
+      return buffer[index_base][vec_ind];
     }
   };
   return Status::OK();

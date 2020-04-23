@@ -51,6 +51,19 @@ namespace xla {
 // created produces an LLVM struct with N elements, one for each element of the
 // arrays in the tuple.  It follows that the arrays in the tuple must have the
 // same length.
+//
+// The `vector_size` parameter can be used to have the inputs loads
+// vectorized. There is some restriction when this mode can used:
+//  - The innermost dimensions must be contiguous.
+//  - The IrArray::Index inner dimension index must be of this form `add llvm::Value*, cst`.
+//    The first time ptr is accessed, cst must be 0. At that time,
+//    `vector_size` elements will be loaded. Then each time the llvm::Value object is
+//    (re)used, we will return the previously loaded element at index cst.
+//
+// The `gen_vector_inst_` parameter cause vectorized load to be emited
+// by only 1 instruction instead of many consecutive instruction. This
+// request that the data is aligned, but doesn't rely on LLVM for the
+// vectorization.
 class FusedIrEmitter : public ConstDfsHloVisitorWithDefault {
  public:
   using IndexedGenerator = llvm_ir::ElementGenerator;
