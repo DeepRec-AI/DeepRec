@@ -3260,8 +3260,28 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
 
   int num_partial_results = 1;
   int vector_size = 1;
+
   KernelMappingScheme::IndexingOrder indexing_order = [&]() {
-    if (reduction_dimensions.is_row_reduction &&
+    if (  // Fusion code generator does not support when one input have
+          // more then 1 uses.
+        !(unnested_hlo->opcode() == HloOpcode::kFusion &&
+          absl::c_any_of(unnested_hlo->fused_instructions_computation()
+                             ->parameter_instructions(),
+                         [](const HloInstruction* instr) {
+                           if (instr->user_count() > 1) return true;
+                           for (auto* user : instr->users()) {
+                             int count =
+                                 std::count(user->operands().begin(),
+                                            user->operands().end(), instr);
+                             CHECK(count > 0);
+                             if (count > 1) {
+                               return true;
+                             }
+                           }
+                           return false;
+                         })) &&
+
+        reduction_dimensions.is_row_reduction &&
         // At least one input has the inner most dimensions contiguous.
         have_inner_contiguous_layout &&
         // P100, only try to vectorize+coales memory access when the
@@ -3271,6 +3291,7 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
          // rows of even size.  For odd row sizes, every other row
          // isn't aligned, so it can't be vectorized.
          (cc_major >= 7 && reduction_dimensions.dimensions[2] % 2 == 0))) {
+      printf("EMIT VEC\n");
       vector_size = 2;
       return kStridedLinearIndexingX;
     } else if (!reduction_dimensions.is_row_reduction &&

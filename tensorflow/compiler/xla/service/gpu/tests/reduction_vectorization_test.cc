@@ -303,6 +303,116 @@ class ReductionVectorizationNoOptTest : public GpuCodegenTest {
   }
 };
 
+TEST_F(ReductionVectorizationNoOptTest, Iota) {
+    const char* hlo_text = R"(
+HloModule iota
+
+%add_F32 {
+  %lhs = f32[] parameter(0)
+  %rhs = f32[] parameter(1)
+  ROOT %add = f32[] add(%lhs, %rhs)
+}
+
+%fused_computation {
+  %param_0 = f32[16,32] parameter(0)
+  %multiply = f32[16,32] multiply(%param_0, %param_0)
+  %constant_0 = f32[] constant(0)
+  ROOT %reduce = f32[] reduce(%multiply, %constant_0), dimensions={0,1}, to_apply=%add_F32
+}
+
+ENTRY %main {
+  %param = f32[16,32] parameter(0)
+  ROOT %fusion = f32[] fusion(%param), kind=kInput, calls=%fused_computation
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> optimized_module,
+                          ParseAndReturnVerifiedModule(hlo_text));
+  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
+
+  CompileAndVerifyPtx(std::move(optimized_module),
+                      R"(
+CHECK-NOT: ld.global.nc.v2.f32
+CHECK: ld.global.nc.f32
+CHECK-NOT: ld.global.nc.v2.f32
+)");
+
+}
+
+TEST_F(ReductionVectorizationNoOptTest, Iota2) {
+    const char* hlo_text = R"(
+HloModule iota
+
+%add_F32 {
+  %lhs = f32[] parameter(0)
+  %rhs = f32[] parameter(1)
+  ROOT %add = f32[] add(%lhs, %rhs)
+}
+
+%fused_computation {
+  %param_0 = f32[16,32] parameter(0)
+  %constant_1 = f32[] constant(1)
+  %broadcast1 = f32[16,32] broadcast(%constant_1), dimensions={}
+  %add = f32[16,32] add(%param_0, %broadcast1)
+  %multiply = f32[16,32] multiply(%param_0, %add)
+  %constant_0 = f32[] constant(0)
+  ROOT %reduce = f32[] reduce(%multiply, %constant_0), dimensions={0,1}, to_apply=%add_F32
+}
+
+ENTRY %main {
+  %param = f32[16,32] parameter(0)
+  ROOT %fusion = f32[] fusion(%param), kind=kInput, calls=%fused_computation
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> optimized_module,
+                          ParseAndReturnVerifiedModule(hlo_text));
+
+  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
+
+  CompileAndVerifyPtx(std::move(optimized_module),
+                      R"(
+CHECK-NOT: ld.global.nc.v2.f32
+CHECK: ld.global.nc.f32
+CHECK-NOT: ld.global.nc.v2.f32
+)");
+
+}
+
+TEST_F(ReductionVectorizationNoOptTest, Iota3) {
+    const char* hlo_text = R"(
+HloModule iota
+
+%add_F32 {
+  %lhs = f32[] parameter(0)
+  %rhs = f32[] parameter(1)
+  ROOT %add = f32[] add(%lhs, %rhs)
+}
+
+%fused_computation {
+  %param_0 = f32[16,32] parameter(0)
+  %param_1 = f32[16,32] parameter(1)
+  %multiply = f32[16,32] multiply(%param_0, %param_1)
+  %constant_0 = f32[] constant(0)
+  ROOT %reduce = f32[] reduce(%multiply, %constant_0), dimensions={0,1}, to_apply=%add_F32
+}
+
+ENTRY %main {
+  %param_0 = f32[16,32] parameter(0)
+  %param_1 = f32[16,32] parameter(1)
+  ROOT %fusion = f32[] fusion(%param_0, %param_1), kind=kInput, calls=%fused_computation
+}
+)";
+  TF_ASSERT_OK_AND_ASSIGN(std::unique_ptr<VerifiedHloModule> optimized_module,
+                          ParseAndReturnVerifiedModule(hlo_text));
+
+  EXPECT_TRUE(RunAndCompare(hlo_text, ErrorSpec{1e-5, 1e-5}));
+
+  CompileAndVerifyPtx(std::move(optimized_module),
+                      R"(
+CHECK: ld.global.nc.v2.f32
+)");
+
+}
+
 TEST_F(ReductionVectorizationNoOptTest, MultiOutputStore) {
   const char* hlo_text = R"(
 HloModule MultiOutputStore
