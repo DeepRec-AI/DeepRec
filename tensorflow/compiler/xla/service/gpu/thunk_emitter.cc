@@ -216,7 +216,7 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
   }
 
   if (custom_call->custom_call_target() == kCudnnBatchNormBackwardCallTarget) {
-    bool use_reserve_space = (custom_call->operand_count() == 8) ? true : false;
+    bool use_reserve_space = custom_call->operand_count() == 8;
     int epsilon_dim =  (use_reserve_space) ? 6 : 5;
     int feature_index_dim = epsilon_dim+1;
     const HloInstruction* epsilon = custom_call->operand(epsilon_dim);

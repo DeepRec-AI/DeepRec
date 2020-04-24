@@ -868,7 +868,7 @@ Status ShapeVerifier::HandleBatchNormTraining(
     HloInstruction* batch_norm_training) {
   auto num_outputs = batch_norm_training->shape().tuple_shapes_size();
   size_t reserve_space_size = 0;
-  bool use_reserve_space = (num_outputs == 4) ? true : false;
+  bool use_reserve_space = num_outputs == 4;
   if (use_reserve_space) {
     CHECK_EQ(batch_norm_training->shape().tuple_shapes(3).dimensions_size(), 1);
     reserve_space_size =

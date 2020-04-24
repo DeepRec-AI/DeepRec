@@ -193,7 +193,7 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   }
 
   auto num_outputs = batch_norm_tuple_shape.size();
-  bool use_reserve_space = (num_outputs == 4) ? true : false;
+  bool use_reserve_space = num_outputs == 4;
   // When batch-norm-training hlo has been lowered from
   // either FusedBatchnormV3 or FusedBatchNormEx, the hlo has
   // an extra reserve space output i.e, 4 outputs. This implies that an extra
@@ -330,7 +330,7 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
   }
 
   auto num_inputs = batch_norm->operand_count();
-  bool use_reserve_space = (num_inputs == 6) ? true : false;
+  bool use_reserve_space = num_inputs == 6;
   // When batch-norm-grad hlo has been lowered from
   // either FusedBatchnormGradV3 or FusedBatchNormGradEx, the hlo has
   // an extra reserve space input i.e, 6 inputs {operand, scale, mean,

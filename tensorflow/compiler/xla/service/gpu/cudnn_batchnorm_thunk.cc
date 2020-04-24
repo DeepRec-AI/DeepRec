@@ -193,7 +193,7 @@ Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
   se::DeviceMemory<float> output_inv_stddev(
       buffer_allocations.GetDeviceAddress(output_slices_[2]));
 
-  bool use_reserve_space = (output_slices_.size()== 5) ? true : false;
+  bool use_reserve_space = output_slices_.size()== 5;
   //se::DeviceMemory<float> null_device_ptr(nullptr);
   se::DeviceMemoryBase reserve_space(nullptr);
   se::DeviceMemoryBase workspace(nullptr);
@@ -286,7 +286,7 @@ Status CudnnBatchNormBackwardThunk::ExecuteOnStream(
   se::DeviceMemory<float> output_grad_offset(
       buffer_allocations.GetDeviceAddress(output_slices_[2]));
 
-  bool use_reserve_space = (operand_slices_.size() == 6) ? true : false;
+  bool use_reserve_space = operand_slices_.size() == 6;
   se::DeviceMemoryBase reserve_space_base(nullptr);
   se::DeviceMemoryBase workspace(nullptr);
   if (use_reserve_space) {
