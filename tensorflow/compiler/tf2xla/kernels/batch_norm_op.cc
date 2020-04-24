@@ -64,10 +64,13 @@ class FusedBatchNormOp : public XlaOpKernel {
     is_on_gpu_ = ctx->device_type().type_string() == DEVICE_GPU_XLA_JIT;
   }
 
-  void Compile(XlaOpKernelContext* ctx) override { CompileImpl(ctx, false); }
+  void Compile(XlaOpKernelContext* ctx) override {
+    ctx->SetUseReserveSpaceMetadata(false);
+    CompileImpl(ctx);
+  }
 
  protected:
-  virtual void CompileImpl(XlaOpKernelContext* ctx, bool use_reserved_space) {
+  virtual void CompileImpl(XlaOpKernelContext* ctx) {
     xla::PrimitiveType input_type;
     OP_REQUIRES_OK(ctx,
                    DataTypeToPrimitiveType(ctx->input_type(0), &input_type));
@@ -86,6 +89,7 @@ class FusedBatchNormOp : public XlaOpKernel {
     // may be more precise than the input type).
     input = xla::ConvertElementType(input, scale_type);
     if (is_training_) {
+      bool use_reserved_space = ctx->GetUseReserveSpaceMetadata();
       size_t reserve_space_size = 0;
       if (is_on_gpu_ && use_reserved_space) {
         OpKernelContext* opkernel_ctx = ctx->op_kernel_context();
@@ -251,7 +255,8 @@ class FusedBatchNormOpV3 : public FusedBatchNormOp {
   void Compile(XlaOpKernelContext* ctx) override {
     // Use reserve space only applicable for gpu. Retaining the original
     // behaviour for non-gpu backends.
-    FusedBatchNormOp::CompileImpl(ctx, is_on_gpu_);
+    ctx->SetUseReserveSpaceMetadata(is_on_gpu_);
+    FusedBatchNormOp::CompileImpl(ctx);
     if (!ctx->status().ok()) {
       return;
     }
@@ -270,7 +275,8 @@ class FusedBatchNormOpEx : public FusedBatchNormOp {
       : FusedBatchNormOp(ctx, /*is_batch_norm_ex=*/true) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormOp::CompileImpl(ctx, is_on_gpu_);
+    ctx->SetUseReserveSpaceMetadata(is_on_gpu_);
+    FusedBatchNormOp::CompileImpl(ctx);
     if (!ctx->status().ok()) {
       return;
     }
@@ -300,9 +306,12 @@ class FusedBatchNormGradOp : public XlaOpKernel {
         errors::InvalidArgument("Invalid data format: ", data_format_str));
     is_on_gpu_ = ctx->device_type().type_string() == DEVICE_GPU_XLA_JIT;
   }
-  void Compile(XlaOpKernelContext* ctx) override { CompileImpl(ctx, false); }
+  void Compile(XlaOpKernelContext* ctx) override {
+    ctx->SetUseReserveSpaceMetadata(false);
+    CompileImpl(ctx);
+  }
 
-  virtual void CompileImpl(XlaOpKernelContext* ctx, bool use_reserved_space ) {
+  virtual void CompileImpl(XlaOpKernelContext* ctx) {
     xla::XlaBuilder* const b = ctx->builder();
     DataType input_dtype = ctx->input_type(0);
     DataType scale_dtype = ctx->input_type(2);
@@ -342,7 +351,7 @@ class FusedBatchNormGradOp : public XlaOpKernel {
         var = xla::Sub(one / (var * var), epsilon);
       }
       xla::XlaOp reserve_space;
-      if (use_reserved_space) {
+      if (ctx->GetUseReserveSpaceMetadata()) {
         reserve_space = ctx->Input(5);
       }
       xla::XlaOp output =
@@ -411,7 +420,8 @@ class FusedBatchNormGradOpV3 : public FusedBatchNormGradOp {
       : FusedBatchNormGradOp(ctx) {}
 
   void Compile(XlaOpKernelContext* ctx) override {
-    FusedBatchNormGradOp::CompileImpl(ctx, is_on_gpu_);
+    ctx->SetUseReserveSpaceMetadata(is_on_gpu_);
+    FusedBatchNormGradOp::CompileImpl(ctx);
     if (!ctx->status().ok()) {
       return;
     }
