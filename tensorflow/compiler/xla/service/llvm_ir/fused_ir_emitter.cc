@@ -175,7 +175,7 @@ Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
       CHECK(index.size() > 0);
       CHECK(param_shmem_buffers_.size() <= param_num ||
             !param_shmem_buffers_[param_num]);
-      // We match the patter `add llvm::Value, cst`.  The first time
+      // We match the pattern `add llvm::Value, cst`.  The first time
       // the object x is found, cst must be 0.  That time, we load
       // vector_size data in one instruction.  Then when `add
       // llvm::Value, cst` is called again with the same object, we
