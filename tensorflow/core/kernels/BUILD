@@ -806,7 +806,9 @@ cc_library(
     name = "eigen_contraction_kernel_no_mkl",
     srcs = ["eigen_contraction_kernel.cc"],
     hdrs = ["eigen_contraction_kernel.h"],
-    deps = ["//third_party/eigen3"],
+    deps = [
+        "//third_party/eigen3",
+    ],
 )
 
 cc_library(
