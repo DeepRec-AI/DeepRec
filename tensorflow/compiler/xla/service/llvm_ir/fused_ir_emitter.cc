@@ -153,7 +153,22 @@ Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
   indexed_generators_[parameter] =
       [=](const IrArray::Index& index) mutable -> llvm::Value* {
     int64 param_num = parameter->parameter_number();
-    if (vector_size_.count(parameter) == 0) {
+
+    // We match the pattern `add llvm::Value, cst`.  The first time
+    // the object x is found, cst must be 0.  That time, we load
+    // vector_size data in one instruction.  Then when `add
+    // llvm::Value, cst` is called again with the same object, we
+    // take the corresponding `cst` element in the vector.
+    bool vec_pattern = false;
+    llvm::BinaryOperator* key_inst = nullptr;
+    if (vector_size_.count(parameter) > 0 &&
+        index.size() > 0 &&
+        key_inst = llvm::dyn_cast<llvm::BinaryOperator>(index.multidim()[index.size() - 1]) &&
+        key_inst->getOpcode() == llvm::Instruction::Add) {
+      vec_pattern = true;
+    }
+
+    if (!vec_pattern) {
       CHECK_EQ(buffer.size(), 0);
       if (param_shmem_buffers_.size() > param_num) {
         if (llvm::Value* param_tile_buffer = param_shmem_buffers_[param_num]) {
@@ -175,14 +190,6 @@ Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
       CHECK(index.size() > 0);
       CHECK(param_shmem_buffers_.size() <= param_num ||
             !param_shmem_buffers_[param_num]);
-      // We match the pattern `add llvm::Value, cst`.  The first time
-      // the object x is found, cst must be 0.  That time, we load
-      // vector_size data in one instruction.  Then when `add
-      // llvm::Value, cst` is called again with the same object, we
-      // take the corresponding `cst` element in the vector.
-
-      auto* key_inst = llvm::dyn_cast<llvm::BinaryOperator>(
-          index.multidim()[index.size() - 1]);
       CHECK(key_inst);
       CHECK(key_inst->getOpcode() == llvm::Instruction::Add);
 
