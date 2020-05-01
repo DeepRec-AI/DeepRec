@@ -123,6 +123,10 @@ class GpuExecutable : public Executable {
   Status CheckCompatibilityWithServiceExecutableRunOptions(
       const ServiceExecutableRunOptions* run_options);
 
+  // Returns whether GPU graph capture can safely be used for execution of
+  // this executable.
+  bool CanUseGpuGraphCapture() const;
+
   // The LLVM IR, in string format, of the unoptimized module generated for this
   // GpuExecutable. We save a string instead of an llvm::Module* because leaving
   // llvm::Module* in a singleton can cause the heap checker to emit false
@@ -162,6 +166,10 @@ class GpuExecutable : public Executable {
       module_handles_ TF_GUARDED_BY(module_handle_mutex_);
   std::map<stream_executor::StreamExecutor*, BufferAllocToDeviceMemoryMap>
       module_globals_ TF_GUARDED_BY(module_handle_mutex_);
+
+  bool can_use_gpu_graph_capture_ = false;
+  // Maps GpuContext* to owned GpuGraphExec objects.
+  std::unordered_map<void*, void*> gpu_exec_graphs_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GpuExecutable);
 };

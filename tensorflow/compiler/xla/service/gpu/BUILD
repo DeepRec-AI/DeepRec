@@ -586,6 +586,8 @@ cc_library(
         "//tensorflow/stream_executor:device_memory",
         "//tensorflow/stream_executor:device_memory_allocator",
         "//tensorflow/stream_executor:kernel",
+        "//tensorflow/stream_executor/gpu:gpu_driver_header",
+        "//tensorflow/stream_executor/gpu:gpu_executor_header",
         "//tensorflow/stream_executor/gpu:gpu_stream",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base:core_headers",

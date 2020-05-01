@@ -27,6 +27,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/gpu_executable_run_options.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_types.h"
 #include "tensorflow/compiler/xla/service/gpu/hlo_execution_profiler.h"
+#include "tensorflow/compiler/xla/service/gpu/sequential_thunk.h"
 #include "tensorflow/compiler/xla/service/hlo_instruction.h"
 #include "tensorflow/compiler/xla/service/llvm_ir/buffer_assignment_util.h"
 #include "tensorflow/compiler/xla/service/logical_buffer.h"
@@ -36,16 +37,65 @@ limitations under the License.
 #include "tensorflow/compiler/xla/shape_util.h"
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/compiler/xla/util.h"
-#include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/annotation.h"
+#include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/profiler/lib/traceme.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/stream_executor/platform.h"
+// TODO(benbarsdell): Plumb Graph APIs into stream_executor (and implement
+// wrapper classes for Graph/GraphExec) instead of using this directly.
+#include "tensorflow/stream_executor/gpu/gpu_driver.h"
+#include "tensorflow/stream_executor/gpu/gpu_executor.h"
 
 namespace xla {
 namespace gpu {
 namespace {
 
 using tensorflow::tracing::ScopedAnnotation;
+
+// A helper function to decide whether to use GPU graph capture, which can
+// reduce GPU launch latency overheads in some cases.
+bool GpuGraphCaptureEnabled() {
+  static bool is_enabled = [] {
+    bool is_enabled = false;
+    TF_CHECK_OK(
+        tensorflow::ReadBoolFromEnvVar("TF_XLA_ENABLE_GPU_GRAPH_CAPTURE",
+                                       /*default_val=*/false, &is_enabled));
+    return is_enabled;
+  }();
+  return is_enabled;
+}
+
+bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
+  // Thunks that synchronize with the host (i.e., call BlockHostUntilDone)
+  // cannot be used with graph capture.
+  static const absl::flat_hash_set<Thunk::Kind> thunk_kinds_safe_for_capture = {
+      Thunk::kCholesky,
+      Thunk::kCollectivePermute,
+      Thunk::kConvolution,
+      Thunk::kCopy,
+      Thunk::kCudnnBatchNormBackward,
+      Thunk::kCudnnBatchNormForwardInference,
+      Thunk::kCudnnBatchNormForwardTraining,
+      Thunk::kFft,
+      Thunk::kGemm,
+      Thunk::kKernel,
+      Thunk::kMemset32BitValue,
+      Thunk::kMemzero,
+      Thunk::kNcclAllReduce,
+      Thunk::kReplicaId,
+      Thunk::kTriangularSolve,
+      Thunk::kTuple,
+  };
+  if (!thunk_kinds_safe_for_capture.count(thunk->kind())) return false;
+  if (thunk->kind() == Thunk::kSequential) {
+    const auto* seq_thunk = static_cast<const SequentialThunk*>(thunk);
+    for (const std::unique_ptr<Thunk>& sub_thunk : seq_thunk->thunks()) {
+      if (!IsThunkSafeForGpuGraphCapture(sub_thunk.get())) return false;
+    }
+  }
+  return true;
+}
 
 }  // namespace
 
@@ -69,6 +119,7 @@ GpuExecutable::GpuExecutable(
   GpuDebugInfoManager::Get()->RegisterModule(module().name(), shared_module(),
                                              assignment_);
   ComputeThunkAnnotations();
+  can_use_gpu_graph_capture_ = CanUseGpuGraphCapture();
 }
 
 GpuExecutable::~GpuExecutable() {
@@ -88,6 +139,23 @@ GpuExecutable::~GpuExecutable() {
       CHECK(pair.first->SynchronizeAllActivity());
     }
   }
+  while (!gpu_exec_graphs_.empty()) {
+    auto* gpu_context = static_cast<stream_executor::gpu::GpuContext*>(
+        gpu_exec_graphs_.begin()->first);
+    auto* exec_graph =
+        reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
+            &gpu_exec_graphs_.begin()->second);
+    using stream_executor::gpu::GpuDriver;
+    GpuDriver::DestroyExecutableGraph(gpu_context, exec_graph);
+    gpu_exec_graphs_.erase(gpu_exec_graphs_.begin());
+  }
+}
+
+bool GpuExecutable::CanUseGpuGraphCapture() const {
+  for (const Thunk* thunk : thunk_schedule_->TotalOrder()) {
+    if (!IsThunkSafeForGpuGraphCapture(thunk)) return false;
+  }
+  return true;
 }
 
 void GpuExecutable::ComputeThunkAnnotations() {
@@ -152,6 +220,11 @@ Status GpuExecutable::ExecuteThunks(
     LOG(WARNING) << "PROFILING: profiling is enabled";
   }
 
+  // TODO(benbarsdell): Enable for ROCm as well if it adds support for capture.
+  bool use_gpu_graph_capture =
+      GpuGraphCaptureEnabled() && can_use_gpu_graph_capture_ &&
+      executor->platform_kind() == stream_executor::PlatformKind::kCuda;
+
   // Stream 0 indicates `main_stream` and substreams start from stream 1.
   std::vector<StreamPool::Ptr> sub_streams;
   sub_streams.reserve(thunk_schedule_->StreamCount() - 1);
@@ -161,6 +234,16 @@ Status GpuExecutable::ExecuteThunks(
                         run_options->BorrowStream(executor->device_ordinal()));
   }
 
+  se::Stream* capture_stream = main_stream;
+  StreamPool::Ptr private_capture_stream;
+  if (use_gpu_graph_capture) {
+    // We need a private stream for capturing to avoid interference from other
+    // threads.
+    TF_ASSIGN_OR_RETURN(private_capture_stream,
+                        run_options->BorrowStream(executor->device_ordinal()));
+    capture_stream = private_capture_stream.get();
+  }
+
   HloExecutionProfiler profiler(do_profile, hlo_execution_profile, main_stream,
                                 sub_streams, hlo_module_->entry_computation());
   uint64 start_micros = tensorflow::Env::Default()->NowMicros();
@@ -168,6 +251,27 @@ Status GpuExecutable::ExecuteThunks(
   tensorflow::profiler::TraceMe hlo_module_activity(
       [&] { return absl::StrCat(hlo_module_->name(), ":XLA GPU module"); },
       tensorflow::profiler::TraceMeLevel::kInfo);
+
+  // TODO(benbarsdell): Clean this up once graph APIs are integrated into stream
+  // executor.
+  CUstream main_cuda_stream = *reinterpret_cast<const CUstream*>(
+      main_stream->implementation()->GpuStreamMemberHack());
+  CUstream capture_cuda_stream = *reinterpret_cast<const CUstream*>(
+      capture_stream->implementation()->GpuStreamMemberHack());
+  stream_executor::gpu::GpuContext* gpu_context =
+      static_cast<stream_executor::gpu::GpuExecutor*>(
+          capture_stream->parent()->implementation())
+          ->gpu_context();
+  using stream_executor::gpu::GpuDriver;
+  if (use_gpu_graph_capture) {
+    VLOG(1) << "Beginning GPU graph capture";
+    // Note: Relaxed capture mode because we use a private stream and always
+    // re-capture the graph.
+    if (!GpuDriver::BeginGraphCaptureOnStream(gpu_context, capture_cuda_stream,
+                                              CU_STREAM_CAPTURE_MODE_RELAXED)) {
+      return InternalError("Failed to begin GPU stream capture");
+    }
+  }
 
   std::map<const Thunk*, std::unique_ptr<se::Event>> thunk_to_finish_event;
   bool scoped_annotation_enabled = ScopedAnnotation::IsEnabled();
@@ -186,7 +290,7 @@ Status GpuExecutable::ExecuteThunks(
     int32 stream_no =
         thunk_schedule_->StreamNumberForHlo(*thunk->hlo_instruction());
     se::Stream* stream =
-        (stream_no == 0 ? main_stream : sub_streams[stream_no - 1].get());
+        (stream_no == 0 ? capture_stream : sub_streams[stream_no - 1].get());
 
     for (const Thunk* dependency : thunk_schedule_->DependsOn(thunk)) {
       stream->ThenWaitFor(FindOrDie(thunk_to_finish_event, dependency).get());
@@ -219,7 +323,46 @@ Status GpuExecutable::ExecuteThunks(
     }
   }
 
-  main_stream->ThenWaitFor(&sub_streams);
+  capture_stream->ThenWaitFor(&sub_streams);
+
+  if (use_gpu_graph_capture) {
+    stream_executor::gpu::GpuGraphHandle graph;
+    if (!GpuDriver::EndGraphCaptureOnStream(gpu_context, capture_cuda_stream,
+                                            &graph)) {
+      return InternalError("GPU stream capture failed");
+    }
+    auto destroy_graph_fn = [&](stream_executor::gpu::GpuGraphHandle graph) {
+      GpuDriver::DestroyGraph(gpu_context, &graph);
+    };
+    std::unique_ptr<
+        std::remove_pointer<stream_executor::gpu::GpuGraphHandle>::type,
+        decltype(destroy_graph_fn)>
+        owned_graph(graph, destroy_graph_fn);
+    // Use of gpu_exec_graphs_ must be made thread-safe.
+    // TODO(benbarsdell): Should use a different mutex?
+    tensorflow::mutex_lock lock(module_handle_mutex_);
+    auto& exec_graph =
+        *reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
+            &gpu_exec_graphs_[gpu_context]);
+    if (exec_graph) {
+      if (!GpuDriver::UpdateExecutableGraph(gpu_context, exec_graph, graph)) {
+        LOG(WARNING) << "Failed to update GPU executable graph";
+        GpuDriver::DestroyExecutableGraph(gpu_context, &exec_graph);
+      }
+    }
+    if (!exec_graph) {
+      if (!GpuDriver::InstantiateExecutableGraph(gpu_context, graph,
+                                                 &exec_graph)) {
+        return InternalError("Failed to instantiate GPU execution graph");
+      }
+    }
+    owned_graph.reset();  // Can destroy the captured graph early
+    if (!GpuDriver::LaunchExecutableGraph(gpu_context, exec_graph,
+                                          main_cuda_stream)) {
+      return InternalError("Failed to launch CUDA execution graph");
+    }
+  }
+
   if (!deferred_host_callbacks.empty()) {
     auto fn = [deferred_host_callbacks{std::move(deferred_host_callbacks)}]() {
       for (auto& callback : deferred_host_callbacks) {
@@ -233,6 +376,7 @@ Status GpuExecutable::ExecuteThunks(
       main_stream->ThenDoHostCallback(std::move(fn));
     }
   }
+
   // Make sure kernels are completed before deallocating temporary buffers or
   // the profiler state.
   // TODO(b/30100571): we could potentially postpone deallocating the temp
