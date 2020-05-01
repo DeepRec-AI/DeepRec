@@ -52,7 +52,7 @@ class QrOpTest(xla_test.XLATestCase, parameterized.TestCase):
     sum_of_ratios = np.sum(np.divide(y, x), -2, keepdims=True)
     phases = np.divide(sum_of_ratios, np.abs(sum_of_ratios))
     x *= phases
-    self.assertTrue(np.all(self.AdjustedNorm(x - y) < 800.0))
+    self.assertTrue(np.all(self.AdjustedNorm(x - y) < 2400.0))
 
   def CheckApproximation(self, a, q, r):
     # Tests that a ~= q*r.
@@ -64,7 +64,7 @@ class QrOpTest(xla_test.XLATestCase, parameterized.TestCase):
     xx = math_ops.matmul(x, x, adjoint_a=True)
     identity = array_ops.matrix_band_part(array_ops.ones_like(xx), 0, 0)
     precision = self.AdjustedNorm(xx.eval() - self.evaluate(identity))
-    self.assertTrue(np.all(precision < 2100.0))
+    self.assertTrue(np.all(precision < 4800.0))
 
   def _test(self, dtype, shape, full_matrices):
     np.random.seed(1)

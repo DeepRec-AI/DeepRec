@@ -25,6 +25,7 @@ import numpy as np
 from tensorflow.compiler.tests import xla_test
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import linalg_ops
 from tensorflow.python.ops import math_ops
@@ -61,7 +62,8 @@ class MatrixTriangularSolveOpTest(xla_test.XLATestCase):
       with self.test_scope():
         x = linalg_ops.matrix_triangular_solve(
             placeholder_a, placeholder_b, lower=lower, adjoint=adjoint)
-      verification = math_ops.matmul(placeholder_ca, x, adjoint_a=adjoint)
+      with ops.device('/cpu:0'):
+        verification = math_ops.matmul(placeholder_ca, x, adjoint_a=adjoint)
       self._VerifyTriangularSolveBase(sess, placeholder_a, placeholder_ca,
                                       placeholder_b, a, clean_a, b,
                                       verification, atol)
