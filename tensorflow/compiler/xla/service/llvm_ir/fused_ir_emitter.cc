@@ -162,14 +162,15 @@ Status FusedIrEmitter::HandleParameter(const HloInstruction* parameter) {
     bool vec_pattern = false;
     llvm::BinaryOperator* key_inst = nullptr;
     if (vector_size_.count(parameter) > 0 &&
-        index.size() > 0 &&
-        key_inst = llvm::dyn_cast<llvm::BinaryOperator>(index.multidim()[index.size() - 1]) &&
-        key_inst->getOpcode() == llvm::Instruction::Add) {
-      vec_pattern = true;
+	index.size() > 0) {
+      key_inst = llvm::dyn_cast<llvm::BinaryOperator>(index.multidim()[index.size() - 1]);
+      if (key_inst->getOpcode() == llvm::Instruction::Add) {
+	vec_pattern = true;
+      }
     }
 
     if (!vec_pattern) {
-      CHECK_EQ(buffer.size(), 0);
+      //CHECK_EQ(buffer.size(), 0);
       if (param_shmem_buffers_.size() > param_num) {
         if (llvm::Value* param_tile_buffer = param_shmem_buffers_[param_num]) {
           // TODO(jlebar): Add AA metadata to this load.  Tile buffers are
