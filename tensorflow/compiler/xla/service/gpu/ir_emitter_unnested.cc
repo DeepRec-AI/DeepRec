@@ -3263,7 +3263,7 @@ ReductionCodegenInfo IrEmitterUnnested::ComputeReductionCodegenInfo(
   int vector_size = 1;
 
   KernelMappingScheme::IndexingOrder indexing_order = [&]() {
-    if (reduction_dimensions.is_row_reduction &&
+    if (false && reduction_dimensions.is_row_reduction &&
         // At least one input has the inner most dimensions contiguous.
         have_inner_contiguous_layout &&
         // P100, only try to vectorize+coales memory access when the
