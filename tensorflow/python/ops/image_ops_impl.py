@@ -1807,8 +1807,8 @@ def convert_image_dtype(image, dtype, saturate=False, name=None):
       # Note: We're ignoring float overflows. If your image dynamic range
       # exceeds float range, you're on your own.
       logging.warning("The operation `tf.image.convert_image_dtype` will not "
-                      "automatically rescale input data since input and "
-                      "output dtypes are floating formats.")
+                      "automatically renormalize input data since input and "
+                      "output dtypes are both floating point formats.")
       return math_ops.cast(image, dtype, name=name)
     else:
       if image.dtype.is_integer:
