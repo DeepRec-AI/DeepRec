@@ -1378,14 +1378,12 @@ bool HloParser::ParseInstructionRhs(HloComputation::Builder* builder,
       optional<int64> feature_index;
       attrs["feature_index"] = {/*required=*/true, AttrTy::kInt64,
                                 &feature_index};
-      if (!ParseOperands(&operands, /*expected_size=*/5) ||
-          !ParseAttributes(attrs)) {
+      if (!ParseOperands(&operands) || !ParseAttributes(attrs)) {
         return false;
       }
       instruction = builder->AddInstruction(HloInstruction::CreateBatchNormGrad(
           shape, /*operand=*/operands[0], /*scale=*/operands[1],
-          /*mean=*/operands[2], /*variance=*/operands[3],
-          /*grad_output=*/operands[4], *epsilon, *feature_index));
+          absl::MakeSpan(operands).subspan(2), *epsilon, *feature_index));
       break;
     }
     case HloOpcode::kPad: {
