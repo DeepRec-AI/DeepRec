@@ -1970,7 +1970,9 @@ void IrEmitterUnnested::EmitTile(
 
   // True iff all threads always execute all instructions in the tiling
   // dimension X.
-  bool x_tile_fits = mapping_scheme.GetDimsInElems()[kDimX] % tile_size_x == 0;
+  bool x_tile_fits =
+      mapping_scheme.GetDimsInElems()[kDimX] % tile_size_x == 0 &&
+      mapping_scheme.GetRowContiguous();
 
   // The outer loop below is simply doing:
   //
@@ -2678,7 +2680,8 @@ void IrEmitterUnnested::EmitHlo021Tile(
                                      /*tile_sizes=*/{1, kWarpSize, kWarpSize},
                                      /*num_threads_y=*/kNumRows,
                                      /*num_threads_x=*/kWarpSize,
-                                     /*is_dilated_x=*/false);
+                                     /*is_dilated_x=*/false,
+                                     /*row_contiguous=*/false);
   LaunchDimensions launch_dimensions(mapping_scheme.GetNumberOfBlocks(),
                                      mapping_scheme.GetThreadsPerBlock());
   llvm::Type* index_type =

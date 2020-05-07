@@ -78,12 +78,14 @@ class KernelMappingScheme {
   enum { DimZ = 0, DimY, DimX, DimTot };
   KernelMappingScheme(absl::Span<const int64> dims_in_elems,
                       absl::Span<const int64> tile_sizes, int64 num_threads_y,
-                      int64 num_threads_x, bool is_dilated_x)
+                      int64 num_threads_x, bool is_dilated_x,
+		      bool row_contiguous = false)
       : dims_in_elems_{dims_in_elems[0], dims_in_elems[1], dims_in_elems[2]},
         tile_sizes_{tile_sizes[0], tile_sizes[1], tile_sizes[2]},
         num_threads_x_(num_threads_x),
         num_threads_y_(num_threads_y),
-        dilated_x_(is_dilated_x) {
+        dilated_x_(is_dilated_x),
+	row_contiguous_(row_contiguous) {
     CHECK_EQ(tile_sizes[1] % num_threads_y_, 0);
     CHECK_EQ(tile_sizes[2] % num_threads_x_, 0);
     VLOG(10) << "dims_in_elems_ = " << absl::StrJoin(dims_in_elems_, ",");
@@ -119,6 +121,7 @@ class KernelMappingScheme {
   }
 
   bool DilatedX() const { return dilated_x_; }
+  bool GetRowContiguous() const {return row_contiguous_; }
 
  private:
   // The number of elements in each dimension.
@@ -139,6 +142,7 @@ class KernelMappingScheme {
   // contiguous. On the other hand, when dilated_x=true the n elements are
   // dilated by a factor of num_threads_x.
   const bool dilated_x_;
+  const bool row_contiguous_;
 };
 
 // Information to support the code generation for a tiled reduction kernel.
