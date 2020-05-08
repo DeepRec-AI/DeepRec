@@ -26,6 +26,7 @@ ResizeBilinearOpTest = test_base.ResizeBilinearOpTestBase
 ResizeBicubicOpTest = test_base.ResizeBicubicOpTestBase
 ScaleAndTranslateOpTest = test_base.ScaleAndTranslateOpTestBase
 CropAndResizeOpTest = test_base.CropAndResizeOpTestBase
+RGBToHSVOpTest = test_base.RGBToHSVOpTestBase
 
 if __name__ == "__main__":
   test.main()
