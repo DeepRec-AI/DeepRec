@@ -345,6 +345,7 @@ cc_library(
     srcs = if_cuda_is_configured(["cuda_dnn.cc"]),
     hdrs = if_cuda_is_configured(["cuda_dnn.h"]),
     visibility = ["//visibility:public"],
+    copts = ["-DNV_CUDNN_DISABLE_EXCEPTION"],
     deps = if_cuda_is_configured([
         ":cuda_activation",
         ":cuda_diagnostics",
@@ -360,6 +361,7 @@ cc_library(
         "//third_party/eigen3",
         "@local_config_cuda//cuda:cuda_headers",
         "@local_config_cuda//cuda:cudnn_header",
+        "@cudnn_frontend_archive//:cudnn_frontend",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/stream_executor:dnn",

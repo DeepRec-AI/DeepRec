@@ -41,6 +41,8 @@ using stream_executor::dnn::DimIndex;
 #include "tensorflow/stream_executor/cuda/ptxas_utils.h"
 #include "tensorflow/stream_executor/cuda/redzone_allocator.h"
 #include "tensorflow/stream_executor/tf_allocator_adapter.h"
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#include "third_party/gpus/cudnn/cudnn.h"
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -200,9 +202,14 @@ TF_CALL_double(REGISTER_CPU_KERNEL);
 struct Conv3dAutoTuneGroup {
   static string name() { return "Conv3d"; }
 };
+#if CUDNN_VERSION >= 8100
+typedef AutoTuneExecutionPlanSingleton<Conv3dAutoTuneGroup, ConvParameters>
+    AutoTuneConv3d;
+#else
 typedef AutoTuneSingleton<Conv3dAutoTuneGroup, ConvParameters,
                           se::dnn::AlgorithmConfig>
     AutoTuneConv3d;
+#endif // CUDNN_VERSION >= 8100
 
 // TODO(mjanusz): Share logic with 2d implementation as much as possible.
 template <typename T>
@@ -491,10 +498,119 @@ struct LaunchConvOp<GPUDevice, T> {
         device_id,
         conv_desc.group_count()};
 
+#if CUDNN_VERSION >= 8100
+    using se::dnn::ExecutionPlanConfig;
+    using se::dnn::ExecutionPlanDesc;
+    using se::dnn::ProfileExecutionPlanResult;
+#else
     using se::dnn::AlgorithmConfig;
     using se::dnn::AlgorithmDesc;
     using se::dnn::ProfileResult;
+#endif // CUDNN_VERSION >= 8100
 
+#if TENSORFLOW_USE_ROCM
+    // cudnn_use_autotune is applicable only the CUDA flow
+    // for ROCm/MIOpen, we need to call GetMIOpenConvolveAlgorithms explicitly
+    // if we do not have a cached algorithm_config for this conv_parameters
+    cudnn_use_autotune = true;
+#endif
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
+		ExecutionPlanConfig exec_plan_config;
+		std::vector<cudnn_frontend::ExecutionPlan> selected_exec_plans;
+    if (cudnn_use_autotune && !AutoTuneConv3d::GetInstance()->Find(
+                                  conv_parameters, &exec_plan_config)) {
+      se::TfAllocatorAdapter tf_allocator_adapter(
+          ctx->device()->GetAllocator({}), stream);
+      se::cuda::RedzoneAllocator rz_allocator(stream, &tf_allocator_adapter,
+                                              se::cuda::PtxCompilationOptions());
+      se::DeviceMemory<T> output_ptr_rz(
+          WrapRedzoneBestEffort(&rz_allocator, output_ptr));
+			std::vector<cudnn_frontend::ExecutionPlan> exec_plans;
+      OP_REQUIRES(ctx,
+	                stream->parent()->GetConvolveExecutionPlans(
+                      se::dnn::ConvolutionKind::FORWARD,
+                      se::dnn::ToDataType<T>::value, stream,
+                      input_desc, filter_desc, output_desc, conv_desc,
+                      &exec_plans),
+                  errors::Unknown(
+                      "Failed to get convolution execution plan. This is "
+                      "probably because cuDNN failed to initialize, so try "
+                      "looking to see if a warning log message was printed "
+                      "above."));
+
+			std::vector<tensorflow::AutotuneExecutionPlanResult> results;
+	    for (auto& profile_plan: exec_plans) {
+        // TODO(zhengxq): profile each algorithm multiple times to better
+        // accuracy.
+        DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
+        se::cuda::RedzoneAllocator rz_scratch_allocator(
+            stream, &tf_allocator_adapter, se::cuda::PtxCompilationOptions(),
+            /*memory_limit=*/ConvolveScratchSize);
+        se::ScratchAllocator* allocator_used =
+            !RedzoneCheckDisabled()
+                ? static_cast<se::ScratchAllocator*>(&rz_scratch_allocator)
+                : static_cast<se::ScratchAllocator*>(&scratch_allocator);
+        ProfileExecutionPlanResult profile_result;
+
+        ExecutionPlanConfig profile_plan_config(
+            ExecutionPlanDesc{profile_plan.getTag(),
+            profile_plan.get_raw_desc()}, profile_plan.getWorkspaceSize());
+        bool cudnn_launch_status =
+            stream
+                ->ThenConvolveWithExecutionPlan(
+                    input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
+                    output_desc, &output_ptr_rz, allocator_used,
+                    profile_plan_config, &profile_result)
+                .ok();
+        if (cudnn_launch_status && profile_result.is_valid()) {
+          results.emplace_back();
+          auto& result = results.back();
+					result.mutable_conv()->set_exec_plan_id(profile_plan.getTag());
+          result.set_scratch_bytes(
+              !RedzoneCheckDisabled()
+                  ? rz_scratch_allocator
+                        .TotalAllocatedBytesExcludingRedzones()
+                  : scratch_allocator.TotalByteSize());
+          *result.mutable_run_time() = proto_utils::ToDurationProto(
+              absl::Milliseconds(profile_result.elapsed_time_in_ms()));
+          CheckRedzones(rz_scratch_allocator, &result);
+          CheckRedzones(rz_allocator, &result);
+        } else {
+          // Make sure the results has the same size with exec_plans. Therefore,
+          // even if the profiling fails, we add a "placeholder".
+          results.emplace_back();
+          auto& result = results.back();
+          result.mutable_failure()->set_kind(
+              AutotuneExecutionPlanResult::UNKNOWN);
+          result.mutable_failure()->set_msg(
+              absl::StrCat("Profiling failure on CUDNN engine: ",
+              profile_plan.getTag()));
+        }
+      }
+      LogConvAutotuneResults(se::dnn::ConvolutionKind::FORWARD,
+          se::dnn::ToDataType<T>::value, input_ptr, filter_ptr, output_ptr_rz,
+          input_desc, filter_desc, output_desc, conv_desc, stream->parent(),
+          results);
+      int idx_, idx_no_scratch_;
+      OP_REQUIRES_OK(ctx,
+          BestCudnnConvExecutionPlan(results, &idx_, &idx_no_scratch_));
+      exec_plan_config.set_plan(
+          ExecutionPlanDesc(exec_plans[idx_].getTag(),
+                            exec_plans[idx_].get_raw_desc()));
+      exec_plan_config.set_scratch_size(exec_plans[idx_].getWorkspaceSize());
+      if (idx_no_scratch_ != -1) {
+        exec_plan_config.set_plan_no_scratch(
+            ExecutionPlanDesc(exec_plans[idx_no_scratch_].getTag(),
+                              exec_plans[idx_no_scratch_].get_raw_desc()));
+      }
+      selected_exec_plans.push_back(std::move(exec_plans[idx_]));
+      if (idx_no_scratch_ != idx_ and idx_no_scratch_ != -1) {
+        selected_exec_plans.push_back(std::move(exec_plans[idx_no_scratch_]));
+      }
+      AutoTuneConv3d::GetInstance()->Insert(conv_parameters,
+                                            selected_exec_plans);
+    }
+#else
     AlgorithmConfig algorithm_config;
 
     if (cudnn_use_autotune && !AutoTuneConv3d::GetInstance()->Find(
@@ -561,6 +677,7 @@ struct LaunchConvOp<GPUDevice, T> {
                              filter_ptr, output_ptr, input_desc, filter_desc,
                              output_desc, conv_desc, stream->parent(), results);
       OP_REQUIRES_OK(ctx, BestCudnnConvAlgorithm(results, &algorithm_config));
+
 #elif TENSORFLOW_USE_ROCM
       ProfileResult best_result;
       DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
@@ -575,11 +692,27 @@ struct LaunchConvOp<GPUDevice, T> {
                   errors::NotFound("Failed to find conv algorithm!"));
       algorithm_config.set_algorithm(best_result.algorithm());
       algorithm_config.set_scratch_size(best_result.scratch_size());
-#endif
+#endif // GOOGLE_CUDA
       AutoTuneConv3d::GetInstance()->Insert(conv_parameters, algorithm_config);
     }
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
     DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
+#if CUDNN_VERSION >= 8100
+    if (exec_plan_config.plan().has_value()) {
+      VLOG(4) << "Convolution Execution Plan: "
+              << exec_plan_config.plan()->exec_plan_id();
+    } else {
+      VLOG(4) << "Convolution Execution Plan AutoTune is turned off";
+    }
+    bool cudnn_launch_status =
+        stream
+            ->ThenConvolveWithExecutionPlan(
+                input_desc, input_ptr, filter_desc, filter_ptr, conv_desc,
+                output_desc, &output_ptr, &scratch_allocator,
+                exec_plan_config, nullptr)
+            .ok();
+#else
     bool cudnn_launch_status =
         stream
             ->ThenConvolveWithAlgorithm(input_desc, input_ptr, filter_desc,
@@ -587,6 +720,7 @@ struct LaunchConvOp<GPUDevice, T> {
                                         &output_ptr, &scratch_allocator,
                                         algorithm_config, nullptr)
             .ok();
+#endif // CUDNN_VERSION >= 8100
 
     if (!cudnn_launch_status) {
       ctx->SetStatus(errors::Internal(

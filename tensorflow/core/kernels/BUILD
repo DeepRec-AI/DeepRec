@@ -510,6 +510,9 @@ cc_library(
 cc_library(
     name = "gpu_util_hdrs",
     hdrs = ["gpu_utils.h"],
+    deps = if_cuda([
+        "@cudnn_frontend_archive//:cudnn_frontend",
+    ]),
 )
 
 tf_cuda_library(
@@ -530,6 +533,7 @@ tf_cuda_library(
         "//tensorflow/stream_executor/cuda:redzone_allocator",
         "//tensorflow/stream_executor/cuda:ptxas_utils",
         "//tensorflow/stream_executor/cuda:cuda_helpers",
+        "@cudnn_frontend_archive//:cudnn_frontend",
     ]),
 )
 
@@ -4306,6 +4310,7 @@ tf_kernel_library(
         ],
         "//conditions:default": [],
     }) + if_cuda([
+        "@cudnn_frontend_archive//:cudnn_frontend",
         "//tensorflow/core/platform/default/build_config:cublas_plugin",
         "//tensorflow/core/platform/default/build_config:cudnn_plugin",
         "//tensorflow/stream_executor:tf_allocator_adapter",
