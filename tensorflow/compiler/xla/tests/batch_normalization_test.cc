@@ -247,7 +247,7 @@ XLA_TEST_P(BatchNormalizationTest, BasicTraining) {
       {LiteralUtil::CreateR4<float>({{{{-1.6f, -2.0f}}, {{0.1f, 0.6f}}},
                                      {{{1.9f, 3.3f}}, {{3.7f, 6.0f}}}}),
        LiteralUtil::CreateR1<float>({4, 5}),
-       LiteralUtil::CreateR1<float>({5, 5})});
+       LiteralUtil::CreateR1<float>({5, 5}), LiteralUtil::CreateR1<uint8>({})});
 
   ComputeAndCompareTuple(&builder, expected, {}, ErrorSpec(0.1));
 }
@@ -301,7 +301,7 @@ XLA_TEST_P(BatchNormalizationTest, BasicTrainingOnDimension2) {
       {LiteralUtil::CreateR4<float>({{{{-1.6f}, {-2.0f}}, {{0.1f}, {0.6f}}},
                                      {{{1.9f}, {3.3f}}, {{3.7f}, {6.0f}}}}),
        LiteralUtil::CreateR1<float>({4, 5}),
-       LiteralUtil::CreateR1<float>({5, 5})});
+       LiteralUtil::CreateR1<float>({5, 5}), LiteralUtil::CreateR1<uint8>({})});
 
   ComputeAndCompareTuple(&builder, expected, {}, ErrorSpec(0.1));
 }
@@ -360,7 +360,8 @@ XLA_TEST_P(BatchNormalizationTest, TrainingWithFeatureOnLowDimension) {
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR3FromArray3D<float>(Array3D<float>(260, 2, 2, 1.0f)),
        LiteralUtil::CreateR1<float>(std::vector<float>(260, 1.0f)),
-       LiteralUtil::CreateR1<float>(std::vector<float>(260, 0.0f))});
+       LiteralUtil::CreateR1<float>(std::vector<float>(260, 0.0f)),
+       LiteralUtil::CreateR1<uint8>({})});
 
   ComputeAndCompareTuple(&builder, expected,
                          {operand.get(), scale.get(), offset.get()},
@@ -393,7 +394,8 @@ XLA_TEST_P(BatchNormalizationTest, LargeEpsilonTest) {
       {LiteralUtil::CreateR3FromArray3D<float>(
            {{{-3.0f}, {-1.0f}, {1.0f}, {3.0f}}}),
        LiteralUtil::CreateR1<float>(std::vector<float>(1, 15.0f)),
-       LiteralUtil::CreateR1<float>(std::vector<float>(1, 125.0f))});
+       LiteralUtil::CreateR1<float>(std::vector<float>(1, 125.0f)),
+       LiteralUtil::CreateR1<uint8>({})});
 
   ComputeAndCompareTuple(&builder, expected,
                          {operand.get(), scale.get(), offset.get()},
@@ -627,7 +629,7 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedTrainingTests) {
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {expected_normalized, LiteralUtil::CreateR1<float>(mean),
-       LiteralUtil::CreateR1<float>(var)});
+       LiteralUtil::CreateR1<float>(var), LiteralUtil::CreateR1<uint8>({})});
 
   std::unique_ptr<GlobalData> input_data =
       client_->TransferToServer(input_literal).ConsumeValueOrDie();
@@ -929,6 +931,8 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedGradTests) {
       client_->TransferToServer(var_literal).ConsumeValueOrDie();
   std::unique_ptr<GlobalData> grad_output_data =
       client_->TransferToServer(grad_output_literal).ConsumeValueOrDie();
+  std::unique_ptr<GlobalData> reserve_space_data =
+      client_->TransferToServer(reserve_space_literal).ConsumeValueOrDie();
 
   BatchNormGrad(input_parameter, scale_parameter, mean_parameter, var_parameter,
                 grad_output_parameter, reserve_space_parameter, epsilon,
@@ -943,10 +947,11 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedGradTests) {
   // testcase.
   execution_options_.mutable_debug_options()->clear_xla_disable_hlo_passes();
 
-  ComputeAndCompareTuple(&builder, expected,
-                         {input_data.get(), scale_data.get(), mean_data.get(),
-                          var_data.get(), grad_output_data.get()},
-                         ErrorSpec(0.01, 1));
+  ComputeAndCompareTuple(
+      &builder, expected,
+      {input_data.get(), scale_data.get(), mean_data.get(), var_data.get(),
+       grad_output_data.get(), reserve_space_data.get()},
+      ErrorSpec(0.01, 1));
 }
 
 }  // namespace

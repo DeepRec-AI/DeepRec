@@ -113,7 +113,7 @@ TEST_F(BatchNormExpanderTest, BatchNormGrad) {
 
   builder.AddInstruction(HloInstruction::CreateBatchNormGrad(
       ShapeUtil::MakeTupleShape({input_shape, scale_shape, mean_shape}), param0,
-      param1, param2, param3, param4,
+      param1, {param2, param3, param4},
       /*epsilon=*/0.001, /*feature_index=*/3));
 
   auto module = CreateNewVerifiedModule();

@@ -107,7 +107,8 @@ XLA_TEST_F(Bfloat16Test, DISABLED_ON_INTERPRETER(BatchNormTraining)) {
        LiteralUtil::CreateR1<bfloat16>(
            {static_cast<bfloat16>(4), static_cast<bfloat16>(5)}),
        LiteralUtil::CreateR1<bfloat16>(
-           {static_cast<bfloat16>(5), static_cast<bfloat16>(5)})});
+           {static_cast<bfloat16>(5), static_cast<bfloat16>(5)}),
+       LiteralUtil::CreateR1<uint8>({})});
 
   ComputeAndCompareTuple(&builder, expected, {}, ErrorSpec(0.01, 0.02));
 }
