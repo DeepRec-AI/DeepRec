@@ -241,7 +241,7 @@ XLA_TEST_P(BatchNormalizationTest, BasicTraining) {
   auto offset = ConstantR1<float>(&builder, {1.0f, 2.0f});
 
   BatchNormTraining(operand, scale, offset,
-                    /*epsilon=*/0.001, kFeatureIndex);
+                    /*epsilon=*/0.001, kFeatureIndex, 0, true);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR4<float>({{{{-1.6f, -2.0f}}, {{0.1f, 0.6f}}},
@@ -266,7 +266,7 @@ XLA_TEST_P(BatchNormalizationTest, BasicTraining_fp16) {
   auto input_f32 = ConvertElementType(operand, F32);
 
   auto output = BatchNormTraining(input_f32, scale, offset,
-                                  /*epsilon=*/0.001, kFeatureIndex);
+                                  /*epsilon=*/0.001, kFeatureIndex, 0, true);
 
   auto converted = ConvertElementType(GetTupleElement(output, 0), F16);
   Tuple(&builder,
@@ -295,7 +295,7 @@ XLA_TEST_P(BatchNormalizationTest, BasicTrainingOnDimension2) {
   auto offset = ConstantR1<float>(&builder, {1.0f, 2.0f});
 
   BatchNormTraining(operand, scale, offset,
-                    /*epsilon=*/0.001, kFeatureIndex);
+                    /*epsilon=*/0.001, kFeatureIndex, 0, true);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR4<float>({{{{-1.6f}, {-2.0f}}, {{0.1f}, {0.6f}}},
@@ -320,7 +320,7 @@ XLA_TEST_P(BatchNormalizationTest, BasicTrainingOnDimension2_fp16) {
   auto input_f32 = ConvertElementType(operand, F32);
 
   auto output = BatchNormTraining(input_f32, scale, offset,
-                                  /*epsilon=*/0.001, kFeatureIndex);
+                                  /*epsilon=*/0.001, kFeatureIndex, 0, true);
 
   auto converted = ConvertElementType(GetTupleElement(output, 0), F16);
   Tuple(&builder,
@@ -355,7 +355,7 @@ XLA_TEST_P(BatchNormalizationTest, TrainingWithFeatureOnLowDimension) {
                                /*parameter_number=*/2, "offset", &builder, &h2);
 
   BatchNormTraining(h0, h1, h2,
-                    /*epsilon=*/1, kFeatureIndex);
+                    /*epsilon=*/1, kFeatureIndex, 0, true);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR3FromArray3D<float>(Array3D<float>(260, 2, 2, 1.0f)),
@@ -387,7 +387,7 @@ XLA_TEST_P(BatchNormalizationTest, LargeEpsilonTest) {
 
   // var = 125, mean = 15, epsilon = -100
   BatchNormTraining(h0, h1, h2,
-                    /*epsilon=*/-100, kFeatureIndex);
+                    /*epsilon=*/-100, kFeatureIndex, 0, true);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR3FromArray3D<float>(
@@ -417,7 +417,9 @@ XLA_TEST_P(BatchNormalizationTest, BatchNormGradBasic) {
       &builder,
       {{{{1.f}, {2.f}}, {{3.f}, {4.f}}}, {{{5.f}, {6.f}}, {{7.f}, {8.f}}}});
 
-  BatchNormGrad(operand, scale, mean, var, grad_output,
+  auto reserve_space = ConstantR1<uint8>(&builder, {});
+
+  BatchNormGrad(operand, scale, mean, var, grad_output, reserve_space,
                 /*epsilon=*/0.0, kFeatureIndex);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
@@ -450,7 +452,9 @@ XLA_TEST_P(BatchNormalizationTest, BatchNormGradBasic_fp16) {
 
   auto grad_output_f32 = ConvertElementType(grad_output, F32);
 
-  auto output = BatchNormGrad(operand_f32, scale, mean, var, grad_output_f32,
+  auto reserve_space = ConstantR1<uint8>(&builder, {});
+
+  auto output = BatchNormGrad(operand_f32, scale, mean, var, grad_output_f32, reserve_space,
                               /*epsilon=*/0.001, kFeatureIndex);
 
   auto converted_output = ConvertElementType(GetTupleElement(output, 0), F16);
@@ -633,7 +637,7 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedTrainingTests) {
       client_->TransferToServer(offset_literal).ConsumeValueOrDie();
 
   BatchNormTraining(input_activations, scale_activations, offset_activations,
-                    epsilon, feature_index);
+                    epsilon, feature_index, 0, true);
 
   // Run all HLO passes during this test.  In particular, ClientLibraryTestBase
   // disables constant folding, but we want it enabled for our zero-sized tensor
@@ -903,6 +907,8 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedGradTests) {
   auto var_literal = LiteralUtil::CreateR1<float>(var);
   auto grad_output_literal =
       LiteralUtil::CreateR4FromArray4D<float>(grad_output_array);
+  auto reserve_space_literal =
+      LiteralUtil::CreateR1<uint8>(std::vector<uint8>{});
 
   auto input_parameter = Parameter(&builder, 0, input_literal.shape(), "input");
   auto scale_parameter = Parameter(&builder, 1, scale_literal.shape(), "scale");
@@ -910,6 +916,8 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedGradTests) {
   auto var_parameter = Parameter(&builder, 3, var_literal.shape(), "variance");
   auto grad_output_parameter =
       Parameter(&builder, 4, grad_output_literal.shape(), "grad_output");
+  auto reserve_space_parameter =
+      Parameter(&builder, 5, reserve_space_literal.shape(), "reserve_space");
 
   std::unique_ptr<GlobalData> input_data =
       client_->TransferToServer(input_literal).ConsumeValueOrDie();
@@ -923,7 +931,8 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedGradTests) {
       client_->TransferToServer(grad_output_literal).ConsumeValueOrDie();
 
   BatchNormGrad(input_parameter, scale_parameter, mean_parameter, var_parameter,
-                grad_output_parameter, epsilon, feature_index);
+                grad_output_parameter, reserve_space_parameter, epsilon,
+                feature_index);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {expected_grad_activation, LiteralUtil::CreateR1<float>(grad_scale),
