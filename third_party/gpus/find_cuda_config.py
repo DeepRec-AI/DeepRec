@@ -435,10 +435,10 @@ def _find_cufft_config(base_paths, required_version, cuda_version):
 def _find_cudnn_config(base_paths, required_version):
 
   def get_header_version(path):
-    version = (
+    version = [
         _get_header_version(path, name)
-        for name in ("CUDNN_MAJOR", "CUDNN_MINOR", "CUDNN_PATCHLEVEL"))
-    return ".".join(version)
+        for name in ("CUDNN_MAJOR", "CUDNN_MINOR", "CUDNN_PATCHLEVEL")]
+    return ".".join(version) if version[0] else None
 
   header_path, header_version = _find_header(base_paths,
                                              ("cudnn.h", "cudnn_version.h"),
