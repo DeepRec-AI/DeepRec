@@ -205,6 +205,9 @@ port::StatusOr<std::vector<uint8>> CompilePtx(int device_ordinal,
   if (options.disable_ptxas_optimizations) {
     ptxas_args.push_back("-O0");
   }
+  if (VLOG_IS_ON(3)) {
+    VLOG(3) << absl::StrJoin(ptxas_args, " ");
+  }
   ptxas_info_dumper.SetProgram(ptxas_path, ptxas_args);
   ptxas_info_dumper.SetChannelAction(tensorflow::CHAN_STDERR,
                                      tensorflow::ACTION_PIPE);
