@@ -205,8 +205,11 @@ port::StatusOr<std::vector<uint8>> CompilePtx(int device_ordinal,
   if (options.disable_ptxas_optimizations) {
     ptxas_args.push_back("-O0");
   }
-  if (cc_major == 8) {
-    ptxas_args.push_back("-sw200428197=true");
+  char* extra_options = getenv("TF_EXTRA_PTXAS_OPTIONS");
+  if (extra_options) {
+    for (auto val: absl::StrSplit(extra_options, ' ')) {
+      ptxas_args.push_back(string(val));
+    }
   }
   if (VLOG_IS_ON(3)) {
     VLOG(3) << absl::StrJoin(ptxas_args, " ");
