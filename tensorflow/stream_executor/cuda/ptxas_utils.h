@@ -61,6 +61,8 @@ port::StatusOr<absl::Span<const uint8>> CompilePtxOrGetCached(
     int device_ordinal, const char* ptx,
     PtxCompilationOptions compilation_options);
 
+char* GetTFExtraPTXOptions();
+
 }  // namespace cuda
 }  // namespace stream_executor
 
