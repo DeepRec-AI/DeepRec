@@ -239,6 +239,8 @@ port::StatusOr<std::vector<uint8>> CompilePtx(int device_ordinal,
                         exit_status, stderr_output));
   }
 
+  VLOG(2) << stderr_output;
+
   // Read in the result of compilation and return it as a byte vector.
   string cubin;
   TF_RETURN_IF_ERROR(tensorflow::ReadFileToString(tensorflow::Env::Default(),
