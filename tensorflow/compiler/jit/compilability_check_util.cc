@@ -136,6 +136,7 @@ bool RecursiveCompilabilityChecker::HasXLAKernel(const Node& node) const {
     // tfcompile.
     const AttrValue* attr = node.attrs().Find("dtype");
     if (attr != nullptr && attr->type() == DT_STRING) {
+      VLOG(2) << "Rejecting " << node.name() << ": Const with STRING attribute.";
       return false;
     }
   }
@@ -147,8 +148,11 @@ bool RecursiveCompilabilityChecker::HasXLAKernel(const Node& node) const {
     VLOG(2) << "Rejecting " << node.name() << ": Identity with unsafe cast.";
     return false;
   }
-
-  return FindKernelDef(jit_device_type_, node.def(), nullptr, nullptr).ok();
+  Status stat = FindKernelDef(jit_device_type_, node.def(), nullptr, nullptr);
+  if (!stat.ok()) {
+    VLOG(3) << "Rejecting " << node.name() << ": Can't find a matching kernel. " << stat.error_message();
+  }
+  return stat.ok();
 }
 
 // Tests whether 'if_node' is compilable. Every operator in the then_branch and
