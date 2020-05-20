@@ -3137,9 +3137,9 @@ class DropoutWrapperTest(test.TestCase, parameterized.TestCase):
         dtype=np.float32)
     true_full_final_c = np.array(
         [[1.949385, 1.949385, 1.949385]], dtype=np.float32)
-    self.assertAllClose(true_full_output, res[0])
-    self.assertAllClose(true_full_output[1], res[1].h)
-    self.assertAllClose(true_full_final_c, res[1].c)
+    self.assertAllClose(true_full_output, res[0], rtol=1e-5, atol=1e-5)
+    self.assertAllClose(true_full_output[1], res[1].h, rtol=1e-5, atol=1e-5)
+    self.assertAllClose(true_full_final_c, res[1].c, rtol=1e-5, atol=1e-5)
 
   def testDropoutWrapperKeepAll(self):
     wrapper_type = rnn_cell_impl.DropoutWrapper
@@ -3152,9 +3152,9 @@ class DropoutWrapperTest(test.TestCase, parameterized.TestCase):
         dtype=np.float32)
     true_full_final_c = np.array(
         [[1.949385, 1.949385, 1.949385]], dtype=np.float32)
-    self.assertAllClose(true_full_output, res[0])
-    self.assertAllClose(true_full_output[1], res[1].h)
-    self.assertAllClose(true_full_final_c, res[1].c)
+    self.assertAllClose(true_full_output, res[0], rtol=1e-5, atol=1e-5)
+    self.assertAllClose(true_full_output[1], res[1].h, rtol=1e-5, atol=1e-5)
+    self.assertAllClose(true_full_final_c, res[1].c, rtol=1e-5, atol=1e-5)
 
   def testDropoutWrapperWithSeed(self):
     wrapper_type = rnn_cell_impl.DropoutWrapper
@@ -3199,9 +3199,9 @@ class DropoutWrapperTest(test.TestCase, parameterized.TestCase):
         dtype=np.float32)
     true_full_final_c = np.array(
         [[1.949385, 1.949385, 1.949385]], dtype=np.float32)
-    self.assertAllClose(np.zeros(res[0].shape), res[0])
-    self.assertAllClose(true_full_output[1], res[1].h)
-    self.assertAllClose(true_full_final_c, res[1].c)
+    self.assertAllClose(np.zeros(res[0].shape), res[0], rtol=1e-5, atol=1e-5)
+    self.assertAllClose(true_full_output[1], res[1].h, rtol=1e-5, atol=1e-5)
+    self.assertAllClose(true_full_final_c, res[1].c, rtol=1e-5, atol=1e-5)
 
   def testDropoutWrapperKeepNoStateExceptLSTMCellMemory(self):
     wrapper_type = rnn_cell_impl.DropoutWrapper
@@ -3218,13 +3218,13 @@ class DropoutWrapperTest(test.TestCase, parameterized.TestCase):
     true_full_output = np.array(
         [[[0.751109, 0.751109, 0.751109]], [[0.895509, 0.895509, 0.895509]]],
         dtype=np.float32)
-    self.assertAllClose(true_full_output[0], res[0][0])
+    self.assertAllClose(true_full_output[0], res[0][0], rtol=1e-5, atol=1e-5)
     # Second output is modified by zero input state
     self.assertGreater(np.linalg.norm(true_full_output[1] - res[0][1]), 1e-4)
     # h state has been set to zero
-    self.assertAllClose(np.zeros(res[1].h.shape), res[1].h)
+    self.assertAllClose(np.zeros(res[1].h.shape), res[1].h, rtol=1e-5, atol=1e-5)
     # c state of an LSTMStateTuple is NEVER modified.
-    self.assertAllClose(true_c_state, res[1].c)
+    self.assertAllClose(true_c_state, res[1].c, rtol=1e-5, atol=1e-5)
 
   def testDropoutWrapperKeepNoInput(self):
     wrapper_type = rnn_cell_impl.DropoutWrapper
