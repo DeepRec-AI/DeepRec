@@ -113,7 +113,7 @@ Status NVPTXCompiler::OptimizeHloConvolutionCanonicalization(
                                             /*allow_mixed_precision=*/false);
   pipeline.AddPass<CusolverRewriter>();
   pipeline.AddPass<CudnnConvRewriter>();
-  pipeline.AddPass<CudnnFusedConvRewriter>(stream_exec);
+  pipeline.AddPass<CudnnFusedConvRewriter>();
   pipeline.AddPass<CudnnConvPaddingLegalization>();
   pipeline.AddPass<CudnnPadForConvolutions>(IsVoltaOrLater(*stream_exec));
   // CudnnConvPadForIntegerConvolutions and CudnnConvPadForTensorCores leaves

@@ -258,22 +258,7 @@ StatusOr<std::unique_ptr<HloInstruction>> TryRewriteToCudnnForwardRelu(
 
 // Fuse bias/scaling/ReLU with convolution custom call with floating point
 // output
-StatusOr<bool> RunFuseBiasSideActivation(HloModule* module,
-                                         se::StreamExecutor* stream_exec) {
-  static bool is_cudnn_8 = [&] {
-    if (auto* dnn = stream_exec->AsDnn()) {
-      StatusOr<se::dnn::VersionInfo> version_or = dnn->GetVersion();
-      if (version_or.ok()) {
-        return version_or.ValueOrDie().major_version() >= 8;
-      }
-    }
-    return false;
-  }();
-
-  if (is_cudnn_8) {
-    return false;
-  }
-
+StatusOr<bool> RunFuseBiasSideActivation(HloModule* module) {
   bool changed = false;
   for (HloComputation* computation : module->MakeNonfusionComputations()) {
     std::vector<ConvWithRelu> matches;
@@ -496,7 +481,7 @@ StatusOr<bool> CudnnFusedConvRewriter::Run(HloModule* module) {
   TF_ASSIGN_OR_RETURN(bool fused_for_convert_to_float,
                       RunFuseConvertToFloat(module));
 
-  TF_ASSIGN_OR_RETURN(bool fused_for_bias, RunFuseBiasSideActivation(module, stream_exec_));
+  TF_ASSIGN_OR_RETURN(bool fused_for_bias, RunFuseBiasSideActivation(module));
 
   TF_ASSIGN_OR_RETURN(bool fused_for_clamp, RunFuseClamp(module));
 
