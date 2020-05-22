@@ -5192,13 +5192,13 @@ Status ConvertCombinedNMS(OpConverterParams* params) {
   TFAttrs attrs(node_def);
   bool share_location = (boxes_dims.d[1] == 1);
   const bool pad_per_class = attrs.get<bool>("pad_per_class");
-  int top_k;
+  const int top_k = boxes_dims.d[0];
+  int keep_top_k = 0;
   if (pad_per_class) {
-    top_k = std::min(max_size_per_class * num_classes, max_total_size);
+    keep_top_k = std::min(max_size_per_class * num_classes, max_total_size);
   } else {
-    top_k = max_total_size;
+    keep_top_k = max_total_size;
   }
-  const int keep_top_k = top_k;
   float score_thresh = *(static_cast<float*>(score_threshold.GetValues()));
   const int background_id = -1;
   nvinfer1::PluginField fields[8] = {
