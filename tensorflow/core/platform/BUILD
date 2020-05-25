@@ -60,6 +60,15 @@ cc_library(
 )
 
 cc_library(
+    name = "blocking_counter",
+    hdrs = ["blocking_counter.h"],
+    deps = [
+        ":logging",
+        ":mutex",
+    ],
+)
+
+cc_library(
     name = "byte_order",
     hdrs = ["byte_order.h"],
 )
