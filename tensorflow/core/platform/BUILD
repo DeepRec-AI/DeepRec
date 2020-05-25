@@ -111,6 +111,13 @@ cc_library(
 )
 
 cc_library(
+    name = "dynamic_annotations",
+    hdrs = ["dynamic_annotations.h"],
+    deps = [
+        ":platform",
+    ], # + tf_platform_deps("dynamic_annotations"),
+)
+cc_library(
     name = "env_time",
     srcs = tf_platform_srcs(["env_time.cc"]),
     hdrs = ["env_time.h"],
