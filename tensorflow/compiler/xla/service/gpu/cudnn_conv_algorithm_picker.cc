@@ -67,8 +67,13 @@ std::vector<AlgorithmDesc> GetAlgorithms(CudnnConvKind kind,
       break;
   }
   DCHECK(succ);
+  std::vector<AlgorithmDesc> double_algorithms;
+  for (auto algo: algorithms) {
+    double_algorithms.push_back(algo);
+    double_algorithms.push_back(algo);
+  }
 
-  return algorithms;
+  return double_algorithms;
 }
 
 string AlgorithmToString(const AlgorithmDesc& algo) {
