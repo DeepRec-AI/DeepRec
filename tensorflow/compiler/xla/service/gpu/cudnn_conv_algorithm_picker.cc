@@ -48,32 +48,46 @@ using absl::optional;
 using se::DeviceMemoryBase;
 using se::dnn::AlgorithmDesc;
 using tensorflow::AutotuneResult;
+static bool first_cudnn_infer_call = true;
+static bool first_cudnn_train_call = true;
 
 std::vector<AlgorithmDesc> GetAlgorithms(CudnnConvKind kind,
                                          se::StreamExecutor* stream_exec) {
   std::vector<AlgorithmDesc> algorithms;
   bool succ = false;
+  bool first_cudnn_call;
   switch (kind) {
     case CudnnConvKind::kBackwardFilter:
       succ =
           stream_exec->GetConvolveBackwardFilterAlgorithms(true, &algorithms);
+      first_cudnn_call = first_cudnn_train_call;
+      first_cudnn_train_call = false;
       break;
     case CudnnConvKind::kBackwardInput:
       succ = stream_exec->GetConvolveBackwardDataAlgorithms(true, &algorithms);
+      first_cudnn_call = first_cudnn_train_call;
+      first_cudnn_train_call = false;
       break;
     case CudnnConvKind::kForward:
     case CudnnConvKind::kForwardActivation:
       succ = stream_exec->GetConvolveAlgorithms(true, &algorithms);
+      first_cudnn_call = first_cudnn_infer_call;
+      first_cudnn_infer_call = false;
       break;
   }
   DCHECK(succ);
-  std::vector<AlgorithmDesc> double_algorithms;
-  for (auto algo: algorithms) {
-    double_algorithms.push_back(algo);
-    double_algorithms.push_back(algo);
+  // Since TF does the lazy loading of the cuDNN sub-libraries, we double the
+  // number of algorithms to eliminate the overhead of loading time.
+  if (first_cudnn_call) {
+    std::vector<AlgorithmDesc> double_algorithms;
+    for (auto algo: algorithms) {
+      double_algorithms.push_back(algo);
+      double_algorithms.push_back(algo);
+    }
+    return double_algorithms;
+  } else {
+    return algorithms;
   }
-
-  return double_algorithms;
 }
 
 string AlgorithmToString(const AlgorithmDesc& algo) {
