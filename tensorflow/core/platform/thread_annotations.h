@@ -52,6 +52,9 @@ limitations under the License.
 #define GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
 #define GUARDED_VAR  // no-op
 
+// FOR XLA that use the upstream name
+#define TF_GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
+
 // Document if the memory location pointed to by a pointer should be guarded
 // by a mutex when dereferencing the pointer.  PT_GUARDED_VAR is analogous to
 // GUARDED_VAR.   Note that a pointer variable to a shared memory location
@@ -60,6 +63,8 @@ limitations under the License.
 // guarded by mu2, q should be annotated as follows:
 //     int *q GUARDED_BY(mu1) PT_GUARDED_BY(mu2);
 #define PT_GUARDED_BY(x) THREAD_ANNOTATION_ATTRIBUTE__(pt_guarded_by(x))
+// For XLA that use the upstrem syntax
+#define TF_PT_GUARDED_BY PT_GUARDED_BY
 #define PT_GUARDED_VAR  // no-op
 
 // Document the acquisition order between locks that can be held
@@ -88,6 +93,9 @@ limitations under the License.
 #define EXCLUSIVE_LOCKS_REQUIRED(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(exclusive_locks_required(__VA_ARGS__))
 
+// For XLA that use the upstream name.
+#define TF_EXCLUSIVE_LOCKS_REQUIRED EXCLUSIVE_LOCKS_REQUIRED
+
 #define SHARED_LOCKS_REQUIRED(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(shared_locks_required(__VA_ARGS__))
 
@@ -96,6 +104,8 @@ limitations under the License.
 // mutex implementation is non-reentrant).
 #define LOCKS_EXCLUDED(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(locks_excluded(__VA_ARGS__))
+//For XLA that use the new upstream name.
+#define TF_LOCKS_EXCLUDED LOCKS_EXCLUDED
 
 // Document a function that returns a mutex without acquiring it.  For example,
 // a public getter method that returns a pointer to a private mutex should
