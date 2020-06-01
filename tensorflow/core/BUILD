@@ -2933,6 +2933,8 @@ tf_cuda_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "//tensorflow/core/platform/default/build_config:platformlib",
+	"//tensorflow/core:framework/bfloat16",
+	"//tensorflow/core:framework/numeric_types",
         "//tensorflow/core/kernels:bounds_check",
         "//tensorflow/core/profiler/lib:traceme",
         "//third_party/eigen3",
@@ -5584,4 +5586,41 @@ alias(
     name = "android_srcs",
     actual = ":mobile_srcs",
     visibility = ["//visibility:public"],
+)
+
+# Individual targets. These should be prefered over tensorflow/core:framework
+# whenever possible.
+cc_library(
+    name = "framework/bfloat16",
+    srcs = ["framework/bfloat16.cc"],
+    hdrs = ["framework/bfloat16.h"],
+    visibility = ["//tensorflow/core:__subpackages__"],
+    deps = [
+        ":framework/numeric_types",
+        "//tensorflow/core/platform:byte_order",
+        "//tensorflow/core/platform:types",
+    ],
+)
+
+cc_library(
+    name = "framework/numeric_types",
+    hdrs = ["framework/numeric_types.h"],
+    visibility = ["//visibility:public"],
+    #visibility = ["//tensorflow/core:__subpackages__"],
+    deps = [
+        "//tensorflow/core/lib/bfloat16",
+        "//tensorflow/core/platform:types",
+        "//third_party/eigen3",
+    ],
+)
+
+# Files whose users still need to be migrated from core:framework to the
+# above targets.
+# TODO(gonnet): Remove these files once targets depending on them have
+# been cleaned up.
+exports_files(
+    srcs = [
+        "bfloat16.h",
+        "numeric_types.h",
+    ],
 )
