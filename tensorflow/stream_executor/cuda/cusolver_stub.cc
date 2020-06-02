@@ -50,4 +50,8 @@ cusolverStatus_t GetSymbolNotFoundError() {
 }
 }  // namespace
 
+#if CUDA_VERSION < 11000
 #include "tensorflow/stream_executor/cuda/cusolver_dense_10_0.inc"
+#else
+#include "tensorflow/stream_executor/cuda/cusolver_dense_11_0.inc"
+#endif
