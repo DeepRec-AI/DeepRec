@@ -2566,3 +2566,9 @@ def if_mlir_tflite(if_true, if_false = []):
 
 def tfcompile_extra_flags():
     return ""
+
+def tf_grpc_dependency():
+    return "//tensorflow:grpc"
+
+def tf_grpc_cc_dependency():
+    return "//tensorflow:grpc++"

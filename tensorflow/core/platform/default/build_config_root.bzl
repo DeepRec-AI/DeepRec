@@ -20,6 +20,9 @@ def tf_exec_compatible_with(kwargs):
         return ["@org_tensorflow//third_party/toolchains:gpu_test"]
     return []
 
+def tf_exec_properties(kwargs):
+     return tf_exec_compatible_with(kwargs)
+
 def tf_additional_plugin_deps():
     return select({
         str(Label("//tensorflow:with_xla_support")): [
