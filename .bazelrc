@@ -210,6 +210,10 @@ build --copt=-w
 # Suppress all warning messages.
 build:short_logs --output_filter=DONT_MATCH_ANYTHING
 
+# By default, build TF in C++ 14 mode.
+build --cxxopt=-std=c++14
+build --host_cxxopt=-std=c++14
+
 # Instruction set optimizations
 # TODO(gunan): Create a feature in toolchains for avx/avx2 to
 #   avoid having to define linux/win separately.
