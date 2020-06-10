@@ -57,6 +57,14 @@ cc_library(
 )
 
 cc_library(
+    name = "asm_compiler",
+    hdrs = if_gpu_is_configured(["asm_compiler.h"]),
+    deps = [
+        "//tensorflow/stream_executor/cuda:ptxas_utils",
+    ],
+)
+
+cc_library(
     name = "gpu_driver_header",
     hdrs = if_gpu_is_configured(["gpu_driver.h"]),
     deps = [
