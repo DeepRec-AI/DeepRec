@@ -35,6 +35,9 @@ limitations under the License.
 #if GOOGLE_TENSORRT
 #include "third_party/tensorrt/NvInfer.h"
 
+// TODO: @mconley @jdekhtiar - Removed when fixed
+#define TF2TENSORRT_BYPASS_NMS_RESIZE_OPS
+
 namespace tensorflow {
 namespace tensorrt {
 
