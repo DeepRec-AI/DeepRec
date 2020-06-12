@@ -69,6 +69,18 @@ cc_library(
 )
 
 cc_library(
+    name = "strcat",
+    hdrs = ["strcat.h"],
+    srcs = [
+         "//tensorflow/core/lib/strings:legacy_lib_strings_all_srcs",
+         "//tensorflow/core/lib/strings:legacy_lib_strings_all_headers",
+    ],
+    deps = [
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_library(
     name = "byte_order",
     hdrs = ["byte_order.h"],
 )
