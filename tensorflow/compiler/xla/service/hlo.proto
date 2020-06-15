@@ -240,10 +240,10 @@ message HloInstructionProto {
   bool unique_indices = 69;
 
   // Represents unique tag for each AsyncOutSend and AsyncOutRecv pair.
-  string rendezvous_key = 70;
+  string rendezvous_key = 1070;
 
   // Shape of AsyncOut.
-  xla.ShapeProto async_out_send_shape = 71;
+  xla.ShapeProto async_out_send_shape = 1071;
 }
 
 // Serialization of HloComputation.
