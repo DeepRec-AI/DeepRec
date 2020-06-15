@@ -141,6 +141,14 @@ cc_library(
 )
 
 cc_library(
+    name = "mutex",
+    textual_hdrs = ["mutex.h"],
+    deps = [
+#        ":mutex_impl",
+    ],
+)
+
+cc_library(
     name = "rocm_rocdl_path",
     srcs = ["rocm_rocdl_path.cc"] + tf_additional_rocdl_srcs(),
     hdrs = ["rocm_rocdl_path.h"],
