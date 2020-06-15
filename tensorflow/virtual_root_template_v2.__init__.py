@@ -76,7 +76,6 @@ _top_level_modules = [
     "tensorflow.tools",
     "tensorflow.core",
     "tensorflow.compiler",
-    "tensorflow.lite",
     "tensorflow.keras",
     "tensorflow.compat",
     "tensorflow.summary",  # tensorboard

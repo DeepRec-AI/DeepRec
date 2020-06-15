@@ -1,5 +1,5 @@
 # Description:
-#   TensorFlow/TensorFlow Lite/XLA MLIR dialects and tools.
+#   TensorFlow/XLA MLIR dialects and tools.
 
 load("//tensorflow:tensorflow.bzl", "tf_cc_binary")
 
@@ -24,11 +24,6 @@ cc_library(
     srcs = ["tf_mlir_opt_main.cc"],
     copts = ["-std=c++14"],
     deps = [
-        "//tensorflow/compiler/mlir/lite:tensorflow_lite",
-        "//tensorflow/compiler/mlir/lite:tensorflow_lite_dialect_registration",
-        "//tensorflow/compiler/mlir/lite:tensorflow_lite_legalize_tf",
-        "//tensorflow/compiler/mlir/lite:tensorflow_lite_optimize",
-        "//tensorflow/compiler/mlir/lite:tensorflow_lite_quantize",
         "//tensorflow/compiler/mlir/tensorflow",
         "//tensorflow/compiler/mlir/tensorflow:tensorflow_dialect_registration",
         "//tensorflow/compiler/mlir/tensorflow:tf_dialect_passes",
