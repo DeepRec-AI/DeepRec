@@ -558,6 +558,13 @@ cc_library(
 )
 
 cc_library(
+    name = "numbers",
+    deps = [
+        "//tensorflow/core/lib/strings:string_utils",
+    ],
+)
+
+cc_library(
     name = "platform_port",
     deps = [
         "//tensorflow/core:platform_port",
