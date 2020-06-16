@@ -36,6 +36,7 @@ option cc_enable_arenas = true;
 
 // Serialization of HloInstruction.
 // Next ID: 70
+// NV Next ID: 1002
 message HloInstructionProto {
   reserved 10;
   reserved "parameter_name";
@@ -240,10 +241,10 @@ message HloInstructionProto {
   bool unique_indices = 69;
 
   // Represents unique tag for each AsyncOutSend and AsyncOutRecv pair.
-  string rendezvous_key = 1070;
+  string rendezvous_key = 1000;
 
   // Shape of AsyncOut.
-  xla.ShapeProto async_out_send_shape = 1071;
+  xla.ShapeProto async_out_send_shape = 1001;
 }
 
 // Serialization of HloComputation.
