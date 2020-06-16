@@ -202,3 +202,10 @@ cc_library(
         "@local_config_rocm//rocm:rocm_headers",
     ]),
 )
+
+cc_library(
+    name = "redzone_allocator",
+    deps = [
+        "//tensorflow/stream_executor/cuda:redzone_allocator",
+    ],
+)

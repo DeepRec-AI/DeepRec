@@ -81,6 +81,17 @@ cc_library(
 )
 
 cc_library(
+    name = "platform_port",
+    deps = [
+        "//tensorflow/core:platform_port",
+    ]
+)
+
+cc_library(
+    name = "status",
+)
+
+cc_library(
     name = "byte_order",
     hdrs = ["byte_order.h"],
 )
