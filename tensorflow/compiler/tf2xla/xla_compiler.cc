@@ -460,7 +460,7 @@ XlaCompiler::XlaCompiler(XlaCompiler::Options options)
   VLOG(1) << "XlaCompiler: "
           << "Device: " << device_
           << "Device_allocator: " << options_.device_allocator
-          << "Stream: " << options_.device_allocator->GetStream()
+	  << "Stream: " << options_.device_allocator->GetStream(options.device_ordinal).ValueOrDie()
           << "options_.device_type : " << options_.device_type;
   CHECK(!options_.device_type.type_string().empty());
   if (options_.populate_resource_manager) {
@@ -494,7 +494,8 @@ XlaCompiler::XlaCompiler(XlaCompiler::Options options)
   // initialized using stream_executor. Since (as it seems) stream_executor is
   // not accessible from here, the stream* in GpuDeviceInfo is null.
   if (options_.device_allocator) {
-    device_->set_gpu_device_info_stream(options_.device_allocator->GetStream());
+    device_->set_gpu_device_info_stream(
+        options_.device_allocator->GetStream(options.device_ordinal).ValueOrDie());
   }
 }
 
