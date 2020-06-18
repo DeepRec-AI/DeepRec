@@ -66,3 +66,8 @@ filegroup(
     srcs = glob(["*"]),
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "scoped_annotation_header",
+    hdrs = ["scoped_annotation.h"]
+)

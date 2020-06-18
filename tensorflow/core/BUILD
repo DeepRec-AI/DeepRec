@@ -5592,7 +5592,7 @@ alias(
 # whenever possible.
 cc_library(
     name = "framework/bfloat16",
-    srcs = ["framework/bfloat16.cc"],
+#    srcs = ["framework/bfloat16.cc"],
     hdrs = ["framework/bfloat16.h"],
     visibility = ["//tensorflow/core:__subpackages__"],
     deps = [

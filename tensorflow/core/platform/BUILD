@@ -61,10 +61,14 @@ cc_library(
 
 cc_library(
     name = "blocking_counter",
-    hdrs = ["blocking_counter.h"],
+    hdrs = [
+        "blocking_counter.h",
+    ],
     deps = [
         ":logging",
         ":mutex",
+	":thread_annotations",
+	"//tensorflow/core:lib_internal_impl",
     ],
 )
 
@@ -135,7 +139,10 @@ cc_library(
 
 cc_library(
     name = "dynamic_annotations",
-    hdrs = ["dynamic_annotations.h"],
+    hdrs = [
+        "dynamic_annotations.h",
+        "default/dynamic_annotations.h"
+    ],
     deps = [
         ":platform",
     ], # + tf_platform_deps("dynamic_annotations"),
@@ -181,7 +188,11 @@ cc_library(
 
 cc_library(
     name = "mutex",
-    textual_hdrs = ["mutex.h"],
+    textual_hdrs = [
+        "mutex.h",
+	"default/mutex.h",
+	"default/mutex_data.h",
+    ],
     deps = [
 #        ":mutex_impl",
     ],
