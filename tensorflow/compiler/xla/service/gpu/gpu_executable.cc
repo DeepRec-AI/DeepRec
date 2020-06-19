@@ -87,15 +87,22 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
       Thunk::kTriangularSolve,
       Thunk::kTuple,
   };
-  if (!thunk_kinds_safe_for_capture.count(thunk->kind())) return false;
   if (thunk->kind() == Thunk::kSequential) {
     const auto* seq_thunk = static_cast<const SequentialThunk*>(thunk);
     for (const std::unique_ptr<Thunk>& sub_thunk : seq_thunk->thunks()) {
       if (!IsThunkSafeForGpuGraphCapture(sub_thunk.get())) return false;
     }
+    return true;
   }
+  if (!thunk_kinds_safe_for_capture.count(thunk->kind())) {
+    VLOG(2) << ThunkKindToString(thunk->kind())
+            << " is not supported for graph capture";
+    return false;
+  }
+
   return true;
 }
+
 
 }  // namespace
 
@@ -295,8 +302,8 @@ Status GpuExecutable::ExecuteThunks(
     for (const Thunk* dependency : thunk_schedule_->DependsOn(thunk)) {
       stream->ThenWaitFor(FindOrDie(thunk_to_finish_event, dependency).get());
     }
-
-    VLOG(2) << "Executing the thunk for "
+    VLOG(2) << "Executing thunk of kind " << ThunkKindToString(thunk->kind());
+    VLOG(3) << "Executing the thunk for "
             << thunk->hlo_instruction()->ToString() << " on stream "
             << stream_no;
     const GpuExecutableRunOptions* gpu_options =

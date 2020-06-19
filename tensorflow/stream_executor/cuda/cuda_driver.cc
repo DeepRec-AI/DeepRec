@@ -1546,7 +1546,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     return false;
   }
 
-  VLOG(2) << "successfully completed graph capture on stream " << stream
+  VLOG(1) << "successfully completed graph capture on stream " << stream
           << " for context " << context->context() << " on thread";
   return true;
 #else
@@ -1568,7 +1568,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     LOG(ERROR) << "failed to destroy CUDA graph for context "
                << context->context() << ": " << ToString(res);
   } else {
-    VLOG(2) << "successfully destroyed graph " << *graph << " for context "
+    VLOG(1) << "successfully destroyed graph " << *graph << " for context "
             << context->context();
     *graph = nullptr;
   }
@@ -1592,7 +1592,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     return false;
   }
 
-  VLOG(2) << "successfully instantiated executable graph for context "
+  VLOG(1) << "successfully instantiated executable graph for context "
           << context->context() << " on thread";
   return true;
 #else
@@ -1618,7 +1618,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     return false;
   }
 
-  VLOG(2) << "successfully updated executable graph for context "
+  VLOG(1) << "successfully updated executable graph for context "
           << context->context() << " on thread";
   return true;
 #else
@@ -1639,7 +1639,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
                << context->context() << ": " << ToString(res);
     return false;
   }
-  VLOG(2) << "successfully launched graph";
+  VLOG(1) << "successfully launched graph";
   return true;
 #else
   LOG(ERROR) << "Feature not supported on this CUDA version "
@@ -1661,7 +1661,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     LOG(ERROR) << "failed to destroy CUDA executable graph for context "
                << context->context() << ": " << ToString(res);
   } else {
-    VLOG(2) << "successfully destroyed executable graph " << *graph_exec
+    VLOG(1) << "successfully destroyed executable graph " << *graph_exec
             << " for context " << context->context();
     *graph_exec = nullptr;
   }
