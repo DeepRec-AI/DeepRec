@@ -49,6 +49,13 @@ class XlaCompilationCache : public ResourceBase {
   enum class CompileMode {
     kLazy,
     kStrict,
+    kAsync,
+  };
+
+  enum class CompileState {
+    kUncompiled,
+    kCompiling,
+    kCompiled,
   };
 
   // Compiles a function into a XlaCompiler::CompilationResult that can be used
@@ -61,7 +68,9 @@ class XlaCompilationCache : public ResourceBase {
   // heuristics, the compilation cache may decide not to compile the cluster at
   // this time.  In this case it returns null into both `out_compilation_result`
   // and `out_executable`.  If `compile_mode` is `kStrict` then the compilation
-  // cache always attempts the compilation on a cache miss.
+  // cache always attempts the compilation on a cache miss. if compilation mode
+  // is 'kAsync' compilation of the cluster happens in the background while the
+  // fall
   //
   // The result of compilation is written to `*out_compilation_result`, which
   // must be non-null. If `out_executable` is non-null, also builds an
@@ -70,7 +79,7 @@ class XlaCompilationCache : public ResourceBase {
   // non-constant outputs.
   Status Compile(const XlaCompiler::Options& options,
                  const NameAttrList& function,
-                 absl::Span<const XlaCompiler::Argument> args,
+                 std::vector<XlaCompiler::Argument>& args,
                  const XlaCompiler::CompileOptions& compile_options,
                  CompileMode compile_mode,
                  const XlaCompiler::CompilationResult** out_compilation_result,
@@ -125,7 +134,7 @@ class XlaCompilationCache : public ResourceBase {
       absl::Span<const XlaCompiler::Argument> args,
       const std::function<Status(XlaCompiler* compiler,
                                  XlaCompiler::CompilationResult*)>& compile_fn,
-      absl::optional<int64> compile_threshold,
+      CompileMode compile_mode,
       const XlaCompiler::CompilationResult** out_compilation_result,
       xla::LocalExecutable** out_executable);
 
@@ -143,7 +152,7 @@ class XlaCompilationCache : public ResourceBase {
     mutex mu;
 
     // Have we tried compiling this entry?
-    bool compiled = false;
+    CompileState compile_state = CompileState::kUncompiled;
 
     // The number of times a compilation with this signature has been requested.
     int64 request_count = 0;
@@ -158,6 +167,17 @@ class XlaCompilationCache : public ResourceBase {
     // executable has been built.
     std::unique_ptr<xla::LocalExecutable> executable GUARDED_BY(mu);
   };
+
+  Status CompileStrict(
+    Entry* entry, const XlaCompiler::Options& options,
+    const string &function_name,
+    const std::function<Status(XlaCompiler* compiler,
+                               XlaCompiler::CompilationResult*)>& compile_fn);
+  Status CompileAsynchronous(
+    Entry* entry, const XlaCompiler::Options& options,
+    const string &function_name,
+    const std::function<Status(XlaCompiler* compiler,
+                               XlaCompiler::CompilationResult*)>& compile_fn);
 
   mutex compile_cache_mu_;
   absl::flat_hash_map<Signature, std::unique_ptr<Entry>, Signature::Hash> cache_
@@ -188,6 +208,28 @@ class XlaCompilationCache : public ResourceBase {
   // Maps cluster names to compilation statistics for said cluster.
   absl::flat_hash_map<string, ClusterCompileStats> cluster_compile_stats_
       GUARDED_BY(cluster_compile_stats_mu_);
+
+  struct AsyncCompilation {
+    mutex async_compilation_mu_;
+
+    // number of threads for asynchronous compilations;
+    static constexpr int64 kNrofCompilerThreads = 10;
+
+    // maximum number of ongoing compilations;
+    static constexpr int64 kMaxNrofOngoingCompilations = kNrofCompilerThreads;
+
+    // pool of threads for asynchronous compilations;
+    thread::ThreadPool compiler_threads;
+
+    // number of ongoing compilations.
+    int64 nrof_ongoing_compilations GUARDED_BY(async_compilation_mu_) = 0;
+
+    AsyncCompilation()
+      : compiler_threads(tensorflow::Env::Default(), "aync_compiler_threads",
+                         kNrofCompilerThreads) {}
+    ~AsyncCompilation() {}
+
+  } async_compilation_;
 
   // The number of times a lazy compilation must be requested for a specific
   // signature before  we attempt to compile it.

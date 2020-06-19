@@ -91,6 +91,9 @@ class Backend {
   se::DeviceMemoryAllocator* memory_allocator() const {
     return memory_allocator_.get();
   }
+  std::shared_ptr<se::DeviceMemoryAllocator> shared_memory_allocator() const {
+    return memory_allocator_;
+  }
   TransferManager* transfer_manager() const { return transfer_manager_; }
   ComputationPlacer* computation_placer() const { return computation_placer_; }
 
@@ -179,7 +182,7 @@ class Backend {
       stream_pools_ GUARDED_BY(mu_);
 
   // The default memory allocator to use.
-  std::unique_ptr<se::StreamExecutorMemoryAllocator> memory_allocator_;
+  std::shared_ptr<se::StreamExecutorMemoryAllocator> memory_allocator_;
 
   // For the CPU backend, an Eigen threadpool device for use by Eigen code.
   struct IntraOpThreadPool;

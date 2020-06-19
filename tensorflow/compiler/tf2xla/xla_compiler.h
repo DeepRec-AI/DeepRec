@@ -340,7 +340,7 @@ class XlaCompiler {
     // here, but on some devices (notably, GPUs), TensorFlow tends to eagerly
     // allocate most or all available memory on the device, leaving none for the
     // compiler to access, unless it can use TensorFlow's allocator.
-    se::DeviceMemoryAllocator* device_allocator = nullptr;
+    std::shared_ptr<se::DeviceMemoryAllocator> device_allocator;
   };
 
   explicit XlaCompiler(Options options);
