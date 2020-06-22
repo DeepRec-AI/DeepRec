@@ -156,10 +156,11 @@ StatusOr<std::vector<se::dnn::ProfileResult>> GetAlgorithms(
   TF_ASSIGN_OR_RETURN(GpuConvParams params,
                       GetGpuConvParams(conv, operand_buffers, result_buffer));
 
-  bool succ = stream_exec->GetMIOpenConvolveAlgorithms(
-      kind, stream, dtype, params.input_descriptor, params.filter_descriptor,
-      params.conv_desc, params.output_descriptor, &algorithms);
-  DCHECK(succ);
+  CHECK(false) << "MIOpen not backported";
+  // bool succ = stream_exec->GetMIOpenConvolveAlgorithms(
+  //     kind, stream, dtype, params.input_descriptor, params.filter_descriptor,
+  //     params.conv_desc, params.output_descriptor, &algorithms);
+  // DCHECK(succ);
 
   return algorithms;
 }
