@@ -205,6 +205,7 @@ cc_library(
 
 cc_library(
     name = "redzone_allocator",
+    hdrs = ["redzone_allocator.h"],
     deps = [
         "//tensorflow/stream_executor/cuda:redzone_allocator",
     ],
