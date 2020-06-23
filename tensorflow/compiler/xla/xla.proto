@@ -262,6 +262,11 @@ message DebugOptions {
   bool xla_gpu_deterministic_reductions = 130;
   // Next id: 134
 
+  // Extra parameters to pass the GPU assembler.
+  string xla_gpu_asm_extra_flags = 141;
+
+  // Next id: 142
+
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.
   map<string, string> xla_backend_extra_options = 500;
