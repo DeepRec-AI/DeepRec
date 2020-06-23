@@ -5588,8 +5588,9 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-# Individual targets. These should be prefered over tensorflow/core:framework
-# whenever possible.
+#############################
+# TF2/TF1 internal API Bridge
+#############################
 cc_library(
     name = "framework/bfloat16",
 #    srcs = ["framework/bfloat16.cc"],
@@ -5611,16 +5612,5 @@ cc_library(
         "//tensorflow/core/lib/bfloat16",
         "//tensorflow/core/platform:types",
         "//third_party/eigen3",
-    ],
-)
-
-# Files whose users still need to be migrated from core:framework to the
-# above targets.
-# TODO(gonnet): Remove these files once targets depending on them have
-# been cleaned up.
-exports_files(
-    srcs = [
-        "bfloat16.h",
-        "numeric_types.h",
     ],
 )

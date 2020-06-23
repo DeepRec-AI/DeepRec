@@ -73,6 +73,17 @@ tf_proto_library_py(
     visibility = ["//visibility:public"],
 )
 
+tf_pyclif_proto_library(
+    name = "topology_pyclif",
+    proto_lib = ":topology_proto",
+    proto_srcfile = "topology.proto",
+    visibility = ["//visibility:public"],
+)
+
+#############################
+# TF2/TF1 internal API Bridge
+#############################
+
 tf_proto_library(
     name = "compile_metadata_proto",
     srcs = [
@@ -85,12 +96,5 @@ tf_proto_library(
         "//tensorflow/compiler/xla:xla_proto",
         "//tensorflow/core:protos_all",
     ],
-    visibility = ["//visibility:public"],
-)
-
-tf_pyclif_proto_library(
-    name = "topology_pyclif",
-    proto_lib = ":topology_proto",
-    proto_srcfile = "topology.proto",
     visibility = ["//visibility:public"],
 )

@@ -60,42 +60,6 @@ cc_library(
 )
 
 cc_library(
-    name = "blocking_counter",
-    hdrs = [
-        "blocking_counter.h",
-    ],
-    deps = [
-        ":logging",
-        ":mutex",
-	":thread_annotations",
-	"//tensorflow/core:lib_internal_impl",
-    ],
-)
-
-cc_library(
-    name = "strcat",
-    hdrs = ["strcat.h"],
-    srcs = [
-         "//tensorflow/core/lib/strings:legacy_lib_strings_all_srcs",
-         "//tensorflow/core/lib/strings:legacy_lib_strings_all_headers",
-    ],
-    deps = [
-        "@com_google_absl//absl/strings",
-    ],
-)
-
-cc_library(
-    name = "platform_port",
-    deps = [
-        "//tensorflow/core:platform_port",
-    ]
-)
-
-cc_library(
-    name = "status",
-)
-
-cc_library(
     name = "byte_order",
     hdrs = ["byte_order.h"],
 )
@@ -137,16 +101,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "dynamic_annotations",
-    hdrs = [
-        "dynamic_annotations.h",
-        "default/dynamic_annotations.h"
-    ],
-    deps = [
-        ":platform",
-    ], # + tf_platform_deps("dynamic_annotations"),
-)
 cc_library(
     name = "env_time",
     srcs = tf_platform_srcs(["env_time.cc"]),
@@ -573,4 +527,55 @@ exports_files(
             "stacktrace.h",
         ],
     ),
+)
+
+#############################
+# TF2/TF1 internal API Bridge
+#############################
+
+cc_library(
+    name = "blocking_counter",
+    hdrs = [
+        "blocking_counter.h",
+    ],
+    deps = [
+        ":logging",
+        ":mutex",
+	":thread_annotations",
+	"//tensorflow/core:lib_internal_impl",
+    ],
+)
+
+cc_library(
+    name = "dynamic_annotations",
+    hdrs = [
+        "dynamic_annotations.h",
+        "default/dynamic_annotations.h"
+    ],
+    deps = [
+        ":platform",
+    ], # + tf_platform_deps("dynamic_annotations"),
+)
+
+cc_library(
+    name = "platform_port",
+    deps = [
+        "//tensorflow/core:platform_port",
+    ]
+)
+
+cc_library(
+    name = "status",
+)
+
+cc_library(
+    name = "strcat",
+    hdrs = ["strcat.h"],
+    srcs = [
+         "//tensorflow/core/lib/strings:legacy_lib_strings_all_srcs",
+         "//tensorflow/core/lib/strings:legacy_lib_strings_all_headers",
+    ],
+    deps = [
+        "@com_google_absl//absl/strings",
+    ],
 )
