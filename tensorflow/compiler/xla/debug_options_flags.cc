@@ -37,6 +37,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_gpu_autotune_level(4);
   opts.set_xla_cpu_multi_thread_eigen(true);
   opts.set_xla_gpu_cuda_data_dir("./cuda_sdk_lib");
+  opts.set_xla_gpu_asm_extra_flags("");
   opts.set_xla_eliminate_hlo_implicit_broadcast(true);
   opts.set_xla_dump_hlo_as_html(false);
 #ifdef INTEL_MKL
@@ -476,6 +477,11 @@ static void AllocateFlags() {
           flag_values->xla_dump_hlo_as_dot(),
           "Dumps HLO modules rendered as dot files to the directory "
           "specified by --xla_dump_to."),
+      tensorflow::Flag(
+          "xla_gpu_asm_extra_flags", string_setter_for(&DebugOptions::set_xla_gpu_asm_extra_flags),
+          "",
+          "Pass extra parameters to the GPU assembler tool (i.e., ptxas for CUDA). "
+          "If multiple parameters, separate them by comma."),
       tensorflow::Flag("xla_dump_hlo_as_html",
                        bool_setter_for(&DebugOptions::set_xla_dump_hlo_as_html),
                        flag_values->xla_dump_hlo_as_html(),

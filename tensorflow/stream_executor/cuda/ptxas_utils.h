@@ -17,7 +17,9 @@ limitations under the License.
 #define TENSORFLOW_STREAM_EXECUTOR_CUDA_PTXAS_UTILS_H_
 
 #include <string>
+#include <vector>
 
+#include "absl/types/span.h"
 #include "absl/types/span.h"
 #include "tensorflow/stream_executor/lib/statusor.h"
 #include "tensorflow/stream_executor/platform/port.h"
@@ -32,15 +34,20 @@ struct PtxCompilationOptions {
   // CUDA directory which would be searched first.
   std::string preferred_cuda_dir;
 
-  explicit PtxCompilationOptions(bool disable_ptxas_optimizations = false,
-                                 absl::string_view preferred_cuda_dir = "")
-      : disable_ptxas_optimizations(disable_ptxas_optimizations),
-        preferred_cuda_dir(preferred_cuda_dir) {}
+  std::vector<std::string> extra_flags;
 
-  using PtxOptionsTuple = std::tuple<bool, std::string>;
+  explicit PtxCompilationOptions(bool disable_ptxas_optimizations = false,
+                                 absl::string_view preferred_cuda_dir = "",
+				 absl::Span<const std::string> extra_flags = {})
+      : disable_ptxas_optimizations(disable_ptxas_optimizations),
+        preferred_cuda_dir(preferred_cuda_dir),
+        extra_flags(extra_flags.begin(), extra_flags.end()) {}
+
+  using PtxOptionsTuple =
+      std::tuple<bool, std::string, std::vector<std::string>>;
 
   PtxOptionsTuple ToTuple() {
-    return std::make_tuple(disable_ptxas_optimizations, preferred_cuda_dir);
+    return std::make_tuple(disable_ptxas_optimizations, preferred_cuda_dir, extra_flags);
   }
 };
 

@@ -293,7 +293,10 @@ message DebugOptions {
   // Blacklist for cuDNN convolutions.
   string xla_gpu_algorithm_blacklist_path = 128;
 
-  // Next id: 130
+  // Extra parameters to pass the GPU assembler.
+  string xla_gpu_asm_extra_flags = 141;
+
+  // Next id: 142
 
   // Extra options to pass to the compilation backend (e.g. LLVM); specific
   // interpretation of these values is left to the backend.
