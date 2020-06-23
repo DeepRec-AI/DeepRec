@@ -102,6 +102,7 @@ class MultiDeviceAdapter : public DeviceMemoryAllocator {
   bool AllowsAsynchronousDeallocation() const override { return true; }
 
   port::StatusOr<Stream *> GetStream(int device_ordinal) override {
+    CHECK(device_ordinal >= 0 && device_ordinal < per_device_allocators_.size());
     return per_device_allocators_[device_ordinal].GetStream(device_ordinal);
   }
 
