@@ -850,9 +850,12 @@ class ConvolutionOrthogonal1dInitializerTest(test.TestCase):
     tol = 1e-5
     with self.session(use_gpu=True):
       for i in range(count):
-        x = variable_scope.get_variable("{}".format(i), shape=shape,
-                                        initializer=
-                                        init_ops.convolutional_orthogonal_1d)
+        # The convolutional_orthogonal_1d op will call matmul op on GPU,
+        # which might lead to deviated results with tf32.
+        with ops.device('/cpu:0'):
+          x = variable_scope.get_variable("{}".format(i), shape=shape,
+                                          initializer=
+                                          init_ops.convolutional_orthogonal_1d)
         x.initializer.run()
         y = np.sum(x.eval(), axis=0)
         determinant = np.linalg.det(y)
@@ -1070,9 +1073,12 @@ class ConvolutionOrthogonal3dInitializerTest(test.TestCase):
     tol = 1e-5
     with self.session(use_gpu=True):
       for i in range(count):
-        x = variable_scope.get_variable("{}".format(i), shape=shape,
-                                        initializer=
-                                        init_ops.convolutional_orthogonal_3d)
+        # The convolutional_orthogonal_3d op will call the matmul op on GPU,
+        # which might lead to deviated results with tf32.
+        with ops.device('/cpu:0'):
+          x = variable_scope.get_variable("{}".format(i), shape=shape,
+                                          initializer=
+                                          init_ops.convolutional_orthogonal_3d)
         x.initializer.run()
         y = np.sum(x.eval(), axis=(0, 1, 2))
         determinant = np.linalg.det(y)

@@ -21,6 +21,7 @@ from __future__ import print_function
 import numpy as np
 
 from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gradient_checker
@@ -63,7 +64,11 @@ def _GetMatrixUnaryFunctorGradientTest(functor_, dtype_, shape_, **kwargs_):
 
   @test_util.run_v1_only('b/120545219')
   def Test(self):
-    with self.session(use_gpu=True):
+    # When functor_ is the linalg_impl.matrix_exponential, the compute_gradient
+    # can lead to deviated results with tf32.
+    use_gpu = (False if functor_ == linalg_impl.matrix_exponential and
+               dtype_ == np.float32 else True)
+    with self.session(use_gpu=use_gpu):
       np.random.seed(1)
       a_np = np.random.uniform(
           low=-1.0, high=1.0,
@@ -109,6 +114,10 @@ def _GetMatrixBinaryFunctorGradientTest(functor_,
     # TODO(rmlarsen): Debug illegal address bug on CUDA and re-enable
     # GPU test for matrix_solve.
     use_gpu = False if functor_ == linalg_ops.matrix_solve else True
+    # When functor_ is the lambda function calling linalg_ops.matrix_solve_ls,
+    # the compute_gradient can lead to deviated results with tf32.
+    use_gpu = (True if functor_ == linalg_ops.matrix_triangular_solve
+               or dtype_ != np.float32 else False)
 
     with self.session(use_gpu=use_gpu):
       np.random.seed(1)

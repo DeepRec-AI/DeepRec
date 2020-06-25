@@ -90,8 +90,17 @@ class Conv3DTest(test.TestCase):
       if data_format == "NCDHW":
         t1 = test_util.NHWCToNCHW(t1)
         strides = test_util.NHWCToNCHW(strides)
-      conv = nn_ops.conv3d(t1, t2, strides, padding=padding,
-                           data_format=data_format)
+      # For the 1x1x1 filter, the NDHWC conv3d will call blas kernel on GPU,
+      # which might lead to deviated results from the reference with tf32.
+      if (data_format == 'NDHWC' and use_gpu and filter_in_sizes[0] == 1 and
+          filter_in_sizes[1] == 1 and filter_in_sizes[2] == 1 and
+          dtype == dtypes.float32):
+        with ops.device('/cpu:0'):
+          conv = nn_ops.conv3d(t1, t2, strides, padding=padding,
+                               data_format=data_format)
+      else:
+        conv = nn_ops.conv3d(t1, t2, strides, padding=padding,
+                             data_format=data_format)
       if data_format == "NCDHW":
         conv = test_util.NCHWToNHWC(conv)
 
@@ -464,7 +473,7 @@ class Conv3DTest(test.TestCase):
             padding,
             data_format=data_format,
             name="conv")
-        
+
         # CPU Conv3D only supports NDHWC
         with ops.device("/cpu:0"):
           conv_cpu = nn_ops.conv3d(

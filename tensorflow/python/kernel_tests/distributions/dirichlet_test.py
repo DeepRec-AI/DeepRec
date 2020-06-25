@@ -22,6 +22,7 @@ import numpy as np
 
 from tensorflow.python.eager import backprop
 from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
@@ -204,14 +205,18 @@ class DirichletTest(test.TestCase):
     alpha = [1., 2, 3]
     denominator = np.sum(alpha)**2 * (np.sum(alpha) + 1)
     dirichlet = dirichlet_lib.Dirichlet(concentration=alpha)
-    self.assertEqual(dirichlet.covariance().get_shape(), (3, 3))
+    # The dirichlet.covariance() will call matmul op on GPU, which might lead to
+    # deviated results with tf32.
+    with ops.device('/cpu:0'):
+      covariance = dirichlet.covariance()
+    self.assertEqual(covariance.get_shape(), (3, 3))
     if not stats:
       return
     expected_covariance = np.diag(stats.dirichlet.var(alpha))
     expected_covariance += [[0., -2, -3], [-2, 0, -6], [-3, -6, 0]
                            ] / denominator
     self.assertAllClose(
-        self.evaluate(dirichlet.covariance()), expected_covariance)
+        self.evaluate(covariance), expected_covariance)
 
   def testMode(self):
     alpha = np.array([1.1, 2, 3])
