@@ -146,9 +146,10 @@ class DataFormatVecPermuteOp : public OpKernel {
                     input.shape().DebugString()));
     if (input.dims() == 1) {
       OP_REQUIRES(
-          context, input.NumElements() == 4,
-          errors::InvalidArgument("1D input must be of size 4, but got shape ",
-                                  input.shape().DebugString()));
+          context, input.NumElements() == 4 || input.NumElements() == 5,
+          errors::InvalidArgument(
+              "1D input must be of size 4 or 5, but got shape ",
+              input.shape().DebugString()));
     } else if (input.dims() == 2) {
       OP_REQUIRES(
           context, input.dim_size(0) == 4,
