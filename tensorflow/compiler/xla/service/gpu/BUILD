@@ -667,6 +667,7 @@ cc_library(
         "//tensorflow/compiler/xla/service:hlo_pass",
         "//tensorflow/core:autotuning_proto_cc",
         "//tensorflow/core:lib",
+	"//tensorflow/core:logger",
         "//tensorflow/core:stream_executor_no_cuda",
         "//tensorflow/core/util/proto:proto_utils",
         "//tensorflow/stream_executor:blas",
