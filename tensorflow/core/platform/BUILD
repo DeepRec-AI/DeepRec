@@ -542,7 +542,7 @@ cc_library(
         ":logging",
         ":mutex",
 	":thread_annotations",
-	"//tensorflow/core:lib_internal_impl",
+	"//tensorflow/core:lib_internal",
     ],
 )
 
