@@ -542,14 +542,25 @@ Status IrEmitterUnnested::EmitExtraOutputsForReduce(
     bool use_linear_index, int vector_size,
     absl::Span<const std::pair<llvm_ir::ElementGenerator, ShapeIndex>>
         extra_output_gens) {
-  for (int i = 0; i != extra_output_gens.size(); ++i) {
+  // Compute all extra output values before writing them. This avoids
+  // overwriting aliased input/output buffers before all reads occured.
+  absl::InlinedVector<llvm::Value*, 8> extra_output_ir_values;
+  for (int i = 0; i < extra_output_gens.size(); ++i) {
+    for (int v = 0; v < vector_size; ++v) {
+      IrArray::Index current_index = index.AddOffsetToDim(
+          llvm::ConstantInt::get(index.GetType(), v), index.size() - 1, &b_);
+      TF_ASSIGN_OR_RETURN(llvm::Value* const extra_output_ir_value,
+			  extra_output_gens[i].first(current_index));
+      extra_output_ir_values.push_back(extra_output_ir_value);
+    }
+  }
+  for (int i = 0; i < extra_output_gens.size(); ++i) {
     auto array =
         GetIrArray(*unnested_hlo, *unnested_hlo, extra_output_gens[i].second);
     for (int v = 0; v < vector_size; ++v) {
       IrArray::Index current_index = index.AddOffsetToDim(
           llvm::ConstantInt::get(index.GetType(), v), index.size() - 1, &b_);
-      TF_ASSIGN_OR_RETURN(llvm::Value* const value,
-                          extra_output_gens[i].first(current_index));
+      llvm::Value* value = extra_output_ir_values.at(i*vector_size + v);
       array.EmitWriteArrayElement(current_index, value, &b_, use_linear_index);
     }
   }
