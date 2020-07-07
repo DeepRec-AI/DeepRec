@@ -1,1 +1,1 @@
---test_arg=--gtest_filter=-RandomCholeskyTestInstance/RandomCholeskyTest.Random/6
+--test_arg=--gtest_filter=-RandomCholeskyTestInstance/RandomCholeskyTest.Random/6 --test_tag_filters=-no_oss
