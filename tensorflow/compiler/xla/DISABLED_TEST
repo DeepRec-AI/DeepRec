@@ -1,1 +1,1 @@
---test_arg=--gtest_filter=-GpuFtzEnabledTest.ExpFtz:GpuFtzDisabledTest.ExpFtz
+--test_arg=--gtest_filter=-GpuFtzEnabledTest.ExpFtz:GpuFtzDisabledTest.ExpFtz --
