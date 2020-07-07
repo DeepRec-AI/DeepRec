@@ -201,6 +201,11 @@ cc_library(
 
 cc_library(
     name = "asm_compiler",
+    visibility = [
+        "//tensorflow/compiler/xla/service/gpu:__subpackages__",
+        "//tensorflow/stream_executor:__subpackages__",
+	"//tensorflow/compiler/xla/service/mlir_gpu:__subpackages__",
+    ],
     hdrs = if_gpu_is_configured(["asm_compiler.h"]),
     deps = [
         "//tensorflow/stream_executor/cuda:ptxas_utils",

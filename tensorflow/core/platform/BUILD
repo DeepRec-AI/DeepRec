@@ -590,3 +590,8 @@ cc_library(
 cc_library(
     name = "resource_loader"
 )
+
+cc_library(
+    name = "test",
+    testonly = True,
+)
