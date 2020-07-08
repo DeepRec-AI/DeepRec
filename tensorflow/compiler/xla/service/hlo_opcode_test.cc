@@ -64,6 +64,7 @@ TEST(HloOpcodeTest, OpcodeProperties) {
       case HloOpcode::kRng:
       case HloOpcode::kSort:
       case HloOpcode::kTuple:
+      case HloOpcode::kBatchNormGrad:
         EXPECT_TRUE(HloOpcodeIsVariadic(opcode));
         break;
       default:
