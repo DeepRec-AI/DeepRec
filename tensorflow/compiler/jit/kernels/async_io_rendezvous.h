@@ -67,14 +67,13 @@ class AsyncIoRendezvous {
   // is required before Send/Recv operations.
   void InitializeRendezvousQueue(const uint64 key_hash) {
     mutex_lock l(mu_);
-    MutexedItemQueue& mq = table_[key_hash];
-    CHECK(mq.queue.empty());
+    table_[key_hash] = new MutexedItemQueue();
   }
 
   void FinalizeRendezvousQueue(const uint64 key_hash) {
     mutex_lock l(mu_);
-    MutexedItemQueue& mq = table_[key_hash];
-    CHECK(mq.queue.empty());
+    CHECK(table_.at(key_hash)->queue.empty());
+    delete table_.at(key_hash);
     table_.erase(key_hash);
   }
 
@@ -96,7 +95,7 @@ class AsyncIoRendezvous {
     ItemQueue queue GUARDED_BY(mu);
     mutex mu;  // mutex for per-queue operation.
   };
-  typedef absl::flat_hash_map<uint64, MutexedItemQueue> Table;
+  typedef absl::flat_hash_map<uint64, MutexedItemQueue*> Table;
 
   // This global lock `mu_` only guards `table_` but does not guard per-queue
   // operations.

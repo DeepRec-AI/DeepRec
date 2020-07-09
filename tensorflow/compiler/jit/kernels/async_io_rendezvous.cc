@@ -20,9 +20,14 @@ namespace tensorflow {
 Status AsyncIoRendezvous::Send(uint64 key_hash, const TensorPayload& val) {
   VLOG(2) << "Send " << this << " " << key_hash;
 
-  MutexedItemQueue& mq = table_[key_hash];
-  ItemQueue* queue = &mq.queue;
-  mutex& mu = mq.mu;
+  MutexedItemQueue* mq = nullptr;
+  {
+    mutex_lock l(mu_);
+    mq = table_.at(key_hash);
+  }
+  CHECK(mq);
+  ItemQueue* queue = &mq->queue;
+  mutex& mu = mq->mu;
   mu.lock();
   if (queue->empty() || queue->front()->IsSendValue()) {
     // There is no waiter for this message. Append the message
@@ -54,9 +59,14 @@ Status AsyncIoRendezvous::Send(uint64 key_hash, const TensorPayload& val) {
 void AsyncIoRendezvous::RecvAsync(uint64 key_hash, DoneCallback done) {
   VLOG(2) << "Recv " << this << " " << key_hash;
 
-  MutexedItemQueue& mq = table_[key_hash];
-  ItemQueue* queue = &mq.queue;
-  mutex& mu = mq.mu;
+  MutexedItemQueue* mq = nullptr;
+  {
+    mutex_lock l(mu_);
+    mq = table_.at(key_hash);
+  }
+  CHECK(mq);
+  ItemQueue* queue = &mq->queue;
+  mutex& mu = mq->mu;
   mu.lock();
   if (queue->empty() || !queue->front()->IsSendValue()) {
     // There is no message to pick up.
