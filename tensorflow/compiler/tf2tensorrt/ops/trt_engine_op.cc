@@ -41,43 +41,19 @@ REGISTER_OP("TRTEngineOp")
     .Attr("precision_mode: {'FP32', 'FP16', 'INT8'}")
     .Attr("calibration_data: string = ''")
     .Attr("use_calibration: bool = true")
+    .Attr("input_shapes: list(shape) = []")
+    .Attr("output_shapes: list(shape) = []")
     .Input("in_tensor: InT")
     .Output("out_tensor: OutT")
-    // TODO(jie): TF requires concrete output shape for concrete input shapes.
-    // This is tricky for batch dimension, since we cannot ensure which input
-    // would carry the correct batch dimension (for the current stage of the
-    // implementation, we do require all input tensor to carry the same batch
-    // size, but this could change in the future). Hence we disable shape
-    // inference function as a workaround.
-    // .SetShapeFn(shape_inference::UnknownShape)
     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-      // ::tensorflow::shape_inference::ShapeHandle input;
-      // TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &input));
-      // c->set_output(0, input);
-
-      // ::tensorflow::shape_inference::ShapeHandle output_shapes;
-      std::vector<tensorflow::TensorShape> output_shapes;
-      // std::vector<tensorflow::TensorShapeProto> output_shapes;
-      // std::unique_ptr<tensorflow::TensorShapeProto[]> proto output_shapes;
-      // c->GetAttr("output_shapes", &output_shapes);
+      std::vector<tensorflow::PartialTensorShape> output_shapes;
       TF_RETURN_IF_ERROR(c->GetAttr("output_shapes", &output_shapes));
 
       for(int i=0; i<output_shapes.size(); i++) {
-        // ShapeHandle shape;
         ::tensorflow::shape_inference::ShapeHandle shape;
-
-        // ShapeHandle handle;
-        // TensorShapeProto proto;
         shape_inference::ShapeHandle output_shape_handle;
-        // TF_RETURN_IF_ERROR(c->MakeShapeFromPartialTensorShape(
-        //     output_shapes[i], &output_shape_handle));
-        // ShapeHandle handle;
-        TF_RETURN_IF_ERROR(
-            c->MakeShapeFromTensorShape(
-              output_shapes.at(i), &output_shape_handle));
-
-        // TF_RETURN_IF_ERROR(
-        //   c->MakeShapeFromShapeProto(output_shapes[i], &shape));
+        TF_RETURN_IF_ERROR(c->MakeShapeFromPartialTensorShape(
+            output_shapes[i], &output_shape_handle));
         c->set_output(i, output_shape_handle);
       }
 
@@ -87,8 +63,6 @@ REGISTER_OP("TRTEngineOp")
     .Attr("segment_funcdef_name: string = ''")
     .Attr("cached_engine_batches: list(int) >= 0 = []")
     .Attr("fixed_input_size: bool = true")
-    .Attr("input_shapes: list(shape) = []")
-    .Attr("output_shapes: list(shape) = []")
     .Attr("static_engine: bool = true");
 }  // namespace tensorflow
 
