@@ -114,8 +114,11 @@ TEST_F(XlaActivityListenerTest, Test) {
   std::vector<std::pair<string, Tensor>> inputs_2x2 = {{"A", tensor_2x2}};
 
   std::vector<Tensor> outputs;
-  TF_ASSERT_OK(session->Run(inputs_2x2, output_names, /*target_node_names=*/{},
-                            &outputs));
+  // Now we compile the first time at the 3rd call.
+  for (int i = 0; i < 3; i++) {
+    TF_ASSERT_OK(session->Run(inputs_2x2, output_names, /*target_node_names=*/{},
+			      &outputs));
+  }
 
   absl::string_view expected_auto_clustering_activity =
       R"(global_jit_level: ON_2
