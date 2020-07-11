@@ -115,7 +115,7 @@ TEST_F(XlaActivityListenerTest, Test) {
 
   std::vector<Tensor> outputs;
   // Now we compile the first time at the 3rd call.
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 30; i++) {
     TF_ASSERT_OK(session->Run(inputs_2x2, output_names, /*target_node_names=*/{},
 			      &outputs));
   }
