@@ -161,6 +161,8 @@ summary {
 }
 )";
 
+  VLOG(0) << listener()->auto_clustering_activity().DebugString();
+  VLOG(0) << expected_auto_clustering_activity;
   EXPECT_EQ(listener()->auto_clustering_activity().DebugString(),
             expected_auto_clustering_activity);
 
