@@ -175,6 +175,16 @@ void BufferAllocations::SetBuffer(BufferAllocation::Index buffer_index,
   buffers_[buffer_index] = buffer;
 }
 
+BufferAllocations::KeyType BufferAllocations::Key() const {
+  KeyType key;
+  key.all_buffers_.reserve(1 + buffers_.size());
+  key.all_buffers_.push_back(temp_buffer_base_.opaque());
+  for (const auto& buffer : buffers_) {
+    key.all_buffers_.push_back(buffer.opaque());
+  }
+  return key;
+}
+
 bool ShouldEmitLiteralInLlvmIr(const Literal& literal) {
   // LLVM can sometimes do interesting optimizations using scalar constants.
   return ShapeUtil::IsScalar(literal.shape());

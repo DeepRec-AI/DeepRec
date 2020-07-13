@@ -169,7 +169,21 @@ class GpuExecutable : public Executable {
 
   bool can_use_gpu_graph_capture_ = false;
   // Maps GpuContext* to owned GpuGraphExec objects.
-  std::unordered_map<void*, void*> gpu_exec_graphs_;
+  // std::unordered_map<void*, void*> gpu_exec_graphs_;
+  // Maps GpuContext* to allocation key to owned GpuGraphExec objects.
+  std::unordered_map<void*,
+                     std::unordered_map<BufferAllocations::KeyType, void*>>
+      gpu_exec_graphs_ GUARDED_BY(module_handle_mutex_);
+
+  struct MutexedGraphCacheStats {
+    tensorflow::mutex graph_cache_mu;
+    uint64 cache_hits GUARDED_BY(graph_cache_mu) = 0;
+    uint64 cache_miss GUARDED_BY(graph_cache_mu) = 0;
+    uint64 times_called GUARDED_BY(graph_cache_mu) = 0;
+    size_t last_buf_key_hash GUARDED_BY(graph_cache_mu) = 0;
+    uint64 last_buf_key_hits GUARDED_BY(graph_cache_mu) = 0;
+  };
+  MutexedGraphCacheStats graph_stats_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GpuExecutable);
 };
