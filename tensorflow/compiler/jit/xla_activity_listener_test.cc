@@ -167,6 +167,7 @@ summary {
 
   VLOG(0) << listener()->auto_clustering_activity().DebugString();
   VLOG(0) << expected_auto_clustering_activity;
+  // TODO: Enable this test again after repairing the activity listener
   //  EXPECT_EQ(listener()->auto_clustering_activity().DebugString(),
   //            expected_auto_clustering_activity);
 
