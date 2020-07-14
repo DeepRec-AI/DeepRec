@@ -754,16 +754,6 @@ struct FusedBatchNorm<GPUDevice, T, U> {
     auto saved_inv_var_ptr =
         StreamExecutorUtil::AsDeviceMemory<U>(*saved_inv_var);
 
-    std::unique_ptr<functor::CudnnBatchNormAllocatorInOutput<U>>
-        reserve_space_allocator;
-    std::unique_ptr<functor::CudnnBatchNormAllocatorInTemp<uint8>>
-        workspace_allocator;
-    if (use_reserved_space) {
-      reserve_space_allocator.reset(
-          new functor::CudnnBatchNormAllocatorInOutput<U>(context, 5));
-      workspace_allocator.reset(
-          new functor::CudnnBatchNormAllocatorInTemp<uint8>(context));
-    }
     // TODO(b/137108598): Extend kernel to allow use of exponential averaging.
     const double exponential_average_factor = 1.0;
     bool cudnn_launch_status =
@@ -775,8 +765,8 @@ struct FusedBatchNorm<GPUDevice, T, U> {
                 exponential_average_factor,
                 AsDnnActivationMode(activation_mode), &y_ptr, &batch_mean_ptr,
                 &batch_var_ptr, &saved_mean_ptr, &saved_inv_var_ptr,
-                is_training, reserve_space_allocator.get(),
-                workspace_allocator.get())
+                is_training, reserve_space_allocator,
+                workspace_allocator)
             .ok();
 
     if (!cudnn_launch_status) {
