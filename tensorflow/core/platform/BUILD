@@ -588,7 +588,8 @@ cc_library(
 )
 
 cc_library(
-    name = "resource_loader"
+    name = "resource_loader",
+    hdrs = ["resource_loader.h"]
 )
 
 cc_library(
