@@ -262,7 +262,7 @@ cc_library(
         "//tensorflow/compiler/xla:types",
         "//tensorflow/compiler/xla:util",
         "//tensorflow/core:lib",
-        #"//tensorflow/core/platform:resource_loader",
+        "//tensorflow/core/platform:resource_loader",
     ],
 )
 
@@ -2439,7 +2439,7 @@ tf_cc_test(
         "//tensorflow/compiler/xla/service:platform_util",
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
-        #"//tensorflow/core/platform:resource_loader",
+        "//tensorflow/core/platform:resource_loader",
     ],
 )
 

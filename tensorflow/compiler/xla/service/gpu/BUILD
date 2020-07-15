@@ -1685,7 +1685,7 @@ tf_cc_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        #"//tensorflow/core/platform:resource_loader",
+	"//tensorflow/core/platform:resource_loader",
         "//tensorflow/stream_executor:dnn",
     ],
 )

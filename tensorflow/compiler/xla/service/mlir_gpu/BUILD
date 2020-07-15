@@ -195,7 +195,7 @@ cc_library(
         "//tensorflow/compiler/xla/tests:verified_hlo_module",
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
-        #"//tensorflow/core/platform:resource_loader",
+        "//tensorflow/core/platform:resource_loader",
         "//tensorflow/core/platform:test",
         "@com_google_absl//absl/memory",
         "@llvm-project//llvm:support",
