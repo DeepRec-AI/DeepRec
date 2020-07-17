@@ -17,6 +17,8 @@ limitations under the License.
 // all over the place, we should log an error and execute the original graph.
 #ifdef INTEL_MKL
 
+#include "tensorflow/core/graph/mkl_layout_pass.h"
+
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -34,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/graph/mkl_graph_util.h"
 #include "tensorflow/core/graph/node_builder.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
@@ -42,9 +45,6 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/tensor_format.h"
 #include "tensorflow/core/util/util.h"
-
-#include "tensorflow/core/graph/mkl_graph_util.h"
-#include "tensorflow/core/graph/mkl_layout_pass.h"
 
 namespace tensorflow {
 
@@ -268,11 +268,14 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     csinfo_.dequantize = "Dequantize";
     csinfo_.fused_batch_norm = "FusedBatchNorm";
     csinfo_.fused_batch_norm_grad = "FusedBatchNormGrad";
+    csinfo_.fused_batch_norm_ex = "_FusedBatchNormEx";
     csinfo_.fused_batch_norm_v2 = "FusedBatchNormV2";
     csinfo_.fused_batch_norm_grad_v2 = "FusedBatchNormGradV2";
     csinfo_.fused_batch_norm_v3 = "FusedBatchNormV3";
     csinfo_.fused_batch_norm_grad_v3 = "FusedBatchNormGradV3";
     csinfo_.fused_conv2d = "_FusedConv2D";
+    csinfo_.fused_depthwise_conv2d = "_FusedDepthwiseConv2dNative";
+    csinfo_.fused_matmul = "_FusedMatMul";
     csinfo_.identity = "Identity";
     csinfo_.leakyrelu = "LeakyRelu";
     csinfo_.leakyrelu_grad = "LeakyReluGrad";
@@ -293,7 +296,10 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         "_MklDepthwiseConv2dNativeBackpropInput";
     csinfo_.mkl_depthwise_conv2d_grad_filter =
         "_MklDepthwiseConv2dNativeBackpropFilter";
+    csinfo_.mkl_fused_batch_norm_ex = "_MklFusedBatchNormEx";
     csinfo_.mkl_fused_conv2d = "_MklFusedConv2D";
+    csinfo_.mkl_fused_depthwise_conv2d = "_MklFusedDepthwiseConv2dNative";
+    csinfo_.mkl_fused_matmul = "_MklFusedMatMul";
     csinfo_.mkl_pad_with_conv2d = "_MklPadWithConv2D";
     csinfo_.mkl_pad_with_fused_conv2d = "_MklPadWithFusedConv2D";
     csinfo_.pad = "Pad";
@@ -326,6 +332,10 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         "QuantizedMatMulWithBiasAndRelu";
     csinfo_.quantized_matmul_with_bias_and_relu_and_requantize =
         "QuantizedMatMulWithBiasAndReluAndRequantize";
+    csinfo_.quantized_matmul_with_bias_and_dequantize =
+        "QuantizedMatMulWithBiasAndDequantize";
+    csinfo_.quantized_matmul_with_bias_and_requantize =
+        "QuantizedMatMulWithBiasAndRequantize";
     csinfo_.quantized_depthwise_conv2d = "QuantizedDepthwiseConv2D";
     csinfo_.quantized_depthwise_conv2d_with_bias =
         "QuantizedDepthwiseConv2DWithBias";
@@ -355,10 +365,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     csinfo_.mul = "Mul";
     csinfo_.squared_difference = "SquaredDifference";
     csinfo_.sub = "Sub";
-// End - element-wise ops. See note above.
+    // End - element-wise ops. See note above.
 
-// NOTE: names are alphabetically sorted.
-#ifndef ENABLE_MKLDNN_V1
+    // NOTE: names are alphabetically sorted.
     rinfo_.push_back({csinfo_.addn, mkl_op_registry::GetMklOpName(csinfo_.addn),
                       CopyAttrsAll, AlwaysRewrite,
                       kRewriteForLayoutPropagation});
@@ -385,10 +394,10 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                       kRewriteForLayoutPropagation});
     rinfo_.push_back({csinfo_.batch_matmul,
                       mkl_op_registry::GetMklOpName(csinfo_.batch_matmul),
-                      CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
+                      CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
     rinfo_.push_back({csinfo_.batch_matmul_v2,
                       mkl_op_registry::GetMklOpName(csinfo_.batch_matmul_v2),
-                      CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
+                      CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
     rinfo_.push_back(
         {csinfo_.concat, mkl_op_registry::GetMklOpName(csinfo_.concat),
          CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
@@ -399,12 +408,10 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         {csinfo_.conjugate_transpose,
          mkl_op_registry::GetMklOpName(csinfo_.conjugate_transpose),
          CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
-#endif  // !ENABLE_MKLDNN_V1
     rinfo_.push_back({csinfo_.conv2d,
                       mkl_op_registry::GetMklOpName(csinfo_.conv2d),
                       CopyAttrsConvCheckConstFilter, AlwaysRewrite,
                       kRewriteForLayoutPropagation});
-#ifndef ENABLE_MKLDNN_V1
     rinfo_.push_back({csinfo_.conv2d_with_bias, csinfo_.mkl_conv2d_with_bias,
                       CopyAttrsConvCheckConstFilter, AlwaysRewrite,
                       kRewriteForLayoutPropagation});
@@ -473,15 +480,25 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         {csinfo_.fused_batch_norm_grad_v3,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_grad_v3),
          CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
-
+#ifdef ENABLE_MKLDNN_V1
+    rinfo_.push_back({csinfo_.fused_batch_norm_ex,
+                      csinfo_.mkl_fused_batch_norm_ex, CopyAttrsAll,
+                      FusedBatchNormExRewrite, kRewriteForLayoutPropagation});
+#endif
     rinfo_.push_back({csinfo_.fused_conv2d, csinfo_.mkl_fused_conv2d,
                       CopyAttrsFusedConv2D, FusedConv2DRewrite,
                       kRewriteForLayoutPropagation});
+    rinfo_.push_back({csinfo_.fused_depthwise_conv2d,
+                      csinfo_.mkl_fused_depthwise_conv2d, CopyAttrsFusedConv2D,
+                      FusedDepthwiseConv2DRewrite,
+                      kRewriteForLayoutPropagation});
+    rinfo_.push_back({csinfo_.fused_matmul, csinfo_.mkl_fused_matmul,
+                      CopyAttrsAllCheckConstFilter, FusedMatMulRewrite});
+
     rinfo_.push_back({csinfo_.identity,
                       mkl_op_registry::GetMklOpName(csinfo_.identity),
                       CopyAttrsAll, RewriteIfAtleastOneMklInput,
                       kRewriteForLayoutPropagation});
-
     rinfo_.push_back({csinfo_.lrn, mkl_op_registry::GetMklOpName(csinfo_.lrn),
                       CopyAttrsAll, LrnRewrite, kRewriteForLayoutPropagation});
     rinfo_.push_back(
@@ -489,7 +506,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
          CopyAttrsAll, LrnGradRewrite, kRewriteForLayoutPropagation});
     rinfo_.push_back({csinfo_.matmul,
                       mkl_op_registry::GetMklOpName(csinfo_.matmul),
-                      CopyAttrsAll, AlwaysRewrite, kRewriteForOpNameChange});
+                      CopyAttrsAll, MatMulRewrite, kRewriteForOpNameChange});
     rinfo_.push_back(
         {csinfo_.leakyrelu, mkl_op_registry::GetMklOpName(csinfo_.leakyrelu),
          CopyAttrsAll, LeakyReluRewrite, kRewriteForLayoutPropagation});
@@ -614,6 +631,15 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
          mkl_op_registry::GetMklOpName(
              csinfo_.quantized_matmul_with_bias_and_relu_and_requantize),
          CopyAttrsQuantizedMatMulWithBias, AlwaysRewrite});
+    rinfo_.push_back({csinfo_.quantized_matmul_with_bias_and_requantize,
+                      mkl_op_registry::GetMklOpName(
+                          csinfo_.quantized_matmul_with_bias_and_requantize),
+                      CopyAttrsQuantizedMatMulWithBias, AlwaysRewrite});
+    rinfo_.push_back({csinfo_.quantized_matmul_with_bias_and_dequantize,
+                      mkl_op_registry::GetMklOpName(
+                          csinfo_.quantized_matmul_with_bias_and_dequantize),
+                      CopyAttrsQuantizedMatMulWithBiasAndDequantize,
+                      AlwaysRewrite});
     rinfo_.push_back(
         {csinfo_.quantized_depthwise_conv2d,
          mkl_op_registry::GetMklOpName(csinfo_.quantized_depthwise_conv2d),
@@ -656,20 +682,12 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back(
         {csinfo_.requantize, mkl_op_registry::GetMklOpName(csinfo_.requantize),
          CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
-#endif  // !ENABLE_MKLDNN_V1
-// Disable these two MKL operators for now due to some test failures caused
-// by these two ops
-/*
-rinfo_.push_back({csinfo_.tanh,
-                  mkl_op_registry::GetMklOpName(csinfo_.tanh),
-                  CopyAttrsAll, AlwaysRewrite,
-                  kRewriteForLayoutPropagation});
-rinfo_.push_back({csinfo_.tanh_grad,
-                  mkl_op_registry::GetMklOpName(csinfo_.tanh_grad),
-                  CopyAttrsAll, AlwaysRewrite,
-                  kRewriteForLayoutPropagation});
-*/
-#ifndef ENABLE_MKLDNN_V1
+    rinfo_.push_back({csinfo_.tanh, mkl_op_registry::GetMklOpName(csinfo_.tanh),
+                      CopyAttrsAll, AlwaysRewrite,
+                      kRewriteForLayoutPropagation});
+    rinfo_.push_back(
+        {csinfo_.tanh_grad, mkl_op_registry::GetMklOpName(csinfo_.tanh_grad),
+         CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
     rinfo_.push_back(
         {csinfo_.reshape, mkl_op_registry::GetMklOpName(csinfo_.reshape),
          CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
@@ -771,7 +789,18 @@ rinfo_.push_back({csinfo_.tanh_grad,
          // CheckForMklOp
          FuseConv3D,
          CopyAttrsConv});
-#endif  // !ENABLE_MKLDNN_V1
+
+    auto CheckForMaxPool3DOp =
+        std::bind(CheckForMklOp, std::placeholders::_1, csinfo_.max_pool3d);
+    auto FuseMaxPool3D =
+        std::bind(FuseTransposeMklOpTranspose, std::placeholders::_1,
+                  std::placeholders::_2, std::placeholders::_3, "NCDHW");
+    finfo_.push_back({"transpose-elimination for MaxPool3D",
+                      {CheckForTransposeToNDHWC, CheckForMaxPool3DOp,
+                       CheckForTransposeToNCDHW},
+                      // CheckForMklOp
+                      FuseMaxPool3D,
+                      CopyAttrsPooling});
   }
 
   // Standard interface to run pass
@@ -898,11 +927,14 @@ rinfo_.push_back({csinfo_.tanh_grad,
     string dequantize;
     string fused_batch_norm;
     string fused_batch_norm_grad;
+    string fused_batch_norm_ex;
     string fused_batch_norm_v2;
     string fused_batch_norm_grad_v2;
     string fused_batch_norm_v3;
     string fused_batch_norm_grad_v3;
     string fused_conv2d;
+    string fused_depthwise_conv2d;
+    string fused_matmul;
     string identity;
     string leakyrelu;
     string leakyrelu_grad;
@@ -921,7 +953,10 @@ rinfo_.push_back({csinfo_.tanh_grad,
     string mkl_conv2d_with_bias;
     string mkl_depthwise_conv2d_grad_input;
     string mkl_depthwise_conv2d_grad_filter;
+    string mkl_fused_batch_norm_ex;
     string mkl_fused_conv2d;
+    string mkl_fused_depthwise_conv2d;
+    string mkl_fused_matmul;
     string mkl_pad_with_conv2d;
     string mkl_pad_with_fused_conv2d;
     string mul;
@@ -946,6 +981,8 @@ rinfo_.push_back({csinfo_.tanh_grad,
     string quantized_matmul_with_bias;
     string quantized_matmul_with_bias_and_relu;
     string quantized_matmul_with_bias_and_relu_and_requantize;
+    string quantized_matmul_with_bias_and_requantize;
+    string quantized_matmul_with_bias_and_dequantize;
     string quantized_depthwise_conv2d;
     string quantized_depthwise_conv2d_with_bias;
     string quantized_depthwise_conv2d_with_bias_and_relu;
@@ -1079,8 +1116,13 @@ rinfo_.push_back({csinfo_.tanh_grad,
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
+#ifndef ENABLE_INTEL_MKL_BFLOAT16
     // Don't try to merge if datatype is not DT_FLOAT
     if (T_m != DT_FLOAT) return n;
+#else
+    // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
+    if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
+#endif
 
     if (m->type_string() == csinfo_.bias_add) {
       // If a is BiasAdd, then Conv2D is 0th input of BiasAdd.
@@ -1236,8 +1278,13 @@ rinfo_.push_back({csinfo_.tanh_grad,
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
+#ifndef ENABLE_INTEL_MKL_BFLOAT16
     // Don't try to merge if datatype is not DT_FLOAT
     if (T_m != DT_FLOAT) return n;
+#else
+    // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
+    if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
+#endif
 
     if (m->type_string() == csinfo_.bias_add_grad) {
       // Get 1st input 'g' of BiasAddGrad.
@@ -1346,8 +1393,10 @@ rinfo_.push_back({csinfo_.tanh_grad,
                 node->name()));
             return false;
           }
+          // Current fusion only supports 4D or 5D tensors according to `perm`
+          // vector, return false otherwise.
+          if (tensor.dim_size(0) != perm.size()) return false;
           DCHECK_EQ(tensor.dims(), 1);
-          DCHECK_EQ(tensor.dim_size(0), perm.size());
           if (type == DT_INT32) {
             const auto tensor_content = tensor.flat<int>().data();
             for (int i = 0; i < perm.size(); ++i)
@@ -1427,6 +1476,16 @@ rinfo_.push_back({csinfo_.tanh_grad,
     return false;
   }
 
+  static bool MatMulRewrite(const Node* n) {
+    DataType T;
+    GetNodeAttr(n->def(), "T", &T);
+    if ((T == DT_FLOAT) || (T == DT_BFLOAT16)) {
+      VLOG(2) << "Rewriting MatMul to _MklMatMul";
+      return true;
+    }
+    return false;
+  }
+
   static bool DequantizeRewrite(const Node* n) {
     DCHECK(n);
     Node* input = nullptr;
@@ -1446,9 +1505,20 @@ rinfo_.push_back({csinfo_.tanh_grad,
                  "Eigen op for Dequantize op.";
       return false;
     }
-    // TODO(sriniva2/mabuzain) Enable the op after verifying support for
-    // object detection models
-    return false;
+    return true;
+  }
+
+  // Rewrite rule for _FusedMatMul.
+  // @return - true (no transpose attribute for input 1);
+  //           false otherwise.
+  static bool FusedMatMulRewrite(const Node* n) {
+    bool trans_a;
+
+    // Do not rewrite with transpose attribute because reorder has performance
+    // impact.
+    TF_CHECK_OK(GetNodeAttr(n->def(), "transpose_a", &trans_a));
+
+    return !trans_a;
   }
 
   // Check if we are performing pooling on depth or batch. If it is, then we
@@ -1545,12 +1615,33 @@ rinfo_.push_back({csinfo_.tanh_grad,
     DCHECK(n);
     Node* filter_node = nullptr;
     TF_CHECK_OK(n->input_node(0, &filter_node));
+    bool narrow_range = false;
+    int axis = -1;
     string mode_string;
     string round_mode_string;
+    DataType type;
+    TryGetNodeAttr(n->def(), "narrow_range", &narrow_range);
+    TryGetNodeAttr(n->def(), "axis", &axis);
     TF_CHECK_OK(GetNodeAttr(n->def(), "mode", &mode_string));
     TF_CHECK_OK(GetNodeAttr(n->def(), "round_mode", &round_mode_string));
-    if (mode_string != "SCALED" || round_mode_string != "HALF_TO_EVEN") {
-      VLOG(1) << "QuantizeOpRewrite: Mode is not SCALED and/or"
+    TF_CHECK_OK(GetNodeAttr(n->def(), "T", &type));
+
+    if (narrow_range) {
+      VLOG(1) << "QuantizeOpRewrite: narrow range is enabled for quantization."
+              << "This case is not optimized by Intel MKL, "
+              << "thus using Eigen op for Quantize op ";
+      return false;
+    }
+    if (axis != -1) {
+      VLOG(1) << "QuantizeOpRewrite: dimension is specified for "
+              << "per slice quantization."
+              << "This case is not optimized by Intel MKL, "
+              << "thus using Eigen op for Quantize op ";
+      return false;
+    }
+    if (!((mode_string == "SCALED" && round_mode_string == "HALF_TO_EVEN") ||
+          (mode_string == "MIN_FIRST"))) {
+      VLOG(1) << "QuantizeOpRewrite: Mode is not SCALED or MIN_FIRST and/or"
               << "rounding mode is not HALF_TO_EVEN. "
               << "This case is not optimized by Intel MKL, thus using Eigen op"
               << "for Quantize op ";
@@ -1563,6 +1654,14 @@ rinfo_.push_back({csinfo_.tanh_grad,
               << "for Quantize op ";
 
       return false;
+    }
+    if (mode_string == "MIN_FIRST") {
+      if (type != DT_QUINT8) {
+        VLOG(1) << "QuantizeOpRewrite: For MIN_FIRST mode the data type is "
+                << "not DT_UINT8. This case is not optimized by Intel MKL, "
+                << "thus using Eigen op for Quantize op ";
+        return false;
+      }
     }
     return true;
   }
@@ -1582,6 +1681,31 @@ rinfo_.push_back({csinfo_.tanh_grad,
       }
     }
     return do_rewrite;
+  }
+
+  static bool FusedBatchNormExRewrite(const Node* n) {
+    DCHECK(n);
+
+    int num_side_inputs;
+    TF_CHECK_OK(GetNodeAttr(n->def(), "num_side_inputs", &num_side_inputs));
+    string activation_mode;
+    TF_CHECK_OK(GetNodeAttr(n->def(), "activation_mode", &activation_mode));
+
+    // if the num_side_inputs is not 0, don't rewrite the node.
+    if (num_side_inputs != 0) {
+      VLOG(1) << "FusedBatchNormExRewrite: The model sets num_side_inputs"
+              << "larger than 0 is not optimized by Intel MKL.";
+      return false;
+    }
+
+    // if the activation_mode is not 'Relu', don't rewrite the node.
+    if (activation_mode != "Relu") {
+      VLOG(1) << "FusedBatchNormExRewrite: Only Relu activation mode is"
+              << "supported by Intel MKL.";
+      return false;
+    }
+
+    return true;
   }
 
   static bool FusedConv2DRewrite(const Node* n) {
@@ -1605,6 +1729,25 @@ rinfo_.push_back({csinfo_.tanh_grad,
             fused_ops == std::vector<string>{"BiasAdd", "Elu"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add"} ||
             fused_ops == std::vector<string>{"BiasAdd", "Add", "Relu"});
+  }
+
+  static bool FusedDepthwiseConv2DRewrite(const Node* n) {
+    // MKL DNN currently doesn't support all fusions that grappler fuses
+    // together with DepthwiseConv2D (ex. batchnorm). We rewrite
+    // _FusedDepthwiseConv2DNative only if it includes those we support.
+    DataType T;
+    if (!TryGetNodeAttr(n->def(), "T", &T) ||
+        !mkl_op_registry::IsMklLayoutDependentOp(
+            csinfo_.mkl_fused_depthwise_conv2d, T)) {
+      return false;
+    }
+
+    std::vector<string> fused_ops;
+    TF_CHECK_OK(GetNodeAttr(n->def(), "fused_ops", &fused_ops));
+    return (fused_ops == std::vector<string>{"BiasAdd"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "Relu"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "Relu6"} ||
+            fused_ops == std::vector<string>{"BiasAdd", "Elu"});
   }
 
   // Rewrites input node to a new node specified by its matching rewrite info.
@@ -1805,6 +1948,10 @@ rinfo_.push_back({csinfo_.tanh_grad,
   // NOTE: names are alphabetically sorted.
   static void CopyAttrsAll(const Node* orig_node, NodeBuilder* nb,
                            bool change_format = false);
+  static void CopyAttrsAllCheckConstFilter(const Node* orig_node,
+                                           NodeBuilder* nb,
+                                           bool change_format = false);
+
   static void CopyAttrsConv(const Node* orig_node, NodeBuilder* nb,
                             bool change_format = false);
   static void CopyAttrsConv2DDepthwiseCheckConstFilter(
@@ -1836,6 +1983,10 @@ rinfo_.push_back({csinfo_.tanh_grad,
   static void CopyAttrsQuantizedMatMulWithBias(const Node* orig_node,
                                                NodeBuilder* nb,
                                                bool change_format = false);
+  static void CopyAttrsQuantizedMatMulWithBiasAndDequantize(
+      const Node* orig_node, NodeBuilder* nb, bool change_format = false);
+  static void CopyAttrsPooling(const Node* orig_node, NodeBuilder* nb,
+                               bool change_format = false);
 
   // Generate a graph node in graph 'g' representing a dummy Mkl tensor node,
   // using node for original node 'orig_node' and return it in '*out'.
@@ -2055,9 +2206,6 @@ int MklLayoutRewritePass::SetUpContiguousInputs(
   // Number of input slots to original op
   // Input slots are represented by .Input() calls in REGISTER_OP.
   int old_node_input_slots = old_node->op_def().input_arg_size();
-  // Actual number of inputs can be greater than or equal to number
-  // of Input slots because inputs of type list could be unfolded.
-  CHECK_GE(old_node_inputs.size(), old_node_input_slots);
   int nn_slot_idx = 0;  // slot index for inputs of new node
 
   // Let's copy all inputs (TF tensors) of original node to new node.
@@ -2065,13 +2213,14 @@ int MklLayoutRewritePass::SetUpContiguousInputs(
   for (int on_slot_idx = 0; on_slot_idx < old_node_input_slots; on_slot_idx++) {
     // An input slot could be a single tensor or a list. We need
     // to handle this case accordingly.
-    CHECK_LT(iidx, old_node_inputs.size());
     const OpDef::ArgDef& arg = old_node->op_def().input_arg(on_slot_idx);
     if (ArgIsList(arg)) {
       std::vector<NodeBuilder::NodeOut> new_node_inputs;
-      int N = GetTensorListLength(arg, old_node);
-      GetNodesProducingTFTensorList(old_node_inputs, &iidx, N,
-                                    &new_node_inputs);
+      int tensor_list_length = GetTensorListLength(arg, old_node);
+      if (tensor_list_length != 0) {
+        GetNodesProducingTFTensorList(old_node_inputs, &iidx,
+                                      tensor_list_length, &new_node_inputs);
+      }
       nb->Input(new_node_inputs);
       nn_slot_idx++;
     } else {
@@ -2104,13 +2253,14 @@ int MklLayoutRewritePass::SetUpContiguousInputs(
   for (int on_slot_idx = 0; on_slot_idx < old_node_input_slots; on_slot_idx++) {
     // An input slot could be a single tensor or a list. We need
     // to handle this case accordingly.
-    CHECK_LT(iidx, old_node_inputs.size());
     const OpDef::ArgDef& arg = old_node->op_def().input_arg(on_slot_idx);
     if (ArgIsList(arg)) {
       std::vector<NodeBuilder::NodeOut> new_node_inputs;
-      int N = GetTensorListLength(arg, old_node);
-      GetNodesProducingMklTensorList(g, old_node, old_node_inputs, &iidx, N,
-                                     &new_node_inputs);
+      int tensor_list_length = GetTensorListLength(arg, old_node);
+      if (tensor_list_length != 0) {
+        GetNodesProducingMklTensorList(g, old_node, old_node_inputs, &iidx,
+                                       tensor_list_length, &new_node_inputs);
+      }
       nb->Input(new_node_inputs);
       nn_slot_idx++;
     } else {
@@ -2174,6 +2324,8 @@ Status MklLayoutRewritePass::SetUpInputs(
       "QuantizedConv2DWithBiasSumAndReluAndRequantize",
       "QuantizedConv2DWithBiasSignedSumAndReluAndRequantize",
       "QuantizedMatMulWithBias",
+      "QuantizedMatMulWithBiasAndRequantize",
+      "QuantizedMatMulWithBiasAndDequantize",
       "QuantizedMatMulWithBiasAndRelu",
       "QuantizedMatMulWithBiasAndReluAndRequantize",
       "QuantizedDepthwiseConv2D",
@@ -2390,6 +2542,18 @@ void MklLayoutRewritePass::CopyAttrsAll(const Node* orig_node, NodeBuilder* nb,
     nb->Attr(name, attr);
     ++iter;
   }
+}
+
+// Generic function to copy all attributes and check if filter is const.
+void MklLayoutRewritePass::CopyAttrsAllCheckConstFilter(const Node* orig_node,
+                                                        NodeBuilder* nb,
+                                                        bool change_format) {
+  CopyAttrsAll(orig_node, nb, change_format);
+
+  // Check and set filter attribute.
+  Node* filter_node = nullptr;
+  TF_CHECK_OK(orig_node->input_node(1, &filter_node));
+  nb->Attr("is_filter_const", filter_node->IsConstant());
 }
 
 void MklLayoutRewritePass::CopyAttrsConvCheckConstFilter(const Node* orig_node,
@@ -2633,7 +2797,7 @@ void MklLayoutRewritePass::CopyAttrsQuantizedConv2D(const Node* orig_node,
   if (bias_status.ToString() == "OK") nb->Attr("Tbias", Tbias);
 }
 
-void MklLayoutRewritePass::CopyAttrsQuantizedMatMulWithBias(
+void MklLayoutRewritePass::CopyAttrsQuantizedMatMulWithBiasAndDequantize(
     const Node* orig_node, NodeBuilder* nb, bool change_format) {
   DataType T1, T2, Toutput;
 
@@ -2646,6 +2810,31 @@ void MklLayoutRewritePass::CopyAttrsQuantizedMatMulWithBias(
   nb->Attr("T1", T1);
   nb->Attr("T2", T2);
   nb->Attr("Toutput", Toutput);
+  nb->Attr("T", T1);  // added "T" for facilitating MklToTf conversion.
+
+  // Requantization attr Tbias
+  DataType Tbias;
+  Status bias_status = GetNodeAttr(orig_node->def(), "Tbias", &Tbias);
+  if (bias_status.ToString() == "OK") nb->Attr("Tbias", Tbias);
+}
+
+void MklLayoutRewritePass::CopyAttrsQuantizedMatMulWithBias(
+    const Node* orig_node, NodeBuilder* nb, bool change_format) {
+  DataType T1, T2, Toutput;
+
+  // Get all attributes from old node.
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "T1", &T1));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "T2", &T2));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "Toutput", &Toutput));
+
+  Node* weight_node = nullptr;
+  TF_CHECK_OK(orig_node->input_node(1, &weight_node));
+
+  // Add attributes to new node.
+  nb->Attr("T1", T1);
+  nb->Attr("T2", T2);
+  nb->Attr("Toutput", Toutput);
+  nb->Attr("is_weight_const", weight_node->IsConstant());
   nb->Attr("T", Toutput);  // added "T" for facilitating MklToTf conversion.
 
   // Requantization attr Tbias
@@ -2728,6 +2917,60 @@ void MklLayoutRewritePass::CopyAttrsFusedConv2D(const Node* orig_node,
   nb->Attr("dilations", dilations);
   nb->Attr("fused_ops", fused_ops);
   nb->Attr("epsilon", epsilon);
+}
+
+void MklLayoutRewritePass::CopyAttrsPooling(const Node* orig_node,
+                                            NodeBuilder* nb,
+                                            bool change_format) {
+  DataType T;
+  string data_format;
+  string padding;
+  std::vector<int32> ksize, strides;
+
+  // Get all attributes from old node.
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "T", &T));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "ksize", &ksize));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "strides", &strides));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "padding", &padding));
+  TF_CHECK_OK(GetNodeAttr(orig_node->def(), "data_format", &data_format));
+
+  // Add attributes to new node.
+  nb->Attr("T", T);
+  nb->Attr("padding", padding);
+
+  if (!change_format) {
+    nb->Attr("strides", strides);
+    nb->Attr("ksize", ksize);
+
+    nb->Attr("data_format", data_format);
+  } else {
+    std::vector<int32> new_strides;
+    std::vector<int32> new_ksize;
+    if (strides.size() == 5) {
+      DCHECK(data_format == "NCDHW");
+      // `strides` and `ksize` also need to be changed according to
+      // `data_format`. In this case, from `NDHWC` to `NCDHW`.
+      new_strides = {strides[NDHWC::dim::N], strides[NDHWC::dim::C],
+                     strides[NDHWC::dim::D], strides[NDHWC::dim::H],
+                     strides[NDHWC::dim::W]};
+
+      new_ksize = {ksize[NDHWC::dim::N], ksize[NDHWC::dim::C],
+                   ksize[NDHWC::dim::D], ksize[NDHWC::dim::H],
+                   ksize[NDHWC::dim::W]};
+
+    } else {
+      // `strides` and `ksize` also need to be changed according to
+      // `data_format`. In this case, from `NHWC` to `NCHW`.
+      DCHECK(data_format == "NCHW");
+      new_strides = {strides[NHWC::dim::N], strides[NHWC::dim::C],
+                     strides[NHWC::dim::H], strides[NHWC::dim::W]};
+
+      new_ksize = {ksize[NHWC::dim::N], ksize[NHWC::dim::C],
+                   ksize[NHWC::dim::H], ksize[NHWC::dim::W]};
+    }
+    nb->Attr("strides", new_strides);
+    nb->Attr("ksize", new_ksize);
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -3502,7 +3745,7 @@ const MklLayoutRewritePass::RewriteInfo*
 MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
   CHECK_NOTNULL(n);
 
-  // QuntizedOps may have attributes other than "T", so decoupled the check
+  // QuantizedOps may have attributes other than "T", so decoupled the check
   // with a function, CheckForQuantizedNodeRewrite(const Node*).
   const RewriteInfo* ri = CheckForQuantizedNodeRewrite(n);
   if (ri != nullptr) return ri;
@@ -3533,7 +3776,10 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
       n->type_string() != csinfo_.pad_with_conv2d &&
       n->type_string() != csinfo_.pad_with_fused_conv2d &&
       n->type_string() != csinfo_.conv2d_grad_filter_with_bias &&
+      n->type_string() != csinfo_.fused_batch_norm_ex &&
       n->type_string() != csinfo_.fused_conv2d &&
+      n->type_string() != csinfo_.fused_depthwise_conv2d &&
+      n->type_string() != csinfo_.fused_matmul &&
       !mkl_op_registry::IsMklOp(mkl_op_registry::GetMklOpName(n->type_string()),
                                 T)) {
     return nullptr;
@@ -3651,7 +3897,7 @@ MklLayoutRewritePass::CheckForNodeFusion(Node* a) const {
     // a.k.a. "a->b->c" matches "op1->op2->op3"
     //
 
-    // Stores the first unvisted outgoing edge of each matched node in "nodes".
+    // Stores the first unvisited outgoing edge of each matched node in "nodes".
     std::stack<EdgeSet::const_iterator> current_neighbor_stack;
     nodes.clear();
 

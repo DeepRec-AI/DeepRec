@@ -15,8 +15,8 @@ limitations under the License.
 
 // An optimization pass that inserts MklToTf conversion nodes in the graph
 
-#ifndef TENSORFLOW_CORE_GRAPH_MKL_TFCONVERSION_PASS_H_
-#define TENSORFLOW_CORE_GRAPH_MKL_TFCONVERSION_PASS_H_
+#ifndef TENSORFLOW_CORE_COMMON_RUNTIME_MKL_TFCONVERSION_PASS_H_
+#define TENSORFLOW_CORE_COMMON_RUNTIME_MKL_TFCONVERSION_PASS_H_
 
 #ifdef INTEL_MKL
 
@@ -37,4 +37,4 @@ extern bool InsertMklToTfConversionNodes(std::unique_ptr<Graph>* g);
 
 #endif
 
-#endif  // TENSORFLOW_CORE_GRAPH_MKL_TFCONVERSION_PASS_H_
+#endif  // TENSORFLOW_CORE_COMMON_RUNTIME_MKL_TFCONVERSION_PASS_H_

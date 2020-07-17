@@ -22,6 +22,8 @@ limitations under the License.
 #include "tensorflow/core/util/padding.h"
 #include "tensorflow/core/util/tensor_format.h"
 
+#define COMPAT_WITH_V2
+
 namespace tensorflow {
 
 using shape_inference::DimensionHandle;
@@ -179,6 +181,9 @@ REGISTER_OP("FusedBatchNorm")
     .Output("reserve_space_2: T")
     .Attr("T: {float}")
     .Attr("epsilon: float = 0.0001")
+#ifdef COMPAT_WITH_V2
+    .Attr("exponential_avg_factor: float = 1.0")
+#endif
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormShape);
@@ -197,6 +202,9 @@ REGISTER_OP("FusedBatchNormV2")
     .Attr("T: {half, bfloat16, float}")
     .Attr("U: {float}")
     .Attr("epsilon: float = 0.0001")
+#ifdef COMPAT_WITH_V2
+    .Attr("exponential_avg_factor: float = 1.0")
+#endif
     .Attr(GetConvnetDataFormatAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormShape);
@@ -216,6 +224,9 @@ REGISTER_OP("FusedBatchNormV3")
     .Attr("T: {half, bfloat16, float}")
     .Attr("U: {float}")
     .Attr("epsilon: float = 0.0001")
+#ifdef COMPAT_WITH_V2
+    .Attr("exponential_avg_factor: float = 1.0")
+#endif
     .Attr(GetConvnetDataFormat2D3DAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormV3Shape);
@@ -233,9 +244,16 @@ REGISTER_OP("_FusedBatchNormEx")
     .Output("reserve_space_1: U")
     .Output("reserve_space_2: U")
     .Output("reserve_space_3: U")
+#ifdef ENABLE_MKLDNN_V1
+    .Attr("T: {half, float, bfloat16}")
+#else
     .Attr("T: {half, float}")
+#endif
     .Attr("U: {float}")
     .Attr("epsilon: float = 0.0001")
+#ifdef COMPAT_WITH_V2
+    .Attr("exponential_avg_factor: float = 1.0")
+#endif
     .Attr("num_side_inputs: int >= 0 = 0")
     .Attr("activation_mode: string = \"Identity\"")
     .Attr(GetConvnetDataFormat2D3DAttrString())
@@ -592,6 +610,25 @@ REGISTER_OP("DepthwiseConv2dNativeBackpropFilter")
       c->set_output(0, s);
       return Status::OK();
     });
+
+#ifdef COMPAT_WITH_V2
+REGISTER_OP("_FusedDepthwiseConv2dNative")
+    .Input("input: T")
+    .Input("filter: T")
+    .Input("args: num_args * T")
+    .Output("output: T")
+    .Attr("T: {half, bfloat16, float, double}")
+    .Attr("num_args: int >= 0")
+    .Attr("strides: list(int)")
+    .Attr(GetPaddingAttrString())
+    .Attr(GetConvnetDataFormatAttrString())
+    .Attr("dilations: list(int) = [1, 1, 1, 1]")
+    .Attr("fused_ops: list(string) = []")
+    // Attributes for the FusedBatchNorm ------------------------------------ //
+    .Attr("epsilon: float = 0.0001")
+    // ---------------------------------------------------------------------- //
+    .SetShapeFn(shape_inference::DepthwiseConv2DNativeShape);
+#endif
 
 // --------------------------------------------------------------------------
 REGISTER_OP("Conv3D")
@@ -2521,6 +2558,9 @@ REGISTER_OP("_MklFusedBatchNorm")
     .Attr("epsilon: float = 0.0001")
     .Attr("data_format: string = 'NHWC'")
     .Attr("is_training: bool = true")
+#ifdef COMPAT_WITH_V2
+    .Attr("exponential_avg_factor: float = 1.0")
+#endif
     .SetShapeFn([](InferenceContext* c) {
       ShapeHandle x;
       TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &x));
@@ -3183,6 +3223,75 @@ REGISTER_OP("QuantizedMatMulWithBiasAndReluAndRequantize")
       c->set_output(2, c->Scalar());
       return Status::OK();
     });
+
+#ifdef COMPAT_WITH_V2
+REGISTER_OP("QuantizedMatMulWithBiasAndDequantize")
+    .Input("a: T1")
+    .Input("b: T2")
+    .Input("bias: Tbias")
+    .Input("min_a: float")
+    .Input("max_a: float")
+    .Input("min_b: float")
+    .Input("max_b: float")
+    .Input("min_freezed_output: float")
+    .Input("max_freezed_output: float")
+    .Output("out: Toutput")
+    .Attr("T1: quantizedtype")
+    .Attr("T2: quantizedtype")
+    .Attr("Tbias: {float, qint32}")
+    .Attr("Toutput: {float}")
+    .Attr("transpose_a: bool = false")
+    .Attr("transpose_b: bool = false")
+    .Attr("input_quant_mode: {'MIN_FIRST', 'SCALED'} = 'MIN_FIRST'")
+    .SetShapeFn([](InferenceContext* c) {
+      TF_RETURN_IF_ERROR(shape_inference::MatMulShape(c));
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(5), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(6), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(7), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(8), 0, &unused));
+
+      return Status::OK();
+    });
+
+REGISTER_OP("QuantizedMatMulWithBiasAndRequantize")
+    .Input("a: T1")
+    .Input("b: T2")
+    .Input("bias: Tbias")
+    .Input("min_a: float")
+    .Input("max_a: float")
+    .Input("min_b: float")
+    .Input("max_b: float")
+    .Input("min_freezed_output: float")
+    .Input("max_freezed_output: float")
+    .Output("out: Toutput")
+    .Output("min_out: float")
+    .Output("max_out: float")
+    .Attr("T1: quantizedtype")
+    .Attr("T2: quantizedtype")
+    .Attr("Tbias: {float, qint32}")
+    .Attr("Toutput: quantizedtype = DT_QUINT8")
+    .Attr("transpose_a: bool = false")
+    .Attr("transpose_b: bool = false")
+    .Attr("input_quant_mode: {'MIN_FIRST', 'SCALED'} = 'MIN_FIRST'")
+    .SetShapeFn([](InferenceContext* c) {
+      TF_RETURN_IF_ERROR(shape_inference::MatMulShape(c));
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(5), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(6), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(7), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(8), 0, &unused));
+      c->set_output(1, c->Scalar());
+      c->set_output(2, c->Scalar());
+      return Status::OK();
+    });
+#endif
 
 REGISTER_OP("QuantizedConv2DPerChannel")
     .Input("input: Tinput")

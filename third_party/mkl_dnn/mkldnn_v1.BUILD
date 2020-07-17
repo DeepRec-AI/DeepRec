@@ -4,6 +4,7 @@ load(
     "@org_tensorflow//third_party/mkl_dnn:build_defs.bzl",
     "if_mkl_open_source_only",
     "if_mkl_v1_open_source_only",
+    "if_mkldnn_threadpool",
 )
 load(
     "@org_tensorflow//third_party:common.bzl",
@@ -18,14 +19,26 @@ config_setting(
     },
 )
 
+_DNNL_RUNTIME_OMP = {
+    "#cmakedefine DNNL_CPU_THREADING_RUNTIME DNNL_RUNTIME_${DNNL_CPU_THREADING_RUNTIME}": "#define DNNL_CPU_THREADING_RUNTIME DNNL_RUNTIME_OMP",
+    "#cmakedefine DNNL_CPU_RUNTIME DNNL_RUNTIME_${DNNL_CPU_RUNTIME}": "#define DNNL_CPU_RUNTIME DNNL_RUNTIME_OMP",
+    "#cmakedefine DNNL_GPU_RUNTIME DNNL_RUNTIME_${DNNL_GPU_RUNTIME}": "#define DNNL_GPU_RUNTIME DNNL_RUNTIME_NONE",
+}
+
+_DNNL_RUNTIME_THREADPOOL = {
+    "#cmakedefine DNNL_CPU_THREADING_RUNTIME DNNL_RUNTIME_${DNNL_CPU_THREADING_RUNTIME}": "#define DNNL_CPU_THREADING_RUNTIME DNNL_RUNTIME_THREADPOOL",
+    "#cmakedefine DNNL_CPU_RUNTIME DNNL_RUNTIME_${DNNL_CPU_RUNTIME}": "#define DNNL_CPU_RUNTIME DNNL_RUNTIME_THREADPOOL",
+    "#cmakedefine DNNL_GPU_RUNTIME DNNL_RUNTIME_${DNNL_GPU_RUNTIME}": "#define DNNL_GPU_RUNTIME DNNL_RUNTIME_NONE",
+}
+
 template_rule(
-    name = "mkldnn_config_h",
-    src = "include/mkldnn_config.h.in",
-    out = "include/mkldnn_config.h",
-    substitutions = {
-        "#cmakedefine MKLDNN_CPU_BACKEND MKLDNN_BACKEND_${MKLDNN_CPU_BACKEND}": "#define MKLDNN_CPU_BACKEND MKLDNN_BACKEND_NATIVE",
-        "#cmakedefine MKLDNN_GPU_BACKEND MKLDNN_BACKEND_${MKLDNN_GPU_BACKEND}": "#define MKLDNN_GPU_BACKEND MKLDNN_BACKEND_NONE",
-    },
+    name = "dnnl_config_h",
+    src = "include/dnnl_config.h.in",
+    out = "include/dnnl_config.h",
+    substitutions = if_mkldnn_threadpool(
+        _DNNL_RUNTIME_THREADPOOL,
+        if_false = _DNNL_RUNTIME_OMP,
+    ),
 )
 
 # Create the file mkldnn_version.h with MKL-DNN version numbers.
@@ -35,18 +48,16 @@ template_rule(
 # set to "version_major.version_minor.version_patch". The git hash version can
 # be set to NA.
 # TODO(agramesh1) Automatically get the version numbers from CMakeLists.txt.
-# TODO(bhavanis): MKL-DNN minor version needs to be updated for MKL-DNN v1.x.
-# The current version numbers will work only if MKL-DNN v0.21 is used.
 
 template_rule(
-    name = "mkldnn_version_h",
-    src = "include/mkldnn_version.h.in",
-    out = "include/mkldnn_version.h",
+    name = "dnnl_version_h",
+    src = "include/dnnl_version.h.in",
+    out = "include/dnnl_version.h",
     substitutions = {
-        "@MKLDNN_VERSION_MAJOR@": "0",
-        "@MKLDNN_VERSION_MINOR@": "21",
-        "@MKLDNN_VERSION_PATCH@": "3",
-        "@MKLDNN_VERSION_HASH@": "N/A",
+        "@DNNL_VERSION_MAJOR@": "1",
+        "@DNNL_VERSION_MINOR@": "4",
+        "@DNNL_VERSION_PATCH@": "0",
+        "@DNNL_VERSION_HASH@": "N/A",
     },
 )
 
@@ -60,9 +71,10 @@ cc_library(
         "src/cpu/**/*.cpp",
         "src/cpu/**/*.hpp",
         "src/cpu/xbyak/*.h",
-    ]) + if_mkl_v1_open_source_only([
-        ":mkldnn_config_h",
-    ]) + [":mkldnn_version_h"],
+    ]) + [
+        ":dnnl_config_h",
+        ":dnnl_version_h",
+    ],
     hdrs = glob(["include/*"]),
     copts = [
         "-fexceptions",
@@ -72,6 +84,9 @@ cc_library(
         "-UUSE_MKL",
         "-UUSE_CBLAS",
     ]) + if_mkl_v1_open_source_only([
+        "-UUSE_MKL",
+        "-UUSE_CBLAS",
+    ]) + if_mkldnn_threadpool([
         "-UUSE_MKL",
         "-UUSE_CBLAS",
     ]) + select({
@@ -119,7 +134,7 @@ cc_library(
         "src/cpu/**/*.cpp",
         "src/cpu/**/*.hpp",
         "src/cpu/xbyak/*.h",
-    ]) + [":mkldnn_version_h"],
+    ]) + [":dnnl_config_h"],
     hdrs = glob(["include/*"]),
     copts = [
         "-fexceptions",

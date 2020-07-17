@@ -17,9 +17,12 @@ limitations under the License.
 #define TENSORFLOW_CORE_GRAPH_MKL_GRAPH_UTIL_H_
 #ifdef INTEL_MKL
 
+#include "absl/base/call_once.h"
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/types.pb_text.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/platform/cpu_info.h"
 
 namespace tensorflow {
 // Since our ops are going to produce and also consume N addition tensors
@@ -74,7 +77,7 @@ int inline GetTensorMetaDataIndex(int n, int total_tensors) {
   return DataIndexToMetaDataIndex(tidx, total_tensors);
 }
 
-// check if the control between src and dst nodes alreay exists
+// check if the control between src and dst nodes already exists
 bool inline DoesControlEdgeExist(const Node* src, const Node* dst) {
   for (const Edge* edge : src->out_edges()) {
     if (edge->IsControlEdge() && edge->dst() == dst) {
@@ -122,6 +125,20 @@ inline string GetMklEagerOpName(const string& name) {
   return string(kMklEagerOpPrefix) + name;
 }
 
+#ifdef ENABLE_INTEL_MKL_BFLOAT16
+static inline bool IsBF16SupportedByOneDNNOnThisCPU() {
+  return port::TestCPUFeature(port::CPUFeature::AVX512F);
+}
+#endif
+
+static inline void BF16UnsupportedWarning() {
+  static absl::once_flag cpu_bfloat16_warn_once_flag;
+  absl::call_once(cpu_bfloat16_warn_once_flag, [] {
+    LOG(ERROR) << "oneDNN BFloat16 support are only on platforms with AVX512. "
+                  "Falling back to default implementation if present.";
+  });
+}
+
 // Check whether opname with type T is registered as MKL operator
 // that can accept input tensors in MKL layout.
 //
@@ -136,10 +153,28 @@ static inline bool IsMklLayoutDependentOp(const string& op_name, DataType T) {
   if (kernel.find(kMklQuantizedOpLabelPattern) != string::npos) {
     return (T == DT_QUINT8 || T == DT_QINT8 || T == DT_QINT32);
   }
+#ifdef ENABLE_INTEL_MKL_BFLOAT16
+  // Restrict regular ops to FLOAT and BFLOAT16
+  if (kernel.find(kMklLayoutDependentOpLabelPattern) != string::npos) {
+    if (T == DT_FLOAT) return true;
+    if (T == DT_BFLOAT16) {
+      if (IsBF16SupportedByOneDNNOnThisCPU()) {
+        return true;
+      } else {
+        // Restrict bfloat16 ops to platforms with at least AVX512 support, fall
+        // back to Eigen implementation otherwise.
+        BF16UnsupportedWarning();
+        return false;
+      }
+    }
+    return false;
+  }
+#else
   // Restrict regular ops to FLOAT
   if (kernel.find(kMklLayoutDependentOpLabelPattern) != string::npos) {
     return (T == DT_FLOAT);
   }
+#endif  // ENABLE_INTEL_MKL_BFLOAT16
   return false;
 }
 
@@ -152,7 +187,7 @@ static inline bool IsMklLayoutDependentOp(const string& op_name,
 
   // Restrict quantized ops to QUINT8 and QINT8 for now
   if (kernel.find(kMklQuantizedOpLabelPattern) != string::npos) {
-    return (Tinput == DT_QUINT8 && Tfilter == DT_QINT8);
+    return (Tfilter == DT_QINT8);
   }
   return false;
 }
@@ -177,9 +212,35 @@ static inline bool IsMklNameChangeOp(const string& op_name, DataType T) {
   // Now we just construct a search string to match what we are looking for.
   string search_string = kMklNameChangeOpLabelPattern;
   search_string += string(";") + string(" T in [");
-  search_string += EnumName_DataType(T) + string("]");
+  search_string += DataType_Name(T) + string("]");
 
-  return kernel.find(search_string) != string::npos;
+  // Temporarily replacing earlier check by adding a type-specific check so
+  // that we can selectively decide which type is supported by MKL operators.
+  // That way kernel registration does not decide which operators we support.
+  // We are using this change to temporarily disable BFLOAT16 support. Once
+  // we want to enable it, we will go back to earlier check.
+  bool isTypeAllowed = false;
+  if (kernel.find(search_string) != string::npos) {
+    isTypeAllowed = (T == DT_COMPLEX128 || T == DT_COMPLEX64 ||
+                     T == DT_DOUBLE || T == DT_FLOAT);
+#ifdef ENABLE_INTEL_MKL_BFLOAT16
+    if (!isTypeAllowed) {
+      if (T == DT_BFLOAT16) {
+        if (IsBF16SupportedByOneDNNOnThisCPU()) {
+          isTypeAllowed = true;
+        } else {
+          // Restrict bfloat16 ops to platforms with at least AVX512 support,
+          // fall back to Eigen implementation otherwise.
+          BF16UnsupportedWarning();
+          isTypeAllowed = false;
+        }
+      }
+    }
+#endif
+    return isTypeAllowed;
+  }
+
+  return false;
 }
 
 // Check if the operator with 'op_name' and type 'T' is an MKL operator that
