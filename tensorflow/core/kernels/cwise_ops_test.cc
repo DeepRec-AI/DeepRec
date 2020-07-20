@@ -243,6 +243,7 @@ Graph* BiasAdd(int rows, int cols, DataType type) {
 
 using Eigen::half;
 BM_BIAS_ADD_ALL(cpu, float, DT_FLOAT);
+BM_BIAS_ADD_ALL(cpu, bfloat16, DT_BFLOAT16);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 BM_BIAS_ADD_ALL(gpu, float, DT_FLOAT);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

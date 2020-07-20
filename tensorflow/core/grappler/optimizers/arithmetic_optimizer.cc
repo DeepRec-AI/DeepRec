@@ -161,7 +161,7 @@ bool GetElementUnexhaustive(const Tensor& t, int i, const std::set<int>& dtypes,
   if (dtypes.find(t.dtype()) == dtypes.end()) return false;
   switch (t.dtype()) {
     case DT_BFLOAT16:
-      *element = complex128(t.flat<bfloat16>()(i));
+      *element = complex128(static_cast<float>(t.flat<bfloat16>()(i)));
       return true;
     case DT_HALF:
       *element = complex128(static_cast<double>(t.flat<Eigen::half>()(i)), 0);

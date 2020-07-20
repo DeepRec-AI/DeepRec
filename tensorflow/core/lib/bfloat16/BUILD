@@ -7,7 +7,6 @@ package(
 
 cc_library(
     name = "bfloat16",
-    srcs = ["bfloat16.cc"],
     hdrs = ["bfloat16.h"],
     deps = [
         "//tensorflow/core/platform:byte_order",

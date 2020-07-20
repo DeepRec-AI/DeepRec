@@ -1459,10 +1459,13 @@ Status RangeSize(const Tensor* start_t, const Tensor* limit_t,
     return errors::InvalidArgument("Requires delta != 0");
   }
 
-  int64 size =
-      (std::is_integral<T>::value
-           ? ((std::abs(limit - start) + std::abs(delta) - 1) / std::abs(delta))
-           : std::ceil(std::abs((limit - start) / delta)));
+  int64 size = (std::is_integral<T>::value
+                   ? ((Eigen::numext::abs(limit - start) +
+                       Eigen::numext::abs(delta) - T(1)) /
+                      Eigen::numext::abs(delta))
+                   : (Eigen::numext::ceil(
+                         Eigen::numext::abs((limit - start) / delta))));
+
   c->set_output(0, c->Vector(size));
   return Status::OK();
 }
