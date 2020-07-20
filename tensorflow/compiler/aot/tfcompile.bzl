@@ -275,7 +275,7 @@ def tf_library(
         ] + (need_xla_data_proto and [
             # If we're generating the program shape, we must depend on the
             # proto.
-            "//tensorflow/compiler/xla:xla_data_proto",
+            "//tensorflow/compiler/xla:xla_data_proto_cc",
         ] or []) + (enable_xla_hlo_profiling and [
             "//tensorflow/compiler/xla/service:hlo_profile_printer_data",
         ] or []) + (include_standard_runtime_deps and [

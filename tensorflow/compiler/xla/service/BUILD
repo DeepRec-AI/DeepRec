@@ -3,13 +3,13 @@
 
 load("//tensorflow/compiler/xla/tests:build_defs.bzl", "xla_test")
 load(
-    "//tensorflow/core/platform:build_config.bzl",
+    "//tensorflow/core/platform:default/build_config.bzl",
     "tf_proto_library_cc",
     "tf_proto_library_py",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cc_test")
 load(
-    "//tensorflow/core/platform/default:cuda_build_defs.bzl",
+    "//tensorflow/core/platform:default/cuda_build_defs.bzl",
     "if_cuda_is_configured",
 )
 load(
@@ -3435,7 +3435,7 @@ cc_library(
         "//tensorflow/compiler/xla:shape_util",
         "//tensorflow/compiler/xla:types",
         "//tensorflow/core:lib",
-        "//tensorflow/core/platform:hash",
+        #"//tensorflow/core/platform:hash",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:inlined_vector",
     ],

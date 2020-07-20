@@ -39,7 +39,7 @@ def tf_additional_grpc_deps_py():
 
 def tf_additional_license_deps():
     return select({
-        str(Label("//tensorflow:with_xla_support")): ["@llvm//:LICENSE.TXT"],
+        str(Label("//tensorflow:with_xla_support")): ["@llvm-project//llvm:LICENSE.TXT"],
         "//conditions:default": [],
     })
 

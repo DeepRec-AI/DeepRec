@@ -611,7 +611,7 @@ cc_library(
     deps = [
         ":runtime_lightweight_check",
         "//tensorflow/compiler/xla:executable_run_options",
-        "//tensorflow/core/framework:numeric_types",
+        "//tensorflow/core:framework/numeric_types",
         "//tensorflow/core/platform:dynamic_annotations",
         "//tensorflow/core/platform:mutex",
         "//tensorflow/core/platform:types",
@@ -678,7 +678,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//tensorflow/compiler/xla:xla_data_proto_cc",
-        "//tensorflow/core/framework:numeric_types",
+        "//tensorflow/core:framework/numeric_types",
         "//tensorflow/core/platform:dynamic_annotations",
         "//tensorflow/core/platform:types",
         "//third_party/eigen3",
@@ -765,7 +765,7 @@ tf_cc_test(
         "//tensorflow/compiler/xla/tests:xla_internal_test_main",
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
-        "//tensorflow/core/framework:numeric_types",
+        "//tensorflow/core:framework/numeric_types",
         "//third_party/eigen3",
     ],
 )

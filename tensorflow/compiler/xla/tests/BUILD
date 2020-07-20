@@ -3,7 +3,7 @@
 
 load("//tensorflow/compiler/xla/tests:build_defs.bzl", "generate_backend_suites", "generate_backend_test_macros", "xla_test", "xla_test_library")
 load(
-    "//tensorflow/core/platform:build_config_root.bzl",
+    "//tensorflow/core/platform:default/build_config_root.bzl",
     "tf_cuda_tests_tags",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cc_binary", "tf_cc_test")
@@ -262,7 +262,7 @@ cc_library(
         "//tensorflow/compiler/xla:types",
         "//tensorflow/compiler/xla:util",
         "//tensorflow/core:lib",
-        "//tensorflow/core/platform:resource_loader",
+        #"//tensorflow/core/platform:resource_loader",
     ],
 )
 
@@ -2439,7 +2439,7 @@ tf_cc_test(
         "//tensorflow/compiler/xla/service:platform_util",
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
-        "//tensorflow/core/platform:resource_loader",
+        #"//tensorflow/core/platform:resource_loader",
     ],
 )
 

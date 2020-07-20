@@ -2,11 +2,11 @@
 #   GPU-specific components in XLA service implementation.
 
 load(
-    "//tensorflow/core/platform:build_config.bzl",
+    "//tensorflow/core/platform:default/build_config.bzl",
     "tf_proto_library_cc",
 )
 load(
-    "//tensorflow/core/platform:build_config_root.bzl",
+    "//tensorflow/core/platform:default/build_config_root.bzl",
     "tf_cuda_tests_tags",
 )
 load(
@@ -17,7 +17,7 @@ load(
 )
 load("@local_config_cuda//cuda:build_defs.bzl", "if_cuda")
 load(
-    "//tensorflow/core/platform/default:cuda_build_defs.bzl",
+    "//tensorflow/core/platform:default/cuda_build_defs.bzl",
     "if_cuda_is_configured",
 )
 load(
@@ -120,7 +120,7 @@ cc_library(
 #        ":partition_assignment",
 #        "//tensorflow/core:stream_executor_no_cuda",
 #        "//tensorflow/compiler/xla:shape_util",
-#        "//tensorflow/compiler/xla:xla_data_proto",
+#        "//tensorflow/compiler/xla:xla_data_proto_cc",
 #        "//tensorflow/compiler/xla/service:gpu_plugin",
 #        "//tensorflow/compiler/xla/service:hlo",
 #        "//tensorflow/compiler/xla/tests:hlo_test_base",
@@ -579,7 +579,7 @@ cc_library(
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:stream_executor_no_cuda",
         "//tensorflow/core/profiler/lib:traceme",
-        "//tensorflow/core/profiler/lib:scoped_annotation",
+        #"//tensorflow/core/profiler/lib:scoped_annotation",
         "//tensorflow/stream_executor",
         "//tensorflow/stream_executor:blas",
         "//tensorflow/stream_executor:device_memory",
@@ -1684,7 +1684,7 @@ tf_cc_test(
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
-        "//tensorflow/core/platform:resource_loader",
+        #"//tensorflow/core/platform:resource_loader",
         "//tensorflow/stream_executor:dnn",
     ],
 )

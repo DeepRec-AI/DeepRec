@@ -40,7 +40,7 @@ cc_library(
         "//tensorflow/compiler/xla:shape_util",
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:util",
-        "//tensorflow/compiler/xla:xla_data_proto",
+        "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/client:client_library",
         "//tensorflow/compiler/xla/client:compile_only_client",
         "//tensorflow/compiler/xla/client:xla_computation",
@@ -74,8 +74,8 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "@com_google_absl//absl/strings",
-        "@llvm//:support",  # fixdeps: keep
-        "@llvm//:x86_code_gen",  # fixdeps: keep
+        "@llvm-project//llvm:support",  # fixdeps: keep
+        "@llvm-project//llvm:x86_code_gen",  # fixdeps: keep
     ],
 )
 
@@ -199,9 +199,9 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-        "@llvm//:core",
-        "@llvm//:support",
-        "@llvm//:target",
+        "@llvm-project//llvm:core",
+        "@llvm-project//llvm:support",
+        "@llvm-project//llvm:target",
     ],
 )
 

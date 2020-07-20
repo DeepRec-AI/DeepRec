@@ -60,7 +60,7 @@ cc_library(
         "//tensorflow/compiler/xla:literal",
         "//tensorflow/compiler/xla:shape_util",
         "//tensorflow/compiler/xla:statusor",
-        "//tensorflow/compiler/xla:xla_data_proto",
+        "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
 	"//tensorflow/stream_executor:device_memory",

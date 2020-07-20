@@ -1,4 +1,4 @@
-load("//tensorflow/core/platform:build_config.bzl", "tf_proto_library_cc")
+load("//tensorflow/core/platform:default/build_config.bzl", "tf_proto_library_cc")
 load(
     "//tensorflow/compiler/xla/python/tpu_driver:platform/external/tools.bzl",
     "external_deps",
@@ -25,7 +25,7 @@ tf_proto_library_cc(
     cc_grpc_version = 1,
     protodeps = [
         ":tpu_driver_proto",
-        "//tensorflow/compiler/xla:xla_data_proto",
+        "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/service:hlo_proto",
     ],
     use_grpc_namespace = True,
