@@ -804,29 +804,7 @@ XlaOp XlaBuilder::SliceInDim(const XlaOp& operand, int64 start_index,
   });
 }
 
-XlaOp XlaBuilder::DynamicSlice(const XlaOp& operand, const XlaOp& start_indices,
-                               absl::Span<const int64> slice_sizes) {
-  return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
-    HloInstructionProto instr;
-
-    TF_ASSIGN_OR_RETURN(const Shape& operand_shape, GetShape(operand));
-    TF_ASSIGN_OR_RETURN(const Shape& start_indices_shape,
-                        GetShape(start_indices));
-    TF_ASSIGN_OR_RETURN(Shape shape,
-                        ShapeInference::InferDynamicSliceShape(
-                            operand_shape, {start_indices_shape}, slice_sizes));
-    *instr.mutable_shape() = shape.ToProto();
-
-    for (int64 size : slice_sizes) {
-      instr.add_dynamic_slice_sizes(size);
-    }
-
-    return AddInstruction(std::move(instr), HloOpcode::kDynamicSlice,
-                          {operand, start_indices});
-  });
-}
-
-XlaOp XlaBuilder::DynamicSlice(const XlaOp& operand,
+XlaOp XlaBuilder::DynamicSlice(XlaOp operand,
                                absl::Span<const XlaOp> start_indices,
                                absl::Span<const int64> slice_sizes) {
   return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
@@ -854,26 +832,7 @@ XlaOp XlaBuilder::DynamicSlice(const XlaOp& operand,
   });
 }
 
-XlaOp XlaBuilder::DynamicUpdateSlice(const XlaOp& operand, const XlaOp& update,
-                                     const XlaOp& start_indices) {
-  return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
-    HloInstructionProto instr;
-
-    TF_ASSIGN_OR_RETURN(const Shape& operand_shape, GetShape(operand));
-    TF_ASSIGN_OR_RETURN(const Shape& update_shape, GetShape(update));
-    TF_ASSIGN_OR_RETURN(const Shape& start_indices_shape,
-                        GetShape(start_indices));
-    TF_ASSIGN_OR_RETURN(
-        Shape shape, ShapeInference::InferDynamicUpdateSliceShape(
-                         operand_shape, update_shape, {start_indices_shape}));
-    *instr.mutable_shape() = shape.ToProto();
-
-    return AddInstruction(std::move(instr), HloOpcode::kDynamicUpdateSlice,
-                          {operand, update, start_indices});
-  });
-}
-
-XlaOp XlaBuilder::DynamicUpdateSlice(const XlaOp& operand, const XlaOp& update,
+XlaOp XlaBuilder::DynamicUpdateSlice(XlaOp operand, XlaOp update,
                                      absl::Span<const XlaOp> start_indices) {
   return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
     HloInstructionProto instr;
@@ -2890,18 +2849,9 @@ XlaOp SliceInDim(const XlaOp operand, int64 start_index, int64 limit_index,
                                        stride, dimno);
 }
 
-XlaOp DynamicSlice(const XlaOp operand, const XlaOp start_indices,
-                   absl::Span<const int64> slice_sizes) {
-  return operand.builder()->DynamicSlice(operand, start_indices, slice_sizes);
-}
 XlaOp DynamicSlice(const XlaOp operand, absl::Span<const XlaOp> start_indices,
                    absl::Span<const int64> slice_sizes) {
   return operand.builder()->DynamicSlice(operand, start_indices, slice_sizes);
-}
-
-XlaOp DynamicUpdateSlice(const XlaOp operand, const XlaOp update,
-                         const XlaOp start_indices) {
-  return operand.builder()->DynamicUpdateSlice(operand, update, start_indices);
 }
 
 XlaOp DynamicUpdateSlice(const XlaOp operand, const XlaOp update,
