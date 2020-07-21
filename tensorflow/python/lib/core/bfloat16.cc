@@ -496,6 +496,26 @@ void NPyCast(void* from_void, void* to_void, npy_intp n, void* fromarr,
   }
 }
 
+template<>
+void NPyCast<bfloat16, complex128>(void* from_void, void* to_void, npy_intp n,
+                                   void* fromarr, void* toarr) {
+  const bfloat16* from = reinterpret_cast<bfloat16*>(from_void);
+  complex128* to = reinterpret_cast<complex128*>(to_void);
+  for (npy_intp i = 0; i < n; ++i) {
+    to[i] = static_cast<complex128>(static_cast<float>(from[i]));
+  }
+}
+
+template<>
+void NPyCast<bfloat16, complex64>(void* from_void, void* to_void, npy_intp n,
+                                   void* fromarr, void* toarr) {
+  const bfloat16* from = reinterpret_cast<bfloat16*>(from_void);
+  complex64* to = reinterpret_cast<complex64*>(to_void);
+  for (npy_intp i = 0; i < n; ++i) {
+    to[i] = static_cast<complex64>(static_cast<float>(from[i]));
+  }
+}
+
 // Registers a cast between bfloat16 and type 'T'. 'numpy_type' is the NumPy
 // type corresponding to 'T'. If 'cast_is_safe', registers that bfloat16 can be
 // safely coerced to T.
@@ -631,13 +651,13 @@ bool Initialize() {
   }
   // Following the numpy convention. imag part is dropped when converting to
   // float.
-  // if (!RegisterBfloat16Cast<complex64>(NPY_COMPLEX64, /*cast_is_safe=*/true)) {
-  //   return false;
-  // }
-  // if (!RegisterBfloat16Cast<complex128>(NPY_COMPLEX128,
-  //                                       /*cast_is_safe=*/true)) {
-  //   return false;
-  // }
+  if (!RegisterBfloat16Cast<complex64>(NPY_COMPLEX64, /*cast_is_safe=*/true)) {
+    return false;
+  }
+  if (!RegisterBfloat16Cast<complex128>(NPY_COMPLEX128,
+                                        /*cast_is_safe=*/true)) {
+    return false;
+  }
 
   // Register ufuncs
   auto register_ufunc = [&](const char* name, PyUFuncGenericFunction fn,

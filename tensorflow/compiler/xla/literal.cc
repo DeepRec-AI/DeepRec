@@ -1149,7 +1149,21 @@ ConvertBetweenNativeTypes(const LiteralBase& src_literal) {
 }
 
 template <typename NativeSrcT, typename NativeDestT>
-typename std::enable_if<(!std::is_same<NativeSrcT, Eigen::half>::value) ||
+typename std::enable_if<(std::is_same<NativeSrcT, Eigen::bfloat16>::value) &&
+                            (std::is_same<NativeDestT, complex64>::value ||
+                             std::is_same<NativeDestT, complex128>::value),
+                        Literal>::type
+ConvertBetweenNativeTypes(const LiteralBase& src_literal) {
+  auto converter = [](NativeSrcT src) {
+    return NativeDestT(static_cast<float>(src));
+  };
+  return ConvertBetweenNativeTypesWithConverter<NativeSrcT, NativeDestT>(
+      src_literal, converter);
+}
+
+template <typename NativeSrcT, typename NativeDestT>
+typename std::enable_if<(!std::is_same<NativeSrcT, Eigen::half>::value &&
+                         !std::is_same<NativeSrcT, Eigen::bfloat16>::value) ||
                             (!std::is_same<NativeDestT, complex64>::value &&
                              !std::is_same<NativeDestT, complex128>::value),
                         Literal>::type
