@@ -103,8 +103,8 @@ INSTANTIATE_TEST_SUITE_P(
         ::testing::Values(
             // The largest negative number smaller than zero in bf16 that's not
             // denormalized.
-            std::make_pair(static_cast<float>(-bfloat16::min_positive_normal()),
-                           0.0f),
+            std::make_pair(static_cast<float>(
+                               -std::numeric_limits<Eigen::bfloat16>::min()),
             // Test odd and even values.
             std::make_pair(32.75f, 33.00f), std::make_pair(32.50f, 32.75f),
             std::make_pair(-33.00f, -32.75f),
