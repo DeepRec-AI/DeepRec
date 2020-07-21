@@ -28,6 +28,8 @@ limitations under the License.
 #include "tensorflow/core/util/strided_slice_op.h"
 #include "tensorflow/core/util/tensor_format.h"
 
+#define COMPAT_WITH_V2
+
 namespace tensorflow {
 
 using shape_inference::DimensionHandle;
@@ -3019,6 +3021,11 @@ REGISTER_OP("QuantizeV2")
     .Attr(
         "round_mode: {'HALF_AWAY_FROM_ZERO', 'HALF_TO_EVEN'} = "
         "'HALF_AWAY_FROM_ZERO'")
+#ifdef COMPAT_WITH_V2
+    .Attr("narrow_range: bool = false")
+    .Attr("axis: int = -1")
+    .Attr("ensure_minimum_range: float = 0.01")
+#endif
     .SetShapeFn([](InferenceContext* c) {
       TF_RETURN_IF_ERROR(shape_inference::UnchangedShape(c));
       ShapeHandle unused;
