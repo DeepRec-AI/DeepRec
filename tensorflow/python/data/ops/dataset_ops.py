@@ -36,7 +36,6 @@ from tensorflow.python.data.experimental.ops import distribute_options
 from tensorflow.python.data.experimental.ops import optimization_options
 from tensorflow.python.data.experimental.ops import stats_options
 from tensorflow.python.data.experimental.ops import threading_options
-from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.ops import iterator_ops
 from tensorflow.python.data.util import nest
 from tensorflow.python.data.util import options as options_lib
@@ -1738,7 +1737,7 @@ class DatasetV1(DatasetV2):
                         "to `tf.data.make_initializable_iterator` for maximum "
                         "performance.")
         try:
-          options = dataset_ops.Options()
+          options = Options()
           options.experimental_optimization.prefetch_to_device = None
           dataset = self.with_options(options)
         except ValueError:
