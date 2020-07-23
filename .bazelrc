@@ -116,6 +116,8 @@ test --define open_source_build=true
 # environment variable "TF_MKL_ROOT" every time before build.
 build:mkl --define=build_with_mkl=true --define=enable_mkl=true
 build:mkl --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl --define=build_with_mkl_dnn_v1_only=true
+build:mkl --copt=-DENABLE_INTEL_MKL_BFLOAT16
 build:mkl -c opt
 
 # This config option is used to enable MKL-DNN open source library only,
