@@ -325,6 +325,7 @@ cuda_py_test(
         "//third_party/py/numpy",
         "//tensorflow/python/data/ops:readers",
         "//tensorflow/core:protos_all_py",
+        "//tensorflow/python/data/experimental/ops:prefetching_ops",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/data/ops:iterator_ops",
         "//tensorflow/python/data/util:structure",

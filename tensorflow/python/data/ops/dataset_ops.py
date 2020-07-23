@@ -36,6 +36,7 @@ from tensorflow.python.data.experimental.ops import distribute_options
 from tensorflow.python.data.experimental.ops import optimization_options
 from tensorflow.python.data.experimental.ops import stats_options
 from tensorflow.python.data.experimental.ops import threading_options
+from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.data.ops import iterator_ops
 from tensorflow.python.data.util import nest
 from tensorflow.python.data.util import options as options_lib
@@ -277,58 +278,92 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
   def _apply_options(self):
     """Apply options, such as optimization configuration, to the dataset."""
 
-    # TODO DEKHTIARJonathan: Remove when GPU OP exists
-    if "/device:GPU" in self._variant_tensor.device:
-      return self
-
     dataset = self
     options = self.options()
+    if options.experimental_threading is not None:
+      t_options = options.experimental_threading
+      if t_options.max_intra_op_parallelism is not None:
+        dataset = _MaxIntraOpParallelismDataset(
+            dataset, t_options.max_intra_op_parallelism)
+      if t_options.private_threadpool_size is not None:
+        dataset = _PrivateThreadPoolDataset(dataset,
+                                            t_options.private_threadpool_size)
+    # pylint: disable=protected-access
+    static_optimizations = options._static_optimizations()
+    static_optimization_configs = options._static_optimization_configs()
+    # pylint: enable=protected-access
+    if static_optimizations:
+      if self._has_captured_ref():
+        warnings.warn(
+            "tf.data static optimizations are not compatible with tf.Variable. "
+            "The following optimizations will be disabled: %s. To enable "
+            "optimizations, use resource variables instead by calling "
+            "`tf.enable_resource_variables()` at the start of the program." %
+            ", ".join(static_optimizations))
+      else:
+        dataset = _OptimizeDataset(dataset, static_optimizations,
+                                   static_optimization_configs)
 
-    with ops.colocate_with(dataset._variant_tensor):
-      if options.experimental_threading is not None:
-        t_options = options.experimental_threading
-        if t_options.max_intra_op_parallelism is not None:
-          dataset = _MaxIntraOpParallelismDataset(
-              dataset, t_options.max_intra_op_parallelism)
-        if t_options.private_threadpool_size is not None:
-          dataset = _PrivateThreadPoolDataset(dataset,
-                                              t_options.private_threadpool_size)
-      # pylint: disable=protected-access
-      static_optimizations = options._static_optimizations()
-      static_optimization_configs = options._static_optimization_configs()
-      # pylint: enable=protected-access
-      if static_optimizations:
-        if self._has_captured_ref():
-          warnings.warn(
-              "tf.data static optimizations are not compatible with tf.Variable. "
-              "The following optimizations will be disabled: %s. To enable "
-              "optimizations, use resource variables instead by calling "
-              "`tf.enable_resource_variables()` at the start of the program." %
-              ", ".join(static_optimizations))
-        else:
-          dataset = _OptimizeDataset(dataset, static_optimizations,
-                                     static_optimization_configs)
+    autotune = True
+    algorithm = AutotuneAlgorithm.HILL_CLIMB
+    cpu_budget = 0  # Indicates that all CPU cores should be used.
+    if options.experimental_optimization is not None:
+      if options.experimental_optimization.autotune is False:  # pylint: disable=g-bool-id-comparison
+        autotune = False
+      if options.experimental_optimization.autotune_algorithm is not None:
+        algorithm = options.experimental_optimization.autotune_algorithm
+      if options.experimental_optimization.autotune_cpu_budget is not None:
+        cpu_budget = options.experimental_optimization.autotune_cpu_budget
 
-      autotune = True
-      algorithm = AutotuneAlgorithm.HILL_CLIMB
-      cpu_budget = 0  # Indicates that all CPU cores should be used.
-      if options.experimental_optimization is not None:
-        if options.experimental_optimization.autotune is False:  # pylint: disable=g-bool-id-comparison
-          autotune = False
-        if options.experimental_optimization.autotune_algorithm is not None:
-          algorithm = options.experimental_optimization.autotune_algorithm
-        if options.experimental_optimization.autotune_cpu_budget is not None:
-          cpu_budget = options.experimental_optimization.autotune_cpu_budget
+    if autotune:
+      dataset = _ModelDataset(dataset, algorithm, cpu_budget)
 
-      if autotune:
-        dataset = _ModelDataset(dataset, algorithm, cpu_budget)
+    if options.experimental_stats and options.experimental_stats.aggregator:  # pylint: disable=line-too-long
+      dataset = _SetStatsAggregatorDataset(  # pylint: disable=protected-access
+          dataset, options.experimental_stats.aggregator,
+          options.experimental_stats.prefix,
+          options.experimental_stats.counter_prefix)
 
-      if options.experimental_stats and options.experimental_stats.aggregator:  # pylint: disable=line-too-long
-        dataset = _SetStatsAggregatorDataset(  # pylint: disable=protected-access
-            dataset, options.experimental_stats.aggregator,
-            options.experimental_stats.prefix,
-            options.experimental_stats.counter_prefix)
-      return dataset
+    from tensorflow.python.distribute import distribution_strategy_context
+    if not distribution_strategy_context.has_strategy():
+      if options.experimental_optimization.prefetch_to_device is not None:
+        from tensorflow.python.data.experimental.ops import prefetching_ops
+        prefetch_device = options.experimental_optimization.prefetch_to_device
+
+        def prefetch_to_device(target_device, buffer_size=None):
+          """A transformation that copies dataset elements to the given `target_device`.
+
+          Args:
+            target_device: The name of a device to which elements will be copied.
+            buffer_size: (Optional.) The number of elements to buffer on `device`.
+              Defaults to an automatically chosen value.
+
+          Returns:
+            A `Dataset` transformation function, which can be passed to
+            `tf.data.Dataset.apply`.
+          """
+
+          def _apply_fn(dataset):
+            source_device = dataset._variant_tensor.device
+            if source_device == "":
+              source_device = "/cpu:0"
+            return prefetching_ops._CopyToDeviceDataset(
+                dataset,
+                target_device=target_device,
+                source_device=source_device
+            ).prefetch(buffer_size)
+
+          return _apply_fn
+
+        dataset = dataset.apply(
+          prefetch_to_device(prefetch_device, buffer_size=1))
+    else:
+      logging.warning("GPU prefetching has been deactivated in your "
+                      "`tf.data` pipeline. It is not compatible with "
+                      "`tf.distribute` API. Please transition to `horovod` for "
+                      "maximum performance.")
+
+    return dataset
 
   def __iter__(self):
     """Creates an `Iterator` for enumerating the elements of this dataset.
@@ -344,7 +379,8 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
     """
     if (context.executing_eagerly()
         or ops.get_default_graph()._building_function):  # pylint: disable=protected-access
-      return iterator_ops.IteratorV2(self)
+      with ops.device(self._variant_tensor.device):
+        return iterator_ops.IteratorV2(self)
     else:
       raise RuntimeError("__iter__() is only supported inside of tf.function "
                          "or when eager execution is enabled.")
@@ -1667,7 +1703,8 @@ class DatasetV1(DatasetV2):
 
   def _make_one_shot_iterator(self):  # pylint: disable=missing-docstring
     if context.executing_eagerly():
-      return iterator_ops.IteratorV2(self)
+      with ops.device(self._variant_tensor.device):
+        return iterator_ops.IteratorV2(self)
 
     _ensure_same_dataset_graph(self)
     # Now that we create datasets at python object creation time, the capture
@@ -1693,7 +1730,24 @@ class DatasetV1(DatasetV2):
         core_random_seed.set_random_seed(
             (graph_level_seed + 87654321 * op_level_seed) % (2 ** 63 - 1))
 
-      dataset = self._apply_options()
+      prefetch_to_device = self.options().experimental_optimization.prefetch_to_device
+      if prefetch_to_device is not None:
+        logging.warning("GPU prefetching has been deactivated in your "
+                        "`tf.data` pipeline. It is not compatible with "
+                        "`tf.data.make_one_shot_iterator`. Please transition "
+                        "to `tf.data.make_initializable_iterator` for maximum "
+                        "performance.")
+        try:
+          options = dataset_ops.Options()
+          options.experimental_optimization.prefetch_to_device = None
+          dataset = self.with_options(options)
+        except ValueError:
+          self._dataset._options.experimental_optimization.prefetch_to_device = None
+          dataset = self
+      else:
+        dataset = self
+
+      dataset = dataset._apply_options()
       return dataset._variant_tensor  # pylint: disable=protected-access
 
     try:
@@ -1709,12 +1763,17 @@ class DatasetV1(DatasetV2):
       else:
         six.reraise(ValueError, err)
 
+    iterator_resource = gen_dataset_ops.one_shot_iterator(
+      dataset_factory=_make_dataset,
+      **self._flat_structure
+    )
     # pylint: disable=protected-access
     return iterator_ops.Iterator(
-        gen_dataset_ops.one_shot_iterator(
-            dataset_factory=_make_dataset, **self._flat_structure), None,
-        get_legacy_output_types(self), get_legacy_output_shapes(self),
-        get_legacy_output_classes(self))
+        iterator_resource=iterator_resource,
+        initializer=None,
+        output_types=get_legacy_output_types(self),
+        output_shapes=get_legacy_output_shapes(self),
+        output_classes=get_legacy_output_classes(self))
 
   @deprecation.deprecated(
       None, "Use `for ... in dataset:` to iterate over a dataset. If using "
@@ -1758,9 +1817,9 @@ class DatasetV1(DatasetV2):
     if shared_name is None:
       shared_name = ""
 
-    with ops.colocate_with(self._variant_tensor):
+    with ops.device(dataset._variant_tensor.device):
       iterator_resource = gen_dataset_ops.iterator_v2(
-        container="", shared_name=shared_name, **self._flat_structure)
+          container="", shared_name=shared_name, **self._flat_structure)
 
       initializer = gen_dataset_ops.make_iterator(
           dataset._variant_tensor,  # pylint: disable=protected-access
@@ -1768,8 +1827,8 @@ class DatasetV1(DatasetV2):
 
       # pylint: disable=protected-access
       return iterator_ops.Iterator(
-        iterator_resource, initializer, get_legacy_output_types(dataset),
-        get_legacy_output_shapes(dataset), get_legacy_output_classes(dataset))
+          iterator_resource, initializer, get_legacy_output_types(dataset),
+          get_legacy_output_shapes(dataset), get_legacy_output_classes(dataset))
 
   @property
   @deprecation.deprecated(
@@ -2283,7 +2342,8 @@ class Options(options_lib.OptionsBase):
       result.append("make_sloppy")
     if self.experimental_stats and self.experimental_stats.latency_all_edges:
       result.append("latency_all_edges")
-    if self.experimental_slack:
+    if (self.experimental_slack and
+        self.experimental_optimization.prefetch_to_device is None):
       result.append("slack")
     if (self.experimental_distribute and
         self.experimental_distribute._make_stateless):  # pylint: disable=protected-access
@@ -3667,14 +3727,14 @@ class PrefetchDataset(UnaryUnchangedStructureDataset):
       buffer_size = -1  # This is the sentinel for auto-tuning.
     self._buffer_size = ops.convert_to_tensor(
         buffer_size, dtype=dtypes.int64, name="buffer_size")
-    
-    with ops.colocate_with(input_dataset._variant_tensor):
-        variant_tensor = gen_dataset_ops.prefetch_dataset(
-            input_dataset._variant_tensor,  # pylint: disable=protected-access
-            buffer_size=self._buffer_size,
-            slack_period=slack_period,
-            **self._flat_structure)
-            
+
+    with ops.device(input_dataset._variant_tensor.device):
+      variant_tensor = gen_dataset_ops.prefetch_dataset(
+          input_dataset._variant_tensor,  # pylint: disable=protected-access
+          buffer_size=self._buffer_size,
+          slack_period=slack_period,
+          **self._flat_structure)
+
     super(PrefetchDataset, self).__init__(input_dataset, variant_tensor)
 
 

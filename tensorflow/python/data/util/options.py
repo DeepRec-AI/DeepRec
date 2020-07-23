@@ -78,7 +78,7 @@ def create_option(name, ty, docstring, default_factory=lambda: None):
     return option._options.get(name)
 
   def set_fn(option, value):
-    if not isinstance(value, ty):
+    if not isinstance(value, (ty, type(None))):
       raise TypeError("Property \"%s\" must be of type %s, got: %r (type: %r)" %
                       (name, ty, value, type(value)))
     option._options[name] = value  # pylint: disable=protected-access

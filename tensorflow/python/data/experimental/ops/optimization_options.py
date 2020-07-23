@@ -174,6 +174,14 @@ class OptimizationOptions(options.OptionsBase):
       docstring="Whether to parallelize copying of batch elements. If None, "
       "defaults to False.")
 
+  prefetch_to_device = options.create_option(
+      name="prefetch_to_device",
+      ty=str,
+      docstring="Whether to prefetch the next batch on device. Defaults to "
+      "`/gpu:0`, deactivate by setting to None.",
+      default_factory=lambda: "/gpu:0"
+  )
+
   shuffle_and_repeat_fusion = options.create_option(
       name="shuffle_and_repeat_fusion",
       ty=bool,

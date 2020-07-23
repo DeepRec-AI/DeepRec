@@ -367,7 +367,7 @@ class Iterator(trackable.Trackable):
                           "dataset with output shapes %r." %
                           (self.output_shapes, dataset_output_shapes))
 
-    with ops.colocate_with(dataset._variant_tensor):
+    with ops.device(dataset._variant_tensor.device):
       return gen_dataset_ops.make_iterator(
           dataset._variant_tensor, self._iterator_resource, name=name)  # pylint: disable=protected-access
 
@@ -419,13 +419,13 @@ class Iterator(trackable.Trackable):
     if self._get_next_call_count > GET_NEXT_CALL_WARNING_THRESHOLD:
       warnings.warn(GET_NEXT_CALL_WARNING_MESSAGE)
 
-    with ops.colocate_with(self._iterator_resource):
+    with ops.device(self._iterator_resource.device):
       # pylint: disable=protected-access
       flat_ret = gen_dataset_ops.iterator_get_next(
-        self._iterator_resource,
-        output_types=self._flat_tensor_types,
-        output_shapes=self._flat_tensor_shapes,
-        name=name)
+          self._iterator_resource,
+          output_types=self._flat_tensor_types,
+          output_shapes=self._flat_tensor_shapes,
+          name=name)
       return structure.from_tensor_list(self._element_spec, flat_ret)
 
   def string_handle(self, name=None):
@@ -605,7 +605,7 @@ class IteratorV2(trackable.Trackable, composite_tensor.CompositeTensor):
         self._element_spec)
     self._flat_output_shapes = structure.get_flat_tensor_shapes(
         self._element_spec)
-    with ops.colocate_with(ds_variant):
+    with ops.device(ds_variant.device):
       self._iterator_resource, self._deleter = (
           gen_dataset_ops.anonymous_iterator_v2(
               output_types=self._flat_output_types,
