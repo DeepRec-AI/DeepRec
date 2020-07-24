@@ -294,7 +294,8 @@ class MultiDeviceIterator(object):
           self._device_iterators.append(dataset_ops.make_one_shot_iterator(ds))
         else:
           self._device_iterators.append(
-              dataset_ops.make_initializable_iterator(ds))
+              dataset_ops.make_initializable_iterator(
+                  ds, force_deactivate_gpu_prefetching=True))
 
     if not context.executing_eagerly():
       device_iterator_initializers = [

@@ -1779,7 +1779,8 @@ class DatasetV1(DatasetV2):
       "`tf.estimator`, return the `Dataset` object directly from your input "
       "function. As a last resort, you can use "
       "`tf.compat.v1.data.make_initializable_iterator(dataset)`.")
-  def make_initializable_iterator(self, shared_name=None):
+  def make_initializable_iterator(self, shared_name=None,
+                                  force_deactivate_gpu_prefetching=False):
     """Creates an `Iterator` for enumerating the elements of this dataset.
 
     Note: The returned iterator will be in an uninitialized state,
@@ -1796,6 +1797,8 @@ class DatasetV1(DatasetV2):
       shared_name: (Optional.) If non-empty, the returned iterator will be
         shared under the given name across multiple sessions that share the same
         devices (e.g. when using a remote server).
+      force_deactivate_gpu_prefetching (Optional) If True, will deactivate
+        automatic GPU prefetching.
 
     Returns:
       An `Iterator` over the elements of this dataset.
@@ -1804,15 +1807,34 @@ class DatasetV1(DatasetV2):
       RuntimeError: If eager execution is enabled.
     """
 
-    return self._make_initializable_iterator(shared_name)
+    return self._make_initializable_iterator(shared_name,
+                                             force_deactivate_gpu_prefetching)
 
-  def _make_initializable_iterator(self, shared_name=None):  # pylint: disable=missing-docstring
+  def _make_initializable_iterator(self, shared_name=None,
+                                   force_deactivate_gpu_prefetching=False):  # pylint: disable=missing-docstring
     if context.executing_eagerly():
       raise RuntimeError(
           "dataset.make_initializable_iterator is not supported when eager "
           "execution is enabled.")
     _ensure_same_dataset_graph(self)
-    dataset = self._apply_options()
+
+    dataset = self
+
+    if force_deactivate_gpu_prefetching:
+      prefetch_to_device = dataset.options().experimental_optimization.prefetch_to_device
+      if prefetch_to_device is not None:
+        logging.warning("GPU prefetching has been deactivated in your "
+                        "`tf.data` pipeline. It is not compatible with "
+                        "`MultiDeviceIterator`.")
+        try:
+          options = Options()
+          options.experimental_optimization.prefetch_to_device = None
+          dataset = dataset.with_options(options)
+        except ValueError:
+          dataset._dataset._options.experimental_optimization.prefetch_to_device = None
+
+    dataset = dataset._apply_options()
+
     if shared_name is None:
       shared_name = ""
 
@@ -2149,7 +2171,8 @@ def make_one_shot_iterator(dataset):
 
 
 @tf_export(v1=["data.make_initializable_iterator"])
-def make_initializable_iterator(dataset, shared_name=None):
+def make_initializable_iterator(dataset, shared_name=None,
+                                force_deactivate_gpu_prefetching=False):
   """Creates a `tf.compat.v1.data.Iterator` for enumerating the elements of a dataset.
 
   Note: The returned iterator will be in an uninitialized state,
@@ -2167,6 +2190,8 @@ def make_initializable_iterator(dataset, shared_name=None):
     shared_name: (Optional.) If non-empty, the returned iterator will be shared
       under the given name across multiple sessions that share the same devices
       (e.g. when using a remote server).
+    force_deactivate_gpu_prefetching (Optional) If True, will deactivate
+      automatic GPU prefetching.
 
   Returns:
     A `tf.compat.v1.data.Iterator` over the elements of `dataset`.
@@ -2177,9 +2202,11 @@ def make_initializable_iterator(dataset, shared_name=None):
   try:
     # Call the defined `_make_initializable_iterator()` if there is one, because
     # some datasets (e.g. for prefetching) override its behavior.
-    return dataset._make_initializable_iterator(shared_name)  # pylint: disable=protected-access
+    return dataset._make_initializable_iterator(
+      shared_name, force_deactivate_gpu_prefetching)  # pylint: disable=protected-access
   except AttributeError:
-    return DatasetV1Adapter(dataset)._make_initializable_iterator(shared_name)  # pylint: disable=protected-access
+    return DatasetV1Adapter(dataset)._make_initializable_iterator(
+      shared_name, force_deactivate_gpu_prefetching)  # pylint: disable=protected-access
 
 
 @tf_export("data.experimental.get_structure")
