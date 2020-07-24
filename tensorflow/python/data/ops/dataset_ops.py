@@ -20,6 +20,7 @@ from __future__ import print_function
 import abc
 import enum
 import functools
+import os
 import threading
 import warnings
 import weakref
@@ -325,7 +326,8 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
 
     from tensorflow.python.distribute import distribution_strategy_context
     if not distribution_strategy_context.has_strategy():
-      if options.experimental_optimization.prefetch_to_device is not None:
+      if (options.experimental_optimization.prefetch_to_device is not None and
+          os.environ.get("TF_DISABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "0"):
         from tensorflow.python.data.experimental.ops import prefetching_ops
         prefetch_device = options.experimental_optimization.prefetch_to_device
 
