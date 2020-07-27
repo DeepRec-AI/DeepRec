@@ -389,6 +389,11 @@ cc_library(
         "//tensorflow/core/platform:cpu_info",
         "//tensorflow/core/platform:legacy_platform_port_srcs",
     ],
+    defines = ["TF_USE_SNAPPY"] + select({
+        # TF Additional NUMA defines
+        "//tensorflow:with_numa_support": ["TENSORFLOW_USE_NUMA"],
+        "//conditions:default": [],
+    }),
     hdrs = [
         ":platform_port_hdrs",
         ":platform_port_internal_hdrs",
