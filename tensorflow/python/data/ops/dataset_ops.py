@@ -323,46 +323,47 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
           dataset, options.experimental_stats.aggregator,
           options.experimental_stats.prefix,
           options.experimental_stats.counter_prefix)
+    
+    if os.environ.get("TF_ENABLE_AUTOMATIC_GPU_PREFETCHING", "1") == "1":
+      from tensorflow.python.distribute import distribution_strategy_context
+      if not distribution_strategy_context.has_strategy():
+        if (options.experimental_optimization.prefetch_to_device is not None and
+            os.environ.get("TF_DISABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "0"):
+          from tensorflow.python.data.experimental.ops import prefetching_ops
+          prefetch_device = options.experimental_optimization.prefetch_to_device
 
-    from tensorflow.python.distribute import distribution_strategy_context
-    if not distribution_strategy_context.has_strategy():
-      if (options.experimental_optimization.prefetch_to_device is not None and
-          os.environ.get("TF_DISABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "0"):
-        from tensorflow.python.data.experimental.ops import prefetching_ops
-        prefetch_device = options.experimental_optimization.prefetch_to_device
+          def prefetch_to_device(target_device, buffer_size=None):
+            """A transformation that copies dataset elements to the given `target_device`.
 
-        def prefetch_to_device(target_device, buffer_size=None):
-          """A transformation that copies dataset elements to the given `target_device`.
+            Args:
+              target_device: The name of a device to which elements will be copied.
+              buffer_size: (Optional.) The number of elements to buffer on `device`.
+                Defaults to an automatically chosen value.
 
-          Args:
-            target_device: The name of a device to which elements will be copied.
-            buffer_size: (Optional.) The number of elements to buffer on `device`.
-              Defaults to an automatically chosen value.
+            Returns:
+              A `Dataset` transformation function, which can be passed to
+              `tf.data.Dataset.apply`.
+            """
 
-          Returns:
-            A `Dataset` transformation function, which can be passed to
-            `tf.data.Dataset.apply`.
-          """
+            def _apply_fn(dataset):
+              source_device = dataset._variant_tensor.device
+              if source_device == "":
+                source_device = "/cpu:0"
+              return prefetching_ops._CopyToDeviceDataset(
+                  dataset,
+                  target_device=target_device,
+                  source_device=source_device
+              ).prefetch(buffer_size)
 
-          def _apply_fn(dataset):
-            source_device = dataset._variant_tensor.device
-            if source_device == "":
-              source_device = "/cpu:0"
-            return prefetching_ops._CopyToDeviceDataset(
-                dataset,
-                target_device=target_device,
-                source_device=source_device
-            ).prefetch(buffer_size)
+            return _apply_fn
 
-          return _apply_fn
-
-        dataset = dataset.apply(
-          prefetch_to_device(prefetch_device, buffer_size=1))
-    else:
-      logging.warning("GPU prefetching has been deactivated in your "
-                      "`tf.data` pipeline. It is not compatible with "
-                      "`tf.distribute` API. Please transition to `horovod` for "
-                      "maximum performance.")
+          dataset = dataset.apply(
+            prefetch_to_device(prefetch_device, buffer_size=1))
+      else:
+        logging.warning("GPU prefetching has been deactivated in your "
+                        "`tf.data` pipeline. It is not compatible with "
+                        "`tf.distribute` API. Please transition to `horovod` for "
+                        "maximum performance.")
 
     return dataset
 
