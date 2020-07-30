@@ -523,6 +523,9 @@ def lib_name(base_name, cpu_value, version = None, static = False):
         The platform-specific name of the library.
       """
     version = "" if not version else "." + version
+    # CUDA 11.1 uses libcudart.so.11.0 rather than libcudart.so.11.1.
+    if base_name == "cudart" and version == ".11.1":
+        version = ".11.0"
     if cpu_value in ("Linux", "FreeBSD"):
         if static:
             return "lib%s.a" % base_name
