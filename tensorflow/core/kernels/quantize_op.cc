@@ -26,8 +26,6 @@ limitations under the License.
 #include "tensorflow/core/kernels/quantization_utils.h"
 #include "tensorflow/core/lib/core/errors.h"
 
-#define COMPAT_WITH_V2
-
 namespace {
 enum {
   QUANTIZE_MODE_MIN_COMBINED,
@@ -98,29 +96,25 @@ class QuantizeV2Op : public OpKernel {
       OP_REQUIRES(ctx, mode_string == "SCALED",
                   errors::InvalidArgument("Round mode 'HALF_TO_EVEN' "
                                           "only supported for mode 'SCALED', "
-                                          "but mode is '" +
+                                          "b  ut mode is '" +
                                           mode_string + "'."));
       round_mode_ = ROUND_HALF_TO_EVEN;
     }
-#ifdef COMPAT_WITH_V2
     OP_REQUIRES_OK(ctx, ctx->GetAttr("narrow_range", &narrow_range_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("axis", &axis_));
     OP_REQUIRES_OK(
         ctx, ctx->GetAttr("ensure_minimum_range", &ensure_minimum_range_));
-#endif
   }
 
   void Compute(OpKernelContext* ctx) override {
     const Tensor& input = ctx->input(0);
-    const float input_min_range = ctx->input(1).flat<float>()(0);
-    const float input_max_range = ctx->input(2).flat<float>()(0);
+    const Tensor& input_min_range = ctx->input(1);
+    const Tensor& input_max_range = ctx->input(2);
 
     int num_slices = 1;
-#ifdef COMPAT_WITH_V2
     if (axis_ > -1) {
       num_slices = input.dim_size(axis_);
     }
-#endif
 
     const TensorShape& minmax_shape = ctx->input(1).shape();
     Tensor* output = nullptr;
@@ -132,14 +126,13 @@ class QuantizeV2Op : public OpKernel {
     if (num_slices == 1) {
       OP_REQUIRES_OK(ctx, ctx->allocate_output(1, {}, &output_min_tensor));
       OP_REQUIRES_OK(ctx, ctx->allocate_output(2, {}, &output_max_tensor));
-      const float min_range = input_min_range;
-      const float max_range = input_max_range;
+      const float min_range = input_min_range.template flat<float>()(0);
+      const float max_range = input_max_range.template flat<float>()(0);
       QuantizeTensor(ctx, input, min_range, max_range, output,
                      output_min_tensor, output_max_tensor);
       return;
     }
 
-#ifdef COMPAT_WITH_V2
     OP_REQUIRES(ctx, mode_ != QUANTIZE_MODE_MIN_FIRST,
                 errors::Unimplemented("MIN_FIRST mode is not implemented for "
                                       "Quantize with axis != -1."));
@@ -159,8 +152,8 @@ class QuantizeV2Op : public OpKernel {
     }
     auto output_tensor = output->template bit_casted_shaped<T, 3>(
         {pre_dim, num_slices, post_dim});
-    auto min_ranges = ctx->input(1).template vec<float>();
-    auto max_ranges = ctx->input(2).template vec<float>();
+    auto min_ranges = input_min_range.template vec<float>();
+    auto max_ranges = input_max_range.template vec<float>();
     for (int i = 0; i < num_slices; ++i) {
       QuantizeSlice(ctx->eigen_device<Device>(), ctx,
                     input_tensor.template chip<1>(i), min_ranges(i),
@@ -168,7 +161,6 @@ class QuantizeV2Op : public OpKernel {
                     &output_min_tensor->flat<float>()(i),
                     &output_max_tensor->flat<float>()(i));
     }
-#endif
   }
 
   void QuantizeTensor(OpKernelContext* ctx, const Tensor& input,
@@ -191,13 +183,9 @@ class QuantizeV2Op : public OpKernel {
     float min_range = std::min(0.0f, input_min_range);
     const float epsilon = std::max(1.0f, std::max(fabsf(input_min_range),
                                                   fabsf(input_max_range))) *
-#ifdef COMPAT_WITH_V2
                           ensure_minimum_range_;
-#else
-                          0.01f;
-#endif
-    float max_range = std::max(input_max_range, min_range + epsilon);
-    max_range = std::max(0.0f, max_range);
+    float max_range =
+        std::max(0.0f, std::max(input_max_range, min_range + epsilon));
 
     if (mode_ == QUANTIZE_MODE_MIN_FIRST) {
       if (meta::IsSupportedAndEnabled() && std::is_same<T, quint8>()) {
@@ -212,9 +200,6 @@ class QuantizeV2Op : public OpKernel {
       }
       output_min_tensor->flat<float>()(0) = min_range;
       output_max_tensor->flat<float>()(0) = max_range;
-
-      LOG(WARNING) << "min_range is " << min_range;
-      LOG(WARNING) << "max_range is " << max_range;
     } else {
       QuantizeSlice(ctx->eigen_device<Device>(), ctx, input.flat<float>(),
                     input_min_range, input_max_range,
@@ -235,15 +220,9 @@ class QuantizeV2Op : public OpKernel {
     float min_range = std::min(0.0f, input_min_range);
     const float epsilon = std::max(1.0f, std::max(fabsf(input_min_range),
                                                   fabsf(input_max_range))) *
-#ifdef COMPAT_WITH_V2
                           ensure_minimum_range_;
-#else
-                          0.01f;
-#endif
-    float max_range = std::max(input_max_range, min_range + epsilon);
-#ifdef COMPAT_WITH_V2
-    max_range = std::max(0.0f, max_range);
-#endif
+    float max_range =
+        std::max(0.0f, std::max(input_max_range, min_range + epsilon));
 
     if (mode_ == QUANTIZE_MODE_MIN_COMBINED) {
       const float scale_factor =
@@ -281,12 +260,8 @@ class QuantizeV2Op : public OpKernel {
                 .template cast<T>();
       }
     } else if (mode_ == QUANTIZE_MODE_SCALED) {
-#ifdef COMPAT_WITH_V2
       const int min_output_value =
           std::numeric_limits<T>::min() + (narrow_range_ ? 1 : 0);
-#else
-      const int min_output_value = std::numeric_limits<T>::min();
-#endif
       const int max_output_value = std::numeric_limits<T>::max();
       const float scale_factor_from_min_side =
           (min_output_value * min_range > 0)
@@ -304,12 +279,12 @@ class QuantizeV2Op : public OpKernel {
         output.device(d) =
             (input.cwiseMin(max_range).cwiseMax(min_range) * scale_factor)
                 .unaryExpr(
-                    Eigen::internal::scalar_round_op_google<float>())
+                    Eigen::internal::scalar_round_half_to_even_op<float>())
                 .template cast<T>();
       } else if (round_mode_ == ROUND_HALF_AWAY_FROM_ZERO) {
         output.device(d) =
             (input.cwiseMin(max_range).cwiseMax(min_range) * scale_factor)
-                .unaryExpr(Eigen::internal::scalar_round_op<float>())
+                .round()
                 .template cast<T>();
       }
     }
@@ -320,13 +295,11 @@ class QuantizeV2Op : public OpKernel {
 
  private:
   float half_range_;
+  float ensure_minimum_range_;
   int mode_;
   int round_mode_;
-#ifdef COMPAT_WITH_V2
-  float ensure_minimum_range_;
   int axis_;
   bool narrow_range_;
-#endif
 };
 
 REGISTER_KERNEL_BUILDER(

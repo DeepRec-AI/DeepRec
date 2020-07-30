@@ -1138,7 +1138,7 @@ tf_module {
   }
   member_method {
     name: "dequantize"
-    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'mode\', \'name\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\'], "
+    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'mode\', \'name\', \'axis\', \'narrow_range\', \'dtype\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\', \'None\', \'False\', \"<dtype: \'float32\'>\"], "
   }
   member_method {
     name: "deserialize_many_sparse"
@@ -1946,11 +1946,11 @@ tf_module {
   }
   member_method {
     name: "quantize"
-    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'T\', \'mode\', \'round_mode\', \'name\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'HALF_AWAY_FROM_ZERO\', \'None\'], "
+    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'T\', \'mode\', \'round_mode\', \'name\', \'narrow_range\', \'axis\', \'ensure_minimum_range\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'HALF_AWAY_FROM_ZERO\', \'None\', \'False\', \'None\', \'0.01\'], "
   }
   member_method {
     name: "quantize_v2"
-    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'T\', \'mode\', \'name\', \'round_mode\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\', \'HALF_AWAY_FROM_ZERO\'], "
+    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'T\', \'mode\', \'name\', \'round_mode\', \'narrow_range\', \'axis\', \'ensure_minimum_range\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\', \'HALF_AWAY_FROM_ZERO\', \'False\', \'None\', \'0.01\'], "
   }
   member_method {
     name: "quantized_concat"

@@ -1050,7 +1050,7 @@ tf_module {
   }
   member_method {
     name: "Dequantize"
-    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'mode\', \'name\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'None\'], "
+    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'mode\', \'narrow_range\', \'axis\', \'dtype\', \'name\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'False\', \'-1\', \"<dtype: \'float32\'>\", \'None\'], "
   }
   member_method {
     name: "DeserializeIterator"
@@ -2778,7 +2778,7 @@ tf_module {
   }
   member_method {
     name: "QuantizeV2"
-    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'T\', \'mode\', \'round_mode\', \'name\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'HALF_AWAY_FROM_ZERO\', \'None\'], "
+    argspec: "args=[\'input\', \'min_range\', \'max_range\', \'T\', \'mode\', \'round_mode\', \'narrow_range\', \'axis\', \'ensure_minimum_range\', \'name\'], varargs=None, keywords=None, defaults=[\'MIN_COMBINED\', \'HALF_AWAY_FROM_ZERO\', \'False\', \'-1\', \'0.01\', \'None\'], "
   }
   member_method {
     name: "QuantizedAdd"
