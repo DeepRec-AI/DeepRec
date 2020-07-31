@@ -1535,6 +1535,7 @@ TEST_F(MklLayoutPassTest, NodeRewrite_Dequantize_Negative_Const_Input) {
       "node { name: 'D' op: 'Dequantize'"
       " attr { key: 'T'             value { type: DT_QUINT8 } }"
       " attr { key: 'mode'          value { s: 'SCALED' } }"
+      " attr { key: 'dtype'         value { type: DT_FLOAT } }"
       " input: ['A', 'B', 'C']}"
       "node { name: 'E' op: 'Zeta' attr { key: 'T' value { type: DT_FLOAT } }"
       " input: ['D'] }");
@@ -1551,6 +1552,7 @@ TEST_F(MklLayoutPassTest, NodeRewrite_Dequantize_Negative_Non_SCALED_Mode) {
       "node { name: 'D' op: 'Dequantize'"
       " attr { key: 'T'             value { type: DT_QUINT8 } }"
       " attr { key: 'mode'          value { s: 'MIN_FIRST' } }"
+      " attr { key: 'dtype'         value { type: DT_FLOAT } }"
       " input: ['A', 'B', 'C']}"
       "node { name: 'E' op: 'Zeta' attr { key: 'T' value { type: DT_FLOAT } }"
       " input: ['D'] }");
