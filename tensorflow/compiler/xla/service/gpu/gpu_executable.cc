@@ -44,8 +44,9 @@ limitations under the License.
 #include "tensorflow/stream_executor/platform.h"
 // TODO(benbarsdell): Plumb Graph APIs into stream_executor (and implement
 // wrapper classes for Graph/GraphExec) instead of using this directly.
-#include "tensorflow/stream_executor/gpu/gpu_driver.h"
+#include "tensorflow/compiler/xla/service/gpu/copy_thunk.h"
 #include "tensorflow/stream_executor/gpu/gpu_executor.h"
+#include "tensorflow/stream_executor/gpu/gpu_stream.h"
 
 namespace xla {
 namespace gpu {
@@ -64,6 +65,15 @@ bool GpuGraphCaptureEnabled() {
     return is_enabled;
   }();
   return is_enabled;
+}
+
+int64 GpuExecGraphCacheSize() {
+  int64 cache_size = 0;
+  TF_CHECK_OK(
+      tensorflow::ReadInt64FromEnvVar("TF_XLA_GPU_EXEC_GRAPH_CACHE_SIZE",
+                                      /*default_val=*/100, &cache_size));
+
+  return cache_size;
 }
 
 bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
@@ -94,8 +104,13 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
     }
     return true;
   }
+  if (dynamic_cast<const HostToDeviceCopyThunk*>(thunk)) {
+    VLOG(1) << "HostToDeviceCopyThunk is not supported for a graph capture";
+    return false;
+  }
+
   if (!thunk_kinds_safe_for_capture.count(thunk->kind())) {
-    VLOG(3) << ThunkKindToString(thunk->kind())
+    VLOG(1) << ThunkKindToString(thunk->kind())
             << " is not supported for graph capture";
     return false;
   }
@@ -148,17 +163,24 @@ GpuExecutable::~GpuExecutable() {
   }
   // float hit_rate = (graph_stats_.cache_hits / graph_stats_.times_called) *
   // 100;
+
   VLOG(1) << "For gpu_executable " << this
           << " Hits: " << graph_stats_.cache_hits
-          << " Misses/Cache Size: " << graph_stats_.cache_miss
+          << " Misses: " << graph_stats_.cache_miss
           << " Recent hash hits: " << graph_stats_.last_buf_key_hits
-          << " called # " << graph_stats_.times_called << " with hit rate of "
-          << (graph_stats_.cache_hits * 100) / graph_stats_.times_called << "%";
+          << " called # " << graph_stats_.times_called;
+  if (graph_stats_.times_called > 0) {
+    VLOG(1) << "with hit rate of "
+            << (graph_stats_.cache_hits * 100) / graph_stats_.times_called
+            << "%";
+  }
   VLOG(2) << "Most recent enqueued hash hits: "
-          << graph_stats_.last_buf_key_hits
-          << " Most recent enqueued hash hit rate: "
-          << (graph_stats_.last_buf_key_hits * 100) / graph_stats_.cache_hits;
-  while (!gpu_exec_graphs_.empty()) {
+          << graph_stats_.last_buf_key_hits;
+  if (graph_stats_.cache_hits > 0) {
+    VLOG(2) << " Most recent enqueued hash hit rate: "
+            << (graph_stats_.last_buf_key_hits * 100) / graph_stats_.cache_hits;
+  }
+  /*while (!gpu_exec_graphs_.empty()) {
     auto* gpu_context = static_cast<stream_executor::gpu::GpuContext*>(
         gpu_exec_graphs_.begin()->first);
     VLOG(2) << "Cache size for gpu_executable " << this << " and gpu_context "
@@ -175,6 +197,27 @@ GpuExecutable::~GpuExecutable() {
       map.erase(map.begin());
     }
     gpu_exec_graphs_.erase(gpu_exec_graphs_.begin());
+  }*/
+
+  while (!gpu_exec_graphs_cache_.empty()) {
+    auto* gpu_context = static_cast<stream_executor::gpu::GpuContext*>(
+        gpu_exec_graphs_cache_.begin()->first);
+    VLOG(2) << "Cache size for gpu_executable " << this << " and gpu_context "
+            << gpu_context << " is "
+            << gpu_exec_graphs_cache_[gpu_context].gpu_exec_graphs_.size();
+    // TODO: Clean this up a bit.
+    auto& cache = gpu_exec_graphs_cache_.begin()->second;
+    auto& exec_graphs = cache.gpu_exec_graphs_;
+
+    while (!exec_graphs.empty()) {
+      auto* exec_graph =
+          reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
+              &exec_graphs.front());
+      using stream_executor::gpu::GpuDriver;
+      GpuDriver::DestroyExecutableGraph(gpu_context, exec_graph);
+      exec_graphs.erase(exec_graphs.begin());
+    }
+    gpu_exec_graphs_cache_.erase(gpu_exec_graphs_cache_.begin());
   }
 }
 
@@ -298,19 +341,20 @@ Status GpuExecutable::ExecuteThunks(
           ->gpu_context();
   using stream_executor::gpu::GpuDriver;
   tensorflow::mutex_lock lock(module_handle_mutex_);
-  auto& exec_graph =
+  /*auto& exec_graph =
       *reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
           &gpu_exec_graphs_[gpu_context][bufs_key]);
   if (gpu_exec_graphs_[gpu_context].size() > 2048) {
     LOG(WARNING) << "Too many exec graphs in cache! "
                  << gpu_exec_graphs_[gpu_context].size();
-  }
-  // if (gpu_exec_graphs_.size() < 16) {
-  //  exec_graph =
-  //} else {
-  //  exec_graph = nullptr;
-  //  LOG(WARNING) << "Too many exec graphs in cache!";
-  //}
+  }*/
+  auto& graph_exec_cache = gpu_exec_graphs_cache_[gpu_context];
+  graph_exec_cache.set_gpu_context(gpu_context);
+  graph_exec_cache.set_cache_size(GpuExecGraphCacheSize());
+  auto graph_exec = graph_exec_cache.get_exec_graph(bufs_key);
+  auto& exec_graph =
+      *reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(&graph_exec);
+
   tensorflow::mutex& mu = graph_stats_.graph_cache_mu;
   if (exec_graph && use_gpu_graph_capture) {
     mu.lock();
@@ -320,21 +364,29 @@ Status GpuExecutable::ExecuteThunks(
       graph_stats_.last_buf_key_hits++;
     }
     mu.unlock();
-    VLOG(2) << "CACHE HIT -> Launching graph blindly!"
+    VLOG(2) << "CACHE HIT -> Launching graph " << exec_graph << " blindly!"
             << " Hits: " << graph_stats_.cache_hits
             << " Misses: " << graph_stats_.cache_miss << " called # "
             << graph_stats_.times_called
-            << " Cache size: " << gpu_exec_graphs_[gpu_context].size();
+            << " Cache size: " << graph_exec_cache.get_current_cache_size();
     VLOG(3) << "Most recent enqueued hash: " << bufs_key.hash()
             << "Most recent enqueued hash hits: "
             << graph_stats_.last_buf_key_hits;
-    // capture_stream->ThenWaitFor(&sub_streams);
+    // main_stream->ThenWaitFor(&sub_streams); //(ToDo(amoitra): Check if this
+    // is required)
     bool launch_success = GpuDriver::LaunchExecutableGraph(
         gpu_context, exec_graph, main_cuda_stream);
     if (!launch_success) {
       return InternalError("Failed to launch CUDA execution graph");
     }
-
+    // GpuStream* cuda_stream = AsGpuStream(main_stream);
+    // stream_executor::gpu::GpuStream* cuda_stream =
+    //     static_cast<stream_executor::gpu::GpuStream*>(main_stream->implementation());
+    // bool is_stream_idle = false;
+    // while (!is_stream_idle){
+    //   is_stream_idle = cuda_stream->IsIdle();
+    //   LOG(INFO) << "Stream " << main_cuda_stream << " not idle yet";
+    // }
   } else {
     if (use_gpu_graph_capture) {
       mu.lock();
@@ -346,7 +398,7 @@ Status GpuExecutable::ExecuteThunks(
               << " Hits: " << graph_stats_.cache_hits
               << " Misses: " << graph_stats_.cache_miss << " called # "
               << graph_stats_.times_called
-              << " Cache size: " << gpu_exec_graphs_[gpu_context].size();
+              << " Cache size: " << graph_exec_cache.get_current_cache_size();
       VLOG(3) << "Most recently enqueued hash: " << bufs_key.hash()
               << "Most recent enqueued hash hits: "
               << graph_stats_.last_buf_key_hits;
@@ -356,7 +408,12 @@ Status GpuExecutable::ExecuteThunks(
       // re-capture the graph.
       if (!GpuDriver::BeginGraphCaptureOnStream(
               gpu_context, capture_cuda_stream,
-              CU_STREAM_CAPTURE_MODE_RELAXED)) {
+              CU_STREAM_CAPTURE_MODE_THREAD_LOCAL  // ToDo (amoitra): Check
+                                                   // implications
+                                                   // (including any
+                                                   // performance related)
+                                                   // of using this
+              /*CU_STREAM_CAPTURE_MODE_RELAXED*/)) {
         return InternalError("Failed to begin GPU stream capture");
       }
     }
@@ -380,10 +437,16 @@ Status GpuExecutable::ExecuteThunks(
           (stream_no == 0 ? capture_stream : sub_streams[stream_no - 1].get());
 
       for (const Thunk* dependency : thunk_schedule_->DependsOn(thunk)) {
+        VLOG(3) << ThunkKindToString(thunk->kind()) << " depends on "
+                << ThunkKindToString(dependency->kind());
         stream->ThenWaitFor(FindOrDie(thunk_to_finish_event, dependency).get());
       }
-      VLOG(2) << "Executing thunk of kind " << ThunkKindToString(thunk->kind());
-      VLOG(3) << "Executing the thunk for "
+      std::string copy_type = dynamic_cast<HostToDeviceCopyThunk*>(thunk)
+                                  ? "HostToDeviceCopyThunk"
+                                  : "";
+      VLOG(3) << "Executing thunk of kind " << ThunkKindToString(thunk->kind())
+              << copy_type;
+      VLOG(4) << "Executing the thunk for "
               << thunk->hlo_instruction()->ToString() << " on stream "
               << stream_no;
       const GpuExecutableRunOptions* gpu_options =
@@ -403,6 +466,10 @@ Status GpuExecutable::ExecuteThunks(
               : nullptr};
       TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(thunk_params));
       if (thunk_schedule_->Depended(thunk)) {
+        VLOG(3) << " " << ThunkKindToString(thunk->kind())
+                << " is depended by another thunk"
+                << ". Hence pushing finish_event.";
+
         auto finish_event = absl::make_unique<se::Event>(main_stream->parent());
         finish_event->Init();
         stream->ThenRecordEvent(finish_event.get());
@@ -437,16 +504,58 @@ Status GpuExecutable::ExecuteThunks(
         }
       }
       if (!exec_graph) {
-        if (!GpuDriver::InstantiateExecutableGraph(gpu_context, graph,
-                                                   &exec_graph)) {
+        bool instantiate_success = GpuDriver::InstantiateExecutableGraph(
+            gpu_context, graph, &exec_graph);
+        if (!instantiate_success) {
           return InternalError("Failed to instantiate GPU execution graph");
         }
+        gpu_exec_graphs_cache_[gpu_context].update_cache(bufs_key, exec_graph);
       }
       owned_graph.reset();  // Can destroy the captured graph early
+      // main_stream->ThenWaitFor(&sub_streams); //(ToDo(amoitra): Check if this
+      // is required)
+      // if (VLOG_IS_ON(3)) {
+      //   stream_executor::gpu::GpuStream* main_gpu_stream =
+      //       static_cast<stream_executor::gpu::GpuStream*>(
+      //           main_stream->implementation());
+      //   bool is_main_stream_idle = false;
+      //   while (!is_main_stream_idle) {
+      //     is_main_stream_idle = main_gpu_stream->IsIdle();
+      //     LOG(INFO) << "Main stream " << main_cuda_stream << " not idle yet";
+      //   }
+
+      //   stream_executor::gpu::GpuStream* capture_gpu_stream =
+      //       static_cast<stream_executor::gpu::GpuStream*>(
+      //           capture_stream->implementation());
+      //   bool is_capture_stream_idle = false;
+      //   while (!is_capture_stream_idle) {
+      //     is_capture_stream_idle = capture_gpu_stream->IsIdle();
+      //     LOG(INFO) << "Capture stream " << capture_cuda_stream
+      //               << " not idle yet (before graph launch)";
+      //   }
+      // }
+
       if (!GpuDriver::LaunchExecutableGraph(gpu_context, exec_graph,
                                             main_cuda_stream)) {
         return InternalError("Failed to launch CUDA execution graph");
       }
+      // if (VLOG_IS_ON(3)) {
+      //   stream_executor::gpu::GpuStream* capture_gpu_stream =
+      //       static_cast<stream_executor::gpu::GpuStream*>(
+      //           capture_stream->implementation());
+      //   bool is_capture_stream_idle = false;
+      //   while (!is_capture_stream_idle) {
+      //     is_capture_stream_idle = capture_gpu_stream->IsIdle();
+      //     LOG(INFO) << "Capture stream " << capture_cuda_stream
+      //               << " not idle yet (after graph launch)";
+      //   }
+
+      //   // is_main_stream_idle = false;
+      //   // while (!is_main_stream_idle){
+      //   //   is_main_stream_idle = main_gpu_stream->IsIdle();
+      //   //   VLOG(2) << "Stream " << main_cuda_stream << " not idle yet";
+      //   // }
+      // }
     }
     // capture_stream->ThenWaitFor(&sub_streams);
 

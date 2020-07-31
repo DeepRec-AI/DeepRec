@@ -1639,7 +1639,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
                << context->context() << ": " << ToString(res);
     return false;
   }
-  VLOG(1) << "successfully launched graph";
+  VLOG(1) << "successfully launched graph on stream " << stream;
   return true;
 #else
   LOG(ERROR) << "Feature not supported on this CUDA version "
@@ -1662,7 +1662,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
                << context->context() << ": " << ToString(res);
   } else {
     VLOG(1) << "successfully destroyed executable graph " << *graph_exec
-            << " for context " << context->context();
+            << " for GpuContext " << context << " and context "
+            << context->context();
     *graph_exec = nullptr;
   }
 #else
