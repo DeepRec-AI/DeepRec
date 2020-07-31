@@ -180,24 +180,6 @@ GpuExecutable::~GpuExecutable() {
     VLOG(2) << " Most recent enqueued hash hit rate: "
             << (graph_stats_.last_buf_key_hits * 100) / graph_stats_.cache_hits;
   }
-  /*while (!gpu_exec_graphs_.empty()) {
-    auto* gpu_context = static_cast<stream_executor::gpu::GpuContext*>(
-        gpu_exec_graphs_.begin()->first);
-    VLOG(2) << "Cache size for gpu_executable " << this << " and gpu_context "
-            << gpu_context << " is " << gpu_exec_graphs_[gpu_context].size();
-    // TODO: Clean this up a bit.
-    auto& map = gpu_exec_graphs_.begin()->second;
-    while (!map.empty()) {
-      auto* exec_graph =
-          reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
-              //&gpu_exec_graphs_.begin()->second);
-              &map.begin()->second);
-      using stream_executor::gpu::GpuDriver;
-      GpuDriver::DestroyExecutableGraph(gpu_context, exec_graph);
-      map.erase(map.begin());
-    }
-    gpu_exec_graphs_.erase(gpu_exec_graphs_.begin());
-  }*/
 
   while (!gpu_exec_graphs_cache_.empty()) {
     auto* gpu_context = static_cast<stream_executor::gpu::GpuContext*>(
@@ -341,13 +323,6 @@ Status GpuExecutable::ExecuteThunks(
           ->gpu_context();
   using stream_executor::gpu::GpuDriver;
   tensorflow::mutex_lock lock(module_handle_mutex_);
-  /*auto& exec_graph =
-      *reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
-          &gpu_exec_graphs_[gpu_context][bufs_key]);
-  if (gpu_exec_graphs_[gpu_context].size() > 2048) {
-    LOG(WARNING) << "Too many exec graphs in cache! "
-                 << gpu_exec_graphs_[gpu_context].size();
-  }*/
   auto& graph_exec_cache = gpu_exec_graphs_cache_[gpu_context];
   graph_exec_cache.set_gpu_context(gpu_context);
   graph_exec_cache.set_cache_size(GpuExecGraphCacheSize());
@@ -379,14 +354,6 @@ Status GpuExecutable::ExecuteThunks(
     if (!launch_success) {
       return InternalError("Failed to launch CUDA execution graph");
     }
-    // GpuStream* cuda_stream = AsGpuStream(main_stream);
-    // stream_executor::gpu::GpuStream* cuda_stream =
-    //     static_cast<stream_executor::gpu::GpuStream*>(main_stream->implementation());
-    // bool is_stream_idle = false;
-    // while (!is_stream_idle){
-    //   is_stream_idle = cuda_stream->IsIdle();
-    //   LOG(INFO) << "Stream " << main_cuda_stream << " not idle yet";
-    // }
   } else {
     if (use_gpu_graph_capture) {
       mu.lock();
@@ -512,50 +479,11 @@ Status GpuExecutable::ExecuteThunks(
         gpu_exec_graphs_cache_[gpu_context].update_cache(bufs_key, exec_graph);
       }
       owned_graph.reset();  // Can destroy the captured graph early
-      // main_stream->ThenWaitFor(&sub_streams); //(ToDo(amoitra): Check if this
-      // is required)
-      // if (VLOG_IS_ON(3)) {
-      //   stream_executor::gpu::GpuStream* main_gpu_stream =
-      //       static_cast<stream_executor::gpu::GpuStream*>(
-      //           main_stream->implementation());
-      //   bool is_main_stream_idle = false;
-      //   while (!is_main_stream_idle) {
-      //     is_main_stream_idle = main_gpu_stream->IsIdle();
-      //     LOG(INFO) << "Main stream " << main_cuda_stream << " not idle yet";
-      //   }
-
-      //   stream_executor::gpu::GpuStream* capture_gpu_stream =
-      //       static_cast<stream_executor::gpu::GpuStream*>(
-      //           capture_stream->implementation());
-      //   bool is_capture_stream_idle = false;
-      //   while (!is_capture_stream_idle) {
-      //     is_capture_stream_idle = capture_gpu_stream->IsIdle();
-      //     LOG(INFO) << "Capture stream " << capture_cuda_stream
-      //               << " not idle yet (before graph launch)";
-      //   }
-      // }
 
       if (!GpuDriver::LaunchExecutableGraph(gpu_context, exec_graph,
                                             main_cuda_stream)) {
         return InternalError("Failed to launch CUDA execution graph");
       }
-      // if (VLOG_IS_ON(3)) {
-      //   stream_executor::gpu::GpuStream* capture_gpu_stream =
-      //       static_cast<stream_executor::gpu::GpuStream*>(
-      //           capture_stream->implementation());
-      //   bool is_capture_stream_idle = false;
-      //   while (!is_capture_stream_idle) {
-      //     is_capture_stream_idle = capture_gpu_stream->IsIdle();
-      //     LOG(INFO) << "Capture stream " << capture_cuda_stream
-      //               << " not idle yet (after graph launch)";
-      //   }
-
-      //   // is_main_stream_idle = false;
-      //   // while (!is_main_stream_idle){
-      //   //   is_main_stream_idle = main_gpu_stream->IsIdle();
-      //   //   VLOG(2) << "Stream " << main_cuda_stream << " not idle yet";
-      //   // }
-      // }
     }
     // capture_stream->ThenWaitFor(&sub_streams);
 
