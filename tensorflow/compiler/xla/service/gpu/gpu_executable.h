@@ -169,6 +169,16 @@ class GpuExecutable : public Executable {
       module_globals_ TF_GUARDED_BY(module_handle_mutex_);
 
   bool can_use_gpu_graph_capture_ = false;
+
+  se::internal::StreamExecutorInterface* executor_impl_ = nullptr;
+
+  void SetExecutor(se::internal::StreamExecutorInterface* executor_impl) {
+    executor_impl_ = executor_impl;
+  }
+
+  se::internal::StreamExecutorInterface* GetExecutor() {
+    return executor_impl_;
+  }
   /*
   // Maps GpuContext* to owned GpuGraphExec objects.
   // std::unordered_map<void*, void*> gpu_exec_graphs_;

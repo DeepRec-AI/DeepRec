@@ -1522,7 +1522,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
   ScopedActivateContext activation(context);
   CUresult res = cuStreamBeginCapture(stream, mode);
   if (res != CUDA_SUCCESS) {
-    LOG(ERROR) << "could not begin graph capture on stream: " << ToString(res);
+    LOG(ERROR) << "could not begin CUDA graph capture on stream: "
+               << ToString(res);
     return false;
   }
 

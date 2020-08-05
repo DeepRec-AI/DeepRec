@@ -359,6 +359,39 @@ Stream &Stream::ThenRecordEvent(Event *event) {
   return *this;
 }
 
+Stream &Stream::ThenLaunchGraph(void *exec_graph) {
+  VLOG_CALL(PARAM(exec_graph));
+  DCHECK(parent_ != nullptr);
+  port::Status status = parent_->LaunchExecutableGraph(this, exec_graph);
+  if (!status.ok()) {
+    LOG(ERROR) << "Failed to launch task graph " << status.error_message();
+  }
+  return *this;
+}
+
+Stream &Stream::ThenBeginGraphCapture() {
+  VLOG_CALL();
+  DCHECK(parent_ != nullptr);
+  port::Status status = parent_->BeginGraphCapture(this);
+  if (!status.ok()) {
+    LOG(ERROR) << "Failed to begin capturing task graph "
+               << status.error_message();
+  }
+  return *this;
+}
+
+Stream &Stream::ThenEndGraphCapture(void *&graph) {
+  VLOG_CALL();
+  DCHECK(parent_ != nullptr);
+  port::StatusOr<void *> status = parent_->EndGraphCapture(this, graph);
+  if (!status.ok()) {
+    LOG(ERROR) << "Failed to end capturing task graph "
+               << status.status().error_message();
+  }
+  graph = status.ValueOrDie();
+  return *this;
+}
+
 Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
     int64 batch_size, int64 feature_count, int64 y_size,
     const std::string &layout, dnn::DataType input_type,
