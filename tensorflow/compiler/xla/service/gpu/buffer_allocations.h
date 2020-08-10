@@ -106,6 +106,8 @@ class BufferAllocations {
   };
   KeyType Key() const;
 
+  KeyType TempBufferKey() const;
+
  private:
   BufferAllocations(BufferAllocation::Index buffer_count, int device_ordinal,
                     se::DeviceMemoryAllocator* memory_allocator,

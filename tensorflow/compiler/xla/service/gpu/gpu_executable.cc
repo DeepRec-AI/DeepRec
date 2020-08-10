@@ -169,22 +169,34 @@ GpuExecutable::~GpuExecutable() {
           << " Misses: " << graph_stats_.cache_miss
           << " Recent hash hits: " << graph_stats_.last_buf_key_hits
           << " called # " << graph_stats_.times_called;
+  VLOG(2) << "Temp buffer cache hits: " << graph_stats_.temp_buffer_cache_hits;
+  VLOG(2) << "This executable " << this << " has encountered "
+          << temp_buffer_base_to_bufs_keys_map_.size()
+          << " different temporary buffer base ptrs during the allocation "
+             "process";
+  if (VLOG_IS_ON(2)) {
+    for (auto it : temp_buffer_base_to_bufs_keys_map_) {
+      LOG(INFO) << "Temp buffer with TempBufferKey hash of " << it.first
+                << " is the same for " << it.second.size()
+                << " unique buffer keys";
+    }
+  }
   if (graph_stats_.times_called > 0) {
-    VLOG(1) << "with hit rate of "
+    VLOG(1) << "Mem cache hit rate of this executable " << this << " is "
             << (graph_stats_.cache_hits * 100) / graph_stats_.times_called
             << "%";
   }
-  VLOG(2) << "Most recent enqueued hash hits: "
+  VLOG(4) << "Most recent enqueued hash hits: "
           << graph_stats_.last_buf_key_hits;
   if (graph_stats_.cache_hits > 0) {
-    VLOG(2) << " Most recent enqueued hash hit rate: "
+    VLOG(4) << " Most recent enqueued hash hit rate: "
             << (graph_stats_.last_buf_key_hits * 100) / graph_stats_.cache_hits;
   }
 
   while (!gpu_exec_graphs_cache_.empty()) {
     auto* gpu_context = static_cast<stream_executor::gpu::GpuContext*>(
         gpu_exec_graphs_cache_.begin()->first);
-    VLOG(2) << "Cache size for gpu_executable " << this << " and gpu_context "
+    VLOG(1) << "Cache size for gpu_executable " << this << " and gpu_context "
             << gpu_context << " is "
             << gpu_exec_graphs_cache_[gpu_context].gpu_exec_graphs_.size();
     // TODO: Clean this up a bit.
@@ -303,6 +315,7 @@ Status GpuExecutable::ExecuteThunks(
       tensorflow::profiler::TraceMeLevel::kInfo);
 
   auto bufs_key = buffer_allocations.Key();
+  auto temp_buf_key = buffer_allocations.TempBufferKey();
   VLOG(3) << "For gpu executable " << this << " tmp buffer base: "
           << buffer_allocations.GetTempBufferBase().opaque()
           << " key hash: " << buffer_allocations.Key().hash();
@@ -319,8 +332,17 @@ Status GpuExecutable::ExecuteThunks(
 
   tensorflow::mutex& mu = graph_stats_.graph_cache_mu;
   if (exec_graph && use_gpu_graph_capture) {
+    // The temp_buffer_base should match the temp_buff_base of the bufs_key that
+    // is cached.
+    auto buf_keys_set = temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()];
+    if (buf_keys_set.find(bufs_key) == buf_keys_set.end()) {
+      LOG(ERROR) << " The temp_buffer_base should match the temp_buff_base of "
+                    "the bufs_key that"
+                 << "is cached.";
+    }
     mu.lock();
     graph_stats_.cache_hits++;
+    graph_stats_.temp_buffer_cache_hits++;
     graph_stats_.times_called++;
     if (bufs_key.hash() == graph_stats_.last_buf_key_hash) {
       graph_stats_.last_buf_key_hits++;
@@ -331,7 +353,7 @@ Status GpuExecutable::ExecuteThunks(
             << " Misses: " << graph_stats_.cache_miss << " called # "
             << graph_stats_.times_called
             << " Cache size: " << graph_exec_cache.get_current_cache_size();
-    VLOG(3) << "Most recent enqueued hash: " << bufs_key.hash()
+    VLOG(4) << "Most recent enqueued hash: " << bufs_key.hash()
             << "Most recent enqueued hash hits: "
             << graph_stats_.last_buf_key_hits;
     // main_stream->ThenWaitFor(&sub_streams); //(ToDo(amoitra): Check if this
@@ -340,6 +362,18 @@ Status GpuExecutable::ExecuteThunks(
   } else {
     if (use_gpu_graph_capture) {
       mu.lock();
+      if (temp_buffer_base_to_bufs_keys_map_.find(temp_buf_key.hash()) !=
+          temp_buffer_base_to_bufs_keys_map_.end()) {
+        graph_stats_.temp_buffer_cache_hits++;
+        VLOG(3) << "CACHE MISS Temp Buffer cache HIT";
+        VLOG(3) << "Cache hits till this point: " << graph_stats_.cache_hits
+                << " and Temp Buffer hits: "
+                << graph_stats_.temp_buffer_cache_hits;
+        VLOG(3)
+            << "Number of buf keys for this temp buffer of hash "
+            << temp_buf_key.hash() << " = "
+            << temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].size();
+      }
       graph_stats_.cache_miss++;
       graph_stats_.times_called++;
       graph_stats_.last_buf_key_hash = bufs_key.hash();
@@ -349,7 +383,8 @@ Status GpuExecutable::ExecuteThunks(
               << " Misses: " << graph_stats_.cache_miss << " called # "
               << graph_stats_.times_called
               << " Cache size: " << graph_exec_cache.get_current_cache_size();
-      VLOG(3) << "Most recently enqueued hash: " << bufs_key.hash()
+      VLOG(3) << "Temp buffer Hits: " << graph_stats_.temp_buffer_cache_hits;
+      VLOG(4) << "Most recently enqueued hash: " << bufs_key.hash()
               << "Most recent enqueued hash hits: "
               << graph_stats_.last_buf_key_hits;
       capture_stream->ThenBeginGraphCapture();
@@ -432,6 +467,8 @@ Status GpuExecutable::ExecuteThunks(
         }
         exec_graph = status.ValueOrDie();
         gpu_exec_graphs_cache_[gpu_context].update_cache(bufs_key, exec_graph);
+        temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].insert(
+            bufs_key);
       }
       GetExecutor()->DestroyGraph(gpu_context, graph);
       main_stream->ThenLaunchGraph(exec_graph);

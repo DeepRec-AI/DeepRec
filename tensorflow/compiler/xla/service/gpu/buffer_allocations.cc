@@ -185,6 +185,14 @@ BufferAllocations::KeyType BufferAllocations::Key() const {
   return key;
 }
 
+BufferAllocations::KeyType BufferAllocations::TempBufferKey() const {
+  KeyType key;
+  key.all_buffers_.reserve(1);
+  key.all_buffers_.push_back(temp_buffer_base_.opaque());
+
+  return key;
+}
+
 bool ShouldEmitLiteralInLlvmIr(const Literal& literal) {
   // LLVM can sometimes do interesting optimizations using scalar constants.
   return ShapeUtil::IsScalar(literal.shape());

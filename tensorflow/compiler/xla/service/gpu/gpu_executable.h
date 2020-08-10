@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/buffer_assignment.h"
 #include "tensorflow/compiler/xla/service/executable.h"
 #include "tensorflow/compiler/xla/service/gpu/buffer_allocations.h"
+#include "tensorflow/compiler/xla/service/gpu/gpu_graph_util.h"
 #include "tensorflow/compiler/xla/service/gpu/gpu_types.h"
 #include "tensorflow/compiler/xla/service/gpu/stream_assignment.h"
 #include "tensorflow/compiler/xla/service/gpu/thunk.h"
@@ -179,87 +180,20 @@ class GpuExecutable : public Executable {
   se::internal::StreamExecutorInterface* GetExecutor() {
     return executor_impl_;
   }
-  /*
-  // Maps GpuContext* to owned GpuGraphExec objects.
-  // std::unordered_map<void*, void*> gpu_exec_graphs_;
-  // Maps GpuContext* to allocation key to owned GpuGraphExec objects.
-  std::unordered_map<void*,
-                      std::unordered_map<BufferAllocations::KeyType, void*>>
-       gpu_exec_graphs_ GUARDED_BY(graph_mutex_);*/
-
-  struct MutexedGraphExecCache {
-    tensorflow::mutex exec_graph_cache_mu_;
-    int64 cache_size_ GUARDED_BY(exec_graph_cache_mu) = 0;
-    stream_executor::gpu::GpuContext* GUARDED_BY(exec_graph_cache_mu)
-        gpu_context_ = nullptr;
-    std::list<void*> gpu_exec_graphs_ GUARDED_BY(exec_graph_cache_mu);
-    std::unordered_map<BufferAllocations::KeyType, std::list<void*>::iterator>
-        gpu_key_to_exec_graphs_map_ GUARDED_BY(exec_graph_cache_mu);
-
-    // Pushing in a new pair of key and exec graph.
-    void update_cache(BufferAllocations::KeyType key, void* gpu_exec_graph) {
-      tensorflow::mutex_lock lock(exec_graph_cache_mu_);
-      gpu_exec_graphs_.push_front(gpu_exec_graph);
-      if (gpu_exec_graphs_.size() > cache_size_) {
-        auto& graph_exec = gpu_exec_graphs_.back();
-        auto* exec_graph =
-            reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
-                &gpu_exec_graphs_.back());
-        using stream_executor::gpu::GpuDriver;
-        GpuDriver::DestroyExecutableGraph(gpu_context_, exec_graph);
-        gpu_exec_graphs_.pop_back();
-      }
-      gpu_key_to_exec_graphs_map_[key] = gpu_exec_graphs_.begin();
-    }
-
-    void* get_exec_graph(BufferAllocations::KeyType key) {
-      tensorflow::mutex_lock lock(exec_graph_cache_mu_);
-      if (gpu_key_to_exec_graphs_map_.find(key) !=
-          gpu_key_to_exec_graphs_map_.end()) {
-        auto it = std::find(gpu_exec_graphs_.begin(), gpu_exec_graphs_.end(),
-                            *(gpu_key_to_exec_graphs_map_[key]));
-        if (it == gpu_exec_graphs_.end()) {
-          gpu_key_to_exec_graphs_map_.erase(key);
-          return nullptr;
-        }
-        auto gpu_exec_graph = *(gpu_key_to_exec_graphs_map_[key]);
-        gpu_exec_graphs_.remove(gpu_exec_graph);
-        gpu_exec_graphs_.push_front(gpu_exec_graph);
-        gpu_key_to_exec_graphs_map_[key] = gpu_exec_graphs_.begin();
-        return gpu_exec_graph;
-      }
-      return nullptr;
-    }
-
-    void set_cache_size(int64 cache_size) {
-      tensorflow::mutex_lock lock(exec_graph_cache_mu_);
-      cache_size_ = cache_size;
-    }
-
-    void set_gpu_context(stream_executor::gpu::GpuContext* gpu_context) {
-      tensorflow::mutex_lock lock(exec_graph_cache_mu_);
-      gpu_context_ = gpu_context;
-    }
-
-    size_t get_current_cache_size() {
-      tensorflow::mutex_lock lock(exec_graph_cache_mu_);
-      return gpu_exec_graphs_.size();
-    }
-  };
-
-  struct MutexedGraphCacheStats {
-    tensorflow::mutex graph_cache_mu;
-    uint64 cache_hits GUARDED_BY(graph_cache_mu) = 0;
-    uint64 cache_miss GUARDED_BY(graph_cache_mu) = 0;
-    uint64 times_called GUARDED_BY(graph_cache_mu) = 0;
-    size_t last_buf_key_hash GUARDED_BY(graph_cache_mu) = 0;
-    uint64 last_buf_key_hits GUARDED_BY(graph_cache_mu) = 0;
-  };
 
   MutexedGraphCacheStats graph_stats_;
 
   std::unordered_map<void*, MutexedGraphExecCache> gpu_exec_graphs_cache_
       GUARDED_BY(module_handle_mutex_);
+
+  // If the temporary base ptr remains constant but the other pointers (input
+  // and output pointers) change, there can be multiple unique buffer address
+  // combinations corresponding to a single temp buffer ptr hash. This data
+  // structure is used to capture the unique buffer keys corresponding to a temp
+  // buffer key (using its has value).
+  // This data structure is maintained mainly for diagnostic purposes.
+  std::unordered_map<size_t, std::unordered_set<BufferAllocations::KeyType>>
+      temp_buffer_base_to_bufs_keys_map_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GpuExecutable);
 };

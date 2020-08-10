@@ -513,6 +513,7 @@ cc_library(
     ]),
     hdrs = [
         "async_out_thunk.h",
+        "gpu_graph_util.h",
         "collective_permute_thunk.h",
         "conditional_thunk.h",
         "convolution_thunk.h",
