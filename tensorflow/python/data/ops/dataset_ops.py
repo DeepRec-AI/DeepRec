@@ -324,7 +324,7 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
           options.experimental_stats.prefix,
           options.experimental_stats.counter_prefix)
     
-    if os.environ.get("TF_ENABLE_AUTOMATIC_GPU_PREFETCHING", "1") == "1":
+    if os.environ.get("TF_ENABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "1":
       from tensorflow.python.distribute import distribution_strategy_context
       if not distribution_strategy_context.has_strategy():
         if (options.experimental_optimization.prefetch_to_device is not None and
