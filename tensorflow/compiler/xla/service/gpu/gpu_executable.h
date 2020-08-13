@@ -39,7 +39,6 @@ limitations under the License.
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/stream_executor_no_cuda.h"
 #include "tensorflow/stream_executor/device_memory_allocator.h"
-#include "tensorflow/stream_executor/gpu/gpu_driver.h"
 
 namespace xla {
 namespace gpu {
@@ -190,7 +189,8 @@ class GpuExecutable : public Executable {
   // and output pointers) change, there can be multiple unique buffer address
   // combinations corresponding to a single temp buffer ptr hash. This data
   // structure is used to capture the unique buffer keys corresponding to a temp
-  // buffer key (using its has value).
+  // buffer key (using its hash value; it can be safely assumed that the number
+  // of temp buffer base ptrs will be low enough to not have hash collision).
   // This data structure is maintained mainly for diagnostic purposes.
   std::unordered_map<size_t, std::unordered_set<BufferAllocations::KeyType>>
       temp_buffer_base_to_bufs_keys_map_;
