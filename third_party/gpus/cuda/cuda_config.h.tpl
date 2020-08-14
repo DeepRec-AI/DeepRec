@@ -19,6 +19,7 @@ limitations under the License.
 #define TF_CUDA_CAPABILITIES %{cuda_compute_capabilities}
 
 #define TF_CUDA_VERSION "%{cuda_version}"
+#define TF_CUDART_VERSION "%{cudart_version}"
 #define TF_CUBLAS_VERSION "%{cublas_version}"
 #define TF_CUSOLVER_VERSION "%{cusolver_version}"
 #define TF_CURAND_VERSION "%{curand_version}"

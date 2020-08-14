@@ -889,6 +889,7 @@ filegroup(name="cudnn-include")
         "cuda:cuda_config.h",
         {
             "%{cuda_version}": "",
+            "%{cudart_version}": "",
             "%{cublas_version}": "",
             "%{cusolver_version}": "",
             "%{curand_version}": "",
@@ -1326,6 +1327,7 @@ def _create_local_cuda_repository(repository_ctx):
         "cuda:cuda_config.h",
         {
             "%{cuda_version}": cuda_config.cuda_version,
+            "%{cudart_version}": cuda_config.cudart_version,
             "%{cublas_version}": cuda_config.cublas_version,
             "%{cusolver_version}": cuda_config.cusolver_version,
             "%{curand_version}": cuda_config.curand_version,
