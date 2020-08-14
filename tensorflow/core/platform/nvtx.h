@@ -237,7 +237,7 @@ class NvtxDomain {
   TF_DISALLOW_COPY_AND_ASSIGN(NvtxDomain);
 };
 
-static const NvtxDomain& GetNvtxTensorFlowCoreDomain() {
+inline const NvtxDomain& GetNvtxTensorFlowCoreDomain() {
   // Singleton because we want the same domain for the lifetime of the process.
   static NvtxDomain nvtx_domain("tensorflow-core");
   return nvtx_domain;
