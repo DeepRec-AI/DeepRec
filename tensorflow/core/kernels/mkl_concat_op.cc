@@ -812,8 +812,6 @@ class MklConcatOp : public OpKernel {
         } else {
           MklConcatFwdPrimitive<T>* concat_fwd = nullptr;
 
-          LOG(INFO) << dst_dims[0] << dst_dims[1] << dst_dims[2] << dst_dims[3];
-          LOG(INFO) << "concat_dim: " << concat_dim;
           MklConcatFwdParams concat_fwd_dims(src_dims_pt, dst_dims,
                                              (N - num_of_empty_inputs),
                                              concat_dim, mkl_common_format);
