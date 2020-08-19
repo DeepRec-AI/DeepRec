@@ -1,1 +1,1 @@
---test_tag_filters=-no_oss
+--test_tag_filters=-no_oss -- -//tensorflow/compiler/xla/tools:interactive_graphviz_build_only_test -//tensorflow/compiler/xla/rpc:grpc_client_test
