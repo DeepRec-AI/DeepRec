@@ -81,7 +81,7 @@ bool GpuInstructionFusion::ShouldFuse(HloInstruction* consumer,
   auto producer = consumer->operand(operand_index);
 
   // The following checks are potentially expensive.
-  if (FusionWouldBeTooLarge(*consumer, *producer)) {
+  if (FusionWouldBeTooLarge(*consumer, *producer, false)) {
     return false;
   }
   if (consumer->opcode() != HloOpcode::kFusion) {

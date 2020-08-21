@@ -65,7 +65,8 @@ bool IsInputFusibleScatter(const HloInstruction& instr);
 // multi-output) fusion would be "too large" -- i.e., have more operands and
 // outputs than is allowed or occupy too much shared memory.
 bool FusionWouldBeTooLarge(const HloInstruction& instr1,
-                           const HloInstruction& instr2);
+                           const HloInstruction& instr2,
+                           bool maybe_MOF_fusion=true);
 
 // Check if fusing producer and consumer will generate a nested loop, e.g. both
 // producer and consumer are `reduce-window` HLO instructions.

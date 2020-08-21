@@ -332,7 +332,8 @@ static int64 SharedMemoryUsage(const HloInstruction& instr) {
 // operands, each GPU thread likely has to do a lot of work, and so possibly
 // uses a lot of registers, thus limiting occupancy.
 bool FusionWouldBeTooLarge(const HloInstruction& instr1,
-                           const HloInstruction& instr2) {
+                           const HloInstruction& instr2,
+                           bool maybe_MOF_fusion) {
   if (SharedMemoryUsage(instr1) + SharedMemoryUsage(instr2) >
       kSharedMemoryBudgetInBytes) {
     return true;
@@ -377,6 +378,14 @@ bool FusionWouldBeTooLarge(const HloInstruction& instr1,
   // producer -> consumer relationship.
   operands.erase(&instr1);
   operands.erase(&instr2);
+
+  // If we generates have the same numbers of inputs and outputs as
+  // before, it won't be bigger after fusion. So accept the fusion.
+  if (!maybe_MOF_fusion && operands.size() == instr1.operands().size()) {
+    return false;
+  }
+
+  // Does the new fusion have more operands and outputs then the max?
   return operands.size() + num_output_buffers > kMaxOperandsAndOutputsPerFusion;
 }
 
