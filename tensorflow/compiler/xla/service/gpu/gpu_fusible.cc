@@ -331,9 +331,13 @@ static int64 SharedMemoryUsage(const HloInstruction& instr) {
 // This limit is also often good for performance.  In a fusion with many
 // operands, each GPU thread likely has to do a lot of work, and so possibly
 // uses a lot of registers, thus limiting occupancy.
+//
+// If the fusion is a producer/consumer fusion and instr1 is the
+// consumer and instr2 is the producer, set is_consumer_producer_fusion
+// to true to enable more fusion.
 bool FusionWouldBeTooLarge(const HloInstruction& instr1,
                            const HloInstruction& instr2,
-                           bool maybe_MOF_fusion) {
+                           bool is_consumer_producer_fusion) {
   if (SharedMemoryUsage(instr1) + SharedMemoryUsage(instr2) >
       kSharedMemoryBudgetInBytes) {
     return true;
@@ -379,13 +383,16 @@ bool FusionWouldBeTooLarge(const HloInstruction& instr1,
   operands.erase(&instr1);
   operands.erase(&instr2);
 
-  // If we generates have the same numbers of inputs and outputs as
+  // If we generate the same numbers of inputs and outputs as
   // before, it won't be bigger after fusion. So accept the fusion.
-  if (!maybe_MOF_fusion && operands.size() == instr1.operands().size()) {
+  // As this is a consumer_producer fusion, this does not change the
+  // consumer numbers of output. So no need to check it.
+  // TODO: change the `==` to `<=`.
+  if (is_consumer_producer_fusion && operands.size() == instr1.operands().size()) {
     return false;
   }
 
-  // Does the new fusion have more operands and outputs then the max?
+  // Does the new fusion have more operands and outputs than the max?
   return operands.size() + num_output_buffers > kMaxOperandsAndOutputsPerFusion;
 }
 
