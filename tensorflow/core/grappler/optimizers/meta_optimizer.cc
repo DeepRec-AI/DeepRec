@@ -86,7 +86,8 @@ int NumIterations(const RewriterConfig& cfg) {
 // Check if optimizer is allowed to run only once.
 bool IsRunOnceOptimizer(const string& name) {
   return name == "layout" || name == "memory_optimizer" ||
-         name == "loop_optimizer" || name == "auto_mixed_precision";
+         name == "loop_optimizer" || name == "auto_mixed_precision" ||
+	 name == "auto_mixed_precision_mkl";
 }
 
 // Creates a function library stub from a real function library: copy only
