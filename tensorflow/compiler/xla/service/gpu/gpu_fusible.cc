@@ -387,8 +387,7 @@ bool FusionWouldBeTooLarge(const HloInstruction& instr1,
   // before, it won't be bigger after fusion. So accept the fusion.
   // As this is a consumer_producer fusion, this does not change the
   // consumer numbers of output. So no need to check it.
-  // TODO: change the `==` to `<=`.
-  if (is_consumer_producer_fusion && operands.size() == instr1.operands().size()) {
+  if (is_consumer_producer_fusion && operands.size() <= instr1.operands().size()) {
     return false;
   }
 
