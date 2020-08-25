@@ -80,6 +80,9 @@ TEST_F(GpuFusionTest, FusedBiggerThenThresholdButDoNotChangeTheFusionl) {
   module->AddEntryComputation(b.Build());
   EXPECT_TRUE(GpuInstructionFusion(false).Run(module.get()).ValueOrDie());
   EXPECT_TRUE(module->entry_computation()->root_instruction()->opcode() == HloOpcode::kFusion);
+  for (HloInstruction* instr : module->entry_computation()->instructions()){
+    EXPECT_TRUE(instr->opcode() != HloOpcode::kSlice);
+  }
 }
 
 }  // namespace
