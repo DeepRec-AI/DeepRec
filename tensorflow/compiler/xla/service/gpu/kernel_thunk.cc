@@ -95,9 +95,8 @@ Status KernelThunk::ExecuteOnStream(const ExecuteParams& params) {
   }
   auto op_profiler =
       params.profiler->MakeScopedInstructionProfiler(hlo_instruction());
-  return ExecuteKernelOnStream(*kernel, buffer_args,
-                               launch_dimensions.threads_per_block(),
-                               launch_dimensions.block_count(), params.stream);
+  return ExecuteKernelOnStream(*kernel, buffer_args, launch_dimensions,
+                               params.stream);
 }
 
 }  // namespace gpu
