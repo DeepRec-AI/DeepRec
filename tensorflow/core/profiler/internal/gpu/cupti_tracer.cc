@@ -635,7 +635,7 @@ Status CuptiTracer::EnableApiTracing() {
   if (status != CUPTI_SUCCESS) {
     const char *errstr = "";
     cupti_interface_->GetResultString(status, &errstr);
-    if (status == CUPTI_ERROR_MAX_LIMIT_REACHED) {
+    if (status == CUPTI_ERROR_MULTIPLE_SUBSCRIBERS_NOT_SUPPORTED) {
       subscriber_existed_ = true;
       LOG(WARNING) << "function cupti_interface_->Subscribe failed with error "
                    << errstr << " and TF CUPTI tracing will be ignored.\n";
