@@ -535,11 +535,11 @@ class AutoMixedPrecisionTest(test.TestCase):
 
     output_val_ref, output_val, cost_graph, partition_graphs = self._run(output)
     node_map = _build_node_map(cost_graph.node)
-    self._assert_output_f16(node_map, 'depthwise')
-    self._assert_output_f16(
+    self._assert_output_fp16(node_map, 'depthwise')
+    self._assert_output_fp16(
         node_map,
         'gradients/depthwise_grad/DepthwiseConv2dNativeBackpropInput')
-    self._assert_output_f16(
+    self._assert_output_fp16(
         node_map,
         'gradients/depthwise_grad/DepthwiseConv2dNativeBackpropFilter')
 
