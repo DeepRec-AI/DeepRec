@@ -23,7 +23,6 @@ tf_proto_library_cc(
     protodeps = [
         "//tensorflow/compiler/xla:xla_proto",
     ],
-    use_grpc_namespace = True,
     visibility = ["//visibility:public"],
 )
 

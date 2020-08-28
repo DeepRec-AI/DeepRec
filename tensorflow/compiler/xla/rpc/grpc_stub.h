@@ -25,7 +25,7 @@ namespace xla {
 
 class GRPCStub : public ServiceInterface {
  public:
-  explicit GRPCStub(grpc::XlaService::Stub* stub) : grpc_stub_(stub) {}
+  explicit GRPCStub(XlaService::Stub* stub) : grpc_stub_(stub) {}
   ~GRPCStub() override;
 
   Status TransferToClient(const TransferToClientRequest* arg,
@@ -77,10 +77,10 @@ class GRPCStub : public ServiceInterface {
   Status Unregister(const UnregisterRequest* arg,
                     UnregisterResponse* result) override;
 
-  grpc::XlaService::Stub* service() { return grpc_stub_; }
+  XlaService::Stub* service() { return grpc_stub_; }
 
  private:
-  grpc::XlaService::Stub* grpc_stub_;
+  XlaService::Stub* grpc_stub_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GRPCStub);
 };

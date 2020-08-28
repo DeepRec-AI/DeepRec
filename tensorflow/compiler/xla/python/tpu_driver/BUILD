@@ -28,7 +28,6 @@ tf_proto_library_cc(
         "//tensorflow/compiler/xla:xla_data_proto_cc",
         "//tensorflow/compiler/xla/service:hlo_proto",
     ],
-    use_grpc_namespace = True,
 )
 
 cc_library(

@@ -23,7 +23,7 @@ limitations under the License.
 namespace xla {
 
 // Service implementation which wraps a XLA Service with a GRPC interface.
-class GRPCService : public grpc::XlaService::Service {
+class GRPCService : public XlaService::Service {
  public:
   // Factory for creating a RPCService. The parameter platform is the platform
   // that the service should target. If platform is null then the default
