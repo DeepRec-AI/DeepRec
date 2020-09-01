@@ -75,7 +75,7 @@ int64 ThreadsPerBlockLimit(const se::DeviceDescription& device_desc);
 
 LaunchDimensions CalculateLaunchDimensions(
     const Shape& shape, const se::DeviceDescription& device_desc,
-    int unroll_factor = 1);
+    int unroll_factor = 1, bool few_waves = false);
 
 }  // namespace gpu
 }  // namespace xla

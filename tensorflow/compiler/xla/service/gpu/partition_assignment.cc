@@ -64,7 +64,7 @@ int64 ThreadsPerBlockLimit(const se::DeviceDescription& device_desc) {
 // Calculates the launch dimensions used to invoke `hlo`.
 LaunchDimensions CalculateLaunchDimensions(
     const Shape& shape, const se::DeviceDescription& device_desc,
-    int unroll_factor) {
+    int unroll_factor, bool few_waves) {
   int64 num_elements = ShapeUtil::ElementsIn(shape);
   if (num_elements <= 1) {
     return LaunchDimensions();
@@ -98,10 +98,11 @@ LaunchDimensions CalculateLaunchDimensions(
   }
 
   int64 block_count = CeilOfRatio(num_elements, threads_per_block);
-  threads_per_block = std::min(threads_per_block, 128LL);
-  block_count = device_desc.core_count() * (device_desc.threads_per_core_limit() /
-					    threads_per_block);
-
+  if (few_waves) {
+    threads_per_block = std::min(threads_per_block, 128LL);
+    block_count = device_desc.core_count() * (device_desc.threads_per_core_limit() /
+					      threads_per_block);
+  }
   VLOG(2) << absl::StrFormat(
       "Initialized the block count to ceil(# of elements / threads per "
       "block) = ceil(%d/%d) = %d",
