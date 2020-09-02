@@ -195,7 +195,7 @@ class GpuExecutable : public Executable {
     return executor_impl_;
   }
 
-  MutexedGraphCacheStats graph_stats_;
+  GraphCacheStats graph_stats_;
 
   std::unordered_map<void*, MutexedGraphExecCache> gpu_exec_graphs_cache_
       GUARDED_BY(module_handle_mutex_);

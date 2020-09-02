@@ -52,8 +52,6 @@ class MutexedGraphExecCache {
 
   void SetCacheSize(int64 cache_size);
 
-  void SetGpuContext(stream_executor::gpu::GpuContext* gpu_context);
-
   size_t GetCurrentCacheSize();
 
   void Initialize(stream_executor::gpu::GpuContext* gpu_context);
@@ -69,9 +67,11 @@ class MutexedGraphExecCache {
   std::unordered_map<BufferAllocations::KeyType, std::list<void*>::iterator>
       gpu_key_to_exec_graphs_map_ GUARDED_BY(exec_graph_cache_mu);
   std::atomic<bool> is_initialized_{false};
+
+  void SetGpuContext(stream_executor::gpu::GpuContext* gpu_context);
 };
 
-struct MutexedGraphCacheStats {
+struct GraphCacheStats {
   std::atomic<uint64> cache_hits{0};
   std::atomic<uint64> temp_buffer_cache_hits{0};
   std::atomic<uint64> cache_miss{0};
