@@ -67,15 +67,6 @@ bool GpuGraphCaptureEnabled() {
   return is_enabled;
 }
 
-int64 GpuExecGraphCacheSize() {
-  int64 cache_size = 0;
-  TF_CHECK_OK(
-      tensorflow::ReadInt64FromEnvVar("TF_XLA_GPU_EXEC_GRAPH_CACHE_SIZE",
-                                      /*default_val=*/100, &cache_size));
-
-  return cache_size;
-}
-
 bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
   // Thunks that synchronize with the host (i.e., call BlockHostUntilDone)
   // cannot be used with graph capture.
@@ -118,6 +109,12 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
   return true;
 }
 
+bool GpuExecutableSafeForGraphCapture(const ThunkSchedule* thunk_schedule) {
+  for (const Thunk* thunk : thunk_schedule->TotalOrder()) {
+    if (!IsThunkSafeForGpuGraphCapture(thunk)) return false;
+  }
+  return true;
+}
 
 }  // namespace
 
@@ -141,7 +138,6 @@ GpuExecutable::GpuExecutable(
   GpuDebugInfoManager::Get()->RegisterModule(module().name(), shared_module(),
                                              assignment_);
   ComputeThunkAnnotations();
-  can_use_gpu_graph_capture_ = CanUseGpuGraphCapture();
 }
 
 GpuExecutable::~GpuExecutable() {
@@ -161,36 +157,39 @@ GpuExecutable::~GpuExecutable() {
       CHECK(pair.first->SynchronizeAllActivity());
     }
   }
-  // float hit_rate = (graph_stats_.cache_hits / graph_stats_.times_called) *
-  // 100;
 
-  VLOG(1) << "For gpu_executable " << this
-          << " Hits: " << graph_stats_.cache_hits
-          << " Misses: " << graph_stats_.cache_miss
-          << " Recent hash hits: " << graph_stats_.last_buf_key_hits
-          << " called # " << graph_stats_.times_called;
-  VLOG(2) << "Temp buffer cache hits: " << graph_stats_.temp_buffer_cache_hits;
-  VLOG(2) << "This executable " << this << " has encountered "
-          << temp_buffer_base_to_bufs_keys_map_.size()
-          << " different temporary buffer base ptrs during the allocation "
-             "process";
-  if (VLOG_IS_ON(2)) {
-    for (auto it : temp_buffer_base_to_bufs_keys_map_) {
-      LOG(INFO) << "Temp buffer with TempBufferKey hash of " << it.first
-                << " is the same for " << it.second.size()
-                << " unique buffer keys";
+  if (GetCanUseGraphCaptureFlag()) {
+    VLOG(1) << "For gpu_executable " << this
+            << " Hits: " << graph_stats_.cache_hits.load()
+            << " Misses: " << graph_stats_.cache_miss.load()
+            << " Recent hash hits: " << graph_stats_.last_buf_key_hits.load()
+            << " called # " << graph_stats_.times_called.load();
+    VLOG(2) << "Temp buffer cache hits: "
+            << graph_stats_.temp_buffer_cache_hits.load();
+    VLOG(2) << "This executable " << this << " has encountered "
+            << temp_buffer_base_to_bufs_keys_map_.size()
+            << " different temporary buffer base ptrs during the allocation "
+               "process";
+    if (VLOG_IS_ON(2)) {
+      for (auto it : temp_buffer_base_to_bufs_keys_map_) {
+        LOG(INFO) << "Temp buffer with TempBufferKey hash of " << it.first
+                  << " is the same for " << it.second.size()
+                  << " unique buffer keys";
+      }
     }
-  }
-  if (graph_stats_.times_called > 0) {
-    VLOG(1) << "Mem cache hit rate of this executable " << this << " is "
-            << (graph_stats_.cache_hits * 100) / graph_stats_.times_called
-            << "%";
-  }
-  VLOG(4) << "Most recent enqueued hash hits: "
-          << graph_stats_.last_buf_key_hits;
-  if (graph_stats_.cache_hits > 0) {
-    VLOG(4) << " Most recent enqueued hash hit rate: "
-            << (graph_stats_.last_buf_key_hits * 100) / graph_stats_.cache_hits;
+    if (graph_stats_.times_called.load() > 0) {
+      VLOG(1) << "Mem cache hit rate of this executable " << this << " is "
+              << (graph_stats_.cache_hits.load() * 100) /
+                     graph_stats_.times_called.load()
+              << "%";
+    }
+    VLOG(4) << "Most recent enqueued hash hits: "
+            << graph_stats_.last_buf_key_hits.load();
+    if (graph_stats_.cache_hits.load() > 0) {
+      VLOG(4) << " Most recent enqueued hash hit rate: "
+              << (graph_stats_.last_buf_key_hits.load() * 100) /
+                     graph_stats_.cache_hits.load();
+    }
   }
 
   while (!gpu_exec_graphs_cache_.empty()) {
@@ -198,10 +197,10 @@ GpuExecutable::~GpuExecutable() {
         gpu_exec_graphs_cache_.begin()->first);
     VLOG(1) << "Cache size for gpu_executable " << this << " and gpu_context "
             << gpu_context << " is "
-            << gpu_exec_graphs_cache_[gpu_context].gpu_exec_graphs_.size();
+            << gpu_exec_graphs_cache_[gpu_context].GetCurrentCacheSize();
     // TODO: Clean this up a bit.
     auto& cache = gpu_exec_graphs_cache_.begin()->second;
-    auto& exec_graphs = cache.gpu_exec_graphs_;
+    auto& exec_graphs = cache.GetGpuExecGraphs();
 
     while (!exec_graphs.empty()) {
       GetExecutor()->DestroyExecutableGraph(
@@ -212,11 +211,13 @@ GpuExecutable::~GpuExecutable() {
   }
 }
 
-bool GpuExecutable::CanUseGpuGraphCapture() const {
-  for (const Thunk* thunk : thunk_schedule_->TotalOrder()) {
-    if (!IsThunkSafeForGpuGraphCapture(thunk)) return false;
+bool GpuExecutable::CanUseGpuGraphCapture() {
+  if (!can_use_gpu_graph_capture_.first) {
+    can_use_gpu_graph_capture_.first = true;
+    SetCanUseGraphCaptureFlag(
+        GpuExecutableSafeForGraphCapture(thunk_schedule_.get()));
   }
-  return true;
+  return GetCanUseGraphCaptureFlag();
 }
 
 void GpuExecutable::ComputeThunkAnnotations() {
@@ -284,8 +285,9 @@ Status GpuExecutable::ExecuteThunks(
 
   // TODO(benbarsdell): Enable for ROCm as well if it adds support for capture.
   bool use_gpu_graph_capture =
-      GpuGraphCaptureEnabled() && can_use_gpu_graph_capture_ &&
-      executor->platform_kind() == stream_executor::PlatformKind::kCuda;
+      GpuGraphCaptureEnabled() && CanUseGpuGraphCapture() &&
+      executor->platform_kind() == stream_executor::PlatformKind::kCuda &&
+      !is_graph_capture_costly_;
 
   // Stream 0 indicates `main_stream` and substreams start from stream 1.
   std::vector<StreamPool::Ptr> sub_streams;
@@ -326,49 +328,42 @@ Status GpuExecutable::ExecuteThunks(
   using stream_executor::gpu::GpuDriver;
   tensorflow::mutex_lock lock(module_handle_mutex_);
   auto& graph_exec_cache = gpu_exec_graphs_cache_[gpu_context];
-  graph_exec_cache.set_gpu_context(gpu_context);
-  graph_exec_cache.set_cache_size(GpuExecGraphCacheSize());
-  auto exec_graph = graph_exec_cache.get_exec_graph(bufs_key);
+  graph_exec_cache.Initialize(gpu_context);
+  auto exec_graph = graph_exec_cache.GetExecGraph(bufs_key);
 
-  tensorflow::mutex& mu = graph_stats_.graph_cache_mu;
   if (exec_graph && use_gpu_graph_capture) {
     // The temp_buffer_base should match the temp_buff_base of the bufs_key that
     // is cached.
     auto buf_keys_set = temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()];
-    if (buf_keys_set.find(bufs_key) == buf_keys_set.end()) {
-      LOG(ERROR) << " The temp_buffer_base should match the temp_buff_base of "
-                    "the bufs_key that"
-                 << "is cached.";
-    }
-    mu.lock();
+    DCHECK(buf_keys_set.find(bufs_key) == buf_keys_set.end())
+        << " The temp_buffer_base should match the temp_buff_base of "
+           "the bufs_key that is cached.";
     graph_stats_.cache_hits++;
     graph_stats_.temp_buffer_cache_hits++;
     graph_stats_.times_called++;
-    if (bufs_key.hash() == graph_stats_.last_buf_key_hash) {
+    if (bufs_key.hash() == graph_stats_.last_buf_key_hash.load()) {
       graph_stats_.last_buf_key_hits++;
     }
-    mu.unlock();
     VLOG(2) << "CACHE HIT -> Launching graph " << exec_graph << " blindly!"
-            << " Hits: " << graph_stats_.cache_hits
-            << " Misses: " << graph_stats_.cache_miss << " called # "
-            << graph_stats_.times_called
-            << " Cache size: " << graph_exec_cache.get_current_cache_size();
+            << " Hits: " << graph_stats_.cache_hits.load()
+            << " Misses: " << graph_stats_.cache_miss.load() << " called # "
+            << graph_stats_.times_called.load()
+            << " Cache size: " << graph_exec_cache.GetCurrentCacheSize();
     VLOG(4) << "Most recent enqueued hash: " << bufs_key.hash()
             << "Most recent enqueued hash hits: "
-            << graph_stats_.last_buf_key_hits;
+            << graph_stats_.last_buf_key_hits.load();
     // main_stream->ThenWaitFor(&sub_streams); //(ToDo(amoitra): Check if this
     // is required)
     main_stream->ThenLaunchGraph(exec_graph);
   } else {
     if (use_gpu_graph_capture) {
-      mu.lock();
       if (temp_buffer_base_to_bufs_keys_map_.find(temp_buf_key.hash()) !=
           temp_buffer_base_to_bufs_keys_map_.end()) {
         graph_stats_.temp_buffer_cache_hits++;
         VLOG(3) << "CACHE MISS Temp Buffer cache HIT";
-        VLOG(3) << "Cache hits till this point: " << graph_stats_.cache_hits
-                << " and Temp Buffer hits: "
-                << graph_stats_.temp_buffer_cache_hits;
+        VLOG(3) << "Cache hits till this point: "
+                << graph_stats_.cache_hits.load() << " and Temp Buffer hits: "
+                << graph_stats_.temp_buffer_cache_hits.load();
         VLOG(3)
             << "Number of buf keys for this temp buffer of hash "
             << temp_buf_key.hash() << " = "
@@ -377,16 +372,16 @@ Status GpuExecutable::ExecuteThunks(
       graph_stats_.cache_miss++;
       graph_stats_.times_called++;
       graph_stats_.last_buf_key_hash = bufs_key.hash();
-      mu.unlock();
       VLOG(2) << "CACHE MISS"
-              << " Hits: " << graph_stats_.cache_hits
-              << " Misses: " << graph_stats_.cache_miss << " called # "
+              << " Hits: " << graph_stats_.cache_hits.load()
+              << " Misses: " << graph_stats_.cache_miss.load() << " called # "
               << graph_stats_.times_called
-              << " Cache size: " << graph_exec_cache.get_current_cache_size();
-      VLOG(3) << "Temp buffer Hits: " << graph_stats_.temp_buffer_cache_hits;
+              << " Cache size: " << graph_exec_cache.GetCurrentCacheSize();
+      VLOG(3) << "Temp buffer Hits: "
+              << graph_stats_.temp_buffer_cache_hits.load();
       VLOG(4) << "Most recently enqueued hash: " << bufs_key.hash()
               << "Most recent enqueued hash hits: "
-              << graph_stats_.last_buf_key_hits;
+              << graph_stats_.last_buf_key_hits.load();
       capture_stream->ThenBeginGraphCapture();
     }
 
@@ -466,7 +461,21 @@ Status GpuExecutable::ExecuteThunks(
               main_stream, status.status().error_message());
         }
         exec_graph = status.ValueOrDie();
-        gpu_exec_graphs_cache_[gpu_context].update_cache(bufs_key, exec_graph);
+        bool has_reached_max_cache_size =
+            gpu_exec_graphs_cache_[gpu_context].UpdateCache(bufs_key,
+                                                            exec_graph);
+
+        // Heuristic to check whether using graphs for this gpu_executable is
+        // proving to be exepensive due to low hit rate.
+        if (has_reached_max_cache_size &&
+            graph_stats_.get_cache_hit_rate() < 21) {
+          LOG(INFO) << "The maximum LRU cache size has been reached but the "
+                       "cache hit rate is still "
+                    << graph_stats_.get_cache_hit_rate()
+                    << ". Hence aborting graph capture for executable " << this;
+          is_graph_capture_costly_ = true;
+        }
+
         temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].insert(
             bufs_key);
       }

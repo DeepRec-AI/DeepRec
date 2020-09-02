@@ -126,7 +126,7 @@ class GpuExecutable : public Executable {
 
   // Returns whether GPU graph capture can safely be used for execution of
   // this executable.
-  bool CanUseGpuGraphCapture() const;
+  bool CanUseGpuGraphCapture();
 
   // The LLVM IR, in string format, of the unoptimized module generated for this
   // GpuExecutable. We save a string instead of an llvm::Module* because leaving
@@ -168,7 +168,22 @@ class GpuExecutable : public Executable {
   std::map<stream_executor::StreamExecutor*, BufferAllocToDeviceMemoryMap>
       module_globals_ TF_GUARDED_BY(module_handle_mutex_);
 
-  bool can_use_gpu_graph_capture_ = false;
+  // The second element is the flag denoting whether graph capture is possible.
+  // The first element is used to identify whether this flag has been set once.
+  // This is to avoid recomputation of GpuExecutableSafeForGraphCapture.
+  std::pair<bool, bool> can_use_gpu_graph_capture_ =
+      std::make_pair(false, false);
+
+  void SetCanUseGraphCaptureFlag(bool b) {
+    can_use_gpu_graph_capture_.second = b;
+  }
+  bool GetCanUseGraphCaptureFlag() { return can_use_gpu_graph_capture_.second; }
+
+  // Flag to determine if using graphs is costly. If even after
+  // completely using the cache upto size specified by env var
+  // TF_XLA_GPU_EXEC_GRAPH_CACHE_SIZE, the hit rate is still less than 20%, it
+  // is not worth using graphs anymore.
+  bool is_graph_capture_costly_ = false;
 
   se::internal::StreamExecutorInterface* executor_impl_ = nullptr;
 

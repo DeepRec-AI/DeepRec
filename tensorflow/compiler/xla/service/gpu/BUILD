@@ -488,6 +488,7 @@ cc_library(
     name = "gpu_executable",
     srcs = [
         "async_out_thunk.cc",
+        "gpu_graph_util.cc",
         "collective_permute_thunk.cc",
         "conditional_thunk.cc",
         "convolution_thunk.cc",
