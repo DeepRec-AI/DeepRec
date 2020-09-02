@@ -42,12 +42,18 @@ int64 GpuExecGraphCacheSize() {
 }
 }  // namespace
 
+// This class is an efficient implementation of thread-safe LRU cache of
+// executable graphs. The primary data structure is a cache of executable graphs
+// mapped to a hash based on the addresses of all the buffers that make up the
+// arguments to the captured kernels in the graph.
 class MutexedGraphExecCache {
  public:
-  // Pushing in a new pair of key and exec graph. Returns flag to specify
+  // Adds a new pair of key and exec graph. Returns flag to specify
   // whether the max cache size has been reached.
-  bool UpdateCache(BufferAllocations::KeyType key, void* gpu_exec_graph);
+  bool AddToCache(BufferAllocations::KeyType key, void* gpu_exec_graph);
 
+  // Returns an executable graph from the cache if available. Returns a nullptr
+  // otherwise.
   void* GetExecGraph(BufferAllocations::KeyType key);
 
   void SetCacheSize(int64 cache_size);
@@ -71,6 +77,8 @@ class MutexedGraphExecCache {
   void SetGpuContext(stream_executor::gpu::GpuContext* gpu_context);
 };
 
+// The members of this struct are updated atomically. Use of a mutex here would
+// be unnecessarily costly.
 struct GraphCacheStats {
   std::atomic<uint64> cache_hits{0};
   std::atomic<uint64> temp_buffer_cache_hits{0};

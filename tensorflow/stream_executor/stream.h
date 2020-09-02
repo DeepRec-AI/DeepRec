@@ -174,6 +174,7 @@ class Stream {
 
   // Launch a task graph. For CUDA backend, launch a CUDA graph.
   // See Documentation:
+  // https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#cuda-graphs
   Stream &ThenLaunchGraph(void *exec_graph);
 
   Stream &ThenBeginGraphCapture();

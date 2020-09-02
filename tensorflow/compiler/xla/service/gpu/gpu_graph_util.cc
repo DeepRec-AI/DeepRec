@@ -18,14 +18,13 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
-bool MutexedGraphExecCache::UpdateCache(BufferAllocations::KeyType key,
-                                        void* gpu_exec_graph) {
+bool MutexedGraphExecCache::AddToCache(BufferAllocations::KeyType key,
+                                       void* gpu_exec_graph) {
   tensorflow::mutex_lock lock(exec_graph_cache_mu_);
   bool has_max_cache_size_reached = false;
   gpu_exec_graphs_.push_front(gpu_exec_graph);
   if (gpu_exec_graphs_.size() > cache_size_.load()) {
     has_max_cache_size_reached = true;
-    auto& graph_exec = gpu_exec_graphs_.back();
     auto* exec_graph =
         reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(
             &gpu_exec_graphs_.back());

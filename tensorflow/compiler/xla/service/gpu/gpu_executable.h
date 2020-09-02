@@ -103,6 +103,13 @@ class GpuExecutable : public Executable {
                        bool block_host_until_done,
                        HloExecutionProfile* hlo_execution_profile);
 
+  Status ExecuteThunkSequence(const ServiceExecutableRunOptions* run_options,
+                              const BufferAllocations& buffer_allocations,
+                              HloExecutionProfiler& profiler,
+                              se::Stream* main_stream,
+                              se::Stream* capture_stream,
+                              const std::vector<StreamPool::Ptr>& sub_streams);
+
   // Returns the value set of the root instruction of the entry
   // computation. Uses dataflow analysis from buffer assignment.
   const InstructionValueSet& GetRootValueSet() const;
