@@ -90,10 +90,12 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
   };
   if (thunk->kind() == Thunk::kSequential) {
     const auto* seq_thunk = static_cast<const SequentialThunk*>(thunk);
-    for (const std::unique_ptr<Thunk>& sub_thunk : seq_thunk->thunks()) {
-      if (!IsThunkSafeForGpuGraphCapture(sub_thunk.get())) return false;
-    }
-    return true;
+    auto is_thunk_safe_for_gpu_graph_capture =
+        [&](const std::unique_ptr<Thunk>& sub_thunk) {
+          return IsThunkSafeForGpuGraphCapture(sub_thunk.get());
+        };
+    const auto& seq_thunks = seq_thunk->thunks();
+    return absl::c_all_of(seq_thunks, is_thunk_safe_for_gpu_graph_capture);
   }
   if (dynamic_cast<const HostToDeviceCopyThunk*>(thunk)) {
     VLOG(1) << "HostToDeviceCopyThunk is not supported for a graph capture";
@@ -110,10 +112,8 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
 }
 
 bool GpuExecutableSafeForGraphCapture(const ThunkSchedule* thunk_schedule) {
-  for (const Thunk* thunk : thunk_schedule->TotalOrder()) {
-    if (!IsThunkSafeForGpuGraphCapture(thunk)) return false;
-  }
-  return true;
+  const auto& thunks = thunk_schedule->TotalOrder();
+  return absl::c_all_of(thunks, IsThunkSafeForGpuGraphCapture);
 }
 
 }  // namespace
@@ -185,7 +185,7 @@ GpuExecutable::~GpuExecutable() {
     }
     VLOG(4) << "Most recent enqueued hash hits: "
             << graph_stats_.last_buf_key_hits.load();
-    if (graph_stats_.cache_hits.load() > 0) {
+    if (graph_stats_.cache_hits.load() > 0 && VLOG_IS_ON(4)) {
       VLOG(4) << " Most recent enqueued hash hit rate: "
               << (graph_stats_.last_buf_key_hits.load() * 100) /
                      graph_stats_.cache_hits.load();
@@ -198,7 +198,6 @@ GpuExecutable::~GpuExecutable() {
     VLOG(1) << "Cache size for gpu_executable " << this << " and gpu_context "
             << gpu_context << " is "
             << gpu_exec_graphs_cache_[gpu_context].GetCurrentCacheSize();
-    // TODO: Clean this up a bit.
     auto& cache = gpu_exec_graphs_cache_.begin()->second;
     auto& exec_graphs = cache.GetGpuExecGraphs();
 
@@ -313,7 +312,11 @@ Status GpuExecutable::ExecuteThunks(
   tensorflow::profiler::TraceMe hlo_module_activity(
       [&] { return absl::StrCat(hlo_module_->name(), ":XLA GPU module"); },
       tensorflow::profiler::TraceMeLevel::kInfo);
-  if (use_gpu_graph_capture) {
+  if (!use_gpu_graph_capture) {
+    TF_RETURN_IF_ERROR(ExecuteThunkSequence(run_options, buffer_allocations,
+                                            profiler, main_stream,
+                                            capture_stream, sub_streams));
+  } else {
     auto bufs_key = buffer_allocations.Key();
     auto temp_buf_key = buffer_allocations.TempBufferKey();
     VLOG(3) << "For gpu executable " << this << " tmp buffer base: "
@@ -411,7 +414,7 @@ Status GpuExecutable::ExecuteThunks(
         // than equal 20% there is no point in using graphs for this executable.
         // The value is currently hard-coded here.
         if (has_reached_max_cache_size &&
-            graph_stats_.get_cache_hit_rate() < 21) {
+            graph_stats_.get_cache_hit_rate() <= 20) {
           VLOG(1) << "The maximum LRU cache size has been reached but the "
                      "cache hit rate is still "
                   << graph_stats_.get_cache_hit_rate()
@@ -426,10 +429,6 @@ Status GpuExecutable::ExecuteThunks(
       main_stream->ThenLaunchGraph(exec_graph);
 
     }  // End of graph launch conditional.
-  } else {
-    TF_RETURN_IF_ERROR(ExecuteThunkSequence(run_options, buffer_allocations,
-                                            profiler, main_stream,
-                                            capture_stream, sub_streams));
   }
 
   // Make sure kernels are completed before deallocating temporary buffers or
@@ -497,16 +496,18 @@ Status GpuExecutable::ExecuteThunkSequence(
               << ThunkKindToString(dependency->kind());
       stream->ThenWaitFor(FindOrDie(thunk_to_finish_event, dependency).get());
     }
-    std::string copy_type = dynamic_cast<HostToDeviceCopyThunk*>(thunk)
-                                ? "HostToDeviceCopyThunk"
-                                : "";
-    VLOG(3) << "Executing thunk of kind " << ThunkKindToString(thunk->kind())
-            << copy_type;
-    VLOG(4) << "Executing the thunk for "
-            << thunk->hlo_instruction()->ToString() << " on stream "
-            << stream_no;
-    const GpuExecutableRunOptions* gpu_options =
-        run_options->run_options().gpu_executable_run_options();
+
+    if (VLOG_IS_ON(3)) {
+      std::string copy_type = dynamic_cast<HostToDeviceCopyThunk*>(thunk)
+                                  ? "HostToDeviceCopyThunk"
+                                  : "";
+      VLOG(3) << "Executing thunk of kind " << ThunkKindToString(thunk->kind())
+              << copy_type;
+      VLOG(4) << "Executing the thunk for "
+              << thunk->hlo_instruction()->ToString() << " on stream "
+              << stream_no;
+    }
+
     Thunk::ExecuteParams thunk_params{
         &buffer_allocations,
         stream,
@@ -522,10 +523,11 @@ Status GpuExecutable::ExecuteThunkSequence(
             : nullptr};
     TF_RETURN_IF_ERROR(thunk->ExecuteOnStream(thunk_params));
     if (thunk_schedule_->Depended(thunk)) {
-      VLOG(3) << " " << ThunkKindToString(thunk->kind())
-              << " is depended by another thunk"
-              << ". Hence pushing finish_event.";
-
+      if (VLOG_IS_ON(3)) {
+        VLOG(3) << " " << ThunkKindToString(thunk->kind())
+                << " is depended by another thunk"
+                << ". Hence pushing finish_event.";
+      }
       auto finish_event = absl::make_unique<se::Event>(main_stream->parent());
       finish_event->Init();
       stream->ThenRecordEvent(finish_event.get());

@@ -42,10 +42,12 @@ int64 GpuExecGraphCacheSize() {
 }
 }  // namespace
 
-// This class is an efficient implementation of thread-safe LRU cache of
+// This class is an O(N) implementation of thread-safe LRU cache of
 // executable graphs. The primary data structure is a cache of executable graphs
 // mapped to a hash based on the addresses of all the buffers that make up the
-// arguments to the captured kernels in the graph.
+// arguments to the captured kernels in the graph. ToDo (amoitra): Since this
+// PoC implementation, currently sticking to O(N) implementation. Implement O(1)
+// implementation of LRU cache.
 class MutexedGraphExecCache {
  public:
   // Adds a new pair of key and exec graph. Returns flag to specify
