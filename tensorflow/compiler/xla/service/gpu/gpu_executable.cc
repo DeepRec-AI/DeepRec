@@ -358,6 +358,8 @@ Status GpuExecutable::ExecuteThunks(
                 << "Most recent enqueued hash hits: "
                 << graph_stats_.last_buf_key_hits.load();
       }
+
+      // Launch existing exec graph
       main_stream->ThenLaunchGraph(exec_graph);
     } else {
       // In case of a cache miss, do the following:
@@ -395,6 +397,8 @@ Status GpuExecutable::ExecuteThunks(
                 << "Most recent enqueued hash hits: "
                 << graph_stats_.last_buf_key_hits.load();
       }
+
+      // Begin capture template graph
       capture_stream->ThenBeginGraphCapture();
 
       TF_RETURN_IF_ERROR(ExecuteThunkSequence(run_options, buffer_allocations,
@@ -402,44 +406,43 @@ Status GpuExecutable::ExecuteThunks(
                                               capture_stream, sub_streams));
 
       void* graph = nullptr;
+
+      // End capture template graph
       capture_stream->ThenEndGraphCapture(graph);
 
-      if (!exec_graph) {
-        StatusOr<void*> status =
-            GetExecutor()->InstantiateGraph(graph, exec_graph);
-        if (!status.ok()) {
-          return InternalError(
-              "Failed to instantiate GPU execution graph on stream %p: %s",
-              main_stream, status.status().error_message());
-        }
-        exec_graph = status.ValueOrDie();
-        bool has_reached_max_cache_size =
-            gpu_exec_graphs_cache_[gpu_context].AddToCache(bufs_key,
-                                                           exec_graph);
+      // Instantiate exec graph
+      StatusOr<void*> status =
+          GetExecutor()->InstantiateGraph(graph, exec_graph);
+      if (!status.ok()) {
+        return InternalError(
+            "Failed to instantiate GPU execution graph on stream %p: %s",
+            main_stream, status.status().error_message());
+      }
+      exec_graph = status.ValueOrDie();
 
-        // Heuristic to check whether using graphs for this gpu_executable is
-        // proving to be exepensive due to low hit rate. If the hit rate is less
-        // than equal 20% there is no point in using graphs for this executable.
-        if (has_reached_max_cache_size &&
-            graph_stats_.get_cache_hit_rate() <= 20) {
-          VLOG(1) << "The maximum LRU cache size has been reached but the "
-                     "cache hit rate is still "
-                  << graph_stats_.get_cache_hit_rate()
-                  << ". Hence aborting graph capture for executable " << this;
-          is_graph_capture_costly_ = true;
+      // Add exec graph to Cache
+      bool has_reached_max_cache_size =
+          gpu_exec_graphs_cache_[gpu_context].AddToCache(bufs_key, exec_graph);
+
+      // Heuristic to check whether using graphs for this gpu_executable is
+      // proving to be exepensive due to low hit rate. If the hit rate is less
+      // than equal 20% there is no point in using graphs for this executable.
+      if (has_reached_max_cache_size &&
+          graph_stats_.get_cache_hit_rate() <= 20) {
+        VLOG(1) << "The maximum LRU cache size has been reached but the "
+                   "cache hit rate is still "
+                << graph_stats_.get_cache_hit_rate()
+                << ". Hence aborting graph capture for executable " << this;
+        is_graph_capture_costly_ = true;
         }
 
         temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].insert(
             bufs_key);
-      } else {
-        // This currently never gets executed. We always chose to
-        // instantiate. This code block has been retained to see if we can come
-        // up with a better algorithm in future that can make use of
-        // UpdateExecutableGraph.
-        GetExecutor()->UpdateExecutableGraph(graph, exec_graph);
-      }
-      GetExecutor()->DestroyGraph(gpu_context, graph);
-      main_stream->ThenLaunchGraph(exec_graph);
+        // Destroy template graph
+        GetExecutor()->DestroyGraph(gpu_context, graph);
+
+        // Launch exec graph
+        main_stream->ThenLaunchGraph(exec_graph);
 
     }  // End of graph launch conditional.
   }
