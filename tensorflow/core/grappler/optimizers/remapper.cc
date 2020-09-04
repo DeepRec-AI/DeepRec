@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/util/util.h"
 
 #if GOOGLE_CUDA
 #include "third_party/gpus/cudnn/cudnn.h"
@@ -304,6 +305,9 @@ bool IsCpuCompatible(const RemapperContext& ctx, const Pattern& matched) {
     return IsCpuCompatibleConv2D(&node);
   } else if (IsDepthwiseConv2dNative(node)) {
 #ifdef INTEL_MKL
+    if (DisableMKL()) {
+      return false;
+    }
     return IsCpuCompatibleDepthwiseConv2dNative(&node);
 #else
     return false;
@@ -1734,6 +1738,9 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
     }
 
 #ifdef INTEL_MKL
+    if (DisableMKL()) {
+      continue;
+    }
     ContractionWithBiasAddAndAdd contract_with_bias_and_add;
     ContractionWithBiasAndAddActivation contract_with_bias_and_add_activation;
 
