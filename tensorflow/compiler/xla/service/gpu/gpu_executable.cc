@@ -425,7 +425,7 @@ Status GpuExecutable::ExecuteThunks(
           gpu_exec_graphs_cache_[gpu_context].AddToCache(bufs_key, exec_graph);
 
       // Heuristic to check whether using graphs for this gpu_executable is
-      // proving to be exepensive due to low hit rate. If the hit rate is less
+      // proving to be expensive due to low hit rate. If the hit rate is less
       // than equal 20% there is no point in using graphs for this executable.
       if (has_reached_max_cache_size &&
           graph_stats_.get_cache_hit_rate() <= 20) {
@@ -438,11 +438,12 @@ Status GpuExecutable::ExecuteThunks(
 
         temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].insert(
             bufs_key);
-        // Destroy template graph
-        GetExecutor()->DestroyGraph(gpu_context, graph);
 
         // Launch exec graph
         main_stream->ThenLaunchGraph(exec_graph);
+
+        // Destroy template graph
+        GetExecutor()->DestroyGraph(gpu_context, graph);
 
     }  // End of graph launch conditional.
   }
