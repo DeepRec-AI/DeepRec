@@ -94,8 +94,8 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
         [&](const std::unique_ptr<Thunk>& sub_thunk) {
           return IsThunkSafeForGpuGraphCapture(sub_thunk.get());
         };
-    const auto& seq_thunks = seq_thunk->thunks();
-    return absl::c_all_of(seq_thunks, is_thunk_safe_for_gpu_graph_capture);
+    return absl::c_all_of(seq_thunk->thunks(),
+                          is_thunk_safe_for_gpu_graph_capture);
   }
   if (dynamic_cast<const HostToDeviceCopyThunk*>(thunk)) {
     VLOG(1) << "HostToDeviceCopyThunk is not supported for a graph capture";
@@ -112,8 +112,8 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
 }
 
 bool GpuExecutableSafeForGraphCapture(const ThunkSchedule* thunk_schedule) {
-  const auto& thunks = thunk_schedule->TotalOrder();
-  return absl::c_all_of(thunks, IsThunkSafeForGpuGraphCapture);
+  return absl::c_all_of(thunk_schedule->TotalOrder(),
+                        IsThunkSafeForGpuGraphCapture);
 }
 
 }  // namespace
@@ -162,15 +162,14 @@ GpuExecutable::~GpuExecutable() {
     VLOG(1) << "For gpu_executable " << this
             << " Hits: " << graph_stats_.cache_hits.load()
             << " Misses: " << graph_stats_.cache_miss.load()
-            << " Recent hash hits: " << graph_stats_.last_buf_key_hits.load()
             << " called # " << graph_stats_.times_called.load();
-    VLOG(2) << "Temp buffer cache hits: "
+    VLOG(4) << "Temp buffer cache hits: "
             << graph_stats_.temp_buffer_cache_hits.load();
-    VLOG(2) << "This executable " << this << " has encountered "
+    VLOG(4) << "This executable " << this << " has encountered "
             << temp_buffer_base_to_bufs_keys_map_.size()
             << " different temporary buffer base ptrs during the allocation "
                "process";
-    if (VLOG_IS_ON(2)) {
+    if (VLOG_IS_ON(4)) {
       for (auto it : temp_buffer_base_to_bufs_keys_map_) {
         LOG(INFO) << "Temp buffer with TempBufferKey hash of " << it.first
                   << " is the same for " << it.second.size()
@@ -333,6 +332,8 @@ Status GpuExecutable::ExecuteThunks(
     // only done once though. Once initialized, the subsequent calls are no-ops.
     graph_exec_cache.Initialize(gpu_context);
     auto exec_graph = graph_exec_cache.GetExecGraph(bufs_key);
+
+    // If there is a cache hit, simply launch the existing executable graph.
     if (exec_graph) {
       // The temp_buffer_base should match the temp_buff_base of the bufs_key
       // that is cached.
@@ -347,43 +348,53 @@ Status GpuExecutable::ExecuteThunks(
       if (bufs_key.hash() == graph_stats_.last_buf_key_hash.load()) {
         graph_stats_.last_buf_key_hits++;
       }
-      VLOG(2) << "CACHE HIT -> Launching graph " << exec_graph << " blindly!"
-              << " Hits: " << graph_stats_.cache_hits.load()
-              << " Misses: " << graph_stats_.cache_miss.load() << " called # "
-              << graph_stats_.times_called.load()
-              << " Cache size: " << graph_exec_cache.GetCurrentCacheSize();
-      VLOG(4) << "Most recent enqueued hash: " << bufs_key.hash()
-              << "Most recent enqueued hash hits: "
-              << graph_stats_.last_buf_key_hits.load();
-      // main_stream->ThenWaitFor(&sub_streams); //(ToDo(amoitra): Check if this
-      // is required)
+      if (VLOG_IS_ON(2)) {
+        VLOG(2) << "CACHE HIT -> Launching graph " << exec_graph << " blindly!"
+                << " Hits: " << graph_stats_.cache_hits.load()
+                << " Misses: " << graph_stats_.cache_miss.load() << " called # "
+                << graph_stats_.times_called.load()
+                << " Cache size: " << graph_exec_cache.GetCurrentCacheSize();
+        VLOG(4) << "Most recent enqueued hash: " << bufs_key.hash()
+                << "Most recent enqueued hash hits: "
+                << graph_stats_.last_buf_key_hits.load();
+      }
       main_stream->ThenLaunchGraph(exec_graph);
     } else {
+      // In case of a cache miss, do the following:
+      // 1. Re-capture the thunk sequence in new template graph,
+      // 2. Instantiate the template graph (cuGraph) to construct a new
+      // executable (cuExecGraph)graph,
+      // 3. Cache the new executable graph with the buffer address key,
+      // 4. Launch new executable graph.
       if (temp_buffer_base_to_bufs_keys_map_.find(temp_buf_key.hash()) !=
           temp_buffer_base_to_bufs_keys_map_.end()) {
         graph_stats_.temp_buffer_cache_hits++;
-        VLOG(3) << "CACHE MISS Temp Buffer cache HIT";
-        VLOG(3) << "Cache hits till this point: "
-                << graph_stats_.cache_hits.load() << " and Temp Buffer hits: "
-                << graph_stats_.temp_buffer_cache_hits.load();
-        VLOG(3)
-            << "Number of buf keys for this temp buffer of hash "
-            << temp_buf_key.hash() << " = "
-            << temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].size();
+        if (VLOG_IS_ON(3)) {
+          VLOG(3) << "CACHE MISS Temp Buffer cache HIT";
+          VLOG(3) << "Cache hits till this point: "
+                  << graph_stats_.cache_hits.load() << " and Temp Buffer hits: "
+                  << graph_stats_.temp_buffer_cache_hits.load();
+          VLOG(3)
+              << "Number of buf keys for this temp buffer of hash "
+              << temp_buf_key.hash() << " = "
+              << temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].size();
+        }
       }
       graph_stats_.cache_miss++;
       graph_stats_.times_called++;
       graph_stats_.last_buf_key_hash = bufs_key.hash();
-      VLOG(2) << "CACHE MISS"
-              << " Hits: " << graph_stats_.cache_hits.load()
-              << " Misses: " << graph_stats_.cache_miss.load() << " called # "
-              << graph_stats_.times_called
-              << " Cache size: " << graph_exec_cache.GetCurrentCacheSize();
-      VLOG(3) << "Temp buffer Hits: "
-              << graph_stats_.temp_buffer_cache_hits.load();
-      VLOG(4) << "Most recently enqueued hash: " << bufs_key.hash()
-              << "Most recent enqueued hash hits: "
-              << graph_stats_.last_buf_key_hits.load();
+      if (VLOG_IS_ON(2)) {
+        VLOG(2) << "CACHE MISS"
+                << " Hits: " << graph_stats_.cache_hits.load()
+                << " Misses: " << graph_stats_.cache_miss.load() << " called # "
+                << graph_stats_.times_called
+                << " Cache size: " << graph_exec_cache.GetCurrentCacheSize();
+        VLOG(3) << "Temp buffer Hits: "
+                << graph_stats_.temp_buffer_cache_hits.load();
+        VLOG(4) << "Most recently enqueued hash: " << bufs_key.hash()
+                << "Most recent enqueued hash hits: "
+                << graph_stats_.last_buf_key_hits.load();
+      }
       capture_stream->ThenBeginGraphCapture();
 
       TF_RETURN_IF_ERROR(ExecuteThunkSequence(run_options, buffer_allocations,
@@ -393,9 +404,6 @@ Status GpuExecutable::ExecuteThunks(
       void* graph = nullptr;
       capture_stream->ThenEndGraphCapture(graph);
 
-      if (exec_graph) {
-        GetExecutor()->UpdateExecutableGraph(graph, exec_graph);
-      }
       if (!exec_graph) {
         StatusOr<void*> status =
             GetExecutor()->InstantiateGraph(graph, exec_graph);
@@ -412,7 +420,6 @@ Status GpuExecutable::ExecuteThunks(
         // Heuristic to check whether using graphs for this gpu_executable is
         // proving to be exepensive due to low hit rate. If the hit rate is less
         // than equal 20% there is no point in using graphs for this executable.
-        // The value is currently hard-coded here.
         if (has_reached_max_cache_size &&
             graph_stats_.get_cache_hit_rate() <= 20) {
           VLOG(1) << "The maximum LRU cache size has been reached but the "
@@ -424,6 +431,12 @@ Status GpuExecutable::ExecuteThunks(
 
         temp_buffer_base_to_bufs_keys_map_[temp_buf_key.hash()].insert(
             bufs_key);
+      } else {
+        // This currently never gets executed. We always chose to
+        // instantiate. This code block has been retained to see if we can come
+        // up with a better algorithm in future that can make use of
+        // UpdateExecutableGraph.
+        GetExecutor()->UpdateExecutableGraph(graph, exec_graph);
       }
       GetExecutor()->DestroyGraph(gpu_context, graph);
       main_stream->ThenLaunchGraph(exec_graph);

@@ -103,6 +103,10 @@ class GpuExecutable : public Executable {
                        bool block_host_until_done,
                        HloExecutionProfile* hlo_execution_profile);
 
+  // Execute the sequence of thunks on a stream. During graph capture, the
+  // sequence of thunks is captured on a private capture stream. The GPU code
+  // isn't actually executed in capture phase. When graphs are not used, the
+  // thunks are executed on the main stream.
   Status ExecuteThunkSequence(const ServiceExecutableRunOptions* run_options,
                               const BufferAllocations& buffer_allocations,
                               HloExecutionProfiler& profiler,

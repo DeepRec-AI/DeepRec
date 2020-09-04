@@ -1529,7 +1529,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 
   return true;
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version "
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version "
                 "(BeginGraphCaptureOnStream)";
   return false;
 #endif
@@ -1551,7 +1551,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
           << " for context " << context->context() << " on thread";
   return true;
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version "
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version "
                 "(EndGraphCaptureOnStream)";
   return false;
 #endif
@@ -1574,7 +1574,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     *graph = nullptr;
   }
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version (DestroyGraph)";
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version (DestroyGraph)";
 #endif
 }
 
@@ -1597,7 +1597,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
           << context->context() << " on thread";
   return true;
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version "
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version "
                 "(InstantiateExecutableGraph)";
   return false;
 #endif
@@ -1623,7 +1623,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
           << context->context() << " on thread";
   return true;
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version "
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version "
                 "(UpdateExecutableGraph)";
   return false;
 #endif
@@ -1643,7 +1643,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
   VLOG(1) << "successfully launched graph on stream " << stream;
   return true;
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version "
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version "
                 "(LaunchExecutableGraph)";
   return false;
 #endif
@@ -1668,7 +1668,7 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
     *graph_exec = nullptr;
   }
 #else
-  LOG(ERROR) << "Feature not supported on this CUDA version "
+  LOG(ERROR) << "CUDA Graph not supported on this CUDA version "
                 "(DestroyExecutableGraph)";
 #endif
 }
