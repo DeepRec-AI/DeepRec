@@ -61,7 +61,7 @@ bool GpuGraphCaptureEnabled() {
     bool is_enabled = false;
     TF_CHECK_OK(
         tensorflow::ReadBoolFromEnvVar("TF_XLA_ENABLE_GPU_GRAPH_CAPTURE",
-                                       /*default_val=*/false, &is_enabled));
+                                       /*default_val=*/true, &is_enabled));
     return is_enabled;
   }();
   return is_enabled;
