@@ -160,8 +160,7 @@ Status ParallelLoopEmitter::EmitLoop(absl::string_view loop_name,
   if (index_type == nullptr) {
     index_type = b_->getInt64Ty();
   }
-  int64 total_threads = launch_dimensions_.block_count() *
-      launch_dimensions_.threads_per_block();
+  int64 total_threads = launch_dimensions_.launch_bound();
   int64 num_elements = ShapeUtil::ElementsIn(shape_);
   // If all the elements are handled by the current threads, no need
   // to add a loop inside the kernel.
