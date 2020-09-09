@@ -36,7 +36,7 @@ int64 GpuExecGraphCacheSize() {
   int64 cache_size = 0;
   TF_CHECK_OK(
       tensorflow::ReadInt64FromEnvVar("TF_XLA_GPU_EXEC_GRAPH_CACHE_SIZE",
-                                      /*default_val=*/100, &cache_size));
+                                      /*default_val=*/10, &cache_size));
 
   return cache_size;
 }

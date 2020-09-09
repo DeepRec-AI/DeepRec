@@ -107,12 +107,13 @@ class GpuExecutable : public Executable {
   // sequence of thunks is captured on a private capture stream. The GPU code
   // isn't actually executed in capture phase. When graphs are not used, the
   // thunks are executed on the main stream.
-  Status ExecuteThunkSequence(const ServiceExecutableRunOptions* run_options,
-                              const BufferAllocations& buffer_allocations,
-                              HloExecutionProfiler& profiler,
-                              se::Stream* main_stream,
-                              se::Stream* capture_stream,
-                              const std::vector<StreamPool::Ptr>& sub_streams);
+  Status ExecuteThunkSequence(
+      const ServiceExecutableRunOptions* run_options,
+      const BufferAllocations& buffer_allocations,
+      HloExecutionProfiler& profiler, se::Stream* main_stream,
+      se::Stream* capture_stream,
+      const std::vector<StreamPool::Ptr>& sub_streams,
+      std::vector<std::function<void()>>& deferred_host_callbacks);
 
   // Returns the value set of the root instruction of the entry
   // computation. Uses dataflow analysis from buffer assignment.

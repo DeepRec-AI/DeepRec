@@ -311,10 +311,11 @@ Status GpuExecutable::ExecuteThunks(
   tensorflow::profiler::TraceMe hlo_module_activity(
       [&] { return absl::StrCat(hlo_module_->name(), ":XLA GPU module"); },
       tensorflow::profiler::TraceMeLevel::kInfo);
+  std::vector<std::function<void()>> deferred_host_callbacks;
   if (!use_gpu_graph_capture) {
-    TF_RETURN_IF_ERROR(ExecuteThunkSequence(run_options, buffer_allocations,
-                                            profiler, main_stream,
-                                            capture_stream, sub_streams));
+    TF_RETURN_IF_ERROR(ExecuteThunkSequence(
+        run_options, buffer_allocations, profiler, main_stream, capture_stream,
+        sub_streams, deferred_host_callbacks));
   } else {
     auto bufs_key = buffer_allocations.Key();
     auto temp_buf_key = buffer_allocations.TempBufferKey();
@@ -401,9 +402,9 @@ Status GpuExecutable::ExecuteThunks(
       // Begin capture template graph
       capture_stream->ThenBeginGraphCapture();
 
-      TF_RETURN_IF_ERROR(ExecuteThunkSequence(run_options, buffer_allocations,
-                                              profiler, main_stream,
-                                              capture_stream, sub_streams));
+      TF_RETURN_IF_ERROR(ExecuteThunkSequence(
+          run_options, buffer_allocations, profiler, main_stream,
+          capture_stream, sub_streams, deferred_host_callbacks));
 
       void* graph = nullptr;
 
@@ -448,6 +449,20 @@ Status GpuExecutable::ExecuteThunks(
     }  // End of graph launch conditional.
   }
 
+  if (!deferred_host_callbacks.empty()) {
+    auto fn = [deferred_host_callbacks{std::move(deferred_host_callbacks)}]() {
+      for (auto& callback : deferred_host_callbacks) {
+        callback();
+      }
+    };
+    if (run_options->run_options().then_execute_function()) {
+      (*run_options->run_options().then_execute_function())(main_stream,
+                                                            std::move(fn));
+    } else {
+      main_stream->ThenDoHostCallback(std::move(fn));
+    }
+  }
+
   // Make sure kernels are completed before deallocating temporary buffers or
   // the profiler state.
   // TODO(b/30100571): we could potentially postpone deallocating the temp
@@ -487,11 +502,12 @@ Status GpuExecutable::ExecuteThunkSequence(
     const ServiceExecutableRunOptions* run_options,
     const BufferAllocations& buffer_allocations, HloExecutionProfiler& profiler,
     se::Stream* main_stream, se::Stream* capture_stream,
-    const std::vector<StreamPool::Ptr>& sub_streams) {
+    const std::vector<StreamPool::Ptr>& sub_streams,
+    std::vector<std::function<void()>>& deferred_host_callbacks) {
   se::StreamExecutor* executor = main_stream->parent();
   std::map<const Thunk*, std::unique_ptr<se::Event>> thunk_to_finish_event;
   bool scoped_annotation_enabled = ScopedAnnotation::IsEnabled();
-  std::vector<std::function<void()>> deferred_host_callbacks;
+  // std::vector<std::function<void()>> deferred_host_callbacks;
   for (Thunk* thunk : thunk_schedule_->TotalOrder()) {
     // Annotate execution of this op if tracing was enabled when we started
     // running this module.  If tracing is enabled *while* we're running the
@@ -509,8 +525,10 @@ Status GpuExecutable::ExecuteThunkSequence(
         (stream_no == 0 ? capture_stream : sub_streams[stream_no - 1].get());
 
     for (const Thunk* dependency : thunk_schedule_->DependsOn(thunk)) {
-      VLOG(3) << ThunkKindToString(thunk->kind()) << " depends on "
-              << ThunkKindToString(dependency->kind());
+      if (VLOG_IS_ON(3)) {
+        VLOG(3) << ThunkKindToString(thunk->kind()) << " depends on "
+                << ThunkKindToString(dependency->kind());
+      }
       stream->ThenWaitFor(FindOrDie(thunk_to_finish_event, dependency).get());
     }
 
@@ -524,6 +542,8 @@ Status GpuExecutable::ExecuteThunkSequence(
               << thunk->hlo_instruction()->ToString() << " on stream "
               << stream_no;
     }
+    const GpuExecutableRunOptions* gpu_options =
+        run_options->run_options().gpu_executable_run_options();
 
     Thunk::ExecuteParams thunk_params{
         &buffer_allocations,
@@ -553,20 +573,6 @@ Status GpuExecutable::ExecuteThunkSequence(
   }
   capture_stream->ThenWaitFor(&sub_streams);
 
-
-  if (!deferred_host_callbacks.empty()) {
-    auto fn = [deferred_host_callbacks{std::move(deferred_host_callbacks)}]() {
-      for (auto& callback : deferred_host_callbacks) {
-        callback();
-      }
-    };
-    if (run_options->run_options().then_execute_function()) {
-      (*run_options->run_options().then_execute_function())(main_stream,
-                                                            std::move(fn));
-    } else {
-      main_stream->ThenDoHostCallback(std::move(fn));
-    }
-  }
   return Status::OK();
 }
 
