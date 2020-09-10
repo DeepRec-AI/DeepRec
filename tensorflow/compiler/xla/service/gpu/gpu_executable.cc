@@ -61,7 +61,7 @@ bool GpuGraphCaptureEnabled() {
     bool is_enabled = false;
     TF_CHECK_OK(
         tensorflow::ReadBoolFromEnvVar("TF_XLA_ENABLE_GPU_GRAPH_CAPTURE",
-                                       /*default_val=*/true, &is_enabled));
+                                       /*default_val=*/false, &is_enabled));
     return is_enabled;
   }();
   return is_enabled;
@@ -507,7 +507,6 @@ Status GpuExecutable::ExecuteThunkSequence(
   se::StreamExecutor* executor = main_stream->parent();
   std::map<const Thunk*, std::unique_ptr<se::Event>> thunk_to_finish_event;
   bool scoped_annotation_enabled = ScopedAnnotation::IsEnabled();
-  // std::vector<std::function<void()>> deferred_host_callbacks;
   for (Thunk* thunk : thunk_schedule_->TotalOrder()) {
     // Annotate execution of this op if tracing was enabled when we started
     // running this module.  If tracing is enabled *while* we're running the
