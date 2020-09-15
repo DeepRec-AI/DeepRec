@@ -136,7 +136,7 @@ class IrEmitterUnnested : public IrEmitter,
   // `LastThunk()`.
   Status EmitTargetElementLoopInThunk(
       const HloInstruction& hlo, const llvm_ir::ElementGenerator& body_emitter,
-      KernelThunk* thunk);
+      KernelThunk* thunk, bool few_waves=false);
 
   // Emits LLVM global variables corresponding to constant instructions.
   Status EmitConstantGlobals();

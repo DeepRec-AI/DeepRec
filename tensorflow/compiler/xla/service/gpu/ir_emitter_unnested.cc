@@ -1826,7 +1826,8 @@ std::unique_ptr<Thunk> IrEmitterUnnested::BuildConditionalThunk(
 
 Status IrEmitterUnnested::EmitTargetElementLoopInThunk(
     const HloInstruction& hlo,
-    const llvm_ir::ElementGenerator& element_generator, KernelThunk* thunk) {
+    const llvm_ir::ElementGenerator& element_generator, KernelThunk* thunk,
+    bool few_waves) {
   int unroll_factor = thunk->unroll_factor();
   VLOG(3) << bindings_.ToString();
 
@@ -1839,7 +1840,7 @@ Status IrEmitterUnnested::EmitTargetElementLoopInThunk(
           << " for unroll_factor " << unroll_factor;
   LaunchDimensions launch_dimensions = CalculateLaunchDimensions(
       element_shape, ir_emitter_context_->device_description(), unroll_factor,
-      /*few_waves=*/true);
+      few_waves);
   UpdateLaunchDimensions(launch_dimensions, thunk,
                          ir_emitter_context_->llvm_module());
   if (!multi_output) {
@@ -1925,8 +1926,22 @@ Status IrEmitterUnnested::EmitTargetElementLoop(
 
   std::unique_ptr<KernelThunk> kernel_thunk = BuildKernelThunk(
       &hlo, /*implements_whole_instruction=*/true, unroll_factor);
+
+  bool few_waves = false;
+  auto is_good_for_few_waves = [](const HloInstruction* instr) {
+	return instr->opcode() != HloOpcode::kReduceWindow;
+  };
+  if (hlo.opcode() == HloOpcode::kFusion) {
+    few_waves = absl::c_all_of(
+        hlo.fused_instructions_computation()->instructions(),
+	is_good_for_few_waves);
+  } else {
+    few_waves = is_good_for_few_waves(&hlo);
+  }
+
   Status emit_status =
-      EmitTargetElementLoopInThunk(hlo, body_emitter, kernel_thunk.get());
+      EmitTargetElementLoopInThunk(hlo, body_emitter, kernel_thunk.get(),
+                                   few_waves);
   thunk_sequence_->emplace_back(std::move(kernel_thunk));
 
   return emit_status;
