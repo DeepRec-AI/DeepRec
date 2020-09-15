@@ -1456,6 +1456,7 @@ void AutoMixedPrecisionImpl::FindFloat32TensorListOpClustersAndDenylistUnsafe(
       continue;
     }
     const NodeTypeId* root_fp32 = GetTensorListFloat32NodeTypeId(*root.node);
+    CHECK(root_fp32);             // Crash Ok
     const absl::optional<int> maybe_root_fp32_idx =
         graph_type_view_.GetNodeIndex(*root_fp32);
     DCHECK(maybe_root_fp32_idx.has_value())
@@ -1791,11 +1792,12 @@ void AutoMixedPrecisionImpl::ForceColorMatchBetweenTensorListOps(
   std::vector<int> node_type_idxs;
   node_type_idxs.reserve(tensor_list_nodes.size());
   for (const NodeDef* node : tensor_list_nodes) {
-    const NodeTypeId& node_type = *GetTensorListFloat32NodeTypeId(*node);
+    const NodeTypeId* node_type = GetTensorListFloat32NodeTypeId(*node);
+    CHECK(node_type);             // Crash Ok;
     const absl::optional<int> maybe_node_type_idx =
-        graph_type_view_.GetNodeIndex(node_type);
+        graph_type_view_.GetNodeIndex(*node_type);
     DCHECK(maybe_node_type_idx.has_value())
-        << "Type attribute " << node_type.type_attr.DebugString() << " of node "
+        << "Type attribute " << node_type->type_attr.DebugString() << " of node "
         << node->name() << " not found in graph view";
     node_type_idxs.push_back(maybe_node_type_idx.value());
   }
