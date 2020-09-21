@@ -906,7 +906,7 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
   } else {
       if (cc_major <= 6) {
         // 300MiB
-        min_system_memory = 300 * 1024 * 1024;
+        min_system_memory = 500 * 1024 * 1024;
       }
       else {
         // 800MiB
