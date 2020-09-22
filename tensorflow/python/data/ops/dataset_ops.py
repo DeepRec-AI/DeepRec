@@ -323,47 +323,48 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
           dataset, options.experimental_stats.aggregator,
           options.experimental_stats.prefix,
           options.experimental_stats.counter_prefix)
-    
-    if os.environ.get("TF_ENABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "1":
-      from tensorflow.python.distribute import distribution_strategy_context
-      if not distribution_strategy_context.has_strategy():
-        if (options.experimental_optimization.prefetch_to_device is not None and
-            os.environ.get("TF_DISABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "0"):
-          from tensorflow.python.data.experimental.ops import prefetching_ops
-          prefetch_device = options.experimental_optimization.prefetch_to_device
-
-          def prefetch_to_device(target_device, buffer_size=None):
-            """A transformation that copies dataset elements to the given `target_device`.
-
-            Args:
-              target_device: The name of a device to which elements will be copied.
-              buffer_size: (Optional.) The number of elements to buffer on `device`.
-                Defaults to an automatically chosen value.
-
-            Returns:
-              A `Dataset` transformation function, which can be passed to
-              `tf.data.Dataset.apply`.
-            """
-
-            def _apply_fn(dataset):
-              source_device = dataset._variant_tensor.device
-              if source_device == "":
-                source_device = "/cpu:0"
-              return prefetching_ops._CopyToDeviceDataset(
-                  dataset,
-                  target_device=target_device,
-                  source_device=source_device
-              ).prefetch(buffer_size)
-
-            return _apply_fn
-
-          dataset = dataset.apply(
-            prefetch_to_device(prefetch_device, buffer_size=1))
-      else:
-        logging.warning("GPU prefetching has been deactivated in your "
-                        "`tf.data` pipeline. It is not compatible with "
-                        "`tf.distribute` API. Please transition to `horovod` for "
-                        "maximum performance.")
+          
+    # TODO: DEKHTIARJonathan - Re-enable once stable.
+    # if os.environ.get("TF_ENABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "1":
+    #   from tensorflow.python.distribute import distribution_strategy_context
+    #   if not distribution_strategy_context.has_strategy():
+    #     if (options.experimental_optimization.prefetch_to_device is not None and
+    #         os.environ.get("TF_DISABLE_AUTOMATIC_GPU_PREFETCHING", "0") == "0"):
+    #       from tensorflow.python.data.experimental.ops import prefetching_ops
+    #       prefetch_device = options.experimental_optimization.prefetch_to_device
+    # 
+    #       def prefetch_to_device(target_device, buffer_size=None):
+    #         """A transformation that copies dataset elements to the given `target_device`.
+    # 
+    #         Args:
+    #           target_device: The name of a device to which elements will be copied.
+    #           buffer_size: (Optional.) The number of elements to buffer on `device`.
+    #             Defaults to an automatically chosen value.
+    # 
+    #         Returns:
+    #           A `Dataset` transformation function, which can be passed to
+    #           `tf.data.Dataset.apply`.
+    #         """
+    # 
+    #         def _apply_fn(dataset):
+    #           source_device = dataset._variant_tensor.device
+    #           if source_device == "":
+    #             source_device = "/cpu:0"
+    #           return prefetching_ops._CopyToDeviceDataset(
+    #               dataset,
+    #               target_device=target_device,
+    #               source_device=source_device
+    #           ).prefetch(buffer_size)
+    # 
+    #         return _apply_fn
+    # 
+    #       dataset = dataset.apply(
+    #         prefetch_to_device(prefetch_device, buffer_size=1))
+    #   else:
+    #     logging.warning("GPU prefetching has been deactivated in your "
+    #                     "`tf.data` pipeline. It is not compatible with "
+    #                     "`tf.distribute` API. Please transition to `horovod` for "
+    #                     "maximum performance.")
 
     return dataset
 
@@ -1731,23 +1732,25 @@ class DatasetV1(DatasetV2):
         assert op_level_seed is not None
         core_random_seed.set_random_seed(
             (graph_level_seed + 87654321 * op_level_seed) % (2 ** 63 - 1))
-
-      prefetch_to_device = self.options().experimental_optimization.prefetch_to_device
-      if prefetch_to_device is not None:
-        logging.warning("GPU prefetching has been deactivated in your "
-                        "`tf.data` pipeline. It is not compatible with "
-                        "`tf.data.make_one_shot_iterator`. Please transition "
-                        "to `tf.data.make_initializable_iterator` for maximum "
-                        "performance.")
-        try:
-          options = Options()
-          options.experimental_optimization.prefetch_to_device = None
-          dataset = self.with_options(options)
-        except ValueError:
-          self._dataset._options.experimental_optimization.prefetch_to_device = None
-          dataset = self
-      else:
-        dataset = self
+      
+      # TODO: DEKHTIARJonathan - Re-enable once stable.
+      # prefetch_to_device = self.options().experimental_optimization.prefetch_to_device
+      # if prefetch_to_device is not None:
+      #   logging.warning("GPU prefetching has been deactivated in your "
+      #                   "`tf.data` pipeline. It is not compatible with "
+      #                   "`tf.data.make_one_shot_iterator`. Please transition "
+      #                   "to `tf.data.make_initializable_iterator` for maximum "
+      #                   "performance.")
+      #   try:
+      #     options = Options()
+      #     options.experimental_optimization.prefetch_to_device = None
+      #     dataset = self.with_options(options)
+      #   except ValueError:
+      #     self._dataset._options.experimental_optimization.prefetch_to_device = None
+      #     dataset = self
+      # else:
+      #   dataset = self
+      dataset = self
 
       dataset = dataset._apply_options()
       return dataset._variant_tensor  # pylint: disable=protected-access
@@ -1823,18 +1826,18 @@ class DatasetV1(DatasetV2):
 
     dataset = self
 
-    if force_deactivate_gpu_prefetching:
-      prefetch_to_device = dataset.options().experimental_optimization.prefetch_to_device
-      if prefetch_to_device is not None:
-        logging.warning("GPU prefetching has been deactivated in your "
-                        "`tf.data` pipeline. It is not compatible with "
-                        "`MultiDeviceIterator`.")
-        try:
-          options = Options()
-          options.experimental_optimization.prefetch_to_device = None
-          dataset = dataset.with_options(options)
-        except ValueError:
-          dataset._dataset._options.experimental_optimization.prefetch_to_device = None
+    # if force_deactivate_gpu_prefetching:
+    #   prefetch_to_device = dataset.options().experimental_optimization.prefetch_to_device
+    #   if prefetch_to_device is not None:
+    #     logging.warning("GPU prefetching has been deactivated in your "
+    #                     "`tf.data` pipeline. It is not compatible with "
+    #                     "`MultiDeviceIterator`.")
+    #     try:
+    #       options = Options()
+    #       options.experimental_optimization.prefetch_to_device = None
+    #       dataset = dataset.with_options(options)
+    #     except ValueError:
+    #       dataset._dataset._options.experimental_optimization.prefetch_to_device = None
 
     dataset = dataset._apply_options()
 
