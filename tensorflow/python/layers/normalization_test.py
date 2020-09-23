@@ -313,6 +313,9 @@ class BNTest(test.TestCase):
         bn.trainable_variables)
 
   def test3DInputAxis1(self):
+    if not test.is_gpu_available(cuda_only=True):
+      self.skipTest("Only run on GPU.")
+
     epsilon = 1e-3
     bn = normalization_layers.BatchNormalization(
         axis=1, epsilon=epsilon, momentum=0.9)
@@ -439,6 +442,9 @@ class BNTest(test.TestCase):
         self.assertAlmostEqual(np.std(normed_np_output), 1., places=1)
 
   def test4DInputAxis2(self):
+    if not test.is_gpu_available(cuda_only=True):
+      self.skipTest("Only run on GPU.")
+
     epsilon = 1e-3
     bn = normalization_layers.BatchNormalization(
         axis=2, epsilon=epsilon, momentum=0.9)
