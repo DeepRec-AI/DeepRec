@@ -50,7 +50,7 @@ DOCLINES = __doc__.split('\n')
 _VERSION = '1.15.5'
 
 REQUIRED_PACKAGES = [
-    'absl-py >= 0.7.0',
+    'absl-py >= 0.9.0',
     'astunparse == 1.6.3',
     'backports.weakref >= 1.0rc1;python_version<"3.4"',
     'enum34 >= 1.1.6;python_version<"3.4"',
