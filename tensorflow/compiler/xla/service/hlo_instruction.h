@@ -1886,6 +1886,10 @@ class HloInstruction {
   // by factory methods.
   HloInstruction(HloOpcode opcode, const Shape& shape);
 
+  void RemoveAllOperands() {
+    operands_.clear();
+  }
+
   void RemoveOperandAt(int index) {
     operands_.erase(operands_.begin() + index);
   }
