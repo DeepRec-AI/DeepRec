@@ -6148,6 +6148,13 @@ void TestConvertResize(OpConverterTest* test) {
           CastTestVector<float, CType>({2.0f, 0.5f, -1.0f, 2.0f, 0.5f, -1.0f}),
       }};
 
+// This use case is not supported as of TRT version 7.1
+#if IS_TRT_VERSION_GE(7, 1, 0, 0)
+  if (OpType == ops::ResizeBilinear) {
+    params.erase(params.begin());
+  }
+#endif
+
   for (int i = 0; i < params.size(); ++i) {
     test->Reset();
     // Create resize node.
@@ -6192,7 +6199,7 @@ TEST_F(OpConverterTest, ConvertResize) {
     // First input is weight, should fail.
     Reset();
     NodeDef node_def =
-        MakeResizeNodeDef<ops::ResizeBilinear>("my_resize", DT_FLOAT, false);
+        MakeResizeNodeDef<ops::ResizeBilinear>("my_resize", DT_FLOAT, true);
     AddTestWeights<float>("input", {1, 2}, {1, 2});
     AddTestWeights<int>("size", {1, 2}, {1, 2});
     RunValidationAndConversion(
@@ -6204,7 +6211,7 @@ TEST_F(OpConverterTest, ConvertResize) {
     // output dimension is a tensor, should fail.
     Reset();
     NodeDef node_def =
-        MakeResizeNodeDef<ops::ResizeBilinear>("my_resize", DT_FLOAT, false);
+        MakeResizeNodeDef<ops::ResizeBilinear>("my_resize", DT_FLOAT, true);
     AddTestTensor("input", {1, 2});
     AddTestTensor("size", {1, 2});
     RunValidationAndConversion(
