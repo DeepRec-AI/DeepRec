@@ -42,8 +42,6 @@ limitations under the License.
 #include "tensorflow/core/profiler/lib/traceme.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/stream_executor/platform.h"
-// TODO(benbarsdell): Plumb Graph APIs into stream_executor (and implement
-// wrapper classes for Graph/GraphExec) instead of using this directly.
 #include "tensorflow/compiler/xla/service/gpu/copy_thunk.h"
 #include "tensorflow/stream_executor/gpu/gpu_executor.h"
 #include "tensorflow/stream_executor/gpu/gpu_stream.h"
@@ -71,21 +69,18 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
   // Thunks that synchronize with the host (i.e., call BlockHostUntilDone)
   // cannot be used with graph capture.
   static const absl::flat_hash_set<Thunk::Kind> thunk_kinds_safe_for_capture = {
-      Thunk::kCholesky,
       Thunk::kCollectivePermute,
       Thunk::kConvolution,
       Thunk::kCopy,
       Thunk::kCudnnBatchNormBackward,
       Thunk::kCudnnBatchNormForwardInference,
       Thunk::kCudnnBatchNormForwardTraining,
-      Thunk::kFft,
       Thunk::kGemm,
       Thunk::kKernel,
       Thunk::kMemset32BitValue,
       Thunk::kMemzero,
       Thunk::kNcclAllReduce,
       Thunk::kReplicaId,
-      Thunk::kTriangularSolve,
       Thunk::kTuple,
   };
   if (thunk->kind() == Thunk::kSequential) {

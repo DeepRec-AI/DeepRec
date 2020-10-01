@@ -440,10 +440,6 @@ port::Status GpuExecutor::Launch(Stream* stream, const ThreadDim& thread_dims,
 port::Status GpuExecutor::LaunchExecutableGraph(Stream* main_stream,
                                                 void* graph_exec) {
   CUstream main_cuda_stream = AsGpuStreamValue(main_stream);
-  // stream_executor::gpu::GpuContext* gpu_context =
-  //     static_cast<stream_executor::gpu::GpuExecutor*>(
-  //         main_stream->parent()->implementation())
-  //         ->gpu_context();
   auto& exec_graph =
       *reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(&graph_exec);
   VLOG(1) << "Launching executable graph " << exec_graph << " on stream "
@@ -481,12 +477,12 @@ port::StatusOr<void*> GpuExecutor::EndGraphCapture(Stream* capture_stream,
   CUstream capture_cuda_stream = AsGpuStreamValue(capture_stream);
   auto& graph_handle =
       *reinterpret_cast<stream_executor::gpu::GpuGraphHandle*>(&graph);
-  VLOG(1) << "End GPU graph capture for graph " << graph_handle << " on stream "
-          << capture_cuda_stream;
   if (!GpuDriver::EndGraphCaptureOnStream(gpu_context(), capture_cuda_stream,
                                           &graph_handle)) {
     return port::InternalError("GPU stream capture failed");
   }
+  VLOG(1) << "End GPU graph capture for graph " << graph_handle << " on stream "
+          << capture_cuda_stream;
   return graph_handle;
 }
 
@@ -496,13 +492,13 @@ port::StatusOr<void*> GpuExecutor::InstantiateGraph(void* graph,
       *reinterpret_cast<stream_executor::gpu::GpuGraphHandle*>(&graph);
   auto& exec_graph =
       *reinterpret_cast<stream_executor::gpu::GpuGraphExecHandle*>(&graph_exec);
-  VLOG(1) << "Instantiate graph " << graph_handle
-          << " returning executable graph " << exec_graph;
   bool instantiate_success = GpuDriver::InstantiateExecutableGraph(
       gpu_context(), graph_handle, &exec_graph);
   if (!instantiate_success) {
     return port::InternalError("Failed to instantiate GPU execution graph");
   }
+  VLOG(1) << "Instantiate graph " << graph_handle
+          << " returning executable graph " << exec_graph;
   return exec_graph;
 }
 
