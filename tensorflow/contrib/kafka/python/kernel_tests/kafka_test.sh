@@ -28,7 +28,7 @@ if [ "$action" == "start" ]; then
     echo pull spotify/kafka
     docker pull spotify/kafka
     echo pull spotify/kafka successfully
-    docker run -d --rm --net=host --name=$container spotify/kafka
+    docker run --init -d --rm --net=host --name=$container spotify/kafka
     echo Wait 5 secs until kafka is up and running
     sleep 5
     echo Create test topic

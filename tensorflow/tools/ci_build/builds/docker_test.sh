@@ -116,7 +116,7 @@ else
 fi
 
 # Run docker image with source directory mapped
-docker run -v ${BASE_DIR}:/tensorflow-src -w /tensorflow-src \
+docker run --init -v ${BASE_DIR}:/tensorflow-src -w /tensorflow-src \
 ${GPU_EXTRA_PARAMS} ${ROCM_EXTRA_PARAMS} \
 "${DOCKER_IMG_TAG}" \
 /bin/bash -c "tensorflow/tools/ci_build/builds/run_pip_tests.sh && "\

@@ -27,10 +27,11 @@ docker-image:
 	docker build -t $(TAG_IMAGE) --build-arg VERSION=$(VERSION) -f Dockerfile.$(NAME) .
 
 docker-shell: docker-image
-	docker run --rm -it $(TAG_IMAGE)
+	docker run --init --rm -it $(TAG_IMAGE)
 
 docker-build: docker-image
 	docker run \
+		--init \
 		-e "PYTHON=$(PYTHON)" \
 		-e "TENSORFLOW_TARGET=$(TENSORFLOW_TARGET)" \
 		-v $(TENSORFLOW_DIR):/tensorflow \
