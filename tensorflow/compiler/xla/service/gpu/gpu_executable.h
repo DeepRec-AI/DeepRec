@@ -88,6 +88,11 @@ class GpuExecutable : public Executable {
       std::vector<ShapeTree<MaybeOwningDeviceMemory>> arguments,
       HloExecutionProfile* hlo_execution_profile) override;
 
+  StatusOr<ScopedShapedBuffer> ExecuteAsyncOnStream(
+      const ServiceExecutableRunOptions* run_options,
+      absl::Span<const ShapedBuffer* const> arguments,
+      HloExecutionProfile* hlo_execution_profile) override;
+
   std::shared_ptr<const BufferAssignment> GetBufferAssignment() const {
     return assignment_;
   }

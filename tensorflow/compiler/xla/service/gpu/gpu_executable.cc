@@ -630,6 +630,13 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ShapeTree<MaybeOwningDeviceMemory>> arguments,
     HloExecutionProfile* hlo_execution_profile) {
+  return Unimplemented("ERRORRRR!!!! OLD GpuExecutable::ExecuteAsyncOnStream() CALLED!");
+}
+
+StatusOr<ScopedShapedBuffer> GpuExecutable::ExecuteAsyncOnStream(
+    const ServiceExecutableRunOptions* run_options,
+    absl::Span<const ShapedBuffer* const> arguments,
+    HloExecutionProfile* hlo_execution_profile) {
   XLA_SCOPED_LOGGING_TIMER(absl::StrCat("GpuExecutable::ExecuteAsyncOnStream(",
                                         module().name(), ")"));
   se::DeviceMemoryAllocator* const memory_allocator = run_options->allocator();
@@ -665,10 +672,8 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStream(
       const BufferAllocation& allocation = assignment_->GetAllocation(i);
       if (allocation.is_entry_computation_parameter()) {
         auto param_no = allocation.parameter_number();
-        se::DeviceMemoryBase buffer =
-            arguments[param_no]
-                .element(allocation.param_shape_index())
-                .AsDeviceMemoryBase();
+        se::DeviceMemoryBase buffer = arguments[param_no]
+            ->buffers().element(allocation.param_shape_index());
 
         // All top-level buffers and sub-buffers must have an explicit, non-null
         // pointer, except for zero-sized buffers, which may be null.
@@ -770,18 +775,7 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStream(
     buffers_in_result.insert(src_base);
   }
   TF_RETURN_IF_ERROR(buffer_allocations->TearDown(buffers_in_result));
-
-  std::vector<se::OwningDeviceMemory> buffers_to_free;
-  for (ShapeTree<MaybeOwningDeviceMemory>& argument : arguments) {
-    for (std::pair<ShapeIndex, MaybeOwningDeviceMemory>& buffer : argument) {
-      auto maybe_owning_buffer = buffer.second.Release();
-      if (maybe_owning_buffer) {
-        buffers_to_free.push_back(std::move(*maybe_owning_buffer));
-      }
-    }
-  }
-  return ExecutionOutput(std::move(shaped_buffer), std::move(buffers_to_free),
-                         {}, {});
+  return shaped_buffer;
 }
 
 const InstructionValueSet& GpuExecutable::GetRootValueSet() const {
