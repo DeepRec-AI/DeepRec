@@ -497,7 +497,7 @@ port::StatusOr<void*> GpuExecutor::InstantiateGraph(void* graph,
   if (!instantiate_success) {
     return port::InternalError("Failed to instantiate GPU execution graph");
   }
-  VLOG(1) << "Instantiate graph " << graph_handle
+  VLOG(1) << "Instantiated CUDA graph " << graph_handle
           << " returning executable graph " << exec_graph;
   return exec_graph;
 }
