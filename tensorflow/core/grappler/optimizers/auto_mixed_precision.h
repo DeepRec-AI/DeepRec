@@ -22,10 +22,6 @@ limitations under the License.
 namespace tensorflow {
 namespace grappler {
 
-// Note: This is primarily used by the tf.experimental.tensorrt.Converter class
-// to use mixed precision on ops not converted by TensorRT. It is also used for
-// the soon-to-be-deprecated enable_mixed_precision_graph_rewrite API.
-//
 // Convert data types to float16 where appropriate to improve performance on
 // GPUs.
 class AutoMixedPrecision : public GraphOptimizer {
