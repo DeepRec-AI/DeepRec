@@ -61,12 +61,20 @@ class HeapSimulator {
     bool OverlapsWith(Chunk other_chunk) const;
   };
 
-  // Result represents the result of the heap simulation.
-  struct Result {
+  struct HeapResult {
     // The assignment of buffers to chunks.
     absl::flat_hash_map<const HloValue*, Chunk> chunk_map;
 
     // The total size in bytes of the heap, containing all assigned chunks.
+    int64 heap_size = 0;
+  };
+  // Result represents the result of the heap simulation.
+  struct Result {
+    // Heap results.
+    std::vector<HeapResult> heap_results;
+
+    // The total size in bytes of the heaps.
+    // heap_size = sum([hr.heap_size for hr in heap_results]).
     int64 heap_size = 0;
 
     // The total size in bytes of heap fragmentation.
@@ -220,6 +228,7 @@ class HeapAlgorithm {
  public:
   using Chunk = HeapSimulator::Chunk;
   using Result = HeapSimulator::Result;
+  using HeapResult = HeapSimulator::HeapResult;
 
   virtual ~HeapAlgorithm() = default;
 
@@ -399,6 +408,7 @@ class GlobalDecreasingSizeBestFitHeap : public HeapAlgorithm {
                                     int64 preferred_offset = -1) const;
   void CommitChunk(const BufferInterval& buffer_interval,
                    ChunkCandidate chunk_candidate);
+
   // Adds the buffer and the chunk to the result chunk map.
   virtual void AddToChunkMap(const HloValue* buffer, Chunk chunk);
 
@@ -410,7 +420,7 @@ class GlobalDecreasingSizeBestFitHeap : public HeapAlgorithm {
   BufferIntervalCompare GetTemporalBufferIntervalCompare() const;
 
   absl::flat_hash_map<const HloValue*, BufferInterval> buffer_intervals_;
-  Result result_;
+  HeapResult result_;
   BufferIntervalCompare buffer_interval_compare_;
   BufferIntervalTree interval_tree_;
 
@@ -426,6 +436,24 @@ class GlobalDecreasingSizeBestFitHeap : public HeapAlgorithm {
   // returns all three of them.
   absl::flat_hash_set<const HloValue*> GetTransitiveColocations(
       const BufferInterval& interval) const;
+};
+
+// This class implements an algorithm that will output multiple heaps. Each heap
+// size is constrained by a given limit.
+class ConstrainedGlobalDecreasingSizeBestFitHeap
+    : public GlobalDecreasingSizeBestFitHeap {
+ public:
+  explicit ConstrainedGlobalDecreasingSizeBestFitHeap(
+      size_t size_limit_per_heap, int64 alignment,
+      GlobalDecreasingSizeBestFitHeap::Type type = kSpatial)
+      : size_limit_per_heap_(size_limit_per_heap),
+        GlobalDecreasingSizeBestFitHeap(alignment, type) {}
+  ~ConstrainedGlobalDecreasingSizeBestFitHeap() override {}
+
+  Result Finish() override;
+
+ private:
+  size_t size_limit_per_heap_;
 };
 
 // A heap algorithm that chooses the best results from other algorithms added to

@@ -505,7 +505,10 @@ HeapSimulator::Result AlternateMemoryBestFitHeap::Finish() {
     }
   }
 
-  return result_;
+  Result result;
+  result.heap_size = result_.heap_size;
+  result.heap_results.emplace_back(std::move(result_));
+  return std::move(result);
 }
 
 bool operator<(const AsynchronousCopy& a, const AsynchronousCopy& b) {

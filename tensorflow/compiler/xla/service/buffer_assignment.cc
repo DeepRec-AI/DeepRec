@@ -1408,10 +1408,21 @@ Status BufferAssigner::AssignBuffersWithSequentialOrdering(
   auto get_heap_algorithm = [&](int64 alignment) {
     auto algorithms =
         absl::make_unique<std::vector<std::unique_ptr<HeapAlgorithm>>>();
-    algorithms->push_back(absl::make_unique<GlobalDecreasingSizeBestFitHeap>(
-        alignment, GlobalDecreasingSizeBestFitHeap::kSpatial));
-    algorithms->push_back(absl::make_unique<GlobalDecreasingSizeBestFitHeap>(
-        alignment, GlobalDecreasingSizeBestFitHeap::kTemporal));
+    if (assignment->multiheap_size_constraint_per_heap() == -1) {
+      algorithms->push_back(absl::make_unique<GlobalDecreasingSizeBestFitHeap>(
+          alignment, GlobalDecreasingSizeBestFitHeap::kSpatial));
+      algorithms->push_back(absl::make_unique<GlobalDecreasingSizeBestFitHeap>(
+          alignment, GlobalDecreasingSizeBestFitHeap::kTemporal));
+    } else {
+      algorithms->push_back(
+          absl::make_unique<ConstrainedGlobalDecreasingSizeBestFitHeap>(
+              assignment->multiheap_size_constraint_per_heap(), alignment,
+              GlobalDecreasingSizeBestFitHeap::kSpatial));
+      algorithms->push_back(
+          absl::make_unique<ConstrainedGlobalDecreasingSizeBestFitHeap>(
+              assignment->multiheap_size_constraint_per_heap(), alignment,
+              GlobalDecreasingSizeBestFitHeap::kTemporal));
+    }
     return absl::make_unique<ChooseBestHeapAlgorithm>(std::move(algorithms));
   };
 
@@ -1575,20 +1586,25 @@ void BufferAssigner::AssignBuffersFromHeapSimulator(
   }
   VLOG(1) << "Result size from heap simulator: " << result.heap_size;
 
-  BufferAllocation* allocation =
-      assignment->NewEmptyAllocation(result.heap_size, color);
-  for (const auto& buffer_chunk : result.chunk_map) {
-    const HloValue& value = *buffer_chunk.first;
-    const HeapSimulator::Chunk& chunk = buffer_chunk.second;
-    assignment->AddAssignment(allocation, value, chunk.offset, chunk.size);
+  for (auto& heap_result : result.heap_results) {
+    BufferAllocation* allocation =
+        assignment->NewEmptyAllocation(heap_result.heap_size, color);
+    for (const auto& buffer_chunk : heap_result.chunk_map) {
+      const HloValue& value = *buffer_chunk.first;
+      const HeapSimulator::Chunk& chunk = buffer_chunk.second;
+      assignment->AddAssignment(allocation, value, chunk.offset, chunk.size);
+    }
+    // Compute peak_buffers only when the multiheap mode is off. Simply return
+    // an empty vector in the multiheap mode.
+    if (assignment->multiheap_size_constraint_per_heap() == -1) {
+      allocation->peak_buffers_ =
+          ComputePeakMemoryLogicalBuffers(*allocation, result.debug_trace);
+    }
+
+    XLA_VLOG_LINES(2, allocation->ToString());
+
+    allocation->AddHeapTrace(result.debug_trace);
   }
-  allocation->peak_buffers_ =
-      ComputePeakMemoryLogicalBuffers(*allocation, result.debug_trace);
-
-  VLOG(1) << "Ran heap simulation for allocation: ";
-  XLA_VLOG_LINES(2, allocation->ToString());
-
-  allocation->AddHeapTrace(result.debug_trace);
 }
 
 StatusOr<std::unique_ptr<BufferAssignment>> BufferAssigner::CreateAssignment(
@@ -1656,6 +1672,10 @@ StatusOr<std::unique_ptr<BufferAssignment>> BufferAssigner::CreateAssignment(
       buffers_to_assign_sequentially.size() == global_computations.size();
   VLOG(2) << "Running whole module heap simulation: "
           << run_whole_module_heap_simulation;
+  const int32 multiheap_size_constraint_per_heap =
+      module->config().debug_options().xla_multiheap_size_constraint_per_heap();
+  VLOG(2) << "Multiheap per heap size limit: "
+          << multiheap_size_constraint_per_heap;
   TF_RETURN_IF_ERROR(AssignBuffersWithSequentialOrdering(
       buffers_to_assign_sequentially, run_whole_module_heap_simulation,
       assignment.get()));
@@ -1694,7 +1714,9 @@ StatusOr<std::unique_ptr<BufferAssignment>> BufferAssigner::CreateAssignment(
   // This can only be performed after all buffers have been assigned, and
   // after maybe_live_out is marked, since it is used to determine whether an
   // allocation contains temporary buffers or not.
-  assignment->CombineTempAllocations();
+  if (multiheap_size_constraint_per_heap == -1) {
+    assignment->CombineTempAllocations();
+  }
 
   XLA_VLOG_LINES(2, assignment->ToString());
   TF_RETURN_IF_ERROR(assignment->ComputeSummaryStats());

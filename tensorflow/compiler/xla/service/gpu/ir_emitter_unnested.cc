@@ -1474,7 +1474,12 @@ std::unique_ptr<KernelThunk> IrEmitterUnnested::BuildKernelThunk(
     if (alloc.IsPreallocatedTempBuffer()) {
       if (!temp_buffer.has_value()) {
         temp_buffer = &alloc;
-      } else {
+      // Check temp buffer numbers only when the multiheap mode is off.
+      } else if (inst->parent()
+                     ->parent()
+                     ->config()
+                     .debug_options()
+                     .xla_multiheap_size_constraint_per_heap() == -1) {
         LOG(FATAL) << "Multiple temp buffers found, but only one is allowed!";
       }
     }

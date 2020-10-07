@@ -64,6 +64,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_allow_excess_precision(true);
   opts.set_xla_force_host_platform_device_count(1);
   opts.set_xla_gpu_deterministic_reductions(false);
+  opts.set_xla_multiheap_size_constraint_per_heap(-1);
   return opts;
 }
 
@@ -460,9 +461,10 @@ static void AllocateFlags() {
           "Dumps HLO modules rendered as dot files to the directory "
           "specified by --xla_dump_to."),
       tensorflow::Flag(
-          "xla_gpu_asm_extra_flags", string_setter_for(&DebugOptions::set_xla_gpu_asm_extra_flags),
-          "",
-          "Pass extra parameters to the GPU assembler tool (i.e., ptxas for CUDA). "
+          "xla_gpu_asm_extra_flags",
+          string_setter_for(&DebugOptions::set_xla_gpu_asm_extra_flags), "",
+          "Pass extra parameters to the GPU assembler tool (i.e., ptxas for "
+          "CUDA). "
           "If multiple parameters, separate them by comma."),
       tensorflow::Flag("xla_dump_hlo_as_html",
                        bool_setter_for(&DebugOptions::set_xla_dump_hlo_as_html),
@@ -541,6 +543,14 @@ static void AllocateFlags() {
           bool_setter_for(&DebugOptions::set_xla_gpu_deterministic_reductions),
           flag_values->xla_gpu_deterministic_reductions(),
           "Always run deterministic reductions on GPU"),
+      tensorflow::Flag(
+          "xla_multiheap_size_constraint_per_heap",
+          int32_setter_for(
+              &DebugOptions::set_xla_multiheap_size_constraint_per_heap),
+          flag_values->xla_multiheap_size_constraint_per_heap(),
+          "Generates multiple heaps (i.e., temp buffers) with a size "
+          "constraint on each heap to avoid Out-of-Memory due to memory "
+          "fragmentation."),
   });
   ParseFlagsFromEnvAndDieIfUnknown("XLA_FLAGS", *flag_objects);
 }

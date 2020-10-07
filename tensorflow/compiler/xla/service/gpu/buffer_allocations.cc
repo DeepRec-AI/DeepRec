@@ -96,7 +96,8 @@ StatusOr<std::unique_ptr<BufferAllocations>> BufferAllocations::Builder::Build(
 
       buffer_allocations->SetBuffer(i, buffer_address);
       if (allocation.IsPreallocatedTempBuffer()) {
-        if (seen_temp_buffer) {
+        if (seen_temp_buffer &&
+            buffer_assignment->multiheap_size_constraint_per_heap() == -1) {
           LOG(FATAL) << "Multiple temporary buffers detected.  BufferAssigner "
                      << "must guarantee at most one temporary buffer.";
         }
