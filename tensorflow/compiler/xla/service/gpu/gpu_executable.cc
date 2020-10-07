@@ -630,13 +630,36 @@ StatusOr<ExecutionOutput> GpuExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     std::vector<ShapeTree<MaybeOwningDeviceMemory>> arguments,
     HloExecutionProfile* hlo_execution_profile) {
-  return Unimplemented("ERRORRRR!!!! OLD GpuExecutable::ExecuteAsyncOnStream() CALLED!");
+  TF_ASSIGN_OR_RETURN(ScopedShapedBuffer shaped_buffer,
+                      ExecuteAsyncOnStreamImpl(run_options, nullptr, &arguments, hlo_execution_profile));
+
+  std::vector<se::OwningDeviceMemory> buffers_to_free;
+  for (ShapeTree<MaybeOwningDeviceMemory>& argument : arguments) {
+    for (std::pair<ShapeIndex, MaybeOwningDeviceMemory>& buffer : argument) {
+      auto maybe_owning_buffer = buffer.second.Release();
+      if (maybe_owning_buffer) {
+        buffers_to_free.push_back(std::move(*maybe_owning_buffer));
+      }
+    }
+  }
+  return ExecutionOutput(std::move(shaped_buffer), std::move(buffers_to_free),
+                         {}, {});
 }
 
 StatusOr<ScopedShapedBuffer> GpuExecutable::ExecuteAsyncOnStream(
     const ServiceExecutableRunOptions* run_options,
     absl::Span<const ShapedBuffer* const> arguments,
     HloExecutionProfile* hlo_execution_profile) {
+  return GpuExecutable::ExecuteAsyncOnStreamImpl(run_options, &arguments, nullptr, hlo_execution_profile);
+}
+
+StatusOr<ScopedShapedBuffer> GpuExecutable::ExecuteAsyncOnStreamImpl(
+    const ServiceExecutableRunOptions* run_options,
+    absl::Span<const ShapedBuffer* const>* arguments_buffer,
+    std::vector<ShapeTree<MaybeOwningDeviceMemory>>* arguments_shapetree,
+    HloExecutionProfile* hlo_execution_profile) {
+  CHECK_EQ((arguments_buffer == nullptr) + (arguments_shapetree == nullptr), 1);
+
   XLA_SCOPED_LOGGING_TIMER(absl::StrCat("GpuExecutable::ExecuteAsyncOnStream(",
                                         module().name(), ")"));
   se::DeviceMemoryAllocator* const memory_allocator = run_options->allocator();
@@ -672,9 +695,15 @@ StatusOr<ScopedShapedBuffer> GpuExecutable::ExecuteAsyncOnStream(
       const BufferAllocation& allocation = assignment_->GetAllocation(i);
       if (allocation.is_entry_computation_parameter()) {
         auto param_no = allocation.parameter_number();
-        se::DeviceMemoryBase buffer = arguments[param_no]
-            ->buffers().element(allocation.param_shape_index());
-
+        se::DeviceMemoryBase buffer;
+        if (arguments_buffer != nullptr) {
+          buffer = (*arguments_buffer)[param_no]->buffers().element(
+              allocation.param_shape_index());
+        } else {
+          buffer = (*arguments_shapetree)[param_no]
+              .element(allocation.param_shape_index())
+              .AsDeviceMemoryBase();
+        }
         // All top-level buffers and sub-buffers must have an explicit, non-null
         // pointer, except for zero-sized buffers, which may be null.
         if (buffer.is_null() && buffer.size() > 0) {

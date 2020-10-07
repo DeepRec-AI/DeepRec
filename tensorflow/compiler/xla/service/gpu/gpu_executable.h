@@ -212,6 +212,15 @@ class GpuExecutable : public Executable {
     return executor_impl_;
   }
 
+  // The real implementation of ExecuteAsyncOnStream. Exactly one of
+  // `arguments_buffer` or `arguments_shapetree` must be provided and
+  // the other must be nullptr.
+  StatusOr<ScopedShapedBuffer> ExecuteAsyncOnStreamImpl(
+      const ServiceExecutableRunOptions* run_options,
+      absl::Span<const ShapedBuffer* const>* arguments_buffer,
+      std::vector<ShapeTree<MaybeOwningDeviceMemory>>* arguments_shapetree,
+      HloExecutionProfile* hlo_execution_profile);
+
   GraphCacheStats graph_stats_;
 
   std::unordered_map<void*, MutexedGraphExecCache> gpu_exec_graphs_cache_
