@@ -66,6 +66,15 @@ class BatchNormalizationTest(keras_parameterized.TestCase):
         kwargs={'scale': False,
                 'center': False},
         input_shape=(3, 3))
+    testing_utils.layer_test(
+        keras.layers.BatchNormalization,
+        kwargs={
+            'gamma_initializer': 'ones',
+            'beta_initializer': 'ones',
+            'moving_mean_initializer': 'zeros',
+            'moving_variance_initializer': 'ones'
+        },
+        input_shape=(3, 2, 4, 2))
 
   @tf_test_util.run_in_graph_and_eager_modes
   def test_batchnorm_weights(self):

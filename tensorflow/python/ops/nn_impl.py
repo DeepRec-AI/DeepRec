@@ -1452,20 +1452,21 @@ def fused_batch_norm(
   (http://arxiv.org/abs/1502.03167).
 
   Args:
-    x: Input `Tensor` of 4 dimensions.
+    x: Input `Tensor` of 4 or 5 dimensions.
     scale: A `Tensor` of 1 dimension for scaling.
     offset: A `Tensor` of 1 dimension for bias.
     mean: A `Tensor` of 1 dimension for population mean used for inference.
     variance: A `Tensor` of 1 dimension for population variance
               used for inference.
     epsilon: A small float number added to the variance of x.
-    data_format: The data format for x. Either "NHWC" (default) or "NCHW".
+    data_format: The data format for x. Support "NHWC" (default) or "NCHW" for
+                 4D tenors and "NDHWC" or "NCDHW" for 5D tensors.
     is_training: A bool value to specify if the operation is used for
                  training or inference.
     name: A name for this operation (optional).
 
   Returns:
-    y: A 4D Tensor for the normalized, scaled, offsetted x.
+    y: A 4D or 5D Tensor for the normalized, scaled, offsetted x.
     batch_mean: A 1D Tensor for the mean of x.
     batch_var: A 1D Tensor for the variance of x.
 

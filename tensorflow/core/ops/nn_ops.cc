@@ -216,7 +216,7 @@ REGISTER_OP("FusedBatchNormV3")
     .Attr("T: {half, bfloat16, float}")
     .Attr("U: {float}")
     .Attr("epsilon: float = 0.0001")
-    .Attr(GetConvnetDataFormatAttrString())
+    .Attr(GetConvnetDataFormat2D3DAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormV3Shape);
 
@@ -259,7 +259,7 @@ REGISTER_OP("FusedBatchNormGrad")
     .Output("reserve_space_4: T")
     .Attr("T: {float}")
     .Attr("epsilon: float = 0.0001")
-    .Attr(GetConvnetDataFormatAttrString())
+    .Attr(GetConvnetDataFormat2D3DAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormGradShape);
 
@@ -296,7 +296,7 @@ REGISTER_OP("FusedBatchNormGradV3")
     .Attr("T: {half, bfloat16, float}")
     .Attr("U: {float}")
     .Attr("epsilon: float = 0.0001")
-    .Attr(GetConvnetDataFormatAttrString())
+    .Attr(GetConvnetDataFormat2D3DAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormGradShape);
 // --------------------------------------------------------------------------

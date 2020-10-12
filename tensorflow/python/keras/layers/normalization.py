@@ -515,8 +515,8 @@ class BatchNormalizationBase(Layer):
     fused_axis = self.axis[0]
     input_shape = array_ops.shape(inputs)
     ndims = len(inputs.shape)
-    if self.axis[0] not in (1, ndims - 1) or ndims != 4:
-      # The fused implementation only supports NCHW or NHWC, so we reshape the
+    if self.axis[0] not in (1, ndims - 1) or ndims not in (4, 5):
+      # The fused implementation supports NCHW or NHWC, so we reshape the
       # input/output tensor to/from an equivalent 4D shape.
       fused_shape, fused_axis = self._get_shape_and_axis_for_fused(input_shape,
                                                                    self.axis[0])
@@ -530,7 +530,10 @@ class BatchNormalizationBase(Layer):
       # particularly tricky. A compromise might be to just support the most
       # common use case (turning 5D w/ virtual batch to NCHW)
 
-    data_format = 'NCHW' if fused_axis == 1 else 'NHWC'
+    if ndims == 5:
+      data_format = 'NCDHW' if fused_axis == 1 else 'NDHWC'
+    else:
+      data_format = 'NCHW' if fused_axis == 1 else 'NHWC'
 
     # TODO(b/129279393): Support zero batch input in non DistributionStrategy
     # code as well.
@@ -569,7 +572,7 @@ class BatchNormalizationBase(Layer):
       factor = (sample_size - math_ops.cast(1.0, variance.dtype)) / sample_size
       variance *= factor
 
-    if original_shape is not None:
+    if original_shape is not None and ndims not in (4, 5):
       output = array_ops.reshape(output, original_shape)
 
     training_value = tf_utils.constant_value(training)
