@@ -54,7 +54,15 @@ using tensorflow::tracing::ScopedAnnotation;
 
 // A helper function to decide whether to use GPU graph capture, which can
 // reduce GPU launch latency overheads in some cases.
-bool GpuGraphCaptureEnabled() {
+//
+// To enable for all supported cluster set the environment variable
+// TF_XLA_ENABLE_GPU_GRAPH_CAPTURE to 1.
+//
+// The environment variable TF_XLA_GPU_GRAPH_CLUSTER_NAME can be used
+// to limit which cluster uses CudaGraph. Multiple names can be added
+// by separating them by a comma. Example:
+// TF_XLA_GPU_GRAPH_CLUSTER_NAME=cluster_1,cluster_20
+bool GpuGraphCaptureEnabled(absl::string_view module_name) {
   static bool is_enabled = [] {
     bool is_enabled = false;
     TF_CHECK_OK(
@@ -62,6 +70,24 @@ bool GpuGraphCaptureEnabled() {
                                        /*default_val=*/false, &is_enabled));
     return is_enabled;
   }();
+
+  static string enabled_names = [] {
+    string enabled_names;
+    TF_CHECK_OK(
+        tensorflow::ReadStringFromEnvVar("TF_XLA_GPU_GRAPH_CLUSTER_NAME",
+					 /*default_val=*/"", &enabled_names));
+    return enabled_names;
+  }();
+  if (!enabled_names.empty() && is_enabled) {
+    for (auto cluster_name: absl::StrSplit(enabled_names, ',')) {
+      if (absl::StartsWith(module_name, cluster_name)) {
+	VLOG(0) << "CUDA GRAPH ENABLED FOR CLUSTER " << module_name;
+	return true;
+      }
+    }
+    VLOG(0) << "CUDA GRAPH NOT ENABLED FOR CLUSTER " << module_name;
+    return false;
+  }
   return is_enabled;
 }
 
@@ -289,7 +315,7 @@ Status GpuExecutable::ExecuteThunks(
   se::Stream* capture_stream = main_stream;
   StreamPool::Ptr private_capture_stream;
   bool use_gpu_graph_capture =
-      GpuGraphCaptureEnabled() && CanUseGpuGraphCapture() &&
+      GpuGraphCaptureEnabled(module().name()) && CanUseGpuGraphCapture() &&
       executor->platform_kind() == stream_executor::PlatformKind::kCuda &&
       !is_graph_capture_costly_;
   if (use_gpu_graph_capture) {
