@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/grappler/optimizers/generic_layout_optimizer.h"
 
+#include <fstream>
 #include <utility>
 
 #include "absl/memory/memory.h"
@@ -29,6 +30,9 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/generic_layout_optimizer_transposer.h"
 #include "tensorflow/core/grappler/optimizers/generic_layout_optimizer_transposer_factory.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/lib/io/path.h" 
+#include "tensorflow/core/util/env_var.h"
+
 
 namespace tensorflow {
 namespace grappler {
@@ -392,6 +396,33 @@ Status EraseOutputShapeAttrs(TransposeContext* context) {
 
 }  // namespace
 
+Status PrintDebugLogs(string suffix, GraphDef* graph_) {
+  bool allow_print;
+  TF_RETURN_IF_ERROR(ReadBoolFromEnvVar(
+      "TF_ENABLE_LAYOUT_OPTIMIZE_GRAPH_REWRITE_LOG", /*default_value=*/false,
+      &allow_print));
+  if (not allow_print) return Status::OK();
+
+  string prepend_path = "/tmp/logs/";
+  if (prepend_path.empty()) return Status::OK();
+  string fname =
+      io::JoinPath(prepend_path, strings::StrCat("graphdef", "_", suffix, ".pb"));
+  std::fstream f;
+  f.open(fname.c_str(), std::fstream::out | std::fstream::binary);
+  f << graph_->SerializeAsString();
+  f.close();
+  LOG(INFO) << "Saved graph as binary to " << fname;
+
+  fname = io::JoinPath(prepend_path,
+                       strings::StrCat("graphdef", "_", suffix, ".pb.txt"));
+  f.open(fname.c_str(), std::fstream::out);
+  f << graph_->DebugString();
+  f.close();
+  LOG(INFO) << "Saved graph as text to " << fname;
+
+  return Status::OK();
+}
+
 Status GenericLayoutOptimizer::Optimize(Cluster* cluster,
                                         const GrapplerItem& item,
                                         GraphDef* output) {
@@ -431,6 +462,8 @@ Status GenericLayoutOptimizer::Optimize(Cluster* cluster,
         context.graph_view->SortTopologically(/*ignore_cycles=*/false, {}));
   }
   TF_RETURN_IF_ERROR(EraseOutputShapeAttrs(&context));
+	TF_RETURN_IF_ERROR(PrintDebugLogs("layout_optimized",
+                                    context.graph_view->graph()));
 
   *output = context.graph;
   return Status::OK();
