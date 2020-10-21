@@ -15993,6 +15993,8 @@ op {
       list {
         s: "NHWC"
         s: "NCHW"
+        s: "NDHWC"
+        s: "NCDHW"
       }
     }
   }

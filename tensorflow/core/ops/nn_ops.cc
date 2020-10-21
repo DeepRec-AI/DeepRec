@@ -238,7 +238,7 @@ REGISTER_OP("_FusedBatchNormEx")
     .Attr("epsilon: float = 0.0001")
     .Attr("num_side_inputs: int >= 0 = 0")
     .Attr("activation_mode: string = \"Identity\"")
-    .Attr(GetConvnetDataFormatAttrString())
+    .Attr(GetConvnetDataFormat2D3DAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormExShape)
     .Doc(R"doc(
