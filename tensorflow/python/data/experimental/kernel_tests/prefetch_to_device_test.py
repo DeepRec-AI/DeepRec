@@ -145,33 +145,18 @@ class PrefetchToDeviceTest(test_base.DatasetTestBase):
     device_dataset = host_dataset.apply(
         prefetching_ops.prefetch_to_device("/gpu:0"))
 
-    iterator = dataset_ops.make_initializable_iterator(device_dataset)
-    next_element = iterator.get_next()
+    self.assertDatasetProduces(device_dataset, list(range(10)))
 
-    with self.cached_session(
-        config=config_pb2.ConfigProto(allow_soft_placement=False)):
-      self.evaluate(iterator.initializer)
-      for i in range(10):
-        self.assertEqual(i, self.evaluate(next_element))
-      with self.assertRaises(errors.OutOfRangeError):
-        self.evaluate(next_element)
-
-  @test_util.deprecated_graph_mode_only
+  @combinations.generate(test_base.default_test_combinations())
   def testPrefetchToDeviceCorrectPlacement(self):
+
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
 
-    host_dataset = dataset_ops.Dataset.range(10)
-    device_dataset = host_dataset.apply(
-      prefetching_ops.prefetch_to_device("/gpu:0"))
+    dataset = dataset_ops.Dataset.range(10)
+    dataset = dataset.apply(prefetching_ops.prefetch_to_device("/gpu:0"))
 
-    self.assertTrue((
-        "" == host_dataset._variant_tensor.device or
-        "cpu:0" in host_dataset._variant_tensor.device.lower()
-    ))
-
-    self.assertTrue(
-      "gpu:0" in device_dataset._variant_tensor.device.lower())
+    self.assertIn("gpu:0", dataset._variant_tensor.device.lower())
 
   @test_util.deprecated_graph_mode_only
   def testPrefetchToDeviceWithReInit(self):
@@ -224,6 +209,48 @@ class PrefetchToDeviceTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         self.evaluate(next_element)
 
+
+  @combinations.generate(test_base.eager_only_combinations())
+  def testIteratorOnDeviceEagerMode(self):
+    if not test_util.is_gpu_available():
+      self.skipTest("No GPU available")
+
+    dataset = dataset_ops.Dataset.range(10)
+    dataset = dataset.apply(prefetching_ops.prefetch_to_device("/gpu:0"))
+    iterator = iter(dataset)
+    data = next(iterator)
+
+    self.assertIn("gpu:0", dataset._variant_tensor.device.lower())
+    self.assertIn("gpu:0", iterator._iterator_resource.device.lower())
+    self.assertIn("gpu:0", data.device.lower())
+
+  @combinations.generate(test_base.graph_only_combinations())
+  def testIteratorOnDeviceGraphModeOneShotIterator(self):
+    if not test_util.is_gpu_available():
+      self.skipTest("No GPU available")
+
+    dataset = dataset_ops.Dataset.range(10)
+    dataset = dataset.apply(prefetching_ops.prefetch_to_device("/gpu:0"))
+    iterator = dataset_ops.make_one_shot_iterator(dataset)
+    data = iterator.get_next()
+
+    self.assertIn("gpu:0", dataset._variant_tensor.device.lower())
+    self.assertIn("gpu:0", iterator._iterator_resource.device.lower())
+    self.assertIn("gpu:0", data.device.lower())
+
+  @combinations.generate(test_base.graph_only_combinations())
+  def testIteratorOnDeviceGraphModeInitializableIterator(self):
+    if not test_util.is_gpu_available():
+      self.skipTest("No GPU available")
+
+    dataset = dataset_ops.Dataset.range(10)
+    dataset = dataset.apply(prefetching_ops.prefetch_to_device("/gpu:0"))
+    iterator = dataset_ops.make_initializable_iterator(dataset)
+    data = iterator.get_next()
+
+    self.assertIn("gpu:0", dataset._variant_tensor.device.lower())
+    self.assertIn("gpu:0", iterator._iterator_resource.device.lower())
+    self.assertIn("gpu:0", data.device.lower())
 
 if __name__ == "__main__":
   test.main()

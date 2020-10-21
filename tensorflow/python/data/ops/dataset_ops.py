@@ -380,8 +380,7 @@ class DatasetV2(tracking_base.Trackable, composite_tensor.CompositeTensor):
     Raises:
       RuntimeError: If not inside of tf.function and not executing eagerly.
     """
-    if (context.executing_eagerly()
-        or ops.get_default_graph()._building_function):  # pylint: disable=protected-access
+    if context.executing_eagerly() or ops.inside_function():
       with ops.device(self._variant_tensor.device):
         return iterator_ops.IteratorV2(self)
     else:
@@ -1768,17 +1767,13 @@ class DatasetV1(DatasetV2):
       else:
         six.reraise(ValueError, err)
 
-    iterator_resource = gen_dataset_ops.one_shot_iterator(
-      dataset_factory=_make_dataset,
-      **self._flat_structure
-    )
-    # pylint: disable=protected-access
-    return iterator_ops.Iterator(
-        iterator_resource=iterator_resource,
-        initializer=None,
-        output_types=get_legacy_output_types(self),
-        output_shapes=get_legacy_output_shapes(self),
-        output_classes=get_legacy_output_classes(self))
+    with ops.device(self._variant_tensor.device):
+      # pylint: disable=protected-access
+      return iterator_ops.Iterator(
+          gen_dataset_ops.one_shot_iterator(
+              dataset_factory=_make_dataset, **self._flat_structure), None,
+          get_legacy_output_types(self), get_legacy_output_shapes(self),
+          get_legacy_output_classes(self))
 
   @deprecation.deprecated(
       None, "Use `for ... in dataset:` to iterate over a dataset. If using "
@@ -1844,7 +1839,7 @@ class DatasetV1(DatasetV2):
     if shared_name is None:
       shared_name = ""
 
-    with ops.device(dataset._variant_tensor.device):
+    with ops.device(self._variant_tensor.device):
       iterator_resource = gen_dataset_ops.iterator_v2(
           container="", shared_name=shared_name, **self._flat_structure)
 
@@ -1853,9 +1848,10 @@ class DatasetV1(DatasetV2):
           iterator_resource)
 
       # pylint: disable=protected-access
-      return iterator_ops.Iterator(
-          iterator_resource, initializer, get_legacy_output_types(dataset),
-          get_legacy_output_shapes(dataset), get_legacy_output_classes(dataset))
+      return iterator_ops.Iterator(iterator_resource, initializer,
+                                   get_legacy_output_types(dataset),
+                                   get_legacy_output_shapes(dataset),
+                                   get_legacy_output_classes(dataset))
 
   @property
   @deprecation.deprecated(

@@ -367,9 +367,10 @@ class Iterator(trackable.Trackable):
                           "dataset with output shapes %r." %
                           (self.output_shapes, dataset_output_shapes))
 
-    with ops.device(dataset._variant_tensor.device):
+    with ops.device(self._iterator_resource.device):
+      # pylint: disable=protected-access
       return gen_dataset_ops.make_iterator(
-          dataset._variant_tensor, self._iterator_resource, name=name)  # pylint: disable=protected-access
+          dataset._variant_tensor, self._iterator_resource, name=name)
 
   def get_next(self, name=None):
     """Returns a nested structure of `tf.Tensor`s representing the next element.
@@ -427,6 +428,15 @@ class Iterator(trackable.Trackable):
           output_shapes=self._flat_tensor_shapes,
           name=name)
       return structure.from_tensor_list(self._element_spec, flat_ret)
+
+  def get_next_as_optional(self):
+    # pylint: disable=protected-access
+    return optional_ops._OptionalImpl(
+        gen_dataset_ops.iterator_get_next_as_optional(
+            self._iterator_resource,
+            output_types=structure.get_flat_tensor_types(self.element_spec),
+            output_shapes=structure.get_flat_tensor_shapes(
+                self.element_spec)), self.element_spec)
 
   def string_handle(self, name=None):
     """Returns a string-valued `tf.Tensor` that represents this iterator.
