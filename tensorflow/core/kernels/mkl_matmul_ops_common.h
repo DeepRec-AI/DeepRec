@@ -35,6 +35,12 @@ using mkldnn::stream;
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
+#ifdef INTEL_MKL_DNN_ONLY
+// Temporarily copying some definitions from mkl_cblas.h so the same code can
+// be used when calling oneDNN or CBLAS batchmatmul in mkl_batch_matmul_op.cc.
+typedef enum { CblasRowMajor, CblasColumnMajor } CBLAS_LAYOUT;
+#define MKL_INT int
+#endif
 
 // This structure aggregates multiple inputs to MklDnnMatMul* methods.
 struct MklDnnMatMulFwdParams {
@@ -353,6 +359,7 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.bias_dims);
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.dst_dims);
     key_creator.AddAsKey(mkldnn_matmul_fwd_dims.dtypes);
+    key_creator.AddAsKey(mkldnn_matmul_fwd_dims.weight_format);
 
     // Generate keys for post-ops
     for (auto const& post_op_param : mkldnn_matmul_fwd_dims.post_op_params) {
@@ -494,7 +501,7 @@ class MklDnnMatMulOpBase : public OpKernel {
     // expected_md. if so use the cached memory, else return NULL
     if (weight_md_t.flat<Tweight>().size()) {
       const memory::desc& stored_md =
-          *(reinterpret_cast<const memory::desc*>(weight_md_t.flat<Tweight>().data()));
+          *(static_cast<memory::desc*>(weight_md_t.data()));
 #ifdef ENABLE_MKLDNN_V1
       if (stored_md == expected_md) {
 #else

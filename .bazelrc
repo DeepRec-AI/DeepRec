@@ -120,6 +120,21 @@ build:mkl --define=build_with_mkl_dnn_v1_only=true
 build:mkl --copt=-DENABLE_INTEL_MKL_BFLOAT16
 build:mkl -c opt
 
+# config to build OneDNN backend with a user specified threadpool.
+build:mkl_threadpool --define=build_with_mkl=true --define=enable_mkl=true
+build:mkl_threadpool --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl_threadpool --define=build_with_mkl_dnn_v1_only=true
+build:mkl_threadpool --define=build_with_mkl_opensource=true
+build:mkl_threadpool --define=build_with_mkldnn_threadpool=true
+build:mkl_threadpool -c opt
+
+# Config setting to build with oneDNN and without the binary blob
+build:mkl_opensource_only --define=build_with_mkl=true --define=enable_mkl=true
+build:mkl_opensource_only --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl_opensource_only --define=build_with_mkl_dnn_v1_only=true
+build:mkl_opensource_only --define=build_with_mkl_opensource=true
+build:mkl_opensource_only -c opt
+
 # This config option is used to enable MKL-DNN open source library only,
 # without depending on MKL binary version.
 build:mkl_open_source_only --define=build_with_mkl_dnn_only=true

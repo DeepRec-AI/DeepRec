@@ -98,6 +98,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/mkl_quantized_conv_ops.h"
 #include "tensorflow/core/kernels/no_op.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/util/mkl_threadpool.h"
 #include "tensorflow/core/util/work_sharder.h"
 
 namespace {

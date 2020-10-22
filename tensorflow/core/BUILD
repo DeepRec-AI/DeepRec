@@ -959,6 +959,7 @@ tf_cuda_library(
             "util/memmapped_file_system_writer.h",
         ],
     }) + if_mkl([
+        "util/mkl_threadpool.h",
         "util/mkl_util.h",
     ]),
     visibility = ["//visibility:public"],

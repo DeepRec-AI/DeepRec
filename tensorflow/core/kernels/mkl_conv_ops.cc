@@ -110,6 +110,19 @@ class MklConvFwdPrimitive : public MklPrimitive {
   void Execute(const Tinput* src_data, const Tfilter* filter_data,
                const Tbias* bias_data, const Toutput* dst_data,
                std::shared_ptr<stream> fwd_stream) {
+    // TODO: Create a common function and avoid the duplicate code
+#ifdef ENABLE_MKLDNN_THREADPOOL
+    context_.src_mem->set_data_handle(
+        static_cast<void*>(const_cast<Tinput*>(src_data)), *fwd_stream);
+    context_.filter_mem->set_data_handle(
+        static_cast<void*>(const_cast<Tfilter*>(filter_data)), *fwd_stream);
+    if (bias_data != nullptr) {
+      context_.bias_mem->set_data_handle(
+          static_cast<void*>(const_cast<Tbias*>(bias_data)), *fwd_stream);
+    }
+    context_.dst_mem->set_data_handle(
+        static_cast<void*>(const_cast<Toutput*>(dst_data)), *fwd_stream);
+#else
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<Tinput*>(src_data)));
     context_.filter_mem->set_data_handle(
@@ -120,6 +133,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
     }
     context_.dst_mem->set_data_handle(
         static_cast<void*>(const_cast<Toutput*>(dst_data)));
+#endif  // ENABLE_MKLDNN_THREADPOOL
 #ifdef ENABLE_MKLDNN_V1
     DCHECK_EQ(context_.fwd_primitives.size(),
               context_.fwd_primitives_args.size());
@@ -148,7 +162,6 @@ class MklConvFwdPrimitive : public MklPrimitive {
                const Toutput* dst_data, std::shared_ptr<stream> fwd_stream) {
     Execute(src_data, filter_data, nullptr, dst_data, fwd_stream);
   }
-
 #ifndef ENABLE_MKLDNN_V1
   // In MKL-DNN v1.x, memory format tags only provide a partial description
   // of the memory layout. Hence, these functions are disabled for v1.x.
@@ -941,6 +954,7 @@ class MklConvOp : public OpKernel {
             kInputIndex_Add, kOutputIndex_Dst, output_tf_shape,
             output_tensor)) {
         AllocateOutputSetMklShape(context, kOutputIndex_Dst, *output_mkl_shape);
+        return;
       } else {
         AllocateOutputSetMklShape(context, kOutputIndex_Dst, output_tensor,
                                   output_tf_shape, *output_mkl_shape,
@@ -1259,8 +1273,7 @@ class MklConvOp : public OpKernel {
 // filter_md. If so, we can use the cached weights; otherwise
 // return nullptr.
 #ifdef ENABLE_MKLDNN_V1
-    if (filter_md == *reinterpret_cast<const memory::desc*>(
-			    cached_filter_md.flat<uint8>().data())) {
+    if (filter_md == *static_cast<memory::desc*>(cached_filter_md.data())) {
 #else
     if (cached_filter_md.scalar<int32>().size() &&
         cached_filter_md.scalar<int32>()() == filter_md) {
@@ -1847,9 +1860,13 @@ class MklQuantizedConv2DSumReluOp
         summand_mkl_shape.SetMklLayout(&dst_md);
         summand_mkl_shape.SetElemType(MklDnnType<Toutput>());
       }
-      ForwardMklTensorInToOutWithMklShape(context, summand_idx, 0,
-                                          summand_mkl_shape);
-      *output_tensor = const_cast<Tensor*>(&summand);
+      // TODO(intel-tf): Support cases when summand cannot be forwarded.
+      OP_REQUIRES(
+          context,
+          ForwardMklTensorInToOutWithMklShape(
+              context, summand_idx, 0, output_tensor, summand_mkl_shape, false),
+          errors::InvalidArgument(
+              "Summand cannot be forwarded in the current fusion."));
       return;
     }
     MklConvOp<Device, Tinput, qint8, Tbias, Toutput, Ttemp_output, int32,
