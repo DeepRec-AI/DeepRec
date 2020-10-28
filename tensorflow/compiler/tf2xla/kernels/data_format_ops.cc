@@ -90,15 +90,15 @@ class DataFormatVecPermuteOp : public XlaOpKernel {
       : XlaOpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("src_format", &src_format_));
     OP_REQUIRES(
-        ctx, src_format_.size() == 4,
-        errors::InvalidArgument("Data format should have 4 characters"));
+        ctx, src_format_.size() == 4 || src_format_.size() == 5,
+        errors::InvalidArgument("Data format should have 4 or 5 characters"));
     TensorFormat data_format;
     OP_REQUIRES(ctx, FormatFromString(src_format_, &data_format),
                 errors::InvalidArgument("Invalid data format"));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("dst_format", &dst_format_));
     OP_REQUIRES(
-        ctx, dst_format_.size() == 4,
-        errors::InvalidArgument("Data format should have 4 characters"));
+        ctx, dst_format_.size() == 4 || dst_format_.size() == 5,
+        errors::InvalidArgument("Data format should have 4 or 5 characters"));
     OP_REQUIRES(ctx, FormatFromString(dst_format_, &data_format),
                 errors::InvalidArgument("Invalid data format"));
   }
@@ -111,9 +111,10 @@ class DataFormatVecPermuteOp : public XlaOpKernel {
                     "Input must be a vector or matrix, but got shape ",
                     input_tensor_shape.DebugString()));
     OP_REQUIRES(
-        ctx, input_tensor_shape.dim_size(0) == 4,
+        ctx, input_tensor_shape.dim_size(0) == 4 ||
+                 input_tensor_shape.dim_size(0) == 5,
         errors::InvalidArgument(
-            "First dimension of input must be of size 4, but got shape ",
+            "First dimension of input must be of size 4 or 5, but got shape ",
             input_tensor_shape.DebugString()));
     if (input_rank == 2) {
       OP_REQUIRES(
@@ -122,15 +123,20 @@ class DataFormatVecPermuteOp : public XlaOpKernel {
               "Second dimension of 2D input must be of size 2, but got shape ",
               input_tensor_shape.DebugString()));
     }
-    int32 dst_indices[4];
-    for (int i = 0; i < 4; ++i) {
-      for (int j = 0; j < 4; ++j) {
+    std::vector<int32> dst_indices(dst_format_.size(), -1);
+    for (int i = 0; i < src_format_.size(); ++i) {
+      for (int j = 0; j < dst_format_.size(); ++j) {
         if (src_format_[i] == dst_format_[j]) {
           dst_indices[j] = i;
           break;
         }
       }
     }
+    absl::c_for_each(dst_indices, [&](int idx) -> void {
+      OP_REQUIRES(ctx, idx != -1,
+                  errors::InvalidArgument(absl::StrCat(
+                      src_format_, " is not a permutation of ", dst_format_)));
+    });
     xla::XlaOp indices =
         xla::ConstantR1(builder, absl::Span<const int32>(dst_indices));
     xla::XlaOp output = xla::TorchIndexSelect(ctx->Input(0), indices, 0);
