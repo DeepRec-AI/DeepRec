@@ -65,6 +65,8 @@ constexpr char kOpConst[] = "Const";
 constexpr char kReshape[] = "Reshape";
 constexpr char kReshapeConst[] = "ReshapeConst";
 constexpr int kRank = 4;
+constexpr int kUnknownRank = -1;
+constexpr int kInvalidRank = -2;
 
 inline bool AttrDataFormatMatch(const utils::MutableNodeView& node,
                                 absl::string_view src_data_format,
@@ -538,6 +540,20 @@ Status Transposer::UpdateEdge(
   return Status::OK();
 }
 
+int Transposer::GetFanoutPortRank(const utils::MutableNodeView& node,
+                                  int port) const {
+  const auto* output_shape_attr = node.GetAttr(kAttrOutputShape);
+  if (output_shape_attr == nullptr ||
+      output_shape_attr->list().shape_size() <= port) {
+    return kInvalidRank;
+  }
+  const auto& shape = output_shape_attr->list().shape(port);
+  if (shape.unknown_rank()) {
+    return kUnknownRank;
+  }
+  return shape.dim_size();
+}
+
 bool Transposer::IsFanoutPortRankN(const utils::MutableNodeView& node, int port,
                                    int n) const {
   const auto* output_shape_attr = node.GetAttr(kAttrOutputShape);
@@ -557,6 +573,15 @@ bool Transposer::IsFanoutPortsRankN(const utils::MutableNodeView& node,
     }
   }
   return true;
+}
+
+int Transposer::GetFaninPortRank(const utils::MutableNodeView& node,
+                                 int port) const {
+  if (port < node.NumRegularFanins() && port >= 0) {
+    const auto& regular_fanin = node.GetRegularFanin(port);
+    return GetFanoutPortRank(*regular_fanin.node_view(), regular_fanin.index());
+  }
+  return kInvalidRank;
 }
 
 bool Transposer::IsFaninPortRankN(const utils::MutableNodeView& node, int port,
@@ -1320,41 +1345,22 @@ Status BinaryOpTransposer::MaybeReshapeVectorFanin(
 Status BinaryOpTransposer::TransposeNode(TransposeContext* context,
                                          utils::MutableNodeView* node) {
   DCHECK(IsBinaryOp(*node->node()));
-  const auto* output_shape_attr = node->GetAttr(kAttrOutputShape);
-  const auto& shape = output_shape_attr->list().shape(0);
-  const int rank = shape.dim_size();
-  std::string src_format = context->src_format;
-  std::string dst_format = context->dst_format;
-  // Update the format from 4D to 5D layout if necessary.
-  bool allow_5d = rank == 5 && (src_format == "NHWC" || src_format == "NCHW") &&
-                  (dst_format == "NHWC" || dst_format == "NCHW");
-  if (allow_5d) {
-    std::string src_format_3d = src_format == "NHWC" ? "NDHWC" : "NCDHW";
-    std::string dst_format_3d = dst_format == "NHWC" ? "NDHWC" : "NCDHW";
-    context->AssignDeviceAndDataFormats(context->target_device, src_format_3d,
-                                        dst_format_3d);
+  const int rank = GetFanoutPortRank(*node, 0);
+  if (rank != 4 && rank != 5) {
+    return Status::OK();
   }
+  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
   if (!ShouldProcess(*context, *node) || !IsFaninShapeSupported(*node, rank) ||
       !IsAfterDstToSrcTransform(*context, *node)) {
-    if (allow_5d) {
-      context->AssignDeviceAndDataFormats(context->target_device, src_format,
-                                          dst_format);
-    }
     return Status::OK();
   }
   VLOG(3) << "GenericLayoutOptimizer: transforming node '" << node->GetName()
           << "' with op '" << node->GetOp() << "' from data format '"
           << context->src_format << "' to '" << context->dst_format << "'";
-  TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(context, GetNDDataFaninPorts(*node,
-                                                                         rank),
-                                            node, kOpTranspose));
+  TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(
+      context, GetNDDataFaninPorts(*node, rank), node, kOpTranspose));
   TF_RETURN_IF_ERROR(MaybeReshapeVectorFanin(context, node, rank));
   TF_RETURN_IF_ERROR(UpdateFanoutEdgesWithOp(context, {0}, node, kOpTranspose));
-  // Change back the format from 5D to 4D layout.
-  if (allow_5d) {
-    context->AssignDeviceAndDataFormats(context->target_device, src_format,
-                                        dst_format);
-  }
   return context->graph_view->GetMutationBuilder()->Apply();
 }
 
