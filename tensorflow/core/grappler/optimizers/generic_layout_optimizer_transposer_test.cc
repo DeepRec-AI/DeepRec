@@ -839,6 +839,9 @@ TEST_F(TransposerTest, BiasAddGradTransposerTest) {
 }
 
 TEST_F(TransposerTest, BiasAddGradTransposerIncorrectInputTest) {
+#if !GOOGLE_CUDA
+  GTEST_SKIP() << "CUDA is not enabled";
+#endif  // !GOOGLE_CUDA
   GrapplerItem item;
   TransposeContext context;
   TF_ASSERT_OK(
