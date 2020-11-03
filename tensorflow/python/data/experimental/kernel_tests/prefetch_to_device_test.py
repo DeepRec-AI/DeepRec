@@ -147,7 +147,7 @@ class PrefetchToDeviceTest(test_base.DatasetTestBase):
 
     self.assertDatasetProduces(device_dataset, list(range(10)))
 
-  @combinations.generate(test_base.default_test_combinations())
+  @test_util.deprecated_graph_mode_only
   def testPrefetchToDeviceCorrectPlacement(self):
 
     if not test_util.is_gpu_available():
@@ -210,7 +210,7 @@ class PrefetchToDeviceTest(test_base.DatasetTestBase):
         self.evaluate(next_element)
 
 
-  @combinations.generate(test_base.eager_only_combinations())
+  @test_util.deprecated_graph_mode_only
   def testIteratorOnDeviceEagerMode(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -224,7 +224,7 @@ class PrefetchToDeviceTest(test_base.DatasetTestBase):
     self.assertIn("gpu:0", iterator._iterator_resource.device.lower())
     self.assertIn("gpu:0", data.device.lower())
 
-  @combinations.generate(test_base.graph_only_combinations())
+  @test_util.deprecated_graph_mode_only
   def testIteratorOnDeviceGraphModeOneShotIterator(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
@@ -238,7 +238,7 @@ class PrefetchToDeviceTest(test_base.DatasetTestBase):
     self.assertIn("gpu:0", iterator._iterator_resource.device.lower())
     self.assertIn("gpu:0", data.device.lower())
 
-  @combinations.generate(test_base.graph_only_combinations())
+  @test_util.deprecated_graph_mode_only
   def testIteratorOnDeviceGraphModeInitializableIterator(self):
     if not test_util.is_gpu_available():
       self.skipTest("No GPU available")
