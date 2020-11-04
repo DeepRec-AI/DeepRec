@@ -1,10 +1,10 @@
 # Description:
-# TRTIS API.
+# TRITON API.
 
-exports_files(["tf_trtis_version_script.lds"])
+exports_files(["tf_triton_version_script.lds"])
 
 cc_library(
-    name = "trtis_tf",
+    name = "triton_tf",
     visibility = ["//visibility:public"],
     srcs = [
         "tensorflow_backend_tf.cc"

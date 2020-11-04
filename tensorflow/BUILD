@@ -591,17 +591,17 @@ tf_cc_shared_object(
 )
 
 tf_cc_shared_object(
-    name = "tensorflow_trtis",
+    name = "tensorflow_triton",
     framework_so = [],
     linkopts = select({
         "//tensorflow:macos": [],
         "//tensorflow:windows": [],
         "//tensorflow:freebsd": [
-            "-Wl,--version-script,$(location //trtis:tf_trtis_version_script.lds)",
+            "-Wl,--version-script,$(location //triton:tf_triton_version_script.lds)",
             "-lexecinfo",
         ],
         "//conditions:default": [
-            "-Wl,--version-script,$(location //trtis:tf_trtis_version_script.lds)",
+            "-Wl,--version-script,$(location //triton:tf_triton_version_script.lds)",
         ],
     }),
     linkstatic = 1,
@@ -610,7 +610,7 @@ tf_cc_shared_object(
     visibility = ["//visibility:public"],
     deps = [
         # linker script
-        "//trtis:tf_trtis_version_script.lds",
+        "//triton:tf_triton_version_script.lds",
         # contrib operations
         "//tensorflow/contrib:contrib_kernels",
         "//tensorflow/contrib:contrib_ops_op_lib",
@@ -618,8 +618,8 @@ tf_cc_shared_object(
         "//tensorflow/contrib/tensor_forest:model_ops_lib",
         "//tensorflow/contrib/tensor_forest:forest_proto_impl",
         "//tensorflow/contrib/tensor_forest/kernels/v4:decision-tree-resource_impl",
-        # TRTIS API
-        "//trtis:trtis_tf",
+        # TRITON API
+        "//triton:triton_tf",
         # tensorflow_cc objects
         "//tensorflow/c:c_api",
         "//tensorflow/c/eager:c_api",

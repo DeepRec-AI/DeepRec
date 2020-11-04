@@ -24,7 +24,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "trtis/tensorflow_backend_tf.h"
+#include "triton/tensorflow_backend_tf.h"
 
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"
@@ -47,94 +47,94 @@
 #include "tensorflow/core/util/device_name_utils.h"
 #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 
-TRTISTF_Error* TRTISTF_ErrorNew(const std::string& str);
-TRTISTF_Shape* TRTISTF_ShapeNew(size_t rank, int64_t* dims);
-void TRTISTF_ShapeDelete(TRTISTF_Shape* shape);
-TRTISTF_IOList* TRTISTF_IOListNew(
-    const char* name, const char* inmodel_name, TRTISTF_IOList* next);
-void TRTISTF_IOListDelete(TRTISTF_IOList* list);
+TRITONTF_Error* TRITONTF_ErrorNew(const std::string& str);
+TRITONTF_Shape* TRITONTF_ShapeNew(size_t rank, int64_t* dims);
+void TRITONTF_ShapeDelete(TRITONTF_Shape* shape);
+TRITONTF_IOList* TRITONTF_IOListNew(
+    const char* name, const char* inmodel_name, TRITONTF_IOList* next);
+void TRITONTF_IOListDelete(TRITONTF_IOList* list);
 
-// If TensorFlow status is non-OK, return the equivalent TRTISTF_Error
+// If TensorFlow status is non-OK, return the equivalent TRITONTF_Error
 #define RETURN_IF_TF_ERROR(TFS)                          \
   do {                                                   \
     const tensorflow::Status& status__ = (TFS);          \
     if (status__.code() != 0) {                          \
-      return TRTISTF_ErrorNew(status__.error_message()); \
+      return TRITONTF_ErrorNew(status__.error_message()); \
     }                                                    \
   } while (false)
 
 namespace {
 
-static TRTISTF_DataType
+static TRITONTF_DataType
 ConvertDataType(tensorflow::DataType dtype)
 {
   switch (dtype) {
     case tensorflow::DT_INVALID:
-      return TRTISTF_DataType::TRTISTF_TYPE_INVALID;
+      return TRITONTF_DataType::TRITONTF_TYPE_INVALID;
     case tensorflow::DT_BOOL:
-      return TRTISTF_DataType::TRTISTF_TYPE_BOOL;
+      return TRITONTF_DataType::TRITONTF_TYPE_BOOL;
     case tensorflow::DT_UINT8:
-      return TRTISTF_DataType::TRTISTF_TYPE_UINT8;
+      return TRITONTF_DataType::TRITONTF_TYPE_UINT8;
     case tensorflow::DT_UINT16:
-      return TRTISTF_DataType::TRTISTF_TYPE_UINT16;
+      return TRITONTF_DataType::TRITONTF_TYPE_UINT16;
     case tensorflow::DT_UINT32:
-      return TRTISTF_DataType::TRTISTF_TYPE_UINT32;
+      return TRITONTF_DataType::TRITONTF_TYPE_UINT32;
     case tensorflow::DT_UINT64:
-      return TRTISTF_DataType::TRTISTF_TYPE_UINT64;
+      return TRITONTF_DataType::TRITONTF_TYPE_UINT64;
     case tensorflow::DT_INT8:
-      return TRTISTF_DataType::TRTISTF_TYPE_INT8;
+      return TRITONTF_DataType::TRITONTF_TYPE_INT8;
     case tensorflow::DT_INT16:
-      return TRTISTF_DataType::TRTISTF_TYPE_INT16;
+      return TRITONTF_DataType::TRITONTF_TYPE_INT16;
     case tensorflow::DT_INT32:
-      return TRTISTF_DataType::TRTISTF_TYPE_INT32;
+      return TRITONTF_DataType::TRITONTF_TYPE_INT32;
     case tensorflow::DT_INT64:
-      return TRTISTF_DataType::TRTISTF_TYPE_INT64;
+      return TRITONTF_DataType::TRITONTF_TYPE_INT64;
     case tensorflow::DT_HALF:
-      return TRTISTF_DataType::TRTISTF_TYPE_FP16;
+      return TRITONTF_DataType::TRITONTF_TYPE_FP16;
     case tensorflow::DT_FLOAT:
-      return TRTISTF_DataType::TRTISTF_TYPE_FP32;
+      return TRITONTF_DataType::TRITONTF_TYPE_FP32;
     case tensorflow::DT_DOUBLE:
-      return TRTISTF_DataType::TRTISTF_TYPE_FP64;
+      return TRITONTF_DataType::TRITONTF_TYPE_FP64;
     case tensorflow::DT_STRING:
-      return TRTISTF_DataType::TRTISTF_TYPE_STRING;
+      return TRITONTF_DataType::TRITONTF_TYPE_STRING;
     default:
       break;
   }
 
-  return TRTISTF_DataType::TRTISTF_TYPE_INVALID;
+  return TRITONTF_DataType::TRITONTF_TYPE_INVALID;
 }
 
 tensorflow::DataType
-ConvertDataType(TRTISTF_DataType dtype)
+ConvertDataType(TRITONTF_DataType dtype)
 {
   switch (dtype) {
-    case TRTISTF_DataType::TRTISTF_TYPE_INVALID:
+    case TRITONTF_DataType::TRITONTF_TYPE_INVALID:
       return tensorflow::DT_INVALID;
-    case TRTISTF_DataType::TRTISTF_TYPE_BOOL:
+    case TRITONTF_DataType::TRITONTF_TYPE_BOOL:
       return tensorflow::DT_BOOL;
-    case TRTISTF_DataType::TRTISTF_TYPE_UINT8:
+    case TRITONTF_DataType::TRITONTF_TYPE_UINT8:
       return tensorflow::DT_UINT8;
-    case TRTISTF_DataType::TRTISTF_TYPE_UINT16:
+    case TRITONTF_DataType::TRITONTF_TYPE_UINT16:
       return tensorflow::DT_UINT16;
-    case TRTISTF_DataType::TRTISTF_TYPE_UINT32:
+    case TRITONTF_DataType::TRITONTF_TYPE_UINT32:
       return tensorflow::DT_UINT32;
-    case TRTISTF_DataType::TRTISTF_TYPE_UINT64:
+    case TRITONTF_DataType::TRITONTF_TYPE_UINT64:
       return tensorflow::DT_UINT64;
-    case TRTISTF_DataType::TRTISTF_TYPE_INT8:
+    case TRITONTF_DataType::TRITONTF_TYPE_INT8:
       return tensorflow::DT_INT8;
-    case TRTISTF_DataType::TRTISTF_TYPE_INT16:
+    case TRITONTF_DataType::TRITONTF_TYPE_INT16:
       return tensorflow::DT_INT16;
-    case TRTISTF_DataType::TRTISTF_TYPE_INT32:
+    case TRITONTF_DataType::TRITONTF_TYPE_INT32:
       return tensorflow::DT_INT32;
-    case TRTISTF_DataType::TRTISTF_TYPE_INT64:
+    case TRITONTF_DataType::TRITONTF_TYPE_INT64:
       return tensorflow::DT_INT64;
-    case TRTISTF_DataType::TRTISTF_TYPE_FP16:
+    case TRITONTF_DataType::TRITONTF_TYPE_FP16:
       return tensorflow::DT_HALF;
-    case TRTISTF_DataType::TRTISTF_TYPE_FP32:
+    case TRITONTF_DataType::TRITONTF_TYPE_FP32:
       return tensorflow::DT_FLOAT;
-    case TRTISTF_DataType::TRTISTF_TYPE_FP64:
+    case TRITONTF_DataType::TRITONTF_TYPE_FP64:
       return tensorflow::DT_DOUBLE;
-    case TRTISTF_DataType::TRTISTF_TYPE_STRING:
+    case TRITONTF_DataType::TRITONTF_TYPE_STRING:
       return tensorflow::DT_STRING;
     default:
       break;
@@ -144,7 +144,7 @@ ConvertDataType(TRTISTF_DataType dtype)
 }
 
 void
-ConvertShape(TRTISTF_Shape* shape, tensorflow::TensorShape* tfshape)
+ConvertShape(TRITONTF_Shape* shape, tensorflow::TensorShape* tfshape)
 {
   for (size_t itr = 0; itr < shape->rank_; itr++) {
     const int64_t dim = shape->dims_[itr];
@@ -152,10 +152,10 @@ ConvertShape(TRTISTF_Shape* shape, tensorflow::TensorShape* tfshape)
   }
 }
 
-TRTISTF_Shape*
+TRITONTF_Shape*
 ConvertShape(const tensorflow::TensorShape& tfshape)
 {
-  TRTISTF_Shape* shape = new TRTISTF_Shape;
+  TRITONTF_Shape* shape = new TRITONTF_Shape;
   shape->rank_ = tfshape.dims();
   shape->dims_ = nullptr;
 
@@ -169,12 +169,12 @@ ConvertShape(const tensorflow::TensorShape& tfshape)
 }
 
 std::string
-PrecisionModeToString(const TRTISTF_TFTRTPrecisionMode m)
+PrecisionModeToString(const TRITONTF_TFTRTPrecisionMode m)
 {
   switch (m) {
-    case TRTISTF_MODE_INT8:
+    case TRITONTF_MODE_INT8:
       return "INT8";
-    case TRTISTF_MODE_FP16:
+    case TRITONTF_MODE_FP16:
       return "FP16";
     default:
       return "FP32";
@@ -185,7 +185,7 @@ PrecisionModeToString(const TRTISTF_TFTRTPrecisionMode m)
 // adapoted from
 // https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/common_runtime/graph_execution_state.cc#L382
 bool
-IsGPUFeedAndFetchSupported(TRTISTF_DataType dtype)
+IsGPUFeedAndFetchSupported(TRITONTF_DataType dtype)
 {
   switch (ConvertDataType(dtype)) {
     case tensorflow::DT_BFLOAT16:
@@ -213,7 +213,7 @@ NewSessionOptions(
     const float per_process_gpu_memory_fraction,
     const bool allow_soft_placement,
     const std::map<int, std::vector<float>>& memory_limit_mb,
-    const TRTISTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision,
+    const TRITONTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision,
     tensorflow::SessionOptions* session_options)
 {
   session_options->config.mutable_gpu_options()->set_allow_growth(
@@ -300,7 +300,7 @@ NewSessionOptions(
 }
 
 // Get the device name in model session given a non-negative device_id.
-TRTISTF_Error*
+TRITONTF_Error*
 GetTFGPUDeviceName(
     std::string* device_name, tensorflow::Session* session, const int device_id)
 {
@@ -330,14 +330,14 @@ GetTFGPUDeviceName(
 class TensorImpl {
  public:
   TensorImpl(
-      const char* name, TRTISTF_DataType dtype, TRTISTF_Shape* shape,
+      const char* name, TRITONTF_DataType dtype, TRITONTF_Shape* shape,
       const tensorflow::TensorShape& tfshape, const int tf_gpu_id);
   TensorImpl(tensorflow::Tensor&& tftensor);
   ~TensorImpl();
 
   const std::string& Name() const { return name_; }
-  TRTISTF_DataType DataType() const { return dtype_; }
-  TRTISTF_Shape* Shape() const { return shape_; }
+  TRITONTF_DataType DataType() const { return dtype_; }
+  TRITONTF_Shape* Shape() const { return shape_; }
 
   tensorflow::Tensor& TFTensor() { return tftensor_; }
 
@@ -352,8 +352,8 @@ class TensorImpl {
   void Init();
 
   const std::string name_;
-  const TRTISTF_DataType dtype_;
-  TRTISTF_Shape* shape_;
+  const TRITONTF_DataType dtype_;
+  TRITONTF_Shape* shape_;
 
   tensorflow::Tensor tftensor_;
   char* nonstring_base_;
@@ -363,7 +363,7 @@ class TensorImpl {
 
 
 TensorImpl::TensorImpl(
-    const char* name, TRTISTF_DataType dtype, TRTISTF_Shape* shape,
+    const char* name, TRITONTF_DataType dtype, TRITONTF_Shape* shape,
     const tensorflow::TensorShape& tfshape, const int tf_gpu_id)
     : name_(name), dtype_(dtype), shape_(shape)
 {
@@ -390,7 +390,7 @@ TensorImpl::TensorImpl(tensorflow::Tensor&& tftensor)
 
 TensorImpl::~TensorImpl()
 {
-  TRTISTF_ShapeDelete(shape_);
+  TRITONTF_ShapeDelete(shape_);
 }
 
 void
@@ -437,31 +437,31 @@ class ModelImpl {
   ModelImpl(
       const std::string& model_name,
       std::unique_ptr<tensorflow::SavedModelBundle> bundle,
-      TRTISTF_IOList* inputs, TRTISTF_IOList* outputs,
+      TRITONTF_IOList* inputs, TRITONTF_IOList* outputs,
       const std::string& device_name);
   ModelImpl(
       const std::string& model_name, tensorflow::Session* session,
-      TRTISTF_IOList* inputs, TRTISTF_IOList* outputs,
+      TRITONTF_IOList* inputs, TRITONTF_IOList* outputs,
       const std::string& device_name);
   ~ModelImpl();
 
-  TRTISTF_IOList* Inputs() const { return inputs_; }
-  TRTISTF_IOList* Outputs() const { return outputs_; }
+  TRITONTF_IOList* Inputs() const { return inputs_; }
+  TRITONTF_IOList* Outputs() const { return outputs_; }
   const std::string& DeviceName() const { return device_name_; }
 
-  TRTISTF_Error* MakeCallable(const tensorflow::CallableOptions& opts);
+  TRITONTF_Error* MakeCallable(const tensorflow::CallableOptions& opts);
 
-  TRTISTF_Error* Run(
-      TRTISTF_TensorList* input_tensors,
+  TRITONTF_Error* Run(
+      TRITONTF_TensorList* input_tensors,
       const std::vector<std::string>& output_names,
-      TRTISTF_TensorList** output_tensors);
+      TRITONTF_TensorList** output_tensors);
 
  private:
   const std::string model_name_;
   std::unique_ptr<tensorflow::SavedModelBundle> bundle_;
   tensorflow::Session* session_;
-  TRTISTF_IOList* inputs_;
-  TRTISTF_IOList* outputs_;
+  TRITONTF_IOList* inputs_;
+  TRITONTF_IOList* outputs_;
 
   // Variables for callable
   bool has_callable_;
@@ -475,7 +475,7 @@ class ModelImpl {
 ModelImpl::ModelImpl(
     const std::string& model_name,
     std::unique_ptr<tensorflow::SavedModelBundle> bundle,
-    TRTISTF_IOList* inputs, TRTISTF_IOList* outputs,
+    TRITONTF_IOList* inputs, TRITONTF_IOList* outputs,
     const std::string& device_name)
     : model_name_(model_name), bundle_(std::move(bundle)), inputs_(inputs),
       outputs_(outputs), has_callable_(false), device_name_(device_name)
@@ -485,7 +485,7 @@ ModelImpl::ModelImpl(
 
 ModelImpl::ModelImpl(
     const std::string& model_name, tensorflow::Session* session,
-    TRTISTF_IOList* inputs, TRTISTF_IOList* outputs,
+    TRITONTF_IOList* inputs, TRITONTF_IOList* outputs,
     const std::string& device_name)
     : model_name_(model_name), session_(session), inputs_(inputs),
       outputs_(outputs), has_callable_(false), device_name_(device_name)
@@ -503,11 +503,11 @@ ModelImpl::~ModelImpl()
     session_ = nullptr;
   }
 
-  TRTISTF_IOListDelete(inputs_);
-  TRTISTF_IOListDelete(outputs_);
+  TRITONTF_IOListDelete(inputs_);
+  TRITONTF_IOListDelete(outputs_);
 }
 
-TRTISTF_Error*
+TRITONTF_Error*
 ModelImpl::MakeCallable(const tensorflow::CallableOptions& opts)
 {
   if (has_callable_) {
@@ -523,24 +523,24 @@ ModelImpl::MakeCallable(const tensorflow::CallableOptions& opts)
   return nullptr;
 }
 
-TRTISTF_Error*
+TRITONTF_Error*
 ModelImpl::Run(
-    TRTISTF_TensorList* input_tensors,
+    TRITONTF_TensorList* input_tensors,
     const std::vector<std::string>& output_names,
-    TRTISTF_TensorList** output_tensors)
+    TRITONTF_TensorList** output_tensors)
 {
   // I/O needs to be prepared differently for callable
   if (has_callable_) {
     std::vector<tensorflow::Tensor> tfinputs;
 
-    for (TRTISTF_TensorList* itr = input_tensors; itr != nullptr;
+    for (TRITONTF_TensorList* itr = input_tensors; itr != nullptr;
          itr = itr->next_) {
       if (itr->tensor_ != nullptr) {
         TensorImpl* tensor = reinterpret_cast<TensorImpl*>(itr->tensor_);
         tfinputs.emplace_back(std::move(tensor->TFTensor()));
       }
     }
-    TRTISTF_TensorListDelete(input_tensors);
+    TRITONTF_TensorListDelete(input_tensors);
 
     tensorflow::RunMetadata meta_data;
     std::vector<tensorflow::Tensor> tfoutputs;
@@ -550,9 +550,9 @@ ModelImpl::Run(
     *output_tensors = nullptr;
     for (auto ri = output_names.rbegin(); ri != output_names.rend(); ++ri) {
       const auto oidx = output_index_map_[*ri];
-      TRTISTF_Tensor* tensor = reinterpret_cast<TRTISTF_Tensor*>(
+      TRITONTF_Tensor* tensor = reinterpret_cast<TRITONTF_Tensor*>(
           new TensorImpl(std::move(tfoutputs[oidx])));
-      *output_tensors = TRTISTF_TensorListNew(tensor, *output_tensors);
+      *output_tensors = TRITONTF_TensorListNew(tensor, *output_tensors);
     }
 
     // Callable documentation suggested caller to use Device::Sync() to ensure
@@ -563,7 +563,7 @@ ModelImpl::Run(
   } else {
     std::vector<std::pair<std::string, tensorflow::Tensor>> tfinputs;
 
-    for (TRTISTF_TensorList* itr = input_tensors; itr != nullptr;
+    for (TRITONTF_TensorList* itr = input_tensors; itr != nullptr;
          itr = itr->next_) {
       if (itr->tensor_ != nullptr) {
         TensorImpl* tensor = reinterpret_cast<TensorImpl*>(itr->tensor_);
@@ -571,7 +571,7 @@ ModelImpl::Run(
             std::make_pair(tensor->Name(), std::move(tensor->TFTensor())));
       }
     }
-    TRTISTF_TensorListDelete(input_tensors);
+    TRITONTF_TensorListDelete(input_tensors);
 
     std::vector<tensorflow::Tensor> tfoutputs;
     RETURN_IF_TF_ERROR(session_->Run(tfinputs, output_names, {}, &tfoutputs));
@@ -580,9 +580,9 @@ ModelImpl::Run(
     for (std::vector<tensorflow::Tensor>::reverse_iterator ri =
              tfoutputs.rbegin();
          ri != tfoutputs.rend(); ++ri) {
-      TRTISTF_Tensor* tensor =
-          reinterpret_cast<TRTISTF_Tensor*>(new TensorImpl(std::move(*ri)));
-      *output_tensors = TRTISTF_TensorListNew(tensor, *output_tensors);
+      TRITONTF_Tensor* tensor =
+          reinterpret_cast<TRITONTF_Tensor*>(new TensorImpl(std::move(*ri)));
+      *output_tensors = TRITONTF_TensorListNew(tensor, *output_tensors);
     }
   }
 
@@ -592,20 +592,20 @@ ModelImpl::Run(
 }  // namespace
 
 //
-// TRTISTF_Error
+// TRITONTF_Error
 //
 
-TRTISTF_Error*
-TRTISTF_ErrorNew(const std::string& str)
+TRITONTF_Error*
+TRITONTF_ErrorNew(const std::string& str)
 {
-  TRTISTF_Error* error = new TRTISTF_Error;
+  TRITONTF_Error* error = new TRITONTF_Error;
   error->msg_ = new char[str.size() + 1];
   strcpy(error->msg_, str.c_str());
   return error;
 }
 
 void
-TRTISTF_ErrorDelete(TRTISTF_Error* error)
+TRITONTF_ErrorDelete(TRITONTF_Error* error)
 {
   if (error == nullptr) {
     return;
@@ -616,12 +616,12 @@ TRTISTF_ErrorDelete(TRTISTF_Error* error)
 }
 
 //
-// TRTISTF_Shape
+// TRITONTF_Shape
 //
-TRTISTF_Shape*
-TRTISTF_ShapeNew(size_t rank, int64_t* dims)
+TRITONTF_Shape*
+TRITONTF_ShapeNew(size_t rank, int64_t* dims)
 {
-  TRTISTF_Shape* shape = new TRTISTF_Shape;
+  TRITONTF_Shape* shape = new TRITONTF_Shape;
   shape->rank_ = rank;
   shape->dims_ = nullptr;
   if (rank > 0) {
@@ -633,7 +633,7 @@ TRTISTF_ShapeNew(size_t rank, int64_t* dims)
 }
 
 void
-TRTISTF_ShapeDelete(TRTISTF_Shape* shape)
+TRITONTF_ShapeDelete(TRITONTF_Shape* shape)
 {
   if (shape != nullptr) {
     delete[] shape->dims_;
@@ -642,13 +642,13 @@ TRTISTF_ShapeDelete(TRTISTF_Shape* shape)
 }
 
 //
-// TRTISTF_IOList
+// TRITONTF_IOList
 //
-TRTISTF_IOList*
-TRTISTF_IOListNew(
-    const char* name, const char* inmodel_name, TRTISTF_IOList* next)
+TRITONTF_IOList*
+TRITONTF_IOListNew(
+    const char* name, const char* inmodel_name, TRITONTF_IOList* next)
 {
-  TRTISTF_IO* io = new TRTISTF_IO;
+  TRITONTF_IO* io = new TRITONTF_IO;
 
   io->name_ = nullptr;
   if (name != nullptr) {
@@ -662,10 +662,10 @@ TRTISTF_IOListNew(
     strcpy(io->inmodel_name_, inmodel_name);
   }
 
-  io->data_type_ = TRTISTF_DataType::TRTISTF_TYPE_INVALID;
+  io->data_type_ = TRITONTF_DataType::TRITONTF_TYPE_INVALID;
   io->shape_ = nullptr;
 
-  TRTISTF_IOList* iol = new TRTISTF_IOList;
+  TRITONTF_IOList* iol = new TRITONTF_IOList;
   iol->io_ = io;
   iol->next_ = next;
 
@@ -673,36 +673,36 @@ TRTISTF_IOListNew(
 }
 
 void
-TRTISTF_IOListDelete(TRTISTF_IOList* list)
+TRITONTF_IOListDelete(TRITONTF_IOList* list)
 {
   while (list != nullptr) {
     if (list->io_ != nullptr) {
       delete[] list->io_->name_;
       delete[] list->io_->inmodel_name_;
-      TRTISTF_ShapeDelete(list->io_->shape_);
+      TRITONTF_ShapeDelete(list->io_->shape_);
       delete list->io_;
     }
 
-    TRTISTF_IOList* next = list->next_;
+    TRITONTF_IOList* next = list->next_;
     delete list;
     list = next;
   }
 }
 
 //
-// TRTISTF_TensorList
+// TRITONTF_TensorList
 //
-TRTISTF_TensorList*
-TRTISTF_TensorListNew(TRTISTF_Tensor* tensor, TRTISTF_TensorList* next)
+TRITONTF_TensorList*
+TRITONTF_TensorListNew(TRITONTF_Tensor* tensor, TRITONTF_TensorList* next)
 {
-  TRTISTF_TensorList* tl = new TRTISTF_TensorList;
+  TRITONTF_TensorList* tl = new TRITONTF_TensorList;
   tl->tensor_ = tensor;
   tl->next_ = next;
   return tl;
 }
 
 void
-TRTISTF_TensorListDelete(TRTISTF_TensorList* list)
+TRITONTF_TensorListDelete(TRITONTF_TensorList* list)
 {
   while (list != nullptr) {
     if (list->tensor_ != nullptr) {
@@ -711,7 +711,7 @@ TRTISTF_TensorListDelete(TRTISTF_TensorList* list)
       list->tensor_ = nullptr;
     }
 
-    TRTISTF_TensorList* next = list->next_;
+    TRITONTF_TensorList* next = list->next_;
     list->next_ = nullptr;
     delete list;
     list = next;
@@ -719,20 +719,20 @@ TRTISTF_TensorListDelete(TRTISTF_TensorList* list)
 }
 
 //
-// TRTISTF_Tensor
+// TRITONTF_Tensor
 //
-TRTISTF_Tensor*
-TRTISTF_TensorNew(
-    const char* name, TRTISTF_DataType dtype, size_t shape_rank,
+TRITONTF_Tensor*
+TRITONTF_TensorNew(
+    const char* name, TRITONTF_DataType dtype, size_t shape_rank,
     int64_t* shape_dims, const int tf_gpu_id)
 {
-  TRTISTF_Shape* shape = TRTISTF_ShapeNew(shape_rank, shape_dims);
+  TRITONTF_Shape* shape = TRITONTF_ShapeNew(shape_rank, shape_dims);
   tensorflow::TensorShape tfshape;
   ConvertShape(shape, &tfshape);
 
   TensorImpl* tensor = new TensorImpl(name, dtype, shape, tfshape, tf_gpu_id);
   // If data type is non-string, make sure TensorImpl contains valid TF tensor
-  if (dtype != TRTISTF_DataType::TRTISTF_TYPE_STRING) {
+  if (dtype != TRITONTF_DataType::TRITONTF_TYPE_STRING) {
     // tensor's byte size is set to value required and it is independent to
     // the data pointer. So make sure data is not nullptr if byte size > 0
     if ((tensor->ByteSize() != 0) && (tensor->Base() == nullptr)) {
@@ -740,53 +740,53 @@ TRTISTF_TensorNew(
       return nullptr;
     }
   }
-  return reinterpret_cast<TRTISTF_Tensor*>(tensor);
+  return reinterpret_cast<TRITONTF_Tensor*>(tensor);
 }
 
-TRTISTF_DataType
-TRTISTF_TensorDataType(TRTISTF_Tensor* tensor)
+TRITONTF_DataType
+TRITONTF_TensorDataType(TRITONTF_Tensor* tensor)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   return t->DataType();
 }
 
 int64_t
-TRTISTF_TensorDataTypeByteSize(TRTISTF_Tensor* tensor)
+TRITONTF_TensorDataTypeByteSize(TRITONTF_Tensor* tensor)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   return tensorflow::DataTypeSize(t->TFTensor().dtype());
 }
 
-TRTISTF_Shape*
-TRTISTF_TensorShape(TRTISTF_Tensor* tensor)
+TRITONTF_Shape*
+TRITONTF_TensorShape(TRITONTF_Tensor* tensor)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   return t->Shape();
 }
 
 char*
-TRTISTF_TensorData(TRTISTF_Tensor* tensor)
+TRITONTF_TensorData(TRITONTF_Tensor* tensor)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   return t->Base();
 }
 
 bool
-TRTISTF_TensorIsGPUTensor(TRTISTF_Tensor* tensor)
+TRITONTF_TensorIsGPUTensor(TRITONTF_Tensor* tensor)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   return t->IsGPUTensor();
 }
 
 size_t
-TRTISTF_TensorDataByteSize(TRTISTF_Tensor* tensor)
+TRITONTF_TensorDataByteSize(TRITONTF_Tensor* tensor)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   return t->ByteSize();
 }
 
 const char*
-TRTISTF_TensorString(TRTISTF_Tensor* tensor, size_t idx, size_t* length)
+TRITONTF_TensorString(TRITONTF_Tensor* tensor, size_t idx, size_t* length)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   const std::string& str = t->String(idx);
@@ -795,8 +795,8 @@ TRTISTF_TensorString(TRTISTF_Tensor* tensor, size_t idx, size_t* length)
 }
 
 void
-TRTISTF_TensorSetString(
-    TRTISTF_Tensor* tensor, size_t idx, const char* cstr, size_t length)
+TRITONTF_TensorSetString(
+    TRITONTF_Tensor* tensor, size_t idx, const char* cstr, size_t length)
 {
   TensorImpl* t = reinterpret_cast<TensorImpl*>(tensor);
   std::string str;
@@ -808,17 +808,17 @@ TRTISTF_TensorSetString(
 }
 
 //
-// TRTISTF_Model
+// TRITONTF_Model
 //
-TRTISTF_Error*
-TRTISTF_ModelCreateFromGraphDef(
-    TRTISTF_Model** trtistf_model, const char* model_name,
+TRITONTF_Error*
+TRITONTF_ModelCreateFromGraphDef(
+    TRITONTF_Model** tritontf_model, const char* model_name,
     const char* model_path, const int device_id, const bool has_graph_level,
     const int graph_level, const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
     const bool allow_soft_placement,
     const std::map<int, std::vector<float>>& memory_limit_mb,
-    const TRTISTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision)
+    const TRITONTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision)
 {
   tensorflow::SessionOptions session_options;
   NewSessionOptions(
@@ -833,11 +833,11 @@ TRTISTF_ModelCreateFromGraphDef(
   RETURN_IF_TF_ERROR(tensorflow::ReadBinaryProto(
       tensorflow::Env::Default(), model_path, &graph_def));
   if (graph_def.node_size() == 0) {
-    return TRTISTF_ErrorNew(
+    return TRITONTF_ErrorNew(
         "model " + std::string(model_name) + " has an empty network");
   }
 
-  if (device_id != TRTISTF_MODEL_DEVICE) {
+  if (device_id != TRITONTF_MODEL_DEVICE) {
     // Clear the device field from the graphdef so that the default device
     // setting below will control which GPU the graph will run on
     for (tensorflow::NodeDef& node : *graph_def.mutable_node()) {
@@ -847,7 +847,7 @@ TRTISTF_ModelCreateFromGraphDef(
     }
     // Set the default device to control the CPU/GPU that the graph runs
     // on.
-    if (device_id == TRTISTF_NO_GPU_DEVICE) {
+    if (device_id == TRITONTF_NO_GPU_DEVICE) {
       tensorflow::graph::SetDefaultDevice("/cpu:0", &graph_def);
     } else {
       tensorflow::graph::SetDefaultDevice(
@@ -862,42 +862,42 @@ TRTISTF_ModelCreateFromGraphDef(
   // when initializing. Unfortunately graphdef isn't explicit in
   // indicating inputs and outputs so we assume any Placeholder can be
   // an input and any node can be an output.
-  TRTISTF_IOList* potential_inputs = nullptr;
-  TRTISTF_IOList* potential_outputs = nullptr;
+  TRITONTF_IOList* potential_inputs = nullptr;
+  TRITONTF_IOList* potential_outputs = nullptr;
   for (const auto& node : graph_def.node()) {
     if (node.op() == "Placeholder") {
       potential_inputs =
-          TRTISTF_IOListNew(node.name().c_str(), nullptr, potential_inputs);
+          TRITONTF_IOListNew(node.name().c_str(), nullptr, potential_inputs);
     } else {
       potential_outputs =
-          TRTISTF_IOListNew(node.name().c_str(), nullptr, potential_outputs);
+          TRITONTF_IOListNew(node.name().c_str(), nullptr, potential_outputs);
     }
   }
 
   std::string device_name;
-  if ((device_id != TRTISTF_MODEL_DEVICE) &&
-      (device_id != TRTISTF_NO_GPU_DEVICE)) {
-    TRTISTF_Error* err = GetTFGPUDeviceName(&device_name, session, device_id);
+  if ((device_id != TRITONTF_MODEL_DEVICE) &&
+      (device_id != TRITONTF_NO_GPU_DEVICE)) {
+    TRITONTF_Error* err = GetTFGPUDeviceName(&device_name, session, device_id);
     if (err != nullptr) {
       return err;
     }
   }
   ModelImpl* model = new ModelImpl(
       model_name, session, potential_inputs, potential_outputs, device_name);
-  *trtistf_model = reinterpret_cast<TRTISTF_Model*>(model);
+  *tritontf_model = reinterpret_cast<TRITONTF_Model*>(model);
 
   return nullptr;
 }
 
-TRTISTF_Error*
-TRTISTF_ModelCreateFromSavedModel(
-    TRTISTF_Model** trtistf_model, const char* model_name,
+TRITONTF_Error*
+TRITONTF_ModelCreateFromSavedModel(
+    TRITONTF_Model** tritontf_model, const char* model_name,
     const char* model_path, const int device_id, const bool has_graph_level,
     const int graph_level, const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
     const bool allow_soft_placement,
     const std::map<int, std::vector<float>>& memory_limit_mb,
-    const TRTISTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision)
+    const TRITONTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision)
 {
   tensorflow::SessionOptions session_options;
   NewSessionOptions(
@@ -906,7 +906,7 @@ TRTISTF_ModelCreateFromSavedModel(
       tftrt_config, auto_mixed_precision, &session_options);
 
 
-  if (device_id != TRTISTF_MODEL_DEVICE) {
+  if (device_id != TRITONTF_MODEL_DEVICE) {
     // Set the default device to control the CPU/GPU that the graph runs
     // on.
     //
@@ -915,7 +915,7 @@ TRTISTF_ModelCreateFromSavedModel(
     // allocator_type in pass in the gpu_device we want and then
     // loader.cc (our modified version) will use that to
     // SetDefaultDevice appropriately.
-    if (device_id == TRTISTF_NO_GPU_DEVICE) {
+    if (device_id == TRITONTF_NO_GPU_DEVICE) {
       session_options.config.mutable_gpu_options()->set_allocator_type(
           "/cpu:0");
     } else {
@@ -948,7 +948,7 @@ TRTISTF_ModelCreateFromSavedModel(
     }
   }
   if (!found_serve_tag) {
-    return TRTISTF_ErrorNew(
+    return TRITONTF_ErrorNew(
         "unable to load model '" + std::string(model_name) + "', expected '" +
         tensorflow::kSavedModelTagServe + "' tag");
   }
@@ -974,7 +974,7 @@ TRTISTF_ModelCreateFromSavedModel(
       }
     }
     if (sig_itr == bundle->meta_graph_def.signature_def().end()) {
-      return TRTISTF_ErrorNew(
+      return TRITONTF_ErrorNew(
           "unable to load model '" + std::string(model_name) + "', expected '" +
           DEFAULT_SERVING_SIGNATURE_DEF_KEY + "' signature");
     }
@@ -983,15 +983,15 @@ TRTISTF_ModelCreateFromSavedModel(
   const tensorflow::SignatureDef& def = sig_itr->second;
 
   // Collect the inputs...
-  TRTISTF_IOList* inputs = nullptr;
+  TRITONTF_IOList* inputs = nullptr;
   for (const auto& sin : def.inputs()) {
     inputs =
-        TRTISTF_IOListNew(sin.first.c_str(), sin.second.name().c_str(), inputs);
-    TRTISTF_IO* io = inputs->io_;
+        TRITONTF_IOListNew(sin.first.c_str(), sin.second.name().c_str(), inputs);
+    TRITONTF_IO* io = inputs->io_;
 
-    const TRTISTF_DataType dt = ConvertDataType(sin.second.dtype());
-    if (dt == TRTISTF_DataType::TRTISTF_TYPE_INVALID) {
-      return TRTISTF_ErrorNew(
+    const TRITONTF_DataType dt = ConvertDataType(sin.second.dtype());
+    if (dt == TRITONTF_DataType::TRITONTF_TYPE_INVALID) {
+      return TRITONTF_ErrorNew(
           "unable to process input '" + std::string(io->name_) + "' for '" +
           std::string(model_name) + "', unsupported datatype '" +
           tensorflow::DataType_Name(sin.second.dtype()) + "'");
@@ -1005,19 +1005,19 @@ TRTISTF_ModelCreateFromSavedModel(
       shape_dims[i] = shape.dim(i).size();
     }
 
-    io->shape_ = TRTISTF_ShapeNew(shape.dim().size(), shape_dims);
+    io->shape_ = TRITONTF_ShapeNew(shape.dim().size(), shape_dims);
   }
 
   // Collect the outputs...
-  TRTISTF_IOList* outputs = nullptr;
+  TRITONTF_IOList* outputs = nullptr;
   for (const auto& sout : def.outputs()) {
-    outputs = TRTISTF_IOListNew(
+    outputs = TRITONTF_IOListNew(
         sout.first.c_str(), sout.second.name().c_str(), outputs);
-    TRTISTF_IO* io = outputs->io_;
+    TRITONTF_IO* io = outputs->io_;
 
-    const TRTISTF_DataType dt = ConvertDataType(sout.second.dtype());
-    if (dt == TRTISTF_DataType::TRTISTF_TYPE_INVALID) {
-      return TRTISTF_ErrorNew(
+    const TRITONTF_DataType dt = ConvertDataType(sout.second.dtype());
+    if (dt == TRITONTF_DataType::TRITONTF_TYPE_INVALID) {
+      return TRITONTF_ErrorNew(
           "unable to process output '" + std::string(io->name_) + "' for '" +
           std::string(model_name) + "', unsupported datatype '" +
           tensorflow::DataType_Name(sout.second.dtype()) + "'");
@@ -1031,13 +1031,13 @@ TRTISTF_ModelCreateFromSavedModel(
       shape_dims[i] = shape.dim(i).size();
     }
 
-    io->shape_ = TRTISTF_ShapeNew(shape.dim().size(), shape_dims);
+    io->shape_ = TRITONTF_ShapeNew(shape.dim().size(), shape_dims);
   }
 
   std::string device_name;
-  if ((device_id != TRTISTF_MODEL_DEVICE) &&
-      (device_id != TRTISTF_NO_GPU_DEVICE)) {
-    TRTISTF_Error* err =
+  if ((device_id != TRITONTF_MODEL_DEVICE) &&
+      (device_id != TRITONTF_NO_GPU_DEVICE)) {
+    TRITONTF_Error* err =
         GetTFGPUDeviceName(&device_name, bundle->session.get(), device_id);
     if (err != nullptr) {
       return err;
@@ -1045,13 +1045,13 @@ TRTISTF_ModelCreateFromSavedModel(
   }
   ModelImpl* model = new ModelImpl(
       model_name, std::move(bundle), inputs, outputs, device_name);
-  *trtistf_model = reinterpret_cast<TRTISTF_Model*>(model);
+  *tritontf_model = reinterpret_cast<TRITONTF_Model*>(model);
 
   return nullptr;
 }
 
 void
-TRTISTF_ModelDelete(TRTISTF_Model* model)
+TRITONTF_ModelDelete(TRITONTF_Model* model)
 {
   if (model != nullptr) {
     ModelImpl* mi = reinterpret_cast<ModelImpl*>(model);
@@ -1059,32 +1059,32 @@ TRTISTF_ModelDelete(TRTISTF_Model* model)
   }
 }
 
-TRTISTF_IOList*
-TRTISTF_ModelInputs(TRTISTF_Model* model)
+TRITONTF_IOList*
+TRITONTF_ModelInputs(TRITONTF_Model* model)
 {
   ModelImpl* m = reinterpret_cast<ModelImpl*>(model);
   return m->Inputs();
 }
 
-TRTISTF_IOList*
-TRTISTF_ModelOutputs(TRTISTF_Model* model)
+TRITONTF_IOList*
+TRITONTF_ModelOutputs(TRITONTF_Model* model)
 {
   ModelImpl* m = reinterpret_cast<ModelImpl*>(model);
   return m->Outputs();
 }
 
-TRTISTF_Error*
-TRTISTF_ModelMakeCallable(
-    TRTISTF_Model* model, const char** input_names,
-    const TRTISTF_DataType* input_types, const size_t num_inputs,
-    const char** output_names, const TRTISTF_DataType* output_types,
+TRITONTF_Error*
+TRITONTF_ModelMakeCallable(
+    TRITONTF_Model* model, const char** input_names,
+    const TRITONTF_DataType* input_types, const size_t num_inputs,
+    const char** output_names, const TRITONTF_DataType* output_types,
     const size_t num_outputs)
 {
   ModelImpl* m = reinterpret_cast<ModelImpl*>(model);
 
   const auto& device_name = m->DeviceName();
   if (device_name.empty()) {
-    return TRTISTF_ErrorNew(
+    return TRITONTF_ErrorNew(
         "model session does not have an assigned GPU device");
   }
 
@@ -1112,10 +1112,10 @@ TRTISTF_ModelMakeCallable(
   return m->MakeCallable(opts);
 }
 
-TRTISTF_Error*
-TRTISTF_ModelRun(
-    TRTISTF_Model* model, TRTISTF_TensorList* input_tensors, size_t num_outputs,
-    const char** output_names, TRTISTF_TensorList** output_tensors)
+TRITONTF_Error*
+TRITONTF_ModelRun(
+    TRITONTF_Model* model, TRITONTF_TensorList* input_tensors, size_t num_outputs,
+    const char** output_names, TRITONTF_TensorList** output_tensors)
 {
   ModelImpl* m = reinterpret_cast<ModelImpl*>(model);
 
