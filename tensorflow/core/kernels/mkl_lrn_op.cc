@@ -158,7 +158,6 @@ class MklLRNOp : public OpKernel {
                            &output_tensor);
       OP_REQUIRES_OK(context, context->status());
       DCHECK(output_tensor != nullptr);
-      dst_dnn_data.SetUsrMemDataHandle(output_tensor);
       dst_dnn_data.SetUsrMemDataHandle(output_tensor, fwd_stream_);
 
       // Handle workspace required for MKL-DNN.
