@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/gpu/backend_configs.pb.h"
 #include "tensorflow/compiler/xla/service/gpu/convolution_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/copy_thunk.h"
+#include "tensorflow/compiler/xla/service/gpu/cudnn_softmax_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_batchnorm_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/fft_thunk.h"
 #include "tensorflow/compiler/xla/service/gpu/gemm_thunk.h"
@@ -147,6 +148,29 @@ std::unique_ptr<Thunk> ThunkEmitter::BuildAsyncOutSendThunk(
 Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
   // A CustomCall on the GPU backend can either be a custom-call to a
   // user-supplied kernel, or a call into a library like cudnn.
+
+  // Lower custom-call to cudnn softmax op to specialized thunk.  It's part
+  // of the contract of the cudnn softmax call that the 
+  // feature_index and the log operands be constants.
+  if (custom_call->custom_call_target() ==
+      kCudnnSoftmaxCallTarget) {
+    const HloInstruction* feature_index = custom_call->operand(1);
+    CHECK(feature_index->IsConstant());
+    int64 feature_index_value = feature_index->literal().Get<int64>({});
+
+    const HloInstruction* log = custom_call->operand(2);
+    CHECK(log->IsConstant());
+    bool log_value = log->literal().Get<bool>({});
+
+    AddThunkToThunkSequence(
+        absl::make_unique<CudnnSoftmaxThunk>(
+            /*operand=*/GetAllocationSlice(*custom_call->operand(0)),
+            /*feature_index=*/feature_index_value,
+            /*log=*/log_value,
+            /*output=*/GetAllocationSlice(*custom_call),
+            /*hlo=*/custom_call));
+    return Status::OK();
+  }
 
   // Lower custom-calls to cudnn batchnorm ops to specialized thunks.  It's part
   // of the contract of these cudnn batchnorm calls that the epsilon and

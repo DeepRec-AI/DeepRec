@@ -3749,6 +3749,47 @@ port::Status CudnnSupport::GetBatchNormalizationWorkspaceSizeImpl(
   return port::Status::OK();
 }
 
+bool CudnnSupport::DoSoftmax(
+    Stream* stream, const DeviceMemory<float>& x,
+    const dnn::BatchDescriptor& x_desc, bool log,
+    DeviceMemory<float>* y)
+{
+  return IsStatusOk(
+      DoSoftmaxImpl<float>(
+          stream, dnn::DataType::kFloat, x, x_desc, log, y),
+      /*report_error=*/true);
+}
+
+bool CudnnSupport::DoSoftmax(
+    Stream* stream, const DeviceMemory<Eigen::half>& x,
+    const dnn::BatchDescriptor& x_desc, bool log,
+    DeviceMemory<Eigen::half>* y)
+{
+  return IsStatusOk(
+      DoSoftmaxImpl<Eigen::half>(
+          stream, dnn::DataType::kHalf, x, x_desc, log, y),
+      /*report_error=*/true);
+}
+
+template <class T>
+port::Status CudnnSupport::DoSoftmaxImpl(
+    Stream* stream, dnn::DataType input_data_type,
+    const DeviceMemory<T>& x, const dnn::BatchDescriptor& x_desc,
+    bool log, DeviceMemory<T>* y)
+{
+  CudnnTensorDescriptor x_descriptor(x_desc, ToCudnnDataType(input_data_type));
+  cudnnSoftmaxMode_t mode = CUDNN_SOFTMAX_MODE_CHANNEL;
+  cudnnSoftmaxAlgorithm_t algo = log ? CUDNN_SOFTMAX_LOG : CUDNN_SOFTMAX_ACCURATE;
+  float one = 1.0;
+  float zero = 0.0;
+  auto cudnn = cudnn_->GetHandle(parent_, stream);
+
+  RETURN_IF_CUDNN_ERROR(cudnnSoftmaxForward(
+      cudnn.handle(), algo, mode, &one, x_descriptor.handle(), x.opaque(),
+      &zero, x_descriptor.handle(), y->opaque()));
+  return port::Status::OK();
+}
+
 bool CudnnSupport::DoBatchNormalizationForward(
     Stream* stream, const DeviceMemory<float>& x,
     const DeviceMemory<float>& scale, const DeviceMemory<float>& offset,

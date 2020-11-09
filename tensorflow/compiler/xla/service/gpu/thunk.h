@@ -51,6 +51,7 @@ class Thunk {
     kConvolution,
     kCopy,
     kCudnnBatchNormBackward,
+    kCudnnSoftmax,
     kCudnnBatchNormForwardInference,
     kCudnnBatchNormForwardTraining,
     kCustomCall,

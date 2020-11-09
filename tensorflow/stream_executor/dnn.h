@@ -1014,6 +1014,32 @@ class DnnSupport {
         "DnnSupport::GetVersion not implemented on this platform.");
   }
 
+  // Performs a single-precision softmax operation onto
+  // the stream.
+  //
+  // Arguments:
+  //  stream: borrowed pointer to the stream that the batch normalization
+  //    operation should be enqueued onto.
+  //  x: input data.
+  //  x_desc: dimensions of the input data, which is the same as the dimensions
+  //  log: wheather to do a logSoftmax
+  //  y: output data.
+  virtual bool DoSoftmax(
+      Stream* stream, const DeviceMemory<float>& x,
+      const dnn::BatchDescriptor& x_desc, bool log,
+      DeviceMemory<float>* y) {
+    return false;
+  }
+
+  // Performs a half-precision softmax operation onto the stream.
+  // stream. See DoSoftmax above for argument details.
+  virtual bool DoSoftmax(
+      Stream* stream, const DeviceMemory<Eigen::half>& x,
+      const dnn::BatchDescriptor& x_desc, bool log,
+      DeviceMemory<Eigen::half>* y) {
+    return false;
+  }
+
   virtual bool GetBatchNormalizationReserveSpaceSize(
       Stream* stream, dnn::DataType input_data_type,
       const dnn::BatchDescriptor& x_desc, size_t* reserve_size_in_bytes,

@@ -1043,6 +1043,7 @@ ColorScheme HloDotDumper::GetInstructionColor(const HloInstruction* instr) {
       return kRed;
     case HloOpcode::kParameter:
       return parameter_color;
+    case HloOpcode::kSoftmax:
     case HloOpcode::kBatchNormGrad:
     case HloOpcode::kBatchNormInference:
     case HloOpcode::kBatchNormTraining:

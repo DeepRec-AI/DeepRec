@@ -80,6 +80,25 @@ constexpr int64 kWarpSize = 32;
 // A call to cuBLAS general matrix multiplication API.
 extern const char* const kGemmCallTarget;
 
+// A call to cuDNN for softmax is represented as CustomCall HLO with
+// a call target equal to one of these strings.
+//
+// The operands to and outputs of these calls are the same as those of the
+// corresponding HLOs, except:
+//
+//  - feature_index and log are proper operands, at the end of the operands
+//    list.  They must be HLO constants.
+extern const char* const kCudnnSoftmaxCallTarget;
+
+// Returns true if `hlo` will be implemented as a call to a cuDNN softmax
+// routine.
+//
+// This returns true if `hlo` is a CustomCall HLO with a call target equal to
+// the kCudnnSoftmax constant above, but returns *false* for an HLO
+// with kSoftmax opcode, because these are lowered either to a
+// sequence of generic HLOs or to a cuDNN CustomCall.
+bool IsCustomCallToDnnSoftmax(const HloInstruction& hlo);
+
 // A call to cuDNN for batch normalization is represented as CustomCall HLO with
 // a call target equal to one of these strings.
 //

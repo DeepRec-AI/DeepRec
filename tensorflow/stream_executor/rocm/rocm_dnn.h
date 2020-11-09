@@ -206,6 +206,16 @@ class MIOpenSupport : public dnn::DnnSupport {
       bool with_winograd_nonfused, int cc_major, int cc_minor,
       std::vector<dnn::AlgorithmDesc>* out_algorithms) override;
 
+  bool DoSoftmax(
+      Stream* stream, const DeviceMemory<float>& x,
+      const dnn::BatchDescriptor& x_desc, bool log,
+      DeviceMemory<float>* y);
+
+  bool DoSoftmax(
+      Stream* stream, const DeviceMemory<Eigen::half>& x,
+      const dnn::BatchDescriptor& x_desc, bool log,
+      DeviceMemory<Eigen::half>* y);
+
   bool DoBatchNormalizationForward(
       Stream* stream, const DeviceMemory<float>& x,
       const DeviceMemory<float>& scale, const DeviceMemory<float>& offset,

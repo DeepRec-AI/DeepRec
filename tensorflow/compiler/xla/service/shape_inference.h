@@ -83,6 +83,11 @@ class ShapeInference {
       absl::Span<const Shape* const> arg_shapes, const ProgramShape& to_apply,
       absl::Span<const int64> dimensions);
 
+  // Infers the shape produced by InferSoftmax with the given
+  // operands.
+  static StatusOr<Shape> InferSoftmaxShape(const Shape& operand_shape,
+                                           int64 feature_index);
+
   // Infers the shape produced by InferBatchNormTraining with the given
   // operands.
   static StatusOr<Shape> InferBatchNormTrainingShape(const Shape& operand_shape,

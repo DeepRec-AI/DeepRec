@@ -36,7 +36,7 @@ option cc_enable_arenas = true;
 
 // Serialization of HloInstruction.
 // Next ID: 72
-// NV Next ID: 1002
+// NV Next ID: 1003
 message HloInstructionProto {
   reserved 10;
   reserved "parameter_name";
@@ -124,7 +124,7 @@ message HloInstructionProto {
   float epsilon = 24;
 
   // An integer value representing the index of the feature dimension.
-  // Only present for kBatchNormTraining.
+  // Only present for kBatchNormTraining or kSoftmax
   int64 feature_index = 25;
 
   // Represents a unique identifier for each Send/Recv instruction pair or
@@ -255,6 +255,9 @@ message HloInstructionProto {
 
   // Shape of AsyncOut.
   xla.ShapeProto async_out_send_shape = 1001;
+  
+  // log of softmax
+  bool log = 1002;
 }
 
 // Serialization of HloComputation.

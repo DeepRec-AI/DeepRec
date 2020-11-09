@@ -2238,6 +2238,7 @@ bool LayoutAssignment::InstructionCanChangeLayout(
     case HloOpcode::kAllReduce:
       return false;
     case HloOpcode::kAsyncOutSend:
+    case HloOpcode::kSoftmax:
     case HloOpcode::kBatchNormGrad:
     case HloOpcode::kBatchNormInference:
     case HloOpcode::kBatchNormTraining:

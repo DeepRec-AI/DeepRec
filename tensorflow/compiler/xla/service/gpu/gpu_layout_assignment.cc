@@ -303,6 +303,14 @@ Status GpuLayoutAssignment::PropagateOperandConstraint(
     LayoutConstraints* constraints) {
   const HloInstruction* instruction = layout_constraint.instruction();
 
+  // cudnn softmax's result must have the same layout as its operand 0.
+  if (instruction->opcode() == HloOpcode::kCustomCall &&
+      instruction->custom_call_target() == kCudnnSoftmaxCallTarget &&
+      layout_constraint.operand_no() == 0) {
+    TF_RETURN_IF_ERROR(constraints->SetInstructionLayout(
+        layout_constraint.shape_layout().shape(), instruction));
+  }
+
   // cudnn batchnorm forward inference's result must have the same layout as its
   // operand 0.
   if (instruction->opcode() == HloOpcode::kCustomCall &&
@@ -359,6 +367,16 @@ Status GpuLayoutAssignment::PropagateBufferConstraint(
 
   Shape shape_with_layout = buf.shape();
   *shape_with_layout.mutable_layout() = buffer_constraint.layout();
+
+  // Propagate output constraints to the operands of cudnn softmax op.  This
+  // is the same as PropagateOperandConstraint, just in the other direction.  We
+  // need to both to fulfill our contract to LayoutAssignment.
+  if (instruction->opcode() == HloOpcode::kCustomCall &&
+      instruction->custom_call_target() ==
+          kCudnnSoftmaxCallTarget) {
+    TF_RETURN_IF_ERROR(constraints->SetOperandLayout(
+        shape_with_layout, instruction, /*operand_no=*/0));
+  }
 
   // Propagate output constraints to the operands of cudnn batchnorm ops.  This
   // is the same as PropagateOperandConstraint, just in the other direction.  We

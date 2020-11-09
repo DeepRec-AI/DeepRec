@@ -59,6 +59,10 @@ class DfsHloVisitorWithDefaultBase
     return DefaultAction(hlo);
   }
 
+  Status HandleSoftmax(HloInstructionPtr hlo) override {
+    return DefaultAction(hlo);
+  }
+
   Status HandleBatchNormTraining(HloInstructionPtr hlo) override {
     return DefaultAction(hlo);
   }

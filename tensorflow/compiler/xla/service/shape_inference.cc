@@ -1187,6 +1187,37 @@ ShapeInference::InferDegenerateDimensionBroadcastShape(HloOpcode operation,
                               AsInt64Slice(arg_shape->dimensions()));
 }
 
+/* static */ StatusOr<Shape> ShapeInference::InferSoftmaxShape(
+    const Shape& operand_shape, int64 feature_index) {
+  TF_RETURN_IF_ERROR(
+      ExpectArray(operand_shape, "operand softmax"));
+  TF_RET_CHECK(ShapeUtil::ValidateShapeWithOptionalLayout(operand_shape) ==
+               Status::OK());
+  if (feature_index >= operand_shape.rank()) {
+    return InvalidArgument(
+        "Expected feature_index of softmax to be "
+        "smaller than the rank of operand_shape; "
+        "got feature_index %d, and rank %d.",
+        feature_index, operand_shape.rank());
+  }
+
+  if (feature_index < 0) {
+    return InvalidArgument(
+        "Expected feature_index of softmax to "
+        "be a non-negative number, got %d.",
+        feature_index);
+  }
+
+  if (operand_shape.rank() < 1) {
+    return InvalidArgument(
+        "Expected the rank of operand to "
+        "softmax to be at least 1; got %d.",
+        operand_shape.rank());
+  }
+
+  return operand_shape;
+}
+
 /* static */ StatusOr<Shape> ShapeInference::InferBatchNormTrainingShape(
     const Shape& operand_shape, const Shape& scale_shape,
     const Shape& offset_shape, int64 feature_index, size_t reserve_space_size,

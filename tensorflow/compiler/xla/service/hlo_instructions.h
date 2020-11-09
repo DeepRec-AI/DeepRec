@@ -24,6 +24,33 @@ limitations under the License.
 
 namespace xla {
 
+class HloSoftmaxInstruction : public HloInstruction {
+ public:
+  explicit HloSoftmaxInstruction(const Shape& shape,
+                                 HloInstruction* operand,
+                                 int64 feature_index,
+                                 bool log);
+  int64 feature_index() const { return feature_index_; }
+  bool log() const { return log_; }
+  // Returns a serialized representation of this instruction.
+  HloInstructionProto ToProto() const override;
+
+ private:
+  std::vector<string> ExtraAttributesToStringImpl(
+      const HloPrintOptions& options) const override;
+  std::unique_ptr<HloInstruction> CloneWithNewOperandsImpl(
+      const Shape& shape, absl::Span<HloInstruction* const> new_operands,
+      HloCloneContext* context) const override;
+  bool IdenticalSlowPath(
+      const HloInstruction& other,
+      const std::function<bool(const HloComputation*, const HloComputation*)>&
+          eq_computations) const override;
+
+  bool log_ = false;
+  int64 feature_index_ = -1;
+};
+
+
 class HloBatchNormInstruction : public HloInstruction {
  public:
   // Returns feature_index field associated with the instruction. The index

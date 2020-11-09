@@ -53,6 +53,20 @@ StatusOr<bool> GpuCopyInsertion::Run(HloModule* module) {
       }
     }
   }
+  // Check the assumption that the log and feature_index constants of the
+  // CUDNN softmax op are not shared with other ops where we would replace
+  // them with a copy. These custom op calls are generated with the
+  // CudnnSoftmaxRewriter, so this would only happen if HloCSE merges them.
+  for (HloComputation* computation : module->computations()) {
+    for (HloInstruction* hlo : computation->instructions()) {
+      if (!IsCustomCallToDnnBatchNorm(*hlo)) {
+        continue;
+      }
+      for (int64 i = hlo->operand_count() - 2; i < hlo->operand_count(); ++i) {
+        CHECK_EQ(hlo->operand(i)->opcode(), HloOpcode::kConstant);
+      }
+    }
+  }
 
   return changed;
 }

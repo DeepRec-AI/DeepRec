@@ -49,6 +49,8 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   // Set cudnn batchnorm off by default; it does not provide a performance win
   // on average.
   opts.set_xla_gpu_use_cudnn_batchnorm(false);
+  // Set cudnn softmax off by default.
+  opts.set_xla_gpu_use_cudnn_softmax(false);
 
   // Run all GPU work on one stream by default.  Using multiple streams
   // increases memory usage and we lack strong motivating benchmarks for tuning
@@ -386,6 +388,12 @@ static void AllocateFlags() {
                        "Extra options to pass to a backend; "
                        "comma-separated list of 'key=val' strings (=val "
                        "may be omitted); no whitespace around commas."),
+      tensorflow::Flag(
+          "xla_gpu_use_cudnn_softmax",
+          bool_setter_for(&DebugOptions::set_xla_gpu_use_cudnn_softmax),
+          flag_values->xla_gpu_use_cudnn_softmax(),
+          "Allows the GPU backend to implement softmax HLOs using cudnn, "
+          "rather than expanding them to a soup of HLOs."),
       tensorflow::Flag(
           "xla_gpu_use_cudnn_batchnorm",
           bool_setter_for(&DebugOptions::set_xla_gpu_use_cudnn_batchnorm),

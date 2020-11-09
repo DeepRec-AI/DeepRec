@@ -218,6 +218,22 @@ class CudnnSupport : public dnn::DnnSupport {
       bool with_winograd_nonfused, int cc_major, int cc_minor,
       std::vector<dnn::AlgorithmDesc>* out_algorithms) override;
 
+  bool DoSoftmax(
+      Stream* stream, const DeviceMemory<float>& x,
+      const dnn::BatchDescriptor& x_desc, bool log,
+      DeviceMemory<float>* y);
+
+  bool DoSoftmax(
+      Stream* stream, const DeviceMemory<Eigen::half>& x,
+      const dnn::BatchDescriptor& x_desc, bool log,
+      DeviceMemory<Eigen::half>* y);
+
+  template <class T>
+  port::Status DoSoftmaxImpl(
+      Stream* stream, dnn::DataType input_data_type,
+      const DeviceMemory<T>& x, const dnn::BatchDescriptor& x_desc,
+      bool log, DeviceMemory<T>* y);
+
   bool GetBatchNormalizationReserveSpaceSize(Stream* stream,
                                              dnn::DataType input_data_type,
                                              const dnn::BatchDescriptor& x_desc,

@@ -72,6 +72,46 @@ string PrecisionConfigToString(const PrecisionConfig& precision_config) {
 }
 }  // namespace
 
+HloSoftmaxInstruction::HloSoftmaxInstruction(
+    const Shape& shape, HloInstruction* operand,
+    int64 feature_index, bool log)
+    : HloInstruction(HloOpcode::kSoftmax, shape),
+      feature_index_(feature_index),
+      log_(log) {
+  AppendOperand(operand);
+}
+
+bool HloSoftmaxInstruction::IdenticalSlowPath(
+    const HloInstruction& other,
+    const std::function<bool(const HloComputation*, const HloComputation*)>&
+        eq_computations) const {
+  const auto& casted_other = static_cast<const HloSoftmaxInstruction&>(other);
+  return feature_index() == casted_other.feature_index() &&
+         log() == casted_other.log();
+}
+
+HloInstructionProto HloSoftmaxInstruction::ToProto() const {
+  HloInstructionProto proto = HloInstruction::ToProto();
+  proto.set_feature_index(feature_index_);
+  proto.set_log(log_);
+  return proto;
+}
+
+std::vector<string> HloSoftmaxInstruction::ExtraAttributesToStringImpl(
+    const HloPrintOptions& options) const {
+  return {StrCat("feature_index=", feature_index()),
+          StrCat("log=", log())};
+}
+
+std::unique_ptr<HloInstruction>
+HloSoftmaxInstruction::CloneWithNewOperandsImpl(
+    const Shape& shape, absl::Span<HloInstruction* const> new_operands,
+    HloCloneContext* context) const {
+  CHECK_EQ(new_operands.size(), 1);
+  return absl::make_unique<HloSoftmaxInstruction>(
+      shape, new_operands[0], feature_index(), log());
+}
+
 HloBatchNormInstruction::HloBatchNormInstruction(
     HloOpcode opcode, const Shape& shape, HloInstruction* operand,
     HloInstruction* scale, float epsilon, int64 feature_index)

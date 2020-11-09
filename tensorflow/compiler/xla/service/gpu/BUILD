@@ -259,6 +259,7 @@ cc_library(
     deps = [
         ":backend_configs_cc",
         ":buffer_allocations",
+        ":cudnn_softmax_runner",
         ":cudnn_batchnorm_runner",
         ":elemental_ir_emitter",
         ":gpu_constants",
@@ -494,6 +495,7 @@ cc_library(
         "conditional_thunk.cc",
         "convolution_thunk.cc",
         "copy_thunk.cc",
+        "cudnn_softmax_thunk.cc",
         "cudnn_batchnorm_thunk.cc",
         "fft_thunk.cc",
         "for_thunk.cc",
@@ -520,6 +522,7 @@ cc_library(
         "conditional_thunk.h",
         "convolution_thunk.h",
         "copy_thunk.h",
+        "cudnn_softmax_thunk.h",
         "cudnn_batchnorm_thunk.h",
         "fft_thunk.h",
         "for_thunk.h",
@@ -543,6 +546,7 @@ cc_library(
         ":backend_configs_cc",
         ":buffer_allocations",
         ":cusolver_context",
+        ":cudnn_softmax_runner",
         ":cudnn_batchnorm_runner",
         ":gpu_conv_runner",
         ":gpu_debug_info_manager",
@@ -724,6 +728,28 @@ cc_library(
     name = "gpu_conv_runner",
     srcs = ["gpu_conv_runner.cc"],
     hdrs = ["gpu_conv_runner.h"],
+    deps = [
+        ":backend_configs_cc",
+        ":ir_emission_utils",
+        ":stream_executor_util",
+        "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla:status",
+        "//tensorflow/compiler/xla:status_macros",
+        "//tensorflow/compiler/xla:statusor",
+        "//tensorflow/compiler/xla:types",
+        "//tensorflow/compiler/xla:util",
+        "//tensorflow/compiler/xla:xla_data_proto_cc",
+        "//tensorflow/compiler/xla/service:hlo",
+        "//tensorflow/core:stream_executor_no_cuda",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:optional",
+    ],
+)
+
+cc_library(
+    name = "cudnn_softmax_runner",
+    srcs = ["cudnn_softmax_runner.cc"],
+    hdrs = ["cudnn_softmax_runner.h"],
     deps = [
         ":backend_configs_cc",
         ":ir_emission_utils",
@@ -1133,6 +1159,7 @@ cc_library(
     ],
     deps = [
         ":alias_passthrough_params",
+        ":cudnn_softmax_rewriter",
         ":cudnn_batchnorm_rewriter",
         ":cudnn_pad_for_convolutions",
         ":fusion_merger",
@@ -1169,6 +1196,7 @@ cc_library(
         "//tensorflow/compiler/xla:util",
         "//tensorflow/compiler/xla/service:algebraic_simplifier",
         "//tensorflow/compiler/xla/service:all_reduce_combiner",
+        "//tensorflow/compiler/xla/service:softmax_expander",
         "//tensorflow/compiler/xla/service:batchnorm_expander",
         "//tensorflow/compiler/xla/service:buffer_assignment",
         "//tensorflow/compiler/xla/service:call_inliner",
@@ -1330,6 +1358,20 @@ cc_library(
         "//tensorflow/compiler/xla/service/gpu/llvm_gpu_backend",
         "//tensorflow/compiler/xla/service/llvm_ir:llvm_util",
         "//tensorflow/core/platform:rocm_rocdl_path",
+    ],
+)
+
+cc_library(
+    name = "cudnn_softmax_rewriter",
+    srcs = ["cudnn_softmax_rewriter.cc"],
+    hdrs = ["cudnn_softmax_rewriter.h"],
+    deps = [
+        ":ir_emission_utils",
+        ":stream_executor_util",
+        "//tensorflow/compiler/xla:literal",
+        "//tensorflow/compiler/xla:literal_util",
+        "//tensorflow/compiler/xla/service:hlo",
+        "//tensorflow/compiler/xla/service:hlo_pass",
     ],
 )
 

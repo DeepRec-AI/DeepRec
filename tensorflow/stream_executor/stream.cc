@@ -392,6 +392,36 @@ Stream &Stream::ThenEndGraphCapture(void *&graph) {
   return *this;
 }
 
+Stream &Stream::ThenSoftmax(
+    const DeviceMemory<float> &x, const dnn::BatchDescriptor &x_desc,
+    bool log , DeviceMemory<float> *y)
+{
+  VLOG_CALL(PARAM(x),  PARAM(x_desc), PARAM(log), PARAM(y));
+  if (ok()) {
+    if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
+      CheckError(dnn->DoSoftmax(this, x, x_desc, log, y));
+    } else {
+      SetErrorAndLogNoDnnSupport();
+    }
+  }
+  return *this;
+}
+
+Stream &Stream::ThenSoftmax(
+    const DeviceMemory<Eigen::half> &x, const dnn::BatchDescriptor &x_desc,
+    bool log , DeviceMemory<Eigen::half> *y)
+{
+  VLOG_CALL(PARAM(x),  PARAM(x_desc), PARAM(log), PARAM(y));
+  if (ok()) {
+    if (dnn::DnnSupport *dnn = parent_->AsDnn()) {
+      CheckError(dnn->DoSoftmax(this, x, x_desc, log, y));
+    } else {
+      SetErrorAndLogNoDnnSupport();
+    }
+  }
+  return *this;
+}
+
 Stream &Stream::ThenFindBatchNormalizationTrainingExReserveSpaceSize(
     int64 batch_size, int64 feature_count, int64 y_size,
     const std::string &layout, dnn::DataType input_type,

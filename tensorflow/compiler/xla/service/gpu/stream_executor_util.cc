@@ -319,8 +319,10 @@ void InitializeBuffer(se::Stream* stream, PrimitiveType buffer_type,
   }
 }
 
-DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
-                                             int64 feature_index) {
+static
+se::dnn::BatchDescriptor MakeBatchDescriptor(const Shape& shape,
+                                             int64 feature_index,
+                                             bool prefer_NCHW) {
   std::vector<int64> logical_to_physical =
       LayoutUtil::MakeLogicalToPhysical(shape.layout());
 
@@ -352,6 +354,7 @@ DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
   }
 
   se::dnn::DataLayout data_layout = se::dnn::DataLayout::kBatchDepthYX;
+
   // For a general NHWC data layout (i.e, feature index is that last index),
   // [N, X1, X2, X3,...Xn, Y1, Y2,..., Ym, C], the above computation will
   // produce batch_size = N*X1*X2....Xn*Y1*Y2*..Ym; y_size = 1. For an NHWC
@@ -359,17 +362,32 @@ DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
   // dim. Note even if it is a spatial dimension, this assumption would not
   // alter the results since anyway batchnorm only cares about the location of
   // the depth (aka "feature" dim).
-  if (logical_to_physical[feature_index] == shape.dimensions_size() - 1) {
+  if (!prefer_NCHW &&
+      logical_to_physical[feature_index] == shape.dimensions_size() - 1) {
     data_layout = se::dnn::DataLayout::kBatchYXDepth;
     y_size = batch_size / physical_dim_size(0);
     batch_size = physical_dim_size(0);
   }
-  DnnBatchDescriptors batch_descs;
-  batch_descs.input_desc.set_layout(data_layout)
+
+  se::dnn::BatchDescriptor input_desc;
+  input_desc.set_layout(data_layout)
       .set_count(batch_size)
       .set_feature_map_count(shape.dimensions(feature_index))
       .set_height(y_size)
       .set_width(1 /*width*/);
+
+  return input_desc;
+}
+
+se::dnn::BatchDescriptor MakeSoftmaxDescriptor(const Shape& shape,
+                                               int64 feature_index) {
+  return MakeBatchDescriptor(shape, feature_index, true);
+}
+
+DnnBatchDescriptors MakeBatchNormDescriptors(const Shape& shape,
+                                             int64 feature_index) {
+  DnnBatchDescriptors batch_descs;
+  batch_descs.input_desc = MakeBatchDescriptor(shape, feature_index, false);
 
   batch_descs.scale_offset_desc.set_layout(se::dnn::DataLayout::kBatchDepthYX)
       .set_feature_map_count(batch_descs.input_desc.feature_map_count())

@@ -90,6 +90,7 @@ class HloCostAnalysis : public ConstDfsHloVisitor {
   Status HandleSort(const HloInstruction* sort) override;
   Status HandleParameter(const HloInstruction* parameter) override;
   Status HandleReduce(const HloInstruction* reduce) override;
+  Status HandleSoftmax(const HloInstruction* softmax) override;
   Status HandleBatchNormTraining(
       const HloInstruction* batch_norm_training) override;
   Status HandleBatchNormInference(

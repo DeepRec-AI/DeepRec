@@ -157,6 +157,17 @@ std::array<int64, 3> GetReductionTiling(
   return {1, 128, 1};
 }
 
+const char* const kCudnnSoftmaxCallTarget =
+    "__cudnn$Softmax";
+
+bool IsCustomCallToDnnSoftmax(const HloInstruction& hlo) {
+  if (hlo.opcode() != HloOpcode::kCustomCall) {
+    return false;
+  }
+  const auto& target = hlo.custom_call_target();
+  return target == kCudnnSoftmaxCallTarget;
+}
+
 const char* const kCudnnBatchNormForwardInferenceCallTarget =
     "__cudnn$batchNormalizationForwardInference";
 const char* const kCudnnBatchNormForwardTrainingCallTarget =
@@ -206,7 +217,7 @@ bool IsCustomCallToCusolver(const HloInstruction& hlo) {
 
 bool ImplementedAsLibraryCall(const HloInstruction& hlo) {
   return IsCublasGemm(hlo) || IsCustomCallToDnnBatchNorm(hlo) ||
-         IsCustomCallToDnnConvolution(hlo);
+         IsCustomCallToDnnConvolution(hlo) || IsCustomCallToDnnSoftmax(hlo);
 }
 
 bool IsReductionFromOrToContiguousDimensions(const HloInstruction& reduce) {

@@ -1380,6 +1380,22 @@ bool HloParserImpl::ParseInstructionRhs(HloComputation::Builder* builder,
           HloInstruction::CreateTranspose(shape, operands[0], *dimensions));
       break;
     }
+    case HloOpcode::kSoftmax: {
+      optional<int64> feature_index;
+      attrs["feature_index"] = {/*required=*/true, AttrTy::kInt64,
+                                &feature_index};
+      optional<bool> log = false;
+      attrs["log"] = {/*required=*/false, AttrTy::kBool, &log};
+
+      if (!ParseOperands(&operands, /*expected_size=*/1) ||
+          !ParseAttributes(attrs)) {
+        return false;
+      }
+      instruction = builder->AddInstruction(
+          HloInstruction::CreateSoftmax(shape, operands[0], *feature_index,
+                                        *log));
+      break;
+    }
     case HloOpcode::kBatchNormTraining: {
       optional<float> epsilon;
       attrs["epsilon"] = {/*required=*/true, AttrTy::kFloat, &epsilon};

@@ -256,10 +256,13 @@ class HloEvaluator : public DfsHloVisitorWithDefault {
 
   Status HandleCustomCall(HloInstruction* custom_call) override;
 
-  // Unsupported HLOs, note some of them (such as BatchNorm*) are typically
-  // expanded in a semantic-preserving way into other HLOs by adding expansion
-  // HLO pass to the HLO optimization pass during compilation, which can then be
-  // handled by the evaluator.
+  // Unsupported HLOs, note some of them (such as BatchNorm* and Softmax) are
+  // typically expanded in a semantic-preserving way into other HLOs by adding
+  // expansion HLO pass to the HLO optimization pass during compilation, which
+  // can then be handled by the evaluator.
+  Status HandleSoftmax(HloInstruction* softmax) override {
+    return Unimplemented("Softmax HLO is unsupported by the evaluator.");
+  };
   Status HandleBatchNormGrad(HloInstruction* batch_norm_grad) override {
     return Unimplemented("BatchNormGrad HLO is unsupported by the evaluator.");
   };

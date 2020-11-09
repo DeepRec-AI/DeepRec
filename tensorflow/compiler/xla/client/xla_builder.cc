@@ -2030,6 +2030,22 @@ XlaOp XlaBuilder::ReduceWindowWithGeneralPadding(
   });
 }
 
+XlaOp XlaBuilder::Softmax(XlaOp operand, int64 feature_index, bool log) {
+  return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
+    HloInstructionProto instr;
+
+    TF_ASSIGN_OR_RETURN(const Shape* operand_shape, GetShapePtr(operand));
+    TF_ASSIGN_OR_RETURN(Shape shape, ShapeInference::InferSoftmaxShape(
+                                         *operand_shape, feature_index));
+    *instr.mutable_shape() = shape.ToProto();
+
+    instr.set_feature_index(feature_index);
+    instr.set_log(log);
+
+    return AddInstruction(std::move(instr), HloOpcode::kSoftmax, {operand});
+  });
+}
+
 XlaOp XlaBuilder::BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
                                     float epsilon, int64 feature_index,
                                     size_t reserve_space_size,
@@ -3591,6 +3607,10 @@ XlaOp CreateToken(XlaBuilder* builder) { return builder->CreateToken(); }
 
 XlaOp AfterAll(XlaBuilder* builder, absl::Span<const XlaOp> tokens) {
   return builder->AfterAll(tokens);
+}
+
+XlaOp Softmax(const XlaOp operand, int64 feature_index, bool log) {
+  return operand.builder()->Softmax(operand, feature_index, log);
 }
 
 XlaOp BatchNormTraining(const XlaOp operand, const XlaOp scale,

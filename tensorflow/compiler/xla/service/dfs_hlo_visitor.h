@@ -264,6 +264,8 @@ class DfsHloVisitorBase {
   virtual Status HandleRecv(HloInstructionPtr recv) = 0;
   virtual Status HandleRecvDone(HloInstructionPtr recv_done) = 0;
 
+  virtual Status HandleSoftmax(HloInstructionPtr hlo) = 0;
+
   virtual Status HandleBatchNormTraining(HloInstructionPtr hlo) = 0;
 
   virtual Status HandleBatchNormInference(HloInstructionPtr hlo) = 0;

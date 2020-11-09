@@ -32,6 +32,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/protobuf_util.h"
 #include "tensorflow/compiler/xla/service/algebraic_simplifier.h"
 #include "tensorflow/compiler/xla/service/all_reduce_combiner.h"
+#include "tensorflow/compiler/xla/service/softmax_expander.h"
 #include "tensorflow/compiler/xla/service/batchnorm_expander.h"
 #include "tensorflow/compiler/xla/service/buffer_assignment.h"
 #include "tensorflow/compiler/xla/service/call_inliner.h"
@@ -43,6 +44,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/service/dynamic_index_splitter.h"
 #include "tensorflow/compiler/xla/service/flatten_call_graph.h"
 #include "tensorflow/compiler/xla/service/gpu/alias_passthrough_params.h"
+#include "tensorflow/compiler/xla/service/gpu/cudnn_softmax_rewriter.h"
 #include "tensorflow/compiler/xla/service/gpu/cudnn_batchnorm_rewriter.h"
 #include "tensorflow/compiler/xla/service/gpu/fusion_merger.h"
 #include "tensorflow/compiler/xla/service/gpu/gemm_rewriter.h"
@@ -171,6 +173,14 @@ Status GpuCompiler::OptimizeHloModule(
           pipeline.AddPass<HloPassFix<HloPassPipeline>>("simplification");
       pass.AddInvariantChecker<HloVerifier>(/*layout_sensitive=*/false,
                                             /*allow_mixed_precision=*/false);
+
+      // If cudnn softmax is enabled, rewrite sofmax HLOs to cudnn calls
+      // where possible.  Not every softmax op can be implemented as a call to
+      // cudnn, so decompose any remaining sofmax ops into a soup of HLOs.
+      if (hlo_module->config().debug_options().xla_gpu_use_cudnn_softmax()) {
+        pass.AddPass<CudnnSoftmaxRewriter>();
+      }
+      pass.AddPass<SoftmaxExpander>();
 
       // If cudnn batchnorms are enabled, rewrite batchnorm HLOs to cudnn calls
       // where possible.  Not every batchnorm op can be implemented as a call to

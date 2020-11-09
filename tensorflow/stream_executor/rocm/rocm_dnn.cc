@@ -3057,6 +3057,22 @@ bool MIOpenSupport::GetConvolveBackwardFilterAlgorithms(
   return true;
 }
 
+bool MIOpenSupport::DoSoftmax(
+    Stream* stream, const DeviceMemory<float>& x,
+    const dnn::BatchDescriptor& x_desc, bool log,
+    DeviceMemory<float>* y)
+{
+    return false;
+}
+
+bool MIOpenSupport::DoSoftmax(
+    Stream* stream, const DeviceMemory<Eigen::half>& x,
+    const dnn::BatchDescriptor& x_desc, bool log,
+    DeviceMemory<Eigen::half>* y)
+{
+    return false;
+}
+
 bool MIOpenSupport::DoBatchNormalizationForward(
     Stream* stream, const DeviceMemory<Eigen::half>& x,
     const DeviceMemory<float>& scale, const DeviceMemory<float>& offset,

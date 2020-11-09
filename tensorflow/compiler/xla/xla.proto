@@ -107,6 +107,7 @@ message DebugOptions {
   // If true, the GPU backend is free to use cudnn for HLO batch normalization
   // ops.
   bool xla_gpu_use_cudnn_batchnorm = 94;
+  bool xla_gpu_use_cudnn_softmax = 95;
 
   // Generate calls to MKL-DNN in the CPU backend.
   bool xla_cpu_use_mkl_dnn = 97;

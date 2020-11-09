@@ -72,6 +72,7 @@ bool IsThunkSafeForGpuGraphCapture(const Thunk* thunk) {
       Thunk::kCollectivePermute,
       Thunk::kConvolution,
       Thunk::kCopy,
+      Thunk::kCudnnSoftmax,
       Thunk::kCudnnBatchNormBackward,
       Thunk::kCudnnBatchNormForwardInference,
       Thunk::kCudnnBatchNormForwardTraining,

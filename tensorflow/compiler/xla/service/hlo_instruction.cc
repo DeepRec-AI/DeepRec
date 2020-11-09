@@ -145,6 +145,11 @@ StatusOr<std::unique_ptr<HloInstruction>> HloInstruction::CreateFromProto(
 
   switch (opcode) {
     // Ops migrated to subclasses.
+    case HloOpcode::kSoftmax: {
+      instruction =
+          CreateSoftmax(shape, operands(0), proto.feature_index(), proto.log());
+      break;
+    }
     case HloOpcode::kBatchNormTraining: {
       instruction =
           CreateBatchNormTraining(shape, operands(0), operands(1), operands(2),
@@ -1198,6 +1203,15 @@ HloInstruction::CreateBitcastConvert(const Shape& shape,
 }
 
 /* static */ std::unique_ptr<HloInstruction>
+HloInstruction::CreateSoftmax(const Shape& shape,
+                              HloInstruction* operand,
+                              int64 feature_index,
+                              bool log) {
+  return absl::make_unique<HloSoftmaxInstruction>(
+      shape, operand, feature_index, log);
+}
+
+/* static */ std::unique_ptr<HloInstruction>
 HloInstruction::CreateBatchNormTraining(const Shape& shape,
                                         HloInstruction* operand,
                                         HloInstruction* scale,
@@ -1510,6 +1524,7 @@ std::unique_ptr<HloInstruction> HloInstruction::CloneWithNewOperands(
   switch (opcode_) {
     // Ops migrated to subclasses.
     // TODO(b/80131774): Remove this switch when migration is complete.
+    case HloOpcode::kSoftmax:
     case HloOpcode::kBatchNormTraining:
     case HloOpcode::kBatchNormInference:
     case HloOpcode::kBatchNormGrad:
@@ -1984,6 +1999,7 @@ bool HloInstruction::IdenticalSlowPath(
 
     // Ops migrated to subclasses should never come to this line.
     // TODO(b/80131774): Remove this switch when migration is complete.
+    case HloOpcode::kSoftmax:
     case HloOpcode::kBatchNormTraining:
     case HloOpcode::kBatchNormInference:
     case HloOpcode::kBatchNormGrad:
@@ -2803,6 +2819,8 @@ Status HloInstruction::Visit(DfsHloVisitorBase<HloInstructionPtr>* visitor) {
       return visitor->HandleAtan2(this);
     case HloOpcode::kRoundNearestAfz:
       return visitor->HandleRound(this);
+    case HloOpcode::kSoftmax:
+      return visitor->HandleSoftmax(this);
     case HloOpcode::kBatchNormTraining:
       return visitor->HandleBatchNormTraining(this);
     case HloOpcode::kBatchNormInference:
@@ -3634,6 +3652,14 @@ void HloInstruction::UniquifyName(NameUniquer* name_uniquer) {
 void HloInstruction::set_outer_dimension_partitions(
     const std::vector<int64>& outer_dimension_partitions) {
   outer_dimension_partitions_ = outer_dimension_partitions;
+}
+
+int64 HloInstruction::softmax_feature_index() const {
+  return Cast<HloSoftmaxInstruction>(this)->feature_index();
+}
+
+int64 HloInstruction::log() const {
+  return Cast<HloSoftmaxInstruction>(this)->log();
 }
 
 // TODO(b/80131774): Remove these temporary methods after transition.

@@ -921,6 +921,14 @@ Status ShapeVerifier::HandleRecvDone(HloInstruction* recv_done) {
            ShapeUtil::MakeTokenShape()}));
 }
 
+Status ShapeVerifier::HandleSoftmax(
+    HloInstruction* softmax) {
+  return CheckShape(softmax,
+                    ShapeInference::InferSoftmaxShape(
+                        softmax->operand(0)->shape(),
+                        softmax->softmax_feature_index()));
+}
+
 Status ShapeVerifier::HandleBatchNormTraining(
     HloInstruction* batch_norm_training) {
   auto num_outputs = batch_norm_training->shape().tuple_shapes_size();

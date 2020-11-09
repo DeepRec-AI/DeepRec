@@ -52,6 +52,7 @@ namespace xla {
   V(kAllToAll, "all-to-all", kHloOpcodeIsVariadic)                     \
   V(kAtan2, "atan2", 2)                                                \
   V(kAsyncOutSend, "async-out-send", 1)                                \
+  V(kSoftmax, "softmax", 1)                                            \
   V(kBatchNormGrad, "batch-norm-grad", kHloOpcodeIsVariadic)           \
   V(kBatchNormInference, "batch-norm-inference", 5)                    \
   V(kBatchNormTraining, "batch-norm-training", 3)                      \

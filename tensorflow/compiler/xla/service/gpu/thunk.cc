@@ -32,6 +32,8 @@ absl::string_view ThunkKindToString(Thunk::Kind kind) {
       return "kConvolution";
     case Thunk::kCopy:
       return "kCopy";
+    case Thunk::kCudnnSoftmax:
+      return "kCudnnSoftmax";
     case Thunk::kCudnnBatchNormBackward:
       return "kCudnnBatchNormBackward";
     case Thunk::kCudnnBatchNormForwardInference:

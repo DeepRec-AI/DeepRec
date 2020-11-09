@@ -1664,6 +1664,26 @@ tf_cc_test(
 )
 
 cc_library(
+    name = "softmax_expander",
+    srcs = ["softmax_expander.cc"],
+    hdrs = ["softmax_expander.h"],
+    deps = [
+        ":hlo",
+        ":hlo_pass",
+        "//tensorflow/compiler/xla:literal",
+        "//tensorflow/compiler/xla:literal_util",
+        "//tensorflow/compiler/xla:shape_util",
+        "//tensorflow/compiler/xla:status_macros",
+        "//tensorflow/compiler/xla:types",
+        "//tensorflow/compiler/xla:util",
+        "//tensorflow/compiler/xla:xla_data_proto_cc",
+        "//tensorflow/core:lib",
+        "@com_google_absl//absl/types:optional",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "batchnorm_expander",
     srcs = ["batchnorm_expander.cc"],
     hdrs = ["batchnorm_expander.h"],

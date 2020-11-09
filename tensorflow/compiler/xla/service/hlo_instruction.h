@@ -812,6 +812,11 @@ class HloInstruction {
       const Shape& shape, HloInstruction* operand, HloInstruction* init_value,
       const Window& window, HloComputation* reduce_computation);
 
+  // Creates a softmax instruction.
+  static std::unique_ptr<HloInstruction> CreateSoftmax(
+      const Shape& shape, HloInstruction* operand, int64 feature_index,
+      bool log);
+
   // Creates a batch-norm-training instruction.
   static std::unique_ptr<HloInstruction> CreateBatchNormTraining(
       const Shape& shape, HloInstruction* operand, HloInstruction* scale,
@@ -1624,6 +1629,11 @@ class HloInstruction {
 
   // Delegates to HloConcatenateInstruction::concatenate_dimension.
   int64 concatenate_dimension() const;
+
+  // Delegates to HloSoftmaxInstruction::feature_index.
+  int64 softmax_feature_index() const;
+  // Delegates to HloSoftmaxInstruction::log.
+  int64 log() const ;
 
   // Delegates to HloGetDimensionSizeInstruction::dimension.
   int64 dimension() const;

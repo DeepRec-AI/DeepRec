@@ -98,6 +98,7 @@ class ShapeVerifier : public DfsHloVisitor {
   Status HandleSendDone(HloInstruction* send_done) override;
   Status HandleRecv(HloInstruction* recv) override;
   Status HandleRecvDone(HloInstruction* recv_done) override;
+  Status HandleSoftmax(HloInstruction* softmax) override;
   Status HandleBatchNormTraining(HloInstruction* batch_norm_training) override;
   Status HandleBatchNormInference(
       HloInstruction* batch_norm_inference) override;
