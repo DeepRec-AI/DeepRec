@@ -161,16 +161,14 @@ bool IsXlaGlobalJitOn(
 
 // A helper function to decide whether to enable the memory optimizer.
 bool MemoryOptimizerEnabled(
-    RewriterConfig::MemOptType mem_opt_type,
-    OptimizerOptions::GlobalJitLevel jit_level_in_session_opts) {
+    RewriterConfig::MemOptType mem_opt_type, bool xla_on) {
   // Disable the default memory optimizer when XLA JIT is ON as it hurts the
   // XLA JIT performance. The (current) XLA clustering can result in loss of
   // concurrency between kernel compute and memory copies. As such, it usually
   // loses the concurrency needed to hide the latencies of the inserted swap-ins
   // and swap-outs and incurs great performance overhead. Remove this check when
   // the XLA JIT can better deal with the concurrency.
-  if (mem_opt_type == RewriterConfig::DEFAULT_MEM_OPT &&
-      IsXlaGlobalJitOn(jit_level_in_session_opts)) {
+  if (mem_opt_type == RewriterConfig::DEFAULT_MEM_OPT && xla_on) {
     return false;
   }
 
@@ -188,7 +186,7 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
   MK_OPT("function", new FunctionOptimizer(cfg_.function_optimization()));
   MK_OPT("constfold", new ConstantFolding(cpu_device_));
   MK_OPT("shape", new ShapeOptimizer());
-  MK_OPT("remap", new Remapper(cfg_.remapping()));
+  MK_OPT("remap", new Remapper(cfg_.remapping(), xla_on_));
   MK_OPT("layout", new GenericLayoutOptimizer());
   MK_OPT("auto_mixed_precision",
          new AutoMixedPrecision(cfg_.auto_mixed_precision()));
@@ -215,6 +213,9 @@ MetaOptimizer::MetaOptimizer(DeviceBase* cpu_device, const ConfigProto& cfg)
       cfg_(*config_proto_.mutable_graph_options()->mutable_rewrite_options()) {
   DCHECK(cpu_device_ == nullptr ||
          cpu_device_->attributes().device_type() == "CPU");
+  auto global_jit_level =
+      cfg.graph_options().optimizer_options().global_jit_level();
+  xla_on_ = IsXlaGlobalJitOn(global_jit_level); 
 }
 
 Status MetaOptimizer::InitializeOptimizers(
@@ -243,7 +244,7 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(MakeUnique<ShapeOptimizer>());
   }
   if (cfg_.remapping() != RewriterConfig::OFF) {
-    optimizers->push_back(MakeUnique<Remapper>(cfg_.remapping()));
+    optimizers->push_back(MakeUnique<Remapper>(cfg_.remapping(), xla_on_));
   }
   if (cfg_.pin_to_host_optimization() == RewriterConfig::ON) {
     optimizers->push_back(MakeUnique<PinToHostOptimizer>());
@@ -267,9 +268,7 @@ Status MetaOptimizer::InitializeOptimizers(
   if (cfg_.layout_optimizer() != RewriterConfig::OFF) {
     optimizers->push_back(MakeUnique<GenericLayoutOptimizer>());
   }
-  auto global_jit_level =
-      config_proto_.graph_options().optimizer_options().global_jit_level();
-  if (MemoryOptimizerEnabled(cfg_.memory_optimization(), global_jit_level)) {
+  if (MemoryOptimizerEnabled(cfg_.memory_optimization(), xla_on_)) {
     if (cfg_.memory_optimizer_target_node_name_scope().empty()) {
       optimizers->push_back(
           // Use the default target node name prefix "gradients/"

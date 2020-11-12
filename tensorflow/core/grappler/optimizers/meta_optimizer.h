@@ -81,6 +81,7 @@ class MetaOptimizer : public GraphOptimizer {
   DeviceBase* const cpu_device_;  // may be NULL
   ConfigProto config_proto_;
   RewriterConfig& cfg_;
+  bool xla_on_;
 
   struct OptimizerResult {
     string optimizer_name;
