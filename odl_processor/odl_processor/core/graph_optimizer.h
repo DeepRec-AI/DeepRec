@@ -22,16 +22,20 @@ limitations under the License.
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
+#include "tensorflow/core/protobuf/saved_model.pb.h"
 
 namespace tensorflow {
 namespace odl_processor {
 
 // Tensorflow GraphDef will be splited into
 // two subgraph, one for tf and another for IREE.
+// TODO: FIXME split it into two structures
 struct ClusteredGraphInfo {
   GraphDef tf_subgraph;
   GraphDef iree_subgraph;
   SignatureDef tf_signature;
+  SavedModel tf_saved_model;
+  SavedModel iree_saved_model;
 };
 
 // clustering strategr base class
@@ -39,26 +43,59 @@ class CluteringStrategy {
  public:
   CluteringStrategy() {}
   virtual ~CluteringStrategy() {}
-  virtual void Run(const MetaGraphDef&, ClusteredGraphInfo*) = 0;
+  virtual void Run(const std::string& tag,
+                   const SavedModel&,
+                   ClusteredGraphInfo*) {}
+  virtual void Run(const MetaGraphDef&, ClusteredGraphInfo*) {}
   // @gdef: tf graph_def
   // @inputs: root ops of the graph def
   // @outputs: target ops of the graph def
   virtual void Run(const GraphDef& gdef,
                    std::vector<std::string>& inputs,
                    std::vector<std::string>& outputs,
-                   ClusteredGraphInfo*) = 0;
+                   ClusteredGraphInfo*) {}
 };
 
 class StaticShapeCluteringStrategy
     : public CluteringStrategy {
  public:
   StaticShapeCluteringStrategy() {}
+  void Run(const std::string& tag,
+           const SavedModel&,
+           ClusteredGraphInfo*);
   void Run(const MetaGraphDef&, ClusteredGraphInfo*);
   void Run(const GraphDef& gdef,
            std::vector<std::string>& inputs,
            std::vector<std::string>& outputs,
            ClusteredGraphInfo*);
+
+  // Function will return static ops set
+  void GetStaticGraphOps(
+      const GraphDef& gdef,
+      std::vector<std::string>& inputs,
+      std::vector<std::string>& outputs,
+      std::unordered_set<std::string>* static_ops_name);
+  // Get dynamic and static signature def
+  void GetDynamicAndStaticSignatureDef(
+      const MetaGraphDef&,
+      std::map<string, SignatureDef>* dynamic_sdef,
+      std::map<string, SignatureDef>* static_sdef);
+  // Get dynamic and static meta graph
+  void GetDynamicAndStaticMetaGraphDef(
+      const MetaGraphDef& mgdef,
+      MetaGraphDef* dynamic_mgdef,
+      MetaGraphDef* static_mgdef);
 };
+
+ClusteredGraphInfo ClusteringGraphDef(
+    const std::string& tag,
+    const SavedModel& saved_model,
+    CluteringStrategy* cluster_strategy = nullptr);
+
+ClusteredGraphInfo ClusteringGraphDef(
+    const std::string& tag,
+    const std::string& saved_model_str,
+    CluteringStrategy* cluster_strategy = nullptr);
 
 ClusteredGraphInfo ClusteringGraphDef(
     const MetaGraphDef& mgdef,
@@ -67,6 +104,10 @@ ClusteredGraphInfo ClusteringGraphDef(
 // @saved_model_str: the saved model pb string
 MetaGraphDef GetMetaGraphDefFromSavedModel(
     const std::string& saved_model_str);
+
+// @saved_model_str: the saved model text
+MetaGraphDef GetMetaGraphDefFromSavedModelText(
+    const std::string& str);
  
 } // namespace odl_processor
 } // namespace tensorflow

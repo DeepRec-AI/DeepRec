@@ -10,11 +10,16 @@ cc_library(
     srcs = ["graph_optimizer.cc"],
     hdrs = [
         "graph_optimizer.h",
-        "@org_tensorflow//tensorflow/core:framework",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
     deps = [
         "utils",
+        "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core:core_cpu",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/cc:cc_ops",
+        "@org_tensorflow//tensorflow/cc:ops",
+        "@org_tensorflow//tensorflow/core:ops",
     ],
 )
 
@@ -29,6 +34,9 @@ cc_test(
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:core_cpu",
+        "@org_tensorflow//tensorflow/cc:cc_ops",
+        "@org_tensorflow//tensorflow/cc:ops",
+        "@org_tensorflow//tensorflow/core:ops",
     ],
 )
 
