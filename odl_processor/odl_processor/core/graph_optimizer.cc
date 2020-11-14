@@ -18,8 +18,9 @@ limitations under the License.
 
 #include "odl_processor/core/graph_optimizer.h"
 #include "odl_processor/core/util/utils.h"
+#include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
-#include "tensorflow/core/protobuf/saved_model.pb.h"
+#include "tensorflow/core/graph/graph_constructor.h"
 
 namespace tensorflow {
 namespace odl_processor {
@@ -51,12 +52,12 @@ std::unordered_set<std::string> GetBlackOpsSet() {
 
 } // namespace
 
+
 MetaGraphDef GetMetaGraphDefFromSavedModel(
     const std::string& saved_model_str) {
-  GraphDef gdef;
   SavedModel saved_model;
   if (!saved_model.ParseFromString(saved_model_str)) {
-    LOG(FATAL) << "Can not parse saved model from string.";
+    LOG(FATAL) << "Can not parse saved model from pb string.";
   }
 
   // TODO: How about many meta graphs?
@@ -65,6 +66,70 @@ MetaGraphDef GetMetaGraphDefFromSavedModel(
   return meta_gdef;
 }
 
+MetaGraphDef GetMetaGraphDefFromSavedModelText(
+    const std::string& str) {
+  SavedModel saved_model;
+  if (!tensorflow::protobuf::TextFormat::ParseFromString(str, &saved_model)) {
+    LOG(FATAL) << "Can not parse saved model from text.";
+  }
+
+  // TODO: How about many meta graphs?
+  MetaGraphDef meta_gdef = saved_model.meta_graphs()[0];
+
+  return meta_gdef;
+} 
+
+// Function will return static ops set
+void StaticShapeCluteringStrategy::GetStaticGraphOps(
+    const GraphDef& gdef,
+    std::vector<std::string>& inputs,
+    std::vector<std::string>& outputs,
+    std::unordered_set<std::string>* static_ops_name) {
+  std::unordered_map<std::string, bool> dynamic_ops_map =
+      GetNodesHasDynamicShapeMap(gdef);
+
+  std::unordered_map<std::string, bool> has_control_flow_input =
+      GetNodesHasControlFlowInputs(gdef);
+
+  std::unordered_map<std::string, const NodeDef*> nodes;
+  for (const NodeDef& node : gdef.node()) {
+    nodes[node.name()] = &node;
+  }
+
+  std::unordered_set<const NodeDef*> static_nodes;
+  std::unordered_set<const NodeDef*> visited;
+  std::queue<const NodeDef*> q;
+  for (auto output : outputs) {
+    q.push(nodes[output]);
+    visited.insert(nodes[output]);
+  }
+
+  std::unordered_set<std::string> black_ops = GetBlackOpsSet();
+  while (!q.empty()) {
+    const NodeDef* curr_node = q.front();
+    // 1) no control edge
+    // 2) no dynamic shape
+    // 3) no blacklist ops
+    if (!has_control_flow_input[curr_node->name()] &&
+        !dynamic_ops_map[curr_node->name()] &&
+        black_ops.find(curr_node->op()) == black_ops.end()) {
+      // Add op into static ops set
+      //(*static_ops)[curr_node->name()] = curr_node;
+      static_ops_name->insert(curr_node->name());
+
+      for (auto in_name : curr_node->input()) {
+        size_t offset = in_name.find(":");
+        in_name = in_name.substr(0, offset);
+        if (visited.find(nodes[in_name]) == visited.end()) {
+          q.push(nodes[in_name]);
+          visited.insert(nodes[in_name]);
+        }
+      }
+    }
+
+    q.pop();
+  }
+}
 
 void StaticShapeCluteringStrategy::Run(
     const GraphDef& gdef,
@@ -120,6 +185,10 @@ void StaticShapeCluteringStrategy::Run(
     q.pop();
   }
 
+  // TODO: Add version and library ops
+
+  // TODO: Add placeholder here
+
   for (const NodeDef& node : gdef.node()) {
     if (static_nodes.find(&node) == static_nodes.end()) {
       NodeDef* new_node = dynamic_graph_def.add_node();
@@ -127,7 +196,7 @@ void StaticShapeCluteringStrategy::Run(
     }
   }
 
-  // TODO: tf_signature ???
+  // TODO: Add tf_signature
 }
 
 void StaticShapeCluteringStrategy::Run(
@@ -161,6 +230,223 @@ void StaticShapeCluteringStrategy::Run(
       clustered_graph_info);
 }
 
+void StaticShapeCluteringStrategy::GetDynamicAndStaticSignatureDef(
+    const MetaGraphDef& mgdef,
+    std::map<string, SignatureDef>* dynamic_sdef,
+    std::map<string, SignatureDef>* static_sdef) {
+  Graph graph(OpRegistry::Global());
+  GraphConstructorOptions opts;
+  opts.allow_internal_ops = true;
+  opts.allow_internal_ops = true;
+ 
+  Status s = ConvertGraphDefToGraph(opts, mgdef.graph_def(), &graph);
+  if (!s.ok()) {
+    LOG(FATAL) << "can not convert graphdef to graph, " << s.error_message();
+  }
+  std::unordered_map<std::string, Node*> nodes_map;
+  for (Node* n : graph.nodes()) {
+    nodes_map[n->name()] = n;
+  }
+
+  // maybe have many signature_defs in the meta graphdef
+  for (auto sdef : mgdef.signature_def()) {
+    std::vector<std::string> inputs;
+    std::vector<std::string> outputs;
+    // filter the dupilication ops, like
+    // key: "in_A:0" and key: "in_A:1",
+    std::unordered_set<std::string> existed;
+    for (auto input : sdef.second.inputs()) {
+      // convert "input_example_tensor:0" to "input_example_tensor"
+      std::string name = input.second.name();
+      size_t offset = name.find(":");
+      name = name.substr(0, offset);
+      if (existed.find(name) != existed.end()) continue;
+      existed.insert(name);
+      inputs.push_back(name);
+    }
+
+    existed.clear();
+    for (auto output : sdef.second.outputs()) {
+      // convert "Reshape_2:0" to "Reshape_2"
+      std::string name = output.second.name();
+      size_t offset = name.find(":");
+      name = name.substr(0, offset);
+      if (existed.find(name) != existed.end()) continue;
+      existed.insert(name);
+      outputs.push_back(name);
+    }
+
+    // get those ops which will be insert into static graphdef
+    std::unordered_set<std::string> static_ops_name;
+    GetStaticGraphOps(mgdef.graph_def(), inputs, outputs, &static_ops_name);
+
+    std::string signature_def_key(sdef.first);
+    // should create a static graphdef
+    if (static_ops_name.size() > 0) {
+      (*dynamic_sdef)[signature_def_key] = sdef.second;
+      (*static_sdef)[signature_def_key] = sdef.second;
+      (*dynamic_sdef)[signature_def_key].clear_inputs();
+      (*dynamic_sdef)[signature_def_key].clear_outputs();
+      (*static_sdef)[signature_def_key].clear_inputs();
+      (*static_sdef)[signature_def_key].clear_outputs();
+
+      // 1) set signature_def output of static/dynamic graphdef
+      for (auto output : sdef.second.outputs()) {
+        std::string name = output.second.name();
+        size_t offset = name.find(":");
+        name = name.substr(0, offset);
+        if (static_ops_name.find(name) != static_ops_name.end()) {
+          (*(*static_sdef)[signature_def_key].mutable_outputs())[output.first] =
+              output.second;
+        } else {
+          (*(*dynamic_sdef)[signature_def_key].mutable_outputs())[output.first] =
+              output.second;
+        }
+      }
+
+      // 2) set signature_def input of static/dynamic graphdef
+      for (auto input : sdef.second.inputs()) {
+        std::string name = input.second.name();
+        size_t offset = name.find(":");
+        name = name.substr(0, offset);
+        if (static_ops_name.find(name) != static_ops_name.end()) {
+          (*(*static_sdef)[signature_def_key].mutable_inputs())[input.first] =
+              input.second;
+        } else {
+          (*(*dynamic_sdef)[signature_def_key].mutable_inputs())[input.first] =
+              input.second;
+        }
+      }
+ 
+      std::unordered_map<std::string, const NodeDef*> nodes;
+      for (const NodeDef& node : mgdef.graph_def().node()) {
+        nodes[node.name()] = &node;
+      }
+
+      // 3) create signature_def of those ops connect dynamic and static graph
+      for (auto& op_name : static_ops_name) {
+        for (std::string in_name : nodes[op_name]->input()) {
+          // NOTE(jiankeng.pt): NO control edge here, so no need to consider '^AAA' case
+          auto offset = in_name.find(":");
+          in_name = in_name.substr(0, offset);
+          // the node named 'in_name' in dynamic graph,
+          // so need add the node into the input signature of static graph,
+          // and add it into the output signature of dynamic graph.
+          if (static_ops_name.find(in_name) == static_ops_name.end()) {
+            std::vector<std::vector<int>> shapes;
+            NodeDef* tmp_in_def = const_cast<NodeDef*>(nodes[in_name]);
+            AttrValue attr_value = (*tmp_in_def->mutable_attr())["_output_shapes"];
+            int output_tensor_count = -1;
+            Status s = AttrValueHasType(attr_value, "list(shape)");
+            if (!s.ok()) {
+              s = AttrValueHasType(attr_value, "shape");
+              if (!s.ok()) {
+                LOG(FATAL) << "Can not found the _output_shapes attr, "
+                           << "we dont know the output tensor count.";
+              }
+              std::vector<int> op_shape;
+              op_shape.push_back(attr_value.shape().dim().size());
+              shapes.push_back(op_shape);
+              output_tensor_count = 1;
+            } else {
+              output_tensor_count = 0;
+              for (const auto& curr_shape : attr_value.list().shape()) {
+                ++output_tensor_count;
+                std::vector<int> op_shape;
+                for (auto d : curr_shape.dim()) {
+                  op_shape.push_back(d.size());
+                }
+                shapes.push_back(op_shape);
+              }
+            }
+
+            // add signature
+            std::string input_base_name = "static_sig_inputs_" + in_name + "_";
+            std::string output_base_name = "dynamic_sig_outputs_" + in_name + "_";
+            for (auto i = 0; i < output_tensor_count; ++i) {
+              std::string target_name = in_name + ":" + std::to_string(i);
+              TensorInfo tinfo;
+              tinfo.set_name(target_name);
+              tinfo.set_dtype(nodes_map[in_name]->output_type(i));
+              for (size_t j = 0; j < shapes[i].size(); ++j) {
+                tinfo.mutable_tensor_shape()->add_dim()->set_size(shapes[i][j]);
+              }
+
+              // input signature for static graph
+              std::string in_key_name = input_base_name + std::to_string(i);
+              (*(*static_sdef)[signature_def_key].mutable_inputs())[in_key_name] = tinfo;
+
+              // output signature for dynamic graph
+              std::string out_key_name = output_base_name + std::to_string(i);
+              (*(*dynamic_sdef)[signature_def_key].mutable_outputs())[out_key_name] = tinfo;
+            }
+          }
+        }
+      }
+    } else {
+      (*dynamic_sdef)[signature_def_key] = sdef.second;
+      (*static_sdef)[signature_def_key] = SignatureDef();
+    }
+  }
+}
+
+void StaticShapeCluteringStrategy::GetDynamicAndStaticMetaGraphDef(
+    const MetaGraphDef& mgdef,
+    MetaGraphDef* dynamic_mgdef,
+    MetaGraphDef* static_mgdef) {
+  std::map<string, SignatureDef> dynamic_sdef, static_sdef;
+  GetDynamicAndStaticSignatureDef(mgdef, &dynamic_sdef, &static_sdef);
+
+  *dynamic_mgdef = mgdef;
+  dynamic_mgdef->clear_signature_def();
+  auto dyn_sig_def = dynamic_mgdef->mutable_signature_def();
+  for (auto sdef : dynamic_sdef) {
+    (*dyn_sig_def)[sdef.first] = sdef.second;
+  }
+
+  *static_mgdef = mgdef;
+  static_mgdef->clear_signature_def();
+  auto sta_sig_def = static_mgdef->mutable_signature_def();
+  for (auto sdef : static_sdef) {
+    (*sta_sig_def)[sdef.first] = sdef.second;
+  }
+}
+
+void StaticShapeCluteringStrategy::Run(
+    const std::string& tag,
+    const SavedModel& saved_model,
+    ClusteredGraphInfo* clustered_graph_info) {
+  clustered_graph_info->tf_saved_model.set_saved_model_schema_version(
+      saved_model.saved_model_schema_version());
+  clustered_graph_info->iree_saved_model.set_saved_model_schema_version(
+      saved_model.saved_model_schema_version());
+
+  // maybe have many meta_graphs here, select the
+  // meta graphdef according the tag.
+  for (const MetaGraphDef& mgdef : saved_model.meta_graphs()) {
+    bool is_target = false;
+    for (auto t : mgdef.meta_info_def().tags()) {
+      if (t == tag) {
+        is_target = true;
+        break;
+      }
+    }
+    if (!is_target) continue;
+
+    MetaGraphDef* dynamic_mgdef =
+      clustered_graph_info->tf_saved_model.add_meta_graphs();
+    MetaGraphDef* static_mgdef =
+      clustered_graph_info->iree_saved_model.add_meta_graphs();
+
+    GetDynamicAndStaticMetaGraphDef(mgdef, dynamic_mgdef, static_mgdef);
+
+    break;
+  }
+  // return:
+  // clustered_graph_info->tf_saved_model
+  // clustered_graph_info->iree_saved_model
+}
+
 ClusteredGraphInfo ClusteringGraphDef(
     const MetaGraphDef& mgdef,
     CluteringStrategy* cluster_strategy) {
@@ -173,6 +459,34 @@ ClusteredGraphInfo ClusteringGraphDef(
   cluster_strategy->Run(mgdef, &info);
 
   return info;
+}
+
+ClusteredGraphInfo ClusteringGraphDef(
+    const std::string& tag,
+    const SavedModel& saved_model,
+    CluteringStrategy* cluster_strategy) {
+  static StaticShapeCluteringStrategy static_strategy;
+  if (cluster_strategy == nullptr) {
+    cluster_strategy = &static_strategy;
+  }
+
+  ClusteredGraphInfo info;
+  cluster_strategy->Run(tag, saved_model, &info);
+
+  return info;
+}
+
+ClusteredGraphInfo ClusteringGraphDef(
+    const std::string& tag,
+    const std::string& saved_model_str,
+    CluteringStrategy* cluster_strategy) {
+  SavedModel saved_model;
+  if (!tensorflow::protobuf::TextFormat::ParseFromString(
+      saved_model_str, &saved_model)) {
+    LOG(FATAL) << "Can not parse saved model from text.";
+  }
+
+  return ClusteringGraphDef(tag, saved_model, cluster_strategy);
 }
 
 } // namespace odl_processor
