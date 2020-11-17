@@ -37,22 +37,22 @@ class SavedModelImpl : public ModelImpl {
 
 class ModelImplFactory {
  public:
-  ModelImpl* Create() {
+  static ModelImpl* Create() {
     return new SavedModelImpl();
   }
 };
 
 Model::Model(const ModelConfig& config) {
-  model_impl_ = ModelImplFactory::Create();
+  impl_ = ModelImplFactory::Create();
 }
 
 Status Model::Load(const char* model_dir) {
-  return model_impl_->Load(model_dir);
+  return impl_->Load(model_dir);
 }
 
 Status Model::Predict(const eas::PredictRequest& req,
                       const eas::PredictResponse& resp) {
-  return model_impl_->Predict(req, resp);
+  return impl_->Predict(req, resp);
 }
 
 } // processor
