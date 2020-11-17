@@ -6,14 +6,19 @@
 #include <vector>
 namespace tensorflow {
 class Tensor;
+class TensorInfo;
 }  // namespace tensorflow
 
 using tensorflow::Tensor;
+using tensorflow::TensorInfo;
+
 class RunRequest {
  public:
   ~RunRequest();
   RunRequest();
   void SetSignatureName(const std::string& value);
+
+  void AddFeed(const std::string& alias, const TensorInfo& tensor_info) {}
   // DT_FLOAT
   void AddFeed(const std::string& inputAliasName, std::vector<long long>& shape,
                std::vector<float>& content);

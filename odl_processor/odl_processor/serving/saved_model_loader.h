@@ -31,6 +31,16 @@ using tensorflow::SavedModelBundle;
 using tensorflow::serving::SessionBundleConfig;
 using tensorflow::eas::PredictRequest;
 using tensorflow::eas::PredictResponse;
+
+namespace processor {
+struct Signature {
+  std::shared_ptr<SignatureDef> signature_def;
+  std::string signature_name;
+
+  Signature(SignatureDef* sig_def, const std::string& name);
+};
+}
+
 class SavedModelLoader {
  public:
   ~SavedModelLoader();
@@ -43,7 +53,7 @@ class SavedModelLoader {
   int LoadModel(const std::string&);
   int Predict(const PredictRequest&, PredictResponse*);
   int Predict(const RunRequest&, RunResponse*);
-  std::string GetModelSignatureInfo();
+  processor::Signature* GetModelSignatureInfo();
 
  private:
   int SavedModelPredict(const PredictRequest&, PredictResponse*);
@@ -66,7 +76,7 @@ class SavedModelLoader {
   SessionBundleConfig* config;
   bool is_saved_model;
   bool is_freeze_model;
-  std::string model_signature_info;
+  processor::Signature* model_signature_info;
 };
 
 #endif
