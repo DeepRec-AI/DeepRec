@@ -2,15 +2,16 @@
 #include "run_predict.h"
 #include "saved_model_loader.h"
 #include "odl_processor/serving/tf_predict.pb.h"
-#include "json.hpp"
+#include "tensorflow/cc/saved_model/loader.h"
+#include "tensorflow/cc/saved_model/signature_constants.h"
+#include "tensorflow/cc/saved_model/tag_constants.h"
+#include "include/json/json.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-
-using json = nlohmann::json;
 
 extern "C" {
 void *initialize(const char *model_entry, const char *model_config,
@@ -20,101 +21,51 @@ void *initialize(const char *model_entry, const char *model_config,
   int inter_threads = 0, intra_threads = 0, schedule_threads = 0;
   bool warm_up = false;
 
-  try {
-    char *schedule_threads_str = getenv("SCHEDULABLE_CPUS");
-    if (schedule_threads_str != NULL) {
-      schedule_threads = atoi(schedule_threads_str);
+  char *schedule_threads_str = getenv("SCHEDULABLE_CPUS");
+  if (schedule_threads_str != NULL) {
+    schedule_threads = atoi(schedule_threads_str);
+  }
+  if (strlen(model_config) != 0) {
+    Json::Reader reader;
+    Json::Value config;
+    if (!reader.parse(model_config, config)) {
+      std::cout << "Parse model_config error."; 
+      *state = -1;
+      return NULL;
     }
-    if (strlen(model_config) != 0) {
-      auto config = json::parse(model_config);
-      if (config.count("inter_op_parallelism_threads") > 0) {
-        inter_threads = config["inter_op_parallelism_threads"];
-      }
-      if (config.count("intra_op_parallelism_threads") > 0) {
-        intra_threads = config["intra_op_parallelism_threads"];
-      }
-      if (config.count("enable_warm_up") > 0) {
-        warm_up = config["enable_warm_up"];
-      }
+
+    if (!config["inter_op_parallelism_threads"].isNull()) {
+      inter_threads = config["inter_op_parallelism_threads"].asInt();
     }
-    if (inter_threads <= 0) {
-      inter_threads = schedule_threads / 2;
+    if (!config["intra_op_parallelism_threads"].isNull()) {
+      intra_threads = config["intra_op_parallelism_threads"].asInt();
     }
-    if (intra_threads <= 0) {
-      intra_threads = schedule_threads / 2;
+    if (!config["enable_warm_up"].isNull()) {
+      warm_up = config["enable_warm_up"].asBool();
     }
-  } catch (std::exception e) {
-    std::cout << "Parse model_config error: " << e.what() << std::endl;
-    *state = -1;
-    return NULL;
+  }
+
+  if (inter_threads <= 0) {
+    inter_threads = schedule_threads / 2;
+  }
+  if (intra_threads <= 0) {
+    intra_threads = schedule_threads / 2;
   }
 
   SavedModelLoader *loader = new SavedModelLoader(inter_threads, intra_threads);
   *state = loader->LoadModel(model_entry);
+
   if (warm_up) {
-    std::cout << "Load model successfully, start to warm up!" << std::endl;
-    try {
-      RunRequest request;
-      RunResponse response;
-      std::string model_signature_info = loader->GetModelSignatureInfo();
-      auto signature = json::parse(model_signature_info.c_str());
-      if (signature.count("signature_name") > 0) {
-        request.SetSignatureName(signature["signature_name"]);
-      }
-      if (signature.count("inputs") > 0) {
-        auto inputs = signature["inputs"];
-        for (json::iterator it = inputs.begin(); it != inputs.end(); it++) {
-          std::vector<long long> shape;
-          auto input_shape = (*it)["shape"];
-          int content_size = 1;
-          for (json::iterator iter = input_shape.begin(); iter != input_shape.end(); iter++) {
-            if ((*iter) > 0) {
-              shape.push_back(*iter);
-              content_size *= (int)(*iter);
-            } else {
-              shape.push_back(1);
-            }
-          }
-          if ((*it)["type"] == "DT_FLOAT") {
-            std::vector<float> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_DOUBLE") {
-            std::vector<double> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_INT32") {
-            std::vector<int> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_UINT8") {
-            std::vector<unsigned char> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_INT8") {
-            std::vector<signed char> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_INT64") {
-            std::vector<long long> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_BOOL") {
-            std::vector<bool> content;
-            content.resize(content_size);
-            request.AddFeed((*it)["name"], shape, content);
-          } else if ((*it)["type"] == "DT_STRING") {
-            std::vector<std::string> content;
-            for (int i = 0; i < content_size; i++) {
-              content.push_back("PACKAGE_611");
-            }
-            request.AddFeed((*it)["name"], shape, content);
-          }
-        }
-      }
-      loader->Predict(request, &response);
-    } catch (std::exception &ex) {
+    RunRequest request;
+    RunResponse response;
+
+    auto signature = loader->GetModelSignatureInfo();
+    request.SetSignatureName(signature->signature_name);
+
+    for (auto it : signature->signature_def->inputs()) {
+      request.AddFeed(it.first, it.second);
     }
+    loader->Predict(request, &response);
     std::cout << "Warm up successfully, start serving" << std::endl;
   }
   return loader;
@@ -124,18 +75,12 @@ int process(void *model_buf, const void *input_data, int input_size,
             void **output_data, int *output_size) {
   SavedModelLoader *loader = static_cast<SavedModelLoader *>(model_buf);
   if (input_size == 0) {
-    std::string model_signature_info = loader->GetModelSignatureInfo();
-    if (model_signature_info.empty()) {
-      const char *errmsg = "input data should not be empty";
-      *output_data = strndup(errmsg, strlen(errmsg));
-      *output_size = strlen(errmsg);
-      return 400;
-    } else {
-      *output_data =
-          strndup(model_signature_info.c_str(), model_signature_info.length());
-      *output_size = model_signature_info.length();
-      return 200;
-    }
+    auto model_signature_info = loader->GetModelSignatureInfo();
+    auto model_signature_str = model_signature_info->signature_def->DebugString();
+    *output_data =
+        strndup(model_signature_str.c_str(), model_signature_str.length());
+    *output_size = model_signature_str.length();
+    return 200;
   }
 
   PredictRequest request;

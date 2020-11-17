@@ -131,6 +131,11 @@ void StringReplace(std::string& strBig, const std::string& strsrc,
 }
 }  // namespace
 
+namespace processor {
+Signature::Signature(SignatureDef* sig_def, const std::string& name) :
+  signature_def(sig_def), signature_name(name) {}
+}
+
 SavedModelLoader::~SavedModelLoader() {
   delete saved_model_bundle;
   delete freeze_bundle;
@@ -167,7 +172,7 @@ SavedModelLoader::SavedModelLoader(int inter_op_parallelism_threads,
         "BFC");
 }
 
-std::string SavedModelLoader::GetModelSignatureInfo() {
+processor::Signature* SavedModelLoader::GetModelSignatureInfo() {
   return model_signature_info;
 }
 
@@ -208,72 +213,10 @@ int SavedModelLoader::LoadModel(const std::string& path) {
     for (; iter != saved_model_bundle->meta_graph_def.signature_def().end();
          iter++) {
       if ((iter->second).method_name() == kPredictMethodName) {
-        model_signature << "{";
-        model_signature << "\"signature_name\": \"" << iter->first << "\",";
-        model_signature << "\"inputs\": [";
-        LOG(INFO) << "Inputs:";
-        for (auto& input : (iter->second).inputs()) {
-          model_signature << "{";
-          model_signature << "\"name\": \"" << input.first << "\",";
-          std::stringstream signature_input_info;
-          signature_input_info << input.first + ": [";
-          model_signature << "\"shape\": [";
-          int dims = input.second.tensor_shape().dim_size();
-          if (dims > 0) {
-            for (int i = 0; i < dims - 1; i++) {
-              signature_input_info << input.second.tensor_shape().dim(i).size();
-              model_signature << input.second.tensor_shape().dim(i).size()
-                              << ", ";
-              signature_input_info << ", ";
-            }
-            signature_input_info
-                << input.second.tensor_shape().dim(dims - 1).size();
-            model_signature << input.second.tensor_shape().dim(dims - 1).size();
-          }
-          signature_input_info << "]; ";
-          model_signature << "],";
-          signature_input_info << dtype_to_string[input.second.dtype()];
-          model_signature << "\"type\": \""
-                          << dtype_to_string[input.second.dtype()] << "\"";
-          LOG(INFO) << signature_input_info.str();
-          model_signature << "},";
-        }
-        model_signature << "],";
-        LOG(INFO) << "Outputs:";
-        model_signature << "\"outputs\": [";
-        for (auto& output : (iter->second).outputs()) {
-          model_signature << "{";
-          model_signature << "\"name\": \"" << output.first << "\",";
-          std::stringstream signature_output_info;
-          signature_output_info << output.first + ": [";
-          model_signature << "\"shape\": [";
-          int dims = output.second.tensor_shape().dim_size();
-          if (dims > 0) {
-            for (int i = 0; i < dims - 1; i++) {
-              signature_output_info
-                  << output.second.tensor_shape().dim(i).size();
-              model_signature << output.second.tensor_shape().dim(i).size()
-                              << ", ";
-              signature_output_info << ", ";
-            }
-            signature_output_info
-                << output.second.tensor_shape().dim(dims - 1).size();
-            model_signature
-                << output.second.tensor_shape().dim(dims - 1).size();
-          }
-          signature_output_info << "]; ";
-          model_signature << "],";
-          signature_output_info << dtype_to_string[output.second.dtype()];
-          model_signature << "\"type\": \""
-                          << dtype_to_string[output.second.dtype()] << "\"";
-          LOG(INFO) << signature_output_info.str();
-          model_signature << "},";
-        }
-        model_signature << "]}";
+        model_signature_info = new processor::Signature(
+            new SignatureDef(iter->second), iter->first);
       }
     }
-    model_signature_info = model_signature.str();
-    StringReplace(model_signature_info, "},]", "}]");
   } else {
     LOG(ERROR)
         << "SessionBundle or SavedModel not found at specified export location:"
@@ -426,16 +369,6 @@ int SavedModelLoader::SavedModelPredict(const RunRequest& request,
         "Expected at least one output Tensor in prediction signature";
     throw std::runtime_error(error_message);
   }
-  /*
-  if (request.GetInputs().size() != signature.inputs().size()) {
-    LOG(ERROR) << "The number of input tensors: " << request.GetInputs().size()
-               << ", which should be: " << signature.inputs().size();
-    stream.str("");
-    stream << "The number of input tensors: " << request.GetInputs().size()
-           << ", which should be: " << signature.inputs().size();
-    throw std::runtime_error(stream.str());
-  }
-  */
   const std::map<std::string, Tensor*>& inputTensors = request.GetInputs();
   inputs.reserve(inputTensors.size());
   for (auto& input : inputTensors) {
@@ -610,16 +543,6 @@ int SavedModelLoader::PreProcessPrediction(
         "Expected at least one output Tensor in prediction signature";
     throw std::runtime_error(error_message);
   }
-  /*
-  if (request.inputs().size() != signature.inputs().size()) {
-    LOG(ERROR) << "The number of input tensors: " << request.inputs().size()
-               << ", which should be: " << signature.inputs().size();
-    stream.str("");
-    stream << "The number of input tensors: " << request.inputs().size()
-           << ", which should be: " << signature.inputs().size();
-    throw std::runtime_error(stream.str());
-  }
-  */
   for (auto& input : request.inputs()) {
     const std::string& alias = input.first;
     auto iter = signature.inputs().begin();
