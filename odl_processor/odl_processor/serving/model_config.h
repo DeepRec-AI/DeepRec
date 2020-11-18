@@ -2,11 +2,13 @@
 #define TENSORFLOW_SERVING_MODEL_CONFIG_H
 
 #include <string>
+#include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
 namespace processor {
 struct ModelConfig {
   std::string signature_name;
+
   int inter_threads;
   int intra_threads;
   bool warmup;
@@ -14,7 +16,7 @@ struct ModelConfig {
 
 class ModelConfigFactory {
  public:
-  static ModelConfig* Create(const char* model_config);
+  static Status Create(const char* model_config, ModelConfig** config);
 };
 
 } // processor

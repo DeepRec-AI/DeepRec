@@ -125,7 +125,7 @@ class GraphOptimizer {
  public:
   explicit GraphOptimizer() {}
   virtual ~GraphOptimizer() {}
-  virtual void Optimize() = 0;
+  virtual Status Optimize() = 0;
 };
 
 class SavedModelOptimizer : public GraphOptimizer {
@@ -133,7 +133,7 @@ class SavedModelOptimizer : public GraphOptimizer {
   SavedModelOptimizer(const std::string& signature_name,
                       MetaGraphDef* mgdef);
   ~SavedModelOptimizer();
-  void Optimize();
+  Status Optimize() override;
 
  private:
   // TODO: Only support EV now
