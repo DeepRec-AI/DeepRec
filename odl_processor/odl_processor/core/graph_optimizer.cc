@@ -494,9 +494,9 @@ ClusteredGraphInfo ClusteringGraphDef(
 /// Tensorflow
 
 SavedModelOptimizer::SavedModelOptimizer(
-    SavedModelBundle* saved_model_bundle,
-    const GraphOptimizerOptions& opts)
-  : GraphOptimizer(opts), saved_model_bundle_(saved_model_bundle) {
+    const std::string& signature_name,
+    MetaGraphDef* mgdef)
+  : signature_name_(signature_name), meta_graph_def_(mgdef) {
 }
 
 SavedModelOptimizer::~SavedModelOptimizer() {
@@ -545,7 +545,7 @@ void ReplaceKVOpsWithLookupOrInsertOps (
   TF_CHECK_OK(status);
 
   // Add input egdes
-  for (int i = 0; i < input_info.size(); ++i) {
+  for (size_t i = 0; i < input_info.size(); ++i) {
     graph->AddEdge(input_info[i].src_node,
                    input_info[i].src_slot,
                    remote_lookup_node, i);
@@ -569,7 +569,7 @@ void SavedModelOptimizer::ConvertKVOps() {
   opts.allow_internal_ops = true;
   opts.allow_internal_ops = true;
   Status s = ConvertGraphDefToGraph(
-      opts, saved_model_bundle_->meta_graph_def.graph_def(), &graph);
+      opts, meta_graph_def_->graph_def(), &graph);
   if (!s.ok()) {
     LOG(FATAL) << "can not convert graphdef to graph, " << s.error_message();
   }
@@ -642,7 +642,7 @@ void SavedModelOptimizer::ConvertKVOps() {
   }
 
   // replace the graph def in saved_model_bundle
-  graph.ToGraphDef(saved_model_bundle_->meta_graph_def.mutable_graph_def());
+  graph.ToGraphDef(meta_graph_def_->mutable_graph_def());
 }
 
 void SavedModelOptimizer::RewriteDefaultValueOp() {
@@ -650,7 +650,25 @@ void SavedModelOptimizer::RewriteDefaultValueOp() {
 }
 
 void SavedModelOptimizer::FreezeSignatureDef() {
+  std::map<string, SignatureDef> new_signature_def;
+  bool found = false;
+  for (auto sdef : meta_graph_def_->signature_def()) {
+    if (sdef.first == signature_name_) {
+      new_signature_def[signature_name_] = sdef.second;
+      found = true;
+      break;
+    }
+  }
 
+  if (!found) {
+    LOG(FATAL) << "Not found the signature_def with user specified signature name.";
+  }
+
+  meta_graph_def_->clear_signature_def();
+  auto sig_def = meta_graph_def_->mutable_signature_def();
+  for (auto sdef : new_signature_def) {
+    (*sig_def)[sdef.first] = sdef.second;
+  }
 }
 
 } // namespace processor

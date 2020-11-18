@@ -110,10 +110,8 @@ class SavedModelImpl : public ModelImpl {
  
  private:
   void GraphOptimize() override {
-    GraphOptimizerOptions opts;
-    // TODO: please set flag 'cache_sparse_locally',
-    // can get the value from config, default is false.
-    optimizer_ = new SavedModelOptimizer(saved_model_bundle_, opts);
+    optimizer_ = new SavedModelOptimizer(
+      /*signature name*/"", &saved_model_bundle_->meta_graph_def);
     optimizer_->Optimize();
   }
 

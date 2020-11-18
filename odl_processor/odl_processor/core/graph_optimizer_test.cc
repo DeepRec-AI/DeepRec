@@ -893,11 +893,41 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   n_lookup_find_0->add_input("Uniue");
   n_lookup_find_0->add_input("default/Const");
 
-  // testing
+  // Fake signature def
 
   SavedModelBundle saved_model_bundle;
   *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
-  SavedModelOptimizer opt(&saved_model_bundle, GraphOptimizerOptions());
+  auto sdef_map = saved_model_bundle.meta_graph_def.mutable_signature_def();
+
+  SignatureDef sdef;
+  TensorInfo tinfo_A0;
+  tinfo_A0.set_name("A:0");
+  tinfo_A0.set_dtype(DT_FLOAT);
+  tinfo_A0.mutable_tensor_shape()->add_dim()->set_size(-1);
+  (*sdef.mutable_inputs())["in_A0"] = tinfo_A0;
+  TensorInfo tinfo_F;
+  tinfo_F.set_name("F:0");
+  tinfo_F.set_dtype(DT_FLOAT);
+  tinfo_F.mutable_tensor_shape()->add_dim()->set_size(1);
+  (*sdef.mutable_outputs())["out_F"] = tinfo_F;
+  (*sdef_map)["serving_default"] = sdef;
+
+  SignatureDef sdef2;
+  TensorInfo tinfo_A02;
+  tinfo_A02.set_name("A:0");
+  tinfo_A02.set_dtype(DT_FLOAT);
+  tinfo_A02.mutable_tensor_shape()->add_dim()->set_size(-1);
+  (*sdef2.mutable_inputs())["in_A0"] = tinfo_A0;
+  TensorInfo tinfo_F2;
+  tinfo_F2.set_name("F:0");
+  tinfo_F2.set_dtype(DT_FLOAT);
+  tinfo_F2.mutable_tensor_shape()->add_dim()->set_size(1);
+  (*sdef2.mutable_outputs())["out_F"] = tinfo_F2;
+  (*sdef_map)["serving_x"] = sdef2;
+
+  // testing all ...
+
+  SavedModelOptimizer opt("serving_x", &saved_model_bundle.meta_graph_def);
   opt.Optimize();
 
   std::unordered_map<std::string, NodeDef> nodes;
@@ -914,6 +944,12 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   EXPECT_TRUE(nodes.find("KvResourceGather_0") != nodes.end());
   n = nodes["KvResourceGather_0"];
   EXPECT_TRUE(n.op() == "KvLookup");
+
+
+  EXPECT_TRUE(saved_model_bundle.meta_graph_def.signature_def().size() == 1);
+  for (auto sdef : saved_model_bundle.meta_graph_def.signature_def()) {
+    EXPECT_TRUE(sdef.first == "serving_x");
+  }
 }
 
 } // namespace processor
