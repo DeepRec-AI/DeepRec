@@ -17,7 +17,7 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
 
 std::unordered_map<std::string, bool>
 GetNodesHasControlFlowInputs(const GraphDef& gdef) {
@@ -92,6 +92,6 @@ std::unordered_map<std::string, bool> GetNodesHasDynamicShapeMap(const GraphDef&
   return result;
 }
 
-} // namespace odl_processor
+} // namespace processor
 } // namespace tensorflow
 

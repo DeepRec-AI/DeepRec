@@ -28,7 +28,7 @@ limitations under the License.
 // bazel  build //odl_processor/e2e_testing:graph_optimizer_e2e_test 
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
 
 namespace {
 
@@ -69,5 +69,5 @@ extern "C" int main(int argc, char** argv) {
 }
 
 
-} // namespace odl_processor
+} // namespace processor
 } // namespace tensorflow
