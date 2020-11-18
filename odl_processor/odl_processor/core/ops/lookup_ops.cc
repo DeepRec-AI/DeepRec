@@ -27,6 +27,7 @@ REGISTER_OP("KvLookup")
     .Input("default_value: dtype")
     .Output("output: dtype")
     .Attr("var_name: string")
+    .Attr("dim_len: int")
     .Attr("dtype: type")
     .Attr("Tkeys: {int64,string}")
     .SetShapeFn(shape_inference::UnknownShape);
@@ -37,6 +38,7 @@ REGISTER_OP("KvInsert")
     .Input("prefix: string")
     .Input("tensor_name: string")
     .Attr("var_name: string")
+    .Attr("dim_len: int")
     .SetShapeFn(shape_inference::UnknownShape);
 
 } // namespace processor

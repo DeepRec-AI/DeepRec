@@ -562,6 +562,23 @@ void ReplaceKVOpsWithLookupOrInsertOps (
   graph->RemoveNode(node);
 }
 
+int GetShapeValue(Node* node) {
+  AttrValue* dim_len_value =
+      const_cast<AttrValue*>(node->attrs().Find("shape"));
+  Status s = AttrValueHasType(*dim_len_value, "shape");
+  if (!s.ok()) {
+    LOG(FATAL) << "Miss shape attr in the KvVarHandleOp, "
+               << node->DebugString();
+  }
+
+  if (dim_len_value->shape().dim().size() == -1) {
+    LOG(FATAL) << "Dim value of the shape in the KvVarHandleOp is unknown."
+               << node->DebugString();
+  }
+
+  return dim_len_value->shape().dim().size();
+}
+
 } // namespace
 
 void SavedModelOptimizer::ConvertKVOps() {
@@ -609,6 +626,12 @@ void SavedModelOptimizer::ConvertKVOps() {
 
       AttrValue var_name_value;
       SetAttrValue(input_edges[0]->src()->name(), &var_name_value);
+
+      // get resource shape attr
+      int dim_len_value = GetShapeValue(input_edges[0]->src());
+      AttrValue dim_len_value_int;
+      SetAttrValue(dim_len_value, &dim_len_value_int);
+
       AttrValue* dtype_value =
         const_cast<AttrValue*>(node->attrs().Find("dtype"));
       AttrValue* tkeys_value =
@@ -617,6 +640,7 @@ void SavedModelOptimizer::ConvertKVOps() {
         LOG(FATAL) << "Miss dtype or Tkeys attr, " << node->DebugString();
       }
       attr_info["var_name"] = &var_name_value;
+      attr_info["dim_len"] = &dim_len_value_int;
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
 
@@ -636,6 +660,12 @@ void SavedModelOptimizer::ConvertKVOps() {
       AttrValue var_name_value;
       SetAttrValue(input_edges[1]->src()->name(), &var_name_value);
       attr_info["var_name"] = &var_name_value;
+
+      // get resource shape attr
+      int dim_len_value = GetShapeValue(input_edges[1]->src());
+      AttrValue dim_len_value_int;
+      SetAttrValue(dim_len_value, &dim_len_value_int);
+      attr_info["dim_len"] = &dim_len_value_int;
 
       ReplaceKVOpsWithLookupOrInsertOps(
           "KvInsert", node, &graph, input_info, attr_info);

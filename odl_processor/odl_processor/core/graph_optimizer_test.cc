@@ -819,6 +819,11 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   NodeDef* n_var_0 = graph_def.add_node();
   n_var_0->set_name("var_0");
   n_var_0->set_op("KvVarHandleOp");
+  AttrValue value_shape;
+  tensorflow::TensorShapeProto tshape_proto;
+  tshape_proto.add_dim()->set_size(1);
+  *value_shape.mutable_shape() = tshape_proto;
+  (*n_var_0->mutable_attr())["shape"] = value_shape;
 
 
   // KvResourceImportV2
