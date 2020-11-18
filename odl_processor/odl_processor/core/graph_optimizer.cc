@@ -503,7 +503,7 @@ SavedModelOptimizer::~SavedModelOptimizer() {
 
 }
 
-void SavedModelOptimizer::Optimize() {
+Status SavedModelOptimizer::Optimize() {
 
   FreezeSignatureDef();
 
@@ -515,6 +515,7 @@ void SavedModelOptimizer::Optimize() {
   RewriteDefaultValueOp();
 
   // Add other passes here
+  return Status::OK();
 }
 
 namespace {
