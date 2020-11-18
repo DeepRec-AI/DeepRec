@@ -4,25 +4,34 @@
 #include "tensorflow/core/lib/core/status.h"
 #include "model_config.h"
 
+class RunRequest;
+class RunResponse;
 namespace tensorflow {
 namespace eas {
   class PredictRequest;
   class PredictResponse;
 }
-
 namespace processor {
-
 class ModelImpl;
 class Model {
  public:
-  Model(const ModelConfig& config);
+  Model(const char* model_config);
+  ~Model();
+
+  Model(const Model&) = delete;
+  Model& operator=(const Model&) = delete;
 
   Status Load(const char* model_dir);
-  Status Predict(const eas::PredictRequest& req,
-                 const eas::PredictResponse& resp);
+  Status Warmup();
+  
+  Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
+  Status Predict(const RunRequest& req, RunResponse* resp);
+
+  std::string DebugString();
 
  private:
   ModelImpl* impl_;
+  ModelConfig* config_;
 };
 
 } // processor

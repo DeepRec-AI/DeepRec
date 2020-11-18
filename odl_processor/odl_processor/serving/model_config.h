@@ -1,16 +1,20 @@
 #ifndef TENSORFLOW_SERVING_MODEL_CONFIG_H
 #define TENSORFLOW_SERVING_MODEL_CONFIG_H
 
+#include <string>
+
 namespace tensorflow {
 namespace processor {
 struct ModelConfig {
-  int inter_op_parallelism_threads;
-  int intra_op_parallelism_threads;
+  std::string signature_name;
+  int inter_threads;
+  int intra_threads;
+  bool warmup;
 };
 
 class ModelConfigFactory {
  public:
-  ModelConfig Create(const char* model_config);
+  static ModelConfig* Create(const char* model_config);
 };
 
 } // processor
