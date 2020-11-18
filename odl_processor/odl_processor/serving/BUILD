@@ -21,10 +21,12 @@ cc_library(
     name = "tf_processor_v1",
     srcs = ["tf_processor_v1.cc",
             "model_serving.cc",
+            "model_impl.cc",
             "model_config.cc",
             "run_predict.cc"],
     hdrs = ["tf_processor_v1.h",
             "model_serving.h",
+            "model_impl.h",
             "model_config.h",
             "run_predict.h"],
     deps = [
