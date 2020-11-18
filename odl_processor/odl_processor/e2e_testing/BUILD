@@ -1,6 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-cc_binary(
+cc_test(
     name = "graph_optimizer_e2e_test",
     srcs = ["graph_optimizer_e2e_test.cc"],
     deps = [
