@@ -8,7 +8,7 @@
 
 namespace tensorflow {
 namespace processor {
-/*namespace {
+namespace {
 struct Signature {
   std::shared_ptr<SignatureDef> signature_def;
   std::string signature_name;
@@ -16,18 +16,14 @@ struct Signature {
   Signature(SignatureDef* sig_def, const std::string& name) :
     signature_def(sig_def), signature_name(name) {
   }
-};*/
-//}
+};
+}
 
 class ModelImpl {
  public:
-  virtual Status Load(const char* model_dir) = 0;
-  virtual Status Predict(const eas::PredictRequest& req,
-                         const eas::PredictResponse& resp) = 0;
-  virtual void GraphOptimize() = 0;
   virtual ~ModelImpl() {}
-
   virtual Status Load(const char* model_dir) = 0;
+  virtual void GraphOptimize() = 0;
   virtual Status Predict(const eas::PredictRequest& req,
                          eas::PredictResponse* resp) = 0;
   virtual Status Predict(const RunRequest& req, RunResponse* resp) = 0;
