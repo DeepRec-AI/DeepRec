@@ -123,19 +123,15 @@ struct GraphOptimizerOptions {
 
 class GraphOptimizer {
  public:
-  explicit GraphOptimizer(
-      const GraphOptimizerOptions& opts) : opts_(opts) {}
-  virtual ~GraphOptimizer() {};
+  explicit GraphOptimizer() {}
+  virtual ~GraphOptimizer() {}
   virtual void Optimize() = 0;
-
- protected:
-  GraphOptimizerOptions opts_;
 };
 
 class SavedModelOptimizer : public GraphOptimizer {
  public:
-  SavedModelOptimizer(SavedModelBundle*,
-                      const GraphOptimizerOptions&);
+  SavedModelOptimizer(const std::string& signature_name,
+                      MetaGraphDef* mgdef);
   ~SavedModelOptimizer();
   void Optimize();
 
@@ -151,7 +147,8 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Remove unused signature def
   void FreezeSignatureDef();
 
-  SavedModelBundle* saved_model_bundle_ = nullptr; // not owned
+  std::string signature_name_;
+  MetaGraphDef* meta_graph_def_ = nullptr; // not owned
 };
 
 } // namespace processor
