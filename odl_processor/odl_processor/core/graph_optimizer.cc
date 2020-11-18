@@ -23,7 +23,9 @@ limitations under the License.
 #include "tensorflow/core/graph/graph_constructor.h"
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
+
+/// IREE
 
 namespace {
 
@@ -489,6 +491,168 @@ ClusteredGraphInfo ClusteringGraphDef(
   return ClusteringGraphDef(tag, saved_model, cluster_strategy);
 }
 
-} // namespace odl_processor
+/// Tensorflow
+
+SavedModelOptimizer::SavedModelOptimizer(
+    SavedModelBundle* saved_model_bundle,
+    const GraphOptimizerOptions& opts)
+  : GraphOptimizer(opts), saved_model_bundle_(saved_model_bundle) {
+}
+
+SavedModelOptimizer::~SavedModelOptimizer() {
+
+}
+
+void SavedModelOptimizer::Optimize() {
+
+  FreezeSignatureDef();
+
+  // For example:
+  // convert KvResourceGather to KvLookup
+  // convert KvResourceImportV2 to KvInsert
+  ConvertKVOps();
+
+  RewriteDefaultValueOp();
+
+  // Add other passes here
+}
+
+namespace {
+
+struct SrcInfo {
+  Node* src_node;
+  int src_slot;
+};
+
+void ReplaceKVOpsWithLookupOrInsertOps (
+    const std::string& remote_op_name,
+    Node* node, Graph* graph,
+    std::vector<SrcInfo>& input_info,
+    std::unordered_map<std::string, AttrValue*>& attr_info) {
+
+  // Create KvLookup/KvInsert op here and remove the node
+  NodeDef remote_def;
+  remote_def.set_name(node->name());
+  remote_def.set_op(remote_op_name);
+
+  // Set attrs
+  for (auto attr : attr_info) {
+    (*remote_def.mutable_attr())[attr.first] = *(attr.second);
+  }
+
+  Status status;
+  Node* remote_lookup_node = graph->AddNode(remote_def, &status);
+  TF_CHECK_OK(status);
+
+  // Add input egdes
+  for (int i = 0; i < input_info.size(); ++i) {
+    graph->AddEdge(input_info[i].src_node,
+                   input_info[i].src_slot,
+                   remote_lookup_node, i);
+  }
+
+  // Add output edges
+  for (const Edge* edge : node->out_edges()) {
+    graph->AddEdge(remote_lookup_node, edge->src_output(),
+                   edge->dst(), edge->dst_input());
+  }
+
+  // remove current node
+  graph->RemoveNode(node);
+}
+
+} // namespace
+
+void SavedModelOptimizer::ConvertKVOps() {
+  Graph graph(OpRegistry::Global());
+  GraphConstructorOptions opts;
+  opts.allow_internal_ops = true;
+  opts.allow_internal_ops = true;
+  Status s = ConvertGraphDefToGraph(
+      opts, saved_model_bundle_->meta_graph_def.graph_def(), &graph);
+  if (!s.ok()) {
+    LOG(FATAL) << "can not convert graphdef to graph, " << s.error_message();
+  }
+
+  // Add a placeholder for version which set by user.
+  NodeDef version_def;
+  version_def.set_name("odl_version");
+  version_def.set_op("Placeholder");
+  (*version_def.mutable_attr())["dtype"].set_type(DT_STRING);
+  Status status;
+  Node* version_node = graph.AddNode(version_def, &status);
+  TF_CHECK_OK(status);
+
+  // Find sparse lookup/Import ops and replace them
+  // with KvLookup and KvInsert
+  for (Node* node : graph.nodes()) {
+    // Get input edges
+    std::vector<const Edge*> input_edges;
+    // Check the edges' order
+    for (const Edge* edge : node->in_edges()) {
+      input_edges.push_back(edge);
+    }
+
+    std::vector<SrcInfo> input_info;
+    std::unordered_map<std::string, AttrValue*> attr_info;
+
+    if (node->op_def().name() == "KvResourceGather") {
+      // version
+      input_info.push_back(SrcInfo{version_node, 0});
+      // indices
+      input_info.push_back(SrcInfo{input_edges[1]->src(),
+                                   input_edges[1]->src_output()});
+      // default_value
+      input_info.push_back(SrcInfo{input_edges[2]->src(),
+                                   input_edges[2]->src_output()});
+
+      AttrValue var_name_value;
+      SetAttrValue(input_edges[0]->src()->name(), &var_name_value);
+      AttrValue* dtype_value =
+        const_cast<AttrValue*>(node->attrs().Find("dtype"));
+      AttrValue* tkeys_value =
+        const_cast<AttrValue*>(node->attrs().Find("Tkeys"));
+      if (!dtype_value || !tkeys_value) {
+        LOG(FATAL) << "Miss dtype or Tkeys attr, " << node->DebugString();
+      }
+      attr_info["var_name"] = &var_name_value;
+      attr_info["dtype"] = dtype_value;
+      attr_info["Tkeys"] = tkeys_value;
+
+      ReplaceKVOpsWithLookupOrInsertOps(
+          "KvLookup", node, &graph, input_info, attr_info);
+
+    } else if (node->op_def().name() == "KvResourceImportV2") {
+      // version
+      input_info.push_back(SrcInfo{version_node, 0});
+      // prefix
+      input_info.push_back(SrcInfo{input_edges[0]->src(),
+                                   input_edges[0]->src_output()});
+      // tensor_names
+      input_info.push_back(SrcInfo{input_edges[3]->src(),
+                                   input_edges[3]->src_output()});
+ 
+      AttrValue var_name_value;
+      SetAttrValue(input_edges[1]->src()->name(), &var_name_value);
+      attr_info["var_name"] = &var_name_value;
+
+      ReplaceKVOpsWithLookupOrInsertOps(
+          "KvInsert", node, &graph, input_info, attr_info);
+    }
+  }
+
+  // replace the graph def in saved_model_bundle
+  graph.ToGraphDef(saved_model_bundle_->meta_graph_def.mutable_graph_def());
+}
+
+void SavedModelOptimizer::RewriteDefaultValueOp() {
+
+}
+
+void SavedModelOptimizer::FreezeSignatureDef() {
+
+}
+
+} // namespace processor
 } // namespace tensorflow
 

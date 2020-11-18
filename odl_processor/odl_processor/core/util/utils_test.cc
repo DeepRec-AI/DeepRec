@@ -20,7 +20,7 @@ limitations under the License.
 #include "gtest/gtest.h"
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
 
 TEST(UtilsTest, HasDynamicShapeOutput0) {
   GraphDef graph_def;
@@ -163,5 +163,5 @@ TEST(UtilsTest, GetNodesHasDynamicShapeMap2) {
   EXPECT_FALSE(m["D"]);
 }
 
-} // namespace odl_processor
+} // namespace processor
 } // namespace tensorflow

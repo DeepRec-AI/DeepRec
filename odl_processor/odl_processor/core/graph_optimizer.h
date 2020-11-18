@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef ODL_PROCESSOR_CORE_GRAPH_OPTIMIZER_H_
 #define ODL_PROCESSOR_CORE_GRAPH_OPTIMIZER_H_
 
+#include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
@@ -25,7 +26,9 @@ limitations under the License.
 #include "tensorflow/core/protobuf/saved_model.pb.h"
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
+
+/// IREE
 
 // Tensorflow GraphDef will be splited into
 // two subgraph, one for tf and another for IREE.
@@ -108,8 +111,50 @@ MetaGraphDef GetMetaGraphDefFromSavedModel(
 // @saved_model_str: the saved model text
 MetaGraphDef GetMetaGraphDefFromSavedModelText(
     const std::string& str);
- 
-} // namespace odl_processor
+
+/// Tensorflow
+
+struct GraphOptimizerOptions {
+  // load sparse parameters to memory,
+  // user can specify this flag or
+  // defined by some strategy.
+  bool cache_sparse_locally = false;
+};
+
+class GraphOptimizer {
+ public:
+  explicit GraphOptimizer(
+      const GraphOptimizerOptions& opts) : opts_(opts) {}
+  virtual ~GraphOptimizer() {};
+  virtual void Optimize() = 0;
+
+ protected:
+  GraphOptimizerOptions opts_;
+};
+
+class SavedModelOptimizer : public GraphOptimizer {
+ public:
+  SavedModelOptimizer(SavedModelBundle*,
+                      const GraphOptimizerOptions&);
+  ~SavedModelOptimizer();
+  void Optimize();
+
+ private:
+  // TODO: Only support EV now
+  // Add Lookup and Insert ops,
+  // then remove KvResourceGather and KvResourceImportV2 ops.
+  void ConvertKVOps();
+
+  // Rewrite default value op when not found the variable key.
+  void RewriteDefaultValueOp();
+
+  // Remove unused signature def
+  void FreezeSignatureDef();
+
+  SavedModelBundle* saved_model_bundle_ = nullptr; // not owned
+};
+
+} // namespace processor
 } // namespace tensorflow
 
 #endif  // ODL_PROCESSOR_CORE_GRAPH_OPTIMIZER_H_

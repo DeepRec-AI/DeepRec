@@ -23,7 +23,7 @@ limitations under the License.
 #include "gtest/gtest.h"
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
 
 TEST(GraphOptimizerTest, StaticShapeCluteringStrategy0) {
   GraphDef graph_def;
@@ -764,5 +764,157 @@ TEST(GraphOptimizerTest, GetDynamicAndStaticMetaGraphDef) {
   EXPECT_TRUE(sta_output_map.find("out_F") != sta_output_map.end());
 }
 
-} // namespace odl_processor
+TEST(GraphOptimizerTest, SavedModelOptimize0) {
+  GraphDef graph_def;
+
+  NodeDef* n_save_const_0 = graph_def.add_node();
+  n_save_const_0->set_name("save/Const");
+  n_save_const_0->set_op("Const");
+  (*n_save_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+ 
+  NodeDef* n_tensor_name_0 = graph_def.add_node();
+  n_tensor_name_0->set_name("tensor_names_0");
+  n_tensor_name_0->set_op("Const");
+  (*n_tensor_name_0->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_shape_slice_0 = graph_def.add_node();
+  n_shape_slice_0->set_name("shape_and_slices_0");
+  n_shape_slice_0->set_op("Const");
+  (*n_shape_slice_0->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_restore_0 = graph_def.add_node();
+  n_restore_0->set_name("RestoreV2_0");
+  n_restore_0->set_op("RestoreV2");
+  DataTypeVector dtypes0;
+  dtypes0.push_back(DT_INT64);
+  AttrValue attr_value0;
+  SetAttrValue(dtypes0, &attr_value0);
+  (*n_restore_0->mutable_attr())["dtypes"] = attr_value0;
+  n_restore_0->add_input("save/Const");
+  n_restore_0->add_input("tensor_names_0");
+  n_restore_0->add_input("shape_and_slices_0");
+
+  NodeDef* n_tensor_name_1 = graph_def.add_node();
+  n_tensor_name_1->set_name("tensor_names_1");
+  n_tensor_name_1->set_op("Const");
+  (*n_tensor_name_1->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_shape_slice_1 = graph_def.add_node();
+  n_shape_slice_1->set_name("shape_and_slices_1");
+  n_shape_slice_1->set_op("Const");
+  (*n_shape_slice_1->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_restore_1 = graph_def.add_node();
+  n_restore_1->set_name("RestoreV2_1");
+  n_restore_1->set_op("RestoreV2");
+  DataTypeVector dtypes1;
+  dtypes1.push_back(DT_FLOAT);
+  AttrValue attr_value1;
+  SetAttrValue(dtypes1, &attr_value1);
+  (*n_restore_1->mutable_attr())["dtypes"] = attr_value1;
+  n_restore_1->add_input("save/Const");
+  n_restore_1->add_input("tensor_names_1");
+  n_restore_1->add_input("shape_and_slices_1");
+
+  NodeDef* n_var_0 = graph_def.add_node();
+  n_var_0->set_name("var_0");
+  n_var_0->set_op("KvVarHandleOp");
+
+
+  // KvResourceImportV2
+
+  NodeDef* n_prefix_const_0 = graph_def.add_node();
+  n_prefix_const_0->set_name("prefix/Const");
+  n_prefix_const_0->set_op("Const");
+  (*n_prefix_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_value_const_0 = graph_def.add_node();
+  n_value_const_0->set_name("value/Const");
+  n_value_const_0->set_op("Const");
+  (*n_value_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_tsname_const_0 = graph_def.add_node();
+  n_tsname_const_0->set_name("tsname/Const");
+  n_tsname_const_0->set_op("Const");
+  (*n_tsname_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_ek_const_0 = graph_def.add_node();
+  n_ek_const_0->set_name("empty_key/Const");
+  n_ek_const_0->set_op("Const");
+  (*n_ek_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+ 
+  NodeDef* n_lookup_import_0 = graph_def.add_node();
+  n_lookup_import_0->set_name("KvResourceImportV2_0");
+  n_lookup_import_0->set_op("KvResourceImportV2");
+  (*n_lookup_import_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_import_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  AttrValue value0;
+  tensorflow::TensorShapeProto tshape0;
+  tshape0.add_dim()->set_size(-1);
+  *value0.mutable_shape() = tshape0;
+  (*n_lookup_import_0->mutable_attr())["shape"] = value0;
+  n_lookup_import_0->add_input("prefix/Const");
+  n_lookup_import_0->add_input("var_0");
+  n_lookup_import_0->add_input("value/Const");
+  n_lookup_import_0->add_input("tsname/Const");
+  n_lookup_import_0->add_input("empty_key/Const");
+  
+  NodeDef* n_restore_shard = graph_def.add_node();
+  n_restore_shard->set_name("save/restore_shard");
+  n_restore_shard->set_op("NoOp");
+  n_restore_shard->add_input("^KvResourceImportV2_0");
+
+  NodeDef* n_restore_all = graph_def.add_node();
+  n_restore_all->set_name("save/restore_all");
+  n_restore_all->set_op("NoOp");
+  n_restore_all->add_input("^save/restore_shard");
+
+  // KvResourceGather
+
+  REGISTER_OP("FakeUnique")
+      .Output("y: int64")
+      .Output("idx: int32");
+ 
+  NodeDef* n_default_const_0 = graph_def.add_node();
+  n_default_const_0->set_name("default/Const");
+  n_default_const_0->set_op("Const");
+  (*n_default_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_unique_0 = graph_def.add_node();
+  n_unique_0->set_name("Uniue");
+  n_unique_0->set_op("FakeUnique");
+ 
+  NodeDef* n_lookup_find_0 = graph_def.add_node();
+  n_lookup_find_0->set_name("KvResourceGather_0");
+  n_lookup_find_0->set_op("KvResourceGather");
+  (*n_lookup_find_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_find_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  n_lookup_find_0->add_input("var_0");
+  n_lookup_find_0->add_input("Uniue");
+  n_lookup_find_0->add_input("default/Const");
+
+  // testing
+
+  SavedModelBundle saved_model_bundle;
+  *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
+  SavedModelOptimizer opt(&saved_model_bundle, GraphOptimizerOptions());
+  opt.Optimize();
+
+  std::unordered_map<std::string, NodeDef> nodes;
+  GraphDef new_graph_def = saved_model_bundle.meta_graph_def.graph_def();
+  for (auto n : new_graph_def.node()) {
+    EXPECT_TRUE(nodes.find(n.name()) == nodes.end());
+    nodes[n.name()] = n;
+  }
+
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0") != nodes.end());
+  auto n = nodes["KvResourceImportV2_0"];
+  EXPECT_TRUE(n.op() == "KvInsert");
+
+  EXPECT_TRUE(nodes.find("KvResourceGather_0") != nodes.end());
+  n = nodes["KvResourceGather_0"];
+  EXPECT_TRUE(n.op() == "KvLookup");
+}
+
+} // namespace processor
 } // namespace tensorflow

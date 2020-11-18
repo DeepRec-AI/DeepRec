@@ -24,7 +24,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_shape.pb.h"
 
 namespace tensorflow {
-namespace odl_processor {
+namespace processor {
 
 // Return true when node has dynamic shape at any input or output, false else.
 std::unordered_map<std::string, bool> GetNodesHasDynamicShapeMap(const GraphDef& gdef);
@@ -35,7 +35,7 @@ std::unordered_map<std::string, bool> GetNodesHasControlFlowInputs(const GraphDe
 // Whether any output has a dynamic shape
 bool HasDynamicShapeOutput(NodeDef* node);
 
-} // namespace odl_processor
+} // namespace processor
 } // namespace tensorflow
 
 #endif  // ODL_PROCESSOR_CORE_UTILS_H_

@@ -31,6 +31,7 @@ cc_library(
         "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
         "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
         "tf_predict_proto_cc",
+        "//odl_processor/core:graph_optimizer",
     ],
 )
 
