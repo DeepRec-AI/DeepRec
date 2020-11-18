@@ -18,11 +18,15 @@ tf_proto_library_cc(
 )
 
 cc_library(
-    name = "tf_processor",
-    srcs = ["model_serving.cc",
-            "model_config.cc"],
-    hdrs = ["model_serving.h",
-            "model_config.h"],
+    name = "tf_processor_v1",
+    srcs = ["tf_processor_v1.cc",
+            "model_serving.cc",
+            "model_config.cc",
+            "run_predict.cc"],
+    hdrs = ["tf_processor_v1.h",
+            "model_serving.h",
+            "model_config.h",
+            "run_predict.h"],
     deps = [
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:framework",
@@ -30,13 +34,14 @@ cc_library(
         "@org_tensorflow//tensorflow/cc/saved_model:loader",
         "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
         "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
+        "@jsoncpp_git//:jsoncpp",
         "tf_predict_proto_cc",
         "//odl_processor/core:graph_optimizer",
     ],
 )
 
 cc_library(
-    name = "tf_processor_prev",
+    name = "tf_processor",
     srcs = ["freeze_bundle.cc",
             "run_predict.cc",
             "tf_processor.cc",
