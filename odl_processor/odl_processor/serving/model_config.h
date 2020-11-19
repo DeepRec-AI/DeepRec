@@ -7,11 +7,23 @@
 namespace tensorflow {
 namespace processor {
 struct ModelConfig {
+  // Model Info
   std::string signature_name;
 
+  // Run Info
   int inter_threads;
   int intra_threads;
   bool warmup;
+
+  // Embedding Config
+  bool local_storage;
+  std::string redis_url;
+  std::string redis_password;
+
+  // OSS Config
+  std::string oss_endpoint;
+  std::string oss_access_id;
+  std::string oss_access_key;
 };
 
 class ModelConfigFactory {

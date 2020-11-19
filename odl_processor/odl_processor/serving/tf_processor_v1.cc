@@ -7,7 +7,7 @@ extern "C" {
 void* initialize(const char* model_entry, const char* model_config,
                  int* state) {
   auto model = new tensorflow::processor::Model();
-  auto status = model->Load(model_config, model_entry);
+  auto status = model->Init(model_config, model_entry);
   if (!status.ok()) {
     std::cerr << "[TensorFlow] Processor initialize failed"
               << ", status:" << status.error_message() << std::endl;
@@ -18,11 +18,11 @@ void* initialize(const char* model_entry, const char* model_config,
   std::cout << "[TensorFlow] Processor initialize success." << std::endl;
 
   *state = 0;
-  status = model->Warmup();
+  /*status = model->Warmup();
   if (!status.ok()) {
     std::cerr << "[TensorFlow] Processor warmup failure"
               << ", status:" << status.error_message() << std::endl;
-  }
+  }*/
   return model;
 }
 

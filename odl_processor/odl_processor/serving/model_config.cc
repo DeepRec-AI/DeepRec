@@ -1,4 +1,4 @@
-#include "model_config.h"
+#include "odl_processor/serving/model_config.h"
 #include "include/json/json.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/cc/saved_model/signature_constants.h"
@@ -46,13 +46,43 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
       json_config["signature_name"].asString();
   } else {
     return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No signature name in ModelConfig.");
+        "[TensorFlow] No signature_name in ModelConfig.");
+  }
+
+  if (!json_config["oss_endpoint"].isNull()) {
+    (*config)->oss_endpoint =
+      json_config["oss_endpoint"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No oss_endpoint in ModelConfig.");
+  }
+
+  if (!json_config["oss_access_id"].isNull()) {
+    (*config)->oss_access_id =
+      json_config["oss_access_id"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No oss_access_id in ModelConfig.");
+  }
+
+  if (!json_config["oss_access_key"].isNull()) {
+    (*config)->oss_access_key =
+      json_config["oss_access_key"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No oss_access_key in ModelConfig.");
   }
 
   if (!json_config["enable_warm_up"].isNull()) {
     (*config)->warmup =
       json_config["enable_warm_up"].asBool();
   }
+
+  if (!json_config["local_storage"].isNull()) {
+    (*config)->local_storage =
+      json_config["local_storage"].asBool();
+  }
+
   return Status::OK();
 }
 

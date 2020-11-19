@@ -20,11 +20,8 @@ class Model {
   Model(const Model&) = delete;
   Model& operator=(const Model&) = delete;
 
-  Status Load(const char* model_config, const char* model_dir);
-  Status Warmup();
-  
+  Status Init(const char* model_config, const char* model_dir);
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
-  Status Predict(const RunRequest& req, RunResponse* resp);
 
   std::string DebugString();
 
