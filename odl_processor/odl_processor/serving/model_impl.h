@@ -18,16 +18,14 @@ class RunOptions;
 namespace processor {
 class SavedModelOptimizer;
 class ModelConfig;
+class ModelInstanceMgr;
 
 class ModelImpl {
  public:
   virtual ~ModelImpl() {}
-  virtual Status Load(const char* model_dir) = 0;
+  virtual Status Init(const char* root_dir) = 0;
   virtual Status Predict(const eas::PredictRequest& req,
                          eas::PredictResponse* resp) = 0;
-  virtual Status Predict(const RunRequest& req, RunResponse* resp) = 0;
-
-  virtual Status Warmup() = 0;
   virtual std::string DebugString() = 0;
 };
 
@@ -35,20 +33,12 @@ class FreezeSavedModelImpl : public ModelImpl {
  public:
   ~FreezeSavedModelImpl() override {}
   
-  Status Load(const char* model_dir) override {
+  Status Init(const char* root_dir) override {
     return Status::OK();
   }
 
   Status Predict(const eas::PredictRequest& req,
                  eas::PredictResponse* resp) override {
-    return Status::OK();
-  }
-
-  Status Predict(const RunRequest& req, RunResponse* resp) override {
-    return Status::OK();
-  }
-  
-  Status Warmup() override {
     return Status::OK();
   }
 
@@ -62,24 +52,23 @@ class SavedModelImpl : public ModelImpl {
   explicit SavedModelImpl(ModelConfig* config);
   ~SavedModelImpl() override;
 
-  Status Load(const char* model_dir) override;
+  Status Init(const char* root_dir) override;
   Status Predict(const eas::PredictRequest& req,
                  eas::PredictResponse* resp) override;
 
  private:
-  Status Predict(const RunRequest& req, RunResponse* resp) override;
-  Status Warmup() override;
   std::string DebugString() override;
  
  private:
   ModelConfig* model_config_;
-  SavedModelBundle* saved_model_bundle_;
+  ModelInstanceMgr* instance_mgr_ = nullptr;
+  //SavedModelBundle* saved_model_bundle_;
+  //std::pair<std::string, SignatureDef> model_signature_;
 
-  SavedModelOptimizer* optimizer_;
-  std::pair<std::string, SignatureDef> model_signature_;
+  SavedModelOptimizer* optimizer_ = nullptr;
   
-  SessionOptions* session_options_;
-  RunOptions* run_options_;
+  SessionOptions* session_options_ = nullptr;
+  RunOptions* run_options_ = nullptr;
 };
 
 class ModelImplFactory {
