@@ -480,9 +480,9 @@ StatusOr<bool> RunFuseConvertToFloat(HloModule* module) {
 StatusOr<bool> CudnnFusedConvRewriter::Run(HloModule* module) {
   TF_ASSIGN_OR_RETURN(bool fused_for_convert_to_float,
                       RunFuseConvertToFloat(module));
-
+#if 0
   TF_ASSIGN_OR_RETURN(bool fused_for_bias, RunFuseBiasSideActivation(module));
-
+#endif
   TF_ASSIGN_OR_RETURN(bool fused_for_clamp, RunFuseClamp(module));
 
   return fused_for_convert_to_float || fused_for_bias || fused_for_clamp;
