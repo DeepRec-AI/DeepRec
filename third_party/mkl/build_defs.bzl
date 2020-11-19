@@ -91,12 +91,7 @@ def mkl_deps():
       inclusion in the deps attribute of rules.
     """
     return select({
-        str(Label("//third_party/mkl_dnn:build_with_mkl_dnn_only")): ["@mkl_dnn"],
-        str(Label("//third_party/mkl_dnn:build_with_mkl_dnn_v1_only")): ["@mkl_dnn_v1//:mkl_dnn"],
-        str(Label("//third_party/mkl:build_with_mkl")): [
-            "//third_party/mkl:intel_binary_blob",
-            "@mkl_dnn",
-        ],
+        "@org_tensorflow//third_party/mkl:build_with_mkl": ["@mkl_dnn_v1//:mkl_dnn"],
         "//conditions:default": [],
     })
 
