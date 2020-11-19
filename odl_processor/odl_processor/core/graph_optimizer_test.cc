@@ -944,7 +944,7 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
 
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0") != nodes.end());
   auto n = nodes["KvResourceImportV2_0"];
-  EXPECT_TRUE(n.op() == "KvInsert");
+  EXPECT_TRUE(n.op() == "KvImport");
 
   EXPECT_TRUE(nodes.find("KvResourceGather_0") != nodes.end());
   n = nodes["KvResourceGather_0"];

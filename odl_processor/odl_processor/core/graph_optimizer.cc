@@ -509,7 +509,7 @@ Status SavedModelOptimizer::Optimize() {
 
   // For example:
   // convert KvResourceGather to KvLookup
-  // convert KvResourceImportV2 to KvInsert
+  // convert KvResourceImportV2 to KvImport
   ConvertKVOps();
 
   RewriteDefaultValueOp();
@@ -531,7 +531,7 @@ void ReplaceKVOpsWithLookupOrInsertOps (
     std::vector<SrcInfo>& input_info,
     std::unordered_map<std::string, AttrValue*>& attr_info) {
 
-  // Create KvLookup/KvInsert op here and remove the node
+  // Create KvLookup/KvImport op here and remove the node
   NodeDef remote_def;
   remote_def.set_name(node->name());
   remote_def.set_op(remote_op_name);
@@ -602,7 +602,7 @@ void SavedModelOptimizer::ConvertKVOps() {
   TF_CHECK_OK(status);
 
   // Find sparse lookup/Import ops and replace them
-  // with KvLookup and KvInsert
+  // with KvLookup and KvImport
   for (Node* node : graph.nodes()) {
     // Get input edges
     std::vector<const Edge*> input_edges;
@@ -667,8 +667,18 @@ void SavedModelOptimizer::ConvertKVOps() {
       SetAttrValue(dim_len_value, &dim_len_value_int);
       attr_info["dim_len"] = &dim_len_value_int;
 
+      AttrValue* dtype_value =
+        const_cast<AttrValue*>(node->attrs().Find("dtype"));
+      AttrValue* tkeys_value =
+        const_cast<AttrValue*>(node->attrs().Find("Tkeys"));
+      if (!dtype_value || !tkeys_value) {
+        LOG(FATAL) << "Miss dtype or Tkeys attr, " << node->DebugString();
+      }
+      attr_info["dtype"] = dtype_value;
+      attr_info["Tkeys"] = tkeys_value;
+
       ReplaceKVOpsWithLookupOrInsertOps(
-          "KvInsert", node, &graph, input_info, attr_info);
+          "KvImport", node, &graph, input_info, attr_info);
     }
   }
 
@@ -700,6 +710,10 @@ void SavedModelOptimizer::FreezeSignatureDef() {
   for (auto sdef : new_signature_def) {
     (*sig_def)[sdef.first] = sdef.second;
   }
+}
+
+void SavedModelOptimizer::AddVariableInitSubGraph() {
+
 }
 
 } // namespace processor

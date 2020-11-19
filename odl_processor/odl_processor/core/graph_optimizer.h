@@ -147,6 +147,9 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Remove unused signature def
   void FreezeSignatureDef();
 
+  // Add a init-op to initialize variable, redis for example
+  void AddVariableInitSubGraph();
+
   std::string signature_name_;
   MetaGraphDef* meta_graph_def_ = nullptr; // not owned
 };
