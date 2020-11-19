@@ -260,6 +260,7 @@ StatusOr<std::unique_ptr<HloInstruction>> TryRewriteToCudnnForwardRelu(
 // output
 StatusOr<bool> RunFuseBiasSideActivation(HloModule* module) {
   bool changed = false;
+#if 0
   for (HloComputation* computation : module->MakeNonfusionComputations()) {
     std::vector<ConvWithRelu> matches;
     int num_forward_convs = 0;
@@ -288,6 +289,7 @@ StatusOr<bool> RunFuseBiasSideActivation(HloModule* module) {
           replacement.first, std::move(replacement.second)));
     }
   }
+#endif
   return changed;
 }
 
@@ -480,9 +482,9 @@ StatusOr<bool> RunFuseConvertToFloat(HloModule* module) {
 StatusOr<bool> CudnnFusedConvRewriter::Run(HloModule* module) {
   TF_ASSIGN_OR_RETURN(bool fused_for_convert_to_float,
                       RunFuseConvertToFloat(module));
-#if 0
+
   TF_ASSIGN_OR_RETURN(bool fused_for_bias, RunFuseBiasSideActivation(module));
-#endif
+
   TF_ASSIGN_OR_RETURN(bool fused_for_clamp, RunFuseClamp(module));
 
   return fused_for_convert_to_float || fused_for_bias || fused_for_clamp;
