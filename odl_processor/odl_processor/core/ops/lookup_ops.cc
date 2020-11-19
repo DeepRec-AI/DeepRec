@@ -29,16 +29,18 @@ REGISTER_OP("KvLookup")
     .Attr("var_name: string")
     .Attr("dim_len: int")
     .Attr("dtype: type")
-    .Attr("Tkeys: {int64,string}")
+    .Attr("Tkeys: {int64}")
     .SetShapeFn(shape_inference::UnknownShape);
 
 // EV
-REGISTER_OP("KvInsert")
+REGISTER_OP("KvImport")
     .Input("version: string")
     .Input("prefix: string")
     .Input("tensor_name: string")
     .Attr("var_name: string")
     .Attr("dim_len: int")
+    .Attr("Tkeys: {int64}")
+    .Attr("dtype: type")
     .SetShapeFn(shape_inference::UnknownShape);
 
 } // namespace processor

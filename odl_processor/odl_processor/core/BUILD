@@ -14,8 +14,29 @@ cc_library(
     linkstatic = True,
     deps = [
         "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core/util/tensor_bundle",
     ],
     alwayslink = 1,
+)
+
+cc_test(
+    name = "lookup_ops_test",
+    srcs = ["kernels/lookup_kernels_test.cc"],
+    deps = [
+        ":lookup_ops",
+        ":graph_optimizer",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
+        "@org_tensorflow//tensorflow/core/kernels:ops_util",
+        "@org_tensorflow//tensorflow/cc:cc_ops",
+        "@org_tensorflow//tensorflow/core:core_cpu",
+        "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        #"@org_tensorflow//tensorflow/core:test",
+        #"@org_tensorflow//tensorflow/core:testlib",
+    ],   
 )
 
 cc_library(
