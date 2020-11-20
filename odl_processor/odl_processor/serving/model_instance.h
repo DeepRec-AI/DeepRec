@@ -5,6 +5,7 @@
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 
 #include <thread>
+#include <atomic>
 
 class RunRequest;
 class RunResponse;
@@ -16,11 +17,13 @@ namespace eas {
 class SavedModelBundle;
 class SessionOptions;
 class RunOptions;
+class Session;
 
 namespace processor {
 class SavedModelOptimizer;
 class ModelConfig;
 class ModelStorage;
+class SparseStorage;
 
 struct Version {
   std::string full_model_version;
@@ -52,10 +55,29 @@ struct Version {
   }
 };
 
+struct ModelSession {
+  ModelSession(Session* s) : session_(s), counter_(0) {}
+
+  Session* session_ = nullptr;
+  std::atomic<int64> counter_;
+};
+
+class ModelSessionMgr {
+ public:
+  Status CreateModelSession(const MetaGraphDef& meta_graph_def,
+      SessionOptions* session_options, RunOptions* run_options,
+      const char* model_dir);
+
+ private:
+  ModelSession* serving_session_ = nullptr;
+  std::vector<ModelSession*> sessions_;
+};
+
 class ModelInstance {
  public:
   ModelInstance(SessionOptions* sess_options, RunOptions* run_options);
-  Status Load(const Version& version, ModelConfig* config);
+  Status Init(const Version& version, ModelConfig* config,
+      SparseStorage* sparse_storage);
 
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
   Status Predict(const RunRequest& req, RunResponse* resp);
@@ -68,15 +90,21 @@ class ModelInstance {
 
  private:
   Status Warmup();
+  Status ReadModelSignature(ModelConfig* model_config);
+
+  Status CreateSession(const char* model_dir);
 
  private:
-  SavedModelBundle* saved_model_bundle_ = nullptr;
+  MetaGraphDef meta_graph_def_;
+  //std::unique_ptr<Session> session_;
+  ModelSessionMgr* session_mgr_;
+
   std::pair<std::string, SignatureDef> model_signature_;
 
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
-
-  SavedModelOptimizer* optimizer_;
+  SavedModelOptimizer* optimizer_ = nullptr;
+  SparseStorage* sparse_storage_ = nullptr;
 
   Version version_;
 };

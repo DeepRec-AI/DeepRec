@@ -6,11 +6,18 @@
 namespace tensorflow {
 namespace processor {
 class Version;
+class SparseStorage {
+ public:
+  void Create(const Version& version) {}
+};
 
 class ModelStorage {
  public:
   Status Init(const char* root_dir) { return Status::OK(); }
   Status GetLatestVersion(Version& version) { return Status::OK();}
+  SparseStorage* GetSparseStorage(const Version& version) {
+    return nullptr;
+  }
 };
 
 } // processor

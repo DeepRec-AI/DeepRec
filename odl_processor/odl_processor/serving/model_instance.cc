@@ -16,15 +16,6 @@ namespace tensorflow {
 namespace {
 constexpr int _60_Seconds = 60;
 
-Status LoadMetaGraphIntoSession(const MetaGraphDef& meta_graph_def,
-                                const SessionOptions& session_options,
-                                std::unique_ptr<Session>* session) {
-  Session* session_p = nullptr;
-  TF_RETURN_IF_ERROR(NewSession(session_options, &session_p));
-  session->reset(session_p);
-  return (*session)->Create(meta_graph_def.graph_def());
-}
-
 Status GetAssetFileDefs(const MetaGraphDef& meta_graph_def,
                         std::vector<AssetFileDef>* asset_file_defs) {
   const auto& collection_def_map = meta_graph_def.collection_def();
@@ -164,55 +155,74 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
 }
 }
 namespace processor {
-ModelInstance::ModelInstance(SessionOptions* sess_options, RunOptions* run_options) :
+Status ModelSessionMgr::CreateModelSession(const MetaGraphDef& meta_graph_def,
+    SessionOptions* session_options, RunOptions* run_options,
+    const char* model_dir) {
+  Session* session = nullptr;
+  TF_RETURN_IF_ERROR(NewSession(*session_options, &session));
+  auto status = session->Create(meta_graph_def.graph_def());
+
+  std::vector<AssetFileDef> asset_file_defs;
+  TF_RETURN_IF_ERROR(GetAssetFileDefs(meta_graph_def, &asset_file_defs));
+
+  TF_RETURN_IF_ERROR(
+      RunRestore(*run_options, model_dir,
+          meta_graph_def.saver_def().restore_op_name(),
+          meta_graph_def.saver_def().filename_tensor_name(),
+          asset_file_defs, session));
+
+  if (HasMainOp(meta_graph_def)) {
+    TF_RETURN_IF_ERROR(RunMainOp(*run_options, model_dir,
+        meta_graph_def, asset_file_defs, session, kSavedModelMainOpKey));
+  } else {
+    TF_RETURN_IF_ERROR(RunMainOp(
+        *run_options, model_dir, meta_graph_def,
+        asset_file_defs, session, kSavedModelLegacyInitOpKey));
+  }
+
+  sessions_.emplace_back(serving_session_);
+  auto model_session = new ModelSession(session);
+  serving_session_ = model_session;
+  return Status::OK();
+}
+
+ModelInstance::ModelInstance(SessionOptions* sess_options,
+    RunOptions* run_options) :
     session_options_(sess_options), run_options_(run_options) {
 }
 
-Status ModelInstance::Load(const Version& version,
-    ModelConfig* model_config) {
-  const char* model_dir = version.IsFullModel() ?
-    version.full_model_name.c_str() : version.delta_model_name.c_str();
-  TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(model_dir,
-        {kSavedModelTagServe},
-        &saved_model_bundle_->meta_graph_def));
-
-  optimizer_ = new SavedModelOptimizer(model_config->signature_name,
-        &saved_model_bundle_->meta_graph_def);
-  TF_RETURN_IF_ERROR(optimizer_->Optimize());
-
-  auto model_signatures =
-    saved_model_bundle_->meta_graph_def.signature_def();
+Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
+  auto model_signatures = meta_graph_def_.signature_def();
   for (auto it : model_signatures) {
     if (it.first == model_config->signature_name) {
       model_signature_ = it;
       break;
     }
   }
+  return Status::OK();
+}
 
-  TF_RETURN_IF_ERROR(LoadMetaGraphIntoSession(
-        saved_model_bundle_->meta_graph_def, *session_options_,
-        &saved_model_bundle_->session));
+Status ModelInstance::CreateSession(const char* model_dir) {
+  return session_mgr_->CreateModelSession(meta_graph_def_, session_options_,
+      run_options_, model_dir);
+}
 
-  std::vector<AssetFileDef> asset_file_defs;
-  TF_RETURN_IF_ERROR(
-      GetAssetFileDefs(saved_model_bundle_->meta_graph_def, &asset_file_defs));
+Status ModelInstance::Init(const Version& version,
+    ModelConfig* model_config, SparseStorage* sparse_storage) {
+  const char* model_dir = version.IsFullModel() ?
+    version.full_model_name.c_str() : version.delta_model_name.c_str();
+  TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(model_dir,
+        {kSavedModelTagServe}, &meta_graph_def_));
 
-  TF_RETURN_IF_ERROR(
-      RunRestore(*run_options_, model_dir,
-          saved_model_bundle_->meta_graph_def.saver_def().restore_op_name(),
-          saved_model_bundle_->meta_graph_def.saver_def().filename_tensor_name(),
-          asset_file_defs, saved_model_bundle_->session.get()));
+  optimizer_ = new SavedModelOptimizer(model_config->signature_name,
+        &meta_graph_def_);
+  TF_RETURN_IF_ERROR(optimizer_->Optimize());
 
-  if (HasMainOp(saved_model_bundle_->meta_graph_def)) {
-    TF_RETURN_IF_ERROR(RunMainOp(*run_options_, model_dir,
-        saved_model_bundle_->meta_graph_def, asset_file_defs,
-        saved_model_bundle_->session.get(), kSavedModelMainOpKey));
-  } else {
-    TF_RETURN_IF_ERROR(RunMainOp(
-        *run_options_, model_dir, saved_model_bundle_->meta_graph_def,
-        asset_file_defs, saved_model_bundle_->session.get(),
-        kSavedModelLegacyInitOpKey));
-  }
+  TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
+  
+  sparse_storage_ = sparse_storage;
+  TF_RETURN_IF_ERROR(CreateSession(model_dir));
+  return Status::OK();
 }
 
 Status ModelInstance::Warmup() {
@@ -237,9 +247,12 @@ Status ModelInstance::Predict(const RunRequest& req,
 }
 
 void ModelInstance::FullModelUpdate(const Version& version) {
+  sparse_storage_->Create(version);
+  CreateSession(version.full_model_name.c_str());
 }
 
 void ModelInstance::DeltaModelUpdate(const Version& version) {
+  CreateSession(version.delta_model_name.c_str());
 }
 
 std::string ModelInstance::DebugString() {
@@ -276,10 +289,12 @@ Status ModelInstanceMgr::Init(SessionOptions* sess_options,
 
 void ModelInstanceMgr::CreateInstances(const Version& version) {
   cur_instance_ = new ModelInstance(session_options_, run_options_);
-  cur_instance_->Load(version, model_config_);
+  cur_instance_->Init(version, model_config_,
+      model_storage_->GetSparseStorage(version));
 
   base_instance_ = new ModelInstance(session_options_, run_options_);
-  base_instance_->Load(version, model_config_);
+  base_instance_->Init(version, model_config_,
+      model_storage_->GetSparseStorage(version));
 }
 
 Status ModelInstanceMgr::Predict(const eas::PredictRequest& req,
