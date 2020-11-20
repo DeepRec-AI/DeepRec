@@ -21,6 +21,12 @@ local_repository(
      path = "./pai-tensorflow",
 )
 
+new_local_repository(
+     name = "hiredis",
+     path = "./hiredis",
+     build_file = "//third_party:hiredis.BUILD",
+)
+
 load("//third_party:tensorflow_workspace.bzl", "tf_repositories")
 
 tf_repositories()
