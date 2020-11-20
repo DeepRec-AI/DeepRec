@@ -150,6 +150,9 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Add a init-op to initialize variable, redis for example
   void AddVariableInitSubGraph();
 
+  // Add full and delta ckpt update subgraph
+  void AddFullAndDeltaUpdateSubGraph();
+
   std::string signature_name_;
   MetaGraphDef* meta_graph_def_ = nullptr; // not owned
 };

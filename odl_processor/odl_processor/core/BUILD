@@ -25,6 +25,7 @@ cc_test(
     deps = [
         ":lookup_ops",
         ":graph_optimizer",
+        "//odl_processor/storage/oss:oss_ops",
         "@com_google_googletest//:gtest",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
@@ -34,8 +35,6 @@ cc_test(
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
-        #"@org_tensorflow//tensorflow/core:test",
-        #"@org_tensorflow//tensorflow/core:testlib",
     ],   
 )
 
