@@ -316,7 +316,8 @@ bool IsGpuCompatible(const RemapperContext& ctx,
   const NodeDef& activation_node = graph->node(matched.activation);
   bool is_relu = IsRelu(activation_node);
 
-  return is_relu && is_spatial_conv && IsGpuCompatibleConv2D(&contraction_node);
+  //return is_relu && is_spatial_conv && IsGpuCompatibleConv2D(&contraction_node);
+  return false; // Disable fused CBR to avoid cudnn regression. see nvbugs/200676335
 }
 bool IsGpuCompatible(const RemapperContext& ctx,
                      const ContractionWithBiasAdd& matched) {
