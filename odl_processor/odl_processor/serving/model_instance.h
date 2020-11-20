@@ -29,13 +29,26 @@ struct Version {
   std::string delta_model_version;
   std::string delta_model_name;
 
-  bool IsBaseCheckpoint() const {
+  Version() = default;
+  ~Version() = default;
+  Version(const Version&) = default;
+  Version& operator=(const Version&) = default;
+
+  bool IsFullModel() const {
     return delta_model_name.empty();
   }
 
   friend bool operator ==(const Version& lhs, const Version& rhs) {
     return lhs.full_model_version == rhs.full_model_version
         && lhs.delta_model_version == rhs.delta_model_version;
+  }
+
+  friend bool operator !=(const Version& lhs, const Version& rhs) {
+    return !(lhs == rhs);
+  }
+
+  bool IsSameFullModel(const Version& other) const {
+    return full_model_version == other.full_model_version;
   }
 };
 
@@ -46,6 +59,9 @@ class ModelInstance {
 
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
   Status Predict(const RunRequest& req, RunResponse* resp);
+
+  void FullModelUpdate(const Version& version);
+  void DeltaModelUpdate(const Version& version);
 
   Version GetVersion() { return version_; }
   std::string DebugString();
@@ -71,18 +87,17 @@ class ModelInstanceMgr {
   ~ModelInstanceMgr();
 
   Status Init(SessionOptions* sess_options, RunOptions* run_options);
-
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
 
-  void Update(const Version& version);
   void WorkLoop();
-
   std::string DebugString();
 
  private:
   void CreateInstances(const Version& version);
-  void UpdateBaseInstance(const Version& version);
-  void UpdateIncrementalInstance(const Version& version);
+  void FullModelUpdate(const Version& version);
+  void DeltaModelUpdate(const Version& version);
+  
+  void ModelUpdate(const Version& version);
 
  private:
   bool is_stop = false;
