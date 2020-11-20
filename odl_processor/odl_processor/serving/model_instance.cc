@@ -14,6 +14,8 @@
 
 namespace tensorflow {
 namespace {
+constexpr int _60_Seconds = 60;
+
 Status LoadMetaGraphIntoSession(const MetaGraphDef& meta_graph_def,
                                 const SessionOptions& session_options,
                                 std::unique_ptr<Session>* session) {
@@ -168,7 +170,7 @@ ModelInstance::ModelInstance(SessionOptions* sess_options, RunOptions* run_optio
 
 Status ModelInstance::Load(const Version& version,
     ModelConfig* model_config) {
-  const char* model_dir = version.IsBaseCheckpoint() ?
+  const char* model_dir = version.IsFullModel() ?
     version.full_model_name.c_str() : version.delta_model_name.c_str();
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(model_dir,
         {kSavedModelTagServe},
@@ -234,6 +236,12 @@ Status ModelInstance::Predict(const RunRequest& req,
   return Status::OK();
 }
 
+void ModelInstance::FullModelUpdate(const Version& version) {
+}
+
+void ModelInstance::DeltaModelUpdate(const Version& version) {
+}
+
 std::string ModelInstance::DebugString() {
   return model_signature_.second.DebugString();
 }
@@ -279,21 +287,24 @@ Status ModelInstanceMgr::Predict(const eas::PredictRequest& req,
   return Status::OK();
 }
 
-void ModelInstanceMgr::UpdateBaseInstance(const Version& version) {
-  //base_instance_->UpdateBase(version);
-  //mutex_lock l(mu_);
-  std::swap(base_instance_, cur_instance_);
+void ModelInstanceMgr::FullModelUpdate(const Version& version) {
+  cur_instance_->FullModelUpdate(version);
 }
 
-void ModelInstanceMgr::UpdateIncrementalInstance(const Version& version) {
-  //cur_instance_->UpdateIncremental(version);
+void ModelInstanceMgr::DeltaModelUpdate(const Version& version) {
+  if (cur_instance_->GetVersion().IsSameFullModel(version) &&
+      !base_instance_->GetVersion().IsSameFullModel(version)) {
+    base_instance_->FullModelUpdate(cur_instance_->GetVersion());
+  }
+
+  cur_instance_->DeltaModelUpdate(version);
 }
 
-void ModelInstanceMgr::Update(const Version& version) {
-  if (version.IsBaseCheckpoint()) {
-    UpdateBaseInstance(version);
+void ModelInstanceMgr::ModelUpdate(const Version& version) {
+  if (version.IsFullModel()) {
+    FullModelUpdate(version);
   } else {
-    UpdateIncrementalInstance(version);
+    DeltaModelUpdate(version);
   }
 }
 
@@ -304,17 +315,16 @@ void ModelInstanceMgr::WorkLoop() {
     if (!status.ok()) {
       status = Status(error::Code::NOT_FOUND,
           "[TensorFlow] Can't get latest model name, will try 60 seconds later.");
-
       std::cerr << status.error_message() << std::endl;
-      sleep(60);
+      sleep(_60_Seconds);
       continue;
     }
 
-    if (version == cur_instance_->GetVersion()) {
-      sleep(10);
-    } else {
-      Update(version);
+    if (version != cur_instance_->GetVersion()) {
+      ModelUpdate(version);
     }
+
+    sleep(_60_Seconds);
   }
 }
 
