@@ -686,10 +686,6 @@ void SavedModelOptimizer::ConvertKVOps() {
   graph.ToGraphDef(meta_graph_def_->mutable_graph_def());
 }
 
-void SavedModelOptimizer::RewriteDefaultValueOp() {
-
-}
-
 void SavedModelOptimizer::FreezeSignatureDef() {
   std::map<string, SignatureDef> new_signature_def;
   bool found = false;
@@ -712,7 +708,15 @@ void SavedModelOptimizer::FreezeSignatureDef() {
   }
 }
 
+void SavedModelOptimizer::RewriteDefaultValueOp() {
+
+}
+
 void SavedModelOptimizer::AddVariableInitSubGraph() {
+
+}
+
+void SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {
 
 }
 
