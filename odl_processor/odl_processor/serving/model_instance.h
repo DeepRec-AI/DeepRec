@@ -56,17 +56,23 @@ struct Version {
 };
 
 struct ModelSession {
-  ModelSession(Session* s) : session_(s), counter_(0) {}
+  ModelSession(Session* s, const Version& version) :
+    session_(s), counter_(0), version_(version) {}
 
   Session* session_ = nullptr;
   std::atomic<int64> counter_;
+
+  Version version_;
 };
 
 class ModelSessionMgr {
  public:
   Status CreateModelSession(const MetaGraphDef& meta_graph_def,
       SessionOptions* session_options, RunOptions* run_options,
-      const char* model_dir);
+      const Version& version, const char* model_dir);
+
+ private:
+  void ResetServingSession(Session* session, const Version& version);
 
  private:
   ModelSession* serving_session_ = nullptr;
@@ -82,8 +88,8 @@ class ModelInstance {
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
   Status Predict(const RunRequest& req, RunResponse* resp);
 
-  void FullModelUpdate(const Version& version);
-  void DeltaModelUpdate(const Version& version);
+  Status FullModelUpdate(const Version& version);
+  Status DeltaModelUpdate(const Version& version);
 
   Version GetVersion() { return version_; }
   std::string DebugString();
@@ -92,11 +98,11 @@ class ModelInstance {
   Status Warmup();
   Status ReadModelSignature(ModelConfig* model_config);
 
-  Status CreateSession(const char* model_dir);
+  Status CreateSession(const Version& version, const char* model_dir);
+  Status RecursionCreateSession(const Version& version);
 
  private:
   MetaGraphDef meta_graph_def_;
-  //std::unique_ptr<Session> session_;
   ModelSessionMgr* session_mgr_;
 
   std::pair<std::string, SignatureDef> model_signature_;
@@ -121,11 +127,11 @@ class ModelInstanceMgr {
   std::string DebugString();
 
  private:
-  void CreateInstances(const Version& version);
-  void FullModelUpdate(const Version& version);
-  void DeltaModelUpdate(const Version& version);
+  Status CreateInstances(const Version& version);
+  Status FullModelUpdate(const Version& version);
+  Status DeltaModelUpdate(const Version& version);
   
-  void ModelUpdate(const Version& version);
+  Status ModelUpdate(const Version& version);
 
  private:
   bool is_stop = false;
