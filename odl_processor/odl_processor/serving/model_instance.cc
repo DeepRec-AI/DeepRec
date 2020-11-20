@@ -157,10 +157,10 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
 namespace processor {
 Status ModelSessionMgr::CreateModelSession(const MetaGraphDef& meta_graph_def,
     SessionOptions* session_options, RunOptions* run_options,
-    const char* model_dir) {
+    const Version& version, const char* model_dir) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(NewSession(*session_options, &session));
-  auto status = session->Create(meta_graph_def.graph_def());
+  TF_RETURN_IF_ERROR(session->Create(meta_graph_def.graph_def()));
 
   std::vector<AssetFileDef> asset_file_defs;
   TF_RETURN_IF_ERROR(GetAssetFileDefs(meta_graph_def, &asset_file_defs));
@@ -180,10 +180,22 @@ Status ModelSessionMgr::CreateModelSession(const MetaGraphDef& meta_graph_def,
         asset_file_defs, session, kSavedModelLegacyInitOpKey));
   }
 
-  sessions_.emplace_back(serving_session_);
-  auto model_session = new ModelSession(session);
-  serving_session_ = model_session;
+  ResetServingSession(session, version);
   return Status::OK();
+}
+
+void ModelSessionMgr::ResetServingSession(Session* session,
+    const Version& version) {
+  auto model_session = new ModelSession(session, version);
+  auto tmp = serving_session_;
+  serving_session_ = model_session;
+
+  if (serving_session_->counter_ > 0) {
+    // TODO: free it in active object.
+    sessions_.emplace_back(tmp);
+  } else {
+    delete tmp;
+  }
 }
 
 ModelInstance::ModelInstance(SessionOptions* sess_options,
@@ -202,16 +214,21 @@ Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
   return Status::OK();
 }
 
-Status ModelInstance::CreateSession(const char* model_dir) {
+Status ModelInstance::CreateSession(const Version& version, 
+    const char* model_dir) {
   return session_mgr_->CreateModelSession(meta_graph_def_, session_options_,
-      run_options_, model_dir);
+      run_options_, version, model_dir);
+}
+
+Status ModelInstance::RecursionCreateSession(const Version& version) {
+  TF_RETURN_IF_ERROR(CreateSession(version, version.full_model_name.c_str()));
+  return CreateSession(version, version.delta_model_name.c_str());
 }
 
 Status ModelInstance::Init(const Version& version,
     ModelConfig* model_config, SparseStorage* sparse_storage) {
-  const char* model_dir = version.IsFullModel() ?
-    version.full_model_name.c_str() : version.delta_model_name.c_str();
-  TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(model_dir,
+  TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
+        version.full_model_name.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
 
   optimizer_ = new SavedModelOptimizer(model_config->signature_name,
@@ -221,7 +238,9 @@ Status ModelInstance::Init(const Version& version,
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
   
   sparse_storage_ = sparse_storage;
-  TF_RETURN_IF_ERROR(CreateSession(model_dir));
+  TF_RETURN_IF_ERROR(sparse_storage_->Create(version));
+
+  TF_RETURN_IF_ERROR(RecursionCreateSession(version));
   return Status::OK();
 }
 
@@ -246,13 +265,13 @@ Status ModelInstance::Predict(const RunRequest& req,
   return Status::OK();
 }
 
-void ModelInstance::FullModelUpdate(const Version& version) {
-  sparse_storage_->Create(version);
-  CreateSession(version.full_model_name.c_str());
+Status ModelInstance::FullModelUpdate(const Version& version) {
+  TF_RETURN_IF_ERROR(sparse_storage_->Create(version));
+  return CreateSession(version, version.full_model_name.c_str());
 }
 
-void ModelInstance::DeltaModelUpdate(const Version& version) {
-  CreateSession(version.delta_model_name.c_str());
+Status ModelInstance::DeltaModelUpdate(const Version& version) {
+  return CreateSession(version, version.delta_model_name.c_str());
 }
 
 std::string ModelInstance::DebugString() {
@@ -281,19 +300,19 @@ Status ModelInstanceMgr::Init(SessionOptions* sess_options,
     return status;
   }
 
-  CreateInstances(version);
+  TF_RETURN_IF_ERROR(CreateInstances(version));
   
   thread_ = new std::thread(&ModelInstanceMgr::WorkLoop, this);
   return Status::OK();
 }
 
-void ModelInstanceMgr::CreateInstances(const Version& version) {
+Status ModelInstanceMgr::CreateInstances(const Version& version) {
   cur_instance_ = new ModelInstance(session_options_, run_options_);
-  cur_instance_->Init(version, model_config_,
-      model_storage_->GetSparseStorage(version));
+  TF_RETURN_IF_ERROR(cur_instance_->Init(version, model_config_,
+      model_storage_->GetSparseStorage(version)));
 
   base_instance_ = new ModelInstance(session_options_, run_options_);
-  base_instance_->Init(version, model_config_,
+  return base_instance_->Init(version, model_config_,
       model_storage_->GetSparseStorage(version));
 }
 
@@ -302,24 +321,25 @@ Status ModelInstanceMgr::Predict(const eas::PredictRequest& req,
   return Status::OK();
 }
 
-void ModelInstanceMgr::FullModelUpdate(const Version& version) {
-  cur_instance_->FullModelUpdate(version);
+Status ModelInstanceMgr::FullModelUpdate(const Version& version) {
+  return cur_instance_->FullModelUpdate(version);
 }
 
-void ModelInstanceMgr::DeltaModelUpdate(const Version& version) {
+Status ModelInstanceMgr::DeltaModelUpdate(const Version& version) {
   if (cur_instance_->GetVersion().IsSameFullModel(version) &&
       !base_instance_->GetVersion().IsSameFullModel(version)) {
-    base_instance_->FullModelUpdate(cur_instance_->GetVersion());
+    TF_RETURN_IF_ERROR(base_instance_->FullModelUpdate(
+          cur_instance_->GetVersion()));
   }
 
-  cur_instance_->DeltaModelUpdate(version);
+  return cur_instance_->DeltaModelUpdate(version);
 }
 
-void ModelInstanceMgr::ModelUpdate(const Version& version) {
+Status ModelInstanceMgr::ModelUpdate(const Version& version) {
   if (version.IsFullModel()) {
-    FullModelUpdate(version);
+    return FullModelUpdate(version);
   } else {
-    DeltaModelUpdate(version);
+    return DeltaModelUpdate(version);
   }
 }
 
@@ -331,12 +351,13 @@ void ModelInstanceMgr::WorkLoop() {
       status = Status(error::Code::NOT_FOUND,
           "[TensorFlow] Can't get latest model name, will try 60 seconds later.");
       std::cerr << status.error_message() << std::endl;
-      sleep(_60_Seconds);
-      continue;
-    }
-
-    if (version != cur_instance_->GetVersion()) {
-      ModelUpdate(version);
+    } else {
+      if (version != cur_instance_->GetVersion()) {
+        auto status = ModelUpdate(version);
+        if (!status.ok()) {
+          std::cerr << status.error_message() << std::endl;
+        }
+      }
     }
 
     sleep(_60_Seconds);

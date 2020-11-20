@@ -8,7 +8,7 @@ namespace processor {
 class Version;
 class SparseStorage {
  public:
-  void Create(const Version& version) {}
+  Status Create(const Version& version) { return Status::OK(); }
 };
 
 class ModelStorage {
