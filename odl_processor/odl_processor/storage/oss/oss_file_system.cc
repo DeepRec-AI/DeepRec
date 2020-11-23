@@ -645,7 +645,7 @@ Status OSSFileSystem::_ListObjects(
     if (!aos_status_is_ok(s)) {
       string msg;
       oss_error_message(s, &msg);
-      VLOG(0) << "cam not list object " << key << " errMsg: " << msg;
+      VLOG(0) << "can not list object " << key << " errMsg: " << msg;
       return errors::NotFound("can not list object:", key, " errMsg: ", msg);
     }
 
