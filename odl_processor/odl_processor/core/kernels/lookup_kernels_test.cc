@@ -40,9 +40,11 @@ limitations under the License.
 namespace tensorflow {
 namespace processor {
 
+
 TEST(KernelsTest, KvImportTest) {
-// TODO: FIXME after support OSS
-#if 1
+// TODO: can NOT expose OSSkey and OSSid in the test.
+// Manual test OSS and local file passed.
+#if 0
   NodeDef version_def;
   Tensor version_value(DT_STRING, TensorShape({1}));
   version_value.flat<std::string>()(0) = "v1";
@@ -54,7 +56,10 @@ TEST(KernelsTest, KvImportTest) {
   NodeDef prefix_def;
   Tensor prefix_value(DT_STRING, TensorShape({1}));
   prefix_value.flat<std::string>()(0) =
-      "oss://tfsmoke1/jktest/mm/odl_test_files/saved_model/variables";
+      // Local test
+      //"/local/path/workspace/tmp/DeepFM/ev/1598442950_pai/variables/variables";
+      // OSS test
+      "oss://bucket-name\x01id=id\x02key=key\x02host=host/jktest/mm/odl_test_files/saved_model/variables";
   TF_CHECK_OK(NodeDefBuilder("prefix", "Const")
                   .Attr("dtype", DT_STRING)
                   .Attr("value", prefix_value)
@@ -113,6 +118,7 @@ TEST(KernelsTest, KvImportTest) {
 
   EXPECT_TRUE(1);
 }
+
 
 } // namespace processor
 } // namespace tensorflow
