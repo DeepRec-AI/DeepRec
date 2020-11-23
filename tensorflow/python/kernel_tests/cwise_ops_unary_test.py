@@ -395,6 +395,8 @@ class UnaryOpTest(test.TestCase):
                   2).reshape(1, 3, 2).astype(dtypes_lib.bfloat16.as_numpy_dtype)
     self._compareCpu(x, np.abs, math_ops.abs)
     self._compareCpu(x, np.abs, _ABS)
+    self._compareCpu(x, np.exp, math_ops.exp)
+    self._compareCpu(z, self._rsqrt, math_ops.rsqrt)
 
   def testInt8Basic(self):
     x = np.arange(-6, 6, 2).reshape(1, 3, 2).astype(np.int8)

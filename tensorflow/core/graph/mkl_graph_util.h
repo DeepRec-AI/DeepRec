@@ -87,6 +87,16 @@ bool inline DoesControlEdgeExist(const Node* src, const Node* dst) {
   return false;
 }
 
+// Check if the data_format attribute in the node def represents 5D tensor
+bool inline Check5DFormat(const NodeDef& ndef) {
+  string data_format;
+  TF_CHECK_OK(GetNodeAttr(ndef, "data_format", &data_format));
+  if (data_format.compare("NCDHW") == 0 || data_format.compare("NDHWC") == 0) {
+    return true;
+  }
+  return false;
+}
+
 namespace mkl_op_registry {
 // MKL operators whose kernels are registered with 'MklLayoutDependentOp' label
 // (e.g., MklConv2D) understand input tensors in MKL layout. These operators
