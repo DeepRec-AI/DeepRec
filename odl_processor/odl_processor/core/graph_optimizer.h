@@ -139,20 +139,25 @@ class SavedModelOptimizer : public GraphOptimizer {
   // TODO: Only support EV now
   // Add Lookup and Insert ops,
   // then remove KvResourceGather and KvResourceImportV2 ops.
-  void ConvertKVOps();
+  Status ConvertKVOps();
 
   // Rewrite default value op when not found the variable key.
-  void RewriteDefaultValueOp();
+  Status RewriteDefaultValueOp();
 
   // Remove unused signature def
-  void FreezeSignatureDef();
+  Status FreezeSignatureDef();
 
   // Add a init-op to initialize variable, redis for example
-  void AddVariableInitSubGraph();
+  Status AddVariableInitSubGraph();
 
   // Add full and delta ckpt update subgraph
-  void AddFullAndDeltaUpdateSubGraph();
+  Status AddFullAndDeltaUpdateSubGraph();
 
+  // Add a version placeholder node
+  Status AddVersionPlaceholderNode();
+
+  Graph graph_; // graph of meta_graph_def_.graph_def()
+  Node* version_node_ = nullptr; // version placeholder node
   std::string signature_name_;
   MetaGraphDef* meta_graph_def_ = nullptr; // not owned
 };

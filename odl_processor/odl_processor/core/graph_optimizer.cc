@@ -496,7 +496,19 @@ ClusteredGraphInfo ClusteringGraphDef(
 SavedModelOptimizer::SavedModelOptimizer(
     const std::string& signature_name,
     MetaGraphDef* mgdef)
-  : signature_name_(signature_name), meta_graph_def_(mgdef) {
+  : graph_(OpRegistry::Global()),
+    signature_name_(signature_name),
+    meta_graph_def_(mgdef) {
+
+  GraphConstructorOptions opts;
+  opts.allow_internal_ops = true;
+  opts.allow_internal_ops = true;
+  Status s = ConvertGraphDefToGraph(
+      opts, meta_graph_def_->graph_def(), &graph_);
+  if (!s.ok()) {
+    LOG(FATAL) << "Can not convert graphdef to graph, "
+               << s.error_message();
+  }
 }
 
 SavedModelOptimizer::~SavedModelOptimizer() {
@@ -504,15 +516,30 @@ SavedModelOptimizer::~SavedModelOptimizer() {
 }
 
 Status SavedModelOptimizer::Optimize() {
+  Status s;
 
-  FreezeSignatureDef();
+  s = FreezeSignatureDef();
+  if (!s.ok()) return s;
+
+  // Add version op
+  s = AddVersionPlaceholderNode();
+  if (!s.ok()) return s;
+
+  // Add KvInit Op
+  s = AddVariableInitSubGraph();
+  if (!s.ok()) return s;
 
   // For example:
   // convert KvResourceGather to KvLookup
   // convert KvResourceImportV2 to KvImport
-  ConvertKVOps();
+  s = ConvertKVOps();
+  if (!s.ok()) return s;
 
-  RewriteDefaultValueOp();
+  s = RewriteDefaultValueOp();
+  if (!s.ok()) return s;
+
+  // replace the graph def in saved_model_bundle
+  graph_.ToGraphDef(meta_graph_def_->mutable_graph_def());
 
   // Add other passes here
   return Status::OK();
@@ -520,12 +547,18 @@ Status SavedModelOptimizer::Optimize() {
 
 namespace {
 
+static const std::string kModelVersionNodeName =
+    "GlobalODL/ModelVersion";
+
+static const std::string kInitNodeName =
+    "GlobalODL/KvInit";
+
 struct SrcInfo {
   Node* src_node;
   int src_slot;
 };
 
-void ReplaceKVOpsWithLookupOrInsertOps (
+Status ReplaceKVOpsWithLookupOrImportOps (
     const std::string& remote_op_name,
     Node* node, Graph* graph,
     std::vector<SrcInfo>& input_info,
@@ -543,7 +576,7 @@ void ReplaceKVOpsWithLookupOrInsertOps (
 
   Status status;
   Node* remote_lookup_node = graph->AddNode(remote_def, &status);
-  TF_CHECK_OK(status);
+  if (!status.ok()) return status;
 
   // Add input egdes
   for (size_t i = 0; i < input_info.size(); ++i) {
@@ -560,50 +593,37 @@ void ReplaceKVOpsWithLookupOrInsertOps (
 
   // remove current node
   graph->RemoveNode(node);
+
+  return Status::OK();
 }
 
-int GetShapeValue(Node* node) {
+Status GetShapeValue(Node* node, int* dim) {
   AttrValue* dim_len_value =
       const_cast<AttrValue*>(node->attrs().Find("shape"));
   Status s = AttrValueHasType(*dim_len_value, "shape");
   if (!s.ok()) {
-    LOG(FATAL) << "Miss shape attr in the KvVarHandleOp, "
-               << node->DebugString();
+    return tensorflow::errors::Internal(
+        "Miss shape attr in the KvVarHandleOp, ",
+        node->DebugString());
   }
 
   if (dim_len_value->shape().dim().size() == -1) {
-    LOG(FATAL) << "Dim value of the shape in the KvVarHandleOp is unknown."
-               << node->DebugString();
+    return tensorflow::errors::Internal(
+        "Dim value of the shape in the KvVarHandleOp is unknown, ",
+        node->DebugString());
   }
 
-  return dim_len_value->shape().dim().size();
+  *dim = dim_len_value->shape().dim().size();
+  return Status::OK();
 }
 
 } // namespace
 
-void SavedModelOptimizer::ConvertKVOps() {
-  Graph graph(OpRegistry::Global());
-  GraphConstructorOptions opts;
-  opts.allow_internal_ops = true;
-  opts.allow_internal_ops = true;
-  Status s = ConvertGraphDefToGraph(
-      opts, meta_graph_def_->graph_def(), &graph);
-  if (!s.ok()) {
-    LOG(FATAL) << "can not convert graphdef to graph, " << s.error_message();
-  }
-
-  // Add a placeholder for version which set by user.
-  NodeDef version_def;
-  version_def.set_name("odl_version");
-  version_def.set_op("Placeholder");
-  (*version_def.mutable_attr())["dtype"].set_type(DT_STRING);
-  Status status;
-  Node* version_node = graph.AddNode(version_def, &status);
-  TF_CHECK_OK(status);
+Status SavedModelOptimizer::ConvertKVOps() {
 
   // Find sparse lookup/Import ops and replace them
   // with KvLookup and KvImport
-  for (Node* node : graph.nodes()) {
+  for (Node* node : graph_.nodes()) {
     // Get input edges
     std::vector<const Edge*> input_edges;
     // Check the edges' order
@@ -616,7 +636,11 @@ void SavedModelOptimizer::ConvertKVOps() {
 
     if (node->op_def().name() == "KvResourceGather") {
       // version
-      input_info.push_back(SrcInfo{version_node, 0});
+      if (!version_node_) {
+        return tensorflow::errors::Internal(
+            "Not found a version node in the graph.");
+      }
+      input_info.push_back(SrcInfo{version_node_, 0});
       // indices
       input_info.push_back(SrcInfo{input_edges[1]->src(),
                                    input_edges[1]->src_output()});
@@ -628,7 +652,10 @@ void SavedModelOptimizer::ConvertKVOps() {
       SetAttrValue(input_edges[0]->src()->name(), &var_name_value);
 
       // get resource shape attr
-      int dim_len_value = GetShapeValue(input_edges[0]->src());
+      int dim_len_value = 0;
+      Status s_get_dim = GetShapeValue(input_edges[0]->src(), &dim_len_value);
+      if (!s_get_dim.ok()) return s_get_dim;
+
       AttrValue dim_len_value_int;
       SetAttrValue(dim_len_value, &dim_len_value_int);
 
@@ -637,19 +664,30 @@ void SavedModelOptimizer::ConvertKVOps() {
       AttrValue* tkeys_value =
         const_cast<AttrValue*>(node->attrs().Find("Tkeys"));
       if (!dtype_value || !tkeys_value) {
-        LOG(FATAL) << "Miss dtype or Tkeys attr, " << node->DebugString();
+        return tensorflow::errors::Internal(
+            "Miss dtype or Tkeys attr, ",
+            node->DebugString());
       }
       attr_info["var_name"] = &var_name_value;
       attr_info["dim_len"] = &dim_len_value_int;
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
 
-      ReplaceKVOpsWithLookupOrInsertOps(
-          "KvLookup", node, &graph, input_info, attr_info);
+      Status s_replace = ReplaceKVOpsWithLookupOrImportOps(
+          "KvLookup", node, &graph_, input_info, attr_info);
+      if (!s_replace.ok()) {
+        return tensorflow::errors::Internal(
+            "Replace Kv ops with lookup or import ops failed, ",
+            s_replace.error_message());
+      }
 
     } else if (node->op_def().name() == "KvResourceImportV2") {
       // version
-      input_info.push_back(SrcInfo{version_node, 0});
+      if (!version_node_) {
+        return tensorflow::errors::Internal(
+            "Not found a version node in the graph.");
+      }
+      input_info.push_back(SrcInfo{version_node_, 0});
       // prefix
       input_info.push_back(SrcInfo{input_edges[0]->src(),
                                    input_edges[0]->src_output()});
@@ -662,7 +700,10 @@ void SavedModelOptimizer::ConvertKVOps() {
       attr_info["var_name"] = &var_name_value;
 
       // get resource shape attr
-      int dim_len_value = GetShapeValue(input_edges[1]->src());
+      int dim_len_value = 0;
+      Status s_get_dim = GetShapeValue(input_edges[1]->src(), &dim_len_value);
+      if (!s_get_dim.ok()) return s_get_dim;
+
       AttrValue dim_len_value_int;
       SetAttrValue(dim_len_value, &dim_len_value_int);
       attr_info["dim_len"] = &dim_len_value_int;
@@ -672,21 +713,27 @@ void SavedModelOptimizer::ConvertKVOps() {
       AttrValue* tkeys_value =
         const_cast<AttrValue*>(node->attrs().Find("Tkeys"));
       if (!dtype_value || !tkeys_value) {
-        LOG(FATAL) << "Miss dtype or Tkeys attr, " << node->DebugString();
+        return tensorflow::errors::Internal(
+            "Miss dtype or Tkeys attr, ",
+            node->DebugString());
       }
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
 
-      ReplaceKVOpsWithLookupOrInsertOps(
-          "KvImport", node, &graph, input_info, attr_info);
+      Status s_replace = ReplaceKVOpsWithLookupOrImportOps(
+          "KvImport", node, &graph_, input_info, attr_info);
+      if (!s_replace.ok()) {
+        return tensorflow::errors::Internal(
+            "Replace Kv ops with lookup or import ops failed, ",
+            s_replace.error_message());
+      }
     }
   }
 
-  // replace the graph def in saved_model_bundle
-  graph.ToGraphDef(meta_graph_def_->mutable_graph_def());
+  return Status::OK();
 }
 
-void SavedModelOptimizer::FreezeSignatureDef() {
+Status SavedModelOptimizer::FreezeSignatureDef() {
   std::map<string, SignatureDef> new_signature_def;
   bool found = false;
   for (auto sdef : meta_graph_def_->signature_def()) {
@@ -698,7 +745,9 @@ void SavedModelOptimizer::FreezeSignatureDef() {
   }
 
   if (!found) {
-    LOG(FATAL) << "Not found the signature_def with user specified signature name.";
+    return tensorflow::errors::Internal(
+        "Not found the signature_def with user specified signature name.",
+        signature_name_);
   }
 
   meta_graph_def_->clear_signature_def();
@@ -706,18 +755,55 @@ void SavedModelOptimizer::FreezeSignatureDef() {
   for (auto sdef : new_signature_def) {
     (*sig_def)[sdef.first] = sdef.second;
   }
+
+  return Status::OK();
 }
 
-void SavedModelOptimizer::RewriteDefaultValueOp() {
-
+Status SavedModelOptimizer::RewriteDefaultValueOp() {
+  return Status::OK();
 }
 
-void SavedModelOptimizer::AddVariableInitSubGraph() {
-
+Status SavedModelOptimizer::AddVersionPlaceholderNode() {
+  // Add a placeholder for version which set by user.
+  NodeDef version_def;
+  version_def.set_name(kModelVersionNodeName);
+  version_def.set_op("Placeholder");
+  (*version_def.mutable_attr())["dtype"].set_type(DT_STRING);
+  Status status;
+  version_node_ = graph_.AddNode(version_def, &status);
+  return status;
 }
 
-void SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {
+Status SavedModelOptimizer::AddVariableInitSubGraph() {
+  // Add a init_op to initialize storage like redis.
+  NodeDef init_op_def;
+  init_op_def.set_name(kInitNodeName);
+  init_op_def.set_op("KvInit");
 
+  std::vector<std::string> feature_names;
+  for (Node* node : graph_.nodes()) {
+    // Add resource name as feature_names attr
+    if (node->op_def().name() == "KvResourceImportV2") {
+      feature_names.push_back(node->name());
+    }
+  }
+  AddNodeAttr("feature_names", feature_names, &init_op_def);
+
+  Status status;
+  Node* init_op_node = graph_.AddNode(init_op_def, &status);
+  if (!status.ok()) return status;
+  if (!version_node_) {
+      return tensorflow::errors::Internal(
+          "Not found a version node in the graph.");
+  }
+  graph_.AddEdge(version_node_, 0,
+                  init_op_node, 0);
+
+  return Status::OK();
+}
+
+Status SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {
+  return Status::OK();
 }
 
 } // namespace processor
