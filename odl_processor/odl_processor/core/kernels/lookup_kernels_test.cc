@@ -108,7 +108,7 @@ TEST(KernelsTest, KvImportTest) {
       new OpKernelContext(&params, 0));
 
   auto done = []() {
-    LOG(INFO) << "I'm done.";
+    LOG(INFO) << "KvImport done.";
   };
 
   AsyncOpKernel* real_kv_import_op = (AsyncOpKernel*)(kv_import_op.get());
@@ -119,6 +119,38 @@ TEST(KernelsTest, KvImportTest) {
   EXPECT_TRUE(1);
 }
 
+TEST(KernelsTest, KvInitTest) {
+  NodeDef kv_init_def;
+  TF_CHECK_OK(NodeDefBuilder("kv_init", "KvInit")
+                  .Attr("feature_names", {"f1", "f2", "f3"})
+                  .Finalize(&kv_init_def));
+
+  std::unique_ptr<Device> device(
+      DeviceFactory::NewDevice("CPU", {}, "/job:localhost/replica:0/task:0"));
+
+  Status status;
+  std::unique_ptr<OpKernel> kv_init_op(
+      CreateOpKernel(DEVICE_CPU, device.get(), cpu_allocator(),
+                     kv_init_def, TF_GRAPH_DEF_VERSION, &status));
+  TF_CHECK_OK(status);
+  OpKernelContext::Params params;
+  params.device = device.get();
+  params.frame_iter = FrameAndIter(0, 0);
+  params.op_kernel = kv_init_op.get();
+
+  std::unique_ptr<OpKernelContext> kv_init_context(
+      new OpKernelContext(&params, 0));
+
+  auto done = []() {
+    LOG(INFO) << "KvInit done.";
+  };
+
+  AsyncOpKernel* real_kv_init_op = (AsyncOpKernel*)(kv_init_op.get());
+  real_kv_init_op->ComputeAsync(kv_init_context.get(), std::move(done));
+  TF_CHECK_OK(kv_init_context->status());
+
+  EXPECT_TRUE(1);
+}
 
 } // namespace processor
 } // namespace tensorflow

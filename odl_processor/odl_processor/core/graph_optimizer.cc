@@ -791,15 +791,7 @@ Status SavedModelOptimizer::AddVariableInitSubGraph() {
 
   Status status;
   Node* init_op_node = graph_.AddNode(init_op_def, &status);
-  if (!status.ok()) return status;
-  if (!version_node_) {
-      return tensorflow::errors::Internal(
-          "Not found a version node in the graph.");
-  }
-  graph_.AddEdge(version_node_, 0,
-                  init_op_node, 0);
-
-  return Status::OK();
+  return status;
 }
 
 Status SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {

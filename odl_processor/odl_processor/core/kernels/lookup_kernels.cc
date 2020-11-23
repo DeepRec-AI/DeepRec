@@ -363,5 +363,50 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_KV_IMPORT_CPU);
 #undef REGISTER_KV_IMPORT_ALL_KEY_TYPES
 #undef REGISTER_KV_IMPORT
 
+namespace {
+
+// TODO: FIXME, function is just for testing
+typedef std::function<void(const Status&)> InitCallback;
+
+void FakeInit(std::vector<std::string>& feature_names,
+              InitCallback callback) {
+  for (auto name : feature_names) {
+    LOG(INFO) << "name: " << name;
+  }
+
+  Status s;
+  callback(s);
+}
+
+InitCallback make_init_callback(
+    OpKernelContext* ctx,
+    AsyncOpKernel::DoneCallback done) {
+  return [ctx, done = std::move(done)](const Status& s) {
+    ctx->SetStatus(s);
+    done();   
+  };
+}
+
+}
+
+class KvInitOp : public AsyncOpKernel {
+ public:
+  explicit KvInitOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("feature_names", &feature_names_));
+  }
+
+  void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
+    FakeInit(feature_names_,
+             make_init_callback(ctx, std::move(done)));
+  }
+
+ private:
+  std::vector<std::string> feature_names_;
+};
+
+REGISTER_KERNEL_BUILDER(Name("KvInit").Device(DEVICE_CPU),
+                        KvInitOp);
+
+
 }  // namespace processor
 }  // namespace tensorflow
