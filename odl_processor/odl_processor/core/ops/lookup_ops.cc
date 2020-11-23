@@ -20,6 +20,12 @@ limitations under the License.
 namespace tensorflow {
 namespace processor {
 
+// Init storage
+REGISTER_OP("KvInit")
+    .Input("version: string")
+    .Attr("feature_names: list(string) >= 0")
+    .SetShapeFn(shape_inference::UnknownShape);
+
 // EV
 REGISTER_OP("KvLookup")
     .Input("version: string")
