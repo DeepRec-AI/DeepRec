@@ -121,6 +121,8 @@ struct GraphOptimizerOptions {
   bool cache_sparse_locally = false;
 };
 
+std::string& GetInitDefKey();
+
 class GraphOptimizer {
  public:
   explicit GraphOptimizer() {}
