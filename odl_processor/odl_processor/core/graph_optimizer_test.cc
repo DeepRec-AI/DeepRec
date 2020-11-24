@@ -951,10 +951,28 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   EXPECT_TRUE(n.op() == "KvLookup");
 
 
-  EXPECT_TRUE(saved_model_bundle.meta_graph_def.signature_def().size() == 1);
+  EXPECT_TRUE(saved_model_bundle.meta_graph_def.signature_def().size() == 2);
   for (auto sdef : saved_model_bundle.meta_graph_def.signature_def()) {
-    EXPECT_TRUE(sdef.first == "serving_x");
+    EXPECT_TRUE(sdef.first == "serving_x" || sdef.first == GetInitDefKey());
   }
+
+  std::string init_op_name;
+  for (auto sdef : saved_model_bundle.meta_graph_def.signature_def()) {
+    if (sdef.first == tensorflow::processor::GetInitDefKey()) {
+      TensorInfo tinfo;
+      for (auto output : sdef.second.outputs()) {
+        if (output.first == "init_op") {
+          tinfo = output.second;
+          break;
+        }
+      }
+      init_op_name = tinfo.name();
+      int offset = init_op_name.find(":");
+      init_op_name = init_op_name.substr(0, offset);
+      break;
+    }
+  }
+  EXPECT_TRUE(init_op_name == "GlobalODL/KvInit");
 }
 
 } // namespace processor

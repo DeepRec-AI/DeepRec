@@ -493,6 +493,11 @@ ClusteredGraphInfo ClusteringGraphDef(
 
 /// Tensorflow
 
+std::string& GetInitDefKey() {
+  static std::string init_def_key("GlobalODL/InitKv");
+  return init_def_key;
+}
+
 SavedModelOptimizer::SavedModelOptimizer(
     const std::string& signature_name,
     MetaGraphDef* mgdef)
@@ -518,15 +523,15 @@ SavedModelOptimizer::~SavedModelOptimizer() {
 Status SavedModelOptimizer::Optimize() {
   Status s;
 
-  s = FreezeSignatureDef();
-  if (!s.ok()) return s;
-
   // Add version op
   s = AddVersionPlaceholderNode();
   if (!s.ok()) return s;
 
   // Add KvInit Op
   s = AddVariableInitSubGraph();
+  if (!s.ok()) return s;
+
+  s = FreezeSignatureDef();
   if (!s.ok()) return s;
 
   // For example:
@@ -547,6 +552,8 @@ Status SavedModelOptimizer::Optimize() {
 
 namespace {
 
+// TODO: FIXME the name may be existed in the graph
+// should a method to get the unique name.
 static const std::string kModelVersionNodeName =
     "GlobalODL/ModelVersion";
 
@@ -755,6 +762,26 @@ Status SavedModelOptimizer::FreezeSignatureDef() {
   for (auto sdef : new_signature_def) {
     (*sig_def)[sdef.first] = sdef.second;
   }
+
+  // Add Init kv def
+  Node* init_op = nullptr;
+  for (Node* node : graph_.nodes()) {
+    if (node->name() == kInitNodeName) {
+      init_op = node;
+      break;
+    }
+  }
+
+  if (!init_op) {
+    return tensorflow::errors::Internal(
+        "Not found the init kv op in the graph.",
+        kInitNodeName);
+  }
+
+  (*sig_def)[GetInitDefKey()] = SignatureDef();
+  TensorInfo tinfo;
+  tinfo.set_name(kInitNodeName+":0");
+  (*(*sig_def)[GetInitDefKey()].mutable_outputs())["init_op"] = tinfo;
 
   return Status::OK();
 }

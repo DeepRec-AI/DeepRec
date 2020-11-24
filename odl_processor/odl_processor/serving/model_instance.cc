@@ -153,6 +153,31 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
   return RunOnce(run_options, inputs, {}, {string(restore_op_name)},
                  nullptr /* outputs */, &run_metadata, session);
 }
+
+Status RunInitSparseGraph(const MetaGraphDef& meta_graph_def,
+                          const RunOptions& run_options,
+                          Session* session) {
+  std::string init_op_name;
+  for (auto sdef : meta_graph_def.signature_def()) {
+    if (sdef.first == tensorflow::processor::GetInitDefKey()) {
+      TensorInfo tinfo;
+      for (auto output : sdef.second.outputs()) {
+        if (output.first == "init_op") {
+          tinfo = output.second;
+          break;
+        }
+      }
+      init_op_name = tinfo.name();
+      int offset = init_op_name.find(":");
+      init_op_name = init_op_name.substr(0, offset);
+      break;
+    }
+  }
+
+  RunMetadata run_metadata;
+  return RunOnce(run_options, {}, {}, {init_op_name},
+                 nullptr /* outputs */, &run_metadata, session);
+}
 }
 namespace processor {
 Status ModelSessionMgr::CreateModelSession(const MetaGraphDef& meta_graph_def,
