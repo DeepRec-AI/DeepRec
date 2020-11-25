@@ -33,8 +33,7 @@ int process(void* model_buf, const void* input_data, int input_size,
 
   tensorflow::eas::PredictRequest request;
   tensorflow::eas::PredictResponse response;
-  std::string input_request = std::string((const char *)input_data, input_size);
-  request.ParseFromString(input_request);
+  request.ParseFromArray(input_data, input_size);
   //tensorflow::Status s = model->Predict(request, &response);
   tensorflow::Status s;
   if (!s.ok()) {
@@ -43,12 +42,8 @@ int process(void* model_buf, const void* input_data, int input_size,
     *output_size = strlen(errmsg);
     return 500;
   }
-  std::string output_response;
-  response.SerializeToString(&output_response);
-  *output_data = malloc(output_response.length());
-  memcpy(*output_data, output_response.c_str(), output_response.length());
-  *output_size = output_response.length();
-
+  *output_size = response.ByteSize();
+  response.SerializeToArray(*output_data, *output_size);
   return 200;
 }
 
