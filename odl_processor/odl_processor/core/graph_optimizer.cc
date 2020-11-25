@@ -493,9 +493,27 @@ ClusteredGraphInfo ClusteringGraphDef(
 
 /// Tensorflow
 
-std::string& GetInitDefKey() {
+// TODO: FIXME these names may be existed in the graph
+// should a method to get the unique name.
+
+const std::string& GetInitDefKey() {
   static std::string init_def_key("GlobalODL/InitKv");
   return init_def_key;
+}
+
+const std::string& GetModelVersionNodeName() {
+  static std::string name("GlobalODL/ModelVersion");
+  return name;
+}
+
+const std::string& GetStoragePointerNodeName() {
+  static std::string name("GlobalODL/StoragePointer");
+  return name;
+}
+
+const std::string& GetInitNodeName() {
+  static std::string name("GlobalODL/KvInit");
+  return name;
 }
 
 SavedModelOptimizer::SavedModelOptimizer(
@@ -523,7 +541,8 @@ SavedModelOptimizer::~SavedModelOptimizer() {
 Status SavedModelOptimizer::Optimize() {
   Status s;
 
-  // Add version op
+  // Add version ops
+  // include version and storage pointer
   s = AddVersionPlaceholderNode();
   if (!s.ok()) return s;
 
@@ -551,14 +570,6 @@ Status SavedModelOptimizer::Optimize() {
 }
 
 namespace {
-
-// TODO: FIXME the name may be existed in the graph
-// should a method to get the unique name.
-static const std::string kModelVersionNodeName =
-    "GlobalODL/ModelVersion";
-
-static const std::string kInitNodeName =
-    "GlobalODL/KvInit";
 
 struct SrcInfo {
   Node* src_node;
@@ -643,9 +654,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
 
     if (node->op_def().name() == "KvResourceGather") {
       // version
-      if (!version_node_) {
+      if (!version_node_ || !storage_pointer_node_) {
         return tensorflow::errors::Internal(
-            "Not found a version node in the graph.");
+            "Not found a version or storage pointer node in the graph.");
       }
       input_info.push_back(SrcInfo{version_node_, 0});
       // indices
@@ -654,6 +665,8 @@ Status SavedModelOptimizer::ConvertKVOps() {
       // default_value
       input_info.push_back(SrcInfo{input_edges[2]->src(),
                                    input_edges[2]->src_output()});
+      // storage pointer
+      input_info.push_back(SrcInfo{storage_pointer_node_, 0});
 
       AttrValue var_name_value;
       SetAttrValue(input_edges[0]->src()->name(), &var_name_value);
@@ -690,9 +703,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
 
     } else if (node->op_def().name() == "KvResourceImportV2") {
       // version
-      if (!version_node_) {
+      if (!version_node_ || !storage_pointer_node_) {
         return tensorflow::errors::Internal(
-            "Not found a version node in the graph.");
+            "Not found a version or storage pointer node in the graph.");
       }
       input_info.push_back(SrcInfo{version_node_, 0});
       // prefix
@@ -701,7 +714,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
       // tensor_names
       input_info.push_back(SrcInfo{input_edges[3]->src(),
                                    input_edges[3]->src_output()});
- 
+      // storage pointer
+      input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+
       AttrValue var_name_value;
       SetAttrValue(input_edges[1]->src()->name(), &var_name_value);
       attr_info["var_name"] = &var_name_value;
@@ -766,7 +781,7 @@ Status SavedModelOptimizer::FreezeSignatureDef() {
   // Add Init kv def
   Node* init_op = nullptr;
   for (Node* node : graph_.nodes()) {
-    if (node->name() == kInitNodeName) {
+    if (node->name() == GetInitNodeName()) {
       init_op = node;
       break;
     }
@@ -775,12 +790,12 @@ Status SavedModelOptimizer::FreezeSignatureDef() {
   if (!init_op) {
     return tensorflow::errors::Internal(
         "Not found the init kv op in the graph.",
-        kInitNodeName);
+        GetInitNodeName());
   }
 
   (*sig_def)[GetInitDefKey()] = SignatureDef();
   TensorInfo tinfo;
-  tinfo.set_name(kInitNodeName+":0");
+  tinfo.set_name(GetInitNodeName()+":0");
   (*(*sig_def)[GetInitDefKey()].mutable_outputs())["init_op"] = tinfo;
 
   return Status::OK();
@@ -793,18 +808,27 @@ Status SavedModelOptimizer::RewriteDefaultValueOp() {
 Status SavedModelOptimizer::AddVersionPlaceholderNode() {
   // Add a placeholder for version which set by user.
   NodeDef version_def;
-  version_def.set_name(kModelVersionNodeName);
+  version_def.set_name(GetModelVersionNodeName());
   version_def.set_op("Placeholder");
   (*version_def.mutable_attr())["dtype"].set_type(DT_STRING);
   Status status;
   version_node_ = graph_.AddNode(version_def, &status);
+  if (!status.ok()) return status;
+
+  // Add a placeholder for storage pointer which set by user.
+  NodeDef storage_pointer_def;
+  storage_pointer_def.set_name(GetStoragePointerNodeName());
+  storage_pointer_def.set_op("Placeholder");
+  (*storage_pointer_def.mutable_attr())["dtype"].set_type(DT_STRING);
+  storage_pointer_node_ = graph_.AddNode(storage_pointer_def, &status);
+
   return status;
 }
 
 Status SavedModelOptimizer::AddVariableInitSubGraph() {
   // Add a init_op to initialize storage like redis.
   NodeDef init_op_def;
-  init_op_def.set_name(kInitNodeName);
+  init_op_def.set_name(GetInitNodeName());
   init_op_def.set_op("KvInit");
 
   std::vector<std::string> feature_names;
