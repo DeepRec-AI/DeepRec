@@ -56,10 +56,12 @@ struct Version {
 };
 
 struct ModelSession {
-  ModelSession(Session* s, const Version& version) :
-    session_(s), counter_(0), version_(version) {}
+  ModelSession(Session* s, const Version& version,
+      SparseStorage* sparse_storage) : session_(s), counter_(0),
+    version_(version) {}
 
   Session* session_ = nullptr;
+  SparseStorage* sparse_storage_ = nullptr;
   std::atomic<int64> counter_;
 
   Version version_;
@@ -67,23 +69,36 @@ struct ModelSession {
 
 class ModelSessionMgr {
  public:
-  Status CreateModelSession(const MetaGraphDef& meta_graph_def,
-      SessionOptions* session_options, RunOptions* run_options,
-      const Version& version, const char* model_dir);
+  ModelSessionMgr(const MetaGraphDef& meta_graph_def,
+      SessionOptions* session_options, RunOptions* run_options);
+
+  Status CreateDeltaModelSession(const Version& version,
+      const char* model_dir, SparseStorage* sparse_storage);
+  Status CreateFullModelSession(const Version& version,
+      const char* model_dir, SparseStorage* sparse_storage);
 
  private:
-  void ResetServingSession(Session* session, const Version& version);
+  Status CreateSession(Session** sess);
+  Status RunRestoreOps(const char* model_dir, Session* session,
+      SparseStorage* sparse_storage);
+  void ResetServingSession(Session* session, const Version& version,
+      SparseStorage* sparse_storage);
 
  private:
   ModelSession* serving_session_ = nullptr;
   std::vector<ModelSession*> sessions_;
+
+  MetaGraphDef meta_graph_def_;
+  SessionOptions* session_options_;
+  RunOptions* run_options_;
+  std::vector<AssetFileDef> asset_file_defs_;
 };
 
 class ModelInstance {
  public:
   ModelInstance(SessionOptions* sess_options, RunOptions* run_options);
   Status Init(const Version& version, ModelConfig* config,
-      SparseStorage* sparse_storage);
+      ModelStorage* model_storage, bool enable_backup);
 
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
   Status Predict(const RunRequest& req, RunResponse* resp);
@@ -98,19 +113,21 @@ class ModelInstance {
   Status Warmup();
   Status ReadModelSignature(ModelConfig* model_config);
 
-  Status CreateSession(const Version& version, const char* model_dir);
-  Status RecursionCreateSession(const Version& version);
+  Status RecursionCreateSession(const Version& version,
+      SparseStorage* sparse_storge);
 
  private:
   MetaGraphDef meta_graph_def_;
-  ModelSessionMgr* session_mgr_;
 
   std::pair<std::string, SignatureDef> model_signature_;
 
+  ModelSessionMgr* session_mgr_ = nullptr;
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
   SavedModelOptimizer* optimizer_ = nullptr;
-  SparseStorage* sparse_storage_ = nullptr;
+
+  SparseStorage* serving_storage_ = nullptr;
+  SparseStorage* backup_storage_ = nullptr; 
 
   Version version_;
 };
