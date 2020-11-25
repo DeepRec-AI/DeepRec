@@ -45,6 +45,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/batch_matmul_op_impl.h"
 #include "tensorflow/core/kernels/fill_functor.h"
 #include "tensorflow/core/kernels/mkl_matmul_ops_common.h"
+#include "tensorflow/core/kernels/no_op.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/matmul_bcast.h"
@@ -64,6 +65,9 @@ class BatchMatMulMkl : public OpKernel {
       : OpKernel(context), eigen_batch_mm_v2_(context) {
     OP_REQUIRES_OK(context, context->GetAttr("adj_x", &adj_x_));
     OP_REQUIRES_OK(context, context->GetAttr("adj_y", &adj_y_));
+
+    alpha_ = 1.0f;
+    beta_ = 0.0f;
   }
 
   virtual ~BatchMatMulMkl() {}
@@ -71,6 +75,14 @@ class BatchMatMulMkl : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     const Tensor& lhs = ctx->input(0);
     const Tensor& rhs = ctx->input(1);
+ 
+    if (fuse_mul_) {
+      const Tensor& scale = ctx->input(2);
+      OP_REQUIRES(ctx, scale.NumElements() == 1,
+                  errors::InvalidArgument("scale Tensor must be a scalar"));
+      alpha_ = static_cast<float>(scale.flat<Scalar>()(0));
+      beta_ = 0.0f;
+    }
 
     if (!v2_bcast) {
       // Using V1, so check to make sure lhs and rhs dimensions are correct and
@@ -184,7 +196,7 @@ class BatchMatMulMkl : public OpKernel {
       // a,b and c.
       MklCblasGemmBatch(CblasRowMajor, adj_x_, adj_y_, m_array, n_array,
                         k_array, &a, lda_array, &b, ldb_array, &c, ldc_array, 1,
-                        group_size, ctx);
+                        group_size, alpha_, beta_, ctx);
     } else {
       std::vector<const Scalar*> a_array;
       std::vector<const Scalar*> b_array;
@@ -216,13 +228,19 @@ class BatchMatMulMkl : public OpKernel {
       // pointer is to 2D matrix.
       MklCblasGemmBatch(CblasRowMajor, adj_x_, adj_y_, m_array, n_array,
                         k_array, &a_array[0], lda_array, &b_array[0], ldb_array,
-                        &c_array[0], ldc_array, 1, group_size, ctx);
+                        &c_array[0], ldc_array, 1, group_size, alpha_, beta_,
+                        ctx);
     }
   }
+ protected:
+  void set_fuse_mul(bool fuse_mul) { fuse_mul_ = fuse_mul; }
 
  private:
   bool adj_x_;
   bool adj_y_;
+  bool fuse_mul_ = false;
+  float alpha_;
+  float beta_;
   BatchMatMulV2Op<CPUDevice, Scalar> eigen_batch_mm_v2_;
 
   void MklCblasGemmBatch(
@@ -232,14 +250,15 @@ class BatchMatMulMkl : public OpKernel {
       const std::vector<MKL_INT>& lda_Array, const float** B_Array,
       const std::vector<MKL_INT>& ldb_Array, float** C_Array,
       const std::vector<MKL_INT>& ldc_Array, const MKL_INT group_count,
-      const std::vector<MKL_INT>& group_size, OpKernelContext* ctx) {
-#if !defined(INTEL_MKL_DNN_ONLY)
+      const std::vector<MKL_INT>& group_size, const float alpha,
+      const float beta, OpKernelContext* ctx) {
+#ifndef ENABLE_MKLDNN_THREADPOOL
     std::vector<CBLAS_TRANSPOSE> TransA_Array(
         group_size[0], TransA ? CblasTrans : CblasNoTrans);
     std::vector<CBLAS_TRANSPOSE> TransB_Array(
         group_size[0], TransB ? CblasTrans : CblasNoTrans);
-    std::vector<float> alpha_Array(group_size[0], 1.0);
-    std::vector<float> beta_Array(group_size[0], 0.0);
+    std::vector<float> alpha_Array(group_size[0], alpha);
+    std::vector<float> beta_Array(group_size[0], beta);
     cblas_sgemm_batch(Layout, &TransA_Array[0], &TransB_Array[0], &M_Array[0],
                       &N_Array[0], &K_Array[0], &alpha_Array[0],
                       reinterpret_cast<const float**>(A_Array), &lda_Array[0],
@@ -250,8 +269,8 @@ class BatchMatMulMkl : public OpKernel {
     DCHECK(Layout == CblasRowMajor);
     std::vector<bool> TransA_Array(group_size[0], TransA);
     std::vector<bool> TransB_Array(group_size[0], TransB);
-    std::vector<float> alpha_Array(group_size[0], 1.0);
-    std::vector<float> beta_Array(group_size[0], 0.0);
+    std::vector<float> alpha_Array(group_size[0], alpha);
+    std::vector<float> beta_Array(group_size[0], beta);
     dnnl_gemm_batch<float>(TransA_Array, TransB_Array, M_Array, N_Array,
                            K_Array, alpha_Array, *A_Array, *B_Array, beta_Array,
                            *C_Array, group_count, group_size, ctx);
@@ -266,12 +285,13 @@ class BatchMatMulMkl : public OpKernel {
       const std::vector<MKL_INT>& lda_Array, const bfloat16** B_Array,
       const std::vector<MKL_INT>& ldb_Array, bfloat16** C_Array,
       const std::vector<MKL_INT>& ldc_Array, const MKL_INT group_count,
-      const std::vector<MKL_INT>& group_size, OpKernelContext* ctx) {
+      const std::vector<MKL_INT>& group_size, const float alpha,
+      const float beta, OpKernelContext* ctx) {
     DCHECK(Layout == CblasRowMajor);
     std::vector<bool> TransA_Array(group_size[0], TransA);
     std::vector<bool> TransB_Array(group_size[0], TransB);
-    std::vector<float> alpha_Array(group_size[0], 1.0);
-    std::vector<float> beta_Array(group_size[0], 0.0);
+    std::vector<float> alpha_Array(group_size[0], static_cast<float>(alpha));
+    std::vector<float> beta_Array(group_size[0], static_cast<float>(beta));
     // TODO(nhasabni): Remove *A when we pass a, b, and c correctly.
     // MKLDNN API does not require lda, ldb, and ldc.
     dnnl_gemm_batch<bfloat16>(
@@ -279,6 +299,35 @@ class BatchMatMulMkl : public OpKernel {
         *A_Array, *B_Array, beta_Array, *C_Array, group_count, group_size, ctx);
   }
 #endif  // ENABLE_MKLDNN_V1 && ENABLE_INTEL_MKL_BFLOAT16
+};
+
+template <typename Device, typename Scalar, bool v2_bcast>
+class FusedBatchMatMulMkl : public BatchMatMulMkl<Device, Scalar, v2_bcast> {
+ public:
+  explicit FusedBatchMatMulMkl(OpKernelConstruction* context)
+      : BatchMatMulMkl<Device, Scalar, v2_bcast>(context) {
+    std::vector<string> fused_ops;
+    OP_REQUIRES_OK(context, context->GetAttr("fused_ops", &fused_ops));
+    OP_REQUIRES(context, !fused_ops.empty(),
+                errors::InvalidArgument(
+                    "Fused BatchMatMul must have at least one fused op."));
+
+    int num_args;
+    OP_REQUIRES_OK(context, context->GetAttr("num_args", &num_args));
+
+    if (fused_ops == std::vector<string>{"Mul"}) {
+      this->set_fuse_mul(true);
+      OP_REQUIRES(context, num_args == 1,
+                  errors::InvalidArgument(
+                      "Fused BatchMatmul must have one extra argument: Mul."));
+    } else {
+      OP_REQUIRES(context, false,
+                  errors::Unimplemented("Fusion is not implemented: [",
+                                        absl::StrJoin(fused_ops, ","), "]"));
+    }
+  }
+
+  virtual ~FusedBatchMatMulMkl() {}
 };
 
 #define REGISTER_BATCH_MATMUL_MKL(TYPE)                                       \
@@ -295,12 +344,34 @@ class BatchMatMulMkl : public OpKernel {
                               .Label(mkl_op_registry::kMklNameChangeOpLabel), \
                           BatchMatMulMkl<CPUDevice, TYPE, true>)
 
+#define REGISTER_FUSED_BATCH_MATMUL_MKL(TYPE)                                 \
+  REGISTER_KERNEL_BUILDER(                                                    \
+      Name("_FusedBatchMatMul").Device(DEVICE_CPU).TypeConstraint<TYPE>("T"), \
+      NoOp);                                                                  \
+  REGISTER_KERNEL_BUILDER(Name("_FusedBatchMatMulV2")                         \
+                              .Device(DEVICE_CPU)                             \
+                              .TypeConstraint<TYPE>("T"),                     \
+                          NoOp);                                              \
+  REGISTER_KERNEL_BUILDER(Name("_MklFusedBatchMatMul")                        \
+                              .Device(DEVICE_CPU)                             \
+                              .TypeConstraint<TYPE>("T")                      \
+                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+                          FusedBatchMatMulMkl<CPUDevice, TYPE, false>)        \
+  REGISTER_KERNEL_BUILDER(Name("_MklFusedBatchMatMulV2")                      \
+                              .Device(DEVICE_CPU)                             \
+                              .TypeConstraint<TYPE>("T")                      \
+                              .Label(mkl_op_registry::kMklNameChangeOpLabel), \
+                          FusedBatchMatMulMkl<CPUDevice, TYPE, true>)
+
 #ifdef ENABLE_MKL
 TF_CALL_float(REGISTER_BATCH_MATMUL_MKL);
 TF_CALL_float(REGISTER_BATCH_MATMUL_MKL_V2);
+TF_CALL_float(REGISTER_FUSED_BATCH_MATMUL_MKL);
+
 #if defined(ENABLE_MKLDNN_V1) && defined(ENABLE_INTEL_MKL_BFLOAT16)
 TF_CALL_bfloat16(REGISTER_BATCH_MATMUL_MKL);
 TF_CALL_bfloat16(REGISTER_BATCH_MATMUL_MKL_V2);
+TF_CALL_bfloat16(REGISTER_FUSED_BATCH_MATMUL_MKL);
 #endif  // ENABLE_MKLDNN_V1 && ENABLE_INTEL_MKL_BFLOAT16
 #endif  // ENABLE_MKL
 

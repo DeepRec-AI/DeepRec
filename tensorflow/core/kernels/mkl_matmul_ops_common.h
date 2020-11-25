@@ -544,6 +544,11 @@ struct MklMatMulParams {
   memory::dims a_strides;
   memory::dims b_strides;
   memory::dims c_strides;
+  struct PostOpParam {
+    string name;
+    std::vector<float> param;
+  };
+  std::vector<PostOpParam> post_op_params;
 
   MklMatMulParams(memory::dims a_dims, memory::dims b_dims, memory::dims c_dims,
                   memory::dims a_strides, memory::dims b_strides,
@@ -637,8 +642,27 @@ class MklMatMulPrimitive : public MklPrimitive {
     // Create matmul.
     context_.desc.reset(
         new matmul::desc(*context_.a_md, *context_.b_md, *context_.c_md));
-    context_.prim_desc.reset(
-        new matmul::primitive_desc(*context_.desc, cpu_engine_));
+
+    // Check if there is any fusion as post-ops
+    auto const& post_op_params = params.post_op_params;
+    mkldnn::primitive_attr post_ops_attr;
+    if (!post_op_params.empty()) {
+      for (auto const& post_op_param : post_op_params) {
+        if (post_op_param.name == "output_scale") {
+          DCHECK_EQ(post_op_param.param.size(), 1);
+          std::vector<float> scales;
+          scales.push_back(post_op_param.param[0]);
+          post_ops_attr.set_output_scales(0, scales);
+        } else {
+          DCHECK((post_op_param.name == "output_scale"));
+        }
+      }
+      context_.prim_desc.reset(new matmul::primitive_desc(
+          *context_.desc, post_ops_attr, cpu_engine_));
+    } else {
+      context_.prim_desc.reset(
+          new matmul::primitive_desc(*context_.desc, cpu_engine_));
+    }
 
     // Create memory primitive based on dummy data.
     context_.a_mem.reset(
@@ -707,6 +731,16 @@ class MklMatMulPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(params.c_strides);
     key_creator.AddAsKey(typeid(T).name());
 
+    // Generate keys for post-ops
+    for (auto const& post_op_param : params.post_op_params) {
+      if (post_op_param.name == "output_scale") {
+        DCHECK_EQ(post_op_param.param.size(), 1);
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
+      } else {
+        return string("not_a_key");
+      }
+    }
     return key_creator.GetKey();
   }
 
@@ -766,13 +800,11 @@ void dnnl_gemm_batch(const std::vector<bool>& transa,
       !transb[0] ? dims{k[0] * n[0], n[0], 1} : dims{n[0] * k[0], 1, k[0]};
   dims c_strides = dims{m[0] * n[0], n[0], 1};
 
-  // MklMatMul uses const alpha and beta, make guarantee here to ensure
-  // they are never changed.
-  DCHECK_EQ(alpha, 1.0f);
-  DCHECK_EQ(beta, 0.f);
-
   MklMatMulParams params(a_sizes, b_sizes, c_sizes, a_strides, b_strides,
                          c_strides);
+
+  if (alpha[0] != 1.0f)
+    params.post_op_params.push_back({"output_scale", { alpha[0] }});
   MklMatMulPrimitive<T>* matmul_prim =
       MklMatMulPrimitiveFactory<T>::Get(params, 0);
 

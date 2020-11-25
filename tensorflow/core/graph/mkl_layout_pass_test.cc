@@ -2011,6 +2011,56 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedMatMul_Positive)
 REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedMatMul_Negative);
 #undef REGISTER_TEST
 
+// Test set: _FusedBatchMatMul -> MklFusedBatchMatMul rewrite tests
+#define REGISTER_TEST(NAME, T, INPUT)                                          \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                                      \
+  InitGraph(                                                                   \
+      "node { name: 'A' op: '" #INPUT "'}"                                     \
+      "node { name: 'B' op: '" #INPUT "'}"                                     \
+      "node { name: 'C' op: '" #INPUT "'}"                                     \
+      "node { name: 'D' op: '_FusedBatchMatMul'"                               \
+      " attr { key: 'T'          value { type:" #T  "} }"                      \
+      " attr { key: 'adj_x'      value { b: false } }"                         \
+      " attr { key: 'adj_y'      value { b: false } }"                         \
+      " attr { key: 'num_args'   value { i: 1 } }"                             \
+      " attr { key: 'fused_ops'  value { list: {s: 'Scale'} } }"               \
+      " input: ['A', 'B', 'C']}"                                               \
+      "node { name: 'Z' op: 'Zeta'"                                            \
+      " attr {key: 'T'           value { type: " #T " } }"                     \
+      " input: ['D', 'C']}");                                                  \
+  EXPECT_EQ(DoMklLayoutOptimizationPass(),                                     \
+            "A(" #INPUT ");B(" #INPUT ");C(" #INPUT ");"                       \
+            "D(_MklFusedBatchMatMul);Z(Zeta)"                                  \
+            "|A->D;B->D:1;C->D:2;C->Z:1;D->Z");                                \
+}
+REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedBatchMatMul_Positive)
+#undef REGISTER_TEST
+
+// Test set: _FusedBatchMatMulV2 -> MklFusedBatchMatMulV2 rewrite tests
+#define REGISTER_TEST(NAME, T, INPUT)                                          \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                                      \
+  InitGraph(                                                                   \
+      "node { name: 'A' op: '" #INPUT "'}"                                     \
+      "node { name: 'B' op: '" #INPUT "'}"                                     \
+      "node { name: 'C' op: '" #INPUT "'}"                                     \
+      "node { name: 'D' op: '_FusedBatchMatMulV2'"                             \
+      " attr { key: 'T'          value { type:" #T  "} }"                      \
+      " attr { key: 'adj_x'      value { b: false } }"                         \
+      " attr { key: 'adj_y'      value { b: false } }"                         \
+      " attr { key: 'num_args'   value { i: 1 } }"                             \
+      " attr { key: 'fused_ops'  value { list: {s: 'Scale'} } }"               \
+      " input: ['A', 'B', 'C']}"                                               \
+      "node { name: 'Z' op: 'Zeta'"                                            \
+      " attr {key: 'T'           value { type: " #T " } }"                     \
+      " input: ['D', 'C']}");                                                  \
+  EXPECT_EQ(DoMklLayoutOptimizationPass(),                                     \
+            "A(" #INPUT ");B(" #INPUT ");C(" #INPUT ");"                       \
+            "D(_MklFusedBatchMatMulV2);Z(Zeta)"                                \
+            "|A->D;B->D:1;C->D:2;C->Z:1;D->Z");                                \
+}
+REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedBatchMatMulV2_Positive)
+#undef REGISTER_TEST
+
 // Merge test for PadWithFusedConv2D Op with BiasAdd fusion
 // padding is VALID type
 // A = input(image), B = input(paddings), C = Pad(A, B) = input of conv2D,

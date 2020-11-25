@@ -63,6 +63,9 @@ namespace {
 
 constexpr char kFusedConv2D[] = "_FusedConv2D";
 constexpr char kFusedMatMul[] = "_FusedMatMul";
+constexpr char kFusedMatMulGrad[] = "_FusedMatMulGrad";
+constexpr char kFusedBatchMatMul[] = "_FusedBatchMatMulV2";
+
 constexpr char kFusedDepthwiseConv2dNative[] = "_FusedDepthwiseConv2dNative";
 constexpr char kFusedBatchNormEx[] = "_FusedBatchNormEx";
 
@@ -104,6 +107,17 @@ struct FusedBatchNormEx {
   int activation = kMissingIndex;
   // Add node that will be invalidated by fusing side input and fused batch norm
   int invalidated = kMissingIndex;
+};
+
+// BatchMatMul + Mul fusion
+struct ContractionWithMul {
+  ContractionWithMul() = default;
+  ContractionWithMul(int contraction, int mul, int scalar)
+      : contraction(contraction), mul(mul), scalar(scalar) {}
+
+  int contraction = kMissingIndex;
+  int mul = kMissingIndex;
+  int scalar = kMissingIndex;
 };
 
 // Contraction node followed by a BiasAdd.
@@ -389,6 +403,21 @@ inline bool HasAtMostOneDataFanoutAtPort0(
   return absl::c_count_if(node_view.GetRegularFanout(0), predicate) <= 1;
 }
 
+// Returns true if it is a scalar
+bool IsScalar(const TensorShapeProto& proto) {
+  // Returns false when rank is unknown
+  if (proto.unknown_rank()) {
+    return false;
+  }
+  // Returns false when dimension is unknown
+  for (const auto& dim : proto.dim()) {
+    if (dim.size() < 0) {
+      return false;
+    }
+  }
+  return (TensorShape(proto).num_elements() == 1);
+}
+
 bool FindContractionWithBias(const RemapperContext& ctx, int node_index,
                              ContractionWithBiasAdd* matched,
                              bool check_device_compatible = true) {
@@ -429,6 +458,69 @@ bool FindContractionWithBias(const RemapperContext& ctx, int node_index,
   return true;
 }
 
+// Fuse BatchMatMul and Mul into FusedBatchMatmul if the other input of
+// Mul is a scalar. For example, we can optimize
+//
+//            Mul
+//           /  \
+//  BatchMatMul scale*  ->       FusedBatchMatmul
+//     /   \                     /      |       \
+// input1  input2             input1  input2   scale
+//
+// *) scale must be a scalar
+bool FindContractionWithMul(const RemapperContext& ctx, int node_index,
+                            ContractionWithMul* matched) {
+  const auto* node_view = ctx.graph_view.GetNode(node_index);
+  if (HasControlFaninOrFanout(*node_view)) return false;
+
+  const auto* node_def = node_view->node();
+  if (!IsAnyMul(*node_def)) return false;
+
+  // Mul has two inputs
+  const auto& props = ctx.graph_properties.GetInputProperties(node_def->name());
+  if (props.size() != 2) return false;
+
+  bool left_is_scalar = IsScalar(props[0].shape());
+  bool right_is_scalar = IsScalar(props[1].shape());
+
+  utils::MutableNodeView *const_node_view, *contraction_node_view;
+  if (left_is_scalar) {
+    const_node_view = node_view->GetRegularFanin(0).node_view();
+    contraction_node_view = node_view->GetRegularFanin(1).node_view();
+  } else if (right_is_scalar) {
+    const_node_view = node_view->GetRegularFanin(1).node_view();
+    contraction_node_view = node_view->GetRegularFanin(0).node_view();
+  } else {
+    return false;
+  }
+
+  // Currently we only fuse BatchMatMul with Mul
+  auto* contraction_node_def = contraction_node_view->node();
+  if (!IsAnyBatchMatMul(*contraction_node_def)) return false;
+
+  bool hasValidType = false;
+#ifdef ENABLE_INTEL_MKL_BFLOAT16
+  hasValidType =
+      (HasDataType(node_def, DT_FLOAT) || HasDataType(node_def, DT_BFLOAT16));
+#else
+  hasValidType = HasDataType(node_def, DT_FLOAT);
+#endif
+  if (!hasValidType) return false;
+
+  if (!HaveSameDataType(node_def, contraction_node_def) ||
+      HasControlFaninOrFanout(*contraction_node_view) ||
+      !HasAtMostOneFanoutAtPort0(*contraction_node_view) ||
+      IsInPreserveSet(ctx, contraction_node_def))
+    return false;
+
+  const ContractionWithMul pattern{contraction_node_view->node_index(),
+                                   node_index, const_node_view->node_index()};
+
+  *matched = pattern;
+
+  return true;
+}
+
 bool FindContractionWithBiasAndActivation(
     const RemapperContext& ctx, int node_index,
     ContractionWithBiasAddAndActivation* matched) {
@@ -453,7 +545,6 @@ bool FindContractionWithBiasAndActivation(
       !HaveSameDataType(node_def, bias_add_node_def) ||
       IsInPreserveSet(ctx, bias_add_node_def))
     return false;
-
   // Check that data type and data format are supported on assigned device.
   const ContractionWithBiasAddAndActivation pattern{base.contraction,
                                                     base.bias_add, node_index};
@@ -621,6 +712,8 @@ bool FindContractionWithBiasInPort(const RemapperContext& ctx,
 
   if (!FindContractionWithBias(ctx, bias_add_node_view->node_index(), base,
                                /*check_device_compatible=*/false))
+    return false;
+  if (!IsConv2D(*bias_add_node_view->GetRegularFanin(0).node_view()->node()))
     return false;
   if (!HasAtMostOneFanoutAtPort0(*bias_add_node_view) ||
       !HaveSameDataType(&add_node_def, bias_add_node_def) ||
@@ -994,6 +1087,18 @@ void CopyMatMulAttributes(const NodeDef& matmul, NodeDef* fused_matmul) {
   (*attr)["transpose_b"] = src_attr.at("transpose_b");
 }
 
+void CopyBatchMatMulAttributes(const NodeDef& batchmatmul,
+                               NodeDef* fused_batch_matmul) {
+  DCHECK(IsAnyBatchMatMul(batchmatmul)) << "Input node must be a BatchMatMul";
+
+  auto* attr = fused_batch_matmul->mutable_attr();
+  auto& src_attr = batchmatmul.attr();
+
+  (*attr)["T"] = src_attr.at("T");
+  (*attr)["adj_x"] = src_attr.at("adj_x");
+  (*attr)["adj_y"] = src_attr.at("adj_y");
+}
+
 void SetFusedOpAttributes(NodeDef* fused,
                           const absl::Span<const absl::string_view> fused_ops,
                           int num_args = 1, float epsilon = 0.0) {
@@ -1001,6 +1106,43 @@ void SetFusedOpAttributes(NodeDef* fused,
   SetAttrValue(fused_ops, &(*attr)["fused_ops"]);
   SetAttrValue(num_args, &(*attr)["num_args"]);
   SetAttrValue(epsilon, &(*attr)["epsilon"]);  // required only for BatchNorm
+}
+
+Status AddFusedContractionNode(RemapperContext* ctx,
+                               const ContractionWithMul& matched,
+                               std::vector<bool>* invalidated_nodes,
+                               std::vector<bool>* nodes_to_delete) {
+  const GraphDef* graph = ctx->graph_view.graph();
+  const NodeDef& contraction = graph->node(matched.contraction);
+  const NodeDef& mul = graph->node(matched.mul);
+  const NodeDef& scalar = graph->node(matched.scalar);
+  VLOG(2) << "Fuse " << contraction.op() << " with Mul: "
+          << " mul=" << mul.name() << " contraction=" << contraction.name();
+
+  NodeDef fused_op;
+  fused_op.set_name(mul.name());
+  fused_op.set_device(contraction.device());
+  fused_op.add_input(contraction.input(0));  // 0: input
+  fused_op.add_input(contraction.input(1));  // 1: filter
+  fused_op.add_input(scalar.name());         // 2: scale
+  fused_op.set_op(kFusedBatchMatMul);
+
+  CopyBatchMatMulAttributes(contraction, &fused_op);
+  auto* attr = fused_op.mutable_attr();
+  absl::Span<const absl::string_view> fused_ops{"Mul"};
+  SetAttrValue(fused_ops, &(*attr)["fused_ops"]);
+  SetAttrValue(1, &(*attr)["num_args"]);
+
+  utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
+  Status status;
+  mutation->AddNode(std::move(fused_op), &status);
+  TF_RETURN_IF_ERROR(status);
+  TF_RETURN_IF_ERROR(mutation->Apply());
+
+  (*invalidated_nodes)[matched.mul] = true;
+  (*nodes_to_delete)[matched.contraction] = true;
+
+  return Status::OK();
 }
 
 Status AddFusedContractionNode(RemapperContext* ctx,
@@ -1576,7 +1718,6 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
 #ifdef INTEL_MKL
 bool IsConv2DWithAdd(const RemapperContext& ctx, int node_index) {
   const auto* node_view = ctx.graph_view.GetNode(node_index);
-  const auto* node_def = node_view->node();
 
   // Candidate for Conv2D + Add or Conv2D + BiasAdd + Add fusion.
   auto is_supported_add_input =
@@ -1612,6 +1753,19 @@ bool IsConv2DWithAdd(const RemapperContext& ctx, int node_index) {
   }
 
   return ret;
+}
+
+bool IsBatchMatMulWithMul(const RemapperContext& ctx, int node_index) {
+  const auto* node_view = ctx.graph_view.GetNode(node_index);
+  const auto* node_def = node_view->node();
+
+  if (!IsAnyMul(*node_def)) return false;
+  if (node_view->NumRegularFanins() < 2) return false;
+  const auto& mul_fanin_0 = node_view->GetRegularFanin(0);
+  const auto& mul_fanin_1 = node_view->GetRegularFanin(1);
+
+  return IsAnyBatchMatMul(*(mul_fanin_0.node_view()->node())) ||
+         IsAnyBatchMatMul(*(mul_fanin_1.node_view()->node()));
 }
 #endif
 
@@ -1693,7 +1847,8 @@ bool RequiresInferredShapes(const RemapperContext& ctx, int node_index) {
 
 #ifdef INTEL_MKL
   return is_batch_norm_candidate() || is_batch_norm_fusion_candidate() ||
-         IsConv2DWithAdd(ctx, node_index);
+         IsConv2DWithAdd(ctx, node_index) ||
+         IsBatchMatMulWithMul(ctx, node_index);
 #else
   return is_relu_biasadd_conv2d_candidate() || is_batch_norm_candidate() ||
          is_batch_norm_fusion_candidate();
@@ -1744,6 +1899,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
 #ifdef INTEL_MKL
     ContractionWithBiasAddAndAdd contract_with_bias_and_add;
     ContractionWithBiasAndAddActivation contract_with_bias_and_add_activation;
+    ContractionWithMul contract_with_mul;
 
     if (!item.optimization_options().is_eager_mode) {
       // Remap Conv2D+BiasAdd+Add+relu into the _FusedConv2D.
@@ -1763,6 +1919,14 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
                                     &invalidated_nodes, &nodes_to_delete));
         continue;
       }
+#ifdef ENABLE_MKLDNN_V1
+      // Remap BatchMatMul+Mul into the _FusedBatchMatMul.
+      if (FindContractionWithMul(ctx, i, &contract_with_mul)) {
+        TF_RETURN_IF_ERROR(AddFusedContractionNode(
+            &ctx, contract_with_mul, &invalidated_nodes, &nodes_to_delete));
+        continue;
+      }
+#endif  // ENABLE_MKLDNN_V1
     }
 #endif  //! INTEL_MKL
 

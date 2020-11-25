@@ -159,6 +159,71 @@ REGISTER_OP("_MklBatchMatMulV2")
     .Attr("adj_x: bool = false")
     .Attr("adj_y: bool = false")
     .SetShapeFn(shape_inference::BatchMatMulV2Shape);
+
+REGISTER_OP("_FusedBatchMatMul")
+    .Input("x: T")
+    .Input("y: T")
+    .Input("args: num_args * T")
+    .Output("output: T")
+    .Attr("T: {bfloat16, float}")
+    .Attr("adj_x: bool = false")
+    .Attr("adj_y: bool = false")
+    .Attr("num_args: int >= 0")
+    .Attr("fused_ops: list(string) = []")
+    .SetShapeFn(shape_inference::BatchMatMulShape)
+    .Doc(R"doc(
+*NOTE*: Do not invoke this operator directly in Python. Grappler is
+expected to create these operators.
+)doc");
+
+REGISTER_OP("_MklFusedBatchMatMul")
+    .Input("x: T")
+    .Input("y: T")
+    .Input("args: num_args * T")
+    .Output("output: T")
+    .Attr("T: {bfloat16, float}")
+    .Attr("adj_x: bool = false")
+    .Attr("adj_y: bool = false")
+    .Attr("num_args: int >= 0")
+    .Attr("fused_ops: list(string) = []")
+    .SetShapeFn(shape_inference::BatchMatMulShape)
+    .Doc(R"doc(
+*NOTE*: Do not invoke this operator directly in Python. Grappler is
+expected to create these operators.
+)doc");
+
+REGISTER_OP("_FusedBatchMatMulV2")
+    .Input("x: T")
+    .Input("y: T")
+    .Input("args: num_args * T")
+    .Output("output: T")
+    .Attr("T: {bfloat16, float}")
+    .Attr("adj_x: bool = false")
+    .Attr("adj_y: bool = false")
+    .Attr("num_args: int >= 0")
+    .Attr("fused_ops: list(string) = []")
+    .SetShapeFn(shape_inference::BatchMatMulV2Shape)
+    .Doc(R"doc(
+*NOTE*: Do not invoke this operator directly in Python. Grappler is
+expected to create these operators.
+)doc");
+
+REGISTER_OP("_MklFusedBatchMatMulV2")
+    .Input("x: T")
+    .Input("y: T")
+    .Input("args: num_args * T")
+    .Output("output: T")
+    .Attr("T: {bfloat16, float}")
+    .Attr("adj_x: bool = false")
+    .Attr("adj_y: bool = false")
+    .Attr("num_args: int >= 0")
+    .Attr("fused_ops: list(string) = []")
+    .SetShapeFn(shape_inference::BatchMatMulV2Shape)
+    .Doc(R"doc(
+*NOTE*: Do not invoke this operator directly in Python. Grappler is
+expected to create these operators.
+)doc");
+
 #endif  // INTEL_MKL
 
 // --------------------------------------------------------------------------

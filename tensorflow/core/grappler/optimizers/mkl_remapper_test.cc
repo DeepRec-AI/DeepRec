@@ -439,6 +439,98 @@ TEST_F(MklRemapperTest, FuseBatchNormWithRelu) {
     }
   }
 }
+
+class MklFuseBatchMatMulWithMul : public MklRemapperTest {
+ public:
+  void VerifyFused(bool adjx, bool adjy) {
+    using ::tensorflow::ops::Placeholder;
+    int b = 2;
+    int m = 2;
+    int k = 3;
+    int n = 4;
+
+    tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+    auto input_shape = adjx ? ops::Placeholder::Shape({b, k, m})
+                            : ops::Placeholder::Shape({b, m, k});
+    auto weight_shape = adjy ? ops::Placeholder::Shape({b, n, k})
+                             : ops::Placeholder::Shape({b, k, n});
+
+    auto input = Placeholder(s.WithOpName("input"), DT_FLOAT, input_shape);
+    auto weight = Placeholder(s.WithOpName("weight"), DT_FLOAT, weight_shape);
+
+    auto batchmatmul =
+        ops::BatchMatMulV2(s.WithOpName("batchmatmul"), input, weight,
+                           ops::BatchMatMulV2::Attrs().AdjX(adjx).AdjY(adjy));
+    auto scale = ops::Const(s.WithOpName("scale"), {10.0f});
+    auto mul = ops::Multiply(s.WithOpName("mul"), batchmatmul, scale);
+
+    auto fetch_mul = ops::Identity(s.WithOpName("fetch_mul"), mul);
+
+    auto input_t = adjx ? GenerateRandomTensor<DT_FLOAT>({b, k, m})
+                        : GenerateRandomTensor<DT_FLOAT>({b, m, k});
+    auto weight_t = adjy ? GenerateRandomTensor<DT_FLOAT>({b, n, k})
+                         : GenerateRandomTensor<DT_FLOAT>({b, k, n});
+
+    GrapplerItem item;
+    item.fetch = {"fetch_mul"};
+    item.feed = {{"input", input_t}, {"weight", weight_t}};
+    TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+    // Place all nodes on CPU.
+    for (int i = 0; i < item.graph.node_size(); ++i) {
+      item.graph.mutable_node(i)->set_device("/device:CPU:0");
+    }
+
+    Remapper optimizer(RewriterConfig::ON);
+    GraphDef output;
+    TF_CHECK_OK(optimizer.Optimize(nullptr, item, &output));
+
+    int found = 0;
+    for (const NodeDef& node : output.node()) {
+      if (node.name() == "mul") {
+        EXPECT_EQ("_FusedBatchMatMulV2", node.op());
+        EXPECT_EQ("input", node.input(0));
+        EXPECT_EQ("weight", node.input(1));
+        EXPECT_EQ("scale", node.input(2));
+
+        const auto fused_ops = node.attr().at("fused_ops").list().s();
+        EXPECT_EQ(1, fused_ops.size());
+        EXPECT_EQ("Mul", fused_ops[0]);
+        found++;
+      }
+    }
+    EXPECT_EQ(1, found);
+
+    auto tensors_expected = EvaluateNodes(item.graph, item.fetch, item.feed);
+    auto tensors = EvaluateNodes(output, item.fetch, item.feed);
+    test::ExpectTensorNear<float>(tensors_expected[0], tensors[0], 1e-6);
+  }
+};
+
+TEST_F(MklFuseBatchMatMulWithMul, a0b0) {
+  bool adjx = false;
+  bool adjy = false;
+  this->VerifyFused(adjx, adjy);
+}
+
+TEST_F(MklFuseBatchMatMulWithMul, a1b0) {
+  bool adjx = true;
+  bool adjy = false;
+  this->VerifyFused(adjx, adjy);
+}
+
+TEST_F(MklFuseBatchMatMulWithMul, a0b1) {
+  bool adjx = false;
+  bool adjy = true;
+  this->VerifyFused(adjx, adjy);
+}
+
+TEST_F(MklFuseBatchMatMulWithMul, a1b1) {
+  bool adjx = true;
+  bool adjy = true;
+  this->VerifyFused(adjx, adjy);
+}
 #endif  // ENABLE_MKLDNN_V1
 
 }  // namespace grappler
