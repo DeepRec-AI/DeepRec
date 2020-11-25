@@ -1,7 +1,6 @@
 #include "odl_processor/serving/model_instance.h"
 #include "odl_processor/serving/model_storage.h"
 #include "odl_processor/serving/model_config.h"
-#include "odl_processor/serving/run_predict.h"
 #include "odl_processor/core/graph_optimizer.h"
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"
@@ -10,6 +9,7 @@
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
+#include "tensorflow/core/framework/tensor.h"
 
 namespace tensorflow {
 namespace {
@@ -86,11 +86,8 @@ Status RunOnce(const RunOptions& run_options,
 
 bool HasMainOp(const MetaGraphDef& meta_graph_def) {
   const auto& collection_def_map = meta_graph_def.collection_def();
-  if (collection_def_map.find(kSavedModelMainOpKey) !=
-      collection_def_map.end()) {
-    return true;
-  }
-  return false;
+  return collection_def_map.find(kSavedModelMainOpKey) !=
+    collection_def_map.end();
 }
 
 Status RunMainOp(const RunOptions& run_options, const string& export_dir,
@@ -210,6 +207,14 @@ Status ModelSessionMgr::RunRestoreOps(const char* model_dir,
   }
 }
 
+Status ModelSessionMgr::Predict(
+    const std::vector<std::pair<std::string, Tensor>>& inputs,
+    const std::vector<std::string>& output_tensor_names,
+    std::vector<Tensor>* outputs) {
+  return serving_session_->session_->Run(inputs, output_tensor_names,
+      {}, outputs);
+}
+
 Status ModelSessionMgr::CreateDeltaModelSession(
     const Version& version, const char* model_dir,
     SparseStorage* sparse_storage) {
@@ -302,25 +307,78 @@ Status ModelInstance::Init(const Version& version,
   return RecursionCreateSession(version, serving_storage_);
 }
 
-Status ModelInstance::Warmup() {
-  RunRequest request;
-  request.SetSignatureName(model_signature_.first);
-  for (auto it : model_signature_.second.inputs()) {
-    request.AddFeed(it.first, it.second);
+Status ModelInstance::Predict(
+    const std::vector<std::pair<std::string, Tensor>>& inputs,
+    const std::vector<std::string>& output_tensor_names,
+    std::vector<Tensor>* outputs) {
+  return session_mgr_->Predict(inputs, output_tensor_names, outputs);
+}
+
+Tensor ModelInstance::CreateTensor(const TensorInfo& tensor_info) {
+  Tensor tensor(tensor_info.dtype(),
+      TensorShape(tensor_info.tensor_shape())); 
+
+  switch(tensor.dtype()) {
+    case DT_FLOAT: {
+      auto flat = tensor.flat<float>();
+      for (int i = 0; i < flat.size(); ++i) flat(i) = 1;
+      break;
+    }
+    case DT_DOUBLE: {
+      auto flat = tensor.flat<double>();
+      for (int i = 0; i < flat.size(); ++i) flat(i) = 1;
+      break;
+    }
+    case DT_UINT32: {
+      auto flat = tensor.flat<uint32>();
+      for (int i = 0; i < flat.size(); ++i) flat(i) = 1;
+      break;
+    }
+    case DT_INT32: {
+      auto flat = tensor.flat<int32>();
+      for (int i = 0; i < flat.size(); ++i) flat(i) = 1;
+      break;
+    }
+    case DT_INT64: {
+      auto flat = tensor.flat<int64>();
+      for (int i = 0; i < flat.size(); ++i) flat(i) = 1;
+      break;
+    }
+    case DT_UINT64: {
+      auto flat = tensor.flat<uint64>();
+      for (int i = 0; i < flat.size(); ++i) flat(i) = 1;
+      break;
+    }
+    default:
+      LOG(ERROR) << "can't support dtype:" << tensor.dtype();
   }
 
-  RunResponse response;
-  return Predict(request, &response);
+  return tensor;
 }
 
-Status ModelInstance::Predict(const eas::PredictRequest& req,
-    eas::PredictResponse* resp) {
+Status ModelInstance::CreateWarmupParams(
+    std::vector<std::pair<std::string, Tensor>>& inputs,
+    std::vector<std::string>& output_tensor_names) {
+  for (auto it : model_signature_.second.inputs()) {
+    const auto& tensor = CreateTensor(it.second);
+    inputs.emplace_back(it.first, tensor);
+  }
+
+  for (auto it : model_signature_.second.outputs()) {
+    output_tensor_names.emplace_back(it.first);
+  }
   return Status::OK();
 }
 
-Status ModelInstance::Predict(const RunRequest& req,
-    RunResponse* resp) {
-  return Status::OK();
+Status ModelInstance::Warmup() {
+  std::vector<std::pair<std::string, Tensor>> inputs;
+  std::vector<std::string> output_tensor_names;
+  TF_RETURN_IF_ERROR(CreateWarmupParams(inputs,
+        output_tensor_names));
+
+  // Ignore output results, only care about return status.
+  std::vector<Tensor> outputs;
+  return Predict(inputs, output_tensor_names, &outputs);
 }
 
 Status ModelInstance::FullModelUpdate(const Version& version) {
@@ -373,15 +431,19 @@ Status ModelInstanceMgr::CreateInstances(const Version& version) {
   cur_instance_ = new ModelInstance(session_options_, run_options_);
   TF_RETURN_IF_ERROR(cur_instance_->Init(version, model_config_,
       model_storage_));
+  TF_RETURN_IF_ERROR(cur_instance_->Warmup());
 
   base_instance_ = new ModelInstance(session_options_, run_options_);
-  return base_instance_->Init(version, model_config_,
-      model_storage_);
+  TF_RETURN_IF_ERROR(base_instance_->Init(version, model_config_,
+      model_storage_));
+  return base_instance_->Warmup();
 }
 
-Status ModelInstanceMgr::Predict(const eas::PredictRequest& req,
-    eas::PredictResponse* resp) {
-  return cur_instance_->Predict(req, resp);
+Status ModelInstanceMgr::Predict(
+    const std::vector<std::pair<std::string, Tensor>>& inputs,
+    const std::vector<std::string>& output_tensor_names,
+    std::vector<Tensor>* outputs) {
+  return cur_instance_->Predict(inputs, output_tensor_names, outputs);
 }
 
 Status ModelInstanceMgr::Rollback() {
@@ -396,7 +458,8 @@ Status ModelInstanceMgr::Rollback() {
 }
 
 Status ModelInstanceMgr::FullModelUpdate(const Version& version) {
-  return cur_instance_->FullModelUpdate(version);
+  cur_instance_->FullModelUpdate(version);
+  return cur_instance_->Warmup();
 }
 
 Status ModelInstanceMgr::DeltaModelUpdate(const Version& version) {
@@ -404,9 +467,11 @@ Status ModelInstanceMgr::DeltaModelUpdate(const Version& version) {
       !base_instance_->GetVersion().IsSameFullModel(version)) {
     TF_RETURN_IF_ERROR(base_instance_->FullModelUpdate(
           cur_instance_->GetVersion()));
+    TF_RETURN_IF_ERROR(base_instance_->Warmup());
   }
 
-  return cur_instance_->DeltaModelUpdate(version);
+  TF_RETURN_IF_ERROR(cur_instance_->DeltaModelUpdate(version));
+  return cur_instance_->Warmup();
 }
 
 Status ModelInstanceMgr::ModelUpdate(const Version& version) {
@@ -439,7 +504,7 @@ void ModelInstanceMgr::WorkLoop() {
 }
 
 std::string ModelInstanceMgr::DebugString() {
-  return std::string();
+  return cur_instance_->DebugString();
 }
 
 } // processor

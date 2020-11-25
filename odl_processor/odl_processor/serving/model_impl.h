@@ -4,16 +4,11 @@
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 
-class RunRequest;
-class RunResponse;
 namespace tensorflow {
-namespace eas {
-  class PredictRequest;
-  class PredictResponse;
-}
 class SavedModelBundle;
 class SessionOptions;
 class RunOptions;
+class Tensor;
 
 namespace processor {
 class SavedModelOptimizer;
@@ -24,8 +19,10 @@ class ModelImpl {
  public:
   virtual ~ModelImpl() {}
   virtual Status Init(const char* root_dir) = 0;
-  virtual Status Predict(const eas::PredictRequest& req,
-                         eas::PredictResponse* resp) = 0;
+  virtual Status Predict(
+      const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs) = 0;
 
   virtual Status Rollback() = 0;
   virtual std::string DebugString() = 0;
@@ -38,9 +35,11 @@ class FreezeSavedModelImpl : public ModelImpl {
   Status Init(const char* root_dir) override {
     return Status::OK();
   }
-
-  Status Predict(const eas::PredictRequest& req,
-                 eas::PredictResponse* resp) override {
+  
+  Status Predict(
+      const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs) override {
     return Status::OK();
   }
 
@@ -59,8 +58,10 @@ class SavedModelImpl : public ModelImpl {
   ~SavedModelImpl() override;
 
   Status Init(const char* root_dir) override;
-  Status Predict(const eas::PredictRequest& req,
-                 eas::PredictResponse* resp) override;
+  Status Predict(
+      const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs);
 
   Status Rollback() override;
   std::string DebugString() override;
@@ -68,11 +69,7 @@ class SavedModelImpl : public ModelImpl {
  private:
   ModelConfig* model_config_;
   ModelInstanceMgr* instance_mgr_ = nullptr;
-  //SavedModelBundle* saved_model_bundle_;
-  //std::pair<std::string, SignatureDef> model_signature_;
 
-  SavedModelOptimizer* optimizer_ = nullptr;
-  
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
 };

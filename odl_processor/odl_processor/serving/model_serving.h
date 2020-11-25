@@ -3,13 +3,8 @@
 
 #include "tensorflow/core/lib/core/status.h"
 
-class RunRequest;
-class RunResponse;
 namespace tensorflow {
-namespace eas {
-  class PredictRequest;
-  class PredictResponse;
-}
+class Tensor;
 namespace processor {
 class ModelImpl;
 class Model {
@@ -21,7 +16,9 @@ class Model {
   Model& operator=(const Model&) = delete;
 
   Status Init(const char* model_config, const char* model_dir);
-  Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
+  Status Predict(const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs);
   Status Rollback();
 
   std::string DebugString();

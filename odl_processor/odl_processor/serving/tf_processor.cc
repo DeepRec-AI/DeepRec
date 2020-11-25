@@ -35,7 +35,8 @@ int process(void* model_buf, const void* input_data, int input_size,
   tensorflow::eas::PredictResponse response;
   std::string input_request = std::string((const char *)input_data, input_size);
   request.ParseFromString(input_request);
-  tensorflow::Status s = model->Predict(request, &response);
+  //tensorflow::Status s = model->Predict(request, &response);
+  tensorflow::Status s;
   if (!s.ok()) {
     const char *errmsg = "[TensorFlow] Processor predict failed";
     *output_data = strndup(errmsg, strlen(errmsg));
