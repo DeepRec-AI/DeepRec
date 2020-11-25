@@ -1,7 +1,6 @@
 #include "odl_processor/serving/model_instance.h"
 #include "odl_processor/serving/model_storage.h"
 #include "odl_processor/serving/model_config.h"
-#include "odl_processor/serving/model_storage.h"
 #include "odl_processor/serving/run_predict.h"
 #include "odl_processor/core/graph_optimizer.h"
 #include "tensorflow/cc/saved_model/loader.h"
@@ -180,38 +179,67 @@ Status RunInitSparseGraph(const MetaGraphDef& meta_graph_def,
 }
 }
 namespace processor {
-Status ModelSessionMgr::CreateModelSession(const MetaGraphDef& meta_graph_def,
-    SessionOptions* session_options, RunOptions* run_options,
-    const Version& version, const char* model_dir) {
-  Session* session = nullptr;
-  TF_RETURN_IF_ERROR(NewSession(*session_options, &session));
-  TF_RETURN_IF_ERROR(session->Create(meta_graph_def.graph_def()));
+ModelSessionMgr::ModelSessionMgr(const MetaGraphDef& meta_graph_def,
+    SessionOptions* session_options, RunOptions* run_options) :
+  meta_graph_def_(meta_graph_def), session_options_(session_options),
+  run_options_(run_options) {
+}
 
-  std::vector<AssetFileDef> asset_file_defs;
-  TF_RETURN_IF_ERROR(GetAssetFileDefs(meta_graph_def, &asset_file_defs));
+Status ModelSessionMgr::CreateSession(Session** session) {
+  TF_RETURN_IF_ERROR(NewSession(*session_options_, session));
+  TF_RETURN_IF_ERROR((*session)->Create(meta_graph_def_.graph_def()));
+  return GetAssetFileDefs(meta_graph_def_, &asset_file_defs_);
+}
 
+Status ModelSessionMgr::RunRestoreOps(const char* model_dir,
+    Session* session, SparseStorage* sparse_storage) {
+  /*TODO: sparse_storage pass to graph by placeholder*/
   TF_RETURN_IF_ERROR(
-      RunRestore(*run_options, model_dir,
-          meta_graph_def.saver_def().restore_op_name(),
-          meta_graph_def.saver_def().filename_tensor_name(),
-          asset_file_defs, session));
+      RunRestore(*run_options_, model_dir,
+          meta_graph_def_.saver_def().restore_op_name(),
+          meta_graph_def_.saver_def().filename_tensor_name(),
+          asset_file_defs_, session));
 
-  if (HasMainOp(meta_graph_def)) {
-    TF_RETURN_IF_ERROR(RunMainOp(*run_options, model_dir,
-        meta_graph_def, asset_file_defs, session, kSavedModelMainOpKey));
+  if (HasMainOp(meta_graph_def_)) {
+    return RunMainOp(*run_options_, model_dir,
+        meta_graph_def_, asset_file_defs_, session, kSavedModelMainOpKey);
   } else {
-    TF_RETURN_IF_ERROR(RunMainOp(
-        *run_options, model_dir, meta_graph_def,
-        asset_file_defs, session, kSavedModelLegacyInitOpKey));
+    return RunMainOp(
+        *run_options_, model_dir, meta_graph_def_,
+        asset_file_defs_, session, kSavedModelLegacyInitOpKey);
   }
+}
 
-  ResetServingSession(session, version);
+Status ModelSessionMgr::CreateDeltaModelSession(
+    const Version& version, const char* model_dir,
+    SparseStorage* sparse_storage) {
+  Session* session = nullptr;
+  TF_RETURN_IF_ERROR(CreateSession(&session));
+  TF_RETURN_IF_ERROR(RunRestoreOps(model_dir, session,
+        sparse_storage));
+
+  ResetServingSession(session, version, sparse_storage);
+  return Status::OK();
+}
+
+Status ModelSessionMgr::CreateFullModelSession(
+    const Version& version, const char* model_dir,
+    SparseStorage* sparse_storage) {
+  Session* session = nullptr;
+  TF_RETURN_IF_ERROR(CreateSession(&session));
+  // TODO: Init Meta in SparseStore
+  // TF_RETURN_IF_ERROR(RunInit());
+  
+  TF_RETURN_IF_ERROR(RunRestoreOps(model_dir, session,
+        sparse_storage));
+  ResetServingSession(session, version, sparse_storage);
   return Status::OK();
 }
 
 void ModelSessionMgr::ResetServingSession(Session* session,
-    const Version& version) {
-  auto model_session = new ModelSession(session, version);
+    const Version& version, SparseStorage* sparse_storage) {
+  auto model_session = new ModelSession(session, version,
+      sparse_storage);
   auto tmp = serving_session_;
   serving_session_ = model_session;
 
@@ -239,34 +267,40 @@ Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
   return Status::OK();
 }
 
-Status ModelInstance::CreateSession(const Version& version, 
-    const char* model_dir) {
-  return session_mgr_->CreateModelSession(meta_graph_def_, session_options_,
-      run_options_, version, model_dir);
-}
+Status ModelInstance::RecursionCreateSession(const Version& version,
+    SparseStorage* sparse_storage) {
+  TF_RETURN_IF_ERROR(session_mgr_->CreateFullModelSession(version,
+        version.full_model_name.c_str(), sparse_storage));
 
-Status ModelInstance::RecursionCreateSession(const Version& version) {
-  TF_RETURN_IF_ERROR(CreateSession(version, version.full_model_name.c_str()));
-  return CreateSession(version, version.delta_model_name.c_str());
+  if (version.delta_model_name.empty()) {
+    return Status::OK();
+  } else {
+    return session_mgr_->CreateDeltaModelSession(version,
+        version.delta_model_name.c_str(), sparse_storage);
+  }
 }
 
 Status ModelInstance::Init(const Version& version,
-    ModelConfig* model_config, SparseStorage* sparse_storage) {
+    ModelConfig* model_config, ModelStorage* model_storage,
+    bool enable_backup) {
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
         version.full_model_name.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
+
+  session_mgr_ = new ModelSessionMgr(meta_graph_def_,
+      session_options_, run_options_);
 
   optimizer_ = new SavedModelOptimizer(model_config->signature_name,
         &meta_graph_def_);
   TF_RETURN_IF_ERROR(optimizer_->Optimize());
 
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
-  
-  sparse_storage_ = sparse_storage;
-  TF_RETURN_IF_ERROR(sparse_storage_->Create(version));
 
-  TF_RETURN_IF_ERROR(RecursionCreateSession(version));
-  return Status::OK();
+  serving_storage_ = model_storage->CreateSparseStorage(version);
+  if (enable_backup) {
+    backup_storage_ = model_storage->CreateSparseStorage(version);
+  }
+  return RecursionCreateSession(version, serving_storage_);
 }
 
 Status ModelInstance::Warmup() {
@@ -291,21 +325,27 @@ Status ModelInstance::Predict(const RunRequest& req,
 }
 
 Status ModelInstance::FullModelUpdate(const Version& version) {
-  TF_RETURN_IF_ERROR(sparse_storage_->Create(version));
-  return CreateSession(version, version.full_model_name.c_str());
+  // Lock free here
+  if (backup_storage_ != nullptr) {
+    std::swap(backup_storage_, serving_storage_);
+  }
+  serving_storage_->Reset();
+
+  return session_mgr_->CreateFullModelSession(version,
+      version.full_model_name.c_str(), serving_storage_);
 }
 
 Status ModelInstance::DeltaModelUpdate(const Version& version) {
-  return CreateSession(version, version.delta_model_name.c_str());
+  return session_mgr_->CreateDeltaModelSession(version,
+      version.delta_model_name.c_str(), serving_storage_);
 }
 
 std::string ModelInstance::DebugString() {
   return model_signature_.second.DebugString();
 }
 
-ModelInstanceMgr::ModelInstanceMgr(const char* root_dir, ModelConfig* config) :
-    model_storage_(new ModelStorage()),
-    model_config_(config) {
+ModelInstanceMgr::ModelInstanceMgr(const char* root_dir, ModelConfig* config)
+  : model_storage_(new ModelStorage()), model_config_(config) {
   model_storage_->Init(root_dir);
 }
 
@@ -334,16 +374,16 @@ Status ModelInstanceMgr::Init(SessionOptions* sess_options,
 Status ModelInstanceMgr::CreateInstances(const Version& version) {
   cur_instance_ = new ModelInstance(session_options_, run_options_);
   TF_RETURN_IF_ERROR(cur_instance_->Init(version, model_config_,
-      model_storage_->GetSparseStorage(version)));
+      model_storage_, true));
 
   base_instance_ = new ModelInstance(session_options_, run_options_);
   return base_instance_->Init(version, model_config_,
-      model_storage_->GetSparseStorage(version));
+      model_storage_, false);
 }
 
 Status ModelInstanceMgr::Predict(const eas::PredictRequest& req,
     eas::PredictResponse* resp) {
-  return Status::OK();
+  return cur_instance_->Predict(req, resp);
 }
 
 Status ModelInstanceMgr::FullModelUpdate(const Version& version) {

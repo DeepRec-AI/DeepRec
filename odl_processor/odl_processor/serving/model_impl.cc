@@ -12,19 +12,11 @@ SavedModelImpl::SavedModelImpl(ModelConfig* config) :
 }
 
 SavedModelImpl::~SavedModelImpl() {
-  //delete saved_model_bundle_;
   delete optimizer_;
   delete instance_mgr_;
   delete model_config_;
 }
 
-// 1 meta_graph_def = ReadMetaGraphDefFromSavedModel
-// 2 bundle->meta_graph_def = OptimizeGraph(signature_name, meta_graph_def)
-// 3 bundle->session = LoadMetaGraphIntoSession
-// 4 RunRestore(bundle)
-// 5 UpdateData(oss, embedding_service)
-//
-// 2 bundle object --> VersionManager
 Status SavedModelImpl::Init(const char* root_dir) {
   instance_mgr_ = new ModelInstanceMgr(root_dir, model_config_);
   return instance_mgr_->Init(session_options_, run_options_);

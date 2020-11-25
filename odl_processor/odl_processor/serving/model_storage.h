@@ -8,16 +8,25 @@ namespace processor {
 class Version;
 class SparseStorage {
  public:
-  Status Create(const Version& version) { return Status::OK(); }
+  Status Reset() { return Status::OK(); }
 };
 
 class ModelStorage {
  public:
+  static ModelStorage* GetInstance() {
+    static ModelStorage storage;
+    return &storage;
+  }
+
   Status Init(const char* root_dir) { return Status::OK(); }
   Status GetLatestVersion(Version& version) { return Status::OK();}
-  SparseStorage* GetSparseStorage(const Version& version) {
+
+  SparseStorage* CreateSparseStorage(const Version& version) {
     return nullptr;
   }
+
+ private:
+  std::map<Version, SparseStorage*> store_;
 };
 
 } // processor
