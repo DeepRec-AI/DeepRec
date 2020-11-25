@@ -7,17 +7,13 @@
 #include <thread>
 #include <atomic>
 
-class RunRequest;
-class RunResponse;
 namespace tensorflow {
-namespace eas {
-  class PredictRequest;
-  class PredictResponse;
-}
 class SavedModelBundle;
 class SessionOptions;
 class RunOptions;
 class Session;
+class Tensor;
+class TensorInfo;
 
 namespace processor {
 class SavedModelOptimizer;
@@ -71,6 +67,11 @@ class ModelSessionMgr {
  public:
   ModelSessionMgr(const MetaGraphDef& meta_graph_def,
       SessionOptions* session_options, RunOptions* run_options);
+  
+  Status Predict(
+      const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs);
 
   Status CreateDeltaModelSession(const Version& version,
       const char* model_dir, SparseStorage* sparse_storage);
@@ -100,21 +101,28 @@ class ModelInstance {
   Status Init(const Version& version, ModelConfig* config,
       ModelStorage* model_storage);
 
-  Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
-  Status Predict(const RunRequest& req, RunResponse* resp);
+  Status Predict(
+      const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs);
 
   Status FullModelUpdate(const Version& version);
   Status DeltaModelUpdate(const Version& version);
+  Status Warmup();
 
   Version GetVersion() { return version_; }
   std::string DebugString();
 
  private:
-  Status Warmup();
   Status ReadModelSignature(ModelConfig* model_config);
 
   Status RecursionCreateSession(const Version& version,
       SparseStorage* sparse_storge);
+
+  Tensor CreateTensor(const TensorInfo& tensor_info);
+  Status CreateWarmupParams(
+      std::vector<std::pair<std::string, Tensor>>& inputs,
+      std::vector<std::string>& output_tensor_names);
 
  private:
   MetaGraphDef meta_graph_def_;
@@ -137,7 +145,11 @@ class ModelInstanceMgr {
   ~ModelInstanceMgr();
 
   Status Init(SessionOptions* sess_options, RunOptions* run_options);
-  Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
+  Status Predict(
+      const std::vector<std::pair<std::string, Tensor>>& inputs,
+      const std::vector<std::string>& output_tensor_names,
+      std::vector<Tensor>* outputs);
+
   Status Rollback();
   std::string DebugString();
 
