@@ -98,7 +98,7 @@ class ModelInstance {
  public:
   ModelInstance(SessionOptions* sess_options, RunOptions* run_options);
   Status Init(const Version& version, ModelConfig* config,
-      ModelStorage* model_storage, bool enable_backup);
+      ModelStorage* model_storage);
 
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
   Status Predict(const RunRequest& req, RunResponse* resp);
@@ -118,7 +118,6 @@ class ModelInstance {
 
  private:
   MetaGraphDef meta_graph_def_;
-
   std::pair<std::string, SignatureDef> model_signature_;
 
   ModelSessionMgr* session_mgr_ = nullptr;
@@ -139,9 +138,10 @@ class ModelInstanceMgr {
 
   Status Init(SessionOptions* sess_options, RunOptions* run_options);
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
+  Status Rollback();
+  std::string DebugString();
 
   void WorkLoop();
-  std::string DebugString();
 
  private:
   Status CreateInstances(const Version& version);

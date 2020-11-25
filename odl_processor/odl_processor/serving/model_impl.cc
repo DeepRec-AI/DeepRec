@@ -26,6 +26,10 @@ Status SavedModelImpl::Predict(const eas::PredictRequest& req,
                eas::PredictResponse* resp) {
   return instance_mgr_->Predict(req, resp);
 }
+
+Status SavedModelImpl::Rollback() {
+  return instance_mgr_->Rollback();
+}
  
 std::string SavedModelImpl::DebugString() {
   return instance_mgr_->DebugString();
