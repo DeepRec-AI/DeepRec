@@ -74,11 +74,21 @@ TEST(KernelsTest, KvImportTest) {
                   .Attr("value", tensor_name_value)
                   .Finalize(&tensor_name_def));
 
+  NodeDef storage_pointer_def;
+  Tensor storage_pointer_value(DT_STRING, TensorShape({1}));
+  storage_pointer_value.flat<std::string>()(0) =
+      "0x12345678";
+  TF_CHECK_OK(NodeDefBuilder("storage_pointer", "Const")
+                  .Attr("dtype", DT_STRING)
+                  .Attr("value", storage_pointer_value)
+                  .Finalize(&storage_pointer_def));
+
   NodeDef kv_import_def;
   TF_CHECK_OK(NodeDefBuilder("kv_import", "KvImport")
                   .Input("version", 0, DT_STRING)
                   .Input("prefix", 0, DT_STRING)
                   .Input("tensor_name", 0, DT_STRING)
+                  .Input("storage_pointer_value", 0, DT_STRING)
                   .Attr("var_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
@@ -101,6 +111,7 @@ TEST(KernelsTest, KvImportTest) {
   inputs.push_back({nullptr, &version_value});
   inputs.push_back({nullptr, &prefix_value});
   inputs.push_back({nullptr, &tensor_name_value});
+  inputs.push_back({nullptr, &storage_pointer_value});
   params.inputs = &inputs;
   params.op_kernel = kv_import_op.get();
 

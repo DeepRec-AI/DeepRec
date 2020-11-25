@@ -121,7 +121,10 @@ struct GraphOptimizerOptions {
   bool cache_sparse_locally = false;
 };
 
-std::string& GetInitDefKey();
+const std::string& GetInitDefKey();
+const std::string& GetModelVersionNodeName();
+const std::string& GetStoragePointerNodeName();
+const std::string& GetInitNodeName();
 
 class GraphOptimizer {
  public:
@@ -155,11 +158,13 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Add full and delta ckpt update subgraph
   Status AddFullAndDeltaUpdateSubGraph();
 
-  // Add a version placeholder node
+  // Add version placeholder nodes
+  // include version and storage pointer
   Status AddVersionPlaceholderNode();
 
   Graph graph_; // graph of meta_graph_def_.graph_def()
-  Node* version_node_ = nullptr; // version placeholder node
+  Node* version_node_ = nullptr;        // version placeholder node
+  Node* storage_pointer_node_ = nullptr;// storage placeholder node
   std::string signature_name_;
   MetaGraphDef* meta_graph_def_ = nullptr; // not owned
 };

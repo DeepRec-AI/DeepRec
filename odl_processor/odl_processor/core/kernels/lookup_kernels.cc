@@ -98,6 +98,10 @@ class KvLookupOp : public AsyncOpKernel {
 
     Tensor default_values(ctx->input(2));
 
+    const Tensor& storage_pointer = ctx->input(3);
+    const std::string storage_pointer_str = storage_pointer.scalar<string>()();
+    // TODO: convert storage_pointer_str to SparseStorage*, AKA: current storage instance
+
     TensorShape result_shape = indices.shape();
     TensorShape value_shape({dim_len_});
     result_shape.AppendShape(value_shape);
@@ -282,6 +286,10 @@ class KvImportOp : public AsyncOpKernel {
 
     const Tensor& tensor_name = ctx->input(2);
     const std::string tensor_name_str = tensor_name.scalar<string>()();
+
+    const Tensor& storage_pointer = ctx->input(3);
+    const std::string storage_pointer_str = storage_pointer.scalar<string>()();
+    // TODO: convert storage_pointer_str to SparseStorage*, AKA: current storage instance
 
     // create for read from file
     BundleReader* reader = new BundleReader(Env::Default(), file_name_str);
