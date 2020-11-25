@@ -26,6 +26,10 @@ Status Model::Predict(const eas::PredictRequest& req,
   return impl_->Predict(req, resp);
 }
 
+Status Model::Rollback() {
+  return impl_->Rollback();
+}
+
 std::string Model::DebugString() {
   return impl_->DebugString();
 }

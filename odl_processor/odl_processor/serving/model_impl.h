@@ -26,6 +26,8 @@ class ModelImpl {
   virtual Status Init(const char* root_dir) = 0;
   virtual Status Predict(const eas::PredictRequest& req,
                          eas::PredictResponse* resp) = 0;
+
+  virtual Status Rollback() = 0;
   virtual std::string DebugString() = 0;
 };
 
@@ -39,6 +41,10 @@ class FreezeSavedModelImpl : public ModelImpl {
 
   Status Predict(const eas::PredictRequest& req,
                  eas::PredictResponse* resp) override {
+    return Status::OK();
+  }
+
+  Status Rollback() override {
     return Status::OK();
   }
 
@@ -56,7 +62,7 @@ class SavedModelImpl : public ModelImpl {
   Status Predict(const eas::PredictRequest& req,
                  eas::PredictResponse* resp) override;
 
- private:
+  Status Rollback() override;
   std::string DebugString() override;
  
  private:

@@ -227,8 +227,9 @@ Status ModelSessionMgr::CreateFullModelSession(
     SparseStorage* sparse_storage) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
-  // TODO: Init Meta in SparseStore
-  // TF_RETURN_IF_ERROR(RunInit());
+  
+  TF_RETURN_IF_ERROR(RunInitSparseGraph(meta_graph_def_,
+        *run_options_, session));
   
   TF_RETURN_IF_ERROR(RunRestoreOps(model_dir, session,
         sparse_storage));
@@ -281,8 +282,7 @@ Status ModelInstance::RecursionCreateSession(const Version& version,
 }
 
 Status ModelInstance::Init(const Version& version,
-    ModelConfig* model_config, ModelStorage* model_storage,
-    bool enable_backup) {
+    ModelConfig* model_config, ModelStorage* model_storage) {
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
         version.full_model_name.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
@@ -297,9 +297,8 @@ Status ModelInstance::Init(const Version& version,
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
 
   serving_storage_ = model_storage->CreateSparseStorage(version);
-  if (enable_backup) {
-    backup_storage_ = model_storage->CreateSparseStorage(version);
-  }
+  backup_storage_ = model_storage->CreateSparseStorage(version);
+
   return RecursionCreateSession(version, serving_storage_);
 }
 
@@ -325,14 +324,13 @@ Status ModelInstance::Predict(const RunRequest& req,
 }
 
 Status ModelInstance::FullModelUpdate(const Version& version) {
-  // Lock free here
-  if (backup_storage_ != nullptr) {
-    std::swap(backup_storage_, serving_storage_);
-  }
-  serving_storage_->Reset();
-
-  return session_mgr_->CreateFullModelSession(version,
-      version.full_model_name.c_str(), serving_storage_);
+  // Logically backup_storage_ shouldn't serving now.
+  backup_storage_->Reset();
+  TF_RETURN_IF_ERROR(session_mgr_->CreateFullModelSession(version,
+      version.full_model_name.c_str(), backup_storage_));
+ 
+  std::swap(backup_storage_, serving_storage_);
+  return Status::OK();
 }
 
 Status ModelInstance::DeltaModelUpdate(const Version& version) {
@@ -374,16 +372,27 @@ Status ModelInstanceMgr::Init(SessionOptions* sess_options,
 Status ModelInstanceMgr::CreateInstances(const Version& version) {
   cur_instance_ = new ModelInstance(session_options_, run_options_);
   TF_RETURN_IF_ERROR(cur_instance_->Init(version, model_config_,
-      model_storage_, true));
+      model_storage_));
 
   base_instance_ = new ModelInstance(session_options_, run_options_);
   return base_instance_->Init(version, model_config_,
-      model_storage_, false);
+      model_storage_);
 }
 
 Status ModelInstanceMgr::Predict(const eas::PredictRequest& req,
     eas::PredictResponse* resp) {
   return cur_instance_->Predict(req, resp);
+}
+
+Status ModelInstanceMgr::Rollback() {
+  if (cur_instance_->GetVersion() == base_instance_->GetVersion()) {
+    LOG(WARNING) << "[Processor] Already rollback to base model.";
+    return Status::OK();
+  }
+  std::swap(cur_instance_, base_instance_);
+  // TODO: Reset base_instance, shouldn't rollback again.
+  // base_instance_->Reset();
+  return Status::OK();
 }
 
 Status ModelInstanceMgr::FullModelUpdate(const Version& version) {

@@ -22,6 +22,7 @@ class Model {
 
   Status Init(const char* model_config, const char* model_dir);
   Status Predict(const eas::PredictRequest& req, eas::PredictResponse* resp);
+  Status Rollback();
 
   std::string DebugString();
 
