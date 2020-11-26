@@ -713,8 +713,7 @@ bool FindContractionWithBiasInPort(const RemapperContext& ctx,
   if (!FindContractionWithBias(ctx, bias_add_node_view->node_index(), base,
                                /*check_device_compatible=*/false))
     return false;
-  if (!IsConv2D(*bias_add_node_view->GetRegularFanin(0).node_view()->node()))
-    return false;
+
   if (!HasAtMostOneFanoutAtPort0(*bias_add_node_view) ||
       !HaveSameDataType(&add_node_def, bias_add_node_def) ||
       IsInPreserveSet(ctx, bias_add_node_def))
@@ -759,6 +758,7 @@ bool FindContractionWithBiasAddAndAdd(const RemapperContext& ctx,
 
   ContractionWithBiasAdd base;
   matched->port_id = 0;
+
 
   // Find the conv+bias pattern in specific port.
   if (!FindContractionWithBiasInPort(ctx, node_view, *node_def,
@@ -1378,28 +1378,34 @@ Status AddFusedContractionNode(RemapperContext* ctx,
   const NodeDef& contraction = graph->node(matched.contraction);
   const NodeDef& bias_add = graph->node(matched.bias_add);
 
-  // MKL version only support fusion for Conv2D
-  DCHECK(IsConv2D(contraction));
+  // MKL version only support fusion for Conv2D and MatMul
+  DCHECK(IsConv2D(contraction) || IsMatMul(contraction));
 
-  NodeDef fused_conv2d;
+  NodeDef contraction_node;
   const NodeDef& add = graph->node(matched.add);
-  fused_conv2d.set_name(add.name());
-  fused_conv2d.set_op(kFusedConv2D);
-  fused_conv2d.set_device(contraction.device());
-  fused_conv2d.add_input(contraction.input(0));  // 0: input
-  fused_conv2d.add_input(contraction.input(1));  // 1: filter
-  fused_conv2d.add_input(bias_add.input(1));     // 2: bias
+  contraction_node.set_name(add.name());
+  contraction_node.set_device(contraction.device());
+  contraction_node.add_input(contraction.input(0));  // 0: input
+  contraction_node.add_input(contraction.input(1));  // 1: filter
+  contraction_node.add_input(bias_add.input(1));     // 2: bias
 
-  // Add OP has two inputs, one is conv+bias pattern matched previously,
-  // the other input to add is fused here.
-  fused_conv2d.add_input(add.input(1 - matched.port_id));
+  // Add OP has two inputs, one is conv+bias/matmul+bias pattern matched
+  // previously, the other input to add is fused here.
+  contraction_node.add_input(add.input(1 - matched.port_id));
 
-  CopyConv2DAttributes(contraction, &fused_conv2d);
-  SetFusedOpAttributes(&fused_conv2d, {"BiasAdd", "Add"}, 2);
+  if (IsConv2D(contraction)) {
+    contraction_node.set_op(kFusedConv2D);
+    CopyConv2DAttributes(contraction, &contraction_node);
+  } else if (IsMatMul(contraction)) {
+    contraction_node.set_op(kFusedMatMul);
+    CopyMatMulAttributes(contraction, &contraction_node);
+  }
+
+  SetFusedOpAttributes(&contraction_node, {"BiasAdd", "Add"}, 2);
 
   utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
   Status status;
-  mutation->AddNode(std::move(fused_conv2d), &status);
+  mutation->AddNode(std::move(contraction_node), &status);
   TF_RETURN_IF_ERROR(status);
   TF_RETURN_IF_ERROR(mutation->Apply());
 
@@ -1716,19 +1722,25 @@ Status AddBatchNormNodes(RemapperContext* ctx, const FusedBatchNorm& matched) {
 }
 
 #ifdef INTEL_MKL
-bool IsConv2DWithAdd(const RemapperContext& ctx, int node_index) {
+bool IsConv2DOrMatMul(const NodeDef& node) {
+  return IsConv2D(node) || IsMatMul(node);
+}
+
+bool IsContractionWithAdd(const RemapperContext& ctx, int node_index) {
   const auto* node_view = ctx.graph_view.GetNode(node_index);
 
   // Candidate for Conv2D + Add or Conv2D + BiasAdd + Add fusion.
+  //               MatMul + Add or MatMul + BiasAdd + Add fusion.
   auto is_supported_add_input =
       [](const utils::MutableNodeView* node_view) -> bool {
-    if (IsConv2D(*node_view->node())) return true;
+    // Currently only support Conv2D and MatMul
+    if (IsConv2DOrMatMul(*node_view->node())) return true;
     if (IsBiasAdd(*node_view->node())) {
       if (node_view->NumRegularFanins() < 2) return false;
       const auto& bias_add_fanin_0 = node_view->GetRegularFanin(0);
       const auto& bias_add_fanin_1 = node_view->GetRegularFanin(1);
-      return IsConv2D(*bias_add_fanin_0.node_view()->node()) ||
-             IsConv2D(*bias_add_fanin_1.node_view()->node());
+      return IsConv2DOrMatMul(*bias_add_fanin_0.node_view()->node()) ||
+             IsConv2DOrMatMul(*bias_add_fanin_1.node_view()->node());
     }
     return false;
   };
@@ -1847,7 +1859,7 @@ bool RequiresInferredShapes(const RemapperContext& ctx, int node_index) {
 
 #ifdef INTEL_MKL
   return is_batch_norm_candidate() || is_batch_norm_fusion_candidate() ||
-         IsConv2DWithAdd(ctx, node_index) ||
+         IsContractionWithAdd(ctx, node_index) ||
          IsBatchMatMulWithMul(ctx, node_index);
 #else
   return is_relu_biasadd_conv2d_candidate() || is_batch_norm_candidate() ||

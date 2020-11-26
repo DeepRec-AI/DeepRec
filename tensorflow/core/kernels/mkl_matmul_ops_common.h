@@ -50,6 +50,7 @@ struct MklDnnMatMulFwdParams {
   memory::dims dst_dims;
   MEMORY_FORMAT src_format;
   MEMORY_FORMAT weight_format;
+  MEMORY_FORMAT dst_format;
   string dtypes = string("");
   struct PostOpParam {
     string name;
@@ -60,13 +61,15 @@ struct MklDnnMatMulFwdParams {
   MklDnnMatMulFwdParams(memory::dims src_dims, memory::dims weight_dims,
                         memory::dims bias_dims, memory::dims dst_dims,
                         MEMORY_FORMAT src_format = MEMORY_FORMAT::any,
-                        MEMORY_FORMAT weight_format = MEMORY_FORMAT::any)
+                        MEMORY_FORMAT weight_format = MEMORY_FORMAT::any,
+                        MEMORY_FORMAT dst_format = MEMORY_FORMAT::any)
       : src_dims(src_dims),
         weight_dims(weight_dims),
         bias_dims(bias_dims),
         dst_dims(dst_dims),
         src_format(src_format),
-        weight_format(weight_format) {}
+        weight_format(weight_format),
+        dst_format(dst_format) {}
 };
 
 // With quantization, input, weight, bias, and output can have different types.
@@ -208,7 +211,7 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
 
     context_.dst_md.reset(new memory::desc({matmul_fwd_params.dst_dims},
                                            MklDnnType<Toutput>(),
-                                           MEMORY_FORMAT::any));
+                                           matmul_fwd_params.dst_format));
 
     context_.bias_md.reset(new memory::desc({matmul_fwd_params.bias_dims},
                                             MklDnnType<Tbias>(),
@@ -252,10 +255,15 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           std::vector<float> scales;
           scales.push_back(post_op_param.param[0]);
           post_ops_attr.set_output_scales(0, scales);
+        } else if (post_op_param.name == "sum") {
+          DCHECK_EQ(post_op_param.param.size(), 1);
+          float op_scale = post_op_param.param[0];
+          post_ops.append_sum(op_scale);
         } else {
           DCHECK((post_op_param.name == "relu") ||
                  (post_op_param.name == "relu6") ||
                  (post_op_param.name == "elu") ||
+                 (post_op_param.name == "sum") ||
                  (post_op_param.name == "output_scale"));
         }
       }
@@ -374,6 +382,10 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
         DCHECK_EQ(post_op_param.param.size(), 1);
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(post_op_param.param[0]);
+      } else if (post_op_param.name == "sum") {
+        DCHECK_EQ(post_op_param.param.size(), 1);
+        key_creator.AddAsKey(post_op_param.name);
+        key_creator.AddAsKey(post_op_param.param[0]);
       } else {
         return string("not_a_key");
       }
@@ -428,8 +440,7 @@ class MklDnnMatMulOpBase : public OpKernel {
   // LOCKS_EXCLUDED annotation ensures that the lock (mu_) cannot
   // be acquired before entering the function, since it is acquired
   // inside the function.
-  inline bool IsWeightCacheEmpty(OpKernelContext* context)
-      LOCKS_EXCLUDED(mu_) {
+  inline bool IsWeightCacheEmpty(OpKernelContext* context) LOCKS_EXCLUDED(mu_) {
     tf_shared_lock lock(mu_);
     return (weight_oi_.NumElements() == 0);
   }
