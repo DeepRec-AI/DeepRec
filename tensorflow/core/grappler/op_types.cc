@@ -278,6 +278,8 @@ bool IsFusedBatchNormGrad(const NodeDef& node) {
          op == "FusedBatchNormGradV3";
 }
 
+bool IsGelu(const NodeDef& node) { return node.op() == "Gelu"; }
+
 bool IsGreater(const NodeDef& node) { return node.op() == "Greater"; }
 
 bool IsGreaterEqual(const NodeDef& node) { return node.op() == "GreaterEqual"; }

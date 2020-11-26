@@ -250,6 +250,20 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           float op_beta = post_op_param.param[2];
           post_ops.append_eltwise(op_scale, ALGORITHM::eltwise_elu, op_alpha,
                                   op_beta);
+        } else if (post_op_param.name == "gelu") {
+          DCHECK_EQ(post_op_param.param.size(), 3);
+          float op_scale = post_op_param.param[0];
+          float op_alpha = post_op_param.param[1];
+          float op_beta = post_op_param.param[2];
+          post_ops.append_eltwise(op_scale, ALGORITHM::eltwise_gelu, op_alpha,
+                                  op_beta);
+        } else if (post_op_param.name == "gelu_erf") {
+          DCHECK_EQ(post_op_param.param.size(), 3);
+          float op_scale = post_op_param.param[0];
+          float op_alpha = post_op_param.param[1];
+          float op_beta = post_op_param.param[2];
+          post_ops.append_eltwise(op_scale, ALGORITHM::eltwise_gelu_erf,
+                                  op_alpha, op_beta);
         } else if (post_op_param.name == "output_scale") {
           DCHECK_EQ(post_op_param.param.size(), 1);
           std::vector<float> scales;
@@ -263,6 +277,8 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
           DCHECK((post_op_param.name == "relu") ||
                  (post_op_param.name == "relu6") ||
                  (post_op_param.name == "elu") ||
+                 (post_op_param.name == "gelu") ||
+                 (post_op_param.name == "gelu_erf") ||
                  (post_op_param.name == "sum") ||
                  (post_op_param.name == "output_scale"));
         }
@@ -372,7 +388,8 @@ class MklDnnMatMulFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
     // Generate keys for post-ops
     for (auto const& post_op_param : mkldnn_matmul_fwd_dims.post_op_params) {
       if (post_op_param.name == "relu" || post_op_param.name == "relu6" ||
-          post_op_param.name == "elu") {
+          post_op_param.name == "elu" || post_op_param.name == "gelu" ||
+          post_op_param.name == "gelu_erf") {
         DCHECK_EQ(post_op_param.param.size(), 3);
         key_creator.AddAsKey(post_op_param.name);
         key_creator.AddAsKey(post_op_param.param[0]);

@@ -84,6 +84,7 @@ bool IsFloorMod(const NodeDef& node);
 bool IsFusedBatchNorm(const NodeDef& node);
 bool IsFusedBatchNormEx(const NodeDef& node);
 bool IsFusedBatchNormGrad(const NodeDef& node);
+bool IsGelu(const NodeDef& node);
 bool IsGreater(const NodeDef& node);
 bool IsGreaterEqual(const NodeDef& node);
 bool IsHistogramSummary(const NodeDef& node);

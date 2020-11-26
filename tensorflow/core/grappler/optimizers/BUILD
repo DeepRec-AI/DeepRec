@@ -803,6 +803,7 @@ tf_kernel_library(
         "//tensorflow/core/grappler/utils:graph_view",
         "//tensorflow/core/grappler/utils:symbolic_shapes",
         "//tensorflow/core/grappler/utils:topological_sort",
+        "//tensorflow/core/grappler/utils:pattern_utils",
         "@com_google_absl//absl/container:flat_hash_set",
     ],
 )
