@@ -8231,6 +8231,22 @@ tf_cc_test_mkl(
     ],
 )
 
+tf_cc_test_mkl(
+    name = "mkl_cwise_ops_test",
+    size = "small",
+    srcs = ["mkl_cwise_ops_test.cc"],
+    linkstatic = 1,
+    deps = [
+        ":mkl_cwise_ops_common",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_mkl_kernel_library(
     name = "mkl_transpose_op",
     srcs = [

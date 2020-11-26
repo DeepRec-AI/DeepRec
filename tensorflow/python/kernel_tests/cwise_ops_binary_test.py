@@ -856,6 +856,40 @@ class ComparisonOpTest(test.TestCase):
       tf_ans = self.evaluate(out)
     self.assertAllEqual(np_ans, tf_ans)
 
+  def testCreateMemDecBlockedFormat(self):
+    """Try to create the mkl binary operation
+
+    when one of the input's memory descriptor is in blocked format
+    """
+    from tensorflow.python.ops import array_ops
+    from tensorflow.python.ops import nn_ops
+    if test_util.IsMklEnabled():
+      s0 = np.ones((1, 8188, 4092, 1), dtype=np.uint8).astype(np.float32)
+      s1 = array_ops.strided_slice(
+          s0, [0, 1, 1, 0], [0, -1, -1, 0], [1, 1, 1, 1],
+          begin_mask=9,
+          end_mask=9)
+      s2 = array_ops.slice(s1, [0, 0, 0, 0], [-1, -1, -1, 1])
+      s3_1 = array_ops.slice(s2, [0, 4, 4, 0], [-1, 8178, 4082, 1])
+      s3_2 = array_ops.slice(s2, [0, 4, 4, 0], [-1, 8178, 4082, 1])
+      filter4_1 = constant_op.constant([[[[1.18, -0.51]]]])
+      s4_1 = nn_ops.conv2d(
+          s3_1, filter4_1, strides=[1, 1, 1, 1], padding="VALID")
+      filter4_2 = constant_op.constant([[[[1.38, -0.11]]]])
+      s4_2 = nn_ops.conv2d(
+          s3_2, filter4_2, strides=[1, 1, 1, 1], padding="VALID")
+      s5_1 = array_ops.slice(s4_1, [0, 6, 6, 0], [-1, 1, 1, -1])
+      s5_2 = array_ops.slice(s4_2, [0, 6, 6, 0], [-1, 1, 1, -1])
+      add = math_ops.add(s5_1, s5_2)
+      self.evaluate(
+          add
+      )  # This test is only meant to check the creation is not crashed
+
+      mul = math_ops.multiply(s5_1, s5_2)
+      self.evaluate(
+          mul
+      )  # This test is only meant to check the creation is not crashed
+
   def testTensorCompareTensor(self):
     x = np.linspace(-15, 15, 6).reshape(1, 3, 2)
     y = np.linspace(20, -10, 6).reshape(1, 3, 2)
