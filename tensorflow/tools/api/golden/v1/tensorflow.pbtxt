@@ -1389,6 +1389,14 @@ tf_module {
     argspec: "args=[\'params\', \'indices\', \'name\', \'batch_dims\'], varargs=None, keywords=None, defaults=[\'None\', \'0\'], "
   }
   member_method {
+    name: "gelu"
+    argspec: "args=[\'features\', \'approximate\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "gelu_grad"
+    argspec: "args=[\'gradients\', \'features\', \'approximate\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
     name: "get_collection"
     argspec: "args=[\'key\', \'scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }

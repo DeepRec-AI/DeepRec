@@ -36,7 +36,7 @@ def _ref_softmax(values):
 class KerasActivationsTest(test.TestCase):
 
   def test_serialization(self):
-    all_activations = ['softmax', 'relu', 'elu', 'tanh',
+    all_activations = ['softmax', 'relu', 'elu', 'tanh', 'gelu',
                        'sigmoid', 'hard_sigmoid', 'linear',
                        'softplus', 'softsign', 'selu']
     for name in all_activations:
@@ -101,6 +101,27 @@ class KerasActivationsTest(test.TestCase):
     result = f([negative_values])[0]
     true_result = (np.exp(negative_values) - 1) * scale * alpha
     self.assertAllClose(result, true_result)
+
+  def test_gelu(self):
+    def gelu(x, approximate=False):
+      if approximate:
+        return 0.5 * x * (1.0 + np.tanh(np.sqrt(2.0 / np.pi) *
+                                        (x + 0.044715 * np.power(x, 3))))
+      else:
+        from scipy.stats import norm  # pylint: disable=g-import-not-at-top
+        return x * norm.cdf(x)
+    x = keras.backend.placeholder(ndim=2)
+    f = keras.backend.function([x], [keras.activations.gelu(x)])
+    test_values = np.random.random((2, 5))
+    result = f([test_values])[0]
+    expected = gelu(test_values)
+    self.assertAllClose(result, expected, rtol=1e-05)
+
+    f = keras.backend.function([x], [keras.activations.gelu(x, True)])
+    test_values = np.random.random((2, 5))
+    result = f([test_values])[0]
+    expected = gelu(test_values, True)
+    self.assertAllClose(result, expected, rtol=1e-05)
 
   def test_softplus(self):
     def softplus(x):

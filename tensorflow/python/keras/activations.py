@@ -72,6 +72,26 @@ def softmax(x, axis=-1):
                      'Received input: %s' % (x,))
 
 
+@keras_export('keras.activations.gelu')
+def gelu(x, approximate=False):
+  """Gaussian Error Linear Unit.
+
+  Arguments:
+      x: Input tensor.
+
+  Returns:
+      The gaussian error linear activation:
+      `0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))`
+      if `approximate` is `True` or
+      `x * P(X <= x) = 0.5 * x * (1 + erf(x / sqrt(2)))`, where P(X) ~ N(0, 1),
+      if `approximate` is `False`.
+
+  Reference:
+      - [Gaussian Error Linear Units (GELUs)](https://arxiv.org/abs/1606.08415)
+  """
+  return nn.gelu(x, approximate)
+
+
 @keras_export('keras.activations.elu')
 def elu(x, alpha=1.0):
   """Exponential linear unit.

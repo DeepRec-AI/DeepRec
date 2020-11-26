@@ -410,6 +410,11 @@ def _BiasAddGradV1(unused_bias_op, received_grad):
                                              reduction_dim_tensor))
 
 
+@ops.RegisterGradient("Gelu")
+def _GeluGrad(op, grad):
+  return gen_nn_ops.gelu_grad(grad, op.inputs[0], op.get_attr("approximate"))
+
+
 @ops.RegisterGradient("Relu")
 def _ReluGrad(op, grad):
   return gen_nn_ops.relu_grad(grad, op.outputs[0])
