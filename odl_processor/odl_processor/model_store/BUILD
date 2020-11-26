@@ -1,5 +1,23 @@
 package(default_visibility = ["//visibility:public"])
 
+cc_library(
+  name = "redis_modelstore",
+  srcs = [
+  ],
+  linkopts = ["-levent", "-L/usr/local/lib"],
+  linkstatic = 1,
+  hdrs = [
+    'abs_model_store.h',
+    'redis_model_store.h',
+    'model_store_factory.h',
+  ],
+  deps = [
+      "@hiredis//:hiredis",
+      "@org_tensorflow//tensorflow/core:lib",
+
+  ],
+)
+
 cc_binary(
   name = "redis_test",
   srcs = [
@@ -9,7 +27,6 @@ cc_binary(
   linkstatic = 1,
   deps = [
       "@hiredis//:hiredis",
-      "@mxml//:mxml",
   ],
 )
 
