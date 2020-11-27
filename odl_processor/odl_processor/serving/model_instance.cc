@@ -148,18 +148,27 @@ std::string ModelInstance::DebugString() {
 ModelInstanceMgr::ModelInstanceMgr(const char* root_dir, ModelConfig* config)
   : model_storage_(new ModelStorage()), model_config_(config) {
   model_storage_->Init(root_dir);
+  session_options_ = new SessionOptions();
+  //session_options_->target = target;
+  session_options_->config.set_intra_op_parallelism_threads(config->inter_threads);
+  session_options_->config.set_inter_op_parallelism_threads(config->intra_threads);
+  //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
+  run_options_ = new RunOptions();
 }
 
 ModelInstanceMgr::~ModelInstanceMgr() {
+  is_stop_ = true;
   thread_->join();
+  delete thread_;
 
   delete base_instance_;
   delete cur_instance_;
+  delete session_options_;
+  delete run_options_;
   delete model_storage_;
 }
 
-Status ModelInstanceMgr::Init(SessionOptions* sess_options,
-    RunOptions* run_options) {
+Status ModelInstanceMgr::Init() {
   Version version;
   auto status = model_storage_->GetLatestVersion(version);
   if (!status.ok()) {
@@ -225,7 +234,7 @@ Status ModelInstanceMgr::ModelUpdate(const Version& version) {
 }
 
 void ModelInstanceMgr::WorkLoop() {
-  while(!is_stop) {
+  while(!is_stop_) {
     Version version;
     auto status = model_storage_->GetLatestVersion(version);
     if (!status.ok()) {

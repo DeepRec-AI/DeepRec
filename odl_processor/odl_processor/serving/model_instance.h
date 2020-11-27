@@ -66,7 +66,7 @@ class ModelInstanceMgr {
   ModelInstanceMgr(const char* root_dir, ModelConfig* config);
   ~ModelInstanceMgr();
 
-  Status Init(SessionOptions* sess_options, RunOptions* run_options);
+  Status Init();
   Status Predict(const Request& req, Response& resp);
 
   Status Rollback();
@@ -82,7 +82,7 @@ class ModelInstanceMgr {
   Status ModelUpdate(const Version& version);
 
  private:
-  bool is_stop = false;
+  volatile bool is_stop_ = false;
 
   Status status_;
   std::thread* thread_ = nullptr;
@@ -92,7 +92,8 @@ class ModelInstanceMgr {
   ModelInstance* base_instance_ = nullptr;
 
   ModelStorage* model_storage_ = nullptr;
-  ModelConfig* model_config_ = nullptr;
+  ModelConfig* model_config_ = nullptr; // not owned
+
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
 };

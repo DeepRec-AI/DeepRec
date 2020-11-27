@@ -203,7 +203,9 @@ void ModelSessionMgr::ResetServingSession(Session* session,
   auto tmp = serving_session_;
   serving_session_ = model_session;
 
-  if (serving_session_->counter_ > 0) {
+  if (tmp == nullptr) return;
+
+  if (tmp->counter_ > 0) {
     // TODO: free it in active object.
     sessions_.emplace_back(tmp);
   } else {
