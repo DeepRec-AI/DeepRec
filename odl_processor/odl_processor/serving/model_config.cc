@@ -73,11 +73,6 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No oss_access_key in ModelConfig.");
   }
 
-  if (!json_config["enable_warm_up"].isNull()) {
-    (*config)->warmup =
-      json_config["enable_warm_up"].asBool();
-  }
-
   if (!json_config["local_storage"].isNull()) {
     (*config)->local_storage =
       json_config["local_storage"].asBool();

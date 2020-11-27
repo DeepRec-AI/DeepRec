@@ -17,7 +17,7 @@ SavedModelImpl::~SavedModelImpl() {
 
 Status SavedModelImpl::Init(const char* root_dir) {
   instance_mgr_ = new ModelInstanceMgr(root_dir, model_config_);
-  return instance_mgr_->Init(session_options_, run_options_);
+  return instance_mgr_->Init();
 }
 
 Status SavedModelImpl::Predict(const Request& req, Response& resp) {

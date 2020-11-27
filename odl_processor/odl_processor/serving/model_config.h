@@ -13,7 +13,6 @@ struct ModelConfig {
   // Run Info
   int inter_threads;
   int intra_threads;
-  bool warmup;
 
   // Embedding Config
   bool local_storage;

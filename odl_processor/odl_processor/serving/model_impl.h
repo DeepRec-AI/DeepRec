@@ -6,8 +6,6 @@
 
 namespace tensorflow {
 class SavedModelBundle;
-class SessionOptions;
-class RunOptions;
 class Tensor;
 
 namespace processor {
@@ -62,9 +60,6 @@ class SavedModelImpl : public ModelImpl {
  private:
   ModelConfig* model_config_;
   ModelInstanceMgr* instance_mgr_ = nullptr;
-
-  SessionOptions* session_options_ = nullptr;
-  RunOptions* run_options_ = nullptr;
 };
 
 class ModelImplFactory {
