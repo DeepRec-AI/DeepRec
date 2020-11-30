@@ -589,7 +589,11 @@ TEST_F(MklRemapperTest, FuseMatMulWithBiasAndGelu) {
         const auto fused_ops = node.attr().at("fused_ops").list().s();
         ASSERT_EQ(fused_ops.size(), 2);
         EXPECT_EQ(fused_ops[0], "BiasAdd");
-        EXPECT_EQ(fused_ops[1], "Gelu");
+       if(activation == "Gelu_tanh") {
+         EXPECT_EQ(fused_ops[1], "Gelu");
+       } else {
+         EXPECT_EQ(fused_ops[1], "Gelu_erf");
+       }
         found++;
       }
     }

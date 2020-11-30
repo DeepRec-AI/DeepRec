@@ -1347,11 +1347,11 @@ Status AddFusedContractionNode(
   }
 
   // Set different algorithm for Gelu according to approximate.
-  string op = activation.op();
-  if (op == "Gelu" && !(activation.attr().at("approximate").b())) {
-    op += "_erf";
+  string new_op = activation.op();
+  if (new_op == "Gelu" && !(activation.attr().at("approximate").b())) {
+    new_op += "_erf";
   }
-  SetFusedOpAttributes(&fused_op, {"BiasAdd", activation.op()});
+  SetFusedOpAttributes(&fused_op, {"BiasAdd", new_op});
 
   utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
   Status status;

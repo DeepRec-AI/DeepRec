@@ -1590,11 +1590,11 @@ tf_module {
   }
   member_method {
     name: "Gelu"
-    argspec: "args=[\'features\', \'approximate\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+    argspec: "args=[\'features\', \'approximate\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "GeluGrad"
-    argspec: "args=[\'gradients\', \'features\', \'approximate\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+    argspec: "args=[\'gradients\', \'features\', \'approximate\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "GenerateBoundingBoxProposals"

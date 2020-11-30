@@ -1090,7 +1090,7 @@ REGISTER_OP("Dilation2DBackpropFilter")
 REGISTER_OP("Gelu")
     .Input("features: T")
     .Output("activations: T")
-    .Attr("T: {half, float, double}")
+    .Attr("T: {half, float, double, bfloat16}")
     .Attr("approximate: bool = false")
     .SetShapeFn(shape_inference::UnchangedShape);
 
@@ -1098,7 +1098,7 @@ REGISTER_OP("GeluGrad")
     .Input("gradients: T")
     .Input("features: T")
     .Output("backprops: T")
-    .Attr("T: {half, float, double}")
+    .Attr("T: {half, float, double, bfloat16}")
     .Attr("approximate: bool = false")
     .SetShapeFn(shape_inference::MergeBothInputsShapeFn);
 
@@ -2213,6 +2213,40 @@ REGISTER_OP("_MklLeakyReluGrad")
     .Doc(R"doc(
 MKL version of LeakyReluGrad operator. Uses MKL DNN APIs to compute rectified
 linear gradients for LeakyReluGrad operation.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
+REGISTER_OP("_MklGelu")
+    .Input("features: T")
+    .Input("mkl_features: uint8")
+    .Output("activations: T")
+    .Output("mkl_activations: uint8")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::UnchangedShape)
+    .Doc(R"doc(
+MKL version of Gelu operator. Uses MKL DNN APIs to implement
+Gelu operator.
+
+NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
+expected to invoke these operators.
+)doc");
+
+REGISTER_OP("_MklGeluGrad")
+    .Input("gradients: T")
+    .Input("features: T")
+    .Input("mkl_gradients: uint8")
+    .Input("mkl_features: uint8")
+    .Output("backprops: T")
+    .Output("mkl_backprops: uint8")
+    .Attr("T: {float, bfloat16} = DT_FLOAT")
+    .Attr("approximate: bool = false")
+    .SetShapeFn(shape_inference::MergeBothInputsShapeFn)
+    .Doc(R"doc(
+MKL version of GeluGrad operator. Uses MKL DNN APIs to compute the
+gradients for GeluGrad operation.
 
 NOTE Do not invoke this operator directly in Python. Graph rewrite pass is
 expected to invoke these operators.

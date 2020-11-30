@@ -20,10 +20,10 @@ limitations under the License.
 #include <algorithm>
 #include <vector>
 
-#include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/mkl_graph_util.h"
 #include "tensorflow/core/graph/testlib.h"
 #include "tensorflow/core/kernels/ops_util.h"
@@ -2957,6 +2957,98 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_Relu6_Positive);
             "A:control->DMT/_1:control;B->C:1;C->D:1;DMT/_0->C:2;DMT/_1->C:3");   \
 }
 REGISTER_TEST_ALL_TYPES(NodeRewrite_Relu6Grad_Positive);
+#undef REGISTER_TEST
+
+#define REGISTER_TEST(NAME, T, INPUT)                               \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                           \
+    InitGraph("node { name: 'A' op: '" #INPUT                       \
+              "'}"                                                  \
+              "node { name: 'B' op: 'Gelu'"                         \
+              " attr { key: 'T'                value { type: " #T   \
+              " } }"                                                \
+              " attr { key: 'approximate'      value { b: true } }" \
+              " input: ['A']}"                                      \
+              "node { name: 'C' op: 'Zeta'"                         \
+              "attr { key: 'T' value { type: " #T                   \
+              " } }"                                                \
+              " input: ['A', 'B'] }");                              \
+    EXPECT_EQ(DoMklLayoutOptimizationPass(),                        \
+              "A(" #INPUT                                           \
+              ");B(_MklGelu);C(Zeta);DMT/_0(Const)|A->B;A->C;"      \
+              "A:control->DMT/_0:control;B->C:1;DMT/_0->B:1");      \
+  }
+REGISTER_TEST_ALL_TYPES(NodeRewrite_Gelu_Positive);
+#undef REGISTER_TEST
+
+#define REGISTER_TEST(NAME, T, INPUT)                                \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                            \
+    InitGraph("node { name: 'A' op: '" #INPUT                        \
+              "'}"                                                   \
+              "node { name: 'B' op: 'Gelu'"                          \
+              " attr { key: 'T'                value { type: " #T    \
+              " } }"                                                 \
+              " attr { key: 'approximate'      value { b: false } }" \
+              " input: ['A']}"                                       \
+              "node { name: 'C' op: 'Zeta'"                          \
+              "attr { key: 'T' value { type: " #T                    \
+              " } }"                                                 \
+              " input: ['A', 'B'] }");                               \
+    EXPECT_EQ(DoMklLayoutOptimizationPass(),                         \
+              "A(" #INPUT                                            \
+              ");B(_MklGelu);C(Zeta);DMT/_0(Const)|A->B;A->C;"       \
+              "A:control->DMT/_0:control;B->C:1;DMT/_0->B:1");       \
+  }
+REGISTER_TEST_ALL_TYPES(NodeRewrite_Gelu_Positive1);
+#undef REGISTER_TEST
+
+#define REGISTER_TEST(NAME, T, INPUT)                                       \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                                   \
+    InitGraph("node { name: 'A' op: '" #INPUT                               \
+              "'}"                                                          \
+              "node { name: 'B' op: '" #INPUT                               \
+              "'}"                                                          \
+              "node { name: 'C' op: 'GeluGrad'"                             \
+              " attr { key: 'T'                value { type: " #T           \
+              " } }"                                                        \
+              " attr { key: 'approximate'      value { b: true } }"         \
+              " input: ['A', 'B']}"                                         \
+              "node { name: 'D' op: 'Zeta'"                                 \
+              "attr { key: 'T' value { type: " #T                           \
+              " } }"                                                        \
+              " input: ['A', 'C'] }");                                      \
+    EXPECT_EQ(                                                              \
+        DoMklLayoutOptimizationPass(),                                      \
+        "A(" #INPUT ");B(" #INPUT                                           \
+        ");C(_MklGeluGrad);D(Zeta);DMT/_0(Const);"                          \
+        "DMT/_1(Const)|A->C;A->D;A:control->DMT/_0:control;"                \
+        "A:control->DMT/_1:control;B->C:1;C->D:1;DMT/_0->C:2;DMT/_1->C:3"); \
+  }
+REGISTER_TEST_ALL_TYPES(NodeRewrite_GeluGrad_Positive);
+#undef REGISTER_TEST
+
+#define REGISTER_TEST(NAME, T, INPUT)                                       \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                                   \
+    InitGraph("node { name: 'A' op: '" #INPUT                               \
+              "'}"                                                          \
+              "node { name: 'B' op: '" #INPUT                               \
+              "'}"                                                          \
+              "node { name: 'C' op: 'GeluGrad'"                             \
+              " attr { key: 'T'                value { type: " #T           \
+              " } }"                                                        \
+              " attr { key: 'approximate'      value { b: false } }"        \
+              " input: ['A', 'B']}"                                         \
+              "node { name: 'D' op: 'Zeta'"                                 \
+              "attr { key: 'T' value { type: " #T                           \
+              " } }"                                                        \
+              " input: ['A', 'C'] }");                                      \
+    EXPECT_EQ(                                                              \
+        DoMklLayoutOptimizationPass(),                                      \
+        "A(" #INPUT ");B(" #INPUT                                           \
+        ");C(_MklGeluGrad);D(Zeta);DMT/_0(Const);"                          \
+        "DMT/_1(Const)|A->C;A->D;A:control->DMT/_0:control;"                \
+        "A:control->DMT/_1:control;B->C:1;C->D:1;DMT/_0->C:2;DMT/_1->C:3"); \
+  }
+REGISTER_TEST_ALL_TYPES(NodeRewrite_GeluGrad_Positive1);
 #undef REGISTER_TEST
 
 #define REGISTER_TEST(NAME, T, INPUT)                                            \

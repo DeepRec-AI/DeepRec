@@ -352,6 +352,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     csinfo_.relu_grad = "ReluGrad";
     csinfo_.relu6 = "Relu6";
     csinfo_.relu6_grad = "Relu6Grad";
+    csinfo_.gelu = "Gelu";
+    csinfo_.gelu_grad = "GeluGrad";
     csinfo_.requantize = "Requantize";
     csinfo_.tanh = "Tanh";
     csinfo_.tanh_grad = "TanhGrad";
@@ -689,6 +691,12 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     rinfo_.push_back(
         {csinfo_.relu6_grad, mkl_op_registry::GetMklOpName(csinfo_.relu6_grad),
          CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
+    rinfo_.push_back({csinfo_.gelu, mkl_op_registry::GetMklOpName(csinfo_.gelu),
+                      CopyAttrsAll, AlwaysRewrite,
+                      kRewriteForLayoutPropagation});
+    rinfo_.push_back(
+        {csinfo_.gelu_grad, mkl_op_registry::GetMklOpName(csinfo_.gelu_grad),
+         CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
     rinfo_.push_back(
         {csinfo_.requantize, mkl_op_registry::GetMklOpName(csinfo_.requantize),
          CopyAttrsAll, AlwaysRewrite, kRewriteForLayoutPropagation});
@@ -1006,6 +1014,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     string relu_grad;
     string relu6;
     string relu6_grad;
+    string gelu;
+    string gelu_grad;
     string requantize;
     string tanh;
     string tanh_grad;

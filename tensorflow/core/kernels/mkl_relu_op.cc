@@ -519,7 +519,9 @@ class MklReluOpBase : public OpKernel {
   ~MklReluOpBase() {}
 
   explicit MklReluOpBase(OpKernelConstruction* context, float alpha, float beta)
-      : OpKernel(context), alpha_(alpha), beta_(beta) {}
+      : OpKernel(context), alpha_(alpha), beta_(beta) {
+        this->alg_kind_ = alg_kind;
+      }
   virtual void Compute_Scalar(OpKernelContext* context) = 0;
 
   void Compute(OpKernelContext* context) override {
@@ -558,7 +560,7 @@ class MklReluOpBase : public OpKernel {
         src_md = MklDnnData<T>::CreateBlockedMemDesc(src_dims, src_strides);
       }
       // Try to get an eltwise forward primitive from caching pool
-      MklEltwiseFwdParams<T> fwdParams(src_dims, src_md, alg_kind, alpha_,
+      MklEltwiseFwdParams<T> fwdParams(src_dims, src_md, alg_kind_, alpha_,
                                        beta_);
       MklEltwiseFwdPrimitive<T>* eltwise_fwd =
           MklEltwiseFwdPrimitiveFactory<T>::Get(fwdParams);
@@ -617,6 +619,7 @@ class MklReluOpBase : public OpKernel {
  protected:
   float alpha_;
   float beta_;
+  algorithm alg_kind_;
 };
 
 template <typename Device, typename T, algorithm alg_kind>
@@ -626,7 +629,9 @@ class MklReluGradOpBase : public OpKernel {
 
   explicit MklReluGradOpBase(OpKernelConstruction* context, float alpha,
                              float beta)
-      : OpKernel(context), alpha_(alpha), beta_(beta) {}
+      : OpKernel(context), alpha_(alpha), beta_(beta) {
+       this->alg_kind_ = alg_kind;
+     }
 
   virtual void Compute_Scalar(OpKernelContext* context) = 0;
 
@@ -736,7 +741,7 @@ class MklReluGradOpBase : public OpKernel {
         common_md = src_md;
       }
 
-      MklEltwiseBwdParams<T> bwdParams(src_dims, common_md, alg_kind, alpha_,
+      MklEltwiseBwdParams<T> bwdParams(src_dims, common_md, alg_kind_, alpha_,
                                        beta_, GetTypeOfInputTensorFromFwdOp());
       MklEltwiseBwdPrimitive<T>* eltwise_bwd =
           MklEltwiseBwdPrimitiveFactory<T>::Get(bwdParams);
@@ -818,6 +823,7 @@ class MklReluGradOpBase : public OpKernel {
  protected:
   float alpha_;
   float beta_;
+  algorithm alg_kind_;
 };
 
 template <typename Device, typename T>
@@ -1193,6 +1199,126 @@ class MklLeakyReluGradOp
   }
 };
 
+template <typename Device, typename T>
+class MklGeluOp
+    : public MklReluOpBase<Device, T, ALGORITHM::eltwise_gelu_erf> {
+ public:
+  ~MklGeluOp() {}
+
+  explicit MklGeluOp(OpKernelConstruction* context)
+      : MklReluOpBase<Device, T, ALGORITHM::eltwise_gelu_erf>(context, 0.0f, 0.0f) {
+    bool approximate;
+    OP_REQUIRES_OK(context, context->GetAttr("approximate", &approximate));
+    this->approximate_ = approximate;
+    if (approximate == true) {
+      this->alg_kind_ = ALGORITHM::eltwise_gelu_tanh;
+    } else {
+      this->alg_kind_ = ALGORITHM::eltwise_gelu_erf;
+    }
+  }
+  virtual void Compute_Scalar(OpKernelContext* context) {
+    const size_t src_index = 0;  // index of src input tensor
+    const size_t dst_index = 0;  // index of dst output tensor
+    const Tensor& src_tensor = MklGetInput(context, src_index);
+    MklDnnShape dnn_shape_src;
+    GetMklShape(context, src_index, &dnn_shape_src);
+
+    Tensor* dst_tensor = nullptr;
+    T* user_i = const_cast<T*>(src_tensor.flat<T>().data());
+    MklDnnShape dnn_shape_dst;
+    dnn_shape_dst.SetMklTensor(false);
+    AllocateOutputSetMklShape(context, dst_index, &dst_tensor,
+                              src_tensor.shape(), dnn_shape_dst);
+
+    T* out_o = dst_tensor->flat<T>().data();
+    T features = user_i[0];
+
+    if (approximate_ == true) {
+      out_o[0] = static_cast<T>(0.5) * features *
+                 (static_cast<T>(1) +
+                  Eigen::numext::tanh(
+                      static_cast<T>(M_2_SQRTPI * M_SQRT1_2) *
+                      (features +
+                       static_cast<T>(0.044715) *
+                           Eigen::numext::pow(features, static_cast<T>(3)))));
+      return;
+    } else {
+      out_o[0] = static_cast<T>(0.5) * features *
+                 (static_cast<T>(1) +
+                  Eigen::numext::erf(features * static_cast<T>(M_SQRT1_2)));
+      return;
+    }
+  }
+
+ private:
+  bool approximate_;
+};
+
+template <typename Device, typename T>
+class MklGeluGradOp
+    : public MklReluGradOpBase<Device, T, ALGORITHM::eltwise_gelu_erf> {
+ public:
+  ~MklGeluGradOp() {}
+
+  explicit MklGeluGradOp(OpKernelConstruction* context)
+      : MklReluGradOpBase<Device, T, ALGORITHM::eltwise_gelu_erf>(context, 0.0f, 0.0f) {
+    bool approximate;
+    OP_REQUIRES_OK(context, context->GetAttr("approximate", &approximate));
+    this->approximate_ = approximate;
+    if (approximate == true) {
+      this->alg_kind_ = ALGORITHM::eltwise_gelu_tanh;
+    } else {
+      this->alg_kind_ = ALGORITHM::eltwise_gelu_erf;
+    }
+  }
+
+  virtual void Compute_Scalar(OpKernelContext* context) {
+    const size_t diff_dst_index = 0;  // index of diff_dst input tensor
+    const size_t src_index = 1;       // index of src input tensor
+    const size_t diff_src_index = 0;  // index of diff_src output tensor
+    const Tensor& src_tensor = MklGetInput(context, src_index);
+    const Tensor& diff_dst_tensor = MklGetInput(context, diff_dst_index);
+    Tensor* diff_src_tensor = nullptr;
+
+    MklDnnShape dnn_shape_diff_dst;
+    GetMklShape(context, diff_dst_index, &dnn_shape_diff_dst);
+
+    MklDnnShape dnn_shape_diff_src;
+    dnn_shape_diff_src.SetMklTensor(false);
+    AllocateOutputSetMklShape(context, diff_src_index, &diff_src_tensor,
+                              diff_dst_tensor.shape(), dnn_shape_diff_src);
+    T* out_o = diff_src_tensor->flat<T>().data();
+    T* user_i = const_cast<T*>(src_tensor.flat<T>().data());
+    T* user_g = const_cast<T*>(diff_dst_tensor.flat<T>().data());
+
+    T features = user_i[0];
+    if (approximate_ == true) {
+      const T kAlpha = static_cast<T>(M_2_SQRTPI * M_SQRT1_2);
+      const T kBeta = kAlpha * static_cast<T>(0.044715) * static_cast<T>(3);
+      const auto y = Eigen::numext::tanh(
+          (kAlpha * ((static_cast<T>(0.044715) *
+                      Eigen::numext::pow(features, static_cast<T>(3))) +
+                     features)));
+      out_o[0] = user_g[0] * static_cast<T>(0.5) *
+                 ((-features * y * y + features) *
+                      (kBeta * features * features + kAlpha) +
+                  static_cast<T>(1) + y);
+      return;
+    } else {
+      const T kAlpha = static_cast<T>(M_2_SQRTPI * M_SQRT1_2);
+      const auto y = Eigen::numext::erf(features * static_cast<T>(M_SQRT1_2));
+      out_o[0] =
+          user_g[0] *
+          ((static_cast<T>(0.5) * (static_cast<T>(1) + y)) +
+           features * kAlpha *
+               Eigen::numext::exp(-static_cast<T>(0.5) * features * features));
+      return;
+    }
+  }
+ private:
+  bool approximate_;
+};
+
 // register dnn kernels for supported operations and supported types
 #define REGISTER_RELU_MKL_SUPPORTED_KERNELS_TYPES(type)        \
   REGISTER_KERNEL_BUILDER(                                     \
@@ -1275,6 +1401,21 @@ TF_CALL_bfloat16(REGISTER_RELU6_MKL_SUPPORTED_KERNELS_TYPES);
 TF_CALL_float(REGISTER_LeakyRelu_MKL_SUPPORTED_KERNELS_TYPES);
 TF_CALL_bfloat16(REGISTER_LeakyRelu_MKL_SUPPORTED_KERNELS_TYPES);
 
+#define REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES(type)        \
+  REGISTER_KERNEL_BUILDER(                                     \
+      Name("_MklGelu")                                         \
+          .Device(DEVICE_CPU)                                  \
+          .TypeConstraint<type>("T")                           \
+          .Label(mkl_op_registry::kMklLayoutDependentOpLabel), \
+      MklGeluOp<CPUDevice, type>);                             \
+  REGISTER_KERNEL_BUILDER(                                     \
+      Name("_MklGeluGrad")                                     \
+          .Device(DEVICE_CPU)                                  \
+          .TypeConstraint<type>("T")                           \
+          .Label(mkl_op_registry::kMklLayoutDependentOpLabel), \
+      MklGeluGradOp<CPUDevice, type>);
+TF_CALL_float(REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES);
+TF_CALL_bfloat16(REGISTER_GELU_MKL_SUPPORTED_KERNELS_TYPES);
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL
