@@ -29,6 +29,7 @@ cc_library(
           "sdsalloc.h",
           "sds.h",
           "sockcompat.h",
+          "win32.h",
   ],
   includes = ["."],
   visibility = ["//visibility:public"],
