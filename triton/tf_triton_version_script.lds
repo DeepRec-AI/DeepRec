@@ -1,7 +1,7 @@
 tensorflow {
   global:
     *tensorflow*;
-    *TRITONTF*;
+    *TRTISTF*;
   local:
     *;
 };
