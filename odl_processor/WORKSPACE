@@ -75,6 +75,15 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "concurrent_queue",
+    build_file = "//third_party:concurrent_queue.BUILD",
+    sha256 = "12d6f88cb69b396d85c0f0d04a7dc91c33ca6184b8c895c0dea58a2a6e263a1d",
+    urls = [
+        "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/read_write_queue/read_write_queue.tar.gz",
+    ],
+)
+
 local_repository(
      name = "org_tensorflow",
      path = "./pai-tensorflow",
