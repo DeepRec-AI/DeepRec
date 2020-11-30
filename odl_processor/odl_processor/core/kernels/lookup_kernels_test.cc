@@ -75,9 +75,9 @@ TEST(KernelsTest, KvImportTest) {
                   .Finalize(&tensor_name_def));
 
   NodeDef storage_pointer_def;
-  Tensor storage_pointer_value(DT_STRING, TensorShape({1}));
-  storage_pointer_value.flat<std::string>()(0) =
-      "0x12345678";
+  Tensor storage_pointer_value(DT_UINT64, TensorShape({1}));
+  storage_pointer_value.scalar<tensorflow::uint64>()() =
+      (uint64_t)(12345678);
   TF_CHECK_OK(NodeDefBuilder("storage_pointer", "Const")
                   .Attr("dtype", DT_STRING)
                   .Attr("value", storage_pointer_value)
@@ -88,7 +88,7 @@ TEST(KernelsTest, KvImportTest) {
                   .Input("version", 0, DT_STRING)
                   .Input("prefix", 0, DT_STRING)
                   .Input("tensor_name", 0, DT_STRING)
-                  .Input("storage_pointer_value", 0, DT_STRING)
+                  .Input("storage_pointer_value", 0, DT_UINT64)
                   .Attr("var_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)

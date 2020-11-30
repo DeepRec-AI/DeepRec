@@ -68,10 +68,10 @@ int main() {
                   .Finalize(&tensor_name_def));
 
   NodeDef pointer_value_def;
-  Tensor pointer_value(DT_STRING, TensorShape({1}));
-  pointer_value.flat<std::string>()(0) = "v1";
+  Tensor pointer_value(DT_UINT64, TensorShape({1}));
+  pointer_value.scalar<tensorflow::uint64>()() = (uint64_t)(12345678);
   TF_CHECK_OK(NodeDefBuilder("pointer_value", "Const")
-                  .Attr("dtype", DT_STRING)
+                  .Attr("dtype", DT_UINT64)
                   .Attr("value", pointer_value)
                   .Finalize(&pointer_value_def));
 
@@ -80,7 +80,7 @@ int main() {
                   .Input("version", 0, DT_STRING)
                   .Input("prefix", 1, DT_STRING)
                   .Input("tensor_name", 2, DT_STRING)
-                  .Input("storage_pointer_value", 3, DT_STRING)
+                  .Input("storage_pointer_value", 3, DT_UINT64)
                   .Attr("var_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
@@ -144,10 +144,10 @@ int main() {
                   .Finalize(&default_value_def));
 
   NodeDef pointer_value_def;
-  Tensor pointer_value(DT_STRING, TensorShape({1}));
-  pointer_value.flat<std::string>()(0) = "v1";
+  Tensor pointer_value(DT_UINT64, TensorShape({1}));
+  pointer_value.scalar<uint64_t>()() = (uint64_t)(12345678);
   TF_CHECK_OK(NodeDefBuilder("pointer_value", "Const")
-                  .Attr("dtype", DT_STRING)
+                  .Attr("dtype", DT_UINT64)
                   .Attr("value", pointer_value)
                   .Finalize(&pointer_value_def));
 
@@ -156,7 +156,7 @@ int main() {
                   .Input("version", 0, DT_STRING)
                   .Input("indices", 1, DT_INT64)
                   .Input("default_value", 2, DT_FLOAT)
-                  .Input("storage_pointer_value", 3, DT_STRING)
+                  .Input("storage_pointer_value", 3, DT_UINT64)
                   .Attr("var_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
