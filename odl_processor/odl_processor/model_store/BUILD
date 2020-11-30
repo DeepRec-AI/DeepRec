@@ -42,3 +42,33 @@ cc_binary(
       "@hiredis//:hiredis",
   ],
 )
+
+cc_library(
+    name = "sparse_storage_manager",
+    srcs = [
+        "sparse_storage_manager.cc",
+    ],
+    hdrs = [
+        "sparse_storage_manager.h",
+    ],
+    linkstatic = True,
+    deps = [
+        ":redis_modelstore",
+        "@com_google_absl//absl/synchronization",
+        "@concurrent_queue",
+        "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:lib",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "sparse_storage_manager_test",
+    srcs = ["sparse_storage_manager_test.cc"],
+    deps = [
+        ":sparse_storage_manager",
+        "@com_google_googletest//:gtest",
+        "@com_google_googletest//:gtest_main",
+    ],   
+)
+
