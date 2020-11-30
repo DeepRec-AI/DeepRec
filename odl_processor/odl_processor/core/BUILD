@@ -13,6 +13,7 @@ cc_library(
     ],
     deps = [
         "//odl_processor/model_store:redis_modelstore",
+        "//odl_processor/model_store:sparse_storage_manager",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/util/tensor_bundle",
     ],

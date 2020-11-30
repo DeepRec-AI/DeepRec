@@ -109,6 +109,7 @@ class SparseStorageManager {
   }
 
  private:
+  // TODO: refine to std::unique_ptr
   std::vector<std::mutex*> mutex_;
   std::vector<std::mutex*> update_mutex_;
   std::vector<std::condition_variable*> cv_;
@@ -134,8 +135,22 @@ class SimpleSparseStorageManager {
       int update_thread_num,
       const std::string& type);
   virtual ~SimpleSparseStorageManager();
-  Status RunTask(SparseTask*);
-  Status RunUpdateTask(SparseTask*);
+  Status RunGetTask(SparseTask*);
+  Status RunSetTask(SparseTask*);
+  Status GetValues(const std::string& feature,
+                   const std::string& version,
+                   const std::vector<char*>& keys,
+                   size_t keys_byte_lens,
+                   const std::vector<char*>& values,
+                   BatchGetCallback cb);
+  Status SetValues(const std::string& feature,
+                   const std::string& version,
+                   const std::vector<char*>& keys,
+                   size_t keys_byte_lens,
+                   const std::vector<char*>& values,
+                   size_t values_byte_lens,
+                   BatchSetCallback cb);
+  Status Reset();
 
  private:
   int thread_num_ = 0;

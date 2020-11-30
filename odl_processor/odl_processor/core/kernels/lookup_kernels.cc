@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 #include "odl_processor/model_store/redis_model_store.h"
 #include "odl_processor/model_store/model_store_factory.h"
+#include "odl_processor/model_store/sparse_storage_manager.h"
 
 namespace tensorflow {
 namespace processor {
@@ -36,7 +37,8 @@ BatchGetCallback make_lookup_callback(
     Tensor default_values_const,
     Tensor allocated_out_tensor_const,
     AsyncOpKernel::DoneCallback done) {
-  return [ctx, N, dim_len, default_values_const, allocated_out_tensor_const,
+  return [ctx, N, dim_len, default_values_const,
+          allocated_out_tensor_const,
           done = std::move(done)](const Status& s,
                                   std::vector<int64_t> not_found_ids_offset) {
     Tensor default_values = default_values_const;
@@ -85,14 +87,16 @@ class KvLookupOp : public AsyncOpKernel {
     Tensor default_values(ctx->input(2));
 
     const Tensor& storage_pointer = ctx->input(3);
-    const std::string storage_pointer_str = storage_pointer.scalar<string>()();
-    // TODO: convert storage_pointer_str to SparseStorage*, AKA: current storage instance
+    const uint64 storage_pointer_value =
+        storage_pointer.scalar<tensorflow::uint64>()();
+    SimpleSparseStorageManager* storageMgr =
+        reinterpret_cast<SimpleSparseStorageManager*>(storage_pointer_value);
 
     TensorShape result_shape = indices.shape();
     TensorShape value_shape({dim_len_});
     result_shape.AppendShape(value_shape);
 
-    // buffer will be pass to embedding service
+    // buffer will be pass to sparse storage
     Tensor* out = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, result_shape, &out));
 
@@ -107,25 +111,26 @@ class KvLookupOp : public AsyncOpKernel {
             "hashmap's value_len should same with output's dimension(1)",
             std::to_string(dim_len_), std::to_string(out->NumElements() / N)));
 
-/*
- * for manual test
     std::vector<char*> keys;
     std::vector<char*> values;
-    auto a = indices.flat<int64>();
+    auto indices_flat = indices.flat<int64>();
     for (int64 i = 0; i < N; ++i) {
-      keys.push_back((char*)&a(i));
-      values.push_back((char*)((TValue*)out->data()+i));
+      keys.push_back((char*)&indices_flat(i));
+      // TODO: decided by redis protocol.
+      values.push_back((char*)((TValue*)out->data() + i));
     }
-    auto r = ModelStoreFactory::CreateModelStore("local_redis");
-    Status s = r->BatchGetAsync(var_name_,
-        version_str,
-        keys,
-        sizeof(TKey),
-        values,
-        make_lookup_callback<TValue>(ctx, N, dim_len_,
+
+    Status s = storageMgr->GetValues(
+        var_name_, version_str, keys,
+        sizeof(TKey), values,
+        make_lookup_callback<TValue>(
+            ctx, N, dim_len_,
             default_values, *out,
             std::move(done)));
-*/
+    if (!s.ok()) {
+      ctx->SetStatus(s);
+      done();
+    }
   }
 
  private:
@@ -157,7 +162,7 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_KV_LOOKUP_CPU);
 
 namespace {
 
-const static size_t BUFFER_SIZE = 8 << 20; // 8MB
+const static size_t BUFFER_SIZE = 8 << 20; // TODO: FIXME 8MB
 
 size_t LookupSegmentInternal(size_t key_size, size_t value_size,
                              int64 total_keys_num,
@@ -206,10 +211,13 @@ BatchSetCallback make_import_callback(
     const std::string& var_name,
     const std::string& version_str,
     BundleReader* reader,
+    SimpleSparseStorageManager* storageMgr,
     AsyncOpKernel::DoneCallback done) {
-  return [ctx, key_buffer, value_buffer, key_size, value_size,
-          left_keys_num = total_keys_num, dim_len, tensor_key, tensor_value, var_name,
-          version_str, reader, done = std::move(done)](const Status& s) {
+  return [ctx, key_buffer, value_buffer, key_size,
+          value_size, left_keys_num = total_keys_num,
+          dim_len, tensor_key, tensor_value, var_name,
+          version_str, reader, storageMgr,
+          done = std::move(done)](const Status& s) {
 
     int64 total_keys_num = left_keys_num;
     if (total_keys_num <= 0) {
@@ -234,16 +242,15 @@ BatchSetCallback make_import_callback(
     }
     total_keys_num -= read_key_num;
 
-/*
- * for manual test
     std::vector<char*> keys;
     std::vector<char*> values;
     for (size_t i = 0; i < read_key_num; ++i) {
-      keys.push_back((char*)((TKey*)key_buffer+i));
-      values.push_back((char*)((TValue*)value_buffer+i));
+      keys.push_back((char*)((TKey*)key_buffer + i));
+      values.push_back((char*)((TValue*)value_buffer + i * dim_len));
     }
-    auto r = ModelStoreFactory::CreateModelStore("local_redis");
-    Status status = r->BatchSetAsync(var_name, version_str,
+
+    Status status = storageMgr->SetValues(
+        var_name, version_str,
         keys, sizeof(TKey),
         values, sizeof(TValue) * dim_len,
         make_import_callback<TKey, TValue>(
@@ -251,8 +258,12 @@ BatchSetCallback make_import_callback(
             total_keys_num, dim_len, key_size,
             value_size, tensor_key,
             tensor_value, var_name, version_str,
-            reader, std::move(done)));
-*/
+            reader, storageMgr, std::move(done)));
+    if (!status.ok()) {
+      ctx->SetStatus(status);
+      done();
+      return;
+    }
   };
 }
 
@@ -279,8 +290,10 @@ class KvImportOp : public AsyncOpKernel {
     const std::string tensor_name_str = tensor_name.scalar<string>()();
 
     const Tensor& storage_pointer = ctx->input(3);
-    const std::string storage_pointer_str = storage_pointer.scalar<string>()();
-    // TODO: convert storage_pointer_str to SparseStorage*, AKA: current storage instance
+    const uint64 storage_pointer_value =
+        storage_pointer.scalar<tensorflow::uint64>()();
+    SimpleSparseStorageManager* storageMgr =
+        reinterpret_cast<SimpleSparseStorageManager*>(storage_pointer_value);
 
     // create for read from file
     BundleReader* reader = new BundleReader(Env::Default(), file_name_str);
@@ -292,13 +305,16 @@ class KvImportOp : public AsyncOpKernel {
     TensorShape key_shape, value_shape;
     reader->LookupTensorShape(tensor_key, &key_shape);
     reader->LookupTensorShape(tensor_value, &value_shape);
+    OP_REQUIRES(ctx, value_shape.dim_size(1) == dim_len_,
+                errors::InvalidArgument("value_shape.dim_size(1) not equal "
+                                        "the dim_len attr value."));
 
     Status s = reader->LookupHeader(tensor_key,
         key_size * key_shape.dim_size(0));
     OP_REQUIRES_OK(ctx, s);
 
     s = reader->LookupHeader(tensor_value,
-        value_size * value_shape.dim_size(0) * value_shape.dim_size(1));
+        value_size * value_shape.dim_size(0) * dim_len_);
     OP_REQUIRES_OK(ctx, s);
 
     int64 total_keys_num = key_shape.dim_size(0);
@@ -309,7 +325,7 @@ class KvImportOp : public AsyncOpKernel {
 
     char* key_buffer = new char[BUFFER_SIZE];
     char* value_buffer = new char[BUFFER_SIZE];
-    size_t value_byte = value_size * value_shape.dim_size(1);
+    size_t value_byte = value_size * dim_len_;
 
     Status s_read = tensorflow::Status::OK();
     size_t read_key_num = LookupSegmentInternal(
@@ -324,16 +340,15 @@ class KvImportOp : public AsyncOpKernel {
 
     total_keys_num -= read_key_num;
 
-/*
- * for manual test
     std::vector<char*> keys;
     std::vector<char*> values;
     for (size_t i = 0; i < read_key_num; ++i) {
-      keys.push_back((char*)((TKey*)key_buffer+i));
-      values.push_back((char*)((TValue*)value_buffer+i * value_shape.dim_size(1)));
+      keys.push_back((char*)((TKey*)key_buffer + i));
+      values.push_back((char*)((TValue*)value_buffer + i * dim_len_));
     }
-    auto r = ModelStoreFactory::CreateModelStore("local_redis");
-    s = r->BatchSetAsync(var_name_, version_str,
+
+    s = storageMgr->SetValues(
+        var_name_, version_str,
         keys, sizeof(TKey),
         values, sizeof(TValue) * dim_len_,
         make_import_callback<TKey, TValue>(
@@ -341,8 +356,11 @@ class KvImportOp : public AsyncOpKernel {
             total_keys_num, dim_len_, key_size,
             value_size, tensor_key,
             tensor_value, var_name_, version_str,
-            reader, std::move(done)));
-*/
+            reader, storageMgr, std::move(done)));
+    if (!s.ok()) {
+      ctx->SetStatus(s);
+      done();
+    }
   }
 
  private:

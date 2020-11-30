@@ -328,26 +328,75 @@ SimpleSparseStorageManager::~SimpleSparseStorageManager() {
   }
 }
 
-Status SimpleSparseStorageManager::RunTask(SparseTask* task) {
+Status SimpleSparseStorageManager::RunGetTask(SparseTask* task) {
   // TODO: Need excetly balance here ?
   uint64_t index = active_thread_index_++;
   index %= thread_num_;
   {
     std::lock_guard<std::mutex> lock(mutex_[index]);
-    // TODO: exectute store_[index]
-    //store_[index]->Run();
+    // TODO: implement here
+    LOG(FATAL) << "Please implement here.";
   }
+
+  return Status::OK();
 }
 
-Status SimpleSparseStorageManager::RunUpdateTask(SparseTask* task) {
+Status SimpleSparseStorageManager::RunSetTask(SparseTask* task) {
   // TODO: Need excetly balance here ?
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
   {
-    std::lock_guard<std::mutex> lock(mutex_[index]);
-    // TODO: exectute update_store_[index]
-    //update_store_[index]->Run();
+    std::lock_guard<std::mutex> lock(update_mutex_[index]);
+    // TODO: implement here
+    LOG(FATAL) << "Please implement here.";
   }
+
+  return Status::OK();
+}
+
+Status SimpleSparseStorageManager::GetValues(
+    const std::string& feature,
+    const std::string& version,
+    const std::vector<char*>& keys,
+    size_t keys_byte_lens,
+    const std::vector<char*>& values,
+    BatchGetCallback cb) {
+  uint64_t index = active_thread_index_++;
+  index %= thread_num_;
+  {
+    std::lock_guard<std::mutex> lock(mutex_[index]);
+    return store_[index]->BatchGetAsync(
+        feature, version, keys, keys_byte_lens,
+        values, std::move(cb));
+  }
+
+  return tensorflow::errors::Unknown(
+      "Failed to get values from SparseStorage.");
+}
+
+Status SimpleSparseStorageManager::SetValues(
+    const std::string& feature,
+    const std::string& version,
+    const std::vector<char*>& keys,
+    size_t keys_byte_lens,
+    const std::vector<char*>& values,
+    size_t values_byte_lens,
+    BatchSetCallback cb) {
+  uint64_t index = active_update_thread_index_++;
+  index %= update_thread_num_;
+  {
+    std::lock_guard<std::mutex> lock(mutex_[index]);
+    return store_[index]->BatchSetAsync(
+        feature, version, keys, keys_byte_lens,
+        values, values_byte_lens, std::move(cb));
+  }
+
+  return tensorflow::errors::Unknown(
+      "Failed to set values into SparseStorage.");
+}
+
+Status SimpleSparseStorageManager::Reset() {
+  // TODO:
 }
 
 } // processor
