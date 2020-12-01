@@ -118,7 +118,8 @@ TEST(SparseStorageTest, SparseStorageManagerTest) {
   }
 
   SparseStorageManager* mgr =
-      new SparseStorageManager(5, 2, "Test", &TestThreadRun);
+      new SparseStorageManager(5, 2, ModelStoreType::UNKNOW,
+                               &TestThreadRun);
 
   // worker threads
   std::vector<std::unique_ptr<std::thread>> threads;

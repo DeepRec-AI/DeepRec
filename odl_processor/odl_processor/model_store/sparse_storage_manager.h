@@ -52,7 +52,7 @@ class SparseStorageManager {
   SparseStorageManager(
       int serving_thread_num,
       int update_thread_num,
-      const std::string& type,
+      ModelStoreType type,
       WorkFn fn = nullptr);
   virtual ~SparseStorageManager();
   Status AddTask(SparseTask*);
@@ -133,7 +133,7 @@ class SimpleSparseStorageManager {
   explicit SimpleSparseStorageManager(
       int serving_thread_num,
       int update_thread_num,
-      const std::string& type);
+      ModelStoreType type);
   virtual ~SimpleSparseStorageManager();
   Status RunGetTask(SparseTask*);
   Status RunSetTask(SparseTask*);

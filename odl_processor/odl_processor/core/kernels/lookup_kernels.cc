@@ -63,21 +63,20 @@ template <typename TKey, typename TValue>
 class KvLookupOp : public AsyncOpKernel {
  public:
   explicit KvLookupOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("var_name", &var_name_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("feature_name", &feature_name_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("feature_name_to_id",
+                                     &feature_name_to_id_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("dim_len", &dim_len_));
   }
 
   void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
-    const Tensor& version = ctx->input(0);
-    const std::string version_str = version.scalar<string>()();
-
-    const Tensor& indices = ctx->input(1);
+    const Tensor& indices = ctx->input(0);
 
     const int64 N = indices.NumElements();
 
-    Tensor default_values(ctx->input(2));
+    Tensor default_values(ctx->input(1));
 
-    const Tensor& storage_pointer = ctx->input(3);
+    const Tensor& storage_pointer = ctx->input(2);
     const uint64 storage_pointer_value =
         storage_pointer.scalar<tensorflow::uint64>()();
     SimpleSparseStorageManager* storageMgr =
@@ -103,9 +102,10 @@ class KvLookupOp : public AsyncOpKernel {
             std::to_string(dim_len_), std::to_string(out->NumElements() / N)));
 
     Status s = storageMgr->GetValues(
-        421, // TODO
-        (const char*)indices.data(), (char*)out->data(),
-        sizeof(TKey), sizeof(TValue) * dim_len_, N,
+        feature_name_to_id_,
+        (const char*)indices.data(),
+        (char*)out->data(), sizeof(TKey),
+        sizeof(TValue) * dim_len_, N,
         (const char*)default_values.data(),
         make_lookup_callback<TValue>(
             ctx, N, *out, default_values,
@@ -118,7 +118,8 @@ class KvLookupOp : public AsyncOpKernel {
   }
 
  private:
-  std::string var_name_;
+  std::string feature_name_;
+  int64 feature_name_to_id_;
   int dim_len_;
 };
 
@@ -192,15 +193,14 @@ BatchSetCallback make_import_callback(
     size_t value_size,
     const std::string& tensor_key,
     const std::string& tensor_value,
-    const std::string& var_name,
-    const std::string& version_str,
+    uint64_t feature_name_to_id,
     BundleReader* reader,
     SimpleSparseStorageManager* storageMgr,
     AsyncOpKernel::DoneCallback done) {
   return [ctx, key_buffer, value_buffer, key_size,
           value_size, left_keys_num = total_keys_num,
-          dim_len, tensor_key, tensor_value, var_name,
-          version_str, reader, storageMgr,
+          dim_len, tensor_key, tensor_value,
+          feature_name_to_id, reader, storageMgr,
           done = std::move(done)](const Status& s) {
 
     int64 total_keys_num = left_keys_num;
@@ -227,14 +227,14 @@ BatchSetCallback make_import_callback(
     total_keys_num -= read_key_num;
 
     Status status = storageMgr->SetValues(
-        421, // TODO
+        feature_name_to_id,
         key_buffer, value_buffer,
         sizeof(TKey), sizeof(TValue) * dim_len, read_key_num,
         make_import_callback<TKey, TValue>(
             ctx, key_buffer, value_buffer,
             total_keys_num, dim_len, key_size,
             value_size, tensor_key,
-            tensor_value, var_name, version_str,
+            tensor_value, feature_name_to_id,
             reader, storageMgr, std::move(done)));
 
     if (!status.ok()) {
@@ -251,23 +251,23 @@ template <typename TKey, typename TValue>
 class KvImportOp : public AsyncOpKernel {
  public:
   explicit KvImportOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("var_name", &var_name_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("feature_name", &feature_name_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("feature_name_to_id",
+                                     &feature_name_to_id_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("dim_len", &dim_len_));
   }
 
   void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
     size_t key_size = sizeof(TKey);
     size_t value_size = sizeof(TValue);
-    const Tensor& version = ctx->input(0);
-    const std::string version_str = version.scalar<string>()();
 
-    const Tensor& file_name = ctx->input(1);
+    const Tensor& file_name = ctx->input(0);
     const std::string file_name_str = file_name.scalar<string>()();
 
-    const Tensor& tensor_name = ctx->input(2);
+    const Tensor& tensor_name = ctx->input(1);
     const std::string tensor_name_str = tensor_name.scalar<string>()();
 
-    const Tensor& storage_pointer = ctx->input(3);
+    const Tensor& storage_pointer = ctx->input(2);
     const uint64 storage_pointer_value =
         storage_pointer.scalar<tensorflow::uint64>()();
     SimpleSparseStorageManager* storageMgr =
@@ -326,14 +326,15 @@ class KvImportOp : public AsyncOpKernel {
     }
 
     s = storageMgr->SetValues(
-        421, // TODO
-        key_buffer, value_buffer,
-        sizeof(TKey), sizeof(TValue) * dim_len_, read_key_num,
+        feature_name_to_id_, key_buffer,
+        value_buffer, sizeof(TKey),
+        sizeof(TValue) * dim_len_,
+        read_key_num,
         make_import_callback<TKey, TValue>(
             ctx, key_buffer, value_buffer,
             total_keys_num, dim_len_, key_size,
             value_size, tensor_key,
-            tensor_value, var_name_, version_str,
+            tensor_value, feature_name_to_id_,
             reader, storageMgr, std::move(done)));
 
     if (!s.ok()) {
@@ -343,7 +344,8 @@ class KvImportOp : public AsyncOpKernel {
   }
 
  private:
-  std::string var_name_;
+  std::string feature_name_;
+  int64 feature_name_to_id_;
   int dim_len_;
 };
 

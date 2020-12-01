@@ -45,13 +45,6 @@ TEST(KernelsTest, KvImportTest) {
 // TODO: can NOT expose OSSkey and OSSid in the test.
 // Manual test OSS and local file passed.
 #if 0
-  NodeDef version_def;
-  Tensor version_value(DT_STRING, TensorShape({1}));
-  version_value.flat<std::string>()(0) = "v1";
-  TF_CHECK_OK(NodeDefBuilder("version", "Const")
-                  .Attr("dtype", DT_STRING)
-                  .Attr("value", version_value)
-                  .Finalize(&version_def));
 
   NodeDef prefix_def;
   Tensor prefix_value(DT_STRING, TensorShape({1}));
@@ -79,17 +72,17 @@ TEST(KernelsTest, KvImportTest) {
   storage_pointer_value.scalar<tensorflow::uint64>()() =
       (uint64_t)(12345678);
   TF_CHECK_OK(NodeDefBuilder("storage_pointer", "Const")
-                  .Attr("dtype", DT_STRING)
+                  .Attr("dtype", DT_UINT64)
                   .Attr("value", storage_pointer_value)
                   .Finalize(&storage_pointer_def));
 
   NodeDef kv_import_def;
   TF_CHECK_OK(NodeDefBuilder("kv_import", "KvImport")
-                  .Input("version", 0, DT_STRING)
                   .Input("prefix", 0, DT_STRING)
                   .Input("tensor_name", 0, DT_STRING)
                   .Input("storage_pointer_value", 0, DT_UINT64)
-                  .Attr("var_name", "XXX")
+                  .Attr("feature_name", "XXX")
+                  .Attr("feature_name_to_id", 854)
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
                   .Attr("dtype", DT_FLOAT)
@@ -108,7 +101,6 @@ TEST(KernelsTest, KvImportTest) {
   params.frame_iter = FrameAndIter(0, 0);
   // Create inputs
   gtl::InlinedVector<TensorValue, 4> inputs;
-  inputs.push_back({nullptr, &version_value});
   inputs.push_back({nullptr, &prefix_value});
   inputs.push_back({nullptr, &tensor_name_value});
   inputs.push_back({nullptr, &storage_pointer_value});

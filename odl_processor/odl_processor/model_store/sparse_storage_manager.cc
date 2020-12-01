@@ -95,8 +95,8 @@ void ThreadRun(SparseStorageManager* mgr, int idx,
   }
 }
 
-AbstractModelStore* CreateSparseStorage(const std::string& type) {
-  if (type == "local_redis") {
+AbstractModelStore* CreateSparseStorage(ModelStoreType type) {
+  if (type == ModelStoreType::LOCAL_REDIS) {
     LocalRedis::Config config;
     config.ip = "127.0.0.1";
     config.port = 6379;
@@ -113,7 +113,7 @@ AbstractModelStore* CreateSparseStorage(const std::string& type) {
 SparseStorageManager::SparseStorageManager(
     int serving_thread_num,
     int update_thread_num,
-    const std::string& type,
+    ModelStoreType type,
     WorkFn fn) : stop_(false),
     thread_num_(serving_thread_num),
     update_thread_num_(update_thread_num),
@@ -290,7 +290,7 @@ bool SparseStorageManager::ShouldStop() {
 SimpleSparseStorageManager::SimpleSparseStorageManager(
     int serving_thread_num,
     int update_thread_num,
-    const std::string& type)
+    ModelStoreType type)
   : thread_num_(serving_thread_num),
     update_thread_num_(update_thread_num),
     active_thread_index_(0),
@@ -306,7 +306,6 @@ SimpleSparseStorageManager::SimpleSparseStorageManager(
                << update_thread_num_;
   }
 
-  // TODO: Need to refine here!!!
   store_.resize(thread_num_);
   for (int i = 0; i < thread_num_; ++i) {
     store_[i] = CreateSparseStorage(type);
@@ -372,9 +371,6 @@ Status SimpleSparseStorageManager::GetValues(
         bytes_per_key, bytes_per_values, N,
         default_value, std::move(cb));
   }
-
-  return tensorflow::errors::Unknown(
-      "Failed to get values from SparseStorage.");
 }
 
 Status SimpleSparseStorageManager::SetValues(
@@ -388,23 +384,20 @@ Status SimpleSparseStorageManager::SetValues(
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
   {
-    std::lock_guard<std::mutex> lock(mutex_[index]);
-    return store_[index]->BatchSetAsync(
+    std::lock_guard<std::mutex> lock(update_mutex_[index]);
+    return update_store_[index]->BatchSetAsync(
         feature2id, keys, values,
         bytes_per_key, bytes_per_values, N,
         std::move(cb));
   }
-
-  return tensorflow::errors::Unknown(
-      "Failed to set values into SparseStorage.");
 }
 
 Status SimpleSparseStorageManager::Reset() {
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
   {
-    std::lock_guard<std::mutex> lock(mutex_[index]);
-    return store_[index]->Cleanup();
+    std::lock_guard<std::mutex> lock(update_mutex_[index]);
+    return update_store_[index]->Cleanup();
   }
 }
 
