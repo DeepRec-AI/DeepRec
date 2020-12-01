@@ -42,8 +42,8 @@ struct SelectAndScatterTestParam {
   std::vector<int64> operand_shape;
   std::vector<int64> source_shape;
   Padding padding_type;
-  absl::Span<const int64> window_dimensions;
-  absl::Span<const int64> window_strides;
+  std::vector<int64> window_dimensions;
+  std::vector<int64> window_strides;
 };
 
 class SelectAndScatterTest
