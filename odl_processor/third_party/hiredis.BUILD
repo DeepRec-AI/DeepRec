@@ -28,9 +28,9 @@ cc_library(
           "read.h",
           "sdsalloc.h",
           "sds.h",
-          "sockcompat.h",
           "win32.h",
-  ],
+          "sockcompat.h",
+  ] + glob(["adapters/*.h"]),
   includes = ["."],
   visibility = ["//visibility:public"],
 )
