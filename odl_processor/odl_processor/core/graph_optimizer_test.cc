@@ -764,6 +764,17 @@ TEST(GraphOptimizerTest, GetDynamicAndStaticMetaGraphDef) {
   EXPECT_TRUE(sta_output_map.find("out_F") != sta_output_map.end());
 }
 
+namespace {
+
+void TestFeatureNameAttr(NodeDef& n) {
+  EXPECT_TRUE(n.attr().find("feature_name") != n.attr().end());
+  EXPECT_TRUE(n.attr().find("feature_name_to_id") != n.attr().end());
+  EXPECT_TRUE(*(n.mutable_attr()->at("feature_name").mutable_s()) == "var_0");
+  EXPECT_TRUE(n.mutable_attr()->at("feature_name_to_id").i() == 0);
+}
+
+}
+
 TEST(GraphOptimizerTest, SavedModelOptimize0) {
   GraphDef graph_def;
 
@@ -945,11 +956,12 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0") != nodes.end());
   auto n = nodes["KvResourceImportV2_0"];
   EXPECT_TRUE(n.op() == "KvImport");
+  TestFeatureNameAttr(n);
 
   EXPECT_TRUE(nodes.find("KvResourceGather_0") != nodes.end());
   n = nodes["KvResourceGather_0"];
   EXPECT_TRUE(n.op() == "KvLookup");
-
+  TestFeatureNameAttr(n);
 
   EXPECT_TRUE(saved_model_bundle.meta_graph_def.signature_def().size() == 2);
   for (auto sdef : saved_model_bundle.meta_graph_def.signature_def()) {
