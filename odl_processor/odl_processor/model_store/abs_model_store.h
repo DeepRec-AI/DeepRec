@@ -21,6 +21,14 @@ namespace processor {
 typedef std::function<void(const Status&)> BatchGetCallback;
 typedef std::function<void(const Status&)> BatchSetCallback;
 
+enum ModelStoreType {
+  LOCAL_REDIS,
+  CLUSTER_REDIS,
+  // Add other types
+
+  UNKNOW
+};
+
 class AbstractModelStore {
   public:
     virtual ~AbstractModelStore() {}

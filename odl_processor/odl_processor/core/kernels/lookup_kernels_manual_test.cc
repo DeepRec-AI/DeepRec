@@ -39,7 +39,8 @@ limitations under the License.
 using namespace tensorflow;
 
 int main() {
- processor::SimpleSparseStorageManager manager(4, 2, "local_redis");
+ processor::SimpleSparseStorageManager manager(
+     4, 2, processor::ModelStoreType::LOCAL_REDIS);
  {
   NodeDef version_def;
   Tensor version_value(DT_STRING, TensorShape({1}));
@@ -84,7 +85,7 @@ int main() {
                   .Input("prefix", 1, DT_STRING)
                   .Input("tensor_name", 2, DT_STRING)
                   .Input("storage_pointer_value", 3, DT_UINT64)
-                  .Attr("var_name", "XXX")
+                  .Attr("feature_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
                   .Attr("dtype", DT_FLOAT)
@@ -163,7 +164,7 @@ int main() {
                   .Input("indices", 1, DT_INT64)
                   .Input("default_value", 2, DT_FLOAT)
                   .Input("storage_pointer_value", 3, DT_UINT64)
-                  .Attr("var_name", "XXX")
+                  .Attr("feature_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
                   .Attr("dtype", DT_FLOAT)

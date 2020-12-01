@@ -539,11 +539,12 @@ SavedModelOptimizer::~SavedModelOptimizer() {
 }
 
 Status SavedModelOptimizer::Optimize() {
-  Status s;
+  // Generate ids for every feature
+  Status s = GenerateIdsForFeatures();
+  if (!s.ok()) return s;
 
-  // Add version ops
-  // include version and storage pointer
-  s = AddVersionPlaceholderNode();
+  // Add a placeholder for storage pointer
+  s = AddStoragePlaceholderNode();
   if (!s.ok()) return s;
 
   // Add KvInit Op
@@ -637,6 +638,27 @@ Status GetShapeValue(Node* node, int* dim) {
 
 } // namespace
 
+Status SavedModelOptimizer::GetFeature2IdAttr(
+    const std::string& name,
+    AttrValue* attr_value) {
+  std::string real_input_fea_name(name);
+  auto offset = real_input_fea_name.find("/part");
+  if (offset != std::string::npos) {
+    real_input_fea_name = real_input_fea_name.substr(0, offset);
+  }
+
+  if (feature_names_to_ids.find(real_input_fea_name) ==
+      feature_names_to_ids.end()) {
+    return tensorflow::errors::Internal(
+        "Not found a id of the featue. ", real_input_fea_name,
+        ", ", name);
+  }
+
+  SetAttrValue(feature_names_to_ids[real_input_fea_name],
+               attr_value);
+  return Status::OK();
+}
+
 Status SavedModelOptimizer::ConvertKVOps() {
 
   // Find sparse lookup/Import ops and replace them
@@ -653,12 +675,10 @@ Status SavedModelOptimizer::ConvertKVOps() {
     std::unordered_map<std::string, AttrValue*> attr_info;
 
     if (node->op_def().name() == "KvResourceGather") {
-      // version
-      if (!version_node_ || !storage_pointer_node_) {
+      if (!storage_pointer_node_) {
         return tensorflow::errors::Internal(
-            "Not found a version or storage pointer node in the graph.");
+            "Not found a storage pointer node in the graph.");
       }
-      input_info.push_back(SrcInfo{version_node_, 0});
       // indices
       input_info.push_back(SrcInfo{input_edges[1]->src(),
                                    input_edges[1]->src_output()});
@@ -668,8 +688,14 @@ Status SavedModelOptimizer::ConvertKVOps() {
       // storage pointer
       input_info.push_back(SrcInfo{storage_pointer_node_, 0});
 
-      AttrValue var_name_value;
-      SetAttrValue(input_edges[0]->src()->name(), &var_name_value);
+      AttrValue feature_name_value;
+      SetAttrValue(input_edges[0]->src()->name(), &feature_name_value);
+
+      AttrValue feature_name_to_id_value;
+      Status s_feature_to_id = GetFeature2IdAttr(
+          input_edges[0]->src()->name(),
+          &feature_name_to_id_value);
+      if (!s_feature_to_id.ok()) return s_feature_to_id;
 
       // get resource shape attr
       int dim_len_value = 0;
@@ -688,7 +714,8 @@ Status SavedModelOptimizer::ConvertKVOps() {
             "Miss dtype or Tkeys attr, ",
             node->DebugString());
       }
-      attr_info["var_name"] = &var_name_value;
+      attr_info["feature_name"] = &feature_name_value;
+      attr_info["feature_name_to_id"] = &feature_name_to_id_value;
       attr_info["dim_len"] = &dim_len_value_int;
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
@@ -702,12 +729,10 @@ Status SavedModelOptimizer::ConvertKVOps() {
       }
 
     } else if (node->op_def().name() == "KvResourceImportV2") {
-      // version
-      if (!version_node_ || !storage_pointer_node_) {
+      if (!storage_pointer_node_) {
         return tensorflow::errors::Internal(
-            "Not found a version or storage pointer node in the graph.");
+            "Not found a storage pointer node in the graph.");
       }
-      input_info.push_back(SrcInfo{version_node_, 0});
       // prefix
       input_info.push_back(SrcInfo{input_edges[0]->src(),
                                    input_edges[0]->src_output()});
@@ -717,9 +742,13 @@ Status SavedModelOptimizer::ConvertKVOps() {
       // storage pointer
       input_info.push_back(SrcInfo{storage_pointer_node_, 0});
 
-      AttrValue var_name_value;
-      SetAttrValue(input_edges[1]->src()->name(), &var_name_value);
-      attr_info["var_name"] = &var_name_value;
+      AttrValue feature_name_value;
+      SetAttrValue(input_edges[1]->src()->name(), &feature_name_value);
+      AttrValue feature_name_to_id_value;
+      Status s_feature_to_id = GetFeature2IdAttr(
+          input_edges[1]->src()->name(),
+          &feature_name_to_id_value);
+      if (!s_feature_to_id.ok()) return s_feature_to_id;
 
       // get resource shape attr
       int dim_len_value = 0;
@@ -739,6 +768,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
             "Miss dtype or Tkeys attr, ",
             node->DebugString());
       }
+
+      attr_info["feature_name"] = &feature_name_value;
+      attr_info["feature_name_to_id"] = &feature_name_to_id_value;
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
 
@@ -805,21 +837,14 @@ Status SavedModelOptimizer::RewriteDefaultValueOp() {
   return Status::OK();
 }
 
-Status SavedModelOptimizer::AddVersionPlaceholderNode() {
-  // Add a placeholder for version which set by user.
-  NodeDef version_def;
-  version_def.set_name(GetModelVersionNodeName());
-  version_def.set_op("Placeholder");
-  (*version_def.mutable_attr())["dtype"].set_type(DT_STRING);
+Status SavedModelOptimizer::AddStoragePlaceholderNode() {
   Status status;
-  version_node_ = graph_.AddNode(version_def, &status);
-  if (!status.ok()) return status;
 
   // Add a placeholder for storage pointer which set by user.
   NodeDef storage_pointer_def;
   storage_pointer_def.set_name(GetStoragePointerNodeName());
   storage_pointer_def.set_op("Placeholder");
-  (*storage_pointer_def.mutable_attr())["dtype"].set_type(DT_STRING);
+  (*storage_pointer_def.mutable_attr())["dtype"].set_type(DT_UINT64);
   storage_pointer_node_ = graph_.AddNode(storage_pointer_def, &status);
 
   return status;
@@ -843,6 +868,25 @@ Status SavedModelOptimizer::AddVariableInitSubGraph() {
   Status status;
   Node* init_op_node = graph_.AddNode(init_op_def, &status);
   return status;
+}
+
+Status SavedModelOptimizer::GenerateIdsForFeatures() {
+  int id = 0;
+  for (Node* node : graph_.nodes()) {
+    if (node->op_def().name() == "KvVarHandleOp") {
+      std::string real_feature_name(node->name());
+      auto offset = real_feature_name.find("/part");
+      if (offset != std::string::npos) {
+        real_feature_name = real_feature_name.substr(0, offset);
+      }
+      if (feature_names_to_ids.find(real_feature_name) ==
+          feature_names_to_ids.end()) {
+        feature_names_to_ids[real_feature_name] = id++;
+      }
+    }
+  }
+
+  return Status::OK();
 }
 
 Status SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {

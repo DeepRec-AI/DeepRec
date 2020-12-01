@@ -141,6 +141,11 @@ class SavedModelOptimizer : public GraphOptimizer {
   Status Optimize() override;
 
  private:
+  Status GetFeature2IdAttr(
+      const std::string& name,
+      AttrValue* attr_value);
+
+ private:
   // TODO: Only support EV now
   // Add Lookup and Insert ops,
   // then remove KvResourceGather and KvResourceImportV2 ops.
@@ -158,15 +163,19 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Add full and delta ckpt update subgraph
   Status AddFullAndDeltaUpdateSubGraph();
 
-  // Add version placeholder nodes
-  // include version and storage pointer
-  Status AddVersionPlaceholderNode();
+  // Add placeholder nodes
+  // include storage pointer
+  Status AddStoragePlaceholderNode();
+
+  // Each feature name will be map to a uint64 num,
+  // the num will be as the prefix of a query key.
+  Status GenerateIdsForFeatures();
 
   Graph graph_; // graph of meta_graph_def_.graph_def()
-  Node* version_node_ = nullptr;        // version placeholder node
   Node* storage_pointer_node_ = nullptr;// storage placeholder node
   std::string signature_name_;
   MetaGraphDef* meta_graph_def_ = nullptr; // not owned
+  std::unordered_map<std::string, int> feature_names_to_ids;
 };
 
 } // namespace processor

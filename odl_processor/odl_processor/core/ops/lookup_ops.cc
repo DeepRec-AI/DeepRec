@@ -27,12 +27,13 @@ REGISTER_OP("KvInit")
 
 // EV
 REGISTER_OP("KvLookup")
-    .Input("version: string")
     .Input("indices: Tkeys")
     .Input("default_value: dtype")
     .Input("storage_pointer_value: uint64")
     .Output("output: dtype")
-    .Attr("var_name: string")
+    .Attr("feature_name: string")
+    // feature name will be map to a int num
+    .Attr("feature_name_to_id: int")
     .Attr("dim_len: int")
     .Attr("dtype: type")
     .Attr("Tkeys: {int64}")
@@ -40,11 +41,12 @@ REGISTER_OP("KvLookup")
 
 // EV
 REGISTER_OP("KvImport")
-    .Input("version: string")
     .Input("prefix: string")
     .Input("tensor_name: string")
     .Input("storage_pointer_value: uint64")
-    .Attr("var_name: string")
+    .Attr("feature_name: string")
+    // feature name will be map to a int num
+    .Attr("feature_name_to_id: int")
     .Attr("dim_len: int")
     .Attr("Tkeys: {int64}")
     .Attr("dtype: type")
