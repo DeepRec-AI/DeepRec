@@ -33,33 +33,24 @@ template <typename TValue>
 BatchGetCallback make_lookup_callback(
     OpKernelContext* ctx,
     int64 N, // indices count
-    int64 dim_len, // len of dim 1
-    Tensor default_values_const,
     Tensor allocated_out_tensor_const,
+    Tensor default_values,
     AsyncOpKernel::DoneCallback done) {
-  return [ctx, N, dim_len, default_values_const,
-          allocated_out_tensor_const,
-          done = std::move(done)](const Status& s,
-                                  std::vector<int64_t> not_found_ids_offset) {
-    Tensor default_values = default_values_const;
+  return [ctx, N, allocated_out_tensor_const, default_values,
+          done = std::move(done)](const Status& s) {
+/*
     Tensor allocated_out_tensor = allocated_out_tensor_const;
-    auto default_values_matrix = default_values.shaped<TValue, 2>(
-        {default_values.NumElements()/dim_len, dim_len});
-
-    // fill default value here
-    if (not_found_ids_offset.size() > 0) {
-      auto out_flat = allocated_out_tensor.shaped<TValue, 2>(
-          {N, allocated_out_tensor.NumElements() / N});
-      TValue* out_base = &out_flat(0, 0);
-      for (size_t i = 0; i < not_found_ids_offset.size(); ++i) {
-        TValue* default_v = &default_values_matrix(not_found_ids_offset[i], 0);
-        TValue* pointer = out_base + not_found_ids_offset[i] * dim_len;
-        for (int64 j = 0; j < dim_len; ++j) {
-          *(pointer + j) = *(default_v + j);
-        }
+    auto out_flat = allocated_out_tensor.shaped<TValue, 2>(
+        {N, allocated_out_tensor.NumElements() / N});
+    LOG(INFO) << "Return Tensor is: ";
+    for (int i = 0; i < N; ++i) {
+      LOG(INFO) << "Row " << i << " :";
+      for (int j = 0; j < allocated_out_tensor.NumElements()/N; ++j) {
+        LOG(INFO) << *((float*)&out_flat(i, j));
       }
     }
 
+*/
     ctx->SetStatus(s);
 
     done();
@@ -111,22 +102,15 @@ class KvLookupOp : public AsyncOpKernel {
             "hashmap's value_len should same with output's dimension(1)",
             std::to_string(dim_len_), std::to_string(out->NumElements() / N)));
 
-    std::vector<char*> keys;
-    std::vector<char*> values;
-    auto indices_flat = indices.flat<int64>();
-    for (int64 i = 0; i < N; ++i) {
-      keys.push_back((char*)&indices_flat(i));
-      // TODO: decided by redis protocol.
-      values.push_back((char*)((TValue*)out->data() + i));
-    }
-
     Status s = storageMgr->GetValues(
-        var_name_, version_str, keys,
-        sizeof(TKey), values,
+        421, // TODO
+        (const char*)indices.data(), (char*)out->data(),
+        sizeof(TKey), sizeof(TValue) * dim_len_, N,
+        (const char*)default_values.data(),
         make_lookup_callback<TValue>(
-            ctx, N, dim_len_,
-            default_values, *out,
+            ctx, N, *out, default_values,
             std::move(done)));
+
     if (!s.ok()) {
       ctx->SetStatus(s);
       done();
@@ -242,23 +226,17 @@ BatchSetCallback make_import_callback(
     }
     total_keys_num -= read_key_num;
 
-    std::vector<char*> keys;
-    std::vector<char*> values;
-    for (size_t i = 0; i < read_key_num; ++i) {
-      keys.push_back((char*)((TKey*)key_buffer + i));
-      values.push_back((char*)((TValue*)value_buffer + i * dim_len));
-    }
-
     Status status = storageMgr->SetValues(
-        var_name, version_str,
-        keys, sizeof(TKey),
-        values, sizeof(TValue) * dim_len,
+        421, // TODO
+        key_buffer, value_buffer,
+        sizeof(TKey), sizeof(TValue) * dim_len, read_key_num,
         make_import_callback<TKey, TValue>(
             ctx, key_buffer, value_buffer,
             total_keys_num, dim_len, key_size,
             value_size, tensor_key,
             tensor_value, var_name, version_str,
             reader, storageMgr, std::move(done)));
+
     if (!status.ok()) {
       ctx->SetStatus(status);
       done();
@@ -348,15 +326,16 @@ class KvImportOp : public AsyncOpKernel {
     }
 
     s = storageMgr->SetValues(
-        var_name_, version_str,
-        keys, sizeof(TKey),
-        values, sizeof(TValue) * dim_len_,
+        421, // TODO
+        key_buffer, value_buffer,
+        sizeof(TKey), sizeof(TValue) * dim_len_, read_key_num,
         make_import_callback<TKey, TValue>(
             ctx, key_buffer, value_buffer,
             total_keys_num, dim_len_, key_size,
             value_size, tensor_key,
             tensor_value, var_name_, version_str,
             reader, storageMgr, std::move(done)));
+
     if (!s.ok()) {
       ctx->SetStatus(s);
       done();

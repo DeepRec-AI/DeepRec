@@ -22,42 +22,44 @@ class LocalRedis : public AbstractModelStore {
     };
 
     LocalRedis(Config config);
+
     ~LocalRedis();
 
-    Status RegisterFeatures(const std::vector<std::string>& features);
+    Status RegisterFeatures(const std::vector<std::string>& features) {
+      return errors::Unimplemented("[Redis] Unimplement RegisterFeatures().");
+    }
 
-    Status BatchGet(const std::string& feature,
-                    const std::string& version,
-                    const std::vector<char*>& keys,
-                    size_t keys_byte_lens,
-                    const std::vector<char*>& values) {
+    Status Cleanup();
+
+    Status BatchGet(uint64_t feature2id,
+                    const Tensor& key,
+                    const Tensor& value) {
       return errors::Unimplemented("[Redis] Unimplement BatchGet() in sync mode.");
     }
 
 
-    Status BatchSet(const std::string& feature,
-                    const std::string& version,
-                    const std::vector<char*>& keys,
-                    size_t keys_byte_lens,
-                    const std::vector<char*>& values,
-                    size_t values_byte_lens) {
+    Status BatchSet(uint64_t feature2id,
+                    const Tensor& key,
+                    const Tensor& value) {
       return errors::Unimplemented("[Redis] Unimplement BatchSet() in sync mode.");
     }
 
 
-    Status BatchGetAsync(const std::string& feature,
-                         const std::string& version,
-                         const std::vector<char*>& keys,
-                         size_t keys_byte_lens,
-                         const std::vector<char*>& values,
+    Status BatchGetAsync(uint64_t feature2id,
+                         const char* const keys,
+                         char* const values,
+                         size_t bytes_per_key,
+                         size_t bytes_per_values,
+                         size_t N,
+                         const char* default_value,
                          BatchGetCallback cb);
 
-    Status BatchSetAsync(const std::string& feature,
-                         const std::string& version,
-                         const std::vector<char*>& keys,
-                         size_t keys_byte_lens,
-                         const std::vector<char*>& values,
-                         size_t values_byte_lens,
+    Status BatchSetAsync(uint64_t feature2id,
+                         const char* const keys,
+                         const char* const values,
+                         size_t bytes_per_key,
+                         size_t bytes_per_values,
+                         size_t N,
                          BatchSetCallback cb);
 
   private:
@@ -71,44 +73,46 @@ class LocalRedis : public AbstractModelStore {
 class ClusterRedis : public AbstractModelStore {
   public:
     ~ClusterRedis() {}
+
     Status RegisterFeatures(const std::vector<std::string>& features) {
-      return Status::OK();
+      return errors::Unimplemented("[Redis] Unimplement RegisterFeatures().");
     }
 
-    Status BatchGet(const std::string& feature,
-                    const std::string& version,
-                    const std::vector<char*>& keys,
-                    size_t keys_byte_lens,
-                    const std::vector<char*>& values) {
+    Status Cleanup() {
+      return errors::Unimplemented("[Redis] Unimplement Cleanup().");
+    }
+
+    Status BatchGet(uint64_t feature2id,
+                    const Tensor& key,
+                    const Tensor& value) {
       return errors::Unimplemented("[Redis] Unimplement BatchGet() in sync mode.");
     }
 
 
-    Status BatchSet(const std::string& feature,
-                    const std::string& version,
-                    const std::vector<char*>& keys,
-                    size_t keys_byte_lens,
-                    const std::vector<char*>& values,
-                    size_t values_byte_lens) {
+    Status BatchSet(uint64_t feature2id,
+                    const Tensor& key,
+                    const Tensor& value) {
       return errors::Unimplemented("[Redis] Unimplement BatchSet() in sync mode.");
     }
 
 
-    Status BatchGetAsync(const std::string& feature,
-                         const std::string& version,
-                         const std::vector<char*>& keys,
-                         size_t keys_byte_lens,
-                         const std::vector<char*>& values,
+    Status BatchGetAsync(uint64_t feature2id,
+                         const char* const keys,
+                         char* const values,
+                         size_t bytes_per_key,
+                         size_t bytes_per_values,
+                         size_t N,
+                         const char* default_value,
                          BatchGetCallback cb) {
       return errors::Unimplemented("[Redis] Unimplement BatchGet() in async mode.");
     }
 
-    Status BatchSetAsync(const std::string& feature,
-                         const std::string& version,
-                         const std::vector<char*>& keys,
-                         size_t keys_byte_lens,
-                         const std::vector<char*>& values,
-                         size_t values_byte_lens,
+    Status BatchSetAsync(uint64_t feature2id,
+                         const char* const keys,
+                         const char* const values,
+                         size_t bytes_per_key,
+                         size_t bytes_per_values,
+                         size_t N,
                          BatchSetCallback cb) {
       return errors::Unimplemented("[Redis] Unimplement BatchSet() in async mode.");
     }

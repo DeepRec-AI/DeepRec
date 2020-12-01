@@ -32,12 +32,15 @@ limitations under the License.
 #include "odl_processor/core/util/utils.h"
 #include "odl_processor/core/graph_optimizer.h"
 #include "odl_processor/core/util/utils.h"
+#include "odl_processor/model_store/model_store_factory.h"
+#include "odl_processor/model_store/sparse_storage_manager.h"
 
 
 using namespace tensorflow;
 
 int main() {
-#if 0
+ processor::SimpleSparseStorageManager manager(4, 2, "local_redis");
+ {
   NodeDef version_def;
   Tensor version_value(DT_STRING, TensorShape({1}));
   version_value.flat<std::string>()(0) = "v1";
@@ -69,7 +72,7 @@ int main() {
 
   NodeDef pointer_value_def;
   Tensor pointer_value(DT_UINT64, TensorShape({1}));
-  pointer_value.scalar<tensorflow::uint64>()() = (uint64_t)(12345678);
+  pointer_value.scalar<tensorflow::uint64>()() = (uint64_t)(&manager);
   TF_CHECK_OK(NodeDefBuilder("pointer_value", "Const")
                   .Attr("dtype", DT_UINT64)
                   .Attr("value", pointer_value)
@@ -117,7 +120,8 @@ int main() {
   AsyncOpKernel* real_kv_import_op = (AsyncOpKernel*)(kv_import_op.get());
   real_kv_import_op->ComputeAsync(kv_import_context.get(), std::move(done));
   TF_CHECK_OK(kv_import_context->status());
-#else
+ }
+ {
   NodeDef version_def;
   Tensor version_value(DT_STRING, TensorShape({1}));
   version_value.flat<std::string>()(0) = "v1";
@@ -127,9 +131,11 @@ int main() {
                   .Finalize(&version_def));
 
   NodeDef indices_def;
-  Tensor indices_value(DT_INT64, TensorShape({2}));
+  Tensor indices_value(DT_INT64, TensorShape({4}));
   indices_value.flat<int64>()(0) = 4672086491694744000;
-  indices_value.flat<int64>()(1) = 8913915434458630000;
+  indices_value.flat<int64>()(1) = 3;
+  indices_value.flat<int64>()(2) = 8913915434458630000;
+  indices_value.flat<int64>()(3) = 1;
   TF_CHECK_OK(NodeDefBuilder("indices", "Const")
                   .Attr("dtype", DT_INT64)
                   .Attr("value", indices_value)
@@ -137,7 +143,7 @@ int main() {
 
   NodeDef default_value_def;
   Tensor default_value(DT_FLOAT, TensorShape({1}));
-  default_value.flat<float>()(0) = 1.0;
+  default_value.flat<float>()(0) = 4.2;
   TF_CHECK_OK(NodeDefBuilder("default_value", "Const")
                   .Attr("dtype", DT_FLOAT)
                   .Attr("value", default_value)
@@ -145,7 +151,7 @@ int main() {
 
   NodeDef pointer_value_def;
   Tensor pointer_value(DT_UINT64, TensorShape({1}));
-  pointer_value.scalar<uint64_t>()() = (uint64_t)(12345678);
+  pointer_value.scalar<uint64_t>()() = (uint64_t)(&manager);
   TF_CHECK_OK(NodeDefBuilder("pointer_value", "Const")
                   .Attr("dtype", DT_UINT64)
                   .Attr("value", pointer_value)
@@ -196,6 +202,8 @@ int main() {
   AsyncOpKernel* real_kv_lookup_op = (AsyncOpKernel*)(kv_lookup_op.get());
   real_kv_lookup_op->ComputeAsync(kv_lookup_context.get(), std::move(done));
   TF_CHECK_OK(kv_lookup_context->status());
-#endif
-  sleep(5);
+ }
+ sleep(5);
+ // cleanup redis
+ TF_CHECK_OK(manager.Reset());
 }

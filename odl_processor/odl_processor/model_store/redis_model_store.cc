@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <vector>
 #include <string>
 
@@ -17,7 +18,16 @@ struct SetCallbackWrapper {
 
 struct GetCallbackWrapper {
   BatchGetCallback cb;
-  std::vector<char*> values;
+  void* tensor_data;
+  int stride_in_bytes;
+  const void* default_value;
+  ~GetCallbackWrapper() {
+  }
+};
+
+struct CleanupCallbackWrapper {
+  Status s;
+  bool done;
 };
 
 void ConnectCallback(const redisAsyncContext *ac, int status) {
@@ -44,30 +54,33 @@ void GetCallback(redisAsyncContext *ac, void *r, void *privdata) {
     if (ac->errstr) {
       Status s(error::Code::INTERNAL,
         "[Redis] run GetCallback failed: " + std::string(ac->errstr));
-      callback(s, std::vector<int64_t>());
+      callback(s);
     } else {
       Status s(error::Code::INTERNAL,
         "[Redis] run GetCallback failed: unknown error");
-      callback(s, std::vector<int64_t>());
+      callback(s);
     }
   } else {
-    if (reply->type == REDIS_REPLY_ARRAY) {
-      std::vector<int64_t> nil_indices;
+    if (REDIS_REPLY_ARRAY == reply->type) {
       for (int i = 0; i < reply->elements; i++) {
-        if (reply->type == REDIS_REPLY_NIL) {
-          nil_indices.push_back(i);
-        } else if (REDIS_REPLY_STRING) {
-          memcpy(wrapper->values[i], reply->element[i]->str, reply->element[i]->len);
+        if (REDIS_REPLY_NIL == reply->element[i]->type) {
+          memcpy(wrapper->tensor_data + i * wrapper->stride_in_bytes,
+                 wrapper->default_value,
+                 wrapper->stride_in_bytes);
+        } else if (REDIS_REPLY_STRING == reply->element[i]->type) {
+          memcpy(wrapper->tensor_data + i * wrapper->stride_in_bytes,
+                 reply->element[i]->str,
+                 reply->element[i]->len);
         } else {
           Status s(error::Code::INTERNAL,
             "[Redis] run GetCallback failed.");
-          callback(s, nil_indices);
+          callback(s);
           delete wrapper;
           return;
         }
       }
       Status s;
-      callback(s, nil_indices);
+      callback(s);
     } else {
       LOG(ERROR) << "Async Multi GET unexcept redis reply";
     }
@@ -98,6 +111,35 @@ void SetCallback(redisAsyncContext *ac, void *r, void *privdata) {
   delete wrapper;
   return;
 }
+
+void CleanupCallback(redisAsyncContext *ac, void *r, void *privdata) {
+  redisReply *reply = (redisReply*)r;
+  CleanupCallbackWrapper* wrapper = (CleanupCallbackWrapper*)privdata;
+  if (reply == NULL) {
+    if (ac->errstr) {
+      Status s(error::Code::INTERNAL,
+        "[Redis] run CleanupCallback failed: " + std::string(ac->errstr));
+      LOG(ERROR) << "errstr: " << ac->errstr;
+      wrapper->s = s;
+    } else {
+      Status s(error::Code::INTERNAL,
+        "[Redis] run CleanupCallback failed: unknown error");
+      wrapper->s = s;
+    }
+  } else {
+    if (REDIS_REPLY_STATUS == reply->type) {
+      Status s;
+      wrapper->s = s;
+    } else {
+      LOG(ERROR) << "[Redis] run CleanupCallback failed: " << reply->str;
+      Status s(error::Code::INTERNAL,
+        "[Redis] run CleanupCallback failed: unknown error");
+      wrapper->s = s;
+    }
+  }
+  wrapper->done = true;
+  return;
+}
 } // anonymous namespace
 
 LocalRedis::LocalRedis(Config config)
@@ -125,25 +167,42 @@ LocalRedis::~LocalRedis() {
   event_thread_->join();
 }
 
-Status LocalRedis::RegisterFeatures(const std::vector<std::string>& features) {
-  // TODO
-  return Status::OK();
+Status LocalRedis::Cleanup() {
+  struct CleanupCallbackWrapper* wrapper = new CleanupCallbackWrapper();
+  int s = redisAsyncCommand(ac_, CleanupCallback, (void*)wrapper, "FLUSHDB");
+  if (REDIS_OK == s) {
+    while (!wrapper->done) {
+      sleep(1);
+    }
+    LOG(INFO) << "LocalRedis::Cleanup, Done." << wrapper->s.ToString();
+    Status s = wrapper->s;
+    delete wrapper;
+    return s;
+  } else {
+    delete wrapper;
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisAsyncCommand-FLUSHDB failed.");
+  }
 }
 
-Status LocalRedis::BatchGetAsync(const std::string& feature,
-                                 const std::string& version,
-                                 const std::vector<char*>& keys,
-                                 size_t keys_byte_lens,
-                                 const std::vector<char*>& values,
+Status LocalRedis::BatchGetAsync(uint64_t feature2id,
+                                 const char* const keys,
+                                 char* const values,
+                                 size_t bytes_per_key,
+                                 size_t bytes_per_values,
+                                 size_t N,
+                                 const char* default_value,
                                  BatchGetCallback cb) {
-  CHECK_EQ(keys.size(), values.size());
   struct GetCallbackWrapper* wrapper = new GetCallbackWrapper();
   wrapper->cb = std::move(cb);
-  wrapper->values = values;
+  wrapper->tensor_data = values;
+  wrapper->stride_in_bytes = bytes_per_values;
+  wrapper->default_value = default_value;
 
-  int64_t len = keys.size();
-  char ** argv = new char*[keys.size() + 1 ];
-  size_t * argvlen = new size_t[keys.size() + 1 ];
+  int64_t len = N;
+  size_t keys_byte_lens = bytes_per_key;
+  char ** argv = new char*[len + 1 ];
+  size_t * argvlen = new size_t[len + 1 ];
 
   int j = 0;
   argv[j] = new char[5];
@@ -151,12 +210,12 @@ Status LocalRedis::BatchGetAsync(const std::string& feature,
   argvlen[j] = 4;
   ++j;
 
-
-  for(int i = 0 ; i < keys.size(); i++) {
-    argvlen[j] = keys_byte_lens;
-    argv[j] = new char[keys_byte_lens];
-    memset((void*)argv[j], 0, keys_byte_lens);
-    memcpy((void*)argv[j], keys[i], keys_byte_lens);
+  size_t key_length = keys_byte_lens + sizeof(feature2id);
+  for(int i = 0 ; i < len; i++) {
+    argvlen[j] = key_length;
+    argv[j] = new char[key_length];
+    memcpy((void*)argv[j], keys + i*keys_byte_lens, keys_byte_lens);
+    memcpy((void*)(argv[j] + keys_byte_lens), &feature2id, sizeof(feature2id));
     j++;
   }
   int s = redisAsyncCommandArgv(ac_, GetCallback, (void*)wrapper,
@@ -169,28 +228,28 @@ Status LocalRedis::BatchGetAsync(const std::string& feature,
   delete []argv;
   delete []argvlen;
 
-  if (!s) {
+  if (REDIS_OK != s) {
     return Status(error::Code::INTERNAL,
         "[Redis] run redisAsyncCommand-MGET failed.");
   }
   return Status::OK();
 }
 
-Status LocalRedis::BatchSetAsync(const std::string& feature,
-                                 const std::string& version,
-                                 const std::vector<char*>& keys,
-                                 size_t keys_byte_lens,
-                                 const std::vector<char*>& values,
-                                 size_t values_byte_lens,
+Status LocalRedis::BatchSetAsync(uint64_t feature2id,
+                                 const char* const keys,
+                                 const char* const values,
+                                 size_t bytes_per_key,
+                                 size_t bytes_per_values,
+                                 size_t N,
                                  BatchSetCallback cb) {
-  CHECK_EQ(keys.size(), values.size());
   struct SetCallbackWrapper* wrapper = new SetCallbackWrapper();
   wrapper->cb = std::move(cb);
 
-  std::string cmd = "MSET";
-  int64_t len = keys.size();
-  char ** argv = new char*[keys.size() + values.size() + 1];
-  size_t * argvlen = new size_t[keys.size() + values.size() + 1];
+  int64_t len = N;
+  size_t keys_byte_lens = bytes_per_key;
+  size_t values_byte_lens = bytes_per_values;
+  char ** argv = new char*[2*len + 1];
+  size_t * argvlen = new size_t[2*len + 1];
 
   int j = 0;
   argv[j] = new char[5];
@@ -199,17 +258,17 @@ Status LocalRedis::BatchSetAsync(const std::string& feature,
   ++j;
 
 
-  for(int i = 0 ; i < keys.size(); i++) {
-    argvlen[j] = keys_byte_lens;
-    argv[j] = new char[keys_byte_lens];
-    memset((void*)argv[j], 0, keys_byte_lens);
-    memcpy((void*)argv[j], keys[i], keys_byte_lens);
+  size_t key_length = keys_byte_lens + sizeof(feature2id);
+  for(int i = 0 ; i < len; i++) {
+    argvlen[j] = key_length;
+    argv[j] = new char[key_length];
+    memcpy((void*)argv[j], keys + i*keys_byte_lens, keys_byte_lens);
+    memcpy((void*)(argv[j] + keys_byte_lens), &feature2id, sizeof(feature2id));
     j++;
 
     argvlen[j] = values_byte_lens;
     argv[j] = new char[values_byte_lens];
-    memset((void*)argv[j], 0, values_byte_lens);
-    memcpy((void*)argv[j], values[i], values_byte_lens);
+    memcpy((void*)argv[j], values + i*values_byte_lens, values_byte_lens);
     j++;
   }
 
@@ -223,7 +282,7 @@ Status LocalRedis::BatchSetAsync(const std::string& feature,
   delete []argv;
   delete []argvlen;
 
-  if (!s) {
+  if (REDIS_OK != s) {
     return Status(error::Code::INTERNAL,
         "[Redis] run redisAsyncCommand-MSET failed.");
   }
