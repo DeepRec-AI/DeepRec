@@ -641,20 +641,13 @@ Status GetShapeValue(Node* node, int* dim) {
 Status SavedModelOptimizer::GetFeature2IdAttr(
     const std::string& name,
     AttrValue* attr_value) {
-  std::string real_input_fea_name(name);
-  auto offset = real_input_fea_name.find("/part");
-  if (offset != std::string::npos) {
-    real_input_fea_name = real_input_fea_name.substr(0, offset);
-  }
-
-  if (feature_names_to_ids.find(real_input_fea_name) ==
+  if (feature_names_to_ids.find(name) ==
       feature_names_to_ids.end()) {
     return tensorflow::errors::Internal(
-        "Not found a id of the featue. ", real_input_fea_name,
-        ", ", name);
+        "Not found a id of the featue. ", name);
   }
 
-  SetAttrValue(feature_names_to_ids[real_input_fea_name],
+  SetAttrValue(feature_names_to_ids[name],
                attr_value);
   return Status::OK();
 }
@@ -874,15 +867,7 @@ Status SavedModelOptimizer::GenerateIdsForFeatures() {
   int id = 0;
   for (Node* node : graph_.nodes()) {
     if (node->op_def().name() == "KvVarHandleOp") {
-      std::string real_feature_name(node->name());
-      auto offset = real_feature_name.find("/part");
-      if (offset != std::string::npos) {
-        real_feature_name = real_feature_name.substr(0, offset);
-      }
-      if (feature_names_to_ids.find(real_feature_name) ==
-          feature_names_to_ids.end()) {
-        feature_names_to_ids[real_feature_name] = id++;
-      }
+      feature_names_to_ids[node->name()] = id++;
     }
   }
 
