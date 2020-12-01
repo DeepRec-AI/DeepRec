@@ -96,7 +96,7 @@ void ThreadRun(SparseStorageManager* mgr, int idx,
 }
 
 AbstractModelStore* CreateSparseStorage(const std::string& type) {
-  if (type == "LocalRedis") {
+  if (type == "local_redis") {
     LocalRedis::Config config;
     config.ip = "127.0.0.1";
     config.port = 6379;
@@ -355,19 +355,22 @@ Status SimpleSparseStorageManager::RunSetTask(SparseTask* task) {
 }
 
 Status SimpleSparseStorageManager::GetValues(
-    const std::string& feature,
-    const std::string& version,
-    const std::vector<char*>& keys,
-    size_t keys_byte_lens,
-    const std::vector<char*>& values,
+    uint64_t feature2id,
+    const char* const keys,
+    char* const values,
+    size_t bytes_per_key,
+    size_t bytes_per_values,
+    size_t N,
+    const char* default_value,
     BatchGetCallback cb) {
   uint64_t index = active_thread_index_++;
   index %= thread_num_;
   {
     std::lock_guard<std::mutex> lock(mutex_[index]);
     return store_[index]->BatchGetAsync(
-        feature, version, keys, keys_byte_lens,
-        values, std::move(cb));
+        feature2id, keys, values, 
+        bytes_per_key, bytes_per_values, N,
+        default_value, std::move(cb));
   }
 
   return tensorflow::errors::Unknown(
@@ -375,20 +378,21 @@ Status SimpleSparseStorageManager::GetValues(
 }
 
 Status SimpleSparseStorageManager::SetValues(
-    const std::string& feature,
-    const std::string& version,
-    const std::vector<char*>& keys,
-    size_t keys_byte_lens,
-    const std::vector<char*>& values,
-    size_t values_byte_lens,
+    uint64_t feature2id,
+    const char* const keys,
+    const char* const values,
+    size_t bytes_per_key,
+    size_t bytes_per_values,
+    size_t N,
     BatchSetCallback cb) {
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
   {
     std::lock_guard<std::mutex> lock(mutex_[index]);
     return store_[index]->BatchSetAsync(
-        feature, version, keys, keys_byte_lens,
-        values, values_byte_lens, std::move(cb));
+        feature2id, keys, values,
+        bytes_per_key, bytes_per_values, N,
+        std::move(cb));
   }
 
   return tensorflow::errors::Unknown(
@@ -396,7 +400,12 @@ Status SimpleSparseStorageManager::SetValues(
 }
 
 Status SimpleSparseStorageManager::Reset() {
-  // TODO:
+  uint64_t index = active_update_thread_index_++;
+  index %= update_thread_num_;
+  {
+    std::lock_guard<std::mutex> lock(mutex_[index]);
+    return store_[index]->Cleanup();
+  }
 }
 
 } // processor

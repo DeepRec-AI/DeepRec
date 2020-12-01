@@ -137,18 +137,20 @@ class SimpleSparseStorageManager {
   virtual ~SimpleSparseStorageManager();
   Status RunGetTask(SparseTask*);
   Status RunSetTask(SparseTask*);
-  Status GetValues(const std::string& feature,
-                   const std::string& version,
-                   const std::vector<char*>& keys,
-                   size_t keys_byte_lens,
-                   const std::vector<char*>& values,
+  Status GetValues(uint64_t feature2id,
+                   const char* const keys,
+                   char* const values,
+                   size_t bytes_per_key,
+                   size_t bytes_per_values,
+                   size_t N,
+                   const char* default_value,
                    BatchGetCallback cb);
-  Status SetValues(const std::string& feature,
-                   const std::string& version,
-                   const std::vector<char*>& keys,
-                   size_t keys_byte_lens,
-                   const std::vector<char*>& values,
-                   size_t values_byte_lens,
+  Status SetValues(uint64_t feature2id,
+                   const char* const keys,
+                   const char* const values,
+                   size_t bytes_per_key,
+                   size_t bytes_per_values,
+                   size_t N,
                    BatchSetCallback cb);
   Status Reset();
 

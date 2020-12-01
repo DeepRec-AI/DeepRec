@@ -15,7 +15,7 @@ cc_library(
   deps = [
       "@hiredis//:hiredis",
       "@org_tensorflow//tensorflow/core:lib",
-
+      "@org_tensorflow//tensorflow/core:framework",
   ],
 )
 
