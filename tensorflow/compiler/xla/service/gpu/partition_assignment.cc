@@ -99,10 +99,13 @@ LaunchDimensions CalculateLaunchDimensions(
 
   int64 block_count = CeilOfRatio(num_elements, threads_per_block);
   if (few_waves) {
-    threads_per_block = std::min(threads_per_block, 128LL);
-    block_count = std::min(block_count,
-                           device_desc.core_count() * (device_desc.threads_per_core_limit() /
-                                                       threads_per_block));
+    int64 new_block_count =
+        device_desc.core_count() *
+        (device_desc.threads_per_core_limit() / threads_per_block);
+    if (new_block_count < block_count) {
+      threads_per_block = std::min(threads_per_block, 128LL);
+      block_count = std::min(new_block_count, block_count);
+    }
   }
   VLOG(2) << absl::StrFormat(
       "Initialized the block count to ceil(# of elements / threads per "
