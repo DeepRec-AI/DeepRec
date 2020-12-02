@@ -1,5 +1,5 @@
 #include "odl_processor/serving/model_instance.h"
-#include "odl_processor/serving/model_storage.h"
+#include "odl_processor/model_store/model_storage.h"
 #include "odl_processor/serving/model_config.h"
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/core/graph_optimizer.h"

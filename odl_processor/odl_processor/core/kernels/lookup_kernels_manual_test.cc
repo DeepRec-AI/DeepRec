@@ -32,8 +32,8 @@ limitations under the License.
 #include "odl_processor/core/util/utils.h"
 #include "odl_processor/core/graph_optimizer.h"
 #include "odl_processor/core/util/utils.h"
-#include "odl_processor/model_store/model_store_factory.h"
-#include "odl_processor/model_store/sparse_storage_manager.h"
+#include "odl_processor/model_store/sparse_storage_factory.h"
+#include "odl_processor/model_store/sparse_storage.h"
 
 
 using namespace tensorflow;

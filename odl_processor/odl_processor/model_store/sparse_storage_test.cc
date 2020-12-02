@@ -15,7 +15,7 @@ limitations under the License.
 
 #include <pthread.h>
 #include "gtest/gtest.h"
-#include "sparse_storage_manager.h"
+#include "sparse_storage.h"
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/core/platform/logging.h"
 

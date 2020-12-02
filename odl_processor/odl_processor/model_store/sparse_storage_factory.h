@@ -1,9 +1,9 @@
-#ifndef ODL_PROCESSOR_MODEL_STORE_MODEL_STORE_FACTORY_H_
-#define ODL_PROCESSOR_MODEL_STORE_MODEL_STORE_FACTORY_H_
+#ifndef ODL_PROCESSOR_MODEL_STORE_SPARSE_STORE_FACTORY_H_
+#define ODL_PROCESSOR_MODEL_STORE_SPARSE_STORE_FACTORY_H_
 #include <string>
 
-#include "odl_processor/model_store/abs_model_store.h"
-#include "odl_processor/model_store/redis_model_store.h"
+#include "odl_processor/model_store/sparse_storage_interface.h"
+#include "odl_processor/model_store/redis_sparse_store.h"
 
 namespace tensorflow {
 namespace processor {
@@ -28,4 +28,4 @@ class ModelStoreFactory {
 
 } // namespace processor
 } // namespace tensorflow
-#endif // ODL_PROCESSOR_MODEL_STORE_MODEL_STORE_FACTORY_H_
+#endif // ODL_PROCESSOR_MODEL_STORE_SPARSE_STORE_FACTORY_H_
