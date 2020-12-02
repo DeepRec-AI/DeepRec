@@ -1,9 +1,12 @@
-#ifndef TENSORFLOW_SERVING_MODEL_STORAGE_H
-#define TENSORFLOW_SERVING_MODEL_STORAGE_H
+#ifndef TENSORFLOW_MODEL_STORE_MODEL_STORAGE_H
+#define TENSORFLOW_MODEL_STORE_MODEL_STORAGE_H
 
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
+namespace io {
+class OSSFileSystem;
+}
 namespace processor {
 class Version;
 class SparseStorage {
@@ -18,12 +21,10 @@ class ModelStorage {
     return &storage;
   }
 
-  Status Init(const char* root_dir) { return Status::OK(); }
-  Status GetLatestVersion(Version& version) { return Status::OK();}
+  Status Init(const char* root_dir);
+  Status GetLatestVersion(Version& version);
 
-  SparseStorage* CreateSparseStorage(const Version& version) {
-    return nullptr;
-  }
+  SparseStorage* CreateSparseStorage(const Version& version);
 
  private:
   std::map<Version, SparseStorage*> store_;
@@ -32,5 +33,5 @@ class ModelStorage {
 } // processor
 } // tensorflow
 
-#endif // TENSORFLOW_SERVING_MODEL_STORAGE_H
+#endif // TENSORFLOW_MODEL_STORE_MODEL_STORAGE_H
 

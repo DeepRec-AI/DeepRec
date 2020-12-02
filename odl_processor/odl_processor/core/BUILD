@@ -12,8 +12,8 @@ cc_library(
         "ops/lookup_ops.cc",
     ],
     deps = [
-        "//odl_processor/model_store:redis_modelstore",
-        "//odl_processor/model_store:sparse_storage_manager",
+        "//odl_processor/model_store:redis_store",
+        "//odl_processor/model_store:sparse_storage",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/util/tensor_bundle",
     ],

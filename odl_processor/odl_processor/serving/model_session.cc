@@ -1,5 +1,5 @@
 #include "odl_processor/serving/model_session.h"
-#include "odl_processor/serving/model_storage.h"
+#include "odl_processor/model_store/model_storage.h"
 #include "odl_processor/serving/model_message.h"
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"

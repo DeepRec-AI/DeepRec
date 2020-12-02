@@ -1,10 +1,10 @@
-#ifndef ODL_PROCESSOR_MODEL_STORE_REDIS_MODEL_STORE_H_
-#define ODL_PROCESSOR_MODEL_STORE_REDIS_MODEL_STORE_H_
+#ifndef ODL_PROCESSOR_MODEL_STORE_REDIS_SPARSE_STORE_H_
+#define ODL_PROCESSOR_MODEL_STORE_REDIS_SPARSE_STORE_H_
 #include <vector>
 #include <string>
 #include <thread>
 
-#include "odl_processor/model_store/abs_model_store.h"
+#include "odl_processor/model_store/sparse_storage_interface.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
 
@@ -122,4 +122,4 @@ class ClusterRedis : public AbstractModelStore {
 } // namespace processor
 } // namespace tensorflow
 
-#endif // ODL_PROCESSOR_MODEL_STORE_REDIS_MODEL_STORE_H_
+#endif // ODL_PROCESSOR_MODEL_STORE_REDIS_SPARSE_STORE_H_

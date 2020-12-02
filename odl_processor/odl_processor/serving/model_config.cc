@@ -48,6 +48,30 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     return Status(error::Code::NOT_FOUND,
         "[TensorFlow] No signature_name in ModelConfig.");
   }
+  
+  if (!json_config["storage_type"].isNull()) {
+    (*config)->storage_type =
+      json_config["storage_type"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No storage_type in ModelConfig.");
+  }
+
+  if (!json_config["redis_url"].isNull()) {
+    (*config)->redis_url =
+      json_config["redis_url"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No redis_url in ModelConfig.");
+  }
+
+  if (!json_config["redis_password"].isNull()) {
+    (*config)->redis_password =
+      json_config["redis_password"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No redis_password in ModelConfig.");
+  }
 
   if (!json_config["oss_endpoint"].isNull()) {
     (*config)->oss_endpoint =
@@ -71,11 +95,6 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   } else {
     return Status(error::Code::NOT_FOUND,
         "[TensorFlow] No oss_access_key in ModelConfig.");
-  }
-
-  if (!json_config["local_storage"].isNull()) {
-    (*config)->local_storage =
-      json_config["local_storage"].asBool();
   }
 
   return Status::OK();

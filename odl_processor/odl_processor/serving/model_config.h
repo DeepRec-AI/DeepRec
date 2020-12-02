@@ -15,7 +15,7 @@ struct ModelConfig {
   int intra_threads;
 
   // Embedding Config
-  bool local_storage;
+  std::string storage_type;
   std::string redis_url;
   std::string redis_password;
 
