@@ -147,9 +147,11 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_KV_LOOKUP_CPU);
 
 namespace {
 
-const static size_t BUFFER_SIZE = 8 << 20; // TODO: FIXME 8MB
+// TODO: magic-num 128MB
+const static size_t BUFFER_SIZE = 128 << 20;
 
-size_t LookupSegmentInternal(size_t key_size, size_t value_size,
+size_t LookupSegmentInternal(size_t key_size,
+                             size_t value_bytes,
                              int64 total_keys_num,
                              const std::string& tensor_key,
                              const std::string& tensor_value,
@@ -157,19 +159,19 @@ size_t LookupSegmentInternal(size_t key_size, size_t value_size,
                              BundleReader* reader,
                              Status& s_read) {
   size_t read_key_num = std::min(BUFFER_SIZE / key_size,
-                                 BUFFER_SIZE / value_size);
+                                 BUFFER_SIZE / value_bytes);
   read_key_num = std::min((int64)read_key_num, total_keys_num);
 
   size_t key_bytes_read = 0, value_bytes_read = 0;
   if (total_keys_num > 0) {
     reader->LookupSegment(tensor_key, read_key_num * key_size,
                           key_buffer, key_bytes_read);
-    reader->LookupSegment(tensor_value, read_key_num * value_size,
+    reader->LookupSegment(tensor_value, read_key_num * value_bytes,
                           value_buffer, value_bytes_read);
 
     if (key_bytes_read > 0) {
       read_key_num = key_bytes_read / key_size;
-      if (read_key_num != value_bytes_read / value_size) {
+      if (read_key_num != value_bytes_read / value_bytes) {
         s_read = errors::Internal("read key num not euqal read value num.");
         return 0;
       }
@@ -182,7 +184,57 @@ size_t LookupSegmentInternal(size_t key_size, size_t value_size,
   return read_key_num;
 }
 
-template <typename TKey, typename TValue>
+int64 GetTotalKeysNum(const std::string& part_var_name,
+                      std::string& tensor_key,
+                      std::string& tensor_value,
+                      BundleReader* reader,
+                      OpKernelContext* ctx,
+                      int dim_len,
+                      int& curr_part_index,
+                      int partition_num,
+                      size_t key_size, size_t value_size) {
+  while(curr_part_index < partition_num) {
+    TensorShape key_shape, value_shape;
+    reader->LookupTensorShape(tensor_key, &key_shape);
+    reader->LookupTensorShape(tensor_value, &value_shape);
+    if (value_shape.dim_size(1) != dim_len) {
+      ctx->CtxFailure(errors::InvalidArgument(
+                          "value_shape.dim_size(1) not equal "
+                          "the dim_len attr value."));
+      return -1;
+    }
+
+    Status s = reader->LookupHeader(tensor_key,
+        key_size * key_shape.dim_size(0));
+    if (!s.ok()) {
+      ctx->CtxFailure(s);
+      return -1;
+    }
+
+    s = reader->LookupHeader(tensor_value,
+        value_size * value_shape.dim_size(0) * dim_len);
+    if (!s.ok()) {
+      ctx->CtxFailure(s);
+      return -1;
+    }
+
+    int64 total_keys_num = key_shape.dim_size(0);
+    if (total_keys_num > 0) return total_keys_num;
+
+    LOG(WARNING) << "Current variable partitions' key num is 0. "
+                 << tensor_key << ", " << tensor_value;
+
+    ++curr_part_index;
+    // try next variable partition
+    tensor_key = strings::StrCat(
+        part_var_name, std::to_string(curr_part_index), "-keys");
+    tensor_value = strings::StrCat(
+        part_var_name, std::to_string(curr_part_index), "-values");
+  }
+
+  return 0;
+}
+
 BatchSetCallback make_import_callback(
     OpKernelContext* ctx,
     char* key_buffer,
@@ -191,6 +243,70 @@ BatchSetCallback make_import_callback(
     size_t dim_len,
     size_t key_size,
     size_t value_size,
+    int part_index,
+    int partition_num,
+    const std::string& part_var_name,
+    const std::string& tensor_key,
+    const std::string& tensor_value,
+    uint64_t feature_name_to_id,
+    BundleReader* reader,
+    SimpleSparseStorageManager* storageMgr,
+    AsyncOpKernel::DoneCallback done);
+ 
+Status InternalImportValues(
+    OpKernelContext* ctx,
+    size_t dim_len,
+    size_t key_size,
+    size_t value_size,
+    int64 total_keys_num,
+    int curr_part_index,
+    int partition_num,
+    const std::string& part_var_name,
+    const std::string& tensor_key,
+    const std::string& tensor_value,
+    char* key_buffer, char* value_buffer,
+    BundleReader* reader,
+    uint64_t feature_name_to_id,
+    SimpleSparseStorageManager* storageMgr,
+    AsyncOpKernel::DoneCallback done) {
+  Status s_read = tensorflow::Status::OK();
+  size_t read_key_num = LookupSegmentInternal(
+      key_size, value_size * dim_len,
+      total_keys_num, tensor_key, tensor_value,
+      key_buffer, value_buffer, reader, s_read);
+  if (!s_read.ok()) {
+    return s_read;
+  }
+
+  total_keys_num -= read_key_num;
+
+  Status status = storageMgr->SetValues(
+      feature_name_to_id,
+      key_buffer, value_buffer,
+      key_size, value_size * dim_len, read_key_num,
+      make_import_callback(
+          ctx, key_buffer, value_buffer,
+          total_keys_num, dim_len, key_size,
+          value_size, curr_part_index,
+          partition_num, part_var_name,
+          tensor_key, tensor_value,
+          feature_name_to_id, reader, storageMgr,
+          std::move(done)));
+
+  return status;
+}
+
+BatchSetCallback make_import_callback(
+    OpKernelContext* ctx,
+    char* key_buffer,
+    char* value_buffer,
+    int64 total_keys_num,
+    size_t dim_len,
+    size_t key_size,
+    size_t value_size,
+    int part_index,
+    int partition_num,
+    const std::string& part_var_name,
     const std::string& tensor_key,
     const std::string& tensor_value,
     uint64_t feature_name_to_id,
@@ -199,43 +315,60 @@ BatchSetCallback make_import_callback(
     AsyncOpKernel::DoneCallback done) {
   return [ctx, key_buffer, value_buffer, key_size,
           value_size, left_keys_num = total_keys_num,
-          dim_len, tensor_key, tensor_value,
+          dim_len, part_index, partition_num,
+          part_var_name, tensor_key, tensor_value,
           feature_name_to_id, reader, storageMgr,
           done = std::move(done)](const Status& s) {
 
+    int curr_part_index = part_index;
     int64 total_keys_num = left_keys_num;
+    bool new_part = false;
+    std::string new_tensor_key;
+    std::string new_tensor_value;
     if (total_keys_num <= 0) {
-      delete []key_buffer;
-      delete []value_buffer;
-      delete reader;
+      ++curr_part_index;
+      // All partitions have been imported
+      if (curr_part_index >= partition_num) {
+        delete []key_buffer;
+        delete []value_buffer;
+        delete reader;
 
-      ctx->SetStatus(s);
-      done();
-      return;
+        ctx->SetStatus(s);
+        done();
+        return;
+      }
+
+      new_tensor_key = strings::StrCat(
+          part_var_name, std::to_string(curr_part_index), "-keys");
+      new_tensor_value = strings::StrCat(
+          part_var_name, std::to_string(curr_part_index), "-values");
+
+      total_keys_num = GetTotalKeysNum(
+          part_var_name, new_tensor_key, new_tensor_value,
+          reader, ctx, dim_len, curr_part_index,
+          partition_num, key_size, value_size);
+      // All partitions' key num equal 0
+      if (total_keys_num < 0 ||
+          curr_part_index >= partition_num) {
+        // NOTE: total_keys_num < 0, ctx will be set error
+        //       status in GetTotalKeysNum func;
+        //       curr_part_index >= partition_num: normal case.
+        done();
+        return;
+      }
+
+      new_part = true;
     }
 
-    Status s_read = tensorflow::Status::OK();
-    size_t read_key_num = LookupSegmentInternal(
-        key_size, value_size, total_keys_num,
-        tensor_key, tensor_value, key_buffer,
-        value_buffer, reader, s_read);
-    if (!s_read.ok()) {
-      ctx->SetStatus(s_read);
-      done();
-      return;
-    }
-    total_keys_num -= read_key_num;
-
-    Status status = storageMgr->SetValues(
-        feature_name_to_id,
-        key_buffer, value_buffer,
-        sizeof(TKey), sizeof(TValue) * dim_len, read_key_num,
-        make_import_callback<TKey, TValue>(
-            ctx, key_buffer, value_buffer,
-            total_keys_num, dim_len, key_size,
-            value_size, tensor_key,
-            tensor_value, feature_name_to_id,
-            reader, storageMgr, std::move(done)));
+    Status status = InternalImportValues(
+        ctx, dim_len, key_size, value_size,
+        total_keys_num, curr_part_index,
+        partition_num, part_var_name,
+        new_part ? new_tensor_key : tensor_key,
+        new_part ? new_tensor_value : tensor_value,
+        key_buffer, value_buffer, reader,
+        feature_name_to_id, storageMgr,
+        std::move(done));
 
     if (!status.ok()) {
       ctx->SetStatus(status);
@@ -257,6 +390,11 @@ class KvImportOp : public AsyncOpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("dim_len", &dim_len_));
   }
 
+  // NOTE(jiankeng.pt):
+  // In order to prevent excessive traffic pressure on the network,
+  // here we send variable block by block(128MB).
+  // The subsequent block will be sent after the storage return OK status.
+  //
   void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
     size_t key_size = sizeof(TKey);
     size_t value_size = sizeof(TValue);
@@ -266,6 +404,10 @@ class KvImportOp : public AsyncOpKernel {
 
     const Tensor& tensor_name = ctx->input(1);
     const std::string tensor_name_str = tensor_name.scalar<string>()();
+    std::string part0_tensor_name_str =
+        strings::StrCat(tensor_name_str, "/part_0");
+    std::string part_tensor_name_str =
+        strings::StrCat(tensor_name_str, "/part_");
 
     const Tensor& storage_pointer = ctx->input(2);
     const uint64 storage_pointer_value =
@@ -279,63 +421,65 @@ class KvImportOp : public AsyncOpKernel {
 
     std::string tensor_key = strings::StrCat(tensor_name_str, "-keys");
     std::string tensor_value = strings::StrCat(tensor_name_str, "-values");
+    bool maybe_partition_var = false;
+    int partition_num = 1;
+    int curr_part_index = 0;
 
-    TensorShape key_shape, value_shape;
-    reader->LookupTensorShape(tensor_key, &key_shape);
-    reader->LookupTensorShape(tensor_value, &value_shape);
-    OP_REQUIRES(ctx, value_shape.dim_size(1) == dim_len_,
-                errors::InvalidArgument("value_shape.dim_size(1) not equal "
-                                        "the dim_len attr value."));
+    // 1) check variable without partition
+    TensorShape key_shape;
+    Status key_status = reader->LookupTensorShape(tensor_key, &key_shape);
+    if (!key_status.ok()) {
+      // not found, check partition variable below
+      if (errors::IsNotFound(key_status)) {
+        maybe_partition_var = true;
+      } else {
+        OP_REQUIRES_OK(ctx, key_status);
+      }
+    }
 
-    Status s = reader->LookupHeader(tensor_key,
-        key_size * key_shape.dim_size(0));
-    OP_REQUIRES_OK(ctx, s);
+    // 2) check variable with partition
+    if (maybe_partition_var) {
+      tensor_key = strings::StrCat(part0_tensor_name_str, "-keys");
+      tensor_value = strings::StrCat(part0_tensor_name_str, "-values");
+      key_status = reader->LookupTensorShape(tensor_key, &key_shape);
+      OP_REQUIRES_OK(ctx, key_status);
 
-    s = reader->LookupHeader(tensor_value,
-        value_size * value_shape.dim_size(0) * dim_len_);
-    OP_REQUIRES_OK(ctx, s);
+      for (int i = 1; ; ++i) {
+        std::string tmp_key = strings::StrCat(
+            part_tensor_name_str, std::to_string(i), "-keys");
+        key_status = reader->LookupTensorShape(tmp_key, &key_shape);
+        if (errors::IsNotFound(key_status)) break;
+        OP_REQUIRES_OK(ctx, key_status);
+        ++partition_num;
+      }
+    }
 
-    int64 total_keys_num = key_shape.dim_size(0);
-    if (total_keys_num <= 0) {
+    int64 total_keys_num = GetTotalKeysNum(
+        part_tensor_name_str, tensor_key, tensor_value,
+        reader, ctx, dim_len_, curr_part_index,
+        partition_num, key_size, value_size);
+    // All partitions' key num equal 0
+    if (total_keys_num < 0 ||
+        curr_part_index >= partition_num) {
+      // NOTE: total_keys_num < 0, ctx will be set error
+      //       status in GetTotalKeysNum func;
+      //       curr_part_index >= partition_num: normal case.
+      LOG(WARNING) << "All variable partitions' key num is 0. variable name:"
+                   << tensor_name_str;
       done();
       return;
     }
 
     char* key_buffer = new char[BUFFER_SIZE];
     char* value_buffer = new char[BUFFER_SIZE];
-    size_t value_byte = value_size * dim_len_;
 
-    Status s_read = tensorflow::Status::OK();
-    size_t read_key_num = LookupSegmentInternal(
-        key_size, value_byte, total_keys_num,
+    Status s = InternalImportValues(
+        ctx, dim_len_, key_size, value_size,
+        total_keys_num, curr_part_index,
+        partition_num, part_tensor_name_str,
         tensor_key, tensor_value, key_buffer,
-        value_buffer, reader, s_read);
-    if (!s_read.ok()) {
-      ctx->SetStatus(s_read);
-      done();
-      return;
-    }
-
-    total_keys_num -= read_key_num;
-
-    std::vector<char*> keys;
-    std::vector<char*> values;
-    for (size_t i = 0; i < read_key_num; ++i) {
-      keys.push_back((char*)((TKey*)key_buffer + i));
-      values.push_back((char*)((TValue*)value_buffer + i * dim_len_));
-    }
-
-    s = storageMgr->SetValues(
-        feature_name_to_id_, key_buffer,
-        value_buffer, sizeof(TKey),
-        sizeof(TValue) * dim_len_,
-        read_key_num,
-        make_import_callback<TKey, TValue>(
-            ctx, key_buffer, value_buffer,
-            total_keys_num, dim_len_, key_size,
-            value_size, tensor_key,
-            tensor_value, feature_name_to_id_,
-            reader, storageMgr, std::move(done)));
+        value_buffer, reader, feature_name_to_id_,
+        storageMgr, std::move(done));
 
     if (!s.ok()) {
       ctx->SetStatus(s);
