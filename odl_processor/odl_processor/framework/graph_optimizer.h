@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef ODL_PROCESSOR_CORE_GRAPH_OPTIMIZER_H_
-#define ODL_PROCESSOR_CORE_GRAPH_OPTIMIZER_H_
+#ifndef ODL_PROCESSOR_FRAMEWORK_GRAPH_OPTIMIZER_H_
+#define ODL_PROCESSOR_FRAMEWORK_GRAPH_OPTIMIZER_H_
 
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/core/graph/graph.h"
@@ -181,5 +181,5 @@ class SavedModelOptimizer : public GraphOptimizer {
 } // namespace processor
 } // namespace tensorflow
 
-#endif  // ODL_PROCESSOR_CORE_GRAPH_OPTIMIZER_H_
+#endif // ODL_PROCESSOR_FRAMEWORK_GRAPH_OPTIMIZER_H_
 

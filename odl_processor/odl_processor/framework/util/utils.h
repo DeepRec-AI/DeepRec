@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef ODL_PROCESSOR_CORE_UTILS_H_
-#define ODL_PROCESSOR_CORE_UTILS_H_
+#ifndef ODL_PROCESSOR_FRAMEWORK_UTILS_H_
+#define ODL_PROCESSOR_FRAMEWORK_UTILS_H_
 
 #include <unordered_map>
 #include "tensorflow/core/graph/graph.h"
@@ -38,5 +38,5 @@ bool HasDynamicShapeOutput(NodeDef* node);
 } // namespace processor
 } // namespace tensorflow
 
-#endif  // ODL_PROCESSOR_CORE_UTILS_H_
+#endif // ODL_PROCESSOR_FRAMEWORK_UTILS_H_
 

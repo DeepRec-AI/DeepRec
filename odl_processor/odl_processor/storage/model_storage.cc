@@ -1,5 +1,5 @@
-#include "odl_processor/model_store/model_storage.h"
-#include "odl_processor/serving/model_version.h"
+#include "odl_processor/storage/model_storage.h"
+#include "odl_processor/framework/model_version.h"
 
 namespace tensorflow {
 namespace processor {

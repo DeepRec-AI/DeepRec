@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "odl_processor/model_store/sparse_storage.h"
+#include "odl_processor/storage/sparse_storage.h"
 
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/core/platform/logging.h"

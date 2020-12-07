@@ -2,8 +2,8 @@
 #define ODL_PROCESSOR_MODEL_STORE_SPARSE_STORE_FACTORY_H_
 #include <string>
 
-#include "odl_processor/model_store/sparse_storage_interface.h"
-#include "odl_processor/model_store/redis_sparse_store.h"
+#include "odl_processor/storage/sparse_storage_interface.h"
+#include "odl_processor/storage/redis_sparse_store.h"
 
 namespace tensorflow {
 namespace processor {

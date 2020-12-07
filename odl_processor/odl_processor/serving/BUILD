@@ -29,12 +29,6 @@ cc_library(
 )
 
 cc_library(
-    name = "model_version",
-    hdrs = ["model_version.h"],
-    deps = [],
-)
-
-cc_library(
     name = "model_serving",
     srcs = ["model_serving.cc",
             "model_impl.cc",
@@ -55,8 +49,8 @@ cc_library(
         "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
         "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
         "@jsoncpp_git//:jsoncpp",
-        "//odl_processor/core:graph_optimizer",
-        "//odl_processor/model_store:model_storage",
-        "model_version",
+        "//odl_processor/framework:graph_optimizer",
+        "//odl_processor/framework:model_version",
+        "//odl_processor/storage:model_storage",
     ],
 )

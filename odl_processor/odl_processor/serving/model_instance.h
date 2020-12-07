@@ -3,7 +3,7 @@
 
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
-#include "odl_processor/serving/model_version.h"
+#include "odl_processor/framework/model_version.h"
 #include "odl_processor/serving/model_message.h"
 
 #include <thread>

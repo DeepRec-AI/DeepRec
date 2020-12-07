@@ -1,5 +1,5 @@
-#ifndef TENSORFLOW_MODEL_STORE_MODEL_STORAGE_H
-#define TENSORFLOW_MODEL_STORE_MODEL_STORAGE_H
+#ifndef TENSORFLOW_STORAGE_MODEL_STORAGE_H
+#define TENSORFLOW_STORAGE_MODEL_STORAGE_H
 
 #include "tensorflow/core/lib/core/status.h"
 
@@ -33,5 +33,5 @@ class ModelStorage {
 } // processor
 } // tensorflow
 
-#endif // TENSORFLOW_MODEL_STORE_MODEL_STORAGE_H
+#endif // TENSORFLOW_STORAGE_MODEL_STORAGE_H
 
