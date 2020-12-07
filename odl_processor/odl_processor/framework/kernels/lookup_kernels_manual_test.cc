@@ -29,11 +29,11 @@ limitations under the License.
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 #include "tensorflow/core/protobuf/saved_model.pb.h"
 #include "tensorflow/core/graph/graph_constructor.h"
-#include "odl_processor/core/util/utils.h"
-#include "odl_processor/core/graph_optimizer.h"
-#include "odl_processor/core/util/utils.h"
-#include "odl_processor/model_store/sparse_storage_factory.h"
-#include "odl_processor/model_store/sparse_storage.h"
+#include "odl_processor/framework/util/utils.h"
+#include "odl_processor/framework/graph_optimizer.h"
+#include "odl_processor/framework/util/utils.h"
+#include "odl_processor/storage/sparse_storage_factory.h"
+#include "odl_processor/storage/sparse_storage.h"
 
 
 using namespace tensorflow;
@@ -81,10 +81,10 @@ int main() {
 
   NodeDef kv_import_def;
   TF_CHECK_OK(NodeDefBuilder("kv_import", "KvImport")
-                  .Input("version", 0, DT_STRING)
-                  .Input("prefix", 1, DT_STRING)
-                  .Input("tensor_name", 2, DT_STRING)
-                  .Input("storage_pointer_value", 3, DT_UINT64)
+                  .Input("prefix", 0, DT_STRING)
+                  .Input("tensor_name", 1, DT_STRING)
+                  .Input("storage_pointer_value", 2, DT_UINT64)
+                  .Attr("feature_name_to_id", 1)
                   .Attr("feature_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)

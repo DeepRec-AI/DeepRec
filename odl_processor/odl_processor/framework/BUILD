@@ -6,14 +6,20 @@ load(
 )
 
 cc_library(
+    name = "model_version",
+    hdrs = ["model_version.h"],
+    deps = [],
+)
+
+cc_library(
     name = "lookup_ops",
     srcs = [
         "kernels/lookup_kernels.cc",
         "ops/lookup_ops.cc",
     ],
     deps = [
-        "//odl_processor/model_store:redis_store",
-        "//odl_processor/model_store:sparse_storage",
+        "//odl_processor/storage:redis_store",
+        "//odl_processor/storage:sparse_storage",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/util/tensor_bundle",
     ],
@@ -25,7 +31,7 @@ cc_test(
     deps = [
         ":lookup_ops",
         ":graph_optimizer",
-        "//odl_processor/storage/oss:oss_ops",
+        "//odl_processor/framework/filesystem:oss_ops",
         "@com_google_googletest//:gtest",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
@@ -106,6 +112,6 @@ cc_test(
     deps = [
         ":lookup_ops",
         ":graph_optimizer",
-        "//odl_processor/storage/oss:oss_ops",
+        "//odl_processor/framework/filesystem:oss_ops",
     ],
 )

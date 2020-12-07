@@ -17,9 +17,9 @@ limitations under the License.
 #include <sstream>
 #include <iostream>
 
-#include "odl_processor/core/util/utils.h"
-#include "odl_processor/core/graph_optimizer.h"
-#include "odl_processor/core/util/utils.h"
+#include "odl_processor/framework/util/utils.h"
+#include "odl_processor/framework/graph_optimizer.h"
+#include "odl_processor/framework/util/utils.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 #include "tensorflow/core/protobuf/saved_model.pb.h"
 #include "tensorflow/core/graph/graph_constructor.h"

@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef ODL_PROCESSOR_MODEL_STORE_SPARSE_STORAGE_H_
-#define ODL_PROCESSOR_MODEL_STORE_SPARSE_STORAGE_H_
+#ifndef ODL_PROCESSOR_STORAGE_SPARSE_STORAGE_H_
+#define ODL_PROCESSOR_STORAGE_SPARSE_STORAGE_H_
 
 #include <atomic>
 #include <thread>
@@ -25,7 +25,7 @@ limitations under the License.
 #include "concurrentqueue.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "odl_processor/model_store/redis_sparse_store.h"
+#include "odl_processor/storage/redis_sparse_store.h"
 
 namespace tensorflow {
 namespace processor {
@@ -168,4 +168,4 @@ class SimpleSparseStorageManager {
 } // processor
 } // tensorflow
 
-#endif // ODL_PROCESSOR_MODEL_STORE_SPARSE_STORAGE_MANAGER_H_
+#endif // ODL_PROCESSOR_STORAGE_SPARSE_STORAGE_MANAGER_H_

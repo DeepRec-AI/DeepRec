@@ -46,6 +46,7 @@ cc_library(
         "include/arch/unix/apr_arch_thread_rwlock.h",
         "include/arch/unix/apr_arch_threadproc.h",
         "include/arch/unix/apr_private.h",
+        "include/private/apr_escape_test_char.h",
         "locks/unix/global_mutex.c",
         "locks/unix/proc_mutex.c",
         "locks/unix/thread_cond.c",

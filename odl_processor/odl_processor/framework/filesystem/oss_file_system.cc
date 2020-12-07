@@ -9,7 +9,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "odl_processor/storage/oss/oss_file_system.h"
+#include "odl_processor/framework/filesystem/oss_file_system.h"
 
 #include <pwd.h>
 #include <unistd.h>
