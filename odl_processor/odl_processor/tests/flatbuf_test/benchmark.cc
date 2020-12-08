@@ -3,7 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include "odl_processor/e2e_testing/request_generated.h"
+#include "odl_processor/tests/request_generated.h"
 #include "odl_processor/serving/tf_predict.pb.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor.h"
