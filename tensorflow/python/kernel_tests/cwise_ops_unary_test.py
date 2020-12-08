@@ -391,8 +391,10 @@ class UnaryOpTest(test.TestCase):
     self._compareBothSparse(x, np.vectorize(math.erf), math_ops.erf, tol=1e-3)
 
   def testBFloat16Basic(self):
+    bfloat16 = dtypes_lib.bfloat16.as_numpy_dtype
     x = np.arange(-6, 6,
                   2).reshape(1, 3, 2).astype(dtypes_lib.bfloat16.as_numpy_dtype)
+    z = (x + 15.5).astype(bfloat16)  # all positive
     self._compareCpu(x, np.abs, math_ops.abs)
     self._compareCpu(x, np.abs, _ABS)
     self._compareCpu(x, np.exp, math_ops.exp)
