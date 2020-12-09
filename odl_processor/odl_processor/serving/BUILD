@@ -29,15 +29,23 @@ cc_library(
 )
 
 cc_library(
+    name = "model_config",
+    srcs = ["model_config.cc"],
+    hdrs = ["model_config.h"],
+    deps = [
+        "@jsoncpp_git//:jsoncpp",
+        "@org_tensorflow//tensorflow/core:framework",
+        ],
+)
+
+cc_library(
     name = "model_serving",
     srcs = ["model_serving.cc",
             "model_impl.cc",
-            "model_config.cc",
             "model_instance.cc",
             "model_session.cc"],
     hdrs = ["model_serving.h",
             "model_impl.h",
-            "model_config.h",
             "model_instance.h",
             "model_message.h",
             "model_session.h"],
@@ -48,9 +56,9 @@ cc_library(
         "@org_tensorflow//tensorflow/cc/saved_model:loader",
         "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
         "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
-        "@jsoncpp_git//:jsoncpp",
         "//odl_processor/framework:graph_optimizer",
         "//odl_processor/framework:model_version",
         "//odl_processor/storage:model_storage",
+        "model_config",
     ],
 )

@@ -1,13 +1,14 @@
 #ifndef TENSORFLOW_SERVING_MODEL_VERSION_H
 #define TENSORFLOW_SERVING_MODEL_VERSION_H
+#include "tensorflow/core/platform/env.h"
 
 namespace tensorflow {
 namespace processor {
 struct Version {
-  std::string full_model_version;
+  int64 full_model_version = 0;
   std::string full_model_name;
 
-  std::string delta_model_version;
+  int64 delta_model_version = 0;
   std::string delta_model_name;
 
   Version() = default;

@@ -36,25 +36,23 @@ const int MANAGER_MAX_UPDATE_THREAD_NUM = 16;
 // TODO: should offered later
 struct SparseTask {
   int64_t num;
-  void Run() {
-    //
-  }
+  void Run() {}
 };
 
-class SparseStorageManager;
-typedef std::function<void(SparseStorageManager*, int, bool)> WorkFn;
+class AsyncSparseStorage;
+typedef std::function<void(AsyncSparseStorage*, int, bool)> WorkFn;
 
 using sparse_task_queue = moodycamel::ConcurrentQueue<SparseTask*>;
 
-class SparseStorageManager {
+class AsyncSparseStorage {
  public:
-
-  SparseStorageManager(
+  AsyncSparseStorage(
       int serving_thread_num,
       int update_thread_num,
-      ModelStoreType type,
+      const std::string& type,
       WorkFn fn = nullptr);
-  virtual ~SparseStorageManager();
+  virtual ~AsyncSparseStorage();
+
   Status AddTask(SparseTask*);
   Status AddUpdateTask(SparseTask*);
   sparse_task_queue* GetSparseTaskQueue(int);
@@ -124,19 +122,14 @@ class SparseStorageManager {
   std::vector<AbstractModelStore*> update_store_;
 };
 
-
-// ----------------------------------------------
-
-class SimpleSparseStorageManager {
+class SparseStorage {
  public:
-
-  explicit SimpleSparseStorageManager(
+  explicit SparseStorage(
       int serving_thread_num,
       int update_thread_num,
-      ModelStoreType type);
-  virtual ~SimpleSparseStorageManager();
-  Status RunGetTask(SparseTask*);
-  Status RunSetTask(SparseTask*);
+      const std::string& type);
+  virtual ~SparseStorage();
+
   Status GetValues(uint64_t feature2id,
                    const char* const keys,
                    char* const values,

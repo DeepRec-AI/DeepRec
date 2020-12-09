@@ -31,7 +31,7 @@ cc_test(
     deps = [
         ":lookup_ops",
         ":graph_optimizer",
-        "//odl_processor/framework/filesystem:oss_ops",
+        "//odl_processor/framework/filesystem:oss_filesystem",
         "@com_google_googletest//:gtest",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core/kernels:ops_testutil",
@@ -112,6 +112,6 @@ cc_test(
     deps = [
         ":lookup_ops",
         ":graph_optimizer",
-        "//odl_processor/framework/filesystem:oss_ops",
+        "//odl_processor/framework/filesystem:oss_filesystem",
     ],
 )

@@ -23,7 +23,7 @@ Status Model::Init(const char* model_config, const char* model_dir) {
   return impl_->Init(model_dir);
 }
 
-Status Model::Predict(const Request& req, Response& resp) {
+Status Model::Predict(Request& req, Response& resp) {
   return impl_->Predict(req, resp);
 }
 

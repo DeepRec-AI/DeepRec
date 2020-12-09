@@ -51,6 +51,8 @@ int process(void* model_buf, const void* input_data, int input_size,
 
 int batch_process(void* model_buf, const void* input_data[], int* input_size,
                   void* output_data[], int* output_size) {
-  return 200;
+  // Client batch inputs into one tensor
+  return process(model_buf, input_data[0], input_size[0],
+      &output_data[0], output_size);
 }
 }

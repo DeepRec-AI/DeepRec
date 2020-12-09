@@ -28,7 +28,7 @@ class ModelInstance {
   Status Init(const Version& version, ModelConfig* config,
       ModelStorage* model_storage);
 
-  Status Predict(const Request& req, Response& resp);
+  Status Predict(Request& req, Response& resp);
 
   Status FullModelUpdate(const Version& version);
   Status DeltaModelUpdate(const Version& version);
@@ -67,7 +67,7 @@ class ModelInstanceMgr {
   ~ModelInstanceMgr();
 
   Status Init();
-  Status Predict(const Request& req, Response& resp);
+  Status Predict(Request& req, Response& resp);
 
   Status Rollback();
   std::string DebugString();

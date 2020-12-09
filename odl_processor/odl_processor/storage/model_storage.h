@@ -4,22 +4,14 @@
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
-namespace io {
-class OSSFileSystem;
-}
+class FileSystem;
 namespace processor {
 class Version;
-class SparseStorage {
- public:
-  Status Reset() { return Status::OK(); }
-};
-
+class ModelConfig;
+class SparseStorage;
 class ModelStorage {
  public:
-  static ModelStorage* GetInstance() {
-    static ModelStorage storage;
-    return &storage;
-  }
+  ModelStorage(ModelConfig* config);
 
   Status Init(const char* root_dir);
   Status GetLatestVersion(Version& version);
@@ -27,7 +19,14 @@ class ModelStorage {
   SparseStorage* CreateSparseStorage(const Version& version);
 
  private:
-  std::map<Version, SparseStorage*> store_;
+  Status GetFullModelVersion(Version& version);
+  Status GetDeltaModelVersion(Version& version);
+
+ private:
+  std::string model_dir_;
+  std::string delta_model_dir_;
+  FileSystem* file_system_;   // not owned
+  ModelConfig* model_config_; // not owned
 };
 
 } // processor

@@ -18,6 +18,8 @@ struct ModelConfig {
   std::string storage_type;
   std::string redis_url;
   std::string redis_password;
+  int read_thread_num;
+  int update_thread_num;
 
   // OSS Config
   std::string oss_endpoint;

@@ -22,8 +22,7 @@ namespace tensorflow {
 namespace processor {
 
 namespace {
-
-void ThreadRun(SparseStorageManager* mgr, int idx,
+void ThreadRun(AsyncSparseStorage* mgr, int idx,
                bool is_update_thread) {
   std::mutex* mu = nullptr;
   std::condition_variable* cv = nullptr;
@@ -95,8 +94,8 @@ void ThreadRun(SparseStorageManager* mgr, int idx,
   }
 }
 
-AbstractModelStore* CreateSparseStorage(ModelStoreType type) {
-  if (type == ModelStoreType::LOCAL_REDIS) {
+AbstractModelStore* CreateSparseStorage(const std::string& type) {
+  if (type == "local_redis") {
     LocalRedis::Config config;
     config.ip = "127.0.0.1";
     config.port = 6379;
@@ -104,17 +103,13 @@ AbstractModelStore* CreateSparseStorage(ModelStoreType type) {
   } else {
     LOG(ERROR) << "Only LocalRedis backend now. type = " << type;
   }
-
   return nullptr;
 }
-
 } // namespace
 
-SparseStorageManager::SparseStorageManager(
-    int serving_thread_num,
-    int update_thread_num,
-    ModelStoreType type,
-    WorkFn fn) : stop_(false),
+AsyncSparseStorage::AsyncSparseStorage(int serving_thread_num,
+    int update_thread_num, const std::string& type, WorkFn fn) :
+    stop_(false),
     thread_num_(serving_thread_num),
     update_thread_num_(update_thread_num),
     active_thread_index_(0),
@@ -159,7 +154,7 @@ SparseStorageManager::SparseStorageManager(
   }
 }
 
-SparseStorageManager::~SparseStorageManager() {
+AsyncSparseStorage::~AsyncSparseStorage() {
   // stop all IO threads
   stop_ = true;
 
@@ -204,7 +199,7 @@ SparseStorageManager::~SparseStorageManager() {
   }
 }
 
-Status SparseStorageManager::AddTask(SparseTask* t) {
+Status AsyncSparseStorage::AddTask(SparseTask* t) {
   // NOTE(jiankebg.pt): No need atomic add here, maybe 
   // more then one Op will call the same thread(queue).
   // TODO: Need excetly balance here ?
@@ -238,7 +233,7 @@ Status SparseStorageManager::AddTask(SparseTask* t) {
   return Status::OK();
 }
 
-Status SparseStorageManager::AddUpdateTask(SparseTask* t) {
+Status AsyncSparseStorage::AddUpdateTask(SparseTask* t) {
   // TODO: Need excetly balance here ?
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
@@ -263,7 +258,7 @@ Status SparseStorageManager::AddUpdateTask(SparseTask* t) {
   return Status::OK();
 }
 
-sparse_task_queue* SparseStorageManager::GetSparseTaskQueue(int idx) {
+sparse_task_queue* AsyncSparseStorage::GetSparseTaskQueue(int idx) {
   if (idx < 0 || idx >= thread_num_) {
     LOG(FATAL) << "Error index num: " << idx
                << ", thread_num is " << thread_num_;
@@ -272,7 +267,7 @@ sparse_task_queue* SparseStorageManager::GetSparseTaskQueue(int idx) {
   return &(task_queues_[idx]);
 }
 
-sparse_task_queue* SparseStorageManager::GetUpdateSparseTaskQueue(int idx) {
+sparse_task_queue* AsyncSparseStorage::GetUpdateSparseTaskQueue(int idx) {
   if (idx < 0 || idx >= update_thread_num_) {
     LOG(FATAL) << "Error index num: " << idx
                << ", update_thread_num is " << update_thread_num_;
@@ -281,16 +276,14 @@ sparse_task_queue* SparseStorageManager::GetUpdateSparseTaskQueue(int idx) {
   return &(update_task_queues_[idx]);
 }
 
-bool SparseStorageManager::ShouldStop() {
+bool AsyncSparseStorage::ShouldStop() {
   return stop_;
 }
 
-// ----------------------------------------
-
-SimpleSparseStorageManager::SimpleSparseStorageManager(
+SparseStorage::SparseStorage(
     int serving_thread_num,
     int update_thread_num,
-    ModelStoreType type)
+    const std::string& type)
   : thread_num_(serving_thread_num),
     update_thread_num_(update_thread_num),
     active_thread_index_(0),
@@ -317,7 +310,7 @@ SimpleSparseStorageManager::SimpleSparseStorageManager(
   }
 }
 
-SimpleSparseStorageManager::~SimpleSparseStorageManager() {
+SparseStorage::~SparseStorage() {
   for (auto store : store_) {
     delete store;
   }
@@ -327,33 +320,7 @@ SimpleSparseStorageManager::~SimpleSparseStorageManager() {
   }
 }
 
-Status SimpleSparseStorageManager::RunGetTask(SparseTask* task) {
-  // TODO: Need excetly balance here ?
-  uint64_t index = active_thread_index_++;
-  index %= thread_num_;
-  {
-    std::lock_guard<std::mutex> lock(mutex_[index]);
-    // TODO: implement here
-    LOG(FATAL) << "Please implement here.";
-  }
-
-  return Status::OK();
-}
-
-Status SimpleSparseStorageManager::RunSetTask(SparseTask* task) {
-  // TODO: Need excetly balance here ?
-  uint64_t index = active_update_thread_index_++;
-  index %= update_thread_num_;
-  {
-    std::lock_guard<std::mutex> lock(update_mutex_[index]);
-    // TODO: implement here
-    LOG(FATAL) << "Please implement here.";
-  }
-
-  return Status::OK();
-}
-
-Status SimpleSparseStorageManager::GetValues(
+Status SparseStorage::GetValues(
     uint64_t feature2id,
     const char* const keys,
     char* const values,
@@ -373,7 +340,7 @@ Status SimpleSparseStorageManager::GetValues(
   }
 }
 
-Status SimpleSparseStorageManager::SetValues(
+Status SparseStorage::SetValues(
     uint64_t feature2id,
     const char* const keys,
     const char* const values,
@@ -392,7 +359,7 @@ Status SimpleSparseStorageManager::SetValues(
   }
 }
 
-Status SimpleSparseStorageManager::Reset() {
+Status SparseStorage::Reset() {
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
   {
