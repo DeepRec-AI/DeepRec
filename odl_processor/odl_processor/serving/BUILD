@@ -10,6 +10,11 @@ load(
     "tf_proto_library_cc"
 )
 
+load(
+    "@org_tensorflow//tensorflow:tensorflow.bzl",
+    "tf_cc_shared_object"
+)
+
 tf_proto_library_cc(
     name = "tf_predict_proto",
     srcs = ["tf_predict.proto"],
@@ -17,11 +22,11 @@ tf_proto_library_cc(
     visibility = ["//visibility:public"],
 )
 
-cc_library(
-    name = "tf_processor",
+tf_cc_shared_object(
+    name = "libtf_processor.so",
     srcs = ["tf_processor.cc",
-            "message_coding.cc"],
-    hdrs = ["tf_processor.h",
+            "message_coding.cc",
+            "tf_processor.h",
             "message_coding.h"],
     deps = [
             "tf_predict_proto_cc",
