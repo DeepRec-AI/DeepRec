@@ -1,6 +1,8 @@
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/serving/model_message.h"
 #include "odl_processor/storage/model_storage.h"
+#include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/framework/graph_optimizer.h"
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/cc/saved_model/reader.h"
@@ -8,7 +10,6 @@
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
-#include "tensorflow/core/framework/tensor.h"
 
 namespace tensorflow {
 namespace {
@@ -90,7 +91,8 @@ bool HasMainOp(const MetaGraphDef& meta_graph_def) {
 Status RunMainOp(const RunOptions& run_options, const string& export_dir,
                  const MetaGraphDef& meta_graph_def,
                  const std::vector<AssetFileDef>& asset_file_defs,
-                 Session* session, const string& main_op_key) {
+                 Session* session, const string& main_op_key,
+                 std::pair<std::string, Tensor> sparse_storage_tensor) {
   LOG(INFO) << "Running MainOp with key " << main_op_key
             << " on SavedModel bundle.";
   const auto& collection_def_map = meta_graph_def.collection_def();
@@ -102,6 +104,7 @@ Status RunMainOp(const RunOptions& run_options, const string& export_dir,
     }
     std::vector<std::pair<string, Tensor>> inputs;
     AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
+    inputs.emplace_back(sparse_storage_tensor);
     RunMetadata run_metadata;
     const StringPiece main_op_name = main_op_it->second.node_list().value(0);
     return RunOnce(run_options, inputs, {}, {string(main_op_name)},
@@ -114,7 +117,8 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
                   const StringPiece restore_op_name,
                   const StringPiece variable_filename_const_op_name,
                   const std::vector<AssetFileDef>& asset_file_defs,
-                  Session* session) {
+                  Session* session,
+                  std::pair<std::string, Tensor> sparse_storage_tensor) {
   LOG(INFO) << "Restoring SavedModel bundle.";
   // Find path to variables to be restored in export directory.
   const string variables_directory =
@@ -139,6 +143,7 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
 
   std::vector<std::pair<string, Tensor>> inputs = {
       {string(variable_filename_const_op_name), variables_path_tensor}};
+  inputs.emplace_back(sparse_storage_tensor);
 
   AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
 
@@ -163,26 +168,46 @@ Status ModelSessionMgr::CreateSession(Session** session) {
 
 Status ModelSessionMgr::RunRestoreOps(const char* model_dir,
     Session* session, SparseStorage* sparse_storage) {
-  /*TODO: sparse_storage pass to graph by placeholder*/
+  Tensor t(DT_UINT64, TensorShape({}));
+  t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
+  auto sparse_storage_tensor = std::make_pair(
+      GetStoragePointerNodeName(), t);
+
   TF_RETURN_IF_ERROR(
       RunRestore(*run_options_, model_dir,
           meta_graph_def_.saver_def().restore_op_name(),
           meta_graph_def_.saver_def().filename_tensor_name(),
-          asset_file_defs_, session));
+          asset_file_defs_, session, sparse_storage_tensor));
 
   if (HasMainOp(meta_graph_def_)) {
     return RunMainOp(*run_options_, model_dir,
-        meta_graph_def_, asset_file_defs_, session, kSavedModelMainOpKey);
+        meta_graph_def_, asset_file_defs_, session, kSavedModelMainOpKey,
+        sparse_storage_tensor);
   } else {
     return RunMainOp(
         *run_options_, model_dir, meta_graph_def_,
-        asset_file_defs_, session, kSavedModelLegacyInitOpKey);
+        asset_file_defs_, session, kSavedModelLegacyInitOpKey,
+        sparse_storage_tensor);
   }
 }
 
-Status ModelSessionMgr::Predict(const Request& req, Response& resp) {
-  return serving_session_->session_->Run(req.inputs, req.output_tensor_names,
+ModelSession::ModelSession(Session* s, const Version& version,
+    SparseStorage* sparse_storage) : session_(s), counter_(0),
+    version_(version) {
+  Tensor t(DT_UINT64, TensorShape({}));
+  t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
+  sparse_storage_tensor_ = t;
+  sparse_storage_name_ = GetStoragePointerNodeName();
+}
+
+Status ModelSession::Predict(Request& req, Response& resp) {
+  req.inputs.emplace_back(sparse_storage_name_, sparse_storage_tensor_);
+  return session_->Run(req.inputs, req.output_tensor_names,
       {}, &resp.outputs);
+}
+
+Status ModelSessionMgr::Predict(Request& req, Response& resp) {
+  return serving_session_->Predict(req, resp);
 }
 
 Status ModelSessionMgr::CreateModelSession(

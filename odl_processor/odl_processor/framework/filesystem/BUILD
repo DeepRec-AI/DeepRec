@@ -6,7 +6,7 @@ load(
 )
 
 cc_library(
-    name = "oss_ops",
+    name = "oss_filesystem",
     srcs = [
         "oss_file_system.cc",
         "oss_file_system.h",

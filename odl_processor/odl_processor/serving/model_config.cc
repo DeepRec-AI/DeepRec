@@ -1,7 +1,6 @@
 #include "odl_processor/serving/model_config.h"
 #include "include/json/json.h"
 #include "tensorflow/core/util/env_var.h"
-#include "tensorflow/cc/saved_model/signature_constants.h"
 
 namespace tensorflow {
 namespace processor {
@@ -71,6 +70,20 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   } else {
     return Status(error::Code::NOT_FOUND,
         "[TensorFlow] No redis_password in ModelConfig.");
+  }
+  
+  if (!json_config["read_thread_num"].isNull()) {
+    (*config)->read_thread_num =
+      json_config["read_thread_num"].asInt();
+  } else {
+    (*config)->read_thread_num = 4;
+  }
+
+  if (!json_config["update_thread_num"].isNull()) {
+    (*config)->update_thread_num =
+      json_config["update_thread_num"].asInt();
+  } else {
+    (*config)->update_thread_num = 2;
   }
 
   if (!json_config["oss_endpoint"].isNull()) {

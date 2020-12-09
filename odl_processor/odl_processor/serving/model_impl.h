@@ -19,7 +19,7 @@ class ModelImpl {
  public:
   virtual ~ModelImpl() {}
   virtual Status Init(const char* root_dir) = 0;
-  virtual Status Predict(const Request& req, Response& resp) = 0;
+  virtual Status Predict(Request& req, Response& resp) = 0;
 
   virtual Status Rollback() = 0;
   virtual std::string DebugString() = 0;
@@ -33,7 +33,7 @@ class FreezeSavedModelImpl : public ModelImpl {
     return Status::OK();
   }
   
-  Status Predict(const Request& req, Response& resp) override {
+  Status Predict(Request& req, Response& resp) override {
     return Status::OK();
   }
 
@@ -52,7 +52,7 @@ class SavedModelImpl : public ModelImpl {
   ~SavedModelImpl() override;
 
   Status Init(const char* root_dir) override;
-  Status Predict(const Request& req, Response& resp);
+  Status Predict(Request& req, Response& resp);
 
   Status Rollback() override;
   std::string DebugString() override;

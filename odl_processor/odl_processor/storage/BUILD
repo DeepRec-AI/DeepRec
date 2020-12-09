@@ -10,7 +10,6 @@ cc_library(
   hdrs = [
     'sparse_storage_interface.h',
     'redis_sparse_store.h',
-    'sparse_storage_factory.h',
   ],
   deps = [
       "@hiredis//:hiredis",
@@ -71,6 +70,9 @@ cc_library(
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "//odl_processor/framework:model_version",
+        "//odl_processor/framework/filesystem:oss_filesystem",
+        "//odl_processor/serving:model_config",
+        "sparse_storage",
     ],
     alwayslink = 1,
 )

@@ -2,6 +2,7 @@
 #include "odl_processor/serving/model_config.h"
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/storage/model_storage.h"
+#include "odl_processor/storage/sparse_storage.h"
 #include "odl_processor/framework/graph_optimizer.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/cc/saved_model/reader.h"
@@ -62,7 +63,7 @@ Status ModelInstance::Init(const Version& version,
   return RecursionCreateSession(version, serving_storage_);
 }
 
-Status ModelInstance::Predict(const Request& req, Response& resp) {
+Status ModelInstance::Predict(Request& req, Response& resp) {
   return session_mgr_->Predict(req, resp);
 }
 
@@ -146,7 +147,7 @@ std::string ModelInstance::DebugString() {
 }
 
 ModelInstanceMgr::ModelInstanceMgr(const char* root_dir, ModelConfig* config)
-  : model_storage_(new ModelStorage()), model_config_(config) {
+  : model_storage_(new ModelStorage(config)), model_config_(config) {
   model_storage_->Init(root_dir);
   session_options_ = new SessionOptions();
   //session_options_->target = target;
@@ -193,7 +194,7 @@ Status ModelInstanceMgr::CreateInstances(const Version& version) {
   return base_instance_->Warmup();
 }
 
-Status ModelInstanceMgr::Predict(const Request& req, Response& resp) {
+Status ModelInstanceMgr::Predict(Request& req, Response& resp) {
   return cur_instance_->Predict(req, resp);
 }
 

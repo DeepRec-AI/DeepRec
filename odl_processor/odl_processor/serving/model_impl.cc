@@ -20,7 +20,7 @@ Status SavedModelImpl::Init(const char* root_dir) {
   return instance_mgr_->Init();
 }
 
-Status SavedModelImpl::Predict(const Request& req, Response& resp) {
+Status SavedModelImpl::Predict(Request& req, Response& resp) {
   return instance_mgr_->Predict(req, resp);
 }
 
