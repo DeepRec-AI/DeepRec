@@ -25,7 +25,7 @@ class SparseStorage;
 class ModelInstance {
  public:
   ModelInstance(SessionOptions* sess_options, RunOptions* run_options);
-  Status Init(const Version& version, ModelConfig* config,
+  Status Init(ModelConfig* config,
       ModelStorage* model_storage);
 
   Status Predict(Request& req, Response& resp);
@@ -75,7 +75,7 @@ class ModelInstanceMgr {
   void WorkLoop();
 
  private:
-  Status CreateInstances(const Version& version);
+  Status CreateInstances();
   Status FullModelUpdate(const Version& version);
   Status DeltaModelUpdate(const Version& version);
   

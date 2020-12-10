@@ -33,12 +33,17 @@ limitations under the License.
 #include "odl_processor/framework/graph_optimizer.h"
 #include "odl_processor/framework/util/utils.h"
 #include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/serving/model_config.h"
 
 
 using namespace tensorflow;
 
 int main() {
- processor::SparseStorage manager(4, 2, "local_redis");
+ processor::ModelConfig config;
+ config.read_thread_num = 4;
+ config.update_thread_num = 2;
+ config.storage_type = "local_redis";
+ processor::SparseStorage manager(&config);
  {
   NodeDef version_def;
   Tensor version_value(DT_STRING, TensorShape({1}));

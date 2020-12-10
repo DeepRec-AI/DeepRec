@@ -40,6 +40,13 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     (*config)->intra_threads = schedule_threads / 2;
   }
 
+  if (!json_config["init_timeout_minutes"].isNull()) {
+    (*config)->init_timeout_minutes =
+      json_config["init_timeout_minutes"].asInt();
+  } else {
+    (*config)->init_timeout_minutes = -1;
+  }
+
   if (!json_config["signature_name"].isNull()) {
     (*config)->signature_name =
       json_config["signature_name"].asString();

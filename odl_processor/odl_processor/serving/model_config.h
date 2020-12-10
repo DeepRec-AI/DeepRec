@@ -11,6 +11,7 @@ struct ModelConfig {
   std::string checkpoint_dir;
   std::string savedmodel_dir;
   std::string signature_name;
+  int init_timeout_minutes;
 
   // Run Info
   int inter_threads;
