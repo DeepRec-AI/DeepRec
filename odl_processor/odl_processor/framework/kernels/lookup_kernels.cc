@@ -198,8 +198,10 @@ int64 GetTotalKeysNum(const std::string& part_var_name,
     reader->LookupTensorShape(tensor_value, &value_shape);
     if (value_shape.dim_size(1) != dim_len) {
       ctx->CtxFailure(errors::InvalidArgument(
-                          "value_shape.dim_size(1) not equal "
-                          "the dim_len attr value."));
+                          strings::StrCat("value_shape.dim_size(1) not equal "
+                          "the dim_len attr value. ",
+                          std::to_string(value_shape.dim_size(1)),
+                          " vs ", std::to_string(dim_len))));
       return -1;
     }
 

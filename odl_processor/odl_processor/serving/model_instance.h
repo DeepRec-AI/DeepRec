@@ -45,6 +45,7 @@ class ModelInstance {
 
   Tensor CreateTensor(const TensorInfo& tensor_info);
   Call CreateWarmupParams();
+  bool ShouldWarmup();
 
  private:
   MetaGraphDef meta_graph_def_;
