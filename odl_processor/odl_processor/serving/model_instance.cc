@@ -58,12 +58,12 @@ Status ModelInstance::Init(ModelConfig* model_config,
         saved_model_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
 
-  session_mgr_ = new ModelSessionMgr(meta_graph_def_,
-      session_options_, run_options_);
-
   optimizer_ = new SavedModelOptimizer(model_config->signature_name,
         &meta_graph_def_);
   TF_RETURN_IF_ERROR(optimizer_->Optimize());
+
+  session_mgr_ = new ModelSessionMgr(meta_graph_def_,
+      session_options_, run_options_);
 
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
 
@@ -141,7 +141,15 @@ Call ModelInstance::CreateWarmupParams() {
   return call;
 }
 
+bool ModelInstance::ShouldWarmup() {
+  for (auto it : model_signature_.second.inputs()) {
+    if (it.second.dtype() == DT_STRING) return false;
+  }
+  return true;
+}
+
 Status ModelInstance::Warmup() {
+  if (!ShouldWarmup()) return Status::OK();
   Call call = CreateWarmupParams();
   return Predict(call.request, call.response);
 }

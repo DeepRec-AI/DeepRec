@@ -632,7 +632,7 @@ Status GetShapeValue(Node* node, int* dim) {
         node->DebugString());
   }
 
-  *dim = dim_len_value->shape().dim().size();
+  *dim = dim_len_value->shape().dim(0).size();
   return Status::OK();
 }
 
