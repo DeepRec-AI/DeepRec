@@ -5,7 +5,6 @@ cc_library(
   srcs = [
     'redis_sparse_store.cc',
   ],
-  linkopts = ["-levent", "-L/usr/local/lib"],
   linkstatic = 1,
   hdrs = [
     'sparse_storage_interface.h',
@@ -13,6 +12,7 @@ cc_library(
   ],
   deps = [
       "@hiredis//:hiredis",
+      "@libevent//:libevent",
       "@org_tensorflow//tensorflow/core:lib",
       "@org_tensorflow//tensorflow/core:framework",
   ],
@@ -23,10 +23,10 @@ cc_binary(
   srcs = [
     "redis_test.cc",
   ],
-  linkopts = ["-levent", "-L/usr/local/lib"],
   linkstatic = 1,
   deps = [
       "@hiredis//:hiredis",
+      "@libevent//:libevent",
   ],
 )
 
@@ -35,10 +35,10 @@ cc_binary(
   srcs = [
     "redis_perf_test.cc",
   ],
-  linkopts = ["-levent", "-L/usr/local/lib"],
   linkstatic = 1,
   deps = [
       "@hiredis//:hiredis",
+      "@libevent//:libevent",
   ],
 )
 
