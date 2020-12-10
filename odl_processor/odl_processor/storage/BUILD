@@ -82,6 +82,7 @@ cc_library(
     deps = [
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
+        "@org_tensorflow//tensorflow/cc/saved_model:loader",
         "//odl_processor/framework:model_version",
         "//odl_processor/framework/filesystem:oss_filesystem",
         "//odl_processor/serving:model_config",
