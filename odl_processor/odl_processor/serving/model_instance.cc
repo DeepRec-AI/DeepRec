@@ -42,9 +42,18 @@ Status ModelInstance::RecursionCreateSession(const Version& version,
   }
 }
 
-Status ModelInstance::Init(const Version& version,
-    ModelConfig* model_config, ModelStorage* model_storage) {
-  const auto& saved_model_dir = model_storage->GetMetaGraphDir();
+Status ModelInstance::Init(ModelConfig* model_config,
+    ModelStorage* model_storage) {
+  int timeout = model_config->init_timeout_minutes;
+  auto saved_model_dir = model_storage->GetMetaGraphDir();
+  while (saved_model_dir.empty()) {
+    // Wait until saved model meta file ready
+    LOG(INFO) << "[Model Instance] Load saved model meta graph failed,"
+              << "will try 1 minute later.";
+    sleep(60);
+    saved_model_dir = model_storage->GetMetaGraphDir();
+  }
+
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
         saved_model_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
@@ -58,8 +67,17 @@ Status ModelInstance::Init(const Version& version,
 
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
 
-  serving_storage_ = model_storage->CreateSparseStorage(version);
-  backup_storage_ = model_storage->CreateSparseStorage(version);
+  serving_storage_ = model_storage->CreateSparseStorage();
+  backup_storage_ = model_storage->CreateSparseStorage();
+  
+  Version version;
+  model_storage->GetLatestVersion(version);
+  while (version.Empty()) {
+    LOG(INFO) << "[Model Instance] Checkpoint dir is empty,"
+              << "will try 1 minute later.";
+    sleep(60);
+    model_storage->GetLatestVersion(version);
+  }
 
   return RecursionCreateSession(version, serving_storage_);
 }
@@ -171,26 +189,26 @@ ModelInstanceMgr::~ModelInstanceMgr() {
 }
 
 Status ModelInstanceMgr::Init() {
-  Version version;
+  /*Version version;
   auto status = model_storage_->GetLatestVersion(version);
   if (!status.ok()) {
     return status;
-  }
+  }*/
 
-  TF_RETURN_IF_ERROR(CreateInstances(version));
+  TF_RETURN_IF_ERROR(CreateInstances());
   
   thread_ = new std::thread(&ModelInstanceMgr::WorkLoop, this);
   return Status::OK();
 }
 
-Status ModelInstanceMgr::CreateInstances(const Version& version) {
+Status ModelInstanceMgr::CreateInstances() {
   cur_instance_ = new ModelInstance(session_options_, run_options_);
-  TF_RETURN_IF_ERROR(cur_instance_->Init(version, model_config_,
+  TF_RETURN_IF_ERROR(cur_instance_->Init(model_config_,
       model_storage_));
   TF_RETURN_IF_ERROR(cur_instance_->Warmup());
 
   base_instance_ = new ModelInstance(session_options_, run_options_);
-  TF_RETURN_IF_ERROR(base_instance_->Init(version, model_config_,
+  TF_RETURN_IF_ERROR(base_instance_->Init(model_config_,
       model_storage_));
   return base_instance_->Warmup();
 }

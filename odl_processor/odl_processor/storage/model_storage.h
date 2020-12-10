@@ -17,7 +17,7 @@ class ModelStorage {
   Status GetLatestVersion(Version& version);
   std::string GetMetaGraphDir();
 
-  SparseStorage* CreateSparseStorage(const Version& version);
+  SparseStorage* CreateSparseStorage();
 
  private:
   Status GetFullModelVersion(Version& version);

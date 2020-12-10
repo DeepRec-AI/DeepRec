@@ -20,6 +20,10 @@ struct Version {
     return delta_model_name.empty();
   }
 
+  bool Empty() const {
+    return full_model_name.empty();
+  }
+
   friend bool operator ==(const Version& lhs, const Version& rhs) {
     return lhs.full_model_version == rhs.full_model_version
         && lhs.delta_model_version == rhs.delta_model_version;

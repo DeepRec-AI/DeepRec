@@ -29,15 +29,6 @@ class AbstractModelStore {
     virtual Status RegisterFeatures(const std::vector<std::string>& features) = 0;
     // Cleanup Store
     virtual Status Cleanup() = 0;
-    // Read Store
-    virtual Status BatchGet(uint64_t feature2id,
-                            const Tensor& key,
-                            const Tensor& value) = 0;
-    // Write Store
-    virtual Status BatchSet(uint64_t feature2id,
-                            const Tensor& key,
-                            const Tensor& value
-                            ) = 0;
     // Read Store Async
     virtual Status BatchGetAsync(uint64_t feature2id,        // featureID encode uint64
                                  const char* const keys,     // key buffer -- IDs

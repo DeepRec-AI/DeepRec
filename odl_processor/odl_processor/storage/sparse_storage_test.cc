@@ -16,6 +16,7 @@ limitations under the License.
 #include <pthread.h>
 #include "gtest/gtest.h"
 #include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/serving/model_config.h"
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/core/platform/logging.h"
 
@@ -117,7 +118,12 @@ TEST(SparseStorageTest, AsyncSparseStorageTest) {
     global_queue_result[i] = false;
   }
 
-  auto mgr = new AsyncSparseStorage(5, 2, "unknown", &TestThreadRun);
+  ModelConfig config;
+  config.read_thread_num = 5;
+  config.update_thread_num = 2;
+  config.storage_type = "unknown";
+
+  auto mgr = new AsyncSparseStorage(&config, &TestThreadRun);
   // worker threads
   std::vector<std::unique_ptr<std::thread>> threads;
   threads.resize(10);

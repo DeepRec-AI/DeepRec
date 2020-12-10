@@ -12,6 +12,24 @@ bool IsMetaFileName(const std::string& fname) {
   return ext == "meta";
 }
 
+std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) {
+  path = io::Basename(path);
+
+  auto pos = path.rfind('.');
+  if (pos == StringPiece::npos)
+    return std::make_pair(path, StringPiece(path.data() + path.size(), 0));
+  return std::make_pair(
+      StringPiece(path.data(), pos),
+      StringPiece(path.data() + pos + 1, path.size() - (pos + 1)));
+}
+
+std::string ParseFullName(const std::string& fname) {
+  auto base_name = io::Basename(fname);
+  auto prefix = SplitBasename(fname).first;
+
+  return io::JoinPath(io::Dirname(fname), prefix);
+}
+
 int64 ParseMetaFileName(const std::string& fname) {
   auto base_name = io::Basename(fname);
   auto pos = base_name.rfind('.');
@@ -43,7 +61,18 @@ Status ModelStorage::Init() {
 }
 
 std::string ModelStorage::GetMetaGraphDir() {
-  return savedmodel_dir_;
+  std::vector<string> file_names;
+  auto status = file_system_->GetChildren(checkpoint_dir_, &file_names);
+  if (!status.ok()) {
+    return std::string();
+  }
+
+  for (auto fname : file_names) {
+    if (IsMetaFileName(fname)) {
+      return savedmodel_dir_;
+    }
+  }
+  return std::string();
 }
 
 Status ModelStorage::GetLatestVersion(Version& version) {
@@ -61,7 +90,7 @@ Status ModelStorage::GetFullModelVersion(Version& version) {
     }
     auto v = ParseMetaFileName(fname);
     if (v > version.full_model_version) {
-      version.full_model_name = fname;
+      version.full_model_name = ParseFullName(fname);
       version.full_model_version = v;
     }
   }
@@ -80,19 +109,15 @@ Status ModelStorage::GetDeltaModelVersion(Version& version) {
     auto v = ParseMetaFileName(fname);
     if (v > version.delta_model_version &&
         v > version.full_model_version) {
-      version.delta_model_name = fname;
+      version.delta_model_name = ParseFullName(fname);
       version.delta_model_version = v;
     }
   }
   return Status::OK();
 }
 
-SparseStorage* ModelStorage::CreateSparseStorage(
-    const Version& /*version*/) {
-  return new SparseStorage(
-      model_config_->read_thread_num,
-      model_config_->update_thread_num,
-      model_config_->storage_type);
+SparseStorage* ModelStorage::CreateSparseStorage() {
+  return new SparseStorage(model_config_);
 }
 
 } // namespace processor

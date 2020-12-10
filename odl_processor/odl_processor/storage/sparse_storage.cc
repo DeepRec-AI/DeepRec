@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "odl_processor/storage/sparse_storage.h"
-
+#include "odl_processor/serving/model_config.h"
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/core/platform/logging.h"
 
@@ -94,7 +94,8 @@ void ThreadRun(AsyncSparseStorage* mgr, int idx,
   }
 }
 
-AbstractModelStore* CreateSparseStorage(const std::string& type) {
+AbstractModelStore* CreateSparseStorage(const std::string& type,
+    const std::string& url, const std::string& password) {
   if (type == "local_redis") {
     LocalRedis::Config config;
     config.ip = "127.0.0.1";
@@ -107,11 +108,10 @@ AbstractModelStore* CreateSparseStorage(const std::string& type) {
 }
 } // namespace
 
-AsyncSparseStorage::AsyncSparseStorage(int serving_thread_num,
-    int update_thread_num, const std::string& type, WorkFn fn) :
+AsyncSparseStorage::AsyncSparseStorage(ModelConfig* config, WorkFn fn) :
     stop_(false),
-    thread_num_(serving_thread_num),
-    update_thread_num_(update_thread_num),
+    thread_num_(config->read_thread_num),
+    update_thread_num_(config->update_thread_num),
     active_thread_index_(0),
     active_update_thread_index_(0) {
   if (thread_num_ < 1 || thread_num_ > MANAGER_MAX_THREAD_NUM) {
@@ -135,7 +135,8 @@ AsyncSparseStorage::AsyncSparseStorage(int serving_thread_num,
     cv_[i] = new std::condition_variable();
     ready_[i] = false;
     sleeping_[i] = false;
-    store_[i] = CreateSparseStorage(type);
+    store_[i] = CreateSparseStorage(config->storage_type, config->redis_url,
+        config->redis_password);
     threads_[i].reset(new std::thread(!fn? &ThreadRun : fn, this, i, false));
   }
 
@@ -149,7 +150,8 @@ AsyncSparseStorage::AsyncSparseStorage(int serving_thread_num,
     update_cv_[i] = new std::condition_variable();
     update_ready_[i] = false;
     update_sleeping_[i] = false;
-    update_store_[i] = CreateSparseStorage(type);
+    update_store_[i] = CreateSparseStorage(config->storage_type,
+        config->redis_url, config->redis_password);
     update_threads_[i].reset(new std::thread(!fn ? &ThreadRun : fn, this, i, true));
   }
 }
@@ -280,12 +282,9 @@ bool AsyncSparseStorage::ShouldStop() {
   return stop_;
 }
 
-SparseStorage::SparseStorage(
-    int serving_thread_num,
-    int update_thread_num,
-    const std::string& type)
-  : thread_num_(serving_thread_num),
-    update_thread_num_(update_thread_num),
+SparseStorage::SparseStorage(ModelConfig* config) 
+  : thread_num_(config->read_thread_num),
+    update_thread_num_(config->update_thread_num),
     active_thread_index_(0),
     active_update_thread_index_(0) {
   if (thread_num_ < 1 || thread_num_ > MANAGER_MAX_THREAD_NUM) {
@@ -301,12 +300,14 @@ SparseStorage::SparseStorage(
 
   store_.resize(thread_num_);
   for (int i = 0; i < thread_num_; ++i) {
-    store_[i] = CreateSparseStorage(type);
+    store_[i] = CreateSparseStorage(config->storage_type,
+        config->redis_url, config->redis_password);
   }
 
   update_store_.resize(update_thread_num_);
   for (int i = 0; i < update_thread_num_; ++i) {
-    update_store_[i] = CreateSparseStorage(type);
+    update_store_[i] = CreateSparseStorage(config->storage_type,
+        config->redis_url, config->redis_password);
   }
 }
 

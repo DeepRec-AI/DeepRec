@@ -39,6 +39,7 @@ struct SparseTask {
   void Run() {}
 };
 
+class ModelConfig;
 class AsyncSparseStorage;
 typedef std::function<void(AsyncSparseStorage*, int, bool)> WorkFn;
 
@@ -46,11 +47,7 @@ using sparse_task_queue = moodycamel::ConcurrentQueue<SparseTask*>;
 
 class AsyncSparseStorage {
  public:
-  AsyncSparseStorage(
-      int serving_thread_num,
-      int update_thread_num,
-      const std::string& type,
-      WorkFn fn = nullptr);
+  AsyncSparseStorage(ModelConfig* config, WorkFn fn = nullptr);
   virtual ~AsyncSparseStorage();
 
   Status AddTask(SparseTask*);
@@ -124,10 +121,7 @@ class AsyncSparseStorage {
 
 class SparseStorage {
  public:
-  explicit SparseStorage(
-      int serving_thread_num,
-      int update_thread_num,
-      const std::string& type);
+  explicit SparseStorage(ModelConfig* config);
   virtual ~SparseStorage();
 
   Status GetValues(uint64_t feature2id,

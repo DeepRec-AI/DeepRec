@@ -31,20 +31,6 @@ class LocalRedis : public AbstractModelStore {
 
     Status Cleanup();
 
-    Status BatchGet(uint64_t feature2id,
-                    const Tensor& key,
-                    const Tensor& value) {
-      return errors::Unimplemented("[Redis] Unimplement BatchGet() in sync mode.");
-    }
-
-
-    Status BatchSet(uint64_t feature2id,
-                    const Tensor& key,
-                    const Tensor& value) {
-      return errors::Unimplemented("[Redis] Unimplement BatchSet() in sync mode.");
-    }
-
-
     Status BatchGetAsync(uint64_t feature2id,
                          const char* const keys,
                          char* const values,
@@ -72,29 +58,12 @@ class LocalRedis : public AbstractModelStore {
 
 class ClusterRedis : public AbstractModelStore {
   public:
-    ~ClusterRedis() {}
-
-    Status RegisterFeatures(const std::vector<std::string>& features) {
-      return errors::Unimplemented("[Redis] Unimplement RegisterFeatures().");
-    }
+    ClusterRedis(const std::string& redis_url,
+        const std::string& redis_password);
 
     Status Cleanup() {
       return errors::Unimplemented("[Redis] Unimplement Cleanup().");
     }
-
-    Status BatchGet(uint64_t feature2id,
-                    const Tensor& key,
-                    const Tensor& value) {
-      return errors::Unimplemented("[Redis] Unimplement BatchGet() in sync mode.");
-    }
-
-
-    Status BatchSet(uint64_t feature2id,
-                    const Tensor& key,
-                    const Tensor& value) {
-      return errors::Unimplemented("[Redis] Unimplement BatchSet() in sync mode.");
-    }
-
 
     Status BatchGetAsync(uint64_t feature2id,
                          const char* const keys,

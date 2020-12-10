@@ -1,5 +1,8 @@
 package(default_visibility = ["//visibility:public"])
 
+load("@org_tensorflow//tensorflow:tensorflow.bzl",
+     "tf_cc_test")
+
 cc_library(
   name = "redis_store",
   srcs = [
@@ -42,6 +45,15 @@ cc_binary(
   ],
 )
 
+#tf_cc_test(
+#    name = "model_storage_test",
+#    srcs = ["model_storage_test.cc",],
+#    deps = [":model_storage",
+#            "//tensorflow/core:test",
+#            "//tensorflow/core:test_main",
+#            "//tensorflow/core:testlib", ],
+#)
+
 cc_library(
     name = "sparse_storage",
     srcs = [
@@ -53,6 +65,7 @@ cc_library(
     linkstatic = True,
     deps = [
         ":redis_store",
+        "//odl_processor/serving:model_config",
         "@com_google_absl//absl/synchronization",
         "@concurrent_queue",
         "@org_tensorflow//tensorflow/core:framework",
