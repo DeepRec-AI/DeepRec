@@ -2007,6 +2007,11 @@ inline bool IsConv1x1StrideNot1(memory::dims filter_dims,
           ((strides[0] != 1) || (strides[1] != 1)));
 }
 
+inline bool IsPrimitiveRefPath(mkldnn::primitive_desc_base& base_desc) {
+  string impl_info = string(base_desc.impl_info_str());
+  return string::npos != impl_info.find("ref");
+}
+
 }  // namespace tensorflow
 
 /////////////////////////////////////////////////////////////////////

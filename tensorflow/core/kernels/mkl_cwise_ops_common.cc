@@ -250,11 +250,11 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
       const int kSecond = 1 - kFirst;
 
       // oneDNN only supports inputs with same rank size, so expand dimension
-      // if they are not consistent. Only expand the 2nd input because bcast
-      // is happened from inputs[1] to inputs[0].
-      // E.g. 8x1 * 4 --> 8x1 * 1x4.
+      // if they are not consistent.
+      // E.g. 8x4 * 4 --> 8x4 * 1x4.
       if (srcs_dims[0].size() != srcs_dims[1].size()) {
-        ExpandDim(srcs_dims[kSecond], srcs_dims[kFirst].size());
+        const int kSmall = srcs_dims[0].size() > srcs_dims[1].size();
+        ExpandDim(srcs_dims[kSmall], srcs_dims[1 - kSmall].size());
       }
 
       std::vector<memory::desc> srcs_md(kNumInputs);
@@ -290,6 +290,18 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
       MklBinaryPrimitive<T>* primitive =
           MklBinaryPrimitiveFactory<T>::Get(params, 0);
       auto binary_pd = primitive->GetBinaryPd();
+
+      // Fallback to Eigen if it's in oneDNN slow `ref` path.
+      if (IsPrimitiveRefPath(*binary_pd)) {
+        VLOG(1) << "MklBinaryOp: Hit oneDNN `ref` path, fallback to Eigen ";
+
+        FallbackToEigen(context);
+        auto out = context->mutable_output(0);
+        VLOG(1) << "MklBinaryOp: Ouput shapes " << out->shape().DebugString();
+
+        return;
+      }
+
       std::shared_ptr<stream> stream;
       stream.reset(CreateStream(context, primitive->GetEngine()));
 
@@ -325,11 +337,7 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
     } else {
       VLOG(1) << "MklBinaryOp: Fall back to Eigen";
 
-      BinaryOp<Device, Functor>::Compute(context);
-
-      // Mkl metadata inputs won't be changed in Eigen path, direct forward
-      // them as output.
-      ForwardMklMetaDataInToOut(context, 0, 0);
+      FallbackToEigen(context);
     }
 
     auto out = context->mutable_output(0);
@@ -358,18 +366,19 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
     }
   }
 
+  void FallbackToEigen(OpKernelContext* context) {
+    BinaryOp<Device, Functor>::Compute(context);
+
+    // Mkl metadata inputs won't be changed in Eigen path, direct forward them.
+    ForwardMklMetaDataInToOut(context, 0, 0);
+  }
+
   bool ShouldFallback(const TensorShape& shape0, const TensorShape& shape1) {
     // oneDNN doesn't support Sub and SuqaredDiff yet.
     if (std::is_same<Functor, functor::sub<T>>::value ||
         std::is_same<Functor, functor::squared_difference<T>>::value) {
       return true;
     }
-
-    // TODO(intel): Disable oneDNN bcast binary op when input shape is greater
-    // than 3-D because it has lower performance than Eigen when do bcast on
-    // channel dimension.
-    // It will be fixed later when the relevant issue is resolved.
-    if (shape0.dims() > 3 && !shape0.IsSameSize(shape1)) return true;
 
     if (UnsupportShape(shape0, shape1)) return true;
 
@@ -394,7 +403,7 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
 
     // Eigen will fill specific shape to output when **the** input shape is 0,
     // oneDNN does not handle this case.
-    if (shape0.dims() == 0 || shape0.dims() == 0 ||
+    if (shape0.dims() == 0 || shape1.dims() == 0 ||
         shape0.num_elements() == 0 || shape1.num_elements() == 0)
       return true;
 
