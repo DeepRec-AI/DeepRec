@@ -188,7 +188,6 @@ class MklAddNOp : public OpKernel {
         MklDnnShape src_mkl_shape;
         GetMklShape(ctx, src_idx, &src_mkl_shape);
         memory::desc md({}, MEMORY_DATA_TYPE_UNDEF, MEMORY_FORMAT_UNDEF);
-        src = MklDnnData<T>(&cpu_engine);
         const Tensor& src_tensor = MklGetInput(ctx, src_idx);
 
         if (src_mkl_shape.IsMklTensor()) {
