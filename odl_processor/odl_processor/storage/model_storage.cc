@@ -4,6 +4,7 @@
 #include "odl_processor/serving/model_config.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/lib/io/path.h"
+#include "tensorflow/cc/saved_model/loader.h"
 
 namespace tensorflow {
 namespace processor {
@@ -24,11 +25,12 @@ std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) {
       StringPiece(path.data() + pos + 1, path.size() - (pos + 1)));
 }
 
-std::string ParseCkptFileName(const std::string& fname) {
+std::string ParseCkptFileName(const std::string& ckpt_dir,
+    const std::string& fname) {
   auto base_name = io::Basename(fname);
   auto prefix = SplitBasename(fname).first;
 
-  return io::JoinPath(io::Dirname(fname), prefix);
+  return io::JoinPath(ckpt_dir, prefix);
 }
 
 int64 ParseMetaFileName(const std::string& fname) {
@@ -107,7 +109,7 @@ std::string ModelStorage::GetMetaGraphDir() {
   }
 
   for (auto fname : file_names) {
-    if (IsMetaFileName(fname)) {
+    if (MaybeSavedModelDirectory(fname)) {
       return savedmodel_dir_;
     }
   }
@@ -131,7 +133,7 @@ Status ModelStorage::GetFullModelVersion(Version& version) {
     }
     auto v = ParseMetaFileName(fname);
     if (v > version.full_ckpt_version) {
-      version.full_ckpt_name = ParseCkptFileName(fname);
+      version.full_ckpt_name = ParseCkptFileName(checkpoint_dir_, fname);
       version.full_ckpt_version = v;
     }
   }
@@ -150,7 +152,7 @@ Status ModelStorage::GetDeltaModelVersion(Version& version) {
     auto v = ParseMetaFileName(fname);
     if (v > version.delta_ckpt_version &&
         v > version.full_ckpt_version) {
-      version.delta_ckpt_name = ParseCkptFileName(fname);
+      version.delta_ckpt_name = ParseCkptFileName(checkpoint_dir_, fname);
       version.delta_ckpt_version = v;
     }
   }
