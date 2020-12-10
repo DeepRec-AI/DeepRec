@@ -85,6 +85,15 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "libevent",
+    build_file = "//third_party:libevent.BUILD",
+    sha256 = "d5e8928f64c219f2dd9731b22ed6dbf471c6fda0e96ab8c3b571408a0e332da6",
+    urls = [
+        "https://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/libevent/libevent-2.1.12-stable+configure.tar.gz",
+    ],
+)
+
 local_repository(
      name = "org_tensorflow",
      path = "./pai-tensorflow",
