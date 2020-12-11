@@ -143,11 +143,10 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
       MklDnnShape add_mkl_shape;
       GetMklShape(ctx, kInputIndex_Add, &add_mkl_shape);
 
-      if (ctx->forward_input_to_output_with_shape(
-              kInputIndex_Add, kOutputIndex_Dst, output_tf_shape,
-              &dst_tensor)) {
-        // If it's not native format, need to forward and set meta first
-        AllocateOutputSetMklShape(ctx, kOutputIndex_Dst, output_mkl_shape);
+      if (ForwardMklTensorInToOutWithMklShape(ctx, kInputIndex_Add,
+                                              kOutputIndex_Dst, &dst_tensor,
+                                              output_mkl_shape, false)) {
+        ;  // If it's not native format, need to forward and set meta first
       } else {
         // If forward is not successful, we should use reorder to copy add
         // tensor to dst tensor
