@@ -466,6 +466,7 @@ Status Parser::ParseResponseToProto(const Request& req, const Response& resp,
     void** output_data, int* output_size) {
   eas::PredictResponse response = Tensor2Response(req, resp);
   *output_size = response.ByteSize();
+  *output_data = new char[*output_size];
   response.SerializeToArray(*output_data, *output_size);
   return Status::OK();
 }
