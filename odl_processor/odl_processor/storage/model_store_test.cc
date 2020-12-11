@@ -59,7 +59,6 @@ class FakeFileSystem : public FileSystem {
  public:
   FakeFileSystem(const std::vector<std::string>& file_names) :
       file_names_(file_names), FileSystem() {
-    std::cerr << "file_names_:" << file_names_.size() << std::endl;
   }
 
   Status NewRandomAccessFile(const string& fname,
@@ -83,10 +82,7 @@ class FakeFileSystem : public FileSystem {
   }
 
   Status FileExists(const string& fname) override {
-    std::cerr << "FileExist:" << fname << std::endl;
-    std::cerr << "file_names_:" << file_names_.size() << std::endl;
     for (auto it : file_names_) {
-      std::cerr << "it:" << it << std::endl;
       if (it == fname) {
         return Status::OK();
       }
@@ -231,6 +227,20 @@ TEST_F(ModelStoreTest,
 }
 
 TEST_F(ModelStoreTest,
+    GetLatestVersionReturnEmptyCkptPathWhenNoCkptPath) {
+  ModelConfig config = CreateValidModelConfig();
+  TestableModelStore ms(&config);
+  ms.Init({"oss://test_savedmodel/saved_model.pb",
+           "oss://test_savedmodel/saved_model.pbtxt"});
+
+  Version version;
+  ms.GetLatestVersion(version);
+  EXPECT_EQ(version.full_ckpt_name, "");
+  EXPECT_EQ(version.delta_ckpt_name, "");
+  EXPECT_EQ(version.savedmodel_dir, "oss://test_savedmodel/");
+}
+
+TEST_F(ModelStoreTest,
     GetLatestVersionReturnValidVersionWhenValidModelPath) {
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
@@ -247,7 +257,7 @@ TEST_F(ModelStoreTest,
 }
 
 TEST_F(ModelStoreTest,
-    GetLatestVersionReturnLatestVersionWhenValidModelPath) {
+    GetLatestVersionReturnLatestVersionWhenValidModelPathWithoutIncremental) {
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
   ms.Init({
@@ -266,7 +276,67 @@ TEST_F(ModelStoreTest,
   ms.GetLatestVersion(version);
   EXPECT_EQ(version.savedmodel_dir, "oss://test_savedmodel/");
   EXPECT_EQ(version.full_ckpt_name, "oss://test_checkpoint/model.ckpt-1612142");
+  EXPECT_EQ(version.full_ckpt_version, 1612142);
   EXPECT_EQ(version.delta_ckpt_name, "");
+  EXPECT_EQ(version.delta_ckpt_version, 0);
+}
+
+TEST_F(ModelStoreTest,
+    GetLatestVersionReturnLatestVersionWhenValidModelPathWithIncremental) {
+  ModelConfig config = CreateValidModelConfig();
+  TestableModelStore ms(&config);
+  ms.Init({
+           "oss://test_checkpoint/model.ckpt-1512965.meta",
+           "oss://test_checkpoint/model.ckpt-1512965.index",
+           "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
+           "oss://test_checkpoint/model.ckpt-1512966.data-00001-of-00002",
+           "oss://test_checkpoint/model.ckpt-1612142.meta",
+           "oss://test_checkpoint/model.ckpt-1612142.index",
+           "oss://test_checkpoint/model.ckpt-1612142.data-00000-of-00002",
+           "oss://test_checkpoint/model.ckpt-1612142.data-00001-of-00002",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1717171.meta",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1717171.index",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1717171.data-00000-of-00002",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1717171.data-00001-of-00002",
+           "oss://test_savedmodel/saved_model.pb",
+           "oss://test_savedmodel/saved_model.pbtxt"});
+
+  Version version;
+  ms.GetLatestVersion(version);
+  EXPECT_EQ(version.savedmodel_dir, "oss://test_savedmodel/");
+  EXPECT_EQ(version.full_ckpt_name, "oss://test_checkpoint/model.ckpt-1612142");
+  EXPECT_EQ(version.delta_ckpt_name, "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1717171");
+  EXPECT_EQ(version.full_ckpt_version, 1612142);
+  EXPECT_EQ(version.delta_ckpt_version, 1717171);
+}
+
+TEST_F(ModelStoreTest,
+    GetLatestVersionReturnLatestVersionWhenValidModelPathWithOlderIncremental) {
+  ModelConfig config = CreateValidModelConfig();
+  TestableModelStore ms(&config);
+  ms.Init({
+           "oss://test_checkpoint/model.ckpt-1512965.meta",
+           "oss://test_checkpoint/model.ckpt-1512965.index",
+           "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
+           "oss://test_checkpoint/model.ckpt-1512966.data-00001-of-00002",
+           "oss://test_checkpoint/model.ckpt-1612142.meta",
+           "oss://test_checkpoint/model.ckpt-1612142.index",
+           "oss://test_checkpoint/model.ckpt-1612142.data-00000-of-00002",
+           "oss://test_checkpoint/model.ckpt-1612142.data-00001-of-00002",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1513366.meta",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1513366.index",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1513366.data-00000-of-00002",
+           "oss://test_checkpoint/.incremental_checkpoint/model.ckpt-1513366.data-00001-of-00002",
+           "oss://test_savedmodel/saved_model.pb",
+           "oss://test_savedmodel/saved_model.pbtxt"});
+
+  Version version;
+  ms.GetLatestVersion(version);
+  EXPECT_EQ(version.savedmodel_dir, "oss://test_savedmodel/");
+  EXPECT_EQ(version.full_ckpt_name, "oss://test_checkpoint/model.ckpt-1612142");
+  EXPECT_EQ(version.delta_ckpt_name, "");
+  EXPECT_EQ(version.full_ckpt_version, 1612142);
+  EXPECT_EQ(version.delta_ckpt_version, 0);
 }
 
 } // processor
