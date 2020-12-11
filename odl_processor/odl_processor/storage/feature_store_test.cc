@@ -15,7 +15,7 @@ limitations under the License.
 
 #include <pthread.h>
 #include "gtest/gtest.h"
-#include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/storage/feature_store_mgr.h"
 #include "odl_processor/serving/model_config.h"
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/core/platform/logging.h"
@@ -121,7 +121,7 @@ TEST(SparseStorageTest, AsyncSparseStorageTest) {
   ModelConfig config;
   config.read_thread_num = 5;
   config.update_thread_num = 2;
-  config.storage_type = "unknown";
+  config.feature_store_type = "unknown";
 
   auto mgr = new AsyncSparseStorage(&config, &TestThreadRun);
   // worker threads

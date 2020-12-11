@@ -1,5 +1,5 @@
-#ifndef TENSORFLOW_STORAGE_MODEL_STORAGE_H
-#define TENSORFLOW_STORAGE_MODEL_STORAGE_H
+#ifndef TENSORFLOW_STORAGE_MODEL_STORE_H
+#define TENSORFLOW_STORAGE_MODEL_STORE_H
 
 #include "tensorflow/core/lib/core/status.h"
 
@@ -15,13 +15,13 @@ class ModelStorage {
 
   Status Init();
   Status GetLatestVersion(Version& version);
-  std::string GetMetaGraphDir();
 
   SparseStorage* CreateSparseStorage();
 
  private:
   Status GetFullModelVersion(Version& version);
   Status GetDeltaModelVersion(Version& version);
+  Status GetValidSavedModelDir(Version& version);
 
  private:
   std::string savedmodel_dir_;
@@ -34,5 +34,5 @@ class ModelStorage {
 } // processor
 } // tensorflow
 
-#endif // TENSORFLOW_STORAGE_MODEL_STORAGE_H
+#endif // TENSORFLOW_STORAGE_MODEL_STORE_H
 

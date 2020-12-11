@@ -1,8 +1,8 @@
 #include "odl_processor/serving/model_instance.h"
 #include "odl_processor/serving/model_config.h"
 #include "odl_processor/serving/model_session.h"
-#include "odl_processor/storage/model_storage.h"
-#include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/storage/model_store.h"
+#include "odl_processor/storage/feature_store_mgr.h"
 #include "odl_processor/framework/graph_optimizer.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/cc/saved_model/reader.h"
@@ -45,17 +45,19 @@ Status ModelInstance::RecursionCreateSession(const Version& version,
 Status ModelInstance::Init(ModelConfig* model_config,
     ModelStorage* model_storage) {
   int timeout = model_config->init_timeout_minutes;
-  auto saved_model_dir = model_storage->GetMetaGraphDir();
-  while (saved_model_dir.empty()) {
+  Version version;
+  model_storage->GetLatestVersion(version);
+  while (version.SavedModelEmpty()) {
     // Wait until saved model meta file ready
-    LOG(INFO) << "[Model Instance] Load saved model meta graph failed,"
+    LOG(INFO) << "[Model Instance] SavedModel dir is empty,"
               << "will try 1 minute later.";
     sleep(60);
-    saved_model_dir = model_storage->GetMetaGraphDir();
+    model_storage->GetLatestVersion(version);
   }
 
+  auto savedmodel_dir = version.savedmodel_dir;
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
-        saved_model_dir.c_str(),
+        savedmodel_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
 
   optimizer_ = new SavedModelOptimizer(model_config->signature_name,
@@ -70,9 +72,7 @@ Status ModelInstance::Init(ModelConfig* model_config,
   serving_storage_ = model_storage->CreateSparseStorage();
   backup_storage_ = model_storage->CreateSparseStorage();
   
-  Version version;
-  model_storage->GetLatestVersion(version);
-  while (version.Empty()) {
+  while (version.CkptEmpty()) {
     LOG(INFO) << "[Model Instance] Checkpoint dir is empty,"
               << "will try 1 minute later.";
     sleep(60);

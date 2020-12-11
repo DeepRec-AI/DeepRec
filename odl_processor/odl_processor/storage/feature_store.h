@@ -1,5 +1,5 @@
-#ifndef ODL_PROCESSOR_MODEL_STORE_SPARSE_STORAGE_INTERFACE_MODEL_STORE_H_
-#define ODL_PROCESSOR_MODEL_STORE_SPARSE_STORAGE_INTERFACE_MODEL_STORE_H_
+#ifndef ODL_PROCESSOR_STORAGE_FEATURE_STORE_H_
+#define ODL_PROCESSOR_STORAGE_FEATURE_STORE_H_
 #include <vector>
 #include <string>
 
@@ -9,24 +9,13 @@
 namespace tensorflow {
 namespace processor {
 
-//     AbstractModelStore
-//             ^
-//        _____|_____
-//       /     |     \
-//      /      |      \
-//     /       |       \
-//  Local   Cluster  RocksDB
-//  Redis    Redis    ...
-
 typedef std::function<void(const Status&)> BatchGetCallback;
 typedef std::function<void(const Status&)> BatchSetCallback;
 
-class AbstractModelStore {
+class FeatureStore {
   public:
-    virtual ~AbstractModelStore() {}
+    virtual ~FeatureStore() {}
 
-    // Register Feature
-    virtual Status RegisterFeatures(const std::vector<std::string>& features) = 0;
     // Cleanup Store
     virtual Status Cleanup() = 0;
     // Read Store Async
@@ -51,4 +40,4 @@ class AbstractModelStore {
 } // namespace processor
 } // namespace tensorflow
 
-#endif // ODL_PROCESSOR_MODEL_STORE_SPARSE_STORAGE_INTERFACE_MODEL_STORE_H_
+#endif // ODL_PROCESSOR_STORAGE_FEATURE_STORE_H_

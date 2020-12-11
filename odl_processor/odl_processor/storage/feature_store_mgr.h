@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef ODL_PROCESSOR_STORAGE_SPARSE_STORAGE_H_
-#define ODL_PROCESSOR_STORAGE_SPARSE_STORAGE_H_
+#ifndef ODL_PROCESSOR_STORAGE_FEATURE_STORE_MGR_H_
+#define ODL_PROCESSOR_STORAGE_FEATURE_STORE_MGR_H_
 
 #include <atomic>
 #include <thread>
@@ -25,7 +25,7 @@ limitations under the License.
 #include "concurrentqueue.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "odl_processor/storage/redis_sparse_store.h"
+#include "odl_processor/storage/redis_feature_store.h"
 
 namespace tensorflow {
 namespace processor {
@@ -115,8 +115,8 @@ class AsyncSparseStorage {
   std::atomic<bool> sleeping_[MANAGER_MAX_THREAD_NUM];
   std::atomic<bool> update_sleeping_[MANAGER_MAX_UPDATE_THREAD_NUM];
 
-  std::vector<AbstractModelStore*> store_; // one connection per store
-  std::vector<AbstractModelStore*> update_store_;
+  std::vector<FeatureStore*> store_; // one connection per store
+  std::vector<FeatureStore*> update_store_;
 };
 
 class SparseStorage {
@@ -148,11 +148,11 @@ class SparseStorage {
   std::atomic<uint64_t> active_update_thread_index_;
   std::mutex mutex_[MANAGER_MAX_THREAD_NUM];
   std::mutex update_mutex_[MANAGER_MAX_UPDATE_THREAD_NUM];
-  std::vector<AbstractModelStore*> store_; // one connection per store
-  std::vector<AbstractModelStore*> update_store_;
+  std::vector<FeatureStore*> store_; // one connection per store
+  std::vector<FeatureStore*> update_store_;
 };
 
 } // processor
 } // tensorflow
 
-#endif // ODL_PROCESSOR_STORAGE_SPARSE_STORAGE_MANAGER_H_
+#endif  // ODL_PROCESSOR_STORAGE_FEATURE_STORE_MGR_H_

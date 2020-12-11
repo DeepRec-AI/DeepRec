@@ -63,7 +63,7 @@ cc_library(
         "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
         "//odl_processor/framework:graph_optimizer",
         "//odl_processor/framework:model_version",
-        "//odl_processor/storage:model_storage",
+        "//odl_processor/storage:model_store",
         "model_config",
     ],
 )
