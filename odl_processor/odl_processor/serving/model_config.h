@@ -18,13 +18,14 @@ struct ModelConfig {
   int intra_threads;
 
   // Embedding Config
-  std::string storage_type;
+  std::string feature_store_type;
   std::string redis_url;
   std::string redis_password;
   int read_thread_num;
   int update_thread_num;
 
   // OSS Config
+  std::string model_store_type;
   std::string oss_endpoint;
   std::string oss_access_id;
   std::string oss_access_key;

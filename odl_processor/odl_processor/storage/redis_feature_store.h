@@ -1,10 +1,10 @@
-#ifndef ODL_PROCESSOR_STORAGE_REDIS_SPARSE_STORE_H_
-#define ODL_PROCESSOR_STORAGE_REDIS_SPARSE_STORE_H_
+#ifndef ODL_PROCESSOR_STORAGE_REDIS_FEATURE_STORE_H_
+#define ODL_PROCESSOR_STORAGE_REDIS_FEATURE_STORE_H_
 #include <vector>
 #include <string>
 #include <thread>
 
-#include "odl_processor/storage/sparse_storage_interface.h"
+#include "odl_processor/storage/feature_store.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
 
@@ -14,7 +14,7 @@ struct event_base;
 namespace tensorflow {
 namespace processor {
 
-class LocalRedis : public AbstractModelStore {
+class LocalRedis : public FeatureStore {
   public:
     struct Config {
       std::string ip;
@@ -22,12 +22,7 @@ class LocalRedis : public AbstractModelStore {
     };
 
     LocalRedis(Config config);
-
     ~LocalRedis();
-
-    Status RegisterFeatures(const std::vector<std::string>& features) {
-      return errors::Unimplemented("[Redis] Unimplement RegisterFeatures().");
-    }
 
     Status Cleanup();
 
@@ -56,7 +51,7 @@ class LocalRedis : public AbstractModelStore {
     std::unique_ptr<std::thread> event_thread_;
 };
 
-class ClusterRedis : public AbstractModelStore {
+class ClusterRedis : public FeatureStore {
   public:
     ClusterRedis(const std::string& redis_url,
         const std::string& redis_password);
@@ -91,4 +86,4 @@ class ClusterRedis : public AbstractModelStore {
 } // namespace processor
 } // namespace tensorflow
 
-#endif // ODL_PROCESSOR_STORAGE_REDIS_SPARSE_STORE_H_
+#endif // ODL_PROCESSOR_STORAGE_REDIS_FEATURE_STORE_H_

@@ -71,12 +71,12 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No savedmodel_dir in ModelConfig.");
   }
 
-  if (!json_config["storage_type"].isNull()) {
-    (*config)->storage_type =
-      json_config["storage_type"].asString();
+  if (!json_config["feature_store_type"].isNull()) {
+    (*config)->feature_store_type =
+      json_config["feature_store_type"].asString();
   } else {
     return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No storage_type in ModelConfig.");
+        "[TensorFlow] No feature_store_type in ModelConfig.");
   }
 
   if (!json_config["redis_url"].isNull()) {
@@ -107,6 +107,14 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
       json_config["update_thread_num"].asInt();
   } else {
     (*config)->update_thread_num = 2;
+  }
+
+  if (!json_config["model_store_type"].isNull()) {
+    (*config)->model_store_type =
+      json_config["model_store_type"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No model_store_type in ModelConfig.");
   }
 
   if (!json_config["oss_endpoint"].isNull()) {

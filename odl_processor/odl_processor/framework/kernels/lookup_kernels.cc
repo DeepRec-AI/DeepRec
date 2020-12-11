@@ -19,8 +19,8 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_op_kernel.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
-#include "odl_processor/storage/redis_sparse_store.h"
-#include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/storage/redis_feature_store.h"
+#include "odl_processor/storage/feature_store_mgr.h"
 
 namespace tensorflow {
 namespace processor {

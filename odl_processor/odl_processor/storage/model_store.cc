@@ -1,10 +1,10 @@
-#include "odl_processor/storage/model_storage.h"
 #include "odl_processor/framework/model_version.h"
-#include "odl_processor/storage/sparse_storage.h"
 #include "odl_processor/serving/model_config.h"
+#include "odl_processor/storage/model_store.h"
+#include "odl_processor/storage/feature_store_mgr.h"
+#include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/lib/io/path.h"
-#include "tensorflow/cc/saved_model/loader.h"
 
 namespace tensorflow {
 namespace processor {
@@ -101,31 +101,25 @@ Status ModelStorage::Init() {
   return Env::Default()->GetFileSystemForFile(savedmodel_dir_, &file_system_);
 }
 
-std::string ModelStorage::GetMetaGraphDir() {
-  std::vector<string> file_names;
-  auto status = file_system_->GetChildren(savedmodel_dir_, &file_names);
-  if (!status.ok()) {
-    return std::string();
-  }
-
-  for (auto fname : file_names) {
-    if (MaybeSavedModelDirectory(fname)) {
-      return savedmodel_dir_;
-    }
-  }
-  return std::string();
-}
-
 Status ModelStorage::GetLatestVersion(Version& version) {
-  version.savedmodel_dir = savedmodel_dir_;
-
+  TF_RETURN_IF_ERROR(GetValidSavedModelDir(version));
   TF_RETURN_IF_ERROR(GetFullModelVersion(version));
   return GetDeltaModelVersion(version);
 }
 
+Status ModelStorage::GetValidSavedModelDir(Version& version) {
+  if (MaybeSavedModelDirectory(savedmodel_dir_)) {
+    version.savedmodel_dir = savedmodel_dir_;
+  }
+  return Status::OK();
+}
+
 Status ModelStorage::GetFullModelVersion(Version& version) {
+  TF_RETURN_IF_ERROR(file_system_->IsDirectory(checkpoint_dir_));
+
   std::vector<string> file_names;
-  TF_RETURN_IF_ERROR(file_system_->GetChildren(checkpoint_dir_, &file_names));
+  TF_RETURN_IF_ERROR(file_system_->GetChildren(checkpoint_dir_,
+        &file_names));
   
   for (auto fname : file_names) {
     if (!IsMetaFileName(fname)) {
@@ -141,6 +135,8 @@ Status ModelStorage::GetFullModelVersion(Version& version) {
 }
 
 Status ModelStorage::GetDeltaModelVersion(Version& version) {
+  TF_RETURN_IF_ERROR(file_system_->IsDirectory(delta_model_dir_));
+
   std::vector<string> file_names;
   TF_RETURN_IF_ERROR(file_system_->GetChildren(delta_model_dir_,
         &file_names));

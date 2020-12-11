@@ -19,7 +19,7 @@ cc_library(
     ],
     deps = [
         "//odl_processor/storage:redis_store",
-        "//odl_processor/storage:sparse_storage",
+        "//odl_processor/storage:feature_store_mgr",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/util/tensor_bundle",
     ],

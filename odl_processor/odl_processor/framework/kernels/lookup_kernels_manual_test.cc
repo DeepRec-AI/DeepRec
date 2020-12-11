@@ -32,7 +32,7 @@ limitations under the License.
 #include "odl_processor/framework/util/utils.h"
 #include "odl_processor/framework/graph_optimizer.h"
 #include "odl_processor/framework/util/utils.h"
-#include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/storage/feature_store_mgr.h"
 #include "odl_processor/serving/model_config.h"
 
 
@@ -42,7 +42,7 @@ int main() {
  processor::ModelConfig config;
  config.read_thread_num = 4;
  config.update_thread_num = 2;
- config.storage_type = "local_redis";
+ config.feature_store_type = "local_redis";
  processor::SparseStorage manager(&config);
  {
   NodeDef version_def;

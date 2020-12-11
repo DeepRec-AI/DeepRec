@@ -22,8 +22,12 @@ struct Version {
     return delta_ckpt_name.empty();
   }
 
-  bool Empty() const {
+  bool CkptEmpty() const {
     return full_ckpt_name.empty();
+  }
+
+  bool SavedModelEmpty() const {
+    return savedmodel_dir.empty();
   }
 
   friend bool operator ==(const Version& lhs, const Version& rhs) {

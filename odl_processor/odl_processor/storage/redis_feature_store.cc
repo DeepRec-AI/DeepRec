@@ -2,7 +2,7 @@
 #include <vector>
 #include <string>
 
-#include "odl_processor/storage/redis_sparse_store.h"
+#include "odl_processor/storage/redis_feature_store.h"
 #include "adapters/libevent.h"
 #include "async.h"
 #include "hiredis.h"

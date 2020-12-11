@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "odl_processor/storage/sparse_storage.h"
+#include "odl_processor/storage/feature_store_mgr.h"
 #include "odl_processor/serving/model_config.h"
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/core/platform/logging.h"
@@ -94,7 +94,7 @@ void ThreadRun(AsyncSparseStorage* mgr, int idx,
   }
 }
 
-AbstractModelStore* CreateSparseStorage(const std::string& type,
+FeatureStore* CreateFeatureStore(const std::string& type,
     const std::string& url, const std::string& password) {
   if (type == "local_redis") {
     LocalRedis::Config config;
@@ -135,7 +135,7 @@ AsyncSparseStorage::AsyncSparseStorage(ModelConfig* config, WorkFn fn) :
     cv_[i] = new std::condition_variable();
     ready_[i] = false;
     sleeping_[i] = false;
-    store_[i] = CreateSparseStorage(config->storage_type, config->redis_url,
+    store_[i] = CreateFeatureStore(config->feature_store_type, config->redis_url,
         config->redis_password);
     threads_[i].reset(new std::thread(!fn? &ThreadRun : fn, this, i, false));
   }
@@ -150,7 +150,7 @@ AsyncSparseStorage::AsyncSparseStorage(ModelConfig* config, WorkFn fn) :
     update_cv_[i] = new std::condition_variable();
     update_ready_[i] = false;
     update_sleeping_[i] = false;
-    update_store_[i] = CreateSparseStorage(config->storage_type,
+    update_store_[i] = CreateFeatureStore(config->feature_store_type,
         config->redis_url, config->redis_password);
     update_threads_[i].reset(new std::thread(!fn ? &ThreadRun : fn, this, i, true));
   }
@@ -300,13 +300,13 @@ SparseStorage::SparseStorage(ModelConfig* config)
 
   store_.resize(thread_num_);
   for (int i = 0; i < thread_num_; ++i) {
-    store_[i] = CreateSparseStorage(config->storage_type,
+    store_[i] = CreateFeatureStore(config->feature_store_type,
         config->redis_url, config->redis_password);
   }
 
   update_store_.resize(update_thread_num_);
   for (int i = 0; i < update_thread_num_; ++i) {
-    update_store_[i] = CreateSparseStorage(config->storage_type,
+    update_store_[i] = CreateFeatureStore(config->feature_store_type,
         config->redis_url, config->redis_password);
   }
 }

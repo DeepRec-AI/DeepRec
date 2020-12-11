@@ -6,12 +6,12 @@ load("@org_tensorflow//tensorflow:tensorflow.bzl",
 cc_library(
   name = "redis_store",
   srcs = [
-    'redis_sparse_store.cc',
+    'redis_feature_store.cc',
   ],
   linkstatic = 1,
   hdrs = [
-    'sparse_storage_interface.h',
-    'redis_sparse_store.h',
+    'feature_store.h',
+    'redis_feature_store.h',
   ],
   deps = [
       "@hiredis//:hiredis",
@@ -45,22 +45,13 @@ cc_binary(
   ],
 )
 
-#tf_cc_test(
-#    name = "model_storage_test",
-#    srcs = ["model_storage_test.cc",],
-#    deps = [":model_storage",
-#            "//tensorflow/core:test",
-#            "//tensorflow/core:test_main",
-#            "//tensorflow/core:testlib", ],
-#)
-
 cc_library(
-    name = "sparse_storage",
+    name = "feature_store_mgr",
     srcs = [
-        "sparse_storage.cc",
+        "feature_store_mgr.cc",
     ],
     hdrs = [
-        "sparse_storage.h",
+        "feature_store_mgr.h",
     ],
     linkstatic = True,
     deps = [
@@ -75,9 +66,9 @@ cc_library(
 )
 
 cc_library(
-    name = "model_storage",
-    srcs = ["model_storage.cc"],
-    hdrs = ["model_storage.h"],
+    name = "model_store",
+    srcs = ["model_store.cc"],
+    hdrs = ["model_store.h"],
     linkstatic = True,
     deps = [
         "@org_tensorflow//tensorflow/core:framework",
@@ -86,16 +77,25 @@ cc_library(
         "//odl_processor/framework:model_version",
         "//odl_processor/framework/filesystem:oss_filesystem",
         "//odl_processor/serving:model_config",
-        "sparse_storage",
+        "feature_store_mgr",
     ],
     alwayslink = 1,
 )
 
 cc_test(
-    name = "sparse_storage_test",
-    srcs = ["sparse_storage_test.cc"],
+    name = "model_store_test",
+    srcs = ["model_store_test.cc",],
+    deps = [":model_store",
+            "//odl_processor/serving:model_config",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main",],
+)
+
+cc_test(
+    name = "feature_store_test",
+    srcs = ["feature_store_test.cc"],
     deps = [
-        ":sparse_storage",
+        ":feature_store_mgr",
         "@com_google_googletest//:gtest",
         "@com_google_googletest//:gtest_main",
     ],   
