@@ -2,6 +2,7 @@
 #include "model_serving.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/lib/strings/strcat.h"
 #include "odl_processor/serving/tf_predict.pb.h"
 #include "odl_processor/serving/model_message.h"
 #include "odl_processor/serving/message_coding.h"
@@ -39,9 +40,11 @@ int process(void* model_buf, const void* input_data, int input_size,
   parser.ParseRequestFromProto(input_data, input_size, call.request);
   auto status = model->Predict(call.request, call.response);
   if (!status.ok()) {
-    const char *errmsg = "[TensorFlow] Processor predict failed";
-    *output_data = strndup(errmsg, strlen(errmsg));
-    *output_size = strlen(errmsg);
+    std::string errmsg = tensorflow::strings::StrCat(
+        "[TensorFlow] Processor predict failed: ",
+        status.error_message());
+    *output_data = strndup(errmsg.c_str(), strlen(errmsg.c_str()));
+    *output_size = strlen(errmsg.c_str());
     return 500;
   }
   parser.ParseResponseToProto(call.request, call.response,
