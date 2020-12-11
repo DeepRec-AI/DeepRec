@@ -43,7 +43,7 @@ int main() {
  config.read_thread_num = 4;
  config.update_thread_num = 2;
  config.feature_store_type = "local_redis";
- processor::SparseStorage manager(&config);
+ processor::FeatureStoreMgr manager(&config);
  {
   NodeDef version_def;
   Tensor version_value(DT_STRING, TensorShape({1}));

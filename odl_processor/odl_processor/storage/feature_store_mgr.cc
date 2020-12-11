@@ -22,7 +22,7 @@ namespace tensorflow {
 namespace processor {
 
 namespace {
-void ThreadRun(AsyncSparseStorage* mgr, int idx,
+void ThreadRun(AsyncFeatureStoreMgr* mgr, int idx,
                bool is_update_thread) {
   std::mutex* mu = nullptr;
   std::condition_variable* cv = nullptr;
@@ -108,7 +108,7 @@ FeatureStore* CreateFeatureStore(const std::string& type,
 }
 } // namespace
 
-AsyncSparseStorage::AsyncSparseStorage(ModelConfig* config, WorkFn fn) :
+AsyncFeatureStoreMgr::AsyncFeatureStoreMgr(ModelConfig* config, WorkFn fn) :
     stop_(false),
     thread_num_(config->read_thread_num),
     update_thread_num_(config->update_thread_num),
@@ -156,7 +156,7 @@ AsyncSparseStorage::AsyncSparseStorage(ModelConfig* config, WorkFn fn) :
   }
 }
 
-AsyncSparseStorage::~AsyncSparseStorage() {
+AsyncFeatureStoreMgr::~AsyncFeatureStoreMgr() {
   // stop all IO threads
   stop_ = true;
 
@@ -201,7 +201,7 @@ AsyncSparseStorage::~AsyncSparseStorage() {
   }
 }
 
-Status AsyncSparseStorage::AddTask(SparseTask* t) {
+Status AsyncFeatureStoreMgr::AddTask(SparseTask* t) {
   // NOTE(jiankebg.pt): No need atomic add here, maybe 
   // more then one Op will call the same thread(queue).
   // TODO: Need excetly balance here ?
@@ -235,7 +235,7 @@ Status AsyncSparseStorage::AddTask(SparseTask* t) {
   return Status::OK();
 }
 
-Status AsyncSparseStorage::AddUpdateTask(SparseTask* t) {
+Status AsyncFeatureStoreMgr::AddUpdateTask(SparseTask* t) {
   // TODO: Need excetly balance here ?
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
@@ -260,7 +260,7 @@ Status AsyncSparseStorage::AddUpdateTask(SparseTask* t) {
   return Status::OK();
 }
 
-sparse_task_queue* AsyncSparseStorage::GetSparseTaskQueue(int idx) {
+sparse_task_queue* AsyncFeatureStoreMgr::GetSparseTaskQueue(int idx) {
   if (idx < 0 || idx >= thread_num_) {
     LOG(FATAL) << "Error index num: " << idx
                << ", thread_num is " << thread_num_;
@@ -269,7 +269,7 @@ sparse_task_queue* AsyncSparseStorage::GetSparseTaskQueue(int idx) {
   return &(task_queues_[idx]);
 }
 
-sparse_task_queue* AsyncSparseStorage::GetUpdateSparseTaskQueue(int idx) {
+sparse_task_queue* AsyncFeatureStoreMgr::GetUpdateSparseTaskQueue(int idx) {
   if (idx < 0 || idx >= update_thread_num_) {
     LOG(FATAL) << "Error index num: " << idx
                << ", update_thread_num is " << update_thread_num_;
@@ -278,11 +278,11 @@ sparse_task_queue* AsyncSparseStorage::GetUpdateSparseTaskQueue(int idx) {
   return &(update_task_queues_[idx]);
 }
 
-bool AsyncSparseStorage::ShouldStop() {
+bool AsyncFeatureStoreMgr::ShouldStop() {
   return stop_;
 }
 
-SparseStorage::SparseStorage(ModelConfig* config) 
+FeatureStoreMgr::FeatureStoreMgr(ModelConfig* config) 
   : thread_num_(config->read_thread_num),
     update_thread_num_(config->update_thread_num),
     active_thread_index_(0),
@@ -311,7 +311,7 @@ SparseStorage::SparseStorage(ModelConfig* config)
   }
 }
 
-SparseStorage::~SparseStorage() {
+FeatureStoreMgr::~FeatureStoreMgr() {
   for (auto store : store_) {
     delete store;
   }
@@ -321,7 +321,7 @@ SparseStorage::~SparseStorage() {
   }
 }
 
-Status SparseStorage::GetValues(
+Status FeatureStoreMgr::GetValues(
     uint64_t feature2id,
     const char* const keys,
     char* const values,
@@ -341,7 +341,7 @@ Status SparseStorage::GetValues(
   }
 }
 
-Status SparseStorage::SetValues(
+Status FeatureStoreMgr::SetValues(
     uint64_t feature2id,
     const char* const keys,
     const char* const values,
@@ -360,7 +360,7 @@ Status SparseStorage::SetValues(
   }
 }
 
-Status SparseStorage::Reset() {
+Status FeatureStoreMgr::Reset() {
   uint64_t index = active_update_thread_index_++;
   index %= update_thread_num_;
   {

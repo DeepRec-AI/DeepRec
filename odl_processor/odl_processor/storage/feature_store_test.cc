@@ -32,7 +32,7 @@ static const int64_t NUM3 = 9999;
 // for check
 static bool global_queue_result[NUM1];
 
-void TestThreadRun(AsyncSparseStorage* mgr, int idx,
+void TestThreadRun(AsyncFeatureStoreMgr* mgr, int idx,
                   bool is_update_thread) {
   std::mutex* mu = nullptr;
   std::condition_variable* cv = nullptr;
@@ -102,7 +102,7 @@ void TestThreadRun(AsyncSparseStorage* mgr, int idx,
   }
 }
 
-void WorkThreadRun(AsyncSparseStorage* mgr,
+void WorkThreadRun(AsyncFeatureStoreMgr* mgr,
                    int64_t start, int64_t end) {
   for (int64_t num = start; num <= end; ++num) {
     SparseTask* task = new SparseTask();
@@ -113,7 +113,7 @@ void WorkThreadRun(AsyncSparseStorage* mgr,
 
 }
 
-TEST(SparseStorageTest, AsyncSparseStorageTest) {
+TEST(FeatureStoreMgrTest, AsyncFeatureStoreMgrTest) {
   for (int64_t i = 0; i < NUM1; ++i) {
     global_queue_result[i] = false;
   }
@@ -123,7 +123,7 @@ TEST(SparseStorageTest, AsyncSparseStorageTest) {
   config.update_thread_num = 2;
   config.feature_store_type = "unknown";
 
-  auto mgr = new AsyncSparseStorage(&config, &TestThreadRun);
+  auto mgr = new AsyncFeatureStoreMgr(&config, &TestThreadRun);
   // worker threads
   std::vector<std::unique_ptr<std::thread>> threads;
   threads.resize(10);

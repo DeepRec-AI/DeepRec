@@ -5,6 +5,7 @@
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/lib/io/path.h"
+#include "tensorflow/cc/saved_model/constants.h"
 
 namespace tensorflow {
 namespace processor {
@@ -16,7 +17,6 @@ bool IsMetaFileName(const std::string& fname) {
 
 std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) {
   path = io::Basename(path);
-
   auto pos = path.rfind('.');
   if (pos == StringPiece::npos)
     return std::make_pair(path, StringPiece(path.data() + path.size(), 0));
@@ -27,9 +27,7 @@ std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) {
 
 std::string ParseCkptFileName(const std::string& ckpt_dir,
     const std::string& fname) {
-  auto base_name = io::Basename(fname);
   auto prefix = SplitBasename(fname).first;
-
   return io::JoinPath(ckpt_dir, prefix);
 }
 
@@ -76,7 +74,7 @@ Status AddOSSAccessPrefix(std::string& dir,
 }
 } // namespace
 
-ModelStorage::ModelStorage(ModelConfig* config) :
+ModelStore::ModelStore(ModelConfig* config) :
     model_config_(config) {
   savedmodel_dir_ = config->savedmodel_dir;
   checkpoint_dir_ = config->checkpoint_dir;
@@ -97,24 +95,29 @@ ModelStorage::ModelStorage(ModelConfig* config) :
   }
 }
 
-Status ModelStorage::Init() {
+Status ModelStore::Init() {
   return Env::Default()->GetFileSystemForFile(savedmodel_dir_, &file_system_);
 }
 
-Status ModelStorage::GetLatestVersion(Version& version) {
+Status ModelStore::GetLatestVersion(Version& version) {
   TF_RETURN_IF_ERROR(GetValidSavedModelDir(version));
   TF_RETURN_IF_ERROR(GetFullModelVersion(version));
   return GetDeltaModelVersion(version);
 }
 
-Status ModelStorage::GetValidSavedModelDir(Version& version) {
-  if (MaybeSavedModelDirectory(savedmodel_dir_)) {
+Status ModelStore::GetValidSavedModelDir(Version& version) {
+  const string saved_model_pb_path =
+      io::JoinPath(savedmodel_dir_, kSavedModelFilenamePb);
+  const string saved_model_pbtxt_path =
+      io::JoinPath(savedmodel_dir_, kSavedModelFilenamePbTxt);
+  if (file_system_->FileExists(saved_model_pb_path).ok() ||
+      file_system_->FileExists(saved_model_pbtxt_path).ok()) {
     version.savedmodel_dir = savedmodel_dir_;
   }
   return Status::OK();
 }
 
-Status ModelStorage::GetFullModelVersion(Version& version) {
+Status ModelStore::GetFullModelVersion(Version& version) {
   TF_RETURN_IF_ERROR(file_system_->IsDirectory(checkpoint_dir_));
 
   std::vector<string> file_names;
@@ -134,7 +137,7 @@ Status ModelStorage::GetFullModelVersion(Version& version) {
   return Status::OK();
 }
 
-Status ModelStorage::GetDeltaModelVersion(Version& version) {
+Status ModelStore::GetDeltaModelVersion(Version& version) {
   TF_RETURN_IF_ERROR(file_system_->IsDirectory(delta_model_dir_));
 
   std::vector<string> file_names;
@@ -153,10 +156,6 @@ Status ModelStorage::GetDeltaModelVersion(Version& version) {
     }
   }
   return Status::OK();
-}
-
-SparseStorage* ModelStorage::CreateSparseStorage() {
-  return new SparseStorage(model_config_);
 }
 
 } // namespace processor

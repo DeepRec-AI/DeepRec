@@ -8,22 +8,19 @@ class FileSystem;
 namespace processor {
 class Version;
 class ModelConfig;
-class SparseStorage;
-class ModelStorage {
+class ModelStore {
  public:
-  ModelStorage(ModelConfig* config);
+  ModelStore(ModelConfig* config);
 
   Status Init();
   Status GetLatestVersion(Version& version);
 
-  SparseStorage* CreateSparseStorage();
-
- private:
+ protected:
   Status GetFullModelVersion(Version& version);
   Status GetDeltaModelVersion(Version& version);
   Status GetValidSavedModelDir(Version& version);
 
- private:
+ protected:
   std::string savedmodel_dir_;
   std::string checkpoint_dir_;
   std::string delta_model_dir_;
