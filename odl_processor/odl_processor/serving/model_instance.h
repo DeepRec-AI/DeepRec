@@ -18,15 +18,15 @@ class TensorInfo;
 namespace processor {
 class SavedModelOptimizer;
 class ModelConfig;
-class ModelStorage;
+class ModelStore;
 class ModelSessionMgr;
-class SparseStorage;
+class FeatureStoreMgr;
 
 class ModelInstance {
  public:
   ModelInstance(SessionOptions* sess_options, RunOptions* run_options);
   Status Init(ModelConfig* config,
-      ModelStorage* model_storage);
+      ModelStore* model_storage);
 
   Status Predict(Request& req, Response& resp);
 
@@ -41,7 +41,7 @@ class ModelInstance {
   Status ReadModelSignature(ModelConfig* model_config);
 
   Status RecursionCreateSession(const Version& version,
-      SparseStorage* sparse_storge);
+      FeatureStoreMgr* sparse_storge);
 
   Tensor CreateTensor(const TensorInfo& tensor_info);
   Call CreateWarmupParams();
@@ -56,8 +56,8 @@ class ModelInstance {
   RunOptions* run_options_ = nullptr;
   SavedModelOptimizer* optimizer_ = nullptr;
 
-  SparseStorage* serving_storage_ = nullptr;
-  SparseStorage* backup_storage_ = nullptr; 
+  FeatureStoreMgr* serving_storage_ = nullptr;
+  FeatureStoreMgr* backup_storage_ = nullptr; 
 
   Version version_;
 };
@@ -92,7 +92,7 @@ class ModelInstanceMgr {
   ModelInstance* cur_instance_ = nullptr;
   ModelInstance* base_instance_ = nullptr;
 
-  ModelStorage* model_storage_ = nullptr;
+  ModelStore* model_storage_ = nullptr;
   ModelConfig* model_config_ = nullptr; // not owned
 
   SessionOptions* session_options_ = nullptr;

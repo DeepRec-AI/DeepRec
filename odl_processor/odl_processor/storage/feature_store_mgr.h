@@ -40,15 +40,15 @@ struct SparseTask {
 };
 
 class ModelConfig;
-class AsyncSparseStorage;
-typedef std::function<void(AsyncSparseStorage*, int, bool)> WorkFn;
+class AsyncFeatureStoreMgr;
+typedef std::function<void(AsyncFeatureStoreMgr*, int, bool)> WorkFn;
 
 using sparse_task_queue = moodycamel::ConcurrentQueue<SparseTask*>;
 
-class AsyncSparseStorage {
+class AsyncFeatureStoreMgr {
  public:
-  AsyncSparseStorage(ModelConfig* config, WorkFn fn = nullptr);
-  virtual ~AsyncSparseStorage();
+  AsyncFeatureStoreMgr(ModelConfig* config, WorkFn fn = nullptr);
+  virtual ~AsyncFeatureStoreMgr();
 
   Status AddTask(SparseTask*);
   Status AddUpdateTask(SparseTask*);
@@ -119,10 +119,10 @@ class AsyncSparseStorage {
   std::vector<FeatureStore*> update_store_;
 };
 
-class SparseStorage {
+class FeatureStoreMgr {
  public:
-  explicit SparseStorage(ModelConfig* config);
-  virtual ~SparseStorage();
+  explicit FeatureStoreMgr(ModelConfig* config);
+  virtual ~FeatureStoreMgr();
 
   Status GetValues(uint64_t feature2id,
                    const char* const keys,

@@ -30,7 +30,7 @@ Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
 }
 
 Status ModelInstance::RecursionCreateSession(const Version& version,
-    SparseStorage* sparse_storage) {
+    FeatureStoreMgr* sparse_storage) {
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
         version.full_ckpt_name.c_str(), sparse_storage));
 
@@ -43,16 +43,16 @@ Status ModelInstance::RecursionCreateSession(const Version& version,
 }
 
 Status ModelInstance::Init(ModelConfig* model_config,
-    ModelStorage* model_storage) {
+    ModelStore* model_store) {
   int timeout = model_config->init_timeout_minutes;
   Version version;
-  model_storage->GetLatestVersion(version);
+  model_store->GetLatestVersion(version);
   while (version.SavedModelEmpty()) {
     // Wait until saved model meta file ready
     LOG(INFO) << "[Model Instance] SavedModel dir is empty,"
               << "will try 1 minute later.";
     sleep(60);
-    model_storage->GetLatestVersion(version);
+    model_store->GetLatestVersion(version);
   }
 
   auto savedmodel_dir = version.savedmodel_dir;
@@ -69,14 +69,14 @@ Status ModelInstance::Init(ModelConfig* model_config,
 
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
 
-  serving_storage_ = model_storage->CreateSparseStorage();
-  backup_storage_ = model_storage->CreateSparseStorage();
+  serving_storage_ = new FeatureStoreMgr(model_config);
+  backup_storage_ = new FeatureStoreMgr(model_config);
   
   while (version.CkptEmpty()) {
     LOG(INFO) << "[Model Instance] Checkpoint dir is empty,"
               << "will try 1 minute later.";
     sleep(60);
-    model_storage->GetLatestVersion(version);
+    model_store->GetLatestVersion(version);
   }
 
   return RecursionCreateSession(version, serving_storage_);
@@ -174,7 +174,7 @@ std::string ModelInstance::DebugString() {
 }
 
 ModelInstanceMgr::ModelInstanceMgr(ModelConfig* config)
-  : model_storage_(new ModelStorage(config)), model_config_(config) {
+  : model_storage_(new ModelStore(config)), model_config_(config) {
   model_storage_->Init();
   session_options_ = new SessionOptions();
   //session_options_->target = target;
