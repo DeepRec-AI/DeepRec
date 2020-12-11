@@ -15,6 +15,11 @@ bool IsMetaFileName(const std::string& fname) {
   return ext == "meta";
 }
 
+bool IsIncrementalCkptPath(const std::string& fname) {
+  auto pos = fname.find(".incremental_checkpoint");
+  return pos != std::string::npos;
+}
+
 std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) {
   path = io::Basename(path);
   auto pos = path.rfind('.');
@@ -125,9 +130,11 @@ Status ModelStore::GetFullModelVersion(Version& version) {
         &file_names));
   
   for (auto fname : file_names) {
-    if (!IsMetaFileName(fname)) {
+    if (IsIncrementalCkptPath(fname) ||
+        !IsMetaFileName(fname)) {
       continue;
     }
+
     auto v = ParseMetaFileName(fname);
     if (v > version.full_ckpt_version) {
       version.full_ckpt_name = ParseCkptFileName(checkpoint_dir_, fname);
@@ -151,7 +158,7 @@ Status ModelStore::GetDeltaModelVersion(Version& version) {
     auto v = ParseMetaFileName(fname);
     if (v > version.delta_ckpt_version &&
         v > version.full_ckpt_version) {
-      version.delta_ckpt_name = ParseCkptFileName(checkpoint_dir_, fname);
+      version.delta_ckpt_name = ParseCkptFileName(delta_model_dir_, fname);
       version.delta_ckpt_version = v;
     }
   }
