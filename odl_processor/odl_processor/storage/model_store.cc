@@ -54,29 +54,6 @@ int64 ParseMetaFileName(const std::string& fname) {
   return ret;
 }
 
-Status AddOSSAccessPrefix(std::string& dir,
-                          const ModelConfig* config) {
-  auto offset = dir.find("oss://");
-  // error oss format
-  if (offset == std::string::npos) {
-    return tensorflow::errors::Internal(
-        "Invalid user input oss dir, ", dir);
-  }
-
-  std::string tmp(dir.substr(6));
-  offset = tmp.find("/");
-  if (offset == std::string::npos) {
-    return tensorflow::errors::Internal(
-        "Invalid user input oss dir, ", dir);
-  }
-  
-  dir = strings::StrCat(dir.substr(0, offset+6),
-                        "\x01id=", config->oss_access_id,
-                        "\x02key=", config->oss_access_key,
-                        "\x02host=", config->oss_endpoint,
-                        tmp.substr(offset));
-  return Status::OK();
-}
 } // namespace
 
 ModelStore::ModelStore(ModelConfig* config) :
@@ -84,20 +61,6 @@ ModelStore::ModelStore(ModelConfig* config) :
   savedmodel_dir_ = config->savedmodel_dir;
   checkpoint_dir_ = config->checkpoint_dir;
   delta_model_dir_ = io::JoinPath(checkpoint_dir_, ".incremental_checkpoint");
-  // oss storage
-  if (!config->oss_endpoint.empty() &&
-      !config->oss_access_id.empty() &&
-      !config->oss_access_key.empty()) {
-    Status s = AddOSSAccessPrefix(savedmodel_dir_, config);
-    if (!s.ok()) {
-      LOG(FATAL) << s.error_message();
-    }
-    s = AddOSSAccessPrefix(checkpoint_dir_, config);
-    if (!s.ok()) {
-      LOG(FATAL) << s.error_message();
-    }
-    delta_model_dir_ = io::JoinPath(checkpoint_dir_, ".incremental_checkpoint");
-  }
 }
 
 Status ModelStore::Init() {
