@@ -1,12 +1,36 @@
 #include "odl_processor/serving/model_config.h"
 #include "include/json/json.h"
 #include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/lib/core/errors.h"
 
 namespace tensorflow {
 namespace processor {
 
 namespace {
 constexpr int DEFAULT_CPUS = 8;
+Status AddOSSAccessPrefix(std::string& dir,
+                          const ModelConfig* config) {
+  auto offset = dir.find("oss://");
+  // error oss format
+  if (offset == std::string::npos) {
+    return tensorflow::errors::Internal(
+        "Invalid user input oss dir, ", dir);
+  }
+
+  std::string tmp(dir.substr(6));
+  offset = tmp.find("/");
+  if (offset == std::string::npos) {
+    return tensorflow::errors::Internal(
+        "Invalid user input oss dir, ", dir);
+  }
+  
+  dir = strings::StrCat(dir.substr(0, offset+6),
+                        "\x01id=", config->oss_access_id,
+                        "\x02key=", config->oss_access_key,
+                        "\x02host=", config->oss_endpoint,
+                        tmp.substr(offset));
+  return Status::OK();
+}
 }
 
 Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config) {
@@ -54,6 +78,11 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     return Status(error::Code::NOT_FOUND,
         "[TensorFlow] No signature_name in ModelConfig.");
   }
+
+  if ((*config)->signature_name.empty()) {
+    return Status(error::Code::INVALID_ARGUMENT,
+        "[TensorFlow] Signature_name shouldn't be empty string.");
+  }
   
   if (!json_config["checkpoint_dir"].isNull()) {
     (*config)->checkpoint_dir =
@@ -79,34 +108,41 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No feature_store_type in ModelConfig.");
   }
 
-  if (!json_config["redis_url"].isNull()) {
-    (*config)->redis_url =
-      json_config["redis_url"].asString();
-  } else {
-    return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No redis_url in ModelConfig.");
-  }
+  if ((*config)->feature_store_type == "cluster_redis") {
+    if (!json_config["redis_url"].isNull()) {
+      (*config)->redis_url =
+        json_config["redis_url"].asString();
+    } else {
+      return Status(error::Code::NOT_FOUND,
+          "[TensorFlow] Should set redis_url in ModelConfig \
+          when feature_store_type=cluster_redis.");
+    }
 
-  if (!json_config["redis_password"].isNull()) {
-    (*config)->redis_password =
-      json_config["redis_password"].asString();
-  } else {
-    return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No redis_password in ModelConfig.");
+    if (!json_config["redis_password"].isNull()) {
+      (*config)->redis_password =
+        json_config["redis_password"].asString();
+    } else {
+      return Status(error::Code::NOT_FOUND,
+          "[TensorFlow] Should set redis_password in ModelConfig \
+          when feature_store_type=cluster_redis.");
+    }
   }
-  
-  if (!json_config["read_thread_num"].isNull()) {
-    (*config)->read_thread_num =
-      json_config["read_thread_num"].asInt();
-  } else {
-    (*config)->read_thread_num = 4;
-  }
+ 
+  // when feature_store_type == local_redis | cluster_redis
+  if ((*config)->feature_store_type.find("redis") != std::string::npos) {
+    if (!json_config["read_thread_num"].isNull()) {
+      (*config)->read_thread_num =
+        json_config["read_thread_num"].asInt();
+    } else {
+      (*config)->read_thread_num = 4;
+    }
 
-  if (!json_config["update_thread_num"].isNull()) {
-    (*config)->update_thread_num =
-      json_config["update_thread_num"].asInt();
-  } else {
-    (*config)->update_thread_num = 2;
+    if (!json_config["update_thread_num"].isNull()) {
+      (*config)->update_thread_num =
+        json_config["update_thread_num"].asInt();
+    } else {
+      (*config)->update_thread_num = 2;
+    }
   }
 
   if (!json_config["model_store_type"].isNull()) {
@@ -117,28 +153,62 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No model_store_type in ModelConfig.");
   }
 
-  if (!json_config["oss_endpoint"].isNull()) {
-    (*config)->oss_endpoint =
-      json_config["oss_endpoint"].asString();
-  } else {
-    return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No oss_endpoint in ModelConfig.");
+  if ((*config)->checkpoint_dir.find((*config)->model_store_type)
+      == std::string::npos) {
+    return Status(error::Code::INVALID_ARGUMENT,
+        "[TensorFlow] Mismatch model_store_type and checkpoint_dir.");
   }
 
-  if (!json_config["oss_access_id"].isNull()) {
-    (*config)->oss_access_id =
-      json_config["oss_access_id"].asString();
-  } else {
-    return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No oss_access_id in ModelConfig.");
+  if ((*config)->savedmodel_dir.find((*config)->model_store_type)
+      == std::string::npos) {
+    return Status(error::Code::INVALID_ARGUMENT,
+        "[TensorFlow] Mismatch model_store_type and savedmodel_dir.");
   }
 
-  if (!json_config["oss_access_key"].isNull()) {
-    (*config)->oss_access_key =
-      json_config["oss_access_key"].asString();
-  } else {
-    return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No oss_access_key in ModelConfig.");
+  if ((*config)->model_store_type == "oss") {
+    if (!json_config["oss_endpoint"].isNull()) {
+      (*config)->oss_endpoint =
+        json_config["oss_endpoint"].asString();
+    } else {
+      return Status(error::Code::NOT_FOUND,
+          "[TensorFlow] No oss_endpoint in ModelConfig.");
+    }
+  
+    if ((*config)->oss_endpoint.empty()) {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] oss_endpoint shouldn't be empty string.");
+    }
+
+    if (!json_config["oss_access_id"].isNull()) {
+      (*config)->oss_access_id =
+        json_config["oss_access_id"].asString();
+    } else {
+      return Status(error::Code::NOT_FOUND,
+          "[TensorFlow] No oss_access_id in ModelConfig.");
+    }
+    
+    if ((*config)->oss_access_id.empty()) {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] oss_access_id shouldn't be empty string.");
+    }
+
+    if (!json_config["oss_access_key"].isNull()) {
+      (*config)->oss_access_key =
+        json_config["oss_access_key"].asString();
+    } else {
+      return Status(error::Code::NOT_FOUND,
+          "[TensorFlow] No oss_access_key in ModelConfig.");
+    }
+    
+    if ((*config)->oss_access_key.empty()) {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] oss_access_key shouldn't be empty string.");
+    }
+
+    TF_RETURN_IF_ERROR(AddOSSAccessPrefix(
+          (*config)->savedmodel_dir, *config));
+    TF_RETURN_IF_ERROR(AddOSSAccessPrefix(
+          (*config)->checkpoint_dir, *config));
   }
 
   return Status::OK();

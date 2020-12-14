@@ -11,18 +11,18 @@ struct ModelConfig {
   std::string checkpoint_dir;
   std::string savedmodel_dir;
   std::string signature_name;
-  int init_timeout_minutes;
+  int init_timeout_minutes = 0;
 
   // Run Info
-  int inter_threads;
-  int intra_threads;
+  int inter_threads = 1;
+  int intra_threads = 1;
 
   // Embedding Config
   std::string feature_store_type;
   std::string redis_url;
   std::string redis_password;
-  int read_thread_num;
-  int update_thread_num;
+  int read_thread_num = 1;
+  int update_thread_num = 1;
 
   // OSS Config
   std::string model_store_type;

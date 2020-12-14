@@ -23,10 +23,11 @@ Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
   for (auto it : model_signatures) {
     if (it.first == model_config->signature_name) {
       model_signature_ = it;
-      break;
+      return Status::OK();
     }
   }
-  return Status::OK();
+  return Status(error::Code::INVALID_ARGUMENT,
+      "Invalid signature name, please check signature_name in model config");
 }
 
 Status ModelInstance::RecursionCreateSession(const Version& version,

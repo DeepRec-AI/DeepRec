@@ -43,6 +43,14 @@ cc_library(
         ],
 )
 
+cc_test(
+    name = "model_config_test",
+    srcs = ["model_config_test.cc",],
+    deps = [":model_config",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main",],
+)
+
 cc_library(
     name = "model_serving",
     srcs = ["model_serving.cc",
