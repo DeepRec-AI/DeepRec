@@ -52,16 +52,14 @@ cc_test(
 )
 
 cc_library(
-    name = "model_serving",
-    srcs = ["model_serving.cc",
-            "model_impl.cc",
-            "model_instance.cc",
-            "model_session.cc"],
-    hdrs = ["model_serving.h",
-            "model_impl.h",
-            "model_instance.h",
-            "model_message.h",
-            "model_session.h"],
+    name = "model_message",
+    hdrs = ["model_message.h",],
+)
+
+cc_library(
+    name = "model_session",
+    srcs = ["model_session.cc"],
+    hdrs = ["model_session.h"],
     deps = [
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:framework",
@@ -73,5 +71,37 @@ cc_library(
         "//odl_processor/framework:model_version",
         "//odl_processor/storage:model_store",
         "model_config",
+        "model_message"],
+)
+
+cc_test(
+    name = "model_session_test",
+    srcs = ["model_session_test.cc",],
+    deps = [":model_session",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main",],
+)
+
+cc_library(
+    name = "model_serving",
+    srcs = ["model_serving.cc",
+            "model_impl.cc",
+            "model_instance.cc"],
+    hdrs = ["model_serving.h",
+            "model_impl.h",
+            "model_instance.h"],
+    deps = [
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:core_cpu",
+        "@org_tensorflow//tensorflow/cc/saved_model:loader",
+        "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
+        "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
+        "//odl_processor/framework:graph_optimizer",
+        "//odl_processor/framework:model_version",
+        "//odl_processor/storage:model_store",
+        "model_config",
+        "model_session",
+        "model_message",
     ],
 )

@@ -20,7 +20,7 @@ class SavedModelOptimizer;
 class ModelConfig;
 class ModelStore;
 class ModelSessionMgr;
-class FeatureStoreMgr;
+class IFeatureStoreMgr;
 
 class ModelInstance {
  public:
@@ -41,7 +41,7 @@ class ModelInstance {
   Status ReadModelSignature(ModelConfig* model_config);
 
   Status RecursionCreateSession(const Version& version,
-      FeatureStoreMgr* sparse_storge);
+      IFeatureStoreMgr* sparse_storge);
 
   Tensor CreateTensor(const TensorInfo& tensor_info);
   Call CreateWarmupParams();
@@ -56,8 +56,8 @@ class ModelInstance {
   RunOptions* run_options_ = nullptr;
   SavedModelOptimizer* optimizer_ = nullptr;
 
-  FeatureStoreMgr* serving_storage_ = nullptr;
-  FeatureStoreMgr* backup_storage_ = nullptr; 
+  IFeatureStoreMgr* serving_storage_ = nullptr;
+  IFeatureStoreMgr* backup_storage_ = nullptr; 
 
   Version version_;
 };
