@@ -31,7 +31,7 @@ Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
 }
 
 Status ModelInstance::RecursionCreateSession(const Version& version,
-    FeatureStoreMgr* sparse_storage) {
+    IFeatureStoreMgr* sparse_storage) {
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
         version.full_ckpt_name.c_str(), sparse_storage));
 

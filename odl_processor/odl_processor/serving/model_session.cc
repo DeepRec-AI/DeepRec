@@ -155,7 +155,7 @@ Status ModelSessionMgr::CreateSession(Session** session) {
 
 Status ModelSessionMgr::RunRestoreOps(const char* ckpt_name,
     const char* savedmodel_dir, Session* session,
-    FeatureStoreMgr* sparse_storage) {
+    IFeatureStoreMgr* sparse_storage) {
   Tensor t(DT_UINT64, TensorShape({}));
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
   auto sparse_storage_tensor = std::make_pair(
@@ -180,7 +180,7 @@ Status ModelSessionMgr::RunRestoreOps(const char* ckpt_name,
 }
 
 ModelSession::ModelSession(Session* s, const Version& version,
-    FeatureStoreMgr* sparse_storage) : session_(s), counter_(0),
+    IFeatureStoreMgr* sparse_storage) : session_(s), counter_(0),
     version_(version) {
   Tensor t(DT_UINT64, TensorShape({}));
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
@@ -190,8 +190,11 @@ ModelSession::ModelSession(Session* s, const Version& version,
 
 Status ModelSession::Predict(Request& req, Response& resp) {
   req.inputs.emplace_back(sparse_storage_name_, sparse_storage_tensor_);
-  return session_->Run(req.inputs, req.output_tensor_names,
+  ++counter_;
+  auto status = session_->Run(req.inputs, req.output_tensor_names,
       {}, &resp.outputs);
+  --counter_;
+  return status;
 }
 
 Status ModelSessionMgr::Predict(Request& req, Response& resp) {
@@ -200,7 +203,7 @@ Status ModelSessionMgr::Predict(Request& req, Response& resp) {
 
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
-    FeatureStoreMgr* sparse_storage) {
+    IFeatureStoreMgr* sparse_storage) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
   TF_RETURN_IF_ERROR(RunRestoreOps(ckpt_name,
@@ -210,8 +213,24 @@ Status ModelSessionMgr::CreateModelSession(
   return Status::OK();
 }
 
+Status ModelSessionMgr::CleanupModelSession() {
+  mutex_lock lock(mu_);
+  sessions_.erase(
+      std::remove_if(sessions_.begin(), sessions_.end(),
+        [this](ModelSession* sess){
+          if (sess->counter_ <= 0) {
+            delete sess;
+            return true;
+          } else {
+            return false;
+          }
+        }), sessions_.end());
+
+  return Status::OK();
+}
+
 void ModelSessionMgr::ResetServingSession(Session* session,
-    const Version& version, FeatureStoreMgr* sparse_storage) {
+    const Version& version, IFeatureStoreMgr* sparse_storage) {
   auto model_session = new ModelSession(session, version,
       sparse_storage);
   auto tmp = serving_session_;
@@ -221,6 +240,7 @@ void ModelSessionMgr::ResetServingSession(Session* session,
 
   if (tmp->counter_ > 0) {
     // TODO: free it in active object.
+    mutex_lock lock(mu_);
     sessions_.emplace_back(tmp);
   } else {
     delete tmp;

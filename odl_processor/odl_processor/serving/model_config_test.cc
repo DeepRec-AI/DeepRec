@@ -5,8 +5,6 @@ namespace tensorflow {
 namespace processor {
 
 class ModelConfigTest : public ::testing::Test {
- protected:
-  ModelConfigTest() {}
 };
 
 TEST_F(ModelConfigTest, ShouldReturnInvalidWhenEmptyInput) {

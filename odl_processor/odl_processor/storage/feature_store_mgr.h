@@ -119,7 +119,31 @@ class AsyncFeatureStoreMgr {
   std::vector<FeatureStore*> update_store_;
 };
 
-class FeatureStoreMgr {
+class IFeatureStoreMgr {
+ public:
+  virtual ~IFeatureStoreMgr() {}
+
+  virtual Status GetValues(uint64_t feature2id,
+                           const char* const keys,
+                           char* const values,
+                           size_t bytes_per_key,
+                           size_t bytes_per_values,
+                           size_t N,
+                           const char* default_value,
+                           BatchGetCallback cb) = 0;
+
+  virtual Status SetValues(uint64_t feature2id,
+                           const char* const keys,
+                           const char* const values,
+                           size_t bytes_per_key,
+                           size_t bytes_per_values,
+                           size_t N,
+                           BatchSetCallback cb) = 0;
+
+  virtual Status Reset() = 0;
+};
+
+class FeatureStoreMgr : public IFeatureStoreMgr {
  public:
   explicit FeatureStoreMgr(ModelConfig* config);
   virtual ~FeatureStoreMgr();
@@ -131,15 +155,15 @@ class FeatureStoreMgr {
                    size_t bytes_per_values,
                    size_t N,
                    const char* default_value,
-                   BatchGetCallback cb);
+                   BatchGetCallback cb) override;
   Status SetValues(uint64_t feature2id,
                    const char* const keys,
                    const char* const values,
                    size_t bytes_per_key,
                    size_t bytes_per_values,
                    size_t N,
-                   BatchSetCallback cb);
-  Status Reset();
+                   BatchSetCallback cb) override;
+  Status Reset() override;
 
  private:
   int thread_num_ = 0;

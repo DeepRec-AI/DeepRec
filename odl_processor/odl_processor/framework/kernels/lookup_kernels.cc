@@ -78,8 +78,8 @@ class KvLookupOp : public AsyncOpKernel {
     const Tensor& storage_pointer = ctx->input(2);
     const uint64 storage_pointer_value =
         storage_pointer.scalar<tensorflow::uint64>()();
-    FeatureStoreMgr* storageMgr =
-        reinterpret_cast<FeatureStoreMgr*>(storage_pointer_value);
+    IFeatureStoreMgr* storageMgr =
+        reinterpret_cast<IFeatureStoreMgr*>(storage_pointer_value);
 
     TensorShape result_shape = indices.shape();
     TensorShape value_shape({dim_len_});
@@ -251,7 +251,7 @@ BatchSetCallback make_import_callback(
     const std::string& tensor_value,
     uint64_t feature_name_to_id,
     BundleReader* reader,
-    FeatureStoreMgr* storageMgr,
+    IFeatureStoreMgr* storageMgr,
     AsyncOpKernel::DoneCallback done);
  
 Status InternalImportValues(
@@ -268,7 +268,7 @@ Status InternalImportValues(
     char* key_buffer, char* value_buffer,
     BundleReader* reader,
     uint64_t feature_name_to_id,
-    FeatureStoreMgr* storageMgr,
+    IFeatureStoreMgr* storageMgr,
     AsyncOpKernel::DoneCallback done) {
   Status s_read = tensorflow::Status::OK();
   size_t read_key_num = LookupSegmentInternal(
@@ -312,7 +312,7 @@ BatchSetCallback make_import_callback(
     const std::string& tensor_value,
     uint64_t feature_name_to_id,
     BundleReader* reader,
-    FeatureStoreMgr* storageMgr,
+    IFeatureStoreMgr* storageMgr,
     AsyncOpKernel::DoneCallback done) {
   return [ctx, key_buffer, value_buffer, key_size,
           value_size, left_keys_num = total_keys_num,
@@ -413,8 +413,8 @@ class KvImportOp : public AsyncOpKernel {
     const Tensor& storage_pointer = ctx->input(2);
     const uint64 storage_pointer_value =
         storage_pointer.scalar<tensorflow::uint64>()();
-    FeatureStoreMgr* storageMgr =
-        reinterpret_cast<FeatureStoreMgr*>(storage_pointer_value);
+    IFeatureStoreMgr* storageMgr =
+        reinterpret_cast<IFeatureStoreMgr*>(storage_pointer_value);
 
     // create for read from file
     BundleReader* reader = new BundleReader(Env::Default(), file_name_str);

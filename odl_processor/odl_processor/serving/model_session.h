@@ -15,17 +15,17 @@ class Session;
 class Tensor;
 
 namespace processor {
-class FeatureStoreMgr;
+class IFeatureStoreMgr;
 class Request;
 class Response;
 struct ModelSession {
   ModelSession(Session* s, const Version& version,
-      FeatureStoreMgr* sparse_storage);
+      IFeatureStoreMgr* sparse_storage);
 
   Status Predict(Request& req, Response& resp);
 
   Session* session_ = nullptr;
-  FeatureStoreMgr* sparse_storage_ = nullptr;
+  IFeatureStoreMgr* sparse_storage_ = nullptr;
   
   std::string sparse_storage_name_;
   Tensor sparse_storage_tensor_;
@@ -41,17 +41,22 @@ class ModelSessionMgr {
   Status Predict(Request& req, Response& resp);
 
   Status CreateModelSession(const Version& version,
-      const char* ckpt_name, FeatureStoreMgr* sparse_storage);
+      const char* ckpt_name, IFeatureStoreMgr* sparse_storage);
+
+  Status CleanupModelSession();
 
  private:
-  Status CreateSession(Session** sess);
-  Status RunRestoreOps(const char* ckpt_name, const char* savedmodel_dir,
-      Session* session, FeatureStoreMgr* sparse_storage);
+  virtual Status CreateSession(Session** sess);
+  virtual Status RunRestoreOps(const char* ckpt_name, const char* savedmodel_dir,
+      Session* session, IFeatureStoreMgr* sparse_storage);
+  
   void ResetServingSession(Session* session, const Version& version,
-      FeatureStoreMgr* sparse_storage);
+      IFeatureStoreMgr* sparse_storage);
 
- private:
+ protected:
   ModelSession* serving_session_ = nullptr;
+
+  mutex mu_;
   std::vector<ModelSession*> sessions_;
 
   MetaGraphDef meta_graph_def_;
