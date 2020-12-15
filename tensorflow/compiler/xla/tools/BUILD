@@ -292,7 +292,6 @@ cc_library(
         "//tensorflow/compiler/xla/service:despecializer",
         "//tensorflow/compiler/xla/service:hlo",
         "//tensorflow/compiler/xla/service:hlo_module_config",
-        "//tensorflow/core/platform:errors",
         "//tensorflow/stream_executor:platform",
         "//tensorflow/stream_executor/lib",
     ],
