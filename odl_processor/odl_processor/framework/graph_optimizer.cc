@@ -516,12 +516,14 @@ const std::string& GetInitNodeName() {
   return name;
 }
 
-SavedModelOptimizer::SavedModelOptimizer(
+GraphOptimizer::GraphOptimizer(
     const std::string& signature_name,
-    MetaGraphDef* mgdef)
+    MetaGraphDef* mgdef,
+    GraphOptimizerOption& option)
   : graph_(OpRegistry::Global()),
     signature_name_(signature_name),
-    meta_graph_def_(mgdef) {
+    meta_graph_def_(mgdef),
+    option_(option) {
 
   GraphConstructorOptions opts;
   opts.allow_internal_ops = true;
@@ -534,11 +536,40 @@ SavedModelOptimizer::SavedModelOptimizer(
   }
 }
 
+
+SavedModelOptimizer::SavedModelOptimizer(
+    const std::string& signature_name,
+    MetaGraphDef* mgdef,
+    GraphOptimizerOption& option)
+  : GraphOptimizer(signature_name, mgdef, option) {
+}
+
 SavedModelOptimizer::~SavedModelOptimizer() {
 
 }
 
 Status SavedModelOptimizer::Optimize() {
+  if (option_.native_tf_mode) {
+    return RunNativeTFGraphPass();
+  }
+
+  return RunODLGraphPass();
+}
+
+Status SavedModelOptimizer::RunNativeTFGraphPass() {
+  Status s = ConvertToHashTableOps();
+  if (!s.ok()) {
+    return s;
+  }
+  // Add other passes here
+
+  // replace the graph def in saved_model_bundle
+  graph_.ToGraphDef(meta_graph_def_->mutable_graph_def());
+
+  return Status::OK();
+}
+
+Status SavedModelOptimizer::RunODLGraphPass() {
   // Generate ids for every feature
   Status s = GenerateIdsForFeatures();
   if (!s.ok()) return s;
@@ -577,36 +608,40 @@ struct SrcInfo {
   int src_slot;
 };
 
-Status ReplaceKVOpsWithLookupOrImportOps (
-    const std::string& remote_op_name,
+Status ReplaceNode(
+    const std::string& op_name,
     Node* node, Graph* graph,
     std::vector<SrcInfo>& input_info,
-    std::unordered_map<std::string, AttrValue*>& attr_info) {
+    std::unordered_map<std::string, const AttrValue*>& attr_info) {
 
   // Create KvLookup/KvImport op here and remove the node
-  NodeDef remote_def;
-  remote_def.set_name(node->name());
-  remote_def.set_op(remote_op_name);
+  NodeDef new_node_def;
+  new_node_def.set_name(node->name());
+  new_node_def.set_op(op_name);
 
   // Set attrs
   for (auto attr : attr_info) {
-    (*remote_def.mutable_attr())[attr.first] = *(attr.second);
+    (*new_node_def.mutable_attr())[attr.first] = *(attr.second);
   }
 
   Status status;
-  Node* remote_lookup_node = graph->AddNode(remote_def, &status);
+  Node *new_node = graph->AddNode(new_node_def, &status);
   if (!status.ok()) return status;
 
-  // Add input egdes
+  // Add input egdes, from slot 0 -> n
   for (size_t i = 0; i < input_info.size(); ++i) {
+    int idx = i;
+    if (input_info[i].src_slot == Graph::kControlSlot) {
+      idx = Graph::kControlSlot;
+    }
     graph->AddEdge(input_info[i].src_node,
                    input_info[i].src_slot,
-                   remote_lookup_node, i);
+                   new_node, idx);
   }
 
   // Add output edges
   for (const Edge* edge : node->out_edges()) {
-    graph->AddEdge(remote_lookup_node, edge->src_output(),
+    graph->AddEdge(new_node, edge->src_output(),
                    edge->dst(), edge->dst_input());
   }
 
@@ -614,6 +649,26 @@ Status ReplaceKVOpsWithLookupOrImportOps (
   graph->RemoveNode(node);
 
   return Status::OK();
+}
+
+Status ReplaceNode(
+    const std::string& op_name,
+    Node* node, Graph* graph,
+    std::vector<SrcInfo>& input_info,
+    std::unordered_map<std::string, std::string>& attr_info_map) {
+  std::unordered_map<std::string, const AttrValue*> attr_info;
+  for (auto m : attr_info_map) {
+    const tensorflow::AttrValue* attr = node->attrs().Find(m.first);
+    if (attr == nullptr) {
+      return tensorflow::errors::Internal(
+          "Miss attr: ", m.first, " in the node, ",
+          node->DebugString());
+    }
+    attr_info[m.second] = attr;
+  }
+
+  return ReplaceNode(op_name, node, graph,
+                     input_info, attr_info);
 }
 
 Status GetShapeValue(Node* node, int* dim) {
@@ -633,6 +688,59 @@ Status GetShapeValue(Node* node, int* dim) {
   }
 
   *dim = dim_len_value->shape().dim(0).size();
+
+  return Status::OK();
+}
+
+bool IsKvOps(const Node* node) {
+  return node->op_def().name() == "KvResourceGather" ||
+         node->op_def().name() == "KvVarHandleOp" ||
+         node->op_def().name() == "KvResourceImportV2";
+}
+
+Status CreateScalarConstOp(const std::string& name,
+                           tensorflow::DataType type,
+                           const std::string& value,
+                           Graph* graph, Node** new_node) {
+  NodeDef const_def;
+  const_def.set_name(name);
+  const_def.set_op("Const");
+  auto* attr = const_def.mutable_attr();
+  (*attr)["dtype"].set_type(type);
+  Tensor const_tensor(type, TensorShape({}));
+  const_tensor.scalar<std::string>()() = value;
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
+
+  Status s_add_node;
+  *new_node = graph->AddNode(const_def, &s_add_node);
+  return s_add_node;
+}
+
+Status CreateRestoreOp(const std::string& name,
+                       std::vector<SrcInfo>& input_info,
+                       std::vector<DataType>& types,
+                       Graph* graph, Node** new_node) {
+  NodeDef restore_def;
+  restore_def.set_name(name);
+  restore_def.set_op("RestoreV2");
+  DataTypeVector dtypes;
+  for (auto t : types) {
+    dtypes.push_back(t);
+  }
+  AttrValue attr_value;
+  SetAttrValue(dtypes, &attr_value);
+  (*restore_def.mutable_attr())["dtypes"] = attr_value;
+  Status status;
+  *new_node = graph->AddNode(restore_def, &status);
+  if (!status.ok()) return status;
+
+  // Add input egdes
+  for (size_t i = 0; i < input_info.size(); ++i) {
+    graph->AddEdge(input_info[i].src_node,
+                   input_info[i].src_slot,
+                   *new_node, i);
+  }
+
   return Status::OK();
 }
 
@@ -660,12 +768,14 @@ Status SavedModelOptimizer::ConvertKVOps() {
     // Get input edges
     std::vector<const Edge*> input_edges;
     // Check the edges' order
-    for (const Edge* edge : node->in_edges()) {
-      input_edges.push_back(edge);
+    if (IsKvOps(node)) {
+      for (const Edge* edge : node->in_edges()) {
+        input_edges.push_back(edge);
+      }
     }
 
     std::vector<SrcInfo> input_info;
-    std::unordered_map<std::string, AttrValue*> attr_info;
+    std::unordered_map<std::string, const AttrValue*> attr_info;
 
     if (node->op_def().name() == "KvResourceGather") {
       if (!storage_pointer_node_) {
@@ -713,7 +823,7 @@ Status SavedModelOptimizer::ConvertKVOps() {
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
 
-      Status s_replace = ReplaceKVOpsWithLookupOrImportOps(
+      Status s_replace = ReplaceNode(
           "KvLookup", node, &graph_, input_info, attr_info);
       if (!s_replace.ok()) {
         return tensorflow::errors::Internal(
@@ -767,7 +877,7 @@ Status SavedModelOptimizer::ConvertKVOps() {
       attr_info["dtype"] = dtype_value;
       attr_info["Tkeys"] = tkeys_value;
 
-      Status s_replace = ReplaceKVOpsWithLookupOrImportOps(
+      Status s_replace = ReplaceNode(
           "KvImport", node, &graph_, input_info, attr_info);
       if (!s_replace.ok()) {
         return tensorflow::errors::Internal(
@@ -875,6 +985,125 @@ Status SavedModelOptimizer::GenerateIdsForFeatures() {
 }
 
 Status SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {
+  return Status::OK();
+}
+
+Status SavedModelOptimizer::ConvertToHashTableOps() {
+
+  for (Node* node : graph_.nodes()) {
+    // Get input edges
+    std::vector<SrcInfo> input_info;
+    int edge_count = 0;
+    if (IsKvOps(node)) {
+      input_info.resize(node->num_inputs());
+      for (const Edge* edge : node->in_edges()) {
+        if (edge->IsControlEdge()) {
+          input_info.push_back({edge->src(), edge->src_output()});
+        } else {
+          ++edge_count;
+          input_info[edge->dst_input()] = {edge->src(), edge->src_output()};
+        }
+      }
+
+      if (edge_count != node->num_inputs()) {
+        return tensorflow::errors::Internal(
+            "Edge count not match, node = ", node->DebugString(),
+            ", need ", std::to_string(node->num_inputs()),
+            ", got ", std::to_string(edge_count));
+      }
+    }
+
+    std::unordered_map<std::string, std::string> attr_info_map;
+    Status s_replace;
+    if (node->op_def().name() == "KvVarHandleOp") {
+      // KvVarHandleOp -> MutableHashTableV2
+      attr_info_map["container"] = "container";
+      attr_info_map["shared_name"] = "shared_name";
+      attr_info_map["dtype"] = "value_dtype";
+      attr_info_map["Tkeys"] = "key_dtype";
+
+      s_replace = ReplaceNode(
+          "MutableHashTableV2", node, &graph_, input_info,
+          attr_info_map);
+    } else if (node->op_def().name() == "KvResourceGather") {
+      // KvResourceGather -> LookupTableFindV2
+      attr_info_map["dtype"] = "Tout";
+      attr_info_map["Tkeys"] = "Tin";
+
+      s_replace = ReplaceNode(
+          "LookupTableFindV2", node, &graph_, input_info,
+          attr_info_map);
+    } else if (node->op_def().name() == "KvResourceImportV2") {
+      // KvResourceImportV2 -> LookupTableImportV2
+
+      // create restore_op to restore values and keys
+      // create const "tensor_names-keys" and "tensor_names-values" op
+      Node* empty_shape_and_slices_node = nullptr;
+      Status s_add_node = CreateScalarConstOp(
+          node->name() + "/const/shape_and_slices", DT_STRING,
+          "", &graph_, &empty_shape_and_slices_node);
+      TF_RETURN_IF_ERROR(s_add_node);
+
+      Node* tensor_names_key_node = nullptr;
+      s_add_node = CreateScalarConstOp(
+          node->name() + "/const/keys", DT_STRING,
+          input_info[3].src_node->name() + "-keys",
+          &graph_, &tensor_names_key_node);
+      TF_RETURN_IF_ERROR(s_add_node);
+
+      Node* tensor_names_value_node = nullptr;
+      s_add_node = CreateScalarConstOp(
+          node->name() + "/const/values", DT_STRING,
+          input_info[3].src_node->name() + "-values",
+          &graph_, &tensor_names_value_node);
+      TF_RETURN_IF_ERROR(s_add_node);
+
+      // 1) create keys restore_op
+      std::vector<SrcInfo> restore_input_info;
+      restore_input_info.push_back(input_info[0]);
+      restore_input_info.push_back(SrcInfo{tensor_names_key_node, 0});
+      restore_input_info.push_back(SrcInfo{empty_shape_and_slices_node, 0});
+      std::vector<DataType> key_types;
+      key_types.push_back(DT_STRING);
+
+      Node* restore_key_node = nullptr;
+      s_add_node = CreateRestoreOp(node->name() + "/keys/restore",
+                                   restore_input_info, key_types,
+                                   &graph_, &restore_key_node);
+      TF_RETURN_IF_ERROR(s_add_node);
+
+      // 2) create values restore_op
+      restore_input_info[1] = SrcInfo{tensor_names_value_node, 0};
+      Node* restore_value_node = nullptr;
+      s_add_node = CreateRestoreOp(node->name() + "/values/restore",
+                                   restore_input_info, key_types,
+                                   &graph_, &restore_value_node);
+      TF_RETURN_IF_ERROR(s_add_node);
+ 
+      std::vector<SrcInfo> import_input_info;
+      import_input_info.push_back(input_info[1]);
+      import_input_info.push_back(SrcInfo{restore_key_node, 0});
+      import_input_info.push_back(SrcInfo{restore_value_node, 0});
+      // control edges
+      for (size_t i = edge_count; i < input_info.size(); ++i) {
+        import_input_info.push_back(input_info[i]);
+      }
+
+      attr_info_map["Tkeys"] = "Tin";
+      attr_info_map["dtype"] = "Tout";
+
+      s_replace = ReplaceNode(
+          "LookupTableImportV2", node, &graph_, import_input_info,
+          attr_info_map);
+    }
+
+    if (!s_replace.ok()) {
+      return tensorflow::errors::Internal(
+          "Replace Kv ops with lookup or import ops failed, ",
+           s_replace.error_message());
+    }
+  }
+
   return Status::OK();
 }
 
