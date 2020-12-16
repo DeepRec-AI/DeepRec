@@ -100,7 +100,7 @@ HloInstructionProto HloSoftmaxInstruction::ToProto() const {
 std::vector<string> HloSoftmaxInstruction::ExtraAttributesToStringImpl(
     const HloPrintOptions& options) const {
   return {StrCat("feature_index=", feature_index()),
-          StrCat("log=", log())};
+          StrCat("log=", log() ? "true" : "false")};
 }
 
 std::unique_ptr<HloInstruction>
