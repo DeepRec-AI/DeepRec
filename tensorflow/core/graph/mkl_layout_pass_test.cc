@@ -1579,6 +1579,7 @@ TEST_F(MklLayoutPassTest, NodeRewrite_Dequantize_Negative_Non_SCALED_Mode) {
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['A', 'B', 'C']}"                                             \
         "node { name: 'E' op: 'Zeta'"                                          \
         "attr { key: 'T' value { type: " #T " } }"                             \
@@ -1610,6 +1611,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive1);
               "i:1, i:1} } }"                                                 \
               " attr { key: 'fused_ops'        value { list: {s: 'Relu'} } }" \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['A', 'B', 'C']}"                                      \
               "node { name: 'E' op: 'Zeta'"                                   \
               "attr { key: 'T' value { type: " #T " } }"                      \
@@ -1642,6 +1644,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive2);
               " attr { key: 'fused_ops'"                                      \
               "             value { list: {s: 'BiasAdd', s: 'Relu'} } }"      \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['A', 'B', 'C']}"                                      \
               "node { name: 'E' op: 'Zeta'"                                   \
               "attr { key: 'T' value { type: " #T " } }"                      \
@@ -1674,6 +1677,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive3);
               " attr { key: 'fused_ops'"                                      \
               "             value { list: {s: 'BiasAdd', s: 'Relu6'} } }"     \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['A', 'B', 'C']}"                                      \
               "node { name: 'E' op: 'Zeta'"                                   \
               "attr { key: 'T' value { type: " #T " } }"                      \
@@ -1706,6 +1710,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive4);
               " attr { key: 'fused_ops'"                                      \
               "             value { list: {s: 'BiasAdd', s: 'Elu'} } }"       \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['A', 'B', 'C']}"                                      \
               "node { name: 'E' op: 'Zeta'"                                   \
               "attr { key: 'T' value { type: " #T " } }"                      \
@@ -1739,6 +1744,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive5);
               " attr { key: 'fused_ops'"                                      \
               "             value { list: {s: 'BiasAdd', s: 'Add'} } }"       \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['A', 'B', 'C', 'D']}"                                 \
               "node { name: 'F' op: 'Zeta'"                                   \
               "attr { key: 'T' value { type: " #T " } }"                      \
@@ -1774,6 +1780,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive6);
         " attr { key: 'fused_ops'"                                             \
         "             value { list: {s: 'BiasAdd', s: 'Add', s: 'Relu'} } }"   \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['A', 'B', 'C', 'D']}"                                        \
         "node { name: 'F' op: 'Zeta'"                                          \
         "attr { key: 'T' value { type: " #T " } }"                             \
@@ -1787,6 +1794,39 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive6);
               "DMT/_0->E:4;DMT/_1->E:5;DMT/_2->E:6;DMT/_3->E:7;E->F");         \
   }
 REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive7);
+#undef REGISTER_TEST
+
+// Rewrite test for _FusedConv2D Op with BiasAdd+LeakyRelu fusion
+#define REGISTER_TEST(NAME, T, INPUT)                                         \
+  TEST_F(MklLayoutPassTest, NAME##_##T) {                                     \
+    InitGraph("node { name: 'A' op: '" #INPUT "'}"                            \
+              "node { name: 'B' op: '" #INPUT "'}"                            \
+              "node { name: 'C' op: '" #INPUT "'}"                            \
+              "node { name: 'D' op: '_FusedConv2D'"                           \
+              " attr { key: 'T'                value { type: " #T " } }"      \
+              " attr { key: 'num_args'         value { i: 1 } }"              \
+              " attr { key: 'data_format'      value { s: 'NCHW' } }"         \
+              " attr { key: 'strides'          value { list: {i: 1, i:1, "    \
+              "i:1, i:1} } }"                                                 \
+              " attr { key: 'padding'          value { s: 'SAME' } }"         \
+              " attr { key: 'dilations'        value { list: {i: 1, i:1, "    \
+              "i:1, i:1} } }"                                                 \
+              " attr { key: 'fused_ops'"                                      \
+              "             value { list: {s: 'BiasAdd', s: 'LeakyRelu'} } }" \
+              " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
+              " input: ['A', 'B', 'C']}"                                      \
+              "node { name: 'E' op: 'Zeta'"                                   \
+              "attr { key: 'T' value { type: " #T " } }"                      \
+              " input: ['D', 'C'] }");                                        \
+    EXPECT_EQ(DoMklLayoutOptimizationPass(),                                  \
+              "A(" #INPUT ");B(" #INPUT ");C(" #INPUT ");D(_MklFusedConv2D);" \
+              "DMT/_0(Const);DMT/_1(Const);DMT/_2(Const);E(Zeta)|A->D;"       \
+              "A:control->DMT/_0:control;A:control->DMT/_1:control;"          \
+              "A:control->DMT/_2:control;B->D:1;C->D:2;C->E:1;D->E;"          \
+              "DMT/_0->D:3;DMT/_1->D:4;DMT/_2->D:5");                         \
+  }
+REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive8);
 #undef REGISTER_TEST
 
 // Rewrite test for _FusedDepthwiseConv2dNative Op fusion
@@ -1807,6 +1847,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Positive7);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: " FUSED_OPS " } }"      \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['A', 'B', 'C']}"                                             \
         "node { name: 'E' op: 'Zeta'"                                          \
         "attr { key: 'T' value { type: " #T " } }"                             \
@@ -1857,6 +1898,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedDepthwiseConv2dNative_Positive4);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'Unsupported'} } }" \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['A', 'B', 'C']}"                                             \
         "node { name: 'E' op: 'Zeta'"                                          \
         "attr { key: 'T' value { type: " #T " } }"                             \
@@ -1886,6 +1928,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedConv2D_Negative1);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'Unsupported'} } }" \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['A', 'B', 'C']}"                                             \
         "node { name: 'E' op: 'Zeta'"                                          \
         "attr { key: 'T' value { type: " #T " } }"                             \
@@ -1915,6 +1958,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedDepthwiseConv2dNative_Negative1);
         " attr { key: 'dilations'        value { list: {i: 1, i:1, i:1, i:1} " \
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
         " input: ['A', 'B', 'C']}"                                             \
         "node { name: 'E' op: 'Zeta'"                                          \
@@ -1945,6 +1989,7 @@ REGISTER_TEST(NodeRewrite_FusedConv2D_Negative2, DT_DOUBLE, DoubleInput);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['A', 'B', 'C']}"                                             \
         "node { name: 'E' op: 'Zeta'"                                          \
         "attr { key: 'T' value { type: " #T "} }"                              \
@@ -2090,6 +2135,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedBatchMatMulV2_Positive)
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['C', 'D', 'E']}"                                             \
         "node { name: 'G' op: 'Zeta'"                                          \
         " attr { key: 'T' value { type: " #T " } }"                            \
@@ -2134,6 +2180,7 @@ REGISTER_TEST_ALL_TYPES(NodeMerge_PadWithFusedConv2D_Positive1);
               " attr { key: 'fused_ops'"                                      \
               "             value { list: {s: 'BiasAdd', s: 'Relu'} } }"      \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['C', 'D', 'E']}"                                      \
               "node { name: 'G' op: 'Zeta'"                                   \
               "attr { key: 'T' value { type: " #T "} }"                       \
@@ -2178,6 +2225,7 @@ REGISTER_TEST_ALL_TYPES(NodeMerge_PadWithFusedConv2D_Positive2);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'Unsupported'} } }" \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['C', 'D', 'E']}"                                             \
         "node { name: 'G' op: 'Zeta'"                                          \
         " attr { key: 'T' value { type: " #T " } }"                            \
@@ -2218,6 +2266,7 @@ REGISTER_TEST_ALL_TYPES(NodeMerge_PadWithFusedConv2D_Negative1);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['C', 'D', 'E']}"                                             \
         "node { name: 'G' op: 'Zeta'"                                          \
         " attr { key: 'T' value { type: " #T " } }"                            \
@@ -2261,6 +2310,7 @@ REGISTER_TEST_ALL_TYPES(NodeMerge_PadWithFusedConv2D_Negative2);
               " attr { key: 'fused_ops'"                                      \
               "             value { list: {s: 'BiasAdd', s: 'Relu'} } }"      \
               " attr { key: 'epsilon'          value { f: 0.001 }}"           \
+              " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"             \
               " input: ['C', 'D', 'E']}"                                      \
               "node { name: 'G' op: 'Zeta'"                                   \
               " attr { key: 'T' value { type: " #T " } }"                     \
@@ -2315,6 +2365,7 @@ REGISTER_TEST_ALL_TYPES(NodeMerge_PadWithFusedConv2D_Negative3);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['C', 'D', 'E']}"                                             \
         "node { name: 'G' op: 'Zeta'"                                          \
         " attr {key: 'T'                 value { type: " #T " } }"             \
@@ -2376,6 +2427,7 @@ REGISTER_TEST_ALL_TYPES(Input_ControlEdge_PadWithFusedConv2D_Positive);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['C', 'D', 'E']}"                                             \
         "node { name: 'G' op: 'Zeta'"                                          \
         " attr {key: 'T'                 value { type: " #T " } }"             \
@@ -2428,6 +2480,7 @@ REGISTER_TEST_ALL_TYPES(Output_ControlEdge_PadWithFusedConv2D_Positive);
         "} }"                                                                  \
         " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"     \
         " attr { key: 'epsilon'          value { f: 0.001 }}"                  \
+        " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"                    \
         " input: ['C', 'A', 'E']}"                                             \
         "node { name: 'G' op: '" #OUTPUT "'"                                   \
         " input: ['C', 'F']}");                                                \
@@ -4777,6 +4830,7 @@ TEST_F(MklLayoutPassTest, FusedConv2DWithBias_FilterCaching_Positive) {
       " attr { key: 'dilations'        value { list: {i: 1, i:1, i:1, i:1} } }"
       " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"
       " attr { key: 'epsilon'          value { f: 0.001 }}"
+      " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"
       " input: ['A', 'B', 'C']}"
       "node { name: 'E' op: 'Zeta' attr { key: 'T' value { type: DT_FLOAT } }"
       " input: ['D', 'C'] }");
@@ -4804,6 +4858,7 @@ TEST_F(MklLayoutPassTest,
       " attr { key: 'dilations'        value { list: {i: 1, i:1, i:1, i:1} } }"
       " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"
       " attr { key: 'epsilon'          value { f: 0.001 }}"
+      " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"
       " input: ['A', 'B', 'C']}"
       "node { name: 'E' op: 'Zeta' attr { key: 'T' value { type: DT_FLOAT } }"
       " input: ['D', 'C'] }");
@@ -4826,6 +4881,7 @@ TEST_F(MklLayoutPassTest, FusedConv2DWithBias_FilterCaching_Negative) {
       " attr { key: 'dilations'        value { list: {i: 1, i:1, i:1, i:1} } }"
       " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"
       " attr { key: 'epsilon'          value { f: 0.001 }}"
+      " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"
       " input: ['A', 'B', 'C']}"
       "node { name: 'E' op: 'Zeta' attr { key: 'T' value { type: DT_FLOAT } }"
       " input: ['D', 'C'] }");
@@ -4849,6 +4905,7 @@ TEST_F(MklLayoutPassTest,
       " attr { key: 'dilations'        value { list: {i: 1, i:1, i:1, i:1} } }"
       " attr { key: 'fused_ops'        value { list: {s: 'BiasAdd'} } }"
       " attr { key: 'epsilon'          value { f: 0.001 }}"
+      " attr { key: 'leakyrelu_alpha'  value { f: 0.2 }}"
       " input: ['A', 'B', 'C']}"
       "node { name: 'E' op: 'Zeta' attr { key: 'T' value { type: DT_FLOAT } }"
       " input: ['D', 'C'] }");

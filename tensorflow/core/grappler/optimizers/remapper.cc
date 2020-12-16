@@ -372,10 +372,10 @@ bool IsDeviceCompatible(const RemapperContext& ctx, Pattern& matched) {
 
 bool IsSupportedActivation(const NodeDef& node) {
   if (!DisableMKL()) {
-    return IsRelu(node) || IsRelu6(node) || IsElu(node) || IsGelu(node);
+    return IsRelu(node) || IsRelu6(node) || IsElu(node) || IsGelu(node) ||
+           IsLeakyRelu(node) || IsTanh(node);
   }
-
-  return IsRelu(node) || IsRelu6(node) || IsElu(node);
+  return IsRelu(node) || IsRelu6(node) || IsElu(node) || IsLeakyRelu(node);
 }
 
 inline bool HasControlFaninOrFanout(const utils::MutableNodeView& node_view) {
@@ -485,6 +485,12 @@ bool FindContractionWithBiasAndActivation(
 
   // Currently, only matmul + bias + gelu is enabled
   if (!IsMatMul(*contraction_node_def) && IsGelu(*node_def)) return false;
+
+  // Currently, only conv + bias + leakyrelu is enabled
+  if (!IsConv2D(*contraction_node_def) && IsLeakyRelu(*node_def)) return false;
+
+  // Currently, only matmul + bias + tanh is enable
+  if (!IsMatMul(*contraction_node_def) && IsTanh(*node_def)) return false;
 
   // Check that data type and data format are supported on assigned device.
   const ContractionWithBiasAddAndActivation pattern{base.contraction,
@@ -790,6 +796,9 @@ bool FindContractionWithBiasAndAddActivation(
   if (node_def == nullptr) return false;
   if (!IsSupportedActivation(*node_def)) return false;
 
+  // Currently, Contraction + Bias + Add + Tanh pattern is not supported
+  if (IsTanh(*node_def)) return false;
+
   // MKL activation op only supports float and bfloat16 data types.
   if (!HasDataType(node_def, DT_FLOAT) && !HasDataType(node_def, DT_BFLOAT16))
     return false;
@@ -804,6 +813,16 @@ bool FindContractionWithBiasAndAddActivation(
   if (!FindContractionWithBiasAddAndAdd(ctx, *add_node_view, &base)) {
     return false;
   }
+
+  // Get the contraction node
+  const auto* bias_add_node_view =
+      add_node_view->GetRegularFanin(base.port_id).node_view();
+  const auto* contraction_node_view =
+      bias_add_node_view->GetRegularFanin(0).node_view();
+  const auto* contraction_node_def = contraction_node_view->node();
+
+  // Currently, only conv + bias + add + leakyrelu is enabled
+  if (!IsConv2D(*contraction_node_def) && IsLeakyRelu(*node_def)) return false;
 
   // We successfully found a Conv2D+BiasAdd+AddN+activation pattern.
   const ContractionWithBiasAndAddActivation pattern{
@@ -998,7 +1017,8 @@ bool FindFusedBatchNormEx(const RemapperContext& ctx, int node_index,
   return false;
 }
 
-void CopyConv2DAttributes(const NodeDef& conv2d, NodeDef* fused_conv2d) {
+void CopyConv2DAttributes(const NodeDef& conv2d, NodeDef* fused_conv2d,
+                          const NodeDef* activation = nullptr) {
   DCHECK(IsConv2D(conv2d)) << "Input node must be a Conv2D";
 
   auto* attr = fused_conv2d->mutable_attr();
@@ -1011,10 +1031,18 @@ void CopyConv2DAttributes(const NodeDef& conv2d, NodeDef* fused_conv2d) {
   (*attr)["dilations"] = src_attr.at("dilations");
   (*attr)["data_format"] = src_attr.at("data_format");
   (*attr)["use_cudnn_on_gpu"] = src_attr.at("use_cudnn_on_gpu");
+  float leakyrelu_alpha = 0.0;
+  // Copy LeakyRelu's attr alpha to FusedConv2D's attr leakyrelu_alpha
+  if (activation != nullptr && IsLeakyRelu(*activation)) {
+    auto& activation_attr = activation->attr();
+    leakyrelu_alpha = activation_attr.at("alpha").f();
+  }
+  SetAttrValue(leakyrelu_alpha, &(*attr)["leakyrelu_alpha"]);
 }
 
 void CopyDepthwiseConv2dNativeAttributes(const NodeDef& dw_conv2d,
-                                         NodeDef* fused_dw_conv2d) {
+                                         NodeDef* fused_dw_conv2d,
+                                         const NodeDef* activation = nullptr) {
   DCHECK(IsDepthwiseConv2dNative(dw_conv2d))
       << "Input node must be a DepthwiseConv2dNative";
 
@@ -1026,6 +1054,13 @@ void CopyDepthwiseConv2dNativeAttributes(const NodeDef& dw_conv2d,
   (*attr)["padding"] = src_attr.at("padding");
   (*attr)["dilations"] = src_attr.at("dilations");
   (*attr)["data_format"] = src_attr.at("data_format");
+  float leakyrelu_alpha = 0.0;
+  // Copy LeakyRelu's attr alpha to FusedDepthwiseConv2d's attr leakyrelu_alpha
+  if (activation != nullptr && IsLeakyRelu(*activation)) {
+    auto& activation_attr = activation->attr();
+    leakyrelu_alpha = activation_attr.at("alpha").f();
+  }
+  SetAttrValue(leakyrelu_alpha, &(*attr)["leakyrelu_alpha"]);
 }
 
 void CopyFusedBatchNormAttributes(const NodeDef& fused_batch_norm,
@@ -1291,6 +1326,7 @@ Status AddFusedContractionNode(
   const NodeDef& contraction = graph->node(matched.contraction);
   const NodeDef& bias_add = graph->node(matched.bias_add);
   const NodeDef& activation = graph->node(matched.activation);
+
   VLOG(2) << "Fuse " << contraction.op() << " with BiasAdd and "
           << activation.op() << ":"
           << " activation=" << activation.name()
@@ -1306,7 +1342,8 @@ Status AddFusedContractionNode(
 
   if (IsConv2D(contraction)) {
     fused_op.set_op(kFusedConv2D);
-    CopyConv2DAttributes(contraction, &fused_op);
+    // leaky relu has a special attribute alpha
+    CopyConv2DAttributes(contraction, &fused_op, &activation);
   } else if (IsDepthwiseConv2dNative(contraction)) {
     fused_op.set_op(kFusedDepthwiseConv2dNative);
     CopyDepthwiseConv2dNativeAttributes(contraction, &fused_op);
@@ -1449,7 +1486,7 @@ Status AddFusedConv2DNode(RemapperContext* ctx,
   fused_conv2d.add_input(fused_batch_norm.input(3));  // 4: mean
   fused_conv2d.add_input(fused_batch_norm.input(4));  // 5: variance
 
-  CopyConv2DAttributes(contraction, &fused_conv2d);
+  CopyConv2DAttributes(contraction, &fused_conv2d, &activation);
   SetFusedOpAttributes(&fused_conv2d, {"FusedBatchNorm", activation.op()},
                        /*num_args=*/4, /*epsilon=*/matched.epsilon);
 
@@ -1574,7 +1611,7 @@ Status AddFusedContractionNode(
   fused_conv2d.add_input(add.input(1 - matched.port_id));
 
   CopyConv2DAttributes(contraction, &fused_conv2d);
-  SetFusedOpAttributes(&fused_conv2d, {"BiasAdd", "Add", "Relu"}, 2);
+  SetFusedOpAttributes(&fused_conv2d, {"BiasAdd", "Add", activation.op()}, 2);
 
   utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
   Status status;
