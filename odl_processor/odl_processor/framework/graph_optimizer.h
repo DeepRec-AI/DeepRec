@@ -114,29 +114,39 @@ MetaGraphDef GetMetaGraphDefFromSavedModelText(
 
 /// Tensorflow
 
-struct GraphOptimizerOptions {
-  // load sparse parameters to memory,
-  // user can specify this flag or
-  // defined by some strategy.
-  bool cache_sparse_locally = false;
-};
-
 const std::string& GetInitDefKey();
 const std::string& GetModelVersionNodeName();
 const std::string& GetStoragePointerNodeName();
 const std::string& GetInitNodeName();
 
+struct GraphOptimizerOption {
+  // Convert EV ops to HashTable ops
+  // to support local graph execution.
+  bool native_tf_mode = false;
+};
+
 class GraphOptimizer {
  public:
-  explicit GraphOptimizer() {}
+  explicit GraphOptimizer(
+      const std::string& signature_name,
+      MetaGraphDef* mgdef,
+      GraphOptimizerOption& option);
   virtual ~GraphOptimizer() {}
   virtual Status Optimize() = 0;
+
+ protected:
+  Graph graph_; // graph of meta_graph_def_.graph_def()
+  std::string signature_name_;
+  MetaGraphDef* meta_graph_def_ = nullptr; // not owned
+  GraphOptimizerOption option_;
 };
 
 class SavedModelOptimizer : public GraphOptimizer {
  public:
-  SavedModelOptimizer(const std::string& signature_name,
-                      MetaGraphDef* mgdef);
+  explicit SavedModelOptimizer(
+      const std::string& signature_name,
+      MetaGraphDef* mgdef,
+      GraphOptimizerOption& option);
   ~SavedModelOptimizer();
   Status Optimize() override;
 
@@ -146,6 +156,12 @@ class SavedModelOptimizer : public GraphOptimizer {
       AttrValue* attr_value);
 
  private:
+  Status RunNativeTFGraphPass();
+  Status RunODLGraphPass();
+
+  // Convert EV related ops to HashTable ops
+  Status ConvertToHashTableOps();
+
   // TODO: Only support EV now
   // Add Lookup and Insert ops,
   // then remove KvResourceGather and KvResourceImportV2 ops.
@@ -171,10 +187,7 @@ class SavedModelOptimizer : public GraphOptimizer {
   // the num will be as the prefix of a query key.
   Status GenerateIdsForFeatures();
 
-  Graph graph_; // graph of meta_graph_def_.graph_def()
   Node* storage_pointer_node_ = nullptr;// storage placeholder node
-  std::string signature_name_;
-  MetaGraphDef* meta_graph_def_ = nullptr; // not owned
   std::unordered_map<std::string, int> feature_names_to_ids;
 };
 

@@ -943,7 +943,10 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
 
   // testing all ...
 
-  SavedModelOptimizer opt("serving_x", &saved_model_bundle.meta_graph_def);
+  GraphOptimizerOption option;
+  SavedModelOptimizer opt("serving_x",
+                          &saved_model_bundle.meta_graph_def,
+                          option);
   opt.Optimize();
 
   std::unordered_map<std::string, NodeDef> nodes;
@@ -987,5 +990,157 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   EXPECT_TRUE(init_op_name == "GlobalODL/KvInit");
 }
 
+/*
+           KvVarHandleOp
+      ...   /        \    ...
+        \  /          \    /
+      KvResource   KvResource
+       ImportV2      Gather
+          |              \
+          |               \
+     NoOp(save/restore)   Identity
+
+                ||
+                ||
+                \/
+
+                       MutableHashTableV2
+                          /          \        ...
+    (key)     (value)    /            \        /
+  RestoreV2  RestoreV2   |          LookupTableFindV2
+         \      |        |
+          \     |        |
+        LookupTableImportV2
+                |
+                |
+         NoOp(save/restore)
+*/
+TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
+  GraphDef graph_def;
+
+  NodeDef* n_prefix_const_0 = graph_def.add_node();
+  n_prefix_const_0->set_name("prefix/Const");
+  n_prefix_const_0->set_op("Const");
+  (*n_prefix_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_value_const_0 = graph_def.add_node();
+  n_value_const_0->set_name("value/Const");
+  n_value_const_0->set_op("Const");
+  (*n_value_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_tsname_const_0 = graph_def.add_node();
+  n_tsname_const_0->set_name("tsname/Const");
+  n_tsname_const_0->set_op("Const");
+  (*n_tsname_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+
+  NodeDef* n_ek_const_0 = graph_def.add_node();
+  n_ek_const_0->set_name("empty_key/Const");
+  n_ek_const_0->set_op("Const");
+  (*n_ek_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+ 
+
+  // KvVarHandle
+  NodeDef* n_var_0 = graph_def.add_node();
+  n_var_0->set_name("var_0");
+  n_var_0->set_op("KvVarHandleOp");
+  AttrValue value_shape;
+  tensorflow::TensorShapeProto tshape_proto;
+  tshape_proto.add_dim()->set_size(1);
+  *value_shape.mutable_shape() = tshape_proto;
+  (*n_var_0->mutable_attr())["shape"] = value_shape;
+  tensorflow::AttrValue container_attr;
+  *container_attr.mutable_s() = "A";
+  (*n_var_0->mutable_attr())["container"] = container_attr;
+  tensorflow::AttrValue shared_name_attr;
+  *shared_name_attr.mutable_s() = "B/feature";
+  (*n_var_0->mutable_attr())["shared_name"] = shared_name_attr;
+  (*n_var_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  (*n_var_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+
+  // KvResourceImportV2
+  NodeDef* n_lookup_import_0 = graph_def.add_node();
+  n_lookup_import_0->set_name("KvResourceImportV2_0");
+  n_lookup_import_0->set_op("KvResourceImportV2");
+  (*n_lookup_import_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_import_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  AttrValue value0;
+  tensorflow::TensorShapeProto tshape0;
+  tshape0.add_dim()->set_size(-1);
+  *value0.mutable_shape() = tshape0;
+  (*n_lookup_import_0->mutable_attr())["shape"] = value0;
+  n_lookup_import_0->add_input("prefix/Const");
+  n_lookup_import_0->add_input("var_0");
+  n_lookup_import_0->add_input("value/Const");
+  n_lookup_import_0->add_input("tsname/Const");
+  n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("^prefix/Const");
+ 
+  // NoOp
+  NodeDef* n_noop_0 = graph_def.add_node(); 
+  n_noop_0->set_name("save/restore");
+  n_noop_0->set_op("NoOp");
+  n_noop_0->add_input("^KvResourceImportV2_0");
+
+  // KvResourceGather
+  NodeDef* n_default_const_0 = graph_def.add_node();
+  n_default_const_0->set_name("default/Const");
+  n_default_const_0->set_op("Const");
+  (*n_default_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_unique_0 = graph_def.add_node();
+  n_unique_0->set_name("Uniue");
+  n_unique_0->set_op("FakeUnique");
+ 
+  NodeDef* n_lookup_find_0 = graph_def.add_node();
+  n_lookup_find_0->set_name("KvResourceGather_0");
+  n_lookup_find_0->set_op("KvResourceGather");
+  (*n_lookup_find_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_find_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  n_lookup_find_0->add_input("var_0");
+  n_lookup_find_0->add_input("Uniue");
+  n_lookup_find_0->add_input("default/Const");
+  n_lookup_find_0->add_input("^var_0");
+
+  // Identity
+  NodeDef* n_identity_0 = graph_def.add_node();
+  n_identity_0->set_name("lookup/Identity");
+  n_identity_0->set_op("Identity");
+  (*n_identity_0->mutable_attr())["T"].set_type(DT_FLOAT);
+  n_identity_0->add_input("KvResourceGather_0");
+
+  SavedModelBundle saved_model_bundle;
+  *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
+
+  GraphOptimizerOption option;
+  option.native_tf_mode = true;
+  SavedModelOptimizer opt("serving_default",
+                          &saved_model_bundle.meta_graph_def,
+                          option);
+  opt.Optimize();
+
+  GraphDef new_graph_def = saved_model_bundle.meta_graph_def.graph_def();
+  std::unordered_map<std::string, NodeDef> nodes;
+  int node_count = 0;
+  for (auto n : new_graph_def.node()) {
+    nodes[n.name()] = n;
+    ++node_count;
+  }
+
+  EXPECT_TRUE(node_count == 16);
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/values/restore") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/keys/restore") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/values") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/keys") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/shape_and_slices") != nodes.end());
+
+  EXPECT_TRUE(nodes["var_0"].op() == "MutableHashTableV2");
+  EXPECT_TRUE(nodes["KvResourceImportV2_0/values/restore"].op() == "RestoreV2");
+  EXPECT_TRUE(nodes["KvResourceImportV2_0/keys/restore"].op() == "RestoreV2");
+  EXPECT_TRUE(nodes["KvResourceImportV2_0"].op() == "LookupTableImportV2");
+  EXPECT_TRUE(nodes["KvResourceGather_0"].op() == "LookupTableFindV2");
+
+  EXPECT_TRUE(1);
+}
+ 
 } // namespace processor
 } // namespace tensorflow

@@ -61,8 +61,13 @@ Status ModelInstance::Init(ModelConfig* model_config,
         savedmodel_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
 
+  // TODO: add model_config->processor_type later
+  GraphOptimizerOption option;
+  if (false/*model_config->processor_type == tf*/) {
+    option.native_tf_mode = true;
+  }
   optimizer_ = new SavedModelOptimizer(model_config->signature_name,
-        &meta_graph_def_);
+      &meta_graph_def_, option);
   TF_RETURN_IF_ERROR(optimizer_->Optimize());
 
   session_mgr_ = new ModelSessionMgr(meta_graph_def_,
