@@ -698,6 +698,31 @@ bool IsKvOps(const Node* node) {
          node->op_def().name() == "KvResourceImportV2";
 }
 
+Status GetInputNodesInfo(std::vector<SrcInfo>* input_info,
+                         const Node* node) {
+  int edge_count = 0;
+  if (IsKvOps(node)) {
+    (*input_info).resize(node->num_inputs());
+    for (const Edge* edge : node->in_edges()) {
+      if (edge->IsControlEdge()) {
+        (*input_info).push_back({edge->src(), edge->src_output()});
+      } else {
+        ++edge_count;
+        (*input_info)[edge->dst_input()] = {edge->src(), edge->src_output()};
+      }
+    }
+
+    if (edge_count != node->num_inputs()) {
+      return tensorflow::errors::Internal(
+          "Edge count not match, node = ", node->DebugString(),
+          ", need ", std::to_string(node->num_inputs()),
+          ", got ", std::to_string(edge_count));
+    }
+  }
+
+  return Status::OK();
+}
+
 Status CreateScalarConstOp(const std::string& name,
                            tensorflow::DataType type,
                            const std::string& value,
@@ -766,15 +791,11 @@ Status SavedModelOptimizer::ConvertKVOps() {
   // with KvLookup and KvImport
   for (Node* node : graph_.nodes()) {
     // Get input edges
-    std::vector<const Edge*> input_edges;
-    // Check the edges' order
-    if (IsKvOps(node)) {
-      for (const Edge* edge : node->in_edges()) {
-        input_edges.push_back(edge);
-      }
-    }
-
     std::vector<SrcInfo> input_info;
+    Status s_input_info = GetInputNodesInfo(&input_info, node);
+    TF_RETURN_IF_ERROR(s_input_info);
+    int edge_count = node->num_inputs();
+
     std::unordered_map<std::string, const AttrValue*> attr_info;
 
     if (node->op_def().name() == "KvResourceGather") {
@@ -782,27 +803,34 @@ Status SavedModelOptimizer::ConvertKVOps() {
         return tensorflow::errors::Internal(
             "Not found a storage pointer node in the graph.");
       }
+
+      std::vector<SrcInfo> gather_input_info;
       // indices
-      input_info.push_back(SrcInfo{input_edges[1]->src(),
-                                   input_edges[1]->src_output()});
+      gather_input_info.push_back(SrcInfo{input_info[1].src_node,
+                                          input_info[1].src_slot});
       // default_value
-      input_info.push_back(SrcInfo{input_edges[2]->src(),
-                                   input_edges[2]->src_output()});
+      gather_input_info.push_back(SrcInfo{input_info[2].src_node,
+                                          input_info[2].src_slot});
       // storage pointer
-      input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+      gather_input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+
+      // control edges
+      for (size_t i = edge_count; i < input_info.size(); ++i) {
+        gather_input_info.push_back(input_info[i]);
+      }
 
       AttrValue feature_name_value;
-      SetAttrValue(input_edges[0]->src()->name(), &feature_name_value);
+      SetAttrValue(input_info[0].src_node->name(), &feature_name_value);
 
       AttrValue feature_name_to_id_value;
       Status s_feature_to_id = GetFeature2IdAttr(
-          input_edges[0]->src()->name(),
+          input_info[0].src_node->name(),
           &feature_name_to_id_value);
       if (!s_feature_to_id.ok()) return s_feature_to_id;
 
       // get resource shape attr
       int dim_len_value = 0;
-      Status s_get_dim = GetShapeValue(input_edges[0]->src(), &dim_len_value);
+      Status s_get_dim = GetShapeValue(input_info[0].src_node, &dim_len_value);
       if (!s_get_dim.ok()) return s_get_dim;
 
       AttrValue dim_len_value_int;
@@ -824,7 +852,7 @@ Status SavedModelOptimizer::ConvertKVOps() {
       attr_info["Tkeys"] = tkeys_value;
 
       Status s_replace = ReplaceNode(
-          "KvLookup", node, &graph_, input_info, attr_info);
+          "KvLookup", node, &graph_, gather_input_info, attr_info);
       if (!s_replace.ok()) {
         return tensorflow::errors::Internal(
             "Replace Kv ops with lookup or import ops failed, ",
@@ -836,26 +864,33 @@ Status SavedModelOptimizer::ConvertKVOps() {
         return tensorflow::errors::Internal(
             "Not found a storage pointer node in the graph.");
       }
+
+      std::vector<SrcInfo> import_input_info;
       // prefix
-      input_info.push_back(SrcInfo{input_edges[0]->src(),
-                                   input_edges[0]->src_output()});
+      import_input_info.push_back(SrcInfo{input_info[0].src_node,
+                                          input_info[0].src_slot});
       // tensor_names
-      input_info.push_back(SrcInfo{input_edges[3]->src(),
-                                   input_edges[3]->src_output()});
+      import_input_info.push_back(SrcInfo{input_info[3].src_node,
+                                          input_info[3].src_slot});
       // storage pointer
-      input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+      import_input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+
+      // control edges
+      for (size_t i = edge_count; i < input_info.size(); ++i) {
+        import_input_info.push_back(input_info[i]);
+      }
 
       AttrValue feature_name_value;
-      SetAttrValue(input_edges[1]->src()->name(), &feature_name_value);
+      SetAttrValue(input_info[1].src_node->name(), &feature_name_value);
       AttrValue feature_name_to_id_value;
       Status s_feature_to_id = GetFeature2IdAttr(
-          input_edges[1]->src()->name(),
+          input_info[1].src_node->name(),
           &feature_name_to_id_value);
       if (!s_feature_to_id.ok()) return s_feature_to_id;
 
       // get resource shape attr
       int dim_len_value = 0;
-      Status s_get_dim = GetShapeValue(input_edges[1]->src(), &dim_len_value);
+      Status s_get_dim = GetShapeValue(input_info[1].src_node, &dim_len_value);
       if (!s_get_dim.ok()) return s_get_dim;
 
       AttrValue dim_len_value_int;
@@ -878,7 +913,7 @@ Status SavedModelOptimizer::ConvertKVOps() {
       attr_info["Tkeys"] = tkeys_value;
 
       Status s_replace = ReplaceNode(
-          "KvImport", node, &graph_, input_info, attr_info);
+          "KvImport", node, &graph_, import_input_info, attr_info);
       if (!s_replace.ok()) {
         return tensorflow::errors::Internal(
             "Replace Kv ops with lookup or import ops failed, ",
@@ -993,25 +1028,9 @@ Status SavedModelOptimizer::ConvertToHashTableOps() {
   for (Node* node : graph_.nodes()) {
     // Get input edges
     std::vector<SrcInfo> input_info;
-    int edge_count = 0;
-    if (IsKvOps(node)) {
-      input_info.resize(node->num_inputs());
-      for (const Edge* edge : node->in_edges()) {
-        if (edge->IsControlEdge()) {
-          input_info.push_back({edge->src(), edge->src_output()});
-        } else {
-          ++edge_count;
-          input_info[edge->dst_input()] = {edge->src(), edge->src_output()};
-        }
-      }
-
-      if (edge_count != node->num_inputs()) {
-        return tensorflow::errors::Internal(
-            "Edge count not match, node = ", node->DebugString(),
-            ", need ", std::to_string(node->num_inputs()),
-            ", got ", std::to_string(edge_count));
-      }
-    }
+    Status s_input_info = GetInputNodesInfo(&input_info, node);
+    TF_RETURN_IF_ERROR(s_input_info);
+    int edge_count = node->num_inputs();
 
     std::unordered_map<std::string, std::string> attr_info_map;
     Status s_replace;

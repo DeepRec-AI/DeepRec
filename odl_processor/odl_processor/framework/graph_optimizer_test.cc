@@ -1008,9 +1008,9 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
                           /          \        ...
     (key)     (value)    /            \        /
   RestoreV2  RestoreV2   |          LookupTableFindV2
-         \      |        |
-          \     |        |
-        LookupTableImportV2
+         \      |        |                 |
+          \     |        |                 |
+        LookupTableImportV2             Identity
                 |
                 |
          NoOp(save/restore)
