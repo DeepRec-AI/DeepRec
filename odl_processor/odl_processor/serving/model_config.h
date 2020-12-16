@@ -7,6 +7,8 @@
 namespace tensorflow {
 namespace processor {
 struct ModelConfig {
+  std::string processor_type;
+
   // Model Info
   std::string checkpoint_dir;
   std::string savedmodel_dir;
