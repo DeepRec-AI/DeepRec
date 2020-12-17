@@ -1595,7 +1595,7 @@ class LayoutOptimizerTest(test.TestCase):
         num_transposes += 1
       nodes.append(node.name)
 
-    # The output of Conv3DBackpropInputV2 shouldn't be converted back to NDHWC
+    # The output of Conv3DBackpropInputV2 won't be converted back to NDHWC
     # because of the BiasAddGrad.
     expected_num_transposes = 1
     self.assertEqual(expected_num_transposes, num_transposes)

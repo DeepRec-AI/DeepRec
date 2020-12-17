@@ -744,30 +744,6 @@ Status DefaultLayoutSensitiveOpTransposer::TransposeNode(
   return context->graph_view->GetMutationBuilder()->Apply();
 }
 
-Status BiasAddTransposer::TransposeNode(
-    TransposeContext* context, utils::MutableNodeView* node) {
-  DCHECK(IsBiasAdd(*node->node()));
-  const int rank = GetFanoutPortRank(*node, 0);
-  if (rank != 4 and rank != 5) {
-    return Status::OK();
-  }
-  if (!ShouldProcess(*context, *node)) {
-    return Status::OK();
-  }
-  VLOG(3) << "GenericLayoutOptimizer: transforming node '" << node->GetName()
-          << "' with op '" << node->GetOp() << "' from data format '"
-          << context->src_format << "' to '" << context->dst_format << "'";
-  // BiasAdd itself only needs NCHW/NHWC to determine whether C dim is the
-  // second or the last dim. Therefore, we use the original 4D data format in
-  // the context to update the node. For the input/output tensor, the
-  // corresponding 4D or 5D data format is needed.
-  TF_RETURN_IF_ERROR(UpdateNode(context, node));
-  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
-  TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(context, {0}, node, kOpTranspose));
-  TF_RETURN_IF_ERROR(UpdateFanoutEdgesWithOp(context, {0}, node, kOpTranspose));
-  return context->graph_view->GetMutationBuilder()->Apply();
-}
-
 Status AvgPoolGradTransposer::TransposeNode(TransposeContext* context,
                                             utils::MutableNodeView* node) {
   DCHECK(IsAvgPoolGrad(*node->node()));
@@ -785,11 +761,37 @@ Status AvgPoolGradTransposer::TransposeNode(TransposeContext* context,
   return context->graph_view->GetMutationBuilder()->Apply();
 }
 
+Status BiasAddTransposer::TransposeNode(
+    TransposeContext* context, utils::MutableNodeView* node) {
+  // This TransposeNode allows for BiasAdd but not BiasAddV1, since BiasAdd
+  // supports different data format.
+  DCHECK(IsBiasAddV2(*node->node()));
+  const int rank = GetFanoutPortRank(*node, 0);
+  if (rank != 4 && rank != 5) {
+    return Status::OK();
+  }
+  if (!ShouldProcess(*context, *node) || !IsFanoutPortRankN(*node, 0, rank)) {
+    return Status::OK();
+  }
+  VLOG(3) << "GenericLayoutOptimizer: transforming node '" << node->GetName()
+          << "' with op '" << node->GetOp() << "' from data format '"
+          << context->src_format << "' to '" << context->dst_format << "'";
+  // BiasAdd itself only needs NCHW/NHWC to determine whether C dim is the
+  // second or the last dim. Therefore, we use the original 4D data format in
+  // the context to update the node. For the input/output tensor, the
+  // corresponding 4D or 5D data format is needed.
+  TF_RETURN_IF_ERROR(UpdateNode(context, node));
+  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
+  TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(context, {0}, node, kOpTranspose));
+  TF_RETURN_IF_ERROR(UpdateFanoutEdgesWithOp(context, {0}, node, kOpTranspose));
+  return context->graph_view->GetMutationBuilder()->Apply();
+}
+
 Status BiasAddGradTransposer::TransposeNode(TransposeContext* context,
                                             utils::MutableNodeView* node) {
   DCHECK(IsBiasAddGrad(*node->node()));
   const int rank = GetFaninPortRank(*node, 0);
-  if (rank != 4 and rank != 5) {
+  if (rank != 4 && rank != 5) {
     return Status::OK();
   }
   if (!ShouldProcess(*context, *node)) {
@@ -803,7 +805,7 @@ Status BiasAddGradTransposer::TransposeNode(TransposeContext* context,
   // the context to update the node. For the input tensor, the corresponding 4D
   // or 5D data format is needed.
   TF_RETURN_IF_ERROR(UpdateNode(context, node));
-	ScopedDataFormatUpgrader data_format_upgrader(context, rank);
+  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
   TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(context, {0}, node, kOpTranspose));
   // No need to update output shape, as it is always of shape 1-D with size the
   // feature dimension of `out_backprop`, regardless of whether NCHW or NHWC is
@@ -851,14 +853,12 @@ Status Conv2DBackpropInputTransposer::TransposeNode(
 Status Conv3DTransposer::TransposeNode(
     TransposeContext* context, utils::MutableNodeView* node) {
   DCHECK(IsConv3D(*node->node()));
-  // Update the format from 4D to 5D layout.
-  std::string src_format = context->src_format;
-  std::string dst_format = context->dst_format;
-  std::string src_format_3d = src_format == "NHWC" ? "NDHWC": "NCDHW";
-  std::string dst_format_3d = dst_format == "NHWC" ? "NDHWC": "NCDHW";
-  context->AssignDeviceAndDataFormats(context->target_device, src_format_3d,
-                                      dst_format_3d);
-  if (!ShouldProcess(*context, *node) || !IsFanoutPortRankN(*node, 0, 5)) {
+  const int rank = GetFanoutPortRank(*node, 0);
+  if (rank != 5) {
+    return Status::OK();
+  }
+  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
+  if (!ShouldProcess(*context, *node)) {
     return Status::OK();
   }
   VLOG(3) << "GenericLayoutOptimizer: transforming node '" << node->GetName()
@@ -867,23 +867,18 @@ Status Conv3DTransposer::TransposeNode(
   TF_RETURN_IF_ERROR(UpdateNode(context, node));
   TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(context, {0}, node, kOpTranspose));
   TF_RETURN_IF_ERROR(UpdateFanoutEdgesWithOp(context, {0}, node, kOpTranspose));
-  // Change back the format from 5D to 4D layout.
-  context->AssignDeviceAndDataFormats(context->target_device, src_format,
-                                      dst_format);
   return context->graph_view->GetMutationBuilder()->Apply();
 }
 
 Status Conv3DBackpropFilterTransposer::TransposeNode(
     TransposeContext* context, utils::MutableNodeView* node) {
   DCHECK(IsConv3DBackpropFilterV2(*node->node()));
-  // Update the format from 4D to 5D layout.
-  std::string src_format = context->src_format;
-  std::string dst_format = context->dst_format;
-  std::string src_format_3d = src_format == "NHWC" ? "NDHWC": "NCDHW";
-  std::string dst_format_3d = dst_format == "NHWC" ? "NDHWC": "NCDHW";
-  context->AssignDeviceAndDataFormats(context->target_device, src_format_3d,
-                                      dst_format_3d);
-  if (!ShouldProcess(*context, *node) || !IsFanoutPortRankN(*node, 0, 5)) {
+  const int rank = GetFanoutPortRank(*node, 0);
+  if (rank != 5) {
+    return Status::OK();
+  }
+  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
+  if (!ShouldProcess(*context, *node)) {
     return Status::OK();
   }
   VLOG(3) << "GenericLayoutOptimizer: transforming node '" << node->GetName()
@@ -895,23 +890,18 @@ Status Conv3DBackpropFilterTransposer::TransposeNode(
   // No need to update output shape, as it is always of shape
   // [filter_height, filter_width, in_channels, out_channels], regardless of
   // whether NCHW or NHWC is used.
-  // Change back the format from 5D to 4D layout.
-  context->AssignDeviceAndDataFormats(context->target_device, src_format,
-                                      dst_format);
   return context->graph_view->GetMutationBuilder()->Apply();
 }
 
 Status Conv3DBackpropInputTransposer::TransposeNode(
     TransposeContext* context, utils::MutableNodeView* node) {
   DCHECK(IsConv3DBackpropInputV2(*node->node()));
-  // Update the format from 4D to 5D layout.
-  std::string src_format = context->src_format;
-  std::string dst_format = context->dst_format;
-  std::string src_format_3d = src_format == "NHWC" ? "NDHWC": "NCDHW";
-  std::string dst_format_3d = dst_format == "NHWC" ? "NDHWC": "NCDHW";
-  context->AssignDeviceAndDataFormats(context->target_device, src_format_3d,
-                                      dst_format_3d);
-  if (!ShouldProcess(*context, *node) || !IsFanoutPortRankN(*node, 0, 5)) {
+  const int rank = GetFanoutPortRank(*node, 0);
+  if (rank != 5) {
+    return Status::OK();
+  }
+  ScopedDataFormatUpgrader data_format_upgrader(context, rank);
+  if (!ShouldProcess(*context, *node)) {
     return Status::OK();
   }
   VLOG(3) << "GenericLayoutOptimizer: transforming node '" << node->GetName()
@@ -922,9 +912,6 @@ Status Conv3DBackpropInputTransposer::TransposeNode(
       UpdateFaninEdgesWithOp(context, {0}, node, kOpDataFormatVecPermute));
   TF_RETURN_IF_ERROR(UpdateFaninEdgesWithOp(context, {2}, node, kOpTranspose));
   TF_RETURN_IF_ERROR(UpdateFanoutEdgesWithOp(context, {0}, node, kOpTranspose));
-  // Change back the format from 5D to 4D layout.
-  context->AssignDeviceAndDataFormats(context->target_device, src_format,
-                                      dst_format);
   return context->graph_view->GetMutationBuilder()->Apply();
 }
 
@@ -1167,6 +1154,9 @@ Status AddNTransposer::TransposeNode(TransposeContext* context,
                                      utils::MutableNodeView* node) {
   DCHECK(IsAddN(*node->node()));
   const int rank = GetFanoutPortRank(*node, 0);
+  if (rank != 4 && rank != 5) {
+    return Status::OK();
+  }
   ScopedDataFormatUpgrader data_format_upgrader(context, rank);
   if (!ShouldProcess(*context, *node) ||
       !IsAfterDstToSrcTransform(*context, *node)) {
@@ -1335,7 +1325,7 @@ Status ConcatOpTransposer::TransposeNode(TransposeContext* context,
                                          utils::MutableNodeView* node) {
   DCHECK(IsConcat(*node->node()));
   const int rank = GetFanoutPortRank(*node, 0);
-  if (rank != 4 and rank != 5) {
+  if (rank != 4 && rank != 5) {
     return Status::OK();
   }
   ScopedDataFormatUpgrader data_format_upgrader(context, rank);
@@ -1485,8 +1475,9 @@ bool ReduceTransposer::IsAlongAxis(const Tensor& tensor,
   return true;
 }
 
-bool ReduceTransposer::IsReduceAxisSupported(
-    const TransposeContext& context, const utils::MutableNodeView& node) {
+bool ReduceTransposer::IsReduceAxisSupported(const TransposeContext& context,
+                                             const utils::MutableNodeView& node,
+                                             int rank) {
   if (KeepDims(node)) {
     return true;
   }
@@ -1507,11 +1498,19 @@ bool ReduceTransposer::IsReduceAxisSupported(
   auto indices = [&context](absl::Span<const char> labels) {
     return GetDimensionIndicesFromLabel(context.src_dim_indices, labels);
   };
-  return IsAlongAxis(tensor, indices({'N', 'H', 'W', 'C'}), kRank) ||
-         IsAlongAxis(tensor, indices({'H', 'W', 'C'}), kRank) ||
-         IsAlongAxis(tensor, indices({'N', 'H', 'W'}), kRank) ||
-         IsAlongAxis(tensor, indices({'H', 'W'}), kRank) ||
-         IsAlongAxis(tensor, indices({'C'}), kRank);
+  if (rank == 5) {
+    return IsAlongAxis(tensor, indices({'N', 'D', 'H', 'W', 'C'}), 5) ||
+           IsAlongAxis(tensor, indices({'D', 'H', 'W', 'C'}), 5) ||
+           IsAlongAxis(tensor, indices({'N', 'D', 'H', 'W'}), 5) ||
+           IsAlongAxis(tensor, indices({'D', 'H', 'W'}), 5) ||
+           IsAlongAxis(tensor, indices({'C'}), 5);
+  }
+  DCHECK_EQ(rank, 4);
+  return IsAlongAxis(tensor, indices({'N', 'H', 'W', 'C'}), 4) ||
+         IsAlongAxis(tensor, indices({'H', 'W', 'C'}), 4) ||
+         IsAlongAxis(tensor, indices({'N', 'H', 'W'}), 4) ||
+         IsAlongAxis(tensor, indices({'H', 'W'}), 4) ||
+         IsAlongAxis(tensor, indices({'C'}), 4);
 }
 
 Status ReduceTransposer::TransposeNode(TransposeContext* context,
@@ -1523,7 +1522,7 @@ Status ReduceTransposer::TransposeNode(TransposeContext* context,
   }
   ScopedDataFormatUpgrader data_format_upgrader(context, rank);
   if (!ShouldProcess(*context, *node) ||
-      !IsReduceAxisSupported(*context, *node) ||
+      !IsReduceAxisSupported(*context, *node, rank) ||
       !IsAfterDstToSrcTransform(*context, *node)) {
     return Status::OK();
   }
@@ -1591,7 +1590,7 @@ Status ShapeTransposer::TransposeNode(TransposeContext* context,
                                       utils::MutableNodeView* node) {
   DCHECK(IsShape(*node->node()));
   const int rank = GetFaninPortRank(*node, 0);
-  if (rank != 4 and rank != 5) {
+  if (rank != 4 && rank != 5) {
     return Status::OK();
   }
   ScopedDataFormatUpgrader data_format_upgrader(context, rank);
@@ -1636,7 +1635,7 @@ Status SliceTransposer::TransposeNode(TransposeContext* context,
                                       utils::MutableNodeView* node) {
   DCHECK(IsSlice(*node->node()));
   const int rank = GetFanoutPortRank(*node, 0);
-  if (rank != 4 and rank != 5) {
+  if (rank != 4 && rank != 5) {
     return Status::OK();
   }
   ScopedDataFormatUpgrader data_format_upgrader(context, rank);
@@ -1949,7 +1948,7 @@ bool IsDefaultLayoutSensitiveOp(const NodeDef& node) {
 
 bool IsLayoutSensitiveOp(const NodeDef& node) {
   return IsDefaultLayoutSensitiveOp(node) || IsAvgPoolGrad(node) ||
-         IsBiasAdd(node) || IsBiasAddGrad(node) ||
+         IsBiasAddV2(node) || IsBiasAddGrad(node) ||
          IsConv2DBackpropFilter(node) || IsConv2DBackpropInput(node) ||
          IsDepthwiseConv2dNativeBackpropFilter(node) ||
          IsDepthwiseConv2dNativeBackpropInput(node) ||
