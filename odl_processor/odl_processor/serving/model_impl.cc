@@ -16,7 +16,7 @@ SavedModelImpl::~SavedModelImpl() {
 }
 
 Status SavedModelImpl::Init() {
-  instance_mgr_ = new ModelInstanceMgr(model_config_);
+  instance_mgr_ = ModelInstanceMgrFactory::Create(model_config_);
   return instance_mgr_->Init();
 }
 

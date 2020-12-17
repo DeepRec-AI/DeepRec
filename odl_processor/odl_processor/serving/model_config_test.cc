@@ -179,7 +179,7 @@ const std::string oss_and_redis_config = " \
 TEST_F(ModelConfigTest, ShouldSuccessWhenNativeProcessorTypeOssDir) {
 const std::string oss_and_redis_config = " \
   { \
-    \"processor_type\" : \"pai-tf\", \
+    \"processor_type\" : \"tf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
@@ -200,7 +200,7 @@ const std::string oss_and_redis_config = " \
   ModelConfig* config = nullptr;
   EXPECT_TRUE(
       ModelConfigFactory::Create(oss_and_redis_config.c_str(), &config).ok());
-  EXPECT_EQ("pai-tf", config->processor_type);
+  EXPECT_EQ("tf", config->processor_type);
   EXPECT_EQ(4, config->inter_threads);
   EXPECT_EQ(2, config->intra_threads);
   EXPECT_EQ("tensorflow_serving", config->signature_name);

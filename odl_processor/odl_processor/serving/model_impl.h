@@ -11,7 +11,7 @@ class Tensor;
 namespace processor {
 class SavedModelOptimizer;
 class ModelConfig;
-class ModelInstanceMgr;
+class IModelInstanceMgr;
 class Request;
 class Response;
 
@@ -59,7 +59,7 @@ class SavedModelImpl : public ModelImpl {
  
  private:
   ModelConfig* model_config_;
-  ModelInstanceMgr* instance_mgr_ = nullptr;
+  IModelInstanceMgr* instance_mgr_ = nullptr;
 };
 
 class ModelImplFactory {
