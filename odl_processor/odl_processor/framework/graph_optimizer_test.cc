@@ -843,6 +843,10 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   n_prefix_const_0->set_name("prefix/Const");
   n_prefix_const_0->set_op("Const");
   (*n_prefix_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr = n_prefix_const_0->mutable_attr();
+  Tensor const_tensor(DT_STRING, TensorShape({1}));
+  const_tensor.vec<std::string>()(0) = "AAAAAAAAAAAAAAAAAAAAA";
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
 
   NodeDef* n_value_const_0 = graph_def.add_node();
   n_value_const_0->set_name("value/Const");
@@ -1004,7 +1008,7 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
                 ||
                 \/
 
-                       MutableHashTableV2
+                    MutableHashTableOfTensorsV2
                           /          \        ...
     (key)     (value)    /            \        /
   RestoreV2  RestoreV2   |          LookupTableFindV2
@@ -1022,6 +1026,11 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   n_prefix_const_0->set_name("prefix/Const");
   n_prefix_const_0->set_op("Const");
   (*n_prefix_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr = n_prefix_const_0->mutable_attr();
+  Tensor const_tensor(DT_STRING, TensorShape({1}));
+  const_tensor.vec<std::string>()(0) = "AAAAAAAAAAAAAAAAAAAAA";
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
+
 
   NodeDef* n_value_const_0 = graph_def.add_node();
   n_value_const_0->set_name("value/Const");
@@ -1032,6 +1041,10 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   n_tsname_const_0->set_name("tsname/Const");
   n_tsname_const_0->set_op("Const");
   (*n_tsname_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr1 = n_tsname_const_0->mutable_attr();
+  Tensor const_tensor1(DT_STRING, TensorShape({1}));
+  const_tensor1.vec<std::string>()(0) = "BBBBBBBBBBBBBBBBBBBB";
+  const_tensor1.AsProtoTensorContent((*attr1)["value"].mutable_tensor());
 
   NodeDef* n_ek_const_0 = graph_def.add_node();
   n_ek_const_0->set_name("empty_key/Const");
@@ -1056,6 +1069,11 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   (*n_var_0->mutable_attr())["shared_name"] = shared_name_attr;
   (*n_var_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
   (*n_var_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  AttrValue var_value0;
+  tensorflow::TensorShapeProto var_shape0;
+  var_shape0.add_dim()->set_size(1);
+  *var_value0.mutable_shape() = var_shape0;
+  (*n_var_0->mutable_attr())["shape"] = var_value0;
 
   // KvResourceImportV2
   NodeDef* n_lookup_import_0 = graph_def.add_node();
@@ -1126,14 +1144,14 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
     ++node_count;
   }
 
-  EXPECT_TRUE(node_count == 16);
+  EXPECT_TRUE(node_count == 17);
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/values/restore") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/keys/restore") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/values") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/keys") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/shape_and_slices") != nodes.end());
 
-  EXPECT_TRUE(nodes["var_0"].op() == "MutableHashTableV2");
+  EXPECT_TRUE(nodes["var_0"].op() == "MutableHashTableOfTensorsV2");
   EXPECT_TRUE(nodes["KvResourceImportV2_0/values/restore"].op() == "RestoreV2");
   EXPECT_TRUE(nodes["KvResourceImportV2_0/keys/restore"].op() == "RestoreV2");
   EXPECT_TRUE(nodes["KvResourceImportV2_0"].op() == "LookupTableImportV2");
