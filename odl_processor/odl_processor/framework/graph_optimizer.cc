@@ -603,11 +603,6 @@ Status SavedModelOptimizer::RunODLGraphPass() {
 
 namespace {
 
-struct SrcInfo {
-  Node* src_node;
-  int src_slot;
-};
-
 Status ReplaceNode(
     const std::string& op_name,
     Node* node, Graph* graph,
@@ -671,9 +666,14 @@ Status ReplaceNode(
                      input_info, attr_info);
 }
 
+// for KvVarHandleOp and MutableHashTableOfTensorsV2
 Status GetShapeValue(Node* node, int* dim) {
   AttrValue* dim_len_value =
       const_cast<AttrValue*>(node->attrs().Find("shape"));
+  if (!dim_len_value) {
+    dim_len_value = const_cast<AttrValue*>(node->attrs().Find("value_shape"));
+  }
+
   Status s = AttrValueHasType(*dim_len_value, "shape");
   if (!s.ok()) {
     return tensorflow::errors::Internal(
@@ -723,17 +723,17 @@ Status GetInputNodesInfo(std::vector<SrcInfo>* input_info,
   return Status::OK();
 }
 
-Status CreateScalarConstOp(const std::string& name,
-                           tensorflow::DataType type,
-                           const std::string& value,
-                           Graph* graph, Node** new_node) {
+Status Create1DStringConstOp(const std::string& name,
+                             tensorflow::DataType type,
+                             const std::string& value,
+                             Graph* graph, Node** new_node) {
   NodeDef const_def;
   const_def.set_name(name);
   const_def.set_op("Const");
   auto* attr = const_def.mutable_attr();
   (*attr)["dtype"].set_type(type);
-  Tensor const_tensor(type, TensorShape({}));
-  const_tensor.scalar<std::string>()() = value;
+  Tensor const_tensor(type, TensorShape({1}));
+  const_tensor.vec<std::string>()(0) = value;
   const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
 
   Status s_add_node;
@@ -769,6 +769,64 @@ Status CreateRestoreOp(const std::string& name,
   return Status::OK();
 }
 
+// create 1-D const op, filled by zeros
+Status CreateDefaultValueNode(Graph* graph, int dim_size,
+                              Node** new_node, DataType type,
+                              const std::string& name) {
+  NodeDef const_def;
+  const_def.set_name(name);
+  const_def.set_op("Const");
+  auto* attr = const_def.mutable_attr();
+  (*attr)["dtype"].set_type(type);
+  Tensor const_tensor(type, TensorShape({dim_size}));
+  for (int i = 0; i < dim_size; ++i) {
+    switch (type) {
+      case DT_INT32: {
+        const_tensor.vec<int>()(i) = 0;
+        break;
+      }
+      case DT_INT64: {
+        const_tensor.vec<int64>()(i) = 0;
+        break;
+      }
+      case DT_FLOAT: {
+        const_tensor.vec<float>()(i) = 0.0;
+        break;
+      }
+      case DT_DOUBLE: {
+        const_tensor.vec<double>()(i) = 0.0;
+        break;
+      }
+      case DT_STRING: {
+        const_tensor.vec<std::string>()(i) = "";
+        break;
+      }
+      default: {
+        LOG(FATAL) << "CreateDefaultValueNode not support type : "
+                   << type;
+      }
+    }
+  }
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
+
+  Status s_add_node;
+  *new_node = graph->AddNode(const_def, &s_add_node);
+  return s_add_node;
+}
+
+Status GetNodeAttr(const Node* node,
+                   const std::string& attr_name,
+                   AttrValue** attr) {
+  *attr = const_cast<AttrValue*>(node->attrs().Find(attr_name));
+  if (*attr == nullptr) {
+     return tensorflow::errors::Internal(
+         "Miss attr: ", attr_name ," in the node, ",
+         node->DebugString());
+  }
+
+  return Status::OK();
+}
+ 
 } // namespace
 
 Status SavedModelOptimizer::GetFeature2IdAttr(
@@ -1023,6 +1081,142 @@ Status SavedModelOptimizer::AddFullAndDeltaUpdateSubGraph() {
   return Status::OK();
 }
 
+Status SavedModelOptimizer::ConvertToHashTableOp(
+    Node* node, std::vector<SrcInfo>& input_info) {
+  std::unordered_map<std::string, std::string> attr_info_map;
+
+  // KvVarHandleOp -> MutableHashTableV2
+  attr_info_map["container"] = "container";
+  attr_info_map["shared_name"] = "shared_name";
+  attr_info_map["dtype"] = "value_dtype";
+  attr_info_map["Tkeys"] = "key_dtype";
+  attr_info_map["shape"] = "value_shape";
+
+  return ReplaceNode(
+      "MutableHashTableOfTensorsV2", node, &graph_, input_info,
+      attr_info_map);
+}
+
+Status SavedModelOptimizer::ConvertToHashLookupOp(
+    Node* node, std::vector<SrcInfo>& input_info) {
+  std::unordered_map<std::string, std::string> attr_info_map;
+
+  // KvResourceGather -> LookupTableFindV2
+  attr_info_map["dtype"] = "Tout";
+  attr_info_map["Tkeys"] = "Tin";
+
+  AttrValue* dtype_attr = nullptr;
+  Status s_attr = GetNodeAttr(node, "dtype", &dtype_attr);
+  TF_RETURN_IF_ERROR(s_attr);
+
+  // create a defaualt value node
+  Node* default_value_node = nullptr;
+  int dim = 0;
+  Status s_shape_value = GetShapeValue(input_info[0].src_node, &dim);
+  TF_RETURN_IF_ERROR(s_shape_value);
+  // shape = [dim]
+  Status s_default_value = CreateDefaultValueNode(
+      &graph_, dim, &default_value_node, dtype_attr->type(),
+      input_info[2].src_node->name() + "/new_default_value");
+  TF_RETURN_IF_ERROR(s_default_value);
+
+  // use newly created default value node(filled by zeros)
+  input_info[2].src_node = default_value_node;
+  input_info[2].src_slot = 0;
+  return ReplaceNode(
+      "LookupTableFindV2", node, &graph_, input_info,
+      attr_info_map);
+}
+
+Status SavedModelOptimizer::ConvertToHashImportOp(
+    Node* node, std::vector<SrcInfo>& input_info) {
+  std::unordered_map<std::string, std::string> attr_info_map;
+  int edge_count = node->num_inputs();
+
+  // KvResourceImportV2 -> LookupTableImportV2
+  AttrValue* key_attr = nullptr;
+  Status s_attr = GetNodeAttr(node, "Tkeys", &key_attr);
+  TF_RETURN_IF_ERROR(s_attr);
+
+  AttrValue* dtype_attr = nullptr;
+  s_attr = GetNodeAttr(node, "dtype", &dtype_attr);
+  TF_RETURN_IF_ERROR(s_attr);
+
+  // create restore_op to restore values and keys
+  // create const "tensor_names-keys" and "tensor_names-values" op
+  Node* empty_shape_and_slices_node = nullptr;
+  Status s_add_node = Create1DStringConstOp(
+      node->name() + "/const/shape_and_slices", DT_STRING,
+      "", &graph_, &empty_shape_and_slices_node);
+  TF_RETURN_IF_ERROR(s_add_node);
+
+  AttrValue* prefix_attr = nullptr;
+  s_attr = GetNodeAttr(input_info[3].src_node, "value", &prefix_attr);
+  TF_RETURN_IF_ERROR(s_attr);
+  Tensor prefix_tensor;
+  bool success = prefix_tensor.FromProto(prefix_attr->tensor());
+  if (!success) {
+    return errors::Internal("Can not parse prefix_attr->tensor()"
+                            "to prefix_tensor");
+  }
+
+  std::string prefix = prefix_tensor.scalar<string>()();
+
+  Node* tensor_names_key_node = nullptr;
+  s_add_node = Create1DStringConstOp(
+      node->name() + "/const/keys", DT_STRING,
+      prefix + "-keys",
+      &graph_, &tensor_names_key_node);
+  TF_RETURN_IF_ERROR(s_add_node);
+
+  Node* tensor_names_value_node = nullptr;
+  s_add_node = Create1DStringConstOp(
+      node->name() + "/const/values", DT_STRING,
+      prefix + "-values",
+      &graph_, &tensor_names_value_node);
+  TF_RETURN_IF_ERROR(s_add_node);
+
+  // 1) create keys restore_op
+  std::vector<SrcInfo> restore_input_info;
+  restore_input_info.push_back(input_info[0]);
+  restore_input_info.push_back(SrcInfo{tensor_names_key_node, 0});
+  restore_input_info.push_back(SrcInfo{empty_shape_and_slices_node, 0});
+  std::vector<DataType> key_types;
+  key_types.push_back(key_attr->type());
+
+  Node* restore_key_node = nullptr;
+  s_add_node = CreateRestoreOp(node->name() + "/keys/restore",
+                               restore_input_info, key_types,
+                               &graph_, &restore_key_node);
+  TF_RETURN_IF_ERROR(s_add_node);
+
+  // 2) create values restore_op
+  std::vector<DataType> value_types;
+  value_types.push_back(dtype_attr->type());
+  restore_input_info[1] = SrcInfo{tensor_names_value_node, 0};
+  Node* restore_value_node = nullptr;
+  s_add_node = CreateRestoreOp(node->name() + "/values/restore",
+                               restore_input_info, value_types,
+                               &graph_, &restore_value_node);
+  TF_RETURN_IF_ERROR(s_add_node);
+ 
+  std::vector<SrcInfo> import_input_info;
+  import_input_info.push_back(input_info[1]);
+  import_input_info.push_back(SrcInfo{restore_key_node, 0});
+  import_input_info.push_back(SrcInfo{restore_value_node, 0});
+  // control edges
+  for (size_t i = edge_count; i < input_info.size(); ++i) {
+    import_input_info.push_back(input_info[i]);
+  }
+
+  attr_info_map["Tkeys"] = "Tin";
+  attr_info_map["dtype"] = "Tout";
+
+  return ReplaceNode(
+      "LookupTableImportV2", node, &graph_, import_input_info,
+      attr_info_map);
+}
+
 Status SavedModelOptimizer::ConvertToHashTableOps() {
 
   for (Node* node : graph_.nodes()) {
@@ -1030,95 +1224,23 @@ Status SavedModelOptimizer::ConvertToHashTableOps() {
     std::vector<SrcInfo> input_info;
     Status s_input_info = GetInputNodesInfo(&input_info, node);
     TF_RETURN_IF_ERROR(s_input_info);
-    int edge_count = node->num_inputs();
 
-    std::unordered_map<std::string, std::string> attr_info_map;
     Status s_replace;
     if (node->op_def().name() == "KvVarHandleOp") {
-      // KvVarHandleOp -> MutableHashTableV2
-      attr_info_map["container"] = "container";
-      attr_info_map["shared_name"] = "shared_name";
-      attr_info_map["dtype"] = "value_dtype";
-      attr_info_map["Tkeys"] = "key_dtype";
-
-      s_replace = ReplaceNode(
-          "MutableHashTableV2", node, &graph_, input_info,
-          attr_info_map);
+      // KvVarHandleOp -> MutableHashTableOfTensorsV2
+      s_replace = ConvertToHashTableOp(node, input_info);
     } else if (node->op_def().name() == "KvResourceGather") {
       // KvResourceGather -> LookupTableFindV2
-      attr_info_map["dtype"] = "Tout";
-      attr_info_map["Tkeys"] = "Tin";
-
-      s_replace = ReplaceNode(
-          "LookupTableFindV2", node, &graph_, input_info,
-          attr_info_map);
+      s_replace = ConvertToHashLookupOp(node, input_info);
     } else if (node->op_def().name() == "KvResourceImportV2") {
       // KvResourceImportV2 -> LookupTableImportV2
-
-      // create restore_op to restore values and keys
-      // create const "tensor_names-keys" and "tensor_names-values" op
-      Node* empty_shape_and_slices_node = nullptr;
-      Status s_add_node = CreateScalarConstOp(
-          node->name() + "/const/shape_and_slices", DT_STRING,
-          "", &graph_, &empty_shape_and_slices_node);
-      TF_RETURN_IF_ERROR(s_add_node);
-
-      Node* tensor_names_key_node = nullptr;
-      s_add_node = CreateScalarConstOp(
-          node->name() + "/const/keys", DT_STRING,
-          input_info[3].src_node->name() + "-keys",
-          &graph_, &tensor_names_key_node);
-      TF_RETURN_IF_ERROR(s_add_node);
-
-      Node* tensor_names_value_node = nullptr;
-      s_add_node = CreateScalarConstOp(
-          node->name() + "/const/values", DT_STRING,
-          input_info[3].src_node->name() + "-values",
-          &graph_, &tensor_names_value_node);
-      TF_RETURN_IF_ERROR(s_add_node);
-
-      // 1) create keys restore_op
-      std::vector<SrcInfo> restore_input_info;
-      restore_input_info.push_back(input_info[0]);
-      restore_input_info.push_back(SrcInfo{tensor_names_key_node, 0});
-      restore_input_info.push_back(SrcInfo{empty_shape_and_slices_node, 0});
-      std::vector<DataType> key_types;
-      key_types.push_back(DT_STRING);
-
-      Node* restore_key_node = nullptr;
-      s_add_node = CreateRestoreOp(node->name() + "/keys/restore",
-                                   restore_input_info, key_types,
-                                   &graph_, &restore_key_node);
-      TF_RETURN_IF_ERROR(s_add_node);
-
-      // 2) create values restore_op
-      restore_input_info[1] = SrcInfo{tensor_names_value_node, 0};
-      Node* restore_value_node = nullptr;
-      s_add_node = CreateRestoreOp(node->name() + "/values/restore",
-                                   restore_input_info, key_types,
-                                   &graph_, &restore_value_node);
-      TF_RETURN_IF_ERROR(s_add_node);
- 
-      std::vector<SrcInfo> import_input_info;
-      import_input_info.push_back(input_info[1]);
-      import_input_info.push_back(SrcInfo{restore_key_node, 0});
-      import_input_info.push_back(SrcInfo{restore_value_node, 0});
-      // control edges
-      for (size_t i = edge_count; i < input_info.size(); ++i) {
-        import_input_info.push_back(input_info[i]);
-      }
-
-      attr_info_map["Tkeys"] = "Tin";
-      attr_info_map["dtype"] = "Tout";
-
-      s_replace = ReplaceNode(
-          "LookupTableImportV2", node, &graph_, import_input_info,
-          attr_info_map);
+      s_replace = ConvertToHashImportOp(node, input_info);
     }
 
     if (!s_replace.ok()) {
       return tensorflow::errors::Internal(
-          "Replace Kv ops with lookup or import ops failed, ",
+          "Replace Kv ops with hash-table, hash-lookup"
+          "or hash-import ops failed, ",
            s_replace.error_message());
     }
   }

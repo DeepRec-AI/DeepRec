@@ -125,6 +125,11 @@ struct GraphOptimizerOption {
   bool native_tf_mode = false;
 };
 
+struct SrcInfo {
+  Node* src_node;
+  int src_slot;
+};
+
 class GraphOptimizer {
  public:
   explicit GraphOptimizer(
@@ -161,6 +166,13 @@ class SavedModelOptimizer : public GraphOptimizer {
 
   // Convert EV related ops to HashTable ops
   Status ConvertToHashTableOps();
+
+  Status ConvertToHashTableOp(
+      Node* node, std::vector<SrcInfo>& input_info);
+  Status ConvertToHashLookupOp(
+      Node* node, std::vector<SrcInfo>& input_info);
+  Status ConvertToHashImportOp(
+      Node* node, std::vector<SrcInfo>& input_info);
 
   // TODO: Only support EV now
   // Add Lookup and Insert ops,
