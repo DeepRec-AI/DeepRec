@@ -15,7 +15,7 @@ cc_test(
 
 flatbuffer_cc_library(
     name = "request_fbs",
-    srcs = ["flatbuf_test/request.fbs"],
+    srcs = ["flatbuf_test/cpp/request.fbs"],
     flatc_args = [
         "--cpp",
     ],
@@ -24,7 +24,7 @@ flatbuffer_cc_library(
 cc_binary(
   name = "flat_test",
   srcs = [
-    "flatbuf_test/benchmark.cc",
+    "flatbuf_test/cpp/benchmark.cc",
   ],
   linkstatic = 1,
   deps = [
