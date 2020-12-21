@@ -169,16 +169,18 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No model_store_type in ModelConfig.");
   }
 
-  if ((*config)->checkpoint_dir.find((*config)->model_store_type)
-      == std::string::npos) {
-    return Status(error::Code::INVALID_ARGUMENT,
-        "[TensorFlow] Mismatch model_store_type and checkpoint_dir.");
-  }
+  if ((*config)->model_store_type != "local") {
+    if ((*config)->checkpoint_dir.find((*config)->model_store_type)
+        == std::string::npos) {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] Mismatch model_store_type and checkpoint_dir.");
+    }
 
-  if ((*config)->savedmodel_dir.find((*config)->model_store_type)
-      == std::string::npos) {
-    return Status(error::Code::INVALID_ARGUMENT,
-        "[TensorFlow] Mismatch model_store_type and savedmodel_dir.");
+    if ((*config)->savedmodel_dir.find((*config)->model_store_type)
+        == std::string::npos) {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] Mismatch model_store_type and savedmodel_dir.");
+    }
   }
 
   if ((*config)->model_store_type == "oss") {

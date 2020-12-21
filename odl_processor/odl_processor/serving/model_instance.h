@@ -109,7 +109,7 @@ class TFInstanceMgr : public IModelInstanceMgr{
 
   std::string DebugString() override;
 
- private:
+ protected:
   SingleSessionInstance* instance_ = nullptr;
   ModelStore* model_store_ = nullptr;
   ModelConfig* model_config_ = nullptr; // not owned

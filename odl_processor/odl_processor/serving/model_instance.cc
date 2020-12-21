@@ -250,7 +250,7 @@ Status SingleSessionInstance::Init(ModelConfig* config,
   Version version;
   model_store->GetLatestVersion(version);
   if (version.SavedModelEmpty()) {
-    return Status(error::Code::NOT_FOUND, "SavedModel dir is empty.");
+    return Status(error::Code::NOT_FOUND, "SavedModel dir is invalid.");
   }
 
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
