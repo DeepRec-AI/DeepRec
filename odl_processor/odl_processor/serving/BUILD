@@ -25,11 +25,8 @@ tf_proto_library_cc(
 tf_cc_shared_object(
     name = "libtf_processor.so",
     srcs = ["tf_processor.cc",
-            "message_coding.cc",
-            "tf_processor.h",
-            "message_coding.h"],
+            "tf_processor.h",],
     deps = [
-            "tf_predict_proto_cc",
             "model_serving"],
 )
 
@@ -113,8 +110,10 @@ cc_test(
 cc_library(
     name = "model_serving",
     srcs = ["model_serving.cc",
+            "message_coding.cc",
             "model_impl.cc",],
     hdrs = ["model_serving.h",
+            "message_coding.h",
             "model_impl.h",],
     deps = [
         "@org_tensorflow//tensorflow/core:protos_all_cc",
@@ -126,5 +125,6 @@ cc_library(
         "model_session",
         "model_message",
         "model_instance",
+        "tf_predict_proto_cc",
     ],
 )

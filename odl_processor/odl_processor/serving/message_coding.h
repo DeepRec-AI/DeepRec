@@ -7,13 +7,47 @@ namespace tensorflow {
 namespace processor {
 class Request;
 class Response;
-class Parser {
+class IParser {
  public:
-  Status ParseRequestFromProto(const void* input_data, int input_size,
-      Request& req);
+  virtual Status ParseRequestFromBuf(const void* input_data,
+      int input_size, Request& req) = 0;
 
-  Status ParseResponseToProto(const Request& req, const Response& resp,
-      void** output_data, int* output_size); 
+  virtual Status ParseResponseToBuf(const Request& req,
+      const Response& resp, void** output_data, int* output_size) = 0;
+};
+
+class ProtoBufParser : public IParser {
+ public:
+  Status ParseRequestFromBuf(const void* input_data,
+      int input_size, Request& req) override;
+
+  Status ParseResponseToBuf(const Request& req, const Response& resp,
+      void** output_data, int* output_size) override;
+};
+
+class FlatBufferParser : public IParser {
+ public:
+  Status ParseRequestFromBuf(const void* input_data,
+      int input_size, Request& req) override;
+
+  Status ParseResponseToBuf(const Request& req, const Response& resp,
+      void** output_data, int* output_size) override;
+};
+
+class ParserFactory {
+ public:
+  static IParser* GetInstance(const std::string& serialize_type) {
+    if (serialize_type == "protobuf") {
+      static ProtoBufParser pb_parser;
+      return &pb_parser;
+    } else if (serialize_type == "flatbuffer") {
+      static FlatBufferParser pb_parser;
+      return &pb_parser;
+    } else {
+      LOG(ERROR) << "Invalid serialize_type.";
+      return nullptr;
+    }
+  }
 };
 
 } // processor

@@ -446,7 +446,7 @@ eas::PredictResponse Tensor2Response(const processor::Request& req,
 
 }
 namespace processor {
-Status Parser::ParseRequestFromProto(const void* input_data,
+Status ProtoBufParser::ParseRequestFromBuf(const void* input_data,
     int input_size, Request& req) {
   eas::PredictRequest request;
   request.ParseFromArray(input_data, input_size);
@@ -462,8 +462,8 @@ Status Parser::ParseRequestFromProto(const void* input_data,
   return Status::OK();
 }
 
-Status Parser::ParseResponseToProto(const Request& req, const Response& resp,
-    void** output_data, int* output_size) {
+Status ProtoBufParser::ParseResponseToBuf(const Request& req,
+    const Response& resp, void** output_data, int* output_size) {
   eas::PredictResponse response = Tensor2Response(req, resp);
   *output_size = response.ByteSize();
   *output_data = new char[*output_size];
