@@ -83,13 +83,9 @@ cc_test(
 )
 
 cc_library(
-    name = "model_serving",
-    srcs = ["model_serving.cc",
-            "model_impl.cc",
-            "model_instance.cc"],
-    hdrs = ["model_serving.h",
-            "model_impl.h",
-            "model_instance.h"],
+    name = "model_instance",
+    srcs = ["model_instance.cc",],
+    hdrs = ["model_instance.h"],
     deps = [
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:framework",
@@ -103,5 +99,32 @@ cc_library(
         "model_config",
         "model_session",
         "model_message",
+    ],
+)
+
+cc_test(
+    name = "model_instance_test",
+    srcs = ["model_instance_test.cc",],
+    deps = [":model_instance",
+            "@com_google_googletest//:gtest",
+            "@com_google_googletest//:gtest_main",],
+)
+
+cc_library(
+    name = "model_serving",
+    srcs = ["model_serving.cc",
+            "model_impl.cc",],
+    hdrs = ["model_serving.h",
+            "model_impl.h",],
+    deps = [
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:core_cpu",
+        "//odl_processor/framework:model_version",
+        "//odl_processor/storage:model_store",
+        "model_config",
+        "model_session",
+        "model_message",
+        "model_instance",
     ],
 )
