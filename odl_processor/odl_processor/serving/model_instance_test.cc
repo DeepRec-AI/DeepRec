@@ -23,6 +23,7 @@ TEST_F(TFInstanceMgrTest, LocalSavedModelServingSuccess) {
 const std::string local_config = " \
   { \
     \"processor_type\" : \"tf\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
@@ -59,6 +60,7 @@ TEST_F(TFInstanceMgrTest, LocalSavedModelServingFailedWithInvalidPath) {
 const std::string local_config = " \
   { \
     \"processor_type\" : \"tf\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \

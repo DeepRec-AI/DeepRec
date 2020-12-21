@@ -97,6 +97,19 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     return Status(error::Code::INVALID_ARGUMENT,
         "[TensorFlow] Signature_name shouldn't be empty string.");
   }
+
+  if (!json_config["serialize_protocol"].isNull()) {
+    (*config)->serialize_protocol =
+      json_config["serialize_protocol"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No serialize_protocol in ModelConfig.");
+  }
+
+  if ((*config)->serialize_protocol.empty()) {
+    return Status(error::Code::INVALID_ARGUMENT,
+        "[TensorFlow] serialize_protocol shouldn't be empty string.");
+  }
   
   if (!json_config["checkpoint_dir"].isNull()) {
     (*config)->checkpoint_dir =

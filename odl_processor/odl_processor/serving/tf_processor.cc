@@ -4,8 +4,6 @@
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "odl_processor/serving/tf_predict.pb.h"
-#include "odl_processor/serving/model_message.h"
-#include "odl_processor/serving/message_coding.h"
 
 extern "C" {
 void* initialize(const char* model_entry, const char* model_config,
@@ -35,10 +33,8 @@ int process(void* model_buf, const void* input_data, int input_size,
     return 200;
   }
 
-  tensorflow::processor::Call call;
-  tensorflow::processor::Parser parser;
-  parser.ParseRequestFromProto(input_data, input_size, call.request);
-  auto status = model->Predict(call.request, call.response);
+  auto status = model->Predict(input_data, input_size,
+      output_data, output_size);
   if (!status.ok()) {
     std::string errmsg = tensorflow::strings::StrCat(
         "[TensorFlow] Processor predict failed: ",
@@ -47,8 +43,6 @@ int process(void* model_buf, const void* input_data, int input_size,
     *output_size = strlen(errmsg.c_str());
     return 500;
   }
-  parser.ParseResponseToProto(call.request, call.response,
-      output_data, output_size);
   return 200;
 }
 

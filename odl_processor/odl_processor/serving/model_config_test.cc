@@ -17,6 +17,7 @@ TEST_F(ModelConfigTest, ShouldSuccessWhenOssAndRedis) {
 const std::string oss_and_redis_config = " \
   { \
     \"processor_type\" : \"odl\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
@@ -64,6 +65,7 @@ TEST_F(ModelConfigTest, ShouldFailureWhenSignatureNameEmpty) {
 const std::string oss_and_redis_config = " \
   { \
     \"processor_type\" : \"odl\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
@@ -94,6 +96,7 @@ TEST_F(ModelConfigTest, ShouldFailedWhenOssDirAndModelStroreTypeMismatch) {
 const std::string oss_and_redis_config = " \
   { \
     \"processor_type\" : \"odl\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
@@ -135,6 +138,7 @@ TEST_F(ModelConfigTest, ShouldSuccessWhenOssDirAndNativeTFFeatureStoreType) {
 const std::string oss_and_redis_config = " \
   { \
     \"processor_type\" : \"odl\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
@@ -180,6 +184,7 @@ TEST_F(ModelConfigTest, ShouldSuccessWhenNativeProcessorTypeOssDir) {
 const std::string oss_and_redis_config = " \
   { \
     \"processor_type\" : \"tf\", \
+    \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
     \"init_timeout_minutes\" : 1, \
