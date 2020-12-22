@@ -48,8 +48,33 @@ int process(void* model_buf, const void* input_data, int input_size,
 
 int batch_process(void* model_buf, const void* input_data[], int* input_size,
                   void* output_data[], int* output_size) {
-  // Client batch inputs into one tensor
-  return process(model_buf, input_data[0], input_size[0],
-      &output_data[0], output_size);
+  auto model = static_cast<tensorflow::processor::Model*>(model_buf);
+  if (input_size == 0) {
+    auto model_str = model->DebugString();
+    *output_data = strndup(model_str.c_str(), model_str.length());
+    *output_size = model_str.length();
+    return 200;
+  }
+
+  auto status = model->Predict(input_data, input_size,
+      output_data, output_size);
+  if (!status.ok()) {
+    std::string errmsg = tensorflow::strings::StrCat(
+        "[TensorFlow] Processor predict failed: ",
+        status.error_message());
+    *output_data = strndup(errmsg.c_str(), strlen(errmsg.c_str()));
+    *output_size = strlen(errmsg.c_str());
+    return 500;
+  }
+  return 200;
 }
+   
+typedef void (*DoneCallback)(const char* output, int output_size,
+    int64_t request_id, int finished, int error_code);
+
+void async_process(void* model_buf, const void* input_data,
+    int input_size, int64_t request_id, DoneCallback done) {
+  // TODO
+}
+
 }

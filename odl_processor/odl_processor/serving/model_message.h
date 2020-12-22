@@ -22,6 +22,12 @@ struct Call {
   Response response;
 };
 
+struct MultipleCall {
+  Request request;
+  Response response;
+  int call_num; 
+};
+
 } // processor
 } // tensorflow
 
