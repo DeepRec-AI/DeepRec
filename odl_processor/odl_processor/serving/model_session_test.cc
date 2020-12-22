@@ -159,6 +159,16 @@ class TestableModelSessionMgr : public ModelSessionMgr {
     }
   }
 
+  void AddModelSession(IFeatureStoreMgr* sparse_storage) {
+    Session* sess = nullptr;
+    CreateSession(&sess);
+    sessions_.emplace_back(new ModelSession(sess, Version(), sparse_storage));
+  }
+
+  void* GetServingSession() {
+    return serving_session_;
+  }
+
   Status RunRestoreOps(const char* ckpt_name, const char* savedmodel_dir,
       Session* session, IFeatureStoreMgr* sparse_storage) override {
     return Status::OK();
@@ -188,17 +198,45 @@ TEST_F(ModelSessionMgrTest, CreateModelSessionWhenPrevServingDone) {
   FakeFeatureStoreMgr feature_store(&config);
   
   Version version_0;
-  auto status = mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
-        &feature_store);
-  EXPECT_TRUE(status.ok());
+  EXPECT_TRUE(mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
+        &feature_store).ok());
+  
+  EXPECT_EQ(1, mgr.GetModelSessionSize());
+  auto prev_serving_session = mgr.GetServingSession();
 
   Request req;
   Response resp;
   EXPECT_TRUE(mgr.Predict(req, resp).ok());
 
-  status = mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
-        &feature_store);
-  EXPECT_TRUE(status.ok());
+  EXPECT_TRUE(mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
+        &feature_store).ok());
+
+  EXPECT_EQ(1, mgr.GetModelSessionSize());
+
+  EXPECT_TRUE(prev_serving_session != mgr.GetServingSession());
+}
+
+TEST_F(ModelSessionMgrTest, CleanupModelSessionWhenNoRequest) {
+  MetaGraphDef test_graph_def;
+  SessionOptions sess_options;
+  RunOptions run_options;
+  TestableModelSessionMgr mgr(test_graph_def, &sess_options, &run_options);
+  
+  ModelConfig config = CreateValidModelConfig();
+  FakeFeatureStoreMgr feature_store(&config);
+  
+  Version version_0;
+  EXPECT_TRUE(mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
+        &feature_store).ok());
+  
+  EXPECT_EQ(1, mgr.GetModelSessionSize());
+
+  mgr.AddModelSession(&feature_store);
+  mgr.AddModelSession(&feature_store);
+
+  EXPECT_EQ(3, mgr.GetModelSessionSize());
+
+  mgr.CleanupModelSession();
 
   EXPECT_EQ(1, mgr.GetModelSessionSize());
 }
