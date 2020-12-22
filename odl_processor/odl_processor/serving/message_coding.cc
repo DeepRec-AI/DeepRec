@@ -447,27 +447,38 @@ eas::PredictResponse Tensor2Response(const processor::Request& req,
 }
 namespace processor {
 Status ProtoBufParser::ParseRequestFromBuf(const void* input_data,
-    int input_size, Request& req) {
+    int input_size, Call& call) {
   eas::PredictRequest request;
   request.ParseFromArray(input_data, input_size);
 
   for (auto& input : request.inputs()) {
-    req.inputs.emplace_back(input.first, Proto2Tensor(input.second));
+    call.request.inputs.emplace_back(input.first, Proto2Tensor(input.second));
   }
 
-  req.output_tensor_names =
+  call.request.output_tensor_names =
       std::vector<std::string>(request.output_filter().begin(),
                                request.output_filter().end());
 
   return Status::OK();
 }
 
-Status ProtoBufParser::ParseResponseToBuf(const Request& req,
-    const Response& resp, void** output_data, int* output_size) {
-  eas::PredictResponse response = Tensor2Response(req, resp);
+Status ProtoBufParser::ParseResponseToBuf(const Call& call,
+    void** output_data, int* output_size) {
+  eas::PredictResponse response = Tensor2Response(call.request,
+      call.response);
   *output_size = response.ByteSize();
   *output_data = new char[*output_size];
   response.SerializeToArray(*output_data, *output_size);
+  return Status::OK();
+}
+
+Status ProtoBufParser::ParseMultipleRequestFromBuf(
+    const void* input_data[], int* input_size, MultipleCall& call) {
+  return Status::OK();
+}
+
+Status ProtoBufParser::ParseMultipleResponseToBuf(
+    const MultipleCall& call, void* output_data[], int* output_size) {
   return Status::OK();
 }
 

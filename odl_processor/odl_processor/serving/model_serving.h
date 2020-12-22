@@ -20,7 +20,9 @@ class Model {
 
   Status Init(const char* model_config);
   Status Predict(const void* input_data, int input_size,
-                  void** output_data, int* output_size);
+      void** output_data, int* output_size);
+  Status Predict(const void* input_data[], int* input_size,
+      void* output_data[], int* output_size);
   Status Predict(Request& req, Response& resp);
 
   Status Rollback();

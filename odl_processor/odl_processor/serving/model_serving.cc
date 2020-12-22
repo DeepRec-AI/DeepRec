@@ -28,14 +28,26 @@ Status Model::Init(const char* model_config) {
 Status Model::Predict(const void* input_data, int input_size,
     void** output_data, int* output_size) {
   Call call;
-  parser_->ParseRequestFromBuf(input_data, input_size, call.request);
+  parser_->ParseRequestFromBuf(input_data, input_size, call);
   auto status = Predict(call.request, call.response);
   if (!status.ok()) {
     return status;
   }
 
-  parser_->ParseResponseToBuf(call.request, call.response,
-    output_data, output_size);
+  parser_->ParseResponseToBuf(call, output_data, output_size);
+  return Status::OK();
+}
+
+Status Model::Predict(const void* input_data[], int* input_size,
+    void* output_data[], int* output_size) {
+  MultipleCall call;
+  parser_->ParseMultipleRequestFromBuf(input_data, input_size, call);
+  auto status = Predict(call.request, call.response);
+  if (!status.ok()) {
+    return status;
+  }
+
+  parser_->ParseMultipleResponseToBuf(call, output_data, output_size);
   return Status::OK();
 }
 

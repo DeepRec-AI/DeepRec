@@ -7,31 +7,51 @@ namespace tensorflow {
 namespace processor {
 class Request;
 class Response;
+class Call;
+class MultipleCall;
 class IParser {
  public:
   virtual Status ParseRequestFromBuf(const void* input_data,
-      int input_size, Request& req) = 0;
+      int input_size, Call& call) = 0;
 
-  virtual Status ParseResponseToBuf(const Request& req,
-      const Response& resp, void** output_data, int* output_size) = 0;
+  virtual Status ParseResponseToBuf(const Call& call,
+      void** output_data, int* output_size) = 0;
+
+  virtual Status ParseMultipleRequestFromBuf(const void* input_data[],
+      int* input_size, MultipleCall& call);
+
+  virtual Status ParseMultipleResponseToBuf(const MultipleCall& call,
+      void* output_data[], int* output_size);
 };
 
 class ProtoBufParser : public IParser {
  public:
   Status ParseRequestFromBuf(const void* input_data,
-      int input_size, Request& req) override;
+      int input_size, Call& call) override;
 
-  Status ParseResponseToBuf(const Request& req, const Response& resp,
+  Status ParseResponseToBuf(const Call& call,
       void** output_data, int* output_size) override;
+  
+  Status ParseMultipleRequestFromBuf(const void* input_data[],
+      int* input_size, MultipleCall& call) override;
+
+  Status ParseMultipleResponseToBuf(const MultipleCall& call,
+      void* output_data[], int* output_size) override;
 };
 
 class FlatBufferParser : public IParser {
  public:
   Status ParseRequestFromBuf(const void* input_data,
-      int input_size, Request& req) override;
+      int input_size, Call& call) override;
 
-  Status ParseResponseToBuf(const Request& req, const Response& resp,
+  Status ParseResponseToBuf(const Call& call,
       void** output_data, int* output_size) override;
+  
+  Status ParseMultipleRequestFromBuf(const void* input_data[],
+      int* input_size, MultipleCall& call) override;
+
+  Status ParseMultipleResponseToBuf(const MultipleCall& call,
+      void* output_data[], int* output_size) override;
 };
 
 class ParserFactory {
