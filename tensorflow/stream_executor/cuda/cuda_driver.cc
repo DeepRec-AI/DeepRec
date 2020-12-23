@@ -1529,8 +1529,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 }
 
 /* static */ bool GpuDriver::BeginGraphCaptureOnStream(
-    GpuContext* context, CUstream stream, CUstreamCaptureMode mode) {
-#if CUDA_VERSION >= 10000
+    GpuContext* context, CUstream stream, GpuStreamCaptureMode mode) {
+#if CUDA_VERSION >= 11000
   ScopedActivateContext activation(context);
   CUresult res = cuStreamBeginCapture(stream, mode);
   if (res != CUDA_SUCCESS) {
@@ -1549,8 +1549,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 
 /* static */ bool GpuDriver::EndGraphCaptureOnStream(GpuContext* context,
                                                      CUstream stream,
-                                                     CUgraph* graph) {
-#if CUDA_VERSION >= 10000
+                                                     GpuGraphHandle* graph) {
+#if CUDA_VERSION >= 11000
   ScopedActivateContext activated{context};
   CUresult res = cuStreamEndCapture(stream, graph);
   if (res != CUDA_SUCCESS) {
@@ -1569,8 +1569,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 #endif
 }
 
-/* static */ void GpuDriver::DestroyGraph(GpuContext* context, CUgraph* graph) {
-#if CUDA_VERSION >= 10000
+/* static */ void GpuDriver::DestroyGraph(GpuContext* context, GpuGraphHandle* graph) {
+#if CUDA_VERSION >= 11000
   if (*graph == nullptr) {
     return;
   }
@@ -1591,8 +1591,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 }
 
 /* static */ bool GpuDriver::InstantiateExecutableGraph(
-    GpuContext* context, CUgraph graph, CUgraphExec* graph_exec) {
-#if CUDA_VERSION >= 10000
+    GpuContext* context, GpuGraphHandle graph, GpuGraphExecHandle* graph_exec) {
+#if CUDA_VERSION >= 11000
   ScopedActivateContext activated{context};
   char log_buffer[1024];
   CUresult res = cuGraphInstantiate(graph_exec, graph,
@@ -1616,9 +1616,9 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 }
 
 /* static */ bool GpuDriver::UpdateExecutableGraph(GpuContext* context,
-                                                   CUgraphExec graph_exec,
-                                                   CUgraph graph) {
-#if CUDA_VERSION >= 10020
+                                                   GpuGraphExecHandle graph_exec,
+                                                   GpuGraphHandle graph) {
+#if CUDA_VERSION >= 11000
   ScopedActivateContext activated{context};
   CUresult res = cuGraphExecUpdate(graph_exec, graph,
                                    /* error_node = */ nullptr,
@@ -1642,9 +1642,9 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 }
 
 /* static */ bool GpuDriver::LaunchExecutableGraph(GpuContext* context,
-                                                   CUgraphExec graph_exec,
+                                                   GpuGraphExecHandle graph_exec,
                                                    CUstream stream) {
-#if CUDA_VERSION >= 10000
+#if CUDA_VERSION >= 11000
   ScopedActivateContext activation(context);
   CUresult res = cuGraphLaunch(graph_exec, stream);
   if (res != CUDA_SUCCESS) {
@@ -1662,8 +1662,8 @@ static port::StatusOr<T> GetSimpleAttribute(CUdevice device,
 }
 
 /* static */ void GpuDriver::DestroyExecutableGraph(GpuContext* context,
-                                                    CUgraphExec* graph_exec) {
-#if CUDA_VERSION >= 10000
+                                                    GpuGraphExecHandle* graph_exec) {
+#if CUDA_VERSION >= 11000
   if (*graph_exec == nullptr) {
     return;
   }

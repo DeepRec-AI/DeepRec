@@ -459,6 +459,7 @@ port::Status GpuExecutor::BeginGraphCapture(Stream* capture_stream) {
   VLOG(1) << "Beginning GPU graph capture on stream " << capture_cuda_stream;
   // Note: Relaxed capture mode because we use a private stream and always
   // re-capture the graph.
+#if CUDA_VERSION >= 10100
   if (!GpuDriver::BeginGraphCaptureOnStream(
           gpu_context(), capture_cuda_stream,
           CU_STREAM_CAPTURE_MODE_THREAD_LOCAL  // ToDo (amoitra): Check
@@ -469,6 +470,7 @@ port::Status GpuExecutor::BeginGraphCapture(Stream* capture_stream) {
           /*CU_STREAM_CAPTURE_MODE_RELAXED*/)) {
     return port::InternalError("Failed to begin GPU stream capture");
   }
+#endif
   return port::Status::OK();
 }
 
