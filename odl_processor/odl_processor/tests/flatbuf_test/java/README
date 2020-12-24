@@ -1,0 +1,9 @@
+1. download shade-protobuf-3.4.0.jar from https://mvnrepository.com/artifact/com.aliyun.openservices.eas/shade-protobuf/3.4.0
+
+2. export CLASSPATH=$CLASSPATH:/path/shade-protobuf-3.4.0.jar
+
+3. flatc -j ./request.fbs
+
+4. javac perf.java
+
+5. java perf
