@@ -8,6 +8,7 @@
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
 
+class redisContext;
 class redisAsyncContext;
 struct event_base;
 
@@ -25,6 +26,21 @@ class LocalRedis : public FeatureStore {
     ~LocalRedis();
 
     Status Cleanup();
+
+    Status BatchGet(uint64_t feature2id,
+                    const char* const keys,
+                    char* const values,
+                    size_t bytes_per_key,
+                    size_t bytes_per_values,
+                    size_t N,
+                    const char* default_value);
+
+    Status BatchSet(uint64_t feature2id,
+                    const char* const keys,
+                    const char* const values,
+                    size_t bytes_per_key,
+                    size_t bytes_per_values,
+                    size_t N);
 
     Status BatchGetAsync(uint64_t feature2id,
                          const char* const keys,
@@ -46,9 +62,7 @@ class LocalRedis : public FeatureStore {
   private:
     std::string ip_;
     int32_t port_;
-    redisAsyncContext *ac_;
-    event_base *base_;
-    std::unique_ptr<std::thread> event_thread_;
+    redisContext *c_;
 };
 
 class ClusterRedis : public FeatureStore {
@@ -58,6 +72,25 @@ class ClusterRedis : public FeatureStore {
 
     Status Cleanup() {
       return errors::Unimplemented("[Redis] Unimplement Cleanup().");
+    }
+
+    Status BatchGet(uint64_t feature2id,
+                    const char* const keys,
+                    char* const values,
+                    size_t bytes_per_key,
+                    size_t bytes_per_values,
+                    size_t N,
+                    const char* default_value) {
+      return errors::Unimplemented("[redis] unimplement batchget() in sync mode.");
+    }
+
+    Status BatchSet(uint64_t feature2id,
+                    const char* const keys,
+                    const char* const values,
+                    size_t bytes_per_key,
+                    size_t bytes_per_values,
+                    size_t N) {
+      return errors::Unimplemented("[redis] unimplement batchset() in sync mode.");
     }
 
     Status BatchGetAsync(uint64_t feature2id,

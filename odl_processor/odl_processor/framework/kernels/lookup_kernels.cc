@@ -321,6 +321,12 @@ BatchSetCallback make_import_callback(
           feature_name_to_id, reader, storageMgr,
           done = std::move(done)](const Status& s) {
 
+    if (!s.ok()) {
+      ctx->SetStatus(s);
+      done();
+      return;
+    }
+
     int curr_part_index = part_index;
     int64 total_keys_num = left_keys_num;
     bool new_part = false;
