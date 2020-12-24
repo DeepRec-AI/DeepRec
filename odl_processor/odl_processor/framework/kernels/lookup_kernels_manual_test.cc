@@ -45,14 +45,6 @@ int main() {
  config.feature_store_type = "local_redis";
  processor::FeatureStoreMgr manager(&config);
  {
-  NodeDef version_def;
-  Tensor version_value(DT_STRING, TensorShape({1}));
-  version_value.flat<std::string>()(0) = "v1";
-  TF_CHECK_OK(NodeDefBuilder("version", "Const")
-                  .Attr("dtype", DT_STRING)
-                  .Attr("value", version_value)
-                  .Finalize(&version_def));
-
   NodeDef prefix_def;
   Tensor prefix_value(DT_STRING, TensorShape({1}));
   prefix_value.flat<std::string>()(0) =
@@ -107,7 +99,6 @@ int main() {
   params.frame_iter = FrameAndIter(0, 0);
   // Create inputs
   gtl::InlinedVector<TensorValue, 4> inputs;
-  inputs.push_back({nullptr, &version_value});
   inputs.push_back({nullptr, &prefix_value});
   inputs.push_back({nullptr, &tensor_name_value});
   inputs.push_back({nullptr, &pointer_value});
@@ -126,14 +117,6 @@ int main() {
   TF_CHECK_OK(kv_import_context->status());
  }
  {
-  NodeDef version_def;
-  Tensor version_value(DT_STRING, TensorShape({1}));
-  version_value.flat<std::string>()(0) = "v1";
-  TF_CHECK_OK(NodeDefBuilder("version", "Const")
-                  .Attr("dtype", DT_STRING)
-                  .Attr("value", version_value)
-                  .Finalize(&version_def));
-
   NodeDef indices_def;
   Tensor indices_value(DT_INT64, TensorShape({4}));
   indices_value.flat<int64>()(0) = 4672086491694744000;
@@ -163,10 +146,10 @@ int main() {
 
   NodeDef kv_lookup_def;
   TF_CHECK_OK(NodeDefBuilder("kv_lookup", "KvLookup")
-                  .Input("version", 0, DT_STRING)
-                  .Input("indices", 1, DT_INT64)
-                  .Input("default_value", 2, DT_FLOAT)
-                  .Input("storage_pointer_value", 3, DT_UINT64)
+                  .Input("indices", 0, DT_INT64)
+                  .Input("default_value", 1, DT_FLOAT)
+                  .Input("storage_pointer_value", 2, DT_UINT64)
+                  .Attr("feature_name_to_id", 1)
                   .Attr("feature_name", "XXX")
                   .Attr("dim_len", 1)
                   .Attr("Tkeys", DT_INT64)
@@ -186,7 +169,6 @@ int main() {
   params.frame_iter = FrameAndIter(0, 0);
   // Create inputs
   gtl::InlinedVector<TensorValue, 4> inputs;
-  inputs.push_back({nullptr, &version_value});
   inputs.push_back({nullptr, &indices_value});
   inputs.push_back({nullptr, &default_value});
   inputs.push_back({nullptr, &pointer_value});

@@ -334,10 +334,14 @@ Status FeatureStoreMgr::GetValues(
   index %= thread_num_;
   {
     std::lock_guard<std::mutex> lock(mutex_[index]);
-    return store_[index]->BatchGetAsync(
+    Status s = store_[index]->BatchGet(
         feature2id, keys, values, 
         bytes_per_key, bytes_per_values, N,
-        default_value, std::move(cb));
+        default_value);
+    if (s.ok()) {
+      cb(s);
+    }
+    return s;
   }
 }
 
@@ -353,10 +357,13 @@ Status FeatureStoreMgr::SetValues(
   index %= update_thread_num_;
   {
     std::lock_guard<std::mutex> lock(update_mutex_[index]);
-    return update_store_[index]->BatchSetAsync(
+    Status s = update_store_[index]->BatchSet(
         feature2id, keys, values,
-        bytes_per_key, bytes_per_values, N,
-        std::move(cb));
+        bytes_per_key, bytes_per_values, N);
+    if (s.ok()) {
+      cb(s);
+    }
+    return s;
   }
 }
 
