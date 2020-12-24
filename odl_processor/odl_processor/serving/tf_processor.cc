@@ -56,7 +56,7 @@ int batch_process(void* model_buf, const void* input_data[], int* input_size,
     return 200;
   }
 
-  auto status = model->Predict(input_data, input_size,
+  auto status = model->BatchPredict(input_data, input_size,
       output_data, output_size);
   if (!status.ok()) {
     std::string errmsg = tensorflow::strings::StrCat(

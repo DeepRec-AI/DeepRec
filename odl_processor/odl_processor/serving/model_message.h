@@ -22,10 +22,16 @@ struct Call {
   Response response;
 };
 
-struct MultipleCall {
-  Request request;
-  Response response;
+struct BatchCall {
+  std::vector<Request> request;
+  std::vector<Response> response;
+
+  Request batched_request;
+  Response batched_response;
   int call_num; 
+
+  Status BatchRequest();
+  Status SplitResponse();
 };
 
 } // processor

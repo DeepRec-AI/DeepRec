@@ -19,7 +19,8 @@ Status Model::Init(const char* model_config) {
     return status;
   }
 
-  parser_ = ParserFactory::GetInstance(config->serialize_protocol);
+  parser_ = ParserFactory::GetInstance(config->serialize_protocol,
+      4);
   impl_ = ModelImplFactory::Create(config);
 
   return impl_->Init();
@@ -38,16 +39,16 @@ Status Model::Predict(const void* input_data, int input_size,
   return Status::OK();
 }
 
-Status Model::Predict(const void* input_data[], int* input_size,
+Status Model::BatchPredict(const void* input_data[], int* input_size,
     void* output_data[], int* output_size) {
-  MultipleCall call;
-  parser_->ParseMultipleRequestFromBuf(input_data, input_size, call);
-  auto status = Predict(call.request, call.response);
+  BatchCall call;
+  parser_->ParseBatchRequestFromBuf(input_data, input_size, call);
+  auto status = Predict(call.batched_request, call.batched_response);
   if (!status.ok()) {
     return status;
   }
 
-  parser_->ParseMultipleResponseToBuf(call, output_data, output_size);
+  parser_->ParseBatchResponseToBuf(call, output_data, output_size);
   return Status::OK();
 }
 
