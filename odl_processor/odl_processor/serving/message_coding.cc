@@ -446,6 +446,11 @@ eas::PredictResponse Tensor2Response(const processor::Request& req,
 
 }
 namespace processor {
+ProtoBufParser::ProtoBufParser(int thread_num) {
+  thread_pool_.reset(new thread::ThreadPool(Env::Default(), "",
+      thread_num));
+}
+
 Status ProtoBufParser::ParseRequestFromBuf(const void* input_data,
     int input_size, Call& call) {
   eas::PredictRequest request;
@@ -472,14 +477,51 @@ Status ProtoBufParser::ParseResponseToBuf(const Call& call,
   return Status::OK();
 }
 
-Status ProtoBufParser::ParseMultipleRequestFromBuf(
-    const void* input_data[], int* input_size, MultipleCall& call) {
+Status ProtoBufParser::ParseBatchRequestFromBuf(
+    const void* input_data[], int* input_size, BatchCall& call) {
+  auto size = sizeof(input_data) / sizeof(void*);
+  call.call_num = size;
+  auto do_work = [&call, input_data, input_size](size_t begin, size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+      eas::PredictRequest request;
+      request.ParseFromArray(input_data[i], input_size[i]);
+      
+      for (auto& input : request.inputs()) {
+        call.request[i].inputs.emplace_back(input.first, Proto2Tensor(input.second));
+      } 
+ 
+      if (i == 0) { 
+        call.request[0].output_tensor_names =
+            std::vector<std::string>(request.output_filter().begin(),
+                                     request.output_filter().end());
+      }
+    }
+  };
+  thread_pool_->ParallelFor(size, 10000, do_work);
+
+  return call.BatchRequest();
+}
+
+Status ProtoBufParser::ParseBatchResponseToBuf(
+    BatchCall& call, void* output_data[], int* output_size) {
+  //TF_RETURN_IF_ERROR(call.SplitResponse());
+  call.SplitResponse();
+  auto do_work = [&call, output_data, output_size](size_t begin, size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+      eas::PredictResponse response = Tensor2Response(call.request[i],
+          call.response[i]);
+      output_size[i] = response.ByteSize();
+      output_data[i] = new char[*output_size];
+      response.SerializeToArray(output_data[i], output_size[i]); 
+    }
+  };
+  thread_pool_->ParallelFor(call.call_num, 10000, do_work);
   return Status::OK();
 }
 
-Status ProtoBufParser::ParseMultipleResponseToBuf(
-    const MultipleCall& call, void* output_data[], int* output_size) {
-  return Status::OK();
+FlatBufferParser::FlatBufferParser(int thread_num) {
+  thread_pool_.reset(new thread::ThreadPool(Env::Default(), "",
+      thread_num));
 }
 
 } // processor

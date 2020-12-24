@@ -50,7 +50,11 @@ cc_test(
 
 cc_library(
     name = "model_message",
+    srcs = ["model_message.cc",],
     hdrs = ["model_message.h",],
+    deps = [
+        "@org_tensorflow//tensorflow/core:framework",
+        ],
 )
 
 cc_library(
@@ -119,6 +123,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:core_cpu",
+        "@org_tensorflow//tensorflow/core:lib",
         "//odl_processor/framework:model_version",
         "//odl_processor/storage:model_store",
         "model_config",
