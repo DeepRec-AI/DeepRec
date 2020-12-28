@@ -19,10 +19,16 @@ class IParser {
       void** output_data, int* output_size) = 0;
 
   virtual Status ParseBatchRequestFromBuf(const void* input_data[],
-      int* input_size, BatchCall& call);
+      int* input_size, BatchCall& call) {
+    // TO be implemented
+    return Status::OK();
+  }
 
   virtual Status ParseBatchResponseToBuf(BatchCall& call,
-      void* output_data[], int* output_size);
+      void* output_data[], int* output_size) {
+    // TO be implemented
+    return Status::OK();
+  }
 };
 
 class ProtoBufParser : public IParser {
@@ -50,16 +56,28 @@ class FlatBufferParser : public IParser {
   explicit FlatBufferParser(int thread_num);
 
   Status ParseRequestFromBuf(const void* input_data,
-      int input_size, Call& call) override;
+      int input_size, Call& call) override {
+    // TO be implemented
+    return Status::OK();
+  }
 
   Status ParseResponseToBuf(const Call& call,
-      void** output_data, int* output_size) override;
+      void** output_data, int* output_size) override {
+    // TO be implemented
+    return Status::OK();
+  }
   
   Status ParseBatchRequestFromBuf(const void* input_data[],
-      int* input_size, BatchCall& call) override;
+      int* input_size, BatchCall& call) override {
+    // TO be implemented
+    return Status::OK();
+  }
 
   Status ParseBatchResponseToBuf(BatchCall& call,
-      void* output_data[], int* output_size) override;
+      void* output_data[], int* output_size) override {
+    // TO be implemented
+    return Status::OK();
+  }
 
  private:
   std::unique_ptr<thread::ThreadPool> thread_pool_;

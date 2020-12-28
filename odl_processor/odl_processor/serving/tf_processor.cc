@@ -68,13 +68,17 @@ int batch_process(void* model_buf, const void* input_data[], int* input_size,
   }
   return 200;
 }
-   
-typedef void (*DoneCallback)(const char* output, int output_size,
-    int64_t request_id, int finished, int error_code);
 
-void async_process(void* model_buf, const void* input_data,
-    int input_size, int64_t request_id, DoneCallback done) {
-  // TODO
-}
+// TODO: EAS has a higher priority to call async interface.
+//       Now we have no implementation of this async interface,
+//       this will block EAS to call sync interface.
+//
+//typedef void (*DoneCallback)(const char* output, int output_size,
+//    int64_t request_id, int finished, int error_code);
+//
+//void async_process(void* model_buf, const void* input_data,
+//    int input_size, int64_t request_id, DoneCallback done) {
+//  // TODO
+//}
 
 }

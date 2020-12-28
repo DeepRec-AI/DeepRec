@@ -271,7 +271,7 @@ Status SingleSessionInstance::Init(ModelConfig* config,
 
 Status SingleSessionInstance::LoadSavedModel(
     const std::string& export_dir) {
- TF_RETURN_IF_ERROR(LoadMetaGraphIntoSession(
+  TF_RETURN_IF_ERROR(LoadMetaGraphIntoSession(
       meta_graph_def_, *session_options_, &session_));
 
   std::vector<AssetFileDef> asset_file_defs;
