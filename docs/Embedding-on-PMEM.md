@@ -155,15 +155,15 @@ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_
 ### 在PMEM内存模式上运行WDL Stand-alone Training
 ```bash
 1. 用户通过命令设置WDL模型Embedding Variable的存储类型为DRAM；
-1. 执行WDL train过程。
+2. 执行WDL train过程。
 ```
 ### 在PMEM FSDAX模式上运行WDL Stand-alone Training
 ```bash
 1. 用户通过命令设置WDL模型Embedding Variable的存储类型为PMEM_LIBPMEM，设置存储路径指向mount的持久内存目录，设置持久内存上存储数据占用空间大小；
-1. 执行WDL train过程。
+2. 执行WDL train过程。
 ```
 ### 在PMEM KMEM DAX模式上运行WDL Stand-alone Training
 ```bash
 1. 用户通过命令设置WDL模型Embedding Variable的存储类型为PMEM_MEMKIND；
-1. 执行WDL train过程。
+2. 执行WDL train过程。
 ```
