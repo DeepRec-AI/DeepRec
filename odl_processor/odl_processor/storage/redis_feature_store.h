@@ -27,7 +27,8 @@ class LocalRedis : public FeatureStore {
 
     Status Cleanup();
 
-    Status BatchGet(uint64_t feature2id,
+    Status BatchGet(uint64_t model_version,
+                    uint64_t feature2id,
                     const char* const keys,
                     char* const values,
                     size_t bytes_per_key,
@@ -35,14 +36,16 @@ class LocalRedis : public FeatureStore {
                     size_t N,
                     const char* default_value);
 
-    Status BatchSet(uint64_t feature2id,
+    Status BatchSet(uint64_t model_version,
+                    uint64_t feature2id,
                     const char* const keys,
                     const char* const values,
                     size_t bytes_per_key,
                     size_t bytes_per_values,
                     size_t N);
 
-    Status BatchGetAsync(uint64_t feature2id,
+    Status BatchGetAsync(uint64_t model_version,
+                         uint64_t feature2id,
                          const char* const keys,
                          char* const values,
                          size_t bytes_per_key,
@@ -51,7 +54,8 @@ class LocalRedis : public FeatureStore {
                          const char* default_value,
                          BatchGetCallback cb);
 
-    Status BatchSetAsync(uint64_t feature2id,
+    Status BatchSetAsync(uint64_t model_version,
+                         uint64_t feature2id,
                          const char* const keys,
                          const char* const values,
                          size_t bytes_per_key,
@@ -74,7 +78,8 @@ class ClusterRedis : public FeatureStore {
       return errors::Unimplemented("[Redis] Unimplement Cleanup().");
     }
 
-    Status BatchGet(uint64_t feature2id,
+    Status BatchGet(uint64_t model_version,
+                    uint64_t feature2id,
                     const char* const keys,
                     char* const values,
                     size_t bytes_per_key,
@@ -84,7 +89,8 @@ class ClusterRedis : public FeatureStore {
       return errors::Unimplemented("[redis] unimplement batchget() in sync mode.");
     }
 
-    Status BatchSet(uint64_t feature2id,
+    Status BatchSet(uint64_t model_version,
+                    uint64_t feature2id,
                     const char* const keys,
                     const char* const values,
                     size_t bytes_per_key,
@@ -93,7 +99,8 @@ class ClusterRedis : public FeatureStore {
       return errors::Unimplemented("[redis] unimplement batchset() in sync mode.");
     }
 
-    Status BatchGetAsync(uint64_t feature2id,
+    Status BatchGetAsync(uint64_t model_version,
+                         uint64_t feature2id,
                          const char* const keys,
                          char* const values,
                          size_t bytes_per_key,
@@ -104,7 +111,8 @@ class ClusterRedis : public FeatureStore {
       return errors::Unimplemented("[Redis] Unimplement BatchGet() in async mode.");
     }
 
-    Status BatchSetAsync(uint64_t feature2id,
+    Status BatchSetAsync(uint64_t model_version,
+                         uint64_t feature2id,
                          const char* const keys,
                          const char* const values,
                          size_t bytes_per_key,

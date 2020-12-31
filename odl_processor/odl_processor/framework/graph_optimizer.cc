@@ -574,6 +574,9 @@ Status SavedModelOptimizer::RunODLGraphPass() {
   Status s = GenerateIdsForFeatures();
   if (!s.ok()) return s;
 
+  // Add node for feed version
+  s = AddVersionNode();
+
   // Add a placeholder for storage pointer
   s = AddStoragePlaceholderNode();
   if (!s.ok()) return s;
@@ -826,7 +829,19 @@ Status GetNodeAttr(const Node* node,
 
   return Status::OK();
 }
- 
+
+ Status AddPlaceholder(Graph* g, const std::string& name,
+                       DataType type, Node** target_node) {
+  // Add a placeholder for 'name' which set by user.
+  NodeDef def;
+  def.set_name(name);
+  def.set_op("Placeholder");
+  (*def.mutable_attr())["dtype"].set_type(type);
+  Status status;
+  *target_node = g->AddNode(def, &status);
+  return status;
+}
+
 } // namespace
 
 Status SavedModelOptimizer::GetFeature2IdAttr(
@@ -857,9 +872,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
     std::unordered_map<std::string, const AttrValue*> attr_info;
 
     if (node->op_def().name() == "KvResourceGather") {
-      if (!storage_pointer_node_) {
+      if (!storage_pointer_node_ || !version_node_) {
         return tensorflow::errors::Internal(
-            "Not found a storage pointer node in the graph.");
+            "Not found a storage pointer or version node in the graph.");
       }
 
       std::vector<SrcInfo> gather_input_info;
@@ -871,6 +886,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
                                           input_info[2].src_slot});
       // storage pointer
       gather_input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+
+      // model version
+      gather_input_info.push_back(SrcInfo{version_node_, 0});
 
       // control edges
       for (size_t i = edge_count; i < input_info.size(); ++i) {
@@ -918,9 +936,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
       }
 
     } else if (node->op_def().name() == "KvResourceImportV2") {
-      if (!storage_pointer_node_) {
+      if (!storage_pointer_node_ || !version_node_) {
         return tensorflow::errors::Internal(
-            "Not found a storage pointer node in the graph.");
+            "Not found a storage pointer or version node in the graph.");
       }
 
       std::vector<SrcInfo> import_input_info;
@@ -932,6 +950,9 @@ Status SavedModelOptimizer::ConvertKVOps() {
                                           input_info[3].src_slot});
       // storage pointer
       import_input_info.push_back(SrcInfo{storage_pointer_node_, 0});
+
+      // model version
+      import_input_info.push_back(SrcInfo{version_node_, 0});
 
       // control edges
       for (size_t i = edge_count; i < input_info.size(); ++i) {
@@ -1033,17 +1054,16 @@ Status SavedModelOptimizer::RewriteDefaultValueOp() {
   return Status::OK();
 }
 
+Status SavedModelOptimizer::AddVersionNode() {
+  // Add a placeholder for version which set by user.
+  return AddPlaceholder(&graph_, GetModelVersionNodeName(),
+                        DT_UINT64, &version_node_);
+}
+
 Status SavedModelOptimizer::AddStoragePlaceholderNode() {
-  Status status;
-
   // Add a placeholder for storage pointer which set by user.
-  NodeDef storage_pointer_def;
-  storage_pointer_def.set_name(GetStoragePointerNodeName());
-  storage_pointer_def.set_op("Placeholder");
-  (*storage_pointer_def.mutable_attr())["dtype"].set_type(DT_UINT64);
-  storage_pointer_node_ = graph_.AddNode(storage_pointer_def, &status);
-
-  return status;
+  return AddPlaceholder(&graph_, GetStoragePointerNodeName(),
+                        DT_UINT64, &storage_pointer_node_);
 }
 
 Status SavedModelOptimizer::AddVariableInitSubGraph() {

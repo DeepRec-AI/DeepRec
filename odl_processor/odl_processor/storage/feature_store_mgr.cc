@@ -94,12 +94,30 @@ void ThreadRun(AsyncFeatureStoreMgr* mgr, int idx,
   }
 }
 
+Status GetIPAndPortFromUrl(const std::string& url,
+                           std::string* ip,
+                           int32_t* port) {
+  auto offset = url.find(":");
+  if (offset == std::string::npos) {
+    return tensorflow::errors::Internal(
+        "Can't parse ip and port from url: ", url);
+  }
+
+  *ip = url.substr(0, offset);
+  *port = atoi(url.substr(offset+1, url.length()).c_str());
+
+  return Status::OK();
+}
+
 FeatureStore* CreateFeatureStore(const std::string& type,
     const std::string& url, const std::string& password) {
   if (type == "local_redis") {
     LocalRedis::Config config;
-    config.ip = "127.0.0.1";
-    config.port = 6379;
+    Status s = GetIPAndPortFromUrl(url, &config.ip, &config.port);
+    if (!s.ok()) {
+      LOG(ERROR) << "Can't parse ip and port from url: " << url;
+      return nullptr;
+    }
     return new LocalRedis(config);
   } else {
     LOG(ERROR) << "Only LocalRedis backend now. type = " << type;
@@ -322,6 +340,7 @@ FeatureStoreMgr::~FeatureStoreMgr() {
 }
 
 Status FeatureStoreMgr::GetValues(
+    uint64_t model_version,
     uint64_t feature2id,
     const char* const keys,
     char* const values,
@@ -335,7 +354,7 @@ Status FeatureStoreMgr::GetValues(
   {
     std::lock_guard<std::mutex> lock(mutex_[index]);
     Status s = store_[index]->BatchGet(
-        feature2id, keys, values, 
+        model_version, feature2id, keys, values, 
         bytes_per_key, bytes_per_values, N,
         default_value);
     if (s.ok()) {
@@ -346,6 +365,7 @@ Status FeatureStoreMgr::GetValues(
 }
 
 Status FeatureStoreMgr::SetValues(
+    uint64_t model_version,
     uint64_t feature2id,
     const char* const keys,
     const char* const values,
@@ -358,7 +378,7 @@ Status FeatureStoreMgr::SetValues(
   {
     std::lock_guard<std::mutex> lock(update_mutex_[index]);
     Status s = update_store_[index]->BatchSet(
-        feature2id, keys, values,
+        model_version, feature2id, keys, values,
         bytes_per_key, bytes_per_values, N);
     if (s.ok()) {
       cb(s);

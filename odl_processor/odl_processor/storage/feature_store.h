@@ -19,7 +19,8 @@ class FeatureStore {
     // Cleanup Store
     virtual Status Cleanup() = 0;
     // Read Store Sync
-    virtual Status BatchGet(uint64_t feature2id,             // featureID encode uint64
+    virtual Status BatchGet(uint64_t model_version,          // model version
+                            uint64_t feature2id,             // featureID encode uint64
                             const char* const keys,          // key buffer -- IDs
                             char* const values,              // val buffer -- embeddings
                             size_t bytes_per_key,            // sizeof(TKey)
@@ -27,14 +28,16 @@ class FeatureStore {
                             size_t N,                        // embedding vocabulary size
                             const char* default_value) = 0;  // embedding default buffer if ID NotFound
     // Write Store Sync
-    virtual Status BatchSet(uint64_t feature2id,             // featureID encode uint64
+    virtual Status BatchSet(uint64_t model_version,          // model version
+                            uint64_t feature2id,             // featureID encode uint64
                             const char* const keys,          // key buffer -- IDs
                             const char* const values,        // val buffer -- embeddings
                             size_t bytes_per_key,            // sizeof(TKey)
                             size_t bytes_per_values,         // sizeof(TValue) * embedding*dim
                             size_t N) = 0;                   // embedding vocabulary size
     // Read Store Async
-    virtual Status BatchGetAsync(uint64_t feature2id,        // featureID encode uint64
+    virtual Status BatchGetAsync(uint64_t model_version,     // model version
+                                 uint64_t feature2id,        // featureID encode uint64
                                  const char* const keys,     // key buffer -- IDs
                                  char* const values,         // val buffer -- embeddings
                                  size_t bytes_per_key,       // sizeof(TKey)
@@ -43,7 +46,8 @@ class FeatureStore {
                                  const char* default_value,  // embedding default buffer if ID NotFound
                                  BatchGetCallback cb) = 0;
     // Write Store Async
-    virtual Status BatchSetAsync(uint64_t feature2id,        // featureID encode uint64
+    virtual Status BatchSetAsync(uint64_t model_version,     // model version
+                                 uint64_t feature2id,        // featureID encode uint64
                                  const char* const keys,     // key buffer -- IDs
                                  const char* const values,   // val buffer -- embeddings
                                  size_t bytes_per_key,       // sizeof(TKey)

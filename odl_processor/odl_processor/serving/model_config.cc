@@ -137,7 +137,8 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     }
   }
 
-  if ((*config)->feature_store_type == "cluster_redis") {
+  if ((*config)->feature_store_type == "cluster_redis" ||
+      (*config)->feature_store_type == "local_redis") {
     if (!json_config["redis_url"].isNull()) {
       (*config)->redis_url =
         json_config["redis_url"].asString();
@@ -155,10 +156,7 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
           "[TensorFlow] Should set redis_password in ModelConfig \
           when feature_store_type=cluster_redis.");
     }
-  }
  
-  // when feature_store_type == local_redis | cluster_redis
-  if ((*config)->feature_store_type.find("redis") != std::string::npos) {
     if (!json_config["read_thread_num"].isNull()) {
       (*config)->read_thread_num =
         json_config["read_thread_num"].asInt();

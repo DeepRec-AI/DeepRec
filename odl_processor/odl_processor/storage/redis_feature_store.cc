@@ -166,7 +166,8 @@ Status LocalRedis::Cleanup() {
   }
 }
 
-Status LocalRedis::BatchGet(uint64_t feature2id,
+Status LocalRedis::BatchGet(uint64_t model_version,
+                            uint64_t feature2id,
                             const char* const keys,
                             char* const values,
                             size_t bytes_per_key,
@@ -187,7 +188,8 @@ Status LocalRedis::BatchGet(uint64_t feature2id,
 #if DEBUG
   for(int i = 0 ; i < len; i++) {
     std::string key = std::to_string(*(int64*)(keys + i*keys_byte_lens));
-    std::string key2 = std::to_string(feature2id) + "_" + key;
+    std::string key2 = std::to_string(model_version) + "_" + \
+                       std::to_string(feature2id) + "_" + key;
     size_t key_length = key2.size();
     argvlen[j] = key_length;
     argv[j] = new char[key_length];
@@ -195,12 +197,18 @@ Status LocalRedis::BatchGet(uint64_t feature2id,
     j++;
   }
 #else
-  size_t key_length = keys_byte_lens + sizeof(feature2id);
+  int size_feature2id = sizeof(feature2id);
+  int size_model_version = sizeof(model_version);
+  size_t key_length = keys_byte_lens + \
+                      size_model_version + \
+                      size_feature2id;
   for(int i = 0 ; i < len; i++) {
     argvlen[j] = key_length;
     argv[j] = new char[key_length];
-    memcpy((void*)argv[j], keys + i*keys_byte_lens, keys_byte_lens);
-    memcpy((void*)(argv[j] + keys_byte_lens), &feature2id, sizeof(feature2id));
+    memcpy((void*)argv[j], &model_version, size_model_version);
+    memcpy((void*)(argv[j] + size_model_version), &feature2id, sizeof(feature2id));
+    memcpy((void*)(argv[j] + size_model_version + size_feature2id),
+           keys + i * keys_byte_lens, keys_byte_lens);
     j++;
   }
 #endif
@@ -252,7 +260,8 @@ Status LocalRedis::BatchGet(uint64_t feature2id,
   return Status::OK();
 }
 
-Status LocalRedis::BatchSet(uint64_t feature2id,
+Status LocalRedis::BatchSet(uint64_t model_version,
+                            uint64_t feature2id,
                             const char* const keys,
                             const char* const values,
                             size_t bytes_per_key,
@@ -273,7 +282,8 @@ Status LocalRedis::BatchSet(uint64_t feature2id,
 #if DEBUG
   for(int i = 0 ; i < len; i++) {
     std::string key = std::to_string(*(int64*)(keys + i*keys_byte_lens));
-    std::string key2 = std::to_string(feature2id) + "_" + key;
+    std::string key2 = std::to_string(model_version) + "_" + \
+                       std::to_string(feature2id) + "_" + key;
     size_t key_length = key2.size();
     argvlen[j] = key_length;
     argv[j] = new char[key_length];
@@ -292,12 +302,18 @@ Status LocalRedis::BatchSet(uint64_t feature2id,
     j++;
   }
 #else
-  size_t key_length = keys_byte_lens + sizeof(feature2id);
+  int size_model_version = sizeof(model_version);
+  int size_feature2id = sizeof(feature2id);
+  size_t key_length = keys_byte_lens + \
+                      size_model_version + \
+                      size_feature2id;
   for(int i = 0 ; i < len; i++) {
     argvlen[j] = key_length;
     argv[j] = new char[key_length];
-    memcpy((void*)argv[j], keys + i*keys_byte_lens, keys_byte_lens);
-    memcpy((void*)(argv[j] + keys_byte_lens), &feature2id, sizeof(feature2id));
+    memcpy((void*)argv[j], &model_version, size_model_version);
+    memcpy((void*)(argv[j] + size_model_version), &feature2id, size_feature2id);
+    memcpy((void*)(argv[j] + size_model_version + size_feature2id),
+           keys + i * keys_byte_lens, keys_byte_lens);
     j++;
 
     argvlen[j] = values_byte_lens;
@@ -324,7 +340,8 @@ Status LocalRedis::BatchSet(uint64_t feature2id,
   return Status::OK();
 }
 
-Status LocalRedis::BatchGetAsync(uint64_t feature2id,
+Status LocalRedis::BatchGetAsync(uint64_t model_version,
+                                 uint64_t feature2id,
                                  const char* const keys,
                                  char* const values,
                                  size_t bytes_per_key,
@@ -335,7 +352,8 @@ Status LocalRedis::BatchGetAsync(uint64_t feature2id,
   return errors::Unimplemented("[redis] unimplement BatchGetAsync() in async mode.");
 }
 
-Status LocalRedis::BatchSetAsync(uint64_t feature2id,
+Status LocalRedis::BatchSetAsync(uint64_t model_version,
+                                 uint64_t feature2id,
                                  const char* const keys,
                                  const char* const values,
                                  size_t bytes_per_key,

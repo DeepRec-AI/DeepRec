@@ -123,7 +123,8 @@ class IFeatureStoreMgr {
  public:
   virtual ~IFeatureStoreMgr() {}
 
-  virtual Status GetValues(uint64_t feature2id,
+  virtual Status GetValues(uint64_t model_version,
+                           uint64_t feature2id,
                            const char* const keys,
                            char* const values,
                            size_t bytes_per_key,
@@ -132,7 +133,8 @@ class IFeatureStoreMgr {
                            const char* default_value,
                            BatchGetCallback cb) = 0;
 
-  virtual Status SetValues(uint64_t feature2id,
+  virtual Status SetValues(uint64_t model_version,
+                           uint64_t feature2id,
                            const char* const keys,
                            const char* const values,
                            size_t bytes_per_key,
@@ -148,7 +150,8 @@ class FeatureStoreMgr : public IFeatureStoreMgr {
   explicit FeatureStoreMgr(ModelConfig* config);
   virtual ~FeatureStoreMgr();
 
-  Status GetValues(uint64_t feature2id,
+  Status GetValues(uint64_t model_version,
+                   uint64_t feature2id,
                    const char* const keys,
                    char* const values,
                    size_t bytes_per_key,
@@ -156,7 +159,8 @@ class FeatureStoreMgr : public IFeatureStoreMgr {
                    size_t N,
                    const char* default_value,
                    BatchGetCallback cb) override;
-  Status SetValues(uint64_t feature2id,
+  Status SetValues(uint64_t model_version,
+                   uint64_t feature2id,
                    const char* const keys,
                    const char* const values,
                    size_t bytes_per_key,

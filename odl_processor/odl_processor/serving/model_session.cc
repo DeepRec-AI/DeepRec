@@ -120,7 +120,7 @@ Status RunRestore(const RunOptions& run_options,
                   const StringPiece variable_filename_const_op_name,
                   const std::vector<AssetFileDef>& asset_file_defs,
                   Session* session,
-                  std::pair<std::string, Tensor> sparse_storage_tensor) {
+                  std::vector<std::pair<std::string, Tensor>>& extra_tensors) {
   LOG(INFO) << "Restoring SavedModel bundle.";
   // Find path to variables to be restored in export directory.
 
@@ -130,7 +130,9 @@ Status RunRestore(const RunOptions& run_options,
 
   std::vector<std::pair<string, Tensor>> inputs = {
       {string(variable_filename_const_op_name), variables_path_tensor}};
-  inputs.emplace_back(sparse_storage_tensor);
+  for (auto t : extra_tensors) {
+    inputs.emplace_back(t);
+  }
 
   AddAssetsTensorsToInputs(savedmodel_dir, asset_file_defs, &inputs);
 
@@ -153,29 +155,39 @@ Status ModelSessionMgr::CreateSession(Session** session) {
   return GetAssetFileDefs(meta_graph_def_, &asset_file_defs_);
 }
 
-Status ModelSessionMgr::RunRestoreOps(const char* ckpt_name,
+Status ModelSessionMgr::RunRestoreOps(
+    const char* ckpt_name, int64 full_ckpt_version,
     const char* savedmodel_dir, Session* session,
     IFeatureStoreMgr* sparse_storage) {
-  Tensor t(DT_UINT64, TensorShape({}));
-  t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
-  auto sparse_storage_tensor = std::make_pair(
-      GetStoragePointerNodeName(), t);
+  std::vector<std::pair<std::string, Tensor>> extra_tensors;
+  Tensor sparse_storage_tensor(DT_UINT64, TensorShape({}));
+  sparse_storage_tensor.scalar<uint64>()() =
+      reinterpret_cast<uint64>(sparse_storage);
+  auto sparse_storage_tensor_pair = std::make_pair(
+      GetStoragePointerNodeName(), sparse_storage_tensor);
+  extra_tensors.emplace_back(sparse_storage_tensor_pair);
+
+  Tensor version_tensor(DT_UINT64, TensorShape({}));
+  version_tensor.scalar<uint64>()() = full_ckpt_version;
+  auto version_tensor_pair = std::make_pair(
+      GetModelVersionNodeName(), version_tensor);
+  extra_tensors.emplace_back(version_tensor_pair);
 
   TF_RETURN_IF_ERROR(
       RunRestore(*run_options_, ckpt_name, savedmodel_dir,
           meta_graph_def_.saver_def().restore_op_name(),
           meta_graph_def_.saver_def().filename_tensor_name(),
-          asset_file_defs_, session, sparse_storage_tensor));
+          asset_file_defs_, session, extra_tensors));
 
   if (HasMainOp(meta_graph_def_)) {
     return RunMainOp(*run_options_, savedmodel_dir,
         meta_graph_def_, asset_file_defs_, session, kSavedModelMainOpKey,
-        sparse_storage_tensor);
+        sparse_storage_tensor_pair);
   } else {
     return RunMainOp(
         *run_options_, savedmodel_dir, meta_graph_def_,
         asset_file_defs_, session, kSavedModelLegacyInitOpKey,
-        sparse_storage_tensor);
+        sparse_storage_tensor_pair);
   }
 }
 
@@ -186,10 +198,16 @@ ModelSession::ModelSession(Session* s, const Version& version,
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
   sparse_storage_tensor_ = t;
   sparse_storage_name_ = GetStoragePointerNodeName();
+
+  Tensor t_version(DT_UINT64, TensorShape({}));
+  t_version.scalar<uint64>()() = version.full_ckpt_version;
+  model_version_tensor_ = t_version;
+  model_version_name_ = GetModelVersionNodeName();
 }
 
 Status ModelSession::Predict(Request& req, Response& resp) {
   req.inputs.emplace_back(sparse_storage_name_, sparse_storage_tensor_);
+  req.inputs.emplace_back(model_version_name_, model_version_tensor_);
   ++counter_;
   auto status = session_->Run(req.inputs, req.output_tensor_names,
       {}, &resp.outputs);
@@ -207,6 +225,7 @@ Status ModelSessionMgr::CreateModelSession(
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
   TF_RETURN_IF_ERROR(RunRestoreOps(ckpt_name,
+        version.full_ckpt_version,
         version.savedmodel_dir.c_str(),
         session, sparse_storage));
   ResetServingSession(session, version, sparse_storage);

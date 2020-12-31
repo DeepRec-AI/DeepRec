@@ -114,18 +114,20 @@ class FakeFeatureStoreMgr : public IFeatureStoreMgr {
   FakeFeatureStoreMgr(ModelConfig* config) {
   }
 
-  Status GetValues (uint64_t feature2id,
-                    const char* const keys,
-                    char* const values,
-                    size_t bytes_per_key,
-                    size_t bytes_per_values,
-                    size_t N,
-                    const char* default_value,
-                    BatchGetCallback cb) override {
+  Status GetValues(uint64_t model_version,
+                   uint64_t feature2id,
+                   const char* const keys,
+                   char* const values,
+                   size_t bytes_per_key,
+                   size_t bytes_per_values,
+                   size_t N,
+                   const char* default_value,
+                   BatchGetCallback cb) override {
     return Status::OK();
   }
 
-  Status SetValues(uint64_t feature2id,
+  Status SetValues(uint64_t model_version,
+                   uint64_t feature2id,
                    const char* const keys,
                    const char* const values,
                    size_t bytes_per_key,
@@ -169,8 +171,9 @@ class TestableModelSessionMgr : public ModelSessionMgr {
     return serving_session_;
   }
 
-  Status RunRestoreOps(const char* ckpt_name, const char* savedmodel_dir,
-      Session* session, IFeatureStoreMgr* sparse_storage) override {
+  Status RunRestoreOps(const char* ckpt_name, int64 full_ckpt_version,
+      const char* savedmodel_dir, Session* session,
+      IFeatureStoreMgr* sparse_storage) override {
     return Status::OK();
   }
 };

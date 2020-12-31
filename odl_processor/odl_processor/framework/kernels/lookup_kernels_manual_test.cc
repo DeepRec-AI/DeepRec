@@ -74,11 +74,21 @@ int main() {
                   .Attr("value", pointer_value)
                   .Finalize(&pointer_value_def));
 
+  NodeDef version_def;
+  Tensor version_value(DT_UINT64, TensorShape({1}));
+  version_value.scalar<tensorflow::uint64>()() =
+      (uint64_t)(1688);
+  TF_CHECK_OK(NodeDefBuilder("model_version", "Const")
+                  .Attr("dtype", DT_UINT64)
+                  .Attr("value", version_value)
+                  .Finalize(&version_def));
+
   NodeDef kv_import_def;
   TF_CHECK_OK(NodeDefBuilder("kv_import", "KvImport")
                   .Input("prefix", 0, DT_STRING)
                   .Input("tensor_name", 1, DT_STRING)
                   .Input("storage_pointer_value", 2, DT_UINT64)
+                  .Input("model_version", 0, DT_UINT64)
                   .Attr("feature_name_to_id", 1)
                   .Attr("feature_name", "XXX")
                   .Attr("dim_len", 1)
@@ -102,6 +112,7 @@ int main() {
   inputs.push_back({nullptr, &prefix_value});
   inputs.push_back({nullptr, &tensor_name_value});
   inputs.push_back({nullptr, &pointer_value});
+  inputs.push_back({nullptr, &version_value});
   params.inputs = &inputs;
   params.op_kernel = kv_import_op.get();
 

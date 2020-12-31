@@ -195,11 +195,15 @@ class SavedModelOptimizer : public GraphOptimizer {
   // include storage pointer
   Status AddStoragePlaceholderNode();
 
+  // Add node for feed version
+  Status AddVersionNode();
+
   // Each feature name will be map to a uint64 num,
   // the num will be as the prefix of a query key.
   Status GenerateIdsForFeatures();
 
   Node* storage_pointer_node_ = nullptr;// storage placeholder node
+  Node* version_node_ = nullptr; // version placeholder node
   std::unordered_map<std::string, int> feature_names_to_ids;
 };
 
