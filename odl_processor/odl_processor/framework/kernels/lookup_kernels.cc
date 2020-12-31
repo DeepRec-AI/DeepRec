@@ -81,6 +81,10 @@ class KvLookupOp : public AsyncOpKernel {
     IFeatureStoreMgr* storageMgr =
         reinterpret_cast<IFeatureStoreMgr*>(storage_pointer_value);
 
+    const Tensor& model_version = ctx->input(3);
+    const uint64 model_version_value =
+        model_version.scalar<tensorflow::uint64>()();
+
     TensorShape result_shape = indices.shape();
     TensorShape value_shape({dim_len_});
     result_shape.AppendShape(value_shape);
@@ -101,6 +105,7 @@ class KvLookupOp : public AsyncOpKernel {
             std::to_string(dim_len_), std::to_string(out->NumElements() / N)));
 
     Status s = storageMgr->GetValues(
+        model_version_value,
         feature_name_to_id_,
         (const char*)indices.data(),
         (char*)out->data(), sizeof(TKey),
@@ -250,6 +255,7 @@ BatchSetCallback make_import_callback(
     const std::string& tensor_key,
     const std::string& tensor_value,
     uint64_t feature_name_to_id,
+    uint64_t model_version,
     BundleReader* reader,
     IFeatureStoreMgr* storageMgr,
     AsyncOpKernel::DoneCallback done);
@@ -268,6 +274,7 @@ Status InternalImportValues(
     char* key_buffer, char* value_buffer,
     BundleReader* reader,
     uint64_t feature_name_to_id,
+    uint64_t model_version,
     IFeatureStoreMgr* storageMgr,
     AsyncOpKernel::DoneCallback done) {
   Status s_read = tensorflow::Status::OK();
@@ -282,6 +289,7 @@ Status InternalImportValues(
   total_keys_num -= read_key_num;
 
   Status status = storageMgr->SetValues(
+      model_version,
       feature_name_to_id,
       key_buffer, value_buffer,
       key_size, value_size * dim_len, read_key_num,
@@ -291,8 +299,8 @@ Status InternalImportValues(
           value_size, curr_part_index,
           partition_num, part_var_name,
           tensor_key, tensor_value,
-          feature_name_to_id, reader, storageMgr,
-          std::move(done)));
+          feature_name_to_id, model_version,
+          reader, storageMgr, std::move(done)));
 
   return status;
 }
@@ -311,6 +319,7 @@ BatchSetCallback make_import_callback(
     const std::string& tensor_key,
     const std::string& tensor_value,
     uint64_t feature_name_to_id,
+    uint64_t model_version,
     BundleReader* reader,
     IFeatureStoreMgr* storageMgr,
     AsyncOpKernel::DoneCallback done) {
@@ -318,7 +327,8 @@ BatchSetCallback make_import_callback(
           value_size, left_keys_num = total_keys_num,
           dim_len, part_index, partition_num,
           part_var_name, tensor_key, tensor_value,
-          feature_name_to_id, reader, storageMgr,
+          feature_name_to_id, model_version,
+          reader, storageMgr,
           done = std::move(done)](const Status& s) {
 
     if (!s.ok()) {
@@ -374,8 +384,8 @@ BatchSetCallback make_import_callback(
         new_part ? new_tensor_key : tensor_key,
         new_part ? new_tensor_value : tensor_value,
         key_buffer, value_buffer, reader,
-        feature_name_to_id, storageMgr,
-        std::move(done));
+        feature_name_to_id, model_version,
+        storageMgr, std::move(done));
 
     if (!status.ok()) {
       ctx->SetStatus(status);
@@ -421,6 +431,10 @@ class KvImportOp : public AsyncOpKernel {
         storage_pointer.scalar<tensorflow::uint64>()();
     IFeatureStoreMgr* storageMgr =
         reinterpret_cast<IFeatureStoreMgr*>(storage_pointer_value);
+
+    const Tensor& model_version = ctx->input(3);
+    const uint64 model_version_value =
+        model_version.scalar<tensorflow::uint64>()();
 
     // create for read from file
     BundleReader* reader = new BundleReader(Env::Default(), file_name_str);
@@ -486,7 +500,7 @@ class KvImportOp : public AsyncOpKernel {
         partition_num, part_tensor_name_str,
         tensor_key, tensor_value, key_buffer,
         value_buffer, reader, feature_name_to_id_,
-        storageMgr, std::move(done));
+        model_version_value, storageMgr, std::move(done));
 
     if (!s.ok()) {
       ctx->SetStatus(s);

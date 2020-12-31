@@ -29,6 +29,8 @@ struct ModelSession {
   
   std::string sparse_storage_name_;
   Tensor sparse_storage_tensor_;
+  std::string model_version_name_;
+  Tensor model_version_tensor_;
   std::atomic<int64> counter_;
   Version version_;
 };
@@ -47,8 +49,10 @@ class ModelSessionMgr {
 
  private:
   virtual Status CreateSession(Session** sess);
-  virtual Status RunRestoreOps(const char* ckpt_name, const char* savedmodel_dir,
-      Session* session, IFeatureStoreMgr* sparse_storage);
+  virtual Status RunRestoreOps(
+      const char* ckpt_name, int64 full_ckpt_version,
+      const char* savedmodel_dir, Session* session,
+      IFeatureStoreMgr* sparse_storage);
   
   void ResetServingSession(Session* session, const Version& version,
       IFeatureStoreMgr* sparse_storage);
