@@ -46,6 +46,7 @@ REGISTER_OP("KvImport")
     .Input("tensor_name: string")
     .Input("storage_pointer_value: uint64")
     .Input("model_version: uint64")
+    .Input("incr_ckpt: bool")
     .Attr("feature_name: string")
     // feature name will be map to a int num
     .Attr("feature_name_to_id: int")

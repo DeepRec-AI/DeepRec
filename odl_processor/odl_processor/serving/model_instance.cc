@@ -247,14 +247,13 @@ SingleSessionInstance::SingleSessionInstance(
 
 Status SingleSessionInstance::Init(ModelConfig* config,
     ModelStore* model_store) {
-  Version version;
-  model_store->GetLatestVersion(version);
-  if (version.SavedModelEmpty()) {
+  model_store->GetLatestVersion(version_);
+  if (version_.SavedModelEmpty()) {
     return Status(error::Code::NOT_FOUND, "SavedModel dir is invalid.");
   }
 
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
-        version.savedmodel_dir.c_str(),
+        version_.savedmodel_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
 
   GraphOptimizerOption option;
@@ -266,7 +265,7 @@ Status SingleSessionInstance::Init(ModelConfig* config,
   
   TF_RETURN_IF_ERROR(ReadModelSignature(config));
 
-  return LoadSavedModel(version.savedmodel_dir); 
+  return LoadSavedModel(version_.savedmodel_dir); 
 }
 
 Status SingleSessionInstance::LoadSavedModel(
@@ -342,13 +341,13 @@ Status MultipleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
 Status MultipleSessionInstance::RecursionCreateSession(const Version& version,
     IFeatureStoreMgr* sparse_storage) {
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
-        version.full_ckpt_name.c_str(), sparse_storage));
+        version.full_ckpt_name.c_str(), sparse_storage, false));
 
   if (version.delta_ckpt_name.empty()) {
     return Status::OK();
   } else {
     return session_mgr_->CreateModelSession(version,
-        version.delta_ckpt_name.c_str(), sparse_storage);
+        version.delta_ckpt_name.c_str(), sparse_storage, true);
   }
 }
 
@@ -357,6 +356,7 @@ Status MultipleSessionInstance::Init(ModelConfig* model_config,
   int timeout = model_config->init_timeout_minutes;
   Version version;
   model_store->GetLatestVersion(version);
+
   while (version.SavedModelEmpty()) {
     // Wait until saved model meta file ready
     LOG(INFO) << "[Model Instance] SavedModel dir is empty,"
@@ -391,6 +391,9 @@ Status MultipleSessionInstance::Init(ModelConfig* model_config,
     model_store->GetLatestVersion(version);
   }
 
+  // update instance version
+  version_ = version;
+
   return RecursionCreateSession(version, serving_storage_);
 }
 
@@ -408,7 +411,7 @@ Status MultipleSessionInstance::FullModelUpdate(const Version& version) {
   // Logically backup_storage_ shouldn't serving now.
   backup_storage_->Reset();
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
-      version.full_ckpt_name.c_str(), backup_storage_));
+      version.full_ckpt_name.c_str(), backup_storage_, false));
  
   std::swap(backup_storage_, serving_storage_);
   return Status::OK();
@@ -416,7 +419,7 @@ Status MultipleSessionInstance::FullModelUpdate(const Version& version) {
 
 Status MultipleSessionInstance::DeltaModelUpdate(const Version& version) {
   return session_mgr_->CreateModelSession(version,
-      version.delta_ckpt_name.c_str(), serving_storage_);
+      version.delta_ckpt_name.c_str(), serving_storage_, true);
 }
 
 std::string MultipleSessionInstance::DebugString() {
@@ -524,11 +527,14 @@ Status ODLInstanceMgr::Rollback() {
 }
 
 Status ODLInstanceMgr::FullModelUpdate(const Version& version) {
-  cur_instance_->FullModelUpdate(version);
+  TF_RETURN_IF_ERROR(cur_instance_->FullModelUpdate(version));
+  cur_instance_->UpdateVersion(version);
   return cur_instance_->Warmup();
 }
 
 Status ODLInstanceMgr::DeltaModelUpdate(const Version& version) {
+  // NOTE: will initialize base_instance storage once after
+  // a newly full model was updated.
   if (cur_instance_->GetVersion().IsSameFullModel(version) &&
       !base_instance_->GetVersion().IsSameFullModel(version)) {
     TF_RETURN_IF_ERROR(base_instance_->FullModelUpdate(
@@ -537,6 +543,7 @@ Status ODLInstanceMgr::DeltaModelUpdate(const Version& version) {
   }
 
   TF_RETURN_IF_ERROR(cur_instance_->DeltaModelUpdate(version));
+  cur_instance_->UpdateVersion(version);
   return cur_instance_->Warmup();
 }
 
@@ -555,12 +562,12 @@ void ODLInstanceMgr::WorkLoop() {
     if (!status.ok()) {
       status = Status(error::Code::NOT_FOUND,
           "[TensorFlow] Can't get latest model name, will try 60 seconds later.");
-      std::cerr << status.error_message() << std::endl;
+      LOG(ERROR) << status.error_message() << std::endl;
     } else {
-      if (version != cur_instance_->GetVersion()) {
+      if (cur_instance_->GetVersion() < version) {
         auto status = ModelUpdate(version);
         if (!status.ok()) {
-          std::cerr << status.error_message() << std::endl;
+          LOG(ERROR) << status.error_message() << std::endl;
         }
       }
     }

@@ -436,12 +436,20 @@ class KvImportOp : public AsyncOpKernel {
     const uint64 model_version_value =
         model_version.scalar<tensorflow::uint64>()();
 
+    const Tensor& t_incr_ckpt = ctx->input(4);
+    const bool is_incr_ckpt = t_incr_ckpt.scalar<bool>()();
+
     // create for read from file
     BundleReader* reader = new BundleReader(Env::Default(), file_name_str);
     OP_REQUIRES_OK(ctx, reader->status());
 
     std::string tensor_key = strings::StrCat(tensor_name_str, "-keys");
     std::string tensor_value = strings::StrCat(tensor_name_str, "-values");
+    if (is_incr_ckpt) {
+      tensor_key = strings::StrCat(tensor_name_str, "-sparse_incr_keys");
+      tensor_value = strings::StrCat(tensor_name_str, "-sparse_incr_values");
+    }
+
     bool maybe_partition_var = false;
     int partition_num = 1;
     int curr_part_index = 0;

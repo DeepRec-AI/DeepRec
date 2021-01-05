@@ -12,7 +12,7 @@ namespace processor {
 namespace {
 bool IsMetaFileName(const std::string& fname) {
   auto ext = io::Extension(fname);
-  return ext == "meta";
+  return ext == "index";
 }
 
 bool IsIncrementalCkptPath(const std::string& fname) {
@@ -91,7 +91,7 @@ Status ModelStore::GetFullModelVersion(Version& version) {
   std::vector<string> file_names;
   TF_RETURN_IF_ERROR(file_system_->GetChildren(checkpoint_dir_,
         &file_names));
-  
+
   for (auto fname : file_names) {
     if (IsIncrementalCkptPath(fname) ||
         !IsMetaFileName(fname)) {
@@ -113,7 +113,7 @@ Status ModelStore::GetDeltaModelVersion(Version& version) {
   std::vector<string> file_names;
   TF_RETURN_IF_ERROR(file_system_->GetChildren(delta_model_dir_,
         &file_names));
-  
+
   for (auto fname : file_names) {
     if (!IsMetaFileName(fname)) {
       continue;

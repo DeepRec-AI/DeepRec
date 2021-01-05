@@ -32,6 +32,7 @@ class SingleSessionInstance {
   Status Predict(Request& req, Response& resp);
   Status Warmup();
   Version GetVersion() { return version_; }
+  void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
 
  private:
@@ -64,6 +65,7 @@ class MultipleSessionInstance {
   Status Warmup();
 
   Version GetVersion() { return version_; }
+  void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
 
  private:

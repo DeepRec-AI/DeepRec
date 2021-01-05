@@ -39,6 +39,12 @@ struct Version {
     return !(lhs == rhs);
   }
 
+  friend bool operator <(const Version& lhs, const Version& rhs) {
+    return lhs.full_ckpt_version < rhs.full_ckpt_version ||
+           (lhs.full_ckpt_version == rhs.full_ckpt_version &&
+            lhs.delta_ckpt_version < rhs.delta_ckpt_version);
+  }
+
   bool IsSameFullModel(const Version& other) const {
     return full_ckpt_version == other.full_ckpt_version;
   }
