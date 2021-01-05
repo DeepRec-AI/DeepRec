@@ -118,6 +118,7 @@ const std::string& GetInitDefKey();
 const std::string& GetModelVersionNodeName();
 const std::string& GetStoragePointerNodeName();
 const std::string& GetInitNodeName();
+const std::string& GetIncrCkptNodeName();
 
 struct GraphOptimizerOption {
   // Convert EV ops to HashTable ops
@@ -198,12 +199,16 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Add node for feed version
   Status AddVersionNode();
 
+  // Import incr ckpt flag
+  Status AddIncrCkptFlag();
+
   // Each feature name will be map to a uint64 num,
   // the num will be as the prefix of a query key.
   Status GenerateIdsForFeatures();
 
   Node* storage_pointer_node_ = nullptr;// storage placeholder node
   Node* version_node_ = nullptr; // version placeholder node
+  Node* incr_ckpt_node_ = nullptr; // indicate if import incr ckpt
   std::unordered_map<std::string, int> feature_names_to_ids;
 };
 

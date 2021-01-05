@@ -511,6 +511,11 @@ const std::string& GetStoragePointerNodeName() {
   return name;
 }
 
+const std::string& GetIncrCkptNodeName() {
+  static std::string name("GlobalODL/ImportIncrCkpt");
+  return name;
+}
+
 const std::string& GetInitNodeName() {
   static std::string name("GlobalODL/KvInit");
   return name;
@@ -579,6 +584,9 @@ Status SavedModelOptimizer::RunODLGraphPass() {
 
   // Add a placeholder for storage pointer
   s = AddStoragePlaceholderNode();
+  if (!s.ok()) return s;
+
+  s = AddIncrCkptFlag();
   if (!s.ok()) return s;
 
   // Add KvInit Op
@@ -954,6 +962,13 @@ Status SavedModelOptimizer::ConvertKVOps() {
       // model version
       import_input_info.push_back(SrcInfo{version_node_, 0});
 
+      // incr ckpt flag
+      if (!incr_ckpt_node_) {
+        return tensorflow::errors::Internal(
+            "Not found a incr_ckpt node in the graph.");
+      }
+      import_input_info.push_back(SrcInfo{incr_ckpt_node_, 0});
+
       // control edges
       for (size_t i = edge_count; i < input_info.size(); ++i) {
         import_input_info.push_back(input_info[i]);
@@ -1064,6 +1079,12 @@ Status SavedModelOptimizer::AddStoragePlaceholderNode() {
   // Add a placeholder for storage pointer which set by user.
   return AddPlaceholder(&graph_, GetStoragePointerNodeName(),
                         DT_UINT64, &storage_pointer_node_);
+}
+
+Status SavedModelOptimizer::AddIncrCkptFlag() {
+  // Add a placeholder for incr_ckpt flag
+  return AddPlaceholder(&graph_, GetIncrCkptNodeName(),
+                        DT_BOOL, &incr_ckpt_node_);
 }
 
 Status SavedModelOptimizer::AddVariableInitSubGraph() {

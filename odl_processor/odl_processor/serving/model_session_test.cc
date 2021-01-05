@@ -173,7 +173,7 @@ class TestableModelSessionMgr : public ModelSessionMgr {
 
   Status RunRestoreOps(const char* ckpt_name, int64 full_ckpt_version,
       const char* savedmodel_dir, Session* session,
-      IFeatureStoreMgr* sparse_storage) override {
+      IFeatureStoreMgr* sparse_storage, bool incr_ckpt) override {
     return Status::OK();
   }
 };

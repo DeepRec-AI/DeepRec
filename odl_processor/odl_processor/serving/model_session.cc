@@ -158,7 +158,8 @@ Status ModelSessionMgr::CreateSession(Session** session) {
 Status ModelSessionMgr::RunRestoreOps(
     const char* ckpt_name, int64 full_ckpt_version,
     const char* savedmodel_dir, Session* session,
-    IFeatureStoreMgr* sparse_storage) {
+    IFeatureStoreMgr* sparse_storage,
+    bool is_incr_ckpt) {
   std::vector<std::pair<std::string, Tensor>> extra_tensors;
   Tensor sparse_storage_tensor(DT_UINT64, TensorShape({}));
   sparse_storage_tensor.scalar<uint64>()() =
@@ -172,6 +173,12 @@ Status ModelSessionMgr::RunRestoreOps(
   auto version_tensor_pair = std::make_pair(
       GetModelVersionNodeName(), version_tensor);
   extra_tensors.emplace_back(version_tensor_pair);
+
+  Tensor is_incr_ckpt_tensor(DT_BOOL, TensorShape({}));
+  is_incr_ckpt_tensor.scalar<bool>()() = is_incr_ckpt;
+  auto is_incr_ckpt_tensor_pair = std::make_pair(
+      GetIncrCkptNodeName(), is_incr_ckpt_tensor);
+  extra_tensors.emplace_back(is_incr_ckpt_tensor_pair);
 
   TF_RETURN_IF_ERROR(
       RunRestore(*run_options_, ckpt_name, savedmodel_dir,
@@ -221,13 +228,13 @@ Status ModelSessionMgr::Predict(Request& req, Response& resp) {
 
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
-    IFeatureStoreMgr* sparse_storage) {
+    IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
   TF_RETURN_IF_ERROR(RunRestoreOps(ckpt_name,
         version.full_ckpt_version,
         version.savedmodel_dir.c_str(),
-        session, sparse_storage));
+        session, sparse_storage, is_incr_ckpt));
   ResetServingSession(session, version, sparse_storage);
   return Status::OK();
 }

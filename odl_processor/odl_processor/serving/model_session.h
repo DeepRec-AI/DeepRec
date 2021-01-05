@@ -42,8 +42,9 @@ class ModelSessionMgr {
   
   Status Predict(Request& req, Response& resp);
 
-  Status CreateModelSession(const Version& version,
-      const char* ckpt_name, IFeatureStoreMgr* sparse_storage);
+  Status CreateModelSession(
+      const Version& version, const char* ckpt_name,
+      IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt = false);
 
   Status CleanupModelSession();
 
@@ -52,7 +53,7 @@ class ModelSessionMgr {
   virtual Status RunRestoreOps(
       const char* ckpt_name, int64 full_ckpt_version,
       const char* savedmodel_dir, Session* session,
-      IFeatureStoreMgr* sparse_storage);
+      IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt);
   
   void ResetServingSession(Session* session, const Version& version,
       IFeatureStoreMgr* sparse_storage);
