@@ -3498,6 +3498,7 @@ cc_library(
 GPU_RUNTIME_HEADERS = [
     "common_runtime/gpu/gpu_bfc_allocator.h",
     "common_runtime/gpu/gpu_cudamalloc_allocator.h",
+    "common_runtime/gpu/gpu_cudamallocasync_allocator.h",
     "common_runtime/gpu/gpu_debug_allocator.h",
     "common_runtime/gpu/gpu_device.h",
     "common_runtime/gpu/gpu_host_allocator.h",
@@ -3517,6 +3518,7 @@ tf_cuda_library(
     name = "gpu_runtime_impl",
     srcs = [
         "common_runtime/gpu/gpu_cudamalloc_allocator.cc",
+        "common_runtime/gpu/gpu_cudamallocasync_allocator.cc",
         "common_runtime/gpu/gpu_debug_allocator.cc",
         "common_runtime/gpu/gpu_device.cc",
         "common_runtime/gpu/gpu_device_factory.cc",
