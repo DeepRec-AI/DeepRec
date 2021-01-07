@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/gpu/gpu_id_utils.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_init.h"
 #include "tensorflow/core/platform/stream_executor.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 
@@ -61,12 +62,19 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     DeallocateRaw(ptr);
     VLOG(2) << "GPUcudaMallocAsyncAllocator Pre-filled the pool";
   }
-  //TODO: check that the GPU and platform support this feature. Otherwise return a good error message.
+  // TODO: check that the GPU and platform support this feature. Otherwise
+  // return a good error message.
 
-  //TODO: If in TF_DETERMINISTIC mode, Set the properties
-  //      cudaMemPoolAttrReuseAllowOpportunistic and
-  //      cudaMemPoolAttrReuseAllowInternalDepedencies to zero to make
-  //      the allocator 100% deterministic.
+  // If in TF_DETERMINISTIC_OPS is set, then make the allocator behave
+  // determistically.
+  bool deterministic_ops = false;
+  TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("TF_DETERMINISTIC_OPS",
+                                             /*default_val=*/false,
+                                             &deterministic_ops));
+  if (deterministic_ops) {
+    cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowOpportunistic, 0);
+    cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowInternalDependencies, 0);
+  }
 }
 
 GPUcudaMallocAsyncAllocator::~GPUcudaMallocAsyncAllocator() {
