@@ -36,6 +36,20 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
   stream_exec_ =
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
 
+#if CUDA_VERSION < 11020
+  LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async need CUDA 11.2 or higher to compile.";
+#endif
+
+  int cuda_malloc_async_supported;
+  cudaDeviceGetAttribute(&cuda_malloc_async_supported,
+                         cudaDevAttrMemoryPoolsSupported,
+                         platform_gpu_id.value());
+  if (!cuda_malloc_async_supported) {
+    LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async isn't currently supported."
+               << " Possible causes: device not supported, driver too old, "
+               << " OS not supported, CUDA version too old.";
+  }
+
   se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   cudaError_t cerr = cudaStreamCreate(&cuda_stream_);
   if (cerr != cudaSuccess) {
@@ -62,8 +76,6 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     DeallocateRaw(ptr);
     VLOG(2) << "GPUcudaMallocAsyncAllocator Pre-filled the pool";
   }
-  // TODO: check that the GPU and platform support this feature. Otherwise
-  // return a good error message.
 
   // If in TF_DETERMINISTIC_OPS is set, then make the allocator behave
   // determistically.
