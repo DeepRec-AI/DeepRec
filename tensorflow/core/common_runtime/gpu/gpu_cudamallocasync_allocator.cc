@@ -38,7 +38,7 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
 
 #if CUDA_VERSION < 11020
   LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async need CUDA 11.2 or higher to compile.";
-#endif
+#else
 
   int cuda_malloc_async_supported;
   cudaDeviceGetAttribute(&cuda_malloc_async_supported,
@@ -70,12 +70,6 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     LOG(ERROR) << "could not set the default CUDA pool memory threshold : "
                << cudaGetErrorString(cerr);
   }
-  VLOG(2) << "GPUcudaMallocAsyncAllocator PoolSize " << pool_size;
-  if (reserve_memory) {
-    void* ptr = AllocateRaw(0, pool_size);
-    DeallocateRaw(ptr);
-    VLOG(2) << "GPUcudaMallocAsyncAllocator Pre-filled the pool";
-  }
 
   // If in TF_DETERMINISTIC_OPS is set, then make the allocator behave
   // determistically.
@@ -87,6 +81,14 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowOpportunistic, 0);
     cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowInternalDependencies, 0);
   }
+#endif
+
+  VLOG(2) << "GPUcudaMallocAsyncAllocator PoolSize " << pool_size;
+  if (reserve_memory) {
+    void* ptr = AllocateRaw(0, pool_size);
+    DeallocateRaw(ptr);
+    VLOG(2) << "GPUcudaMallocAsyncAllocator Pre-filled the pool";
+  }
 }
 
 GPUcudaMallocAsyncAllocator::~GPUcudaMallocAsyncAllocator() {
@@ -96,7 +98,9 @@ GPUcudaMallocAsyncAllocator::~GPUcudaMallocAsyncAllocator() {
 
 void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
                                                size_t num_bytes) {
-#ifdef GOOGLE_CUDA
+#if CUDA_VERSION < 11020 || !defined(GOOGLE_CUDA)
+  return nullptr;
+#else
   se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   void* rv = 0;
   cudaError_t res = cudaMallocAsync(&rv, num_bytes, cuda_stream_);
@@ -106,12 +110,11 @@ void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
     return nullptr;
   }
   return rv;
-#else
-  return nullptr;
-#endif  // GOOGLE_CUDA
+#endif
 }
 void GPUcudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
-#ifdef GOOGLE_CUDA
+#if CUDA_VERSION < 11020 || !defined(GOOGLE_CUDA)
+#else
   cudaError_t res = cudaFreeAsync(ptr, cuda_stream_);
   if (res != cudaSuccess) {
     LOG(ERROR) << "cudaFreeAsync failed to free " << ptr
