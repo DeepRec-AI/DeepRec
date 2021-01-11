@@ -32,7 +32,8 @@ namespace tensorflow {
 GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     Allocator* allocator, PlatformGpuId platform_gpu_id, size_t pool_size,
     bool reserve_memory)
-    : base_allocator_(allocator), cuda_stream_(nullptr) {
+    : base_allocator_(allocator), cuda_stream_(nullptr),
+      name_(absl::StrCat("gpu_async_", platform_gpu_id.value())) {
   stream_exec_ =
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
 
@@ -40,6 +41,7 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
   LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async need CUDA 11.2 or higher to compile.";
 #else
 
+  se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   int cuda_malloc_async_supported;
   cudaDeviceGetAttribute(&cuda_malloc_async_supported,
                          cudaDevAttrMemoryPoolsSupported,
@@ -50,21 +52,21 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
                << " OS not supported, CUDA version too old.";
   }
 
-  se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   cudaError_t cerr = cudaStreamCreate(&cuda_stream_);
   if (cerr != cudaSuccess) {
     LOG(ERROR) << "could not allocate CUDA stream for context : "
                << cudaGetErrorString(cerr);
   }
 
-  CUmemoryPool pool = nullptr;
-  cerr = cudaDeviceGetDefaultMemPool(&pool, platform_gpu_id.value());
+  cerr = cudaDeviceGetDefaultMemPool(&pool_, platform_gpu_id.value());
   if (cerr != cudaSuccess) {
     LOG(ERROR) << "could not get the default CUDA pool : "
                << cudaGetErrorString(cerr);
   }
-
-  cerr = cudaMemPoolSetAttribute(pool, cudaMemPoolAttrReleaseThreshold,
+  VLOG(1) << Name() << " CudaMallocAsync initialized on platform: "
+          << platform_gpu_id.value() << " with pool size of: "
+          << pool_size << " this ptr: " << this;
+  cerr = cudaMemPoolSetAttribute(pool_, cudaMemPoolAttrReleaseThreshold,
                                  (void*)&pool_size);
   if (cerr != cudaSuccess) {
     LOG(ERROR) << "could not set the default CUDA pool memory threshold : "
@@ -78,16 +80,16 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
                                              /*default_val=*/false,
                                              &deterministic_ops));
   if (deterministic_ops) {
-    cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowOpportunistic, 0);
-    cudaMemPoolSetAttribute(pool, cudaMemPoolReuseAllowInternalDependencies, 0);
+    cudaMemPoolSetAttribute(pool_, cudaMemPoolReuseAllowOpportunistic, 0);
+    cudaMemPoolSetAttribute(pool_, cudaMemPoolReuseAllowInternalDependencies, 0);
   }
 #endif
 
-  VLOG(2) << "GPUcudaMallocAsyncAllocator PoolSize " << pool_size;
+  VLOG(2) << Name() << " GPUcudaMallocAsyncAllocator PoolSize " << pool_size;
   if (reserve_memory) {
     void* ptr = AllocateRaw(0, pool_size);
     DeallocateRaw(ptr);
-    VLOG(2) << "GPUcudaMallocAsyncAllocator Pre-filled the pool";
+    VLOG(2) << Name() << " GPUcudaMallocAsyncAllocator Pre-filled the pool";
   }
 }
 
@@ -103,12 +105,13 @@ void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
 #else
   se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   void* rv = 0;
-  cudaError_t res = cudaMallocAsync(&rv, num_bytes, cuda_stream_);
+  cudaError_t res = cudaMallocFromPoolAsync(&rv, num_bytes, pool_, cuda_stream_);
   if (res != cudaSuccess) {
-    LOG(ERROR) << "cudaMallocAsync failed to allocate " << num_bytes
+    LOG(ERROR) << Name() << " cudaMallocAsync failed to allocate " << num_bytes
                << ". Error: " << cudaGetErrorString(res);
     return nullptr;
   }
+  VLOG(10) << Name() << " Allocated " << num_bytes << " at " << rv;
   return rv;
 #endif
 }
@@ -120,6 +123,7 @@ void GPUcudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
     LOG(ERROR) << "cudaFreeAsync failed to free " << ptr
                << ". Error: " << cudaGetErrorString(res);
   }
+  VLOG(10) << Name() << " Freed ptr: " << ptr;
 #endif  // GOOGLE_CUDA
 }
 

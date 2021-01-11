@@ -39,7 +39,7 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
                                        size_t pool_size,
                                        bool reserve_memory = false);
   ~GPUcudaMallocAsyncAllocator() override;
-  string Name() override { return "gpu_async"; }
+  string Name() override { return name_; }
   void* AllocateRaw(size_t alignment, size_t num_bytes) override;
   void DeallocateRaw(void* ptr) override;
   bool TracksAllocationSizes() const override;
@@ -51,6 +51,9 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
   se::StreamExecutor* stream_exec_;  // Not owned.
 
   cudaStream_t cuda_stream_;
+  string name_;
+  //Not owned. The default pool of the associated GPU.
+  CUmemoryPool pool_ = nullptr;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GPUcudaMallocAsyncAllocator);
 };
