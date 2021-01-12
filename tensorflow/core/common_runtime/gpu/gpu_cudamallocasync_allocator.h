@@ -21,6 +21,7 @@ limitations under the License.
 #include "third_party/gpus/cuda/include/cuda.h"
 #include "third_party/gpus/cuda/include/cuda_runtime_api.h"
 
+#include "absl/container/flat_hash_map.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_id.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/platform/macros.h"
@@ -42,8 +43,16 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
   string Name() override { return name_; }
   void* AllocateRaw(size_t alignment, size_t num_bytes) override;
   void DeallocateRaw(void* ptr) override;
+
   bool TracksAllocationSizes() const override;
+
+  size_t RequestedSize(const void* ptr) const override;
+
+  size_t AllocatedSize(const void* ptr) const override;
+
   absl::optional<AllocatorStats> GetStats() override;
+
+  void ClearStats() override;
 
  private:
   Allocator* base_allocator_ = nullptr;  // owned
@@ -56,6 +65,12 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
   CUmemoryPool pool_ = nullptr;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GPUcudaMallocAsyncAllocator);
+
+  // Stats.
+  // Structures mutable after construction
+  mutable mutex lock_;
+  AllocatorStats stats_ GUARDED_BY(lock_);
+  absl::flat_hash_map<const void*, size_t> size_map_ GUARDED_BY(lock_);
 };
 
 }  // namespace tensorflow

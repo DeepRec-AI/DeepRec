@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/gpu/gpu_id.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_id_utils.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_init.h"
+#include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/util/env_var.h"
 
@@ -68,6 +69,7 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
           << pool_size << " this ptr: " << this;
   cerr = cudaMemPoolSetAttribute(pool_, cudaMemPoolAttrReleaseThreshold,
                                  (void*)&pool_size);
+  stats_.bytes_limit = static_cast<int64>(pool_size);
   if (cerr != cudaSuccess) {
     LOG(ERROR) << "could not set the default CUDA pool memory threshold : "
                << cudaGetErrorString(cerr);
@@ -90,6 +92,7 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     void* ptr = AllocateRaw(0, pool_size);
     DeallocateRaw(ptr);
     VLOG(2) << Name() << " GPUcudaMallocAsyncAllocator Pre-filled the pool";
+    ClearStats();
   }
 }
 
@@ -111,6 +114,15 @@ void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
                << ". Error: " << cudaGetErrorString(res);
     return nullptr;
   }
+
+  // Update stats.
+  ++stats_.num_allocs;
+  stats_.bytes_in_use += num_bytes;
+  stats_.peak_bytes_in_use =
+      std::max(stats_.peak_bytes_in_use, stats_.bytes_in_use);
+  stats_.largest_alloc_size =
+      std::max<std::size_t>(stats_.largest_alloc_size, num_bytes);
+  size_map_[rv] = num_bytes;
   VLOG(10) << Name() << " Allocated " << num_bytes << " at " << rv;
   return rv;
 #endif
@@ -123,16 +135,40 @@ void GPUcudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
     LOG(ERROR) << "cudaFreeAsync failed to free " << ptr
                << ". Error: " << cudaGetErrorString(res);
   }
+
+  // Updates the stats.
+  size_t size = size_map_[ptr];
+  stats_.bytes_in_use -= size;
+  size_map_.erase(ptr);
+
   VLOG(10) << Name() << " Freed ptr: " << ptr;
 #endif  // GOOGLE_CUDA
 }
 
-absl::optional<AllocatorStats> GPUcudaMallocAsyncAllocator::GetStats() {
-  return base_allocator_->GetStats();
+bool GPUcudaMallocAsyncAllocator::TracksAllocationSizes() const {
+  return true;
 }
 
-bool GPUcudaMallocAsyncAllocator::TracksAllocationSizes() const {
-  return false;
+size_t GPUcudaMallocAsyncAllocator::RequestedSize(const void* ptr) const {
+  CHECK(ptr);
+  return size_map_.at(ptr);
+}
+
+size_t GPUcudaMallocAsyncAllocator::AllocatedSize(const void* ptr) const {
+  CHECK(ptr);
+  return size_map_.at(ptr);
+}
+
+absl::optional<AllocatorStats> GPUcudaMallocAsyncAllocator::GetStats() {
+  mutex_lock l(lock_);
+  return stats_;
+}
+
+void GPUcudaMallocAsyncAllocator::ClearStats() {
+  mutex_lock l(lock_);
+  stats_.num_allocs = 0;
+  stats_.peak_bytes_in_use = stats_.bytes_in_use;
+  stats_.largest_alloc_size = 0;
 }
 
 }  // namespace tensorflow
