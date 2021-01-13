@@ -34,7 +34,8 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     Allocator* allocator, PlatformGpuId platform_gpu_id, size_t pool_size,
     bool reserve_memory)
     : base_allocator_(allocator), cuda_stream_(nullptr),
-      name_(absl::StrCat("gpu_async_", platform_gpu_id.value())) {
+      name_(absl::StrCat("gpu_async_", platform_gpu_id.value())),
+      pool_(nullptr) {
   stream_exec_ =
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
 
@@ -46,11 +47,10 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
   // request that the context on GPU 0 is initialized. Which isn't the
   // case for TF+horovod.
   if (platform_gpu_id.value() > 0) {
-    CUcontext pctx; // We loose track of it. But this is fine...
+    CUcontext pctx; // We loose track of it. But this is fine.
     CUresult err = cuDevicePrimaryCtxRetain(&pctx, 0);
     if (err != CUDA_SUCCESS){
-      LOG(ERROR) << "Failed to create the context on device 0.";
-      return;
+      LOG(FATAL) << "Failed to create the context on device 0.";
     }
   }
 
@@ -60,20 +60,20 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
                          cudaDevAttrMemoryPoolsSupported,
                          platform_gpu_id.value());
   if (!cuda_malloc_async_supported) {
-    LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async isn't currently supported."
+    LOG(FATAL) << "TF_GPU_ALLOCATOR=cuda_malloc_async isn't currently supported."
                << " Possible causes: device not supported, driver too old, "
                << " OS not supported, CUDA version too old.";
   }
 
   cudaError_t cerr = cudaStreamCreate(&cuda_stream_);
   if (cerr != cudaSuccess) {
-    LOG(ERROR) << "could not allocate CUDA stream for context : "
+    LOG(FATAL) << "could not allocate CUDA stream for context : "
                << cudaGetErrorString(cerr);
   }
 
   cerr = cudaDeviceGetDefaultMemPool(&pool_, platform_gpu_id.value());
   if (cerr != cudaSuccess) {
-    LOG(ERROR) << "could not get the default CUDA pool : "
+    LOG(FATAL) << "could not get the default CUDA pool : "
                << cudaGetErrorString(cerr);
   }
   VLOG(1) << Name() << " CudaMallocAsync initialized on platform: "
@@ -83,8 +83,9 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
                                  (void*)&pool_size);
   stats_.bytes_limit = static_cast<int64>(pool_size);
   if (cerr != cudaSuccess) {
-    LOG(ERROR) << "could not set the default CUDA pool memory threshold : "
+    LOG(FATAL) << "could not set the default CUDA pool memory threshold : "
                << cudaGetErrorString(cerr);
+    pool_ = nullptr;
   }
 
   // If in TF_DETERMINISTIC_OPS is set, then make the allocator behave
@@ -118,6 +119,10 @@ void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
 #if CUDA_VERSION < 11020 || !defined(GOOGLE_CUDA)
   return nullptr;
 #else
+  if (pool_ == nullptr) {
+    LOG(FATAL) << "The instantiation of GPUcudaMallocAsyncAllocator failed."
+               << " See previous errors.";
+  }
   se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   void* rv = 0;
   cudaError_t res = cudaMallocFromPoolAsync(&rv, num_bytes, pool_, cuda_stream_);
