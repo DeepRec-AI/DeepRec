@@ -42,6 +42,17 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
   LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async need CUDA 11.2 or higher to compile.";
 #else
 
+  // WAR an CUDA 11.2 driver bug for multiple-GPU. It currently
+  // request that the context on GPU 0 is initialized. Which isn't the
+  // case for TF+horovod.
+  if (platform_gpu_id.value() > 0) {
+    auto stream_0 = GpuIdUtil::ExecutorForPlatformGpuId(PlatformGpuId(0)).ValueOrDie();
+    se::cuda::ScopedActivateExecutorContext scoped_activation{stream_0};
+    void* ptr;
+    cudaMalloc(&ptr, 1024);
+    cudaFree(ptr);
+  }
+
   se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
   int cuda_malloc_async_supported;
   cudaDeviceGetAttribute(&cuda_malloc_async_supported,
