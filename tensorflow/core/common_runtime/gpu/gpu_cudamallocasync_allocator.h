@@ -30,9 +30,13 @@ limitations under the License.
 
 namespace tensorflow {
 
-// An allocator that wraps a GPU allocator and adds debugging
-// functionality that verifies that users do not write outside their
-// allocated memory.
+// An allocator that wraps cudaMallocAsync It has less fragmentation
+// issue then the BFC memory allocator.  The compute-sanitizer tool
+// help to detect OOB memory error of cudaMallocAsync. Use the
+// environment variable TF_GPU_ALLOCATOR=cuda_malloc_async to enable
+// it. It needs CUDA 11.2+. When using container, this only need the
+// container driver to be 11.2. It have a WAR again a driver bug in
+// multi-GPU with CUDA 11.2. The WAR creates extra context on GPU 0.
 class GPUcudaMallocAsyncAllocator : public Allocator {
  public:
   explicit GPUcudaMallocAsyncAllocator(Allocator* allocator,
@@ -59,9 +63,15 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
 
   se::StreamExecutor* stream_exec_;  // Not owned.
 
+  // cudaMallocAsync is stream aware. But TF StreamExecutor use only 1
+  // compute stream and already synchronize with the h2d, d2h and d2d
+  // stream. So we do not need to ask cudaMallocAsync to add extra
+  // synchronization.
   cudaStream_t cuda_stream_;
   string name_;
   //Not owned. The default pool of the associated GPU.
+  //If null, then the instanciation failed and the first allocation
+  //will return an error.
   CUmemoryPool pool_ = nullptr;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GPUcudaMallocAsyncAllocator);
