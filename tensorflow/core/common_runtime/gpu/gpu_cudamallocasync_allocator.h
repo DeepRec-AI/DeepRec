@@ -34,13 +34,21 @@ namespace tensorflow {
 // issue then the BFC memory allocator.  The compute-sanitizer tool
 // help to detect OOB memory error of cudaMallocAsync. Use the
 // environment variable TF_GPU_ALLOCATOR=cuda_malloc_async to enable
-// it. It needs CUDA 11.2+. When using container, this only need the
+// it.
+//
+// It needs CUDA 11.2+. When using container, this only need the
 // container driver to be 11.2. It have a WAR again a driver bug in
 // multi-GPU with CUDA 11.2. The WAR creates extra context on GPU 0.
+//
+// We configure cudaMallocAsync to grow when more memory are needed
+// instead of preallocating everything up front.  But it never release
+// to other process the GPU memory.  So no other process will "steal"
+// the GPU memory already used by the current process. This is to
+// prevent crash of long running jobs.  Use 'reserve_memory=true' if
+// you want to preallocate the memory.
 class GPUcudaMallocAsyncAllocator : public Allocator {
  public:
-  explicit GPUcudaMallocAsyncAllocator(Allocator* allocator,
-                                       PlatformGpuId platform_gpu_id,
+  explicit GPUcudaMallocAsyncAllocator(PlatformGpuId platform_gpu_id,
                                        size_t pool_size,
                                        bool reserve_memory = false);
   ~GPUcudaMallocAsyncAllocator() override;
@@ -59,8 +67,6 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
   void ClearStats() override;
 
  private:
-  Allocator* base_allocator_ = nullptr;  // owned
-
   se::StreamExecutor* stream_exec_;  // Not owned.
 
   // cudaMallocAsync is stream aware. But TF StreamExecutor use only 1

@@ -31,16 +31,16 @@ limitations under the License.
 namespace tensorflow {
 
 GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
-    Allocator* allocator, PlatformGpuId platform_gpu_id, size_t pool_size,
+    PlatformGpuId platform_gpu_id, size_t pool_size,
     bool reserve_memory)
-    : base_allocator_(allocator), cuda_stream_(nullptr),
+    : cuda_stream_(nullptr),
       name_(absl::StrCat("gpu_async_", platform_gpu_id.value())),
       pool_(nullptr) {
   stream_exec_ =
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
 
 #if CUDA_VERSION < 11020
-  LOG(ERROR) << "TF_GPU_ALLOCATOR=cuda_malloc_async need CUDA 11.2 or higher to compile.";
+  LOG(FATAL) << "TF_GPU_ALLOCATOR=cuda_malloc_async need CUDA 11.2 or higher to compile.";
 #else
 
   // WAR an CUDA 11.2 driver bug for multiple-GPU. It currently
@@ -104,13 +104,12 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
   if (reserve_memory) {
     void* ptr = AllocateRaw(0, pool_size);
     DeallocateRaw(ptr);
-    VLOG(2) << Name() << " GPUcudaMallocAsyncAllocator Pre-filled the pool";
+    VLOG(2) << Name() << " GPUcudaMallocAsyncAllocator reserved the pool";
     ClearStats();
   }
 }
 
 GPUcudaMallocAsyncAllocator::~GPUcudaMallocAsyncAllocator() {
-  delete base_allocator_;
   cuStreamDestroy(cuda_stream_);
 }
 
