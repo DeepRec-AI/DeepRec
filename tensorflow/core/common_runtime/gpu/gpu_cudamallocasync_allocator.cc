@@ -32,7 +32,7 @@ namespace tensorflow {
 
 GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
     PlatformGpuId platform_gpu_id, size_t pool_size,
-    bool reserve_memory)
+    bool reserve_memory, bool compute_stats)
     : cuda_stream_(nullptr),
       name_(absl::StrCat("gpu_async_", platform_gpu_id.value())),
       pool_(nullptr) {
@@ -81,7 +81,9 @@ GPUcudaMallocAsyncAllocator::GPUcudaMallocAsyncAllocator(
           << pool_size << " this ptr: " << this;
   cerr = cudaMemPoolSetAttribute(pool_, cudaMemPoolAttrReleaseThreshold,
                                  (void*)&pool_size);
-  stats_.bytes_limit = static_cast<int64>(pool_size);
+  if (compute_stats) {
+    stats_.bytes_limit = static_cast<int64>(pool_size);
+  } // If not set, it means we do not compute stats.
   if (cerr != cudaSuccess) {
     LOG(FATAL) << "could not set the default CUDA pool memory threshold : "
                << cudaGetErrorString(cerr);
@@ -136,13 +138,15 @@ void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
   }
 
   // Update stats.
-  ++stats_.num_allocs;
-  stats_.bytes_in_use += num_bytes;
-  stats_.peak_bytes_in_use =
-      std::max(stats_.peak_bytes_in_use, stats_.bytes_in_use);
-  stats_.largest_alloc_size =
-      std::max<std::size_t>(stats_.largest_alloc_size, num_bytes);
-  size_map_[rv] = num_bytes;
+  if (stats_.bytes_limit.has_value()) {
+    ++stats_.num_allocs;
+    stats_.bytes_in_use += num_bytes;
+    stats_.peak_bytes_in_use =
+        std::max(stats_.peak_bytes_in_use, stats_.bytes_in_use);
+    stats_.largest_alloc_size =
+        std::max<std::size_t>(stats_.largest_alloc_size, num_bytes);
+    size_map_[rv] = num_bytes;
+  }
   VLOG(10) << Name() << " Allocated " << num_bytes << " at " << rv;
   return rv;
 #endif
@@ -162,17 +166,19 @@ void GPUcudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
   }
 
   // Updates the stats.
-  DCHECK(size_map_.contains(ptr));
-  size_t size = size_map_[ptr];
-  stats_.bytes_in_use -= size;
-  size_map_.erase(ptr);
+  if (stats_.bytes_limit.has_value()) {
+    DCHECK(size_map_.contains(ptr));
+    size_t size = size_map_[ptr];
+    stats_.bytes_in_use -= size;
+    size_map_.erase(ptr);
+  }
 
   VLOG(10) << Name() << " Freed ptr: " << ptr;
 #endif  // GOOGLE_CUDA
 }
 
 bool GPUcudaMallocAsyncAllocator::TracksAllocationSizes() const {
-  return true;
+  return stats_.bytes_limit.has_value();
 }
 
 size_t GPUcudaMallocAsyncAllocator::RequestedSize(const void* ptr) const {
