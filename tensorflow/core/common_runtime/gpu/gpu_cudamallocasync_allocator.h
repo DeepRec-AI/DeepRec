@@ -30,21 +30,21 @@ limitations under the License.
 
 namespace tensorflow {
 
-// An allocator that wraps cudaMallocAsync It has less fragmentation
-// issue then the BFC memory allocator.  The compute-sanitizer tool
-// help to detect OOB memory error of cudaMallocAsync. Use the
+// An allocator that wraps cudaMallocAsync. It has less fragmentation
+// issues then the BFC memory allocator.  The compute-sanitizer tool
+// helps to detect OOB memory error of cudaMallocAsync. Use the
 // environment variable TF_GPU_ALLOCATOR=cuda_malloc_async to enable
 // it.
 //
-// It needs CUDA 11.2+. When using container, this only need the
-// container driver to be 11.2. It have a WAR again a driver bug in
-// multi-GPU with CUDA 11.2. The WAR creates extra context on GPU 0.
+// It needs CUDA 11.2+. When using a container, this only needs the
+// container driver to be 11.2. It has a WAR again a driver bug in
+// multi-GPU with CUDA 11.2. The WAR creates an extra context on GPU 0.
 //
-// We configure cudaMallocAsync to grow when more memory are needed
-// instead of preallocating everything up front.  But it never release
+// We configure cudaMallocAsync to grow when more memory is needed
+// instead of preallocating everything up front.  But it never releases
 // to other process the GPU memory.  So no other process will "steal"
 // the GPU memory already used by the current process. This is to
-// prevent crash of long running jobs.  Use 'reserve_memory=true' if
+// prevent crashes of long running jobs.  Use 'reserve_memory=true' if
 // you want to preallocate the memory.
 class GPUcudaMallocAsyncAllocator : public Allocator {
  public:
@@ -78,7 +78,7 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
   //Not owned. The default pool of the associated GPU.
   //If null, then the instanciation failed and the first allocation
   //will return an error.
-  CUmemoryPool pool_ = nullptr;
+  CUmemoryPool pool_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(GPUcudaMallocAsyncAllocator);
 

@@ -162,6 +162,7 @@ void GPUcudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
   }
 
   // Updates the stats.
+  DCHECK(size_map_.contains(ptr));
   size_t size = size_map_[ptr];
   stats_.bytes_in_use -= size;
   size_map_.erase(ptr);
