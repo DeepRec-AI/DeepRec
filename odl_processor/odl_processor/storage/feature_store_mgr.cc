@@ -118,6 +118,7 @@ FeatureStore* CreateFeatureStore(const std::string& type,
       LOG(ERROR) << "Can't parse ip and port from url: " << url;
       return nullptr;
     }
+    config.passwd = password;
     return new LocalRedis(config);
   } else {
     LOG(ERROR) << "Only LocalRedis backend now. type = " << type;

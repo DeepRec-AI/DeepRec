@@ -20,6 +20,7 @@ class LocalRedis : public FeatureStore {
     struct Config {
       std::string ip;
       int32_t port = 0;
+      std::string passwd;
     };
 
     LocalRedis(Config config);
