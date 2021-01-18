@@ -52,7 +52,7 @@ TEST(KernelsTest, KvImportTest) {
       // Local test
       //"/local/path/workspace/tmp/DeepFM/ev/1598442950_pai/variables/variables";
       // OSS test
-      "oss://bucket-name\x01id=id\x02key=key\x02host=host/jktest/mm/odl_test_files/saved_model/variables";
+      //"oss://bucket-name\x01id=id\x02key=key\x02host=host/jktest/mm/odl_test_files/saved_model/variables";
   TF_CHECK_OK(NodeDefBuilder("prefix", "Const")
                   .Attr("dtype", DT_STRING)
                   .Attr("value", prefix_value)
@@ -85,12 +85,21 @@ TEST(KernelsTest, KvImportTest) {
                   .Attr("value", version_value)
                   .Finalize(&version_def));
 
+  NodeDef incr_ckpt_def;
+  Tensor incr_ckpt_value(DT_BOOL, TensorShape({1}));
+  incr_ckpt_value.scalar<bool>()() = false;
+  TF_CHECK_OK(NodeDefBuilder("incr_ckpt", "Const")
+                  .Attr("dtype", DT_BOOL)
+                  .Attr("value", incr_ckpt_value)
+                  .Finalize(&incr_ckpt_def));
+
   NodeDef kv_import_def;
   TF_CHECK_OK(NodeDefBuilder("kv_import", "KvImport")
                   .Input("prefix", 0, DT_STRING)
                   .Input("tensor_name", 0, DT_STRING)
                   .Input("storage_pointer", 0, DT_UINT64)
                   .Input("model_version", 0, DT_UINT64)
+                  .Input("incr_ckpt", false, DT_BOOL)
                   .Attr("feature_name", "XXX")
                   .Attr("feature_name_to_id", 854)
                   .Attr("dim_len", 1)
@@ -115,6 +124,7 @@ TEST(KernelsTest, KvImportTest) {
   inputs.push_back({nullptr, &tensor_name_value});
   inputs.push_back({nullptr, &storage_pointer_value});
   inputs.push_back({nullptr, &version_value});
+  inputs.push_back({nullptr, &incr_ckpt_value});
   params.inputs = &inputs;
   params.op_kernel = kv_import_op.get();
 

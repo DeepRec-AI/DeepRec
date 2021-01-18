@@ -149,6 +149,15 @@ LocalRedis::LocalRedis(Config config)
     port_(config.port),
     c_(nullptr) {
   assert((c_ = redisConnect(ip_.c_str(), port_)) != nullptr);
+  // Authentication
+  if (!config.passwd.empty()) {
+    std::string auth_cmd = "AUTH " + config.passwd;
+    redisReply *reply = (redisReply *)redisCommand(c_, auth_cmd.c_str());
+    if (REDIS_REPLY_STATUS != reply->type) {
+      LOG(FATAL) << "Redis authentication failed.";
+    }
+    freeReplyObject(reply);
+  }
 }
 
 LocalRedis::~LocalRedis() {
