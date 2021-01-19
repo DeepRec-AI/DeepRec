@@ -79,7 +79,11 @@ class GPUcudaMallocAsyncAllocator : public Allocator {
   //Not owned. The default pool of the associated GPU.
   //If null, then the instanciation failed and the first allocation
   //will return an error.
+#if CUDA_VERSION >= 11020
   CUmemoryPool pool_;
+#else
+  char* pool_; // Dummy variable to allow to compile
+#endif
 
   TF_DISALLOW_COPY_AND_ASSIGN(GPUcudaMallocAsyncAllocator);
 
