@@ -21,9 +21,10 @@ class LocalRedis : public FeatureStore {
       std::string ip;
       int32_t port = 0;
       std::string passwd;
+      size_t db_idx = 0;
     };
 
-    LocalRedis(Config config);
+    LocalRedis(const Config& config);
     ~LocalRedis();
 
     Status Cleanup();
@@ -67,6 +68,7 @@ class LocalRedis : public FeatureStore {
   private:
     std::string ip_;
     int32_t port_;
+    size_t db_idx_;
     redisContext *c_;
 };
 

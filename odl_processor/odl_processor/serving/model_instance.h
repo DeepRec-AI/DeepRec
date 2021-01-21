@@ -51,10 +51,21 @@ class SingleSessionInstance {
   Version version_;
 };
 
+struct StorageOptions {
+  // for redis, connection will select DB 0~16
+  size_t serving_storage_db_index_;
+  size_t backup_storage_db_index_;
+
+  StorageOptions(size_t serving_db_idx, size_t backup_db_idx)
+      : serving_storage_db_index_(serving_db_idx),
+        backup_storage_db_index_(backup_db_idx) {}
+};
+
 class MultipleSessionInstance {
  public:
   MultipleSessionInstance(SessionOptions* sess_options,
-      RunOptions* run_options);
+                          RunOptions* run_options,
+                          StorageOptions* storage_options);
   Status Init(ModelConfig* config,
       ModelStore* model_store);
 
@@ -85,6 +96,7 @@ class MultipleSessionInstance {
 
   IFeatureStoreMgr* serving_storage_ = nullptr;
   IFeatureStoreMgr* backup_storage_ = nullptr; 
+  StorageOptions* storage_options_ = nullptr;
 
   Version version_;
 };
@@ -155,6 +167,8 @@ class ODLInstanceMgr : public IModelInstanceMgr {
 
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
+  StorageOptions* cur_inst_storage_options_ = nullptr;
+  StorageOptions* base_inst_storage_options_ = nullptr;
 };
 
 class ModelInstanceMgrFactory {

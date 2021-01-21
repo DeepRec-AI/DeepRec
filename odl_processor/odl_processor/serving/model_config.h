@@ -24,6 +24,8 @@ struct ModelConfig {
   std::string feature_store_type;
   std::string redis_url;
   std::string redis_password;
+  // default db = 0
+  size_t redis_db_idx = 0;
   int read_thread_num = 1;
   int update_thread_num = 1;
 

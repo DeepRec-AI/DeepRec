@@ -322,8 +322,11 @@ std::string SingleSessionInstance::DebugString() {
 
 MultipleSessionInstance::MultipleSessionInstance(
     SessionOptions* sess_options,
-    RunOptions* run_options) :
-    session_options_(sess_options), run_options_(run_options) {
+    RunOptions* run_options,
+    StorageOptions* storage_options) :
+    session_options_(sess_options),
+    run_options_(run_options),
+    storage_options_(storage_options) {
 }
 
 Status MultipleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
@@ -381,8 +384,15 @@ Status MultipleSessionInstance::Init(ModelConfig* model_config,
 
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
 
-  serving_storage_ = new FeatureStoreMgr(model_config);
-  backup_storage_ = new FeatureStoreMgr(model_config);
+  ModelConfig serving_model_config(*model_config);
+  serving_model_config.redis_db_idx =
+      storage_options_->serving_storage_db_index_;
+  serving_storage_ = new FeatureStoreMgr(&serving_model_config);
+
+  ModelConfig backup_model_config(*model_config);
+  backup_model_config.redis_db_idx =
+      storage_options_->backup_storage_db_index_;
+  backup_storage_ = new FeatureStoreMgr(&backup_model_config);
   
   while (version.CkptEmpty()) {
     LOG(INFO) << "[Model Instance] Checkpoint dir is empty,"
@@ -472,6 +482,8 @@ ODLInstanceMgr::ODLInstanceMgr(ModelConfig* config)
   session_options_->config.set_inter_op_parallelism_threads(config->intra_threads);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
   run_options_ = new RunOptions();
+  cur_inst_storage_options_ = new StorageOptions(0, 1);
+  base_inst_storage_options_ = new StorageOptions(2, 3);
 }
 
 ODLInstanceMgr::~ODLInstanceMgr() {
@@ -484,6 +496,8 @@ ODLInstanceMgr::~ODLInstanceMgr() {
   delete session_options_;
   delete run_options_;
   delete model_storage_;
+  delete cur_inst_storage_options_;
+  delete base_inst_storage_options_;
 }
 
 Status ODLInstanceMgr::Init() {
@@ -500,12 +514,16 @@ Status ODLInstanceMgr::Init() {
 }
 
 Status ODLInstanceMgr::CreateInstances() {
-  cur_instance_ = new MultipleSessionInstance(session_options_, run_options_);
+  cur_instance_ = new MultipleSessionInstance(
+      session_options_, run_options_,
+      cur_inst_storage_options_);
   TF_RETURN_IF_ERROR(cur_instance_->Init(model_config_,
       model_storage_));
   TF_RETURN_IF_ERROR(cur_instance_->Warmup());
 
-  base_instance_ = new MultipleSessionInstance(session_options_, run_options_);
+  base_instance_ = new MultipleSessionInstance(
+      session_options_, run_options_,
+      base_inst_storage_options_);
   TF_RETURN_IF_ERROR(base_instance_->Init(model_config_,
       model_storage_));
   return base_instance_->Warmup();
