@@ -144,11 +144,13 @@ void CleanupCallback(redisAsyncContext *ac, void *r, void *privdata) {
 }
 } // anonymous namespace
 
-LocalRedis::LocalRedis(Config config)
+LocalRedis::LocalRedis(const Config& config)
   : ip_(config.ip),
     port_(config.port),
+    db_idx_(config.db_idx),
     c_(nullptr) {
   assert((c_ = redisConnect(ip_.c_str(), port_)) != nullptr);
+
   // Authentication
   if (!config.passwd.empty()) {
     std::string auth_cmd = "AUTH " + config.passwd;
@@ -158,6 +160,14 @@ LocalRedis::LocalRedis(Config config)
     }
     freeReplyObject(reply);
   }
+
+  // Connect to the specified db, default is db-0
+  std::string select_db_cmd = "SELECT " + std::to_string(db_idx_);
+  redisReply *reply = (redisReply *)redisCommand(c_, select_db_cmd.c_str());
+  if (REDIS_REPLY_STATUS != reply->type) {
+    LOG(FATAL) << "Redis select db failed. db idx is " << db_idx_;
+  }
+  freeReplyObject(reply);
 }
 
 LocalRedis::~LocalRedis() {

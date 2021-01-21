@@ -109,20 +109,26 @@ Status GetIPAndPortFromUrl(const std::string& url,
   return Status::OK();
 }
 
-FeatureStore* CreateFeatureStore(const std::string& type,
-    const std::string& url, const std::string& password) {
-  if (type == "local_redis") {
-    LocalRedis::Config config;
-    Status s = GetIPAndPortFromUrl(url, &config.ip, &config.port);
+FeatureStore* CreateFeatureStore(ModelConfig* config) {
+  if (config->feature_store_type == "local_redis") {
+    LocalRedis::Config redis_config;
+    Status s = GetIPAndPortFromUrl(config->redis_url,
+                                   &redis_config.ip,
+                                   &redis_config.port);
     if (!s.ok()) {
-      LOG(ERROR) << "Can't parse ip and port from url: " << url;
+      LOG(ERROR) << "Can't parse ip and port from url: "
+                 << config->redis_url;
       return nullptr;
     }
-    config.passwd = password;
-    return new LocalRedis(config);
+    redis_config.passwd = config->redis_password;
+    redis_config.db_idx = config->redis_db_idx;
+
+    return new LocalRedis(redis_config);
   } else {
-    LOG(ERROR) << "Only LocalRedis backend now. type = " << type;
+    LOG(ERROR) << "Only LocalRedis backend now. type = "
+               << config->feature_store_type;
   }
+
   return nullptr;
 }
 } // namespace
@@ -154,8 +160,7 @@ AsyncFeatureStoreMgr::AsyncFeatureStoreMgr(ModelConfig* config, WorkFn fn) :
     cv_[i] = new std::condition_variable();
     ready_[i] = false;
     sleeping_[i] = false;
-    store_[i] = CreateFeatureStore(config->feature_store_type, config->redis_url,
-        config->redis_password);
+    store_[i] = CreateFeatureStore(config);
     threads_[i].reset(new std::thread(!fn? &ThreadRun : fn, this, i, false));
   }
 
@@ -169,8 +174,7 @@ AsyncFeatureStoreMgr::AsyncFeatureStoreMgr(ModelConfig* config, WorkFn fn) :
     update_cv_[i] = new std::condition_variable();
     update_ready_[i] = false;
     update_sleeping_[i] = false;
-    update_store_[i] = CreateFeatureStore(config->feature_store_type,
-        config->redis_url, config->redis_password);
+    update_store_[i] = CreateFeatureStore(config);
     update_threads_[i].reset(new std::thread(!fn ? &ThreadRun : fn, this, i, true));
   }
 }
@@ -319,14 +323,12 @@ FeatureStoreMgr::FeatureStoreMgr(ModelConfig* config)
 
   store_.resize(thread_num_);
   for (int i = 0; i < thread_num_; ++i) {
-    store_[i] = CreateFeatureStore(config->feature_store_type,
-        config->redis_url, config->redis_password);
+    store_[i] = CreateFeatureStore(config);
   }
 
   update_store_.resize(update_thread_num_);
   for (int i = 0; i < update_thread_num_; ++i) {
-    update_store_[i] = CreateFeatureStore(config->feature_store_type,
-        config->redis_url, config->redis_password);
+    update_store_[i] = CreateFeatureStore(config);
   }
 }
 
