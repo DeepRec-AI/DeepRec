@@ -521,6 +521,16 @@ const std::string& GetInitNodeName() {
   return name;
 }
 
+const std::string& GetKvRestoreAllNameSuffix() {
+  static std::string suffix("/Kv_all");
+  return suffix;
+}
+
+const std::string& GetDenseRestoreAllNameSuffix() {
+  static std::string suffix("/Dense_all");
+  return suffix;
+}
+
 GraphOptimizer::GraphOptimizer(
     const std::string& signature_name,
     MetaGraphDef* mgdef,
@@ -591,6 +601,10 @@ Status SavedModelOptimizer::RunODLGraphPass() {
 
   // Add KvInit Op
   s = AddVariableInitSubGraph();
+  if (!s.ok()) return s;
+
+  // Create dense and sparse restore ops
+  s = CreateDenseAndSparseRestoreOp();
   if (!s.ok()) return s;
 
   s = FreezeSignatureDef();
@@ -850,6 +864,32 @@ Status GetNodeAttr(const Node* node,
   return status;
 }
 
+Status CreateRestoreAllNode(const std::string& name,
+                            const std::string& op_name,
+                            std::vector<SrcInfo>& inputs,
+                            Graph* graph) {
+  NodeDef def;
+  def.set_name(name);
+  def.set_op(op_name);
+  Status status;
+  Node *new_node = graph->AddNode(def, &status);
+  if (!status.ok()) return status;
+
+  // Add input egdes
+  int idx = 0;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    int dst_in_slot = Graph::kControlSlot;
+    if (inputs[i].src_slot != Graph::kControlSlot) {
+      dst_in_slot = idx++;
+    }
+
+    graph->AddEdge(inputs[i].src_node, inputs[i].src_slot,
+                   new_node, dst_in_slot);
+  }
+
+  return Status::OK();
+}
+
 } // namespace
 
 Status SavedModelOptimizer::GetFeature2IdAttr(
@@ -1105,6 +1145,53 @@ Status SavedModelOptimizer::AddVariableInitSubGraph() {
   Status status;
   Node* init_op_node = graph_.AddNode(init_op_def, &status);
   return status;
+}
+
+Status SavedModelOptimizer::CreateDenseAndSparseRestoreOp() {
+  const std::string restore_op_name =
+      meta_graph_def_->saver_def().restore_op_name();
+  Node* restore_op = nullptr;
+  for (Node* node : graph_.nodes()) {
+    if (node->name() == restore_op_name) {
+      restore_op = node;
+      break;
+    }
+  }
+
+  if (!restore_op) {
+    return errors::Internal(
+        "Can not find restore op: " + restore_op_name);
+  }
+
+  std::vector<SrcInfo> kv_nodes;
+  std::vector<SrcInfo> dense_nodes;
+  for (const Edge* edge : restore_op->in_edges()) {
+    const Node* src = edge->src();
+    if (src->type_string() != "NoOp") {
+      LOG(WARNING) << "Restore op " << restore_op_name
+                   << " has input node which type is not NoOp."
+                   << src->DebugString();
+      continue;
+    }
+
+    for (const Edge* inner_edge : src->in_edges()) {
+      Node* inner_src = inner_edge->src();
+      if (inner_src->op_def().name() == "KvResourceImportV2") {
+        kv_nodes.push_back({inner_src, inner_edge->src_output()});
+      } else {
+        dense_nodes.push_back({inner_src, inner_edge->src_output()});
+      }
+    }
+  }
+
+  Status s = CreateRestoreAllNode(
+      restore_op_name + GetKvRestoreAllNameSuffix(),
+      "NoOp", kv_nodes, &graph_);
+  if (!s.ok()) return s;
+
+  return CreateRestoreAllNode(
+      restore_op_name + GetDenseRestoreAllNameSuffix(),
+     "NoOp", dense_nodes, &graph_);
 }
 
 Status SavedModelOptimizer::GenerateIdsForFeatures() {

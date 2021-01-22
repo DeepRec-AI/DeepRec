@@ -136,9 +136,24 @@ Status RunRestore(const RunOptions& run_options,
 
   AddAssetsTensorsToInputs(savedmodel_dir, asset_file_defs, &inputs);
 
+  std::string dense_restore_op_name =
+      std::string(restore_op_name) +
+      tensorflow::processor::GetDenseRestoreAllNameSuffix();
+  std::string kv_restore_op_name =
+      std::string(restore_op_name) +
+      tensorflow::processor::GetKvRestoreAllNameSuffix();
+
   RunMetadata run_metadata;
-  return RunOnce(run_options, inputs, {}, {string(restore_op_name)},
-                 nullptr /* outputs */, &run_metadata, session);
+  // 1) update dense variable
+  Status s = RunOnce(
+      run_options, inputs, {}, {dense_restore_op_name},
+      nullptr /* outputs */, &run_metadata, session);
+  if (!s.ok()) return s;
+
+  // 2) update kv variable
+  return RunOnce(
+      run_options, inputs, {}, {kv_restore_op_name},
+      nullptr /* outputs */, &run_metadata, session);
 }
 
 }
