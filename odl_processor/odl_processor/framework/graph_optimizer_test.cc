@@ -915,8 +915,12 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
 
   // Fake signature def
 
+  SaverDef saver_def;
+  saver_def.set_restore_op_name("save/restore_all");
+
   SavedModelBundle saved_model_bundle;
   *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
+  *(saved_model_bundle.meta_graph_def.mutable_saver_def()) = saver_def;
   auto sdef_map = saved_model_bundle.meta_graph_def.mutable_signature_def();
 
   SignatureDef sdef;
@@ -959,6 +963,9 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
     EXPECT_TRUE(nodes.find(n.name()) == nodes.end());
     nodes[n.name()] = n;
   }
+
+  EXPECT_TRUE(nodes.find("save/restore_all/Kv_all") != nodes.end());
+  EXPECT_TRUE(nodes.find("save/restore_all/Dense_all") != nodes.end());
 
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0") != nodes.end());
   auto n = nodes["KvResourceImportV2_0"];
@@ -1099,6 +1106,11 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   n_noop_0->set_op("NoOp");
   n_noop_0->add_input("^KvResourceImportV2_0");
 
+  NodeDef* n_restore_all = graph_def.add_node();
+  n_restore_all->set_name("save/restore_all");
+  n_restore_all->set_op("NoOp");
+  n_restore_all->add_input("^save/restore");
+ 
   // KvResourceGather
   NodeDef* n_default_const_0 = graph_def.add_node();
   n_default_const_0->set_name("default/Const");
@@ -1119,6 +1131,9 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   n_lookup_find_0->add_input("default/Const");
   n_lookup_find_0->add_input("^var_0");
 
+  SaverDef saver_def;
+  saver_def.set_restore_op_name("save/restore_all");
+
   // Identity
   NodeDef* n_identity_0 = graph_def.add_node();
   n_identity_0->set_name("lookup/Identity");
@@ -1128,6 +1143,7 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
 
   SavedModelBundle saved_model_bundle;
   *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
+  *(saved_model_bundle.meta_graph_def.mutable_saver_def()) = saver_def;
 
   GraphOptimizerOption option;
   option.native_tf_mode = true;
@@ -1144,7 +1160,7 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
     ++node_count;
   }
 
-  EXPECT_TRUE(node_count == 17);
+  EXPECT_TRUE(node_count == 18);
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/values/restore") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/keys/restore") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/values") != nodes.end());

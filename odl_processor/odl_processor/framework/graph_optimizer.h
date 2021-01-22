@@ -119,7 +119,9 @@ const std::string& GetModelVersionNodeName();
 const std::string& GetStoragePointerNodeName();
 const std::string& GetInitNodeName();
 const std::string& GetIncrCkptNodeName();
-
+const std::string& GetKvRestoreAllNameSuffix();
+const std::string& GetDenseRestoreAllNameSuffix();
+ 
 struct GraphOptimizerOption {
   // Convert EV ops to HashTable ops
   // to support local graph execution.
@@ -191,6 +193,9 @@ class SavedModelOptimizer : public GraphOptimizer {
 
   // Add full and delta ckpt update subgraph
   Status AddFullAndDeltaUpdateSubGraph();
+
+  // Create dense and sparse restore ops
+  Status CreateDenseAndSparseRestoreOp();
 
   // Add placeholder nodes
   // include storage pointer
