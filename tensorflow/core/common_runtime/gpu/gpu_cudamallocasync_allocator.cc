@@ -131,9 +131,10 @@ void* GPUcudaMallocAsyncAllocator::AllocateRaw(size_t alignment,
     size_t free, total;
     cudaMemGetInfo(&free, &total);
     LOG(ERROR) << Name() << " cudaMallocAsync failed to allocate " << num_bytes
-               << " Free Total: " << free << " " << total
-               << ". Error: " << cudaGetErrorString(res)
-               << " \nStats: \n" << stats_.DebugString();
+               << "\n Error name: " << cudaGetErrorName(res)
+               << "\n Error sting: " << cudaGetErrorString(res)
+               << "\n Free memory/Total memory: " << free << "/" << total
+               << "\n Stats: \n" << stats_.DebugString();
     return nullptr;
   }
 
@@ -160,9 +161,10 @@ void GPUcudaMallocAsyncAllocator::DeallocateRaw(void* ptr) {
     se::cuda::ScopedActivateExecutorContext scoped_activation{stream_exec_};
     cudaMemGetInfo(&free, &total);
     LOG(ERROR) << "cudaFreeAsync failed to free " << ptr
-               << ". Error: " << cudaGetErrorString(res)
-               << " \n Free Total " << free << " " << total
-               << " \nStats: \n" << stats_.DebugString();
+               << "\n Error name: " << cudaGetErrorName(res)
+               << "\n Error sting: " << cudaGetErrorString(res)
+               << "\n Free memory/Total memory: " << free << "/" << total
+               << "\n Stats: \n" << stats_.DebugString();
   }
 
   // Updates the stats.
