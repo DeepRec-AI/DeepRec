@@ -19,7 +19,7 @@ limitations under the License.
 
 namespace tensorflow {
 namespace functor {
-DEFINE_BINARY5(div, Eigen::half, float, double, complex64, complex128);
+DEFINE_BINARY5(mul_no_nan, Eigen::half, float, double, complex64, complex128);
 }  // namespace functor
 }  // namespace tensorflow
 

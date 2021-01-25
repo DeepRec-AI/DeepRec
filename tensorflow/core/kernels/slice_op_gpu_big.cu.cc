@@ -13,34 +13,36 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
-    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
-#include "tensorflow/core/kernels/pad_op.h"
+#include "tensorflow/core/kernels/slice_op.h"
 
 #include "tensorflow/core/framework/register_types.h"
+#include "tensorflow/core/framework/tensor_types.h"
+#include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
 
 typedef Eigen::GpuDevice GPUDevice;
 
-// Definition of the GPU implementations declared in pad_op.cc.
-#define DEFINE_GPU_PAD_SPECS(T, Tpadding)                  \
-  template struct functor::Pad<GPUDevice, T, Tpadding, 0>; \
-  template struct functor::Pad<GPUDevice, T, Tpadding, 1>; \
-  template struct functor::Pad<GPUDevice, T, Tpadding, 2>; \
-  template struct functor::Pad<GPUDevice, T, Tpadding, 3>;
+#define DEFINE_GPU_KERNELS(T)                      \
+  template struct functor::Slice<GPUDevice, T, 5>; \
+  template struct functor::Slice<GPUDevice, T, 6>; \
+  template struct functor::Slice<GPUDevice, T, 7>;
 
-#define DEFINE_GPU_SPECS(T)      \
-  DEFINE_GPU_PAD_SPECS(T, int32) \
-  DEFINE_GPU_PAD_SPECS(T, int64)
+TF_CALL_GPU_NUMBER_TYPES(DEFINE_GPU_KERNELS);
+TF_CALL_complex64(DEFINE_GPU_KERNELS);
+TF_CALL_complex128(DEFINE_GPU_KERNELS);
+TF_CALL_bfloat16(DEFINE_GPU_KERNELS);
+TF_CALL_bool(DEFINE_GPU_KERNELS);
+TF_CALL_int8(DEFINE_GPU_KERNELS);
+DEFINE_GPU_KERNELS(int32);
+DEFINE_GPU_KERNELS(int64);
 
-TF_CALL_GPU_ALL_TYPES(DEFINE_GPU_SPECS);
-TF_CALL_int8(DEFINE_GPU_SPECS);
-TF_CALL_uint8(DEFINE_GPU_SPECS);
+#undef DEFINE_GPU_KERNELS
 
-}  // namespace tensorflow
+}  // end namespace tensorflow
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

@@ -19,7 +19,12 @@ limitations under the License.
 
 namespace tensorflow {
 namespace functor {
-DEFINE_BINARY5(div, Eigen::half, float, double, complex64, complex128);
+#if GOOGLE_CUDA
+DEFINE_BINARY5(div_no_nan, Eigen::half, float, double, complex64, complex128);
+#elif TENSORFLOW_USE_ROCM
+// ROCM TODO: fix compiler error for complex64 / complex128 division
+DEFINE_BINARY3(div_no_nan, Eigen::half, float, double);
+#endif
 }  // namespace functor
 }  // namespace tensorflow
 
