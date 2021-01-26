@@ -624,8 +624,9 @@ class XlaBuilder {
   XlaOp Softmax(XlaOp operand, int64 feature_index, bool log);
 
   XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
-                          float epsilon, int64 feature_index,
-                          size_t reserve_space_size, bool use_reserve_space);
+                          XlaOp side_input, float epsilon, int64 feature_index,
+                          size_t reserve_space_size, bool use_reserve_space,
+                          bool is_activation_relu);
 
   XlaOp BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset, XlaOp mean,
                            XlaOp variance, float epsilon, int64 feature_index);
@@ -1036,9 +1037,10 @@ class XlaBuilder {
                     const ChannelHandle& handle);
   friend XlaOp Softmax(XlaOp operand, int64 dimension, bool log);
   friend XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
-                                 float epsilon, int64 feature_index,
-                                 size_t reserve_space_size,
-                                 bool use_reserve_space);
+                                 XlaOp side_input, float epsilon,
+                                 int64 feature_index, size_t reserve_space_size,
+                                 bool use_reserve_space,
+                                 bool is_activation_relu);
   friend XlaOp BatchNormInference(XlaOp operand, XlaOp scale, XlaOp offset,
                                   XlaOp mean, XlaOp variance, float epsilon,
                                   int64 feature_index);
@@ -2016,9 +2018,10 @@ XlaOp Softmax(XlaOp operand, int64 dimension, bool log);
 // Returns a tuple (normalized, batch_mean, batch_var) where `normalized`
 // is the normalized result and batch_mean and batch_var are the mean and
 // variance, respectively, across batch for the operand.
-XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset, float epsilon,
-                        int64 feature_index, size_t reserve_space_size,
-                        bool use_reserve_space);
+XlaOp BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
+                        XlaOp side_input, float epsilon, int64 feature_index,
+                        size_t reserve_space_size, bool use_reserve_space,
+                        bool is_activation_relu);
 
 // Normalizes operand across spatial and batch dimensions for each feature.
 //

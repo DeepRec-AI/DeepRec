@@ -240,8 +240,10 @@ XLA_TEST_P(BatchNormalizationTest, BasicTraining) {
 
   auto offset = ConstantR1<float>(&builder, {1.0f, 2.0f});
 
-  BatchNormTraining(operand, scale, offset,
-                    /*epsilon=*/0.001, kFeatureIndex, 0, true);
+  XlaOp side_input;
+
+  BatchNormTraining(operand, scale, offset, side_input,
+                    /*epsilon=*/0.001, kFeatureIndex, 0, true, false);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR4<float>({{{{-1.6f, -2.0f}}, {{0.1f, 0.6f}}},
@@ -265,8 +267,9 @@ XLA_TEST_P(BatchNormalizationTest, BasicTraining_fp16) {
 
   auto input_f32 = ConvertElementType(operand, F32);
 
-  auto output = BatchNormTraining(input_f32, scale, offset,
-                                  /*epsilon=*/0.001, kFeatureIndex, 0, true);
+  XlaOp side_input;
+  auto output = BatchNormTraining(input_f32, scale, offset, side_input,
+                                  /*epsilon=*/0.001, kFeatureIndex, 0, true, false);
 
   auto converted = ConvertElementType(GetTupleElement(output, 0), F16);
   Tuple(&builder,
@@ -278,6 +281,87 @@ XLA_TEST_P(BatchNormalizationTest, BasicTraining_fp16) {
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateFromArray(out), LiteralUtil::CreateR1<float>({4, 5}),
        LiteralUtil::CreateR1<float>({5, 5})});
+
+  ComputeAndCompareTuple(&builder, expected, {}, ErrorSpec(0.1));
+}
+
+XLA_TEST_P(BatchNormalizationTest, BasicTraining_fp16_side_input) {
+  const int kFeatureIndex = 3;
+  XlaBuilder builder(TestName());
+  setenv("TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT", "1", 1 /* replace */);
+
+  Array4D<Eigen::half> input = {
+      {{{1.f, 2.f, 1.f, 2.f}}, {{3.f, 4.f, 1.f, 2.f}}},
+      {{{5.f, 6.f, 1.f, 2.f}}, {{7.f, 8.f, 1.f, 2.f}}}};
+
+  auto operand = ConstantR4FromArray4D<Eigen::half>(&builder, input);
+
+  auto scale = ConstantR1<float>(&builder, {2.0f, 3.0f, 2.0f, 3.0f});
+
+  auto offset = ConstantR1<float>(&builder, {1.0f, 2.0f, 1.0f, 2.0f});
+
+  auto input_f32 = ConvertElementType(operand, F32);
+
+  Array4D<Eigen::half> side_input = {
+      {{{1.f, 2.f, 1.f, 2.f}}, {{3.f, 4.f, 1.f, 2.f}}},
+      {{{5.f, 6.f, 1.f, 2.f}}, {{7.f, 8.f, 1.f, 2.f}}}};
+  auto side_input_operand =
+      ConstantR4FromArray4D<Eigen::half>(&builder, side_input);
+  auto side_input_f32 = ConvertElementType(side_input_operand, F32);
+  auto output =
+      BatchNormTraining(input_f32, scale, offset, side_input_f32,
+                        /*epsilon=*/0.001, kFeatureIndex, 4096, true, true);
+
+  auto converted = ConvertElementType(GetTupleElement(output, 0), F16);
+  Tuple(&builder,
+        {converted, GetTupleElement(output, 1), GetTupleElement(output, 2)});
+
+  Array4D<Eigen::half> out = {
+      {{{0.0f, 0.f, 2.f, 4.f}}, {{3.1f, 4.7f, 2.f, 4.f}}},
+      {{{6.9f, 9.3f, 2.f, 4.f}}, {{10.7f, 14.0f, 2.f, 4.f}}}};
+
+  auto expected = LiteralUtil::MakeTupleFromSlices(
+      {LiteralUtil::CreateFromArray(out),
+       LiteralUtil::CreateR1<float>({4, 5, 1, 2}),
+       LiteralUtil::CreateR1<float>({5, 5, 0, 0})});
+
+  ComputeAndCompareTuple(&builder, expected, {}, ErrorSpec(0.1));
+}
+
+XLA_TEST_P(BatchNormalizationTest, BasicTraining_fp16_activation) {
+  const int kFeatureIndex = 3;
+  XlaBuilder builder(TestName());
+  setenv("TF_USE_CUDNN_BATCHNORM_SPATIAL_PERSISTENT", "1", 1 /* replace */);
+
+  Array4D<Eigen::half> input = {
+      {{{1.f, 2.f, 1.f, 2.f}}, {{3.f, 4.f, 1.f, 2.f}}},
+      {{{5.f, 6.f, 1.f, 2.f}}, {{7.f, 8.f, 1.f, 2.f}}}};
+
+  auto operand = ConstantR4FromArray4D<Eigen::half>(&builder, input);
+
+  auto scale = ConstantR1<float>(&builder, {2.0f, 3.0f, 2.0f, 3.0f});
+
+  auto offset = ConstantR1<float>(&builder, {1.0f, 2.0f, 1.0f, 2.0f});
+
+  auto input_f32 = ConvertElementType(operand, F32);
+
+  XlaOp side_input;
+  auto output =
+      BatchNormTraining(input_f32, scale, offset, side_input,
+                        /*epsilon=*/0.001, kFeatureIndex, 0, true, true);
+
+  auto converted = ConvertElementType(GetTupleElement(output, 0), F16);
+  Tuple(&builder,
+        {converted, GetTupleElement(output, 1), GetTupleElement(output, 2)});
+
+  Array4D<Eigen::half> out = {
+      {{{0.0f, 0.f, 1.f, 2.f}}, {{0.1f, 0.7f, 1.f, 2.f}}},
+      {{{1.9f, 3.3f, 1.f, 2.f}}, {{3.7f, 6.0f, 1.f, 2.f}}}};
+
+  auto expected = LiteralUtil::MakeTupleFromSlices(
+      {LiteralUtil::CreateFromArray(out),
+       LiteralUtil::CreateR1<float>({4, 5, 1, 2}),
+       LiteralUtil::CreateR1<float>({5, 5, 0, 0})});
 
   ComputeAndCompareTuple(&builder, expected, {}, ErrorSpec(0.1));
 }
@@ -294,8 +378,9 @@ XLA_TEST_P(BatchNormalizationTest, BasicTrainingOnDimension2) {
 
   auto offset = ConstantR1<float>(&builder, {1.0f, 2.0f});
 
-  BatchNormTraining(operand, scale, offset,
-                    /*epsilon=*/0.001, kFeatureIndex, 0, true);
+  XlaOp side_input;
+  BatchNormTraining(operand, scale, offset, side_input,
+                    /*epsilon=*/0.001, kFeatureIndex, 0, true, false);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR4<float>({{{{-1.6f}, {-2.0f}}, {{0.1f}, {0.6f}}},
@@ -319,8 +404,11 @@ XLA_TEST_P(BatchNormalizationTest, BasicTrainingOnDimension2_fp16) {
 
   auto input_f32 = ConvertElementType(operand, F32);
 
-  auto output = BatchNormTraining(input_f32, scale, offset,
-                                  /*epsilon=*/0.001, kFeatureIndex, 0, true);
+  // auto side_input = ConstantR4FromArray4D<float>(
+  //     &builder, {});
+  XlaOp side_input;
+  auto output = BatchNormTraining(input_f32, scale, offset, side_input,
+                                  /*epsilon=*/0.001, kFeatureIndex, 0, true, false);
 
   auto converted = ConvertElementType(GetTupleElement(output, 0), F16);
   Tuple(&builder,
@@ -353,9 +441,9 @@ XLA_TEST_P(BatchNormalizationTest, TrainingWithFeatureOnLowDimension) {
   auto offset =
       CreateR1Parameter<float>(std::vector<float>(260, 1.0f),
                                /*parameter_number=*/2, "offset", &builder, &h2);
-
-  BatchNormTraining(h0, h1, h2,
-                    /*epsilon=*/1, kFeatureIndex, 0, true);
+  XlaOp side_input;
+  BatchNormTraining(h0, h1, h2, side_input,
+                    /*epsilon=*/1, kFeatureIndex, 0, true, false);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR3FromArray3D<float>(Array3D<float>(260, 2, 2, 1.0f)),
@@ -385,10 +473,10 @@ XLA_TEST_P(BatchNormalizationTest, LargeEpsilonTest) {
   auto offset =
       CreateR1Parameter<float>(std::vector<float>(1, 0.0f),
                                /*parameter_number=*/2, "offset", &builder, &h2);
-
+  XlaOp h3;
   // var = 125, mean = 15, epsilon = -100
-  BatchNormTraining(h0, h1, h2,
-                    /*epsilon=*/-100, kFeatureIndex, 0, true);
+  BatchNormTraining(h0, h1, h2, h3,
+                    /*epsilon=*/-100, kFeatureIndex, 0, true, false);
 
   auto expected = LiteralUtil::MakeTupleFromSlices(
       {LiteralUtil::CreateR3FromArray3D<float>(
@@ -637,9 +725,9 @@ XLA_TEST_P(BatchNormTestManySizes, RandomizedTrainingTests) {
       client_->TransferToServer(scale_literal).ConsumeValueOrDie();
   std::unique_ptr<GlobalData> offset_data =
       client_->TransferToServer(offset_literal).ConsumeValueOrDie();
-
-  BatchNormTraining(input_activations, scale_activations, offset_activations,
-                    epsilon, feature_index, 0, true);
+  XlaOp side_input;
+  BatchNormTraining(input_activations, scale_activations, offset_activations, side_input,
+                    epsilon, feature_index, 0, true, false);
 
   // Run all HLO passes during this test.  In particular, ClientLibraryTestBase
   // disables constant folding, but we want it enabled for our zero-sized tensor

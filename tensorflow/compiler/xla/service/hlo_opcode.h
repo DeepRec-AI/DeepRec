@@ -55,7 +55,7 @@ namespace xla {
   V(kSoftmax, "softmax", 1)                                            \
   V(kBatchNormGrad, "batch-norm-grad", kHloOpcodeIsVariadic)           \
   V(kBatchNormInference, "batch-norm-inference", 5)                    \
-  V(kBatchNormTraining, "batch-norm-training", 3)                      \
+  V(kBatchNormTraining, "batch-norm-training", kHloOpcodeIsVariadic)   \
   V(kBitcast, "bitcast", 1)                                            \
   V(kBitcastConvert, "bitcast-convert", 1)                             \
   V(kBroadcast, "broadcast", 1)                                        \

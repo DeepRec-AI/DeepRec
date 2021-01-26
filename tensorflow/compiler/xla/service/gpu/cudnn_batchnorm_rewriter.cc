@@ -18,6 +18,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/literal.h"
 #include "tensorflow/compiler/xla/literal_util.h"
 #include "tensorflow/compiler/xla/service/dfs_hlo_visitor_with_default.h"
+#include "tensorflow/compiler/xla/service/gpu/backend_configs.pb.h"
 #include "tensorflow/compiler/xla/service/gpu/ir_emission_utils.h"
 #include "tensorflow/compiler/xla/service/gpu/stream_executor_util.h"
 
@@ -70,7 +71,8 @@ bool IsF32BatchNormWithFP16Inputs(HloInstruction* batch_norm) {
 }
 
 size_t GetWorkspaceSize(se::Stream* stream, HloInstruction* batch_norm,
-                        bool is_batchnorm_with_fp16_inputs) {
+                        bool is_batchnorm_with_fp16_inputs, bool apply_relu,
+                        bool apply_side_inputs) {
   DnnBatchDescriptors batch_descs = MakeBatchNormDescriptors(
       batch_norm->operand(0)->shape(), batch_norm->feature_index());
   se::dnn::BatchDescriptor input_desc = batch_descs.input_desc;
@@ -88,10 +90,20 @@ size_t GetWorkspaceSize(se::Stream* stream, HloInstruction* batch_norm,
   if (stream) {
     if (is_batchnorm_with_fp16_inputs) {
       stream->ThenFindBatchNormWorkspaceSize<Eigen::half, float>(
-          input_desc, scale_offset_desc, &workspace_size, kind, false, false);
+          input_desc, scale_offset_desc, &workspace_size, kind, apply_relu,
+          apply_side_inputs);
     } else {
+      DCHECK_EQ(apply_relu, false)
+          << "cudnnGetBatchNormalizationForwardTrainingWorkspaceSize is only "
+             "supported for CUDNN_DATA_HALF data type for "
+             "CUDNN_BATCHNORM_OPS_BN_ACTIVATION mode. ";
+      DCHECK_EQ(apply_side_inputs, false)
+          << "cudnnGetBatchNormalizationForwardTrainingWorkspaceSize is only "
+             "supported for CUDNN_DATA_HALF data type for "
+             "CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION mode. ";
       stream->ThenFindBatchNormWorkspaceSize<float, float>(
-          input_desc, scale_offset_desc, &workspace_size, kind, false, false);
+          input_desc, scale_offset_desc, &workspace_size, kind, apply_relu,
+          apply_side_inputs);
     }
   } else {
     VLOG(1) << "Stream is nullptr. Hence workspace not queried. ";
@@ -180,6 +192,9 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   bool is_batchnorm_with_fp16_inputs = IsF32BatchNormWithFP16Inputs(batch_norm);
   if (is_batchnorm_with_fp16_inputs) {
     operands[0] = AddConvert(batch_norm->mutable_operand(0), F16);
+    if (batch_norm->operands().size() == 4) {
+      operands[3] = AddConvert(batch_norm->mutable_operand(3), F16);
+    }
   }
   operands.push_back(epsilon);
   operands.push_back(feature_index);
@@ -199,8 +214,12 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
   // an extra reserve space output i.e, 4 outputs. This implies that an extra
   // temp workspace also needs to be allocated.
   if (use_reserve_space) {
+    bool apply_relu = static_cast<HloBatchNormTrainingInstruction*>(batch_norm)
+                          ->is_activation_relu();
+    bool apply_side_input = batch_norm->operands().size() == 4;
     size_t workspace_size =
-        GetWorkspaceSize(stream_, batch_norm, is_batchnorm_with_fp16_inputs);
+        GetWorkspaceSize(stream_, batch_norm, is_batchnorm_with_fp16_inputs,
+                         apply_relu, apply_side_input);
     VLOG(1) << "Forward workspace required: " << workspace_size << " bytes";
     batch_norm_tuple_shape.push_back(
         ShapeUtil::MakeShape(U8, {workspace_size}));
@@ -213,7 +232,16 @@ Status Visitor::HandleBatchNormTraining(HloInstruction* batch_norm) {
       computation_->AddInstruction(HloInstruction::CreateCustomCall(
           batch_norm_shape, operands,
           kCudnnBatchNormForwardTrainingCallTarget));
-
+  TF_ASSIGN_OR_RETURN(
+      CudnnBatchNormBackendConfig config,
+      batch_norm->backend_config<CudnnBatchNormBackendConfig>());
+  se::dnn::ActivationMode activation_mode =
+      static_cast<HloBatchNormTrainingInstruction*>(batch_norm)
+              ->is_activation_relu()
+          ? se::dnn::ActivationMode::kRelu
+          : se::dnn::ActivationMode::kNone;
+  config.set_activation_mode(static_cast<int64>(activation_mode));
+  TF_RETURN_IF_ERROR(libcall->set_backend_config(config));
   // The cudnn libcall returns a tuple
   //   {output, mean, rsqrt(variance + epsilon)},
   // but the batchnorm HLO returns {output, mean, variance}.  Fix it up.
@@ -337,8 +365,8 @@ Status Visitor::HandleBatchNormGrad(HloInstruction* batch_norm) {
   // variance, out_grad, reserve_space}. This implies that an extra
   // temp workspace also needs to be allocated.
   if (use_reserve_space) {
-    size_t workspace_size =
-        GetWorkspaceSize(stream_, batch_norm, is_batchnorm_with_fp16_inputs);
+    size_t workspace_size = GetWorkspaceSize(
+        stream_, batch_norm, is_batchnorm_with_fp16_inputs, false, false);
     VLOG(1) << "Backward workspace required: " << workspace_size << " bytes";
     batch_norm_tuple_shape.push_back(
         ShapeUtil::MakeShape(U8, {workspace_size}));

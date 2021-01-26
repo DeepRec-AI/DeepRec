@@ -132,27 +132,22 @@ class FusedBatchNormOp : public XlaOpKernel {
                 << " Feature count: " << feature_count
                 << " Num Dims: " << input_shape.dims()
                 << " y_size = " << y_size;
-        // Since in tf2xla, a fused batchnorm with activation or with
-        // activation+add gets expanded to batchnorm and activation and add, the
-        // boolean apply_relu and apply_side_input are set to false here while
-        // querying the reserve space. This can be modified the bridge decides
-        // to do otherwise.
-        bool apply_relu = false;
-        bool apply_side_input = false;
+
         // Stream can be null here since DeviceMemory allocator can be null in
         // XlaCompiler. In such case, correct reserved_space cannot be queried.
         // This is not the optimum case but will be functionally correct.
+
         if (stream) {
           if (input_type == xla::PrimitiveType::F16) {
             stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<
                 Eigen::half>(batch_size, feature_count, y_size,
                              ::tensorflow::ToString(data_format_),
-                             &reserve_space_size, apply_relu, apply_side_input);
+                             &reserve_space_size, apply_relu_, add_side_input_);
           } else if (input_type == xla::PrimitiveType::F32) {
             stream->ThenFindBatchNormalizationTrainingExReserveSpaceSize<float>(
                 batch_size, feature_count, y_size,
                 ::tensorflow::ToString(data_format_), &reserve_space_size,
-                apply_relu, apply_side_input);
+                apply_relu_, add_side_input_);
           } else {
             errors::Unimplemented(
                 "Unimplemented data type for batchnorm input");
@@ -166,21 +161,33 @@ class FusedBatchNormOp : public XlaOpKernel {
         VLOG(1) << "Reserved space required: " << reserve_space_size
                 << " bytes";
       }
+      xla::XlaOp side_input;
+      if (add_side_input_ && is_on_gpu_) {
+        side_input = ctx->Input(5);
+        side_input = xla::ConvertElementType(side_input, scale_type);
+        CHECK_EQ(apply_relu_, true)
+            << "Identity activation is not supported with non-empty side input";
+      }
+
       xla::XlaOp output = xla::BatchNormTraining(
-          input, ctx->Input(1), ctx->Input(2), epsilon_, feature_index,
-          reserve_space_size, use_reserved_space);
+          input, ctx->Input(1), ctx->Input(2), side_input, epsilon_,
+          feature_index, reserve_space_size, use_reserved_space, apply_relu_);
 
       // In training mode, outputs the normalized value as well as the
       // calculated mean and variance. Optionally we add side input and apply
       // relu activation.
       xla::XlaOp converted =
           xla::ConvertElementType(xla::GetTupleElement(output, 0), input_type);
-      if (add_side_input_ && apply_relu_) {
-        ctx->SetOutput(0, xla::Relu(xla::Add(ctx->Input(5), converted)));
-      } else if (apply_relu_) {
-        ctx->SetOutput(0, xla::Relu(converted));
-      } else {
+      if (is_on_gpu_) {
         ctx->SetOutput(0, converted);
+      } else {
+        if (add_side_input_ && apply_relu_) {
+          ctx->SetOutput(0, xla::Relu(xla::Add(ctx->Input(5), converted)));
+        } else if (apply_relu_) {
+          ctx->SetOutput(0, xla::Relu(converted));
+        } else {
+          ctx->SetOutput(0, converted);
+        }
       }
 
       ctx->SetOutput(1, xla::GetTupleElement(output, 1));

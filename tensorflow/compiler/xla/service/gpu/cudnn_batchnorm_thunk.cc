@@ -73,6 +73,16 @@ void CheckInputOutputPrimitivetypeAreValid(const HloInstruction* hlo) {
     if (num_operands == 8 && i == 5) {
       continue;
     }
+
+    // Number of operands is 4 + 2(epsilon and feature index) = 6 when the is
+    // side input. Side input should have the same data type as operand(0).
+    if (hlo->custom_call_target() == kCudnnBatchNormForwardTrainingCallTarget &&
+        num_operands == 6 && i == 3) {
+      CHECK_EQ(hlo->operand(i)->shape().element_type(), operand_primitive_type)
+          << "Invalid datatype";
+      continue;
+    }
+
     CHECK_EQ(hlo->operand(i)->shape().element_type(), F32)
         << "Not yet implemented";
   }
@@ -179,7 +189,7 @@ CudnnBatchNormForwardTrainingThunk::CudnnBatchNormForwardTrainingThunk(
 Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
     const ExecuteParams& params) {
   auto& buffer_allocations = *params.buffer_allocations;
-  CHECK_EQ(operand_slices_.size(), 3);
+  CHECK_LE(operand_slices_.size(), 4);
   CHECK_LE(output_slices_.size(), 5);
   se::DeviceMemoryBase operand =
       buffer_allocations.GetDeviceAddress(operand_slices_[0]);
@@ -187,7 +197,15 @@ Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
       buffer_allocations.GetDeviceAddress(operand_slices_[1]));
   se::DeviceMemory<float> offset(
       buffer_allocations.GetDeviceAddress(operand_slices_[2]));
-
+  bool has_side_input = operand_slices_.size() == 4;
+  se::DeviceMemoryBase side_input_base(nullptr);
+  if (has_side_input) {
+    side_input_base = buffer_allocations.GetDeviceAddress(operand_slices_[3]);
+    VLOG(2) << "BatchNorm side input buffer slice: "
+            << operand_slices_[3].ToString() << " with size "
+            << side_input_base.size();
+  }
+  
   se::DeviceMemoryBase output_data =
       buffer_allocations.GetDeviceAddress(output_slices_[0]);
 
@@ -197,7 +215,6 @@ Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
       buffer_allocations.GetDeviceAddress(output_slices_[2]));
 
   bool use_reserve_space = output_slices_.size() == 5;
-  // se::DeviceMemory<float> null_device_ptr(nullptr);
   se::DeviceMemoryBase reserve_space(nullptr);
   se::DeviceMemoryBase workspace(nullptr);
   if (use_reserve_space) {
@@ -217,8 +234,8 @@ Status CudnnBatchNormForwardTrainingThunk::ExecuteOnStream(
   auto& stream = *params.stream;
   TF_RETURN_IF_ERROR(RunCudnnBatchNormForwardTraining(
       hlo_instruction(), operand, output_data, output_mean, output_inv_stddev,
-      scale, offset, reserve_space, workspace, epsilon_, feature_index_,
-      &stream));
+      scale, offset, side_input_base, reserve_space, workspace, epsilon_,
+      feature_index_, &stream));
 
   // Write the output tuple.
   const int kNumOutputs = (use_reserve_space) ? 5 : 3;

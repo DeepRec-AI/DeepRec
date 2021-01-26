@@ -223,11 +223,15 @@ Status ThunkEmitter::HandleCustomCall(HloInstruction* custom_call) {
 
   if (custom_call->custom_call_target() ==
       kCudnnBatchNormForwardTrainingCallTarget) {
-    const HloInstruction* epsilon = custom_call->operand(3);
+    bool has_side_input = custom_call->operand_count() == 6;
+    int epsilon_dim = (has_side_input) ? 4 : 3;
+    int feature_index_dim = epsilon_dim + 1;
+    const HloInstruction* epsilon = custom_call->operand(epsilon_dim);
     CHECK(epsilon->IsConstant());
     float epsilon_value = epsilon->literal().Get<float>({});
 
-    const HloInstruction* feature_index = custom_call->operand(4);
+    const HloInstruction* feature_index =
+        custom_call->operand(feature_index_dim);
     CHECK(feature_index->IsConstant());
     int64 feature_index_value = feature_index->literal().Get<int64>({});
 

@@ -2047,12 +2047,13 @@ XlaOp XlaBuilder::Softmax(XlaOp operand, int64 feature_index, bool log) {
 }
 
 XlaOp XlaBuilder::BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
-                                    float epsilon, int64 feature_index,
+                                    XlaOp side_input, float epsilon,
+                                    int64 feature_index,
                                     size_t reserve_space_size,
-                                    bool use_reserve_space) {
+                                    bool use_reserve_space,
+                                    bool is_activation_relu) {
   return ReportErrorOrReturn([&]() -> StatusOr<XlaOp> {
     HloInstructionProto instr;
-
     TF_ASSIGN_OR_RETURN(const Shape* operand_shape, GetShapePtr(operand));
     TF_ASSIGN_OR_RETURN(const Shape* scale_shape, GetShapePtr(scale));
     TF_ASSIGN_OR_RETURN(const Shape* offset_shape, GetShapePtr(offset));
@@ -2064,9 +2065,14 @@ XlaOp XlaBuilder::BatchNormTraining(XlaOp operand, XlaOp scale, XlaOp offset,
 
     instr.set_epsilon(epsilon);
     instr.set_feature_index(feature_index);
+    instr.set_is_activation_relu(is_activation_relu);
 
+    std::vector<XlaOp> operands = {operand, scale, offset};
+    if (!side_input.IsUninitialized()) {
+      operands.push_back(side_input);
+    }
     return AddInstruction(std::move(instr), HloOpcode::kBatchNormTraining,
-                          {operand, scale, offset});
+                          operands);
   });
 }
 
@@ -3614,11 +3620,13 @@ XlaOp Softmax(const XlaOp operand, int64 feature_index, bool log) {
 }
 
 XlaOp BatchNormTraining(const XlaOp operand, const XlaOp scale,
-                        const XlaOp offset, float epsilon, int64 feature_index,
-                        size_t reserve_space_size, bool use_reserve_space) {
-  return operand.builder()->BatchNormTraining(operand, scale, offset, epsilon,
-                                              feature_index, reserve_space_size,
-                                              use_reserve_space);
+                        const XlaOp offset, const XlaOp side_input,
+                        float epsilon, int64 feature_index,
+                        size_t reserve_space_size, bool use_reserve_space,
+                        bool is_activation_relu) {
+  return operand.builder()->BatchNormTraining(
+      operand, scale, offset, side_input, epsilon, feature_index,
+      reserve_space_size, use_reserve_space, is_activation_relu);
 }
 
 XlaOp BatchNormInference(const XlaOp operand, const XlaOp scale,

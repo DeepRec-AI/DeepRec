@@ -249,13 +249,14 @@ class Stream {
       int64 batch_size, int64 feature_count, int64 y_size,
       const std::string &layout, size_t *reserve_space_size, bool apply_relu,
       bool apply_side_input) {
-    // activation_mode must be dnn::ActivationMode::kRelu only if apply_relu is
-    // true and apply_side_input is false. All other combinations of apply_relu
-    // & apply_relu should lead to activation_mode being
-    // dnn::ActivationMode::kNone.
     dnn::ActivationMode activation_mode = dnn::ActivationMode::kNone;
-    if (apply_relu && !apply_side_input) {
-      dnn::ActivationMode activation_mode = dnn::ActivationMode::kRelu;
+    // Activation mode is only relevant in the absence of side_input. The cuDNN
+    // BN activation mode can be either CUDNN_BATCHNORM_OPS_BN or
+    // CUDNN_BATCHNORM_OPS_BN_ACTIVATION. When side_input is present, it is
+    // assumed that the activation is a relu and the cuDNN BN activation mode is
+    // always CUDNN_BATCHNORM_OPS_BN_ADD_ACTIVATION.
+    if (apply_relu) {
+      activation_mode = dnn::ActivationMode::kRelu;
     }
     return ThenFindBatchNormalizationTrainingExReserveSpaceSize(
         batch_size, feature_count, y_size, layout,
@@ -279,8 +280,8 @@ class Stream {
       stream_executor::BatchNormalizationKind kind, bool apply_relu,
       bool apply_side_input) {
     dnn::ActivationMode activation_mode = dnn::ActivationMode::kNone;
-    if (apply_relu && !apply_side_input) {
-      dnn::ActivationMode activation_mode = dnn::ActivationMode::kRelu;
+    if (apply_relu) {
+      activation_mode = dnn::ActivationMode::kRelu;
     }
     return ThenFindBatchNormWorkspaceSize(
         dnn::ToDataType<InElemT>::value, dnn::ToDataType<ScaleElemT>::value,
@@ -326,14 +327,14 @@ class Stream {
       const DeviceMemory<float> &offset,
       const DeviceMemory<float> &estimated_mean,
       const DeviceMemory<float> &estimated_variance,
-      const DeviceMemory<float> &side_input, const dnn::BatchDescriptor &x_desc,
+      const DeviceMemory<Eigen::half> &side_input,
+      const dnn::BatchDescriptor &x_desc,
       const dnn::BatchDescriptor &scale_offset_desc, const double epsilon,
       const double exponential_average_factor,
       dnn::ActivationMode activation_mode, DeviceMemory<Eigen::half> *y,
       DeviceMemory<float> *batch_mean, DeviceMemory<float> *batch_var,
       DeviceMemory<float> *saved_mean, DeviceMemory<float> *saved_inv_var,
-      bool is_training,
-      ScratchAllocator *reserve_space_allocator,
+      bool is_training, ScratchAllocator *reserve_space_allocator,
       ScratchAllocator *workspace_allocator);
 
   Stream &ThenBatchNormalizationBackward(

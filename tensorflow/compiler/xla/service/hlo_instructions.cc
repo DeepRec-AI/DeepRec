@@ -145,21 +145,56 @@ std::vector<string> HloBatchNormInstruction::ExtraAttributesToStringImpl(
 }
 
 HloBatchNormTrainingInstruction::HloBatchNormTrainingInstruction(
-    const Shape& shape, HloInstruction* operand, HloInstruction* scale,
-    HloInstruction* offset, float epsilon, int64 feature_index)
-    : HloBatchNormInstruction(HloOpcode::kBatchNormTraining, shape, operand,
-                              scale, epsilon, feature_index) {
-  AppendOperand(offset);
+    const Shape& shape, HloInstruction* operand_0, HloInstruction* scale,
+    absl::Span<HloInstruction* const> other_operands, float epsilon,
+    int64 feature_index, bool is_activation_relu)
+    : HloBatchNormInstruction(HloOpcode::kBatchNormTraining, shape, operand_0,
+                              scale, epsilon, feature_index),
+      is_activation_relu_(is_activation_relu) {
+  for (auto operand : other_operands) {
+    AppendOperand(operand);
+  }
+}
+
+HloInstructionProto HloBatchNormTrainingInstruction::ToProto() const {
+  HloInstructionProto proto = HloBatchNormInstruction::ToProto();
+  proto.set_is_activation_relu(is_activation_relu_);
+  return proto;
+}
+
+std::vector<string>
+HloBatchNormTrainingInstruction::ExtraAttributesToStringImpl(
+    const HloPrintOptions& options) const {
+  std::vector<string> attrs =
+      HloBatchNormInstruction::ExtraAttributesToStringImpl(options);
+  if (is_activation_relu()) {
+    attrs.push_back("is_activation_relu=true");
+  }
+  return attrs;
 }
 
 std::unique_ptr<HloInstruction>
 HloBatchNormTrainingInstruction::CloneWithNewOperandsImpl(
     const Shape& shape, absl::Span<HloInstruction* const> new_operands,
     HloCloneContext* context) const {
-  CHECK_EQ(new_operands.size(), 3);
+  CHECK_LE(new_operands.size(), 4);
+  std::vector<HloInstruction*> other_operands;
+  other_operands.reserve(new_operands.size() - 2);
+  for (auto it = std::next(std::next(new_operands.begin()));
+       it != new_operands.end(); it++) {
+    other_operands.push_back(*it);
+  }
   return absl::make_unique<HloBatchNormTrainingInstruction>(
-      shape, new_operands[0], new_operands[1], new_operands[2], epsilon(),
-      feature_index());
+      shape, new_operands[0], new_operands[1], other_operands, epsilon(),
+      feature_index(), is_activation_relu());
+}
+
+bool HloBatchNormTrainingInstruction::IdenticalSlowPath(
+    const HloInstruction& other,
+    const std::function<bool(const HloComputation*, const HloComputation*)>&
+        eq_computations) const {
+  // Not yet supported.
+  return false;
 }
 
 HloBatchNormInferenceInstruction::HloBatchNormInferenceInstruction(

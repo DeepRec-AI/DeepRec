@@ -250,6 +250,10 @@ message HloInstructionProto {
   // RNG algorithm used by kRngBitGenerator.
   xla.RandomAlgorithm rng_algorithm = 70;
 
+  // Whether activation mode for kBatchNormTraining is relu.
+  // The kBatchNormTraining instr is actually  fused batchnorm+add+activation.
+  bool is_activation_relu = 73;
+
   // Represents unique tag for each AsyncOutSend and AsyncOutRecv pair.
   string rendezvous_key = 1000;
 

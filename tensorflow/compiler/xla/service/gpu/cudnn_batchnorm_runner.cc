@@ -45,10 +45,12 @@ struct CudnnBatchNormForwardInferenceParams {
 
 struct CudnnBatchNormForwardTrainingParams {
   CudnnBatchNormParamsCommon common;
+  se::DeviceMemoryBase side_input;
   se::DeviceMemoryBase output_data;
   se::DeviceMemory<float> offset;
   se::DeviceMemory<float> output_mean;
   se::DeviceMemory<float> output_inv_stddev;
+  se::dnn::ActivationMode activation_mode;
 };
 
 struct CudnnBatchNormBackwardParams {
@@ -86,7 +88,7 @@ void AssignCommonParams(const HloInstruction* batchnorm,
 template <typename ElemType>
 void RunCudnnBatchNormForwardInferenceImpl(
     CudnnBatchNormForwardInferenceParams* params, se::Stream* stream) {
-  se::DeviceMemory<float> null_device_ptr(nullptr);
+  se::DeviceMemory<ElemType> null_device_ptr(nullptr);
   auto output_buf = se::DeviceMemory<ElemType>(params->output);
   stream->ThenBatchNormalizationForward(
       se::DeviceMemory<ElemType>(params->common.operand),
@@ -129,18 +131,18 @@ void RunCudnnBatchNormForwardTrainingImpl(
   workspace_allocator = allocator(workspace_allocator);
   stream->ThenBatchNormalizationForward(
       se::DeviceMemory<ElemType>(params->common.operand),
-      params->common.scale,                    //
-      params->offset,                          //
-      /*estimated_mean=*/null_device_ptr,      //
-      /*estimated_variance=*/null_device_ptr,  //
-      /*side_input=*/null_device_ptr,          //
-      params->common.operand_desc,             //
-      params->common.scale_offset_desc,        //
-      params->common.epsilon,                  //
+      params->common.scale,                            //
+      params->offset,                                  //
+      /*estimated_mean=*/null_device_ptr,              //
+      /*estimated_variance=*/null_device_ptr,          //
+      se::DeviceMemory<ElemType>(params->side_input),  //
+      params->common.operand_desc,                     //
+      params->common.scale_offset_desc,                //
+      params->common.epsilon,                          //
       // TODO(b/137108598): Extend method to allow use of non-trivial
       // exponential averaging.
       /*exponential_average_factor=*/1.0,
-      se::dnn::ActivationMode::kNone,                //
+      params->activation_mode,                       //
       &output_data,                                  //
       /*batch_mean=*/&null_device_ptr,               //
       /*batch_var=*/&null_device_ptr,                //
@@ -213,9 +215,9 @@ Status RunCudnnBatchNormForwardTraining(
     const HloInstruction* batchnorm, se::DeviceMemoryBase operand,
     se::DeviceMemoryBase output_data, se::DeviceMemory<float> output_mean,
     se::DeviceMemory<float> output_inv_stddev, se::DeviceMemory<float> scale,
-    se::DeviceMemory<float> offset, se::DeviceMemoryBase reserve_space,
-    se::DeviceMemoryBase workspace, float epsilon, int64 feature_index,
-    se::Stream* stream) {
+    se::DeviceMemory<float> offset, se::DeviceMemoryBase side_input,
+    se::DeviceMemoryBase reserve_space, se::DeviceMemoryBase workspace,
+    float epsilon, int64 feature_index, se::Stream* stream) {
   CudnnBatchNormForwardTrainingParams forward_params;
   ScratchBufAllocator reserve_space_scratch_allocator(reserve_space);
   ScratchBufAllocator workspace_scratch_allocator(workspace);
@@ -225,7 +227,15 @@ Status RunCudnnBatchNormForwardTraining(
   forward_params.output_data = output_data;
   forward_params.output_mean = output_mean;
   forward_params.output_inv_stddev = output_inv_stddev;
-
+  forward_params.side_input = side_input;
+  TF_ASSIGN_OR_RETURN(CudnnBatchNormBackendConfig backend_config,
+                      batchnorm->backend_config<CudnnBatchNormBackendConfig>());
+  if (!se::dnn::ActivationMode_IsValid(backend_config.activation_mode())) {
+    return InternalError("Bad activation mode: %s",
+                         backend_config.ShortDebugString());
+  }
+  forward_params.activation_mode =
+      static_cast<se::dnn::ActivationMode>(backend_config.activation_mode());
   PrimitiveType output_primitive_type =
       batchnorm->shape().tuple_shapes(0).element_type();
   switch (output_primitive_type) {
