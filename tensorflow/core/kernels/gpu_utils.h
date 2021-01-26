@@ -460,6 +460,18 @@ void LogFusedConvForwardAutotuneResults(
     double side_value_scale, se::dnn::ActivationMode activation_mode,
     se::StreamExecutor* stream_exec, absl::Span<const AutotuneResult> results);
 
+void LogFusedConvForwardAutotuneResults(
+    se::dnn::DataType element_type, se::DeviceMemoryBase input_buffer,
+    se::DeviceMemoryBase filter_buffer, se::DeviceMemoryBase output_buffer,
+    se::DeviceMemoryBase bias_buffer, se::DeviceMemoryBase side_input_buffer,
+    const se::dnn::BatchDescriptor& input_desc,
+    const se::dnn::FilterDescriptor& filter_desc,
+    const se::dnn::BatchDescriptor& output_desc,
+    const se::dnn::ConvolutionDescriptor& conv_desc, double conv_scale,
+    double side_value_scale, se::dnn::ActivationMode activation_mode,
+    se::StreamExecutor* stream_exec,
+    absl::Span<const AutotuneExecutionPlanResult> results);
+
 // Returns the best algorithms for the config, one is the fastest, the other is
 // other is fastest with 0 scracth space. Unsuccessful autotuning results are
 // allowed and ignored.

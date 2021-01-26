@@ -381,6 +381,15 @@ class StreamExecutor {
       const dnn::ConvolutionDescriptor &convolution_descriptor,
       std::vector<cudnn_frontend::ExecutionPlan> *out_exec_plans);
 
+  bool GetFusedConvolveExecutionPlans(
+      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream *stream,
+      const dnn::BatchDescriptor &input_descriptor,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const dnn::BatchDescriptor &output_descriptor,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      std::vector<cudnn_frontend::ExecutionPlan> *out_exec_plans);
+
   // Returns the list of supported algorithms for rnn operation.
   bool GetRnnAlgorithms(std::vector<dnn::AlgorithmDesc> *out_algorithms);
 

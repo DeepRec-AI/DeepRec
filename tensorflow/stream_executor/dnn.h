@@ -1416,6 +1416,103 @@ class DnnSupport {
     return false;
   }
 
+  virtual port::Status DoFusedConvolve(
+      Stream* stream, const dnn::BatchDescriptor& conv_input_descriptor,
+      const DeviceMemory<double>& conv_input_data, double conv_input_scale,
+      const dnn::FilterDescriptor& filter_descriptor,
+      const DeviceMemory<double>& filter_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      const DeviceMemory<double>& side_input_data, double side_input_scale,
+      const dnn::BatchDescriptor& bias_descriptor,
+      const DeviceMemory<double>& biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemory<double>* output_data, ScratchAllocator* scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult* output_profile_result) {
+    return port::UnimplementedError(
+        "DnnSupport::DoFusedConvolve not implemented on this platform.");
+  }
+
+  // This is the float version of DoFusedConvolve.
+  virtual port::Status DoFusedConvolve(
+      Stream* stream, const dnn::BatchDescriptor& conv_input_descriptor,
+      const DeviceMemory<float>& conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor& filter_descriptor,
+      const DeviceMemory<float>& filter_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      const DeviceMemory<float>& side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor& bias_descriptor,
+      const DeviceMemory<float>& biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemory<float>* output_data, ScratchAllocator* scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult* output_profile_result) {
+    return port::UnimplementedError(
+        "DnnSupport::DoFusedConvolve not implemented on this platform.");
+  }
+
+  // This is the Eigen::half version of DoFusedConvolve.
+  // The scaling parameters are still floats.
+  virtual port::Status DoFusedConvolve(
+      Stream* stream, const dnn::BatchDescriptor& conv_input_descriptor,
+      const DeviceMemory<Eigen::half>& conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor& filter_descriptor,
+      const DeviceMemory<Eigen::half>& filter_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      const DeviceMemory<Eigen::half>& side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor& bias_descriptor,
+      const DeviceMemory<Eigen::half>& biases,
+      dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemory<Eigen::half>* output_data,
+      ScratchAllocator* scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult* output_profile_result) {
+    return port::UnimplementedError(
+        "DnnSupport::DoFusedConvolve not implemented on this platform.");
+  }
+
+  // This is the int8 version of DoFusedConvolve.
+  // The bias input and scaling parameters are floats.
+  virtual port::Status DoFusedConvolve(
+      Stream* stream, const dnn::BatchDescriptor& conv_input_descriptor,
+      const DeviceMemory<int8>& conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor& filter_descriptor,
+      const DeviceMemory<int8>& filter_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      const DeviceMemory<int8>& side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor& bias_descriptor,
+      const DeviceMemory<float>& biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemory<int8>* output_data, ScratchAllocator* scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult* output_profile_result) {
+    return port::UnimplementedError(
+        "DnnSupport::DoFusedConvolve not implemented on this platform.");
+  }
+
+  // This is the int8 version of DoFusedConvolve.
+  // The output, bias input and scaling parameters are floats.
+  virtual port::Status DoFusedConvolve(
+      Stream* /*stream*/, const dnn::BatchDescriptor& /*conv_input_descriptor*/,
+      const DeviceMemory<int8>& /*conv_input_data*/, float /*conv_input_scale*/,
+      const dnn::FilterDescriptor& /*filter_descriptor*/,
+      const DeviceMemory<int8>& /*filter_data*/,
+      const dnn::ConvolutionDescriptor& /*convolution_descriptor*/,
+      const DeviceMemory<float>& /*side_input_data*/,
+      float /*side_input_scale*/,
+      const dnn::BatchDescriptor& /*bias_descriptor*/,
+      const DeviceMemory<float>& /*biases*/,
+      dnn::ActivationMode /*activation_mode*/,
+      const dnn::BatchDescriptor& /*output_descriptor*/,
+      DeviceMemory<float>* /*output_data*/,
+      ScratchAllocator* /*scratch_allocator*/,
+      const dnn::ExecutionPlanConfig& /*plan_config*/,
+      dnn::ProfileExecutionPlanResult* /*output_profile_result*/) {
+    return port::UnimplementedError(
+        "DnnSupport::DoFusedConvolve not implemented on this platform.");
+  }
+
   template <typename ElementType, typename OutputType>
   port::Status PrepareForConvolution(
       ConvolutionKind kind, Stream* stream,
@@ -1541,6 +1638,15 @@ class DnnSupport {
       dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
       const dnn::BatchDescriptor& input_descriptor,
       const dnn::FilterDescriptor& filter_descriptor,
+      const dnn::BatchDescriptor& output_descriptor,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      std::vector<cudnn_frontend::ExecutionPlan>* out_exec_plans);
+
+  virtual bool GetFusedConvolveExecutionPlans(
+      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream* stream,
+      const dnn::BatchDescriptor& input_descriptor,
+      const dnn::FilterDescriptor& filter_descriptor,
+      const dnn::BatchDescriptor& bias_descriptor,
       const dnn::BatchDescriptor& output_descriptor,
       const dnn::ConvolutionDescriptor& convolution_descriptor,
       std::vector<cudnn_frontend::ExecutionPlan>* out_exec_plans);

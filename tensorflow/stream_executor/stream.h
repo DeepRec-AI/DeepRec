@@ -558,6 +558,77 @@ class Stream {
       const dnn::AlgorithmConfig &algorithm_config,
       dnn::ProfileResult *output_profile_result);
 
+  port::Status FusedConvolveWithExecutionPlan(
+      const dnn::BatchDescriptor &conv_input_descriptor,
+      const DeviceMemory<double> &conv_input_data, double conv_input_scale,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const DeviceMemory<double> &filter_data,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      const DeviceMemory<double> &side_input_data, double side_input_scale,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const DeviceMemory<double> &biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor &output_descriptor,
+      DeviceMemory<double> *output, ScratchAllocator *scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult *output_profile_result);
+
+  port::Status FusedConvolveWithExecutionPlan(
+      const dnn::BatchDescriptor &conv_input_descriptor,
+      const DeviceMemory<float> &conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const DeviceMemory<float> &filter_data,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      const DeviceMemory<float> &side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const DeviceMemory<float> &biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor &output_descriptor,
+      DeviceMemory<float> *output, ScratchAllocator *scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult *output_profile_result);
+
+  port::Status FusedConvolveWithExecutionPlan(
+      const dnn::BatchDescriptor &conv_input_descriptor,
+      const DeviceMemory<Eigen::half> &conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const DeviceMemory<Eigen::half> &filter_data,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      const DeviceMemory<Eigen::half> &side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const DeviceMemory<Eigen::half> &biases,
+      dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor &output_descriptor,
+      DeviceMemory<Eigen::half> *output, ScratchAllocator *scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult *output_profile_result);
+
+  port::Status FusedConvolveWithExecutionPlan(
+      const dnn::BatchDescriptor &conv_input_descriptor,
+      const DeviceMemory<int8> &conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const DeviceMemory<int8> &filter_data,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      const DeviceMemory<int8> &side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const DeviceMemory<float> &biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor &output_descriptor, DeviceMemory<int8> *output,
+      ScratchAllocator *scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult *output_profile_result);
+
+  port::Status FusedConvolveWithExecutionPlan(
+      const dnn::BatchDescriptor &conv_input_descriptor,
+      const DeviceMemory<int8> &conv_input_data, float conv_input_scale,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const DeviceMemory<int8> &filter_data,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      const DeviceMemory<float> &side_input_data, float side_input_scale,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const DeviceMemory<float> &biases, dnn::ActivationMode activation_mode,
+      const dnn::BatchDescriptor &output_descriptor,
+      DeviceMemory<float> *output, ScratchAllocator *scratch_allocator,
+      const dnn::ExecutionPlanConfig &plan_config,
+      dnn::ProfileExecutionPlanResult *output_profile_result);
+
   Stream &ThenSeparableConvolve(
       const dnn::BatchDescriptor &input_descriptor,
       const DeviceMemory<float> &input_data,

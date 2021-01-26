@@ -172,6 +172,54 @@ void LogConvAutotuneResultsImpl(se::dnn::ConvolutionKind kind,
   Logger::GetSingleton()->LogProto(log);
 }
 
+template<typename TResult, typename TLog>
+void LogFusedConvForwardAutotuneResultsImpl(
+    se::dnn::DataType element_type, se::DeviceMemoryBase input_buffer,
+    se::DeviceMemoryBase filter_buffer, se::DeviceMemoryBase output_buffer,
+    se::DeviceMemoryBase bias_buffer, se::DeviceMemoryBase side_input_buffer,
+    const se::dnn::BatchDescriptor& input_desc,
+    const se::dnn::FilterDescriptor& filter_desc,
+    const se::dnn::BatchDescriptor& output_desc,
+    const se::dnn::ConvolutionDescriptor& conv_desc, double conv_scale,
+    double side_value_scale, se::dnn::ActivationMode activation_mode,
+    se::StreamExecutor* stream_exec, absl::Span<const TResult> results) {
+  TLog log;
+  {
+    ConvolutionProto instr;
+    instr.set_kind(se::dnn::ConvolutionKind::FORWARD_BIAS_ACTIVATION);
+    *instr.mutable_input() = input_desc.ToProto(element_type);
+    *instr.mutable_filter() = filter_desc.ToProto(element_type);
+    *instr.mutable_output() = output_desc.ToProto(element_type);
+    *instr.mutable_conv_desc() = conv_desc.ToProto();
+    instr.set_conv_scale(conv_scale);
+    instr.set_side_value_scale(side_value_scale);
+    instr.set_activation(activation_mode);
+    instr.set_input_address(reinterpret_cast<uint64>(input_buffer.opaque()));
+    instr.set_filter_address(reinterpret_cast<uint64>(filter_buffer.opaque()));
+    instr.set_output_address(reinterpret_cast<uint64>(output_buffer.opaque()));
+    instr.set_bias_address(reinterpret_cast<uint64>(bias_buffer.opaque()));
+    instr.set_side_input_address(
+        reinterpret_cast<uint64>(side_input_buffer.opaque()));
+    log.mutable_instr()->PackFrom(std::move(instr));
+  }
+  *log.mutable_cudnn_version() = GetCudnnVersion(stream_exec);
+  *log.mutable_compute_capability() = GetComputeCapability(stream_exec);
+  log.set_device_pci_bus_id(stream_exec->GetDeviceDescription().pci_bus_id());
+  {
+    string blas_version;
+    if (auto* blas = stream_exec->AsBlas()) {
+      if (blas->GetVersion(&blas_version).ok()) {
+        log.set_blas_version(blas_version);
+      }
+    }
+  }
+  for (const auto& result : results) {
+    *log.add_results() = result;
+  }
+  VLOG(2) << log.DebugString();
+  Logger::GetSingleton()->LogProto(log);
+}
+
 }  // namespace
 
 void LogConvAutotuneResults(se::dnn::ConvolutionKind kind,
@@ -215,40 +263,28 @@ void LogFusedConvForwardAutotuneResults(
     const se::dnn::ConvolutionDescriptor& conv_desc, double conv_scale,
     double side_value_scale, se::dnn::ActivationMode activation_mode,
     se::StreamExecutor* stream_exec, absl::Span<const AutotuneResult> results) {
-  AutotuningLog log;
-  {
-    ConvolutionProto instr;
-    instr.set_kind(se::dnn::ConvolutionKind::FORWARD_BIAS_ACTIVATION);
-    *instr.mutable_input() = input_desc.ToProto(element_type);
-    *instr.mutable_filter() = filter_desc.ToProto(element_type);
-    *instr.mutable_output() = output_desc.ToProto(element_type);
-    *instr.mutable_conv_desc() = conv_desc.ToProto();
-    instr.set_conv_scale(conv_scale);
-    instr.set_side_value_scale(side_value_scale);
-    instr.set_activation(activation_mode);
-    instr.set_input_address(reinterpret_cast<uint64>(input_buffer.opaque()));
-    instr.set_filter_address(reinterpret_cast<uint64>(filter_buffer.opaque()));
-    instr.set_output_address(reinterpret_cast<uint64>(output_buffer.opaque()));
-    instr.set_bias_address(reinterpret_cast<uint64>(bias_buffer.opaque()));
-    instr.set_side_input_address(
-        reinterpret_cast<uint64>(side_input_buffer.opaque()));
-    log.mutable_instr()->PackFrom(std::move(instr));
-  }
-  *log.mutable_cudnn_version() = GetCudnnVersion(stream_exec);
-  *log.mutable_compute_capability() = GetComputeCapability(stream_exec);
-  log.set_device_pci_bus_id(stream_exec->GetDeviceDescription().pci_bus_id());
-  {
-    string blas_version;
-    if (auto* blas = stream_exec->AsBlas()) {
-      if (blas->GetVersion(&blas_version).ok()) {
-        log.set_blas_version(blas_version);
-      }
-    }
-  }
-  for (const auto& result : results) {
-    *log.add_results() = result;
-  }
-  Logger::GetSingleton()->LogProto(log);
+  LogFusedConvForwardAutotuneResultsImpl<AutotuneResult, AutotuningLog>(
+      element_type, input_buffer, filter_buffer, output_buffer, bias_buffer,
+      side_input_buffer, input_desc, filter_desc, output_desc, conv_desc,
+      conv_scale, side_value_scale, activation_mode, stream_exec, results);
+}
+
+void LogFusedConvForwardAutotuneResults(
+    se::dnn::DataType element_type, se::DeviceMemoryBase input_buffer,
+    se::DeviceMemoryBase filter_buffer, se::DeviceMemoryBase output_buffer,
+    se::DeviceMemoryBase bias_buffer, se::DeviceMemoryBase side_input_buffer,
+    const se::dnn::BatchDescriptor& input_desc,
+    const se::dnn::FilterDescriptor& filter_desc,
+    const se::dnn::BatchDescriptor& output_desc,
+    const se::dnn::ConvolutionDescriptor& conv_desc, double conv_scale,
+    double side_value_scale, se::dnn::ActivationMode activation_mode,
+    se::StreamExecutor* stream_exec,
+    absl::Span<const AutotuneExecutionPlanResult> results) {
+  LogFusedConvForwardAutotuneResultsImpl<AutotuneExecutionPlanResult,
+                                         AutotuningExecutionPlanLog>(
+      element_type, input_buffer, filter_buffer, output_buffer, bias_buffer,
+      side_input_buffer, input_desc, filter_desc, output_desc, conv_desc,
+      conv_scale, side_value_scale, activation_mode, stream_exec, results);
 }
 
 Status BestCudnnConvAlgorithm(absl::Span<const AutotuneResult> results,

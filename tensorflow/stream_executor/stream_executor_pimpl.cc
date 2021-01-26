@@ -306,6 +306,24 @@ bool StreamExecutor::GetConvolveExecutionPlans(
       output_descriptor, convolution_descriptor, out_exec_plans);
 }
 
+bool StreamExecutor::GetFusedConvolveExecutionPlans(
+    dnn::ConvolutionKind kind, dnn::DataType element_type, Stream *stream,
+    const dnn::BatchDescriptor &input_descriptor,
+    const dnn::FilterDescriptor &filter_descriptor,
+    const dnn::BatchDescriptor &bias_descriptor,
+    const dnn::BatchDescriptor &output_descriptor,
+    const dnn::ConvolutionDescriptor &convolution_descriptor,
+    std::vector<cudnn_frontend::ExecutionPlan> *out_exec_plans) {
+  dnn::DnnSupport *dnn_support = AsDnn();
+  if (!dnn_support) {
+    return false;
+  }
+  return dnn_support->GetFusedConvolveExecutionPlans(
+      kind, element_type, stream, input_descriptor, filter_descriptor,
+      bias_descriptor, output_descriptor, convolution_descriptor,
+      out_exec_plans);
+}
+
 bool StreamExecutor::GetRnnAlgorithms(
     std::vector<dnn::AlgorithmDesc> *out_algorithms) {
   dnn::DnnSupport *dnn_support = AsDnn();
