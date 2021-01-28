@@ -123,6 +123,20 @@ class IFeatureStoreMgr {
  public:
   virtual ~IFeatureStoreMgr() {}
 
+  virtual Status GetStorageMeta(StorageMeta* meta) = 0;
+  virtual void GetStorageOptions(StorageMeta& meta,
+                                 StorageOptions** cur_opt,
+                                 StorageOptions** bak_opt) = 0;
+  virtual Status SetStorageActiveStatus(bool active) = 0;
+  virtual Status GetModelVersion(int64_t* full_version,
+                                 int64_t* latest_version) = 0;
+  virtual Status SetModelVersion(int64_t full_version,
+                                 int64_t latest_version) = 0;
+
+  virtual Status GetStorageLock(int value, int timeout,
+                                bool* success) = 0;
+  virtual Status ReleaseStorageLock(int value) = 0;
+
   virtual Status GetValues(uint64_t model_version,
                            uint64_t feature2id,
                            const char* const keys,
@@ -149,6 +163,22 @@ class FeatureStoreMgr : public IFeatureStoreMgr {
  public:
   explicit FeatureStoreMgr(ModelConfig* config);
   virtual ~FeatureStoreMgr();
+
+  Status GetStorageMeta(StorageMeta* meta) override;
+
+  void GetStorageOptions(StorageMeta& meta,
+                         StorageOptions** cur_opt,
+                         StorageOptions** bak_opt) override;
+
+  Status SetStorageActiveStatus(bool active) override;
+  Status GetModelVersion(int64_t* full_version,
+                         int64_t* latest_version) override;
+  Status SetModelVersion(int64_t full_version,
+                         int64_t latest_version) override;
+
+  Status GetStorageLock(int value, int timeout,
+                        bool* success) override;
+  Status ReleaseStorageLock(int value) override;
 
   Status GetValues(uint64_t model_version,
                    uint64_t feature2id,
@@ -178,6 +208,7 @@ class FeatureStoreMgr : public IFeatureStoreMgr {
   std::mutex update_mutex_[MANAGER_MAX_UPDATE_THREAD_NUM];
   std::vector<FeatureStore*> store_; // one connection per store
   std::vector<FeatureStore*> update_store_;
+  std::string storage_type_;
 };
 
 } // processor

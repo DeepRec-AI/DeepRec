@@ -142,6 +142,52 @@ void CleanupCallback(redisAsyncContext *ac, void *r, void *privdata) {
   wrapper->done = true;
   return;
 }
+
+Status GetRedisMeta(redisContext *c, int db, StorageMeta *meta) {
+  std::string select_db_cmd = "SELECT " + std::to_string(db);
+  redisReply *reply = (redisReply *)redisCommand(c, select_db_cmd.c_str());
+  if (REDIS_REPLY_STATUS != reply->type) {
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisCommand-SELECT failed. " +
+        std::string(reply->str));
+  }
+  freeReplyObject(reply);
+
+  std::string get_active_cmd = "GET active";
+  reply = (redisReply *)redisCommand(c, get_active_cmd.c_str());
+  if (REDIS_REPLY_NIL == reply->type) {
+    meta->active.push_back(false);
+  } else if (REDIS_REPLY_STRING == reply->type) {
+    if (std::string(reply->str) == "0") {
+      meta->active.push_back(false);
+    } else {
+      meta->active.push_back(true);
+    }
+  } else {
+    freeReplyObject(reply);
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisCommand-GET active failed. " +
+        std::string(reply->str));
+  }
+  freeReplyObject(reply);
+
+  std::string get_model_version_cmd = "GET model_version";
+  reply = (redisReply *)redisCommand(c, get_model_version_cmd.c_str());
+  if (REDIS_REPLY_NIL == reply->type) {
+    meta->model_version.push_back(-1);
+  } else if (REDIS_REPLY_STRING != reply->type) {
+    freeReplyObject(reply);
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisCommand-GET model_version failed. " +
+        std::string(reply->str));
+  } else {
+    meta->model_version.push_back(atoll(reply->str));
+  }
+  freeReplyObject(reply);
+
+  return Status::OK();
+}
+
 } // anonymous namespace
 
 LocalRedis::LocalRedis(const Config& config)
@@ -174,6 +220,130 @@ LocalRedis::~LocalRedis() {
   LOG(INFO) << "~LocalRedis";
 }
 
+Status LocalRedis::GetStorageMeta(StorageMeta* meta) {
+  // currently need to get 'active' and 'model_version'
+  // of redis db-0 and db-1.
+  // db-0
+  StorageMeta tmp0;
+  Status s = GetRedisMeta(c_, 0, &tmp0);
+  if (!s.ok()) return s;
+  meta->active.push_back(tmp0.active[0]);
+  meta->model_version.push_back(tmp0.model_version[0]);
+
+  // db-1
+  StorageMeta tmp1;
+  s = GetRedisMeta(c_, 1, &tmp1);
+  if (!s.ok()) return s;
+  meta->active.push_back(tmp1.active[0]);
+  meta->model_version.push_back(tmp1.model_version[0]);
+
+  return Status::OK();
+}
+
+Status LocalRedis::SetActiveStatus(bool active) {
+  std::string set_active_cmd("SET active 0");
+  if (active) {
+    set_active_cmd = "SET active 1";
+  }
+  redisReply* reply = (redisReply *)redisCommand(
+      c_, set_active_cmd.c_str());
+  if (REDIS_REPLY_STATUS != reply->type) {
+    freeReplyObject(reply);
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisCommand-SET active failed. " +
+        std::string(reply->str));
+  }
+  freeReplyObject(reply);
+
+  return Status::OK();
+}
+
+Status LocalRedis::GetModelVersion(int64_t* full_version,
+                                   int64_t* latest_version) {
+  std::string cmd("GET model_version");
+  redisReply* reply = (redisReply *)redisCommand(c_, cmd.c_str());
+  if (REDIS_REPLY_NIL == reply->type) {
+    *full_version = -1;
+    *latest_version = -1;
+  } else if (REDIS_REPLY_STRING == reply->type) {
+    std::string str(reply->str);
+    if (str.find(",") == std::string::npos) {
+      freeReplyObject(reply);
+      return Status(error::Code::INTERNAL,
+          "[Redis] Parse model_version failed. " +
+          std::string(reply->str));
+    }
+    auto offset = str.find(",");
+    *full_version = atoll(str.substr(0, offset).c_str());
+    *latest_version = atoll(str.substr(offset+1).c_str());
+  } else {
+    freeReplyObject(reply);
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisCommand-Get model_version failed. " +
+        std::string(reply->str));
+  }
+  freeReplyObject(reply);
+
+  return Status::OK();
+}
+
+Status LocalRedis::SetModelVersion(int64_t full_version,
+                                   int64_t latest_version) {
+  std::string cmd = "SET model_version " +
+                    std::to_string(full_version) +
+                    "," + std::to_string(latest_version);
+  redisReply* reply = (redisReply *)redisCommand(
+      c_, cmd.c_str());
+  if (REDIS_REPLY_STATUS != reply->type) {
+    freeReplyObject(reply);
+    return Status(error::Code::INTERNAL,
+        "[Redis] run redisCommand-SET model_version failed. " +
+        std::string(reply->str));
+  }
+  freeReplyObject(reply);
+
+  return Status::OK();
+}
+
+// NOTE:(jiankeng.pt) The distributed lock only suit for
+// single master case. Of course the cluster can have
+// many slave nodes.
+Status LocalRedis::GetStorageLock(
+    int value, int timeout, bool* success) {
+  *success = false;
+  std::string cmd = "set model_lock " + std::to_string(value) +
+                    " ex " + std::to_string(timeout) + " nx";
+  redisReply* reply =
+      (redisReply *)redisCommand(c_, cmd.c_str());
+  if(reply->type != REDIS_REPLY_NIL &&
+     string(reply->str) == "OK") {
+    LOG(INFO) << "Get redis lock successful.";
+    *success = true;
+  }
+  freeReplyObject(reply);
+
+  return Status::OK();
+}
+
+Status LocalRedis::ReleaseStorageLock(int value) {
+  char script[] = "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                  "return redis.call('del', KEYS[1]) else return 0 end";
+
+  std::string value_str = std::to_string(value);
+  redisReply* reply = (redisReply *)redisCommand(
+      c_, "eval %s %d %s %s", script, 1,
+      "model_lock", value_str.c_str());
+
+  if (reply->type == REDIS_REPLY_INTEGER &&
+      reply->integer == 1) {
+    LOG(INFO) << "Release redis lock successful.";
+  } else {
+    LOG(INFO) << "Release redis lock failed.";
+  }
+
+  return Status::OK();
+}
+ 
 Status LocalRedis::Cleanup() {
   redisReply *r= (redisReply *)redisCommand(c_, "FLUSHDB");
   if (REDIS_REPLY_STATUS == r->type) {
@@ -183,6 +353,7 @@ Status LocalRedis::Cleanup() {
     return Status(error::Code::INTERNAL,
         "[Redis] run redisCommand-FLUSHDB failed. " + std::string(r->str));
   }
+  freeReplyObject(r);
 }
 
 Status LocalRedis::BatchGet(uint64_t model_version,

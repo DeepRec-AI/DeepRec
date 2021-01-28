@@ -6,6 +6,7 @@
 #include "odl_processor/framework/model_version.h"
 #include "odl_processor/serving/model_message.h"
 #include "odl_processor/serving/model_config.h"
+#include "odl_processor/storage/feature_store.h"
 #include <thread>
 #include <atomic>
 
@@ -51,28 +52,20 @@ class SingleSessionInstance {
   Version version_;
 };
 
-struct StorageOptions {
-  // for redis, connection will select DB 0~16
-  size_t serving_storage_db_index_;
-  size_t backup_storage_db_index_;
-
-  StorageOptions(size_t serving_db_idx, size_t backup_db_idx)
-      : serving_storage_db_index_(serving_db_idx),
-        backup_storage_db_index_(backup_db_idx) {}
-};
-
 class MultipleSessionInstance {
  public:
   MultipleSessionInstance(SessionOptions* sess_options,
                           RunOptions* run_options,
                           StorageOptions* storage_options);
   Status Init(ModelConfig* config,
-      ModelStore* model_store);
+      ModelStore* model_store, bool active);
 
   Status Predict(Request& req, Response& resp);
 
-  Status FullModelUpdate(const Version& version);
-  Status DeltaModelUpdate(const Version& version);
+  Status FullModelUpdate(const Version& version,
+                         ModelConfig* model_config);
+  Status DeltaModelUpdate(const Version& version,
+                          ModelConfig* model_config);
   Status Warmup();
 
   Version GetVersion() { return version_; }
@@ -83,7 +76,8 @@ class MultipleSessionInstance {
   Status ReadModelSignature(ModelConfig* model_config);
 
   Status RecursionCreateSession(const Version& version,
-      IFeatureStoreMgr* sparse_storge);
+      IFeatureStoreMgr* sparse_storge,
+      ModelConfig* model_config);
 
  private:
   MetaGraphDef meta_graph_def_;
@@ -147,10 +141,13 @@ class ODLInstanceMgr : public IModelInstanceMgr {
 
  private:
   Status CreateInstances();
-  Status FullModelUpdate(const Version& version);
-  Status DeltaModelUpdate(const Version& version);
+  Status FullModelUpdate(const Version& version,
+                         ModelConfig* model_config);
+  Status DeltaModelUpdate(const Version& version,
+                          ModelConfig* model_config);
   
-  Status ModelUpdate(const Version& version);
+  Status ModelUpdate(const Version& version,
+                     ModelConfig* model_config);
 
  private:
   volatile bool is_stop_ = false;

@@ -131,6 +131,17 @@ FeatureStore* CreateFeatureStore(ModelConfig* config) {
 
   return nullptr;
 }
+
+#define CALL_BY_UPDATE_THREAD(fn, ...)                        \
+  do {                                                        \
+    uint64_t index = active_update_thread_index_++;           \
+    index %= update_thread_num_;                              \
+    {                                                         \
+      std::lock_guard<std::mutex> lock(update_mutex_[index]); \
+      return update_store_[index]->fn(__VA_ARGS__);           \
+    }                                                         \
+  } while(0)
+
 } // namespace
 
 AsyncFeatureStoreMgr::AsyncFeatureStoreMgr(ModelConfig* config, WorkFn fn) :
@@ -309,7 +320,8 @@ FeatureStoreMgr::FeatureStoreMgr(ModelConfig* config)
   : thread_num_(config->read_thread_num),
     update_thread_num_(config->update_thread_num),
     active_thread_index_(0),
-    active_update_thread_index_(0) {
+    active_update_thread_index_(0),
+    storage_type_(config->feature_store_type) {
   if (thread_num_ < 1 || thread_num_ > MANAGER_MAX_THREAD_NUM) {
     LOG(FATAL) << "Invalid IO thread num, required [1, 96], get "
                << thread_num_;
@@ -397,6 +409,69 @@ Status FeatureStoreMgr::Reset() {
     std::lock_guard<std::mutex> lock(update_mutex_[index]);
     return update_store_[index]->Cleanup();
   }
+}
+
+Status FeatureStoreMgr::GetStorageMeta(StorageMeta* meta) {
+  uint64_t index = active_update_thread_index_++;
+  index %= update_thread_num_;
+  {
+    std::lock_guard<std::mutex> lock(update_mutex_[index]);
+    return update_store_[index]->GetStorageMeta(meta);
+  }
+}
+
+void FeatureStoreMgr::GetStorageOptions(
+    StorageMeta& meta,
+    StorageOptions** cur_opt,
+    StorageOptions** bak_opt) {
+  // Redis
+  if (storage_type_.find("redis") != std::string::npos) {
+    // NOTE:(jiankeng.pt) now only consider db-0 and db-1
+    int cur_db, bak_db;
+    bool is_init_storage = false;
+    if (!meta.active[0] && !meta.active[1]) {
+      cur_db = 0;
+      bak_db = 1;
+      is_init_storage = true;
+    } else if (meta.active[0]) {
+      cur_db = 0;
+      bak_db = 1;
+    } else {
+      cur_db = 1;
+      bak_db = 0;
+    }
+    *cur_opt = new StorageOptions(cur_db, cur_db,
+                                  is_init_storage);
+    *bak_opt = new StorageOptions(bak_db, bak_db,
+                                  is_init_storage);
+  }
+}
+
+Status FeatureStoreMgr::SetStorageActiveStatus(
+    bool active) {
+  CALL_BY_UPDATE_THREAD(SetActiveStatus, active);
+}
+
+Status FeatureStoreMgr::GetModelVersion(int64_t* full_version,
+                                        int64_t* latest_version) {
+  CALL_BY_UPDATE_THREAD(GetModelVersion, full_version,
+                        latest_version);
+}
+
+Status FeatureStoreMgr::SetModelVersion(
+    int64_t full_version, int64_t latest_version) {
+  CALL_BY_UPDATE_THREAD(SetModelVersion, full_version,
+                        latest_version);
+}
+
+Status FeatureStoreMgr::GetStorageLock(
+    int value, int timeout, bool* success) {
+  CALL_BY_UPDATE_THREAD(GetStorageLock, value,
+                        timeout, success);
+}
+
+Status FeatureStoreMgr::ReleaseStorageLock(int value) {
+  CALL_BY_UPDATE_THREAD(ReleaseStorageLock, value);
 }
 
 } // processor

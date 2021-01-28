@@ -27,6 +27,16 @@ class LocalRedis : public FeatureStore {
     LocalRedis(const Config& config);
     ~LocalRedis();
 
+    Status GetStorageMeta(StorageMeta* meta);
+    Status SetActiveStatus(bool active);
+    Status GetModelVersion(int64_t* full_version,
+                           int64_t* latest_version);
+    Status SetModelVersion(int64_t full_version,
+                           int64_t latest_version);
+    Status GetStorageLock(int value, int timeout,
+                          bool* success);
+    Status ReleaseStorageLock(int value);
+ 
     Status Cleanup();
 
     Status BatchGet(uint64_t model_version,

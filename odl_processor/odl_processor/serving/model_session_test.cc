@@ -140,6 +140,38 @@ class FakeFeatureStoreMgr : public IFeatureStoreMgr {
   Status Reset() override {
     return Status::OK();
   }
+
+  Status GetStorageMeta(StorageMeta* meta) {
+    return Status::OK();
+  }
+
+  void GetStorageOptions(StorageMeta& meta,
+                         StorageOptions** cur_opt,
+                         StorageOptions** bak_opt) {
+  }
+
+  Status SetStorageActiveStatus(bool active) {
+    return Status::OK();
+  }
+
+  Status GetModelVersion(int64_t* full_version,
+                         int64_t* latest_version) {
+    return Status::OK();
+  }
+
+  Status SetModelVersion(int64_t full_version,
+                         int64_t latest_version) {
+    return Status::OK();
+  }
+
+  Status GetStorageLock(int value, int timeout,
+                        bool* success) {
+    return Status::OK();
+  }
+
+  Status ReleaseStorageLock(int value) {
+    return Status::OK();
+  }
 };
 
 class TestableModelSessionMgr : public ModelSessionMgr {
@@ -171,9 +203,11 @@ class TestableModelSessionMgr : public ModelSessionMgr {
     return serving_session_;
   }
 
-  Status RunRestoreOps(const char* ckpt_name, int64 full_ckpt_version,
+  Status RunRestoreOps(
+      const char* ckpt_name, int64 full_ckpt_version,
       const char* savedmodel_dir, Session* session,
-      IFeatureStoreMgr* sparse_storage, bool incr_ckpt) override {
+      IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt,
+      bool update_sparse, int64_t latest_version) override {
     return Status::OK();
   }
 };
@@ -188,7 +222,7 @@ TEST_F(ModelSessionMgrTest, CreateModelSessionReturnStatusOK) {
   ModelConfig config = CreateValidModelConfig();
   FakeFeatureStoreMgr feature_store(&config);
   EXPECT_TRUE(mgr.CreateModelSession(version, config.checkpoint_dir.c_str(),
-        &feature_store).ok());
+        &feature_store, false, false, &config).ok());
 }
 
 TEST_F(ModelSessionMgrTest, CreateModelSessionWhenPrevServingDone) {
@@ -202,7 +236,7 @@ TEST_F(ModelSessionMgrTest, CreateModelSessionWhenPrevServingDone) {
   
   Version version_0;
   EXPECT_TRUE(mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
-        &feature_store).ok());
+        &feature_store, false, false, &config).ok());
   
   EXPECT_EQ(1, mgr.GetModelSessionSize());
   auto prev_serving_session = mgr.GetServingSession();
@@ -212,7 +246,7 @@ TEST_F(ModelSessionMgrTest, CreateModelSessionWhenPrevServingDone) {
   EXPECT_TRUE(mgr.Predict(req, resp).ok());
 
   EXPECT_TRUE(mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
-        &feature_store).ok());
+        &feature_store, false, false, &config).ok());
 
   EXPECT_EQ(1, mgr.GetModelSessionSize());
 
@@ -230,7 +264,7 @@ TEST_F(ModelSessionMgrTest, CleanupModelSessionWhenNoRequest) {
   
   Version version_0;
   EXPECT_TRUE(mgr.CreateModelSession(version_0, config.checkpoint_dir.c_str(),
-        &feature_store).ok());
+        &feature_store, false, false, &config).ok());
   
   EXPECT_EQ(1, mgr.GetModelSessionSize());
 
