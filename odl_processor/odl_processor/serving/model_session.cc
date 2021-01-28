@@ -1,3 +1,4 @@
+#include <random>
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/serving/model_message.h"
 #include "odl_processor/storage/model_store.h"
@@ -9,10 +10,21 @@
 #include "tensorflow/cc/saved_model/constants.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
+#include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
 
 namespace tensorflow {
+namespace processor {
+
 namespace {
+constexpr int _30_Seconds = 30;
+
+int GetRandomNum() {
+  std::random_device device("/dev/urandom");
+  std::mt19937 r(device());
+  return r();
+}
+
 Status GetAssetFileDefs(const MetaGraphDef& meta_graph_def,
                         std::vector<AssetFileDef>* asset_file_defs) {
   const auto& collection_def_map = meta_graph_def.collection_def();
@@ -113,13 +125,98 @@ Status RunMainOp(const RunOptions& run_options, const string& export_dir,
   return Status::OK();
 }
 
+void ModifyPathName(std::string* path, int version) {
+  // Full  ckpt: /you_path/model.ckpt-num
+  // Delta ckpt: /you_path/incremental_model.ckpt-num
+  int len = path->length(), i;
+  for (i = len - 1; len >= 0; --i) {
+    if ((*path)[i] == '-') break;
+  }
+  *path = path->substr(0, i+1);
+  *path += std::to_string(version);
+}
+
+void MaybeUpdateRealVersion(Version* version, int64_t full_version,
+                            int latest_version) {
+  if (version->full_ckpt_version != full_version) {
+    version->full_ckpt_version = full_version;
+    ModifyPathName(&version->full_ckpt_name, full_version);
+  }
+
+  if (version->delta_ckpt_version != latest_version) {
+    version->delta_ckpt_version = latest_version;
+    // No delta version
+    if (latest_version == 0) {
+      version->delta_ckpt_name = "";
+    } else {
+      ModifyPathName(&version->delta_ckpt_name, latest_version);
+    }
+  }
+}
+
+int LockOrWait(int64_t latest_version,
+               IFeatureStoreMgr* sparse_storage,
+               Version* real_version,
+               ModelConfig* config, bool* locked) {
+  *locked = false;
+
+  // Only one instance can get the distribute lock,
+  // other instances should wait here,
+  // and check the model version in the storage.
+  // Wait here when the lock timeout is not reached.
+  // If lock timeout, other instances should
+  // try to get the lock again.
+  do {
+    auto lock_value = GetRandomNum();
+    Status status = sparse_storage->GetStorageLock(
+        lock_value, config->lock_timeout, locked);
+    if (status.ok() && locked) {
+      return lock_value;
+    }
+    *locked = false;
+
+    // WAIT and CHECK version in the storage
+    int64_t curr_full_version = -1;
+    int64_t model_version = -1;
+    int time_cost = 0;
+    // try util lock timeout
+    while (time_cost < config->lock_timeout) {
+      // check model_version from storage like redis.
+      status = sparse_storage->GetModelVersion(
+          &curr_full_version, &model_version);
+      if (!status.ok()) {
+        LOG(WARNING) << "Check latest version error, will try again.";
+      } else {
+        LOG(INFO) << "Waiting for the latest model to be updated. version is "
+                  << latest_version << ", current redis model version is "
+                  << model_version;
+        if (model_version >= latest_version) {
+          MaybeUpdateRealVersion(real_version, curr_full_version,
+                                 model_version);
+          return 0;
+        }
+      }
+
+      sleep(_30_Seconds);
+      time_cost += _30_Seconds;
+    }
+
+    LOG(WARNING) << "Lock timeout, try to grab the lock again.";
+    // continue: lock timeout, try to get lock again
+
+  } while(true);
+
+  return 0;
+}
+
 Status RunRestore(const RunOptions& run_options,
                   const std::string& ckpt_name,
                   const std::string& savedmodel_dir,
                   const StringPiece restore_op_name,
                   const StringPiece variable_filename_const_op_name,
                   const std::vector<AssetFileDef>& asset_file_defs,
-                  Session* session,
+                  Session* session, bool update_sparse, int64_t latest_version,
+                  IFeatureStoreMgr* sparse_storage,
                   std::vector<std::pair<std::string, Tensor>>& extra_tensors) {
   LOG(INFO) << "Restoring SavedModel bundle.";
   // Find path to variables to be restored in export directory.
@@ -151,13 +248,18 @@ Status RunRestore(const RunOptions& run_options,
   if (!s.ok()) return s;
 
   // 2) update kv variable
-  return RunOnce(
-      run_options, inputs, {}, {kv_restore_op_name},
-      nullptr /* outputs */, &run_metadata, session);
+  if (update_sparse) {
+    // only one instance can update sparse variable
+    return RunOnce(
+        run_options, inputs, {}, {kv_restore_op_name},
+        nullptr /* outputs */, &run_metadata, session);
+  }
+
+  return s;
 }
 
-}
-namespace processor {
+} // namespace
+
 ModelSessionMgr::ModelSessionMgr(const MetaGraphDef& meta_graph_def,
     SessionOptions* session_options, RunOptions* run_options) :
   meta_graph_def_(meta_graph_def), session_options_(session_options),
@@ -174,7 +276,8 @@ Status ModelSessionMgr::RunRestoreOps(
     const char* ckpt_name, int64 full_ckpt_version,
     const char* savedmodel_dir, Session* session,
     IFeatureStoreMgr* sparse_storage,
-    bool is_incr_ckpt) {
+    bool is_incr_ckpt, bool update_sparse,
+    int64_t latest_version) {
   std::vector<std::pair<std::string, Tensor>> extra_tensors;
   Tensor sparse_storage_tensor(DT_UINT64, TensorShape({}));
   sparse_storage_tensor.scalar<uint64>()() =
@@ -199,12 +302,13 @@ Status ModelSessionMgr::RunRestoreOps(
       RunRestore(*run_options_, ckpt_name, savedmodel_dir,
           meta_graph_def_.saver_def().restore_op_name(),
           meta_graph_def_.saver_def().filename_tensor_name(),
-          asset_file_defs_, session, extra_tensors));
+          asset_file_defs_, session, update_sparse,
+          latest_version, sparse_storage, extra_tensors));
 
   if (HasMainOp(meta_graph_def_)) {
     return RunMainOp(*run_options_, savedmodel_dir,
-        meta_graph_def_, asset_file_defs_, session, kSavedModelMainOpKey,
-        sparse_storage_tensor_pair);
+        meta_graph_def_, asset_file_defs_, session,
+        kSavedModelMainOpKey, sparse_storage_tensor_pair);
   } else {
     return RunMainOp(
         *run_options_, savedmodel_dir, meta_graph_def_,
@@ -214,8 +318,7 @@ Status ModelSessionMgr::RunRestoreOps(
 }
 
 ModelSession::ModelSession(Session* s, const Version& version,
-    IFeatureStoreMgr* sparse_storage) : session_(s), counter_(0),
-    version_(version) {
+    IFeatureStoreMgr* sparse_storage) : session_(s), counter_(0) {
   Tensor t(DT_UINT64, TensorShape({}));
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
   sparse_storage_tensor_ = t;
@@ -243,14 +346,82 @@ Status ModelSessionMgr::Predict(Request& req, Response& resp) {
 
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
-    IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt) {
+    IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt,
+    bool is_initialize, ModelConfig* config) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
-  TF_RETURN_IF_ERROR(RunRestoreOps(ckpt_name,
-        version.full_ckpt_version,
-        version.savedmodel_dir.c_str(),
-        session, sparse_storage, is_incr_ckpt));
-  ResetServingSession(session, version, sparse_storage);
+
+  Version real_version = version;
+  Status status;
+
+  int64_t latest_version =
+      version.full_ckpt_version;;
+  if (is_incr_ckpt) {
+    latest_version = version.delta_ckpt_version;
+  }
+
+  int lock_value = 0;
+  bool locked = false;
+  if (is_initialize) {
+    // get redis lock and update, or wait
+    //status = sparse_storage->GetStorageLock(
+    //    lock_value, config->lock_timeout, &locked);
+    lock_value = LockOrWait(latest_version, sparse_storage,
+                            &real_version, config, &locked);
+  } else {
+    // check redis version, compare to version, update or wait
+
+    // the full version in redis.
+    int64_t curr_full_version = -1;
+    // the latest version in redis, maybe delta version.
+    int64_t model_version = -1;
+    TF_RETURN_IF_ERROR(sparse_storage->GetModelVersion(
+        &curr_full_version, &model_version));
+    // Remote storage already has the latest version
+    if (model_version >= latest_version) {
+      locked = false;
+      // Update the model which version matched to redis in local,
+      // Avoid the mismatch between dense and sparse variable.
+      latest_version = model_version;
+      MaybeUpdateRealVersion(&real_version, curr_full_version,
+                             model_version);
+      LOG(INFO) << "Latest variable have been updated.";
+    } else {
+      //status = sparse_storage->GetStorageLock(
+      //    lock_value, config->lock_timeout, &locked);
+
+      lock_value = LockOrWait(latest_version, sparse_storage,
+                              &real_version, config, &locked);
+    }
+  }
+  TF_RETURN_IF_ERROR(status);
+
+  // only one instance can restore sparse variable
+  status = RunRestoreOps(ckpt_name,
+        real_version.full_ckpt_version,
+        real_version.savedmodel_dir.c_str(),
+        session, sparse_storage, is_incr_ckpt,
+        locked, latest_version);
+
+  // Update model_version and then Release lock after import
+  if (locked) {
+    if (status.ok()) {
+      int64_t full_version = version.full_ckpt_version;
+      int64_t delta_version = version.delta_ckpt_version;
+      if (!is_incr_ckpt) {
+        delta_version = 0;
+      }
+      sparse_storage->SetModelVersion(full_version, delta_version);
+    }
+
+    TF_RETURN_IF_ERROR(
+        sparse_storage->ReleaseStorageLock(lock_value));
+  }
+  TF_RETURN_IF_ERROR(status);
+
+  // version(real_version) maybe modfied across
+  // the version returned by remote storage.
+  ResetServingSession(session, real_version, sparse_storage);
   return Status::OK();
 }
 

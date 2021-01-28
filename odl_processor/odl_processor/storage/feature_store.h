@@ -12,9 +12,61 @@ namespace processor {
 typedef std::function<void(const Status&)> BatchGetCallback;
 typedef std::function<void(const Status&)> BatchSetCallback;
 
+struct StorageOptions {
+  bool is_init_storage_;
+
+  // for redis, connection will select DB 0~16
+  size_t serving_storage_db_index_;
+  size_t backup_storage_db_index_;
+
+  StorageOptions(size_t serving_db_idx, size_t backup_db_idx)
+      : serving_storage_db_index_(serving_db_idx),
+        backup_storage_db_index_(backup_db_idx) {}
+
+  StorageOptions(size_t serving_db_idx, size_t backup_db_idx,
+                 bool is_init_storage)
+      : is_init_storage_(is_init_storage),
+        serving_storage_db_index_(serving_db_idx),
+        backup_storage_db_index_(backup_db_idx) {}
+};
+
+struct StorageMeta {
+  // for redis, db 0 ~ N
+  std::vector<int64_t> model_version;
+  std::vector<bool> active;
+};
+
 class FeatureStore {
   public:
     virtual ~FeatureStore() {}
+
+    // Get meta data of storage if needed
+    virtual Status GetStorageMeta(StorageMeta* meta) {
+      return Status::OK();
+    }
+
+    virtual Status SetActiveStatus(bool active) {
+      return Status::OK();
+    }
+
+    virtual Status GetModelVersion(int64_t* full_version,
+                                   int64_t* latest_version) {
+      return Status::OK();
+    }
+
+    virtual Status SetModelVersion(int64_t full_version,
+                                   int64_t latest_version) {
+      return Status::OK();
+    }
+
+    virtual Status GetStorageLock(int value, int timeout,
+                                  bool* success) {
+      return Status::OK();
+    }
+
+    virtual Status ReleaseStorageLock(int value) {
+      return Status::OK();
+    }
 
     // Cleanup Store
     virtual Status Cleanup() = 0;

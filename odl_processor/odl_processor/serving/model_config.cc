@@ -240,6 +240,14 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
           (*config)->checkpoint_dir, *config));
   }
 
+  // timeout of distribute lock
+  if (!json_config["lock_timeout"].isNull()) {
+    (*config)->lock_timeout =
+      json_config["lock_timeout"].asInt();
+  } else {
+    (*config)->lock_timeout = 15 * 60; // 900 seconds
+  }
+
   return Status::OK();
 }
 

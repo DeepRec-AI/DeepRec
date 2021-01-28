@@ -1,6 +1,7 @@
 #ifndef TENSORFLOW_SERVING_MODEL_SESSION_H
 #define TENSORFLOW_SERVING_MODEL_SESSION_H
 
+#include "odl_processor/serving/model_config.h"
 #include "odl_processor/framework/model_version.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
@@ -32,7 +33,6 @@ struct ModelSession {
   std::string model_version_name_;
   Tensor model_version_tensor_;
   std::atomic<int64> counter_;
-  Version version_;
 };
 
 class ModelSessionMgr {
@@ -44,7 +44,9 @@ class ModelSessionMgr {
 
   Status CreateModelSession(
       const Version& version, const char* ckpt_name,
-      IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt = false);
+      IFeatureStoreMgr* sparse_storage,
+      bool is_incr_ckpt, bool is_initialize,
+      ModelConfig* config);
 
   Status CleanupModelSession();
 
@@ -53,7 +55,9 @@ class ModelSessionMgr {
   virtual Status RunRestoreOps(
       const char* ckpt_name, int64 full_ckpt_version,
       const char* savedmodel_dir, Session* session,
-      IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt);
+      IFeatureStoreMgr* sparse_storage,
+      bool is_incr_ckpt, bool update_sparse,
+      int64_t latest_version);
   
   void ResetServingSession(Session* session, const Version& version,
       IFeatureStoreMgr* sparse_storage);

@@ -342,20 +342,39 @@ Status MultipleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
 }
 
 Status MultipleSessionInstance::RecursionCreateSession(const Version& version,
-    IFeatureStoreMgr* sparse_storage) {
+    IFeatureStoreMgr* sparse_storage, ModelConfig* model_config) {
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
-        version.full_ckpt_name.c_str(), sparse_storage, false));
+        version.full_ckpt_name.c_str(),
+        sparse_storage, /*is_incr_ckpt*/false,
+        /*is_initialize*/storage_options_->is_init_storage_,
+        model_config));
 
   if (version.delta_ckpt_name.empty()) {
     return Status::OK();
   } else {
     return session_mgr_->CreateModelSession(version,
-        version.delta_ckpt_name.c_str(), sparse_storage, true);
+        version.delta_ckpt_name.c_str(),
+        sparse_storage, /*is_incr_ckpt*/true,
+        /*is_initialize*/storage_options_->is_init_storage_,
+        model_config);
   }
 }
 
 Status MultipleSessionInstance::Init(ModelConfig* model_config,
-    ModelStore* model_store) {
+    ModelStore* model_store, bool active) {
+  ModelConfig serving_model_config(*model_config);
+  serving_model_config.redis_db_idx =
+      storage_options_->serving_storage_db_index_;
+  serving_storage_ = new FeatureStoreMgr(&serving_model_config);
+
+  ModelConfig backup_model_config(*model_config);
+  backup_model_config.redis_db_idx =
+      storage_options_->backup_storage_db_index_;
+  backup_storage_ = new FeatureStoreMgr(&backup_model_config);
+
+  // set active flag
+  serving_storage_->SetStorageActiveStatus(active);
+
   int timeout = model_config->init_timeout_minutes;
   Version version;
   model_store->GetLatestVersion(version);
@@ -384,16 +403,6 @@ Status MultipleSessionInstance::Init(ModelConfig* model_config,
 
   TF_RETURN_IF_ERROR(ReadModelSignature(model_config));
 
-  ModelConfig serving_model_config(*model_config);
-  serving_model_config.redis_db_idx =
-      storage_options_->serving_storage_db_index_;
-  serving_storage_ = new FeatureStoreMgr(&serving_model_config);
-
-  ModelConfig backup_model_config(*model_config);
-  backup_model_config.redis_db_idx =
-      storage_options_->backup_storage_db_index_;
-  backup_storage_ = new FeatureStoreMgr(&backup_model_config);
-  
   while (version.CkptEmpty()) {
     LOG(INFO) << "[Model Instance] Checkpoint dir is empty,"
               << "will try 1 minute later.";
@@ -404,7 +413,7 @@ Status MultipleSessionInstance::Init(ModelConfig* model_config,
   // update instance version
   version_ = version;
 
-  return RecursionCreateSession(version, serving_storage_);
+  return RecursionCreateSession(version, serving_storage_, model_config);
 }
 
 Status MultipleSessionInstance::Predict(Request& req, Response& resp) {
@@ -417,19 +426,25 @@ Status MultipleSessionInstance::Warmup() {
   return Predict(call.request, call.response);
 }
 
-Status MultipleSessionInstance::FullModelUpdate(const Version& version) {
+Status MultipleSessionInstance::FullModelUpdate(
+    const Version& version, ModelConfig* model_config) {
   // Logically backup_storage_ shouldn't serving now.
   backup_storage_->Reset();
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
-      version.full_ckpt_name.c_str(), backup_storage_, false));
+      version.full_ckpt_name.c_str(), backup_storage_,
+      /*is_incr_ckpt*/false, /*is_initialize*/false,
+      model_config));
  
   std::swap(backup_storage_, serving_storage_);
   return Status::OK();
 }
 
-Status MultipleSessionInstance::DeltaModelUpdate(const Version& version) {
+Status MultipleSessionInstance::DeltaModelUpdate(
+    const Version& version, ModelConfig* model_config) {
   return session_mgr_->CreateModelSession(version,
-      version.delta_ckpt_name.c_str(), serving_storage_, true);
+      version.delta_ckpt_name.c_str(), serving_storage_,
+      /*is_incr_ckpt*/true, /*is_initialize*/false,
+      model_config);
 }
 
 std::string MultipleSessionInstance::DebugString() {
@@ -482,8 +497,22 @@ ODLInstanceMgr::ODLInstanceMgr(ModelConfig* config)
   session_options_->config.set_inter_op_parallelism_threads(config->intra_threads);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
   run_options_ = new RunOptions();
-  cur_inst_storage_options_ = new StorageOptions(0, 1);
-  base_inst_storage_options_ = new StorageOptions(2, 3);
+
+  std::unique_ptr<FeatureStoreMgr> tmp_storage(
+      new FeatureStoreMgr(model_config_));
+  // Get 'active' and 'model_version' of DB-0 and DB-1
+  // This will be abstracted as an interface below.
+  StorageMeta storage_meta;
+  Status s = tmp_storage->GetStorageMeta(&storage_meta);
+  if (!s.ok()) {
+    LOG(FATAL) << "Get storage meta data failed. "
+               << s.error_message();
+  }
+
+  tmp_storage->GetStorageOptions(
+      storage_meta,
+      &cur_inst_storage_options_,
+      &base_inst_storage_options_);
 }
 
 ODLInstanceMgr::~ODLInstanceMgr() {
@@ -518,14 +547,14 @@ Status ODLInstanceMgr::CreateInstances() {
       session_options_, run_options_,
       cur_inst_storage_options_);
   TF_RETURN_IF_ERROR(cur_instance_->Init(model_config_,
-      model_storage_));
+      model_storage_, true));
   TF_RETURN_IF_ERROR(cur_instance_->Warmup());
 
   base_instance_ = new MultipleSessionInstance(
       session_options_, run_options_,
       base_inst_storage_options_);
   TF_RETURN_IF_ERROR(base_instance_->Init(model_config_,
-      model_storage_));
+      model_storage_, false));
   return base_instance_->Warmup();
 }
 
@@ -544,32 +573,37 @@ Status ODLInstanceMgr::Rollback() {
   return Status::OK();
 }
 
-Status ODLInstanceMgr::FullModelUpdate(const Version& version) {
-  TF_RETURN_IF_ERROR(cur_instance_->FullModelUpdate(version));
+Status ODLInstanceMgr::FullModelUpdate(const Version& version,
+                                       ModelConfig* model_config) {
+  TF_RETURN_IF_ERROR(cur_instance_->FullModelUpdate(
+      version, model_config));
   cur_instance_->UpdateVersion(version);
   return cur_instance_->Warmup();
 }
 
-Status ODLInstanceMgr::DeltaModelUpdate(const Version& version) {
+Status ODLInstanceMgr::DeltaModelUpdate(const Version& version,
+                                        ModelConfig* model_config) {
   // NOTE: will initialize base_instance storage once after
   // a newly full model was updated.
   if (cur_instance_->GetVersion().IsSameFullModel(version) &&
       !base_instance_->GetVersion().IsSameFullModel(version)) {
     TF_RETURN_IF_ERROR(base_instance_->FullModelUpdate(
-          cur_instance_->GetVersion()));
+          cur_instance_->GetVersion(), model_config));
     TF_RETURN_IF_ERROR(base_instance_->Warmup());
   }
 
-  TF_RETURN_IF_ERROR(cur_instance_->DeltaModelUpdate(version));
+  TF_RETURN_IF_ERROR(cur_instance_->DeltaModelUpdate(
+      version, model_config));
   cur_instance_->UpdateVersion(version);
   return cur_instance_->Warmup();
 }
 
-Status ODLInstanceMgr::ModelUpdate(const Version& version) {
+Status ODLInstanceMgr::ModelUpdate(const Version& version,
+                                   ModelConfig* model_config) {
   if (version.IsFullModel()) {
-    return FullModelUpdate(version);
+    return FullModelUpdate(version, model_config);
   } else {
-    return DeltaModelUpdate(version);
+    return DeltaModelUpdate(version, model_config);
   }
 }
 
@@ -583,7 +617,7 @@ void ODLInstanceMgr::WorkLoop() {
       LOG(ERROR) << status.error_message() << std::endl;
     } else {
       if (cur_instance_->GetVersion() < version) {
-        auto status = ModelUpdate(version);
+        auto status = ModelUpdate(version, model_config_);
         if (!status.ok()) {
           LOG(ERROR) << status.error_message() << std::endl;
         }

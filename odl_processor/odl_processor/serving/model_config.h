@@ -26,6 +26,8 @@ struct ModelConfig {
   std::string redis_password;
   // default db = 0
   size_t redis_db_idx = 0;
+  // default 9000s
+  int lock_timeout = 15 * 60;
   int read_thread_num = 1;
   int update_thread_num = 1;
 
