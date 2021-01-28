@@ -480,7 +480,11 @@ bool IsCUDATensor(const Tensor& t) {
       cudaPointerGetAttributes(&attributes, t.tensor_data().data());
   if (err == cudaErrorInvalidValue) return false;
   CHECK_EQ(cudaSuccess, err) << cudaGetErrorString(err);
+#if CUDA_VERSION >= 11000
+  return (attributes.type == cudaMemoryTypeDevice);
+#else
   return (attributes.memoryType == cudaMemoryTypeDevice);
+#endif
 #elif TENSORFLOW_USE_ROCM
   hipPointerAttribute_t attributes;
   hipError_t err = hipPointerGetAttributes(&attributes, t.tensor_data().data());
