@@ -175,13 +175,25 @@ Status GetRedisMeta(redisContext *c, int db, StorageMeta *meta) {
   reply = (redisReply *)redisCommand(c, get_model_version_cmd.c_str());
   if (REDIS_REPLY_NIL == reply->type) {
     meta->model_version.push_back(-1);
+    meta->curr_full_version.push_back(-1);
   } else if (REDIS_REPLY_STRING != reply->type) {
     freeReplyObject(reply);
     return Status(error::Code::INTERNAL,
         "[Redis] run redisCommand-GET model_version failed. " +
         std::string(reply->str));
   } else {
-    meta->model_version.push_back(atoll(reply->str));
+    std::string str(reply->str);
+    if (str.find(",") == std::string::npos) {
+      freeReplyObject(reply);
+      return Status(error::Code::INTERNAL,
+          "[Redis] Parse model_version failed. " +
+          std::string(reply->str));
+    }
+    auto offset = str.find(",");
+    int64_t full_version = atoll(str.substr(0, offset).c_str());
+    int64_t latest_version = atoll(str.substr(offset+1).c_str());
+    meta->model_version.push_back(latest_version);
+    meta->curr_full_version.push_back(full_version);
   }
   freeReplyObject(reply);
 
