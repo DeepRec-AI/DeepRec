@@ -32,7 +32,13 @@ struct StorageOptions {
 
 struct StorageMeta {
   // for redis, db 0 ~ N
+
+  // latest version in the storage,
+  // full_version or delta version
   std::vector<int64_t> model_version;
+  // current full version in the storage
+  std::vector<int64_t> curr_full_version;
+  // current db active or not
   std::vector<bool> active;
 };
 
