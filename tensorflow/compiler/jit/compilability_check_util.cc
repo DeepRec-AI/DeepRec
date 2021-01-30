@@ -277,7 +277,8 @@ bool RecursiveCompilabilityChecker::OpIsSlow(const Node& node) const {
          node.type_string() == "MatrixInverse" ||
          node.type_string() == "ResizeNearestNeighbor" ||
          node.type_string() == "ResizeBilinear" ||
-         node.type_string() == "ResizeBilinearGrad";
+         node.type_string() == "ResizeBilinearGrad" ||
+         node.type_string() == "TopKV2";
 }
 
 bool RecursiveCompilabilityChecker::IsCompilableNode(
