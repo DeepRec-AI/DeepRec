@@ -73,7 +73,7 @@ inline std::pair<int, int> GetNumGPUs(const Cluster& cluster) {
   return {num_gpus, num_volta};
 }
 
-inline bool NumConvOnDeviceWithDataTypeOverThreshold(
+inline absl::optional<bool> NumConvOnDeviceWithDataTypeOverThreshold(
     const TransposeContext& context, absl::string_view device,
     const DataType& data_type) {
   int num_conv_gpu = 0;
@@ -103,22 +103,26 @@ inline bool NumConvOnDeviceWithDataTypeOverThreshold(
     }
   }
 
-  if (num_conv_gpu == 0) return false;
+  if (num_conv_gpu == 0) return {};
 
   return (static_cast<float>(num_conv_gpu_fp16) /
           static_cast<float>(num_conv_gpu)) >= kConvGPUFP16Threshold;
 }
 
-inline std::pair<string, string> GetSrcAndDstDataFormats(
+inline absl::optional<std::pair<string, string>> GetSrcAndDstDataFormats(
     const TransposeContext& context, int num_gpus, int num_voltas) {
+  auto would_exceed_threshold = NumConvOnDeviceWithDataTypeOverThreshold(
+                                    context, kGPU, DT_HALF);
+  if (!would_exceed_threshold.has_value()) {
+    return {};
+  }
   string src_format = kNHWC;
   string dst_format = kNCHW;
   if (((static_cast<float>(num_voltas) / static_cast<float>(num_gpus)) >=
-       kVoltaGPURatioThreshold) &&
-      NumConvOnDeviceWithDataTypeOverThreshold(context, kGPU, DT_HALF)) {
+       kVoltaGPURatioThreshold) && would_exceed_threshold.value()) {
     std::swap(src_format, dst_format);
   }
-  return {src_format, dst_format};
+  return std::make_pair(src_format, dst_format);
 }
 
 Status ExpandLayoutSensitiveOp(TransposeContext* context,
@@ -447,8 +451,12 @@ Status GenericLayoutOptimizer::Optimize(Cluster* cluster,
 
   const auto src_dst_formats =
       GetSrcAndDstDataFormats(context, num_gpus, num_gpus_and_num_volta.second);
-  context.AssignDeviceAndDataFormats(kGPU, src_dst_formats.first,
-                                     src_dst_formats.second);
+  if (!src_dst_formats.has_value()) {
+    return errors::Aborted(
+        "No Conv ops found: GenericLayoutOptimizer is skipped.");
+  }
+  context.AssignDeviceAndDataFormats(kGPU, src_dst_formats->first,
+                                     src_dst_formats->second);
 
   TransposerFactory transposer_factory;
   TF_RETURN_IF_ERROR(ExpandLayoutSensitiveOp(&context, &transposer_factory));
