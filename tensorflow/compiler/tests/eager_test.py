@@ -620,19 +620,17 @@ class EagerFunctionTest(xla_test.XLATestCase):
       y = f(constant_op.constant(3.0))
     self.assertEqual(13.0, y.numpy())
 
-  # https://nvbugs/200680364
-  # Disabled as the update to Python 3.8 broke that feature
-  # def testAutoGraphWhileInDefun(self):
-  #   with self.test_scope():
-  #     @def_function.function
-  #     def f(start):
-  #       x = start
-  #       while x < 13.0:
-  #         x += 1.0
-  #       return x
+  def testAutoGraphWhileInDefun(self):
+    with self.test_scope():
+      @def_function.function
+      def f(start):
+        x = start
+        while x < 13.0:
+          x += 1.0
+        return x
 
-  #     y = f(constant_op.constant(3.0))
-  #   self.assertEqual(13.0, y.numpy())
+      y = f(constant_op.constant(3.0))
+    self.assertEqual(13.0, y.numpy())
 
   def testCondInDefun(self):
     with self.test_scope():
@@ -647,21 +645,19 @@ class EagerFunctionTest(xla_test.XLATestCase):
     self.assertEqual(11.0, plus_one.numpy())
     self.assertEqual(9.0, minus_one.numpy())
 
-  # https://nvbugs/200680364
-  # Disabled as the update to Python 3.8 broke that feature
-  # def testAutoGraphCondInDefun(self):
-  #   with self.test_scope():
-  #     @def_function.function
-  #     def f(pred, value):
-  #       if pred:
-  #         return value + 1.0
-  #       else:
-  #         return value - 1.0
+  def testAutoGraphCondInDefun(self):
+    with self.test_scope():
+      @def_function.function
+      def f(pred, value):
+        if pred:
+          return value + 1.0
+        else:
+          return value - 1.0
 
-  #     plus_one = f(constant_op.constant(True), constant_op.constant(10.0))
-  #     minus_one = f(constant_op.constant(False), constant_op.constant(10.0))
-  #   self.assertEqual(11.0, plus_one.numpy())
-  #   self.assertEqual(9.0, minus_one.numpy())
+      plus_one = f(constant_op.constant(True), constant_op.constant(10.0))
+      minus_one = f(constant_op.constant(False), constant_op.constant(10.0))
+    self.assertEqual(11.0, plus_one.numpy())
+    self.assertEqual(9.0, minus_one.numpy())
 
   def testScanInDefun(self):
     with self.test_scope():
