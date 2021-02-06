@@ -57,8 +57,10 @@ limitations under the License.
 #include "tensorflow/stream_executor/cuda/ptxas_utils.h"
 #include "tensorflow/stream_executor/cuda/redzone_allocator.h"
 #include "tensorflow/stream_executor/tf_allocator_adapter.h"
-#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
 #include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #endif  // GOOGLE_CUDA
 
 namespace {
@@ -642,7 +644,7 @@ template struct LaunchConv2DBackpropFilterOp<CPUDevice, double>;
 struct ConvBackwardFilterAutoTuneGroup {
   static string name() { return "ConvBwdFilter"; }
 };
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
 typedef AutoTuneExecutionPlanSingleton<ConvBackwardFilterAutoTuneGroup,
                                        ConvParameters>
     AutoTuneConvBwdFilter;
@@ -650,7 +652,7 @@ typedef AutoTuneExecutionPlanSingleton<ConvBackwardFilterAutoTuneGroup,
 typedef AutoTuneSingleton<ConvBackwardFilterAutoTuneGroup, ConvParameters,
                           se::dnn::AlgorithmConfig>
     AutoTuneConvBwdFilter;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 template <typename T>
 void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
@@ -659,7 +661,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
     int col_dilation, int row_stride, int col_stride, const Padding& padding,
     const std::vector<int64>& explicit_paddings, Tensor* filter_backprop,
     TensorFormat data_format) {
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
   using se::dnn::ExecutionPlanConfig;
   using se::dnn::ExecutionPlanDesc;
   using se::dnn::ProfileExecutionPlanResult;
@@ -667,7 +669,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
   using se::dnn::AlgorithmConfig;
   using se::dnn::AlgorithmDesc;
   using se::dnn::ProfileResult;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
   std::vector<int32> dilations(4, 1);
   dilations[GetTensorDimIndex(data_format, 'H')] = row_dilation;
   dilations[GetTensorDimIndex(data_format, 'W')] = col_dilation;
@@ -1175,7 +1177,13 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
 #endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
   DnnScratchAllocator scratch_allocator(ConvolveBackwardFilterScratchSize, ctx);
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
+  if (exec_plan_config.plan().has_value()) {
+    VLOG(4) << "Convolution Backward Filter Execution Plan: "
+            << exec_plan_config.plan()->exec_plan_id();
+  } else {
+    VLOG(4) << "Convolution Backward Filter AutoTune is turned off";
+  }
   bool cudnn_launch_status =
       stream
           ->ThenConvolveBackwardFilterWithExecutionPlan(
@@ -1191,7 +1199,7 @@ void LaunchConv2DBackpropFilterOp<Eigen::GpuDevice, T>::operator()(
               filter_desc, &filter_backprop_ptr, &scratch_allocator,
               algorithm_config, nullptr)
           .ok();
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
   if (!cudnn_launch_status) {
     ctx->SetStatus(errors::Internal(

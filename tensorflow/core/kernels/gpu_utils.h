@@ -30,7 +30,10 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 
 #if GOOGLE_CUDA
+#include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
 #include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #endif // GOOGLE_CUDA
 
 namespace stream_executor {
@@ -206,6 +209,7 @@ class AutoTuneMap {
   TF_DISALLOW_COPY_AND_ASSIGN(AutoTuneMap);
 };
 
+#if CUDNN_VERSION >= 8100
 using se::dnn::ExecutionPlanDesc;
 using se::dnn::ExecutionPlanConfig;
 template <typename Parameters>
@@ -393,7 +397,7 @@ class AutoTuneExecutionPlanMap {
 
   TF_DISALLOW_COPY_AND_ASSIGN(AutoTuneExecutionPlanMap);
 };
-
+#endif // CUDNN_VERSION >= 8100
 
 // A Singleton helper that manages the global autotune results by groups.
 // The caller specified arbitrary Group type that can distinguish between
@@ -409,6 +413,7 @@ class AutoTuneSingleton {
   }
 };
 
+#if CUDNN_VERSION >= 8100
 template <class Group, typename Parameters>
 class AutoTuneExecutionPlanSingleton {
  public:
@@ -418,6 +423,7 @@ class AutoTuneExecutionPlanSingleton {
     return instance;
   }
 };
+#endif // CUDNN_VERSION >= 8100
 
 // Logs convolution results to customized back-storage.
 void LogConvAutotuneResults(se::dnn::ConvolutionKind kind,

@@ -48,8 +48,10 @@ using stream_executor::dnn::DimIndex;
 #include "tensorflow/stream_executor/cuda/ptxas_utils.h"
 #include "tensorflow/stream_executor/cuda/redzone_allocator.h"
 #include "tensorflow/stream_executor/tf_allocator_adapter.h"
-#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
 #include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #endif  // GOOGLE_CUDA
 
 namespace {
@@ -1091,7 +1093,7 @@ DECLARE_GPU_SPEC(double);
 struct Conv3dBackwardDataAutoTuneGroup {
   static string name() { return "Conv3dBwdData"; }
 };
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
 typedef AutoTuneExecutionPlanSingleton<Conv3dBackwardDataAutoTuneGroup,
                                        ConvParameters>
     AutoTuneConv3dBwdData;
@@ -1100,7 +1102,7 @@ typedef AutoTuneSingleton<Conv3dBackwardDataAutoTuneGroup, ConvParameters,
                           se::dnn::AlgorithmConfig>
 
     AutoTuneConv3dBwdData;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 template <typename T>
 class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
  public:
@@ -1414,7 +1416,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
         device_id,
         conv_desc.group_count()};
 
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     using se::dnn::ExecutionPlanConfig;
     using se::dnn::ExecutionPlanDesc;
     using se::dnn::ProfileExecutionPlanResult;
@@ -1422,7 +1424,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
     using se::dnn::AlgorithmConfig;
     using se::dnn::AlgorithmDesc;
     using se::dnn::ProfileResult;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 #if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     ExecutionPlanConfig exec_plan_config;
@@ -1628,7 +1630,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
 #endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
     DnnScratchAllocator scratch_allocator(ConvolveBackwardDataScratchSize,
                                           context);
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     bool cudnn_launch_status =
         stream
             ->ThenConvolveBackwardDataWithExecutionPlan(
@@ -1644,7 +1646,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
                 conv_desc, input_desc, &in_backprop_ptr, &scratch_allocator,
                 algorithm_config, nullptr)
             .ok();
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
     if (!cudnn_launch_status) {
       context->SetStatus(errors::Internal(
@@ -1701,7 +1703,7 @@ class Conv3DBackpropInputOp<GPUDevice, T> : public OpKernel {
 struct Conv3dBackwardFilterAutoTuneGroup {
   static string name() { return "Conv3dBwdFilter"; }
 };
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
 typedef AutoTuneExecutionPlanSingleton<Conv3dBackwardFilterAutoTuneGroup,
                                        ConvParameters>
     AutoTuneConv3dBwdFilter;
@@ -1709,7 +1711,7 @@ typedef AutoTuneExecutionPlanSingleton<Conv3dBackwardFilterAutoTuneGroup,
 typedef AutoTuneSingleton<Conv3dBackwardFilterAutoTuneGroup, ConvParameters,
                           se::dnn::AlgorithmConfig>
     AutoTuneConv3dBwdFilter;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 template <typename T>
 class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
@@ -2039,7 +2041,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
         device_id,
         conv_desc.group_count()};
 
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     using se::dnn::ExecutionPlanConfig;
     using se::dnn::ExecutionPlanDesc;
     using se::dnn::ProfileExecutionPlanResult;
@@ -2047,7 +2049,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
     using se::dnn::AlgorithmConfig;
     using se::dnn::AlgorithmDesc;
     using se::dnn::ProfileResult;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 #if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     ExecutionPlanConfig exec_plan_config;
@@ -2127,11 +2129,11 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
       }
       AutoTuneConv3dBwdFilter::GetInstance()->Insert(conv_parameters,
                                                      selected_exec_plans);
-   }
+    }
 #else
-   AlgorithmConfig algorithm_config;
-   if (cudnn_use_autotune_ && !AutoTuneConv3dBwdFilter::GetInstance()->Find(
-                                  conv_parameters, &algorithm_config)) {
+    AlgorithmConfig algorithm_config;
+    if (cudnn_use_autotune_ && !AutoTuneConv3dBwdFilter::GetInstance()->Find(
+                                   conv_parameters, &algorithm_config)) {
 #if GOOGLE_CUDA
       std::vector<AlgorithmDesc> algorithms;
       CHECK(stream->parent()->GetConvolveBackwardFilterAlgorithms(
@@ -2199,7 +2201,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
                                                      algorithm_config);
     }
 #endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     DnnScratchAllocator scratch_allocator(
                             ConvolveBackwardFilterScratchSize, context);
     bool cudnn_launch_status =
@@ -2219,7 +2221,7 @@ class Conv3DBackpropFilterOp<GPUDevice, T> : public OpKernel {
                 filter_desc, &filter_backprop_ptr, &scratch_allocator,
                 algorithm_config, nullptr)
             .ok();
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
     if (!cudnn_launch_status) {
       context->SetStatus(errors::Internal(

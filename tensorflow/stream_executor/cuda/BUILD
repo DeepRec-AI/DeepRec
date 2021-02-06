@@ -344,8 +344,8 @@ cc_library(
     name = "cudnn_plugin",
     srcs = if_cuda_is_configured(["cuda_dnn.cc"]),
     hdrs = if_cuda_is_configured(["cuda_dnn.h"]),
-    visibility = ["//visibility:public"],
     copts = ["-DNV_CUDNN_DISABLE_EXCEPTION"],
+    visibility = ["//visibility:public"],
     deps = if_cuda_is_configured([
         ":cuda_activation",
         ":cuda_diagnostics",

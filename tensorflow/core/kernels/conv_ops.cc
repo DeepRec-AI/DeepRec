@@ -67,8 +67,10 @@ limitations under the License.
 #include "tensorflow/stream_executor/cuda/ptxas_utils.h"
 #include "tensorflow/stream_executor/cuda/redzone_allocator.h"
 #include "tensorflow/stream_executor/tf_allocator_adapter.h"
-#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
 #include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -601,14 +603,14 @@ int64 GetDnnWorkspaceLimit(const string& envvar_in_mb,
 struct ConvAutoTuneGroup {
   static string name() { return "Conv"; }
 };
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
 typedef AutoTuneExecutionPlanSingleton<ConvAutoTuneGroup, ConvParameters>
     AutoTuneConv;
 #else
 typedef AutoTuneSingleton<ConvAutoTuneGroup, ConvParameters,
                           se::dnn::AlgorithmConfig>
     AutoTuneConv;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 template <typename T>
 void LaunchConv2DOp<GPUDevice, T>::operator()(
@@ -617,7 +619,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
     int col_dilation, int row_stride, int col_stride, const Padding& padding,
     const std::vector<int64>& explicit_paddings, Tensor* output,
     TensorFormat data_format) {
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
   using se::dnn::ExecutionPlanConfig;
   using se::dnn::ExecutionPlanDesc;
   using se::dnn::ProfileExecutionPlanResult;
@@ -625,7 +627,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
   using se::dnn::AlgorithmConfig;
   using se::dnn::AlgorithmDesc;
   using se::dnn::ProfileResult;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
   auto* stream = ctx->op_device_context()->stream();
   OP_REQUIRES(ctx, stream, errors::Internal("No GPU stream available."));
 
@@ -1142,7 +1144,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
   }
 #endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
   if (exec_plan_config.plan().has_value()) {
     VLOG(4) << "Convolution Execution Plan: "
             << exec_plan_config.plan()->exec_plan_id();
@@ -1171,7 +1173,7 @@ void LaunchConv2DOp<GPUDevice, T>::operator()(
                                       &output_ptr, &scratch_allocator,
                                       algorithm_config, nullptr)
           .ok();
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
   if (!cudnn_launch_status) {
     ctx->SetStatus(errors::Internal(

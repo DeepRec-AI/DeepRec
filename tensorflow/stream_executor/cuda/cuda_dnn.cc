@@ -44,8 +44,10 @@ limitations under the License.
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_pimpl.h"
 // clang-format off
-#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
 #include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #include "absl/strings/string_view.h"
 // clang-format on
 
@@ -3974,6 +3976,10 @@ bool CudnnSupport::GetConvolveExecutionPlans(
                     .build();
     if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
       out_exec_plans->push_back(std::move(plan));
+      // We will use the first working plan when determinism is required.
+      if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+        break;
+      }
     }
   }
 

@@ -59,6 +59,9 @@ limitations under the License.
 #include "tensorflow/stream_executor/tf_allocator_adapter.h"
 #include "third_party/cudnn_frontend/include/cudnn_frontend.h"
 #include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #endif  // GOOGLE_CUDA
 
 namespace {
@@ -796,7 +799,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
     int col_dilation, int row_stride, int col_stride, const Padding& padding,
     const std::vector<int64>& explicit_paddings, Tensor* in_backprop,
     TensorFormat data_format) {
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
   using se::dnn::ExecutionPlanConfig;
   using se::dnn::ExecutionPlanDesc;
   using se::dnn::ProfileExecutionPlanResult;
@@ -804,7 +807,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
   using se::dnn::AlgorithmConfig;
   using se::dnn::AlgorithmDesc;
   using se::dnn::ProfileResult;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
   std::vector<int32> strides(4, 1);
   std::vector<int32> dilations(4, 1);
   auto input_h = GetTensorDimIndex(data_format, 'H');
@@ -1300,7 +1303,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
   }
 #endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
   bool cudnn_launch_status =
       stream
           ->ThenConvolveBackwardDataWithExecutionPlan(
@@ -1316,7 +1319,7 @@ void LaunchConv2DBackpropInputOp<GPUDevice, T>::operator()(
               input_desc, &in_backprop_ptr, &scratch_allocator,
               algorithm_config, nullptr)
           .ok();
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
   if (!cudnn_launch_status) {
     ctx->SetStatus(errors::Internal(

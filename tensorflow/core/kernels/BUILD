@@ -511,6 +511,7 @@ cc_library(
     name = "gpu_util_hdrs",
     hdrs = ["gpu_utils.h"],
     deps = if_cuda([
+        "@local_config_cuda//cuda:cudnn_header",
         "@cudnn_frontend_archive//:cudnn_frontend",
     ]),
 )
@@ -534,6 +535,7 @@ tf_cuda_library(
         "//tensorflow/stream_executor/cuda:ptxas_utils",
         "//tensorflow/stream_executor/cuda:cuda_helpers",
         "@cudnn_frontend_archive//:cudnn_frontend",
+        "@local_config_cuda//cuda:cudnn_header",
     ]),
 )
 

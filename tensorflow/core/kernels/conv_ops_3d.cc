@@ -41,8 +41,10 @@ using stream_executor::dnn::DimIndex;
 #include "tensorflow/stream_executor/cuda/ptxas_utils.h"
 #include "tensorflow/stream_executor/cuda/redzone_allocator.h"
 #include "tensorflow/stream_executor/tf_allocator_adapter.h"
-#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
 #include "third_party/gpus/cudnn/cudnn.h"
+#if CUDNN_VERSION >= 8100
+#include "third_party/cudnn_frontend/include/cudnn_frontend.h"
+#endif // CUDNN_VERSION >= 8100
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -202,14 +204,14 @@ TF_CALL_double(REGISTER_CPU_KERNEL);
 struct Conv3dAutoTuneGroup {
   static string name() { return "Conv3d"; }
 };
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
 typedef AutoTuneExecutionPlanSingleton<Conv3dAutoTuneGroup, ConvParameters>
     AutoTuneConv3d;
 #else
 typedef AutoTuneSingleton<Conv3dAutoTuneGroup, ConvParameters,
                           se::dnn::AlgorithmConfig>
     AutoTuneConv3d;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 // TODO(mjanusz): Share logic with 2d implementation as much as possible.
 template <typename T>
@@ -498,7 +500,7 @@ struct LaunchConvOp<GPUDevice, T> {
         device_id,
         conv_desc.group_count()};
 
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     using se::dnn::ExecutionPlanConfig;
     using se::dnn::ExecutionPlanDesc;
     using se::dnn::ProfileExecutionPlanResult;
@@ -506,7 +508,7 @@ struct LaunchConvOp<GPUDevice, T> {
     using se::dnn::AlgorithmConfig;
     using se::dnn::AlgorithmDesc;
     using se::dnn::ProfileResult;
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
 #if TENSORFLOW_USE_ROCM
     // cudnn_use_autotune is applicable only the CUDA flow
@@ -698,7 +700,7 @@ struct LaunchConvOp<GPUDevice, T> {
 #endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
     DnnScratchAllocator scratch_allocator(ConvolveScratchSize, ctx);
-#if CUDNN_VERSION >= 8100
+#if GOOGLE_CUDA && CUDNN_VERSION >= 8100
     if (exec_plan_config.plan().has_value()) {
       VLOG(4) << "Convolution Execution Plan: "
               << exec_plan_config.plan()->exec_plan_id();
@@ -720,7 +722,7 @@ struct LaunchConvOp<GPUDevice, T> {
                                         &output_ptr, &scratch_allocator,
                                         algorithm_config, nullptr)
             .ok();
-#endif // CUDNN_VERSION >= 8100
+#endif // GOOGLE_CUDA && CUDNN_VERSION >= 8100
 
     if (!cudnn_launch_status) {
       ctx->SetStatus(errors::Internal(
