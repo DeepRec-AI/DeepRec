@@ -164,27 +164,6 @@ cudnnBatchNormOps_t GetBNOps(bool side_input,
 }
 #endif
 
-#if CUDNN_VERSION >= 8100
-bool isNonDeterministic(cudnnBackendDescriptor_t engine_config) {
-  return cudnn_frontend::hasNumericalNote<
-             CUDNN_NUMERICAL_NOTE_NONDETERMINISTIC>(engine_config);
-}
-
-bool isDownConvertingInputs(cudnnBackendDescriptor_t engine_config) {
-  return cudnn_frontend::hasNumericalNote<
-             CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS>(engine_config);
-}
-bool isNonDeterministicOrIsDownConverting(
-         cudnnBackendDescriptor_t engine_config) {
-  return isNonDeterministic(engine_config) ||
-         isDownConvertingInputs(engine_config);
-}
-
-bool allowAll(cudnnBackendDescriptor_t engine_config) {
-  return false;
-}
-#endif // CUDNN_VERSION >= 8100
-
 // RAII wrapper for all calls to cuDNN with a cuDNN handle argument.
 //
 // See CudnnAccess::GetHandle() for details.
@@ -3018,6 +2997,8 @@ struct FftTilingForward {
 // By default it is turned on, users can explicitly disable them through an
 // env-var "TF_ENABLE_WINOGRAD_NONFUSED=0".
 // https://github.com/tensorflow/tensorflow/pull/4901
+// For CUDNN v8.1, when this env-var is turned off, both the winograd and
+// winograd-non-fused engines will be ruled out.
 struct WinogradNonfused {
   static constexpr const char* kName = "TF_ENABLE_WINOGRAD_NONFUSED";
   // NVIDIA has fixed winograd nonfused bug for cudnn v>=7. For older versions,
@@ -3056,6 +3037,37 @@ struct RnnDoFP32ComputationFP16Input {
   // cuDNN == 7.5.0 is verified to have this fixed.
   static constexpr bool kDefaultFlag = CUDNN_VERSION >= 7500;
 };
+
+namespace {
+#if CUDNN_VERSION >= 8100
+bool isNonDeterministic(cudnnBackendDescriptor_t engine_config) {
+  return cudnn_frontend::hasNumericalNote<
+             CUDNN_NUMERICAL_NOTE_NONDETERMINISTIC>(engine_config);
+}
+
+bool isDownConvertingInputs(cudnnBackendDescriptor_t engine_config) {
+  return cudnn_frontend::hasNumericalNote<
+             CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS>(engine_config);
+}
+
+bool isWinograd(cudnnBackendDescriptor_t engine_config) {
+  return cudnn_frontend::hasNumericalNote<
+             CUDNN_NUMERICAL_NOTE_WINOGRAD>(engine_config);
+}
+
+bool isNonDeterministicOrIsDownConverting(
+         cudnnBackendDescriptor_t engine_config) {
+  if (CudnnEnvVar<WinogradNonfused>::IsEnabled()) {
+    return isNonDeterministic(engine_config) ||
+           isDownConvertingInputs(engine_config);
+  } else {
+    return isNonDeterministic(engine_config) ||
+           isDownConvertingInputs(engine_config) || isWinograd(engine_config);
+  }
+}
+
+#endif // CUDNN_VERSION >= 8100
+} // namespace
 
 cudnnDataType_t GetRnnComputeType(dnn::DataType data_type) {
   switch (data_type) {
@@ -3680,11 +3692,12 @@ port::Status CudnnSupport::DoConvolve(
       cudnn_frontend::filter(engine_config, filtered_configs,
                              isNonDeterministicOrIsDownConverting);
       cudnn_frontend::filter(fallback_list, filtered_configs,
-                             isNonDeterministic);
+                             isNonDeterministicOrIsDownConverting);
     } else {
       cudnn_frontend::filter(engine_config, filtered_configs,
                              isDownConvertingInputs);
-      cudnn_frontend::filter(fallback_list, filtered_configs, allowAll);
+      cudnn_frontend::filter(fallback_list, filtered_configs,
+                             isDownConvertingInputs);
     }
     for (int i = 0; i < filtered_configs.size(); i++) {
       auto plan = cudnn_frontend::ExecutionPlanBuilder()
@@ -3958,12 +3971,12 @@ bool CudnnSupport::GetConvolveExecutionPlans(
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isNonDeterministicOrIsDownConverting);
     cudnn_frontend::filter(fallback_configs, filtered_configs,
-                           isNonDeterministic);
+                           isNonDeterministicOrIsDownConverting);
   } else {
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isDownConvertingInputs);
     cudnn_frontend::filter(fallback_configs, filtered_configs,
-                           allowAll);
+                           isDownConvertingInputs);
   }
 
   VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size();
