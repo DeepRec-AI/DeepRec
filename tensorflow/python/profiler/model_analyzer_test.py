@@ -242,7 +242,7 @@ class PrintModelAnalysisTest(test.TestCase):
           self.assertLess(101600, tfprof_node.total_float_ops)
         else:
           self.assertLess(145660, tfprof_node.total_float_ops)
-        self.assertEqual(8, len(tfprof_node.children))
+        self.assertEqual(10, len(tfprof_node.children))
         self.assertEqual('_TFProfRoot', tfprof_node.name)
         self.assertEqual(
             'model_analyzer_testlib.py:63:BuildFullModel',
@@ -251,23 +251,29 @@ class PrintModelAnalysisTest(test.TestCase):
             'model_analyzer_testlib.py:63:BuildFullModel (gradient)',
             tfprof_node.children[1].name)
         self.assertEqual(
-            'model_analyzer_testlib.py:67:BuildFullModel',
+            'model_analyzer_testlib.py:66:BuildFullModel',
             tfprof_node.children[2].name)
         self.assertEqual(
-            'model_analyzer_testlib.py:67:BuildFullModel (gradient)',
+            'model_analyzer_testlib.py:66:BuildFullModel (gradient)',
             tfprof_node.children[3].name)
         self.assertEqual(
-            'model_analyzer_testlib.py:69:BuildFullModel',
+            'model_analyzer_testlib.py:67:BuildFullModel',
             tfprof_node.children[4].name)
         self.assertEqual(
-            'model_analyzer_testlib.py:70:BuildFullModel',
+            'model_analyzer_testlib.py:67:BuildFullModel (gradient)',
             tfprof_node.children[5].name)
         self.assertEqual(
-            'model_analyzer_testlib.py:70:BuildFullModel (gradient)',
+            'model_analyzer_testlib.py:69:BuildFullModel',
             tfprof_node.children[6].name)
         self.assertEqual(
-            'model_analyzer_testlib.py:72:BuildFullModel',
+            'model_analyzer_testlib.py:70:BuildFullModel',
             tfprof_node.children[7].name)
+        self.assertEqual(
+            'model_analyzer_testlib.py:70:BuildFullModel (gradient)',
+            tfprof_node.children[8].name)
+        self.assertEqual(
+            'model_analyzer_testlib.py:72:BuildFullModel',
+            tfprof_node.children[9].name)
         # pylint: enable=line-too-long
 
   def testCodeViewLeafGraphNode(self):
