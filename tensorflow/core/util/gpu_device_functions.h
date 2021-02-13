@@ -610,6 +610,38 @@ template <typename From, typename To>
 using ToTypeIfConvertible =
     typename std::enable_if<std::is_convertible<From, To>::value, To>::type;
 
+template <typename T>
+struct CudaSupportedTypeImpl {
+  using type = T;
+};
+
+template <>
+struct CudaSupportedTypeImpl<long long> {
+  using type = unsigned long long;
+};
+
+template <>
+struct CudaSupportedTypeImpl<unsigned long> {
+  using type =
+      typename std::conditional<sizeof(unsigned long) == sizeof(unsigned int),
+                                unsigned int, unsigned long long>::type;
+};
+
+template <>
+struct CudaSupportedTypeImpl<long> {
+  // This cast should be safe since module-2 addition should work fine. However,
+  // signed overflow is not handled correctly since it's undefined behavior.
+  using type = typename CudaSupportedTypeImpl<unsigned long>::type;
+};
+
+template <typename T>
+using CudaSupportedType = typename CudaSupportedTypeImpl<T>::type;
+
+template <typename T>
+__device__ CudaSupportedType<T>* ToCudaSupportedPtr(T* ptr) {
+  return reinterpret_cast<CudaSupportedType<T>*>(ptr);
+}
+
 }  // namespace detail
 
 // CUDA provides atomic ops, but not for all types.  We provide wrappers
