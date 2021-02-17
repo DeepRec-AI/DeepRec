@@ -299,7 +299,7 @@ TEST_F(GenericLayoutOptimizerTest, CPUDevice) {
   GrapplerItem item;
   TF_ASSERT_OK(s.ToGraphDef(&item.graph));
 
-  GenericLayoutOptimizer optimizer;
+  GenericLayoutOptimizer optimizer(/*force=*/true);
   GraphDef output;
   TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
 
@@ -358,7 +358,7 @@ TEST_F(GenericLayoutOptimizerTest, Conv2DBackpropInputNonConstInputSizes) {
   GrapplerItem item;
   TF_ASSERT_OK(s.ToGraphDef(&item.graph));
 
-  GenericLayoutOptimizer optimizer;
+  GenericLayoutOptimizer optimizer(/*force=*/true);
   GraphDef output;
   TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
 
@@ -466,7 +466,7 @@ TEST_F(GenericLayoutOptimizerTest, DoNotPruneNonAddedCancellableTransposes) {
     TF_ASSERT_OK(scope.ToGraphDef(&item.graph));
   }
 
-  GenericLayoutOptimizer optimizer;
+  GenericLayoutOptimizer optimizer(/*force=*/true);
   GraphDef output;
   TF_ASSERT_OK(optimizer.Optimize(virtual_cluster_.get(), item, &output));
 
@@ -530,7 +530,7 @@ TEST_F(GenericLayoutOptimizerTest, DoNotPruneNonAddedCancellableTransposes) {
 TEST_F(GenericLayoutOptimizerTest, CancelTransposeAroundPad) {
   using test::function::NDef;
 
-  GenericLayoutOptimizer optimizer(RewriterConfig::AGGRESSIVE);
+  GenericLayoutOptimizer optimizer(RewriterConfig::AGGRESSIVE, /*force=*/true);
 
   const Tensor kPermuteNhwcToNchw = test::AsTensor<int32>({0, 3, 1, 2});
   const Tensor kPermuteNchwToNhwc = test::AsTensor<int32>({0, 2, 3, 1});

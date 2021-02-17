@@ -75,7 +75,7 @@ inline std::pair<int, int> GetNumGPUs(const Cluster& cluster) {
 
 inline absl::optional<bool> NumConvOnDeviceWithDataTypeOverThreshold(
     const TransposeContext& context, absl::string_view device,
-    const DataType& data_type) {
+    const DataType& data_type, bool force) {
   int num_conv_gpu = 0;
   int num_conv_gpu_fp16 = 0;
 
@@ -103,16 +103,16 @@ inline absl::optional<bool> NumConvOnDeviceWithDataTypeOverThreshold(
     }
   }
 
-  if (num_conv_gpu == 0) return {};
+  if (num_conv_gpu == 0 && !force) return {};
 
   return (static_cast<float>(num_conv_gpu_fp16) /
           static_cast<float>(num_conv_gpu)) >= kConvGPUFP16Threshold;
 }
 
 inline absl::optional<std::pair<string, string>> GetSrcAndDstDataFormats(
-    const TransposeContext& context, int num_gpus, int num_voltas) {
+    const TransposeContext& context, int num_gpus, int num_voltas, bool force) {
   auto would_exceed_threshold = NumConvOnDeviceWithDataTypeOverThreshold(
-                                    context, kGPU, DT_HALF);
+                                    context, kGPU, DT_HALF, force);
   if (!would_exceed_threshold.has_value()) {
     return {};
   }
@@ -450,7 +450,8 @@ Status GenericLayoutOptimizer::Optimize(Cluster* cluster,
       TransposeContext::InitializeTransposeContext(item, cluster, &context));
 
   const auto src_dst_formats =
-      GetSrcAndDstDataFormats(context, num_gpus, num_gpus_and_num_volta.second);
+      GetSrcAndDstDataFormats(context, num_gpus, num_gpus_and_num_volta.second,
+                              force_);
   if (!src_dst_formats.has_value()) {
     return errors::Aborted(
         "No Conv ops found: GenericLayoutOptimizer is skipped.");
