@@ -930,45 +930,45 @@ class IteratorTest(test_base.DatasetTestBase, parameterized.TestCase):
     self.assertIn("gpu:0", device_iterator._iterator_resource.device.lower())
     self.assertIn("gpu:0", device_tensor.device.lower())
 
-  @test_util.deprecated_graph_mode_only
-  def testIteratorOnDeviceGraphModeOneShotIterator(self):
-    if not test_util.is_gpu_available():
-      self.skipTest("No GPU available")
-
-    host_dataset = dataset_ops.Dataset.range(10)
-    device_dataset = host_dataset.apply(
-        prefetching_ops.prefetch_to_device("/gpu:0"))
-
-    host_iterator = dataset_ops.make_one_shot_iterator(host_dataset)
-    device_iterator = dataset_ops.make_one_shot_iterator(device_dataset)
-
-    host_tensor = host_iterator.get_next()
-    device_tensor = device_iterator.get_next()
-
-    self.assert_dataset_placement(
-        host_dataset, host_iterator, host_tensor,
-        device_dataset, device_iterator, device_tensor
-    )
-
-  @test_util.deprecated_graph_mode_only
-  def testIteratorOnDeviceGraphModeInitializableIterator(self):
-    if not test_util.is_gpu_available():
-      self.skipTest("No GPU available")
-
-    host_dataset = dataset_ops.Dataset.range(10)
-    device_dataset = host_dataset.apply(
-        prefetching_ops.prefetch_to_device("/gpu:0"))
-
-    host_iterator = dataset_ops.make_initializable_iterator(host_dataset)
-    device_iterator = dataset_ops.make_initializable_iterator(device_dataset)
-
-    host_tensor = host_iterator.get_next()
-    device_tensor = device_iterator.get_next()
-
-    self.assert_dataset_placement(
-        host_dataset, host_iterator, host_tensor,
-        device_dataset, device_iterator, device_tensor
-    )
+#  @test_util.deprecated_graph_mode_only
+#  def testIteratorOnDeviceGraphModeOneShotIterator(self):
+#    if not test_util.is_gpu_available():
+#      self.skipTest("No GPU available")
+#
+#    host_dataset = dataset_ops.Dataset.range(10)
+#    device_dataset = host_dataset.apply(
+#        prefetching_ops.prefetch_to_device("/gpu:0"))
+#
+#    host_iterator = dataset_ops.make_one_shot_iterator(host_dataset)
+#    device_iterator = dataset_ops.make_one_shot_iterator(device_dataset)
+#
+#    host_tensor = host_iterator.get_next()
+#    device_tensor = device_iterator.get_next()
+#
+#    self.assert_dataset_placement(
+#        host_dataset, host_iterator, host_tensor,
+#        device_dataset, device_iterator, device_tensor
+#    )
+#
+#  @test_util.deprecated_graph_mode_only
+#  def testIteratorOnDeviceGraphModeInitializableIterator(self):
+#    if not test_util.is_gpu_available():
+#      self.skipTest("No GPU available")
+#
+#    host_dataset = dataset_ops.Dataset.range(10)
+#    device_dataset = host_dataset.apply(
+#        prefetching_ops.prefetch_to_device("/gpu:0"))
+#
+#    host_iterator = dataset_ops.make_initializable_iterator(host_dataset)
+#    device_iterator = dataset_ops.make_initializable_iterator(device_dataset)
+#
+#    host_tensor = host_iterator.get_next()
+#    device_tensor = device_iterator.get_next()
+#
+#    self.assert_dataset_placement(
+#        host_dataset, host_iterator, host_tensor,
+#        device_dataset, device_iterator, device_tensor
+#    )
 
 
 if __name__ == "__main__":
