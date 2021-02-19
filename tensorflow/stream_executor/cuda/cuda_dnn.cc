@@ -3045,25 +3045,25 @@ bool isNonDeterministic(cudnnBackendDescriptor_t engine_config) {
              CUDNN_NUMERICAL_NOTE_NONDETERMINISTIC>(engine_config);
 }
 
-bool isDownConvertingInputs(cudnnBackendDescriptor_t engine_config) {
-  return cudnn_frontend::hasNumericalNote<
-             CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS>(engine_config);
-}
-
 bool isWinograd(cudnnBackendDescriptor_t engine_config) {
   return cudnn_frontend::hasNumericalNote<
              CUDNN_NUMERICAL_NOTE_WINOGRAD>(engine_config);
 }
 
+bool isDownConvertingInputs(cudnnBackendDescriptor_t engine_config) {
+  if (CudnnEnvVar<WinogradNonfused>::IsEnabled()) {
+    return cudnn_frontend::hasNumericalNote<
+               CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS>(engine_config);
+  } else {
+    return isWinograd(engine_config) || cudnn_frontend::hasNumericalNote<
+               CUDNN_NUMERICAL_NOTE_DOWN_CONVERT_INPUTS>(engine_config);
+  }
+}
+
 bool isNonDeterministicOrIsDownConverting(
          cudnnBackendDescriptor_t engine_config) {
-  if (CudnnEnvVar<WinogradNonfused>::IsEnabled()) {
-    return isNonDeterministic(engine_config) ||
-           isDownConvertingInputs(engine_config);
-  } else {
-    return isNonDeterministic(engine_config) ||
-           isDownConvertingInputs(engine_config) || isWinograd(engine_config);
-  }
+  return isNonDeterministic(engine_config) ||
+         isDownConvertingInputs(engine_config);
 }
 
 #endif // CUDNN_VERSION >= 8100
