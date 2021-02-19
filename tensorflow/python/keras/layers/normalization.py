@@ -572,7 +572,7 @@ class BatchNormalizationBase(Layer):
       factor = (sample_size - math_ops.cast(1.0, variance.dtype)) / sample_size
       variance *= factor
 
-    if original_shape is not None and ndims not in (4, 5):
+    if original_shape is not None:
       output = array_ops.reshape(output, original_shape)
 
     training_value = tf_utils.constant_value(training)
