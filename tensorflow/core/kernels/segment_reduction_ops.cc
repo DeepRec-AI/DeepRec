@@ -35,6 +35,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/logging.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/util.h"
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -268,8 +269,10 @@ class SegmentSumGPUOp : public AsyncOpKernel {
         done);
 
     functor::SegmentSumFunctor<T, Index> functor_;
-    auto create_and_check_output = [context, output_rows_host, &input,
+    auto create_and_check_output = [this, context, output_rows_host, &input,
                                     &segment_ids, &functor_, done]() {
+      nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
+
       // Ensure that within the callback, the proper GPU settings are
       // configured.
       auto stream = context->op_device_context()->stream();

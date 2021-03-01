@@ -39,15 +39,12 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/tracing.h"
 #include "tensorflow/core/profiler/lib/traceme.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/public/version.h"
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
 #if !defined(IS_MOBILE_PLATFORM)
 #include "tensorflow/core/grappler/optimizers/meta_optimizer.h"
 #endif  // !IS_MOBILE_PLATFORM
-
-#if GOOGLE_CUDA
-#include "tensorflow/core/platform/nvtx.h"
-#endif // GOOGLE_CUDA
 
 namespace tensorflow {
 
@@ -308,49 +305,14 @@ Status KernelAndDeviceOp::Run(ScopedStepContainer* step_container,
 
   OpKernelContext context(&params);
 
-#if GOOGLE_CUDA
-  string msg;
-  if (nvtx::NvtxRangesEnabled() || nvtx::NvtxRangesDetailedEnabled()) {
-    if (nvtx::NvtxRangesDetailedEnabled()) {
-      std::vector<string> args_pieces;
-      for (int i = 0; i < inputs.size(); i++) {
-        if (i == 10) {
-          // Truncate long arg lists and indicate with an ending null value.
-          args_pieces.push_back("null");
-          break;
-        }
-        const auto& shape = inputs[i].tensor->shape();
-        string shape_str = shape.unknown_rank() ? "null" : shape.DebugString();
-        args_pieces.push_back(
-            strings::StrCat("{\"name\":\"", kernel_->def().input(i),
-                            "\",\"shape\":", shape_str, "}"));
-      }
-      std::vector<string> attrs_pieces;
-      const auto& attrs = kernel_->def().attr();
-      for (auto it = attrs.begin(); it != attrs.end(); ++it) {
-        const string& key = it->first;
-        const AttrValue& value = it->second;
-        // Exclude types that aren't useful for profiling.
-        if (value.value_case() == AttrValue::kFunc ||
-            value.value_case() == AttrValue::kPlaceholder ||
-            value.value_case() == AttrValue::VALUE_NOT_SET) {
-          continue;
-        }
-        string value_str = nvtx::AttrValueToJson(value);
-        attrs_pieces.push_back(strings::StrCat("\"", key, "\":", value_str));
-      }
-      msg = strings::StrCat("{\"op\":\"", kernel_->def().op(), "\",\"name\":\"",
-                            kernel_->name(), "\",\"args\":[",
-                            str_util::Join(args_pieces, ","), "],\"attrs\":{",
-                            str_util::Join(attrs_pieces, ","), "}}");
-    } else {
-      msg = kernel_->def().op() + ": " + kernel_->name();
-    }
-  }
-  auto nvtx_range = nvtx::MaybeNvtxDomainRangeStartMsg(msg,
-                                                       kernel_->def().op());
-#endif // GOOGLE_CUDA
-
+  nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(
+      kernel_->def().op(), [&]() {
+        return nvtx::GetNodeExecutionRangeMessage(
+            kernel_.get(), inputs.size(), inputs,
+            [](const TensorValue& tensor_value) {
+              return tensor_value.tensor;
+            });
+      });
   if (kernel_->def().op() == "_Recv") {
     // TODO(apassos) do not special-case _Recv. Currently the GPU device fails
     // if trying to run _Recv->Compute(), specifically checking for _Recv. To go
@@ -396,10 +358,6 @@ Status KernelAndDeviceOp::Run(ScopedStepContainer* step_container,
   if (stats != nullptr) {
     UpdateStats(&context, step_stats_collector.get(), stats);
   }
-
-#if GOOGLE_CUDA
-  nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
-#endif // GOOGLE_CUDA
 
   return Status::OK();
 }

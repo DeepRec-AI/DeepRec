@@ -37,6 +37,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "nvtx_utils",
+    srcs = ["nvtx_utils.cc",],
+    hdrs = ["nvtx_utils.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+      "//tensorflow/core:framework",
+      "@nvtx_archive//:nvtx",
+    ],
+)
+
 tf_proto_library(
     name = "op_profile_proto",
     srcs = ["op_profile.proto"],

@@ -26,8 +26,8 @@ limitations under the License.
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mutex.h"
-#include "tensorflow/core/platform/nvtx.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/stream_executor/blas.h"
 #include "tensorflow/stream_executor/device_memory.h"
 
@@ -265,8 +265,11 @@ Status RunGemm(const HloInstruction *gemm,
   complex128 alpha = {backend_config.alpha_real(), backend_config.alpha_imag()};
   double beta = backend_config.beta();
 
-  auto nvtx_range = tensorflow::nvtx::MaybeNvtxRangeStart(
-      gemm->NvtxNodeOpString(), gemm->NvtxNodeNameString());
+  tensorflow::nvtx::ScopedRangeIfEnabled<tensorflow::nvtx::CoreDomain>
+      nvtx_range(gemm->metadata().op_type(), [&]() {
+        return tensorflow::nvtx::GetThunkExecutionRangeMessage(
+            gemm->GetModule()->name(), gemm->metadata().op_name());
+      });
 
   bool launch_ok = [&]() {
     switch (output_shape.element_type()) {
@@ -302,8 +305,6 @@ Status RunGemm(const HloInstruction *gemm,
         LOG(FATAL) << "Unsupported type.";
     }
   }();
-
-  tensorflow::nvtx::MaybeNvtxRangeEnd(nvtx_range);
 
   if (!launch_ok) {
     return InternalError("Unable to launch cuBLAS gemm on stream %p", stream);

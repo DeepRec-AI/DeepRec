@@ -1,4 +1,4 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,76 +13,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef TENSORFLOW_CORE_PLATFORM_NVTX_H_
-#define TENSORFLOW_CORE_PLATFORM_NVTX_H_
-
-#include "third_party/nvtx3/nvToolsExt.h"
-
-#include "tensorflow/core/framework/attr_value.pb.h"
-#include "tensorflow/core/framework/attr_value_util.h"
-#include "tensorflow/core/framework/types.pb.h"
-#include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 
 namespace tensorflow {
 namespace nvtx {
+namespace detail {
 
-inline unsigned hash_string(const char* c) {
-  enum { M = 33 };
-  unsigned hash = 5381;
-  while (*c) {
-    hash = hash * M + *c++;
-  }
-  return hash;
-}
-
-inline uint32_t get_color(unsigned hash) {
-  const uint32_t colors[] = {0x00aedb, 0xa200ff, 0xf47835, 0xd41243, 0x8ec127,
-                             0xffb3ba, 0xffdfba, 0xffffba, 0xbaffc9, 0xbae1ff,
-                             0xbbcbdb, 0x9ebd9e, 0xdd855c, 0xf1e8ca, 0x745151,
-                             0x2e4045, 0x83adb5, 0xc7bbc9, 0x5e3c58, 0xbfb5b2,
-                             0xff77aa, 0xaaff77, 0x77aaff, 0xffffff, 0x000000};
-  const int ncolor = sizeof(colors) / sizeof(uint32_t);
-  return colors[hash % ncolor];
-}
-
-inline nvtxRangeId_t nvtxRangeStartHelper(const char* msg,
-                                          const char* type,
-                                          nvtxDomainHandle_t nvtx_domain,
-                                          bool set_category = true) {
-  unsigned h = hash_string(type);
-  uint32_t color = get_color(h);
-  uint32_t category = set_category ? h : 0;
-
-  nvtxEventAttributes_t attrs = {};
-  attrs.version = NVTX_VERSION;
-  attrs.size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
-  attrs.colorType = NVTX_COLOR_ARGB;
-  attrs.color = color;
-  attrs.messageType = NVTX_MESSAGE_TYPE_ASCII;
-  attrs.message.ascii = msg;
-  attrs.category = category;
-
-  if (nvtx_domain != NULL)
-    return ::nvtxDomainRangeStartEx(nvtx_domain, &attrs);
-
-  return ::nvtxRangeStartEx(&attrs);
-}
-
-// A helper function to decide whether to enable CUDA NVTX profiling ranges.
-inline bool NvtxRangesEnabled() {
-  static bool is_enabled = [] {
-    bool is_disabled = false;
-    TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("TF_DISABLE_NVTX_RANGES",
-                                               /*default_val=*/false,
-                                               &is_disabled));
-    return !is_disabled;
-  }();
-  return is_enabled;
-}
+namespace {
 
 // A helper function to decide whether to enable CUDA NVTX profiling ranges
 // with detailed node information.
-inline bool NvtxRangesDetailedEnabled() {
+inline bool RangesDetailedEnabled() {
   static bool is_enabled = [] {
     bool _is_enabled = false;
     TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("TF_ENABLE_NVTX_RANGES_DETAILED",
@@ -93,7 +34,37 @@ inline bool NvtxRangesDetailedEnabled() {
   return is_enabled;
 }
 
-inline string DataTypeToNumpyString(DataType dtype) {
+// A helper function to decide whether to enable setting color information in
+// NVTX ranges. This reduces performance slightly, as it requires hashing the
+// type string of each range.
+inline bool RangesColorEnabled() {
+  static bool is_enabled = [] {
+    bool is_disabled = false;
+    TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("TF_DISABLE_NVTX_RANGES_COLOR",
+                                               /*default_val=*/false,
+                                               &is_disabled));
+    return !is_disabled;
+  }();
+  return is_enabled;
+}
+
+inline size_t hash_bytes(const char* data, size_t size, size_t seed = 5381) {
+  for (size_t i = 0; i < size; ++i) seed = seed * 33 + *data++;
+  return seed;
+}
+
+inline uint32_t get_color(size_t hash) {
+  static constexpr const uint32_t colors[] = {
+      0x00aedb, 0xa200ff, 0xf47835, 0xd41243, 0x8ec127, 0xffb3ba, 0xffdfba,
+      0xffffba, 0xbaffc9, 0xbae1ff, 0xbbcbdb, 0x9ebd9e, 0xdd855c, 0xf1e8ca,
+      0x745151, 0x2e4045, 0x83adb5, 0xc7bbc9, 0x5e3c58, 0xbfb5b2, 0xff77aa,
+      0xaaff77, 0x77aaff, 0xffffff, 0x000000, 0x57b85a, 0x57b88b, 0x57b5b8,
+      0x5785b8, 0x5a57b8, 0x8b57b8, 0xb8575a};
+  static constexpr const int ncolor = sizeof(colors) / sizeof(colors[0]);
+  return colors[hash % ncolor];
+}
+
+string DataTypeToNumpyString(DataType dtype) {
   int dtype_i = static_cast<int>(dtype);
   bool is_ref = false;
   if (dtype_i > 100) {
@@ -134,7 +105,7 @@ inline string DataTypeToNumpyString(DataType dtype) {
 }
 
 // TODO(benbarsdell): This is a bit crude and hacky (and inefficient).
-inline string AttrValueToJson(const AttrValue& attr_value) {
+string AttrValueToJson(const AttrValue& attr_value) {
   switch (attr_value.value_case()) {
     case AttrValue::kS:
       return SummarizeAttrValue(attr_value);
@@ -151,8 +122,19 @@ inline string AttrValueToJson(const AttrValue& attr_value) {
       if (attr_value.shape().unknown_rank()) return "null";
       return PartialTensorShape::DebugString(attr_value.shape());
     }
-    case AttrValue::kTensor:
+    case AttrValue::kTensor: {
+      const TensorProto& tensor_proto = attr_value.tensor();
+      const TensorShapeProto& proto_shape = tensor_proto.tensor_shape();
+      if (!TensorShape::IsValid(proto_shape)) {
+        return strings::StrCat("\"", tensor_proto.ShortDebugString(), "\"");
+      }
+      TensorShape shape(proto_shape);
+      const int64 N = shape.num_elements();
+      if (N > 1024 * 128) {
+        return strings::StrCat("\"", tensor_proto.ShortDebugString(), "\"");
+      }
       return strings::StrCat("\"", SummarizeAttrValue(attr_value), "\"");
+    }
     case AttrValue::kList: {
       std::vector<string> pieces;
       if (attr_value.list().s_size() > 0) {
@@ -187,7 +169,7 @@ inline string AttrValueToJson(const AttrValue& attr_value) {
         return strings::StrCat("\"", SummarizeAttrValue(attr_value), "\"");
       }
       // Truncate long lists and indicate with an ending null value.
-      constexpr int kMaxListSummarySize = 10;
+      constexpr const int kMaxListSummarySize = 10;
       if (pieces.size() > kMaxListSummarySize) {
         pieces.erase(pieces.begin() + kMaxListSummarySize, pieces.end());
         pieces.push_back("null");
@@ -205,61 +187,78 @@ inline string AttrValueToJson(const AttrValue& attr_value) {
   return "\"<Unknown AttrValue type>\"";  // Prevent missing return warning
 }
 
-inline nvtxRangeId_t MaybeNvtxRangeStart(string node_op, string node_name) {
-  nvtxRangeId_t nvtx_range;
-  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-    string msg;
-    if (NvtxRangesDetailedEnabled()) {
-      msg = node_op + ": " + node_name;
-    } else {
-      msg = node_op + ": " + node_name;
+}  // namespace
+
+void MakeAttributes(const char* msg, absl::string_view category,
+                    nvtxEventAttributes_t* result) {
+  *result = {};
+  result->version = NVTX_VERSION;
+  result->size = NVTX_EVENT_ATTRIB_STRUCT_SIZE;
+  result->messageType = NVTX_MESSAGE_TYPE_ASCII;
+  result->message.ascii = msg;
+  if (detail::RangesColorEnabled() && !category.empty()) {
+    size_t hash = detail::hash_bytes(category.data(), category.size());
+    uint32_t color = detail::get_color(hash);
+    uint32_t category = static_cast<uint32_t>(hash);
+    result->colorType = NVTX_COLOR_ARGB;
+    result->color = color;
+    result->category = category;
+  }
+}
+
+string GetNodeExecutionRangeMessageImpl(
+    const OpKernel* kernel,
+    const gtl::InlinedVector<const Tensor*, 4>& input_tensors) {
+  string msg;
+  if (!detail::RangesDetailedEnabled()) {
+    msg = strings::StrCat(kernel->def().op(), ": ", kernel->name());
+  } else {
+    constexpr const size_t kMaxInputs = 10;
+    std::vector<string> args_pieces;
+    args_pieces.reserve(std::min(input_tensors.size(), kMaxInputs + 1));
+    for (int i = 0; i < input_tensors.size(); ++i) {
+      if (i == kMaxInputs) {
+        // Truncate long arg lists and indicate with an ending null value.
+        args_pieces.push_back("null");
+        break;
+      }
+      const Tensor* input_tensor = input_tensors[i];
+      const TensorShape* shape = &(input_tensor->shape());
+      string shape_str =
+          (!shape || shape->unknown_rank()) ? "null" : shape->DebugString();
+      args_pieces.push_back(strings::StrCat("{\"name\":\"",
+                                            kernel->def().input(i),
+                                            "\",\"shape\":", shape_str, "}"));
     }
-    nvtx_range = nvtxRangeStartHelper(msg.c_str(), node_op.c_str(),
-                                      /*nvtx_domain=*/NULL);
+    std::vector<string> attrs_pieces;
+    attrs_pieces.reserve(kernel->def().attr().size());
+    for (auto key_value : kernel->def().attr()) {
+      const string& key = key_value.first;
+      const AttrValue& value = key_value.second;
+      // Exclude types that aren't useful for profiling.
+      if (value.value_case() == AttrValue::kFunc ||
+          value.value_case() == AttrValue::kPlaceholder ||
+          value.value_case() == AttrValue::VALUE_NOT_SET) {
+        continue;
+      }
+      string value_str = detail::AttrValueToJson(value);
+      attrs_pieces.push_back(strings::StrCat("\"", key, "\":", value_str));
+    }
+    return strings::StrCat("{\"op\":\"", kernel->def().op(), "\",\"name\":\"",
+                           kernel->name(), "\",\"args\":[",
+                           str_util::Join(args_pieces, ","), "],\"attrs\":{",
+                           str_util::Join(attrs_pieces, ","), "}}");
   }
-  return nvtx_range;
+  return msg;
 }
 
-inline void MaybeNvtxRangeEnd(nvtxRangeId_t nvtx_range) {
-  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-    ::nvtxRangeEnd(nvtx_range);
-  }
-}
+}  // namespace detail
 
-class NvtxDomain {
- public:
-  explicit NvtxDomain(const char* name) : handle_(nvtxDomainCreateA(name)) {}
-  ~NvtxDomain() { nvtxDomainDestroy(handle_); }
-  operator nvtxDomainHandle_t() const { return handle_; }
-
- private:
-  nvtxDomainHandle_t handle_;
-  TF_DISALLOW_COPY_AND_ASSIGN(NvtxDomain);
-};
-
-inline const NvtxDomain& GetNvtxTensorFlowCoreDomain() {
-  // Singleton because we want the same domain for the lifetime of the process.
-  static NvtxDomain nvtx_domain("tensorflow-core");
-  return nvtx_domain;
-}
-
-// Sets the nvtx domain and associates all the nvtx ranges to it.
-inline nvtxRangeId_t MaybeNvtxDomainRangeStartMsg(string msg, string node_op) {
-  nvtxRangeId_t nvtx_range;
-  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-    nvtx_range = nvtxRangeStartHelper(msg.c_str(), node_op.c_str(),
-                                      GetNvtxTensorFlowCoreDomain());
-  }
-  return nvtx_range;
-}
-
-inline void MaybeNvtxDomainRangeEnd(nvtxRangeId_t nvtx_range) {
-  if (NvtxRangesEnabled() || NvtxRangesDetailedEnabled()) {
-    ::nvtxDomainRangeEnd(GetNvtxTensorFlowCoreDomain(), nvtx_range);
-  }
+string GetThunkExecutionRangeMessage(absl::string_view cluster_name,
+                                     absl::string_view op_name) {
+  cluster_name = cluster_name.substr(0, cluster_name.find("__XlaCompile"));
+  return strings::StrCat(cluster_name, "_1/xla_run/", op_name);
 }
 
 }  // namespace nvtx
 }  // namespace tensorflow
-
-#endif  // TENSORFLOW_CORE_PLATFORM_NVTX_H_

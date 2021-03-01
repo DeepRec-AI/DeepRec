@@ -25,10 +25,6 @@ limitations under the License.
 #include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 
-#if GOOGLE_CUDA
-#include "tensorflow/core/platform/nvtx.h"
-#endif // GOOGLE_CUDA
-
 #include "tensorflow/core/common_runtime/costmodel_manager.h"
 #include "tensorflow/core/common_runtime/executor_factory.h"
 #include "tensorflow/core/common_runtime/pending_counts.h"
@@ -75,8 +71,8 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/profiler/internal/traceme_recorder.h"
 #include "tensorflow/core/profiler/lib/traceme.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
-#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 namespace {
@@ -1729,48 +1725,14 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
     Entry* first_input = input_tensors + item.input_start;
     outputs.clear();
 
-#if GOOGLE_CUDA
-    string msg;
-    if (nvtx::NvtxRangesEnabled() || nvtx::NvtxRangesDetailedEnabled()) {
-      if (nvtx::NvtxRangesDetailedEnabled()) {
-        std::vector<string> args_pieces;
-        for (int i = 0; i < item.num_inputs; ++i) {
-          if (i == 10) {
-            // Truncate long arg lists and indicate with an ending null value.
-            args_pieces.push_back("null");
-            break;
-          }
-          const auto& shape = GetTensorValueForDump(first_input[i])->shape();
-          string shape_str =
-              shape.unknown_rank() ? "null" : shape.DebugString();
-          args_pieces.push_back(
-              strings::StrCat("{\"name\":\"", node->def().input(i),
-                              "\",\"shape\":", shape_str, "}"));
-        }
-        std::vector<string> attrs_pieces;
-        const auto& attrs = node->def().attr();
-        for (auto it = attrs.begin(); it != attrs.end(); ++it) {
-          const string& key = it->first;
-          const AttrValue& value = it->second;
-          // Exclude types that aren't useful for profiling.
-          if (value.value_case() == AttrValue::kFunc ||
-              value.value_case() == AttrValue::kPlaceholder ||
-              value.value_case() == AttrValue::VALUE_NOT_SET) {
-            continue;
-          }
-          string value_str = nvtx::AttrValueToJson(value);
-          attrs_pieces.push_back(strings::StrCat("\"", key, "\":", value_str));
-        }
-        msg = strings::StrCat("{\"op\":\"", node->def().op(), "\",\"name\":\"",
-                              node->name(), "\",\"args\":[",
-                              str_util::Join(args_pieces, ","), "],\"attrs\":{",
-                              str_util::Join(attrs_pieces, ","), "}}");
-      } else {
-        msg = node->def().op() + ": " + node->name();
-      }
-    }
-    auto nvtx_range = nvtx::MaybeNvtxDomainRangeStartMsg(msg, node->def().op());
-#endif // GOOGLE_CUDA
+    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(
+        item.kernel->def().op(), [&]() {
+          return nvtx::GetNodeExecutionRangeMessage(
+              item.kernel, item.num_inputs, first_input,
+              [this](const Entry& entry) {
+                return GetTensorValueForDump(entry);
+              });
+        });
 
     TensorReferenceVector accessed_tensors;
     DeviceContext* device_context = nullptr;
@@ -1794,9 +1756,6 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         MaybeMarkCompleted(input_frame, input_iter, id);
         // Continue to process the nodes in 'inline_ready'.
         completed = NodeDone(s, item.node, ready, stats, &inline_ready);
-#if GOOGLE_CUDA
-        nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
-#endif // GOOGLE_CUDA
         continue;
       }
 
@@ -1816,11 +1775,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
         AsyncState* state =
             new AsyncState(params, tagged_node, &item, first_input, stats);
 
-#if GOOGLE_CUDA
-        auto done = [this, state, nvtx_range]() {
-#else
         auto done = [this, state]() {
-#endif // GOOGLE_CUDA
           Device* device = impl_->params_.device;
           NodeExecStatsInterface* stats = state->stats;  // Shorthand
           Entry* first_input = state->first_input;       // Shorthand
@@ -1862,9 +1817,6 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
           }
           const bool completed =
               NodeDone(s, state->item->node, ready, stats, nullptr);
-#if GOOGLE_CUDA
-          nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
-#endif // GOOGLE_CUDA
           delete state;
           if (completed) ScheduleFinish();
         };
@@ -1951,9 +1903,6 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       }
       // Postprocess.
       completed = NodeDone(s, item.node, ready, stats, &inline_ready);
-#if GOOGLE_CUDA
-      nvtx::MaybeNvtxDomainRangeEnd(nvtx_range);
-#endif // GOOGLE_CUDA
     }
   }  // while !inline_ready.empty()
 
