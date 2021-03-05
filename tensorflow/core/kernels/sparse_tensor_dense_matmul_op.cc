@@ -137,7 +137,7 @@ class SparseTensorDenseMatMulOp : public OpKernel {
   if (adjoint_a_ == ADJ_A && adjoint_b_ == ADJ_B) {                        \
     Status functor_status = functor::SparseTensorDenseMatMulFunctor<       \
         Device, T, Tindices, ADJ_A,                                        \
-        ADJ_B>::Compute(ctx->eigen_device<Device>(), out->matrix<T>(),     \
+        ADJ_B>::Compute(ctx, out->matrix<T>(),     \
                         a_indices->matrix<Tindices>(), a_values->vec<T>(), \
                         b->matrix<T>());                                   \
     OP_REQUIRES_OK(ctx, functor_status);                                   \
@@ -183,7 +183,7 @@ namespace functor {
   template <>                                                             \
   Status SparseTensorDenseMatMulFunctor<                                  \
       GPUDevice, T, Tindices, ADJ_A,                                      \
-      ADJ_B>::Compute(const GPUDevice& d, typename TTypes<T>::Matrix out, \
+      ADJ_B>::Compute(OpKernelContext* ctx, typename TTypes<T>::Matrix out, \
                       TTypes<Tindices>::ConstMatrix a_indices,            \
                       typename TTypes<T>::ConstVec a_values,              \
                       typename TTypes<T>::ConstMatrix b);                 \
@@ -246,10 +246,11 @@ struct SparseTensorDenseMatMulFunctor<CPUDevice, T, Tindices, ADJ_A, ADJ_B> {
   // Vectorize certain operations above this size.
   static const std::size_t kNumVectorize = 32;
 
-  static Status Compute(const CPUDevice& d, typename TTypes<T>::Matrix out,
+  static Status Compute(OpKernelContext* context, typename TTypes<T>::Matrix out,
                         typename TTypes<Tindices>::ConstMatrix a_indices,
                         typename TTypes<T>::ConstVec a_values,
                         typename TTypes<T>::ConstMatrix b) {
+    const CPUDevice d = context->eigen_device<CPUDevice>();
     const std::size_t nnz = a_values.size();
     const std::size_t rhs_right = (ADJ_B ? b.dimension(0) : b.dimension(1));
     const std::size_t lhs_right = (ADJ_B ? b.dimension(1) : b.dimension(0));

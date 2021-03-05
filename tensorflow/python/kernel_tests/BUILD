@@ -3262,11 +3262,10 @@ cuda_py_test(
     xla_enable_strict_auto_jit = True,
 )
 
-cuda_py_test(
-    name = "sparse_tensor_dense_matmul_op_test",
-    size = "medium",
-    srcs = ["sparse_tensor_dense_matmul_op_test.py"],
-    additional_deps = [
+py_library(
+    name = "sparse_tensor_dense_matmul_op_base",
+    srcs = ["sparse_tensor_dense_matmul_op_base.py"],
+    deps = [
         "//third_party/py/numpy",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python:array_ops",
@@ -3278,6 +3277,25 @@ cuda_py_test(
         "//tensorflow/python:math_ops",
         "//tensorflow/python:platform",
         "//tensorflow/python:sparse_ops",
+    ],
+)
+
+cuda_py_test(
+    name = "sparse_tensor_dense_matmul_op_test",
+    size = "medium",
+    srcs = ["sparse_tensor_dense_matmul_op_test.py"],
+    additional_deps = [
+        ":sparse_tensor_dense_matmul_op_base",
+    ],
+    xla_enable_strict_auto_jit = True,
+)
+
+cuda_py_test(
+    name = "sparse_tensor_dense_matmul_op_deterministic_test",
+    size = "small",
+    srcs = ["sparse_tensor_dense_matmul_op_deterministic_test.py"],
+    additional_deps = [
+        ":sparse_tensor_dense_matmul_op_base",
     ],
     xla_enable_strict_auto_jit = True,
 )
