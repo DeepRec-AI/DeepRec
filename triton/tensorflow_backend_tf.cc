@@ -208,14 +208,19 @@ IsGPUFeedAndFetchSupported(TRITONTF_DataType dtype)
 
 void
 NewSessionOptions(
-    const bool has_graph_level, const int graph_level,
-    const bool allow_gpu_memory_growth,
+    const int num_intra_threads, const int num_inter_threads,
+    const bool use_per_session_threads, const bool has_graph_level,
+    const int graph_level, const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
     const bool allow_soft_placement,
     const std::map<int, std::vector<float>>& memory_limit_mb,
     const TRITONTF_TFTRTConfig* tftrt_config, const bool auto_mixed_precision,
     tensorflow::SessionOptions* session_options)
 {
+  session_options->config.set_intra_op_parallelism_threads(num_intra_threads);
+  session_options->config.set_inter_op_parallelism_threads(num_inter_threads);
+  session_options->config.set_use_per_session_threads(use_per_session_threads);
+
   session_options->config.mutable_gpu_options()->set_allow_growth(
       allow_gpu_memory_growth);
   session_options->config.mutable_gpu_options()
@@ -813,8 +818,10 @@ TRITONTF_TensorSetString(
 TRITONTF_Error*
 TRITONTF_ModelCreateFromGraphDef(
     TRITONTF_Model** tritontf_model, const char* model_name,
-    const char* model_path, const int device_id, const bool has_graph_level,
-    const int graph_level, const bool allow_gpu_memory_growth,
+    const char* model_path, const int device_id, const int num_intra_threads,
+    const int num_inter_threads, const bool use_per_session_threads,
+    const bool has_graph_level, const int graph_level,
+    const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
     const bool allow_soft_placement,
     const std::map<int, std::vector<float>>& memory_limit_mb,
@@ -822,6 +829,7 @@ TRITONTF_ModelCreateFromGraphDef(
 {
   tensorflow::SessionOptions session_options;
   NewSessionOptions(
+      num_intra_threads, num_inter_threads, use_per_session_threads,
       has_graph_level, graph_level, allow_gpu_memory_growth,
       per_process_gpu_memory_fraction, allow_soft_placement, memory_limit_mb,
       tftrt_config, auto_mixed_precision, &session_options);
@@ -892,8 +900,10 @@ TRITONTF_ModelCreateFromGraphDef(
 TRITONTF_Error*
 TRITONTF_ModelCreateFromSavedModel(
     TRITONTF_Model** tritontf_model, const char* model_name,
-    const char* model_path, const int device_id, const bool has_graph_level,
-    const int graph_level, const bool allow_gpu_memory_growth,
+    const char* model_path, const int device_id, const int num_intra_threads,
+    const int num_inter_threads, const bool use_per_session_threads,
+    const bool has_graph_level, const int graph_level,
+    const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
     const bool allow_soft_placement,
     const std::map<int, std::vector<float>>& memory_limit_mb,
@@ -901,6 +911,7 @@ TRITONTF_ModelCreateFromSavedModel(
 {
   tensorflow::SessionOptions session_options;
   NewSessionOptions(
+      num_intra_threads, num_inter_threads, use_per_session_threads,
       has_graph_level, graph_level, allow_gpu_memory_growth,
       per_process_gpu_memory_fraction, allow_soft_placement, memory_limit_mb,
       tftrt_config, auto_mixed_precision, &session_options);
