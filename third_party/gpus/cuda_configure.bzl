@@ -23,6 +23,7 @@
   * `TF_CUDA_COMPUTE_CAPABILITIES`: The CUDA compute capabilities. Default is
     `3.5,5.2`.
   * `PYTHON_BIN_PATH`: The python binary path
+  * `TF_USE_CCACHE`: Prepend ccache to compilation commands.
 """
 
 load("//third_party/clang_toolchain:download_clang.bzl", "download_clang")
@@ -49,6 +50,7 @@ _TF_CUDA_COMPUTE_CAPABILITIES = "TF_CUDA_COMPUTE_CAPABILITIES"
 _TF_CUDA_CONFIG_REPO = "TF_CUDA_CONFIG_REPO"
 _TF_DOWNLOAD_CLANG = "TF_DOWNLOAD_CLANG"
 _PYTHON_BIN_PATH = "PYTHON_BIN_PATH"
+_TF_USE_CCACHE = "TF_USE_CCACHE"
 
 _DEFAULT_CUDA_COMPUTE_CAPABILITIES = ["3.5", "5.2"]
 
@@ -1289,6 +1291,9 @@ def _create_local_cuda_repository(repository_ctx):
         cuda_defines["%{linker_files}"] = ":crosstool_wrapper_driver_is_not_gcc"
         cuda_defines["%{win_linker_files}"] = ":windows_msvc_wrapper_files"
 
+        ccache = ""
+        if repository_ctx.os.environ.get(_TF_USE_CCACHE) == "1":
+            ccache = "ccache"
         wrapper_defines = {
             "%{cpu_compiler}": str(cc),
             "%{cuda_version}": cuda_config.cuda_version,
@@ -1298,6 +1303,7 @@ def _create_local_cuda_repository(repository_ctx):
                 ["\"%s\"" % c for c in cuda_config.compute_capabilities],
             ),
             "%{nvcc_tmp_dir}": _get_nvcc_tmp_dir_for_windows(repository_ctx),
+            "%{ccache}": ccache
         }
         _tpl(
             repository_ctx,
@@ -1409,6 +1415,7 @@ cuda_configure = repository_rule(
         "TMP",
         "TMPDIR",
         "TF_CUDA_PATHS",
+        _TF_USE_CCACHE,
     ],
 )
 

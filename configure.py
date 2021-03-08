@@ -1452,6 +1452,8 @@ def main():
     write_action_env_to_bazelrc('LD_LIBRARY_PATH',
                                 environ_cp.get('LD_LIBRARY_PATH'))
 
+  write_action_env_to_bazelrc("TF_USE_CCACHE",
+                              environ_cp.get('TF_USE_CCACHE', '0'))
   environ_cp['TF_NEED_CUDA'] = str(
       int(get_var(environ_cp, 'TF_NEED_CUDA', 'CUDA', False)))
   if (environ_cp.get('TF_NEED_CUDA') == '1' and
