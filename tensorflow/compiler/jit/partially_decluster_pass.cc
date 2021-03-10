@@ -436,14 +436,11 @@ Status PopulateReachableDynamicNodes(
       const Node* n = queue.front();
       queue.pop();
       absl::optional<absl::string_view> cluster_n = GetXlaClusterForNode(*n);
-      if (*cluster_n ==
-          *consumer_cluster) {  // redundant condition. Extra protection.
-        VLOG(2) << "Possible dynamic node " << n->def().op() << " ("
-                << n->name() << ")"
-                << " in " << *cluster_n
-                << ". Adding to candidate dynamic nodes.";
-        candidate_dynamic_nodes.push_back(n);
-      }
+      CHECK_EQ(*cluster_n, *consumer_cluster);
+      VLOG(2) << "Possible dynamic node " << n->def().op() << " (" << n->name()
+              << ")"
+              << " in " << *cluster_n << ". Adding to candidate dynamic nodes.";
+      candidate_dynamic_nodes.push_back(n);
 
       for (const Node* out_node : n->out_nodes()) {
         VLOG(2) << "Examining " << out_node->def().op() << "("
@@ -458,7 +455,7 @@ Status PopulateReachableDynamicNodes(
                   << src_dynamic_node->name() << ")";
           visited[out_node->name()] = true;
           queue.push(out_node);
-        } else {
+        } else if (VLOG_IS_ON(2)) {
           absl::string_view c = !GetXlaClusterForNode(*out_node).has_value()
                                     ? " unclustered "
                                     : *GetXlaClusterForNode(*out_node);
@@ -493,37 +490,40 @@ Status PopulatePossibleDynamicNodes(
 
     absl::optional<absl::string_view> incoming_cluster =
         GetXlaClusterForNode(*b_node);
-    bool is_node_blacklisted = false;
 
-    // If any of the outgoing edges are consumed by a cluster, we move forward.
-    VLOG(2) << "Examining whether " << b_node->def().op() << " ("
-            << b_node->name()
-            << ") found in the blacklist is on the edge of a cluster";
-    if (!incoming_cluster.has_value()) {
-      VLOG(2) << b_node->name() << " node found "
-              << " which is unclustered. ";
-    } else {
-      VLOG(2) << b_node->name() << " node found in " << *incoming_cluster;
+    if (VLOG_IS_ON(3)) {
+      VLOG(3) << "Examining whether " << b_node->def().op() << " ("
+              << b_node->name()
+              << ") found in the blacklist is on the edge of a cluster.";
+      if (!incoming_cluster.has_value()) {
+        VLOG(3) << b_node->name() << " node found "
+                << " which is unclustered. ";
+      } else {
+        VLOG(3) << b_node->name() << " node found in " << *incoming_cluster
+                << ".";
+      }
     }
+
+    bool is_node_blacklisted = false;
     for (auto edge : b_node->out_edges()) {
       absl::optional<absl::string_view> consumer_cluster =
           GetXlaClusterForNode(*edge->dst());
-      // b_node is unclustered but on the edge of cluster.
-      bool unclustered_node_on_edge =
-          !incoming_cluster.has_value() && consumer_cluster.has_value();
 
-      // b_node is a different cluster but on edge of another cluster.
-      bool clustered_node_on_edge = false;
-      if (incoming_cluster.has_value() && consumer_cluster.has_value()) {
-        clustered_node_on_edge = *incoming_cluster != *consumer_cluster;
-      }
-      if (unclustered_node_on_edge || clustered_node_on_edge) {
-        VLOG(2) << "Out edge of " << b_node->def().op() << " ("
+      // Exit right away if there is no consumer cluster.
+      if (!consumer_cluster.has_value()) continue;
+
+      // !incoming_cluster.has_value() implies b_node is unclustered but on the
+      // edge of a cluster. If !incoming_cluster.has_value() is true, then lazy
+      // evaluation will ensure that *incoming_cluster deref is not computed.
+      // Otherwise, if incoming_cluster.has_value() is true, *incoming_cluster
+      // != *consumer_cluster will imply b_node is a different cluster but on
+      // edge of another cluster.
+      if (!incoming_cluster.has_value() ||
+          *incoming_cluster != *consumer_cluster) {
+        VLOG(3) << "Out edge of " << b_node->def().op() << " ("
                 << b_node->name() << ")"
                 << " is " << edge->dst()->name() << " and is in "
-                << *consumer_cluster
-                << " unclustered_node_on_edge: " << unclustered_node_on_edge
-                << " clustered_node_on_edge: " << clustered_node_on_edge;
+                << *consumer_cluster << ".";
         is_node_blacklisted = true;
         break;
       }
@@ -534,11 +534,12 @@ Status PopulatePossibleDynamicNodes(
               << " is in the blacklist but not on the edge of a cluster.";
       continue;
     }
-
-    VLOG(1) << "We have found a blacklisted op " << b_node->def().op() << "("
-            << b_node->name()
-            << ") that can be used to analyse possible dynamic nodes in the "
-               "graph based on reachability.";
+    if (VLOG_IS_ON(1)) {
+      VLOG(1) << "We have found a blacklisted op " << b_node->def().op() << "("
+              << b_node->name()
+              << ") that can be used to analyse possible dynamic nodes in the "
+                 "graph based on reachability.";
+    }
 
     visited[b_node->name()] = true;
     TF_RETURN_IF_ERROR(PopulateReachableDynamicNodes(b_node, visited,
