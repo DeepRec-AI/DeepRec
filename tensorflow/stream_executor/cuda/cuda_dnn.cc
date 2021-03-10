@@ -682,7 +682,14 @@ std::string CudnnExecutionPlanEngineFilter() {
     std::string str = "";
     TF_CHECK_OK(tensorflow::ReadStringFromEnvVar(
                     "TF_CUDNN_ENGINE_FILTER", "", &str));
-    return str;
+    // TODO(kaixih@nvidia): nvbugs/3270255 and nvbugs/3193140.
+    std::string default_str =
+        "(ConvFwd_eng(32|33)|ConvBwdFilter_eng(6|14)|ConvBwdData_eng(10|11))";
+    if (str != "") {
+      return absl::StrCat(default_str, "|(", str, ")");
+    } else {
+      return default_str;
+    }
   }();
 
   return filter_str;
