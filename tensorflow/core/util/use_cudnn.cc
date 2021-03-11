@@ -34,6 +34,7 @@ namespace tensorflow {
 
 ADD_BOOL_CUDNN_FLAG(CanUseCudnn, TF_USE_CUDNN, true);
 ADD_BOOL_CUDNN_FLAG(CudnnUseAutotune, TF_CUDNN_USE_AUTOTUNE, true);
+ADD_BOOL_CUDNN_FLAG(CudnnUseFrontend, TF_CUDNN_USE_FRONTEND, true);
 // Whether to auto-tuning Cudnn RNN forward and backward pass to pick
 // statistically the best cudnnRNNAlgo_t and cudnnMathType_t.
 // The flag is disabled when TF_DEBUG_CUDNN_RNN is turned on.
