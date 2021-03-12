@@ -434,7 +434,6 @@ Status PopulateReachableDynamicNodes(
 
     std::queue<const Node*> queue;
     queue.push(edge->dst());
-    visited[edge->dst()->name()] = true;
     while (!queue.empty()) {
       const Node* n = queue.front();
       queue.pop();
