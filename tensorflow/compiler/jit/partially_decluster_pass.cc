@@ -429,12 +429,17 @@ Status PopulateReachableDynamicNodes(
               << ". Hence, Looking for reachable nodes only within "
               << *consumer_cluster;
     }
+
+    if (visited[edge->dst()->name()]) continue;
+
     std::queue<const Node*> queue;
     queue.push(edge->dst());
     visited[edge->dst()->name()] = true;
     while (!queue.empty()) {
       const Node* n = queue.front();
       queue.pop();
+      if (visited[n->name()]) continue;
+      visited[n->name()] = true;
       absl::optional<absl::string_view> cluster_n = GetXlaClusterForNode(*n);
       CHECK_EQ(*cluster_n, *consumer_cluster);
       VLOG(2) << "Possible dynamic node " << n->def().op() << " (" << n->name()
@@ -446,26 +451,13 @@ Status PopulateReachableDynamicNodes(
         VLOG(2) << "Examining " << out_node->def().op() << "("
                 << out_node->name() << ")"
                 << " out node of " << n->def().op() << " (" << n->name() << ")";
-        if (!visited[out_node->name()] &&
-            GetXlaClusterForNode(*out_node).has_value() &&
+        if (GetXlaClusterForNode(*out_node).has_value() &&
             (*GetXlaClusterForNode(*out_node) == *consumer_cluster)) {
           VLOG(2) << out_node->def().op() << "(" << out_node->name()
                   << ") which is in " << *GetXlaClusterForNode(*out_node)
                   << " is poisonable by " << src_dynamic_node->def().op() << "("
                   << src_dynamic_node->name() << ")";
-          visited[out_node->name()] = true;
           queue.push(out_node);
-        } else if (VLOG_IS_ON(2)) {
-          absl::string_view c = !GetXlaClusterForNode(*out_node).has_value()
-                                    ? " unclustered "
-                                    : *GetXlaClusterForNode(*out_node);
-          if (!visited[out_node->name()]) {
-            VLOG(2) << out_node->def().op() << "(" << out_node->name()
-                    << ") has not been visited yet but is " << c;
-          } else {
-            VLOG(2) << out_node->def().op() << "(" << out_node->name()
-                    << ") has already been visited and is " << c;
-          }
         }
       }
     }
@@ -484,6 +476,8 @@ Status PopulatePossibleDynamicNodes(
   absl::flat_hash_set<string> blacklisted_ops =
       tensorflow::GetBlacklistedDynamicOps();
   for (const Node* b_node : graph->op_nodes()) {
+    if (visited[b_node->name()]) continue;
+    visited[b_node->name()] = true;
     if (blacklisted_ops.find(b_node->def().op()) == blacklisted_ops.end()) {
       continue;
     }
@@ -534,14 +528,11 @@ Status PopulatePossibleDynamicNodes(
               << " is in the blacklist but not on the edge of a cluster.";
       continue;
     }
-    if (VLOG_IS_ON(1)) {
-      VLOG(1) << "We have found a blacklisted op " << b_node->def().op() << "("
-              << b_node->name()
-              << ") that can be used to analyse possible dynamic nodes in the "
-                 "graph based on reachability.";
-    }
+    VLOG(1) << "We have found a blacklisted op " << b_node->def().op() << "("
+            << b_node->name()
+            << ") that can be used to analyse possible dynamic nodes in the "
+               "graph based on reachability.";
 
-    visited[b_node->name()] = true;
     TF_RETURN_IF_ERROR(PopulateReachableDynamicNodes(b_node, visited,
                                                      candidate_dynamic_nodes));
   }
