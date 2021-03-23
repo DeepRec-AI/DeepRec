@@ -47,6 +47,17 @@ absl::flat_hash_set<string> GetBlacklistedDynamicOps() {
   return result;
 }
 
+bool DeclusterPossibleDynamicOps() {
+  static bool decluster = [] {
+    bool to_decluster = false;
+    TF_CHECK_OK(
+        tensorflow::ReadBoolFromEnvVar("TF_XLA_DECLUSTER_POSSIBLE_DYNAMIC_OPS",
+                                       /*default_val=*/false, &to_decluster));
+    return to_decluster;
+  }();
+  return decluster;
+}
+
 namespace {
 
 bool NotBackedge(const Edge& edge) { return !edge.src()->IsNextIteration(); }
@@ -569,9 +580,10 @@ Status PartiallyDeclusterPass::Run(
   // invalid.
 
   Graph* graph = options.graph->get();
-
-  TF_RETURN_IF_ERROR(
-      decluster_possible_dynamic_ops::PartiallyDeclusterGraph(graph));
+  if (DeclusterPossibleDynamicOps()) {
+    TF_RETURN_IF_ERROR(
+        decluster_possible_dynamic_ops::PartiallyDeclusterGraph(graph));
+  }
 
   TF_RETURN_IF_ERROR(
       reduce_device_to_host_copies::PartiallyDeclusterGraph(graph));
