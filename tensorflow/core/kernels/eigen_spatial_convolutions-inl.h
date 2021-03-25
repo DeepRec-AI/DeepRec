@@ -1542,7 +1542,6 @@ struct gemm_pack_rhs<
  */
 template <typename Input, typename Kernel,
           typename OutputKernel = const NoOpOutputKernel>
-EIGEN_DEVICE_FUNC
     EIGEN_ALWAYS_INLINE static const typename internal::conditional<
         internal::traits<Input>::Layout == ColMajor,
         TensorReshapingOp<
