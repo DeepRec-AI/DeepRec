@@ -566,7 +566,7 @@ class SeluTest(test.TestCase):
       x_val = [[-0.9, -0.7, -0.5, -0.3, -0.1], [0.1, 0.3, 0.5, 0.7, 0.9]]
       x = np.asarray(x_val, dtype=np.float32, order="F")
       err = gradient_checker_v2.max_error(
-          *gradient_checker_v2.compute_gradient(nn_ops.selu, [x]))
+          *gradient_checker_v2.compute_gradient(nn_ops.selu, [x], delta=1.0 / 1024))
     print("selu (float32) gradient err = ", err)
     self.assertLess(err, 1e-4)
 
@@ -594,7 +594,7 @@ class SeluTest(test.TestCase):
           dtype=np.float32,
           order="F")
       err = gradient_checker_v2.max_error(
-          *gradient_checker_v2.compute_gradient(f, [x]))
+          *gradient_checker_v2.compute_gradient(f, [x], delta=1.0 / 1024))
     print("selu (float32) gradient of gradient err = ", err)
     self.assertLess(err, 1e-4)
 
