@@ -126,6 +126,11 @@ class BaseGPUDevice : public LocalDevice {
   // the compute stream and are not yet known to have completed.
   int PendingKernels();
 
+  void* GetStream() {
+    CHECK(streams_.size() == 1);
+    return streams_.front()->compute->implementation()->GpuStreamMemberHack();
+  }
+
  protected:
   Allocator* gpu_allocator_;  // not owned
   Allocator* cpu_allocator_;  // not owned

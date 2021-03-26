@@ -59,6 +59,8 @@ class GpuIdUtil {
   }
 };
 
+typedef GpuIdUtil DeviceIdUtil;
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_COMMON_RUNTIME_GPU_GPU_ID_UTILS_H_
