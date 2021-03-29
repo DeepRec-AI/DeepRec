@@ -3407,7 +3407,7 @@ std::vector<std::vector<HloInstruction*>> DivideOutputInstructionsIntoGroups(
     }
   }
   // Place output instructions in the same set into the same group.
-  absl::flat_hash_map<HloInstruction*, std::vector<HloInstruction*>> groups;
+  HloInstructionMap<std::vector<HloInstruction*> > groups;
   for (size_t oid = 0; oid < output_instructions.size(); ++oid) {
     groups[disjoint_sets[oid].Get()].push_back(output_instructions.at(oid));
   }

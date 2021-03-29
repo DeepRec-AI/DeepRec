@@ -257,6 +257,153 @@ bool MaybeLoadPtxFromFile(const HloModule* module, std::string* ptx) {
 
 }  // namespace
 
+
+persistentCompilationCache::persistentCompilationCache()
+{
+  cache_dir_ = GetDebugOptionsFromFlags().xla_gpu_persistent_cache_dir();
+  in_use_ = !cache_dir_.empty();
+  if (!in_use_) {
+    return;
+  }
+#if !defined(PLATFORM_POSIX)
+  // The current peristent cache design requires an atomic rename.
+  LOG(WARNING) << "XLA persistent cache is only supported on POSIX platforms.";
+  return;
+#endif
+  tensorflow::Env* env = tensorflow::Env::Default();
+  std::vector<string> files;
+  in_use_ = env->GetChildren(cache_dir_, &files).ok();
+  if (!in_use_) {
+    LOG(WARNING) << "Can't read XLA persistent cache directory \""
+                 << cache_dir_ << "\".";
+    return;
+  }
+  VLOG(2) << "Directory " << cache_dir_ << " is persistent cache.";
+  // Loop over the cache entries and store them in memory. Allow for failures. 
+  for (const auto& file : files) {
+    if (file[0] == '!') {
+      // Persistent cache temp file start with a '!'.
+      VLOG(3) << "Skipping temp file name \'" << file << "\".";
+      continue;
+    }
+    // The filename is the hash key.
+    int64 key;
+    if (!absl::SimpleAtoi(file, &key)) {
+      // Invalid filename. Filename must be an int64
+      LOG(WARNING) << "Skipping invalid entry name \"" << file << ".\"";
+      continue;
+    }
+    // Read the file, and store in cache on success.
+    std::string text;
+    string fullpath = tensorflow::io::JoinPath(cache_dir_, file);
+    if (!tensorflow::ReadFileToString(env, fullpath, &text).ok()) {
+      LOG(WARNING) << "Skippping entry \"" << fullpath << "\". Can't read it.";
+      continue;
+    }
+    // store PTX or cubin in memory cache
+    in_memory_cache_[key] = text;
+  }
+  VLOG(2) << "Persistent cache has " << in_memory_cache_.size()
+          << " entries.";
+  if (VLOG_IS_ON(3)) {
+    for (const auto &pair : in_memory_cache_) {
+      VLOG(3) << "  Entry: " << pair.first << ".";
+    }
+  }
+}
+
+const int64 persistentCompilationCache::ptx_hash_;
+
+int64 persistentCompilationCache::createKey(
+    llvm::Module* llvm_module, const std::pair<int, int> &compute_capability){
+  string llvm_str = llvm_ir::DumpModuleToString(*llvm_module);
+
+  int64 key = tensorflow::Hash64Combine(
+                tensorflow::Hash64Combine(tensorflow::Hash64(llvm_str),
+                                          compute_capability.first),
+                compute_capability.second);
+  VLOG(3) << "Created key " << key << ".";
+ 
+  return key;
+}
+
+void persistentCompilationCache::addToCache(int64 key, absl::string_view text,
+                                            const string &kind) {
+  VLOG(2) << "Attempting to add " << kind << " to cache for key: "
+          << key << ".";
+  tensorflow::Env* env = tensorflow::Env::Default();
+  std::string text_tmp = tensorflow::io::JoinPath(cache_dir_, "!");
+  if (!env->CreateUniqueFileName(&text_tmp, "")) {
+    LOG(ERROR) << "Don't add to cache: cannot create a temporary file "
+               << "name to store the " << kind << ".";
+  } else {
+    if (!tensorflow::WriteStringToFile(env, text_tmp, text).ok()) {
+      LOG(ERROR) << "Don't add to cache: can't write " << kind << ". Please "
+                 << "check that there's space on the device, and that the "
+		 << "cache \"" << cache_dir_ << "\" has the right permissions.";
+    } else {
+      // Rename file.
+      string key_str = std::to_string(key);
+      string text_file = tensorflow::io::JoinPath(cache_dir_, key_str);
+      // add cache entry "key -> text".
+      // rename is atomic, making this multi thread/process safe.
+      if (!env->RenameFile(text_tmp, text_file).ok()) {
+	LOG(ERROR) << "Don't add to cache: can't rename \"" << text_tmp\
+	           << "\" to \"" << text_file << "\". Please check that "
+		   << "there's space on the device, and that the cache \""
+                   << cache_dir_ << "\" has the right permissions.";
+      } else {
+	VLOG(2) << "Added " << kind << ": " << key << " to cache directory "
+        	<< cache_dir_ << ".";
+      }
+    }
+    // On success, the temp file is no longer present, but  WriteStringToFile
+    // can fail after file has been created. Delete here in case of failures.
+    (void)env->DeleteFile(text_tmp);
+  }
+}
+
+void persistentCompilationCache::addToCache(int64 key, const string &ptx) {
+  int64 ptx_key = tensorflow::Hash64Combine(key, ptx_hash_);
+  addToCache(ptx_key, ptx, "PTX");
+}
+
+void persistentCompilationCache::addToCache(int64 key,
+                                            const std::vector<uint8> &cubin) {
+  size_t size = cubin.size();
+  if (size > 0) { // 0 sized cubin is a result of ptxas failure.
+    absl::string_view cubin_str(reinterpret_cast<const char*>(cubin.data()),
+                        	size);
+    addToCache(key, cubin_str, "cubin");
+  }
+}
+
+template <typename T>
+bool persistentCompilationCache::LookupCache(int64 key, T &text,
+                                             const string &kind) {
+  VLOG(2) << "Attempting to lookup " << kind << " in cache for key: " << key << ".";
+  bool in_cache = in_memory_cache_.contains(key);
+  if (in_cache) {
+    const string &text_str = in_memory_cache_[key];
+    // Make a copy in order to not return a reference to the cache. 
+    std::copy_n(text_str.data(), text_str.size(), std::back_inserter(text));
+    VLOG(2) << "Found " << kind << " in cache for key: " << key << ".";
+  }
+  return in_cache;
+}
+
+bool persistentCompilationCache::LookupCache(int64 key, string &ptx) {
+  int64 ptx_key = tensorflow::Hash64Combine(key, ptx_hash_);
+
+  return LookupCache(ptx_key, ptx, "PTX");
+}
+
+bool persistentCompilationCache::LookupCache(int64 key,
+                                             std::vector<uint8> &cubin) {
+  return LookupCache(key, cubin, "cubin");
+}
+
+
 NVPTXCompiler::NVPTXCompiler()
     : GpuCompiler(stream_executor::cuda::kCudaPlatformId, nvptx::kTargetTriple,
                   nvptx::kDataLayout) {}
@@ -286,42 +433,66 @@ NVPTXCompiler::CompileTargetBinary(const HloModule* module,
   std::pair<int, int> compute_capability =
       absl::get<std::pair<int, int>>(gpu_version);
 
-  std::string libdevice_dir;
-  {
-    tensorflow::mutex_lock lock(mutex_);
-
-    // Find the directory containing libdevice.  To avoid searching for it every
-    // time, we have a one-element cache, keyed on the module's config's
-    // cuda_data_dir.
-    if (cached_libdevice_dir_.empty()) {
-      cached_libdevice_dir_ = GetLibdeviceDir(module->config());
-    }
-    libdevice_dir = cached_libdevice_dir_;
-  }
-  VLOG(2) << "Libdevice dir = " << libdevice_dir << "\n";
-
+  bool use_cache = persistent_compilation_cache_.in_use_;
+  bool have_ptx = false;
+  int64 key;
   string ptx;
-  if (!MaybeLoadPtxFromFile(module, &ptx)) {
-    XLA_SCOPED_LOGGING_TIMER(
-        "NVPTXCompiler::CompileTargetBinary - CompileToPtx");
-    TF_ASSIGN_OR_RETURN(
-        ptx, nvptx::CompileToPtx(llvm_module, gpu_version, module->config(),
-                                 libdevice_dir));
+  if (use_cache) {
+    key = persistent_compilation_cache_.createKey(llvm_module,
+                                                  compute_capability);
+    have_ptx = persistent_compilation_cache_.LookupCache(key, ptx);
   }
 
-  llvm_ir::DumpIrIfEnabled(*module, *llvm_module, /*optimized=*/true);
+  if (!have_ptx) {
+    std::string libdevice_dir;
+    {
+      tensorflow::mutex_lock lock(mutex_);
 
-  if (user_post_optimization_hook_) {
-    user_post_optimization_hook_(*llvm_module);
+      // Find the directory containing libdevice.  To avoid searching for it every
+      // time, we have a one-element cache, keyed on the module's config's
+      // cuda_data_dir.
+      if (cached_libdevice_dir_.empty()) {
+	cached_libdevice_dir_ = GetLibdeviceDir(module->config());
+      }
+      libdevice_dir = cached_libdevice_dir_;
+    }
+    VLOG(2) << "Libdevice dir = " << libdevice_dir << "\n";
+
+    if (!MaybeLoadPtxFromFile(module, &ptx)) {
+      XLA_SCOPED_LOGGING_TIMER(
+          "NVPTXCompiler::CompileTargetBinary - CompileToPtx");
+      TF_ASSIGN_OR_RETURN(
+          ptx, nvptx::CompileToPtx(llvm_module, gpu_version, module->config(),
+                                   libdevice_dir));
+    }
+
+    llvm_ir::DumpIrIfEnabled(*module, *llvm_module, /*optimized=*/true);
+
+    if (user_post_optimization_hook_) {
+      user_post_optimization_hook_(*llvm_module);
+    }
+    if (use_cache) {
+      persistent_compilation_cache_.addToCache(key, ptx);
+    }
   }
   // Write PTX to IR dump directory, if IR dumping was requested.
   if (DumpingEnabledForHloModule(*module)) {
     DumpToFileInDirOrStdout(*module, "", "ptx", ptx);
   }
 
-  std::vector<uint8> cubin = CompileGpuAsmOrGetCachedResult(
-      stream_exec, ptx, compute_capability.first, compute_capability.second,
-      module->config());
+  bool have_cubin = false;
+  std::vector<uint8> cubin;
+  if (use_cache && have_ptx) {
+    have_cubin = persistent_compilation_cache_.LookupCache(key, cubin);
+  }
+  if (!have_cubin) {
+    cubin = CompileGpuAsmOrGetCachedResult(
+	stream_exec, ptx, compute_capability.first, compute_capability.second,
+	module->config());
+    if (use_cache) {
+      persistent_compilation_cache_.addToCache(key, cubin);
+    }
+  }
 
   return std::pair<std::string, std::vector<uint8>>(std::move(ptx),
                                                     std::move(cubin));

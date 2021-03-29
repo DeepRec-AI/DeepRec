@@ -38,6 +38,7 @@ DebugOptions DefaultDebugOptionsIgnoringFlags() {
   opts.set_xla_cpu_multi_thread_eigen(true);
   opts.set_xla_gpu_cuda_data_dir("./cuda_sdk_lib");
   opts.set_xla_gpu_asm_extra_flags("");
+  opts.set_xla_gpu_persistent_cache_dir("");
   opts.set_xla_eliminate_hlo_implicit_broadcast(true);
   opts.set_xla_dump_hlo_as_html(false);
   opts.set_xla_dump_include_timestamp(true);
@@ -435,6 +436,11 @@ static void AllocateFlags() {
               &DebugOptions::set_xla_gpu_disable_gpuasm_optimizations),
           flag_values->xla_gpu_disable_gpuasm_optimizations(),
           "In XLA:GPU run ptxas in -O0 (default is -O3)."),
+      tensorflow::Flag(
+          "xla_gpu_persistent_cache_dir",
+          string_setter_for(
+	     &DebugOptions::set_xla_gpu_persistent_cache_dir), "",
+          "The directory for the persistent compilation cache."),
       tensorflow::Flag(
           "xla_fuel", setter_for_xla_fuel, /*default_value_for_display=*/"",
           "Sets compiler fuel, useful for bisecting bugs in passes.  Format "

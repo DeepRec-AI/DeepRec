@@ -237,16 +237,19 @@ void HorizontalLoopFusionImpl::FusionCandidates::Initialize(
   // First, find out all potential target candidates. We will filter out
   // unsupported/non-profitable cases below.
   absl::flat_hash_set<HloInstruction*> fusible_candidates;
+  std::vector<HloInstruction*> ordered_fusible_candidates;
   for (auto opnd : consumer->operands()) {
     auto predecessor = opnd->LatestNonGteAncestor();
     // We support kLoop fusion and element-wise HLOs now. We may extend the
     // support list if needs arise.
     if (IsFusibleCandidate(*predecessor)) {
-      fusible_candidates.insert(predecessor);
+      if (fusible_candidates.insert(predecessor).second) {
+        ordered_fusible_candidates.push_back(predecessor);
+      }
     }
   }
 
-  for (auto instr : fusible_candidates) {
+  for (auto instr : ordered_fusible_candidates) {
     if (!IsConsumerTheOnlyNonRootUser(*instr, *consumer)) {
       VLOG(2) << "Reject maybe illegal instr " << instr->ToString()
               << "; including it may create cycles in HLO.";
