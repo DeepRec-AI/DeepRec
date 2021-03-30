@@ -1,0 +1,21 @@
+name: CPU-CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+
+  TF_build:
+    env:
+      CI_CONTAINER_NAME: pai-tf-ci-cpu-worker
+    runs-on: self-hosted
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: build
+        run: |
+          sudo docker run --name ${CI_CONTAINER_NAME}-$(date +%s) -v `pwd`:/root/pai-tensorflow pai-tf-ci-cpu:v1.0 /bin/bash -c "/bin/bash /root/pai-tensorflow/.github/workflows/cpu-ci.sh"
