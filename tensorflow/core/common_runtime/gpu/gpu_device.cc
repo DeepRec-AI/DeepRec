@@ -905,7 +905,7 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
     min_system_memory = 225 * 1024 * 1024;
   } else {
     if (cc_major <= 6) {
-      min_system_memory = 525 * 1024 * 1024;
+      min_system_memory = 575 * 1024 * 1024;
     } else if (cc_major <= 7) {
       min_system_memory = 1050 * 1024 * 1024;
     } else {
