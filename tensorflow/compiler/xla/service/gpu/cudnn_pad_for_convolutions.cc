@@ -189,12 +189,6 @@ static StatusOr<bool> TryResolvePaddedShapesForTensorCore(
     return false;
   }
 
-  // TODO(timshen): Don't skip forward-activation convs if we find a benchmark
-  // where there's a speedup.
-  if (kind == CudnnConvKind::kForwardActivation) {
-    return false;
-  }
-
   Shape new_lhs_shape = lhs->shape();
   Shape new_rhs_shape = rhs->shape();
   Shape& new_result_shape = *new_result_shape_ptr;
@@ -220,6 +214,12 @@ static StatusOr<bool> TryResolvePaddedShapesForTensorCore(
     }
   }();
 
+  // Deal with bias when there is one.
+  bool has_bias = kind == CudnnConvKind::kForwardActivation;
+  Shape bias_shape = has_bias ? conv->mutable_operand(2)->shape()
+                              : ShapeUtil::MakeShape(F16, {0});
+  Shape new_bias_shape = bias_shape;
+
   // If there are 3 input features and 32 or 64 output features, pad the input
   // features to 4.  Otherwise, try padding to multiples of 8 and check that
   // this doesn't make any of the conv buffers too much larger.
@@ -238,6 +238,7 @@ static StatusOr<bool> TryResolvePaddedShapesForTensorCore(
     pad_dim(new_filter_shape, dnums.kernel_input_feature_dimension());
     pad_dim(new_filter_shape, dnums.kernel_output_feature_dimension());
     pad_dim(new_output_shape, dnums.output_feature_dimension());
+    pad_dim(&new_bias_shape, 0);
 
     // Check that padding wouldn't increase the total bytes read/written by this
     // operation too much.
@@ -258,6 +259,7 @@ static StatusOr<bool> TryResolvePaddedShapesForTensorCore(
       return false;
     };
 
+    // Don't check bias as it's a mere vector.
     if (!check_size_increase(lhs->shape(), new_lhs_shape) ||
         !check_size_increase(rhs->shape(), new_rhs_shape) ||
         !check_size_increase(result_shape, new_result_shape)) {
@@ -266,13 +268,17 @@ static StatusOr<bool> TryResolvePaddedShapesForTensorCore(
   }
 
   if (ShapeUtil::Equal(lhs->shape(), new_lhs_shape) &&
-      ShapeUtil::Equal(rhs->shape(), new_rhs_shape)) {
+      ShapeUtil::Equal(rhs->shape(), new_rhs_shape) &&
+      ShapeUtil::Equal(bias_shape, new_bias_shape)) {
     VLOG(3) << "No need to pad features of " << conv->ToString();
     return false;
   }
 
   new_input_shapes_ptr->push_back(new_lhs_shape);
   new_input_shapes_ptr->push_back(new_rhs_shape);
+  if (has_bias) {
+    new_input_shapes_ptr->push_back(new_bias_shape);
+  }
   return true;
 }
 
