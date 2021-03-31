@@ -19,7 +19,7 @@ ModelConfig CreateValidModelConfig() {
   config.inter_threads = 4;
   config.intra_threads = 2;
 
-  config.feature_store_type = "local_redis";
+  config.feature_store_type = "redis";
   config.read_thread_num = 2;
   config.update_thread_num = 2;
 

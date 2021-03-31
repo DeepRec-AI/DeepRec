@@ -110,7 +110,7 @@ Status GetIPAndPortFromUrl(const std::string& url,
 }
 
 FeatureStore* CreateFeatureStore(ModelConfig* config) {
-  if (config->feature_store_type == "local_redis") {
+  if (config->feature_store_type == "redis") {
     LocalRedis::Config redis_config;
     Status s = GetIPAndPortFromUrl(config->redis_url,
                                    &redis_config.ip,

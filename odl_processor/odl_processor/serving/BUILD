@@ -31,6 +31,21 @@ tf_cc_shared_object(
 )
 
 cc_library(
+    name = "utils",
+    srcs = ["util.cc"],
+    hdrs = ["util.h"],
+    deps = [
+        "//odl_processor/framework:graph_optimizer",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core:core_cpu",
+        "@org_tensorflow//tensorflow/cc/saved_model:loader",
+        "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
+        "@org_tensorflow//tensorflow/cc/saved_model:tag_constants",
+        ],
+)
+
+cc_library(
     name = "model_config",
     srcs = ["model_config.cc"],
     hdrs = ["model_config.h"],
@@ -72,7 +87,8 @@ cc_library(
         "//odl_processor/framework:model_version",
         "//odl_processor/storage:model_store",
         "model_config",
-        "model_message"],
+        "model_message",
+        "utils"],
 )
 
 cc_test(
@@ -100,15 +116,8 @@ cc_library(
         "model_config",
         "model_session",
         "model_message",
+        "utils",
     ],
-)
-
-cc_test(
-    name = "model_instance_test",
-    srcs = ["model_instance_test.cc",],
-    deps = [":model_instance",
-            "@com_google_googletest//:gtest",
-            "@com_google_googletest//:gtest_main",],
 )
 
 cc_library(

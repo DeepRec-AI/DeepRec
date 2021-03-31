@@ -1,6 +1,8 @@
 #ifndef TENSORFLOW_SERVING_MODEL_VERSION_H
 #define TENSORFLOW_SERVING_MODEL_VERSION_H
+#include <string.h>
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/lib/strings/strcat.h"
 
 namespace tensorflow {
 namespace processor {
@@ -17,6 +19,15 @@ struct Version {
   ~Version() = default;
   Version(const Version&) = default;
   Version& operator=(const Version&) = default;
+
+  std::string DebugString() {
+    return tensorflow::strings::StrCat(
+        "full_ckpt_version: ", std::to_string(full_ckpt_version),
+        "\nfull_ckpt_name: ", full_ckpt_name,
+        "\ndelta_ckpt_version: ", std::to_string(delta_ckpt_version),
+        "\ndelta_ckpt_name: ", delta_ckpt_name,
+        "\nsavedmodel_dir: ", savedmodel_dir);
+  }
 
   bool IsFullModel() const {
     return delta_ckpt_name.empty();

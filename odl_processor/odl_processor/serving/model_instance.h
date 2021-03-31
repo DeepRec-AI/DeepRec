@@ -22,9 +22,9 @@ class ModelStore;
 class ModelSessionMgr;
 class IFeatureStoreMgr;
 
-class SingleSessionInstance {
+class LocalSessionInstance {
  public:
-  SingleSessionInstance(SessionOptions* sess_options,
+  LocalSessionInstance(SessionOptions* sess_options,
       RunOptions* run_options);
 
   Status Init(ModelConfig* config,
@@ -36,15 +36,19 @@ class SingleSessionInstance {
   void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
 
+  Status FullModelUpdate(const Version& version,
+                         ModelConfig* model_config);
+  Status DeltaModelUpdate(const Version& version,
+                          ModelConfig* model_config);
+ 
  private:
   Status ReadModelSignature(ModelConfig* model_config);
-  Status LoadSavedModel(const std::string& export_dir);
 
  private: 
   MetaGraphDef meta_graph_def_;
   std::pair<std::string, SignatureDef> model_signature_;
 
-  Session* session_ = nullptr;
+  ModelSessionMgr* session_mgr_ = nullptr;
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
   SavedModelOptimizer* optimizer_ = nullptr;
@@ -52,9 +56,9 @@ class SingleSessionInstance {
   Version version_;
 };
 
-class MultipleSessionInstance {
+class RemoteSessionInstance {
  public:
-  MultipleSessionInstance(SessionOptions* sess_options,
+  RemoteSessionInstance(SessionOptions* sess_options,
                           RunOptions* run_options,
                           StorageOptions* storage_options);
   Status Init(ModelConfig* config,
@@ -106,10 +110,33 @@ class IModelInstanceMgr {
   virtual std::string DebugString() = 0;
 };
 
-class TFInstanceMgr : public IModelInstanceMgr{
+class ModelUpdater {
  public:
-  TFInstanceMgr(ModelConfig* config);
-  ~TFInstanceMgr() override;
+  ModelUpdater(ModelConfig* config);
+  virtual ~ModelUpdater();
+  void WorkLoop();
+
+ protected:
+  virtual Status FullModelUpdate(const Version& version,
+                                 ModelConfig* model_config) = 0;
+  virtual Status DeltaModelUpdate(const Version& version,
+                                  ModelConfig* model_config) = 0;
+  virtual Version GetVersion() = 0;
+
+  Status ModelUpdate(const Version& version,
+                     ModelConfig* model_config);
+
+ protected:
+  ModelStore* model_store_ = nullptr;
+  ModelConfig* model_config_ = nullptr; // not owned
+  volatile bool is_stop_ = false;
+  std::thread* thread_ = nullptr;
+};
+
+class LocalSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
+ public:
+  LocalSessionInstanceMgr(ModelConfig* config);
+  ~LocalSessionInstanceMgr() override;
 
   Status Init() override;
   Status Predict(Request& req, Response& resp) override;
@@ -118,18 +145,23 @@ class TFInstanceMgr : public IModelInstanceMgr{
   std::string DebugString() override;
 
  protected:
-  SingleSessionInstance* instance_ = nullptr;
-  ModelStore* model_store_ = nullptr;
-  ModelConfig* model_config_ = nullptr; // not owned
+  Status FullModelUpdate(const Version& version,
+                         ModelConfig* model_config) override;
+  Status DeltaModelUpdate(const Version& version,
+                          ModelConfig* model_config) override;
+  Version GetVersion() override;
+
+ protected:
+  LocalSessionInstance* instance_ = nullptr;
 
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
 };
 
-class ODLInstanceMgr : public IModelInstanceMgr {
+class RemoteSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
  public:
-  ODLInstanceMgr(ModelConfig* config);
-  virtual ~ODLInstanceMgr();
+  RemoteSessionInstanceMgr(ModelConfig* config);
+  virtual ~RemoteSessionInstanceMgr();
 
   Status Init() override;
   Status Predict(Request& req, Response& resp) override;
@@ -137,30 +169,22 @@ class ODLInstanceMgr : public IModelInstanceMgr {
   Status Rollback() override;
   std::string DebugString() override;
 
-  void WorkLoop();
+ protected:
+  Status FullModelUpdate(const Version& version,
+                         ModelConfig* model_config) override;
+  Status DeltaModelUpdate(const Version& version,
+                          ModelConfig* model_config) override;
+  Version GetVersion() override;
 
  private:
   Status CreateInstances();
-  Status FullModelUpdate(const Version& version,
-                         ModelConfig* model_config);
-  Status DeltaModelUpdate(const Version& version,
-                          ModelConfig* model_config);
-  
-  Status ModelUpdate(const Version& version,
-                     ModelConfig* model_config);
 
  private:
-  volatile bool is_stop_ = false;
-
   Status status_;
-  std::thread* thread_ = nullptr;
 
   //mutex mu_;
-  MultipleSessionInstance* cur_instance_ = nullptr;
-  MultipleSessionInstance* base_instance_ = nullptr;
-
-  ModelStore* model_storage_ = nullptr;
-  ModelConfig* model_config_ = nullptr; // not owned
+  RemoteSessionInstance* cur_instance_ = nullptr;
+  RemoteSessionInstance* base_instance_ = nullptr;
 
   SessionOptions* session_options_ = nullptr;
   RunOptions* run_options_ = nullptr;
@@ -171,10 +195,11 @@ class ODLInstanceMgr : public IModelInstanceMgr {
 class ModelInstanceMgrFactory {
  public:
   static IModelInstanceMgr* Create(ModelConfig* config) {
-    if (config->processor_type == "odl") {
-      return new ODLInstanceMgr(config);
-    } else if (config->processor_type == "tf") {
-      return new TFInstanceMgr(config);
+    if (config->feature_store_type == "redis" ||
+        config->feature_store_type == "cluster_redis") {
+      return new RemoteSessionInstanceMgr(config);
+    } else if (config->feature_store_type == "memory") {
+      return new LocalSessionInstanceMgr(config);
     } else {
       return nullptr;
     }

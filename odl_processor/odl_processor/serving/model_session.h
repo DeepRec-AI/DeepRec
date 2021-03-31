@@ -22,25 +22,32 @@ class Response;
 struct ModelSession {
   ModelSession(Session* s, const Version& version,
       IFeatureStoreMgr* sparse_storage);
+  ModelSession(Session* s, const Version& version);
+  virtual ~ModelSession();
 
   Status Predict(Request& req, Response& resp);
+  Status LocalPredict(Request& req, Response& resp);
 
   Session* session_ = nullptr;
-  IFeatureStoreMgr* sparse_storage_ = nullptr;
+  //IFeatureStoreMgr* sparse_storage_ = nullptr;
   
   std::string sparse_storage_name_;
   Tensor sparse_storage_tensor_;
   std::string model_version_name_;
   Tensor model_version_tensor_;
   std::atomic<int64> counter_;
+  // Local storage or remote storage for sparse variable.
+  bool is_local_ = true;
 };
 
 class ModelSessionMgr {
  public:
   ModelSessionMgr(const MetaGraphDef& meta_graph_def,
       SessionOptions* session_options, RunOptions* run_options);
-  
+  virtual ~ModelSessionMgr();
+
   Status Predict(Request& req, Response& resp);
+  Status LocalPredict(Request& req, Response& resp);
 
   Status CreateModelSession(
       const Version& version, const char* ckpt_name,
@@ -48,6 +55,10 @@ class ModelSessionMgr {
       bool is_incr_ckpt, bool is_initialize,
       ModelConfig* config);
 
+  Status CreateModelSession(
+      const Version& version, const char* ckpt_name,
+      bool is_incr_ckpt, ModelConfig* config);
+ 
   Status CleanupModelSession();
 
  private:
@@ -62,16 +73,20 @@ class ModelSessionMgr {
   void ResetServingSession(Session* session, const Version& version,
       IFeatureStoreMgr* sparse_storage);
 
+  void ClearLoop();
+
  protected:
   ModelSession* serving_session_ = nullptr;
-
-  mutex mu_;
-  std::vector<ModelSession*> sessions_;
 
   MetaGraphDef meta_graph_def_;
   SessionOptions* session_options_;
   RunOptions* run_options_;
   std::vector<AssetFileDef> asset_file_defs_;
+
+  std::thread* clear_session_thread_ = nullptr;
+  std::vector<ModelSession*> sessions_;
+  mutex mu_;
+  volatile bool is_stop_ = false;
 };
 
 } // processor
