@@ -42,7 +42,7 @@ int main() {
  processor::ModelConfig config;
  config.read_thread_num = 4;
  config.update_thread_num = 2;
- config.feature_store_type = "local_redis";
+ config.feature_store_type = "redis";
  processor::FeatureStoreMgr manager(&config);
  {
   NodeDef prefix_def;

@@ -16,7 +16,6 @@ TEST_F(ModelConfigTest, ShouldReturnInvalidWhenEmptyInput) {
 TEST_F(ModelConfigTest, ShouldSuccessWhenOssAndRedis) {
 const std::string oss_and_redis_config = " \
   { \
-    \"processor_type\" : \"odl\", \
     \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
@@ -40,7 +39,6 @@ const std::string oss_and_redis_config = " \
   auto s = ModelConfigFactory::Create(oss_and_redis_config.c_str(), &config);
   EXPECT_EQ(s.error_message(), "");
  
-  EXPECT_EQ("odl", config->processor_type);
   EXPECT_EQ(4, config->inter_threads);
   EXPECT_EQ(2, config->intra_threads);
   EXPECT_EQ("tensorflow_serving", config->signature_name);
@@ -64,7 +62,6 @@ const std::string oss_and_redis_config = " \
 TEST_F(ModelConfigTest, ShouldFailureWhenSignatureNameEmpty) {
 const std::string oss_and_redis_config = " \
   { \
-    \"processor_type\" : \"odl\", \
     \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
@@ -86,7 +83,6 @@ const std::string oss_and_redis_config = " \
   ModelConfig* config = nullptr;
   EXPECT_EQ(error::Code::INVALID_ARGUMENT,
       ModelConfigFactory::Create(oss_and_redis_config.c_str(), &config).code());
-  EXPECT_EQ("odl", config->processor_type);
   EXPECT_EQ(4, config->inter_threads);
   EXPECT_EQ(2, config->intra_threads);
   EXPECT_EQ("", config->signature_name);
@@ -95,7 +91,6 @@ const std::string oss_and_redis_config = " \
 TEST_F(ModelConfigTest, ShouldFailedWhenOssDirAndModelStroreTypeMismatch) {
 const std::string oss_and_redis_config = " \
   { \
-    \"processor_type\" : \"odl\", \
     \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
@@ -117,7 +112,6 @@ const std::string oss_and_redis_config = " \
   ModelConfig* config = nullptr;
   EXPECT_EQ(error::Code::INVALID_ARGUMENT,
       ModelConfigFactory::Create(oss_and_redis_config.c_str(), &config).code());
-  EXPECT_EQ("odl", config->processor_type);
   EXPECT_EQ(4, config->inter_threads);
   EXPECT_EQ(2, config->intra_threads);
   EXPECT_EQ("tensorflow_serving", config->signature_name);
@@ -137,7 +131,6 @@ const std::string oss_and_redis_config = " \
 TEST_F(ModelConfigTest, ShouldSuccessWhenOssDirAndNativeTFFeatureStoreType) {
 const std::string oss_and_redis_config = " \
   { \
-    \"processor_type\" : \"odl\", \
     \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
@@ -145,7 +138,7 @@ const std::string oss_and_redis_config = " \
     \"signature_name\": \"tensorflow_serving\", \
     \"checkpoint_dir\" : \"oss://test_ckpt/1\", \
     \"savedmodel_dir\" : \"oss://test_savedmodel/1\", \
-    \"feature_store_type\" : \"tensorflow\", \
+    \"feature_store_type\" : \"memory\", \
     \"redis_url\" :\"test_url\",  \
     \"redis_password\" :\"test_password\", \
     \"read_thread_num\" : 2, \
@@ -159,7 +152,6 @@ const std::string oss_and_redis_config = " \
   ModelConfig* config = nullptr;
   EXPECT_TRUE(
       ModelConfigFactory::Create(oss_and_redis_config.c_str(), &config).ok());
-  EXPECT_EQ("odl", config->processor_type);
   EXPECT_EQ(4, config->inter_threads);
   EXPECT_EQ(2, config->intra_threads);
   EXPECT_EQ("tensorflow_serving", config->signature_name);
@@ -169,7 +161,7 @@ const std::string oss_and_redis_config = " \
   EXPECT_EQ(
       "oss://test_savedmodel\x1id=test_id\x2key=test_key\x2host=test.endpoint/1",
       config->savedmodel_dir);
-  EXPECT_EQ("tensorflow", config->feature_store_type);
+  EXPECT_EQ("memory", config->feature_store_type);
   EXPECT_EQ("", config->redis_url);
   EXPECT_EQ("", config->redis_password);
   EXPECT_EQ(1, config->read_thread_num);
@@ -183,7 +175,6 @@ const std::string oss_and_redis_config = " \
 TEST_F(ModelConfigTest, ShouldSuccessWhenNativeProcessorTypeOssDir) {
 const std::string oss_and_redis_config = " \
   { \
-    \"processor_type\" : \"tf\", \
     \"serialize_protocol\": \"protobuf\", \
     \"inter_op_parallelism_threads\" : 4, \
     \"intra_op_parallelism_threads\" : 2, \
@@ -191,7 +182,7 @@ const std::string oss_and_redis_config = " \
     \"signature_name\": \"tensorflow_serving\", \
     \"checkpoint_dir\" : \"oss://test_ckpt/1\", \
     \"savedmodel_dir\" : \"oss://test_savedmodel/1\", \
-    \"feature_store_type\" : \"tensorflow\", \
+    \"feature_store_type\" : \"memory\", \
     \"redis_url\" :\"test_url\",  \
     \"redis_password\" :\"test_password\", \
     \"read_thread_num\" : 2, \
@@ -205,7 +196,6 @@ const std::string oss_and_redis_config = " \
   ModelConfig* config = nullptr;
   EXPECT_TRUE(
       ModelConfigFactory::Create(oss_and_redis_config.c_str(), &config).ok());
-  EXPECT_EQ("tf", config->processor_type);
   EXPECT_EQ(4, config->inter_threads);
   EXPECT_EQ(2, config->intra_threads);
   EXPECT_EQ("tensorflow_serving", config->signature_name);
@@ -215,7 +205,7 @@ const std::string oss_and_redis_config = " \
   EXPECT_EQ(
       "oss://test_savedmodel\x1id=test_id\x2key=test_key\x2host=test.endpoint/1",
       config->savedmodel_dir);
-  EXPECT_EQ("", config->feature_store_type);
+  EXPECT_EQ("memory", config->feature_store_type);
   EXPECT_EQ("", config->redis_url);
   EXPECT_EQ("", config->redis_password);
   EXPECT_EQ(1, config->read_thread_num);

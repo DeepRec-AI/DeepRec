@@ -1,5 +1,6 @@
 #include "odl_processor/serving/model_instance.h"
 #include "odl_processor/serving/model_session.h"
+#include "odl_processor/serving/util.h"
 #include "odl_processor/storage/model_store.h"
 #include "odl_processor/storage/feature_store_mgr.h"
 #include "odl_processor/framework/graph_optimizer.h"
@@ -16,166 +17,6 @@ namespace tensorflow {
 namespace processor {
 namespace {
 constexpr int _60_Seconds = 60;
-Status LoadMetaGraphIntoSession(const MetaGraphDef& meta_graph_def,
-                                const SessionOptions& session_options,
-                                Session** session) {
-  TF_RETURN_IF_ERROR(NewSession(session_options, session));
-  return (*session)->Create(meta_graph_def.graph_def());
-}
-
-Tensor CreateStringTensor(const string& value) {
-  Tensor tensor(DT_STRING, TensorShape({}));
-  tensor.scalar<string>()() = value;
-  return tensor;
-}
-
-Status GetAssetFileDefs(const MetaGraphDef& meta_graph_def,
-                        std::vector<AssetFileDef>* asset_file_defs) {
-  const auto& collection_def_map = meta_graph_def.collection_def();
-  const auto assets_it = collection_def_map.find(kSavedModelAssetsKey);
-  if (assets_it == collection_def_map.end()) {
-    return Status::OK();
-  }
-  const auto& any_assets = assets_it->second.any_list().value();
-  for (const auto& any_asset : any_assets) {
-    AssetFileDef asset_file_def;
-    TF_RETURN_IF_ERROR(
-        ParseAny(any_asset, &asset_file_def, "tensorflow.AssetFileDef"));
-    asset_file_defs->push_back(asset_file_def);
-  }
-  return Status::OK();
-}
-
-void AddAssetsTensorsToInputs(const StringPiece export_dir,
-                              const std::vector<AssetFileDef>& asset_file_defs,
-                              std::vector<std::pair<string, Tensor>>* inputs) {
-  if (asset_file_defs.empty()) {
-    return;
-  }
-  for (auto& asset_file_def : asset_file_defs) {
-    Tensor assets_file_path_tensor = CreateStringTensor(io::JoinPath(
-        export_dir, kSavedModelAssetsDirectory, asset_file_def.filename()));
-    inputs->push_back(
-        {asset_file_def.tensor_info().name(), assets_file_path_tensor});
-  }
-}
-
-// Like Session::Run(), but uses the Make/Run/ReleaseCallable() API to avoid
-// leaving behind non-GC'ed state.
-//
-// Detailed motivation behind this approach, from ashankar@:
-//
-// Each call to Session::Run() that identifies a new subgraph (based on feeds
-// and fetches) creates some datastructures that live as long as the session
-// (the partitioned graph, associated executors etc.).
-//
-// A pathological case of this would be if say the initialization op
-// (main_op/legacy_init_op) involves the use of a large constant. Then we
-// allocate memory for that large constant that will just stick around till the
-// session dies. With this Callable mechanism, that memory will be released
-// right after ReleaseCallable returns.
-//
-// However, the resource manager state remains.
-Status RunOnce(const RunOptions& run_options,
-               const std::vector<std::pair<string, Tensor>>& inputs,
-               const std::vector<string>& output_tensor_names,
-               const std::vector<string>& target_node_names,
-               std::vector<Tensor>* outputs, RunMetadata* run_metadata,
-               Session* session) {
-  CallableOptions callable_options;
-  std::vector<Tensor> feed_tensors;
-  *callable_options.mutable_run_options() = run_options;
-  for (const auto& input : inputs) {
-    const string& name = input.first;
-    const Tensor& tensor = input.second;
-    callable_options.add_feed(name);
-    feed_tensors.push_back(tensor);
-  }
-  for (const string& output_tensor_name : output_tensor_names) {
-    callable_options.add_fetch(output_tensor_name);
-  }
-  for (const string& target_node_name : target_node_names) {
-    callable_options.add_target(target_node_name);
-  }
-
-  Session::CallableHandle callable_handle;
-  TF_RETURN_IF_ERROR(session->MakeCallable(callable_options, &callable_handle));
-  const Status run_status = session->RunCallable(callable_handle, feed_tensors,
-                                                 outputs, run_metadata);
-  // Be sure to call ReleaseCallable() regardless of the outcome of
-  // RunCallable().
-  session->ReleaseCallable(callable_handle).IgnoreError();
-  return run_status;
-}
-
-bool HasMainOp(const MetaGraphDef& meta_graph_def) {
-  const auto& collection_def_map = meta_graph_def.collection_def();
-  if (collection_def_map.find(kSavedModelMainOpKey) !=
-      collection_def_map.end()) {
-    return true;
-  }
-  return false;
-}
-
-Status RunMainOp(const RunOptions& run_options, const string& export_dir,
-                 const MetaGraphDef& meta_graph_def,
-                 const std::vector<AssetFileDef>& asset_file_defs,
-                 Session* session, const string& main_op_key) {
-  LOG(INFO) << "Running MainOp with key " << main_op_key
-            << " on SavedModel bundle.";
-  const auto& collection_def_map = meta_graph_def.collection_def();
-  const auto main_op_it = collection_def_map.find(main_op_key);
-  if (main_op_it != collection_def_map.end()) {
-    if (main_op_it->second.node_list().value_size() != 1) {
-      return errors::FailedPrecondition(
-          strings::StrCat("Expected exactly one main op in : ", export_dir));
-    }
-    std::vector<std::pair<string, Tensor>> inputs;
-    AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
-    RunMetadata run_metadata;
-    const StringPiece main_op_name = main_op_it->second.node_list().value(0);
-    return RunOnce(run_options, inputs, {}, {string(main_op_name)},
-                   nullptr /* outputs */, &run_metadata, session);
-  }
-  return Status::OK();
-}
-
-Status RunRestore(const RunOptions& run_options, const string& export_dir,
-                  const StringPiece restore_op_name,
-                  const StringPiece variable_filename_const_op_name,
-                  const std::vector<AssetFileDef>& asset_file_defs,
-                  Session* session) {
-  LOG(INFO) << "Restoring SavedModel bundle.";
-  // Find path to variables to be restored in export directory.
-  const string variables_directory =
-      io::JoinPath(export_dir, kSavedModelVariablesDirectory);
-  // Check for saver checkpoints in v2 format. Models exported in the checkpoint
-  // v2 format will have a variables.index file. The corresponding
-  // variables are stored in the variables.data-?????-of-????? files.
-  const string variables_index_path = io::JoinPath(
-      variables_directory, MetaFilename(kSavedModelVariablesFilename));
-  if (!Env::Default()->FileExists(variables_index_path).ok()) {
-    LOG(INFO) << "The specified SavedModel has no variables; no checkpoints "
-                 "were restored. File does not exist: "
-              << variables_index_path;
-    return Status::OK();
-  }
-  const string variables_path =
-      io::JoinPath(variables_directory, kSavedModelVariablesFilename);
-
-  // Add variables to the graph.
-  Tensor variables_path_tensor(DT_STRING, TensorShape({}));
-  variables_path_tensor.scalar<string>()() = variables_path;
-
-  std::vector<std::pair<string, Tensor>> inputs = {
-      {string(variable_filename_const_op_name), variables_path_tensor}};
-
-  AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
-
-  RunMetadata run_metadata;
-  return RunOnce(run_options, inputs, {}, {string(restore_op_name)},
-                 nullptr /* outputs */, &run_metadata, session);
-}
 
 Tensor CreateTensor(const TensorInfo& tensor_info) {
   Tensor tensor(tensor_info.dtype(),
@@ -239,17 +80,21 @@ bool ShouldWarmup(SignatureDef& sig_def) {
   return true;
 }
 }
-SingleSessionInstance::SingleSessionInstance(
+LocalSessionInstance::LocalSessionInstance(
     SessionOptions* sess_options,
     RunOptions* run_options) :
     session_options_(sess_options), run_options_(run_options) {
 }
 
-Status SingleSessionInstance::Init(ModelConfig* config,
+Status LocalSessionInstance::Init(ModelConfig* config,
     ModelStore* model_store) {
   model_store->GetLatestVersion(version_);
-  if (version_.SavedModelEmpty()) {
-    return Status(error::Code::NOT_FOUND, "SavedModel dir is invalid.");
+  while (version_.SavedModelEmpty() || version_.CkptEmpty()) {
+    // Wait until saved model meta file ready
+    LOG(INFO) << "[Model Instance] SavedModel or Checkpoint dir is empty,"
+              << "will try 1 minute later.";
+    sleep(60);
+    model_store->GetLatestVersion(version_);
   }
 
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
@@ -265,35 +110,24 @@ Status SingleSessionInstance::Init(ModelConfig* config,
   
   TF_RETURN_IF_ERROR(ReadModelSignature(config));
 
-  return LoadSavedModel(version_.savedmodel_dir); 
-}
+  session_mgr_ = new ModelSessionMgr(meta_graph_def_,
+      session_options_, run_options_);
 
-Status SingleSessionInstance::LoadSavedModel(
-    const std::string& export_dir) {
-  TF_RETURN_IF_ERROR(LoadMetaGraphIntoSession(
-      meta_graph_def_, *session_options_, &session_));
+  // Load full model
+  TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version_,
+        version_.full_ckpt_name.c_str(),
+        /*is_incr_ckpt*/false, config));
 
-  std::vector<AssetFileDef> asset_file_defs;
-  TF_RETURN_IF_ERROR(
-      GetAssetFileDefs(meta_graph_def_, &asset_file_defs));
-  TF_RETURN_IF_ERROR(
-      RunRestore(*run_options_, export_dir,
-                 meta_graph_def_.saver_def().restore_op_name(),
-                 meta_graph_def_.saver_def().filename_tensor_name(),
-                 asset_file_defs, session_));
-  if (HasMainOp(meta_graph_def_)) {
-    TF_RETURN_IF_ERROR(RunMainOp(*run_options_, export_dir,
-                                 meta_graph_def_, asset_file_defs,
-                                 session_, kSavedModelMainOpKey));
-  } else {
-    TF_RETURN_IF_ERROR(RunMainOp(
-        *run_options_, export_dir, meta_graph_def_, asset_file_defs,
-        session_, kSavedModelLegacyInitOpKey));
+  // Load delta model if existed
+  if (version_.delta_ckpt_name.empty()) {
+    return Status::OK();
   }
-  return Status::OK(); 
+  return session_mgr_->CreateModelSession(version_,
+      version_.delta_ckpt_name.c_str(),
+      /*is_incr_ckpt*/true, config);
 }
 
-Status SingleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
+Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
   auto model_signatures = meta_graph_def_.signature_def();
   for (auto it : model_signatures) {
     if (it.first == model_config->signature_name) {
@@ -305,22 +139,35 @@ Status SingleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       "Invalid signature name, please check signature_name in model config");
 }
 
-Status SingleSessionInstance::Predict(Request& req, Response& resp) {
-  return session_->Run(req.inputs, req.output_tensor_names, {},
-      &resp.outputs);
+Status LocalSessionInstance::Predict(Request& req, Response& resp) {
+  return session_mgr_->LocalPredict(req, resp);
 }
 
-Status SingleSessionInstance::Warmup() {
+Status LocalSessionInstance::Warmup() {
   if (!ShouldWarmup(model_signature_.second)) return Status::OK();
   Call call = CreateWarmupParams(model_signature_.second);
   return Predict(call.request, call.response);
 }
 
-std::string SingleSessionInstance::DebugString() {
+std::string LocalSessionInstance::DebugString() {
   return model_signature_.second.DebugString();
 }
 
-MultipleSessionInstance::MultipleSessionInstance(
+Status LocalSessionInstance::FullModelUpdate(
+    const Version& version, ModelConfig* model_config) {
+  return session_mgr_->CreateModelSession(version,
+      version.full_ckpt_name.c_str(),
+      /*is_incr_ckpt*/false, model_config);
+}
+
+Status LocalSessionInstance::DeltaModelUpdate(
+    const Version& version, ModelConfig* model_config) {
+  // TODO: Implement here
+  return Status::OK();
+}
+
+
+RemoteSessionInstance::RemoteSessionInstance(
     SessionOptions* sess_options,
     RunOptions* run_options,
     StorageOptions* storage_options) :
@@ -329,7 +176,7 @@ MultipleSessionInstance::MultipleSessionInstance(
     storage_options_(storage_options) {
 }
 
-Status MultipleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
+Status RemoteSessionInstance::ReadModelSignature(ModelConfig* model_config) {
   auto model_signatures = meta_graph_def_.signature_def();
   for (auto it : model_signatures) {
     if (it.first == model_config->signature_name) {
@@ -341,7 +188,7 @@ Status MultipleSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       "Invalid signature name, please check signature_name in model config");
 }
 
-Status MultipleSessionInstance::RecursionCreateSession(const Version& version,
+Status RemoteSessionInstance::RecursionCreateSession(const Version& version,
     IFeatureStoreMgr* sparse_storage, ModelConfig* model_config) {
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
         version.full_ckpt_name.c_str(),
@@ -360,7 +207,7 @@ Status MultipleSessionInstance::RecursionCreateSession(const Version& version,
   }
 }
 
-Status MultipleSessionInstance::Init(ModelConfig* model_config,
+Status RemoteSessionInstance::Init(ModelConfig* model_config,
     ModelStore* model_store, bool active) {
   ModelConfig serving_model_config(*model_config);
   serving_model_config.redis_db_idx =
@@ -416,17 +263,17 @@ Status MultipleSessionInstance::Init(ModelConfig* model_config,
   return RecursionCreateSession(version, serving_storage_, model_config);
 }
 
-Status MultipleSessionInstance::Predict(Request& req, Response& resp) {
+Status RemoteSessionInstance::Predict(Request& req, Response& resp) {
   return session_mgr_->Predict(req, resp);
 }
 
-Status MultipleSessionInstance::Warmup() {
+Status RemoteSessionInstance::Warmup() {
   if (!ShouldWarmup(model_signature_.second)) return Status::OK();
   Call call = CreateWarmupParams(model_signature_.second);
   return Predict(call.request, call.response);
 }
 
-Status MultipleSessionInstance::FullModelUpdate(
+Status RemoteSessionInstance::FullModelUpdate(
     const Version& version, ModelConfig* model_config) {
   // Logically backup_storage_ shouldn't serving now.
   backup_storage_->Reset();
@@ -439,7 +286,7 @@ Status MultipleSessionInstance::FullModelUpdate(
   return Status::OK();
 }
 
-Status MultipleSessionInstance::DeltaModelUpdate(
+Status RemoteSessionInstance::DeltaModelUpdate(
     const Version& version, ModelConfig* model_config) {
   return session_mgr_->CreateModelSession(version,
       version.delta_ckpt_name.c_str(), serving_storage_,
@@ -447,13 +294,12 @@ Status MultipleSessionInstance::DeltaModelUpdate(
       model_config);
 }
 
-std::string MultipleSessionInstance::DebugString() {
+std::string RemoteSessionInstance::DebugString() {
   return model_signature_.second.DebugString();
 }
 
-TFInstanceMgr::TFInstanceMgr(ModelConfig* config)
-    : model_store_(new ModelStore(config)), model_config_(config) {
-  model_store_->Init();
+LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
+    : ModelUpdater(config) {
   session_options_ = new SessionOptions();
   //session_options_->target = target;
   session_options_->config.set_intra_op_parallelism_threads(config->inter_threads);
@@ -462,35 +308,58 @@ TFInstanceMgr::TFInstanceMgr(ModelConfig* config)
   run_options_ = new RunOptions();
 }
 
-TFInstanceMgr::~TFInstanceMgr() {
+LocalSessionInstanceMgr::~LocalSessionInstanceMgr() {
+  is_stop_ = true;
+
   delete instance_;
   delete session_options_;
   delete run_options_;
-  delete model_store_;
 }
 
-Status TFInstanceMgr::Init() {
-  instance_ = new SingleSessionInstance(session_options_, run_options_);
+Status LocalSessionInstanceMgr::Init() {
+  instance_ = new LocalSessionInstance(session_options_, run_options_);
   TF_RETURN_IF_ERROR(instance_->Init(model_config_,
       model_store_));
-  return instance_->Warmup();
+  TF_RETURN_IF_ERROR(instance_->Warmup());
+
+  thread_ = new std::thread(&ModelUpdater::WorkLoop, this);
+  return Status::OK();
 }
 
-Status TFInstanceMgr::Predict(Request& req, Response& resp) {
+Status LocalSessionInstanceMgr::Predict(Request& req, Response& resp) {
   return instance_->Predict(req, resp);
 }
 
-Status TFInstanceMgr::Rollback() {
+Status LocalSessionInstanceMgr::Rollback() {
   return Status(error::Code::NOT_FOUND, "TF Processor can't support Rollback.");
 }
 
-std::string TFInstanceMgr::DebugString() {
+std::string LocalSessionInstanceMgr::DebugString() {
   return instance_->DebugString();
 }
 
-ODLInstanceMgr::ODLInstanceMgr(ModelConfig* config)
-    : model_storage_(new ModelStore(config)), model_config_(config) {
-  model_storage_->Init();
+Status LocalSessionInstanceMgr::FullModelUpdate(const Version& version,
+                                      ModelConfig* model_config) {
+  TF_RETURN_IF_ERROR(instance_->FullModelUpdate(
+      version, model_config));
+  instance_->UpdateVersion(version);
+  return instance_->Warmup();
+}
+
+Status LocalSessionInstanceMgr::DeltaModelUpdate(const Version& version,
+                                       ModelConfig* model_config) {
+  // TODO: Implement here, can NOT create a new session, modify
+  // variable in current resource variable.
+  return Status::OK();
+}
+
+Version LocalSessionInstanceMgr::GetVersion() {
+  return instance_->GetVersion();
+}
+
+
+RemoteSessionInstanceMgr::RemoteSessionInstanceMgr(ModelConfig* config)
+    : ModelUpdater(config) {
   session_options_ = new SessionOptions();
   //session_options_->target = target;
   session_options_->config.set_intra_op_parallelism_threads(config->inter_threads);
@@ -515,54 +384,51 @@ ODLInstanceMgr::ODLInstanceMgr(ModelConfig* config)
       &base_inst_storage_options_);
 }
 
-ODLInstanceMgr::~ODLInstanceMgr() {
+RemoteSessionInstanceMgr::~RemoteSessionInstanceMgr() {
   is_stop_ = true;
-  thread_->join();
-  delete thread_;
 
   delete base_instance_;
   delete cur_instance_;
   delete session_options_;
   delete run_options_;
-  delete model_storage_;
   delete cur_inst_storage_options_;
   delete base_inst_storage_options_;
 }
 
-Status ODLInstanceMgr::Init() {
+Status RemoteSessionInstanceMgr::Init() {
   /*Version version;
-  auto status = model_storage_->GetLatestVersion(version);
+  auto status = model_store_->GetLatestVersion(version);
   if (!status.ok()) {
     return status;
   }*/
 
   TF_RETURN_IF_ERROR(CreateInstances());
   
-  thread_ = new std::thread(&ODLInstanceMgr::WorkLoop, this);
+  thread_ = new std::thread(&ModelUpdater::WorkLoop, this);
   return Status::OK();
 }
 
-Status ODLInstanceMgr::CreateInstances() {
-  cur_instance_ = new MultipleSessionInstance(
+Status RemoteSessionInstanceMgr::CreateInstances() {
+  cur_instance_ = new RemoteSessionInstance(
       session_options_, run_options_,
       cur_inst_storage_options_);
   TF_RETURN_IF_ERROR(cur_instance_->Init(model_config_,
-      model_storage_, true));
+      model_store_, true));
   TF_RETURN_IF_ERROR(cur_instance_->Warmup());
 
-  base_instance_ = new MultipleSessionInstance(
+  base_instance_ = new RemoteSessionInstance(
       session_options_, run_options_,
       base_inst_storage_options_);
   TF_RETURN_IF_ERROR(base_instance_->Init(model_config_,
-      model_storage_, false));
+      model_store_, false));
   return base_instance_->Warmup();
 }
 
-Status ODLInstanceMgr::Predict(Request& req, Response& resp) {
+Status RemoteSessionInstanceMgr::Predict(Request& req, Response& resp) {
   return cur_instance_->Predict(req, resp);
 }
 
-Status ODLInstanceMgr::Rollback() {
+Status RemoteSessionInstanceMgr::Rollback() {
   if (cur_instance_->GetVersion() == base_instance_->GetVersion()) {
     LOG(WARNING) << "[Processor] Already rollback to base model.";
     return Status::OK();
@@ -573,7 +439,11 @@ Status ODLInstanceMgr::Rollback() {
   return Status::OK();
 }
 
-Status ODLInstanceMgr::FullModelUpdate(const Version& version,
+std::string RemoteSessionInstanceMgr::DebugString() {
+  return cur_instance_->DebugString();
+}
+
+Status RemoteSessionInstanceMgr::FullModelUpdate(const Version& version,
                                        ModelConfig* model_config) {
   TF_RETURN_IF_ERROR(cur_instance_->FullModelUpdate(
       version, model_config));
@@ -581,7 +451,7 @@ Status ODLInstanceMgr::FullModelUpdate(const Version& version,
   return cur_instance_->Warmup();
 }
 
-Status ODLInstanceMgr::DeltaModelUpdate(const Version& version,
+Status RemoteSessionInstanceMgr::DeltaModelUpdate(const Version& version,
                                         ModelConfig* model_config) {
   // NOTE: will initialize base_instance storage once after
   // a newly full model was updated.
@@ -598,8 +468,29 @@ Status ODLInstanceMgr::DeltaModelUpdate(const Version& version,
   return cur_instance_->Warmup();
 }
 
-Status ODLInstanceMgr::ModelUpdate(const Version& version,
-                                   ModelConfig* model_config) {
+Version RemoteSessionInstanceMgr::GetVersion() {
+  return cur_instance_->GetVersion();
+}
+
+
+ModelUpdater::ModelUpdater(ModelConfig* config)
+    : model_store_(new ModelStore(config)),
+      model_config_(config) {
+  model_store_->Init();
+}
+
+ModelUpdater::~ModelUpdater() {
+  is_stop_ = true;
+  if (thread_) {
+    thread_->join();
+    delete thread_;
+  }
+
+  delete model_store_;
+}
+
+Status ModelUpdater::ModelUpdate(const Version& version,
+                             ModelConfig* model_config) {
   if (version.IsFullModel()) {
     return FullModelUpdate(version, model_config);
   } else {
@@ -607,16 +498,16 @@ Status ODLInstanceMgr::ModelUpdate(const Version& version,
   }
 }
 
-void ODLInstanceMgr::WorkLoop() {
+void ModelUpdater::WorkLoop() {
   while(!is_stop_) {
     Version version;
-    auto status = model_storage_->GetLatestVersion(version);
+    auto status = model_store_->GetLatestVersion(version);
     if (!status.ok()) {
       status = Status(error::Code::NOT_FOUND,
           "[TensorFlow] Can't get latest model name, will try 60 seconds later.");
       LOG(ERROR) << status.error_message() << std::endl;
     } else {
-      if (cur_instance_->GetVersion() < version) {
+      if (GetVersion() < version) {
         auto status = ModelUpdate(version, model_config_);
         if (!status.ok()) {
           LOG(ERROR) << status.error_message() << std::endl;
@@ -626,10 +517,6 @@ void ODLInstanceMgr::WorkLoop() {
 
     sleep(_60_Seconds);
   }
-}
-
-std::string ODLInstanceMgr::DebugString() {
-  return cur_instance_->DebugString();
 }
 
 } // processor

@@ -51,19 +51,6 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
 
   *config = new ModelConfig;
 
-  if (!json_config["processor_type"].isNull()) {
-    (*config)->processor_type =
-      json_config["processor_type"].asString();
-  } else {
-    return Status(error::Code::NOT_FOUND,
-        "[TensorFlow] No processor_type in ModelConfig.");
-  }
-
-  if ((*config)->processor_type.empty()) {
-    return Status(error::Code::INVALID_ARGUMENT,
-        "[TensorFlow] processor_type shouldn't be empty string.");
-  }
-
   if (!json_config["inter_op_parallelism_threads"].isNull()) {
     (*config)->inter_threads =
       json_config["inter_op_parallelism_threads"].asInt();
@@ -127,18 +114,23 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No savedmodel_dir in ModelConfig.");
   }
   
-  if ((*config)->processor_type == "odl") {
-    if (!json_config["feature_store_type"].isNull()) {
-      (*config)->feature_store_type =
-        json_config["feature_store_type"].asString();
-    } else {
-      return Status(error::Code::NOT_FOUND,
-          "[TensorFlow] No feature_store_type in ModelConfig.");
-    }
+  if (!json_config["feature_store_type"].isNull()) {
+    (*config)->feature_store_type =
+      json_config["feature_store_type"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No feature_store_type in ModelConfig.");
   }
 
+  if ((*config)->feature_store_type.empty()) {
+    return Status(error::Code::INVALID_ARGUMENT,
+        "[TensorFlow] feature_store_type shouldn't be empty string.");
+  }
+
+  // @feature_store_type: 
+  // 'redis/cluster_redis' or 'memory'
   if ((*config)->feature_store_type == "cluster_redis" ||
-      (*config)->feature_store_type == "local_redis") {
+      (*config)->feature_store_type == "redis") {
     if (!json_config["redis_url"].isNull()) {
       (*config)->redis_url =
         json_config["redis_url"].asString();
