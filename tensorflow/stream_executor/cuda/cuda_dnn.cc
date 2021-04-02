@@ -4563,12 +4563,23 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
   VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size();
 
   out_exec_plans->clear();
+  
+  std::string filter_str = CudnnExecutionPlanEngineFilter();
   for (int i = 0; i < filtered_configs.size(); i++) {
     auto plan = cudnn_frontend::ExecutionPlanBuilder()
                     .setHandle(cudnn.handle())
                     .setEngineConfig(filtered_configs[i], op_graph->getTag())
                     .build();
     if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
+      if (filter_str != "") {
+        std::smatch m;
+        std::regex pattern(absl::StrCat("(", filter_str, ")($|_)"));
+        if (std::regex_search(plan.getTag(), m, pattern)) {
+          VLOG(4) << "Exclude engine: " << plan.getTag();
+          continue;
+        }
+      }
+
       out_exec_plans->push_back(std::move(plan));
       // We will use the first working plan when determinism is required.
       if (stream_executor::cuda::RequireCuDNNDeterminism()) {
