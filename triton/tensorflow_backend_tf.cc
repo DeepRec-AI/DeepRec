@@ -902,6 +902,7 @@ TRITONTF_ModelCreateFromSavedModel(
     TRITONTF_Model** tritontf_model, const char* model_name,
     const char* model_path, const int device_id, const int num_intra_threads,
     const int num_inter_threads, const bool use_per_session_threads,
+    const char* graph_tag, const char* signature_def,
     const bool has_graph_level, const int graph_level,
     const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
@@ -942,18 +943,21 @@ TRITONTF_ModelCreateFromSavedModel(
   std::unique_ptr<tensorflow::SavedModelBundle> bundle(
       new tensorflow::SavedModelBundle);
 
+  // If user does not specify a 'tag' in the configuration file, use 'serve' as default
   std::unordered_set<std::string> saved_model_tags;
-  saved_model_tags.insert(tensorflow::kSavedModelTagServe);
+  const std::string TAG_TO_USE = 
+      (strcmp(graph_tag, "") == 0) ? tensorflow::kSavedModelTagServe : graph_tag;
+  saved_model_tags.insert(TAG_TO_USE);
 
   tensorflow::RunOptions run_options;
   RETURN_IF_TF_ERROR(tensorflow::LoadSavedModel(
       session_options, run_options, model_path, saved_model_tags,
       bundle.get()));
 
-  // Verify that the bundle has the "serve" tag
+  // Verify that the bundle has the correct tag
   bool found_serve_tag = false;
   for (const auto& tag : bundle->meta_graph_def.meta_info_def().tags()) {
-    if (tag == tensorflow::kSavedModelTagServe) {
+    if (tag == TAG_TO_USE) {
       found_serve_tag = true;
       break;
     }
@@ -961,16 +965,17 @@ TRITONTF_ModelCreateFromSavedModel(
   if (!found_serve_tag) {
     return TRITONTF_ErrorNew(
         "unable to load model '" + std::string(model_name) + "', expected '" +
-        tensorflow::kSavedModelTagServe + "' tag");
+        TAG_TO_USE + "' tag");
   }
 
-  // Verify that a "serving_default" signature exists, that is what
-  // will be used to verify the inputs and outputs.
-  static const std::string DEFAULT_SERVING_SIGNATURE_DEF_KEY("serving_default");
+  // If user does not specify a 'signature_def' in the configuration file,
+  // then use "serving_default" as default
+  const std::string SIGNATURE_DEF_KEY_TO_USE = 
+      (strcmp(signature_def, "") == 0) ? "serving_default" : signature_def;
   static const std::string INIT_OP_SIGNATURE_DEF_KEY("__saved_model_init_op");
   static const std::string TRAIN_OP_SIGNATURE_DEF_KEY("__saved_model_train_op");
   auto sig_itr = bundle->meta_graph_def.signature_def().find(
-      DEFAULT_SERVING_SIGNATURE_DEF_KEY);
+      SIGNATURE_DEF_KEY_TO_USE);
   if (sig_itr == bundle->meta_graph_def.signature_def().end()) {
     // If default serving signature_def key is not found, maybe it is named
     // something else, use one that is neither init_op key nor train_op key
@@ -978,16 +983,16 @@ TRITONTF_ModelCreateFromSavedModel(
          sig_itr != bundle->meta_graph_def.signature_def().end(); sig_itr++) {
       if ((sig_itr->first != INIT_OP_SIGNATURE_DEF_KEY) &&
           (sig_itr->first != TRAIN_OP_SIGNATURE_DEF_KEY)) {
-        LOG(WARNING) << "unable to find default serving signature '"
-                     << DEFAULT_SERVING_SIGNATURE_DEF_KEY
-                     << "', using signature '" << sig_itr->first << "'";
+        LOG(WARNING) << "unable to find serving signature '"
+                     << SIGNATURE_DEF_KEY_TO_USE;
+        LOG(WARNING) << "using signature '" << sig_itr->first << "'";
         break;
       }
     }
     if (sig_itr == bundle->meta_graph_def.signature_def().end()) {
       return TRITONTF_ErrorNew(
           "unable to load model '" + std::string(model_name) + "', expected '" +
-          DEFAULT_SERVING_SIGNATURE_DEF_KEY + "' signature");
+          SIGNATURE_DEF_KEY_TO_USE + "' signature");
     }
   }
 

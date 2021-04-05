@@ -232,6 +232,7 @@ TRITONTF_EXPORT TRITONTF_Error* TRITONTF_ModelCreateFromSavedModel(
     TRITONTF_Model** tritontf_model, const char* model_name,
     const char* model_path, const int device_id, const int num_intra_threads,
     const int num_inter_threads, const bool use_per_session_threads,
+    const char* graph_tag, const char* signature_def,
     const bool has_graph_level, const int graph_level,
     const bool allow_gpu_memory_growth,
     const float per_process_gpu_memory_fraction,
