@@ -69,6 +69,33 @@ class MaybeAdjoint<MATRIX, true> {
   const MATRIX m_;
 };
 
+template <typename T>
+struct SumType {
+  using type = T;
+  // The following type alias is required for the build, but will never be used at
+  // run-time. Deterministic operation is not supported for the types for which
+  // there is not an explicit specialization of this template.
+  using type_for_determinism = T;
+};
+
+template <>
+struct SumType<Eigen::half> {
+  using type = float;  // Use fp32 accumulator for fp16 input values
+  using type_for_determinism = double;
+};
+
+template <>
+struct SumType<float> {
+  using type = float;
+  using type_for_determinism = double;
+};
+
+template <>
+struct SumType<complex64> {
+  using type = complex64;
+  using type_for_determinism = complex128;
+};
+
 }  // end namespace functor
 }  // end namespace tensorflow
 
