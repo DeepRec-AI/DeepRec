@@ -703,6 +703,41 @@ std::string CudnnExecutionPlanEngineFilter() {
   return filter_str;
 }
 
+struct FrontendEngineLimits {
+  unsigned int max_engines_total = -1;
+  unsigned int max_engines_heuristics = -1;
+  unsigned int max_engines_fallback = -1;
+  bool limit_total() { return max_engines_total != -1; }
+  bool limit_heuristics() { return max_engines_heuristics != -1; }
+  bool limit_fallback() { return max_engines_fallback != -1; }
+};
+
+// A helper function to fetch the max limits for the heuristics and fallback
+// engines when autotuning is enabled. Users can set only one value to put a cap
+// on the total engines, or two numbers separated by a comma to put a cap on
+// heuristics engines and fallback engines respectively. "-1" = no cap.
+const FrontendEngineLimits& CudnnExecutionPlanEngineMaxLimits() {
+  static FrontendEngineLimits caps = [] {
+    FrontendEngineLimits ret;
+    std::string str = "";
+    TF_CHECK_OK(tensorflow::ReadStringFromEnvVar(
+                    "TF_CUDNN_ENGINE_MAX_LIMITS", "", &str));
+
+    std::vector<string> parts = absl::StrSplit(str, ",");
+    int val0, val1;
+    if (parts.size() == 1 && absl::SimpleAtoi(parts[0], &val0)) {
+      ret.max_engines_total = val0;
+    } else if (parts.size() > 1 && absl::SimpleAtoi(parts[0], &val0) &&
+               absl::SimpleAtoi(parts[1], &val1)) {
+      ret.max_engines_heuristics = val0;
+      ret.max_engines_fallback = val1;
+    }
+    return ret;
+  }();
+
+  return caps;
+}
+
 // A helper function to decide whether to use
 // CUDNN_BATCHNORM_SPATIAL_PERSISTENT in batchnorm. This mode can be faster in
 // some tasks because an optimized path may be selected for CUDNN_DATA_FLOAT
@@ -4475,23 +4510,46 @@ bool CudnnSupport::GetConvolveExecutionPlans(
           << "\nFallback engine configs size: " << fallback_configs.size();
 
   cudnn_frontend::EngineConfigList filtered_configs;
+  // We use the num_engines_heuristics to mark the border between the two
+  // concatenated engine lists.
+  int num_engines_heuristics;
   if (stream_executor::cuda::RequireCuDNNDeterminism()) {
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isNonDeterministicOrIsDownConverting);
+    num_engines_heuristics = filtered_configs.size();
     cudnn_frontend::filter(fallback_configs, filtered_configs,
                            isNonDeterministicOrIsDownConverting);
   } else {
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isDownConvertingInputs);
+    num_engines_heuristics = filtered_configs.size();
     cudnn_frontend::filter(fallback_configs, filtered_configs,
                            isDownConvertingInputs);
   }
 
-  VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size();
+  VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size()
+          << " (heuristics=" << num_engines_heuristics << ", fallback="
+          << filtered_configs.size() - num_engines_heuristics << ").";
 
   out_exec_plans->clear();
 
   std::string filter_str = CudnnExecutionPlanEngineFilter();
+
+  auto limits = CudnnExecutionPlanEngineMaxLimits();
+  if (limits.limit_total()) {
+    VLOG(4) << "\nSet a limit on total engines: " << limits.max_engines_total;
+  }
+  if (limits.limit_heuristics()) {
+    VLOG(4) << "\nSet a limit on heuristics engines: "
+            << limits.max_engines_heuristics;
+  }
+  if (limits.limit_fallback()) {
+    VLOG(4) << "\nSet a limit on fallback engines: "
+            << limits.max_engines_fallback;
+  }
+
+  int count_heuristics = 0;
+  int count_fallback = 0;
   for (int i = 0; i < filtered_configs.size(); i++) {
     auto plan = cudnn_frontend::ExecutionPlanBuilder()
                     .setHandle(cudnn.handle())
@@ -4507,6 +4565,17 @@ bool CudnnSupport::GetConvolveExecutionPlans(
         }
       }
 
+      if (i < num_engines_heuristics) {
+        if (count_heuristics >= limits.max_engines_heuristics ||
+            count_heuristics >= limits.max_engines_total) continue;
+        count_heuristics++;
+      } else {
+        int count_total = count_heuristics + count_fallback;
+        if (count_fallback >= limits.max_engines_fallback ||
+            count_total >= limits.max_engines_total) continue;
+        count_fallback++;
+      }
+
       out_exec_plans->push_back(std::move(plan));
       // We will use the first working plan when determinism is required.
       if (stream_executor::cuda::RequireCuDNNDeterminism()) {
@@ -4515,7 +4584,9 @@ bool CudnnSupport::GetConvolveExecutionPlans(
     }
   }
 
-  VLOG(4) << "\nReturned execution plans size: " << out_exec_plans->size();
+  VLOG(4) << "\nReturned execution plans size: " << out_exec_plans->size()
+          << " (heuristics=" << count_heuristics << ", fallback="
+          << count_fallback << ").";
 
   return true;
 #else
@@ -4552,19 +4623,42 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
   VLOG(4) << "\nHeuristics engine configs size: " << heur_configs.size();
 
   cudnn_frontend::EngineConfigList filtered_configs;
+  // We use the num_engines_heuristics to mark the border between the two
+  // concatenated engine lists.
+  int num_engines_heuristics;
   if (stream_executor::cuda::RequireCuDNNDeterminism()) {
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isNonDeterministicOrIsDownConverting);
+    num_engines_heuristics = filtered_configs.size();
   } else {
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isDownConvertingInputs);
+    num_engines_heuristics = filtered_configs.size();
   }
 
-  VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size();
+  VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size()
+          << " (heuristics=" << num_engines_heuristics << ", fallback="
+          << filtered_configs.size() - num_engines_heuristics << ").";
 
   out_exec_plans->clear();
   
   std::string filter_str = CudnnExecutionPlanEngineFilter();
+
+  auto limits = CudnnExecutionPlanEngineMaxLimits();
+  if (limits.limit_total()) {
+    VLOG(4) << "\nSet a limit on total engines: " << limits.max_engines_total;
+  }
+  if (limits.limit_heuristics()) {
+    VLOG(4) << "\nSet a limit on heuristics engines: "
+            << limits.max_engines_heuristics;
+  }
+  if (limits.limit_fallback()) {
+    VLOG(4) << "\nSet a limit on fallback engines: "
+            << limits.max_engines_fallback;
+  }
+
+  int count_heuristics = 0;
+  int count_fallback = 0;
   for (int i = 0; i < filtered_configs.size(); i++) {
     auto plan = cudnn_frontend::ExecutionPlanBuilder()
                     .setHandle(cudnn.handle())
@@ -4580,6 +4674,17 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
         }
       }
 
+      if (i < num_engines_heuristics) {
+        if (count_heuristics >= limits.max_engines_heuristics ||
+            count_heuristics >= limits.max_engines_total) continue;
+        count_heuristics++;
+      } else {
+        int count_total = count_heuristics + count_fallback;
+        if (count_fallback >= limits.max_engines_fallback ||
+            count_total >= limits.max_engines_total) continue;
+        count_fallback++;
+      }
+
       out_exec_plans->push_back(std::move(plan));
       // We will use the first working plan when determinism is required.
       if (stream_executor::cuda::RequireCuDNNDeterminism()) {
@@ -4588,7 +4693,9 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
     }
   }
 
-  VLOG(4) << "\nReturned execution plans size: " << out_exec_plans->size();
+  VLOG(4) << "\nReturned execution plans size: " << out_exec_plans->size()
+          << " (heuristics=" << count_heuristics << ", fallback="
+          << count_fallback << ").";
 
   return true;
 #else
