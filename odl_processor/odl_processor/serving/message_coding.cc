@@ -35,7 +35,7 @@ Tensor Proto2Tensor(const eas::ArrayProto& input) {
       Tensor tensor(DT_DOUBLE, tensor_shape);
       auto flat = tensor.flat<double>();
       memcpy(flat.data(), input.double_val().data(),
-          input.double_val_size() * sizeof(float));
+          input.double_val_size() * sizeof(double));
       return tensor;
     }
     case tensorflow::eas::DT_INT32: {
