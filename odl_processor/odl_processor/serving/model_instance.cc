@@ -162,10 +162,10 @@ Status LocalSessionInstance::FullModelUpdate(
 
 Status LocalSessionInstance::DeltaModelUpdate(
     const Version& version, ModelConfig* model_config) {
-  // TODO: Implement here
-  return Status::OK();
+  return session_mgr_->CreateModelSession(version,
+      version.delta_ckpt_name.c_str(),
+      /*is_incr_ckpt*/true, model_config);
 }
-
 
 RemoteSessionInstance::RemoteSessionInstance(
     SessionOptions* sess_options,
@@ -338,19 +338,20 @@ std::string LocalSessionInstanceMgr::DebugString() {
   return instance_->DebugString();
 }
 
-Status LocalSessionInstanceMgr::FullModelUpdate(const Version& version,
-                                      ModelConfig* model_config) {
+Status LocalSessionInstanceMgr::FullModelUpdate(
+    const Version& version, ModelConfig* model_config) {
   TF_RETURN_IF_ERROR(instance_->FullModelUpdate(
       version, model_config));
   instance_->UpdateVersion(version);
   return instance_->Warmup();
 }
 
-Status LocalSessionInstanceMgr::DeltaModelUpdate(const Version& version,
-                                       ModelConfig* model_config) {
-  // TODO: Implement here, can NOT create a new session, modify
-  // variable in current resource variable.
-  return Status::OK();
+Status LocalSessionInstanceMgr::DeltaModelUpdate(
+    const Version& version, ModelConfig* model_config) {
+  TF_RETURN_IF_ERROR(instance_->DeltaModelUpdate(
+      version, model_config));
+  instance_->UpdateVersion(version);
+  return instance_->Warmup();
 }
 
 Version LocalSessionInstanceMgr::GetVersion() {

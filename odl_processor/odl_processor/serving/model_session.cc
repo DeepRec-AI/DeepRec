@@ -332,13 +332,20 @@ Status ModelSessionMgr::CreateModelSession(
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
     bool is_incr_ckpt, ModelConfig* config) {
+  std::string restore_op_name =
+      meta_graph_def_.saver_def().restore_op_name();
   Session* session = nullptr;
-  TF_RETURN_IF_ERROR(CreateSession(&session));
+  if (is_incr_ckpt) {
+    // Use serving session to update delta model
+    session = serving_session_->session_;
+    restore_op_name += GetKvRestoreAllNameSuffix();
+  } else {
+    TF_RETURN_IF_ERROR(CreateSession(&session));
+  }
 
   TF_RETURN_IF_ERROR(util::RunRestoreCheckpoint(
       *run_options_, ckpt_name,
-      version.savedmodel_dir.c_str(),
-      meta_graph_def_.saver_def().restore_op_name(),
+      version.savedmodel_dir.c_str(), restore_op_name,
       meta_graph_def_.saver_def().filename_tensor_name(),
       asset_file_defs_, session));
 
@@ -354,7 +361,10 @@ Status ModelSessionMgr::CreateModelSession(
         kSavedModelLegacyInitOpKey));
   }
 
-  ResetServingSession(session, version, nullptr);
+  if (!is_incr_ckpt) {
+    ResetServingSession(session, version, nullptr);
+  }
+
   return Status::OK();
 }
 

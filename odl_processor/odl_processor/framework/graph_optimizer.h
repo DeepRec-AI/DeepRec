@@ -167,6 +167,14 @@ class SavedModelOptimizer : public GraphOptimizer {
   Status RunNativeTFGraphPass();
   Status RunODLGraphPass();
 
+  // Add op to restore delta model which contain
+  // EV ops.
+  Status AddIncrRestoreOps();
+  Status ConvertKvImportToKvInsert(
+      Node* import_op, Node** insert_op);
+  Status CreateIncrRestoreOp(
+      Node* import_op, Node** restore_op);
+
   // Convert EV related ops to HashTable ops
   Status ConvertToHashTableOps();
 
