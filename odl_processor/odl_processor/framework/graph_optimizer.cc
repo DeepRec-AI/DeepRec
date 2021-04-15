@@ -572,10 +572,9 @@ Status SavedModelOptimizer::Optimize() {
 }
 
 Status SavedModelOptimizer::RunNativeTFGraphPass() {
-  Status s = ConvertToHashTableOps();
-  if (!s.ok()) {
-    return s;
-  }
+  // Add incr_restore_op for load delta model
+  TF_RETURN_IF_ERROR(AddIncrRestoreOps());
+
   // Add other passes here
 
   // replace the graph def in saved_model_bundle
@@ -876,11 +875,12 @@ Status CreateRestoreAllNode(const std::string& name,
   if (!status.ok()) return status;
 
   // Add input egdes
-  int idx = 0;
+  int dst_in_slot = Graph::kControlSlot;
   for (size_t i = 0; i < inputs.size(); ++i) {
-    int dst_in_slot = Graph::kControlSlot;
     if (inputs[i].src_slot != Graph::kControlSlot) {
-      dst_in_slot = idx++;
+      LOG(FATAL) << "RestoreAll op only allow control eages. "
+                 << "Current input node: " << inputs[i].src_node->DebugString()
+                 << ", slot: " << inputs[i].src_slot;
     }
 
     graph->AddEdge(inputs[i].src_node, inputs[i].src_slot,
@@ -1163,15 +1163,19 @@ Status SavedModelOptimizer::CreateDenseAndSparseRestoreOp() {
         "Can not find restore op: " + restore_op_name);
   }
 
+  if (restore_op->in_edges().size() != 1) {
+    LOG(FATAL) << "Restore all op only allow 1 input: "
+               << restore_op->DebugString();
+  }
+
   std::vector<SrcInfo> kv_nodes;
   std::vector<SrcInfo> dense_nodes;
   for (const Edge* edge : restore_op->in_edges()) {
     const Node* src = edge->src();
     if (src->type_string() != "NoOp") {
-      LOG(WARNING) << "Restore op " << restore_op_name
-                   << " has input node which type is not NoOp."
-                   << src->DebugString();
-      continue;
+      LOG(FATAL) << "Restore op " << restore_op_name
+                 << " has input node which type is not NoOp."
+                 << src->DebugString();
     }
 
     for (const Edge* inner_edge : src->in_edges()) {
@@ -1374,6 +1378,197 @@ Status SavedModelOptimizer::ConvertToHashTableOps() {
   }
 
   return Status::OK();
+}
+
+namespace {
+
+Status CreateFakeConstOp(const std::string& name,
+                         DataType type, Graph* graph,
+                         Node** fake_const,
+                         Tensor* content = nullptr) {
+  NodeDef def;
+  def.set_name(name);
+  def.set_op("Const");
+  auto* attr = def.mutable_attr();
+  (*attr)["dtype"].set_type(type);
+  if (content != nullptr) {
+    content->AsProtoTensorContent((*attr)["value"].mutable_tensor());
+  }
+  Status status;
+  *fake_const = graph->AddNode(def, &status);
+  return status;
+}
+
+}
+
+Status SavedModelOptimizer::CreateIncrRestoreOp(
+    Node* import_op, Node** restore_op) {
+  NodeDef incr_restore_def;
+  incr_restore_def.set_name(import_op->name() + "_IncrRestore");
+  incr_restore_def.set_op("IncrRestore");
+  DataTypeVector dtypes;
+  // Tkeys, dtype, int64 (for version)
+  AttrValue* key_attr = nullptr;
+  Status s_attr = GetNodeAttr(import_op, "Tkeys", &key_attr);
+  TF_RETURN_IF_ERROR(s_attr);
+  AttrValue* dtype_attr = nullptr;
+  s_attr = GetNodeAttr(import_op, "dtype", &dtype_attr);
+  TF_RETURN_IF_ERROR(s_attr);
+  dtypes.push_back(key_attr->type());
+  dtypes.push_back(dtype_attr->type());
+  dtypes.push_back(tensorflow::DataType::DT_INT64);
+
+  AttrValue attr_value;
+  SetAttrValue(dtypes, &attr_value);
+  (*incr_restore_def.mutable_attr())["dtypes"] = attr_value;
+  Status status;
+  *restore_op = graph_.AddNode(incr_restore_def, &status);
+  TF_RETURN_IF_ERROR(status);
+
+  std::vector<SrcInfo> src_info;
+  Status s_src_info = GetInputNodesInfo(&src_info, import_op);
+  TF_RETURN_IF_ERROR(s_src_info);
+
+  // Add input egdes
+  std::vector<SrcInfo> input_info;
+  input_info.push_back({src_info[0].src_node, src_info[0].src_slot});
+  input_info.push_back({src_info[3].src_node, src_info[3].src_slot});
+
+  // fake input: shape_and_slices
+  Node* shape_slices_op = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateFakeConstOp(import_op->name() + "_IncrRestore/shape_and_slices",
+                        DataType::DT_STRING, &graph_, &shape_slices_op));
+  // fake input: is_sparse
+  Node* is_sparse_op = nullptr;
+  Tensor sparse_val(DT_BOOL, TensorShape({}));
+  sparse_val.scalar<bool>()() = true;
+  TF_RETURN_IF_ERROR(
+      CreateFakeConstOp(import_op->name() + "_IncrRestore/is_sparse",
+                        DataType::DT_BOOL, &graph_, &is_sparse_op, &sparse_val));
+  // fake input: in_tensors (key, value, version)
+  Node* key_tensor_op = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateFakeConstOp(import_op->name() + "_IncrRestore/key_tensor",
+                        dtypes[0], &graph_, &key_tensor_op));
+  Node* val_tensor_op = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateFakeConstOp(import_op->name() + "_IncrRestore/val_tensor",
+                        dtypes[1], &graph_, &val_tensor_op));
+  Node* version_tensor_op = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateFakeConstOp(import_op->name() + "_IncrRestore/version_tensor",
+                        dtypes[2], &graph_, &version_tensor_op));
+
+  input_info.push_back({shape_slices_op, 0});
+  input_info.push_back({is_sparse_op, 0});
+  input_info.push_back({key_tensor_op, 0});
+  input_info.push_back({val_tensor_op, 0});
+  input_info.push_back({version_tensor_op, 0});
+ 
+  for (size_t i = 0; i < input_info.size(); ++i) {
+    graph_.AddEdge(input_info[i].src_node,
+                   input_info[i].src_slot,
+                   *restore_op, i);
+  }
+
+  return Status::OK();
+}
+
+Status SavedModelOptimizer::ConvertKvImportToKvInsert(
+    Node* import_op, Node** insert_op) {
+  Node* incr_restore_op = nullptr;
+  Status s = CreateIncrRestoreOp(import_op, &incr_restore_op);
+  TF_RETURN_IF_ERROR(s);
+
+  NodeDef kv_insert_def;
+  kv_insert_def.set_name(import_op->name() + "_KvResourceInsert");
+  kv_insert_def.set_op("KvResourceInsert");
+
+  AttrValue* dtype_value =
+      const_cast<AttrValue*>(import_op->attrs().Find("dtype"));
+  AttrValue* tkeys_value =
+      const_cast<AttrValue*>(import_op->attrs().Find("Tkeys"));
+  if (!dtype_value || !tkeys_value) {
+    LOG(FATAL) << "Miss dtype or Tkeys attr, "
+               << import_op->DebugString();
+  }
+  (*kv_insert_def.mutable_attr())["dtype"] = *dtype_value;
+  (*kv_insert_def.mutable_attr())["Tkeys"] = *tkeys_value;
+
+  *insert_op = graph_.AddNode(kv_insert_def, &s);
+  TF_RETURN_IF_ERROR(s);
+
+  std::vector<SrcInfo> input_info;
+  Status s_input_info = GetInputNodesInfo(&input_info, import_op);
+  TF_RETURN_IF_ERROR(s_input_info);
+
+  // input_edge: resource_handle
+  graph_.AddEdge(input_info[1].src_node, input_info[1].src_slot,
+                 *insert_op, 0);
+  // input_edge: keys
+  graph_.AddEdge(incr_restore_op, 0, *insert_op, 1);
+  // input_edge: values
+  graph_.AddEdge(incr_restore_op, 1, *insert_op, 2);
+  // input_edge: versions
+  graph_.AddEdge(incr_restore_op, 2, *insert_op, 3);
+
+  return Status::OK();
+}
+
+Status SavedModelOptimizer::AddIncrRestoreOps() {
+  const std::string restore_op_name =
+      meta_graph_def_->saver_def().restore_op_name();
+  Node* restore_op = nullptr;
+  for (Node* node : graph_.nodes()) {
+    if (node->name() == restore_op_name) {
+      restore_op = node;
+      break;
+    }
+  }
+
+  if (!restore_op) {
+    return errors::Internal(
+        "Can not find restore op: " + restore_op_name);
+  }
+
+  if (restore_op->in_edges().size() != 1) {
+    LOG(FATAL) << "Restore all op only allow 1 input: "
+               << restore_op->DebugString();
+  }
+  std::vector<SrcInfo> input_nodes;
+  for (const Edge* edge : restore_op->in_edges()) {
+    const Node* src = edge->src();
+    if (src->type_string() != "NoOp") {
+      LOG(FATAL) << "Restore op " << restore_op_name
+                 << " has input node which type is not NoOp."
+                 << src->DebugString();
+    }
+
+    for (const Edge* inner_edge : src->in_edges()) {
+      Node* inner_src = inner_edge->src();
+      // KvResourceImportV2 -> KvResourceInsert
+      if (inner_src->op_def().name() == "KvResourceImportV2") {
+        if (inner_edge->src_output() != -1) {
+          LOG(FATAL) << "Invalid tensorflow graph, restore_shard op is: "
+                     << src->DebugString() << ", KvResourceImportV2 op is: "
+                     << inner_src->DebugString();
+        }
+
+        Node* insert_op = nullptr;
+        Status s = ConvertKvImportToKvInsert(inner_src, &insert_op);
+        TF_RETURN_IF_ERROR(s);
+
+        input_nodes.push_back({insert_op, inner_edge->src_output()});
+      } else {
+        input_nodes.push_back({inner_src, inner_edge->src_output()});
+      }
+    }
+  }
+
+  return CreateRestoreAllNode(
+      restore_op_name + GetKvRestoreAllNameSuffix(),
+      "NoOp", input_nodes, &graph_);
 }
 
 } // namespace processor

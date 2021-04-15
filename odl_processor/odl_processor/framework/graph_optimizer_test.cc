@@ -1002,29 +1002,29 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
 }
 
 /*
-           KvVarHandleOp
-      ...   /        \    ...
-        \  /          \    /
-      KvResource   KvResource
-       ImportV2      Gather
-          |              \
-          |               \
-     NoOp(save/restore)   Identity
+              KvVarHandleOp
+       Assign  /        \    ...
+           \  /          \    /
+         KvResource   KvResource
+          ImportV2      Gather
+             |              \
+             |               \
+        NoOp(save/restore)   Identity
+   
+                   ||
+                   ||
+                   \/
 
-                ||
-                ||
-                \/
+              KvVarHandleOp
+       Assign  /        \    ...
+           \  /          \    /
+         KvResource     KvResource
+          ImportV2        Gather
+           /   \              \
+          /     \              \
+       NoOp     NoOp         Identity  
+(restore_delta) (restore_all) 
 
-                    MutableHashTableOfTensorsV2
-                          /          \        ...
-    (key)     (value)    /            \        /
-  RestoreV2  RestoreV2   |          LookupTableFindV2
-         \      |        |                 |
-          \     |        |                 |
-        LookupTableImportV2             Identity
-                |
-                |
-         NoOp(save/restore)
 */
 TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   GraphDef graph_def;
@@ -1099,12 +1099,19 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   n_lookup_import_0->add_input("tsname/Const");
   n_lookup_import_0->add_input("empty_key/Const");
   n_lookup_import_0->add_input("^prefix/Const");
+
+  REGISTER_OP("FakeAssign")
+      .Output("x: int32");
+  NodeDef* fake_assign_0 = graph_def.add_node();
+  fake_assign_0->set_name("FakeAssign");
+  fake_assign_0->set_op("FakeAssign");
  
   // NoOp
   NodeDef* n_noop_0 = graph_def.add_node(); 
   n_noop_0->set_name("save/restore");
   n_noop_0->set_op("NoOp");
   n_noop_0->add_input("^KvResourceImportV2_0");
+  n_noop_0->add_input("^FakeAssign");
 
   NodeDef* n_restore_all = graph_def.add_node();
   n_restore_all->set_name("save/restore_all");
@@ -1160,19 +1167,19 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
     ++node_count;
   }
 
-  EXPECT_TRUE(node_count == 18);
-  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/values/restore") != nodes.end());
-  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/keys/restore") != nodes.end());
-  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/values") != nodes.end());
-  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/keys") != nodes.end());
-  EXPECT_TRUE(nodes.find("KvResourceImportV2_0/const/shape_and_slices") != nodes.end());
+  EXPECT_TRUE(node_count == 21);
+  EXPECT_TRUE(nodes.find("save/restore_all/Kv_all") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_KvResourceInsert") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/version_tensor") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/val_tensor") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/key_tensor") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/is_sparse") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/shape_and_slices") != nodes.end());
+  EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore") != nodes.end());
 
-  EXPECT_TRUE(nodes["var_0"].op() == "MutableHashTableOfTensorsV2");
-  EXPECT_TRUE(nodes["KvResourceImportV2_0/values/restore"].op() == "RestoreV2");
-  EXPECT_TRUE(nodes["KvResourceImportV2_0/keys/restore"].op() == "RestoreV2");
-  EXPECT_TRUE(nodes["KvResourceImportV2_0"].op() == "LookupTableImportV2");
-  EXPECT_TRUE(nodes["KvResourceGather_0"].op() == "LookupTableFindV2");
-
+  EXPECT_TRUE(nodes["KvResourceImportV2_0_IncrRestore"].op() == "IncrRestore");
+  EXPECT_TRUE(nodes["KvResourceImportV2_0_KvResourceInsert"].op() == "KvResourceInsert");
+  EXPECT_TRUE(nodes["save/restore_all/Kv_all"].op() == "NoOp");
   EXPECT_TRUE(1);
 }
  
