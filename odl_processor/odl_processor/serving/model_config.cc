@@ -85,6 +85,13 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] Signature_name shouldn't be empty string.");
   }
 
+  if (!json_config["warmup_file_name"].isNull()) {
+    (*config)->warmup_file_name =
+      json_config["warmup_file_name"].asString();
+  } else {
+    (*config)->warmup_file_name = "";
+  }
+
   if (!json_config["serialize_protocol"].isNull()) {
     (*config)->serialize_protocol =
       json_config["serialize_protocol"].asString();

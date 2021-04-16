@@ -186,7 +186,8 @@ Status ModelSessionMgr::RunRestoreOps(
 
 ModelSession::ModelSession(Session* s, const Version& version,
     IFeatureStoreMgr* sparse_storage)
-    : session_(s), counter_(0), is_local_(false) {
+    : session_(s), counter_(0), is_local_(false),
+      version_(version) {
   Tensor t(DT_UINT64, TensorShape({}));
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
   sparse_storage_tensor_ = t;
@@ -199,7 +200,8 @@ ModelSession::ModelSession(Session* s, const Version& version,
 }
 
 ModelSession::ModelSession(Session* s, const Version& version)
-    : session_(s), counter_(0), is_local_(true) {
+    : session_(s), counter_(0), is_local_(true),
+      version_(version) {
   Tensor t_version(DT_UINT64, TensorShape({}));
   t_version.scalar<uint64>()() = version.full_ckpt_version;
   model_version_tensor_ = t_version;
@@ -252,6 +254,20 @@ Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
     IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt,
     bool is_initialize, ModelConfig* config) {
+  ModelSession* new_model_session = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateModelSession(version, ckpt_name, sparse_storage,
+                         is_incr_ckpt, is_initialize, config,
+                         &new_model_session));
+  ResetServingSession(new_model_session);
+  return Status::OK();
+}
+
+Status ModelSessionMgr::CreateModelSession(
+    const Version& version, const char* ckpt_name,
+    IFeatureStoreMgr* sparse_storage, bool is_incr_ckpt,
+    bool is_initialize, ModelConfig* config,
+    ModelSession** new_model_session) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
 
@@ -325,13 +341,31 @@ Status ModelSessionMgr::CreateModelSession(
 
   // version(real_version) maybe modfied across
   // the version returned by remote storage.
-  ResetServingSession(session, real_version, sparse_storage);
+  // ResetServingSession(session, real_version, sparse_storage);
+  *new_model_session = new ModelSession(
+      session, version, sparse_storage);
+
   return Status::OK();
 }
 
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* ckpt_name,
     bool is_incr_ckpt, ModelConfig* config) {
+  ModelSession* new_model_session = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateModelSession(version, ckpt_name, is_incr_ckpt,
+                         config, &new_model_session));
+  if (!is_incr_ckpt) {
+    ResetServingSession(new_model_session);
+  }
+
+  return Status::OK();
+}
+ 
+Status ModelSessionMgr::CreateModelSession(
+    const Version& version, const char* ckpt_name,
+    bool is_incr_ckpt, ModelConfig* config,
+    ModelSession** new_model_session) {
   std::string restore_op_name =
       meta_graph_def_.saver_def().restore_op_name();
   Session* session = nullptr;
@@ -362,7 +396,8 @@ Status ModelSessionMgr::CreateModelSession(
   }
 
   if (!is_incr_ckpt) {
-    ResetServingSession(session, version, nullptr);
+    // ResetServingSession(session, version);
+    *new_model_session = new ModelSession(session, version);
   }
 
   return Status::OK();
@@ -384,16 +419,7 @@ Status ModelSessionMgr::CleanupModelSession() {
   return Status::OK();
 }
 
-void ModelSessionMgr::ResetServingSession(Session* session,
-    const Version& version, IFeatureStoreMgr* sparse_storage) {
-  ModelSession* model_session = nullptr;
-  if (sparse_storage) {
-    model_session = new ModelSession(session, version,
-        sparse_storage);
-  } else {
-    model_session = new ModelSession(session, version);
-  }
-
+void ModelSessionMgr::ResetServingSession(ModelSession* model_session) {
   auto tmp = serving_session_;
   serving_session_ = model_session;
 

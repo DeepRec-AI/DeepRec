@@ -19,6 +19,7 @@ class Session;
 namespace processor {
 class SavedModelOptimizer;
 class ModelStore;
+class ModelSession;
 class ModelSessionMgr;
 class IFeatureStoreMgr;
 
@@ -31,7 +32,7 @@ class LocalSessionInstance {
       ModelStore* model_store);
 
   Status Predict(Request& req, Response& resp);
-  Status Warmup();
+  Status Warmup(ModelSession* warmup_session = nullptr);
   Version GetVersion() { return version_; }
   void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
@@ -47,6 +48,7 @@ class LocalSessionInstance {
  private: 
   MetaGraphDef meta_graph_def_;
   std::pair<std::string, SignatureDef> model_signature_;
+  std::string warmup_file_name_;
 
   ModelSessionMgr* session_mgr_ = nullptr;
   SessionOptions* session_options_ = nullptr;
@@ -70,7 +72,7 @@ class RemoteSessionInstance {
                          ModelConfig* model_config);
   Status DeltaModelUpdate(const Version& version,
                           ModelConfig* model_config);
-  Status Warmup();
+  Status Warmup(ModelSession* warmup_session = nullptr);
 
   Version GetVersion() { return version_; }
   void UpdateVersion(const Version& v) { version_ = v; }
@@ -86,6 +88,7 @@ class RemoteSessionInstance {
  private:
   MetaGraphDef meta_graph_def_;
   std::pair<std::string, SignatureDef> model_signature_;
+  std::string warmup_file_name_;
 
   ModelSessionMgr* session_mgr_ = nullptr;
   SessionOptions* session_options_ = nullptr;

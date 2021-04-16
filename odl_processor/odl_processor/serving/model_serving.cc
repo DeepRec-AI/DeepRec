@@ -8,6 +8,10 @@
 namespace tensorflow {
 namespace processor {
 
+Model::Model(const std::string& model_entry)
+    : model_entry_(model_entry) {
+}
+
 Model::~Model() {
   delete impl_;
 }
@@ -17,6 +21,11 @@ Status Model::Init(const char* model_config) {
   auto status = ModelConfigFactory::Create(model_config, &config);
   if (!status.ok()) {
     return status;
+  }
+
+  if (!config->warmup_file_name.empty()) {
+    config->warmup_file_name =
+        model_entry_ + config->warmup_file_name;
   }
 
   parser_ = ParserFactory::GetInstance(config->serialize_protocol,

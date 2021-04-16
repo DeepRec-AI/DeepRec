@@ -8,7 +8,7 @@
 extern "C" {
 void* initialize(const char* model_entry, const char* model_config,
                  int* state) {
-  auto model = new tensorflow::processor::Model();
+  auto model = new tensorflow::processor::Model(std::string(model_entry));
   auto status = model->Init(model_config);
   if (!status.ok()) {
     std::cerr << "[TensorFlow] Processor initialize failed"
