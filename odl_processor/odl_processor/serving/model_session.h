@@ -27,6 +27,7 @@ struct ModelSession {
 
   Status Predict(Request& req, Response& resp);
   Status LocalPredict(Request& req, Response& resp);
+  Version GetVersion() {return version_;}
 
   Session* session_ = nullptr;
   //IFeatureStoreMgr* sparse_storage_ = nullptr;
@@ -38,6 +39,7 @@ struct ModelSession {
   std::atomic<int64> counter_;
   // Local storage or remote storage for sparse variable.
   bool is_local_ = true;
+  Version version_;
 };
 
 class ModelSessionMgr {
@@ -57,9 +59,23 @@ class ModelSessionMgr {
 
   Status CreateModelSession(
       const Version& version, const char* ckpt_name,
+      IFeatureStoreMgr* sparse_storage,
+      bool is_incr_ckpt, bool is_initialize,
+      ModelConfig* config,
+      ModelSession** new_model_session);
+
+  Status CreateModelSession(
+      const Version& version, const char* ckpt_name,
       bool is_incr_ckpt, ModelConfig* config);
  
+  Status CreateModelSession(
+      const Version& version, const char* ckpt_name,
+      bool is_incr_ckpt, ModelConfig* config,
+      ModelSession** new_model_session);
+ 
   Status CleanupModelSession();
+
+  void ResetServingSession(ModelSession* model_session);
 
  private:
   virtual Status CreateSession(Session** sess);
@@ -70,9 +86,6 @@ class ModelSessionMgr {
       bool is_incr_ckpt, bool update_sparse,
       int64_t latest_version);
   
-  void ResetServingSession(Session* session, const Version& version,
-      IFeatureStoreMgr* sparse_storage);
-
   void ClearLoop();
 
  protected:

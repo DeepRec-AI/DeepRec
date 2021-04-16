@@ -12,6 +12,7 @@ struct ModelConfig {
   std::string checkpoint_dir;
   std::string savedmodel_dir;
   std::string signature_name;
+  std::string warmup_file_name;
   std::string serialize_protocol;
   int init_timeout_minutes = 0;
 

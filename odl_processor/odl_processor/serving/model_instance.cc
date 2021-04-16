@@ -1,5 +1,7 @@
+#include <fstream>
 #include "odl_processor/serving/model_instance.h"
 #include "odl_processor/serving/model_session.h"
+#include "odl_processor/serving/tf_predict.pb.h"
 #include "odl_processor/serving/util.h"
 #include "odl_processor/storage/model_store.h"
 #include "odl_processor/storage/feature_store_mgr.h"
@@ -70,6 +72,33 @@ Call CreateWarmupParams(SignatureDef& sig_def) {
   for (auto it : sig_def.outputs()) {
     call.request.output_tensor_names.emplace_back(it.first);
   }
+
+  return call; 
+}
+
+Call CreateWarmupParams(SignatureDef& sig_def,
+                        const std::string& warmup_file_name) {
+  // Parse warmup file
+  eas::PredictRequest request;
+  std::fstream input(warmup_file_name, std::ios::in | std::ios::binary);
+  request.ParseFromIstream(&input);
+  input.close();
+
+  Call call;
+  for (auto& input : request.inputs()) {
+    call.request.inputs.emplace_back(input.first,
+        util::Proto2Tensor(input.second));
+  }
+
+  call.request.output_tensor_names =
+      std::vector<std::string>(request.output_filter().begin(),
+                               request.output_filter().end());
+
+  // User need to set fetches
+  if (call.request.output_tensor_names.size() == 0) {
+    LOG(FATAL) << "warmup file must be contain fetches.";
+  }
+
   return call; 
 }
 
@@ -79,11 +108,15 @@ bool ShouldWarmup(SignatureDef& sig_def) {
   }
   return true;
 }
-}
+
+} // namespace
+
 LocalSessionInstance::LocalSessionInstance(
     SessionOptions* sess_options,
     RunOptions* run_options) :
-    session_options_(sess_options), run_options_(run_options) {
+    warmup_file_name_(""),
+    session_options_(sess_options),
+    run_options_(run_options) {
 }
 
 Status LocalSessionInstance::Init(ModelConfig* config,
@@ -100,6 +133,8 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
         version_.savedmodel_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
+
+  warmup_file_name_ = config->warmup_file_name;
 
   GraphOptimizerOption option;
   option.native_tf_mode = true;
@@ -143,10 +178,28 @@ Status LocalSessionInstance::Predict(Request& req, Response& resp) {
   return session_mgr_->LocalPredict(req, resp);
 }
 
-Status LocalSessionInstance::Warmup() {
-  if (!ShouldWarmup(model_signature_.second)) return Status::OK();
-  Call call = CreateWarmupParams(model_signature_.second);
-  return Predict(call.request, call.response);
+Status LocalSessionInstance::Warmup(
+    ModelSession* warmup_session) {
+  if (warmup_file_name_.empty() &&
+      !ShouldWarmup(model_signature_.second)) {
+    return Status::OK();
+  }
+
+  Call call;
+  if (warmup_file_name_.empty()) {
+    call = CreateWarmupParams(model_signature_.second);
+  } else {
+    call = CreateWarmupParams(model_signature_.second,
+                              warmup_file_name_);
+  }
+
+  if (warmup_session) {
+    return warmup_session->LocalPredict(
+        call.request, call.response);
+  }
+
+  return session_mgr_->LocalPredict(
+      call.request, call.response);
 }
 
 std::string LocalSessionInstance::DebugString() {
@@ -155,16 +208,36 @@ std::string LocalSessionInstance::DebugString() {
 
 Status LocalSessionInstance::FullModelUpdate(
     const Version& version, ModelConfig* model_config) {
-  return session_mgr_->CreateModelSession(version,
-      version.full_ckpt_name.c_str(),
-      /*is_incr_ckpt*/false, model_config);
+  ModelSession* new_model_session = nullptr;
+
+  TF_RETURN_IF_ERROR(
+      session_mgr_->CreateModelSession(version,
+          version.full_ckpt_name.c_str(),
+          /*is_incr_ckpt*/false, model_config,
+          &new_model_session));
+
+  // warmup model
+  Warmup(new_model_session);
+
+  session_mgr_->ResetServingSession(new_model_session);
+  UpdateVersion(new_model_session->GetVersion());
+
+  return Status::OK();
 }
 
 Status LocalSessionInstance::DeltaModelUpdate(
     const Version& version, ModelConfig* model_config) {
-  return session_mgr_->CreateModelSession(version,
-      version.delta_ckpt_name.c_str(),
-      /*is_incr_ckpt*/true, model_config);
+  TF_RETURN_IF_ERROR(
+      session_mgr_->CreateModelSession(version,
+          version.delta_ckpt_name.c_str(),
+          /*is_incr_ckpt*/true, model_config));
+
+  // Delta model update: No need to warmup model and
+  // reset serving session, we don't create a new session.
+
+  UpdateVersion(version);
+
+  return Status::OK();
 }
 
 RemoteSessionInstance::RemoteSessionInstance(
@@ -219,6 +292,8 @@ Status RemoteSessionInstance::Init(ModelConfig* model_config,
       storage_options_->backup_storage_db_index_;
   backup_storage_ = new FeatureStoreMgr(&backup_model_config);
 
+  warmup_file_name_ = model_config->warmup_file_name;
+
   // set active flag
   serving_storage_->SetStorageActiveStatus(active);
 
@@ -267,31 +342,68 @@ Status RemoteSessionInstance::Predict(Request& req, Response& resp) {
   return session_mgr_->Predict(req, resp);
 }
 
-Status RemoteSessionInstance::Warmup() {
-  if (!ShouldWarmup(model_signature_.second)) return Status::OK();
-  Call call = CreateWarmupParams(model_signature_.second);
-  return Predict(call.request, call.response);
+Status RemoteSessionInstance::Warmup(
+    ModelSession* warmup_session) {
+  if (warmup_file_name_.empty() &&
+      !ShouldWarmup(model_signature_.second)) {
+    return Status::OK();
+  }
+
+  Call call;
+  if (warmup_file_name_.empty()) {
+    call = CreateWarmupParams(model_signature_.second);
+  } else {
+    call = CreateWarmupParams(model_signature_.second,
+                              warmup_file_name_);
+  }
+
+  if (warmup_session) {
+    return warmup_session->Predict(
+        call.request, call.response);
+  }
+
+  return session_mgr_->Predict(
+      call.request, call.response);
 }
 
 Status RemoteSessionInstance::FullModelUpdate(
     const Version& version, ModelConfig* model_config) {
+  ModelSession* new_model_session = nullptr;
+
   // Logically backup_storage_ shouldn't serving now.
   backup_storage_->Reset();
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
       version.full_ckpt_name.c_str(), backup_storage_,
       /*is_incr_ckpt*/false, /*is_initialize*/false,
-      model_config));
- 
+      model_config, &new_model_session));
+
+  // warmup model
+  Warmup(new_model_session);
+
+  session_mgr_->ResetServingSession(new_model_session);
   std::swap(backup_storage_, serving_storage_);
+  UpdateVersion(new_model_session->GetVersion());
+
   return Status::OK();
 }
 
 Status RemoteSessionInstance::DeltaModelUpdate(
     const Version& version, ModelConfig* model_config) {
-  return session_mgr_->CreateModelSession(version,
-      version.delta_ckpt_name.c_str(), serving_storage_,
-      /*is_incr_ckpt*/true, /*is_initialize*/false,
-      model_config);
+  ModelSession* new_model_session = nullptr;
+
+  TF_RETURN_IF_ERROR(
+      session_mgr_->CreateModelSession(version,
+          version.delta_ckpt_name.c_str(), serving_storage_,
+          /*is_incr_ckpt*/true, /*is_initialize*/false,
+          model_config, &new_model_session));
+
+  // warmup model
+  Warmup(new_model_session);
+
+  session_mgr_->ResetServingSession(new_model_session);
+  UpdateVersion(new_model_session->GetVersion());
+
+  return Status::OK();
 }
 
 std::string RemoteSessionInstance::DebugString() {
@@ -340,18 +452,14 @@ std::string LocalSessionInstanceMgr::DebugString() {
 
 Status LocalSessionInstanceMgr::FullModelUpdate(
     const Version& version, ModelConfig* model_config) {
-  TF_RETURN_IF_ERROR(instance_->FullModelUpdate(
-      version, model_config));
-  instance_->UpdateVersion(version);
-  return instance_->Warmup();
+  return instance_->FullModelUpdate(
+      version, model_config);
 }
 
 Status LocalSessionInstanceMgr::DeltaModelUpdate(
     const Version& version, ModelConfig* model_config) {
-  TF_RETURN_IF_ERROR(instance_->DeltaModelUpdate(
-      version, model_config));
-  instance_->UpdateVersion(version);
-  return instance_->Warmup();
+  return instance_->DeltaModelUpdate(
+      version, model_config);
 }
 
 Version LocalSessionInstanceMgr::GetVersion() {
@@ -446,10 +554,8 @@ std::string RemoteSessionInstanceMgr::DebugString() {
 
 Status RemoteSessionInstanceMgr::FullModelUpdate(const Version& version,
                                        ModelConfig* model_config) {
-  TF_RETURN_IF_ERROR(cur_instance_->FullModelUpdate(
-      version, model_config));
-  cur_instance_->UpdateVersion(version);
-  return cur_instance_->Warmup();
+  return cur_instance_->FullModelUpdate(
+      version, model_config);
 }
 
 Status RemoteSessionInstanceMgr::DeltaModelUpdate(const Version& version,
@@ -460,13 +566,10 @@ Status RemoteSessionInstanceMgr::DeltaModelUpdate(const Version& version,
       !base_instance_->GetVersion().IsSameFullModel(version)) {
     TF_RETURN_IF_ERROR(base_instance_->FullModelUpdate(
           cur_instance_->GetVersion(), model_config));
-    TF_RETURN_IF_ERROR(base_instance_->Warmup());
   }
 
-  TF_RETURN_IF_ERROR(cur_instance_->DeltaModelUpdate(
-      version, model_config));
-  cur_instance_->UpdateVersion(version);
-  return cur_instance_->Warmup();
+  return cur_instance_->DeltaModelUpdate(
+      version, model_config);
 }
 
 Version RemoteSessionInstanceMgr::GetVersion() {

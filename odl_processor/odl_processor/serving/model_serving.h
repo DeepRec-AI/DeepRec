@@ -12,7 +12,7 @@ class Response;
 class IParser;
 class Model {
  public:
-  Model() = default;
+  Model(const std::string& model_entry);
   ~Model();
 
   Model(const Model&) = delete;
@@ -31,6 +31,7 @@ class Model {
   std::string DebugString();
 
  private:
+  std::string model_entry_ = "";
   ModelImpl* impl_ = nullptr;
   IParser* parser_ = nullptr; // not owned
 };

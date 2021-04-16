@@ -35,6 +35,8 @@ cc_library(
     srcs = ["util.cc"],
     hdrs = ["util.h"],
     deps = [
+        "model_message",
+        "tf_predict_proto_cc",
         "//odl_processor/framework:graph_optimizer",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:framework",
@@ -88,6 +90,7 @@ cc_library(
         "//odl_processor/storage:model_store",
         "model_config",
         "model_message",
+        "tf_predict_proto_cc",
         "utils"],
 )
 
@@ -116,6 +119,7 @@ cc_library(
         "model_config",
         "model_session",
         "model_message",
+        "tf_predict_proto_cc",
         "utils",
     ],
 )

@@ -1,14 +1,19 @@
 #ifndef TENSORFLOW_SERVING_UTILS_H
 #define TENSORFLOW_SERVING_UTILS_H
 
+#include "odl_processor/serving/model_message.h"
+#include "odl_processor/serving/tf_predict.pb.h"
+
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/cc/saved_model/reader.h"
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/cc/saved_model/constants.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
+
 
 namespace tensorflow {
 namespace processor {
@@ -64,6 +69,12 @@ Status RunRestore(const RunOptions& run_options,
                   const std::vector<AssetFileDef>& asset_file_defs,
                   Session* session, bool update_sparse, int64_t latest_version,
                   std::vector<std::pair<std::string, Tensor>>& extra_tensors);
+
+Tensor Proto2Tensor(const eas::ArrayProto& input);
+
+eas::PredictResponse Tensor2Response(
+    const processor::Request& req,
+    const processor::Response& resp);
  
 } // namespace util
 } // namespace processor
