@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #include "odl_processor/serving/model_config.h"
 #include "include/json/json.h"
 #include "tensorflow/core/util/env_var.h"
@@ -50,6 +52,22 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   ReadInt64FromEnvVar("SCHEDULABLE_CPUS", DEFAULT_CPUS, &schedule_threads);
 
   *config = new ModelConfig;
+
+  if (!json_config["omp_num_threads"].isNull()) {
+    if (setenv("OMP_NUM_THREADS",
+               json_config["omp_num_threads"].asString().c_str(), 1) != 0) {
+      LOG(WARNING) << "Set OMP_NUM_THREADS env error: "
+                   << json_config["omp_num_threads"];
+    }
+  }
+
+  if (!json_config["kmp_blocktime"].isNull()) {
+    if (setenv("KMP_BLOCKTIME",
+               json_config["kmp_blocktime"].asString().c_str(), 1) != 0) {
+      LOG(WARNING) << "Set KMP_BLOCKTIME env error: "
+                   << json_config["kmp_blocktime"];
+    }
+  }
 
   if (!json_config["inter_op_parallelism_threads"].isNull()) {
     (*config)->inter_threads =
