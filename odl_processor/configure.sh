@@ -5,4 +5,8 @@ if [[ "$#" -gt 0 ]]; then
   PYTHON=$1
 fi
 
-$PYTHON tools/build/configure.py
+# python tools/build/configure.py --mkl
+# python tools/build/configure.py --mkl_open_source_v1_only
+# python tools/build/configure.py --mkl_threadpool
+$PYTHON tools/build/configure.py "$@"
+
