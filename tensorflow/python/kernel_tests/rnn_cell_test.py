@@ -2918,8 +2918,8 @@ class RNNCellTest(test.TestCase, parameterized.TestCase):
         _ = sess.run(outputs, options=opts, run_metadata=run_metadata)
 
       cpu_stats, gpu_stats = self._retrieve_cpu_gpu_stats(run_metadata)
-      self.assertFalse([s for s in cpu_stats if "gru_cell" in s.node_name])
-      self.assertTrue([s for s in gpu_stats if "gru_cell" in s.node_name])
+      self.assertFalse([s for s in cpu_stats if "/gru_cell/" in s.node_name])
+      self.assertTrue([s for s in gpu_stats if "/gru_cell/" in s.node_name])
 
   @test_util.run_v1_only("b/124229375")
   def testMultiRNNCell(self):
