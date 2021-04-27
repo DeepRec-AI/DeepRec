@@ -120,6 +120,7 @@ const std::string& GetStoragePointerNodeName();
 const std::string& GetInitNodeName();
 const std::string& GetIncrCkptNodeName();
 const std::string& GetKvRestoreAllNameSuffix();
+const std::string& GetKvIncrRestoreAllNameSuffix();
 const std::string& GetDenseRestoreAllNameSuffix();
  
 struct GraphOptimizerOption {

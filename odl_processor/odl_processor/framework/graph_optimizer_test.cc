@@ -1167,8 +1167,8 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
     ++node_count;
   }
 
-  EXPECT_TRUE(node_count == 21);
-  EXPECT_TRUE(nodes.find("save/restore_all/Kv_all") != nodes.end());
+  EXPECT_TRUE(node_count == 29);
+  EXPECT_TRUE(nodes.find("save/restore_all/Kv_incr_all") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0_KvResourceInsert") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/version_tensor") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/val_tensor") != nodes.end());
@@ -1179,7 +1179,7 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
 
   EXPECT_TRUE(nodes["KvResourceImportV2_0_IncrRestore"].op() == "IncrRestore");
   EXPECT_TRUE(nodes["KvResourceImportV2_0_KvResourceInsert"].op() == "KvResourceInsert");
-  EXPECT_TRUE(nodes["save/restore_all/Kv_all"].op() == "NoOp");
+  EXPECT_TRUE(nodes["save/restore_all/Kv_incr_all"].op() == "NoOp");
   EXPECT_TRUE(1);
 }
  
