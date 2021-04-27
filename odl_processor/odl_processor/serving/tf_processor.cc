@@ -41,6 +41,7 @@ int process(void* model_buf, const void* input_data, int input_size,
         status.error_message());
     *output_data = strndup(errmsg.c_str(), strlen(errmsg.c_str()));
     *output_size = strlen(errmsg.c_str());
+    LOG(ERROR) << errmsg;
     return 500;
   }
   return 200;
@@ -64,6 +65,7 @@ int batch_process(void* model_buf, const void* input_data[], int* input_size,
         status.error_message());
     *output_data = strndup(errmsg.c_str(), strlen(errmsg.c_str()));
     *output_size = strlen(errmsg.c_str());
+    LOG(ERROR) << errmsg;
     return 500;
   }
   return 200;

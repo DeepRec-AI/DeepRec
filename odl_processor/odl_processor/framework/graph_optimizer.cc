@@ -526,6 +526,11 @@ const std::string& GetKvRestoreAllNameSuffix() {
   return suffix;
 }
 
+const std::string& GetKvIncrRestoreAllNameSuffix() {
+  static std::string suffix("/Kv_incr_all");
+  return suffix;
+}
+
 const std::string& GetDenseRestoreAllNameSuffix() {
   static std::string suffix("/Dense_all");
   return suffix;
@@ -1382,6 +1387,27 @@ Status SavedModelOptimizer::ConvertToHashTableOps() {
 
 namespace {
 
+#define SET_DEFAULT_CONST_ATTR(pattr, type)         \
+do {                                                \
+  Tensor val(type, TensorShape({}));                \
+  if (type == DT_BOOL) {                            \
+    val.scalar<bool>()() = false;                   \
+  } else if (type == DT_DOUBLE) {                   \
+    val.scalar<double>()() = 0.0;                   \
+  } else if (type == DT_FLOAT) {                    \
+    val.scalar<float>()() = 0.0;                    \
+  } else if (type == DT_INT64) {                    \
+    val.scalar<int64>()() = 0;                      \
+  } else if (type == DT_INT32) {                    \
+    val.scalar<int>()() = 0;                        \
+  } else if (type == DT_STRING) {                   \
+    val.scalar<string>()() = "";                    \
+  } else {                                          \
+    LOG(FATAL) << "Not supported FakeConstOp type"; \
+  }                                                 \
+  val.AsProtoTensorContent((*pattr)["value"].mutable_tensor()); \
+} while(0)
+
 Status CreateFakeConstOp(const std::string& name,
                          DataType type, Graph* graph,
                          Node** fake_const,
@@ -1393,9 +1419,57 @@ Status CreateFakeConstOp(const std::string& name,
   (*attr)["dtype"].set_type(type);
   if (content != nullptr) {
     content->AsProtoTensorContent((*attr)["value"].mutable_tensor());
+  } else {
+    SET_DEFAULT_CONST_ATTR(attr, type);
   }
   Status status;
   *fake_const = graph->AddNode(def, &status);
+  return status;
+}
+
+Status CreateStringJoinOp(const std::string& name,
+                          std::vector<SrcInfo> input_info,
+                          Graph* graph, Node** join_node) {
+  NodeDef def;
+  def.set_name(name);
+  def.set_op("StringJoin");
+  AttrValue attr_N;
+  attr_N.set_i(input_info.size());
+  def.mutable_attr()->insert({"N", attr_N});
+  Status status;
+  *join_node = graph->AddNode(def, &status);
+  TF_RETURN_IF_ERROR(status);
+
+  for (size_t i = 0; i < input_info.size(); ++i) {
+    graph->AddEdge(input_info[i].src_node, input_info[i].src_slot,
+                   *join_node, i);
+  }
+
+  return status;
+}
+
+Status CreateConcatOp(const std::string& name,
+                      DataType type,
+                      std::vector<SrcInfo> input_info,
+                      Graph* graph, Node** concat_op) {
+  NodeDef def;
+  def.set_name(name);
+  def.set_op("Concat");
+  AttrValue attr_T;
+  attr_T.set_type(type);
+  def.mutable_attr()->insert({"T", attr_T});
+  AttrValue attr_N;
+  attr_N.set_i(input_info.size() - 1);
+  def.mutable_attr()->insert({"N", attr_N});
+  Status status;
+  *concat_op = graph->AddNode(def, &status);
+  TF_RETURN_IF_ERROR(status);
+
+  for (size_t i = 0; i < input_info.size(); ++i) {
+    graph->AddEdge(input_info[i].src_node, input_info[i].src_slot,
+                   *concat_op, i);
+  }
+
   return status;
 }
 
@@ -1431,22 +1505,70 @@ Status SavedModelOptimizer::CreateIncrRestoreOp(
 
   // Add input egdes
   std::vector<SrcInfo> input_info;
+  // input: prefix
   input_info.push_back({src_info[0].src_node, src_info[0].src_slot});
-  input_info.push_back({src_info[3].src_node, src_info[3].src_slot});
+
+  // input: tensor_names
+  // concat key/value/version strings to one tensor
+  Node* kvv_concat_dim_op = nullptr;
+  Tensor kvv_concat_dim_val(DT_INT32, TensorShape({}));
+  kvv_concat_dim_val.scalar<int>()() = 0;
+  TF_RETURN_IF_ERROR(
+      CreateFakeConstOp(import_op->name() + "_IncrRestore/kvv_concat_dim",
+                        DataType::DT_INT32, &graph_, &kvv_concat_dim_op,
+                        &kvv_concat_dim_val));
+  std::vector<SrcInfo> kvv_concat_inputs;
+  kvv_concat_inputs.push_back({kvv_concat_dim_op, 0});
+ 
+  std::string tensor_kind_names[3] = {"keys", "values", "versions"};
+  for (int i = 0; i < 3; ++i) {
+    Tensor suffix(DT_STRING, TensorShape({1}));
+    suffix.flat<string>()(0) = "-" + tensor_kind_names[i];
+
+    Node* suffix_node = nullptr;
+    TF_RETURN_IF_ERROR(
+        CreateFakeConstOp(import_op->name() + "_IncrRestore/" +
+                              tensor_kind_names[i] + "_suffix",
+                          DataType::DT_STRING, &graph_, &suffix_node, &suffix));
+
+    std::vector<SrcInfo> join_inputs;
+    join_inputs.push_back({src_info[3].src_node, src_info[3].src_slot});
+    join_inputs.push_back({suffix_node, 0});
+    Node* join_node = nullptr;
+    TF_RETURN_IF_ERROR(
+        CreateStringJoinOp(import_op->name() + "_IncrRestore/" +
+                               tensor_kind_names[i] + "_join",
+                           join_inputs, &graph_, &join_node));
+
+    kvv_concat_inputs.push_back({join_node, 0});
+  }
+
+  Node* kvv_concat_op = nullptr;
+  TF_RETURN_IF_ERROR(
+      CreateConcatOp(import_op->name() + "_IncrRestore/kvv_concat",
+                     DataType::DT_STRING, kvv_concat_inputs, &graph_,
+                     &kvv_concat_op));
+
+  // tensor_names input, shape=[3]
+  input_info.push_back({kvv_concat_op, 0});
 
   // fake input: shape_and_slices
   Node* shape_slices_op = nullptr;
   TF_RETURN_IF_ERROR(
       CreateFakeConstOp(import_op->name() + "_IncrRestore/shape_and_slices",
                         DataType::DT_STRING, &graph_, &shape_slices_op));
-  // fake input: is_sparse
+  // input: is_sparse = true
   Node* is_sparse_op = nullptr;
   Tensor sparse_val(DT_BOOL, TensorShape({}));
   sparse_val.scalar<bool>()() = true;
   TF_RETURN_IF_ERROR(
       CreateFakeConstOp(import_op->name() + "_IncrRestore/is_sparse",
                         DataType::DT_BOOL, &graph_, &is_sparse_op, &sparse_val));
-  // fake input: in_tensors (key, value, version)
+
+  input_info.push_back({shape_slices_op, 0});
+  input_info.push_back({is_sparse_op, 0});
+ 
+  // input: in_tensors
   Node* key_tensor_op = nullptr;
   TF_RETURN_IF_ERROR(
       CreateFakeConstOp(import_op->name() + "_IncrRestore/key_tensor",
@@ -1460,12 +1582,10 @@ Status SavedModelOptimizer::CreateIncrRestoreOp(
       CreateFakeConstOp(import_op->name() + "_IncrRestore/version_tensor",
                         dtypes[2], &graph_, &version_tensor_op));
 
-  input_info.push_back({shape_slices_op, 0});
-  input_info.push_back({is_sparse_op, 0});
   input_info.push_back({key_tensor_op, 0});
   input_info.push_back({val_tensor_op, 0});
   input_info.push_back({version_tensor_op, 0});
- 
+
   for (size_t i = 0; i < input_info.size(); ++i) {
     graph_.AddEdge(input_info[i].src_node,
                    input_info[i].src_slot,
@@ -1478,6 +1598,7 @@ Status SavedModelOptimizer::CreateIncrRestoreOp(
 Status SavedModelOptimizer::ConvertKvImportToKvInsert(
     Node* import_op, Node** insert_op) {
   Node* incr_restore_op = nullptr;
+  // ev
   Status s = CreateIncrRestoreOp(import_op, &incr_restore_op);
   TF_RETURN_IF_ERROR(s);
 
@@ -1567,7 +1688,7 @@ Status SavedModelOptimizer::AddIncrRestoreOps() {
   }
 
   return CreateRestoreAllNode(
-      restore_op_name + GetKvRestoreAllNameSuffix(),
+      restore_op_name + GetKvIncrRestoreAllNameSuffix(),
       "NoOp", input_nodes, &graph_);
 }
 

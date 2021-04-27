@@ -372,7 +372,7 @@ Status ModelSessionMgr::CreateModelSession(
   if (is_incr_ckpt) {
     // Use serving session to update delta model
     session = serving_session_->session_;
-    restore_op_name += GetKvRestoreAllNameSuffix();
+    restore_op_name += GetKvIncrRestoreAllNameSuffix();
   } else {
     TF_RETURN_IF_ERROR(CreateSession(&session));
   }
