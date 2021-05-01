@@ -757,13 +757,13 @@ Status OSSFileSystem::_RetrieveObjectMetadata(
               << " , with length: " << stat->length;
     }
 
-    object_date_str = (char*)apr_table_get(resp_headers, OSS_DATE);
+    object_date_str = (char*)apr_table_get(resp_headers, "Last-Modified");
     if (object_date_str != NULL) {
       // the time is GMT Date, format like below
       // Date: Fri, 24 Feb 2012 07:32:52 GMT
       std::tm tm = {};
       strptime(object_date_str, "%a, %d %b %Y %H:%M:%S", &tm);
-      stat->mtime_nsec = static_cast<int64>(mktime(&tm) * 1000) * 1e9;
+      stat->mtime_nsec = static_cast<int64>(mktime(&tm) * 1e9);
 
       VLOG(1) << "_RetrieveObjectMetadata object: " << object
               << " , with time: " << stat->mtime_nsec;

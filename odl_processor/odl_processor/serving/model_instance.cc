@@ -297,7 +297,6 @@ Status RemoteSessionInstance::Init(ModelConfig* model_config,
   // set active flag
   serving_storage_->SetStorageActiveStatus(active);
 
-  int timeout = model_config->init_timeout_minutes;
   Version version;
   model_store->GetLatestVersion(version);
 

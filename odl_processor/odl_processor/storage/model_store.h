@@ -19,9 +19,11 @@ class ModelStore {
   Status GetFullModelVersion(Version& version);
   Status GetDeltaModelVersion(Version& version);
   Status GetValidSavedModelDir(Version& version);
+  Status DetectLatestCheckpointDir();
 
  protected:
   std::string savedmodel_dir_;
+  std::string checkpoint_parent_dir_;
   std::string checkpoint_dir_;
   std::string delta_model_dir_;
   FileSystem* file_system_;   // not owned
