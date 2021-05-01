@@ -59,8 +59,7 @@ int64 ParseMetaFileName(const std::string& fname) {
 ModelStore::ModelStore(ModelConfig* config) :
     model_config_(config) {
   savedmodel_dir_ = config->savedmodel_dir;
-  checkpoint_dir_ = config->checkpoint_dir;
-  delta_model_dir_ = io::JoinPath(checkpoint_dir_, ".incremental_checkpoint");
+  checkpoint_parent_dir_ = config->checkpoint_dir;
 }
 
 Status ModelStore::Init() {
@@ -86,6 +85,7 @@ Status ModelStore::GetValidSavedModelDir(Version& version) {
 }
 
 Status ModelStore::GetFullModelVersion(Version& version) {
+  TF_RETURN_IF_ERROR(DetectLatestCheckpointDir());
   TF_RETURN_IF_ERROR(file_system_->IsDirectory(checkpoint_dir_));
 
   std::vector<string> file_names;
@@ -108,6 +108,7 @@ Status ModelStore::GetFullModelVersion(Version& version) {
 }
 
 Status ModelStore::GetDeltaModelVersion(Version& version) {
+  delta_model_dir_ = io::JoinPath(checkpoint_dir_, ".incremental_checkpoint");
   TF_RETURN_IF_ERROR(file_system_->IsDirectory(delta_model_dir_));
 
   std::vector<string> file_names;
@@ -125,6 +126,29 @@ Status ModelStore::GetDeltaModelVersion(Version& version) {
       version.delta_ckpt_version = v;
     }
   }
+  return Status::OK();
+}
+
+Status ModelStore::DetectLatestCheckpointDir() {
+  TF_RETURN_IF_ERROR(file_system_->IsDirectory(checkpoint_parent_dir_));
+  std::vector<string> file_names;
+  TF_RETURN_IF_ERROR(file_system_->GetMatchingPaths(
+    io::JoinPath(checkpoint_parent_dir_ + "*/checkpoint"), &file_names));
+  int64 latest_mtime_nsec = -1;
+  for (auto fname : file_names) {
+    FileStatistics stat;
+    Status s = file_system_->Stat(fname, &stat);
+    if (s.ok()) {
+      if (stat.mtime_nsec > latest_mtime_nsec) {
+        latest_mtime_nsec = stat.mtime_nsec;
+        checkpoint_dir_ = fname.substr(0, fname.rfind('/'));
+      }
+    } else {
+      LOG(WARNING) << "[Processor] Path: "<< fname
+                   << " not a valid checkpoint_path, meg:" << s.ToString();
+    }
+  }
+  LOG(WARNING) << "[Processor] checkpoint_dir: " << checkpoint_dir_;
   return Status::OK();
 }
 

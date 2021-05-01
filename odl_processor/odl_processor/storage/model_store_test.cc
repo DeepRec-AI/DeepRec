@@ -1,4 +1,5 @@
 #include "gtest/gtest.h"
+#include <regex>
 #include "odl_processor/storage/model_store.h"
 #include "odl_processor/serving/model_config.h"
 #include "odl_processor/framework/model_version.h"
@@ -120,6 +121,11 @@ class FakeFileSystem : public FileSystem {
 
   Status GetMatchingPaths(const string& pattern,
       std::vector<string>* results) override {
+    for (auto it : file_names_) {
+      if (std::regex_match(it, std::regex(pattern))) {
+        results->emplace_back(it);
+      }
+    }
     return Status::OK();
   }
 
@@ -216,8 +222,9 @@ TEST_F(ModelStoreTest,
     GetLatestVersionReturnEmptySavedModelPathWhenNoSavedModelPath) {
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
-  ms.Init({"oss://test_checkpoint/model.ckpt-1512965.meta",
+  ms.Init({"oss://test_checkpoint/checkpoint",
            "oss://test_checkpoint/model.ckpt-1512965.index",
+           "oss://test_checkpoint/model.ckpt-1512965.meta",
            "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
            "oss://test_checkpoint/model.ckpt-1512966.data-00001-of-00002"});
 
@@ -244,7 +251,8 @@ TEST_F(ModelStoreTest,
     GetLatestVersionReturnValidVersionWhenValidModelPath) {
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
-  ms.Init({"oss://test_checkpoint/model.ckpt-1512965.meta",
+  ms.Init({"oss://test_checkpoint/checkpoint",
+           "oss://test_checkpoint/model.ckpt-1512965.meta",
            "oss://test_checkpoint/model.ckpt-1512965.index",
            "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
            "oss://test_checkpoint/model.ckpt-1512966.data-00001-of-00002",
@@ -261,6 +269,7 @@ TEST_F(ModelStoreTest,
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
   ms.Init({
+           "oss://test_checkpoint/checkpoint",
            "oss://test_checkpoint/model.ckpt-1512965.meta",
            "oss://test_checkpoint/model.ckpt-1512965.index",
            "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
@@ -286,6 +295,7 @@ TEST_F(ModelStoreTest,
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
   ms.Init({
+           "oss://test_checkpoint/checkpoint",
            "oss://test_checkpoint/model.ckpt-1512965.meta",
            "oss://test_checkpoint/model.ckpt-1512965.index",
            "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
@@ -315,6 +325,7 @@ TEST_F(ModelStoreTest,
   ModelConfig config = CreateValidModelConfig();
   TestableModelStore ms(&config);
   ms.Init({
+           "oss://test_checkpoint/checkpoint",
            "oss://test_checkpoint/model.ckpt-1512965.meta",
            "oss://test_checkpoint/model.ckpt-1512965.index",
            "oss://test_checkpoint/model.ckpt-1512966.data-00000-of-00002",
