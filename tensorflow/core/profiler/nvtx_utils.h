@@ -73,7 +73,8 @@ inline string GetNodeExecutionRangeMessage(
 }
 
 string GetThunkExecutionRangeMessage(absl::string_view cluster_name,
-                                     absl::string_view op_name);
+                                     absl::string_view op_name,
+                                     absl::string_view op_type);
 
 class NvtxDomain {
  public:
