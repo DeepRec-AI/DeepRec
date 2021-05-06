@@ -3156,6 +3156,16 @@ cudnnDataType_t GetRnnComputeType(dnn::DataType data_type) {
   }
 }
 
+#if CUDNN_VERSION >= 8100
+cudnnBackendHeurMode_t GetCudnnFrontendHeurMode() {
+#if CUDNN_VERSION >= 8200
+  return CUDNN_HEUR_MODE_B;
+#else
+  return CUDNN_HEUR_MODE_INSTANT;
+#endif // CUDNN_VERSION >= 8200
+}
+#endif // CUDNN_VERSION >= 8100
+
 dnn::DataType GetConvAccumulatorType(dnn::DataType data_type) {
   switch (data_type) {
     case dnn::DataType::kFloat:
@@ -4029,7 +4039,7 @@ port::Status CudnnSupport::DoConvolve(
 
     auto heuristics = cudnn_frontend::EngineHeuristicsBuilder()
                           .setOperationGraph(*op_graph)
-                          .setHeurMode(CUDNN_HEUR_MODE_INSTANT)
+                          .setHeurMode(GetCudnnFrontendHeurMode())
                           .build();
     RETURN_MSG_IF_CUDNN_ERROR(heuristics);
 
@@ -4493,7 +4503,7 @@ bool CudnnSupport::GetConvolveExecutionPlans(
 
   auto heur = cudnn_frontend::EngineHeuristicsBuilder()
                   .setOperationGraph(*op_graph)
-                  .setHeurMode(CUDNN_HEUR_MODE_INSTANT)
+                  .setHeurMode(GetCudnnFrontendHeurMode())
                   .build();
   RETURN_FALSE_IF_CUDNN_ERROR(heur);
 
