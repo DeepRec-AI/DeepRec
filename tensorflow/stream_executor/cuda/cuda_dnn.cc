@@ -4227,23 +4227,47 @@ port::Status CudnnSupport::DoFusedConvolveImpl(
                           .build();
     RETURN_MSG_IF_CUDNN_ERROR(heuristics);
 
+    auto fallback =
+        cudnn_frontend::EngineFallbackListBuilder()
+            .setOperationGraph(*op_graph)
+            .setOperation(
+                CUDNN_BACKEND_OPERATION_CONVOLUTION_FORWARD_DESCRIPTOR)
+            .build();
+    RETURN_MSG_IF_CUDNN_ERROR(fallback);
+
     auto engine_count = heuristics.getEngineConfigCount();
     auto &engine_config = heuristics.getEngineConfig(engine_count);
+    auto &fallback_list = fallback.getFallbackList();
 
     cudnn_frontend::EngineConfigList filtered_configs;
     if (stream_executor::cuda::RequireCuDNNDeterminism()) {
       cudnn_frontend::filter(engine_config, filtered_configs,
                              isNonDeterministicOrIsDownConverting);
+      cudnn_frontend::filter(fallback_list, filtered_configs,
+                             isNonDeterministicOrIsDownConverting);
     } else {
       cudnn_frontend::filter(engine_config, filtered_configs,
                              isDownConvertingInputs);
+      cudnn_frontend::filter(fallback_list, filtered_configs,
+                             isDownConvertingInputs);
     }
+
+    std::string filter_str = CudnnExecutionPlanEngineFilter();
     for (int i = 0; i < filtered_configs.size(); i++) {
       auto plan = cudnn_frontend::ExecutionPlanBuilder()
                       .setHandle(cudnn.handle())
                       .setEngineConfig(filtered_configs[i], op_graph->getTag())
                       .build();
       if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
+        if (filter_str != "") {
+          std::smatch m;
+          std::regex pattern(absl::StrCat("(", filter_str, ")($|_)"));
+          if (std::regex_search(plan.getTag(), m, pattern)) {
+            VLOG(4) << "Exclude engine: " << plan.getTag();
+            continue;
+          }
+        }
+
         bool specify_workspace_limit = scratch_allocator != nullptr;
         auto memory_limit_bytes =
             specify_workspace_limit
@@ -4628,9 +4652,18 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
                   .build();
   RETURN_FALSE_IF_CUDNN_ERROR(heur);
 
-  auto &heur_configs = heur.getEngineConfig(heur.getEngineConfigCount());
+  auto fallback =
+      cudnn_frontend::EngineFallbackListBuilder()
+          .setOperationGraph(*op_graph)
+          .setOperation(CUDNN_BACKEND_OPERATION_CONVOLUTION_FORWARD_DESCRIPTOR)
+          .build();
+  RETURN_FALSE_IF_CUDNN_ERROR(fallback);
 
-  VLOG(4) << "\nHeuristics engine configs size: " << heur_configs.size();
+  auto &heur_configs = heur.getEngineConfig(heur.getEngineConfigCount());
+  auto &fallback_configs = fallback.getFallbackList();
+
+  VLOG(4) << "\nHeuristics engine configs size: " << heur_configs.size()
+          << "\nFallback engine configs size: " << fallback_configs.size();
 
   cudnn_frontend::EngineConfigList filtered_configs;
   // We use the num_engines_heuristics to mark the border between the two
@@ -4640,10 +4673,14 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isNonDeterministicOrIsDownConverting);
     num_engines_heuristics = filtered_configs.size();
+    cudnn_frontend::filter(fallback_configs, filtered_configs,
+                           isNonDeterministicOrIsDownConverting);
   } else {
     cudnn_frontend::filter(heur_configs, filtered_configs,
                            isDownConvertingInputs);
     num_engines_heuristics = filtered_configs.size();
+    cudnn_frontend::filter(fallback_configs, filtered_configs,
+                           isDownConvertingInputs);
   }
 
   VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size()
