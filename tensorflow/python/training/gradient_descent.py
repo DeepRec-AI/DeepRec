@@ -19,10 +19,12 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
+from tensorflow.python.training import training_util
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -66,8 +68,15 @@ class GradientDescentOptimizer(optimizer.Optimizer):
         grad, use_locking=self._use_locking)
 
   def _resource_apply_sparse_duplicate_indices(self, grad, handle, indices):
-    return resource_variable_ops.resource_scatter_add(
-        handle.handle, indices, -grad * self._learning_rate)
+    if isinstance(handle, kv_variable_ops.EmbeddingVariable):
+      global_step = training_util.get_or_create_global_step()
+      return training_ops.kv_resource_sparse_apply_gradient_descent(
+          handle.handle, math_ops.cast(self._learning_rate_tensor,
+                                       grad.dtype.base_dtype),
+          grad, indices, global_step, use_locking=self._use_locking)
+    else:
+      return resource_variable_ops.resource_scatter_add(
+          handle.handle, indices, -grad * self._learning_rate)
 
   def _apply_sparse_duplicate_indices(self, grad, var):
     delta = ops.IndexedSlices(

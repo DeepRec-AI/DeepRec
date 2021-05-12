@@ -24,3 +24,5 @@ from tensorflow.python.training import gen_training_ops  # pylint: disable=unuse
 # pylint: disable=wildcard-import
 from tensorflow.python.training.gen_training_ops import *
 # pylint: enable=wildcard-import
+
+from tensorflow.python.training.gen_training_ali_ops import *

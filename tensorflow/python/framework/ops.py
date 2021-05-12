@@ -6050,6 +6050,8 @@ class GraphKeys(object):
   # Key to collect Variable objects that will be trained by the
   # optimizers.
   TRAINABLE_VARIABLES = "trainable_variables"
+  # Indicate EmbeddingVariable in CollectionDef
+  EMBEDDING_VARIABLES = "embedding_variables"
   # Key to collect summaries.
   SUMMARIES = "summaries"
   # Key to collect QueueRunners.

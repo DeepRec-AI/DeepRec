@@ -1,0 +1,232 @@
+#ifndef TENSORFLOW_CORE_LIB_CORE_SPIN_RW_LOCK_H_
+#define TENSORFLOW_CORE_LIB_CORE_SPIN_RW_LOCK_H_
+
+#define EASY_SMP_LOCK               "lock;"
+#define easy_atomic_set(v,i)        ((v) = (i))
+
+typedef volatile int64_t easy_atomic_t;
+static __inline__ void easy_atomic_add(easy_atomic_t *v, int64_t i)
+{
+    __asm__ __volatile__(
+        EASY_SMP_LOCK "addq %1,%0"
+        : "=m" ((*v)) : "r" (i), "m" ((*v)));
+}
+static __inline__ int64_t easy_atomic_add_return(easy_atomic_t *value, int64_t i)
+{
+    int64_t                 __i = i;
+    __asm__ __volatile__(
+        EASY_SMP_LOCK "xaddq %0, %1;"
+        :"=r"(i)
+        :"m"(*value), "0"(i));
+    return i + __i;
+}
+static __inline__ int64_t easy_atomic_cmp_set(easy_atomic_t *lock, int64_t old, int64_t set)
+{
+    uint8_t                 res;
+    __asm__ volatile (
+        EASY_SMP_LOCK "cmpxchgq %3, %1; sete %0"
+        : "=a" (res) : "m" (*lock), "a" (old), "r" (set) : "cc", "memory");
+    return res;
+}
+static __inline__ void easy_atomic_inc(easy_atomic_t *v)
+{
+    __asm__ __volatile__(EASY_SMP_LOCK "incq %0" : "=m" (*v) :"m" (*v));
+}
+static __inline__ void easy_atomic_dec(easy_atomic_t *v)
+{
+    __asm__ __volatile__(EASY_SMP_LOCK "decq %0" : "=m" (*v) :"m" (*v));
+}
+
+#define EASY_OK                     0
+#define EASY_ERROR                  (-1)
+#define EASY_ABORT                  (-2)
+#define EASY_ASYNC                  (-3)
+#define EASY_BREAK                  (-4)
+#define EASY_ENCODE                 (-5)
+#define EASY_QUEUE_FULL             (-6)
+#define EASY_AGAIN                  (-EAGAIN)
+
+typedef struct easy_spinrwlock_t {
+    easy_atomic_t ref_cnt;
+    easy_atomic_t wait_write;
+} easy_spinrwlock_t;
+#define EASY_SPINRWLOCK_INITIALIZER {0, 0}
+static __inline__ int easy_spinrwlock_rdlock(easy_spinrwlock_t *lock)
+{
+    int ret = EASY_OK;
+
+    if (NULL == lock) {
+        ret = EASY_ERROR;
+    } else {
+        int cond = 1;
+
+        while (cond) {
+            int loop = 1;
+
+            do {
+                easy_atomic_t oldv = lock->ref_cnt;
+
+                if (0 <= oldv && 0 == lock->wait_write) {
+                    if (easy_atomic_cmp_set(&lock->ref_cnt, oldv, oldv + 1)) {
+                        return ret;
+                    }
+                }
+
+                asm("pause");
+                loop <<= 1;
+            } while (loop < 1024);
+
+            sched_yield();
+        }
+    }
+
+    return ret;
+}
+static __inline__ int easy_spinrwlock_wrlock(easy_spinrwlock_t *lock)
+{
+    int ret = EASY_OK;
+
+    if (NULL == lock) {
+        ret = EASY_ERROR;
+    } else {
+        int cond = 1;
+        easy_atomic_inc(&lock->wait_write);
+
+        while (cond) {
+            int loop = 1;
+
+            do {
+                easy_atomic_t oldv = lock->ref_cnt;
+
+                if (0 == oldv) {
+                    if (easy_atomic_cmp_set(&lock->ref_cnt, oldv, -1)) {
+                        cond = 0;
+                        break;
+                    }
+                }
+
+                asm("pause");
+                loop <<= 1;
+            } while (loop < 1024);
+
+            if (cond) sched_yield();
+        }
+
+        easy_atomic_dec(&lock->wait_write);
+    }
+
+    return ret;
+}
+static __inline__ int easy_spinrwlock_try_rdlock(easy_spinrwlock_t *lock)
+{
+    int ret = EASY_OK;
+
+    if (NULL == lock) {
+        ret = EASY_ERROR;
+    } else {
+        ret = EASY_AGAIN;
+        easy_atomic_t oldv = lock->ref_cnt;
+
+        if (0 <= oldv
+                && 0 == lock->wait_write) {
+            easy_atomic_t newv = oldv + 1;
+
+            if (easy_atomic_cmp_set(&lock->ref_cnt, oldv, newv)) {
+                ret = EASY_OK;
+            }
+        }
+    }
+
+    return ret;
+}
+static __inline__ int easy_spinrwlock_try_wrlock(easy_spinrwlock_t *lock)
+{
+    int ret = EASY_OK;
+
+    if (NULL == lock) {
+        ret = EASY_ERROR;
+    } else {
+        ret = EASY_AGAIN;
+        easy_atomic_t oldv = lock->ref_cnt;
+
+        if (0 == oldv) {
+            easy_atomic_t newv = -1;
+
+            if (easy_atomic_cmp_set(&lock->ref_cnt, oldv, newv)) {
+                ret = EASY_OK;
+            }
+        }
+    }
+
+    return ret;
+}
+static __inline__ int easy_spinrwlock_unlock(easy_spinrwlock_t *lock)
+{
+    int ret = EASY_OK;
+
+    if (NULL == lock) {
+        ret = EASY_ERROR;
+    } else {
+        while (1) {
+            easy_atomic_t oldv = lock->ref_cnt;
+
+            if (-1 == oldv) {
+                easy_atomic_t newv = 0;
+
+                if (easy_atomic_cmp_set(&lock->ref_cnt, oldv, newv)) {
+                    break;
+                }
+            } else if (0 < oldv) {
+                easy_atomic_t newv = oldv - 1;
+
+                if (easy_atomic_cmp_set(&lock->ref_cnt, oldv, newv)) {
+                    break;
+                }
+            } else {
+                ret = EASY_ERROR;
+                break;
+            }
+        }
+    }
+
+    return ret;
+}
+namespace tensorflow {
+
+class spin_rd_lock {
+public:
+    typedef easy_spinrwlock_t lock_type;
+
+    explicit spin_rd_lock(lock_type* lock) : lock_(lock) {
+        easy_spinrwlock_rdlock(lock_);
+    }
+    explicit spin_rd_lock(lock_type& lock) : lock_(&lock) {
+        easy_spinrwlock_rdlock(lock_);
+    }
+    ~spin_rd_lock() {
+        easy_spinrwlock_unlock(lock_);
+    }
+private:
+    lock_type* lock_;
+};
+
+class spin_wr_lock {
+public:
+    typedef easy_spinrwlock_t lock_type;
+
+    explicit spin_wr_lock(lock_type* lock) : lock_(lock) {
+        easy_spinrwlock_wrlock(lock_);
+    }
+    explicit spin_wr_lock(lock_type& lock) : lock_(&lock) {
+        easy_spinrwlock_wrlock(lock_);
+    }
+    ~spin_wr_lock() {
+        easy_spinrwlock_unlock(lock_);
+    }
+private:
+    lock_type* lock_;
+};
+
+}  // namespace tensorflow
+
+#endif  // TENSORFLOW_CORE_LIB_CORE_SPIN_RW_LOCK_H_

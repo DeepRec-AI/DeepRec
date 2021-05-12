@@ -43,6 +43,7 @@ from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
@@ -64,14 +65,25 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype):
     use_resource = False
   else:
     use_resource = None
-  slot = variable_scope.get_variable(
-      scope,
-      initializer=val,
-      trainable=False,
-      use_resource=use_resource,
-      shape=shape,
-      dtype=dtype,
-      validate_shape=validate_shape)
+  if isinstance(primary, kv_variable_ops.EmbeddingVariable):
+    slot = variable_scope.get_embedding_variable(
+        scope,
+        initializer=val,
+        trainable=False,
+        embedding_dim=shape,
+        key_dtype=primary._invalid_key_type,
+        validate_shape=validate_shape,
+        steps_to_live=primary._steps_to_live,
+        ht_partition_num=primary._ht_partition_num)
+  else:
+    slot = variable_scope.get_variable(
+        scope,
+        initializer=val,
+        trainable=False,
+        use_resource=use_resource,
+        shape=shape,
+        dtype=dtype,
+        validate_shape=validate_shape)
   variable_scope.get_variable_scope().set_partitioner(current_partitioner)
 
   # pylint: disable=protected-access

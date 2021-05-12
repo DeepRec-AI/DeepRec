@@ -25,6 +25,7 @@ from __future__ import print_function
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.ops import gen_math_ops
 from tensorflow.python.ops import gen_resource_variable_ops
 from tensorflow.python.ops import gen_state_ops
@@ -129,6 +130,11 @@ def is_variable_initialized(ref, name=None):
   """
   if ref.dtype._is_ref_dtype:
     return gen_state_ops.is_variable_initialized(ref=ref, name=name)
+  elif ref.op.type == "KvVarHandleOp":
+    # Handle kv variable
+    return gen_kv_variable_ops.kv_var_is_initialized_op(ref.handle,
+                                                        ref._invalid_key_type,
+                                                        name=name)
   # Handle resource variables.
   return ref.is_initialized(name=name)
 

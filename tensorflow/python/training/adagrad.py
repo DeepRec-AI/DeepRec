@@ -22,9 +22,11 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
+from tensorflow.python.training import training_util
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -123,7 +125,18 @@ class AdagradOptimizer(optimizer.Optimizer):
 
   def _resource_apply_sparse(self, grad, var, indices):
     acc = self.get_slot(var, "accumulator")
-    return training_ops.resource_sparse_apply_adagrad(
+    if isinstance(var, kv_variable_ops.EmbeddingVariable):
+      global_step = training_util.get_or_create_global_step()
+      return training_ops.kv_resource_sparse_apply_adagrad(
+        var.handle,
+        acc.handle,
+        math_ops.cast(self._learning_rate_tensor, grad.dtype),
+        grad,
+        indices,
+        global_step,
+        use_locking=self._use_locking)
+    else:
+      return training_ops.resource_sparse_apply_adagrad(
         var.handle,
         acc.handle,
         math_ops.cast(self._learning_rate_tensor, grad.dtype),

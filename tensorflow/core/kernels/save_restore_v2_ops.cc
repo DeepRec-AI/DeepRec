@@ -23,7 +23,9 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/framework/types.pb.h"
+#include "tensorflow/core/kernels/kv_variable_ops.h"
 #include "tensorflow/core/kernels/save_restore_tensor.h"
+#include "tensorflow/core/kernels/variable_ops.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/env.h"
@@ -90,7 +92,10 @@ void ValidateInputs(bool is_save_op, OpKernelContext* context,
 // Saves a list of named tensors using the tensor bundle library.
 class SaveV2 : public OpKernel {
  public:
-  explicit SaveV2(OpKernelConstruction* context) : OpKernel(context) {}
+  explicit SaveV2(OpKernelConstruction* context) : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("dtypes", &tensor_types_));
+    OP_REQUIRES_OK(context, context->GetAttr("has_ev", &has_ev_));
+  }
 
   void Compute(OpKernelContext* context) override {
     const Tensor& prefix = context->input(0);
@@ -109,33 +114,63 @@ class SaveV2 : public OpKernel {
     OP_REQUIRES_OK(context, writer.status());
     VLOG(1) << "BundleWriter, prefix_string: " << prefix_string;
 
-    for (int i = 0; i < num_tensors; ++i) {
+    int start_index = 0;
+    if (has_ev_) {
+      start_index = 1;
+    }
+
+    for (int i = start_index; i < num_tensors; ++i) {
       const string& tensor_name = tensor_names_flat(i);
-      const Tensor& tensor = context->input(i + kFixedInputs);
-
-      if (!shape_and_slices_flat(i).empty()) {
-        const string& shape_spec = shape_and_slices_flat(i);
-        TensorShape shape;
-        TensorSlice slice(tensor.dims());
-        TensorShape slice_shape;
-
-        OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
-                                    shape_spec, &shape, &slice, &slice_shape));
-        OP_REQUIRES(context, slice_shape.IsSameSize(tensor.shape()),
-                    errors::InvalidArgument("Slice in shape_and_slice "
-                                            "specification does not match the "
-                                            "shape of the tensor to  save: ",
-                                            shape_spec, ", tensor: ",
-                                            tensor.shape().DebugString()));
-
+      if (tensor_types_[i] == DT_RESOURCE) {
+        EmbeddingVar<int64, float>* variable = nullptr;
         OP_REQUIRES_OK(context,
-                       writer.AddSlice(tensor_name, shape, slice, tensor));
+            LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
+        const Tensor& global_step = context->input(3);
+        Tensor part_offset_tensor;
+        context->allocate_temp(DT_INT32,
+                                         TensorShape({kSavedPartitionNum + 1}),
+                                         &part_offset_tensor);
+        if (tensor_types_[0] == DT_INT32) {
+          int32 global_step_scalar = global_step.scalar<int32>()();
+          core::ScopedUnref s(variable);
+          OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+          OP_REQUIRES_OK(context, DumpEmbeddingValues(variable,tensor_name, &writer, &part_offset_tensor));
+        } else {
+          int64 global_step_scalar = global_step.scalar<int64>()();
+          core::ScopedUnref s(variable);
+          OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+          OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name, &writer, &part_offset_tensor));
+        }
       } else {
-        OP_REQUIRES_OK(context, writer.Add(tensor_name, tensor));
+        const Tensor& tensor = context->input(i + kFixedInputs);
+
+        if (!shape_and_slices_flat(i).empty()) {
+          const string& shape_spec = shape_and_slices_flat(i);
+          TensorShape shape;
+          TensorSlice slice(tensor.dims());
+          TensorShape slice_shape;
+
+          OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
+                                      shape_spec, &shape, &slice, &slice_shape));
+          OP_REQUIRES(context, slice_shape.IsSameSize(tensor.shape()),
+                      errors::InvalidArgument("Slice in shape_and_slice "
+                                              "specification does not match the "
+                                              "shape of the tensor to  save: ",
+                                              shape_spec, ", tensor: ",
+                                              tensor.shape().DebugString()));
+
+          OP_REQUIRES_OK(context,
+                         writer.AddSlice(tensor_name, shape, slice, tensor));
+        } else {
+          OP_REQUIRES_OK(context, writer.Add(tensor_name, tensor));
+        }
       }
     }
     OP_REQUIRES_OK(context, writer.Finish());
   }
+ private:
+  DataTypeVector tensor_types_;
+  bool has_ev_;
 };
 REGISTER_KERNEL_BUILDER(Name("SaveV2").Device(DEVICE_CPU), SaveV2);
 

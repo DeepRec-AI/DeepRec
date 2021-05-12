@@ -166,13 +166,13 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "sparsehash_c11",
+        build_file = "//third_party:sparsehash_c11.BUILD",
+        sha256 = "d4a43cad1e27646ff0ef3a8ce3e18540dbcb1fdec6cc1d1cb9b5095a9ca2a755",
+        strip_prefix = "sparsehash-c11-2.11.1",
         urls = [
-            "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/mirror.bazel.build/github.com/sparsehash-c11/sparsehash-c11.tar.gz",
-            "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/github.com/sparsehash-c11/sparsehash-c11.tar.gz",
+            "https://github.com/sparsehash/sparsehash-c11/archive/v2.11.1.tar.gz",
+            "https://github.com/sparsehash/sparsehash-c11/archive/v2.11.1.tar.gz",
         ],
-        sha256 = "882efd8c9325c84497a05cf6de3c1be8a66015c689024f75b4474e2c782a53d7",
-        strip_prefix = "sparsehash-c11",
-        build_file = str(Label("//third_party:sparsehash_c11.BUILD")),
     )
 
     tf_http_archive(
@@ -1014,6 +1014,29 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         strip_prefix = "c-ares-1.14.0",
         urls = ["https://storage.googleapis.com/mirror.tensorflow.org/github.com/c-ares.haxx.se/download/c-ares-1.14.0.tar.gz",
                 "https://c-ares.haxx.se/download/c-ares-1.14.0.tar.gz"],
+    )
+
+
+    tf_http_archive(
+        name = "libcuckoo",
+        urls = [
+            "https://github.com/efficient/libcuckoo/archive/8785773896d74f72b6224e59d37f5f8c3c1e022a.tar.gz",
+            "https://github.com/efficient/libcuckoo/archive/8785773896d74f72b6224e59d37f5f8c3c1e022a.tar.gz",
+        ],
+        sha256 = "11cf338f342b3a12f946048deb8f96171b102450b8b73fefe9f1968b601bc00d",
+        strip_prefix = "libcuckoo-8785773896d74f72b6224e59d37f5f8c3c1e022a",
+        build_file = str(Label("//third_party:libcuckoo.BUILD")),
+    )
+
+    tf_http_archive(
+        name = "com_github_google_leveldb",
+        sha256 = "f99dc5dcb6f23e500b197db02e993ee0d3bafd1ac84b85ab50de9009b36fbf03",
+        strip_prefix = "leveldb-5d94ad4d95c09d3ac203ddaf9922e55e730706a8",
+        build_file = clean_dep("//third_party:leveldb.BUILD"),
+        urls = [
+            "https://github.com/google/leveldb/archive/5d94ad4d95c09d3ac203ddaf9922e55e730706a8.tar.gz",
+            "https://github.com/google/leveldb/archive/5d94ad4d95c09d3ac203ddaf9922e55e730706a8.tar.gz"
+        ],
     )
 
 def tf_bind():

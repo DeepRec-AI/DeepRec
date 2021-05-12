@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_SAVE_RESTORE_TENSOR_H_
 #define TENSORFLOW_CORE_KERNELS_SAVE_RESTORE_TENSOR_H_
 
+#include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 #include "tensorflow/core/util/tensor_slice_reader.h"
 #include "tensorflow/core/util/tensor_slice_writer.h"
 
@@ -67,6 +68,52 @@ Status RestoreTensorsV2(OpKernelContext* context, const Tensor& prefix,
                         const Tensor& tensor_names,
                         const Tensor& shape_and_slices,
                         gtl::ArraySlice<DataType> dtypes);
+
+template<class K, class T>
+class DumpIterator {
+ public:
+  virtual ~DumpIterator() {}
+  virtual bool HasNext() const = 0;
+  virtual T Next() = 0;
+};
+
+template<typename K, typename T>
+Status SaveTensorWithFixedBuffer(const string& tensor_name, BundleWriter* writer, char* dump_buffer, size_t bytes_limit,
+    DumpIterator<K, T>* dump_iter, const TensorShape& dump_tensor_shape, bool use_shape = true) {
+  bool dump_happened = false;
+  size_t bytes_written = 0;
+  int buffer_idx = 0;
+  Status st;
+  int64 total_bytes_written = 0;
+  T* key_dump_buffer = (T*)dump_buffer;
+  if (use_shape)
+  st = writer->AddTensorHeader(tensor_name, DataTypeToEnum<T>::v(), dump_tensor_shape);
+  if (!st.ok())
+    return st;
+
+  while (dump_iter->HasNext()) {
+    T key = dump_iter->Next();
+    if (bytes_written + sizeof(T) > bytes_limit) {
+      dump_happened = true;
+      writer->AppendSegmentData(dump_buffer, bytes_written);
+      bytes_written = 0;
+      buffer_idx = 0;
+    }
+    key_dump_buffer[buffer_idx] = key;
+    buffer_idx++;
+    bytes_written += sizeof(T);
+    total_bytes_written += sizeof(T);
+  }
+  if (!dump_happened) {
+    LOG(INFO) << tensor_name << " only one buffer written, size:" << bytes_written;
+    writer->AddCompeleteData(dump_buffer, bytes_written);
+  } else {
+    LOG(INFO) << tensor_name << " mutiple buffer written, size:" << total_bytes_written << ", bytes written:" << bytes_written;
+    writer->AppendSegmentData(dump_buffer, bytes_written);
+    writer->EndSegmentData(total_bytes_written,  bytes_written);
+  }
+  return Status::OK();
+}
 
 }  // namespace tensorflow
 

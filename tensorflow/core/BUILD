@@ -1188,6 +1188,7 @@ tf_gen_op_libs(
         "stateless_random_ops",
         "summary_ops",
         "training_ops",
+        "training_ali_ops",
     ],
     deps = [
         ":lib",
@@ -1239,6 +1240,14 @@ tf_gen_op_libs(
     is_external = False,
     op_lib_names = [
         "resource_variable_ops",
+    ],
+    deps = [":lib"],
+)
+
+tf_gen_op_libs(
+    is_external = False,
+    op_lib_names = [
+        "kv_variable_ops",
     ],
     deps = [":lib"],
 )
@@ -1566,6 +1575,7 @@ cc_library(
         "//tensorflow/core/kernels:histogram_op",
         "//tensorflow/core/kernels:image",
         "//tensorflow/core/kernels:io",
+        "//tensorflow/core/kernels:kv_variable_ops",
         "//tensorflow/core/kernels:linalg",
         "//tensorflow/core/kernels:lookup",
         "//tensorflow/core/kernels:logging",
@@ -1600,6 +1610,7 @@ cc_library(
         "//tensorflow/core/kernels:string",
         "//tensorflow/core/kernels:summary_kernels",
         "//tensorflow/core/kernels:training_ops",
+        "//tensorflow/core/kernels:training_ali_ops",
         "//tensorflow/core/kernels:word2vec_kernels",
     ] + tf_additional_cloud_kernel_deps() + if_not_windows([
         "//tensorflow/core/kernels:fact_op",

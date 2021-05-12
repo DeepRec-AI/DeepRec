@@ -209,6 +209,8 @@ def _get_processor(v):
     return _DenseResourceVariableProcessor(v)
   if v.op.type == "VarHandleOp":
     return _DenseResourceVariableProcessor(v)
+  if v.op.type == "KvVarHandleOp":
+    return _DenseResourceVariableProcessor(v)
   if isinstance(v, variables.Variable):
     return _RefVariableProcessor(v)
   if isinstance(v, ops.Tensor):

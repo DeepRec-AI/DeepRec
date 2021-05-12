@@ -21,8 +21,11 @@ import six
 
 from tensorflow.python.eager import context
 from tensorflow.python.framework import device as pydev
+from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_kv_variable_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import variables
@@ -115,6 +118,60 @@ class ResourceVariableSaveable(saveable_object.SaveableObject):
           self.handle_op, self._var_shape, restored_tensor)
 
 
+class EmbeddingVariableSaveable(saveable_object.SaveableObject):
+  """SaveableObject implementation that handles EmbeddingVariables."""
+  def __init__(self, var, name):
+    self.handle_op = var.handle
+    self.invalid_key = var.invalid_key
+    self.key_type = var._invalid_key_type
+    self.steps_to_live = var.steps_to_live
+    self.ht_type = var._ht_type
+    self.ht_partition_num= var._ht_partition_num
+    name = var._shared_name
+    self.handle_op = var.handle
+    self.var = var
+    is_partitioned_ev = not isinstance(self.var._save_slice_info, str)
+    self.partition_id = 0
+    self.partition_num = 1
+    if self.var._save_slice_info is not None:
+      self.partition_id = self.var._save_slice_info.var_offset[0] if is_partitioned_ev else 0
+      self.partition_num = self.var._save_slice_info.full_shape[0] if is_partitioned_ev else 1
+
+    def _read_variable_closure(v):
+      def f():
+        with ops.device(v.device):
+          x = v.read_value()
+          return array_ops.identity(x)
+      return f
+    unused_tensor = _read_variable_closure(var)
+
+    specs = []
+    specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-keys", dtype=self.key_type, device=var.device))
+    specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-values", dtype=dtypes.float32, device=var.device))
+    specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-versions", dtype=dtypes.int64, device=var.device))
+    # pylint: disable=protected-access
+    super(EmbeddingVariableSaveable, self).__init__(var, specs, name)
+
+  def restore(self, restored_tensors, unused_restored_shapes):
+    # pylint: disable=protected-access
+    with ops.colocate_with(self.handle_op):
+      handle_name = ops.name_from_scope_name(self.name)
+      is_partitioned_ev = not isinstance(self.var._save_slice_info, str)
+      if self.var._init_data_source is not None:
+        return self.var.recover_from_init_data_source(self.var._init_data_source, partition_id, partition_num)
+      else:
+        return gen_kv_variable_ops.kv_resource_import_v2(
+              restored_tensors[0],
+              self.handle_op,
+              variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
+              self.name,
+              ops.convert_to_tensor(self.invalid_key, preferred_dtype=dtypes.int64),
+              shape=self.op.initial_value.get_shape(), steps_to_live=self.steps_to_live,
+              ht_type=self.ht_type,
+              ht_partition_num=self.ht_partition_num,
+              partition_id=self.partition_id, partition_num=self.partition_num)
+
+
 def _tensor_comes_from_variable(v):
   return isinstance(v, ops.Tensor) and v.op.type in _VARIABLE_OPS
 
@@ -161,6 +218,8 @@ def saveable_objects_for_op(op, name):
                               "AutoReloadVariable"]:
         yield ReferenceVariableSaveable(
             variable, variable._save_slice_info.spec, name)
+      elif isinstance(variable, kv_variable_ops.EmbeddingVariable):
+        yield EmbeddingVariableSaveable(variable, name)
       else:
         yield ResourceVariableSaveable(
             variable, variable._save_slice_info.spec, name)
@@ -178,6 +237,8 @@ def saveable_objects_for_op(op, name):
       for op in saveable_objects_for_op(op, op.name):
         yield op
     # pylint: enable=protected-access
+  elif isinstance(op, kv_variable_ops.EmbeddingVariable):
+    yield EmbeddingVariableSaveable(op, name)
   else:
     # A variable or tensor.
     if isinstance(op, resource_variable_ops.BaseResourceVariable):
@@ -259,6 +320,8 @@ def op_list_to_dict(op_list, convert_variable_to_tensor=True):
           for factory in var._gather_saveables_for_checkpoint().values()]
       names_to_saveables.update(
           op_list_to_dict(trackable_saveables))
+    elif isinstance(var, kv_variable_ops.EmbeddingVariable):
+      names_to_saveables[var.op.name] = var
     else:
       # Variables (reference and resource) have an _in_graph_mode property
       # indicating whether they were created in a graph building context. We

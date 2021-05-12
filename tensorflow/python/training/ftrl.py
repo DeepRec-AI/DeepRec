@@ -19,6 +19,7 @@ from __future__ import print_function
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
@@ -246,7 +247,20 @@ class FtrlOptimizer(optimizer.Optimizer):
     accum = self.get_slot(var, "accum")
     linear = self.get_slot(var, "linear")
     if self._l2_shrinkage_regularization_strength <= 0.0:
-      return training_ops.resource_sparse_apply_ftrl(
+      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+        return training_ops.kv_resource_sparse_apply_ftrl(
+          var.handle,
+          accum.handle,
+          linear.handle,
+          grad,
+          indices,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          math_ops.cast(self._l1_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._l2_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
+          use_locking=self._use_locking)
+      else:
+        return training_ops.resource_sparse_apply_ftrl(
           var.handle,
           accum.handle,
           linear.handle,
@@ -258,7 +272,22 @@ class FtrlOptimizer(optimizer.Optimizer):
           math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
           use_locking=self._use_locking)
     else:
-      return training_ops.resource_sparse_apply_ftrl_v2(
+      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+        return training_ops.kv_resource_sparse_apply_ftrl_v2(
+          var.handle,
+          accum.handle,
+          linear.handle,
+          grad,
+          indices,
+          math_ops.cast(self._learning_rate_tensor, grad.dtype),
+          math_ops.cast(self._l1_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._l2_regularization_strength_tensor, grad.dtype),
+          math_ops.cast(self._l2_shrinkage_regularization_strength_tensor,
+                        grad.dtype),
+          math_ops.cast(self._learning_rate_power_tensor, grad.dtype),
+          use_locking=self._use_locking)
+      else:
+        return training_ops.resource_sparse_apply_ftrl_v2(
           var.handle,
           accum.handle,
           linear.handle,

@@ -2734,6 +2734,32 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "kv_variable_ops",
+    hdrs = ["kv_variable_ops.h"],
+    srcs = ["kv_variable_ops.cc"],
+    copts = ["-g"],
+    nocopts = "-fno-exceptions",
+    deps = [
+        ":bounds_check",
+        ":dense_update_functor",
+        ":gather_functor",
+        ":save_restore_tensor",
+        ":scatter_functor",
+        ":state",
+        ":training_op_helpers",
+        ":variable_ops",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:kv_variable_ops_op_lib",
+        "//tensorflow/core/util/tensor_bundle",
+        "//third_party/eigen3",
+        "@sparsehash_c11//:dense_hash_map",
+        "@libcuckoo//:libcuckoo",
+        "@com_github_google_leveldb//:leveldb",
+    ],
+)
+
+tf_kernel_library(
     name = "list_kernels",
     srcs = ["list_kernels.cc"],
     hdrs = ["list_kernels.h"],
@@ -3297,6 +3323,7 @@ tf_kernel_library(
 SAVE_RESTORE_DEPS = [
     ":bounds_check_lib",
     ":save_restore_tensor",
+    ":kv_variable_ops",
     "//tensorflow/core:framework",
     "//tensorflow/core:lib",
     "//tensorflow/core:lib_internal",
@@ -5779,6 +5806,22 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
+    ],
+)
+
+tf_kernel_library(
+    name = "training_ali_ops",
+    prefix = "training_ali_ops",
+    hdrs = ["training_ali_op_helpers.h"],
+    deps = [
+        ":bounds_check",
+        ":training_op_helpers",
+        ":variable_ops",
+        ":kv_variable_ops",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:training_ali_ops_op_lib",
+        "//third_party/eigen3",
     ],
 )
 

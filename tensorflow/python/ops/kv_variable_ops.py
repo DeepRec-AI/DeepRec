@@ -1,0 +1,833 @@
+# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+"""Ops to use variables as resources."""
+
+# pylint: disable=g-bad-name
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import json
+
+from tensorflow.core.framework import attr_value_pb2
+from tensorflow.core.framework import variable_pb2
+from tensorflow.python.eager import context
+from tensorflow.python.eager import tape
+from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import ops
+from tensorflow.python.framework import tensor_shape
+from tensorflow.python.framework import tensor_util
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_array_ops
+from tensorflow.python.ops import gen_kv_variable_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import variables
+from tensorflow.python.ops import resource_variable_ops
+from tensorflow.python.util import compat
+
+__all__ = ["EmbeddingVariable"]
+
+
+class EmbeddingVariable(resource_variable_ops.ResourceVariable):
+  """Embedding Variable based on resource variable.
+
+  See the ${variables} documentation for more details.
+
+  A `EmbeddingVariable` allows you to maintain state across subsequent calls to
+  session.run.
+
+  The `EmbeddingVariable` constructor requires an initial value for the variable,
+  which can be a `Tensor` of any type and shape. The initial value defines the
+  type and shape of the parted variable. After construction, the type and embedding
+  dim shape of the variable are fixed. The first demension of the embedding variable
+  is mutable. The shape can be changed using read_sparse methods.
+
+  Unlike tf.ResourceVariable, a tf.EmbeddingVariable is mutable. the shape of the
+  EmbeddingVariable means the embedding dim, user can use the APIs(sparse_read()) to
+  change the whole shape of the EmbeddingVariable. When read_sparse(index=i, ...) is
+  called, if the i-th embedding value doesn't exist, it will be initialized and return,
+   else it will return the i-th existing embedding value, when the embedding variable
+  is updated by back propagation, the i-th embedding value will be updated or removed.
+
+  For example:
+
+   ```python
+    a = tf.EmbeddingVariable([1.0, 3.0, 5.0])
+    a.initializer.run()
+
+    b = a.sparse_read([2])
+
+    tf.Print(b, [b]).run()  # Will print 1.0, 3.0, 5.0
+  ```
+
+  """
+
+  def __init__(self,
+               initial_value=None,
+               initializer=None,
+               trainable=True,
+               collections=None,
+               validate_shape=True,
+               caching_device=None,
+               name=None,
+               dtype=None,
+               variable_def=None,
+               import_scope=None,
+               constraint=None,
+               invalid_key=None,
+               steps_to_live=None,
+               init_data_source=None,
+               ht_type=None,
+               ht_partition_num=1000):
+    """Creates a variable.
+
+    Args:
+      initial_value: A `Tensor`, or Python object convertible to a `Tensor`,
+        which is the initial value for the Variable. The initial value must have
+        a shape specified unless `validate_shape` is set to False. Can also be a
+        callable with no argument that returns the initial value when called.
+        (Note that initializer functions from init_ops.py must first be bound
+         to a shape before being used here.)
+      trainable: If `True`, the default, also adds the variable to the graph
+        collection `GraphKeys.TRAINABLE_VARIABLES`. This collection is used as
+        the default list of variables to use by the `Optimizer` classes.
+      collections: List of graph collections keys. The new variable is added to
+        these collections. Defaults to `[GraphKeys.GLOBAL_VARIABLES]`.
+      validate_shape: Ignored. Provided for compatibility with tf.Variable.
+      caching_device: Optional device string or function describing where the
+        Variable should be cached for reading.  Defaults to the Variable's
+        device.  If not `None`, caches on another device.  Typical use is to
+        cache on the device where the Ops using the Variable reside, to
+        deduplicate copying through `Switch` and other conditional statements.
+      name: Optional name for the variable. Defaults to `'Variable'` and gets
+        uniquified automatically.
+      dtype: If set, initial_value will be converted to the given type.
+        If None, either the datatype will be kept (if initial_value is
+        a Tensor) or float32 will be used (if it is a Python object convertible
+        to a Tensor).
+      variable_def: `VariableDef` protocol buffer. If not None, recreates the
+        `EmbeddingVariable` object with its contents. `variable_def` and other
+        arguments (except for import_scope) are mutually exclusive.
+      import_scope: Optional `string`. Name scope to add to the
+        EmbeddingVariable. Only used when `variable_def` is provided.
+      constraint: An optional projection function to be applied to the variable
+        after being updated by an `Optimizer` (e.g. used to implement norm
+        constraints or value constraints for layer weights). The function must
+        take as input the unprojected Tensor representing the value of the
+        variable and return the Tensor for the projected value
+        (which must have the same shape). Constraints are not safe to
+        use when doing asynchronous distributed training.
+
+    Raises:
+      ValueError: If the initial value is not specified, or does not have a
+        shape and `validate_shape` is `True`.
+
+    @compatibility(eager)
+    When Eager Execution is enabled, the default for the `collections` argument
+    is None, which signifies that this Variable will not be added to any
+    collections.
+    @end_compatibility
+    """
+    if context.executing_eagerly():
+      raise ValueError("Creating EmbeddingVariable"
+                       " only supported in GRAPH mode.")
+    if variable_def:
+      if initial_value is not None:
+        raise ValueError("variable_def and initial_value are mutually "
+                         "exclusive.")
+      self._init_from_proto(variable_def, import_scope=import_scope)
+    else:
+      self._init_from_args(
+          initial_value=initial_value,
+          initializer=initializer,
+          trainable=trainable,
+          collections=collections,
+          validate_shape=validate_shape,
+          caching_device=caching_device,
+          name=name,
+          dtype=dtype,
+          constraint=constraint,
+          invalid_key=invalid_key,
+          steps_to_live=steps_to_live,
+          init_data_source=init_data_source,
+          ht_type=ht_type,
+          ht_partition_num=ht_partition_num)
+
+  def __repr__(self):
+    return "<tf.EmbeddingVariable '%s' embedding dim=%s dtype=%s>" % (self.name,
+                                                                      self.shape,
+                                                                      self.dtype.name)
+
+  # LINT.IfChange
+  # _VariableFromResource inherits from EmbeddingVariable but
+  # doesn't call the constructor, so changes here might need to be reflected
+  # there.
+  # pylint: disable=unused-argument
+  def _init_from_args(self,
+                      initial_value=None,
+                      initializer=None,
+                      trainable=True,
+                      collections=None,
+                      validate_shape=True,
+                      caching_device=None,
+                      name=None,
+                      dtype=None,
+                      constraint=None,
+                      invalid_key=-1,
+                      steps_to_live=0,
+                      init_data_source=None,
+                      ht_type='',
+                      ht_partition_num=1000):
+    """Creates a variable.
+
+    Args:
+      initial_value: A `Tensor`, or Python object convertible to a `Tensor`,
+        which is the initial value for the Variable. The initial value must have
+        a shape specified unless `validate_shape` is set to False. Can also be a
+        callable with no argument that returns the initial value when called.
+        (Note that initializer functions from init_ops.py must first be bound
+         to a shape before being used here.)
+      trainable: If `True`, the default, also adds the variable to the graph
+        collection `GraphKeys.TRAINABLE_VARIABLES`. This collection is used as
+        the default list of variables to use by the `Optimizer` classes.
+      collections: List of graph collections keys. The new variable is added to
+        these collections. Defaults to `[GraphKeys.GLOBAL_VARIABLES]`.
+      validate_shape: Ignored. Provided for compatibility with tf.Variable.
+      caching_device: Optional device string or function describing where the
+        Variable should be cached for reading.  Defaults to the Variable's
+        device.  If not `None`, caches on another device.  Typical use is to
+        cache on the device where the Ops using the Variable reside, to
+        deduplicate copying through `Switch` and other conditional statements.
+      name: Optional name for the variable. Defaults to `'Variable'` and gets
+        uniquified automatically.
+      dtype: If set, initial_value will be converted to the given type.
+        If None, either the datatype will be kept (if initial_value is
+       a Tensor) or float32 will be used (if it is a Python object convertible
+       to a Tensor).
+      constraint: An optional projection function to be applied to the variable
+        after being updated by an `Optimizer` (e.g. used to implement norm
+        constraints or value constraints for layer weights). The function must
+        take as input the unprojected Tensor representing the value of the
+        variable and return the Tensor for the projected value
+        (which must have the same shape). Constraints are not safe to
+        use when doing asynchronous distributed training.
+
+    Raises:
+      ValueError: If the initial value is not specified, or does not have a
+        shape and `validate_shape` is `True`.
+
+    @compatibility(eager)
+    When Eager Execution is enabled, variables are never added to collections.
+    It is not implicitly added to the GLOBAL_VARIABLES or TRAINABLE_VARIABLES
+    collections, and the `collections` argument is ignored.
+    @end_compatibility
+    """
+    if initial_value is None:
+      raise ValueError("initial_value must be specified.")
+    init_from_fn = callable(initial_value)
+
+    if collections is None:
+      collections = [ops.GraphKeys.GLOBAL_VARIABLES]
+    if not isinstance(collections, (list, tuple, set)):
+      raise ValueError(
+          "collections argument to Variable constructor must be a list, tuple, "
+          "or set. Got %s of type %s" % (collections, type(collections)))
+    if constraint is not None and not callable(constraint):
+      raise ValueError("The `constraint` argument must be a callable.")
+
+    self._trainable = trainable
+    self._initializer = initializer
+    if trainable and ops.GraphKeys.TRAINABLE_VARIABLES not in collections:
+      collections = list(collections) + [ops.GraphKeys.TRAINABLE_VARIABLES]
+    self._save_slice_info = None
+    self._in_graph_mode = not context.executing_eagerly()
+    self._steps_to_live = steps_to_live
+    self._init_data_source = init_data_source 
+    self._ht_type = ht_type
+    self._ht_partition_num = ht_partition_num
+    with ops.control_dependencies(None):
+      with ops.name_scope(name, "Variable", []
+                          if init_from_fn else [initial_value]) as name:
+        # pylint: disable=protected-access
+        self._invalid_key = invalid_key
+        self._invalid_key_type = ops.convert_to_tensor(invalid_key,
+                name="invalid_key", preferred_dtype=dtypes.int64).dtype.base_dtype
+        handle_name = ops.name_from_scope_name(name)
+        if init_from_fn:
+          # Use attr_scope and device(None) to simulate the behavior of
+          # colocate_with when the variable we want to colocate with doesn't
+          # yet exist.
+          attr = attr_value_pb2.AttrValue(
+              list=attr_value_pb2.AttrValue.ListValue(
+                  s=[compat.as_bytes("loc:@%s" % handle_name)]))
+          with ops.get_default_graph()._attr_scope({"_class": attr}):
+            with ops.name_scope("Initializer"), ops.device(None):
+              initial_value = ops.convert_to_tensor(
+                  initial_value(), name="initial_value", dtype=dtype)
+            self._handle = self._embedding_variable_handle(
+                shape=initial_value.get_shape(),
+                dtype=initial_value.dtype.base_dtype,
+                shared_name=handle_name,
+                name=name,
+                graph_mode=self._in_graph_mode)
+            self._handle_device = (
+                self._handle.device if self._in_graph_mode else
+                context.get_default_context().device_name)
+            self._graph_shape = initial_value.get_shape()
+        # pylint: enable=protected-access
+
+        # Or get the initial value from a Tensor or Python object.
+        else:
+          with ops.name_scope("Initializer"):
+            initial_value = ops.convert_to_tensor(
+                initial_value, name="initial_value", dtype=dtype)
+          # pylint: disable=protected-access
+          if (self._in_graph_mode and initial_value is not None and
+              initial_value.op._get_control_flow_context() is not None):
+            raise ValueError(
+                "Initializer for variable %s is from inside a control-flow "
+                "construct, such as a loop or conditional. When creating a "
+                "variable inside a loop or conditional, use a lambda as the "
+                "initializer." % name)
+          # pylint: enable=protected-access
+          self._handle = self._embedding_variable_handle(
+              shape=initial_value.get_shape(),
+              dtype=initial_value.dtype.base_dtype,
+              shared_name=handle_name,
+              name=name,
+              graph_mode=self._in_graph_mode)
+          self._handle_device = (self._handle.device if self._in_graph_mode else
+                                 context.get_default_context().device_name)
+          self._graph_shape = initial_value.get_shape()
+
+        self._initial_value = initial_value if self._in_graph_mode else None
+        self._handle_name = handle_name + ":0"
+        self._dtype = initial_value.dtype.base_dtype
+        self._constraint = constraint
+
+        with ops.name_scope("IsInitialized"):
+          self._is_initialized_op = (
+              gen_kv_variable_ops.kv_var_is_initialized_op(self._handle,
+                                                           Tkeys=self._invalid_key_type))
+        if initial_value is not None:
+          with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
+            self._initializer_op = (
+                gen_kv_variable_ops.initialize_kv_variable_op(
+                    self._handle,
+                    variables._try_guard_against_uninitialized_dependencies(name, initial_value),
+                    ops.convert_to_tensor(invalid_key, preferred_dtype=dtypes.int64),
+                    shape=initial_value.get_shape(),
+                    steps_to_live=self._steps_to_live,
+                    ht_type=self._ht_type,
+                    ht_partition_num=self._ht_partition_num,
+                    name=n))
+        with ops.name_scope("Read"), ops.colocate_with(self._handle):
+          # Manually assign reads to the handle's device to avoid log
+          # messages.
+          with ops.device(self._handle_device):
+            value = self._read_variable_op()
+          self._graph_element = value
+          if caching_device is not None:
+            # Variables may be created in a tf.device() or ops.colocate_with()
+            # context. At the same time, users would expect caching device to
+            # be independent of this context, and/or would not expect the
+            # current device context to be merged with the caching device
+            # spec.  Therefore we reset the colocation stack before creating
+            # the cached value. Note that resetting the colocation stack will
+            # also reset the device stack.
+            with ops.colocate_with(None, ignore_existing=True):
+              with ops.device(caching_device):
+                self._cached_value = array_ops.identity(value)
+          else:
+            self._cached_value = None
+        if not context.executing_eagerly():
+          ops.add_to_collections(collections, self)
+          self.add_ev_to_collection(handle_name)
+        elif ops.GraphKeys.GLOBAL_STEP in collections:
+          ops.add_to_collections(ops.GraphKeys.GLOBAL_STEP, self)
+
+  def add_ev_to_collection(self, handle_name):
+    '''
+    schema:
+    "EMBEDDING_VARIABLES": "{
+      "emb_name_1": {
+        "embedding_dim": 8,
+        "tensors": [
+          "emb_name_1/part_0",
+          "emb_name_1/part_1"
+        ]
+      },
+      ...
+    }"
+    '''
+    #ev info except ev's slots
+    if self._trainable:
+      var_name = handle_name
+      if "/part_" in var_name:
+        var_name = var_name[:var_name.index("/part_")]
+      if not ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLES):
+        ops.add_to_collections(ops.GraphKeys.EMBEDDING_VARIABLES, "{}")
+      emb_list = ops.get_collection_ref(ops.GraphKeys.EMBEDDING_VARIABLES)
+      emb_dict = json.loads(emb_list[0])
+      if var_name in emb_dict:
+        emb_dict[var_name]["tensors"].append(handle_name)
+      else:
+        emb_dict[var_name]={}
+        emb_dict[var_name]["tensors"]=[handle_name]
+        emb_dict[var_name]["embedding_dim"]=self.shape.dims[0].value
+      emb_list[0] = json.dumps(emb_dict)
+
+  def _init_from_proto(self, variable_def, import_scope=None):
+    """Initializes from `VariableDef` proto."""
+    # Note that init_from_proto is currently not supported in Eager mode.
+    assert not context.executing_eagerly()
+    self._in_graph_mode = True
+    assert isinstance(variable_def, variable_pb2.VariableDef)
+    if not variable_def.is_resource:
+      raise ValueError("Trying to restore Variable as EmbeddingVariable.")
+
+    # Create from variable_def.
+    g = ops.get_default_graph()
+    self._handle = g.as_graph_element(
+        ops.prepend_name_scope(
+            variable_def.variable_name, import_scope=import_scope))
+    self._graph_shape = tensor_shape.TensorShape(
+        self._handle.op.get_attr("shape"))
+    self._handle_device = self._handle.device
+    self._handle_name = self._handle.name
+    self._initializer_op = g.as_graph_element(
+        ops.prepend_name_scope(
+            variable_def.initializer_name, import_scope=import_scope))
+    self._trainable = getattr(variable_def, "trainable", True)
+    if variable_def.snapshot_name:
+      self._cached_value = g.as_graph_element(
+          ops.prepend_name_scope(
+              variable_def.snapshot_name, import_scope=import_scope))
+    else:
+      self._cached_value = None
+    if variable_def.HasField("save_slice_info_def"):
+      self._save_slice_info = variables.Variable.SaveSliceInfo(
+          save_slice_info_def=variable_def.save_slice_info_def)
+    else:
+      self._save_slice_info = None
+    self._caching_device = None
+    self._dtype = dtypes.as_dtype(self._handle.op.get_attr("dtype"))
+    self._invalid_key = -1
+    self._steps_to_live = self._initializer_op.get_attr("steps_to_live")
+    self._ht_type = self._initializer_op.get_attr("ht_type")
+    self._ht_partition_num = self._initializer_op.get_attr("ht_partition_num")
+    self._init_data_source = None
+    self._initial_value = ops.convert_to_tensor(
+                              [0], name="initial_value", dtype=self._dtype)
+    self._invalid_key_type = dtypes.as_dtype(self._handle.op.get_attr("Tkeys"))
+    self._graph_element = self.value()
+    self._constraint = None
+  # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
+
+  def _set_init_data_source_initializer(self, init_data_source):
+    import pkgutil
+    try:
+      # pylint: disable=unused-import
+      from paiio.python.ops.io_ops import feature_store_initializer 
+      # pylint: enable=unused-import
+    except BaseException as error:
+      import sys, traceback
+      print('You need paiio to use feature store', file=sys.stderr)
+      raise
+    steps_to_live_hybrid = self._steps_to_live 
+    if not self._trainable:
+      steps_to_live_hybrid = -214 
+    with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
+      kv_init_op = gen_kv_variable_ops.initialize_kv_variable_op(
+          self._handle,
+          variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
+          ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+          shape=self._initial_value.get_shape(),
+          steps_to_live=steps_to_live_hybrid,
+          name=n)
+      with ops.control_dependencies([kv_init_op]):
+        is_partitioned_ev = self._save_slice_info is not None
+        partition_id = self._save_slice_info.var_offset[0] if is_partitioned_ev else 0
+        partition_num = self._save_slice_info.full_shape[0] if is_partitioned_ev else 1
+        self._initializer_op = (
+           feature_store_initializer(
+               self._init_data_source, 
+               self._handle, 
+               variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
+               ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+               self._initial_value.get_shape(), 
+               self._steps_to_live, partition_id, partition_num)
+        )
+
+  def recover_from_init_data_source(self, init_data_source, partition_id, partition_num):
+    import pkgutil
+    try:
+      # pylint: disable=unused-import
+      from paiio.python.ops.io_ops import feature_store_initializer 
+      # pylint: enable=unused-import
+    except BaseException as error:
+      import sys, traceback
+      print('You need paiio to use feature store', file=sys.stderr)
+      raise
+    steps_to_live_hybrid = self._steps_to_live 
+    if not self._trainable:
+      steps_to_live_hybrid = -214 
+    with ops.name_scope("RecoverAssign") as n, ops.colocate_with(self._handle):
+      kv_init_op = gen_kv_variable_ops.initialize_kv_variable_op(
+          self._handle,
+          variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
+          ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+          shape=self._initial_value.get_shape(),
+          steps_to_live=steps_to_live_hybrid,
+          name=n)
+      with ops.control_dependencies([kv_init_op]):
+        return (
+           feature_store_initializer(
+               self._init_data_source, 
+               self._handle, 
+               variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
+               ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+               self._initial_value.get_shape(), 
+               self._steps_to_live, partition_id, partition_num)
+        )
+
+
+  @property
+  def dtype(self):
+    """The dtype of this variable."""
+    return self._dtype
+
+  @property
+  def device(self):
+    """The device this variable is on."""
+    return self._handle_device
+
+  @property
+  def graph(self):
+    """The `Graph` of this variable."""
+    return self._handle.graph
+
+  @property
+  def name(self):
+    """The name of the handle for this variable."""
+    return self._handle_name
+
+  @property
+  def shape(self):
+    """The embedding dim of this variable."""
+    return self._graph_shape
+
+  def total_count(self):
+    """The shape of this variable."""
+    return gen_kv_variable_ops.kv_variable_shape(self._handle,
+		    Tkeys=self._invalid_key_type)
+
+  def export(self):
+    return gen_kv_variable_ops.kv_resource_export(self._handle,
+		    self._invalid_key_type, self.dtype)
+
+  @property
+  def steps_to_live(self):
+    return self._steps_to_live
+
+  @property
+  def create(self):
+    """The op responsible for initializing this variable."""
+    if not self._in_graph_mode:
+      raise RuntimeError("Calling create in EAGER mode not supported.")
+    return self._initializer_op
+
+  @property
+  def handle(self):
+    """The handle by which this variable can be accessed."""
+    return self._handle
+
+  @property
+  def invalid_key(self):
+    return self._invalid_key
+
+  def value(self):
+    """A cached operation which reads the value of this variable."""
+    if self._cached_value is not None:
+      return self._cached_value
+    with ops.colocate_with(None, ignore_existing=True):
+      with ops.device(self._handle_device):
+        return self._read_variable_op()
+
+  def _as_graph_element(self):
+    """Conversion function for Graph.as_graph_element()."""
+    return self._graph_element
+
+  @property
+  def initializer(self):
+    """The op responsible for initializing this variable."""
+    return self._initializer_op
+
+  @property
+  def initial_value(self):
+    """Returns the Tensor used as the initial value for the variable."""
+    if context.executing_eagerly():
+      raise RuntimeError("initial_value not supported in EAGER mode.")
+    return self._initial_value
+
+  @property
+  def constraint(self):
+    """Returns the constraint function associated with this variable.
+
+    Returns:
+      The constraint function that was passed to the variable constructor.
+      Can be `None` if no constraint was passed.
+    """
+    return self._constraint
+
+  @property
+  def op(self):
+    """The op for this variable."""
+    return self._handle.op
+
+  def eval(self, session=None):
+    """Evaluates and returns the value of this variable."""
+    if context.in_eager_mode():
+      raise RuntimeError("Trying to eval in EAGER mode")
+    return self._graph_element.eval(session=session)
+
+  def _set_save_slice_info(self, save_slice_info):
+    """Sets the slice info for this `EmbeddingVariable`.
+
+    Args:
+      save_slice_info: A `Variable.SaveSliceInfo` object.
+    """
+    self._save_slice_info = save_slice_info
+
+  def _get_save_slice_info(self):
+    return self._save_slice_info
+
+  def _read_variable_op(self):
+    if self.trainable:
+      tape.variable_accessed(self)
+    return gen_kv_variable_ops.read_kv_variable_op(self._handle,
+                                                   self._dtype,
+                                                   Tkeys=self._invalid_key_type)
+
+  def read_value(self):
+    """Constructs an op which reads the value of this variable.
+
+    Should be used when there are multiple reads, or when it is desirable to
+    read the value only after some condition is true.
+
+    Returns:
+     the read operation.
+    """
+    #raise NotImplementedError("EmbeddingVariable does not implement read_value()")
+    with ops.name_scope("Read"):
+      # Ensure we read the variable in the same device as the handle.
+      with ops.colocate_with(self._handle):
+        value = self._read_variable_op()
+    # Return an identity so it can get placed on whatever device the context
+    # specifies instead of the device where the variable is.
+    return array_ops.identity(value)
+
+  def sparse_read(self, indices, name=None):
+    """Reads the value of this variable sparsely, using `gather`."""
+    with ops.name_scope("Gather" if name is None else name) as name:
+      if self._trainable:
+        tape.variable_accessed(self)
+      init = self._initializer(array_ops.concat([array_ops.shape(indices),
+                                                 self._graph_shape.as_list()],
+                                                axis=0), dtype=self._dtype)
+      default_value = init
+      value = gen_kv_variable_ops.kv_resource_gather(self._handle,
+              indices,
+              default_value, name=name)
+    return array_ops.identity(value)
+
+  def to_proto(self, export_scope=None):
+    """Converts a `EmbeddingVariable` to a `VariableDef` protocol buffer.
+
+    Args:
+      export_scope: Optional `string`. Name scope to remove.
+
+    Raises:
+      RuntimeError: If run in EAGER mode.
+
+    Returns:
+      A `VariableDef` protocol buffer, or `None` if the `Variable` is not
+      in the specified name scope.
+    """
+    if context.executing_eagerly():
+      raise RuntimeError("to_proto not supported in EAGER mode.")
+    if export_scope is None or self.handle.name.startswith(export_scope):
+      var_def = variable_pb2.VariableDef()
+      var_def.variable_name = ops.strip_name_scope(self.handle.name,
+                                                   export_scope)
+      var_def.initializer_name = ops.strip_name_scope(self.initializer.name,
+                                                      export_scope)
+      if self._initial_value is not None:
+        var_def.initial_value_name = ops.strip_name_scope(
+            self._initial_value.name, export_scope)
+      if self._cached_value is not None:
+        var_def.snapshot_name = ops.strip_name_scope(self._cached_value.name,
+                                                     export_scope)
+      var_def.is_resource = True
+      var_def.is_embedding_var = True
+      if self._save_slice_info:
+        var_def.save_slice_info_def.MergeFrom(
+            self._save_slice_info.to_proto(export_scope=export_scope))
+      return var_def
+    else:
+      return None
+
+  @staticmethod
+  def from_proto(variable_def, import_scope=None):
+    if context.executing_eagerly():
+      raise RuntimeError("from_proto not supported in EAGER mode.")
+    return EmbeddingVariable(
+        variable_def=variable_def, import_scope=import_scope)
+
+  @staticmethod
+  def _OverloadAllOperators():  # pylint: disable=invalid-name
+    """Register overloads for all operators."""
+    for operator in ops.Tensor.OVERLOADABLE_OPERATORS:
+      EmbeddingVariable._OverloadOperator(operator)
+    # For slicing, bind getitem differently than a tensor (use SliceHelperVar
+    # instead)
+    # pylint: disable=protected-access
+    setattr(EmbeddingVariable, "__getitem__", array_ops._SliceHelperVar)
+
+  def _AsTensor(self):
+    return self.value()
+
+  def _ref(self):
+    """Unsupported."""
+    raise NotImplementedError("EmbeddingVariable does not implement _ref()")
+
+  @staticmethod
+  def _OverloadOperator(operator):  # pylint: disable=invalid-name
+    """Defer an operator overload to `ops.Tensor`.
+
+    We pull the operator out of ops.Tensor dynamically to avoid ordering issues.
+
+    Args:
+      operator: string. The operator name.
+    """
+
+    def _run_op(a, *args):
+      # pylint: disable=protected-access
+      value = a._AsTensor()
+      return getattr(ops.Tensor, operator)(value, *args)
+
+    # Propagate __doc__ to wrapper
+    try:
+      _run_op.__doc__ = getattr(ops.Tensor, operator).__doc__
+    except AttributeError:
+      pass
+
+    setattr(EmbeddingVariable, operator, _run_op)
+
+  __array_priority__ = 100
+
+  def assign_sub(self, delta, use_locking=None, name=None):
+    raise NotImplementedError("EmbeddingVariable does not implement assign_sub()")
+
+  def assign_add(self, delta, use_locking=None, name=None):
+    raise NotImplementedError("EmbeddingVariable does not implement assign_add()")
+
+  def assign(self, value, use_locking=None, name=None):
+    raise NotImplementedError("EmbeddingVariable does not implement assign()")
+
+  def _embedding_variable_handle(self, shape, dtype, shared_name, name, graph_mode):
+    """Creates a variable handle with information to do shape inference."""
+    container = ops.get_default_graph()._container  # pylint: disable=protected-access
+    if container is None:
+      container = ""
+    return gen_kv_variable_ops.kv_var_handle_op(shape=shape, dtype=dtype,
+                                                shared_name=shared_name,
+                                                name=name, 
+                                                Tkeys=self._invalid_key_type,
+                                                container=container)
+
+  def _strided_slice_assign(self, begin, end, strides, value, name, begin_mask,
+                            end_mask, ellipsis_mask, new_axis_mask,
+                            shrink_axis_mask):
+    with ops.control_dependencies([
+        gen_array_ops.resource_strided_slice_assign(
+            ref=self.handle,
+            begin=begin,
+            end=end,
+            strides=strides,
+            value=value,
+            name=name,
+            begin_mask=begin_mask,
+            end_mask=end_mask,
+            ellipsis_mask=ellipsis_mask,
+            new_axis_mask=new_axis_mask,
+            shrink_axis_mask=shrink_axis_mask)
+    ]):
+      return self.value()
+
+  def _dense_var_to_tensor(self, dtype=None, name=None, as_ref=False):
+    del name
+    if dtype is not None and dtype != self.dtype:
+      print("trying to switch the dtype to ", dtype, " from ", self.dtype)
+      return NotImplemented
+    if as_ref:
+      return self.read_value().op.inputs[0]
+    else:
+      return self.value()
+
+
+def _dense_var_to_tensor(var, dtype=None, name=None, as_ref=False):
+  return var._dense_var_to_tensor(dtype=dtype, name=name, as_ref=as_ref)  # pylint: disable=protected-access
+
+
+# Register a conversion function which reads the value of the variable,
+# allowing instances of the class to be used as tensors.
+
+# Note: registering for Variable after EmbeddingVariable because inheritance will
+# otherwise lead to the wrong behavior.
+ops.register_tensor_conversion_function(EmbeddingVariable, _dense_var_to_tensor)
+ops.register_tensor_conversion_function(
+    variables.Variable, variables.Variable._TensorConversionFunction)  # pylint: disable=protected-access
+
+# pylint: disable=protected-access
+EmbeddingVariable._OverloadAllOperators()
+ops.register_dense_tensor_like_type(EmbeddingVariable)
+
+
+@ops.RegisterGradient("ReadKvVariableOp")
+def _ReadGrad(_, grad):
+  """Gradient for read op."""
+  return grad
+
+
+@ops.RegisterGradient("KvResourceGather")
+def _GatherGrad(op, grad):
+  """Gradient for gather op."""
+  # Build appropriately shaped IndexedSlices
+  # Walk graph back until the original handle is found.
+  # TODO(apassos): more robust way of getting the shape.
+  # TODO(apassos): implement this for EAGER mode.
+  handle = op.inputs[0]
+  while handle.op.type != "KvVarHandleOp":
+    handle = handle.op.inputs[0]
+  params_shape = ops.convert_to_tensor(
+      tensor_shape.TensorShape(handle.op.get_attr("shape")))
+  indices = op.inputs[1]
+  size = array_ops.expand_dims(array_ops.size(indices), 0)
+  values_shape = array_ops.concat([size, params_shape[0:]], 0)
+  values = array_ops.reshape(grad, values_shape)
+  indices = array_ops.reshape(indices, size)
+  return [ops.IndexedSlices(values, indices, params_shape), None, None]
+

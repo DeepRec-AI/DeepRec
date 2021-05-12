@@ -129,6 +129,7 @@ import collections
 import math
 
 import six
+import numpy as np
 
 from tensorflow.contrib import lookup
 from tensorflow.contrib.framework.python.framework import checkpoint_utils
@@ -148,9 +149,11 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import parsing_ops
+from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import string_ops
+from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import deprecation
@@ -163,26 +166,76 @@ InputLayer = fc_core.InputLayer  # pylint: disable=invalid-name
 
 class _LinearEmbeddingLookupArguments(
     collections.namedtuple("_LinearEmbeddingLookupArguments", [
-        "input_tensor", "weight_tensor", "vocab_size", "initializer", "combiner"
+        "input_tensor", "weight_tensor", "vocab_size", "initializer", "combiner",
+        "use_embedding_var", "embedding_var_part_num", "steps_to_live","init_data_source",
+        "ht_partition_num"
     ])):
   """Represents the information needed from a column for embedding lookup.
 
   Used to compute DNN inputs and weighted sum.
   """
-  pass
+  def __new__(cls, *args, **kwargs):
+    if 'use_embedding_var' not in kwargs:
+      kwargs['use_embedding_var'] = False
+    if 'embedding_var_part_num' not in kwargs:
+      kwargs['embedding_var_part_num'] = None
+    if 'steps_to_live' not in kwargs:
+      kwargs['steps_to_live'] = None
+    if 'init_data_source' not in kwargs:
+      kwargs['init_data_source'] = None
+    if 'ht_partition_num' not in kwargs:
+      kwargs['ht_partition_num'] = 1000
+    return super(_LinearEmbeddingLookupArguments, cls).__new__(
+        cls, *args, **kwargs)
+
+  def gen_embedding_attrs(self):
+    attrs = {"bucket_size" : self.vocab_size,
+             "combiner" : self.combiner,
+             "max_norm" : None,
+             "is_embedding_var" : self.use_embedding_var}
+    return attrs
+
 
 
 class _DeepEmbeddingLookupArguments(
     collections.namedtuple("_DeepEmbeddingLookupArguments", [
         "input_tensor", "weight_tensor", "vocab_size", "initializer",
         "combiner", "dimension", "shared_embedding_name", "hash_key",
-        "max_norm", "trainable"
+        "max_norm", "trainable",
+        "use_embedding_var", "embedding_var_part_num", "steps_to_live",
+        "init_data_source", "ht_partition_num"
     ])):
   """Represents the information needed from a column for embedding lookup.
 
   Used to compute DNN inputs and weighted sum.
   """
-  pass
+  def __new__(cls, *args, **kwargs):
+    if 'use_embedding_var' not in kwargs:
+      kwargs['use_embedding_var'] = False
+    if 'embedding_var_part_num' not in kwargs:
+      kwargs['embedding_var_part_num'] = None
+    if 'steps_to_live' not in kwargs:
+      kwargs['steps_to_live'] = None
+    if 'init_data_source' not in kwargs:
+      kwargs['init_data_source'] = None
+    if 'ht_partition_num' not in kwargs:
+      kwargs['ht_partition_num'] = 1000
+    return super(_DeepEmbeddingLookupArguments, cls).__new__(
+        cls, *args, **kwargs)
+
+  def gen_embedding_attrs(self):
+    attrs = {
+      "vocab_size" : self.vocab_size,
+      "combiner" : self.combiner,
+      "dimension" : self.dimension,
+      "shared_embedding_name" : self.shared_embedding_name,
+      "hash_key" : self.hash_key,
+      "max_norm" : self.max_norm,
+      "bucket_size" : self.bucket_size,
+      "is_embedding_var" : self.use_embedding_var,
+    }
+    return attrs
+
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -290,7 +343,8 @@ class _SparseColumn(
     fc_core._CategoricalColumn,  # pylint: disable=protected-access
     collections.namedtuple("_SparseColumn", [
         "column_name", "is_integerized", "bucket_size", "lookup_config",
-        "combiner", "dtype"
+        "combiner", "dtype", "partition_num", "steps_to_live", "init_data_source",
+        "ht_partition_num"
     ])):
   """Represents a sparse feature column also known as categorical features.
 
@@ -328,7 +382,11 @@ class _SparseColumn(
               bucket_size=None,
               lookup_config=None,
               combiner="sum",
-              dtype=dtypes.string):
+              dtype=dtypes.string,
+              partition_num=None,
+              steps_to_live=None,
+              init_data_source=None,
+              ht_partition_num=1000):
     if is_integerized and bucket_size is None:
       raise ValueError("bucket_size must be set if is_integerized is True. "
                        "column_name: {}".format(column_name))
@@ -372,7 +430,11 @@ class _SparseColumn(
         bucket_size=bucket_size,
         lookup_config=lookup_config,
         combiner=combiner,
-        dtype=dtype)
+        dtype=dtype,
+        partition_num=partition_num,
+        steps_to_live=steps_to_live,
+        init_data_source=init_data_source,
+        ht_partition_num=ht_partition_num)
 
   @property
   def name(self):
@@ -549,7 +611,11 @@ class _SparseColumnHashed(_SparseColumn):
               lookup_config=None,
               combiner="sum",
               dtype=dtypes.string,
-              hash_keys=None):
+              hash_keys=None,
+              partition_num=None,
+              steps_to_live=None,
+              init_data_source=None,
+              ht_partition_num=1000):
     if hash_keys is not None:
       if not isinstance(hash_keys, list) or not hash_keys:
         raise ValueError("hash_keys must be a non-empty list.")
@@ -565,7 +631,11 @@ class _SparseColumnHashed(_SparseColumn):
         bucket_size=bucket_size,
         lookup_config=lookup_config,
         combiner=combiner,
-        dtype=dtype)
+        dtype=dtype,
+        partition_num=partition_num,
+        steps_to_live=steps_to_live,
+        init_data_source=init_data_source,
+        ht_partition_num=ht_partition_num)
     obj.hash_keys = hash_keys
     return obj
 
@@ -636,6 +706,46 @@ def sparse_column_with_hash_bucket(column_name,
       combiner=combiner,
       dtype=dtype,
       hash_keys=hash_keys)
+
+
+class _SparseColumnEmbedding(_SparseColumn):
+  def _do_transform(self, input_tensor):
+    if self.dtype == dtypes.string:
+        max_value = np.iinfo(dtypes.int64.as_numpy_dtype).max
+        sparse_id_values = string_ops.string_to_hash_bucket_fast(
+                               input_tensor.values, max_value)
+    else:
+        sparse_id_values = input_tensor.values
+    return sparse_tensor_py.SparseTensor(input_tensor.indices, sparse_id_values,
+                                         input_tensor.dense_shape)
+  def _wide_embedding_lookup_arguments(self, input_tensor):
+    return _LinearEmbeddingLookupArguments(
+        input_tensor=self.id_tensor(input_tensor),
+        weight_tensor=self.weight_tensor(input_tensor),
+        vocab_size=self.length,
+        initializer=init_ops.zeros_initializer(),
+        combiner=self.combiner,
+        use_embedding_var=True,
+        embedding_var_part_num=self.partition_num,
+        steps_to_live=self.steps_to_live,
+        init_data_source=self.init_data_source,
+        ht_partition_num=self.ht_partition_num)
+
+
+def sparse_column_with_embedding(column_name,
+                                 dtype=dtypes.string,
+                                 partition_num=None,
+                                 steps_to_live=None,
+                                 init_data_source=None,
+                                 ht_partition_num=1000):
+  """parameter bucket_size is unused, just for inherit from _SparseColumn"""
+  return _SparseColumnEmbedding(column_name,
+                                bucket_size=1,
+                                dtype=dtype,
+                                partition_num=partition_num,
+                                steps_to_live=steps_to_live,
+                                init_data_source=init_data_source,
+                                ht_partition_num=ht_partition_num)
 
 
 class _SparseColumnKeys(_SparseColumn):
@@ -1131,6 +1241,16 @@ class _EmbeddingColumn(
     columns_to_tensors[self] = columns_to_tensors[self.sparse_id_column]
 
   def _deep_embedding_lookup_arguments(self, input_tensor):
+    if isinstance(self.sparse_id_column, _SparseColumnEmbedding):
+      p = self.sparse_id_column.partition_num
+      steps_to_live = self.sparse_id_column.steps_to_live
+      init_data_source = self.sparse_id_column.init_data_source
+      ht_partition_num = self.sparse_id_column.ht_partition_num
+    else:
+      p = None
+      steps_to_live = None
+      init_data_source = None
+      ht_partition_num = None
     return _DeepEmbeddingLookupArguments(
         input_tensor=self.sparse_id_column.id_tensor(input_tensor),
         weight_tensor=self.sparse_id_column.weight_tensor(input_tensor),
@@ -1141,7 +1261,12 @@ class _EmbeddingColumn(
         shared_embedding_name=self.shared_embedding_name,
         hash_key=None,
         max_norm=self.max_norm,
-        trainable=self.trainable)
+        trainable=self.trainable,
+        use_embedding_var=isinstance(self.sparse_id_column, _SparseColumnEmbedding),
+        embedding_var_part_num=p,
+        steps_to_live=steps_to_live,
+        init_data_source=init_data_source,
+        ht_partition_num=ht_partition_num)
 
   def _checkpoint_path(self):
     if self.ckpt_to_load_from is not None:
@@ -1222,6 +1347,13 @@ def _embeddings_from_arguments(column,
         combiner=args.combiner,
         name="lookup")
 
+  graph = ops.get_default_graph()
+  partition_num = args.embedding_var_part_num
+  if partition_num is None:
+    partitioner = None
+  else:
+    partitioner = partitioned_variables.fixed_size_partitioner(partition_num)
+
   if args.shared_embedding_name is not None:
     shared_embedding_collection_name = ("SHARED_EMBEDDING_COLLECTION_" +
                                         args.shared_embedding_name.upper())
@@ -1236,7 +1368,8 @@ def _embeddings_from_arguments(column,
                          shared_embedding_collection_name)
       else:
         embeddings = shared_embedding_collection[0]
-        if embeddings.get_shape() != shape:
+        if (not args.use_embedding_var
+            and embeddings.get_shape() != shape):
           raise ValueError("The embedding variable with name {} already "
                            "exists, but its shape does not match required "
                            "embedding shape here. Please make sure to use "
@@ -1244,22 +1377,50 @@ def _embeddings_from_arguments(column,
                            "shared embeddings.".format(
                                args.shared_embedding_name))
     else:
+      if args.use_embedding_var:
+        embeddings = variable_scope.get_embedding_variable(
+            name=args.shared_embedding_name,
+            embedding_dim=args.dimension,
+            key_dtype=dtypes.int64,
+            initializer=args.initializer,
+            trainable=(trainable and args.trainable),
+            collections=weight_collections,
+            partitioner=partitioner,
+            steps_to_live=args.steps_to_live,
+            init_data_source=args.init_data_source,
+            ht_partition_num=args.ht_partition_num)
+        graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, embeddings)
+      else:
+        embeddings = contrib_variables.model_variable(
+            name=args.shared_embedding_name,
+            shape=shape,
+            dtype=dtypes.float32,
+            initializer=args.initializer,
+            trainable=(trainable and args.trainable),
+            collections=weight_collections)
+      graph.add_to_collection(shared_embedding_collection_name, embeddings)
+  else:
+    if args.use_embedding_var:
+      embeddings = variable_scope.get_embedding_variable(
+          name="weights",
+          embedding_dim=args.dimension,
+          key_dtype=dtypes.int64,
+          initializer=args.initializer,
+          trainable=(trainable and args.trainable),
+          collections=weight_collections,
+          partitioner=partitioner,
+          steps_to_live=args.steps_to_live,
+          init_data_source=args.init_data_source,
+          ht_partition_num=args.ht_partition_num)
+      graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, embeddings)
+    else:
       embeddings = contrib_variables.model_variable(
-          name=args.shared_embedding_name,
-          shape=shape,
+          name="weights",
+          shape=[args.vocab_size, args.dimension],
           dtype=dtypes.float32,
           initializer=args.initializer,
           trainable=(trainable and args.trainable),
           collections=weight_collections)
-      graph.add_to_collection(shared_embedding_collection_name, embeddings)
-  else:
-    embeddings = contrib_variables.model_variable(
-        name="weights",
-        shape=[args.vocab_size, args.dimension],
-        dtype=dtypes.float32,
-        initializer=args.initializer,
-        trainable=(trainable and args.trainable),
-        collections=weight_collections)
 
   if _is_variable(embeddings):
     embeddings = [embeddings]
@@ -1539,7 +1700,8 @@ class _ScatteredEmbeddingColumn(
         shared_embedding_name=None,
         hash_key=self.hash_key,
         max_norm=None,
-        trainable=True)
+        trainable=True,
+        use_embedding_var=False)
 
   @property
   def _variable_shape(self):

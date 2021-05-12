@@ -500,6 +500,80 @@ Status BundleWriter::AddSlice(StringPiece full_tensor_key,
   return status_;
 }
 
+Status BundleWriter::AddTensorHeader(StringPiece key, DataType dtype) {
+  if (!status_.ok()) return status_;
+  CHECK_NE(key, kHeaderEntryKey);
+  const string key_string(key);
+  if (entries_.find(key_string) != entries_.end()) {
+    status_ = errors::InvalidArgument("Adding duplicate key: ", key);
+    return status_;
+  }
+
+  entry_seg_ = &entries_[key_string];
+  entry_seg_->set_dtype(dtype);
+  entry_seg_->set_shard_id(0);
+  entry_seg_->set_offset(size_);
+
+  out_->clear_crc32c();
+  return status_;
+}
+
+
+Status BundleWriter::AddTensorHeader(StringPiece key, DataType dtype, TensorShape shape) {
+  if (!status_.ok()) return status_;
+  CHECK_NE(key, kHeaderEntryKey);
+  const string key_string(key);
+  if (entries_.find(key_string) != entries_.end()) {
+    status_ = errors::InvalidArgument("Adding duplicate key: ", key);
+    return status_;
+  }
+
+  entry_seg_ = &entries_[key_string];
+  entry_seg_->set_dtype(dtype);
+  shape.AsProto(entry_seg_->mutable_shape());
+  entry_seg_->set_shard_id(0);
+  entry_seg_->set_offset(size_);
+
+  out_->clear_crc32c();
+  return status_;
+}
+
+// use if tensor is less or equal than buffer_size, just dump once
+Status BundleWriter::AddCompeleteData(char* content, int64 data_bytes_written) {
+   uint32 crc32c = 0;
+
+   status_ = out_->Append(StringPiece(content, data_bytes_written));
+   if (!status_.ok())
+     return status_;
+
+   crc32c = out_->crc32c();
+
+   if (status_.ok()) {
+     entry_seg_->set_size(data_bytes_written);
+     entry_seg_->set_crc32c(crc32c::Mask(crc32c));
+     size_ += data_bytes_written;
+   }
+   return status_;
+}
+
+void BundleWriter::FillTensorShape(TensorShape shape) {
+  shape.AsProto(entry_seg_->mutable_shape());
+}
+// dump mutiple times;
+Status BundleWriter::AppendSegmentData(char* content, int64 data_bytes_written) {
+  return out_->AppendSegment(StringPiece(content, data_bytes_written));
+}
+
+void BundleWriter::EndSegmentData(int64 total_bytes_written, int64 end_bytes_written) {
+
+  //out_->EndSegment(end_bytes_written);
+  uint32 crc32c = out_->crc32c();
+
+  entry_seg_->set_size(total_bytes_written);
+  entry_seg_->set_crc32c(crc32c::Mask(crc32c));
+  size_ += total_bytes_written;
+}
+
 // TODO(zongheng): on metadata write failure or !status_.ok(), consider removing
 // the orphaned data file.
 Status BundleWriter::Finish() {
@@ -914,6 +988,92 @@ Status BundleReader::Lookup(StringPiece key, Tensor* val) {
   }
 }
 
+Status BundleReader::LookupHeader(StringPiece tensor_key, int64 total_bytes) {
+  BundleEntryProto entry;
+  TF_RETURN_IF_ERROR(GetBundleEntryProto(tensor_key, &entry));
+  if (entry.size() != total_bytes) {
+    return errors::DataLoss("Invalid size in bundle entry: key ", key(),
+        "; stored size ", entry.size(),
+        "; expected size ", total_bytes);
+  }
+  io::InputBuffer* buffered_file = data_[entry.shard_id()];
+  if (buffered_file == nullptr) {
+    std::unique_ptr<RandomAccessFile> file = nullptr;
+    TF_RETURN_IF_ERROR(env_->NewRandomAccessFile(
+          DataFilename(prefix_, entry.shard_id(), num_shards_), &file));
+    buffered_file =
+      new io::InputBuffer(file.release(), 256 << 10 /* 256KB buffer */);
+    // The InputBuffer and RandomAccessFile objects are both released in dtor.
+    data_[entry.shard_id()] = buffered_file;
+  }
+  CHECK(buffered_file != nullptr);
+
+  TF_RETURN_IF_ERROR(buffered_file->Seek(entry.offset()));
+  if (!DataTypeCanUseMemcpy(entry.dtype())) {
+    return errors::DataLoss("segment lookup not support string");
+  }
+  LookupSegItem seg_item;
+  seg_item.entry = entry;
+  seg_item.total_size = entry.size();
+  seg_item.bytes_read = 0;
+
+  tmp_lookupseg_items_[string(tensor_key)] = seg_item;
+  return Status::OK();
+
+}
+
+Status BundleReader::LookupSegment(StringPiece key, size_t buffer_size, char* destination, size_t& real_bytes_read) {
+  LookupSegItem& seg_item = tmp_lookupseg_items_[string(key)];
+  const size_t desired_bytes = std::min(buffer_size, seg_item.total_size);
+  if (desired_bytes == 0) {
+    real_bytes_read = 0;
+    return Status::OK();
+  }
+
+  io::InputBuffer* buffered_file = data_[seg_item.entry.shard_id()];
+  StringPiece result;
+  Status status = buffered_file->file()->Read(seg_item.entry.offset() + seg_item.bytes_read, desired_bytes, &result, destination);
+
+  if (!status.ok()) {
+    return errors::InvalidArgument("Read Error! ", buffer_size, " ", seg_item.total_size, " ", seg_item.entry.offset() + seg_item.bytes_read, " ", desired_bytes, " ", status.ToString());
+  }
+  if (result.size() != desired_bytes) {
+    return errors::DataLoss("Requested ", desired_bytes, " bytes but read ",
+        result.size(), " bytes.");
+  }
+  // Data is already in the correct location.
+  seg_item.bytes_read += result.size();
+  seg_item.total_size -= result.size();
+  real_bytes_read = result.size();
+  return Status::OK();
+}
+
+Status BundleReader::LookupSegmentOffset(StringPiece key, uint64_t offset, size_t buffer_size, char* destination, size_t& real_bytes_read) {
+  LookupSegItem& seg_item = tmp_lookupseg_items_[string(key)];
+  const size_t desired_bytes = std::min(buffer_size, seg_item.total_size);
+  if (desired_bytes == 0) {
+    real_bytes_read = 0;
+    return Status::OK();
+  }
+
+  io::InputBuffer* buffered_file = data_[seg_item.entry.shard_id()];
+  StringPiece result;
+  Status status = buffered_file->file()->Read(seg_item.entry.offset() + offset, desired_bytes, &result, destination);
+
+  if (!status.ok()) {
+    return errors::InvalidArgument("Read Error! ", buffer_size, " ", seg_item.total_size, " ", seg_item.entry.offset() + seg_item.bytes_read, " ", desired_bytes, " ", status.ToString());
+  }
+  if (result.size() != desired_bytes) {
+    return errors::DataLoss("Requested ", desired_bytes, " bytes but read ",
+        result.size(), " bytes.");
+  }
+  // Data is already in the correct location.
+  seg_item.bytes_read += result.size();
+  seg_item.total_size -= result.size();
+  real_bytes_read = result.size();
+  return Status::OK();
+}
+
 Status BundleReader::ReadCurrent(Tensor* val) {
   CHECK(val != nullptr);
   BundleEntryProto entry;
@@ -1132,6 +1292,15 @@ Status FileOutputBuffer::Append(StringPiece data) {
     return Status::OK();
   }
   position_ += data.size();
+  return Status::OK();
+}
+
+Status FileOutputBuffer::AppendSegment(StringPiece data) {
+  TF_RETURN_IF_ERROR(FlushBuffer());
+  memcpy(&buffer_[0], data.data(), data.size());
+  crc32c_ = crc32c::Extend(crc32c_, &buffer_[0], data.size());
+  position_ = data.size();
+  TF_RETURN_IF_ERROR(FlushBuffer());
   return Status::OK();
 }
 

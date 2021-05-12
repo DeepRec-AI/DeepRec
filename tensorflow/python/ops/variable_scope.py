@@ -38,6 +38,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging as logging
@@ -50,7 +51,8 @@ from tensorflow.python.util.tf_export import tf_export
 __all__ = [
     "AUTO_REUSE", "VariableScope", "get_variable_scope", "get_variable",
     "get_local_variable", "variable_scope", "variable_op_scope",
-    "no_regularizer", "VariableSynchronization", "VariableAggregation"
+    "no_regularizer", "VariableSynchronization", "VariableAggregation",
+    "get_embedding_variable"
 ]
 
 _api_usage_gauge = monitoring.BoolGauge(
@@ -299,7 +301,11 @@ class _VariableStore(object):
                    custom_getter=None,
                    constraint=None,
                    synchronization=VariableSynchronization.AUTO,
-                   aggregation=VariableAggregation.NONE):
+                   aggregation=VariableAggregation.NONE,
+                   invalid_key=None,
+                   steps_to_live=None,
+                   init_data_source=None,
+                   ht_partition_num=1000):
     """Gets an existing variable with these parameters or create a new one.
 
     If a variable with the given name is already stored, we return the stored
@@ -447,7 +453,11 @@ class _VariableStore(object):
         use_resource=None,
         constraint=None,
         synchronization=VariableSynchronization.AUTO,
-        aggregation=VariableAggregation.NONE):
+        aggregation=VariableAggregation.NONE,
+        invalid_key=None,
+        steps_to_live=None,
+        init_data_source=None,
+        ht_partition_num=1000):
       is_scalar = (
           shape is not None and isinstance(shape, collections_lib.Sequence) and
           not shape)
@@ -472,7 +482,11 @@ class _VariableStore(object):
               use_resource=use_resource,
               constraint=constraint,
               synchronization=synchronization,
-              aggregation=aggregation)
+              aggregation=aggregation,
+              invalid_key=invalid_key,
+              steps_to_live=steps_to_live,
+              init_data_source=init_data_source,
+              ht_partition_num=ht_partition_num)
 
       # Special case for partitioned variable to allow reuse without having to
       # specify partitioner.
@@ -493,7 +507,11 @@ class _VariableStore(object):
             use_resource=use_resource,
             constraint=constraint,
             synchronization=synchronization,
-            aggregation=aggregation)
+            aggregation=aggregation,
+            invalid_key=invalid_key,
+            steps_to_live=steps_to_live,
+            init_data_source=init_data_source,
+            ht_partition_num=ht_partition_num)
 
       # Single variable case
       if "%s/part_0" % name in self._vars:
@@ -516,7 +534,11 @@ class _VariableStore(object):
           use_resource=use_resource,
           constraint=constraint,
           synchronization=synchronization,
-          aggregation=aggregation)
+          aggregation=aggregation,
+          invalid_key=invalid_key,
+          steps_to_live=steps_to_live,
+          init_data_source=init_data_source,
+          ht_partition_num=ht_partition_num)
 
     synchronization, aggregation, trainable = (
         variables.validate_synchronization_aggregation_trainable(
@@ -541,6 +563,10 @@ class _VariableStore(object):
           "use_resource": use_resource,
           "synchronization": synchronization,
           "aggregation": aggregation,
+          "invalid_key": invalid_key,
+          "steps_to_live": steps_to_live,
+          "init_data_source": init_data_source,
+          "ht_partition_num": ht_partition_num,
       }
       # `fn_args` and `has_kwargs` can handle functions, `functools.partial`,
       # `lambda`.
@@ -564,7 +590,11 @@ class _VariableStore(object):
           use_resource=use_resource,
           constraint=constraint,
           synchronization=synchronization,
-          aggregation=aggregation)
+          aggregation=aggregation,
+          invalid_key=invalid_key,
+          steps_to_live=steps_to_live,
+          init_data_source=init_data_source,
+          ht_partition_num=ht_partition_num)
 
   def _get_partitioned_variable(self,
                                 name,
@@ -581,7 +611,11 @@ class _VariableStore(object):
                                 use_resource=None,
                                 constraint=None,
                                 synchronization=VariableSynchronization.AUTO,
-                                aggregation=VariableAggregation.NONE):
+                                aggregation=VariableAggregation.NONE,
+                                invalid_key=None,
+                                steps_to_live=None,
+                                init_data_source=None,
+                                ht_partition_num=1000):
     """Gets or creates a sharded variable list with these parameters.
 
     The `partitioner` must be a callable that accepts a fully defined
@@ -676,6 +710,12 @@ class _VariableStore(object):
     shape = tensor_shape.as_shape(shape)
     if initializing_from_value:
       shape = shape.merge_with(initializer.get_shape())
+    if invalid_key is not None:
+      # EmbedingVariable: extend shape to reuse Variable partition process
+      # first demension is unused
+      shape_t = tensor_shape.as_shape([sys.maxsize]).concatenate(shape)
+      fd_partition_num = partitioner(shape=shape_t, dtype=dtype)[0]
+      shape = tensor_shape.as_shape([fd_partition_num]).concatenate(shape)
 
     partitions = None
     if not reuse or partitioner:
@@ -756,6 +796,8 @@ class _VariableStore(object):
           init = ops.convert_to_tensor(initializer, dtype=dtype)
           init = array_ops.slice(init, var_offset, var_shape)
           init_shape = None
+      if invalid_key is not None:
+          init_shape = shape.as_list()[1:]
 
       with ops.name_scope(None):
         var = self._get_single_variable(
@@ -773,7 +815,11 @@ class _VariableStore(object):
             use_resource=use_resource,
             constraint=constraint,
             synchronization=synchronization,
-            aggregation=aggregation)
+            aggregation=aggregation,
+            invalid_key=invalid_key,
+            steps_to_live=steps_to_live,
+            init_data_source=init_data_source,
+            ht_partition_num=ht_partition_num)
 
       # pylint: disable=protected-access
       var._set_save_slice_info(
@@ -807,7 +853,11 @@ class _VariableStore(object):
                            use_resource=None,
                            constraint=None,
                            synchronization=VariableSynchronization.AUTO,
-                           aggregation=VariableAggregation.NONE):
+                           aggregation=VariableAggregation.NONE,
+                           invalid_key=None,
+                           steps_to_live=None,
+                           init_data_source=None,
+                           ht_partition_num=1000):
     """Get or create a single Variable (e.g.
 
     a shard or entire variable).
@@ -930,7 +980,12 @@ class _VariableStore(object):
         constraint=constraint,
         use_resource=use_resource,
         synchronization=synchronization,
-        aggregation=aggregation)
+        aggregation=aggregation,
+        invalid_key=invalid_key,
+        steps_to_live=steps_to_live,
+        init_data_source=init_data_source,
+        embedding_initializer=initializer,
+        ht_partition_num=ht_partition_num)
     if context.executing_eagerly() and self._store_eager_variables:
       if collections:
         ops.add_to_collections(collections, v)
@@ -1241,6 +1296,74 @@ class VariableScope(object):
           constraint=constraint,
           synchronization=synchronization,
           aggregation=aggregation)
+
+  def get_embedding_variable(self,
+                             var_store,
+                             name,
+                             shape=None,
+                             dtype=None,
+                             initializer=None,
+                             regularizer=None,
+                             reuse=None,
+                             trainable=True,
+                             collections=None,
+                             caching_device=None,
+                             partitioner=None,
+                             validate_shape=True,
+                             use_resource=None,
+                             custom_getter=None,
+                             constraint=None,
+                             invalid_key=None,
+                             steps_to_live=None,
+                             init_data_source=None,
+                             ht_partition_num=1000):
+    """Gets an existing variable with this name or create a new one."""
+    if regularizer is None:
+      regularizer = self._regularizer
+    if caching_device is None:
+      caching_device = self._caching_device
+    if partitioner is None:
+      partitioner = self._partitioner
+    if custom_getter is None:
+      custom_getter = self._custom_getter
+    if not context.executing_eagerly():
+      if reuse is None:
+        reuse = self._reuse
+      if use_resource is None:
+        use_resource = self._use_resource
+    else:
+      reuse = AUTO_REUSE
+      use_resource = True
+
+    full_name = self.name + "/" + name if self.name else name
+    # Variable names only depend on variable_scope (full_name here),
+    # not name_scope, so we reset it below for the time of variable creation.
+    with ops.name_scope(None):
+      # Check that `initializer` dtype and `dtype` are consistent before
+      # replacing them with defaults.
+      if (dtype is not None and initializer is not None and
+          not callable(initializer)):
+        init_dtype = ops.convert_to_tensor(initializer).dtype.base_dtype
+        if init_dtype != dtype:
+          raise ValueError("Initializer type '%s' and explicit dtype '%s' "
+                           "don't match." % (init_dtype, dtype))
+      if initializer is None:
+        initializer = self._initializer
+      if constraint is None:
+        constraint = self._constraint
+      if dtype is None:
+        dtype = self._dtype
+      if invalid_key is None:
+        invalid_key = -1
+      return var_store.get_variable(
+          full_name, shape=shape, dtype=dtype, initializer=initializer,
+          regularizer=regularizer, reuse=reuse, trainable=trainable,
+          collections=collections, caching_device=caching_device,
+          partitioner=partitioner, validate_shape=validate_shape,
+          use_resource=use_resource, custom_getter=custom_getter,
+          constraint=constraint, invalid_key=invalid_key,
+          steps_to_live=steps_to_live, init_data_source=init_data_source,
+          ht_partition_num=ht_partition_num)
 
   def _get_partitioned_variable(self,
                                 var_store,
@@ -1653,6 +1776,41 @@ get_local_variable.__doc__ = get_variable_or_local_docstring % (
     "added to the `LOCAL_VARIABLES` collection and `trainable` is set to\n"
     "`False`.\n", "", "GraphKeys.LOCAL_VARIABLES")
 
+
+@tf_export(v1=["get_embedding_variable"])
+def get_embedding_variable(name,
+                           embedding_dim,
+                           key_dtype=dtypes.int64,
+                           value_dtype=None,
+                           initializer=None,
+                           regularizer=None,
+                           trainable=True,
+                           collections=None,
+                           caching_device=None,
+                           partitioner=None,
+                           validate_shape=True,
+                           custom_getter=None,
+                           constraint=None,
+                           steps_to_live=None,
+                           init_data_source=None,
+                           ht_partition_num=1000):
+  if key_dtype == dtypes.int64:
+    invalid_key = -1
+  elif key_dtype == dtypes.string:
+    invalid_key = ""
+  else:
+    raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
+  if initializer is None:
+    initializer = init_ops.truncated_normal_initializer()
+  return get_variable_scope().get_embedding_variable(
+      _get_default_variable_store(), name, shape=embedding_dim, dtype=value_dtype,
+      initializer=initializer, regularizer=regularizer, trainable=trainable,
+      collections=collections, caching_device=caching_device,
+      partitioner=partitioner, validate_shape=validate_shape,
+      use_resource=True, custom_getter=custom_getter,
+      constraint=constraint, invalid_key=invalid_key,
+      steps_to_live=steps_to_live, init_data_source=init_data_source,
+      ht_partition_num=ht_partition_num)
 
 def _get_partitioned_variable(name,
                               shape=None,
@@ -2478,13 +2636,18 @@ def default_variable_creator(next_creator=None, **kwargs):
   synchronization = kwargs.get("synchronization", None)
   aggregation = kwargs.get("aggregation", None)
   shape = kwargs.get("shape", None)
+  invalid_key = kwargs.get("invalid_key", None)
+  steps_to_live = kwargs.get("steps_to_live", None)
+  init_data_source = kwargs.get("init_data_source", None)
+  initializer = kwargs.get("embedding_initializer", None)
+  ht_partition_num = kwargs.get("ht_partition_num", None)
 
   if use_resource is None:
     use_resource = get_variable_scope().use_resource
   if use_resource is None:
     use_resource = _DEFAULT_USE_RESOURCE
   use_resource = use_resource or context.executing_eagerly()
-  if use_resource:
+  if use_resource and invalid_key is None:
     distribute_strategy = kwargs.get("distribute_strategy", None)
     return resource_variable_ops.ResourceVariable(
         initial_value=initial_value,
@@ -2501,6 +2664,18 @@ def default_variable_creator(next_creator=None, **kwargs):
         synchronization=synchronization,
         aggregation=aggregation,
         shape=shape)
+  elif use_resource and invalid_key is not None:
+    ev = kv_variable_ops.EmbeddingVariable(
+          initial_value=initial_value, trainable=trainable,
+          collections=collections, validate_shape=validate_shape,
+          caching_device=caching_device, name=name, dtype=dtype,
+          constraint=constraint, variable_def=variable_def,
+          import_scope=import_scope, invalid_key=invalid_key,
+          steps_to_live=steps_to_live, init_data_source=init_data_source,
+          initializer=initializer, ht_partition_num=ht_partition_num)
+    if init_data_source is not None:
+      ev._set_init_data_source_initializer(init_data_source)
+    return ev
   else:
     return variables.RefVariable(
         initial_value=initial_value,

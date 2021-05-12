@@ -120,6 +120,12 @@ class BundleWriter {
   // Across calls "key" must be unique but can be added in any order.
   Status Add(StringPiece key, const Tensor& val);
 
+  Status AddTensorHeader(StringPiece key, DataType dtype, TensorShape shape);
+  Status AddTensorHeader(StringPiece key, DataType dtype);
+  void FillTensorShape(TensorShape shape);
+  Status AddCompeleteData(char* content, int64 data_bytes_written);
+  Status AppendSegmentData(char* content, int64 data_bytes_written);
+  void EndSegmentData(int64 total_bytes_written, int64 end_bytes_written);
   // Partitioned variables support.
   // A slice of a full tensor is stored in two entries in the metadata table:
   //
@@ -155,6 +161,7 @@ class BundleWriter {
   int64 size_;  // Number of bytes written into out_.
   std::map<string, BundleEntryProto> entries_;
   Status status_;
+  BundleEntryProto* entry_seg_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(BundleWriter);
 };
@@ -218,6 +225,10 @@ class BundleReader {
   // REQUIRES: status().ok()
   Status Lookup(StringPiece key, Tensor* val) TF_MUST_USE_RESULT;
 
+  Status LookupHeader(StringPiece key, int64 total_bytes);
+  Status LookupSegment(StringPiece key, size_t buffer_size, char* destination, size_t& real_bytes_read);
+  Status LookupSegmentOffset(StringPiece key, uint64_t offset, size_t buffer_size, char* destination, size_t& real_bytes_read);
+
   // Looks up the tensor pointed to by the internal iterator.
   //
   // On error, "val" may contain nonsense data.
@@ -262,6 +273,12 @@ class BundleReader {
 
   string DebugString();
 
+  struct LookupSegItem{
+    BundleEntryProto entry;
+    size_t total_size;
+    size_t bytes_read;
+  };
+
  private:
   // Seeks for "key" and reads the metadata proto.
   // On non-OK return, clears "entry" for the caller.
@@ -296,6 +313,8 @@ class BundleReader {
   // TensorSliceSet).  Populated on-demand.
   std::unordered_map<string, checkpoint::TensorSliceSet*> tensor_slices_;
 
+  std::map<std::string, LookupSegItem> tmp_lookupseg_items_;
+
   // Expected number of data file shards in the bundle.  Extracted by reading
   // the header entry in the metadata table.
   int num_shards_;
@@ -324,6 +343,7 @@ class FileOutputBuffer {
   // Buffered append.
   Status Append(StringPiece data);
 
+  Status AppendSegment(StringPiece data);
   // Returns the running crc32c checksum of all currently appended bytes.
   uint32 crc32c() { return crc32c_; }
   // Clears the running crc32c checksum.

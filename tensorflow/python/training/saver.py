@@ -37,13 +37,16 @@ from tensorflow.python.client import session
 from tensorflow.python.eager import context
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import device as pydev
+from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import meta_graph
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_io_ops
+from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.ops import io_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import string_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import gfile
@@ -79,6 +82,7 @@ class BaseSaverBuilder(object):
   # Aliases for code which was moved but still has lots of users.
   VariableSaveable = saveable_object_util.ReferenceVariableSaveable
   ResourceVariableSaveable = saveable_object_util.ResourceVariableSaveable
+  EmbeddingVariableSaveable = saveable_object_util.EmbeddingVariableSaveable
 
   def __init__(self, write_version=saver_pb2.SaverDef.V2):
     self._write_version = write_version
@@ -104,7 +108,22 @@ class BaseSaverBuilder(object):
     tensor_names = []
     tensors = []
     tensor_slices = []
+    resource_handles = []
+    has_ev = False
     for saveable in saveables:
+      if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
+        tensors.append(training_util.get_or_create_global_step())
+        tensor_names.append("global_step")
+        tensor_slices.append("")
+        has_ev = True
+        break
+
+    for saveable in saveables:
+      if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
+        tensor_names.append(saveable.name)
+        tensors.append(saveable.handle_op)
+        tensor_slices.append("")
+        continue
       for spec in saveable.specs:
         tensor_names.append(spec.name)
         tensors.append(spec.tensor)
@@ -119,7 +138,7 @@ class BaseSaverBuilder(object):
       # "filename_tensor" is interpreted *NOT AS A FILENAME*, but as a prefix
       # of a V2 checkpoint: e.g. "/fs/train/ckpt-<step>/tmp/worker<i>-<step>".
       return io_ops.save_v2(filename_tensor, tensor_names, tensor_slices,
-                            tensors)
+                            tensors, has_ev)
     else:
       raise RuntimeError("Unexpected write_version: " + self._write_version)
 
@@ -345,8 +364,11 @@ class BaseSaverBuilder(object):
           if not shape.is_fully_defined():
             shape = array_ops.shape(v)
           shapes.append(shape)
-      saveable_tensors = all_tensors[idx:idx + len(saveable.specs)]
-      idx += len(saveable.specs)
+      if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
+        saveable_tensors = [filename_tensor]
+      else:
+        saveable_tensors = all_tensors[idx:idx + len(saveable.specs)]
+        idx += len(saveable.specs)
       assign_ops.append(saveable.restore(saveable_tensors, shapes))
 
     # Create a Noop that has control dependencies from all the updates.

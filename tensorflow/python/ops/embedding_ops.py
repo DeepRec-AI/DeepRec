@@ -29,6 +29,7 @@ from tensorflow.python.ops import clip_ops
 # Imports gradient definitions.
 from tensorflow.python.ops import data_flow_grad  # pylint: disable=unused-import
 from tensorflow.python.ops import data_flow_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import sparse_ops
@@ -214,12 +215,21 @@ def _embedding_lookup_and_transform(params,
           pindices, partitioned_result, name=name)
 
       # Determine the static element shape.
-      if transform_fn is None:
-        element_shape_s = params[0].get_shape()[1:]
-        for p in params[1:]:
-          element_shape_s = element_shape_s.merge_with(p.get_shape()[1:])
+      if isinstance(params[0], kv_variable_ops.EmbeddingVariable):
+        if transform_fn is None:
+          element_shape_s = params[0].get_shape()[:]
+          for p in params[1:]:
+            element_shape_s = element_shape_s.merge_with(p.get_shape()[:])
+        else:
+          element_shape_s = ret.get_shape()[:]
       else:
-        element_shape_s = ret.get_shape()[1:]
+        if transform_fn is None:
+          element_shape_s = params[0].get_shape()[1:]
+          for p in params[1:]:
+            element_shape_s = element_shape_s.merge_with(p.get_shape()[1:])
+        else:
+          element_shape_s = ret.get_shape()[1:]
+
 
       # Compute the dynamic element shape.
       if element_shape_s.is_fully_defined():

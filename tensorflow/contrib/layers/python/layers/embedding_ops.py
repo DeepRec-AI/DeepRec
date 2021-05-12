@@ -32,6 +32,7 @@ from tensorflow.python.ops import clip_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import embedding_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import sparse_ops
@@ -112,9 +113,10 @@ def safe_embedding_lookup_sparse(embedding_weights,
   dtype = sparse_weights.dtype if sparse_weights is not None else None
   if isinstance(embedding_weights, variables.PartitionedVariable):
     embedding_weights = list(embedding_weights)
-  embedding_weights = [
-      ops.convert_to_tensor(w, dtype=dtype) for w in embedding_weights
-  ]
+  if not isinstance(embedding_weights[0], kv_variable_ops.EmbeddingVariable):
+    embedding_weights = [
+        ops.convert_to_tensor(w, dtype=dtype) for w in embedding_weights
+    ]
 
   contrib_tensor_util.assert_same_float_dtype(embedding_weights +
                                               [sparse_weights])

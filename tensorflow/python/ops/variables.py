@@ -192,7 +192,12 @@ class VariableMetaclass(type):
                         use_resource=None,
                         synchronization=VariableSynchronization.AUTO,
                         aggregation=VariableAggregation.NONE,
-                        shape=None):
+                        shape=None,
+                        invalid_key=None,
+                        steps_to_live=None,
+                        init_data_source=None,
+                        embedding_initializer=None,
+                        ht_partition_num=1000):
     """Call on Variable class. Useful to force the signature."""
     previous_getter = lambda **kwargs: default_variable_creator(None, **kwargs)
     for _, getter in ops.get_default_graph()._variable_creator_stack:  # pylint: disable=protected-access
@@ -216,7 +221,12 @@ class VariableMetaclass(type):
         use_resource=use_resource,
         synchronization=synchronization,
         aggregation=aggregation,
-        shape=shape)
+        shape=shape,
+        invalid_key=invalid_key,
+        steps_to_live=steps_to_live,
+        init_data_source=init_data_source,
+        embedding_initializer=embedding_initializer,
+        ht_partition_num=ht_partition_num)
 
   def _variable_v2_call(cls,
                         initial_value=None,

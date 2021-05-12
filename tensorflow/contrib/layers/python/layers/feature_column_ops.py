@@ -33,6 +33,7 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import parsing_ops
+from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.platform import tf_logging as logging
@@ -287,15 +288,33 @@ def _create_embedding_lookup(column,
   variables: the created embeddings.
   predictions: the computed predictions.
   """
+  partition_num = embedding_lookup_arguments.embedding_var_part_num
+  if partition_num is None:
+    partitioner = None
+  else:
+    partitioner = partitioned_variables.fixed_size_partitioner(partition_num)
   with variable_scope.variable_scope(
       None, default_name=column.name, values=columns_to_tensors.values()):
-    variable = contrib_variables.model_variable(
-        name='weights',
-        shape=[embedding_lookup_arguments.vocab_size, num_outputs],
-        dtype=dtypes.float32,
-        initializer=embedding_lookup_arguments.initializer,
-        trainable=trainable,
-        collections=weight_collections)
+    if embedding_lookup_arguments.use_embedding_var:
+      graph = ops.get_default_graph()
+      variable = variable_scope.get_embedding_variable(
+          name="weights",
+          embedding_dim=num_outputs,
+          key_dtype=dtypes.int64,
+          initializer=embedding_lookup_arguments.initializer,
+          trainable=trainable,
+          collections=weight_collections,
+          partitioner=partitioner,
+          steps_to_live=embedding_lookup_arguments.steps_to_live)
+      graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, variable)
+    else:
+      variable = contrib_variables.model_variable(
+          name='weights',
+          shape=[embedding_lookup_arguments.vocab_size, num_outputs],
+          dtype=dtypes.float32,
+          initializer=embedding_lookup_arguments.initializer,
+          trainable=trainable,
+          collections=weight_collections)
     if fc._is_variable(variable):  # pylint: disable=protected-access
       variable = [variable]
     else:

@@ -2211,6 +2211,10 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+    name = "kv_variable_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
     name = "stateless_random_ops_gen",
     visibility = [
         "//tensorflow/python/data/experimental/ops:__pkg__",
@@ -2267,6 +2271,11 @@ tf_gen_op_wrapper_private_py(
 tf_gen_op_wrapper_private_py(
     name = "training_ops_gen",
     out = "training/gen_training_ops.py",
+)
+
+tf_gen_op_wrapper_private_py(
+    name = "training_ali_ops_gen",
+    out = "training/gen_training_ali_ops.py",
 )
 
 tf_gen_op_wrapper_private_py(
@@ -2795,6 +2804,7 @@ py_library(
         ":sparse_ops",
         ":tensor_shape",
         ":variables",
+        ":kv_variable_ops",
     ],
 )
 
@@ -3285,6 +3295,24 @@ py_library(
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:tape",
+    ],
+)
+
+py_library(
+    name = "kv_variable_ops",
+    srcs = ["ops/kv_variable_ops.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":array_ops_gen",
+        ":dtypes",
+        ":framework_ops",
+        ":resource_variable_ops_gen",
+        ":kv_variable_ops_gen",
+        ":tensor_shape",
+        ":util",
+        ":variables",
+        "//tensorflow/core:protos_all_py",
     ],
 )
 
@@ -4422,6 +4450,7 @@ py_library(
         ":state_ops",
         ":summary",
         ":training_ops_gen",
+        ":training_ali_ops_gen",
         ":training_util",
         ":util",
         ":variable_scope",
@@ -5588,6 +5617,54 @@ cuda_py_test(
 )
 
 cuda_py_test(
+    name = "adam_async_test",
+    size = "small",
+    srcs = ["training/adam_async_test.py"],
+    additional_deps = [
+        ":array_ops",
+        ":framework",
+        ":math_ops",
+        ":platform",
+        ":training",
+        ":platform_test",
+        ":client_testlib",
+        "//third_party/py/numpy",
+    ],
+)
+
+cuda_py_test(
+    name = "adagrad_decay_test",
+    size = "small",
+    srcs = ["training/adagrad_decay_test.py"],
+    additional_deps = [
+        ":array_ops",
+        ":framework",
+        ":math_ops",
+        ":platform",
+        ":training",
+        ":platform_test",
+        ":client_testlib",
+        "//third_party/py/numpy",
+    ],
+)
+
+cuda_py_test(
+    name = "adagrad_decay_v2_test",
+    size = "small",
+    srcs = ["training/adagrad_decay_v2_test.py"],
+    additional_deps = [
+        ":array_ops",
+        ":framework",
+        ":math_ops",
+        ":platform",
+        ":training",
+        ":platform_test",
+        ":client_testlib",
+        "//third_party/py/numpy",
+    ],
+)
+
+cuda_py_test(
     name = "moving_averages_test",
     size = "small",
     srcs = [
@@ -6293,6 +6370,24 @@ tf_py_test(
         "//third_party/py/numpy",
     ],
     tags = ["no_windows"],
+)
+
+py_test(
+    name = "embedding_variable_ops_test",
+    size = "small",
+    srcs = ["ops/embedding_variable_ops_test.py"],
+    srcs_version = "PY2AND3",
+    tags = ["no_windows"],
+    deps = [
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":partitioned_variables",
+        ":variable_scope",
+        ":embedding_ops",
+        ":state_ops",
+        "//tensorflow/contrib/layers:layers_py",
+        "//third_party/py/numpy",
+    ],
 )
 
 cuda_py_test(
