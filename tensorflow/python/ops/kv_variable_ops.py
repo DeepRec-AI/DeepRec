@@ -788,6 +788,41 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       return self.value()
 
 
+class DynamicEmbeddingVariable(resource_variable_ops.ResourceVariable):
+  def __init__(self, name, ev_list):
+    if not ev_list:
+      raise ValueError("ev list must not be empty")
+    self._ev_list = ev_list
+    self._head_ev = ev_list[0]
+    self._name = name
+    self._graph_element = ev_list[0]._graph_element
+    self._dtype = ev_list[0]._dtype
+  
+  def sparse_read(self, indices, blocknums, name=None):
+    evnum = len(self._ev_list)
+    embs =[]
+    for i in range(evnum):
+      evids = array_ops.boolean_mask(indices, math_ops.greater_equal(blocknums, i + 1))
+      gathered_emb = self._ev_list[i].sparse_read(evids, name=name) 
+      embs.append(gathered_emb)
+    return embs
+  def mainev(self):
+    return self._ev_list[0]
+  @property
+  def name(self):
+    """The name of the handle for this variable."""
+    return self._name
+  
+  def _get_save_slice_info(self):
+    return self._ev_list[0]._save_slice_info
+  @property
+  def shape(self):
+    """The embedding dim of this variable."""
+    return tensor_shape.TensorShape(self.mainev().shape[0] * len(self._ev_list))
+  def blocknum(self):
+    return len(self._ev_list)
+
+
 def _dense_var_to_tensor(var, dtype=None, name=None, as_ref=False):
   return var._dense_var_to_tensor(dtype=dtype, name=name, as_ref=as_ref)  # pylint: disable=protected-access
 

@@ -80,13 +80,23 @@ def _clip(params, ids, max_norm):
       axes=(list(range(ids_rank, params_rank)) if ids_static and params_static
             else math_ops.range(ids_rank, params_rank)))
 
+def _gather_fae(ids, blocknums, embs, params):
+  concat_embs=[]
+  indices = math_ops.range(0, array_ops.squeeze(array_ops.shape(ids)), 1)
+  for i in range(len(embs)):
+    indice_cnt = array_ops.expand_dims(array_ops.boolean_mask(indices, math_ops.greater_equal(blocknums, i+1)), 1)
+    #scatter_shape=tensor_shape.TensorShape([ids.get_shape()[0], params._ev_list[i].shape()[0]])
+    concat_emb=array_ops.scatter_nd(indices=indice_cnt, updates=embs[i], shape=array_ops.shape(embs[0]))
+    concat_embs.append(concat_emb)
+  return array_ops.concat(concat_embs, 1)
 
 def _embedding_lookup_and_transform(params,
                                     ids,
                                     partition_strategy="mod",
                                     name=None,
                                     max_norm=None,
-                                    transform_fn=None):
+                                    transform_fn=None,
+                                    blocknums=None):
   """Helper function for embedding_lookup and _compute_sampled_logits.
 
   This function is a generalization of embedding_lookup that optionally
@@ -131,11 +141,24 @@ def _embedding_lookup_and_transform(params,
       params = ops.convert_n_to_tensor_or_indexed_slices(params, name="params")
     ids = ops.convert_to_tensor(ids, name="ids")
     if np == 1 and (not transform_fn or ids.get_shape().ndims == 1):
-      with ops.colocate_with(params[0]):
-        result = _clip(
-            array_ops.gather(params[0], ids, name=name), ids, max_norm)
-        if transform_fn:
-          result = transform_fn(result)
+      if isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable):
+        if blocknums is None:
+          raise ValueError("blocknums must be valid for dynamic embedding variable")
+        ids_nozero = array_ops.boolean_mask(ids, math_ops.greater_equal(blocknums, 1))
+        blocknums_nozero = array_ops.boolean_mask(blocknums, math_ops.greater_equal(blocknums, 1))
+        with ops.colocate_with(params[0].mainev()):
+          embs = params[0].sparse_read(ids_nozero, blocknums_nozero)
+        embs_nozero = _gather_fae(ids_nozero, blocknums_nozero, embs, params[0])
+        indices = math_ops.range(0, array_ops.squeeze(array_ops.shape(ids)), 1)
+        indice_cnt = array_ops.expand_dims(array_ops.boolean_mask(indices, math_ops.greater_equal(blocknums, 1)), 1)
+        return array_ops.scatter_nd(indices=indice_cnt, updates=embs_nozero, shape=[array_ops.shape(ids)[0], array_ops.shape(embs_nozero)[1]])
+      else:
+        with ops.colocate_with(params[0]):
+          result = _clip(array_ops.gather(params[0], ids, name=name),
+                       ids, max_norm)
+          if transform_fn:
+            result = transform_fn(result)
+          return result
       # Make sure the final result does not have colocation contraints on the
       # params. Similar to the case np > 1 where parallel_dynamic_stitch is
       # outside the scioe of all with ops.colocate_with(params[p]).
@@ -150,6 +173,10 @@ def _embedding_lookup_and_transform(params,
       original_indices = math_ops.range(array_ops.size(flat_ids))
 
       # Create p_assignments and set new_ids depending on the strategy.
+
+      if blocknums is None and isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable):
+        raise ValueError("blocknums must be valid for dynamic embedding variable")
+ 
       if partition_strategy == "mod":
         p_assignments = flat_ids % np
         new_ids = flat_ids // np
@@ -195,27 +222,48 @@ def _embedding_lookup_and_transform(params,
       p_assignments = math_ops.cast(p_assignments, dtypes.int32)
       # Partition list of ids based on assignments into np separate lists
       gather_ids = data_flow_ops.dynamic_partition(new_ids, p_assignments, np)
+      gather_blocknums = None
+      if isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable): 
+            gather_blocknums = data_flow_ops.dynamic_partition(blocknums, p_assignments, np)
       # Similarly, partition the original indices.
       pindices = data_flow_ops.dynamic_partition(original_indices,
                                                  p_assignments, np)
       # Do np separate lookups, finding embeddings for plist[p] in params[p]
       partitioned_result = []
-      for p in xrange(np):
+      for p in range(np):
         pids = gather_ids[p]
-        with ops.colocate_with(params[p]):
-          result = array_ops.gather(params[p], pids)
-          if transform_fn:
-            # If transform_fn is provided, the clip_by_norm precedes
-            # the transform and hence must be co-located. See below
-            # for the counterpart if transform_fn is not proveded.
-            result = transform_fn(_clip(result, pids, max_norm))
-        partitioned_result.append(result)
+        if isinstance(params[p], kv_variable_ops.DynamicEmbeddingVariable):
+          pblocknums = gather_blocknums[p]
+          embs = []
+          pids_nozero = array_ops.boolean_mask(pids, math_ops.greater_equal(pblocknums , 1))
+          pblocknums_nozero = array_ops.boolean_mask(pblocknums, math_ops.greater_equal(pblocknums, 1))
+          for i in range(params[p].blocknum()):
+            with ops.colocate_with(params[p]._ev_list[i]):
+              evids = array_ops.boolean_mask(pids_nozero, math_ops.greater_equal(pblocknums_nozero, i + 1))
+              gathered_emb = params[p]._ev_list[i].sparse_read(evids, name=None)
+              embs.append(gathered_emb)
+          result_nozero = _gather_fae(pids_nozero, pblocknums_nozero, embs, params[p])
+          # suplement blocknum equal to zero
+          indices = math_ops.range(0, array_ops.squeeze(array_ops.shape(pids)), 1)
+          indice_cnt = array_ops.expand_dims(array_ops.boolean_mask(indices, math_ops.greater_equal(pblocknums, 1)), 1)
+          result = array_ops.scatter_nd(indices=indice_cnt, updates=result_nozero, shape=[array_ops.shape(pids)[0], array_ops.shape(result_nozero)[1]])
+          partitioned_result.append(result)
+        else:
+          with ops.colocate_with(params[p]):
+            result = array_ops.gather(params[p], pids)
+            if transform_fn:
+              # If transform_fn is provided, the clip_by_norm precedes
+              # the transform and hence must be co-located. See below
+              # for the counterpart if transform_fn is not proveded.
+              result = transform_fn(_clip(result, pids, max_norm))
+            partitioned_result.append(result)
       # Stitch these back together
       ret = data_flow_ops.parallel_dynamic_stitch(
           pindices, partitioned_result, name=name)
 
       # Determine the static element shape.
-      if isinstance(params[0], kv_variable_ops.EmbeddingVariable):
+      if isinstance(params[0], kv_variable_ops.EmbeddingVariable) or \
+        isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable):
         if transform_fn is None:
           element_shape_s = params[0].get_shape()[:]
           for p in params[1:]:
@@ -264,7 +312,8 @@ def embedding_lookup(
     partition_strategy="mod",
     name=None,
     validate_indices=True,  # pylint: disable=unused-argument
-    max_norm=None):
+    max_norm=None,
+    blocknums=None): # check up when adding origin_feature_tensor
   """Looks up `ids` in a list of embedding tensors.
 
   This function is used to perform parallel lookups on the list of
@@ -324,7 +373,8 @@ def embedding_lookup(
       partition_strategy=partition_strategy,
       name=name,
       max_norm=max_norm,
-      transform_fn=None)
+      transform_fn=None,
+      blocknums=blocknums)
 
 
 @tf_export("nn.embedding_lookup", v1=[])
@@ -381,7 +431,8 @@ def embedding_lookup_sparse(params,
                             partition_strategy="mod",
                             name=None,
                             combiner=None,
-                            max_norm=None):
+                            max_norm=None,
+                            blocknums=None):
   """Computes embeddings for the given ids and weights.
 
   This op assumes that there is at least one id for each row in the dense tensor
@@ -488,8 +539,16 @@ def embedding_lookup_sparse(params,
     ids = sp_ids.values
     ids, idx = array_ops.unique(ids)
 
+    uniqued_blocknums = None
+    if blocknums is not None:
+      if idx is None:
+        raise ValueError("blocknums now require unqiue index to be generagted")
+      else:
+        uniqued_blocknums = math_ops.unsorted_segment_max(blocknums, idx, array_ops.squeeze(array_ops.shape(ids), 0))
+
     embeddings = embedding_lookup(
-        params, ids, partition_strategy=partition_strategy, max_norm=max_norm)
+        params, ids, partition_strategy=partition_strategy, max_norm=max_norm,
+        blocknums=uniqued_blocknums)
     if embeddings.dtype in (dtypes.float16, dtypes.bfloat16):
       embeddings = math_ops.cast(embeddings, dtypes.float32)
     if not ignore_weights:
