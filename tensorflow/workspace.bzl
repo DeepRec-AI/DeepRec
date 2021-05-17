@@ -16,6 +16,7 @@ load("//third_party/toolchains/cpus/arm:arm_compiler_configure.bzl", "arm_compil
 load("//third_party:repo.bzl", "tf_http_archive")
 load("//third_party/clang_toolchain:cc_configure_clang.bzl", "cc_download_clang_toolchain")
 load("@io_bazel_rules_closure//closure/private:java_import_external.bzl", "java_import_external")
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "new_git_repository")
 load("@io_bazel_rules_closure//closure:defs.bzl", "filegroup_external")
 load(
     "//tensorflow/tools/def_file_filter:def_file_filter_configure.bzl",
@@ -126,16 +127,13 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         print("path_prefix was specified to tf_workspace but is no longer used " +
               "and will be removed in the future.")
 
-    tf_http_archive(
+    new_git_repository(
         name = "cudnn_frontend_archive",
         build_file = clean_dep("//third_party:cudnn_frontend.BUILD"),
-        patch_file = clean_dep("//third_party:cudnn_frontend_header_fix.patch"),
-        sha256 = "498f908ced41bbf524af6b89dc4229d5cc89311bfaaed1e3794981e858629196",
-        strip_prefix = "cudnn-frontend-360d6e7164dfb7c802493fd1c0464f0d815b852a",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/NVIDIA/cudnn-frontend/archive/360d6e7164dfb7c802493fd1c0464f0d815b852a.zip",
-            "https://github.com/NVIDIA/cudnn-frontend/archive/360d6e7164dfb7c802493fd1c0464f0d815b852a.zip"
-        ],
+        patches = [clean_dep("//third_party:cudnn_frontend_header_fix.patch")],
+        patch_args = ['-p1'],
+        commit = "e9ad21cc61f8427bbaed98045b7e4f24bad57619",
+        remote = "https://oauth2:J64G8MymaUmqNKG_N3rR@gitlab-master.nvidia.com/cudnn/cudnn_frontend.git"
     )
 
     # Important: If you are upgrading MKL-DNN, then update the version numbers
