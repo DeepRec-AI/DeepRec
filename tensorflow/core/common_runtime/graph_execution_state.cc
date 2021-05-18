@@ -51,6 +51,7 @@ limitations under the License.
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/device_name_utils.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/util.h"
 
 #ifndef IS_MOBILE_PLATFORM
@@ -643,6 +644,33 @@ Status GraphExecutionState::PipelineGraph(std::unique_ptr<Graph>* g,
   return Status::OK();
 }
 
+Status GraphExecutionState::SmartStageGraph(std::unique_ptr<Graph>* g,
+                                            const std::vector<std::string>& target_nodes) {
+    VLOG(2) << "GraphExecutionState::SmartStageGraph";
+    Graph* graph = g->get();
+    std::unique_ptr<Graph> staged_graph(new Graph(OpRegistry::Global()));
+    CopyGraph(*graph, staged_graph.get());
+    std::map<std::string, Node*> stage_node_map;
+    std::map<std::string, Node*> unstage_node_map;
+    for (Node* n : staged_graph.get()->op_nodes()) {
+      if (n->IsStage()) {
+        std::string name = n->def().attr().at("shared_name").s();
+        stage_node_map[name] = n;
+      } else if (n->IsUnstage()) {
+        std::string name = n->def().attr().at("shared_name").s();
+        unstage_node_map[name] = n;
+      }
+    }
+    std::map<std::string, Node*>::iterator it;
+    for (it = stage_node_map.begin(); it != stage_node_map.end(); ++it) {
+      if (unstage_node_map.find(it->first) != unstage_node_map.end()) {
+        StageGraph(staged_graph.get(), it->second, unstage_node_map[it->first], target_nodes);
+      }
+    }
+    g->swap(staged_graph);
+    return Status::OK();
+}
+
 Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   // Save stateful placements before placing.
   RestoreStatefulNodes(new_graph.get());
@@ -675,11 +703,22 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   }
 
   const OptimizerOptions& session_optimizer_options =
-      session_options_->config.graph_options().optimizer_options();
+    session_options_->config.graph_options().optimizer_options();
   int32 micro_batch_num = session_optimizer_options.micro_batch_num();
   if (micro_batch_num > 1) {
     VLOG(2) << "RUN Graph Optimization: Runtime Pipeline";
     PipelineGraph(&new_graph, micro_batch_num);
+  }
+
+  if (session_optimizer_options.do_smart_stage()) {
+    VLOG(2) << "RUN Graph Optimization: SmartStage";
+    std::string tn;
+    ReadStringFromEnvVar("TARGET_NDOES_NAME", "", &tn);
+    std::vector<std::string> target_nodes;
+    for (std::string s : str_util::Split(tn, ';')) {
+      target_nodes.push_back(s.substr(0, s.find_last_of(':')));
+    }
+    SmartStageGraph(&new_graph, target_nodes);
   }
 
   SaveStatefulNodes(new_graph.get());

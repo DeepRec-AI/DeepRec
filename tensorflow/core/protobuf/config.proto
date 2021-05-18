@@ -241,6 +241,7 @@ message OptimizerOptions {
   GlobalJitLevel global_jit_level = 5;
 
   int32 micro_batch_num = 9;
+  bool do_smart_stage = 10;
 }
 
 message GraphOptions {

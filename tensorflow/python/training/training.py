@@ -86,6 +86,7 @@ from tensorflow.python.training.monitored_session import ChiefSessionCreator
 from tensorflow.python.training.monitored_session import WorkerSessionCreator
 from tensorflow.python.training.monitored_session import MonitoredSession
 from tensorflow.python.training.monitored_session import SingularMonitoredSession
+from tensorflow.python.training.monitored_session import mark_target_node
 from tensorflow.python.training.saver import Saver
 from tensorflow.python.training.checkpoint_management import checkpoint_exists
 from tensorflow.python.training.checkpoint_management import generate_checkpoint_state_proto

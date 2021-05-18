@@ -416,6 +416,35 @@ def _create_monitored_session_with_worker_context(
       hooks=all_hooks,
       stop_grace_period_secs=stop_grace_period_secs)
 
+@tf_export('train.mark_target_node')
+def mark_target_node(target_nodes_or_tensors):
+  def is_valid_node(op):
+    return isinstance(op, ops.Tensor) or \
+           isinstance(op, ops.Operation) or \
+           isinstance(op, variables.Variable)
+
+  target_node=[]
+  for op in target_nodes_or_tensors:
+    if is_valid_node(op):
+      target_node.append(op.name)
+    elif isinstance(op, dict):
+      for value in op.values():
+        if is_valid_node(value):
+          target_node.append(value.name)
+        else:
+          logging.warning('%s, %s is not tensor or '
+                          'operation in dict'%(value, type(value)))
+    elif isinstance(op, list):
+      for value in op:
+        if is_valid_node(value):
+          target_node.append(value.name)
+        else:
+          logging.warning('%s, %s is not tensor or '
+                          'operation in list'%(value, type(value)))
+    else:
+      logging.warning("%s, %s is not tensor or operation"%(op, type(op)))
+  os.environ['TARGET_NDOES_NAME']=";".join(target_node)
+
 
 @tf_export(v1=['train.MonitoredTrainingSession'])
 def MonitoredTrainingSession(
@@ -433,7 +462,9 @@ def MonitoredTrainingSession(
     log_step_count_steps=100,
     max_wait_secs=7200,
     save_checkpoint_steps=USE_DEFAULT,
-    summary_dir=None):
+    summary_dir=None,
+    target_nodes_or_tensors=None):
+
   """Creates a `MonitoredSession` for training.
 
   For a chief, this utility sets proper session initializer/restorer. It also
@@ -487,6 +518,8 @@ def MonitoredTrainingSession(
       `save_checkpoint_secs` is used. Default not enabled.
     summary_dir: A string.  Optional path to a directory where to save
       summaries. If None, checkpoint_dir is used instead.
+    target_nodes_or_tensors: list of tf.Tensor or tf.Operation indicates
+      targets, which determine graph transformation of 'smart-stage'
 
   Returns:
     A `MonitoredSession` object.
@@ -507,6 +540,9 @@ def MonitoredTrainingSession(
     save_checkpoint_secs = None
   elif save_checkpoint_steps == USE_DEFAULT:
     save_checkpoint_steps = None
+
+  if target_nodes_or_tensors:
+    mark_target_node(target_nodes_or_tensors)
 
   scaffold = scaffold or Scaffold()
   worker_context = distribute_coordinator_context.get_current_worker_context()

@@ -192,6 +192,11 @@ extern void CopyGraph(const Graph& src, Graph* dest);
 extern void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
     int32 duplicated_num);
 
+extern void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
+                       const std::vector<std::string>& target_nodes);
+extern void GetStagingEdges(const Graph& dest, const EdgeSet& source_edge_set,
+                            const std::vector<std::string>& target_nodes,
+                            std::vector<const Edge*>& edge_vec);
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_GRAPH_GRAPH_CONSTRUCTOR_H_

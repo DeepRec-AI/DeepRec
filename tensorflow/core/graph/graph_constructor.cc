@@ -21,6 +21,7 @@ limitations under the License.
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <queue>
 
 #include "absl/algorithm/container.h"
 #include "absl/container/flat_hash_set.h"
@@ -1864,6 +1865,180 @@ void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
 
     if (n->IsApplySparseAdamOps()) {
       AggregateForSparseApply(dest, n, duplicated_nodes, 9, 10);
+    }
+  }
+}
+
+void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
+                const std::vector<std::string>& target_nodes) {
+  std::string s1 = stage_node->def().attr().at("shared_name").s();
+  std::string s2 = unstage_node->def().attr().at("shared_name").s();
+  CHECK(s1 == s2);
+
+  std::vector<const Edge*> out_edges;
+  for (const Edge* e : unstage_node->out_edges()) {
+    if (!e->IsControlEdge()) {
+      out_edges.push_back(e);
+    }
+  }
+
+  EdgeSet source_edge_set;
+  for (const Edge* out_edge : out_edges) {
+    const Edge* in_edge = NULL;
+    int index = out_edge->src_output();
+    Status s = stage_node->input_edge(index, &in_edge);
+    TF_CHECK_OK(s);
+    const Node* dst = out_edge->dst();
+    int dst_input = out_edge->dst_input();
+    s = dest->UpdateEdge(in_edge->src(), in_edge->src_output(), out_edge->dst(), out_edge->dst_input());
+    TF_CHECK_OK(s);
+    const Edge* e = NULL;
+    s = dst->input_edge(dst_input, &e);
+    TF_CHECK_OK(s);
+    CHECK(e != nullptr);
+    source_edge_set.insert(e);
+  }
+
+  std::vector<const Edge*> in_edges;
+  for (auto* e : stage_node->in_edges()) {
+    in_edges.push_back(e);
+  }
+
+  for (const Edge* e : in_edges) {
+    dest->RemoveEdge(e);
+  }
+
+  std::vector<const Edge*> edge_vec;
+  GetStagingEdges(*dest, source_edge_set, target_nodes, edge_vec);
+
+  std::vector<DataType> type_vec;
+  int i = 0;
+  std::map<std::string, int64> edge_map;
+  std::vector<NodeDefBuilder::NodeOut> src_list;
+  std::map<const Edge*, int64> edge_to_stage;
+  std::map<const Edge*, int64> edge_to_unstage;
+  for (const Edge* e : edge_vec) {
+    std::string name = e->src()->name() + std::to_string(e->src_output());
+    if (edge_map.find(name) == edge_map.end()) {
+      type_vec.push_back(e->src()->output_type(e->src_output()));
+      src_list.emplace_back(e->src()->name(), e->src_output(), e->src()->output_type(e->src_output()));
+      edge_to_stage[e] = i;
+      edge_map[name] = i;
+      ++i;
+    }
+    edge_to_unstage[e] = edge_map[name];
+  }
+
+  NodeDef node_def_stage;
+  TF_CHECK_OK(NodeDefBuilder(stage_node->name(), "DataBufferPut")
+    .Device(stage_node->assigned_device_name())
+    .Input(src_list)
+    .Attr("container", stage_node->def().attr().at("container"))
+    .Attr("shared_capacity", stage_node->def().attr().at("shared_capacity"))
+    .Attr("shared_name", stage_node->def().attr().at("shared_name"))
+    .Attr("timeout_millis", stage_node->def().attr().at("timeout_millis"))
+    .Finalize(&node_def_stage));
+  Status s;
+  Node* stage_xxx = dest->AddNode(node_def_stage, &s);
+  TF_CHECK_OK(s);
+  stage_xxx->set_assigned_device_name(stage_node->assigned_device_name());
+  dest->RemoveNode(stage_node);
+
+  NodeDef node_def_unstage;
+  TF_CHECK_OK(NodeDefBuilder(unstage_node->name(), "DataBufferTake")
+    .Device(unstage_node->assigned_device_name())
+    .Attr("container", unstage_node->def().attr().at("container"))
+    .Attr("dtypes", DataTypeSlice(type_vec))
+    .Attr("shared_capacity", unstage_node->def().attr().at("shared_capacity"))
+    .Attr("shared_name", unstage_node->def().attr().at("shared_name"))
+    .Attr("shared_threads", unstage_node->def().attr().at("shared_threads"))
+    .Finalize(&node_def_unstage));
+  Node* unstage_xxx = dest->AddNode(node_def_unstage, &s);
+  TF_CHECK_OK(s);
+  unstage_xxx->set_assigned_device_name(unstage_node->assigned_device_name());
+  dest->RemoveNode(unstage_node);
+
+  for (auto it = edge_to_stage.begin(); it != edge_to_stage.end(); ++it) {
+    const Edge* e = it->first;
+    dest->AddEdge(e->src(), e->src_output(), stage_xxx, it->second);
+  }
+  for (auto it = edge_to_unstage.begin(); it != edge_to_unstage.end(); ++it) {
+    const Edge* e = it->first;
+    Status s = dest->UpdateEdge(unstage_xxx, it->second, e->dst(), e->dst_input());
+    TF_CHECK_OK(s);
+  }
+}
+
+void GetStagingEdges(const Graph& dest, const EdgeSet& source_edge_set,
+                     const std::vector<std::string>& target_nodes,
+                     std::vector<const Edge*>& edge_vec) {
+  std::queue<const Node*> q;
+  for (Node* n : dest.op_nodes()) {
+    if (n->IsVariable() || n->IsKvVarHandle() || n->IsPlaceholder() ||
+        std::find(target_nodes.begin(), target_nodes.end(), n->name()) != target_nodes.end()) {
+      q.push(n);
+    }
+  }
+  std::vector<bool> is_var_relate(dest.num_nodes());
+  while (!q.empty()) {
+    const Node* node = q.front();
+    q.pop();
+    is_var_relate[node->id()] = true;
+    for (const Edge* e : node->out_edges()) {
+      if (!is_var_relate[e->dst()->id()]) {
+        q.push(e->dst());
+      }
+    }
+  }
+
+  std::map<std::string, std::set<const Edge*>> edges_map;
+  for (const Edge* e : source_edge_set) {
+    std::string name = e->src()->name() + std::to_string(e->src_output());
+    edges_map[name].insert(e);;
+  }
+
+  std::vector<std::string> has_visit_node_output;
+
+  std::queue<std::set<const Edge*>> queue;
+  for (auto iter = edges_map.begin(); iter != edges_map.end(); ++iter) {
+    queue.push(iter->second);
+    has_visit_node_output.push_back(iter->first);
+  }
+  while (!queue.empty()) {
+    auto edges = queue.front();
+    queue.pop();
+    bool stop = false;
+    for (const Edge* e : edges) {
+      if (is_var_relate[e->dst()->id()] ||
+          e->IsControlEdge() ||
+          e->dst()->IsControlFlow()) {
+        stop = true;
+      }
+    }
+    if (stop) {
+      for (const Edge* e : edges) {
+        if (!e->IsControlEdge()) {
+          if (std::find(edge_vec.begin(), edge_vec.end(), e) == edge_vec.end())
+            edge_vec.push_back(e);
+        }
+      }
+    } else {
+      for (const Edge* e : edges) {
+        const Node* node = e->dst();
+        std::map<std::string, std::set<const Edge*>> edges_map;
+        for (const Edge* e : node->out_edges()) {
+          std::string name = e->src()->name() + std::to_string(e->src_output());
+          edges_map[name].insert(e);
+        }
+        for (auto iter = edges_map.begin(); iter != edges_map.end(); ++iter) {
+          if (std::find(has_visit_node_output.begin(),
+                        has_visit_node_output.end(),
+                        iter->first) == has_visit_node_output.end()) {
+            queue.push(iter->second);
+            has_visit_node_output.push_back(iter->first);
+          }
+        }
+      }
     }
   }
 }

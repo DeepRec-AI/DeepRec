@@ -146,7 +146,6 @@ class Node {
   bool IsOp() const { return id() > 1; }
 
   // Node class helpers
-  // Node class helpers
   bool IsApplyAdagradOps() const {
     return type_string() == "ApplyAdagrad" ||
            type_string() == "ResourceApplyAdagrad";
@@ -184,7 +183,6 @@ class Node {
            type_string() == "KvResourceSparseApplyFtrlV2";
   }
   bool IsPlaceholder() const { return type_string() == "Placeholder"; }
-
   bool IsSwitch() const { return class_ == NC_SWITCH; }
   bool IsMerge() const { return class_ == NC_MERGE; }
   bool IsEnter() const { return class_ == NC_ENTER; }
@@ -197,8 +195,10 @@ class Node {
   bool IsFuseRecv() const { return class_ == NC_FUSE_RECV ||
                                    class_ == NC_HOST_FUSE_RECV; }
   bool IsConstant() const { return class_ == NC_CONSTANT; }
-  bool IsKvVarHandle() const { return class_ == NC_KV_VAR_HANDLE; }
+  bool IsStage() const { return class_ == NC_DATA_BUFFER_PUT; }
+  bool IsUnstage() const { return class_ == NC_DATA_BUFFER_TAKE; }
   bool IsVariable() const { return class_ == NC_VARIABLE; }
+  bool IsKvVarHandle() const { return class_ == NC_KV_VAR_HANDLE; }
   bool IsIdentity() const { return class_ == NC_IDENTITY; }
   bool IsGetSessionHandle() const { return class_ == NC_GET_SESSION_HANDLE; }
   bool IsGetSessionTensor() const { return class_ == NC_GET_SESSION_TENSOR; }
@@ -307,8 +307,8 @@ class Node {
     NC_FUSE_RECV,
     NC_HOST_FUSE_RECV,
     NC_CONSTANT,
-    NC_KV_VAR_HANDLE,
     NC_VARIABLE,
+    NC_KV_VAR_HANDLE,
     NC_IDENTITY,
     NC_GET_SESSION_HANDLE,
     NC_GET_SESSION_TENSOR,
@@ -324,6 +324,8 @@ class Node {
     NC_RETVAL,
     NC_STAR_RUN_GRAPH,
     NC_RUN_GRAPH,
+    NC_DATA_BUFFER_PUT,
+    NC_DATA_BUFFER_TAKE,
     NC_OTHER  // Not a special kind of node
   };
 

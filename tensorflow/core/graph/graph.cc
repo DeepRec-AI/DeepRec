@@ -76,6 +76,7 @@ const std::unordered_map<string, Node::NodeClass>& Node::kNodeClassTable =
         {"HostConst", NC_CONSTANT},
         {"Variable", NC_VARIABLE},
         {"VariableV2", NC_VARIABLE},
+        {"KvVarHandleOp", NC_KV_VAR_HANDLE},
         REF_CLASS("Identity", NC_IDENTITY),
         {"GetSessionHandle", NC_GET_SESSION_HANDLE},
         {"GetSessionHandleV2", NC_GET_SESSION_HANDLE},
@@ -106,6 +107,8 @@ const std::unordered_map<string, Node::NodeClass>& Node::kNodeClassTable =
         {"_Retval", NC_RETVAL},
         {"_DeviceRetval", NC_RETVAL},
         {"_XlaMerge", NC_MERGE},
+        {"DataBufferPut", NC_DATA_BUFFER_PUT},
+        {"DataBufferTake", NC_DATA_BUFFER_TAKE},
     });
 
 #undef REF_CLASS
