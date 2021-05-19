@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "tensorflow/core/common_runtime/collective_executor_mgr.h"
 #include "tensorflow/core/common_runtime/device_mgr.h"
+#include "tensorflow/core/common_runtime/memory_planner.h"
 #include "tensorflow/core/common_runtime/process_util.h"
 #include "tensorflow/core/common_runtime/scoped_allocator_mgr.h"
 #include "tensorflow/core/common_runtime/step_stats_collector.h"
@@ -67,6 +68,7 @@ void Worker::DeleteWorkerSessionAsync(CallOptions* opts,
 void Worker::RegisterGraphAsync(const RegisterGraphRequest* request,
                                 RegisterGraphResponse* response,
                                 StatusCallback done) {
+  MemoryPlannerFactory::GetMemoryPlanner()->SetThreadPool(env_->compute_pool);
   std::shared_ptr<WorkerSession> session;
   Status s;
   if (request->create_worker_session_called()) {
@@ -168,6 +170,7 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
     return;
   }
 
+  ScopedMemoryCollector scoped_memory_collector;
   std::shared_ptr<WorkerSession> session;
   if (request->create_worker_session_called()) {
     s = env_->session_mgr->WorkerSessionForSession(request->session_handle(),
