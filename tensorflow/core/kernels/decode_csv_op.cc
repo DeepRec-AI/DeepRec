@@ -21,8 +21,10 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/strings/numbers.h"
+#include "tensorflow/core/util/work_sharder.h"
 
 namespace tensorflow {
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 class DecodeCSVOp : public OpKernel {
  public:
@@ -81,120 +83,128 @@ class DecodeCSVOp : public OpKernel {
       OP_REQUIRES_OK(ctx, output.allocate(i, records->shape(), &out));
     }
 
-    for (int64 i = 0; i < records_size; ++i) {
-      const StringPiece record(records_t(i));
-      std::vector<string> fields;
-      ExtractFields(ctx, record, &fields);
-      OP_REQUIRES(ctx, fields.size() == out_type_.size(),
-                  errors::InvalidArgument("Expect ", out_type_.size(),
-                                          " fields but have ", fields.size(),
-                                          " in record ", i));
+    auto RunTask = [&records_t, ctx, this, &output,
+         &record_defaults] (int64 start, int64 end) {
+      for (int64 i = start; i < end; ++i) {
+        const StringPiece record(records_t(i));
+        std::vector<string> fields;
+        ExtractFields(ctx, record, &fields);
+        OP_REQUIRES(ctx, fields.size() == out_type_.size(),
+                    errors::InvalidArgument("Expect ", out_type_.size(),
+                                            " fields but have ", fields.size(),
+                                            " in record ", i));
 
-      // Check each field in the record
-      for (int f = 0; f < static_cast<int>(out_type_.size()); ++f) {
-        const DataType& dtype = out_type_[f];
-        switch (dtype) {
-          case DT_INT32: {
-            // If this field is empty or NA value, check if default is given:
-            // If yes, use default value; Otherwise report error.
-            if (fields[f].empty() || fields[f] == na_value_) {
-              OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
-                          errors::InvalidArgument(
-                              "Field ", f,
-                              " is required but missing in record ", i, "!"));
+        // Check each field in the record
+        for (int f = 0; f < static_cast<int>(out_type_.size()); ++f) {
+          const DataType& dtype = out_type_[f];
+          switch (dtype) {
+            case DT_INT32: {
+              // If this field is empty or NA value, check if default is given:
+              // If yes, use default value; Otherwise report error.
+              if (fields[f].empty() || fields[f] == na_value_) {
+                OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
+                            errors::InvalidArgument(
+                                "Field ", f,
+                                " is required but missing in record ", i, "!"));
 
-              output[f]->flat<int32>()(i) = record_defaults[f].flat<int32>()(0);
-            } else {
-              int32 value;
-              OP_REQUIRES(ctx, strings::safe_strto32(fields[f], &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid int32: ", fields[f]));
-              output[f]->flat<int32>()(i) = value;
+                output[f]->flat<int32>()(i) = record_defaults[f].flat<int32>()(0);
+              } else {
+                int32 value;
+                OP_REQUIRES(ctx, strings::safe_strto32(fields[f], &value),
+                            errors::InvalidArgument(
+                                "Field ", f, " in record ", i,
+                                " is not a valid int32: ", fields[f]));
+                output[f]->flat<int32>()(i) = value;
+              }
+              break;
             }
-            break;
-          }
-          case DT_INT64: {
-            // If this field is empty or NA value, check if default is given:
-            // If yes, use default value; Otherwise report error.
-            if (fields[f].empty() || fields[f] == na_value_) {
-              OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
-                          errors::InvalidArgument(
-                              "Field ", f,
-                              " is required but missing in record ", i, "!"));
+            case DT_INT64: {
+              // If this field is empty or NA value, check if default is given:
+              // If yes, use default value; Otherwise report error.
+              if (fields[f].empty() || fields[f] == na_value_) {
+                OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
+                            errors::InvalidArgument(
+                                "Field ", f,
+                                " is required but missing in record ", i, "!"));
 
-              output[f]->flat<int64>()(i) = record_defaults[f].flat<int64>()(0);
-            } else {
-              int64 value;
-              OP_REQUIRES(ctx, strings::safe_strto64(fields[f], &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid int64: ", fields[f]));
-              output[f]->flat<int64>()(i) = value;
+                output[f]->flat<int64>()(i) = record_defaults[f].flat<int64>()(0);
+              } else {
+                int64 value;
+                OP_REQUIRES(ctx, strings::safe_strto64(fields[f], &value),
+                            errors::InvalidArgument(
+                                "Field ", f, " in record ", i,
+                                " is not a valid int64: ", fields[f]));
+                output[f]->flat<int64>()(i) = value;
+              }
+              break;
             }
-            break;
-          }
-          case DT_FLOAT: {
-            // If this field is empty or NA value, check if default is given:
-            // If yes, use default value; Otherwise report error.
-            if (fields[f].empty() || fields[f] == na_value_) {
-              OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
-                          errors::InvalidArgument(
-                              "Field ", f,
-                              " is required but missing in record ", i, "!"));
-              output[f]->flat<float>()(i) = record_defaults[f].flat<float>()(0);
-            } else {
-              float value;
-              OP_REQUIRES(ctx, strings::safe_strtof(fields[f], &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid float: ", fields[f]));
-              output[f]->flat<float>()(i) = value;
+            case DT_FLOAT: {
+              // If this field is empty or NA value, check if default is given:
+              // If yes, use default value; Otherwise report error.
+              if (fields[f].empty() || fields[f] == na_value_) {
+                OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
+                            errors::InvalidArgument(
+                                "Field ", f,
+                                " is required but missing in record ", i, "!"));
+                output[f]->flat<float>()(i) = record_defaults[f].flat<float>()(0);
+              } else {
+                float value;
+                OP_REQUIRES(ctx, strings::safe_strtof(fields[f], &value),
+                            errors::InvalidArgument(
+                                "Field ", f, " in record ", i,
+                                " is not a valid float: ", fields[f]));
+                output[f]->flat<float>()(i) = value;
+              }
+              break;
             }
-            break;
-          }
-          case DT_DOUBLE: {
-            // If this field is empty or NA value, check if default is given:
-            // If yes, use default value; Otherwise report error.
-            if (fields[f].empty() || fields[f] == na_value_) {
-              OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
-                          errors::InvalidArgument(
-                              "Field ", f,
-                              " is required but missing in record ", i, "!"));
-              output[f]->flat<double>()(i) =
-                  record_defaults[f].flat<double>()(0);
-            } else {
-              double value;
-              OP_REQUIRES(ctx, strings::safe_strtod(fields[f], &value),
-                          errors::InvalidArgument(
-                              "Field ", f, " in record ", i,
-                              " is not a valid double: ", fields[f]));
-              output[f]->flat<double>()(i) = value;
+            case DT_DOUBLE: {
+              // If this field is empty or NA value, check if default is given:
+              // If yes, use default value; Otherwise report error.
+              if (fields[f].empty() || fields[f] == na_value_) {
+                OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
+                            errors::InvalidArgument(
+                                "Field ", f,
+                                " is required but missing in record ", i, "!"));
+                output[f]->flat<double>()(i) =
+                    record_defaults[f].flat<double>()(0);
+              } else {
+                double value;
+                OP_REQUIRES(ctx, strings::safe_strtod(fields[f], &value),
+                            errors::InvalidArgument(
+                                "Field ", f, " in record ", i,
+                                " is not a valid double: ", fields[f]));
+                output[f]->flat<double>()(i) = value;
+              }
+              break;
             }
-            break;
-          }
-          case DT_STRING: {
-            // If this field is empty or NA value, check if default is given:
-            // If yes, use default value; Otherwise report error.
-            if (fields[f].empty() || fields[f] == na_value_) {
-              OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
-                          errors::InvalidArgument(
-                              "Field ", f,
-                              " is required but missing in record ", i, "!"));
-              output[f]->flat<tstring>()(i) =
-                  record_defaults[f].flat<tstring>()(0);
-            } else {
-              output[f]->flat<tstring>()(i) = std::move(fields[f]);
+            case DT_STRING: {
+              // If this field is empty or NA value, check if default is given:
+              // If yes, use default value; Otherwise report error.
+              if (fields[f].empty() || fields[f] == na_value_) {
+                OP_REQUIRES(ctx, record_defaults[f].NumElements() == 1,
+                            errors::InvalidArgument(
+                                "Field ", f,
+                                " is required but missing in record ", i, "!"));
+                output[f]->flat<tstring>()(i) =
+                    record_defaults[f].flat<tstring>()(0);
+              } else {
+                output[f]->flat<tstring>()(i) = std::move(fields[f]);
+              }
+              break;
             }
-            break;
+            default:
+              OP_REQUIRES(ctx, false,
+                          errors::InvalidArgument("csv: data type ", dtype,
+                                                  " not supported in field ", f));
           }
-          default:
-            OP_REQUIRES(ctx, false,
-                        errors::InvalidArgument("csv: data type ", dtype,
-                                                " not supported in field ", f));
         }
       }
-    }
+    };
+
+    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
+    const int64 element_cost = 1000;
+    Shard(worker_threads->num_threads - 1, worker_threads->workers,
+        records_size, element_cost, RunTask); 
   }
 
  private:
