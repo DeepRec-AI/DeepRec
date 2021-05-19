@@ -94,6 +94,7 @@ void LogMessage::GenerateLogMessage() {
 #else
 
 void LogMessage::GenerateLogMessage() {
+  static const VlogFileMgr vlog_file;
   static EnvTime* env_time = tensorflow::EnvTime::Default();
   uint64 now_micros = env_time->NowMicros();
   time_t now_seconds = static_cast<time_t>(now_micros / 1000000);
@@ -103,9 +104,8 @@ void LogMessage::GenerateLogMessage() {
   strftime(time_buffer, time_buffer_size, "%Y-%m-%d %H:%M:%S",
            localtime(&now_seconds));
 
-  // TODO(jeff,sanjay): Replace this with something that logs through the env.
-  fprintf(stderr, "%s.%06d: %c %s:%d] %s\n", time_buffer, micros_remainder,
-          "IWEF"[severity_], fname_, line_, str().c_str());
+  fprintf(vlog_file.FilePtr(), "%s.%06d: %c %s:%d] %s\n", time_buffer,
+          micros_remainder, "IWEF"[severity_], fname_, line_, str().c_str());
 }
 #endif
 
@@ -333,6 +333,24 @@ string* CheckOpMessageBuilder::NewString() {
   *stream_ << ")";
   return new string(stream_->str());
 }
+
+VlogFileMgr::VlogFileMgr() {
+  vlog_file_name = getenv("TF_CPP_VLOG_FILENAME");
+  vlog_file_ptr =
+      vlog_file_name == nullptr ? nullptr : fopen(vlog_file_name, "w");
+
+  if (vlog_file_ptr == nullptr) {
+    vlog_file_ptr = stderr;
+  }
+}
+
+VlogFileMgr::~VlogFileMgr() {
+  if (vlog_file_ptr != stderr) {
+    fclose(vlog_file_ptr);
+  }
+}
+
+FILE* VlogFileMgr::FilePtr() const { return vlog_file_ptr; } 
 
 }  // namespace internal
 }  // namespace tensorflow
