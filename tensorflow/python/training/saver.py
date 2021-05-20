@@ -84,8 +84,30 @@ class BaseSaverBuilder(object):
   ResourceVariableSaveable = saveable_object_util.ResourceVariableSaveable
   EmbeddingVariableSaveable = saveable_object_util.EmbeddingVariableSaveable
 
-  def __init__(self, write_version=saver_pb2.SaverDef.V2):
+  def __init__(self,
+               write_version=saver_pb2.SaverDef.V2,
+               build_incr_activateop = False,
+               incremental_include_normal_var = False):
     self._write_version = write_version
+    self._build_incr_activateop = build_incr_activateop
+    # if incremental_include_normal_var set False, don't save normal-Variable in incr ckpt
+    self._incremental_include_normal_var = incremental_include_normal_var
+
+  def _GetTensorNameAndIsSparse(self, spec, saveable):
+    # if-else BRANCH   single-EV    part-EV    single-normal    part-normal
+    # save_incr_sparse     1           1             2              3
+    # not save_incr_sparse -           -             2              2
+
+    save_incr_sparse = saveable.op.op._is_sparse and self._incremental_include_normal_var
+    # EV
+    if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
+      return saveable.name, True
+    # normal single variable
+    if spec.slice_spec == "" or save_incr_sparse is False:
+      return spec.name, save_incr_sparse
+    # normal partitioned variable
+    else:
+      return saveable._full_name, save_incr_sparse
 
   def save_op(self, filename_tensor, saveables):
     """Create an Op to save 'saveables'.
@@ -222,8 +244,22 @@ class BaseSaverBuilder(object):
     Returns:
       A tensor with the filename used to save.
     """
-    save = self.save_op(filename_tensor, saveables)
-    return control_flow_ops.with_dependencies([save], filename_tensor)
+    if self._build_incr_activateop:
+      save = self.save_op(filename_tensor, saveables)
+      tensor_names = []
+      for saveable in saveables:
+        if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
+          tensor_names.append(saveable.name)
+        else:
+          for spec in saveable.specs:
+            tensor_names.append(self._GetTensorNameAndIsSparse(spec, saveable)[0])
+      activate_op = gen_io_ops.activate_sparse_recorder(tensor_names)
+      with ops.control_dependencies([save]):
+        save = control_flow_ops.group(activate_op)
+      return control_flow_ops.with_dependencies([save], filename_tensor)
+    else:
+      save = self.save_op(filename_tensor, saveables)
+      return control_flow_ops.with_dependencies([save], filename_tensor)
 
   def _AddShardedSaveOpsForV2(self, checkpoint_prefix, per_device):
     """Add ops to save the params per shard, for the V2 format.
@@ -513,6 +549,7 @@ class BaseSaverBuilder(object):
       # Keep the name "Const" for backwards compatibility.
       filename_tensor = array_ops.placeholder_with_default(
           filename_tensor, shape=(), name="Const")
+      self.filename_tensor = filename_tensor
 
       # Add the save ops.
       if sharded:
@@ -588,16 +625,19 @@ class BulkSaverBuilder(BaseSaverBuilder):
     del restore_sequentially
     restore_specs = []
     for saveable in saveables:
+      if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
+        continue
       for spec in saveable.specs:
         restore_specs.append((spec.name, spec.slice_spec, spec.dtype))
 
-    names, slices, dtypes = zip(*restore_specs)
-    # Load all tensors onto CPU 0 for compatibility with existing code.
-    with ops.device("cpu:0"):
-      return io_ops.restore_v2(filename_tensor, names, slices, dtypes)
+    if len(restore_specs) > 0:    
+      names, slices, dtypes = zip(*restore_specs)
+      # Load all tensors onto CPU 0 for compatibility with existing code.
+      with ops.device("cpu:0"):
+        return io_ops.restore_v2(filename_tensor, names, slices, dtypes)
 
 
-def _get_saver_or_default():
+def _get_saver_or_default(incremental_save_restore=False):
   """Returns the saver from SAVERS collection, or creates a default one.
 
   This method is used by other members of the training module, such as
@@ -618,7 +658,8 @@ def _get_saver_or_default():
           "Please indicate which one to use by passing it to the constructor."
           .format(collection_key))
     return savers[0]
-  saver = Saver(sharded=True, allow_empty=True)
+  saver = Saver(sharded=True, allow_empty=True,
+                incremental_save_restore=incremental_save_restore)
   if saver is not None:
     ops.add_to_collection(collection_key, saver)
   return saver
@@ -715,7 +756,9 @@ class Saver(object):
                write_version=saver_pb2.SaverDef.V2,
                pad_step_number=False,
                save_relative_paths=False,
-               filename=None):
+               filename=None,
+               incremental_save_restore=False,
+               incremental_include_normal_var=False):
     """Creates a `Saver`.
 
     The constructor adds ops to save and restore variables.
@@ -843,6 +886,8 @@ class Saver(object):
     self._filename = filename
     self._last_checkpoints = []
     self._checkpoints_to_be_deleted = []
+    self._incremental_save_restore = incremental_save_restore
+    self._incremental_include_normal_var = incremental_include_normal_var
     if context.executing_eagerly():
       self._next_checkpoint_time = (
           time.time() + self._keep_checkpoint_every_n_hours * 3600)
@@ -874,7 +919,8 @@ class Saver(object):
 
     if not self.saver_def or context.executing_eagerly():
       if self._builder is None:
-        self._builder = BulkSaverBuilder(self._write_version)
+        self._builder = BulkSaverBuilder(self._write_version, self._incremental_save_restore,
+                                         self._incremental_include_normal_var)
 
       if self._var_list is None:
         # pylint: disable=protected-access

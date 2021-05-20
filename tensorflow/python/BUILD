@@ -6390,6 +6390,24 @@ py_test(
     ],
 )
 
+py_test(
+    name = "incr_ckpt_test",
+    size = "small",
+    srcs = ["training/incr_ckpt_test.py"],
+    srcs_version = "PY2AND3",
+    tags = ["no_windows"],
+    deps = [
+      ":client_testlib",
+      ":framework_for_generated_wrappers",
+      ":partitioned_variables",
+      ":variable_scope",
+      ":embedding_ops",
+      ":state_ops",
+      "//tensorflow/contrib/layers:layers_py",
+      "//third_party/py/numpy",
+    ],
+)
+
 cuda_py_test(
     name = "accumulate_n_benchmark",
     size = "medium",

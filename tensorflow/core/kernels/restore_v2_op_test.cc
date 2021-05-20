@@ -177,8 +177,10 @@ class RestoreV2OpTest : public OpsTestBase {
             return static_cast<Eigen::half>(x) / Eigen::half(5);
           });
       inputs.push_back({nullptr, &input_14});
+      ResourceMgr mgr;
       OpKernelContext::Params params;
       params.device = device.get();
+      params.resource_manager = &mgr;
       params.frame_iter = FrameAndIter(0, 0);
       params.inputs = &inputs;
       params.op_kernel = op.get();

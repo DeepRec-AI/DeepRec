@@ -1308,7 +1308,8 @@ class Variable(six.with_metaclass(VariableMetaclass, trackable.Trackable)):
                  var_offset=None,
                  var_shape=None,
                  save_slice_info_def=None,
-                 import_scope=None):
+                 import_scope=None,
+                 var_full_name=None):
       """Create a `SaveSliceInfo`.
 
       Args:
@@ -1331,11 +1332,13 @@ class Variable(six.with_metaclass(VariableMetaclass, trackable.Trackable)):
         self.full_shape = [i for i in save_slice_info_def.full_shape]
         self.var_offset = [i for i in save_slice_info_def.var_offset]
         self.var_shape = [i for i in save_slice_info_def.var_shape]
+        self.var_full_name = var_full_name
       else:
         self.full_name = full_name
         self.full_shape = full_shape
         self.var_offset = var_offset
         self.var_shape = var_shape
+        self.var_full_name = var_full_name
 
     @property
     def spec(self):
@@ -1856,6 +1859,7 @@ class RefVariable(VariableV1):
           # initial_value has been converted to a Tensor with a known type.
           self._variable = state_ops.variable_op_v2(
               shape, self._initial_value.dtype.base_dtype, name=name)
+        self.op._is_sparse=False
 
         # Manually overrides the variable's shape with the initial value's.
         if validate_shape:

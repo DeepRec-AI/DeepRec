@@ -41,6 +41,7 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.platform import gfile
 from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python.training import incremental_saver
 from tensorflow.python.training import session_run_hook
 from tensorflow.python.training import training_util
 from tensorflow.python.training.session_run_hook import SessionRunArgs
@@ -520,7 +521,8 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
                saver=None,
                checkpoint_basename="model.ckpt",
                scaffold=None,
-               listeners=None):
+               listeners=None,
+               incremental_save_secs=None):
     """Initializes a `CheckpointSaverHook`.
 
     Args:
@@ -543,12 +545,17 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
       raise ValueError("You cannot provide both saver and scaffold.")
     self._saver = saver
     self._checkpoint_dir = checkpoint_dir
+    self._incremental_checkpoint_dir = os.path.join(checkpoint_dir, incremental_saver.SUB_INCR_CKPT_DIR)
     self._save_path = os.path.join(checkpoint_dir, checkpoint_basename)
+    self._incremental_save_path = os.path.join(self._incremental_checkpoint_dir, "incremental_model.ckpt")
     self._scaffold = scaffold
     self._timer = SecondOrStepTimer(
         every_secs=save_secs, every_steps=save_steps)
     self._listeners = listeners or []
     self._steps_per_run = 1
+    self._incremental_save_secs = incremental_save_secs
+    self._incremental_save = self._incremental_save_secs is not None
+    logging.info("Init incremental saver , incremental_save:%s, incremental_path:%s", str(self._incremental_save), str(self._incremental_save_path))
 
   def _set_steps_per_run(self, steps_per_run):
     self._steps_per_run = steps_per_run
@@ -579,6 +586,11 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
     # The checkpoint saved here is the state at step "global_step".
     self._save(session, global_step)
     self._timer.update_last_triggered_step(global_step)
+    self._incremental_save = self._incremental_save and self._get_incr_saver() is not None
+    logging.info("Create incremental timer, incremental_save:%s, incremental_save_secs:%s", str(self._incremental_save), str(self._incremental_save_secs))
+    if self._incremental_save:
+      self._incremental_timer = SecondOrStepTimer(every_secs=self._incremental_save_secs,
+                                                  every_steps=None)
 
   def before_run(self, run_context):  # pylint: disable=unused-argument
     return SessionRunArgs(self._global_step_tensor)
@@ -593,6 +605,15 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
         self._timer.update_last_triggered_step(global_step)
         if self._save(run_context.session, global_step):
           run_context.request_stop()
+    elif self._incremental_save:
+      if self._incremental_timer.should_trigger_for_step(stale_global_step+1):
+        global_step = run_context.session.run(self._global_step_tensor)
+        if self._incremental_timer.should_trigger_for_step(global_step):
+          self._incremental_timer.update_last_triggered_step(global_step)
+          logging.info("Start Save incremental checkpoints for %d into %s.", global_step, self._incremental_save_path)
+          self._get_incr_saver().incremental_save(run_context.session, self._incremental_save_path, global_step=global_step)
+          logging.info("Finish Save incremental checkpoints for %d into %s.", global_step, self._incremental_save_path)
+
 
   def end(self, session):
     last_step = session.run(self._global_step_tensor)
@@ -644,6 +665,12 @@ class CheckpointSaverHook(session_run_hook.SessionRunHook):
 
     self._saver = savers[0]
     return savers[0]
+
+  def _get_incr_saver(self):
+    if self._scaffold is not None:
+      return self._scaffold._incr_saver
+    else:
+      return None
 
 
 @tf_export(v1=["train.StepCounterHook"])

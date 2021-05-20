@@ -155,6 +155,7 @@ class SessionManager(object):
   def _restore_checkpoint(self,
                           master,
                           saver=None,
+                          incr_saver=None,
                           checkpoint_dir=None,
                           checkpoint_filename_with_path=None,
                           wait_for_checkpoint=False,
@@ -219,6 +220,10 @@ class SessionManager(object):
     # Loads the checkpoint.
     saver.restore(sess, ckpt.model_checkpoint_path)
     saver.recover_last_checkpoints(ckpt.all_model_checkpoint_paths)
+
+    if incr_saver is not None:
+      incr_saver.recover_incr_checkpoints(sess, checkpoint_dir)
+    # Loads the incremental checkpoint.
     return sess, True
 
   def prepare_session(self,
@@ -231,7 +236,8 @@ class SessionManager(object):
                       max_wait_secs=7200,
                       config=None,
                       init_feed_dict=None,
-                      init_fn=None):
+                      init_fn=None,
+                      incr_saver=None):
     """Creates a `Session`. Makes sure the model is ready to be used.
 
     Creates a `Session` on 'master'. If a `saver` object is passed in, and
@@ -283,6 +289,7 @@ class SessionManager(object):
     sess, is_loaded_from_checkpoint = self._restore_checkpoint(
         master,
         saver,
+        incr_saver,
         checkpoint_dir=checkpoint_dir,
         checkpoint_filename_with_path=checkpoint_filename_with_path,
         wait_for_checkpoint=wait_for_checkpoint,
@@ -348,6 +355,7 @@ class SessionManager(object):
     sess, is_loaded_from_checkpoint = self._restore_checkpoint(
         master,
         saver,
+        None,
         checkpoint_dir=checkpoint_dir,
         checkpoint_filename_with_path=checkpoint_filename_with_path,
         wait_for_checkpoint=wait_for_checkpoint,

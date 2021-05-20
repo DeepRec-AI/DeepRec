@@ -61,9 +61,10 @@ def set_cpu0(device_string):
 class ReferenceVariableSaveable(saveable_object.SaveableObject):
   """SaveableObject implementation that handles reference variables."""
 
-  def __init__(self, var, slice_spec, name):
+  def __init__(self, var, slice_spec, name, full_name=None):
     spec = saveable_object.SaveSpec(var, slice_spec, name, dtype=var.dtype)
     super(ReferenceVariableSaveable, self).__init__(var, [spec], name)
+    self._full_name = full_name
 
   def restore(self, restored_tensors, restored_shapes):
     restored_tensor = restored_tensors[0]
@@ -171,6 +172,17 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               ht_partition_num=self.ht_partition_num,
               partition_id=self.partition_id, partition_num=self.partition_num)
 
+  def incr_restore(self, restored_tensors, unused_restored_shapes):
+    # pylint: disable=protected-access
+    with ops.colocate_with(self.handle_op):
+      handle_name = ops.name_from_scope_name(self.name)
+      return gen_kv_variable_ops.kv_resource_incr_import(
+              restored_tensors[0], self.handle_op, self.name,
+              ops.convert_to_tensor(self.invalid_key, preferred_dtype=dtypes.int64),
+              variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
+              partition_id=self.partition_id, partition_num=self.partition_num)
+
+
 
 def _tensor_comes_from_variable(v):
   return isinstance(v, ops.Tensor) and v.op.type in _VARIABLE_OPS
@@ -217,7 +229,7 @@ def saveable_objects_for_op(op, name):
       if variable.op.type in ["Variable", "VariableV2",
                               "AutoReloadVariable"]:
         yield ReferenceVariableSaveable(
-            variable, variable._save_slice_info.spec, name)
+            variable, variable._save_slice_info.spec, name, variable._save_slice_info.var_full_name)
       elif isinstance(variable, kv_variable_ops.EmbeddingVariable):
         yield EmbeddingVariableSaveable(variable, name)
       else:

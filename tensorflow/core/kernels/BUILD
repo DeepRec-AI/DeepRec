@@ -3324,6 +3324,7 @@ SAVE_RESTORE_DEPS = [
     ":bounds_check_lib",
     ":save_restore_tensor",
     ":kv_variable_ops",
+    ":variable_ops",
     "//tensorflow/core:framework",
     "//tensorflow/core:lib",
     "//tensorflow/core:lib_internal",
@@ -3346,7 +3347,32 @@ tf_kernel_library(
 tf_kernel_library(
     name = "save_restore_v2_ops",
     prefix = "save_restore_v2_ops",
+    deps = SAVE_RESTORE_DEPS + [":incr_save_restore_ops"],
+)
+
+tf_kernel_library(
+    name = "incr_save_restore_ops",
+    prefix = "incr_save_restore_ops",
     deps = SAVE_RESTORE_DEPS,
+)
+
+tf_cc_test(
+    name = "incr_save_restore_ops_test",
+    size = "small",
+    srcs = ["incr_save_restore_ops_test.cc"],
+    deps = [
+        ":io",
+        ":ops_testutil",
+        ":ops_util",
+        ":incr_save_restore_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_kernel_library(

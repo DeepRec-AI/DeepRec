@@ -101,7 +101,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype):
         slice_info.full_name + "/" + real_slot_name,
         slice_info.full_shape[:],
         slice_info.var_offset[:],
-        slice_info.var_shape[:]))
+        slice_info.var_shape[:],
+        var_full_name=slice_info.var_full_name + "/" + real_slot_name))
   # pylint: enable=protected-access
   return slot
 

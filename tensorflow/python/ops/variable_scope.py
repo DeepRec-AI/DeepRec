@@ -824,7 +824,7 @@ class _VariableStore(object):
       # pylint: disable=protected-access
       var._set_save_slice_info(
           variables.Variable.SaveSliceInfo(name, shape.as_list(), var_offset,
-                                           var_shape))
+                                           var_shape, var_full_name=var_full_name))
       vs.append(var)
       # pylint: enable=protected-access
 

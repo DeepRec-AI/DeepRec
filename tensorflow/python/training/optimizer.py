@@ -36,6 +36,7 @@ from tensorflow.python.framework import smart_cond
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gradients
+from tensorflow.python.ops import gen_io_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import state_ops
@@ -661,6 +662,13 @@ class Optimizer(
             scope_name = var.op.name
           with ops.name_scope("update_" + scope_name), ops.colocate_with(var):
             update_ops.append(processor.update_op(self, grad))
+            if (not context.executing_eagerly()) and isinstance(grad, ops.IndexedSlices):
+              var.op._is_sparse = True
+              update_ops.append(gen_io_ops.record_sparse_indices(grad.indices, var_name=scope_name))
+              for slot_name in self.get_slot_names():
+                slot = self.get_slot(var, slot_name)
+                slot.op._is_sparse = True
+                update_ops.append(gen_io_ops.record_sparse_indices(grad.indices, var_name=slot.op.name))
         if global_step is None:
           apply_updates = self._finish(update_ops, sname)
         else:

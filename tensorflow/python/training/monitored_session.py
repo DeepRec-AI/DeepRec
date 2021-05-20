@@ -39,6 +39,7 @@ from tensorflow.python.summary import summary
 from tensorflow.python.training import basic_session_run_hooks
 from tensorflow.python.training import coordinator
 from tensorflow.python.training import queue_runner
+from tensorflow.python.training import incremental_saver as incr_saver
 from tensorflow.python.training import saver as training_saver
 from tensorflow.python.training import session_manager as sm
 from tensorflow.python.training import session_run_hook
@@ -113,7 +114,8 @@ class Scaffold(object):
                local_init_op=None,
                summary_op=None,
                saver=None,
-               copy_from_scaffold=None):
+               copy_from_scaffold=None,
+               incremental_save_restore=False):
     """Create a scaffold.
 
     Args:
@@ -180,6 +182,8 @@ class Scaffold(object):
     self._local_init_op = local_init_op
     self._summary_op = summary_op
     self._saver = saver
+    self._incremental_save_restore = incremental_save_restore
+    self._incr_saver = None
 
   def finalize(self):
     """Creates operations if needed and finalizes the graph."""
@@ -226,7 +230,8 @@ class Scaffold(object):
                                                  summary.merge_all)
     # pylint: disable=g-long-lambda
     if self._saver is None:
-      self._saver = training_saver._get_saver_or_default()  # pylint: disable=protected-access
+      self._saver = training_saver._get_saver_or_default(
+              incremental_save_restore=self._incremental_save_restore)  # pylint: disable=protected-access
     # pylint: enable=g-long-lambda
     if isinstance(self._saver, trackable_util.Checkpoint):
       self._saver = training_saver.Saver(
@@ -235,6 +240,7 @@ class Scaffold(object):
           sharded=True)
     else:
       self._saver.build()
+      self._incr_saver = incr_saver._get_incremental_saver(self._incremental_save_restore, self._saver)
 
     from tensorflow.contrib.structured_model.python import core
     if core.get_structured_model():
@@ -467,6 +473,7 @@ def MonitoredTrainingSession(
     max_wait_secs=7200,
     save_checkpoint_steps=USE_DEFAULT,
     summary_dir=None,
+    save_incremental_checkpoint_secs=None,
     target_nodes_or_tensors=None):
 
   """Creates a `MonitoredSession` for training.
@@ -548,7 +555,8 @@ def MonitoredTrainingSession(
   if target_nodes_or_tensors:
     mark_target_node(target_nodes_or_tensors)
 
-  scaffold = scaffold or Scaffold()
+  incremental_save_restore = True if save_incremental_checkpoint_secs else False
+  scaffold = scaffold or Scaffold(incremental_save_restore=incremental_save_restore)
   worker_context = distribute_coordinator_context.get_current_worker_context()
 
   if worker_context:
@@ -614,7 +622,8 @@ def MonitoredTrainingSession(
               checkpoint_dir,
               save_steps=save_checkpoint_steps,
               save_secs=save_checkpoint_secs,
-              scaffold=scaffold))
+              scaffold=scaffold,
+              incremental_save_secs=save_incremental_checkpoint_secs))
 
   if hooks:
     all_hooks.extend(hooks)
@@ -679,6 +688,7 @@ class ChiefSessionCreator(SessionCreator):
     return self._get_session_manager().prepare_session(
         self._master,
         saver=self._scaffold.saver,
+        incr_saver=self._scaffold._incr_saver,
         checkpoint_dir=self._checkpoint_dir,
         checkpoint_filename_with_path=self._checkpoint_filename_with_path,
         config=self._config,
