@@ -304,8 +304,7 @@ class _VariableStore(object):
                    synchronization=VariableSynchronization.AUTO,
                    aggregation=VariableAggregation.NONE,
                    invalid_key=None,
-                   steps_to_live=None,
-                   init_data_source=None,
+                   evconfig=variables.EmbeddingVariableConfig(),
                    ht_partition_num=1000):
     """Gets an existing variable with these parameters or create a new one.
 
@@ -457,8 +456,7 @@ class _VariableStore(object):
         synchronization=VariableSynchronization.AUTO,
         aggregation=VariableAggregation.NONE,
         invalid_key=None,
-        steps_to_live=None,
-        init_data_source=None,
+        evconfig=variables.EmbeddingVariableConfig(),
         ht_partition_num=1000):
       is_scalar = (
           shape is not None and isinstance(shape, collections_lib.Sequence) and
@@ -487,8 +485,7 @@ class _VariableStore(object):
               synchronization=synchronization,
               aggregation=aggregation,
               invalid_key=invalid_key,
-              steps_to_live=steps_to_live,
-              init_data_source=init_data_source,
+              evconfig=evconfig,
               ht_partition_num=ht_partition_num)
 
       # Special case for partitioned variable to allow reuse without having to
@@ -513,8 +510,7 @@ class _VariableStore(object):
             synchronization=synchronization,
             aggregation=aggregation,
             invalid_key=invalid_key,
-            steps_to_live=steps_to_live,
-            init_data_source=init_data_source,
+            evconfig=evconfig,
             ht_partition_num=ht_partition_num)
 
       # Single variable case
@@ -541,8 +537,7 @@ class _VariableStore(object):
           synchronization=synchronization,
           aggregation=aggregation,
           invalid_key=invalid_key,
-          steps_to_live=steps_to_live,
-          init_data_source=init_data_source,
+          evconfig=evconfig,
           ht_partition_num=ht_partition_num)
 
     synchronization, aggregation, trainable = (
@@ -570,8 +565,7 @@ class _VariableStore(object):
           "synchronization": synchronization,
           "aggregation": aggregation,
           "invalid_key": invalid_key,
-          "steps_to_live": steps_to_live,
-          "init_data_source": init_data_source,
+          "evconfig": evconfig,
           "ht_partition_num": ht_partition_num,
       }
       # `fn_args` and `has_kwargs` can handle functions, `functools.partial`,
@@ -599,8 +593,7 @@ class _VariableStore(object):
           synchronization=synchronization,
           aggregation=aggregation,
           invalid_key=invalid_key,
-          steps_to_live=steps_to_live,
-          init_data_source=init_data_source,
+          evconfig=evconfig,
           ht_partition_num=ht_partition_num)
 
   def _get_partitioned_variable(self,
@@ -621,8 +614,7 @@ class _VariableStore(object):
                                 synchronization=VariableSynchronization.AUTO,
                                 aggregation=VariableAggregation.NONE,
                                 invalid_key=None,
-                                steps_to_live=None,
-                                init_data_source=None,
+                                evconfig=variables.EmbeddingVariableConfig(),
                                 ht_partition_num=1000):
     """Gets or creates a sharded variable list with these parameters.
 
@@ -826,8 +818,7 @@ class _VariableStore(object):
             synchronization=synchronization,
             aggregation=aggregation,
             invalid_key=invalid_key,
-            steps_to_live=steps_to_live,
-            init_data_source=init_data_source,
+            evconfig=evconfig,
             ht_partition_num=ht_partition_num)
 
       # pylint: disable=protected-access
@@ -869,8 +860,7 @@ class _VariableStore(object):
                            synchronization=VariableSynchronization.AUTO,
                            aggregation=VariableAggregation.NONE,
                            invalid_key=None,
-                           steps_to_live=None,
-                           init_data_source=None,
+                           evconfig=variables.EmbeddingVariableConfig(),
                            ht_partition_num=1000):
     """Get or create a single Variable (e.g.
 
@@ -997,8 +987,7 @@ class _VariableStore(object):
         synchronization=synchronization,
         aggregation=aggregation,
         invalid_key=invalid_key,
-        steps_to_live=steps_to_live,
-        init_data_source=init_data_source,
+        evconfig=evconfig,
         embedding_initializer=initializer,
         ht_partition_num=ht_partition_num)
     if context.executing_eagerly() and self._store_eager_variables:
@@ -1329,8 +1318,7 @@ class VariableScope(object):
                              custom_getter=None,
                              constraint=None,
                              invalid_key=None,
-                             steps_to_live=None,
-                             init_data_source=None,
+                             evconfig=variables.EmbeddingVariableConfig(),
                              ht_partition_num=1000):
     """Gets an existing variable with this name or create a new one."""
     if regularizer is None:
@@ -1377,7 +1365,7 @@ class VariableScope(object):
           partitioner=partitioner, validate_shape=validate_shape,
           use_resource=use_resource, custom_getter=custom_getter,
           constraint=constraint, invalid_key=invalid_key,
-          steps_to_live=steps_to_live, init_data_source=init_data_source,
+          evconfig=evconfig,
           ht_partition_num=ht_partition_num)
   
   def get_dynamic_dimension_embedding_variable(self,
@@ -1398,8 +1386,7 @@ class VariableScope(object):
                              custom_getter=None,
                              constraint=None,
                              invalid_key=None,
-                             steps_to_live=None,
-                             init_data_source=None,
+                             evconfig=variables.EmbeddingVariableConfig(),
                              ht_partition_num=1000):
     """Gets an existing variable with this name or create a new one."""
     if regularizer is None:
@@ -1447,7 +1434,7 @@ class VariableScope(object):
           partitioner=partitioner, validate_shape=validate_shape,
           use_resource=use_resource, custom_getter=custom_getter,
           constraint=constraint, invalid_key=invalid_key,
-          steps_to_live=steps_to_live, init_data_source=init_data_source,
+          evconfig=evconfig,
           ht_partition_num=ht_partition_num)
 
 
@@ -1895,8 +1882,45 @@ def get_embedding_variable(name,
       partitioner=partitioner, validate_shape=validate_shape,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
-      steps_to_live=steps_to_live, init_data_source=init_data_source,
+      evconfig=variables.EmbeddingVariableConfig(
+        steps_to_live=steps_to_live, init_data_source=init_data_source),
       ht_partition_num=ht_partition_num)
+
+
+@tf_export(v1=["get_embedding_variable_v2"])
+def get_embedding_variable_v2(name,
+                           embedding_dim,
+                           key_dtype=dtypes.int64,
+                           value_dtype=None,
+                           initializer=None,
+                           regularizer=None,
+                           trainable=True,
+                           collections=None,
+                           caching_device=None,
+                           partitioner=None,
+                           validate_shape=True,
+                           custom_getter=None,
+                           constraint=None,
+                           evconfig=variables.EmbeddingVariableConfig(),
+                           ht_partition_num=1000):
+  if key_dtype == dtypes.int64:
+    invalid_key = -1
+  elif key_dtype == dtypes.string:
+    invalid_key = ""
+  else:
+    raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
+  if initializer is None:
+    initializer = init_ops.truncated_normal_initializer()
+  return get_variable_scope().get_embedding_variable(
+      _get_default_variable_store(), name, shape=embedding_dim, dtype=value_dtype,
+      initializer=initializer, regularizer=regularizer, trainable=trainable,
+      collections=collections, caching_device=caching_device,
+      partitioner=partitioner, validate_shape=validate_shape,
+      use_resource=True, custom_getter=custom_getter,
+      constraint=constraint, invalid_key=invalid_key,
+      evconfig=evconfig,
+      ht_partition_num=ht_partition_num)
+
 
 @tf_export(v1=["get_dynamic_dimension_embedding_variable"])
 def get_dynamic_dimension_embedding_variable(name,
@@ -1933,7 +1957,8 @@ def get_dynamic_dimension_embedding_variable(name,
       partitioner=partitioner, validate_shape=validate_shape,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
-      steps_to_live=steps_to_live, init_data_source=init_data_source,
+      evconfig=variables.EmbeddingVariableConfig(
+        steps_to_live=steps_to_live, init_data_source=init_data_source),
       ht_partition_num=ht_partition_num)
 
 def _get_partitioned_variable(name,
@@ -2762,8 +2787,7 @@ def default_variable_creator(next_creator=None, **kwargs):
   aggregation = kwargs.get("aggregation", None)
   shape = kwargs.get("shape", None)
   invalid_key = kwargs.get("invalid_key", None)
-  steps_to_live = kwargs.get("steps_to_live", None)
-  init_data_source = kwargs.get("init_data_source", None)
+  evconfig = kwargs.get("evconfig", None)
   initializer = kwargs.get("embedding_initializer", None)
   ht_partition_num = kwargs.get("ht_partition_num", None)
 
@@ -2790,44 +2814,55 @@ def default_variable_creator(next_creator=None, **kwargs):
         aggregation=aggregation,
         shape=shape)
   elif use_resource and invalid_key is not None:
-    if embedding_block_num[0] is None: 
+    emb_blocknum = embedding_block_num[0]
+    evconfig.ht_type='dynamic_dense_hash_map'
+    if emb_blocknum is None: 
       ev = kv_variable_ops.EmbeddingVariable(
           initial_value=initial_value, trainable=trainable,
           collections=collections, validate_shape=validate_shape,
           caching_device=caching_device, name=name, dtype=dtype,
           constraint=constraint, variable_def=variable_def,
           import_scope=import_scope, invalid_key=invalid_key,
-          steps_to_live=steps_to_live, init_data_source=init_data_source,
+          evconfig=evconfig,
           initializer=initializer, ht_partition_num=ht_partition_num)
-      if init_data_source is not None:
-        ev._set_init_data_source_initializer(init_data_source)
+      if evconfig.init_data_source is not None:
+        ev.set_init_data_source_initializer(evconfig.init_data_source)
       return ev
     else:
+      evconfig.block_num = emb_blocknum 
       evlist = []
-      block_ev = kv_variable_ops.EmbeddingVariable(
+      block_evconfig = copy.copy(evconfig)
+      block_evconfig.handle_name = name
+      block_evconfig.emb_index = 0
+      primary_ev = kv_variable_ops.EmbeddingVariable(
         initial_value=initial_value, trainable=trainable,
         collections=collections, validate_shape=validate_shape,
         caching_device=caching_device, name=name + "/block0", dtype=dtype,
         constraint=constraint, variable_def=variable_def,
         import_scope=import_scope, invalid_key=invalid_key,
-        steps_to_live=steps_to_live, init_data_source=init_data_source,
+        evconfig=block_evconfig,
         initializer=initializer, ht_partition_num=ht_partition_num)
-      if init_data_source is not None:
-        block_ev._set_init_data_source_initializer(init_data_source)
-      evlist.append(block_ev)
-      with ops.colocate_with(block_ev):
-        for i in range(embedding_block_num[0] - 1):
-          block_ev = kv_variable_ops.EmbeddingVariable(
+      if evconfig.init_data_source is not None:
+        primary_ev.set_init_data_source_initializer(evconfig.init_data_source)
+      evlist.append(primary_ev)
+      block_evconfig.primary_handle = primary_ev._handle
+      with ops.colocate_with(primary_ev):
+        block_evconfig.handle_name = primary_ev._block_handle_name
+        for i in range(emb_blocknum - 1):
+          slave_evconfig = copy.copy(block_evconfig)
+          slave_evconfig.emb_index = i + 1
+          slave_evconfig.primary_slotnum_op = primary_ev._slotnum_op
+          slave_ev = kv_variable_ops.EmbeddingVariable(
             initial_value=initial_value, trainable=trainable,
             collections=collections, validate_shape=validate_shape,
             caching_device=caching_device, name=name + "/block" + str(i + 1), dtype=dtype,
             constraint=constraint, variable_def=variable_def,
             import_scope=import_scope, invalid_key=invalid_key,
-            steps_to_live=steps_to_live, init_data_source=init_data_source,
+            evconfig=slave_evconfig,
             initializer=initializer, ht_partition_num=ht_partition_num)
-          if init_data_source is not None:
-            block_ev._set_init_data_source_initializer(init_data_source)
-          evlist.append(block_ev)
+          if evconfig.init_data_source is not None:
+            slave_ev._set_init_data_source_initializer(evconfig.init_data_source)
+          evlist.append(slave_ev)
         dyn_ev =  kv_variable_ops.DynamicEmbeddingVariable(name, evlist)
         return dyn_ev
   else:

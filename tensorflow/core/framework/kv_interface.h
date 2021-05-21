@@ -17,6 +17,9 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_KV_INTERFACE_H_
 
 #include <pthread.h>
+#include <bitset>
+#include <atomic>
+#include <memory>
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
@@ -29,6 +32,100 @@ limitations under the License.
 
 namespace tensorflow {
 
+template <class V> 
+class ValuePtr {
+ public:  
+  ValuePtr(size_t size) {
+    /* ________________________________________________________________________________
+      |           |               |           |                 |                  |
+      | number of | each bit a V* |  version  |       V*        |       V*         |
+      | embedding |   1 valid     |   int64   |actually pointer | actually pointer |...
+      |  columns  |  0 no-valid   | optional  |   by alloctor   |   by alloctor    |
+      |  (8 bits) |  (56 bits)    | ( 8 bits) |  (8 bits)       |                  |
+       --------------------------------------------------------------------------------
+     
+     */
+    // we make sure that we store at least on embedding column
+    ptr_ = (void*) malloc(sizeof(int64) * (1 + size));
+    memset(ptr_, 0, sizeof(int64) * (1 + size));
+  }
+
+  ~ValuePtr() {
+    free(ptr_);
+  }
+  
+  V* GetOrAllocate(Allocator* allocator, int64 value_len, const V* default_v, int emb_index, bool allocate_version) {
+    // fetch meta
+    unsigned long metaorig = ((unsigned long*)ptr_)[0];
+    unsigned int embnum = metaorig & 0xff;
+    std::bitset<56> metadata(metaorig >> 8);
+   
+    if (!metadata.test(emb_index)) {
+
+      while(flag_.test_and_set(std::memory_order_acquire)); 
+
+      // need to realloc
+      /*
+      if (emb_index + 1 > embnum) {
+        ptr_ = (void*)realloc(ptr_, sizeof(int64) * (1 + emb_index + 1));
+      }*/
+      embnum++ ;
+      int64 alloc_value_len = value_len;
+      if (allocate_version) {
+        alloc_value_len = value_len + (sizeof(int64) + sizeof(V) - 1) / sizeof(V);
+      }
+      V* tensor_val = TypedAllocator::Allocate<V>(allocator, alloc_value_len, AllocationAttributes());
+      memcpy(tensor_val, default_v, sizeof(V) * value_len);
+
+      ((V**)((int64*)ptr_ + 1))[emb_index]  = tensor_val;
+
+      metadata.set(emb_index);
+      // NOTE:if we use ((unsigned long*)((char*)ptr_ + 1))[0] = metadata.to_ulong();
+      // the ptr_ will be occaionally  modified from 0x7f18700912a0 to 0x700912a0
+      // must use  ((V**)ptr_ + 1 + 1)[emb_index] = tensor_val;  to avoid
+      ((unsigned long*)(ptr_))[0] = (metadata.to_ulong() << 8) | embnum;
+
+      flag_.clear(std::memory_order_release);
+      return tensor_val;
+    } else {
+      return ((V**)((int64*)ptr_ + 1))[emb_index];
+    }
+  }
+
+
+  // simple getter for V* and version
+  V* GetValue(int emb_index) {
+    unsigned long metaorig = ((unsigned long*)ptr_)[0];
+    std::bitset<56> metadata(metaorig >> 8);
+    if (metadata.test(emb_index)) {
+      return ((V**)((int64*)ptr_ + 1))[emb_index];
+    } else {
+      return nullptr;
+    }
+  }
+  	
+  void Destroy(int64 value_len, int64 value_version_len) {
+    unsigned long metaorig = ((unsigned long*)ptr_)[0];
+    unsigned int embnum = metaorig & 0xff;
+    std::bitset<56> metadata(metaorig >> 8);
+    
+    for (int i = 0; i< embnum; i++) {
+      if (metadata.test(i)) {
+        V* val = ((V**)((int64*)ptr_ + 1))[i];
+        if (i == 0) {
+          TypedAllocator::Deallocate(cpu_allocator(), val, value_version_len);
+        } else {
+          TypedAllocator::Deallocate(cpu_allocator(), val, value_len);
+        }
+      }
+    }
+  }
+
+ private:
+  void* ptr_;
+  std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+};
+
 template <class K, class V>
 class KVInterface {
  public:
@@ -37,8 +134,9 @@ class KVInterface {
   // return no-Ok if not exist
   virtual Status Lookup(K key, V** val) = 0;
   virtual Status Lookup(K key, std::string* value) { return Status::OK(); }
+   virtual ValuePtr<V>* Lookup(K key, size_t size) { return NULL; }
   // Insert KV
-  virtual Status Insert(K key, const V* val, V** exist_val) = 0;
+  virtual Status Insert(K key, const V* val, V** exist_val) { return Status::OK();}
   virtual Status Insert(K key, const V* val, size_t value_len) {
     return Status::OK();
   }
@@ -47,11 +145,17 @@ class KVInterface {
   virtual int64 Size() const = 0;
   virtual Status Shrink(int64 step_to_live, int64 gs, int64 value_and_version_len, int64 value_len) { return Status::OK();}
 
+
+  virtual int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list, 
+                            int emb_index, int primary_emb_index, int64 value_len, int64 steps_to_live) {
+    return 0;
+  }
+
   // hold all partition lock, return size after all lock hold
   virtual int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list) {return 0;}
   virtual Status ResetIterator() { return Status::OK();}
-  virtual Status HasNext() = 0;
-  virtual Status Next(K& key, V** value) = 0;
+  virtual Status HasNext() { return Status::OK();}
+  virtual Status Next(K& key, V** value)  { return Status::OK();}
 
   virtual std::string DebugString() const = 0;
 
@@ -220,6 +324,148 @@ class DenseHashMap : public KVInterface<K, V> {
   };
   dense_iterator dense_iter_;
 };
+
+
+template <class K, class V>
+class DynamicDenseHashMap : public KVInterface<K, V> {
+ public:
+  DynamicDenseHashMap(int partition_num = 1000) 
+  : partition_num_(partition_num),
+    value_ptr_map_(nullptr) {
+    value_ptr_map_ = new value_ptr_map[partition_num_];
+    for (int i = 0; i< partition_num_; i++) {
+      value_ptr_map_[i].hash_map.max_load_factor(0.8);
+      value_ptr_map_[i].hash_map.set_empty_key(-1);
+      value_ptr_map_[i].hash_map.set_deleted_key(-2); 
+    }
+  }
+  
+  ~DynamicDenseHashMap() {
+    delete []value_ptr_map_;
+  }
+
+  // Lookup ValuePtr 
+  ValuePtr<V>* Lookup(K key, size_t size) {
+    int64 l_id = std::abs(key)%partition_num_;
+    mutex_lock l(value_ptr_map_[l_id].mu);
+    auto iter = value_ptr_map_[l_id].hash_map.find(key);
+    if (iter == value_ptr_map_[l_id].hash_map.end()) {
+      // insert ValuePtr in-place
+      ValuePtr<V>* newval = new ValuePtr<V>(size);
+      value_ptr_map_[l_id].hash_map[key] = newval;
+      return newval;
+    } else {
+      return iter->second;
+    }
+  }
+
+  virtual Status Lookup(K key, V** val) {
+    return Status::OK();
+  }
+
+  // Other Method
+  int64 Size() const {
+    int64 ret = 0;
+    for (int i = 0; i< partition_num_; i++) {
+      mutex_lock l(value_ptr_map_[i].mu);
+      ret += value_ptr_map_[i].hash_map.size();
+    }
+    return ret;
+  }
+ 
+  // Remove KV
+  Status Remove(K key, int64 value_len, int64 value_and_version_len) {
+    int64 l_id = std::abs(key) % partition_num_;
+    mutex_lock l(value_ptr_map_[l_id].mu);
+    auto iter = value_ptr_map_[l_id].hash_map.find(key);
+    if (iter != value_ptr_map_[l_id].hash_map.end()) {
+      (iter->second)->Destroy(value_len, value_and_version_len);
+      delete iter->second;
+      value_ptr_map_[l_id].hash_map.erase(key);
+    }
+
+    return Status::OK();
+  }
+
+  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list, int emb_index, int primary_emb_index, int64 value_len, int64 steps_to_live) {
+    int64 tot_size = 0;
+    for (int i = 0; i< partition_num_; i++) {
+      mutex_lock l(value_ptr_map_[i].mu);
+      for (const auto it : value_ptr_map_[i].hash_map) {
+        V* val = (it.second)->GetValue(emb_index);
+        V* primary_val = (it.second)->GetValue(primary_emb_index);
+        if (val != nullptr && primary_val != nullptr) {
+          key_list->push_back(it.first);
+          value_list->push_back((it.second)->GetValue(emb_index));
+          // for version
+          if (steps_to_live != 0) {
+            int64 dump_version = *(reinterpret_cast<int64*>(primary_val + value_len));
+            version_list->push_back(dump_version);
+          } else {
+            version_list->push_back(0);
+          }
+          tot_size++;
+        }
+      }
+    }
+    return tot_size;
+  } 
+
+  Status Shrink(int64 step_to_live, int64 gs, int64 value_and_version_len, int64 value_len) {
+    for (int i = 0; i< partition_num_; i++) {
+      mutex_lock l(value_ptr_map_[i].mu);
+      std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
+      for (const auto it : value_ptr_map_[i].hash_map) {
+        ValuePtr<V>* valptr = it.second;
+        V* primary_val = valptr->GetValue(0);        
+        if (primary_val != nullptr) {
+          int64 version = *(reinterpret_cast<int64*>(primary_val + value_len));
+          VLOG(2) << "key:" << it.first << ", primary_val:" << primary_val << ", gs:" << gs << ", version:" << version 
+              <<", step_to_live:" << step_to_live << ", value_len:" << value_len;
+          if (gs - version > step_to_live) {
+            to_deleted.push_back(std::pair<K, ValuePtr<V>* >(it.first, it.second));
+            VLOG(2) << i << " shrink remove:" << version;
+          }
+        }
+      }
+      for (const auto it : to_deleted) {
+        (it.second)->Destroy(value_len, value_and_version_len);
+        delete it.second;
+        if (!value_ptr_map_[i].hash_map.erase(it.first)) {
+          LOG(ERROR) << "dense hash map erase key failed: " << it.first;
+        }
+      }
+    }
+    return Status::OK();
+  }
+
+  std::string DebugString() const {
+    LOG(INFO) << "map info size:" << Size();
+    int64 bucket_count = 0;
+    for (int i = 0; i< partition_num_; i++) {
+      mutex_lock l(value_ptr_map_[i].mu);
+      bucket_count += value_ptr_map_[i].hash_map.bucket_count();
+    }
+    LOG(INFO) << "map info bucket_count:" << bucket_count;
+    LOG(INFO) << "map info bucket_bytes:" << bucket_count *sizeof(typename google::dense_hash_map<K, V*>::value_type)/1024<< "KB";
+    LOG(INFO) << "map info load_factor:" << value_ptr_map_[0].hash_map.load_factor();
+    LOG(INFO) << "map info max_load_factor:" << value_ptr_map_[0].hash_map.max_load_factor();
+    LOG(INFO) << "map info min_load_factor:" << value_ptr_map_[0].hash_map.min_load_factor();
+
+    return "";
+  }
+
+ private:
+  const int partition_num_;
+  // new ValuePtr
+  struct value_ptr_map {
+    mutable mutex mu;
+    google::dense_hash_map<K, ValuePtr<V>* > hash_map;
+  };
+  value_ptr_map* value_ptr_map_;
+
+};
+
 
 template <class K, class V>
 class SparseHashMap : public KVInterface<K, V> {
@@ -408,9 +654,12 @@ class HashMapFactory {
   ~HashMapFactory() {}
   static KVInterface<K, V>* CreateHashMap(const std::string& ht_type,
                                           int partition_num) {
-    if ("dense_hash_map" == ht_type || ht_type.empty()) {
+    if ("dense_hash_map" == ht_type) {
       VLOG(2) << "Use dense_hash_map as EV data struct";
       return new DenseHashMap<K, V>(partition_num);
+    } else if ("dynamic_dense_hash_map" == ht_type) {
+      VLOG(2) << "Use dynamic dense_hash_map as EV data struct";
+      return new DynamicDenseHashMap<K, V>(partition_num);
     } else if ("sparse_hash_map" == ht_type) {
       return nullptr;
       // TODO

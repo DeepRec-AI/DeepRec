@@ -27,6 +27,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
 from tensorflow.python.training import training_util
+from tensorflow.python.training import slot_creator
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -79,7 +80,8 @@ class AdagradOptimizer(optimizer.Optimizer):
       else:
         init = self._init_constant_op(v, dtype)
       self._get_or_make_slot_with_initializer(v, init, v.get_shape(), dtype,
-                                              "accumulator", self._name)
+                                              "accumulator", self._name,
+                                              slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=2))
 
   def _init_constant_op(self, v, dtype):
     def init():

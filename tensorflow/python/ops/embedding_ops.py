@@ -176,8 +176,12 @@ def _embedding_lookup_and_transform(params,
 
       if blocknums is None and isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable):
         raise ValueError("blocknums must be valid for dynamic embedding variable")
- 
-      if partition_strategy == "mod":
+
+
+      if isinstance(params[0], kv_variable_ops.EmbeddingVariable):
+         new_ids = flat_ids
+         p_assignments = flat_ids % 1000 % np 
+      elif partition_strategy == "mod":
         p_assignments = flat_ids % np
         new_ids = flat_ids // np
       elif partition_strategy == "div":

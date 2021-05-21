@@ -6090,6 +6090,9 @@ class GraphKeys(object):
   # Trainable resource-style variables.
   TRAINABLE_RESOURCE_VARIABLES = "trainable_resource_variables"
 
+  EV_INIT_VAR_OPS = "ev_init_var_ops"
+  EV_INIT_SLOT_OPS = "ev_init_slot_ops"
+
   # Key to indicate various ops.
   INIT_OP = "init_op"
   LOCAL_INIT_OP = "local_init_op"

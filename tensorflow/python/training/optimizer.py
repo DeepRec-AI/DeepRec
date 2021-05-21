@@ -1173,7 +1173,7 @@ class Optimizer(
       self._slots[slot_name] = named_slots
     return named_slots
 
-  def _get_or_make_slot(self, var, val, slot_name, op_name):
+  def _get_or_make_slot(self, var, val, slot_name, op_name, slot_config=None):
     """Find or create a slot for a variable.
 
     Args:
@@ -1188,7 +1188,7 @@ class Optimizer(
     """
     named_slots = self._slot_dict(slot_name)
     if _var_key(var) not in named_slots:
-      new_slot_variable = slot_creator.create_slot(var, val, op_name)
+      new_slot_variable = slot_creator.create_slot(var, val, op_name, slot_config=slot_config)
       self._restore_slot_variable(
           slot_name=slot_name, variable=var,
           slot_variable=new_slot_variable)
@@ -1196,7 +1196,7 @@ class Optimizer(
     return named_slots[_var_key(var)]
 
   def _get_or_make_slot_with_initializer(self, var, initializer, shape, dtype,
-                                         slot_name, op_name):
+                                         slot_name, op_name, slot_config=None):
     """Find or create a slot for a variable, using an Initializer.
 
     Args:
@@ -1214,14 +1214,14 @@ class Optimizer(
     named_slots = self._slot_dict(slot_name)
     if _var_key(var) not in named_slots:
       new_slot_variable = slot_creator.create_slot_with_initializer(
-          var, initializer, shape, dtype, op_name)
+          var, initializer, shape, dtype, op_name, slot_config=slot_config)
       self._restore_slot_variable(
           slot_name=slot_name, variable=var,
           slot_variable=new_slot_variable)
       named_slots[_var_key(var)] = new_slot_variable
     return named_slots[_var_key(var)]
 
-  def _zeros_slot(self, var, slot_name, op_name):
+  def _zeros_slot(self, var, slot_name, op_name, slot_config=None):
     """Find or create a slot initialized with 0.0.
 
     Args:
@@ -1235,7 +1235,7 @@ class Optimizer(
     """
     named_slots = self._slot_dict(slot_name)
     if _var_key(var) not in named_slots:
-      new_slot_variable = slot_creator.create_zeros_slot(var, op_name)
+      new_slot_variable = slot_creator.create_zeros_slot(var, op_name, slot_config=slot_config)
       self._restore_slot_variable(
           slot_name=slot_name, variable=var,
           slot_variable=new_slot_variable)

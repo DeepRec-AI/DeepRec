@@ -38,16 +38,51 @@ struct RestoreBuffer {
   }
 };
 
+
+struct EmbeddingConfig {
+  int64 emb_index;
+  int64 primary_emb_index;
+  int64 block_num;
+  int64 slot_num;
+  std::string name;
+  int64 steps_to_live;
+
+  EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
+                 int64 block_num = 1, int slot_num = 1,
+                 const std::string& name = "", int64 steps_to_live = 0):
+                  emb_index(emb_index), 
+                  primary_emb_index(primary_emb_index),
+                  block_num(block_num), slot_num(slot_num) , name(name),
+                  steps_to_live(steps_to_live){}
+
+  bool is_primary() const {
+    return emb_index == primary_emb_index;
+  }
+
+  int64 total_num() {
+    return block_num * (slot_num + 1);
+  }
+
+  std::string DebugString() const {
+     return strings::StrCat("opname: ", name, " emb_index: ", emb_index,
+                         " primary_emb_index: ", primary_emb_index, " block_num: ", block_num,
+                         " slot_num: ", slot_num);
+
+  }
+};
+
 template <class K, class V>
 class HashMap {
  public:
-  HashMap(KVInterface<K, V>* kv, Allocator* alloc = cpu_allocator(), bool use_db = false)
-      :kv_(kv),
+  HashMap(KVInterface<K, V>* kv, Allocator* alloc = cpu_allocator(), bool use_db = false,
+             EmbeddingConfig emb_cfg=EmbeddingConfig()):
+      kv_(kv),
       default_value_(NULL),
       value_len_(0),
       value_and_version_len_(0),
       alloc_(alloc),
-      use_db_(use_db) {}
+      use_db_(use_db),
+      emb_config_(emb_cfg) {}
 
   Status Init(const Tensor& default_tensor) {
     if (default_tensor.dims() != 1) {
@@ -85,6 +120,91 @@ class HashMap {
     }
     TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
   }
+
+  // for embedding 3.0
+   KVInterface<K, V>* kv() { return kv_; }
+
+   V* LookupOrCreateV3(ValuePtr<V>* valptr, const EmbeddingConfig& embcfg, const V* default_v, int64 update_version = -1) {
+    bool allocate_version = false;
+    if (embcfg.is_primary() && embcfg.steps_to_live != 0) {
+      allocate_version = true;
+    }
+    V* val = valptr->GetOrAllocate(alloc_, value_len_, default_v, embcfg.emb_index, allocate_version);
+    if (allocate_version && update_version != -1) {
+      int64* version = reinterpret_cast<int64*>(val + value_len_);
+      *version = update_version;
+    }
+    return val;
+  }
+  // for test 
+  V* LookupOrCreateV3Test(K key, int64 update_version = -1) {
+    ValuePtr<V>* valptr = kv_->Lookup(key, emb_config_.total_num());
+    return LookupOrCreateV3(valptr,  emb_config_, default_value_, update_version);
+  }
+  ValuePtr<V>* LookupValuePtr(K key) {
+    return kv_->Lookup(key, emb_config_.total_num());
+  }
+  typename TTypes<V>::Flat flat_emb(ValuePtr<V>* valptr, int64 update_version = -1) {
+    V* val = LookupOrCreateV3(valptr, emb_config_, default_value_, update_version);
+    Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
+    return typename TTypes<V>::Flat(val, dims);
+  }
+    typename TTypes<V>::Flat flat_emb(ValuePtr<V>* valptr, const EmbeddingConfig embcfg, int64 update_version = -1) {
+    V* val = LookupOrCreateV3(valptr, embcfg, default_value_, update_version);
+    Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
+    return typename TTypes<V>::Flat(val, dims);
+  }
+  void LookupOrCreateHybridV3(K key,  V* val, V* default_v)  {
+    if (use_db_) {
+      std::string db_value;
+      Status st = db_kv_->Lookup(key, &db_value);
+      if (!st.ok()) {
+        memcpy(val, default_value_, sizeof(V) * value_len_);
+        //alloc_->Deallocate(new_val, value_and_version_len_);
+      } else {
+        // found in disk
+        memcpy(val, db_value.data(), sizeof(V) * value_len_);
+      }
+    } else {
+      const V* default_value_ptr = (default_v == NULL) ? default_value_ : default_v;
+      ValuePtr<V>* valptr = kv_->Lookup(key, emb_config_.total_num());
+      V* mem_val = LookupOrCreateV3(valptr, emb_config_, default_value_ptr);
+      memcpy(val, mem_val, sizeof(V) * value_len_);
+    }
+  }
+  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list) {
+    return kv_->GetSnapshot(key_list, value_list, version_list, 
+      emb_config_.emb_index, emb_config_.primary_emb_index, value_len_, emb_config_.steps_to_live);
+  }
+
+  Status ImportV3(RestoreBuffer& restore_buff, int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num) {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    int64* version_buff = (int64*)restore_buff.version_buffer;
+    for (auto i = 0; i < key_num; ++i) {
+      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      ValuePtr<V>* valptr = kv_->Lookup(key_buff[i], emb_config_.total_num());
+      LookupOrCreateV3(valptr, emb_config_, value_buff + i * value_len_, version_buff[i]);
+    }
+    return Status::OK();
+  }
+
+  bool UseDB() const {
+    return use_db_;
+  }
+
+  bool GetEmbConfig(const std::string& name, EmbeddingConfig& embconfig) {
+    return true;
+  }
+  // end for embedding v3
+
 
   typename TTypes<V>::Flat flat(K key, int64 update_version = -1) {
     V* val = LookupOrCreate(key, default_value_, update_version);
@@ -235,7 +355,8 @@ class HashMap {
   int64 value_len_;
   int64 value_and_version_len_;
   Allocator* alloc_;
-
+  mutable mutex mu_;
+  EmbeddingConfig emb_config_;
 };
 
 }  // namespace tensorflow

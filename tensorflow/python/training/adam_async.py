@@ -27,6 +27,7 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import variable_scope
+from tensorflow.python.training import slot_creator
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
 from tensorflow.python.training import training_util
@@ -125,18 +126,18 @@ class AdamAsyncOptimizer(optimizer.Optimizer):
           self._get_or_make_slot(v,
               array_ops.expand_dims(
                 ops.convert_to_tensor(self._beta1, dtype=v.dtype.base_dtype), -1),
-              "beta1_power", self._name)
+              "beta1_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=4))
           self._get_or_make_slot(v,
               array_ops.expand_dims(
                 ops.convert_to_tensor(self._beta2, dtype=v.dtype.base_dtype), -1),
-              "beta2_power", self._name)
+              "beta2_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=2, slot_num=4))
         else:
           self._get_or_make_slot(v,
               ops.convert_to_tensor(self._beta1, dtype=v.dtype.base_dtype),
-              "beta1_power", self._name)
+              "beta1_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=3, slot_num=4))
           self._get_or_make_slot(v,
               ops.convert_to_tensor(self._beta2, dtype=v.dtype.base_dtype),
-              "beta2_power", self._name)
+              "beta2_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=4, slot_num=4))
 
   def _prepare(self):
     self._lr_t = ops.convert_to_tensor(self._lr, name="learning_rate")

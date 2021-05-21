@@ -159,15 +159,18 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
       handle_name = ops.name_from_scope_name(self.name)
       is_partitioned_ev = not isinstance(self.var._save_slice_info, str)
       if self.var._init_data_source is not None:
-        return self.var.recover_from_init_data_source(self.var._init_data_source, partition_id, partition_num)
+        return self.var.recover_from_init_data_source(self.var._init_data_source, self.partition_id, self.partition_num)
       else:
         return gen_kv_variable_ops.kv_resource_import_v2(
               restored_tensors[0],
-              self.handle_op,
+              self.handle_op, self.var._primary_handle,
               variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
               self.name,
               ops.convert_to_tensor(self.invalid_key, preferred_dtype=dtypes.int64),
+              self.var._slotnum_op,
               shape=self.op.initial_value.get_shape(), steps_to_live=self.steps_to_live,
+              emb_index=self.var._emb_index, slot_index=self.var._slot_index,
+              block_num=self.var.block_num,
               ht_type=self.ht_type,
               ht_partition_num=self.ht_partition_num,
               partition_id=self.partition_id, partition_num=self.partition_num)

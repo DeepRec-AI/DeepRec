@@ -26,6 +26,7 @@ from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.training import slot_creator
 from tensorflow.python.training import distribution_strategy_context
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
@@ -103,7 +104,8 @@ class AdagradDecayOptimizerV2(optimizer.Optimizer):
                                              self._initial_accumulator_value)
           init = math_ops.cast(init_constant, dtype)
       self._get_or_make_slot_with_initializer(v, init, v_shape, dtype,
-                                              "accumulator", self._name)
+                                              "accumulator", self._name,
+                                              slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=2))
       # A slot to record how many times of decay has been operated on this index.
       # For a variable whose gradients are dense, only a scalar is needed.
       # But we have not known that whose gradients are sparse until ApplyGradients.
@@ -119,7 +121,8 @@ class AdagradDecayOptimizerV2(optimizer.Optimizer):
       self._get_or_make_slot_with_initializer(
           v, init_ops.zeros_initializer(self._global_step.dtype),
           tensor_shape.TensorShape(decay_powers_shape),
-          self._global_step.dtype, "accumulator_decay_power", self._name)
+          self._global_step.dtype, "accumulator_decay_power", self._name,
+          slot_config=slot_creator.SlotConfig(slot_index=2, slot_num=2))
 
   def _prepare(self):
     self._learning_rate_tensor = ops.convert_to_tensor(

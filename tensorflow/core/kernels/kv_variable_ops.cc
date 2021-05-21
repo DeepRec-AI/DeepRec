@@ -161,6 +161,14 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
     OP_REQUIRES(c, shape_.dims() == 1,
                 errors::InvalidArgument("KvVariable dimension must be 1"));
+
+     // get ev emb_index
+    OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
+     // get ev block_num
+    OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
+     // get ev slot_index
+    OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
+    
     OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {
@@ -176,25 +184,81 @@ class InitializeKvVariableOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
-    OP_REQUIRES(context, dtype_ == context->input(1).dtype(),
+    const Tensor& default_values = context->input(2);
+    OP_REQUIRES(context, dtype_ == default_values.dtype(),
                 errors::InvalidArgument(
                     "Variable and value dtypes don't match; respectively, ",
-                    dtype_, " and ", context->input(1).dtype()));
+                    dtype_, " and ", default_values.dtype()));
+    
+    ResourceHandle handle_self = HandleFromInput(context, 0);
+    ResourceHandle handle_primary = HandleFromInput(context, 1);
+    std::string opname = handle_self.name();
+
     EmbeddingVar<TKey, TValue>* variable = nullptr;
-    const Tensor& default_values = context->input(1);
-    OP_REQUIRES_OK(
+
+    const Tensor& slotnum = context->input(4);
+    int64 slotnum_op = slotnum.scalar<int64>()(); 
+    
+    if (handle_self.name() == handle_primary.name() && 
+        handle_self.container() == handle_primary.container()) {
+
+      OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, HandleFromInput(context, 0), &variable,
-            [this, default_values](EmbeddingVar<TKey, TValue>** ptr) {
+            context, handle_self, &variable,
+            [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
                        new HashMap<TKey, TValue>(
-                         ht, cpu_allocator(), use_db_),
+                         ht, cpu_allocator(), use_db_,
+                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
+                                                        block_num_, slotnum_op, opname + "-primary", 
+                                                        steps_to_live_)),
                          steps_to_live_);
-              return (*ptr)->Init(default_values);
+             return (*ptr)->Init(default_values);
             }));
+
+    } else {
+      EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
+
+      OP_REQUIRES_OK(
+       context,
+       LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
+           context, handle_primary, &primary_variable,
+           [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
+             int64 primary_slot_index(0), primary_emb_index(0);
+             auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+                 ht_type_, ht_partition_num_);
+             *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
+                      new HashMap<TKey, TValue>(
+                        ht, cpu_allocator(), use_db_,
+                        EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
+                                                       block_num_, slotnum_op, opname + "-primary", 
+                                                       steps_to_live_)),
+                        steps_to_live_);
+            return (*ptr)->Init(default_values);
+           }));
+
+
+      OP_REQUIRES_OK(
+        context,
+        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
+            context, handle_self, &variable,
+            [this, default_values, opname, primary_variable, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
+              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
+                       new HashMap<TKey, TValue>(
+                         primary_variable->hashmap()->kv(), cpu_allocator(), use_db_,
+                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
+                                                        block_num_, slotnum_op, opname,
+                                                        steps_to_live_)),
+                         steps_to_live_);
+
+             return (*ptr)->Init(default_values);
+            }));
+
+      core::ScopedUnref unref_me(primary_variable);
+    }
     core::ScopedUnref unref_me(variable);
     if (steps_to_live_ != kEmbeddingVarUseDB) {
       variable->SetInitialized();
@@ -205,6 +269,9 @@ class InitializeKvVariableOp : public OpKernel {
   DataType dtype_;
   TensorShape shape_;
   int64 steps_to_live_;
+  int64 emb_index_;
+  int64 block_num_;
+  int64 slot_index_;
   std::string ht_type_;
   int64 ht_partition_num_;
   bool use_db_;
@@ -292,7 +359,7 @@ class KvResourceGatherOp : public OpKernel {
       const size_t slice_bytes = slice_elems * sizeof(TValue);
       for (int64 i = 0; i < indices_size; i++) {
         TValue* default_v = &default_values_matrix(i, 0);
-        hashmap->LookupOrCreateHybrid(indices_flat(i), out_base + i * slice_elems, default_v);
+        hashmap->LookupOrCreateHybridV3(indices_flat(i), out_base + i * slice_elems, default_v);
       }
     }
   }
@@ -477,32 +544,90 @@ class KvResourceImportV2Op: public OpKernel {
     //OP_REQUIRES_OK(c, c->GetAttr("restore_versions", &restore_versions_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
+    // get ev emb_index
+    OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
+      // get ev slot_index
+    OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
+    OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
   }
 
   void Compute(OpKernelContext* context) override {
     const Tensor& file_name = context->input(0);
     const std::string file_name_string = file_name.scalar<string>()();
-    const Tensor& name = context->input(3);
+    const Tensor& name = context->input(4);
     const std::string name_string = name.scalar<string>()();
-    OP_REQUIRES(context, dtype_ == context->input(2).dtype(),
+	  const Tensor& default_values = context->input(3);
+    OP_REQUIRES(context, dtype_ == default_values.dtype(),
                 errors::InvalidArgument(
                     "Variable and ddd value dtypes don't match; respectively, ",
-                    dtype_, " and ", context->input(2).dtype()));
-	  const Tensor& default_values = context->input(2);
+                    dtype_, " and ", default_values.dtype()));
+
+
+    ResourceHandle handle_self = HandleFromInput(context, 1);
+    ResourceHandle handle_primary = HandleFromInput(context, 2);
+    std::string opname = handle_self.name();
     EmbeddingVar<TKey, TValue>* variable = nullptr;
-    OP_REQUIRES_OK(
+
+    const Tensor& slotnum = context->input(6);
+    int64 slotnum_op = slotnum.scalar<int64>()(); 
+    
+    if (handle_self.name() == handle_primary.name() && 
+         handle_self.container() == handle_primary.container()) {
+      OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, HandleFromInput(context, 1), &variable,
-            [this, default_values](EmbeddingVar<TKey, TValue>** ptr) {
+            context, handle_self, &variable,
+            [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
                        new HashMap<TKey, TValue>(
-                         ht, cpu_allocator()),
+                         ht, cpu_allocator(), false,
+                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
+                                                        block_num_, slotnum_op, opname + "-primary", 
+                                                        steps_to_live_)),
                          steps_to_live_);
-              return (*ptr)->Init(default_values);
+             return (*ptr)->Init(default_values);
             }));
+    } else {
+      EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
+      
+      OP_REQUIRES_OK(
+       context,
+       LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
+           context, handle_primary, &primary_variable,
+           [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
+             int64 primary_slot_index(0), primary_emb_index(0);
+             auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+                 ht_type_, ht_partition_num_);
+             *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
+                      new HashMap<TKey, TValue>(
+                        ht, cpu_allocator(), false,
+                        EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
+                                                       block_num_, slotnum_op, opname + "-primary", 
+                                                       steps_to_live_)),
+                        steps_to_live_);
+            return (*ptr)->Init(default_values);
+           }));
+
+      OP_REQUIRES_OK(
+        context,
+        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
+            context, handle_self, &variable,
+            [this, default_values, opname, primary_variable, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
+              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
+                       new HashMap<TKey, TValue>(
+                         primary_variable->hashmap()->kv(), cpu_allocator(), false,
+                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
+                                                        block_num_, slotnum_op, opname,
+                                                        steps_to_live_)),
+                         steps_to_live_);
+
+             return (*ptr)->Init(default_values);
+            }));
+
+      core::ScopedUnref unref_me(primary_variable);
+    }
     core::ScopedUnref unref_me(variable);
 
     HashMap<TKey, TValue>* hashmap = variable->hashmap();
@@ -524,6 +649,9 @@ class KvResourceImportV2Op: public OpKernel {
   bool restore_versions_;
   string ht_type_;
   int64 ht_partition_num_;
+  int64 emb_index_;
+  int64 slot_index_;
+  int64 block_num_;
 };
 
 

@@ -217,6 +217,10 @@ class SessionManager(object):
       else:
         return sess, False
 
+    logging.info("run with loading checkpoint")
+    sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+    sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+    
     # Loads the checkpoint.
     saver.restore(sess, ckpt.model_checkpoint_path)
     saver.recover_last_checkpoints(ckpt.all_model_checkpoint_paths)
@@ -300,6 +304,9 @@ class SessionManager(object):
         raise RuntimeError("Model is not initialized and no init_op or "
                            "init_fn or local_init_op was given")
       if init_op is not None:
+        logging.info("run without loading checkpoint")
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run(init_op, feed_dict=init_feed_dict)
       if init_fn:
         init_fn(sess)

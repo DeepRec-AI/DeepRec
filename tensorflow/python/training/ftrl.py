@@ -21,6 +21,7 @@ from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.training import slot_creator
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
 from tensorflow.python.util.tf_export import tf_export
@@ -129,8 +130,10 @@ class FtrlOptimizer(optimizer.Optimizer):
       with ops.colocate_with(v):
         val = constant_op.constant(
             self._initial_accumulator_value, dtype=v.dtype, shape=v.get_shape())
-        self._get_or_make_slot(v, val, "accum", self._accum_name or self._name)
-        self._zeros_slot(v, "linear", self._linear_name or self._name)
+        self._get_or_make_slot(v, val, "accum", self._accum_name or self._name,
+             slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=2))
+        self._zeros_slot(v, "linear", self._linear_name or self._name,
+             slot_config=slot_creator.SlotConfig(slot_index=2, slot_num=2))
 
   def _prepare(self):
     self._learning_rate_tensor = ops.convert_to_tensor(

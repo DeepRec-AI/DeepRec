@@ -40,6 +40,7 @@ from tensorflow.python.util import compat
 __all__ = ["EmbeddingVariable"]
 
 
+
 class EmbeddingVariable(resource_variable_ops.ResourceVariable):
   """Embedding Variable based on resource variable.
 
@@ -87,9 +88,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                import_scope=None,
                constraint=None,
                invalid_key=None,
-               steps_to_live=None,
-               init_data_source=None,
-               ht_type=None,
+               evconfig=variables.EmbeddingVariableConfig(),
                ht_partition_num=1000):
     """Creates a variable.
 
@@ -149,6 +148,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                          "exclusive.")
       self._init_from_proto(variable_def, import_scope=import_scope)
     else:
+      evconfig.reveal()
       self._init_from_args(
           initial_value=initial_value,
           initializer=initializer,
@@ -160,9 +160,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           dtype=dtype,
           constraint=constraint,
           invalid_key=invalid_key,
-          steps_to_live=steps_to_live,
-          init_data_source=init_data_source,
-          ht_type=ht_type,
+          evconfig=evconfig,
           ht_partition_num=ht_partition_num)
 
   def __repr__(self):
@@ -186,9 +184,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                       dtype=None,
                       constraint=None,
                       invalid_key=-1,
-                      steps_to_live=0,
-                      init_data_source=None,
-                      ht_type='',
+                      evconfig=variables.EmbeddingVariableConfig(),
                       ht_partition_num=1000):
     """Creates a variable.
 
@@ -253,10 +249,19 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       collections = list(collections) + [ops.GraphKeys.TRAINABLE_VARIABLES]
     self._save_slice_info = None
     self._in_graph_mode = not context.executing_eagerly()
-    self._steps_to_live = steps_to_live
-    self._init_data_source = init_data_source 
-    self._ht_type = ht_type
+    self._steps_to_live = evconfig.steps_to_live
+    self._init_data_source = evconfig.init_data_source 
+    self._emb_index = evconfig.emb_index
+    self._slot_index = evconfig.slot_index
+    self._block_num = evconfig.block_num
+    self._block_handle_name = None
+    self._primary_handle = evconfig.primary_handle
+    self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
+    if self._primary_handle is None:
+      self._is_primary = True
+    else:
+      self._is_primary = False
     with ops.control_dependencies(None):
       with ops.name_scope(name, "Variable", []
                           if init_from_fn else [initial_value]) as name:
@@ -282,6 +287,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                 shared_name=handle_name,
                 name=name,
                 graph_mode=self._in_graph_mode)
+            if self._primary_handle is None:
+              self._primary_handle = self._handle
             self._handle_device = (
                 self._handle.device if self._in_graph_mode else
                 context.get_default_context().device_name)
@@ -308,6 +315,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
               shared_name=handle_name,
               name=name,
               graph_mode=self._in_graph_mode)
+          if self._primary_handle is None:
+            self._primary_handle = self._handle
           self._handle_device = (self._handle.device if self._in_graph_mode else
                                  context.get_default_context().device_name)
           self._graph_shape = initial_value.get_shape()
@@ -316,6 +325,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._handle_name = handle_name + ":0"
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
+        if self._is_primary:
+          self._slotnum_op = variables.Variable(1, trainable=False, dtype=dtypes.int64, name="slotnum")
+          ops.add_to_collection(ops.GraphKeys.EV_INIT_VAR_OPS,  self._slotnum_op.assign(1))
+        else:
+          self._slotnum_op = evconfig.primary_slotnum_op
 
         with ops.name_scope("IsInitialized"):
           self._is_initialized_op = (
@@ -326,10 +340,14 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
             self._initializer_op = (
                 gen_kv_variable_ops.initialize_kv_variable_op(
                     self._handle,
+                    self._primary_handle,
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
                     ops.convert_to_tensor(invalid_key, preferred_dtype=dtypes.int64),
+                    self._slotnum_op,
                     shape=initial_value.get_shape(),
                     steps_to_live=self._steps_to_live,
+                    emb_index=self._emb_index, block_num=self.block_num,
+                    slot_index=self._slot_index,
                     ht_type=self._ht_type,
                     ht_partition_num=self._ht_partition_num,
                     name=n))
@@ -436,7 +454,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._constraint = None
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
-  def _set_init_data_source_initializer(self, init_data_source):
+  def set_init_data_source_initializer(self, init_data_source):
     import pkgutil
     try:
       # pylint: disable=unused-import
@@ -503,6 +521,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                self._steps_to_live, partition_id, partition_num)
         )
 
+  def reconstruct_initialize_op(self):
+    pass
 
   @property
   def dtype(self):
@@ -541,6 +561,13 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
   @property
   def steps_to_live(self):
     return self._steps_to_live
+  
+  @property
+  def block_num(self):
+    if self._block_num is None:
+      return 1
+    else:
+      return self._block_num
 
   @property
   def create(self):

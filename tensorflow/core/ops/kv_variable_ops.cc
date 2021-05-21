@@ -122,9 +122,11 @@ dtype: the dtype of the value.
 )");
 
 REGISTER_OP("InitializeKvVariableOp")
-    .Input("resource: resource")
+    .Input("resource_self: resource")
+    .Input("resource_primary: resource")
     .Input("value: dtype")
     .Input("empty_key: Tkeys")
+    .Input("slotnum: Tkeys")
     .Attr("Tkeys: {int64,string}")
     .Attr("dtype: type")
     .Attr("shape: shape")
@@ -132,15 +134,23 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("max_load_factor: float = 0.8")	
     .Attr("steps_to_live: int = 0")
     .Attr("ht_type: string = ''")
+    .Attr("emb_index: int = 0")
+    .Attr("block_num: int = 1")
+    .Attr("slot_index: int = 0")
     .Attr("ht_partition_num: int = 1000")
-    .SetShapeFn(CreateAssignShapeFn)
+    // .SetShapeFn(CreateAssignShapeFn)
+    .SetShapeFn([](InferenceContext* c) { 
+
+      return Status::OK();
+    })
     .Doc(R"(
 Assigns a new value to a variable.
 
 Any ReadVariableOp with a control dependency on this op is guaranteed to return
 this value or a subsequent newer value of the variable.
 
-resource: handle to the resource in which to store the variable.
+resource_self: handle to the resource in which to store the variable.
+resource_primary: handle to the resource in which to store the variable.
 value: the value to set the new tensor to use.
 dtype: the dtype of the value.
 )");
@@ -332,13 +342,19 @@ values: Values to associate with keys.
 
 REGISTER_OP("KvResourceImportV2")
     .Input("prefix: string")
-    .Input("resource_handle: resource")
+    .Input("resource_self: resource")
+    .Input("resource_primary: resource")
     .Input("value: dtype")
     .Input("tensor_names: string")
     .Input("empty_key: Tkeys")
+    .Input("slotnum: Tkeys")
     .Attr("shape: shape")
     .Attr("Tkeys: {int64}")
     .Attr("dtype: type")
+    .Attr("emb_index: int = 0")
+    .Attr("slot_index: int = 0")
+    .Attr("slot_num: int = 0")
+    .Attr("block_num: int = 1")
     .Attr("steps_to_live: int = 0")
     .Attr("partition_id: int = 0")
     .Attr("partition_num: int = 1")

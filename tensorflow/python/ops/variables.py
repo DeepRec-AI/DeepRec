@@ -173,6 +173,53 @@ def validate_synchronization_aggregation_trainable(synchronization, aggregation,
     trainable = synchronization != VariableSynchronization.ON_READ
   return synchronization, aggregation, trainable
 
+class EmbeddingVariableConfig(object):
+  def __init__(self,
+               steps_to_live=None, steps_to_live_l2reg=None, 
+               l2reg_theta=None, l2reg_lambda=None,
+               ht_type=None,
+               ckpt_to_load_from=None,
+               tensor_name_in_ckpt=None,
+               always_load_from_specific_ckpt=False,
+               init_data_source=None,
+               handle_name=None,
+               emb_index=None,
+               slot_index=None,
+               block_num=None,
+               primary_handle=None,
+               primary_slotnum_op=None):
+    self.steps_to_live = steps_to_live
+    self.steps_to_live_l2reg = steps_to_live_l2reg
+    self.l2reg_theta = l2reg_theta
+    self.l2reg_lambda = l2reg_lambda
+    self.ckpt_to_load_from = ckpt_to_load_from
+    self.tensor_name_in_ckpt = tensor_name_in_ckpt
+    self.always_load_from_specific_ckpt = always_load_from_specific_ckpt
+    self.init_data_source = init_data_source
+    self.handle_name = handle_name
+    self.emb_index = emb_index
+    self.slot_index = slot_index
+    self.block_num = block_num
+    self.primary_handle = primary_handle
+    self.primary_slotnum_op = primary_slotnum_op
+    self.ht_type = ht_type
+
+
+  def reveal(self):
+    if self.steps_to_live is None:
+      self.steps_to_live = 0
+    if self.steps_to_live_l2reg is None:
+      self.steps_to_live_l2reg = 0
+    if self.l2reg_theta is None:
+      self.l2reg_theta = 0
+    if self.l2reg_lambda is None:
+      self.l2reg_lambda = 0
+    if self.ht_type is None:
+      self.ht_type = ''
+    if self.emb_index is None:
+      self.emb_index = 0
+    if self.slot_index is None:
+      self.slot_index = 0
 
 class VariableMetaclass(type):
   """Metaclass to allow construction of tf.Variable to be overridden."""
@@ -195,8 +242,7 @@ class VariableMetaclass(type):
                         aggregation=VariableAggregation.NONE,
                         shape=None,
                         invalid_key=None,
-                        steps_to_live=None,
-                        init_data_source=None,
+                        evconfig=EmbeddingVariableConfig(),
                         embedding_initializer=None,
                         ht_partition_num=1000):
     """Call on Variable class. Useful to force the signature."""
@@ -225,8 +271,7 @@ class VariableMetaclass(type):
         aggregation=aggregation,
         shape=shape,
         invalid_key=invalid_key,
-        steps_to_live=steps_to_live,
-        init_data_source=init_data_source,
+        evconfig=evconfig,
         embedding_initializer=embedding_initializer,
         ht_partition_num=ht_partition_num)
 

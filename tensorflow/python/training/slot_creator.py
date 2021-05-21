@@ -43,13 +43,25 @@ from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.framework import ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
+from tensorflow.python.training import distribution_strategy_context
+
+class SlotConfig:
+  def __init__(self,
+               slot_num=1, slot_index=0):
+    self.slot_num = slot_num
+    self.slot_index = slot_index
+
+def _is_embedding(v):
+  """Returns true if v is something you get from a embedding variable."""
+  return isinstance(v, kv_variable_ops.EmbeddingVariable)
 
 
-def _create_slot_var(primary, val, scope, validate_shape, shape, dtype):
+def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_config):
   """Helper function for creating a slot variable."""
 
   # TODO(lukaszkaiser): Consider allowing partitioners to be set in the current
@@ -66,7 +78,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype):
   else:
     use_resource = None
   if isinstance(primary, kv_variable_ops.EmbeddingVariable):
-    slot = variable_scope.get_embedding_variable(
+    if slot_config is None:
+      slot = variable_scope.get_embedding_variable(
         scope,
         initializer=val,
         trainable=False,
@@ -75,6 +88,21 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype):
         validate_shape=validate_shape,
         steps_to_live=primary._steps_to_live,
         ht_partition_num=primary._ht_partition_num)
+    else:
+      ops.add_to_collection(ops.GraphKeys.EV_INIT_SLOT_OPS,  primary._slotnum_op.assign(slot_config.slot_num))
+      primary._slotnum_op._initializer_op = primary._slotnum_op.assign(slot_config.slot_num)
+      slot = variable_scope.get_embedding_variable_v2(
+        scope, initializer=val, trainable=False,
+        embedding_dim=shape, key_dtype=primary._invalid_key_type,
+        validate_shape=validate_shape, 
+        evconfig=variables.EmbeddingVariableConfig(
+          steps_to_live=primary._steps_to_live,
+          handle_name=primary._block_handle_name,
+          emb_index=primary._emb_index,
+          block_num=primary.block_num,
+          slot_index=slot_config.slot_index,
+          primary_handle=primary._primary_handle,
+          primary_slotnum_op=primary._slotnum_op))
   else:
     slot = variable_scope.get_variable(
         scope,
@@ -107,7 +135,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype):
   return slot
 
 
-def create_slot(primary, val, name, colocate_with_primary=True):
+def create_slot(primary, val, name, colocate_with_primary=True, slot_config=None):
   """Create a slot initialized to the given value.
 
   The type of the slot is determined by the given value.
@@ -136,13 +164,13 @@ def create_slot(primary, val, name, colocate_with_primary=True):
     if colocate_with_primary:
       distribution_strategy = distribution_strategy_context.get_strategy()
       with distribution_strategy.extended.colocate_vars_with(primary):
-        return _create_slot_var(primary, val, "", validate_shape, None, None)
+        return _create_slot_var(primary, val, "", validate_shape, None, None, slot_config)
     else:
-      return _create_slot_var(primary, val, "", validate_shape, None, None)
+      return _create_slot_var(primary, val, "", validate_shape, None, None, slot_config)
 
 
 def create_slot_with_initializer(primary, initializer, shape, dtype, name,
-                                 colocate_with_primary=True):
+                                 colocate_with_primary=True, slot_config=None):
   """Creates a slot initialized using an `Initializer`.
 
   The type of the slot is determined by the given value.
@@ -174,13 +202,13 @@ def create_slot_with_initializer(primary, initializer, shape, dtype, name,
       distribution_strategy = distribution_strategy_context.get_strategy()
       with distribution_strategy.extended.colocate_vars_with(primary):
         return _create_slot_var(primary, initializer, "", validate_shape, shape,
-                                dtype)
+                                dtype, slot_config)
     else:
       return _create_slot_var(primary, initializer, "", validate_shape, shape,
-                              dtype)
+                              dtype, slot_config)
 
 
-def create_zeros_slot(primary, name, dtype=None, colocate_with_primary=True):
+def create_zeros_slot(primary, name, dtype=None, colocate_with_primary=True, slot_config=None):
   """Create a slot initialized to 0 with same shape as the primary object.
 
   Args:
@@ -200,7 +228,8 @@ def create_zeros_slot(primary, name, dtype=None, colocate_with_primary=True):
     initializer = init_ops.zeros_initializer()
     return create_slot_with_initializer(
         primary, initializer, slot_shape, dtype, name,
-        colocate_with_primary=colocate_with_primary)
+        colocate_with_primary=colocate_with_primary,
+        slot_config=slot_config)
   else:
     if isinstance(primary, variables.Variable):
       slot_shape = array_ops.shape(primary.initialized_value())
@@ -208,4 +237,5 @@ def create_zeros_slot(primary, name, dtype=None, colocate_with_primary=True):
       slot_shape = array_ops.shape(primary)
     val = array_ops.zeros(slot_shape, dtype=dtype)
     return create_slot(primary, val, name,
-                       colocate_with_primary=colocate_with_primary)
+                       colocate_with_primary=colocate_with_primary,
+                       slot_config=slot_config)

@@ -117,10 +117,11 @@ class KvSparseApplyAdagradOp : public OpKernel {
 
         for (int64 i = 0; i < N; i++) {
           const TKey index = indices_vec(i);
+          ValuePtr<float>* valptr = var->LookupValuePtr(index);
 
-          auto a = accum->flat(index, gs);
+          auto a = accum->flat_emb(valptr, gs);
           auto g = grad_flat.template chip<0>(i);
-          auto v = var->flat(index, gs);
+          auto v = var->flat_emb(valptr, gs);
 
           a += g.square();
           v -= g.constant(lr_scalar) * g * a.rsqrt();
@@ -253,9 +254,10 @@ class KvSparseApplyFtrlOp : public OpKernel {
 
           for (int64 i = (int64)start_i; i < (int64)limit_i; i++) {
             const TKey index = indices_vec(i);
-            auto var = var_->flat(index);
-            auto accum = accum_->flat(index);
-            auto linear = linear_->flat(index);
+            ValuePtr<float>* valptr = var_->LookupValuePtr(index);
+            auto var = var_->flat_emb(valptr);
+            auto accum = accum_->flat_emb(valptr);
+            auto linear = linear_->flat_emb(valptr);
             auto grad = grad_flat.template chip<0>(i);
 
 // Use a macro to implement the computation here due to the templating of the
@@ -754,13 +756,14 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
 
         for (int64 i = 0; i < N; i++) {
           const Tindex index = indices_vec(i);
+          ValuePtr<float>* valptr = var->LookupValuePtr(index);
 
-          auto a = accum->flat(index, global_step_scalar);
+          auto a = accum->flat_emb(valptr, global_step_scalar);
 
           auto g = grad_flat.template chip<0>(i);
 
-          auto v = var->flat(index, global_step_scalar);
-          auto accum_decay_power = accum_decay_power_var->flat(index, global_step_scalar);
+          auto v = var->flat_emb(valptr, global_step_scalar);
+          auto accum_decay_power = accum_decay_power_var->flat_emb(valptr, global_step_scalar);
 
           if (global_step_scalar / decay_step_scalar > accum_decay_power(0)) {
             a *= a.constant(decay_rate_scalar);
@@ -1298,9 +1301,10 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
         for (Tindex i = 0; i < N; i++) {
           const Tindex index = indices_vec(i);
+          ValuePtr<T>* valptr = var->LookupValuePtr(index);
 
-          auto v_ = v->flat(index);
-          auto m_ = m->flat(index);
+          auto v_ = v->flat_emb(valptr);
+          auto m_ = m->flat_emb(valptr);
           auto grad_ = grad_flat.template chip<0>(i);
 
           v_ = v_ * v_.constant(beta2_scalar) +
@@ -1309,12 +1313,13 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                  (v_ + v_.constant(epsilon_scalar)).rsqrt() *
                      v_.constant(lr_scalar) * grad_;
 
-          auto v = var->flat(index);
+          auto v = var->flat_emb(valptr);
           v -= m_;
         }
       } else {
-        auto beta1_power_flat = beta1_power->flat(0);
-        auto beta2_power_flat = beta2_power->flat(0);
+        ValuePtr<T>* beta1_ptr = beta1_power->LookupValuePtr(0);
+        auto beta1_power_flat = beta1_power->flat_emb(beta1_ptr);
+        auto beta2_power_flat = beta2_power->flat_emb(beta1_ptr);
         T lr_scalar = lr.scalar<T>()();
         T beta1_scalar = beta1.scalar<T>()();
         T beta2_scalar = beta2.scalar<T>()();
@@ -1333,11 +1338,12 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
             for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
               const Tindex index = indices_vec(i);
+              ValuePtr<T>* valptr = var->LookupValuePtr(index);
 
-              auto m_a = m->flat(index, gs);
-              auto v_a = v->flat(index, gs);
+              auto m_a = m->flat_emb(valptr, gs);
+              auto v_a = v->flat_emb(valptr, gs);
               auto g = grad_flat.template chip<0>(i);
-              auto var_i = var->flat(index, gs);
+              auto var_i = var->flat_emb(valptr, gs);
 
               m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
               v_a = v_a * beta2_scalar + g.square() * (static_cast<T>(1) - beta2_scalar);
@@ -1442,8 +1448,9 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
 
         for (int64 i = 0; i < N; i++) {
           const Tindex index = indices_vec(i);
+          ValuePtr<float>* valptr = var->LookupValuePtr(index);
           auto g = grad_flat.template chip<0>(i);
-          auto v = var->flat(index, global_step_scalar);
+          auto v = var->flat_emb(valptr, global_step_scalar);
           v -= g.constant(lr_scalar) * g;
         }
       }
