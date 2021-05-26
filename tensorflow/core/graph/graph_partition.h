@@ -21,8 +21,10 @@ limitations under the License.
 #include <unordered_map>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/graph.pb.h"
+#include "tensorflow/core/graph/control_flow.h"
 #include "tensorflow/core/graph/costmodel.h"
 #include "tensorflow/core/graph/graph.h"
 
@@ -76,6 +78,40 @@ struct PartitionOptions {
   // in the graph as a node attribute.
   bool need_to_record_start_times = false;
   std::vector<Microseconds> start_times;
+
+  // Fuse recv ops or not
+  bool tensor_fuse = false;
+};
+
+namespace {
+  // A map used to store memory types for the inputs/outputs of every node.
+  // The key is a pair of ints consisting of a node id and input/output index.
+  // TODO(power): migrate back to std::pair when absl::Hash is fixed for MSVC.
+  struct NodePort {
+    int node_id;
+    int index;
+
+    friend bool operator==(const NodePort& x, const NodePort& y) {
+      return x.node_id == y.node_id && x.index == y.index;
+    }
+
+    template <typename H>
+    friend H AbslHashValue(H h, const NodePort& c) {
+      return H::combine(std::move(h), c.node_id, c.index);
+    }
+  };
+
+  typedef absl::flat_hash_map<NodePort, MemoryType> MemoryTypeMap;
+
+} // namespace
+
+// We collect the following information about the graph before performing
+// graph partitioning.
+struct GraphInfo {
+  std::vector<DeviceType> device_types;
+  MemoryTypeMap input_types;
+  MemoryTypeMap output_types;
+  std::vector<ControlFlowInfo> cf_info;
 };
 
 // Partition "input" graph into a set of graphs, one per location.
@@ -87,11 +123,35 @@ struct PartitionOptions {
 Status Partition(const PartitionOptions& opts, Graph* input,
                  std::unordered_map<string, GraphDef>* partitions);
 
+Status PartitionWithTensorFuse(const PartitionOptions& opts, Graph* g,
+                               std::unordered_map<string, GraphDef>* partitions);
+
 // Add control edges to the partitions to control the ordering
 // and timing of the recv nodes based on the start times calculated
 // using some scheduling algorithm.
 Status AddControlEdges(const PartitionOptions& opts,
                        std::unordered_map<string, GraphDef>* partitions);
+
+// Add an input to dst that comes from the "src_slot" output of the
+// node named by "src_name".
+void AddInput(NodeDef* dst, StringPiece src_name, int src_slot);
+
+// Each participating device needs to decide a) if there is a next iteration,
+// and b) if the loop terminates. We take the approach to encode this control
+// flow logic in the dataflow graph. There are at least two possible encodings.
+// In a completely decentralized encoding, the participants communicate peer
+// to peer. The other encoding uses a frame leader (the participant who owns
+// the pivot termination predicate) to broadcast the termination condition to
+// all the participants. For now we take the latter because it is simpler.
+//
+// TODO(yuanbyu): The correctness of this construction is rather subtle. I got
+// it wrong many times so it would be nice to write a proof to be sure.
+Status AddControlFlow(const PartitionOptions& opts, Graph* g, GraphInfo* g_info);
+
+// Build memory and device type info for every node in the graph.
+// TODO(yuanbyu): It might be simpler if we convert MemoryType to
+// DeviceType for the inputs/outputs of each node.
+Status BuildMemoryDeviceInfo(const Graph& g, GraphInfo* info);
 
 }  // namespace tensorflow
 

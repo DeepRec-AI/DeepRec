@@ -422,6 +422,12 @@ config_setting(
 )
 
 config_setting(
+    name = "with_star_support",
+    values = {"define": "with_star_support=true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "with_mpi_support",
     values = {"define": "with_mpi_support=true"},
     visibility = ["//visibility:public"],

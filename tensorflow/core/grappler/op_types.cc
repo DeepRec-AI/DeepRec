@@ -438,6 +438,11 @@ bool IsRecv(const NodeDef& node) {
   return node.op() == "_Recv" || node.op() == "_HostRecv";
 }
 
+bool IsFuseRecv(const NodeDef& node) {
+  const auto op = node.op();
+  return op == "_FuseRecv";
+}
+
 bool IsReduction(const NodeDef& node) {
   const auto& op = node.op();
   return op == "Sum" || op == "Prod" || op == "Min" || op == "Max" ||

@@ -553,6 +553,15 @@ const RunGraphRequest& MutableProtoRunGraphRequest::ToProto() const {
   return request_;
 }
 
+void MutableProtoRunGraphRequest::add_send(const string& key,
+                                           const Tensor& tensor) {
+  NamedTensorProto* send = request_.add_send();
+  send->set_name(key);
+  TensorProto proto;
+  tensor.AsProtoTensorContent(&proto);
+  *send->mutable_tensor() = proto;
+}
+
 ProtoRunGraphRequest::ProtoRunGraphRequest(const RunGraphRequest* request)
     : request_(request) {}
 

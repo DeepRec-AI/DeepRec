@@ -92,9 +92,21 @@ struct MasterEnv {
                        WorkerCacheInterface**)>
       worker_cache_factory;
 
+  // fuse recv ops or not
+  bool tensor_fuse = false;
+
+  // A pool of threads for scheduling compute work.
+  thread::ThreadPool* compute_pool = nullptr;
+
   // Generates per-step CollectiveExecutors and has access to utilities
   // supporting collective operations.
   CollectiveExecutorMgrInterface* collective_executor_mgr = nullptr;
+
+  // Enable RunGraph or not
+  bool run_graph_mode = false;
+
+  // Enable StarRunGraph or not
+  bool run_graph_mode_with_zero_copy = false;
 };
 
 }  // end namespace tensorflow

@@ -162,6 +162,12 @@ cc_library(
 )
 
 cc_library(
+    name = "worker_resource",
+    hdrs = ["worker_resource.h"],
+    deps = [],
+)
+
+cc_library(
     name = "tensor_coding",
     srcs = ["tensor_coding.cc"],
     hdrs = [
@@ -418,8 +424,15 @@ cc_library(
     name = "graph_mgr",
     srcs = ["graph_mgr.cc"],
     hdrs = ["graph_mgr.h"],
-    deps = [
-        ":message_wrappers",
+    copts = select({"//tensorflow:with_star_support": ["-std=gnu++1y",
+                                                       "-DFMT_HEADER_ONLY",
+                                                       "-DNO_EXCEPTION_HACK",
+                                                       "-DNO_EXCEPTION_INTERCEPT",
+                                                       "-DHAVE_LZ4_COMPRESS_DEFAULT"],
+                    "//conditions:default": []}),
+    deps = select({"//tensorflow:with_star_support": ["@seastar_repo//:seastar"],
+                    "//conditions:default": []}) +
+       [":message_wrappers",
         ":rendezvous_mgr_interface",
         ":worker_env",
         "//tensorflow/core:core_cpu_internal",

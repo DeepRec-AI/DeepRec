@@ -539,9 +539,11 @@ class Variable(six.with_metaclass(VariableMetaclass, trackable.Trackable)):
       has run.
     """
     with ops.init_scope():
-      return control_flow_ops.cond(
-          is_variable_initialized(self), self.read_value,
-          lambda: self.initial_value)
+      # optimize node placement policy in initialized_value stage.
+      with ops.colocate_with(self):
+        return control_flow_ops.cond(is_variable_initialized(self),
+                                     self.read_value,
+                                     lambda: self.initial_value)
 
   @property
   def initial_value(self):

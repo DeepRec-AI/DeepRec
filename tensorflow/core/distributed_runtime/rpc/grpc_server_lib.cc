@@ -46,6 +46,7 @@ limitations under the License.
 #include "tensorflow/core/distributed_runtime/server_lib.h"
 #include "tensorflow/core/distributed_runtime/worker_cache_wrapper.h"
 #include "tensorflow/core/distributed_runtime/worker_env.h"
+#include "tensorflow/core/distributed_runtime/worker_resource.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/env.h"
@@ -345,6 +346,14 @@ Status GrpcServer::WorkerCacheFactory(const WorkerCacheFactoryOptions& options,
 
   *worker_cache = NewGrpcWorkerCacheWithLocalWorker(channel_cache,
                                                     worker_impl(), name_prefix);
+
+  for (auto device : master_env_.local_devices) {
+    ResourceMgr *rm = device->resource_manager();
+    WorkerResource *worker_resource = new WorkerResource();
+    worker_resource->worker_cache = *worker_cache;
+    rm->Create("worker_resource", "worker_resource", worker_resource);
+  }
+
   return Status::OK();
 }
 

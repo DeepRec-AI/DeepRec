@@ -35,6 +35,12 @@ Status SendTensorsToRendezvous(
     const std::vector<AllocatorAttributes>& alloc_attrs,
     const std::vector<string>& keys, gtl::ArraySlice<Tensor> tensors_to_send);
 
+Status SendTensorsToRendezvous(
+    Rendezvous* rendezvous, DeviceContext* device_context,
+    const std::vector<AllocatorAttributes>& alloc_attrs,
+    const std::vector<string>& keys, gtl::ArraySlice<Tensor> tensors_to_send,
+    const std::vector<bool>& is_tensor_dead);
+
 // Uses `rendezvous` to obtain tensors. `device_context` should be the
 // DeviceContext associated with the receiving device. `alloc_attrs` contains
 // information as how to store the received tensors. Should be {} or match the
@@ -46,6 +52,10 @@ void RecvOutputsFromRendezvousAsync(
     StatusCallback done);
 
 Status RecvOutputsFromRendezvous(Rendezvous* rendezvous, NamedTensors* out,
+                                 const Rendezvous::Args& args);
+
+Status RecvOutputsFromRendezvous(Rendezvous* rendezvous, NamedTensors* out,
+                                 std::map<std::string, bool>* is_out_dead,
                                  const Rendezvous::Args& args);
 
 }  // namespace tensorflow

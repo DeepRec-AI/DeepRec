@@ -40,6 +40,7 @@ limitations under the License.
 #include "tensorflow/core/platform/protobuf.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/public/version.h"
+#include "tensorflow/core/util/device_name_utils.h"
 #include "tensorflow/core/util/equal_graph_def.h"
 
 namespace tensorflow {
@@ -61,6 +62,15 @@ using ops::NextIteration;
 const char gpu_device[] = "/job:a/replica:0/task:0/device:GPU:0";
 
 string SplitByDevice(const Node* node) { return node->assigned_device_name(); }
+
+static string SplitByWorker(const Node* node) {
+  string task;
+  string device;
+  CHECK(DeviceNameUtils::SplitDeviceName(node->assigned_device_name(), &task,
+          &device))
+    << "node: " << node->name() << " dev: " << node->assigned_device_name();
+  return task;
+}
 
 string DeviceName(const Node* node) {
   char first = node->name()[0];
@@ -162,6 +172,20 @@ REGISTER_OP("Combine")
     .Input("b: float")
     .Output("o: float")
     .SetShapeFn(shape_inference::UnknownShape);
+REGISTER_OP("Scatter1to2")
+    .Input("a: float")
+    .Output("o1: float")
+    .Output("o2: float")
+    .SetShapeFn(shape_inference::UnknownShape);
+REGISTER_OP("Scatter1toRef2")
+    .Input("a: float")
+    .Output("o1: Ref(float)")
+    .Output("o2: float")
+    .SetShapeFn(shape_inference::UnknownShape);
+REGISTER_OP("FakeIdentity")
+    .Input("a: float")
+    .Output("o: float")
+    .SetShapeFn(shape_inference::ScalarShape);
 
 Output ConstructOp(const Scope& scope, const string& op_type,
                    const gtl::ArraySlice<Input>& inputs) {
@@ -181,6 +205,67 @@ Output ConstructOp(const Scope& scope, const string& op_type,
   return Output(ret);
 }
 
+Output ConstructOp(const Scope& scope, const string& op_type,
+                   const string &device,
+                   const gtl::ArraySlice<Input>& inputs,
+                   const gtl::ArraySlice<Node*>& control_inputs = {}) {
+
+  if (!scope.ok()) {
+      return Output();
+  }
+  const string unique_name = scope.GetUniqueNameForOp(op_type);
+  auto builder =
+    NodeBuilder(unique_name, op_type, scope.graph()->op_registry());
+  builder.Device(device);
+  for (auto const& input : inputs) {
+    builder.Input(ops::NodeOut(input.node(), input.index()));
+  }
+  if (!control_inputs.empty()) {
+    builder.ControlInputs(control_inputs);
+  }
+  scope.UpdateBuilder(&builder);
+  Node* ret;
+  scope.UpdateStatus(builder.Finalize(scope.graph(), &ret));
+  if (!scope.ok()) {
+      return Output();
+  }
+  scope.UpdateStatus(scope.DoShapeInference(ret));
+  return Output(ret);
+}
+
+std::vector<Output> ConstructOp(const Scope& scope, const string& op_type,
+                                const string &device,
+                                const int output_count,
+                                const gtl::ArraySlice<Input>& inputs,
+                                const gtl::ArraySlice<Node*>& control_inputs = {}) {
+  std::vector<Output> ret_outputs;
+  if (!scope.ok()) {
+      return ret_outputs;
+  }
+  const string unique_name = scope.GetUniqueNameForOp(op_type);
+  auto builder =
+    NodeBuilder(unique_name, op_type, scope.graph()->op_registry());
+  builder.Device(device);
+  for (auto const& input : inputs) {
+    builder.Input(ops::NodeOut(input.node(), input.index()));
+  }
+  if (!control_inputs.empty()) {
+    builder.ControlInputs(control_inputs);
+  }
+  scope.UpdateBuilder(&builder);
+  Node* ret;
+  scope.UpdateStatus(builder.Finalize(scope.graph(), &ret));
+  if (!scope.ok()) {
+      return ret_outputs;
+  }
+  scope.UpdateStatus(scope.DoShapeInference(ret));
+  for (int i = 0; i < output_count; ++i) {
+    ret_outputs.push_back(Output(ret, i));
+  }
+
+  return ret_outputs;
+}
+
 Output FloatInput(const Scope& scope) {
   return ConstructOp(scope, "FloatInput", {});
 }
@@ -191,6 +276,195 @@ Output BoolInput(const Scope& scope) {
 
 Output Combine(const Scope& scope, Input a, Input b) {
   return ConstructOp(scope, "Combine", {std::move(a), std::move(b)});
+}
+
+Output FloatInput(const Scope& scope, const string &device) {
+  return ConstructOp(scope, "FloatInput", device, {});
+}
+
+Output BoolInput(const Scope& scope, const string &device) {
+  return ConstructOp(scope, "BoolInput", device, {});
+}
+
+std::vector<Output> Scatter1to2(const Scope& scope,
+                                const string &device, Input a) {
+  return ConstructOp(scope, "Scatter1to2", device, 2, {std::move(a)});
+}
+
+std::vector<Output> Scatter1toRef2(const Scope& scope,
+                                   const string &device, Input a) {
+  return ConstructOp(scope, "Scatter1toRef2", device, 2, {std::move(a)});
+}
+
+Output Combine(const Scope& scope, const string &device,
+               Input a, Input b) {
+  return ConstructOp(scope, "Combine", device,
+                     {std::move(a), std::move(b)});
+}
+
+Output FakeIdentity(const Scope& scope, const string &device, Input a) {
+  return ConstructOp(scope, "FakeIdentity", device, {std::move(a)});
+}
+
+class FuseRecvTest : public ::testing::Test {
+ protected:
+  FuseRecvTest()
+      : in_(Scope::NewRootScope().ExitOnError()),
+        scope_worker_(Scope::NewRootScope().ExitOnError().WithDevice(
+            "/job:worker/replica:0/task:0/cpu:0")),
+        scope_ps_(Scope::NewRootScope().ExitOnError().WithDevice(
+            "/job:ps/replica:0/task:0/cpu:0")) {}
+
+  std::shared_ptr<Graph> ConstructGraph() {
+    TF_EXPECT_OK(in_.ToGraphDef(&in_graph_def_));
+    GraphConstructorOptions opts;
+    opts.expect_device_spec = true;
+    g_.reset(new Graph(OpRegistry::Global()));
+    TF_CHECK_OK(ConvertGraphDefToGraph(opts, in_graph_def_, g_.get()));
+    return g_;
+  }
+
+  const GraphDef& GetGraphDef() const {
+    return in_graph_def_;
+  }
+
+  Scope in_;
+  Scope scope_worker_;
+  Scope scope_ps_;
+  GraphDef in_graph_def_;
+  std::shared_ptr<Graph> g_;
+};
+
+TEST_F(FuseRecvTest, FuseRecvNormal) {
+  string worker_device = "/job:worker/replica:0/task:0/cpu:0";
+  string ps_device = "/job:ps/replica:0/task:0/cpu:0";
+
+  auto w1 = FloatInput(in_.WithOpName("W1"), worker_device);
+  auto w2 = Scatter1to2(in_.WithOpName("W2"), worker_device, w1);
+  auto w3 = Scatter1to2(in_.WithOpName("W3"), worker_device, w1);
+  ASSERT_EQ(w2.size(), 2);
+  ASSERT_EQ(w3.size(), 2);
+  auto p1 = FakeIdentity(in_.WithOpName("P1"), ps_device, w2[0]);
+  auto p2 = FakeIdentity(in_.WithOpName("P2"), ps_device, w2[1]);
+  auto p3 = FakeIdentity(in_.WithOpName("P3"), ps_device, w3[0]);
+  auto w4 = FakeIdentity(in_.WithOpName("W4"), worker_device, w3[1]);
+
+  std::shared_ptr<Graph> g = ConstructGraph();
+
+  PartitionOptions popts;
+  popts.node_to_loc = SplitByWorker;
+  popts.new_name = [&g](const string& prefix) { return g->NewName(prefix); };
+  popts.get_incarnation = [](const string& name) {
+    return (name[0] - 'A') + 100;
+  };
+  std::unordered_map<string, GraphDef> partitions;
+  PartitionWithTensorFuse(popts, g.get(), &partitions);
+
+  ASSERT_EQ(partitions.size(), 2);
+  for (auto p : partitions) {
+    int fuse_recv_count = 0;
+    for (int i = 0; i < p.second.node_size(); ++i) {
+      if (p.second.node(i).op() == "_FuseRecv") {
+        ++fuse_recv_count;
+      }
+    }
+    if (p.first.find("ps") != std::string::npos) {
+      ASSERT_EQ(fuse_recv_count, 1);
+    } else {
+      ASSERT_EQ(fuse_recv_count, 0);
+    }
+  }
+}
+
+TEST_F(FuseRecvTest, FuseRecvNormal2) {
+  string worker_device = "/job:worker/replica:0/task:0/cpu:0";
+  string ps_device = "/job:ps/replica:0/task:0/cpu:0";
+
+  auto w1 = FloatInput(in_.WithOpName("W1"), worker_device);
+  auto w2 = Scatter1to2(in_.WithOpName("W2"), worker_device, w1);
+  auto w3 = Scatter1to2(in_.WithOpName("W3"), worker_device, w1);
+  ASSERT_EQ(w2.size(), 2);
+  ASSERT_EQ(w3.size(), 2);
+  auto w4 = FakeIdentity(in_.WithOpName("W4"), worker_device, w3[1]);
+  auto p1 = FakeIdentity(in_.WithOpName("P1"), ps_device, w2[0]);
+  auto p2 = FakeIdentity(in_.WithOpName("P2"), ps_device, w2[1]);
+  auto p3 = FakeIdentity(in_.WithOpName("P3"), ps_device, w3[0]);
+  auto p4 = Combine(in_.WithOpName("P4"), ps_device, p1, w2[0]);
+  auto p5 = FakeIdentity(in_.WithOpName("P5"), ps_device, w2[1]);
+
+  std::shared_ptr<Graph> g = ConstructGraph();
+
+  PartitionOptions popts;
+  popts.node_to_loc = SplitByWorker;
+  popts.new_name = [&g](const string& prefix) { return g->NewName(prefix); };
+  popts.get_incarnation = [](const string& name) {
+    return (name[0] - 'A') + 100;
+  };
+  std::unordered_map<string, GraphDef> partitions;
+  PartitionWithTensorFuse(popts, g.get(), &partitions);
+
+  ASSERT_EQ(partitions.size(), 2);
+  for (auto p : partitions) {
+    int fuse_recv_count = 0;
+    for (int i = 0; i < p.second.node_size(); ++i) {
+      if (p.second.node(i).op() == "_FuseRecv") {
+        ++fuse_recv_count;
+      }
+    }
+    if (p.first.find("ps") != std::string::npos) {
+      ASSERT_EQ(fuse_recv_count, 1);
+    } else {
+      ASSERT_EQ(fuse_recv_count, 0);
+    }
+  }
+}
+
+TEST_F(FuseRecvTest, FuseRecvRefType) {
+  string worker_device = "/job:worker/replica:0/task:0/cpu:0";
+  string ps_device = "/job:ps/replica:0/task:0/cpu:0";
+
+  auto w1 = FloatInput(in_.WithOpName("W1"), worker_device);
+  auto w2 = Scatter1to2(in_.WithOpName("W2"), worker_device, w1);
+  auto w3 = Scatter1toRef2(in_.WithOpName("W3"), worker_device, w1);
+  ASSERT_EQ(w2.size(), 2);
+  ASSERT_EQ(w3.size(), 2);
+  auto w4 = FakeIdentity(in_.WithOpName("W4"), worker_device, w3[1]);
+  auto p1 = FakeIdentity(in_.WithOpName("P1"), ps_device, w2[0]);
+  auto p2 = FakeIdentity(in_.WithOpName("P2"), ps_device, w2[1]);
+  auto p3 = FakeIdentity(in_.WithOpName("P3"), ps_device, w3[0]);
+  auto p4 = Combine(in_.WithOpName("P4"), ps_device, p1, w2[0]);
+  auto p5 = FakeIdentity(in_.WithOpName("P5"), ps_device, w2[1]);
+
+  std::shared_ptr<Graph> g = ConstructGraph();
+
+  PartitionOptions popts;
+  popts.node_to_loc = SplitByWorker;
+  popts.new_name = [&g](const string& prefix) { return g->NewName(prefix); };
+  popts.get_incarnation = [](const string& name) {
+    return (name[0] - 'A') + 100;
+  };
+  std::unordered_map<string, GraphDef> partitions;
+  PartitionWithTensorFuse(popts, g.get(), &partitions);
+
+  ASSERT_EQ(partitions.size(), 2);
+  for (auto p : partitions) {
+    int fuse_recv_count = 0;
+    int recv_count = 0;
+    for (int i = 0; i < p.second.node_size(); ++i) {
+      if (p.second.node(i).op() == "_FuseRecv") {
+        ++fuse_recv_count;
+      } else if (p.second.node(i).op() == "_Recv") {
+        ++recv_count;
+      }
+    }
+    if (p.first.find("ps") != std::string::npos) {
+      ASSERT_EQ(fuse_recv_count, 1);
+      ASSERT_EQ(recv_count, 1);
+    } else {
+      ASSERT_EQ(fuse_recv_count, 0);
+      ASSERT_EQ(recv_count, 0);
+    }
+  }
 }
 
 class GraphPartitionTest : public ::testing::Test {

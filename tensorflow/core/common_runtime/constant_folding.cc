@@ -231,7 +231,10 @@ bool IsConstantFoldable(
   if (consider && !consider(n)) {
     return false;
   }
-  if (n->IsControlFlow() || n->IsSend() || n->IsRecv()) {
+  if (n->IsControlFlow() || n->IsSend() ||
+      n->IsRecv() || n->IsFuseRecv() ||
+      n->def().op() == "RunGraph" ||
+      n->def().op() == "StarRunGraph") {
     return false;
   }
   // TODO(yuanbyu): For now disable these session handle operations.

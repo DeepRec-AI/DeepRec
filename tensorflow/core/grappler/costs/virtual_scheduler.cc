@@ -548,7 +548,8 @@ void VirtualScheduler::MaybeUpdateInputOutput(const NodeDef* node) {
   // This method is called when NodeState is created and adds input and output
   // properties for a few exceptional cases that GraphProperties cannot provide
   // input/output properties.
-  if ((IsSend(*node) || IsRecv(*node)) && node->attr().count(kAttrInputSrc)) {
+  if ((IsSend(*node) || IsRecv(*node) || IsFuseRecv(*node)) &&
+      node->attr().count(kAttrInputSrc)) {
     // _Send and _Recv ops created from VirtualScheduler have kAttrInputSrc
     // attr; normal _Send and _Recv ops (from the input graph) do not have that
     // attr.

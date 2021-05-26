@@ -1,0 +1,1136 @@
+From dd0043f7e723d83343d1053ad8b732a5f67bbcf9 Mon Sep 17 00:00:00 2001
+From: "tongxuan.ltx" <tongxuan.ltx@alibaba-inc.com>
+Date: Wed, 25 Mar 2020 15:31:58 +0800
+Subject: [PATCH] seastar changes for tensorflow
+
+---
+ include/seastar/core/channel.hh              |  43 ++++
+ include/seastar/core/internal/pollable_fd.hh |   2 +
+ include/seastar/core/iostream-impl.hh        | 101 +++++++--
+ include/seastar/core/iostream.hh             |  31 ++-
+ include/seastar/core/packet_queue.hh         |  45 ++++
+ include/seastar/core/reactor.hh              |  33 ++-
+ include/seastar/net/posix-stack.hh           |   3 +
+ src/core/channel.cc                          |  63 ++++++
+ src/core/packet_queue.cc                     |  57 +++++
+ src/core/reactor.cc                          | 216 ++++++++++++++++---
+ src/net/native-stack-impl.hh                 |   3 +
+ src/net/posix-stack.cc                       |  36 ++++
+ 12 files changed, 587 insertions(+), 46 deletions(-)
+ create mode 100644 include/seastar/core/channel.hh
+ create mode 100644 include/seastar/core/packet_queue.hh
+ create mode 100644 src/core/channel.cc
+ create mode 100644 src/core/packet_queue.cc
+
+diff --git a/include/seastar/core/channel.hh b/include/seastar/core/channel.hh
+new file mode 100644
+index 00000000..9efe78ff
+--- /dev/null
++++ b/include/seastar/core/channel.hh
+@@ -0,0 +1,43 @@
++#pragma once
++#include <atomic>
++#include <functional>
++#include <string>
++
++#include "seastar/core/iostream.hh"
++
++namespace seastar {
++class packet_queue;
++struct user_packet;
++
++class channel {
++ public:
++  channel(const std::string&);
++  virtual ~channel() {}
++
++  void init(seastar::packet_queue* pq, output_stream<char>&& output_stream);
++  const std::atomic_bool& is_init();
++
++  void put(user_packet* p);
++  void put(const std::vector<user_packet*>& v);
++
++  output_stream<char>* get_output_stream();
++
++  bool is_channel_broken() const;
++  void set_channel_broken();
++  void set_channel_reconnect_func(
++      std::function<void(void (channel::*done)())> fn);
++  void reconnect(void);
++  void reconnect_done();
++
++  const std::string& get_addr() const;
++
++ private:
++  seastar::packet_queue* volatile _packet_queue;
++  output_stream<char> _output_stream;
++  std::string _addr;
++  bool volatile _is_channel_broken;
++  std::function<void(void (channel::*func)())> _reconnect_func;
++  std::atomic_flag _is_reconnecting = ATOMIC_FLAG_INIT;
++  std::atomic_bool _init;
++};
++}  // namespace seastar
+diff --git a/include/seastar/core/internal/pollable_fd.hh b/include/seastar/core/internal/pollable_fd.hh
+index f24dfb42..f905543d 100644
+--- a/include/seastar/core/internal/pollable_fd.hh
++++ b/include/seastar/core/internal/pollable_fd.hh
+@@ -35,6 +35,7 @@ class socket_address;
+ namespace net {
+
+ class packet;
++class posix_data_sink_impl;
+
+ }
+
+@@ -97,6 +98,7 @@ class pollable_fd {
+     friend class reactor;
+     friend class readable_eventfd;
+     friend class writeable_eventfd;
++    friend class net::posix_data_sink_impl;
+ private:
+     std::unique_ptr<pollable_fd_state> _s;
+ };
+diff --git a/include/seastar/core/iostream-impl.hh b/include/seastar/core/iostream-impl.hh
+index 5112a918..4e6e20aa 100644
+--- a/include/seastar/core/iostream-impl.hh
++++ b/include/seastar/core/iostream-impl.hh
+@@ -70,6 +70,11 @@ future<> output_stream<CharType>::write(scattered_message<CharType> msg) {
+     return write(std::move(msg).release());
+ }
+
++template<typename CharType>
++int output_stream<CharType>::get_fd() {
++    return _fd.get_fd();
++}
++
+ template<typename CharType>
+ future<>
+ output_stream<CharType>::zero_copy_put(net::packet p) {
+@@ -120,11 +125,8 @@ future<> output_stream<CharType>::write(net::packet p) {
+         }
+
+         if (_zc_bufs.len() >= _size) {
+-            if (_trim_to_size) {
+-                return zero_copy_split_and_put(std::move(_zc_bufs));
+-            } else {
+-                return zero_copy_put(std::move(_zc_bufs));
+-            }
++            auto bufs = std::move(_zc_bufs);
++            return zero_copy_put(std::move(bufs));
+         }
+     }
+     return make_ready_future<>();
+@@ -148,18 +150,25 @@ input_stream<CharType>::read_exactly_part(size_t n, tmp_buf out, size_t complete
+         std::copy(_buf.get(), _buf.get() + now, out.get_write() + completed);
+         _buf.trim_front(now);
+         completed += now;
++    } else {
++       completed += _fd.get_read_data_size();
++       _fd.reset_read_data_size();
+     }
+     if (completed == n) {
+         return make_ready_future<tmp_buf>(std::move(out));
+     }
+
+-    // _buf is now empty
+-    return _fd.get().then([this, n, out = std::move(out), completed] (auto buf) mutable {
+-        if (buf.size() == 0) {
++    char* write_buf = out.get_write() + completed;
++    return _fd.get(n - completed, write_buf)
++              .then([this, n, out = std::move(out), completed] (auto buf) mutable {
++        // connection is disconnect
++        if (_fd.get_read_data_size() == 0) {
+             _eof = true;
+             return make_ready_future<tmp_buf>(std::move(buf));
+         }
+-        _buf = std::move(buf);
++        if (buf.size() > 0) {
++            _buf = std::move(buf);
++        }
+         return this->read_exactly_part(n, std::move(out), completed);
+     });
+ }
+@@ -188,10 +197,50 @@ input_stream<CharType>::read_exactly(size_t n) {
+     } else {
+         // buffer too small: start copy/read loop
+         tmp_buf b(n);
++        _fd.reset_read_data_size();
+         return read_exactly_part(n, std::move(b), 0);
+     }
+ }
+
++// TODO: user_buf should be allocated before read_exactly
++template <typename CharType>
++future<size_t>
++input_stream<CharType>::read_exactly(CharType* user_buf, size_t n) {
++    if (_buf.size() >= n) {
++        std::copy(_buf.get(), _buf.get() + n, user_buf);
++        _buf.trim_front(n);
++        return make_ready_future<size_t>(n);
++    } else {
++        _fd.reset_read_data_size();
++        // wrap to tmp_buf, but the deleter must be empty,
++        // it's owned by user.
++        tmp_buf b(user_buf, n, deleter());
++        return read_exactly_part(n, std::move(b), 0).then([] (auto&& buf) {
++            return make_ready_future<size_t>(buf.size());
++        });
++    }
++}
++
++template <typename CharType>
++future<size_t> input_stream<CharType>::read_exactly_into(CharType* user_buf, size_t n) {
++    static_assert(sizeof(CharType) == 1, "must buffer stream of bytes");
++
++    return _fd.get(user_buf, n).then([this, user_buf, n] (auto size) mutable {
++        // if size == 0, then disconnect
++        if (size == 0) {
++           return make_ready_future<size_t>(0);
++        }
++
++        if (size < n) {
++            return this->read_exactly_into(user_buf + size, n-size).then([size] (auto new_size) {
++                return make_ready_future<size_t>(size + new_size);
++            });
++        }
++
++        return make_ready_future<size_t>(size);
++    });
++}
++
+ template <typename CharType>
+ template <typename Consumer>
+ GCC6_CONCEPT(requires InputStreamConsumer<Consumer, CharType> || ObsoleteInputStreamConsumer<Consumer, CharType>)
+@@ -397,9 +446,8 @@ output_stream<CharType>::flush() {
+                 return _fd.flush();
+             });
+         } else if (_zc_bufs) {
+-            return zero_copy_put(std::move(_zc_bufs)).then([this] {
+-                return _fd.flush();
+-            });
++            auto bufs = std::move(_zc_bufs);
++            return zero_copy_put(std::move(bufs)).then([this] () mutable { return _fd.flush();});
+         }
+     } else {
+         if (_ex) {
+@@ -435,26 +483,41 @@ output_stream<CharType>::put(temporary_buffer<CharType> buf) {
+
+ template <typename CharType>
+ void
+-output_stream<CharType>::poll_flush() {
++output_stream<CharType>::poll_flush(bool one_more_flush) {
+     if (!_flush) {
+         // flush was canceled, do nothing
+         _flushing = false;
+-        _in_batch.value().set_value();
+-        _in_batch = compat::nullopt;
++        if (_in_batch) {
++            _in_batch.value().set_value();
++            _in_batch = std::experimental::nullopt;
++        }
+         return;
+     }
+
+     auto f = make_ready_future();
+     _flush = false;
+-    _flushing = true; // make whoever wants to write into the fd to wait for flush to complete
+
+     if (_end) {
+         // send whatever is in the buffer right now
+         _buf.trim(_end);
+         _end = 0;
+-        f = _fd.put(std::move(_buf));
++        if (one_more_flush) {
++            _flushing = true;
++            f = _fd.put(std::move(_buf));
++        } else {
++            auto bufs = std::move(_buf);
++            _flushing = true;
++            f = _fd.put(std::move(bufs));
++        }
+     } else if(_zc_bufs) {
+-        f = _fd.put(std::move(_zc_bufs));
++        if (one_more_flush) {
++            _flushing = true;
++            f = _fd.put(std::move(_zc_bufs));
++        } else {
++            auto bufs = std::move(_zc_bufs);
++            _flushing = true;
++            f = _fd.put(std::move(bufs));
++        }
+     }
+
+     f.then([this] {
+@@ -466,7 +529,7 @@ output_stream<CharType>::poll_flush() {
+             _ex = std::current_exception();
+         }
+         // if flush() was called while flushing flush once more
+-        poll_flush();
++        poll_flush(true);
+     });
+ }
+
+diff --git a/include/seastar/core/iostream.hh b/include/seastar/core/iostream.hh
+index cd7cfbe0..51204761 100644
+--- a/include/seastar/core/iostream.hh
++++ b/include/seastar/core/iostream.hh
+@@ -50,6 +50,20 @@ class data_source_impl {
+     virtual future<temporary_buffer<char>> get() = 0;
+     virtual future<temporary_buffer<char>> skip(uint64_t n);
+     virtual future<> close() { return make_ready_future<>(); }
++    virtual future<size_t> get(char* user_buf, size_t n) {
++        return make_ready_future<size_t>(0);
++    }
++    virtual future<temporary_buffer<char>> get(size_t hint, char* user_buf) {
++        return make_ready_future<temporary_buffer<char>>(temporary_buffer<char>());
++    }
++    virtual size_t get_read_data_size() {
++        return _read_data_size;
++    }
++    virtual void reset_read_data_size() {
++        _read_data_size = 0;
++    } 
++protected:
++    size_t _read_data_size;
+ };
+
+ class data_source {
+@@ -64,6 +78,11 @@ class data_source {
+     future<temporary_buffer<char>> get() { return _dsi->get(); }
+     future<temporary_buffer<char>> skip(uint64_t n) { return _dsi->skip(n); }
+     future<> close() { return _dsi->close(); }
++    future<temporary_buffer<char>> get(size_t hint, char* user_buf) {
++        return _dsi->get(hint, user_buf);
++    }
++    size_t get_read_data_size() { return _dsi->get_read_data_size(); }
++    void reset_read_data_size() { _dsi->reset_read_data_size(); }
+ };
+
+ class data_sink_impl {
+@@ -88,6 +107,10 @@ class data_sink_impl {
+         return make_ready_future<>();
+     }
+     virtual future<> close() = 0;
++    virtual int get_fd() {
++        // not implememted, reserve api
++        return -1;
++    }
+ };
+
+ class data_sink {
+@@ -113,6 +136,7 @@ class data_sink {
+         return _dsi->flush();
+     }
+     future<> close() { return _dsi->close(); }
++    int get_fd() { return _dsi->get_fd(); }
+ };
+
+ struct continue_consuming {};
+@@ -214,6 +238,7 @@ class input_stream final {
+     input_stream(input_stream&&) = default;
+     input_stream& operator=(input_stream&&) = default;
+     future<temporary_buffer<CharType>> read_exactly(size_t n);
++    future<size_t> read_exactly(CharType* user_buf, size_t n);
+     template <typename Consumer>
+     GCC6_CONCEPT(requires InputStreamConsumer<Consumer, CharType> || ObsoleteInputStreamConsumer<Consumer, CharType>)
+     future<> consume(Consumer&& c);
+@@ -221,6 +246,7 @@ class input_stream final {
+     GCC6_CONCEPT(requires InputStreamConsumer<Consumer, CharType> || ObsoleteInputStreamConsumer<Consumer, CharType>)
+     future<> consume(Consumer& c);
+     bool eof() { return _eof; }
++    future<size_t> read_exactly_into(CharType* user_buf, size_t n);
+     /// Returns some data from the stream, or an empty buffer on end of
+     /// stream.
+     future<tmp_buf> read();
+@@ -286,7 +312,8 @@ class output_stream final {
+     size_t possibly_available() const { return _size - _begin; }
+     future<> split_and_put(temporary_buffer<CharType> buf);
+     future<> put(temporary_buffer<CharType> buf);
+-    void poll_flush();
++    //void poll_flush();
++    void poll_flush(bool one_more_flush= false);
+     future<> zero_copy_put(net::packet p);
+     future<> zero_copy_split_and_put(net::packet p);
+     [[gnu::noinline]]
+@@ -324,6 +351,8 @@ class output_stream final {
+     ///
+     /// \returns the data_sink
+     data_sink detach() &&;
++
++    int get_fd();
+ private:
+     friend class reactor;
+ };
+diff --git a/include/seastar/core/packet_queue.hh b/include/seastar/core/packet_queue.hh
+new file mode 100644
+index 00000000..d165eaed
+--- /dev/null
++++ b/include/seastar/core/packet_queue.hh
+@@ -0,0 +1,45 @@
++#pragma once
++#include <pthread.h>
++#include <atomic>
++#include <functional>
++#include <list>
++#include <map>
++
++#include "readerwriterqueue.h"
++#include "seastar/core/circular_buffer.hh"
++#include "seastar/core/iostream.hh"
++
++namespace seastar {
++
++class reactor;
++class channel;
++
++struct user_packet {
++  std::vector<net::fragment> _fragments;
++  std::function<void()> _done;
++  channel* _channel;
++};
++
++using tls_queue = moodycamel::ReaderWriterQueue<user_packet*>;
++using tls_queue_list = std::vector<tls_queue*>;
++
++class packet_queue {
++ public:
++  explicit packet_queue(reactor* r);
++  virtual ~packet_queue();
++
++  bool enqueue(user_packet* pack);
++  bool try_enqueue(user_packet* pack);
++  bool try_dequeue_bulk(user_packet** p);
++
++ private:
++  tls_queue* impl();
++  void dequeue_tls_queues();
++
++ private:
++  pthread_key_t tls_queue_key;
++  tls_queue_list _queues;
++  std::atomic<size_t> _index;
++  reactor* _reactor;
++};
++}  // namespace seastar
+diff --git a/include/seastar/core/reactor.hh b/include/seastar/core/reactor.hh
+index dcd2f82b..443fbe20 100644
+--- a/include/seastar/core/reactor.hh
++++ b/include/seastar/core/reactor.hh
+@@ -78,6 +78,8 @@
+ #include <seastar/core/manual_clock.hh>
+ #include <seastar/core/metrics_registration.hh>
+ #include <seastar/core/scheduling.hh>
++#include <seastar/core/packet_queue.hh>
++#include <seastar/core/channel.hh>
+ #include "internal/pollable_fd.hh"
+
+ #ifdef HAVE_OSV
+@@ -92,6 +94,8 @@ extern "C" int _Unwind_RaiseException(struct _Unwind_Exception *h);
+
+ namespace seastar {
+
++extern logger seastar_logger;
++
+ using shard_id = unsigned;
+
+ /// Configuration structure for reactor
+@@ -391,6 +395,8 @@ class reactor {
+     class signal_pollfn;
+     class aio_batch_submit_pollfn;
+     class batch_flush_pollfn;
++    class packet_queue_pollfn;
++    class smp_alien_pollfn;
+     class smp_pollfn;
+     class drain_cross_cpu_freelist_pollfn;
+     class lowres_timer_pollfn;
+@@ -402,6 +408,8 @@ class reactor {
+     friend signal_pollfn;
+     friend aio_batch_submit_pollfn;
+     friend batch_flush_pollfn;
++    friend packet_queue_pollfn;
++    friend smp_alien_pollfn;
+     friend smp_pollfn;
+     friend drain_cross_cpu_freelist_pollfn;
+     friend lowres_timer_pollfn;
+@@ -534,6 +542,7 @@ class reactor {
+     int64_t _last_vruntime = 0;
+     task_queue_list _active_task_queues;
+     task_queue_list _activating_task_queues;
++    packet_queue* _packet_queue;
+     task_queue* _at_destroy_tasks;
+     sched_clock::duration _task_quota;
+     /// Handler that will be called when there is no task to execute on cpu.
+@@ -777,6 +786,11 @@ class reactor {
+         }
+     }
+
++    packet_queue* get_packet_queue() {
++        return _packet_queue;
++    }
++
++    future<> flush_packet_queue(bool& pollable);
+     /// Set a handler that will be called when there is no task to execute on cpu.
+     /// Handler should do a low priority work.
+     /// 
+@@ -797,6 +811,7 @@ class reactor {
+
+     void start_epoll();
+     void sleep();
++    void maybe_wakeup();
+
+     steady_clock_type::duration total_idle_time();
+     steady_clock_type::duration total_busy_time();
+@@ -1008,6 +1023,7 @@ class smp {
+     static void create_thread(std::function<void ()> thread_loop);
+ public:
+     static unsigned count;
++    static bool poll_mode;
+ };
+
+ inline
+@@ -1026,7 +1042,22 @@ size_t iovec_len(const iovec* begin, size_t len)
+     return ret;
+ }
+
+-extern logger seastar_logger;
++
++class connection_close_exception : public std::exception {
++public:
++    connection_close_exception() {}
++    virtual const char* what() const throw () {
++        return "Remote connection is closed.";
++    }
++};
++
++#define CHECK_CONNECTION_CLOSE(size)              \
++  do {                                            \
++    if (size == 0) {                              \
++      return seastar::make_exception_future<>(    \
++          seastar::connection_close_exception()); \
++    }                                             \
++  } while(0)
+
+ }
+
+diff --git a/include/seastar/net/posix-stack.hh b/include/seastar/net/posix-stack.hh
+index 803f6db6..ccc7a711 100644
+--- a/include/seastar/net/posix-stack.hh
++++ b/include/seastar/net/posix-stack.hh
+@@ -112,6 +112,8 @@ class posix_data_source_impl final : public data_source_impl {
+         size_t buf_size = 8192) : _buffer_allocator(allocator), _fd(std::move(fd)),
+         _buf(make_temporary_buffer<char>(_buffer_allocator, buf_size)), _buf_size(buf_size) {}
+     future<temporary_buffer<char>> get() override;
++    future<size_t> get(char* user_buf, size_t n) override;
++    future<temporary_buffer<char>> get(size_t hint, char* user_buf) override;
+     future<> close() override;
+ };
+
+@@ -124,6 +126,7 @@ class posix_data_sink_impl : public data_sink_impl {
+     future<> put(packet p) override;
+     future<> put(temporary_buffer<char> buf) override;
+     future<> close() override;
++    int get_fd() override;
+ };
+
+ template <transport Transport>
+diff --git a/src/core/channel.cc b/src/core/channel.cc
+new file mode 100644
+index 00000000..58620551
+--- /dev/null
++++ b/src/core/channel.cc
+@@ -0,0 +1,63 @@
++#include "seastar/core/channel.hh"
++#include "seastar/core/packet_queue.hh"
++
++namespace seastar {
++channel::channel(const std::string& addr)
++    : _packet_queue(nullptr),
++      _addr(addr),
++      _reconnect_func(nullptr),
++      _is_channel_broken(false),
++      _init(false) {}
++
++void channel::init(seastar::packet_queue* pq,
++                   output_stream<char>&& output_stream) {
++  _packet_queue = pq;
++  _output_stream = std::move(output_stream);
++  _init = true;
++}
++
++void channel::put(user_packet* p) {
++  p->_channel = this;
++  _packet_queue->enqueue(p);
++}
++
++void channel::put(const std::vector<user_packet*>& v) {
++  for (auto p : v) {
++    p->_channel = this;
++    _packet_queue->enqueue(p);
++  }
++}
++
++const std::atomic_bool& channel::is_init() { return _init; }
++
++output_stream<char>* channel::get_output_stream() {
++  return &this->_output_stream;
++}
++
++bool channel::is_channel_broken() const { return _is_channel_broken; }
++
++void channel::set_channel_broken() { _is_channel_broken = true; }
++
++const std::string& channel::get_addr() const { return _addr; }
++
++void channel::reconnect_done() {
++  _is_channel_broken = false;
++  _is_reconnecting.clear(std::memory_order_release);
++}
++
++void channel::reconnect() {
++  if (_reconnect_func != nullptr &&
++      !_is_reconnecting.test_and_set(std::memory_order_acquire)) {
++    if (_is_channel_broken) {
++      _reconnect_func(&channel::reconnect_done);
++    } else {
++      reconnect_done();
++    }
++  }
++}
++
++void channel::set_channel_reconnect_func(
++    std::function<void(void (channel::*func)())> fn) {
++  _reconnect_func = fn;
++}
++}  // namespace seastar
+diff --git a/src/core/packet_queue.cc b/src/core/packet_queue.cc
+new file mode 100644
+index 00000000..d0f56ea9
+--- /dev/null
++++ b/src/core/packet_queue.cc
+@@ -0,0 +1,57 @@
++#include "seastar/core/packet_queue.hh"
++#include "seastar/core/reactor.hh"
++
++namespace seastar {
++
++static const size_t TLS_QUEUE_SIZE = 128;
++packet_queue::packet_queue(reactor* r) : _index(0), _reactor(r) {
++  pthread_key_create(&tls_queue_key, NULL);
++  _queues.resize(TLS_QUEUE_SIZE, nullptr);
++}
++
++packet_queue::~packet_queue() {
++  for (auto it = _queues.begin(); it != _queues.end(); ++it) delete *it;
++  pthread_key_delete(tls_queue_key);
++}
++
++tls_queue* packet_queue::impl() {
++  auto tls_queue_impl = (tls_queue*)pthread_getspecific(tls_queue_key);
++  if (tls_queue_impl == nullptr) {
++    tls_queue_impl = new tls_queue();
++    auto index = _index.fetch_add(1);
++    _queues[index] = tls_queue_impl;
++    pthread_setspecific(tls_queue_key, tls_queue_impl);
++  }
++  return tls_queue_impl;
++}
++
++bool packet_queue::enqueue(user_packet* pack) {
++  bool ret = impl()->enqueue(pack);
++  if (ret) {
++    _reactor->maybe_wakeup();
++  }
++  return ret;
++}
++
++bool packet_queue::try_enqueue(user_packet* pack) {
++  bool ret = impl()->try_enqueue(pack);
++  if (ret) {
++    _reactor->maybe_wakeup();
++  }
++  return ret;
++}
++
++bool packet_queue::try_dequeue_bulk(user_packet** pack) {
++  for (auto it = _queues.begin(); it != _queues.end(); ++it) {
++    if (*it == nullptr) return false;
++    user_packet* item = nullptr;
++    while ((*it)->try_dequeue(item)) {
++      if (item == nullptr) continue;
++      *pack = item;
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace seastar
+diff --git a/src/core/reactor.cc b/src/core/reactor.cc
+index e2ec4e56..f3492b90 100644
+--- a/src/core/reactor.cc
++++ b/src/core/reactor.cc
+@@ -641,6 +641,7 @@ class reactor_backend {
+     virtual void reset_preemption_monitor() = 0;
+     virtual void request_preemption() = 0;
+     virtual void start_handling_signal() = 0;
++    virtual int get_fd() = 0;
+ };
+
+ // reactor backend using file-descriptor & epoll, suitable for running on
+@@ -674,6 +675,7 @@ class reactor_backend_epoll : public reactor_backend {
+     virtual void reset_preemption_monitor() override;
+     virtual void request_preemption() override;
+     virtual void start_handling_signal() override;
++    virtual int get_fd() override;
+ };
+
+ #ifdef HAVE_OSV
+@@ -694,6 +696,7 @@ class reactor_backend_osv : public reactor_backend {
+     virtual future<> writeable(pollable_fd_state& fd) override;
+     virtual void forget(pollable_fd_state& fd) override;
+     void enable_timer(steady_clock_type::time_point when);
++    virtual int get_fd() override;
+ };
+ #endif /* HAVE_OSV */
+
+@@ -963,6 +966,9 @@ class reactor_backend_aio : public reactor_backend {
+         // The aio backend only uses SIGHUP/SIGTERM/SIGINT. We don't need to handle them right away and our
+         // implementation of request_preemption is not signal safe, so do nothing.
+     }
++    virtual int get_fd() override {
++      return -1;
++    }
+ };
+
+ reactor_backend_epoll::reactor_backend_epoll(reactor* r)
+@@ -993,6 +999,10 @@ void reactor_backend_epoll::start_tick() {
+     auto sched_ok = pthread_setschedparam(_task_quota_timer_thread.native_handle(), SCHED_FIFO, &sp);
+     if (sched_ok != 0 && _r->_id == 0) {
+         seastar_logger.warn("Unable to set SCHED_FIFO scheduling policy for timer thread; latency impact possible. Try adding CAP_SYS_NICE");
++        auto ret = nice(-10);
++        if (ret == -1) {
++            seastar_logger.warn("Unable to set CAP_SYS_NICE");
++        }
+     }
+ }
+
+@@ -1337,6 +1347,7 @@ reactor::reactor(unsigned id, reactor_backend_selector rbs, reactor_config cfg)
+     , _io_context(0)
+     , _reuseport(posix_reuseport_detect())
+     , _thread_pool(std::make_unique<thread_pool>(this, seastar::format("syscall-{}", id))) {
++    _packet_queue = new packet_queue(this);
+     _task_queues.push_back(std::make_unique<task_queue>(0, "main", 1000));
+     _task_queues.push_back(std::make_unique<task_queue>(1, "atexit", 1000));
+     _at_destroy_tasks = _task_queues.back().get();
+@@ -1375,6 +1386,7 @@ reactor::~reactor() {
+     auto r = ::pthread_sigmask(SIG_BLOCK, &mask, NULL);
+     assert(r == 0);
+
++    delete _packet_queue;
+     _backend->stop_tick();
+     auto eraser = [](auto& list) {
+         while (!list.empty()) {
+@@ -1511,7 +1523,8 @@ void cpu_stall_detector::update_config(cpu_stall_detector_config cfg) {
+
+ void cpu_stall_detector::maybe_report() {
+     if (_reported++ < _max_reports_per_minute) {
+-        generate_trace();
++        std::cerr << "Warning: Heavy task is running" << std::endl;
++        //generate_trace();
+     }
+ }
+ // We use a tick at every timer firing so we can report suppressed backtraces.
+@@ -1770,6 +1783,7 @@ void reactor::configure(boost::program_options::variables_map vm) {
+     _max_task_backlog = vm["max-task-backlog"].as<unsigned>();
+     _max_poll_time = vm["idle-poll-time-us"].as<unsigned>() * 1us;
+     if (vm.count("poll-mode")) {
++        smp::poll_mode = true;
+         _max_poll_time = std::chrono::nanoseconds::max();
+     }
+     if (vm.count("overprovisioned")
+@@ -1833,12 +1847,14 @@ reactor::posix_listen(socket_address sa, listen_options opts) {
+     if (opts.reuse_address) {
+         fd.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1);
+     }
+-    if (_reuseport)
+-        fd.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1);
++    //if (_reuseport)
++    fd.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1);
+
+     try {
+         fd.bind(sa.u.sa, sizeof(sa.u.sas));
+-        fd.listen(100);
++        // here shouldn't use SOMAXCONN which probabaly 128
++        //fd.listen(100);
++        fd.listen(4096);
+     } catch (const std::system_error& s) {
+         throw std::system_error(s.code(), fmt::format("posix_listen failed for address {}", sa));
+     }
+@@ -1892,6 +1908,7 @@ reactor::posix_connect(lw_shared_ptr<pollable_fd> pfd, socket_address sa, socket
+         }
+     }
+ #endif
++    pfd->get_file_desc().setsockopt(SOL_SOCKET, SO_REUSEADDR, 1);
+     if (!local.is_wildcard()) {
+         // call bind() only if local address is not wildcard
+         pfd->get_file_desc().bind(local.u.sa, sizeof(sa.u.sas));
+@@ -3545,6 +3562,53 @@ future<> reactor::run_exit_tasks() {
+     });
+ }
+
++future<> reactor::flush_packet_queue(bool& pollable) {
++    pollable = false;
++
++    user_packet* item = nullptr;
++    if (!_packet_queue->try_dequeue_bulk(&item)) {
++        return make_ready_future();
++    }
++    channel* chan = item->_channel;
++
++    pollable = true;
++    output_stream<char>* out = chan->get_output_stream();
++
++    return out->write(net::packet(item->_fragments,
++                                  make_deleter(seastar::deleter(), [item](){
++                                      item->_done();
++                                      delete item;
++                                  })
++            )).then([this, out]() {
++                return out->flush().then([] {
++                    return seastar::make_ready_future<>();
++                });
++            }).then_wrapped([this, out, chan] (auto&& f) {
++                try {
++                    f.get();
++                    return seastar::make_ready_future<>();
++                } catch (...) {
++                    // disconnect when exception
++                    seastar_logger.error("Write error, disconnect the connection.");
++                    chan->set_channel_broken();
++
++                    // ev_del is a param that will be ignored by EPOLL_CTL_DEL
++                    // so the last param in epoll_ctl can be null, but
++                    // in kernel versions before 2.6.9, the EPOLL_CTL_DEL operation required
++                    // a non-null pointer in event, even though this argument is ignored.
++                    // so we use a empty param here.
++                    struct epoll_event ev_del;
++                    if (epoll_ctl(_backend->get_fd(), EPOLL_CTL_DEL, out->get_fd(), &ev_del) < 0) {
++                        seastar_logger.error("Epoll delete fd error.");
++                        return make_ready_future();
++                    }
++                    close(out->get_fd());
++
++                    return make_ready_future();
++                }
++          });
++}
++
+ void reactor::stop() {
+     assert(engine()._id == 0);
+     smp::cleanup_cpu();
+@@ -3892,6 +3956,71 @@ class reactor::drain_cross_cpu_freelist_pollfn final : public reactor::pollfn {
+     }
+ };
+
++// poller for alien queue
++class reactor::smp_alien_pollfn : public reactor::pollfn {
++    reactor& _r;
++public:
++    smp_alien_pollfn(reactor& r) : _r(r) {}
++    virtual bool poll() final override {
++        return alien::smp::poll_queues();
++    }
++    virtual bool pure_poll() final override {
++        return alien::smp::pure_poll_queues();
++    }
++    virtual bool try_enter_interrupt_mode() override {
++        return true;
++    }
++    virtual void exit_interrupt_mode() override final {
++    }
++};
++
++// TODO packet_queue per connection
++class reactor::packet_queue_pollfn final : public reactor::pollfn {
++public:
++    packet_queue_pollfn(reactor& r) : _r(r), _should_poll(true) {
++        start();
++    }
++
++    virtual bool poll() final override {
++        if (_should_poll) {
++            start();
++        }
++        return false;
++    }
++
++    void start() {
++        bool pollable = false;
++        future<> f = do_poll(pollable);
++        if (pollable) {
++            _should_poll = false;
++            f.then([this]() { start(); });
++        } else {
++            _should_poll = true;
++        }
++    }
++
++    virtual bool pure_poll() override final {
++        return poll();
++    }
++
++    virtual bool try_enter_interrupt_mode() override {
++        return true;
++    }
++
++    virtual void exit_interrupt_mode() override final {
++    }
++
++private:
++    future<> do_poll(bool& pollable) {
++        return _r.flush_packet_queue(pollable);
++    }
++
++private:
++    reactor& _r;
++    bool _should_poll;
++};
++
++
+ class reactor::lowres_timer_pollfn final : public reactor::pollfn {
+     reactor& _r;
+     // A highres timer is implemented as a waking  signal; so
+@@ -4175,22 +4304,25 @@ int reactor::run() {
+     }
+     if (my_io_queues.size() > 0) {
+ #ifndef HAVE_OSV
+-        io_poller = poller(std::make_unique<io_pollfn>(*this));
++        //disable io poller
++        //io_poller = poller(std::make_unique<io_pollfn>(*this));
+ #endif
+         aio_poller = poller(std::make_unique<aio_batch_submit_pollfn>(*this));
+     }
+
+     poller batch_flush_poller(std::make_unique<batch_flush_pollfn>(*this));
+     poller execution_stage_poller(std::make_unique<execution_stage_pollfn>());
++    poller packet_queue_poller(std::make_unique<packet_queue_pollfn>(*this));
++    poller alien_queue_poller(std::make_unique<smp_alien_pollfn>(*this));
+
+     start_aio_eventfd_loop();
+
+-    if (_id == 0 && _cfg.auto_handle_sigint_sigterm) {
++    /*if (_id == 0 && _cfg.auto_handle_sigint_sigterm) {
+        if (_handle_sigint) {
+           _signals.handle_signal_once(SIGINT, [this] { stop(); });
+        }
+        _signals.handle_signal_once(SIGTERM, [this] { stop(); });
+-    }
++    }*/
+
+     _cpu_started.wait(smp::count).then([this] {
+         _network_stack->initialize().then([this] {
+@@ -4327,6 +4459,26 @@ int reactor::run() {
+     return _return;
+ }
+
++void
++reactor::maybe_wakeup() {
++    // poll-mode no need to check _sleeping.
++    if (smp::poll_mode) {
++        return;
++    }
++
++    // This is read-after-write, which wants memory_order_seq_cst,
++    // but we insert that barrier using systemwide_memory_barrier()
++    // because seq_cst is so expensive.
++    //
++    // However, we do need a compiler barrier:
++    std::atomic_signal_fence(std::memory_order_seq_cst);
++    if (_sleeping.load(std::memory_order_relaxed)) {
++        // We are free to clear it, because we're sending a signal now
++        _sleeping.store(false, std::memory_order_relaxed);
++        wakeup();
++    }
++}
++
+ void
+ reactor::sleep() {
+     for (auto i = _pollers.begin(); i != _pollers.end(); ++i) {
+@@ -4465,6 +4617,11 @@ reactor::poller::~poller() {
+     }
+ }
+
++int
++reactor_backend_epoll::get_fd() {
++    return _epollfd.get();
++}
++
+ bool
+ reactor_backend_epoll::wait_and_process(int timeout, const sigset_t* active_sigmask) {
+     std::array<epoll_event, 128> eevt;
+@@ -4995,6 +5152,7 @@ std::vector<reactor*> smp::_reactors;
+ std::unique_ptr<smp_message_queue*[], smp::qs_deleter> smp::_qs;
+ std::thread::id smp::_tmain;
+ unsigned smp::count = 1;
++bool smp::poll_mode = false;
+ bool smp::_using_dpdk;
+
+ void smp::start_all_queues()
+@@ -5083,6 +5241,20 @@ void smp::create_thread(std::function<void ()> thread_loop) {
+     }
+ }
+
++static void siguser_action() noexcept {
++    print("write queue is waking up");
++}
++
++void smp::qs_deleter::operator()(smp_message_queue** qs) const {
++    for (unsigned i = 0; i < smp::count; i++) {
++        for (unsigned j = 0; j < smp::count; j++) {
++            qs[i][j].~smp_message_queue();
++        }
++        ::operator delete[](qs[i]);
++    }
++    delete[](qs);
++}
++
+ // Installs handler for Signal which ensures that Func is invoked only once
+ // in the whole program and that after it is invoked the default handler is restored.
+ template<int Signal, void(*Func)()>
+@@ -5116,16 +5288,6 @@ static void sigabrt_action() noexcept {
+     print_with_backtrace("Aborting");
+ }
+
+-void smp::qs_deleter::operator()(smp_message_queue** qs) const {
+-    for (unsigned i = 0; i < smp::count; i++) {
+-        for (unsigned j = 0; j < smp::count; j++) {
+-            qs[i][j].~smp_message_queue();
+-        }
+-        ::operator delete[](qs[i]);
+-    }
+-    delete[](qs);
+-}
+-
+ class disk_config_params {
+ private:
+     unsigned _num_io_queues = 0;
+@@ -5285,18 +5447,18 @@ void smp::configure(boost::program_options::variables_map configuration, reactor
+     // We leave some signals unmasked since we don't handle them ourself.
+     sigset_t sigs;
+     sigfillset(&sigs);
+-    for (auto sig : {SIGHUP, SIGQUIT, SIGILL, SIGABRT, SIGFPE, SIGSEGV,
++    /*for (auto sig : {SIGHUP, SIGQUIT, SIGILL, SIGABRT, SIGFPE, SIGSEGV,
+             SIGALRM, SIGCONT, SIGSTOP, SIGTSTP, SIGTTIN, SIGTTOU}) {
+         sigdelset(&sigs, sig);
+-    }
+-    if (!reactor_cfg.auto_handle_sigint_sigterm) {
++    }*/
++    /*if (!reactor_cfg.auto_handle_sigint_sigterm) {
+         sigdelset(&sigs, SIGINT);
+         sigdelset(&sigs, SIGTERM);
+-    }
++    }*/
+     pthread_sigmask(SIG_BLOCK, &sigs, nullptr);
+
+-    install_oneshot_signal_handler<SIGSEGV, sigsegv_action>();
+-    install_oneshot_signal_handler<SIGABRT, sigabrt_action>();
++    //install_oneshot_signal_handler<SIGSEGV, sigsegv_action>();
++    //install_oneshot_signal_handler<SIGABRT, sigabrt_action>();
+
+ #ifdef SEASTAR_HAVE_DPDK
+     _using_dpdk = configuration.count("dpdk-pmd");
+@@ -5487,9 +5649,9 @@ void smp::configure(boost::program_options::variables_map configuration, reactor
+             memory::set_heap_profiling_enabled(heapprof_enabled);
+             sigset_t mask;
+             sigfillset(&mask);
+-            for (auto sig : { SIGSEGV }) {
++            /*for (auto sig : { SIGSEGV }) {
+                 sigdelset(&mask, sig);
+-            }
++            }*/
+             auto r = ::pthread_sigmask(SIG_BLOCK, &mask, NULL);
+             throw_pthread_error(r);
+             init_default_smp_service_group();
+@@ -5597,6 +5759,10 @@ __thread reactor* local_engine;
+ reactor_backend_osv::reactor_backend_osv() {
+ }
+
++int reactor_backend_epoll::get_fd() {
++    return -1;
++}
++
+ bool
+ reactor_backend_osv::wait_and_process() {
+     _poller.process();
+diff --git a/src/net/native-stack-impl.hh b/src/net/native-stack-impl.hh
+index 4be2ca08..e1c8a953 100644
+--- a/src/net/native-stack-impl.hh
++++ b/src/net/native-stack-impl.hh
+@@ -155,6 +155,9 @@ class native_connected_socket_impl<Protocol>::native_data_source_impl final
+             return get();
+         });
+     }
++    virtual future<size_t> get(char* user_buf, size_t n) override {
++        return make_ready_future<size_t>(0);
++    }
+     future<> close() override {
+         _conn->close_write();
+         return make_ready_future<>();
+diff --git a/src/net/posix-stack.cc b/src/net/posix-stack.cc
+index 758deb0b..bdd0d9a7 100644
+--- a/src/net/posix-stack.cc
++++ b/src/net/posix-stack.cc
+@@ -325,6 +325,37 @@ posix_data_source_impl::get() {
+     });
+ }
+
++// 'hint' is the total bytes we need, if the 'hint' is
++// greater or equal to '_buf_size', we can read the data
++// to 'user_buf' directly from kernel. And if the last
++// several bytes less than '_buf_size', we must read the
++// data to '_buf'.
++future<temporary_buffer<char>>
++posix_data_source_impl::get(size_t hint, char* user_buf) {
++    if (hint >= _buf_size) {
++        return _fd->read_some(user_buf, hint).then([this] (size_t size) {
++            _buf.trim(0);
++            _read_data_size = size;
++            return make_ready_future<temporary_buffer<char>>(std::move(temporary_buffer<char>()));
++        });
++    } else {
++        return _fd->read_some(_buf.get_write(), _buf_size).then([this] (size_t size) {
++            _buf.trim(size);
++            auto ret = std::move(_buf);
++            _buf = temporary_buffer<char>(_buf_size);
++            _read_data_size = size;
++            return make_ready_future<temporary_buffer<char>>(std::move(ret));
++        });
++    }
++}
++
++future<size_t>
++posix_data_source_impl::get(char* user_buf, size_t n) {
++    return _fd->read_some(user_buf, n).then([this] (size_t size) {
++        return make_ready_future<size_t>(size);
++    });
++}
++
+ future<> posix_data_source_impl::close() {
+     _fd->shutdown(SHUT_RD);
+     return make_ready_future<>();
+@@ -365,6 +396,11 @@ posix_data_sink_impl::close() {
+     return make_ready_future<>();
+ }
+
++int
++posix_data_sink_impl::get_fd() {
++    return _fd->get_fd();
++}
++
+ server_socket
+ posix_network_stack::listen(socket_address sa, listen_options opt) {
+     if (opt.proto == transport::TCP) {
+-- 
+2.19.1.3.ge56e4f7
+

@@ -86,33 +86,21 @@ struct RecvInfo {
 
 typedef absl::flat_hash_map<DupRecvKey, RecvInfo> DupRecvTable;
 
-// A map used to store memory types for the inputs/outputs of every node.
-// The key is a pair of ints consisting of a node id and input/output index.
-// TODO(power): migrate back to std::pair when absl::Hash is fixed for MSVC.
-struct NodePort {
-  int node_id;
-  int index;
-
-  friend bool operator==(const NodePort& x, const NodePort& y) {
-    return x.node_id == y.node_id && x.index == y.index;
-  }
-
-  template <typename H>
-  friend H AbslHashValue(H h, const NodePort& c) {
-    return H::combine(std::move(h), c.node_id, c.index);
-  }
+struct FuseRecvInfo : public RecvInfo {
+  NodeDef* dst_def;
+  // Used to specify to dst input slot.
+  const Edge* edge;
+  int64 start_time;
+  int slot;
 };
 
-typedef absl::flat_hash_map<NodePort, MemoryType> MemoryTypeMap;
+typedef absl::flat_hash_map<DupRecvKey, std::vector<FuseRecvInfo>>
+    DupFuseRecvTable;
 
-// We collect the following information about the graph before performing
-// graph partitioning.
-struct GraphInfo {
-  std::vector<DeviceType> device_types;
-  MemoryTypeMap input_types;
-  MemoryTypeMap output_types;
-  std::vector<ControlFlowInfo> cf_info;
-};
+typedef absl::flat_hash_map<DupRecvKey, FuseRecvInfo>
+    GlobalDupFuseRecvTable;
+
+typedef std::map<std::string, DupFuseRecvTable> FuseRecvGroups;
 
 DataType EdgeType(const Edge* e) {
   if (e->IsControlEdge()) {
@@ -157,15 +145,14 @@ bool IsDstInputOnHost(const Edge* edge, const GraphInfo& info) {
   return true;
 }
 
-// Add an input to dst that comes from the "src_slot" output of the
-// node named by "src_name".
-void AddInput(NodeDef* dst, StringPiece src_name, int src_slot) {
+void SetInput(NodeDef* dst, int dst_slot,
+              StringPiece src_name, int src_slot) {
   if (src_slot == Graph::kControlSlot) {
-    dst->add_input(strings::StrCat("^", src_name));
+    dst->set_input(dst_slot, strings::StrCat("^", src_name));
   } else if (src_slot == 0) {
-    dst->add_input(src_name.data(), src_name.size());
+    dst->set_input(dst_slot, src_name.data(), src_name.size());
   } else {
-    dst->add_input(strings::StrCat(src_name, ":", src_slot));
+    dst->set_input(dst_slot, strings::StrCat(src_name, ":", src_slot));
   }
 }
 
@@ -188,6 +175,37 @@ void SetSendRecvAttrs(const PartitionOptions& opts, const Edge* edge,
                 static_cast<int64>(
                     opts.get_incarnation(edge->src()->assigned_device_name())));
   builder->Attr("recv_device", edge->dst()->assigned_device_name());
+  builder->Attr("client_terminated", false);
+}
+
+void SetFuseRecvAttrs(const PartitionOptions& opts,
+                      const std::vector<const Edge*>& edges,
+                      NodeDefBuilder* builder) {
+
+  int fuse_count = edges.size();
+
+  // Set tensor names.
+  std::vector<string> tensor_names(fuse_count);
+  for (int i = 0; i < fuse_count; ++i) {
+    tensor_names[i] = strings::StrCat("edge_", edges[i]->id(), "_",
+                                      edges[i]->src()->name());
+  }
+  builder->Attr("tensor_names", tensor_names);
+
+  std::vector<string> send_devices(fuse_count);
+  std::vector<string> recv_devices(fuse_count);
+  std::vector<int64> send_device_incarnations(fuse_count);
+  for (int i = 0; i < fuse_count; ++i) {
+    send_devices[i] = edges[i]->src()->assigned_device_name();
+    recv_devices[i] = edges[i]->dst()->assigned_device_name();
+    send_device_incarnations[i] =
+      static_cast<int64>(opts.get_incarnation(
+          edges[i]->src()->assigned_device_name()));
+  }
+  builder->Attr("send_devices", send_devices);
+  builder->Attr("recv_devices", recv_devices);
+  builder->Attr("send_device_incarnations", send_device_incarnations);
+
   builder->Attr("client_terminated", false);
 }
 
@@ -331,6 +349,178 @@ NodeDef* AddRecv(const PartitionOptions& opts, const GraphInfo& g_info,
   } else {
     return recv;
   }
+}
+
+std::vector<NodeDef*> AddFuseRecv(const PartitionOptions& opts,
+                                  const GraphInfo& g_info, GraphDef* gdef,
+                                  const std::vector<const Edge*> edges,
+                                  NodeDef** real_recv, Status* status) {
+  int fuse_count = edges.size();
+
+  std::vector<DataType> dtypes(fuse_count);
+  std::vector<const Node*> srcs(fuse_count);
+  std::vector<const Node*> dsts(fuse_count);
+  std::vector<DataType> cast_dtypes(fuse_count);
+
+  bool host_memory;
+  int host_memory_count = 0, device_memory_count = 0;
+  for (int i = 0; i < fuse_count; ++i) {
+    dtypes[i] = EdgeType(edges[i]);
+    srcs[i] = edges[i]->src();
+    dsts[i] = edges[i]->dst();
+    cast_dtypes[i] = dtypes[i];
+
+    // NOTE(yuanbyu): Only cast for cross-device send/recv.
+    if (opts.should_cast && !NeedSameDeviceSendRecv(edges[i], g_info)) {
+      cast_dtypes[i] = opts.should_cast(edges[i]);
+    }
+
+    host_memory = false;
+    if (!edges[i]->IsControlEdge()) {
+      auto dst_it = g_info.input_types.find({dsts[i]->id(), edges[i]->dst_input()});
+      DCHECK(dst_it != g_info.input_types.end());
+      host_memory = (dst_it->second == HOST_MEMORY);
+    }
+    if (host_memory) {
+      ++host_memory_count;
+    } else {
+      ++device_memory_count;
+    }
+  }
+
+  host_memory = false;
+  if (host_memory_count > device_memory_count) host_memory = true;
+
+  // Add the fuse recv node.
+  const string fuse_recv_op = (host_memory) ? "_HostFuseRecv" : "_FuseRecv";
+  string fuse_recv_node_name;
+  // TODO: name -> use global counter
+  for (int i = 0; i < fuse_count; ++i) {
+    if (i != 0) {
+      fuse_recv_node_name += "__";
+    }
+    fuse_recv_node_name += srcs[i]->name();
+  }
+
+  NodeDefBuilder fuse_recv_builder(opts.new_name(fuse_recv_node_name),
+                                   fuse_recv_op);
+  SetFuseRecvAttrs(opts, edges, &fuse_recv_builder);
+  fuse_recv_builder.Device(dsts[0]->assigned_device_name())
+    .Attr("tensor_types", cast_dtypes);
+
+  *real_recv = gdef->add_node();
+  *status = fuse_recv_builder.Finalize(*real_recv);
+  if (!status->ok()) {
+    return std::vector<NodeDef*>(fuse_count, nullptr);
+  }
+
+  std::vector<NodeDef*> rets(fuse_count, nullptr);
+  for (int i = 0; i < fuse_count; ++i) {
+    rets[i] = *real_recv;
+  }
+
+  for (int i = 0; i < fuse_count; ++i) {
+    if (dtypes[i] != cast_dtypes[i]) {
+      const string cast_op = (host_memory) ? "_HostCast" : "Cast";
+      NodeDefBuilder cast_builder(opts.new_name(srcs[i]->name()), cast_op);
+      cast_builder.Attr("DstT", dtypes[i]);
+      cast_builder.Device(dsts[i]->assigned_device_name())
+        .Input(rets[i]->name(), i, cast_dtypes[i]);
+      NodeDef* cast = gdef->add_node();
+      *status = cast_builder.Finalize(cast);
+      if (!status->ok()) return std::vector<NodeDef*>(fuse_count, nullptr);
+      rets[i] = cast;
+    } else if (edges[i]->IsControlEdge()) {
+      // An Identity is only needed for control edges.
+      NodeDefBuilder id_builder(opts.new_name(srcs[i]->name()), "Identity");
+      id_builder.Device(dsts[i]->assigned_device_name())
+          .Input(rets[i]->name(), i, cast_dtypes[i]);
+      NodeDef* id = gdef->add_node();
+      *status = id_builder.Finalize(id);
+      if (!status->ok()) return std::vector<NodeDef*>(fuse_count, nullptr);
+      rets[i] = id;
+    }
+  }
+
+  return rets;
+}
+
+std::vector<NodeDef*> AddFuseRecv(const PartitionOptions& opts,
+                                  const GraphInfo& g_info, GraphDef* gdef,
+                                  const std::vector<const Edge*> edges,
+                                  bool host_memory, NodeDef** real_recv,
+                                  Status* status) {
+  int fuse_count = edges.size();
+
+  std::vector<DataType> dtypes(fuse_count);
+  std::vector<const Node*> srcs(fuse_count);
+  std::vector<const Node*> dsts(fuse_count);
+  std::vector<DataType> cast_dtypes(fuse_count);
+
+  for (int i = 0; i < fuse_count; ++i) {
+    dtypes[i] = EdgeType(edges[i]);
+    srcs[i] = edges[i]->src();
+    dsts[i] = edges[i]->dst();
+    cast_dtypes[i] = dtypes[i];
+
+    // NOTE(yuanbyu): Only cast for cross-device send/recv.
+    if (opts.should_cast && !NeedSameDeviceSendRecv(edges[i], g_info)) {
+      cast_dtypes[i] = opts.should_cast(edges[i]);
+    }
+  }
+
+  // Add the fuse recv node.
+  const string fuse_recv_op = (host_memory) ? "_HostFuseRecv" : "_FuseRecv";
+  string fuse_recv_node_name;
+  // TODO: name -> use global counter
+  for (int i = 0; i < fuse_count; ++i) {
+    if (i != 0) {
+      fuse_recv_node_name += "__";
+    }
+    fuse_recv_node_name += srcs[i]->name();
+  }
+
+  NodeDefBuilder fuse_recv_builder(opts.new_name(fuse_recv_node_name),
+                                   fuse_recv_op);
+  SetFuseRecvAttrs(opts, edges, &fuse_recv_builder);
+  fuse_recv_builder.Device(dsts[0]->assigned_device_name())
+    .Attr("tensor_types", cast_dtypes);
+
+  *real_recv = gdef->add_node();
+  *status = fuse_recv_builder.Finalize(*real_recv);
+  if (!status->ok()) {
+    return std::vector<NodeDef*>(fuse_count, nullptr);
+  }
+
+  std::vector<NodeDef*> rets(fuse_count, nullptr);
+  for (int i = 0; i < fuse_count; ++i) {
+    rets[i] = *real_recv;
+  }
+
+  for (int i = 0; i < fuse_count; ++i) {
+    if (dtypes[i] != cast_dtypes[i]) {
+      const string cast_op = (host_memory) ? "_HostCast" : "Cast";
+      NodeDefBuilder cast_builder(opts.new_name(srcs[i]->name()), cast_op);
+      cast_builder.Attr("DstT", dtypes[i]);
+      cast_builder.Device(dsts[i]->assigned_device_name())
+        .Input(rets[i]->name(), i, cast_dtypes[i]);
+      NodeDef* cast = gdef->add_node();
+      *status = cast_builder.Finalize(cast);
+      if (!status->ok()) return std::vector<NodeDef*>(fuse_count, nullptr);
+      rets[i] = cast;
+    } else if (edges[i]->IsControlEdge()) {
+      // An Identity is only needed for control edges.
+      NodeDefBuilder id_builder(opts.new_name(srcs[i]->name()), "Identity");
+      id_builder.Device(dsts[i]->assigned_device_name())
+          .Input(rets[i]->name(), i, cast_dtypes[i]);
+      NodeDef* id = gdef->add_node();
+      *status = id_builder.Finalize(id);
+      if (!status->ok()) return std::vector<NodeDef*>(fuse_count, nullptr);
+      rets[i] = id;
+    }
+  }
+
+  return rets;
 }
 
 NodeDef* AddDummyConst(const PartitionOptions& opts, GraphDef* gdef,
@@ -568,38 +758,6 @@ Status AddControlLoop(const PartitionOptions& opts, Graph* g, const Node* src,
   return Status::OK();
 }
 
-// Build memory and device type info for every node in the graph.
-// TODO(yuanbyu): It might be simpler if we convert MemoryType to
-// DeviceType for the inputs/outputs of each node.
-Status BuildMemoryDeviceInfo(const Graph& g, GraphInfo* info) {
-  MemoryTypeVector input_memory_types;
-  MemoryTypeVector output_memory_types;
-
-  info->device_types.resize(g.num_node_ids(), DEVICE_CPU);
-  for (const Node* node : g.op_nodes()) {
-    DeviceNameUtils::ParsedName parsed;
-    if (!DeviceNameUtils::ParseFullName(node->assigned_device_name(),
-                                        &parsed)) {
-      return errors::Internal("Malformed assigned device '",
-                              node->assigned_device_name(), "'");
-    }
-
-    TF_RETURN_IF_ERROR(MemoryTypesForNode(
-        g.op_registry(), DeviceType(parsed.type), node->def(),
-        &input_memory_types, &output_memory_types));
-
-    int node_id = node->id();
-    info->device_types[node_id] = DeviceType(parsed.type);
-    for (int i = 0; i < input_memory_types.size(); ++i) {
-      info->input_types[{node_id, i}] = input_memory_types[i];
-    }
-    for (int i = 0; i < output_memory_types.size(); ++i) {
-      info->output_types[{node_id, i}] = output_memory_types[i];
-    }
-  }
-  return Status::OK();
-}
-
 const Node* InputFrame(const Node* node,
                        const std::vector<ControlFlowInfo>& cf_info) {
   // An input is in the same frame as the node except for Enter nodes.
@@ -618,6 +776,256 @@ const Node* OutputFrame(const Node* node,
     return node;
   }
   return cf_info[node->id()].parent_frame;
+}
+
+struct PriorityTopoSortNode {
+  PriorityTopoSortNode(const NodeDef* n, int64 st) : node(n), start_time(st) {}
+
+  const NodeDef* node;
+  int64 start_time;
+};
+
+struct PriorityTopoSortNodeGreater {
+  bool operator()(const PriorityTopoSortNode& left,
+                  const PriorityTopoSortNode& right) {
+    return left.start_time > right.start_time;
+  }
+};
+
+void SplitDupFuseRecvTables(const GraphInfo& g_info,
+                            const DupFuseRecvTable group,
+                            DupFuseRecvTable* host_recvs,
+                            DupFuseRecvTable* recvs) {
+
+  auto it = group.begin();
+  while (it != group.end()) {
+    const Edge* edge = it->second[0].edge;
+    const Node* dst = edge->dst();
+    const int dst_port = edge->dst_input();
+    auto dst_it = g_info.input_types.find({dst->id(), dst_port});
+    DCHECK(dst_it != g_info.input_types.end());
+    bool host_memory = (dst_it->second == HOST_MEMORY);
+
+    if (host_memory) {
+      (*host_recvs)[it->first] = it->second;
+    } else {
+      (*recvs)[it->first] = it->second;
+    }
+
+    ++it;
+  }
+}
+
+void SplitByGatherInputs(const DupFuseRecvTable& full,
+                         DupFuseRecvTable* gather_inputs,
+                         DupFuseRecvTable* no_gather_inputs) {
+  auto it = full.begin();
+  while (it != full.end()) {
+    const Edge* edge = it->second[0].edge;
+    if (edge->dst()->type_string() == "Gather"
+        || edge->src()->type_string() == "Gather"
+        || edge->dst()->type_string() == "GatherV2"
+        || edge->src()->type_string() == "GatherV2") {
+      (*gather_inputs)[it->first] = it->second;
+    } else {
+      (*no_gather_inputs)[it->first] = it->second;
+    }
+    ++it;
+  }
+}
+
+Status DoFuseRecv(const PartitionOptions& opts, const GraphInfo& g_info,
+                  const DupFuseRecvTable& recvs, GraphDef* dst_graph,
+                  GlobalDupFuseRecvTable* dup_global_fuse_recv) {
+  std::vector<const std::vector<FuseRecvInfo>* > fuse_recv_infos;
+  std::vector<const Edge*> edges;
+
+  auto it = recvs.begin();
+  while (it != recvs.end()) {
+    const std::vector<FuseRecvInfo>* fuse_recv_info = &(it->second);
+    fuse_recv_infos.push_back(fuse_recv_info);
+    edges.push_back((*fuse_recv_info)[0].edge);
+    ++it;
+  }
+
+  Status status;
+  NodeDef* real_recv = nullptr;
+  std::vector<NodeDef*> filters =
+    AddFuseRecv(opts, g_info, dst_graph, edges, &real_recv, &status);
+  if (!status.ok()) {
+    return status;
+  }
+
+  int i = 0;
+  for (auto fuse_recv_info : fuse_recv_infos) {
+    DupRecvKey key;
+    bool init = true;
+    int slot = 0;
+    auto iter_inner = fuse_recv_info->begin();
+    while(iter_inner != fuse_recv_info->end()) {
+      if (init) {
+        key.src_node_id = iter_inner->edge->src()->id();
+        key.src_output_slot = iter_inner->edge->src_output();
+        key.dst_graph = dst_graph;
+        key.recv_output_on_host = IsDstInputOnHost(iter_inner->edge, g_info);
+        if (iter_inner->edge->IsControlEdge()) {
+          slot = Graph::kControlSlot;
+        } else if (filters[i] == real_recv) {
+          slot = i;
+        }
+
+        init = false;
+      }
+
+      if (slot == Graph::kControlSlot) {
+        AddInput(iter_inner->dst_def, filters[i]->name(), Graph::kControlSlot);
+      } else {
+        SetInput(iter_inner->dst_def, iter_inner->edge->dst_input(),
+                 filters[i]->name(), slot);
+      }
+      ++iter_inner;
+    }
+
+    // Record the global recv info
+    FuseRecvInfo global_global_recv_info;
+    global_global_recv_info.recv = filters[i];
+    global_global_recv_info.slot = slot;
+    (*dup_global_fuse_recv)[key] = global_global_recv_info;
+
+    ++i;
+  }
+
+  return status;
+}
+
+Status DoFuseRecv(const PartitionOptions& opts, const GraphInfo& g_info,
+                  const DupFuseRecvTable& recvs, bool host_memory,
+                  GraphDef* dst_graph) {
+  std::vector<const std::vector<FuseRecvInfo>* > fuse_recv_infos;
+  std::vector<const Edge*> edges;
+  auto it = recvs.begin();
+  while (it != recvs.end()) {
+    const std::vector<FuseRecvInfo>* fuse_recv_info = &(it->second);
+    fuse_recv_infos.push_back(fuse_recv_info);
+    edges.push_back((*fuse_recv_info)[0].edge);
+    ++it;
+  }
+
+  Status status;
+  NodeDef* real_recv = nullptr;
+  std::vector<NodeDef*> filters =
+    AddFuseRecv(opts, g_info, dst_graph, edges, host_memory, &real_recv, &status);
+  if (!status.ok()) {
+    return status;
+  }
+
+  int i = 0;
+  for (auto fuse_recv_info : fuse_recv_infos) {
+    auto iter_inner = fuse_recv_info->begin();
+    while(iter_inner != fuse_recv_info->end()) {
+      SetInput(iter_inner->dst_def, iter_inner->edge->dst_input(),
+               filters[i]->name(),
+               filters[i] == real_recv ? i : 0);
+      ++iter_inner;
+    }
+    ++i;
+  }
+
+  return status;
+}
+
+// Grouping by 'srcp + dstp + host'
+//
+Status HandleFuseRecvGroup(const PartitionOptions& opts,
+                           const GraphInfo& g_info,
+                           const DupFuseRecvTable group,
+                           GraphDef* dst_graph,
+                           GlobalDupFuseRecvTable* dup_global_fuse_recv) {
+  Status status;
+  DupFuseRecvTable gather_inputs;
+  DupFuseRecvTable no_gather_inputs;
+  SplitByGatherInputs(group, &gather_inputs, &no_gather_inputs);
+
+  if (gather_inputs.size() > 0) {
+    status = DoFuseRecv(opts, g_info, gather_inputs, dst_graph, dup_global_fuse_recv);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+
+  if (no_gather_inputs.size() > 0) {
+    status = DoFuseRecv(opts, g_info, no_gather_inputs, dst_graph, dup_global_fuse_recv);
+    if (!status.ok()) {
+      return status;
+    }
+  }
+
+  return status;
+}
+
+Status HandleFuseRecvGroup(const PartitionOptions& opts,
+                           const GraphInfo& g_info,
+                           const DupFuseRecvTable group,
+                           GraphDef* dst_graph) {
+  DupFuseRecvTable host_recvs;
+  DupFuseRecvTable recvs;
+  SplitDupFuseRecvTables(g_info, group, &host_recvs, &recvs);
+
+  Status status;
+  if (host_recvs.size() > 0) {
+    DupFuseRecvTable gather_inputs;
+    DupFuseRecvTable no_gather_inputs;
+    SplitByGatherInputs(host_recvs, &gather_inputs, &no_gather_inputs);
+
+    if (gather_inputs.size() > 0) {
+      status = DoFuseRecv(opts, g_info, gather_inputs, true, dst_graph);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+
+    if (no_gather_inputs.size() > 0) {
+      status = DoFuseRecv(opts, g_info, no_gather_inputs, true, dst_graph);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+  }
+
+  if (recvs.size() > 0) {
+    DupFuseRecvTable gather_inputs;
+    DupFuseRecvTable no_gather_inputs;
+    SplitByGatherInputs(recvs, &gather_inputs, &no_gather_inputs);
+
+    if (gather_inputs.size() > 0) {
+      status = DoFuseRecv(opts, g_info, gather_inputs, false, dst_graph);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+
+    if (no_gather_inputs.size() > 0) {
+      status = DoFuseRecv(opts, g_info, no_gather_inputs, false, dst_graph);
+      if (!status.ok()) {
+        return status;
+      }
+    }
+  }
+  return status;
+}
+
+}  // namespace
+
+// Add an input to dst that comes from the "src_slot" output of the
+// node named by "src_name".
+void AddInput(NodeDef* dst, StringPiece src_name, int src_slot) {
+  if (src_slot == Graph::kControlSlot) {
+    dst->add_input(strings::StrCat("^", src_name));
+  } else if (src_slot == 0) {
+    dst->add_input(src_name.data(), src_name.size());
+  } else {
+    dst->add_input(strings::StrCat(src_name, ":", src_slot));
+  }
 }
 
 // Each participating device needs to decide a) if there is a next iteration,
@@ -779,21 +1187,37 @@ Status AddControlFlow(const PartitionOptions& opts, Graph* g,
   return Status::OK();
 }
 
-struct PriorityTopoSortNode {
-  PriorityTopoSortNode(const NodeDef* n, int64 st) : node(n), start_time(st) {}
+// Build memory and device type info for every node in the graph.
+// TODO(yuanbyu): It might be simpler if we convert MemoryType to
+// DeviceType for the inputs/outputs of each node.
+Status BuildMemoryDeviceInfo(const Graph& g, GraphInfo* info) {
+  MemoryTypeVector input_memory_types;
+  MemoryTypeVector output_memory_types;
 
-  const NodeDef* node;
-  int64 start_time;
-};
+  info->device_types.resize(g.num_node_ids(), DEVICE_CPU);
+  for (const Node* node : g.op_nodes()) {
+    DeviceNameUtils::ParsedName parsed;
+    if (!DeviceNameUtils::ParseFullName(node->assigned_device_name(),
+                                        &parsed)) {
+      return errors::Internal("Malformed assigned device '",
+                              node->assigned_device_name(), "'");
+    }
 
-struct PriorityTopoSortNodeGreater {
-  bool operator()(const PriorityTopoSortNode& left,
-                  const PriorityTopoSortNode& right) {
-    return left.start_time > right.start_time;
+    TF_RETURN_IF_ERROR(MemoryTypesForNode(
+        g.op_registry(), DeviceType(parsed.type), node->def(),
+        &input_memory_types, &output_memory_types));
+
+    int node_id = node->id();
+    info->device_types[node_id] = DeviceType(parsed.type);
+    for (int i = 0; i < input_memory_types.size(); ++i) {
+      info->input_types[{node_id, i}] = input_memory_types[i];
+    }
+    for (int i = 0; i < output_memory_types.size(); ++i) {
+      info->output_types[{node_id, i}] = output_memory_types[i];
+    }
   }
-};
-
-}  // namespace
+  return Status::OK();
+}
 
 // Returns in <nodes> the nodes that should participate in epoch-based recv
 // scheduling, along with their times; <nodes> is ordered by increasing
@@ -1247,6 +1671,474 @@ Status Partition(const PartitionOptions& opts, Graph* g,
                          *gdef);
     }
   }
+  return Status::OK();
+}
+
+namespace {
+
+void GetReadyNodes(std::unordered_set<Node*>& done,
+                   const std::string& loc,
+                   std::unordered_set<Node*>* node_set,
+                   std::unordered_map<std::string, std::unordered_set<Node*> >* ready_nodes) {
+  bool exit = false;
+  while (!exit && node_set->size() > 0) {
+    exit = true;
+    for (auto n : *node_set) {
+      if (!n->IsOp()) {
+        LOG(FATAL) << "There should be no _Source or _Sink here.";
+      }
+
+      bool ready = true;
+      for (const Edge* in_edge : n->in_edges()) {
+        Node* src = in_edge->src();
+        if (!src->IsOp()) continue;
+        // NOTE(jiankeng.pt): skip NextIteration to make topological sort successful.
+        if (n->IsMerge() && src->IsNextIteration()) {
+          continue;
+        }
+        if (done.find(src) != done.end()) continue;
+        // (*ready_nodes)[loc].find(src) != (*ready_nodes)[loc].end()
+        ready = false;
+        break;
+      }
+      if (ready) {
+        exit = false;
+        (*ready_nodes)[loc].insert(n);
+      }
+    }
+
+    for (auto n : (*ready_nodes)[loc]) {
+      node_set->erase(n);
+    }
+  }
+}
+
+} // namespace
+
+Status PartitionWithTensorFuse(const PartitionOptions& opts, Graph* g,
+                               std::unordered_map<string, GraphDef>* partitions) {
+
+  Status status;
+  partitions->clear();
+
+  std::vector<ControlFlowInfo> cf_info;
+  GraphInfo g_info;
+  if (!opts.control_flow_added) {
+    // Add the "code" for distributed execution of control flow. Code is
+    // added only for the frames that are placed on multiple devices. The
+    // new graph is an equivalent transformation of the original graph and
+    // has the property that it can be subsequently partitioned arbitrarily
+    // (down to the level of individual device) for distributed execution.
+    status = AddControlFlow(opts, g, &g_info);
+    cf_info = g_info.cf_info;
+    if (!status.ok()) return status;
+  } else {
+    status = BuildControlFlowInfo(g, &cf_info);
+    if (!status.ok()) return status;
+  }
+
+  // At this point, all the graph mutations have been done. Build memory
+  // and device type info for every node and edge in the graph.
+  status = BuildMemoryDeviceInfo(*g, &g_info);
+  if (!status.ok()) return status;
+
+  std::unordered_set<Node*> done;
+  std::unordered_map<std::string, std::unordered_set<Node*> > subgraph_nodes;
+  for (Node* n : g->nodes()) {
+    if (!n->IsOp()) continue;
+    std::string loc = opts.node_to_loc(n);
+    subgraph_nodes[loc].insert(n);
+  }
+
+  int32 num_data = 0;
+  int32 num_control = 0;
+  // Used to store control edges.
+  DupRecvTable dup_recv(3);
+  GlobalDupFuseRecvTable dup_global_fuse_recv;
+
+  // topological partition
+  while (true) {
+    size_t left_nodes_count = 0;
+    for (auto nodes : subgraph_nodes) {
+      left_nodes_count += nodes.second.size();
+    }
+    if (left_nodes_count == 0) break;
+
+    std::unordered_map<std::string, std::unordered_set<Node*> > ready_subgraph_nodes;
+    for (auto& node_set : subgraph_nodes) {
+      GetReadyNodes(done, node_set.first, &(node_set.second), &ready_subgraph_nodes);
+    }
+
+    for (auto nodes : ready_subgraph_nodes) {
+      string dstp = nodes.first;
+      std::vector<const Edge*> inputs;
+      // Used to store non-control inputs
+      FuseRecvGroups fuse_recv_groups;
+
+      // For a node dst, 'ref_recvs' remembers the recvs introduced by a ref
+      // edge to dst. 'ref_control_inputs' remembers the inputs by a non-ref
+      // edge to dst. We will add a control edge for every pair in
+      // (ref_recvs x ref_control_inputs).
+      std::vector<NodeDef*> ref_recvs;
+      std::vector<string> ref_control_inputs;
+
+      for (auto dst : nodes.second) {
+        dstp = opts.node_to_loc(dst);
+        GraphDef* dst_graph = &(*partitions)[dstp];
+        NodeDef* dst_def = dst_graph->add_node();
+        *dst_def = dst->def();
+        dst_def->set_device(dst->assigned_device_name());
+        dst_def->clear_input();  // Inputs are filled below
+        if (opts.need_to_record_start_times) {
+          int64 start_time;
+          status = GetNodeAttr(*dst_def, "_start_time", &start_time);
+          if (errors::IsNotFound(status)) {
+            start_time = opts.start_times[dst->id()].value();
+            AddNodeAttr("_start_time", start_time, dst_def);
+          } else if (!status.ok()) {
+            return status;
+          }
+        }
+
+        // Arrange the incoming edges to dst so that input[i] holds the
+        // input flowing into slot numbered i. Trailing entries in input[]
+        // hold control edges.
+        inputs.clear();
+        // Resize to num inputs, maybe a no-control flow control node
+        // will be added.
+        inputs.resize(dst->num_inputs(), nullptr);
+        ref_recvs.clear();
+        ref_control_inputs.clear();
+        const Edge* control_flow_edge = nullptr;
+        int32 num_control_flow_edges = 0;
+        int32 num_input_edges = 0;
+
+        // Traverse all in edges and record the input types.
+        for (const Edge* edge : dst->in_edges()) {
+          if (edge->IsControlEdge()) {
+            if (IsMerge(edge->src()) && IsControlLoop(edge->src())) {
+              // This is one of the control edges added for control flow. There
+              // can be multiple such edges as the dest node may have multiple
+              // remote inputs. We keep track of the number of such edges.
+              control_flow_edge = edge;
+              ++num_control_flow_edges;
+            } else {
+              // Add a no-control flow control node.
+              inputs.push_back(edge);
+            }
+          } else {
+            // This is read input edge.
+            DCHECK(inputs[edge->dst_input()] == nullptr);
+            inputs[edge->dst_input()] = edge;
+            ++num_input_edges;
+          }
+        }
+
+        // Num of read input edges should equal to num_inputs of the node.
+        if (num_input_edges != dst->num_inputs()) {
+          return errors::InvalidArgument("Incomplete graph, missing ",
+                                         (dst->num_inputs() - num_input_edges),
+                                         " inputs for ", dst->name());
+        }
+
+        // Is there an non-control edge which src_node's output type
+        // is ref type.
+        bool has_ref_input = false;
+        for (const Edge* edge : inputs) {
+          const Node* src = edge->src();
+          if (!src->IsOp()) continue;
+          GraphDef* src_graph = &(*partitions)[opts.node_to_loc(src)];
+          if (src_graph == dst_graph &&
+              !NeedSameDeviceSendRecv(edge, g_info)) {
+            continue;
+          }
+          if (!edge->IsControlEdge() &&
+              IsRefType(src->output_type(edge->src_output()))) {
+            has_ref_input = true;
+            break;
+          }
+        }
+
+        // Process in order so that all data edges are added as inputs to
+        // dst in Edge::dst_input() order.
+        // rangeng.llb: if we skip the recv node, and add a fuse recv node at last,
+        // may be the sequence of the input is changed in the pb data structure.
+        for (const Edge* edge : inputs) {
+          const Node* src = edge->src();
+          // rangeng.llb: not op, then what's that?, seems not seen before.
+          if (!src->IsOp()) continue;  // Skip Sink/Source nodes.
+
+          string srcp = opts.node_to_loc(src);
+          GraphDef* src_graph = &(*partitions)[opts.node_to_loc(src)];
+          if (src_graph == dst_graph && !NeedSameDeviceSendRecv(edge, g_info)) {
+            // Same partition and compatible memory types:
+            AddInput(dst_def, src->name(), edge->src_output());
+            if (edge->IsControlEdge() ||
+                !IsRefType(src->output_type(edge->src_output()))) {
+              ref_control_inputs.push_back(src->name());
+            }
+            continue;
+          }
+
+          int64 send_start_time = 0;
+          int64 recv_start_time = 0;
+          if (opts.scheduling_for_recvs) {
+            status = GetNodeAttr(src->attrs(), "_start_time", &send_start_time);
+            if (errors::IsNotFound(status) && opts.need_to_record_start_times) {
+              send_start_time = opts.start_times[src->id()].value();
+            } else if (!status.ok()) {
+              return status;
+            }
+
+            status = GetNodeAttr(dst->attrs(), "_start_time", &recv_start_time);
+            if (errors::IsNotFound(status) && opts.need_to_record_start_times) {
+              recv_start_time = opts.start_times[dst->id()].value();
+            } else if (!status.ok()) {
+              return status;
+            }
+          }
+
+          // Check whether there is already a send/recv pair transferring
+          // the same tensor/control from the src to dst partition.
+          if (cf_info[src->id()].frame_name != cf_info[dst->id()].frame_name) {
+            LOG(FATAL) << "Src node and dst node do not belong to one frame, src frame: "
+                       << cf_info[src->id()].frame_name << ", dst frame: "
+                       << cf_info[dst->id()].frame_name;
+          }
+          const bool on_host = IsDstInputOnHost(edge, g_info);
+          DupRecvKey key{src->id(), edge->src_output(), dst_graph, on_host};
+          std::string group_key = dstp + "|" + srcp + "|" +
+                                  std::to_string(on_host) + "|" +
+                                  cf_info[src->id()].frame_name;
+
+          auto iter = dup_recv.find(key);
+          if (iter != dup_recv.end()) {
+            const string& recv_node_name = iter->second.recv->name();
+            if (edge->IsControlEdge()) {
+              AddInput(dst_def, recv_node_name, Graph::kControlSlot);
+            } else {
+              AddInput(dst_def, recv_node_name, 0);
+            }
+
+            ref_control_inputs.push_back(recv_node_name);
+
+            // We want the start_time for the recv to be the smallest of the start
+            // times of it's consumers. So we update this whenever we use a recv,
+            // and write it out to the attribute at the end of the subroutine
+            if (iter->second.start_time > recv_start_time) {
+              iter->second.start_time = recv_start_time;
+            }
+            continue;
+          }
+
+          auto iter_global_fuse = dup_global_fuse_recv.find(key);
+          if (iter_global_fuse != dup_global_fuse_recv.end()) {
+            const string& recv_node_name = iter_global_fuse->second.recv->name();
+            if (edge->IsControlEdge()) {
+              AddInput(dst_def, recv_node_name, Graph::kControlSlot);
+            } else {
+              // FuseRecv:slot, cast:slot, Identity:slot
+              AddInput(dst_def, recv_node_name, iter_global_fuse->second.slot);
+            }
+
+            ref_control_inputs.push_back(recv_node_name);
+
+            if (iter_global_fuse->second.start_time > recv_start_time) {
+              iter_global_fuse->second.start_time = recv_start_time;
+            }
+
+            continue;
+          }
+
+          auto iter_fuse = fuse_recv_groups[group_key].find(key);
+          if (iter_fuse != fuse_recv_groups[group_key].end()) {
+            // Fuse recv node already exist, just push back another
+            // 'FuseRecvInfo' and record the dst node.
+            FuseRecvInfo fuse_recv_info = iter_fuse->second[0];
+            fuse_recv_info.dst_def = dst_def;
+            fuse_recv_info.edge = edge;
+            iter_fuse->second.push_back(fuse_recv_info);
+
+            // TODO: DO NOT reserve a slot for control edge
+            if (!edge->IsControlEdge()) {
+              // Add a fake input node as a placeholder for this slot.
+              AddInput(dst_def, "fake", 0);
+            }
+            continue;
+          }
+
+          NodeDefBuilder::NodeOut send_from;
+          if (edge->IsControlEdge()) {
+            // Insert a dummy const node that will generate a tiny
+            // data element to be sent from send to recv.
+            VLOG(1) << "Send/Recv control: " << src->assigned_device_name() << "["
+                    << src->name() << "] -> " << dst->assigned_device_name() << "["
+                    << dst->name() << "]";
+            NodeDef* dummy = AddDummyConst(opts, src_graph, edge, &status);
+            if (!status.ok()) return status;
+            // Set the start time for this dummy node.
+            if (opts.scheduling_for_recvs) {
+              AddNodeAttr("_start_time", send_start_time, dummy);
+            }
+            AddInput(dummy, src->name(), Graph::kControlSlot);
+            send_from.Reset(dummy->name(), 0, DT_FLOAT);
+          } else {
+            send_from.Reset(src->name(), edge->src_output(), EdgeType(edge));
+          }
+
+          // Need to split edge by placing matching send/recv nodes on
+          // the src/dst sides of the edge.
+          NodeDef* send = AddSend(opts, g_info, src_graph, edge, send_from,
+                                  send_start_time, &status);
+          if (!status.ok()) return status;
+
+          if (has_ref_input ||
+              src_graph == dst_graph ||
+              control_flow_edge != nullptr) {
+            NodeDef* real_recv = nullptr;
+            NodeDef* recv =
+              AddRecv(opts, g_info, dst_graph, edge, &real_recv, &status);
+
+            if (!status.ok()) return status;
+            // Fix up the control flow edge.
+            // NOTE(yuanbyu): 'real_recv' must be the real recv node.
+            if (src_graph == dst_graph) {
+              // For same device send/recv, add a control edge from send to recv.
+              // This prevents the asynchronous recv kernel from being scheduled
+              // before the data is available.
+              AddInput(real_recv, send->name(), Graph::kControlSlot);
+            } else if (control_flow_edge != nullptr) {
+              // Redirect control edge to the real recv since this is not a same
+              // device send/recv.
+              --num_control_flow_edges;
+              AddInput(real_recv, control_flow_edge->src()->name(),
+                       Graph::kControlSlot);
+            }
+
+            if (!edge->IsControlEdge() &&
+                IsRefType(src->output_type(edge->src_output()))) {
+              AddNodeAttr("_start_time", recv_start_time, recv);
+              if (real_recv != recv) {
+                AddNodeAttr("_start_time", recv_start_time, real_recv);
+              }
+              // If src is of ref type and the edge is not a control edge, dst has
+              // read semantics and therefore we must control the recv.
+              ref_recvs.push_back(real_recv);
+            } else {
+              // Memorize the send/recv pair, only if this is not a "ref" edge.
+              // NOTE(yuanbyu): Collapsing ref edges requires extreme care so
+              // for now we don't do it.
+              dup_recv[key] = {recv, real_recv, recv_start_time};
+              ref_control_inputs.push_back(recv->name());
+            }
+
+            if (edge->IsControlEdge()) {
+              ++num_control;
+               AddInput(dst_def, recv->name(), Graph::kControlSlot);
+            } else {
+              ++num_data;
+              AddInput(dst_def, recv->name(), 0);
+            }
+
+            continue;
+          }
+
+          // Add FuseRecv node
+          FuseRecvInfo fuse_recv_info;
+          fuse_recv_info.dst_def = dst_def;
+          fuse_recv_info.edge = edge;
+          fuse_recv_info.start_time = recv_start_time;
+
+          fuse_recv_groups[group_key][key].push_back(fuse_recv_info);
+          //AddInput(dst_def, "fake", 0);
+
+          if (edge->IsControlEdge()) {
+            // NOTE(jiankeng.pt): DO NOT reserve a slot for control edge
+            ++num_control;
+          } else {
+            ++num_data;
+            AddInput(dst_def, "fake", 0);
+          }
+
+        } // End traverse each input edge.
+
+        // Add control edges from 'ref_control_inputs' to 'ref_recvs'.
+        // NOTE(yuanbyu): Adding these control edges should not introduce
+        // deadlocks. 'dst' has implicit "read" nodes that, when we split
+        // across devices, are made explicit; Retargettig the dependencies
+        // to 'dst' to those nodes would not introduce cycles if there isn't
+        // one before the transformation.
+        // NOTE(yuanbyu): This may impact performance because it defers the
+        // execution of recvs until all the other inputs become available.
+        AddReadControl(ref_recvs, ref_control_inputs);
+
+        // Add back the control edges for control flow that are not used.
+        if (control_flow_edge != nullptr) {
+          for (int i = 0; i < num_control_flow_edges; ++i) {
+            AddInput(dst_def, control_flow_edge->src()->name(),
+                     Graph::kControlSlot);
+          }
+        }
+      } // End traverse a set of nodes
+
+      auto it = fuse_recv_groups.begin();
+      while (it != fuse_recv_groups.end()) {
+        const std::string& group_key = it->first;
+        const DupFuseRecvTable& group = it->second;
+        std::vector<std::string> pieces = str_util::Split(group_key, "|");
+        const std::string& dstp = pieces[0];
+        GraphDef* dst_graph = &(*partitions)[dstp];
+
+        Status status = HandleFuseRecvGroup(opts, g_info, group,
+                                            dst_graph, &dup_global_fuse_recv);
+        if (!status.ok()) {
+          return status;
+        }
+        ++it;
+      }
+    } // End traverse all set of nodes
+
+    // TODO: add ready_subgraph_nodes to done
+    size_t curr_ready_count = 0;
+    for (auto nodes : ready_subgraph_nodes) {
+      curr_ready_count += nodes.second.size();
+      for (auto n : nodes.second) {
+        done.insert(n);
+      }
+    }
+    if (curr_ready_count == 0) {
+      LOG(FATAL) << "Topological sort failed, there may be a cycle in graph.";
+    }
+  }
+
+  const FunctionLibraryDefinition* flib_def = opts.flib_def;
+  if (flib_def == nullptr) {
+    flib_def = &g->flib_def();
+  }
+
+  // Set versions, function library and send/recv incarnation.
+  for (auto& it : *partitions) {
+    GraphDef* gdef = &it.second;
+    *gdef->mutable_versions() = g->versions();
+    *gdef->mutable_library() = flib_def->ToProto();
+
+    // Traverse the graph to fill every send/recv op's incarnation
+    // information.
+    SetIncarnation(opts, gdef);
+  }
+
+  // Set the start times for recvs at the very end.
+  if (opts.scheduling_for_recvs) {
+    for (auto& it : dup_recv) {
+      AddNodeAttr("_start_time", it.second.start_time, it.second.recv);
+      if (it.second.real_recv != it.second.recv) {
+        AddNodeAttr("_start_time", it.second.start_time, it.second.real_recv);
+      }
+    }
+  }
+
+  VLOG(1) << "Added send/recv: controls=" << num_control
+          << ", data=" << num_data;
   return Status::OK();
 }
 

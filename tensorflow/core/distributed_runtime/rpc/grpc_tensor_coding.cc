@@ -135,6 +135,138 @@ static void EncodeSkeleton(const Tensor& val, io::ProtoEncodeHelper* e) {
 #endif
 }
 
+void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val,
+                              std::vector<std::vector<::grpc::Slice> >* slices,
+                              int idx, uint64_t fuse_count) {
+  const int kLargeTensorBytes = 1024;
+  RecvTensorResponse response;
+  if (is_dead) {
+    response.set_is_dead(is_dead);
+  }
+  response.set_send_start_micros(Env::Default()->NowMicros());
+  if (!DataTypeCanUseMemcpy(val.dtype())) {
+    // Straightforward but slow path for complicated kinds of tensor data
+    // TODO(jeff,sanjay): If this becomes an issue, we could
+    // go directly from val -> ByteBuffer, with some effort.
+    val.AsProtoTensorContent(response.mutable_tensor());
+
+    // Encode full protocol buffer to a ByteBuffer
+    int write_len = 0;
+    bool can_memcpy = false;
+    uint64 total_slice_len = response.ByteSizeLong() + sizeof(uint64) + sizeof(bool);
+    if (idx == 0) {
+      total_slice_len += sizeof(uint64);
+    }
+    uint64 total_len = response.ByteSizeLong();
+    ::grpc::Slice slice(total_slice_len);
+    if (idx == 0) {
+      memcpy(const_cast<uint8_t*>(slice.begin()), &fuse_count, sizeof(uint64));
+      write_len += sizeof(uint64);
+    }
+    memcpy(const_cast<uint8_t*>(slice.begin() + write_len), &total_len, sizeof(uint64));
+    write_len += sizeof(uint64);
+    memcpy(const_cast<uint8_t*>(slice.begin() + write_len), &can_memcpy, sizeof(bool));
+    write_len += sizeof(bool);
+    response.SerializeWithCachedSizesToArray(
+        const_cast<uint8*>(reinterpret_cast<const uint8*>(slice.begin() + write_len)));
+    (*slices)[idx].resize(1);
+    (*slices)[idx][0] = std::move(slice);
+  } else {
+    // skeleton is the encoded TensorProto contents (dtype and shape), but
+    // not the actual data
+    gtl::InlinedVector<char, 128> skeleton(SkeletonEncodingSizeUpperBound(val));
+    io::ProtoEncodeHelper e_skeleton(skeleton.data(), skeleton.size());
+    EncodeSkeleton(val, &e_skeleton);
+    StringPiece tdata = val.tensor_data();
+    uint32 overall_tensor_proto_bytesize =
+        (e_skeleton.size() +
+         VarLengthEncodingSize(TensorProto::kTensorContentFieldNumber,
+                               tdata.size()));
+    string header;  // All of RecvTensorResponse except the tensor() field
+    response.AppendToString(&header);
+    size_t expected_size =
+        (header.size() +
+         VarLengthEncodingSize(RecvTensorResponse::kTensorFieldNumber,
+                               overall_tensor_proto_bytesize));
+    bool tensor_data_is_large = true; //(tdata.size() > kLargeTensorBytes);
+    size_t encoder_size = expected_size - tdata.size();
+    // Encode all but the actual "tdata", but including the tag and
+    // varlength header for the "tdata"
+    gtl::InlinedVector<char, 1024> space(encoder_size);
+    io::ProtoEncodeHelper e(space.data(), space.size());
+    // (A)
+    e.WriteRawBytes(header);
+
+    // (B1) & (B2)
+    e.WriteVarlengthBeginning(RecvTensorResponse::kTensorFieldNumber,
+                              overall_tensor_proto_bytesize);
+    // (C)
+    e.WriteRawBytes(StringPiece(e_skeleton.data(), e_skeleton.size()));
+    // (D1) & (D2)
+    e.WriteVarlengthBeginning(TensorProto::kTensorContentFieldNumber,
+                              tdata.size());
+    // All but the tensor backing store are serialized now
+
+    // Now allocate memory and put into the ByteBuffer
+    if (tdata.size() > 0) {
+      (*slices)[idx].resize(2);
+    } else {
+      (*slices)[idx].resize(1);
+    }
+    size_t total_slice_bytes = expected_size;
+    int num_slices = 0;
+    {
+      int write_len = 0;
+      bool can_memcpy = true;
+      uint64 total_len = expected_size;
+      size_t slice_len = sizeof(bool) + sizeof(uint64) +e.size() +
+                         (tensor_data_is_large ? 0 : tdata.size());
+      total_slice_bytes += sizeof(bool) + sizeof(uint64);
+      if (idx == 0) {
+        slice_len += sizeof(uint64);
+        total_slice_bytes += sizeof(uint64);
+      }
+      (*slices)[idx][0] = ::grpc::Slice(slice_len);
+      if (idx == 0) {
+        memcpy(const_cast<uint8_t*>((*slices)[idx][0].begin()), &fuse_count, sizeof(uint64));
+        write_len += sizeof(uint64);
+      }
+      memcpy(const_cast<uint8_t*>((*slices)[idx][0].begin() + write_len), &total_len, sizeof(uint64));
+      write_len += sizeof(uint64);
+      memcpy(const_cast<uint8_t*>((*slices)[idx][0].begin() + write_len), &can_memcpy, sizeof(bool));
+      write_len += sizeof(bool);
+      memcpy(const_cast<uint8_t*>((*slices)[idx][0].begin() + write_len), e.data(), e.size());
+      write_len += e.size();
+      if (!tensor_data_is_large) {
+        // (E)
+        memcpy(const_cast<uint8_t*>((*slices)[idx][0].begin()) + write_len, tdata.data(),
+               tdata.size());
+      }
+      num_slices += 1;
+    }
+
+    // Do not allocate a slice for an empty tensor.
+    if (tdata.size() > 0 && tensor_data_is_large) {
+      // (E) Encode tensor data, but by sharing backing store
+      const TensorBuffer* buf = DMAHelper::buffer(&val);
+      buf->Ref();
+      (*slices)[idx][1] = ::grpc::Slice(
+          const_cast<void*>(static_cast<const void*>(tdata.data())),
+          tdata.size(),
+          [](void* backing) { static_cast<TensorBuffer*>(backing)->Unref(); },
+          const_cast<TensorBuffer*>(buf));
+      num_slices += 1;
+    }
+
+    size_t total_bytes = 0;
+    for (int i = 0; i < num_slices; i++) {
+      total_bytes += (*slices)[idx][i].size();
+    }
+
+    CHECK_EQ(total_bytes, total_slice_bytes);
+  }
+}
+
 void EncodeTensorToByteBuffer(bool is_dead, const Tensor& val, bool require_ack,
                               ::grpc::ByteBuffer* result) {
   const int kLargeTensorBytes = 1024;

@@ -28,6 +28,9 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/device.h"
 #include "tensorflow/core/common_runtime/device_mgr.h"
 #include "tensorflow/core/common_runtime/dma_helper.h"
+#if GOOGLE_CUDA
+#include "tensorflow/core/common_runtime/gpu/gpu_util.h"
+#endif
 #include "tensorflow/core/common_runtime/local_device.h"
 #include "tensorflow/core/common_runtime/process_util.h"
 #include "tensorflow/core/common_runtime/step_stats_collector.h"
@@ -158,6 +161,15 @@ class GrpcWorkerServiceThread {
       EnqueueRecvTensorRequestRaw();
     }
 
+    // Support FuseRecv
+    for (int i = 0;
+         i < gtl::FindWithDefault(
+                 queue_depth_, static_cast<int>(GrpcWorkerMethod::kFuseRecvTensor),
+                 1000);
+         ++i) {
+      EnqueueFuseRecvTensorRequestRaw();
+    }
+
     void* tag;
     bool ok;
 
@@ -283,6 +295,23 @@ class GrpcWorkerServiceThread {
     EnqueueRecvTensorRequestRaw();
   }
 
+    void FuseRecvTensorHandlerRaw(
+        WorkerCall<FuseRecvTensorRequest, ::grpc::ByteBuffer>* call) {
+      Schedule([this, call]() {
+        CallOptions* call_opts = new CallOptions;
+        call->SetCancelCallback([call_opts]() { call_opts->StartCancel(); }); 
+
+        worker_->GrpcFuseRecvTensorAsync(call_opts, &call->request, &call->response,
+                                         [call, call_opts
+                                         ](const Status& s) {
+                                           call->ClearCancelCallback();
+                                           delete call_opts;
+                                           call->SendResponse(ToGrpcStatus(s));
+                                         });
+      });
+      EnqueueFuseRecvTensorRequestRaw();
+    }
+
   void RecvBufHandler(WorkerCall<RecvBufRequest, RecvBufResponse>* call) {
     Schedule([this, call]() {
       CallOptions* call_opts = new CallOptions;
@@ -348,6 +377,19 @@ class GrpcWorkerServiceThread {
               worker_service_, cq_.get(),
               static_cast<int>(GrpcWorkerMethod::kRecvTensor),
               &GrpcWorkerServiceThread::RecvTensorHandlerRaw,
+              true /* supports cancel*/);
+    }
+  }
+
+  void EnqueueFuseRecvTensorRequestRaw() {
+    mutex_lock l(shutdown_mu_);
+    if (!is_shutdown_) {
+      Call<GrpcWorkerServiceThread, grpc::WorkerService::AsyncService,
+           FuseRecvTensorRequest, ::grpc::ByteBuffer>::
+          EnqueueRequestForMethod(
+              worker_service_, cq_.get(),
+              static_cast<int>(GrpcWorkerMethod::kFuseRecvTensor),
+              &GrpcWorkerServiceThread::FuseRecvTensorHandlerRaw,
               true /* supports cancel*/);
     }
   }
@@ -552,6 +594,155 @@ void GrpcWorker::GrpcRecvTensorAsync(CallOptions* opts,
         }
 
         rendezvous_done(val, is_dead, status);
+      });
+}
+
+namespace {
+
+void FuseRecvDone(int *fuse_counter,
+                  std::vector<Device*>* src_devs,
+                  std::vector<Tensor*>* tensor_copies,
+                  std::vector<std::vector<::grpc::Slice> >* slices,
+                  ::grpc::ByteBuffer* response,
+                  StatusCallback done,
+                  const Status& s) {
+  int total_count = 0;
+  for (int index = 0; index < (*slices).size(); ++index) {
+    total_count += (*slices)[index].size();
+  }
+  ::grpc::Slice final_slices[total_count];
+  int index = 0;
+  for (int i = 0; i < (*slices).size(); ++i) {
+    for (int j = 0; j < (*slices)[i].size(); ++j) {
+      final_slices[index++] = std::move((*slices)[i][j]);
+    }
+  }
+
+  ::grpc::ByteBuffer tmp(&final_slices[0], total_count);
+  response->Swap(&tmp);
+
+  done(s);
+  delete src_devs;
+  delete fuse_counter;
+  for (auto t : *tensor_copies) {
+    if (t != nullptr) delete t;
+  }
+  delete tensor_copies;
+  delete slices;
+}
+
+} // namespace
+
+void GrpcWorker::GrpcFuseRecvTensorAsync(CallOptions* opts,
+                                         const FuseRecvTensorRequest* request,
+                                         ::grpc::ByteBuffer* response,
+                                         StatusCallback done) {
+  Status s = recent_request_ids_.TrackUnique(
+      request->request_id(), "RecvTensor (GrpcWorker)", *request);
+  if (!s.ok()) {
+    done(s);
+    return;
+  }
+
+  const int64 step_id = request->step_id();
+  int fuse_count = request->rendezvous_key_size();
+  std::vector<Rendezvous::ParsedKey> parsed_keys(fuse_count);
+  std::vector<Device*>* src_devs = new std::vector<Device*>(fuse_count, nullptr);
+
+  for (int idx = 0; idx < fuse_count; ++idx) {
+    const string& key = request->rendezvous_key(idx);
+    Status s = Rendezvous::ParseKey(key, &parsed_keys[idx]);
+    if (s.ok()) {
+      s = PrepareRecvTensor(parsed_keys[idx], &(*src_devs)[idx]);
+    }
+
+    if (!s.ok()) {
+      LOG(WARNING) << "PrepareRecvTensor failed, tensor:" << key;
+      delete src_devs;
+      done(s);
+      return;
+    }
+  }
+
+  // Request the tensor associated with the rendezvous key. Any time
+  // while waiting for the tensor to be produced, up until the start
+  // of execution of the callback lambda body below, an RPC
+  // cancellation should abort the rendezvous.
+  opts->SetCancelCallback([this, step_id]() { AbortStep(step_id); });
+  env_->rendezvous_mgr->FuseRecvLocalAsync(
+      step_id, parsed_keys,
+      [opts, response, done, src_devs, fuse_count](
+          const Status& status,
+          const std::vector<Rendezvous::Args>& send_args,
+          const Rendezvous::Args& recv_args,
+          const std::vector<Tensor>& vals,
+          const std::vector<bool>& is_deads) {
+        opts->ClearCancelCallback();
+
+        for (const Tensor& val : vals) {
+          if (val.tensor_data().size() > UINT32_MAX) {
+            done(errors::InvalidArgument("grpc not support tensor large than 4G, use partitioner instead"));
+            return;
+          }
+        }
+
+        if (status.ok()) {
+          // DMA can only be used for Tensors that do not fall into
+          // the following three odd edge cases: 1) a zero-size
+          // buffer, 2) a dead tensor which has an uninit value, and
+          // 3) the tensor has the on_host allocation attribute,
+          // i.e. it's in CPU RAM *independent of its assigned
+          // device type*.
+          int *fuse_counter = new int(fuse_count);
+          std::vector<std::vector<::grpc::Slice> >* slices =
+              new std::vector<std::vector<::grpc::Slice> >(fuse_count);
+          std::vector<Tensor*>* tensor_copies =
+              new std::vector<Tensor*>(fuse_count, nullptr);
+
+          for (int idx = 0; idx < fuse_count; ++idx) {
+            bool is_dead = is_deads[idx];
+            const bool on_host = send_args[idx].alloc_attrs.on_host();
+            if ((*src_devs)[idx]->tensorflow_gpu_device_info() && (!on_host)) {
+#if GOOGLE_CUDA
+              const DeviceContext* send_dev_context = send_args[idx].device_context;
+              AllocatorAttributes alloc_attrs;
+              alloc_attrs.set_gpu_compatible(true);
+              alloc_attrs.set_on_host(true);
+              Allocator* alloc = (*src_devs)[idx]->GetAllocator(alloc_attrs);
+              Tensor* copy = new Tensor(alloc, vals[idx].dtype(), vals[idx].shape());
+              (*tensor_copies)[idx] = copy;
+              CHECK(send_dev_context)
+                << "send dev name: " << (*src_devs)[idx]->name()
+                << " gpu_info: " << (*src_devs)[idx]->tensorflow_gpu_device_info();
+              // "val" is on a GPU. Uses GPUUtil to fill the copy on host.
+              StatusCallback copy_ready = [response, done, copy, tensor_copies, fuse_counter,
+                                           src_devs, fuse_count, is_dead, slices, idx](const Status& s) {
+                               grpc::EncodeTensorToByteBuffer(is_dead, *copy, slices, idx, fuse_count);
+                               if (__sync_sub_and_fetch(fuse_counter, 1) == 0) {
+                                 FuseRecvDone(fuse_counter, src_devs, tensor_copies,
+                                              slices, response, done, s);
+                               }
+                             };
+
+              GPUUtil::CopyGPUTensorToCPU((*src_devs)[idx], send_dev_context, &vals[idx], copy,
+                  copy_ready);
+#else
+              done(errors::Internal("No GPU device in process"));
+#endif
+            } else {
+              Tensor* copy = new Tensor(vals[idx]);
+              (*tensor_copies)[idx] = copy;
+              grpc::EncodeTensorToByteBuffer(is_dead, *copy, slices, idx, fuse_count);
+              if (__sync_sub_and_fetch(fuse_counter, 1) == 0) {
+                FuseRecvDone(fuse_counter, src_devs, tensor_copies,
+                             slices, response, done, Status::OK());
+              }
+            }
+          }
+        } else {
+          //  !s.ok()
+          done(status);
+        }
       });
 }
 

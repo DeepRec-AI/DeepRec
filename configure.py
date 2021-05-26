@@ -1429,6 +1429,9 @@ def main():
   set_build_var(environ_cp, 'TF_ENABLE_XLA', 'XLA JIT', 'with_xla_support',
                 xla_enabled_by_default, 'xla')
 
+  set_build_var(environ_cp, 'TF_NEED_STAR', 'STAR', 'with_star_support',
+                False, 'star')
+
   set_action_env_var(
       environ_cp,
       'TF_NEED_OPENCL_SYCL',

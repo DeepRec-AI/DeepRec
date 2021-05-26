@@ -70,6 +70,8 @@ const std::unordered_map<string, Node::NodeClass>& Node::kNodeClassTable =
         {"_HostSend", NC_HOST_SEND},
         {"_Recv", NC_RECV},
         {"_HostRecv", NC_HOST_RECV},
+        {"_FuseRecv", NC_FUSE_RECV},
+        {"_HostFuseRecv", NC_HOST_FUSE_RECV},
         {"Const", NC_CONSTANT},
         {"HostConst", NC_CONSTANT},
         {"Variable", NC_VARIABLE},
@@ -94,6 +96,8 @@ const std::unordered_map<string, Node::NodeClass>& Node::kNodeClassTable =
         {"StatelessIf", NC_IF},
         {"While", NC_WHILE},
         {"StatelessWhile", NC_WHILE},
+        {"StarRunGraph", NC_STAR_RUN_GRAPH},
+        {"RunGraph", NC_RUN_GRAPH},
         // Not using the constants defined in FunctionLibraryDefinition for the
         // 4 ops below because android inference library does not link
         // tf.function related files.

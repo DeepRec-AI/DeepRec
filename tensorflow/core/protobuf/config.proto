@@ -545,6 +545,12 @@ message ConfigProto {
   Experimental experimental = 16;
 
   // Next: 17
+
+  // Whether tensor fuse is used in distributed running mode.
+  bool tensor_fuse = 201;
+
+  bool run_graph_mode = 203;
+  // Next: 204
 }
 
 // Options for a single Run() call.

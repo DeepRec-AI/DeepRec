@@ -299,6 +299,9 @@ class RunGraphRequestWrapper {
 
   // Returns the wrapped data as a protocol buffer message.
   virtual const RunGraphRequest& ToProto() const = 0;
+
+  // True if enable star_server(run_graph_mode)
+  virtual bool is_run_graph_mode() const = 0;
 };
 
 // Abstract interface for a mutable RunGraphRequest message.
@@ -326,6 +329,8 @@ class MutableRunGraphRequestWrapper : public RunGraphRequestWrapper {
   virtual void set_is_last_partial_run(bool is_last_partial_run) = 0;
   virtual void set_store_errors_in_response_body(bool store_errors) = 0;
   virtual void set_request_id(int64 request_id) = 0;
+  virtual void add_send(const string& key, const Tensor& tensor) {};
+  virtual void set_run_graph_mode(bool run_graph_mode) = 0;
 };
 
 class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
@@ -364,6 +369,10 @@ class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
   void set_is_last_partial_run(bool is_last_partial_run) override;
   void set_store_errors_in_response_body(bool store_errors) override;
   void set_request_id(int64 request_id) override;
+  bool is_run_graph_mode() const override { return is_run_graph_mode_;}
+  void set_run_graph_mode(bool run_graph_mode) override {
+    is_run_graph_mode_ = run_graph_mode;
+  }
 
  private:
   string session_handle_;
@@ -377,6 +386,7 @@ class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
   bool is_last_partial_run_ = false;
   bool store_errors_in_response_body_ = false;
   int64 request_id_ = 0;
+  bool is_run_graph_mode_ = false;
 
   // Holds a cached and owned representation of the proto
   // representation of this request, if needed, so that `ToProto()`
@@ -424,6 +434,11 @@ class MutableProtoRunGraphRequest : public MutableRunGraphRequestWrapper {
   void set_is_last_partial_run(bool is_last_partial_run) override;
   void set_store_errors_in_response_body(bool store_errors) override;
   void set_request_id(int64 request_id) override;
+  bool is_run_graph_mode() const { return request_.run_graph_mode();}
+  void set_run_graph_mode(bool run_graph_mode) override {
+    request_.set_run_graph_mode(run_graph_mode);
+  }
+  void add_send(const string& key, const Tensor& tensor);
 
  private:
   RunGraphRequest request_;
@@ -449,6 +464,7 @@ class ProtoRunGraphRequest : public RunGraphRequestWrapper {
   bool store_errors_in_response_body() const override;
   int64 request_id() const override;
   const RunGraphRequest& ToProto() const override;
+  bool is_run_graph_mode() const { return request_->run_graph_mode();}
 
  private:
   const RunGraphRequest* const request_;  // Not owned.

@@ -46,6 +46,8 @@ const char* GrpcWorkerMethodName(GrpcWorkerMethod id) {
       return "/tensorflow.WorkerService/CleanupAll";
     case GrpcWorkerMethod::kRecvTensor:
       return "/tensorflow.WorkerService/RecvTensor";
+    case GrpcWorkerMethod::kFuseRecvTensor:
+      return "/tensorflow.WorkerService/FuseRecvTensor";
     case GrpcWorkerMethod::kRecvBuf:
       return "/tensorflow.WorkerService/RecvBuf";
     case GrpcWorkerMethod::kLogging:

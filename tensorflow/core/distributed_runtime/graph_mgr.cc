@@ -18,6 +18,12 @@ limitations under the License.
 #include <chrono>  // NOLINT(build/c++11)
 #include <vector>
 
+#ifdef TENSORFLOW_USE_STAR
+#include "seastar/core/distributed.hh"
+#include "seastar/core/reactor.hh"
+#include "seastar/core/alien.hh"
+#endif // TENSORFLOW_USE_STAR
+
 #include "tensorflow/core/common_runtime/build_graph_options.h"
 #include "tensorflow/core/common_runtime/constant_folding.h"
 #include "tensorflow/core/common_runtime/debugger_state_interface.h"
@@ -385,6 +391,15 @@ Status GraphMgr::RecvOutputs(const int64 step_id, NamedTensors* out) {
   return s;
 }
 
+Status GraphMgr::RecvOutputs(const int64 step_id, NamedTensors* out,
+                             std::map<std::string, bool>* is_out_dead) {
+  Rendezvous* rendezvous = worker_env_->rendezvous_mgr->Find(step_id);
+  Status s = RecvOutputsFromRendezvous(rendezvous, out,
+                                       is_out_dead, Rendezvous::Args());
+  rendezvous->Unref();
+  return s;
+}
+
 void GraphMgr::RecvOutputsAsync(const int64 step_id, NamedTensors* out,
                                 StatusCallback done) {
   Rendezvous* rendezvous = worker_env_->rendezvous_mgr->Find(step_id);
@@ -416,7 +431,34 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
                             StepStatsCollector* collector,
                             MutableRunGraphResponseWrapper* response,
                             CancellationManager* cancellation_manager,
-                            const NamedTensors& in, StatusCallback done) {
+                            const NamedTensors& in,
+                            std::map<std::string, bool>& is_send_dead,
+                            StatusCallback done) {
+  RemoteRendezvous *rendezvous = worker_env_->rendezvous_mgr->Find(step_id);
+  Status s = rendezvous->Initialize(session);
+  if (!s.ok()) {
+    done(s);
+    rendezvous->Unref();
+    return;
+  }
+
+  ExecuteAsync(handle, step_id, rendezvous, session, opts, collector,
+               response, cancellation_manager, in, is_send_dead,
+               [rendezvous, done](const Status &s) {
+        rendezvous->Unref();
+        done(s);
+      });
+}
+
+void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
+                            Rendezvous* rendezvous,
+                            WorkerSession* session, const ExecutorOpts& opts,
+                            StepStatsCollector* collector,
+                            MutableRunGraphResponseWrapper* response,
+                            CancellationManager* cancellation_manager,
+                            const NamedTensors& in,
+                            std::map<std::string, bool>& is_send_dead,
+                            StatusCallback done) {
   const uint64 start_time_usecs = Env::Default()->NowMicros();
   string session_id_meta = strings::StrCat("RunGraph #id=", step_id, "#");
   auto* activity = new profiler::TraceMe(absl::string_view(session_id_meta),
@@ -450,8 +492,6 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
     }
   }
 
-  RemoteRendezvous* rendezvous = worker_env_->rendezvous_mgr->Find(step_id);
-  Status s = rendezvous->Initialize(session);
   CollectiveExecutor::Handle* ce_handle =
       item->collective_graph_key != BuildGraphOptions::kNoCollectiveGraphKey
           ? new CollectiveExecutor::Handle(
@@ -460,25 +500,26 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
           : nullptr;
   // Sends values specified by the caller.
   size_t input_size = 0;
-  if (s.ok()) {
-    std::vector<string> keys;
-    std::vector<Tensor> tensors_to_send;
-    keys.reserve(in.size());
-    tensors_to_send.reserve(in.size());
-    for (auto& p : in) {
-      keys.push_back(p.first);
-      tensors_to_send.push_back(p.second);
-      input_size += p.second.AllocatedBytes();
-    }
-    s = SendTensorsToRendezvous(rendezvous, nullptr, {}, keys, tensors_to_send);
+  std::vector<string> keys;
+  std::vector<Tensor> tensors_to_send;
+  std::vector<bool> is_tensor_dead;
+  keys.reserve(in.size());
+  tensors_to_send.reserve(in.size());
+  is_tensor_dead.reserve(in.size());
+  for (auto& p : in) {
+    keys.push_back(p.first);
+    tensors_to_send.push_back(p.second);
+    is_tensor_dead.push_back(is_send_dead[p.first]);
+    input_size += p.second.AllocatedBytes();
   }
+  Status s = SendTensorsToRendezvous(rendezvous, nullptr, {}, keys,
+                                     tensors_to_send, is_tensor_dead);
 
   if (!s.ok()) {
     done(s);
     delete activity;
     delete ce_handle;
     item->Unref();
-    rendezvous->Unref();
     return;
   }
 
@@ -495,7 +536,6 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
                            metrics::RecordGraphInputTensors(input_size);
                            metrics::UpdateGraphExecTime(
                                Env::Default()->NowMicros() - start_time_usecs);
-                           rendezvous->Unref();
                            item->Unref();
                            delete activity;
                            delete ce_handle;
@@ -513,17 +553,37 @@ void GraphMgr::StartParallelExecutors(
   ScopedStepContainer* step_container = new ScopedStepContainer(
       step_id,
       [this](const string& name) { device_mgr_->ClearContainers({name}); });
+#ifdef TENSORFLOW_USE_STAR
+  int32 cpu_id = 0;
+  if (worker_env_->lockless) {
+    cpu_id = seastar::engine().cpu_id();
+  }
+#endif // TENSORFLOW_USE_STAR
   // NOTE: Transfer one ref of rendezvous and item.
   ExecutorBarrier* barrier =
       new ExecutorBarrier(num_units, rendezvous,
                           [this, item, collector, cost_graph, step_container,
+#ifdef TENSORFLOW_USE_STAR
+                           done, cpu_id](const Status& s) {
+                            BuildCostModel(item, collector, cost_graph);
+                            if (worker_env_->lockless) {
+                              seastar::alien::submit_to(cpu_id, [s, done] {
+                                done(s);
+                                return seastar::make_ready_future();
+                              });
+                            } else  {
+                              done(s);
+                            }
+#else
                            done](const Status& s) {
                             BuildCostModel(item, collector, cost_graph);
                             done(s);
+#endif // TENSORFLOW_USE_STAR
                             delete step_container;
                           });
   Executor::Args args;
   args.step_id = step_id;
+  args.round_step_id = step_id;
   args.rendezvous = rendezvous;
   args.global_rendezvous = global_rendezvous;
   args.collective_executor = ce_handle ? ce_handle->get() : nullptr;

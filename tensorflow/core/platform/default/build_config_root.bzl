@@ -68,6 +68,15 @@ def tf_additional_gdr_deps():
         "//conditions:default": [],
     })
 
+def tf_additional_star_deps():
+    return select({
+        str(Label("//tensorflow:with_star_support")): [
+             str(Label("//tensorflow/contrib/star:star_server_base_lib")),
+             str(Label("//tensorflow/contrib/star_server:star_server_lib")),
+        ],
+        "//conditions:default": [],
+    })
+
 # Include specific extra dependencies when building statically, or
 # another set of dependencies otherwise. If "macos" is provided, that
 # dependency list is used when using the framework_shared_object config

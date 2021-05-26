@@ -37,6 +37,10 @@ limitations under the License.
 
 namespace tensorflow {
 
+namespace {
+  uint64 kGlobalStepId = 0x100000000000000uLL;
+} // namespace anonymous
+
 static void StartAbortRendevous(Rendezvous* rendez, const Status& s) {
   rendez->StartAbort(s);
   rendez->Unref();
@@ -103,6 +107,26 @@ Status BaseRendezvousMgr::RecvLocal(int64 step_id,
   return ret;
 }
 
+void BaseRendezvousMgr::FuseRecvLocalAsync(
+    int64 step_id, const std::vector<Rendezvous::ParsedKey>& parsed_keys,
+    Rendezvous::FuseDoneCallback done) {
+  auto rendez = FindOrCreate(step_id);
+  using namespace std::placeholders;
+  Rendezvous::FuseDoneCallback done_cb = std::bind(
+      [rendez](Rendezvous::FuseDoneCallback done,
+               // Begin unbound arguments.
+               const Status& s,
+               const std::vector<Rendezvous::Args>& send_argses,
+               const Rendezvous::Args& recv_args,
+               const std::vector<Tensor>& vals,
+               const std::vector<bool>& deads) {
+        rendez->Unref();
+        done(s, send_argses, recv_args, vals, deads);
+      },
+      std::move(done), _1, _2, _3, _4, _5);
+  rendez->FuseRecvLocalAsync(parsed_keys, std::move(done_cb));
+}
+
 void BaseRendezvousMgr::Cleanup(int64 step_id) {
   Rendezvous* rendez = nullptr;
   {
@@ -140,6 +164,10 @@ void BaseRendezvousMgr::CleanupAll() {
   for (auto rendez : rendezs) {
     StartAbortRendevous(rendez, errors::Aborted("Shutdown"));
   }
+}
+
+RemoteRendezvous* BaseRendezvousMgr::FindInterStepRendezvous() {
+  return FindOrCreate(kGlobalStepId);
 }
 
 BaseRemoteRendezvous::BaseRemoteRendezvous(const WorkerEnv* env, int64 step_id)
@@ -182,6 +210,17 @@ Status BaseRemoteRendezvous::Initialize(WorkerSession* session) {
   for (auto& call : deferred_calls) {
     RecvLocalAsyncInternal(call.parsed, std::move(call.done));
   }
+
+  std::vector<DeferredFuseCall> deferred_fuse_calls;
+  {
+    mutex_lock l(mu_);
+    std::swap(deferred_fuse_calls, deferred_fuse_calls_);
+  }
+  for (auto& fuse_call : deferred_fuse_calls) {
+    FuseRecvLocalAsyncInternal(fuse_call.parsed_keys,
+                               std::move(fuse_call.done));
+  }
+
   return Status::OK();
 }
 
@@ -385,6 +424,171 @@ void BaseRemoteRendezvous::RecvLocalAsyncInternal(const ParsedKey& parsed,
   local_->RecvAsync(parsed, Args(), std::move(done));
 }
 
+void BaseRemoteRendezvous::FuseRecvAsync(
+    const std::vector<ParsedKey>& parsed_keys,
+    const Rendezvous::Args& recv_args, FuseDoneCallback done) {
+  CHECK(is_initialized()) << "RecvAsync called when uninitialized.";
+
+  int fuse_count = parsed_keys.size();
+  for (int i = 0; i < fuse_count; ++i) {
+    Status s = ValidateDevices(parsed_keys[i], false /*!is_src*/);
+    if (!s.ok()) {
+      done(s, std::vector<Args>(fuse_count), recv_args,
+           std::vector<Tensor>(fuse_count),
+           std::vector<bool>(fuse_count, false));
+      return;
+    }
+  }
+
+  // Are src and dst in the same worker?
+  if (IsSameWorker(parsed_keys[0].src, parsed_keys[0].dst)) {
+    // NOTE(jiankeng.pt): run_graph_op will use the local fuse recv,
+    // and we use sync method here.
+    FuseRecvLocalSync(parsed_keys, std::move(done));
+  } else {
+    FuseRecvFromRemoteAsync(parsed_keys, recv_args, std::move(done));
+  }
+}
+
+// NOTE(jiankeng.pt): The sync method will only be used when
+// all parsed_keys' value are ready.
+void BaseRemoteRendezvous::FuseRecvLocalSync(
+    const std::vector<ParsedKey>& parsed_keys,
+    FuseDoneCallback done) {
+  int fuse_count = parsed_keys.size();
+  std::vector<Tensor> vt(fuse_count);
+  std::vector<bool> vd(fuse_count, true);
+  std::vector<Rendezvous::Args> vsa(fuse_count);
+
+  for (int i = 0; i < fuse_count; ++i) {
+    Status s = ValidateDevices(parsed_keys[i], true /* is_src */);
+    if (!s.ok()) {
+      if (s.code() != tensorflow::error::OUT_OF_RANGE) {
+        LOG(ERROR) << "step_id" << step_id_ << ", "
+                   << "send device is not local device. key="
+                   << parsed_keys[i].FullKey();
+      }
+      done(s, vsa, Args(), vt, std::vector<bool>(fuse_count));
+      return;
+    }
+  }
+
+  for (int i = 0; i < fuse_count; ++i) {
+    bool recv_done = false;
+    Status status;
+    local_->RecvAsync(parsed_keys[i], Args(), [i, &vt, &vd, &vsa, &recv_done, &status](
+                        const Status& s,
+                        const Rendezvous::Args& send_args,
+                        const Rendezvous::Args& recv_args,
+                        const Tensor& val, bool is_dead) {
+                          if (!s.ok()) {
+                            status = s;
+                          } else {
+                            status = Status::OK();
+                            vsa[i] = send_args;
+                            vt[i] = val;
+                            vd[i] = is_dead;
+                            recv_done = true;
+                          }
+                        });
+    if (!recv_done) {
+      done(status, vsa, Args(), vt, vd);
+      return;
+    }
+  }
+
+  done(Status::OK(), vsa, Args(), vt, vd);
+}
+
+void BaseRemoteRendezvous::FuseRecvLocalAsync(
+    const std::vector<ParsedKey>& parsed_keys,
+    FuseDoneCallback done) {
+  {
+    mutex_lock l(mu_);
+    if (!is_initialized_locked()) {
+      // RecvLocalAsync can be called (due to an incoming RecvTensor RPC from a
+      // remote worker) before the RunStep (or PartialRunStep) RPC from the
+      // master arrives. RecvLocalAsync thus buffers the arguments until after
+      // the RemoteRendezvous is Initialize()'d, when it completes the
+      // rendezvous logic. At some point after Initialize() is called, a Tensor
+      // is produced locally that will then be sent in response to the incoming
+      // RPC.
+      DeferredFuseCall call(parsed_keys, std::move(done));
+      deferred_fuse_calls_.push_back(call);
+      return;
+    }
+  }
+  FuseRecvLocalAsyncInternal(parsed_keys, std::move(done));
+}
+
+void BaseRemoteRendezvous::FuseRecvLocalAsyncInternal(
+    const std::vector<ParsedKey>& parsed_keys, FuseDoneCallback done) {
+  int fuse_count = parsed_keys.size();
+  std::vector<Tensor> *vt = new std::vector<Tensor>(fuse_count);
+  volatile bool *vd = new volatile bool[fuse_count]();
+  std::vector<Rendezvous::Args> *vsa = new std::vector<Rendezvous::Args>(fuse_count);
+
+  for (int i = 0; i < fuse_count; ++i) {
+    Status s = ValidateDevices(parsed_keys[i], true /* is_src */);
+    if (!s.ok()) {
+      LOG(ERROR) << "send device is not local device";
+      done(s, *vsa, Args(), *vt, std::vector<bool>(fuse_count));
+      delete vsa,
+      delete vt;
+      delete [] vd;
+      return;
+    }
+  }
+
+  Status* status = new Status();
+  mutex *mu = new mutex();
+  std::atomic<int> *fuse_counter = new std::atomic<int>(fuse_count);
+
+  for (int i = 0; i < fuse_count; ++i) {
+    using namespace std::placeholders;
+    ParsedKey parsed_key_tmp = parsed_keys[i];
+    DoneCallback done_once = std::bind(
+        [vsa, vt, vd, status, mu, fuse_count, fuse_counter, i](
+            FuseDoneCallback done, const Status& s,
+            const Rendezvous::Args& send_args,
+            const Rendezvous::Args& recv_args,
+            const Tensor& val, bool is_dead) {
+          if (!s.ok()) {
+            mutex_lock l(*mu);
+            *status = s;
+          } else {
+            (*vsa)[i] = send_args;
+            (*vt)[i] = val;
+            vd[i] = is_dead;
+          }
+
+          if (fuse_counter->fetch_sub(1) == 1) {
+            std::vector<bool> vd_tmp(vd, vd + fuse_count);
+            done(*status, *vsa, recv_args, *vt, vd_tmp);
+            delete vsa;
+            delete vt;
+            delete [] vd;
+            delete status;
+            delete fuse_counter;
+          }
+        },
+        // std::move should not be used here, 'done' may be
+        // called at multiple context.
+        done,
+        _1, _2, _3, _4, _5);
+
+    local_->RecvAsync(parsed_keys[i], Args(), std::move(done_once));
+  }
+}
+
+void BaseRemoteRendezvous::FuseRecvFromRemoteAsync(
+        const std::vector<Rendezvous::ParsedKey>& parsed_keys,
+        const Rendezvous::Args& args,
+        FuseDoneCallback done,
+        CallOptions* opts) {
+    CHECK(false) << "FuseRecvFromRemoteAsync Unimplemented";
+}
+
 void BaseRemoteRendezvous::StartAbort(const Status& s) {
   CHECK(!s.ok());
   // Use a "derived" status as the status for the rendezvous. Derived
@@ -451,5 +655,9 @@ void BaseRemoteRendezvous::DeregisterCall(BaseRecvTensorCall* call) {
 BaseRemoteRendezvous::DeferredCall::DeferredCall(const ParsedKey& parsed,
                                                  DoneCallback done)
     : parsed(parsed), done(std::move(done)) {}
+
+BaseRemoteRendezvous::DeferredFuseCall::DeferredFuseCall(
+    const std::vector<ParsedKey>& parsed_keys, FuseDoneCallback done)
+    : parsed_keys(parsed_keys), done(std::move(done)) {}
 
 }  // end namespace tensorflow

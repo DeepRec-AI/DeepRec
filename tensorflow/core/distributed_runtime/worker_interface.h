@@ -40,6 +40,11 @@ class WorkerInterface {
                               GetStatusResponse* response,
                               StatusCallback done) = 0;
 
+  virtual void GetStatusAsyncWithOptions(const GetStatusRequest* request,
+                                         GetStatusResponse* response,
+                                         StatusCallback done,
+                                         CallOptions* call_opts) = 0;
+
   virtual void CreateWorkerSessionAsync(
       const CreateWorkerSessionRequest* request,
       CreateWorkerSessionResponse* response, StatusCallback done) = 0;

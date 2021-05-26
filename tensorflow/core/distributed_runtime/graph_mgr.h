@@ -91,10 +91,23 @@ class GraphMgr {
                     StepStatsCollector* collector,
                     MutableRunGraphResponseWrapper* response,
                     CancellationManager* cancellation_manager,
-                    const NamedTensors& in, StatusCallback done);
+                    const NamedTensors& in,
+                    std::map<std::string, bool>& is_send_dead,
+                    StatusCallback done);
+  void ExecuteAsync(const string& handle, const int64 step_id,
+                    Rendezvous* rendezvous,
+                    WorkerSession* session, const ExecutorOpts& opts,
+                    StepStatsCollector* collector,
+                    MutableRunGraphResponseWrapper* response,
+                    CancellationManager* cancellation_manager,
+                    const NamedTensors& in, 
+                    std::map<std::string, bool>& is_send_dead,
+                    StatusCallback done);
 
   Status SendInputs(const int64 step_id, const NamedTensors& in);
   Status RecvOutputs(const int64 step_id, NamedTensors* out);
+  Status RecvOutputs(const int64 step_id, NamedTensors* out,
+                     std::map<std::string, bool>* is_out_dead);
   void RecvOutputsAsync(const int64 step_id, NamedTensors* out,
                         StatusCallback done);
 

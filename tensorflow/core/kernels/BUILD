@@ -4948,6 +4948,7 @@ cc_library(
     deps = [
         ":no_op",
         ":sendrecv_ops",
+        ":fuserecv_ops",
     ],
 )
 
@@ -4981,6 +4982,49 @@ tf_cc_test(
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
     ],
+)
+
+tf_kernel_library(
+    name = "fuserecv_ops",
+    prefix = "fuserecv_ops",
+    deps = REQUIRED_DEPS,
+)
+
+tf_kernel_library(
+    name = "run_graph_op",
+    prefix = "run_graph_op",
+    deps = REQUIRED_DEPS + [
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:master_proto_cc",
+        "//tensorflow/core:proto_text",
+        "//tensorflow/core:worker_proto_cc",
+        "//tensorflow/core/distributed_runtime:worker_cache",
+        "//tensorflow/core/distributed_runtime:worker_resource",
+        "//tensorflow/core/distributed_runtime:call_options",
+        "//tensorflow/core/distributed_runtime:worker_interface",
+        "//tensorflow/core/distributed_runtime:message_wrappers",
+        "//tensorflow/core:run_graph_op_op_lib",
+    ],
+)
+
+tf_kernel_library(
+    name = "star_run_graph_op",
+    prefix = "star_run_graph_op",
+    deps = REQUIRED_DEPS + [
+      "//tensorflow/core:lib_internal",
+      "//tensorflow/core:core_cpu",
+      "//tensorflow/core:master_proto_cc",
+      "//tensorflow/core:proto_text",
+      "//tensorflow/core:worker_proto_cc",
+      "//tensorflow/core/distributed_runtime:worker_cache",
+      "//tensorflow/core/distributed_runtime:worker_resource",
+      "//tensorflow/core/distributed_runtime:call_options",
+      "//tensorflow/core/distributed_runtime:worker_interface",
+      "//tensorflow/core/distributed_runtime:message_wrappers",
+      "//tensorflow/core:star_run_graph_op_op_lib",
+    ] + select({"//tensorflow:with_star_support": ["//tensorflow/contrib/star:star_tensor_coding"],
+                "//conditions:default": []}),
 )
 
 cc_library(

@@ -1,0 +1,8 @@
+op {
+  graph_op_name: "RunGraph"
+  summary: "convert the input tensor to string tensor, the string output content is"
+  description: <<END
+in-tensor's serialized proto.
+END
+}
+

@@ -64,6 +64,10 @@ class CallOptions {
   int64 GetTimeout();
   void SetTimeout(int64 ms);
 
+  // Get and set use_rpc_wait_for_ready.
+  bool UseWaitForReady();
+  void SetUseWaitForReady(bool wait_for_ready);
+
  private:
   mutex mu_;
   CancelFunction cancel_func_ GUARDED_BY(mu_);
@@ -71,6 +75,8 @@ class CallOptions {
   // RPC operation timeout in milliseconds.
   int64 timeout_in_ms_ GUARDED_BY(mu_);
 
+  // use_rpc_wait_for_ready
+  bool use_wait_for_ready_ GUARDED_BY(mu_);
   TF_DISALLOW_COPY_AND_ASSIGN(CallOptions);
 };
 

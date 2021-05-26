@@ -298,4 +298,244 @@ bool TensorResponse::ParseSlow(Source* source) {
   return true;
 }
 
+void FuseTensorResponse::InitAlloc(DeviceBase* d,
+                                   const AllocatorAttributes& aa) {
+  Clear();
+  device_ = d;
+  alloc_attrs_ = aa; 
+  const DeviceAttributes& da = d->attributes();
+  if (alloc_attrs_.on_host() || da.device_type() == "CPU") {
+    on_host_ = true;
+  }
+  allocator_ = device_->GetAllocator(alloc_attrs_);
+}
+
+void FuseTensorResponse::Clear() {
+  on_host_ = false;
+  device_ = nullptr;
+  alloc_attrs_ = AllocatorAttributes();
+  allocator_ = nullptr;
+  meta_.clear_tensor();
+}
+
+Status FuseTensorResponse::ParseFrom(::tensorflow::protobuf::io::ZeroCopyInputStream* input) {
+  uint64 fuse_count = 0;
+  {
+    protobuf::io::CodedInputStream header_input(input);
+    header_input.ReadRaw(const_cast<uint64*>(&fuse_count), sizeof(uint64));
+  }
+
+  int tensor_idx = 0;
+  while (tensor_idx < fuse_count) {
+    RecvTensorResponse meta_tmp;
+    uint64 cur_len, raw_len = 0;
+    bool can_memcpy;
+
+    // Should add a '{}' scope here
+    {
+      protobuf::io::CodedInputStream coded_input(input);
+
+      coded_input.ReadRaw(const_cast<uint64*>(&cur_len), sizeof(uint64));
+      raw_len += sizeof(uint64);
+      coded_input.ReadRaw(const_cast<bool*>(&can_memcpy), sizeof(bool));
+      raw_len += sizeof(bool);
+    }
+
+    if (!on_host_) {
+      ::tensorflow::protobuf::io::ZeroCopyInputStream* zero_copy_input = input;
+      if (!meta_tmp.ParseFromBoundedZeroCopyStream(zero_copy_input, cur_len)) {
+        LOG(ERROR) << "Cannot parse tensor from response";
+        return errors::InvalidArgument("Cannot parse tensor from response");
+      }
+
+      is_deads_[tensor_idx] =  meta_tmp.is_dead();;
+      Status s =
+          device_->MakeTensorFromProto(meta_tmp.tensor(), alloc_attrs_, &tensors_[tensor_idx]);
+      if (!s.ok()) {
+        LOG(ERROR) << "Cannot parse tensor from proto";
+        return s;
+      }
+
+      {
+        TensorProto empty;
+        meta_tmp.mutable_tensor()->Swap(&empty);
+      }
+      ++tensor_idx;
+      continue;
+    }
+
+    if (can_memcpy) {
+      protobuf::io::CodedInputStream coded_input(input);
+      if (!ParseFast(coded_input, tensor_idx)) {
+        LOG(ERROR) << "Cannot parse tensor from response";
+        return errors::InvalidArgument("Cannot parse tensor from response");
+      }
+
+      ++tensor_idx;
+
+    } else {
+      ::tensorflow::protobuf::io::ZeroCopyInputStream* zero_copy_input = input;
+      if (!meta_tmp.ParseFromBoundedZeroCopyStream(zero_copy_input, cur_len)) {
+        LOG(ERROR) << "Cannot parse tensor from response";
+        return errors::InvalidArgument("Cannot parse tensor from response");
+      }
+
+      Tensor parsed(meta_tmp.tensor().dtype());
+      if (!parsed.FromProto(allocator_, meta_tmp.tensor())) {
+        LOG(ERROR) << "Cannot parse tensor from proto";
+        return errors::InvalidArgument("Cannot parse tensor from proto");
+      }
+      tensors_[tensor_idx] = std::move(parsed);
+      is_deads_[tensor_idx] = meta_tmp.is_dead();
+
+      // Reduce memory usage for big tensors.
+      {
+        TensorProto empty;
+        meta_tmp.mutable_tensor()->Swap(&empty);
+      }
+
+      meta_tmp.clear_tensor();
+      ++tensor_idx;
+    }
+  }
+
+  return Status::OK();
+}
+
+bool FuseTensorResponse::ParseFast(protobuf::io::CodedInputStream& input,
+                                   int tensor_idx) {
+  RecvTensorResponse meta_tmp;
+  is_deads_[tensor_idx] = false;
+
+  input.SetTotalBytesLimit(INT_MAX, INT_MAX);  // Unlimited
+  while (true) {
+    auto p = input.ReadTagWithCutoff(127);
+    int tag = GetTagFieldNumber(p.first);
+    WireType wt = GetTagWireType(p.first);
+    if (!p.second) {
+      return (tag == 0);
+    }
+
+    switch (tag) {
+      case RecvTensorResponse::kTensorFieldNumber: {
+        if (wt != WIRETYPE_LENGTH_DELIMITED) return false;
+
+        int length;
+        if (!ReadVarintSizeAsInt(&input, &length)) return false;
+        if (!ParseTensorSubmessage(&input, meta_tmp.mutable_tensor(), tensor_idx)) {
+          return false;
+        }
+
+        // The last field of a whole message.
+        return true;
+      }
+      case RecvTensorResponse::kIsDeadFieldNumber: {
+        uint32 v;
+        if ((wt != WIRETYPE_VARINT) || !input.ReadVarint32(&v)) return false;
+        meta_tmp.set_is_dead((v != 0) ? true : false);
+        is_deads_[tensor_idx] = meta_tmp.is_dead();
+        break;
+      }
+      case RecvTensorResponse::kSendStartMicrosFieldNumber: {
+        protobuf_uint64 v;
+        if ((wt != WIRETYPE_VARINT) || !input.ReadVarint64(&v)) return false;
+        meta_tmp.set_send_start_micros(static_cast<int64>(v));
+        break;
+      }
+      case RecvTensorResponse::kTransportOptionsFieldNumber: {
+        if ((wt != WIRETYPE_LENGTH_DELIMITED) ||
+            !ReadNestedMessage(&input, meta_tmp.mutable_transport_options()))
+          return false;
+        break;
+      }
+      default: {
+        // Unknown tag, so don't handle we can't handle on the fast path
+        // NOTE: Check whether RecvTensorResponse message has new field.
+        return false;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool FuseTensorResponse::ParseTensorSubmessage(
+    protobuf::io::CodedInputStream* input,
+    TensorProto* tensor_meta,
+    int tensor_idx) {
+  bool seen_tensor_content = false;
+
+  while (true) {
+    auto p = input->ReadTagWithCutoff(127);
+    int tag = GetTagFieldNumber(p.first);
+    WireType wt = GetTagWireType(p.first);
+
+    switch (tag) {
+      case TensorProto::kDtypeFieldNumber: {
+        uint32 v;
+        if ((wt != WIRETYPE_VARINT) || !input->ReadVarint32(&v)) return false;
+        if (seen_tensor_content) return false;
+        tensor_meta->set_dtype(static_cast<DataType>(static_cast<int>(v)));
+        if (!DataTypeCanUseMemcpy(tensor_meta->dtype())) return false;
+        break;
+      }
+      case TensorProto::kTensorShapeFieldNumber: {
+        if ((wt != WIRETYPE_LENGTH_DELIMITED) ||
+            !ReadNestedMessage(input, tensor_meta->mutable_tensor_shape()))
+          return false;
+        if (seen_tensor_content) return false;
+        break;
+      }
+      case TensorProto::kVersionNumberFieldNumber: {
+        uint32 v;
+        if ((wt != WIRETYPE_VARINT) || !input->ReadVarint32(&v)) return false;
+        if (seen_tensor_content) return false;
+        tensor_meta->set_version_number(static_cast<int32>(v));
+        break;
+      }
+      case TensorProto::kTensorContentFieldNumber: {
+        // If we haven't seen the dtype and tensor_shape data first, we can't
+        // deal with this in the fast path.
+        if (seen_tensor_content) return false;
+
+        // TODO: Empty shape 'TensorShape({})' is valided here.
+        if (wt != WIRETYPE_LENGTH_DELIMITED) {
+          return false;
+        }
+
+        int tensor_size = 0;
+        if (!ReadVarintSizeAsInt(input, &tensor_size)) {
+          return false;
+        }
+
+        // Read tensor buf data here.
+        TensorShape shape({});
+        if (tensor_meta->has_tensor_shape()) {
+          shape = tensor_meta->tensor_shape();
+        }
+        Tensor t(allocator_, tensor_meta->dtype(), shape);
+        StringPiece buf = t.tensor_data();
+        if (static_cast<size_t>(tensor_size) != buf.size()) {
+          LOG(ERROR) << "Recviced tensor size is not equal tensor size, "
+                     << tensor_size << " vs " << buf.size();
+          return false;
+        }
+
+        // Not an empty tensor, read bytes from input stream
+        if (tensor_size > 0) {
+          input->ReadRaw(const_cast<char*>(buf.data()), tensor_size);
+        }
+        tensors_[tensor_idx] = std::move(t);
+
+        return true;
+      }
+      default: {
+        // Some other tag our fast path code is not prepared to handle.
+        // return false.
+        return false;
+      }
+    }
+  }
+}
+
 }  // namespace tensorflow

@@ -64,6 +64,9 @@ struct WorkerEnv {
 
   // A pool of threads for scheduling compute work.
   thread::ThreadPool* compute_pool = nullptr;
+
+  // Use lockless distributed runtime or not.
+  bool lockless = false;
 };
 
 }  // end namespace tensorflow

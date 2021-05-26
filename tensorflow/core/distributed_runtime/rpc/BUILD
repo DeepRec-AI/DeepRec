@@ -79,7 +79,8 @@ cc_library(
 cc_library(
     name = "grpc_remote_worker",
     srcs = ["grpc_remote_worker.cc"],
-    hdrs = ["grpc_remote_worker.h"],
+    hdrs = ["grpc_remote_worker.h",
+            "grpc_worker_interface.h"],
     deps = [
         ":grpc_client_cq_tag",
         ":grpc_state",
@@ -262,7 +263,8 @@ cc_library(
 cc_library(
     name = "rpc_rendezvous_mgr",
     srcs = ["rpc_rendezvous_mgr.cc"],
-    hdrs = ["rpc_rendezvous_mgr.h"],
+    hdrs = ["rpc_rendezvous_mgr.h",
+            "grpc_worker_interface.h"],
     deps = [
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
@@ -308,6 +310,7 @@ cc_library(
         "//tensorflow/core/distributed_runtime:session_mgr",
         "//tensorflow/core/distributed_runtime:worker_cache_wrapper",
         "//tensorflow/core/distributed_runtime:worker_env",
+        "//tensorflow/core/distributed_runtime:worker_resource",
         "//tensorflow/core/distributed_runtime/rpc/eager:grpc_eager_service_impl",
     ],
     alwayslink = 1,

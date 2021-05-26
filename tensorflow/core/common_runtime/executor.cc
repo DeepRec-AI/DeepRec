@@ -171,6 +171,7 @@ struct NodeItem {
   bool is_sink : 1;             // True iff IsSink(node)
   // True iff IsEnter(node) || IsExit(node) || IsNextIteration(node)
   bool is_enter_exit_or_next_iter : 1;
+  bool is_run_graph_op;          // True iff IsRunGraph(node)
 
   // Cached values of node->num_inputs() and node->num_outputs(), to
   // avoid levels of indirection.
@@ -661,6 +662,7 @@ Status ExecutorImpl::Initialize() {
     item->is_sink = IsSink(n);
     item->is_enter_exit_or_next_iter =
         (IsEnter(n) || IsExit(n) || IsNextIteration(n));
+    item->is_run_graph_op = IsRunGraph(n);
 
     // Compute the maximum values we'll store for this node in the
     // pending counts data structure, and allocate a handle in
@@ -807,8 +809,8 @@ Status InferAllocAttr(const Node* n, const Node* dst,
       // Value is going to be the sink of an RPC.
       attr->set_nic_compatible(true);
       VLOG(2) << "node " << n->name() << " is the sink of an RPC in";
-    } else if ((local_dev_name.type == "CPU" || n->IsHostRecv()) &&
-               parsed_src_name.type != "CPU") {
+    } else if ((local_dev_name.type == "CPU" || n->IsHostRecv() ||
+               n->IsHostFuseRecv()) && parsed_src_name.type != "CPU") {
       // Value is going to be the sink of a local DMA from GPU to CPU (or
       // other types of accelerators).
       attr->set_gpu_compatible(true);
@@ -1250,6 +1252,7 @@ class ExecutorState {
   const bool log_memory_;
 
   int64 step_id_;
+  int64 round_step_id_;
   // Not owned.
   Rendezvous* rendezvous_;
   Executor::RendezvousFactory* create_rendezvous_ = nullptr;
@@ -1332,7 +1335,8 @@ class ExecutorState {
                        TensorValueVec* inputs,
                        DeviceContextVec* input_device_contexts,
                        AllocatorAttributeVec* input_alloc_attrs,
-                       bool* is_input_dead);
+                       bool* is_input_dead,
+                       std::vector<bool>* is_input_dead_details);
 
   // After item->kernel computation is done, processes its outputs.
   Status ProcessOutputs(const NodeItem& item, OpKernelContext* ctx,
@@ -1389,6 +1393,7 @@ ExecutorState::ExecutorState(const Executor::Args& args, ExecutorImpl* impl)
     : vlog_(VLOG_IS_ON(1)),
       log_memory_(LogMemory::IsEnabled()),
       step_id_(args.step_id),
+      round_step_id_(args.round_step_id),
       rendezvous_(args.rendezvous),
       create_rendezvous_(&impl->params_.rendezvous_factory),
       global_rendezvous_(args.global_rendezvous),
@@ -1633,6 +1638,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
 
   OpKernelContext::Params params;
   params.step_id = step_id_;
+  params.round_step_id = round_step_id_;
   // Override device's threadpool if user provides an intra_op_threadpool
   Device* device = impl_->params_.device;
   if (user_device_) {
@@ -1748,8 +1754,9 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
     } else {
       // Prepares inputs.
       bool is_input_dead = false;
+      std::vector<bool> is_input_dead_details;
       s = PrepareInputs(item, first_input, &inputs, &input_device_contexts,
-                        &input_alloc_attrs, &is_input_dead);
+                        &input_alloc_attrs, &is_input_dead, &is_input_dead_details);
       if (!s.ok()) {
         // Clear inputs.
         int num_inputs = item.num_inputs;
@@ -1767,6 +1774,7 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
       params.op_kernel = op_kernel;
       params.frame_iter = FrameAndIter(input_frame->frame_id, input_iter);
       params.is_input_dead = is_input_dead;
+      params.is_input_dead_details = is_input_dead_details;
       params.output_attr_array = item.output_attrs();
       params.forward_from_array = item.forward_from();
 
@@ -1917,7 +1925,8 @@ Status ExecutorState::PrepareInputs(const NodeItem& item, Entry* first_input,
                                     TensorValueVec* inputs,
                                     DeviceContextVec* input_device_contexts,
                                     AllocatorAttributeVec* input_alloc_attrs,
-                                    bool* is_input_dead) {
+                                    bool* is_input_dead,
+                                    std::vector<bool>* is_input_dead_details) {
   const Node* node = item.node;
 
   inputs->clear();
@@ -1930,7 +1939,9 @@ Status ExecutorState::PrepareInputs(const NodeItem& item, Entry* first_input,
   *is_input_dead = false;
 
   bool is_merge = item.is_merge;
+  is_input_dead_details->resize(item.num_inputs, false);
   for (int i = 0; i < item.num_inputs; ++i) {
+    (*is_input_dead_details)[i] = false;
     const bool expect_ref = IsRefType(item.input_type(i));
     Entry* entry = first_input + i;
     (*input_device_contexts)[i] = entry->device_context;
@@ -1949,6 +1960,7 @@ Status ExecutorState::PrepareInputs(const NodeItem& item, Entry* first_input,
         entry->val.Init(*kEmptyTensor);
         inp->tensor = entry->val.get();
         *is_input_dead = true;
+        (*is_input_dead_details)[i] = true;
       }
       continue;
     }
@@ -2047,10 +2059,11 @@ Status ExecutorState::ProcessOutputs(const NodeItem& item, OpKernelContext* ctx,
 
   for (int i = 0; i < item.num_outputs; ++i) {
     const TensorValue val = ctx->release_output(i);
-    if (val.tensor == nullptr) {
+    if (*ctx->is_output_dead() || val.tensor == nullptr) {
       // Unless it's a Switch or a Recv, the node must produce a
       // tensor value at i-th output.
-      if (!IsSwitch(node) && !IsRecv(node)) {
+      if (!IsSwitch(node) && !IsRecv(node) &&
+          !IsFuseRecv(node) && !IsRunGraph(node)) {
         s.Update(errors::Internal("Missing ", i, "-th output from ",
                                   FormatNodeForError(*node)));
       }
@@ -2781,7 +2794,10 @@ void ExecutorState::FrameState::ActivateNodes(const NodeItem* item,
 
     // Add dst to the ready queue if it's ready
     if (dst_ready) {
-      if (dst_item->is_control_trigger) dst_dead = false;
+      // NOTE(jiankeng.pt): RunGraphOp can not be dead in any time.
+      if (dst_item->is_control_trigger || dst_item->is_run_graph_op) {
+        dst_dead = false;
+      }
       ready->emplace_back(dst_item->node, this, iter, dst_dead);
       iter_state->outstanding_ops++;
     }

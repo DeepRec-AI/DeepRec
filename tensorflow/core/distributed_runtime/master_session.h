@@ -151,6 +151,7 @@ class MasterSession : public core::RefCounted {
   // before a new substitute has been created, Variables can go out of
   // scope and lose their state.
   class ReffedClientGraph;
+  class ReffedClientGraphV2;
   typedef std::unordered_map<uint64, ReffedClientGraph*> RCGMap;
   RCGMap run_graphs_ GUARDED_BY(mu_);
   RCGMap partial_run_graphs_ GUARDED_BY(mu_);

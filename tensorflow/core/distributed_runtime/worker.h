@@ -49,6 +49,11 @@ class Worker : public WorkerInterface {
                       GetStatusResponse* response,
                       StatusCallback done) override;
 
+  void GetStatusAsyncWithOptions(const GetStatusRequest* request,
+                                 GetStatusResponse* response,
+                                 StatusCallback done,
+                                 CallOptions* call_opts) override;
+
   void CreateWorkerSessionAsync(const CreateWorkerSessionRequest* request,
                                 CreateWorkerSessionResponse* response,
                                 StatusCallback done) override;

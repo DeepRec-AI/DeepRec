@@ -38,6 +38,13 @@ Worker::Worker(WorkerEnv* env) : env_(env), recent_request_ids_(100000) {
 
 void Worker::GetStatusAsync(const GetStatusRequest* request,
                             GetStatusResponse* response, StatusCallback done) {
+  GetStatusAsyncWithOptions(request, response, done, nullptr);
+}
+
+void Worker::GetStatusAsyncWithOptions(const GetStatusRequest* request,
+                                       GetStatusResponse* response,
+                                       StatusCallback done,
+                                       CallOptions* call_opts) {
   DeviceMgr* dm = env_->device_mgr;
   std::vector<DeviceAttributes> devices;
   dm->ListDeviceAttributes(&devices);
@@ -182,9 +189,14 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
     done(s);
     return;
   }
+  std::map<std::string, bool> is_send_dead;
   GraphMgr::NamedTensors in;
   GraphMgr::NamedTensors* out = new GraphMgr::NamedTensors;
   s = PrepareRunGraph(request, &in, out);
+  // NOTE(jiankeng.pt): tensor in worker side is not dead.
+  for (size_t i = 0; i < request->num_sends(); ++i) {
+    is_send_dead.insert({request->send_key(i), false});
+  }
   if (!s.ok()) {
     delete out;
     done(s);
@@ -222,7 +234,7 @@ void Worker::DoRunGraph(CallOptions* opts, RunGraphRequestWrapper* request,
   }
   session->graph_mgr->ExecuteAsync(
       request->graph_handle(), step_id, session.get(), request->exec_opts(),
-      collector, response, cm, in,
+      collector, response, cm, in, is_send_dead,
       [this, step_id, response, session, cm, out, token, collector,
        profiler_session, opts, done](const Status& status) {
         Status s = status;
@@ -283,9 +295,14 @@ void Worker::DoPartialRunGraph(CallOptions* opts,
     return;
   }
 
+  std::map<std::string, bool> is_send_dead;
   GraphMgr::NamedTensors in;
   GraphMgr::NamedTensors* out = new GraphMgr::NamedTensors;
   s = PrepareRunGraph(request, &in, out);
+  // NOTE(jiankeng.pt): tensor in worker side is not dead.
+  for (size_t i = 0; i < request->num_sends(); ++i) {
+    is_send_dead.insert({request->send_key(i), false});
+  }
   auto finish = [done, out, opts](const Status& s) {
     opts->ClearCancelCallback();
     delete out;
@@ -315,7 +332,7 @@ void Worker::DoPartialRunGraph(CallOptions* opts,
                                            [cm]() { cm->StartCancel(); });
     session->graph_mgr->ExecuteAsync(
         graph_handle, step_id, session.get(), request->exec_opts(),
-        nullptr /* collector */, nullptr /* response */, cm, in,
+        nullptr /* collector */, nullptr /* response */, cm, in, is_send_dead,
         [this, token, step_id, session](Status s) {
           cancellation_manager_.DeregisterCallback(token);
           partial_run_mgr_.ExecutorDone(step_id, s);

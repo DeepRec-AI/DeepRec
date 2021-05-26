@@ -374,6 +374,9 @@ void Master::CreateSession(const CreateSessionRequest* req,
     std::unique_ptr<std::vector<std::unique_ptr<Device>>> remote_devices(
         new std::vector<std::unique_ptr<Device>>());
 
+    // set tensor fuse.
+    env_->tensor_fuse = req->config().tensor_fuse();
+
     if (req->config().has_cluster_def()) {
       worker_cache_factory_options.cluster_def = &req->config().cluster_def();
 

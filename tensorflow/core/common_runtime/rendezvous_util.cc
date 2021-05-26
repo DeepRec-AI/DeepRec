@@ -53,6 +53,41 @@ Status SendTensorsToRendezvous(
   return Status::OK();
 }
 
+Status SendTensorsToRendezvous(
+    Rendezvous* rendezvous, DeviceContext* device_context,
+    const std::vector<AllocatorAttributes>& alloc_attrs,
+    const std::vector<string>& keys, gtl::ArraySlice<Tensor> tensors_to_send,
+    const std::vector<bool>& is_tensor_dead) {
+  if (keys.size() != tensors_to_send.size()) {
+    return errors::InvalidArgument(
+        "keys and tensors_to_send are not the same size. keys.size() = ",
+        keys.size(), "; tensors_to_send.size() = ", tensors_to_send.size());
+  }
+  if (!alloc_attrs.empty() && (keys.size() != alloc_attrs.size())) {
+    return errors::InvalidArgument(
+        "keys and alloc_attrs are not the same size. ",
+        "keys.size() = ", keys.size(),
+        "; alloc_attrs.size() = ", alloc_attrs.size());
+  }
+
+  if (!rendezvous) {
+    return errors::InvalidArgument("Rendezvous is null.");
+  }
+
+  Rendezvous::ParsedKey parsed;
+  for (int i = 0; i < keys.size(); ++i) {
+    Rendezvous::Args rendez_args;
+    rendez_args.device_context = device_context;
+    if (!alloc_attrs.empty()) {
+      rendez_args.alloc_attrs = alloc_attrs[i];
+    }
+    TF_RETURN_IF_ERROR(Rendezvous::ParseKey(keys[i], &parsed));
+    TF_RETURN_IF_ERROR(
+        rendezvous->Send(parsed, rendez_args, tensors_to_send[i], is_tensor_dead[i]));
+  }
+  return Status::OK();
+}
+
 void RecvOutputsFromRendezvousAsync(
     Rendezvous* rendezvous, DeviceContext* device_context,
     const std::vector<AllocatorAttributes>& alloc_attrs,
@@ -132,6 +167,26 @@ Status RecvOutputsFromRendezvous(Rendezvous* rendezvous, NamedTensors* out,
       return errors::InvalidArgument("The tensor returned for ", key,
                                      " was not valid.");
     }
+  }
+  return Status::OK();
+}
+
+Status RecvOutputsFromRendezvous(Rendezvous* rendezvous, NamedTensors* out,
+                                 std::map<std::string, bool>* is_out_dead,
+                                 const Rendezvous::Args& args) {
+  // Receives values requested by the caller.
+  Rendezvous::ParsedKey parsed;
+  for (auto& p : *out) {
+    const string& key = p.first;
+    Tensor* val = &p.second;
+    bool is_dead = false;
+    TF_RETURN_IF_ERROR(Rendezvous::ParseKey(key, &parsed));
+    TF_RETURN_IF_ERROR(rendezvous->Recv(parsed, args, val, &is_dead));
+    if (is_dead) {
+      static Tensor empty_tensor(DT_FLOAT);
+      *val = empty_tensor;
+    }
+    is_out_dead->insert({key, is_dead});
   }
   return Status::OK();
 }

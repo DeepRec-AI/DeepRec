@@ -105,6 +105,18 @@ tf_proto {
       type: TYPE_MESSAGE
       type_name: ".tensorflow.ConfigProto.Experimental"
     }
+    field {
+      name: "tensor_fuse"
+      number: 201
+      label: LABEL_OPTIONAL
+      type: TYPE_BOOL
+    }
+    field {
+      name: "run_graph_mode"
+      number: 203
+      label: LABEL_OPTIONAL
+      type: TYPE_BOOL
+    }
     nested_type {
       name: "DeviceCountEntry"
       field {

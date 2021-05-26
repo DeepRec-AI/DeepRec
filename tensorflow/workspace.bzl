@@ -996,6 +996,14 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
             "https://github.com/GrahamDumpleton/wrapt/archive/1.11.1.tar.gz",
         ],
     )
+    tf_http_archive(
+        name = "cares",
+        build_file = "//third_party/cares:cares.BUILD",
+        sha256 = "45d3c1fd29263ceec2afc8ff9cd06d5f8f889636eb4e80ce3cc7f0eaf7aadc6e",
+        strip_prefix = "c-ares-1.14.0",
+        urls = ["https://storage.googleapis.com/mirror.tensorflow.org/github.com/c-ares.haxx.se/download/c-ares-1.14.0.tar.gz",
+                "https://c-ares.haxx.se/download/c-ares-1.14.0.tar.gz"],
+    )
 
 def tf_bind():
     """Bind targets for some external repositories"""

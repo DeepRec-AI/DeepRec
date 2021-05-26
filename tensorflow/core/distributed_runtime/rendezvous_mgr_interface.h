@@ -85,6 +85,10 @@ class RendezvousMgrInterface {
   virtual Status RecvLocal(int64 step_id, const Rendezvous::ParsedKey& parsed,
                            Tensor* val, bool* is_dead) = 0;
 
+  virtual void FuseRecvLocalAsync(
+      int64 step_id, const std::vector<Rendezvous::ParsedKey>& parsed_keys,
+      Rendezvous::FuseDoneCallback done) = 0;
+
   // Removes rendezvous for "step_id".
   //
   // TODO(zhifengc): Have a background thread in worker that
@@ -93,6 +97,11 @@ class RendezvousMgrInterface {
 
   // Removes all rendezvous.
   virtual void CleanupAll() = 0;
+
+  // Returns Rendezvous supporting send and recv across steps.
+  // The caller takes ownership of one reference on the
+  // returned Rendezvous instance.
+  virtual RemoteRendezvous* FindInterStepRendezvous() = 0;
 };
 
 }  // end namespace tensorflow

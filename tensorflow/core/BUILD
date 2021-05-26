@@ -126,6 +126,7 @@ load(
     "tf_additional_numa_copts",
     "tf_additional_numa_deps",
     "tf_additional_numa_lib_defines",
+    "tf_additional_star_lib_defines",
     "tf_additional_test_deps",
     "tf_additional_verbs_lib_defines",
     "tf_grpc_service_all",
@@ -1153,6 +1154,7 @@ tf_gen_op_libs(
         "experimental_dataset_ops",
         "function_ops",
         "functional_ops",
+        "fuserecv_ops",
         "image_ops",
         "io_ops",
         "linalg_ops",
@@ -1168,6 +1170,8 @@ tf_gen_op_libs(
         "parsing_ops",
         "random_grad",
         "random_ops",
+        "run_graph_op",
+        "star_run_graph_op",
         "stateful_random_ops",
         "remote_fused_graph_ops",
         "rnn_ops",
@@ -1378,6 +1382,7 @@ cc_library(
         ":experimental_dataset_ops_op_lib",
         ":function_ops_op_lib",
         ":functional_ops_op_lib",
+        ":fuserecv_ops_op_lib",
         ":image_ops_op_lib",
         ":io_ops_op_lib",
         ":linalg_ops_op_lib",
@@ -1397,12 +1402,14 @@ cc_library(
         ":remote_fused_graph_ops_op_lib",
         ":resource_variable_ops_op_lib",
         ":rpc_ops_op_lib",
+        ":run_graph_op_op_lib",
         ":scoped_allocator_ops_op_lib",
         ":script_ops_op_lib",
         ":sdca_ops_op_lib",
         ":sendrecv_ops_op_lib",
         ":set_ops_op_lib",
         ":sparse_ops_op_lib",
+        ":star_run_graph_op_op_lib",
         ":summary_ops_op_lib",
         ":spectral_ops_op_lib",
         ":state_ops_op_lib",
@@ -1580,11 +1587,13 @@ cc_library(
         "//tensorflow/core/kernels:resource_variable_ops",
         "//tensorflow/core/kernels:rnn_ops",
         "//tensorflow/core/kernels:rpc_op",
+        "//tensorflow/core/kernels:run_graph_op",
         "//tensorflow/core/kernels:scoped_allocator_ops",
         "//tensorflow/core/kernels:sdca_ops",
         "//tensorflow/core/kernels:searchsorted_op",
         "//tensorflow/core/kernels:set_kernels",
         "//tensorflow/core/kernels:sparse",
+        "//tensorflow/core/kernels:star_run_graph_op",
         "//tensorflow/core/kernels:state",
         "//tensorflow/core/kernels:stateless_random_ops",
         "//tensorflow/core/kernels:string",
@@ -2428,7 +2437,8 @@ LIB_INTERNAL_DEFINES = (
     ] + tf_additional_verbs_lib_defines() +
     tf_additional_mpi_lib_defines() +
     tf_additional_gdr_lib_defines() +
-    tf_additional_numa_lib_defines()
+    tf_additional_numa_lib_defines() +
+    tf_additional_star_lib_defines()
 )
 
 cc_library(
@@ -3046,6 +3056,7 @@ GRAPH_HDRS = [
     "graph/mkl_tfconversion_pass.h",
     "graph/node_builder.h",
     "graph/optimizer_cse.h",
+    "graph/star_server_graph_partition.h",
     "graph/subgraph.h",
     "graph/tensor_id.h",
     "graph/testlib.h",
@@ -3064,6 +3075,7 @@ tf_cuda_library(
         "graph/costmodel.cc",
         "graph/graph_partition.cc",
         "graph/optimizer_cse.cc",
+        "graph/star_server_graph_partition.cc",
         "graph/subgraph.cc",
         "graph/validate.cc",
     ],
@@ -4168,6 +4180,7 @@ tf_cc_tests(
         "graph/graph_test.cc",
         "graph/node_builder_test.cc",
         "graph/optimizer_cse_test.cc",
+        "graph/star_server_graph_partition_test.cc",
         "graph/subgraph_test.cc",
         "graph/tensor_id_test.cc",
         "graph/validate_test.cc",

@@ -141,6 +141,7 @@ bool IsReal(const NodeDef& node);
 bool IsRealDiv(const NodeDef& node);
 bool IsReciprocalGrad(const NodeDef& node);
 bool IsRecv(const NodeDef& node);
+bool IsFuseRecv(const NodeDef& node);
 bool IsReduction(const NodeDef& node);
 bool IsRelu(const NodeDef& node);
 bool IsRelu6(const NodeDef& node);

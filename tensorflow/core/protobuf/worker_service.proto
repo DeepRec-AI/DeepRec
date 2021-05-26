@@ -68,6 +68,11 @@ service WorkerService {
   }
 
   // See worker.proto for details.
+  rpc FuseRecvTensor(FuseRecvTensorRequest) returns (FuseRecvTensorResponse) {
+    // FuseRecvTensor Method
+  }
+
+  // See worker.proto for details.
   rpc Logging(LoggingRequest) returns (LoggingResponse);
 
   // See worker.proto for details.

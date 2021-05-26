@@ -66,6 +66,10 @@ class RPCState : public GrpcClientCQTag {
         stub_(stub),
         method_(method),
         fail_fast_(fail_fast) {
+    if (call_opts != nullptr && !call_opts->UseWaitForReady()) {
+      fail_fast = true;
+    }
+
     response_ = response;
     ::grpc::Status s = GrpcMaybeUnparseProto(request, &request_buf_);
     if (!s.ok()) {

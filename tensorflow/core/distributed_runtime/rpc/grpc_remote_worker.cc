@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/distributed_runtime/rpc/grpc_client_cq_tag.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_state.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_util.h"
+#include "tensorflow/core/distributed_runtime/rpc/grpc_worker_interface.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_worker_service_impl.h"
 #include "tensorflow/core/distributed_runtime/tensor_coding.h"
 #include "tensorflow/core/distributed_runtime/worker_cache_logger.h"
@@ -41,7 +42,8 @@ namespace tensorflow {
 
 const int kMaxWorkerRpcRetries = 10;
 
-class GrpcRemoteWorker : public WorkerInterface {
+class GrpcRemoteWorker :
+    public WorkerInterface, public GrpcWorkerInterface {
  public:
   explicit GrpcRemoteWorker(SharedGrpcChannelPtr channel,
                             ::grpc::CompletionQueue* completion_queue,
@@ -60,6 +62,7 @@ class GrpcRemoteWorker : public WorkerInterface {
         cleanupgraph_(Method(GrpcWorkerMethod::kCleanupGraph)),
         cleanupall_(Method(GrpcWorkerMethod::kCleanupAll)),
         recvtensor_(Method(GrpcWorkerMethod::kRecvTensor)),
+        fuserecvtensor_(Method(GrpcWorkerMethod::kFuseRecvTensor)),
         recvbuf_(Method(GrpcWorkerMethod::kRecvBuf)),
         logging_(Method(GrpcWorkerMethod::kLogging)),
         tracing_(Method(GrpcWorkerMethod::kTracing)),
@@ -74,7 +77,14 @@ class GrpcRemoteWorker : public WorkerInterface {
   void GetStatusAsync(const GetStatusRequest* request,
                       GetStatusResponse* response,
                       StatusCallback done) override {
-    IssueRequest(request, response, getstatus_, std::move(done));
+    GetStatusAsyncWithOptions(request, response, done, nullptr);
+  }
+
+  void GetStatusAsyncWithOptions(const GetStatusRequest* request,
+                                 GetStatusResponse* response,
+                                 StatusCallback done,
+                                 CallOptions* call_opts) override {
+    IssueRequest(request, response, getstatus_, std::move(done), call_opts);
   }
 
   void CreateWorkerSessionAsync(const CreateWorkerSessionRequest* request,
@@ -192,6 +202,14 @@ class GrpcRemoteWorker : public WorkerInterface {
     IssueRequest(request, response, getstepsequence_, std::move(done));
   }
 
+  void FuseRecvTensorAsync(CallOptions* call_opts,
+                           const FuseRecvTensorRequest* request,
+                           FuseTensorResponse* response,
+                           StatusCallback done) {
+    VLOG(1) << "FuseRecvTensorAsync req: " << request->DebugString();
+    IssueRequest(request, response, fuserecvtensor_, done, call_opts);
+  }
+
   void RecvTensorAsync(CallOptions* call_opts, const RecvTensorRequest* request,
                        TensorResponse* response, StatusCallback done) override {
     VLOG(1) << "RecvTensorAsync req: " << request->DebugString();
@@ -283,6 +301,18 @@ class GrpcRemoteWorker : public WorkerInterface {
                                  callback_threadpool_, max_retries);
   }
 
+  void IssueRequest(const protobuf::Message* request,
+                    FuseTensorResponse* response,
+                    const ::grpc::string& method,
+                    StatusCallback done,
+                    CallOptions* call_opts = nullptr,
+                   int max_retries = kMaxWorkerRpcRetries) {
+    new RPCState<FuseTensorResponse>(&stub_, cq_, method, *request,
+                                     response, std::move(done),
+                                     call_opts, callback_threadpool_,
+                                     max_retries);
+  }
+
   void IssueMarkRecvFinishedRequest(int64 request_id) {
     VLOG(2) << "Send MarkRecvFinishedRequest for request " << request_id;
     MarkRecvFinishedRequest request;
@@ -310,6 +340,7 @@ class GrpcRemoteWorker : public WorkerInterface {
   const ::grpc::string cleanupgraph_;
   const ::grpc::string cleanupall_;
   const ::grpc::string recvtensor_;
+  const ::grpc::string fuserecvtensor_;
   const ::grpc::string recvbuf_;
   const ::grpc::string logging_;
   const ::grpc::string tracing_;
