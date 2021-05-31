@@ -361,6 +361,10 @@ class Optimizer(
     # allow creation per-replica optimizers however, because the
     # compute_gradients()->apply_gradients() sequence is safe.
 
+    from tensorflow.contrib.structured_model.python import core
+    if core.get_structured_model():
+      core.get_structured_model().graph_transform()
+
   def get_name(self):
     return self._name
 
@@ -656,7 +660,7 @@ class Optimizer(
           with ops.name_scope("update_" + scope_name), ops.colocate_with(var):
             update_ops.append(processor.update_op(self, grad))
         if global_step is None:
-          apply_updates = self._finish(update_ops, sname+'-apply')
+          apply_updates = self._finish(update_ops, sname)
         else:
           with ops.control_dependencies([self._finish(update_ops, "update")]):
             with ops.colocate_with(global_step):
@@ -666,9 +670,9 @@ class Optimizer(
                 apply_updates = resource_variable_ops.assign_add_variable_op(
                     global_step.handle,
                     ops.convert_to_tensor(1, dtype=global_step.dtype),
-                    name=sname+'-apply')
+                    name=sname)
               else:
-                apply_updates = state_ops.assign_add(global_step, 1, name=sname+'-apply')
+                apply_updates = state_ops.assign_add(global_step, 1, name=sname)
 
         if not context.executing_eagerly():
           if isinstance(apply_updates, ops.Tensor):
@@ -772,12 +776,12 @@ class Optimizer(
         finish_updates = distribution.extended.update_non_slot(
             non_slot_devices, finish, args=(self, update_ops), group=False)
         if global_step is None:
-          apply_updates = distribution.group(finish_updates, name=sname+'-apply')
+          apply_updates = distribution.group(finish_updates, name=sname)
         else:
           with ops.control_dependencies(finish_updates):
             apply_updates = distribution.extended.update(
                 global_step, state_ops.assign_add, args=(1,),
-                kwargs={"name": sname+'-apply'})
+                kwargs={"name": sname})
 
         if not context.executing_eagerly():
           if isinstance(apply_updates, ops.Tensor):

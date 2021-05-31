@@ -4445,6 +4445,7 @@ py_library(
     srcs_version = "PY2AND3",
     deps = [
         ":training_lib",
+        "//tensorflow/contrib/structured_model",
         "//tensorflow/python/training/tracking:base",
         "//tensorflow/python/training/tracking:python_state",
         "//tensorflow/python/training/tracking:util",

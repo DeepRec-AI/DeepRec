@@ -236,6 +236,10 @@ class Scaffold(object):
     else:
       self._saver.build()
 
+    from tensorflow.contrib.structured_model.python import core
+    if core.get_structured_model():
+      core.get_structured_model().graph_transform()
+
     ops.get_default_graph().finalize()
     logging.info('Graph was finalized.')
     return self
