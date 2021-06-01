@@ -62,10 +62,12 @@ class LegacyStringToHashBucketOp : public OpKernel {
 REGISTER_KERNEL_BUILDER(Name("StringToHashBucket").Device(DEVICE_CPU),
                         LegacyStringToHashBucketOp);
 
+/* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 REGISTER_KERNEL_BUILDER(Name("StringToHashBucketFast").Device(DEVICE_CPU),
                         StringToHashBucketOp<Fingerprint64>);
 
 REGISTER_KERNEL_BUILDER(Name("StringToHashBucketStrong").Device(DEVICE_CPU),
                         StringToKeyedHashBucketOp<StrongKeyedHash>);
+================= End of KERNEL registering COMMENTED block. ================ */
 
 }  // namespace tensorflow

@@ -5465,6 +5465,7 @@ cc_library(
         ":string_split_op",
         ":string_strip_op",
         ":string_to_hash_bucket_op",
+        ":string_to_hash_bucket_ali_op",
         ":string_upper_op",
         ":substr_op",
         ":unicode_ops",
@@ -6649,6 +6650,7 @@ filegroup(
             "cudnn_rnn_ops.*",
             "lmdb_reader_op.*",
             "string_to_hash_bucket_op.*",
+            "string_to_hash_bucket_ali_op.*",
             "sdca_ops.*",
             "sdca_internal.*",
             "sparse_cross_op.*",
@@ -8093,6 +8095,12 @@ tf_kernel_library(
         "//tensorflow/core:framework",
         "@icu//:common",
     ],
+)
+
+tf_kernel_library(
+    name = "string_to_hash_bucket_ali_op",
+    prefix = "string_to_hash_bucket_ali_op",
+    deps = STRING_DEPS,
 )
 
 # Library to link with when compiling the cwise_op kernels directly,

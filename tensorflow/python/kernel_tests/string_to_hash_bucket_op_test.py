@@ -41,13 +41,13 @@ class StringToHashBucketOpTest(test.TestCase):
     with self.cached_session():
       input_string = array_ops.placeholder(dtypes.string)
       output = string_ops.string_to_hash_bucket_fast(input_string, 10)
-      result = output.eval(feed_dict={input_string: ['a', 'b', 'c', 'd']})
+      result = output.eval(feed_dict={input_string: ['a', 'b', 'c', 'd'] * 65536})
 
       # Fingerprint64('a') -> 12917804110809363939 -> mod 10 -> 9
       # Fingerprint64('b') -> 11795596070477164822 -> mod 10 -> 2
       # Fingerprint64('c') -> 11430444447143000872 -> mod 10 -> 2
       # Fingerprint64('d') -> 4470636696479570465 -> mod 10 -> 5
-      self.assertAllEqual([9, 2, 2, 5], result)
+      self.assertAllEqual([9, 2, 2, 5] * 65536, result)
 
   @test_util.run_deprecated_v1
   def testStringToOneHashBucketLegacyHash(self):
@@ -79,14 +79,14 @@ class StringToHashBucketOpTest(test.TestCase):
 
   def testStringToHashBucketsStrong(self):
     with self.cached_session():
-      input_string = constant_op.constant(['a', 'b', 'c'])
+      input_string = constant_op.constant(['a', 'b', 'c'] * 65536)
       output = string_ops.string_to_hash_bucket_strong(
           input_string, 10, key=[98765, 132])
       # key = [98765, 132]
       # StrongKeyedHash(key, 'a') -> 7157389809176466784 -> mod 10 -> 4
       # StrongKeyedHash(key, 'b') -> 15805638358933211562 -> mod 10 -> 2
       # StrongKeyedHash(key, 'c') -> 18100027895074076528 -> mod 10 -> 8
-      self.assertAllEqual([4, 2, 8], self.evaluate(output))
+      self.assertAllEqual([4, 2, 8] * 65536, self.evaluate(output))
 
   def testStringToHashBucketsStrongInvalidKey(self):
     with self.cached_session():
