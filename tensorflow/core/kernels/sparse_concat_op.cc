@@ -154,6 +154,7 @@ class SparseConcatOp : public OpKernel {
   int concat_dim_attr_;
 };
 
+/* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_KERNELS(type)                                           \
   REGISTER_KERNEL_BUILDER(                                               \
       Name("SparseConcat").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
@@ -161,4 +162,5 @@ class SparseConcatOp : public OpKernel {
 
 TF_CALL_ALL_TYPES(REGISTER_KERNELS);
 #undef REGISTER_KERNELS
+================= End of KERNEL registering COMMENTED block. ================ */
 }  // namespace tensorflow

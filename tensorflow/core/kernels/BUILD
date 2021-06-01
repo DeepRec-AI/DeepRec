@@ -5038,7 +5038,7 @@ cc_library(
         ":serialize_sparse_op",
         ":sparse_add_grad_op",
         ":sparse_add_op",
-        ":sparse_concat_op",
+        ":sparse_concat_ali_op",
         ":sparse_cross_op",
         ":sparse_dense_binary_op_shared",
         ":sparse_fill_empty_rows_op",
@@ -8099,6 +8099,32 @@ tf_kernel_library(
     deps = [
         "//tensorflow/core:framework",
         "@icu//:common",
+    ],
+)
+
+tf_kernel_library(
+    name = "sparse_concat_ali_op",
+    prefix = "sparse_concat_ali_op",
+    deps = SPARSE_DEPS,
+)
+
+tf_cc_test(
+    name = "sparse_concat_ali_op_test",
+    size = "small",
+    srcs = [
+        "sparse_concat_ali_op_test.cc",
+    ],
+    deps = [
+        ":ops_testutil",
+        ":ops_util",
+        ":sparse_concat_ali_op",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
     ],
 )
 
