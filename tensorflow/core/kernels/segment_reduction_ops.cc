@@ -968,6 +968,7 @@ class SparseSegmentReductionSumWithNumSegmentsOp
             true /* has_num_segments */, T(0) /* default_value */) {}
 };
 
+/* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_CPU_SPARSE_KERNELS(type)                                \
   REGISTER_KERNEL_BUILDER(Name("SparseSegmentSum")                       \
                               .Device(DEVICE_CPU)                        \
@@ -1014,6 +1015,7 @@ REGISTER_CPU_SPARSE_KERNELS(double);
 REGISTER_CPU_SPARSE_KERNELS(float);
 REGISTER_CPU_SPARSE_KERNELS(double);
 #undef REGISTER_CPU_SPARSE_KERNELS
+================= End of KERNEL registering COMMENTED block. ================ */
 
 template <class T>
 class SparseSegmentGradOpBase : public OpKernel {
@@ -1135,6 +1137,7 @@ class SparseSegmentSqrtNGradOp : public SparseSegmentGradOpBase<T> {
       : SparseSegmentGradOpBase<T>(context, true /*is_sqrtn*/) {}
 };
 
+/* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_CPU_SPARSE_KERNELS(type)                     \
   REGISTER_KERNEL_BUILDER(Name("SparseSegmentMeanGrad")       \
                               .Device(DEVICE_CPU)             \
@@ -1154,4 +1157,5 @@ REGISTER_CPU_SPARSE_KERNELS(double);
 REGISTER_CPU_SPARSE_KERNELS(float);
 REGISTER_CPU_SPARSE_KERNELS(double);
 #undef REGISTER_CPU_SPARSE_KERNELS
+================= End of KERNEL registering COMMENTED block. ================ */
 }  // namespace tensorflow

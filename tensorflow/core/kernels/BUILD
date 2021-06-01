@@ -3759,6 +3759,7 @@ cc_library(
         ":reduction_ops",
         ":scan_ops",
         ":segment_reduction_ops",
+        ":segment_reduction_ali_ops",
         ":sequence_ops",
     ],
 )
@@ -4151,6 +4152,7 @@ tf_cc_test(
     deps = [
         ":ops_testutil",
         ":ops_util",
+        ":segment_reduction_ali_ops",
         ":segment_reduction_ops",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:core_cpu_internal",
@@ -6540,6 +6542,7 @@ filegroup(
         "scatter_nd_op_cpu_impl_6.cc",
         "scatter_nd_op_cpu_impl_7.cc",
         "segment_reduction_ops.cc",
+        "segment_reduction_ali_ops.cc",
         "session_ops.cc",
         "softplus_op.cc",
         "softsign_op.cc",
@@ -8113,6 +8116,33 @@ tf_kernel_library(
     deps = ARRAY_DEPS + [
         "@com_google_absl//absl/container:flat_hash_map",
         "@sparsehash_c11//:dense_hash_map",
+    ],
+)
+
+tf_kernel_library(
+    name = "segment_reduction_ali_ops",
+    prefix = "segment_reduction_ali_ops",
+    deps = MATH_DEPS,
+)
+
+tf_cuda_cc_test(
+    name = "segment_reduction_ali_ops_test",
+    size = "small",
+    srcs = ["segment_reduction_ali_ops_test.cc"],
+    deps = [
+        ":ops_testutil",
+        ":ops_util",
+        ":host_constant_op",
+        ":segment_reduction_ali_ops",
+        ":segment_reduction_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
     ],
 )
 
