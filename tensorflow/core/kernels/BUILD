@@ -4448,6 +4448,33 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "bias_grad_ali_op",
+    prefix = "bias_grad_ali_op",
+    deps = NN_DEPS,
+)
+
+tf_cc_test(
+    name = "bias_grad_ali_op_test",
+    srcs = ["bias_grad_ali_op_test.cc"],
+    deps = [
+        ":bias_grad_ali_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//third_party/eigen3",
+    ],
+)
+
+tf_kernel_library(
     name = "fused_batch_norm_op",
     prefix = "fused_batch_norm_op",
     deps = NN_DEPS + [
