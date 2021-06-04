@@ -319,6 +319,7 @@ REGISTER_SELECT_SYCL(int64);
 #endif  // TENSORFLOW_USE_SYCL
 
 namespace functor {
+constexpr size_t float_alignment = 16;
 
 // CPU Specializations of Select functors.
 template <typename Device, typename T>
@@ -328,6 +329,49 @@ struct SelectFunctorBase {
                   typename TTypes<T>::ConstFlat then_flat,
                   typename TTypes<T>::ConstFlat else_flat) {
     Assign(d, out, cond_flat.select(then_flat, else_flat));
+  }
+};
+
+template <typename Device>
+struct SelectFunctorBase<Device, float> {
+  void operator()(const Device& d, typename TTypes<float>::Flat out,
+                  typename TTypes<bool>::ConstFlat cond_flat,
+                  typename TTypes<float>::ConstFlat then_flat,
+                  typename TTypes<float>::ConstFlat else_flat) {
+#ifdef __AVX512F__
+    const size_t num = cond_flat.size();
+    const bool* c = cond_flat.data();
+    const float* t = then_flat.data();
+    const float* e = else_flat.data();
+    float* output = out.data();
+    size_t quotient = num / float_alignment;
+    size_t remainder = num - (quotient * float_alignment);
+    __m128i zeros = _mm_setzero_si128();
+    size_t offset = 0;
+
+    for (size_t j = 0; j < quotient; ++j) {
+      __m128i cb = _mm_mask_loadu_epi8(zeros, 0xffff, c + offset);
+      __mmask16 mask = _mm_cmpeq_epu8_mask(zeros, cb);
+      __m512 src = _mm512_loadu_ps(t + offset);
+      __m512 tmp = _mm512_mask_loadu_ps(src, mask, e + offset);
+      _mm512_storeu_ps(output + offset,  tmp);
+      offset += float_alignment;
+    }
+
+    if (remainder != 0) {
+      __mmask16 k = (remainder >= float_alignment)
+          ? 0xffff : 0xffff >> (float_alignment - remainder);
+      __m128i cb = _mm_mask_loadu_epi8(zeros, k, c + offset);
+      __mmask16 mask = _mm_mask_cmpeq_epu8_mask(k, zeros, cb);
+      __m512 src  = _mm512_mask_loadu_ps(_mm512_setzero_ps(), k, t + offset);
+      __m512 tmp = _mm512_mask_loadu_ps(src, mask, e + offset);
+      _mm512_mask_storeu_ps(output + offset, k, tmp);
+    }
+
+    Assign(d, out, out);
+#else
+    Assign(d, out, cond_flat.select(then_flat, else_flat));
+#endif
   }
 };
 
@@ -475,6 +519,83 @@ struct BCastSelectFunctorBase {
 template <typename T, int NDIMS>
 struct BCastSelectFunctor<CPUDevice, T, NDIMS>
     : BCastSelectFunctorBase<CPUDevice, T, NDIMS> {};
+
+// A fast implementation on CPU, using loop to get rid of broadcasting.
+template <>
+struct BatchSelectFunctor<CPUDevice, float> {
+  void operator()(const CPUDevice& d,
+                  typename TTypes<float>::Matrix output_flat_outer_dims,
+                  TTypes<bool>::ConstVec cond_vec,
+                  typename TTypes<float>::ConstMatrix then_flat_outer_dims,
+                  typename TTypes<float>::ConstMatrix else_flat_outer_dims) {
+    const size_t batch = cond_vec.size();
+    const size_t batch_size = then_flat_outer_dims.size() / batch;
+    float* output = output_flat_outer_dims.data();
+    const bool* c = cond_vec.data();
+    const float* t = then_flat_outer_dims.data();
+    const float* e = else_flat_outer_dims.data();
+
+#ifdef __AVX512F__
+    size_t quotient = batch_size / float_alignment;
+    int remainder = batch_size - (quotient * float_alignment);
+
+    auto work = [batch_size, output, c, t, e, quotient, remainder](int64 start, int64 end) {
+      for (size_t i = start; i < end; ++i) {
+        size_t offset = i * batch_size;
+        port::prefetch<port::PREFETCH_HINT_NTA>(
+            reinterpret_cast<const void*>(&t[offset + batch_size]));
+        port::prefetch<port::PREFETCH_HINT_NTA>(
+            reinterpret_cast<const void*>(&e[offset + batch_size]));
+        port::prefetch<port::PREFETCH_HINT_NTA>(
+            reinterpret_cast<const void*>(&c[i + 1]));
+        __mmask16 cmask = (c[i] == false) ? 0xffff : 0x0000;  // select t/e
+        size_t ofs = 0;
+
+        for (size_t j = 0; j < quotient; ++j) {
+          __m512 src = _mm512_loadu_ps(t + offset + ofs);
+          __m512 tmp = _mm512_mask_loadu_ps(src, cmask, e + offset + ofs);
+          _mm512_storeu_ps(output + offset + ofs,  tmp);
+          ofs +=  float_alignment;
+        }
+
+        if (remainder != 0) {
+          __mmask16 mask = (remainder >= float_alignment)
+              ? 0xffff : 0xffff >> (float_alignment - remainder);
+          cmask &= mask;
+          __m512 src  = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, t + offset + ofs);
+          __m512 tmp = _mm512_mask_loadu_ps(src, cmask, e + offset + ofs);
+          _mm512_mask_storeu_ps(output + offset + ofs, mask, tmp);
+        }
+      }
+    };
+#else
+    auto work = [batch_size, output, c, t, e](int64 start, int64 end) {
+      for (size_t i = start; i < end; ++i) {
+        size_t offset = i * batch_size;
+        port::prefetch<port::PREFETCH_HINT_NTA>(
+            reinterpret_cast<const void*>(&t[offset + batch_size]));
+        port::prefetch<port::PREFETCH_HINT_NTA>(
+            reinterpret_cast<const void*>(&e[offset + batch_size]));
+        port::prefetch<port::PREFETCH_HINT_NTA>(
+            reinterpret_cast<const void*>(&c[i + 1]));
+        if (c[i]) {
+          for (size_t j = 0; j < batch_size; ++j) {
+            output[offset + j] = t[offset + j];
+          }
+        } else {
+          for (size_t j = 0; j < batch_size; ++j) {
+            output[offset + j] = e[offset + j];
+          }
+        }
+      }
+    };
+#endif
+    auto cost = Eigen::TensorOpCost(sizeof(float) * batch_size * 2,  // ld bytes
+                                    sizeof(float) * batch_size,      // st bytes
+                                    batch_size);  // compute cycles
+    d.parallelFor(batch, cost, work);
+  }
+};
 
 #ifdef TENSORFLOW_USE_SYCL
 template <typename T>
