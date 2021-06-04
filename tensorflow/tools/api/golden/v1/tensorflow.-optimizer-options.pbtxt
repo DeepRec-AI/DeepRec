@@ -40,6 +40,12 @@ tf_proto {
       type: TYPE_ENUM
       type_name: ".tensorflow.OptimizerOptions.GlobalJitLevel"
     }
+    field {
+      name: "micro_batch_num"
+      number: 9
+      label: LABEL_OPTIONAL
+      type: TYPE_INT32
+    }
     enum_type {
       name: "Level"
       value {

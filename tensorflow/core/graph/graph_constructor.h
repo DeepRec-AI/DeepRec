@@ -189,6 +189,9 @@ extern Status ImportGraphDef(const ImportGraphDefOptions& opts,
 // other than the implicit Source/Sink nodes.
 extern void CopyGraph(const Graph& src, Graph* dest);
 
+extern void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
+    int32 duplicated_num);
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_GRAPH_GRAPH_CONSTRUCTOR_H_

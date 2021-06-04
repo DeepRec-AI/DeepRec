@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/framework/function.pb.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
+#include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/framework/types.h"
@@ -36,6 +37,7 @@ limitations under the License.
 #include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/graph/algorithm.h"
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/graph/node_builder.h"
 #include "tensorflow/core/graph/tensor_id.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/gtl/flatmap.h"
@@ -1553,6 +1555,316 @@ void CopyGraph(const Graph& src, Graph* dest) {
     Node* src_copy = node_map[e->src()];
     Node* dst_copy = node_map[e->dst()];
     dest->AddEdge(src_copy, e->src_output(), dst_copy, e->dst_input());
+  }
+}
+
+namespace {
+Node* scalar_const_node(Graph* g, int64 val, const string& name,
+    const string& device_name) {
+  Node* ret;
+  Tensor t(DT_INT32, TensorShape({}));
+  t.scalar<int32>()() = val;
+  TF_CHECK_OK(NodeBuilder(g->NewName(name), "Const")
+                         .Device(device_name)
+                         .Attr("dtype", DT_INT32)
+                         .Attr("value", t)
+                         .Finalize(g, &ret));
+  ret->set_assigned_device_name(device_name);
+  return ret;
+}
+
+Node* tensor_const_node(Graph* g, Tensor& t, const string& name,
+    const string& device_name) {
+  Node* ret;
+  TF_CHECK_OK(NodeBuilder(g->NewName(name), "Const")
+                         .Device(device_name)
+                         .Attr("dtype", DT_INT32)
+                         .Attr("value", t)
+                         .Finalize(g, &ret));
+  ret->set_assigned_device_name(device_name);
+  return ret;
+}
+
+typedef std::vector<Node*> node_list;
+node_list DuplicateNode(Node* n, Graph* dest, int32 duplicate_num) {
+  node_list duplicated_nodes;
+  duplicated_nodes.reserve(duplicate_num);
+  for (int i = 0; i < duplicate_num; ++i) {
+    NodeDef node_def = n->def();
+    node_def.set_name(node_def.name() + "/dup" + std::to_string(i));
+    Status s;
+    Node* dup = dest->AddNode(node_def, &s);
+    TF_CHECK_OK(s);
+    dup->set_assigned_device_name(n->assigned_device_name());
+    duplicated_nodes.emplace_back(dup);
+  }
+  return duplicated_nodes;
+}
+
+struct EdgeWrapper {
+  Node* src;
+  Node* dst;
+  int src_output;
+  int dst_input;
+  EdgeWrapper(Node* s, int s_id, Node* d, int d_id) :
+    src(s), src_output(s_id), dst(d), dst_input(d_id) {}
+};
+
+typedef std::vector<EdgeWrapper> edge_list;
+typedef std::map<const Node*, node_list> map_node_list;
+typedef std::map<const Node*, Node*> map_node;
+
+edge_list DuplicateEdges(Graph* dest, map_node_list& duplicated_nodes,
+    map_node& margin_nodes) {
+  edge_list edges;
+  for (const Edge* e : dest->edges()) {
+    auto src = e->src();
+    auto dst = e->dst();
+
+    auto src_dup_nodes = duplicated_nodes[src];
+    auto dst_dup_nodes = duplicated_nodes[dst];
+
+    //duplicate inner edges between duplicated nodes
+    if (!src_dup_nodes.empty() && !dst_dup_nodes.empty()) {
+      for (size_t i = 0; i < src_dup_nodes.size(); ++i) {
+        edges.emplace_back(src_dup_nodes[i], e->src_output(),
+            dst_dup_nodes[i], e->dst_input());
+      }
+      continue;
+    }
+
+    //duplicate edges from duplicated nodes to margin node
+    if (!src_dup_nodes.empty()) {
+      auto margin_node = margin_nodes[dst];
+      if (margin_node != nullptr) {
+        for (size_t i = 0; i < src_dup_nodes.size(); ++i) {
+          edges.emplace_back(src_dup_nodes[i], e->src_output(),
+              margin_node, e->dst_input());
+        }
+      }
+      continue;
+    }
+
+    //duplicate edges from margin node to duplicated nodes
+    if (!dst_dup_nodes.empty()) {
+      auto margin_node = margin_nodes[src];
+      if (margin_node != nullptr) {
+        for (size_t i = 0; i < dst_dup_nodes.size(); ++i) {
+          edges.emplace_back(margin_node, e->src_output(),
+              dst_dup_nodes[i], e->dst_input());
+        }
+      }
+    }
+  }
+  return edges;
+}
+
+void AggregateForApply(Graph* dest, Node* n,
+    map_node_list& duplicated_nodes, int grad_input) {
+  const Edge* e = nullptr;
+  TF_CHECK_OK(n->input_edge(grad_input, &e));
+  auto grad = e->src();
+  auto duplicate_grads = duplicated_nodes[grad];
+  std::vector<NodeDefBuilder::NodeOut> src_list;
+  src_list.emplace_back(grad->name(), e->src_output(),
+      grad->output_type(0));
+  for (auto it : duplicate_grads) {
+    src_list.emplace_back(it->name(), e->src_output(),
+        it->output_type(0));
+  }
+
+  NodeDef node_def;
+  TF_CHECK_OK(NodeDefBuilder(n->name() + "/aggr_addn", "AddN")
+      .Device(n->assigned_device_name())
+      .Input(src_list)
+      .Attr("T", grad->output_type(0))
+      .Finalize(&node_def));
+
+  Status s;
+  Node* aggregate_node = dest->AddNode(node_def, &s);
+  TF_CHECK_OK(s);
+  aggregate_node->set_assigned_device_name(n->assigned_device_name());
+
+  dest->RemoveEdge(e);
+  dest->AddEdge(aggregate_node, 0, n, grad_input);
+  dest->AddEdge(grad, 0, aggregate_node, 0);
+  for (size_t i = 0; i < duplicate_grads.size(); ++i) {
+    dest->AddEdge(duplicate_grads[i], 0, aggregate_node, i+1);
+  }
+}
+
+
+void AggregateForSparseApply(Graph* dest, Node* n,
+    map_node_list& duplicated_nodes, int grad_input,
+    int indices_input) {
+  const Edge* e = nullptr;
+  TF_CHECK_OK(n->input_edge(grad_input, &e));
+  auto grad = e->src();
+  auto dup_grads = duplicated_nodes[grad];
+
+  const Edge* e2 = nullptr;
+  TF_CHECK_OK(n->input_edge(indices_input, &e2));
+  auto indices = e2->src();
+  auto dup_indices = duplicated_nodes[indices];
+
+  Node* axis = scalar_const_node(dest, 0, n->name() + "/axis_0",
+      n->assigned_device_name());
+
+  std::vector<NodeDefBuilder::NodeOut> src_list;
+  src_list.emplace_back(grad->name(), e->src_output(),
+      grad->output_type(0));
+  for (auto it : dup_grads) {
+    src_list.emplace_back(it->name(), e->src_output(),
+        it->output_type(0));
+  }
+  NodeDef node_def;
+  TF_CHECK_OK(NodeDefBuilder(n->name() + "/aggr_concat", "ConcatV2")
+      .Device(n->assigned_device_name())
+      .Input(src_list)
+      .Input(axis->name(), 0, axis->output_type(0))
+      .Attr("T", grad->output_type(0))
+      .Finalize(&node_def));
+  Status s;
+  Node* concat_grad = dest->AddNode(node_def, &s);
+  TF_CHECK_OK(s);
+  concat_grad->set_assigned_device_name(n->assigned_device_name());
+
+  std::vector<NodeDefBuilder::NodeOut> src_list2;
+  src_list2.emplace_back(indices->name(), e2->src_output(),
+      indices->output_type(0));
+  for (auto it : dup_indices) {
+    src_list2.emplace_back(it->name(), e2->src_output(),
+        it->output_type(0));
+  }
+  NodeDef node_def2;
+  TF_CHECK_OK(NodeDefBuilder(n->name() + "/aggr_concat2", "ConcatV2")
+      .Device(n->assigned_device_name())
+      .Input(src_list2)
+      .Input(axis->name(), 0, axis->output_type(0))
+      .Attr("T", indices->output_type(0))
+      .Finalize(&node_def2));
+  Node* concat_indices = dest->AddNode(node_def2, &s);
+  TF_CHECK_OK(s);
+  concat_indices->set_assigned_device_name(n->assigned_device_name());
+
+  dest->RemoveEdge(e);
+  dest->RemoveEdge(e2);
+  dest->AddEdge(grad, 0, concat_grad, 0);
+  for (size_t i = 0; i < dup_grads.size(); ++i) {
+    dest->AddEdge(dup_grads[i], 0, concat_grad, i+1);
+  }
+  dest->AddEdge(axis, 0, concat_grad, dup_grads.size()+1);
+
+  dest->AddEdge(indices, 0, concat_indices, 0);
+  for (size_t i = 0; i < dup_indices.size(); ++i) {
+    dest->AddEdge(dup_indices[i], 0, concat_indices, i+1);
+  }
+  dest->AddEdge(axis, 0, concat_indices, dup_indices.size()+1);
+
+  NodeDef node_def_unique;
+  TF_CHECK_OK(NodeDefBuilder(n->name() + "/aggr_unique", "Unique")
+      .Device(n->assigned_device_name())
+      .Input(concat_indices->name(), 0, concat_indices->output_type(0))
+      .Attr("T", indices->output_type(0))
+      .Finalize(&node_def_unique));
+  Node* unique = dest->AddNode(node_def_unique, &s);
+  TF_CHECK_OK(s);
+  dest->AddEdge(concat_indices, 0, unique, 0);
+  unique->set_assigned_device_name(n->assigned_device_name());
+
+  NodeDef node_def_shape;
+  TF_CHECK_OK(NodeDefBuilder(n->name() + "/aggr_shape", "Shape")
+      .Device(n->assigned_device_name())
+      .Input(unique->name(), 0, unique->output_type(0))
+      .Attr("T", unique->output_type(0))
+      .Finalize(&node_def_shape));
+  Node* shape = dest->AddNode(node_def_shape, &s);
+  TF_CHECK_OK(s);
+  dest->AddEdge(unique, 0, shape, 0);
+  shape->set_assigned_device_name(n->assigned_device_name());
+
+  Tensor stack_0(DT_INT32, TensorShape({1}));
+  stack_0.vec<int32>()(0) = 0;
+  Tensor stack_1(DT_INT32, TensorShape({1}));
+  stack_1.vec<int32>()(0) = 1;
+  Node* strided_slice;
+  TF_CHECK_OK(NodeBuilder(dest->NewName(n->name() + "/aggr_stridedslice"),
+        "StridedSlice")
+      .Device(n->assigned_device_name())
+      .Input(shape, 0)
+      .Input(tensor_const_node(dest, stack_0, n->name() + "/aggr_stack0",
+          n->assigned_device_name()), 0)
+      .Input(tensor_const_node(dest, stack_1, n->name() + "/aggr_stack1",
+          n->assigned_device_name()), 0)
+      .Input(tensor_const_node(dest, stack_1, n->name() + "/aggr_stack2",
+          n->assigned_device_name()), 0)
+      .Attr("T", shape->output_type(0))
+      .Attr("Index", DT_INT32)
+      .Attr("shrink_axis_mask", 1)
+      .Finalize(dest, &strided_slice));
+  strided_slice->set_assigned_device_name(n->assigned_device_name());
+
+  NodeDef node_def_unsorted_segment_sum;
+  TF_CHECK_OK(NodeDefBuilder(n->name() + "/aggr_unsorted_segment_sum", "UnsortedSegmentSum")
+      .Device(n->assigned_device_name())
+      .Input(concat_grad->name(), 0, concat_grad->output_type(0))
+      .Input(unique->name(), 1, unique->output_type(1))
+      .Input(strided_slice->name(), 0, strided_slice->output_type(0))
+      .Attr("T", concat_grad->output_type(0))
+      .Attr("Tindices", unique->output_type(1))
+      .Finalize(&node_def_unsorted_segment_sum));
+  Node* unsorted_segment_sum = dest->AddNode(node_def_unsorted_segment_sum, &s);
+  TF_CHECK_OK(s);
+  unsorted_segment_sum->set_assigned_device_name(n->assigned_device_name());
+  dest->AddEdge(strided_slice, 0, unsorted_segment_sum, 2);
+  dest->AddEdge(concat_grad, 0, unsorted_segment_sum, 0);
+  dest->AddEdge(unique, 1, unsorted_segment_sum, 1);
+
+  dest->AddEdge(unsorted_segment_sum, 0, n, grad_input);
+  dest->AddEdge(unique, 0, n, indices_input);
+}
+} // namespace
+
+void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
+    int32 duplicate_num) {
+  // Copy the nodes "Node in src" -> "Node in *dest"
+  map_node_list duplicated_nodes;
+  map_node margin_nodes;
+  for (Node* n : dest->op_nodes()) {
+    if (excluded.find(n) != excluded.end()) {
+      continue;
+    }
+    if (n->IsVariable() || n->IsConstant() || n->IsPlaceholder()) {
+      margin_nodes.emplace(n, n);
+    } else {
+      duplicated_nodes.emplace(n, DuplicateNode(n, dest, duplicate_num));
+    }
+  }
+
+  // Copy the edges
+  auto edges = DuplicateEdges(dest, duplicated_nodes, margin_nodes);
+  for (auto it : edges) {
+    dest->AddEdge(it.src, it.src_output, it.dst, it.dst_input);
+  }
+
+  // Add aggregate nodes for Apply***
+  for (Node* n : dest->op_nodes()) {
+    if (n->IsApplyAdagradOps() || n->IsApplyFtrlOps()) {
+      AggregateForApply(dest, n, duplicated_nodes, 3);
+    }
+    // concat ------------------------------->
+    // concat(indices) --> unique(indices) --> unsorted_segment_sum
+    if (n->IsSparseApplyAdagradOps() || n->IsSparseApplyFtrlOps()) {
+      AggregateForSparseApply(dest, n, duplicated_nodes, 3, 4);
+    }
+
+    if (n->IsApplyAdamOps()) {
+      AggregateForApply(dest, n, duplicated_nodes, 9);
+    }
+
+    if (n->IsApplySparseAdamOps()) {
+      AggregateForSparseApply(dest, n, duplicated_nodes, 9, 10);
+    }
   }
 }
 

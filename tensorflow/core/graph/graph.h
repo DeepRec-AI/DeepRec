@@ -146,6 +146,45 @@ class Node {
   bool IsOp() const { return id() > 1; }
 
   // Node class helpers
+  // Node class helpers
+  bool IsApplyAdagradOps() const {
+    return type_string() == "ApplyAdagrad" ||
+           type_string() == "ResourceApplyAdagrad";
+  }
+  bool IsSparseApplyAdagradOps() const {
+    return type_string() == "SparseApplyAdagrad" ||
+           type_string() == "KvResourceSparseApplyAdagrad" ||
+           type_string() == "ResourceSparseApplyAdagrad";
+  }
+  bool IsApplyAdamOps() const {
+    return type_string() == "ApplyAdam" ||
+           type_string() == "ResourceApplyAdam";
+  }
+  bool IsApplySparseAdamOps() const {
+    return type_string() == "SparseAdam" ||
+           type_string() == "ResourceSparseApplyAdam" ||
+           type_string() == "KvResourceSparseApplyAdam" ||
+           type_string() == "ResourceSparseApplyAdamAsync" ||
+           type_string() == "KvResourceSparseApplyAdamAsync";
+  }
+  bool IsApplyFtrlOps() const {
+    return type_string() == "ApplyFtrl" ||
+           type_string() == "ResourceApplyFtrl" ||
+           type_string() == "ApplyFtrlV2" ||
+           type_string() == "ResourceApplyFtrlV2";
+  }
+  bool IsSparseApplyFtrlOps() const {
+    return type_string() == "SparseApplyFtrl" ||
+           type_string() == "GroupSparseApplyFtrl" ||
+           type_string() == "ResourceGroupSparseApplyFtrl" ||
+           type_string() == "ResourceSparseApplyFtrl" ||
+           type_string() == "KvResourceSparseApplyFtrl" ||
+           type_string() == "SparseApplyFtrlV2" ||
+           type_string() == "ResourceSparseApplyFtrlV2" ||
+           type_string() == "KvResourceSparseApplyFtrlV2";
+  }
+  bool IsPlaceholder() const { return type_string() == "Placeholder"; }
+
   bool IsSwitch() const { return class_ == NC_SWITCH; }
   bool IsMerge() const { return class_ == NC_MERGE; }
   bool IsEnter() const { return class_ == NC_ENTER; }

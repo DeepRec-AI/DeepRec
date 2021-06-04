@@ -595,6 +595,54 @@ Status GraphExecutionState::PruneGraph(
   return Status::OK();
 }
 
+namespace {
+bool FindGradientOps(Graph* g, std::unordered_set<const Node*>& visited) {
+  bool found = false;
+  for (Node* n : g->nodes()) {
+    // Ftrl & Adagrad's input 3 is grad
+    if (n->IsApplyAdagradOps() ||
+        n->IsSparseApplyAdagradOps() ||
+        n->IsApplyFtrlOps() ||
+        n->IsSparseApplyFtrlOps()) {
+      Node* gradient = nullptr;
+      TF_CHECK_OK(n->input_node(3, &gradient));
+      visited.insert(gradient);
+      found = true;
+    }
+    // Adam's input 9 is grad
+    if (n->IsApplyAdamOps() ||
+        n->IsApplySparseAdamOps()) {
+      Node* gradient = nullptr;
+      TF_CHECK_OK(n->input_node(9, &gradient));
+      visited.insert(gradient);
+      found = true;
+    }
+  }
+  return found;
+}
+}
+
+Status GraphExecutionState::PipelineGraph(std::unique_ptr<Graph>* g,
+    int32 micro_batch_num) {
+  Graph* graph = g->get();
+  std::unique_ptr<Graph> g2duplicated(new Graph(OpRegistry::Global()));
+  CopyGraph(*graph, g2duplicated.get());
+
+  std::unordered_set<const Node*> visited;
+  if (!FindGradientOps(g2duplicated.get(), visited)) {
+    return Status::OK();
+  }
+  auto excluded = FindExcludeDuplicationNodes(g2duplicated.get(), visited);
+  // Duplicate Graph with micro_batch_num-1 duplications
+  ExtendGraph(g2duplicated.get(), excluded, micro_batch_num - 1);
+
+  std::unique_ptr<Graph> copy(new Graph(graph->flib_def()));
+  CopyGraph(*(g2duplicated.get()), copy.get());
+  g->swap(copy);
+
+  return Status::OK();
+}
+
 Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   // Save stateful placements before placing.
   RestoreStatefulNodes(new_graph.get());
@@ -624,6 +672,14 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   for (const Node* n : new_graph->nodes()) {
     VLOG(2) << "Mapping " << n->name() << " to " << n->cost_id();
     node_name_to_cost_id_map_[n->name()] = n->cost_id();
+  }
+
+  const OptimizerOptions& session_optimizer_options =
+      session_options_->config.graph_options().optimizer_options();
+  int32 micro_batch_num = session_optimizer_options.micro_batch_num();
+  if (micro_batch_num > 1) {
+    VLOG(2) << "RUN Graph Optimization: Runtime Pipeline";
+    PipelineGraph(&new_graph, micro_batch_num);
   }
 
   SaveStatefulNodes(new_graph.get());

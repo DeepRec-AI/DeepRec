@@ -179,6 +179,8 @@ class GraphExecutionState {
   Status PruneGraph(const BuildGraphOptions& options, Graph* graph,
                     subgraph::RewriteGraphMetadata* out_rewrite_metadata);
 
+  Status PipelineGraph(std::unique_ptr<Graph>* graph, int32 micro_batch_num);
+
   Status OptimizeGraph(
       const BuildGraphOptions& options, std::unique_ptr<Graph>* optimized_graph,
       std::unique_ptr<FunctionLibraryDefinition>* optimized_flib);

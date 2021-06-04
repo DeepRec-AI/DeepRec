@@ -260,4 +260,40 @@ bool FixupSourceAndSinkEdges(Graph* g) {
   return changed;
 }
 
+std::unordered_set<const Node*> FindExcludeDuplicationNodes(Graph* g,
+    std::unordered_set<const Node*>& visited) {
+  // Compute set of nodes that we need to traverse in order to reach
+  // the nodes in "nodes" by performing a breadth-first search from those
+  // nodes, and accumulating the visited nodes.
+  std::deque<const Node*> queue;
+  for (const Node* n : visited) {
+    VLOG(2) << "Reverse reach init: " << n->name();
+    queue.emplace_back(n);
+  }
+  while (!queue.empty()) {
+    const Node* n = queue.front();
+    queue.pop_front();
+    for (const Node* in : n->in_nodes()) {
+      if (visited.insert(in).second) {
+        queue.emplace_back(in);
+      }
+    }
+  }
+
+  // Make a pass over the graph to remove nodes not in "visited"
+  std::vector<Node*> all_nodes;
+  all_nodes.reserve(g->num_nodes());
+  for (Node* n : g->nodes()) {
+    all_nodes.emplace_back(n);
+  }
+
+  std::unordered_set<const Node*> excluded;
+  for (Node* n : all_nodes) {
+    if (visited.count(n) == 0 && !n->IsSource() && !n->IsSink()) {
+      excluded.emplace(n);
+    }
+  }
+  return excluded;
+}
+
 }  // namespace tensorflow
