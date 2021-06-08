@@ -46,6 +46,51 @@ __global__ void DynamicStitchKernel(const int32 slice_size,
   }
 }
 
+template <typename T>
+__global__ void DynamicStitchKernelV2(const int32 slice_size,
+                                      const int32 output_size,
+                                      const int32* input_indices,
+                                      T** input_ptrs,
+                                      T* output) {
+  CUDA_1D_KERNEL_LOOP(output_index, output_size) {
+    const int32 slice_id = output_index / slice_size;
+    const int32 slice_offset = output_index % slice_size;
+    const int32 input_index = input_indices[slice_id];
+    if (input_index != -1) {
+      output[output_index] = ldg(input_ptrs[input_index] + slice_offset);
+    }
+  }
+}
+
+template <typename T>
+__global__ void DynamicStitchPrepKernel(const int32* indices_flat,
+                                        int32* indices_flat_work,
+                                        T** data_ptr_heads,
+                                        const int32* data_ptr_num,
+                                        T** data_ptr_all,
+                                        const int32 data_partition_num,
+                                        const int32 slice_size,
+                                        const int32 output_size) {
+
+  CUDA_1D_KERNEL_LOOP(output_index, output_size) {
+    // for indices
+    indices_flat_work[output_index] = -1;
+    indices_flat_work[indices_flat[output_index]] = output_index;
+    // find the partition id
+    int32 data_ptr_id = 0;
+    int32 data_ptr_accu = data_ptr_num[data_ptr_id];
+    while((data_ptr_accu < (output_index + 1)) &&
+           data_ptr_id < data_partition_num) {
+      data_ptr_id++;
+      data_ptr_accu += data_ptr_num[data_ptr_id];
+    }
+    // find the offset
+    int32 data_ptr_offset = output_index - data_ptr_accu +
+                            data_ptr_num[data_ptr_id];
+    data_ptr_all[output_index] = data_ptr_heads[data_ptr_id] +
+                                 data_ptr_offset * slice_size;
+  }
+}
 }  // namespace
 
 template <typename T>
@@ -63,6 +108,66 @@ void DynamicStitchGPUImpl(const Eigen::GpuDevice& gpu_device,
                               input_ptrs, output));
 }
 
+template <typename T>
+void DynamicStitchGPUImplV2(const Eigen::GpuDevice& gpu_device,
+                            const int32 slice_size,
+                            const int32 first_dim_size,
+                            Tensor* input_indices,
+                            Tensor* input_ptrs,
+                            T* output) {
+  const int32 output_size = first_dim_size * slice_size;
+  auto config = GetCudaLaunchConfig(output_size, gpu_device);
+
+  DynamicStitchKernelV2<T>
+      <<<config.block_count, config.thread_per_block, 0, gpu_device.stream()>>>(
+          slice_size, output_size,
+          input_indices->flat<int32>().data(),
+          reinterpret_cast<T**>(input_ptrs->flat<int8>().data()),
+          output);
+}
+
+template <typename T>
+void DynamicStitchGPUPrep(const Eigen::GpuDevice& gpu_device,
+                          Tensor* indices_flat,
+                          Tensor* indices_flat_work,
+                          Tensor* data_ptr_heads,
+                          Tensor* data_ptr_num,
+                          T** data_ptr_all,
+                          const int32 data_partition_num,
+                          const int32 slice_size,
+                          const int32 data_elements_size) {
+
+  auto config = GetCudaLaunchConfig(data_elements_size, gpu_device);
+  DynamicStitchPrepKernel<T>
+      <<<config.block_count, config.thread_per_block, 0, gpu_device.stream()>>>(
+          indices_flat->flat<int32>().data(),
+          indices_flat_work->flat<int32>().data(),
+          reinterpret_cast<T**>(data_ptr_heads->flat<int8>().data()),
+          data_ptr_num->flat<int32>().data(),
+          data_ptr_all,
+          data_partition_num, slice_size, data_elements_size);
+}
+
+void AggregateIndiceOnGpu(OpKernelContext* c,
+                          OpInputList* indices_list,
+                          Tensor* indice_flat) {
+  auto dst = indice_flat->flat<int32>();
+  int32 offset_size = 0;
+  auto* stream = c->op_device_context()->stream();
+  for (const Tensor& indices : *indices_list) {
+    if (indices.NumElements() > 0) {
+       auto src = indices.flat<int32>();
+       se::DeviceMemoryBase dst_wrapped(dst.data() + offset_size,
+                                        indices.NumElements() * sizeof(int32));
+       stream->ThenMemcpy(&dst_wrapped,
+                          static_cast<const void*>(src.data()),
+                          indices.NumElements() * sizeof(int32));
+       offset_size += indices.NumElements();
+    }
+  }
+  stream->BlockHostUntilDone();
+}
+
 #define REGISTER_GPU(T)                                           \
   template void DynamicStitchGPUImpl(                             \
       const Eigen::GpuDevice& gpu_device, const int32 slice_size, \
@@ -76,6 +181,40 @@ TF_CALL_complex128(REGISTER_GPU);
 TF_CALL_int64(REGISTER_GPU);
 TF_CALL_int32(REGISTER_GPU)
 
+#undef REGISTER_GPU
+
+#define REGISTER_GPU(T)                                           \
+  template void DynamicStitchGPUPrep(                             \
+      const Eigen::GpuDevice& gpu_device,                         \
+      Tensor* indices_flat,                                       \
+      Tensor* indices_flat_work,                                  \
+      Tensor* data_ptr_heads,                                     \
+      Tensor* data_ptr_num,                                       \
+      T** data_ptr_all,                                           \
+      const int32 data_partition_num,                             \
+      const int32 slice_size,                                     \
+      const int32 data_elements_size);
+
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU);
+TF_CALL_complex64(REGISTER_GPU);
+TF_CALL_complex128(REGISTER_GPU);
+TF_CALL_int64(REGISTER_GPU);
+TF_CALL_int32(REGISTER_GPU)
+#undef REGISTER_GPU
+
+#define REGISTER_GPU(T)                                           \
+  template void DynamicStitchGPUImplV2(                           \
+      const Eigen::GpuDevice& gpu_device, const int32 slice_size, \
+      const int32 first_dim_size,                                 \
+      Tensor* input_indices,                                      \
+      Tensor* input_ptrs,                                         \
+      T* output);
+
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU);
+TF_CALL_complex64(REGISTER_GPU);
+TF_CALL_complex128(REGISTER_GPU);
+TF_CALL_int64(REGISTER_GPU);
+TF_CALL_int32(REGISTER_GPU)
 #undef REGISTER_GPU
 
 }  // namespace tensorflow

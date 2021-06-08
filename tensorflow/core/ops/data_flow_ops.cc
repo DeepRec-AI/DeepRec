@@ -86,6 +86,68 @@ REGISTER_OP("DynamicPartition")
       return Status::OK();
     });
 
+REGISTER_OP("DynamicPartitionFuse")
+    .Input("data: T")
+    .Input("num_total_ids: T")
+    .Output("gather_ids: num_partitions * T")
+    .Output("pindices: num_partitions * int32")
+    .Attr("T: {int32, int64}")
+    .Attr("num_partitions: int = 1")
+    .SetShapeFn([](InferenceContext* c) {
+      int64 num_partitions;
+      TF_RETURN_IF_ERROR(c->GetAttr("num_partitions", &num_partitions));
+
+      //it includes two DynamicPartition operations
+      //DynamicPartition_0 (gather_ids): input0: shape(data),
+      ShapeHandle data_shape_0 = c->input(0);
+
+      // infer the shape of DynamicPartition_1 :
+      DimensionHandle data_size_hanlde = c->NumElements(data_shape_0);
+      int64 data_size = c->Value(data_size_hanlde);
+      int64 start = 0;
+      int64 delta = 1;
+      int64 range_size =
+        (std::abs(data_size - start) + std::abs(delta) - 1) / std::abs(delta);
+      ShapeHandle data_shape_1 = c->Vector(range_size);
+      // fetch partition shape
+      ShapeHandle partitions_shape = c->input(0);
+      if (!c->RankKnown(partitions_shape)) {
+        return shape_inference::UnknownShape(c);
+      }
+
+      const int64 rank = c->Rank(partitions_shape);
+      // data shape must start with partitions_shape
+      ShapeHandle unused_0;
+      TF_RETURN_IF_ERROR(
+          c->MergePrefix(data_shape_0, partitions_shape, &unused_0, &unused_0));
+      ShapeHandle unused_1;
+      TF_RETURN_IF_ERROR(
+          c->MergePrefix(data_shape_1, partitions_shape, &unused_1, &unused_1));
+
+      // The partition shape is dynamic in the 0th dimension, and matches
+      // data_shape in the remaining dimensions.
+      // for output gather_ids
+      ShapeHandle unknown_dim0_0 = c->MakeShape({c->UnknownDim()});
+      ShapeHandle data_suffix_shape_0;
+      TF_RETURN_IF_ERROR(c->Subshape(data_shape_0, rank, &data_suffix_shape_0));
+      ShapeHandle result_shape_0;
+      TF_RETURN_IF_ERROR(
+          c->Concatenate(unknown_dim0_0, data_suffix_shape_0, &result_shape_0));
+      // for output pindices
+      ShapeHandle unknown_dim0_1 = c->MakeShape({c->UnknownDim()});
+      ShapeHandle data_suffix_shape_1;
+      TF_RETURN_IF_ERROR(c->Subshape(data_shape_1, rank, &data_suffix_shape_1));
+      ShapeHandle result_shape_1;
+      TF_RETURN_IF_ERROR(
+          c->Concatenate(unknown_dim0_1, data_suffix_shape_1, &result_shape_1));
+
+      for (int i = 0; i < (c->num_outputs()/2); i++) {
+        c->set_output(i, result_shape_0);
+        c->set_output(i+(c->num_outputs()/2), result_shape_1);
+      }
+      return Status::OK();
+    });
+
 namespace {
 
 Status DynamicStitchShapeFunction(InferenceContext* c) {
@@ -140,6 +202,14 @@ Status DynamicStitchShapeFunction(InferenceContext* c) {
 }  // namespace
 
 REGISTER_OP("DynamicStitch")
+    .Input("indices: N * int32")
+    .Input("data: N * T")
+    .Output("merged: T")
+    .Attr("N : int >= 1")
+    .Attr("T : type")
+    .SetShapeFn(DynamicStitchShapeFunction);
+
+REGISTER_OP("DynamicStitchFast")
     .Input("indices: N * int32")
     .Input("data: N * T")
     .Output("merged: T")

@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 // See docs in ../ops/data_flow_ops.cc.
+#include <algorithm>
 
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -131,6 +132,61 @@ class DynamicStitchOpImplBase : public OpKernel {
     }
     OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, result_ptr));
   }
+
+  void CheckArgsAndAllocateResultV2(OpKernelContext* c,
+                                    OpInputList* indices_inputs,
+                                    OpInputList* data_inputs,
+                                    int* first_dim_size,
+                                    int* data_elements_size,
+                                    Tensor** result_ptr) {
+    // Find maximum index in the indices vectors
+    int32 max_index = -1;
+    if (data_elements_size) {
+      *data_elements_size = 0;
+    }
+    // find the max indices for result
+    for (const Tensor& indices : *indices_inputs) {
+      if (indices.NumElements() > 0) {
+         Eigen::Tensor<int32, 0, Eigen::RowMajor> m =
+            indices.flat<int32>().maximum();
+         max_index = std::max(static_cast<int32>(m()), max_index);
+      }
+      if (data_elements_size) {
+        *data_elements_size += indices.NumElements();
+      }
+    }
+    *first_dim_size = max_index + 1;
+    const Tensor& data0 = (*data_inputs)[0];
+    const Tensor& indices0 = (*indices_inputs)[0];
+    for (int input_num = 0; input_num < indices_inputs->size(); input_num++) {
+      const Tensor& indices = (*indices_inputs)[input_num];
+      const Tensor& data = (*data_inputs)[input_num];
+      OP_REQUIRES(
+          c, TensorShapeUtils::StartsWith(data.shape(), indices.shape()),
+          errors::InvalidArgument("data[", input_num,
+                                  "].shape = ", data.shape().DebugString(),
+                                  " does not start with indices[", input_num,
+                                  "].shape = ", indices.shape().DebugString()));
+      OP_REQUIRES(
+          c, input_num == 0 || SameExtraShape(data0, indices0, data, indices),
+          errors::InvalidArgument(
+              "Need data[0].shape[", indices0.dims(), ":] = data[", input_num,
+              "].shape[", indices.dims(),
+              ":], got data[0].shape = ", data0.shape().DebugString(),
+              ", data[", input_num, "].shape = ", data.shape().DebugString(),
+              ", indices[0].shape = ", indices0.shape().DebugString(),
+              ", indices[", input_num,
+              "].shape = ", indices.shape().DebugString()));
+    }
+
+    // Allocate result tensor of shape
+    TensorShape result_shape;
+    result_shape.AddDim(*first_dim_size);
+    for (int d = indices0.dims(); d < data0.dims(); d++) {
+      result_shape.AddDim(data0.dim_size(d));
+    }
+    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, result_ptr));
+  }
 };
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -153,6 +209,28 @@ TF_CALL_complex128(REGISTER_GPU);
 TF_CALL_int64(REGISTER_GPU);
 TF_CALL_int32(REGISTER_GPU);
 #undef REGISTER_GPU
+
+template <typename T>
+void DynamicStitchGPUImplV2(const Eigen::GpuDevice& gpu_device,
+                            const int32 slice_size, const int32 first_dim_size,
+                            Tensor* input_indices,
+                            Tensor* input_ptrs,
+                            T* output);
+
+template <typename T>
+void DynamicStitchGPUPrep(const Eigen::GpuDevice& gpu_device,
+                          Tensor* indices_flat,
+                          Tensor* indices_flat_work,
+                          Tensor* data_ptr_heads,
+                          Tensor* data_ptr_num,
+                          T** data_ptr_all,
+                          const int32 data_partition_num,
+                          const int32 slice_size,
+                          const int32 data_elements_size);
+
+void AggregateIndiceOnGpu(OpKernelContext* c,
+                          OpInputList* indices_list,
+                          Tensor* indice_flat);
 
 template <class T>
 class DynamicStitchOpGPU : public DynamicStitchOpImplBase<T> {
@@ -223,6 +301,149 @@ class DynamicStitchOpGPU : public DynamicStitchOpImplBase<T> {
   }
 };
 
+template <class T>
+class DynamicStitchOpGPUV2 : public DynamicStitchOpImplBase<T> {
+ public:
+  explicit DynamicStitchOpGPUV2(OpKernelConstruction* c)
+      : DynamicStitchOpImplBase<T>(c, "DynamicStitchOp") {}
+  // an alternative implementation to minimize the cpu-gpu memory copy
+  void Compute(OpKernelContext* c) override {
+    OpInputList indices_inputs;
+    OpInputList data_inputs;
+    int first_dim_size;
+    int data_elements_size;
+    int total_indices_num = 0;
+    Tensor* merged = nullptr;
+    // obtain the tensors/tensor lists
+    OP_REQUIRES_OK(c, c->input_list("indices", &indices_inputs));
+    OP_REQUIRES_OK(c, c->input_list("data", &data_inputs));
+    for (int i = 0; i < indices_inputs.size(); ++i) {
+      total_indices_num += indices_inputs[i].NumElements();
+    }
+    Tensor indices_flat;
+    c->allocate_temp(DT_INT32, TensorShape{total_indices_num},
+                     &indices_flat);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+
+    this->CheckArgsAndAllocateResultV2(c, &indices_inputs, &data_inputs,
+                                       &first_dim_size, &data_elements_size,
+                                       &merged);
+
+    if (!c->status().ok()) {
+      // Avoid segmentation faults if merged cannot be
+      // allocated and an error is passed back in the context.
+      LOG(ERROR) << c->status();
+      return;
+    }
+
+    // device to device aggregation
+    AggregateIndiceOnGpu(c, &indices_inputs, &indices_flat);
+    // a pointer head array on gpu (copy data from cpu)
+    AllocatorAttributes host_alloc_attr;
+    host_alloc_attr.set_on_host(true);
+    host_alloc_attr.set_gpu_compatible(true);
+    const uint64 data_ptr_heads_bytes = data_inputs.size() * sizeof(T*);
+
+    Tensor data_ptr_heads_cpu;
+    c->allocate_temp(DT_INT8, TensorShape{data_ptr_heads_bytes},
+                     &data_ptr_heads_cpu, host_alloc_attr);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+    Tensor data_ptr_heads;
+    c->allocate_temp(DT_INT8, TensorShape{data_ptr_heads_bytes},
+                     &data_ptr_heads);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+    // an array to store number of indices in each partition
+    Tensor data_ptr_num_cpu;
+    c->allocate_temp(DT_INT32, TensorShape{data_inputs.size()},
+                     &data_ptr_num_cpu, host_alloc_attr);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+    Tensor data_ptr_num;
+    c->allocate_temp(DT_INT32, TensorShape{data_inputs.size()},
+                     &data_ptr_num);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+
+    // assign values to data_ptr_heads_cpu and indices
+    T** data_ptr_heads_cpu_val = reinterpret_cast<T**>(
+      data_ptr_heads_cpu.flat<int8>().data());
+    for(int i = 0; i < data_inputs.size(); i++) {
+      data_ptr_heads_cpu_val[i] =
+        const_cast<T*>(data_inputs[i].flat<T>().data());
+      data_ptr_num_cpu.flat<int32>()(i) =
+        indices_inputs[i].NumElements();
+    }
+
+    auto* stream = c->op_device_context()->stream();
+    // copy data ptr heads to gpu
+    TensorReference tensor_ref_heads(data_ptr_heads_cpu);
+    se::DeviceMemoryBase dst_wrapped_heads(
+        data_ptr_heads.flat<int8>().data(), data_ptr_heads_bytes);
+    stream->ThenMemcpy(&dst_wrapped_heads,
+                       data_ptr_heads_cpu.flat<int8>().data(),
+                       data_ptr_heads_bytes);
+    c->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
+        stream, [tensor_ref_heads]() { tensor_ref_heads.Unref(); });
+    // copy data ptr number to gpu
+    TensorReference tensor_ref_num(data_ptr_num_cpu);
+    se::DeviceMemoryBase dst_wrapped_num(data_ptr_num.flat<int32>().data(),
+                                         data_inputs.size() * sizeof(int32));
+    stream->ThenMemcpy(&dst_wrapped_num,
+                       data_ptr_num_cpu.flat<int32>().data(),
+                       data_inputs.size() * sizeof(int32));
+    c->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
+        stream, [tensor_ref_num]() { tensor_ref_num.Unref(); });
+    // a pointer array on gpu
+    Tensor data_ptr_all;
+    c->allocate_temp(DT_INT8, TensorShape{data_elements_size * sizeof(T*)},
+                     &data_ptr_all);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+    // a working space for indices_flat
+    Tensor indices_flat_work;
+    c->allocate_temp(DT_INT32, TensorShape{first_dim_size},
+                     &indices_flat_work);
+    if (!c->status().ok()) {
+      LOG(ERROR) << c->status();
+      return;
+    }
+
+    if (first_dim_size > 0) {
+      const int slice_size = merged->flat_outer_dims<T>().dimension(1);
+      // create a kernel to prepare indices_flat_work and data_ptr_all
+      DynamicStitchGPUPrep<T>(c->eigen_gpu_device(),
+                              &indices_flat,
+                              &indices_flat_work,
+                              &data_ptr_heads,
+                              &data_ptr_num,
+                              reinterpret_cast<T**>(
+                              data_ptr_all.flat<int8>().data()),
+                              data_inputs.size(),
+                              slice_size,
+                              data_elements_size);
+      auto output = merged->template flat<T>().data();
+      DynamicStitchGPUImplV2<T>(c->eigen_gpu_device(), slice_size,
+                                first_dim_size,
+                                &indices_flat_work,
+                                &data_ptr_all, output);
+    }
+  }
+};
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 
 template <class T, bool Parallel>
@@ -331,6 +552,11 @@ struct ParallelDynamicStitchOpCPU : DynamicStitchOpImplCPU<T, true> {
                               .TypeConstraint<type>("T") \
                               .HostMemory("indices"),    \
                           DynamicStitchOpCPU<type>)      \
+  REGISTER_KERNEL_BUILDER(Name("DynamicStitchFast")      \
+                              .Device(DEVICE_CPU)        \
+                              .TypeConstraint<type>("T") \
+                              .HostMemory("indices"),    \
+                          ParallelDynamicStitchOpCPU<type>) \
   REGISTER_KERNEL_BUILDER(Name("ParallelDynamicStitch")  \
                               .Device(DEVICE_CPU)        \
                               .TypeConstraint<type>("T") \
@@ -349,13 +575,16 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_DYNAMIC_STITCH);
                               .TypeConstraint<type>("T") \
                               .HostMemory("indices"),    \
                           DynamicStitchOpGPU<type>)      \
+  REGISTER_KERNEL_BUILDER(Name("DynamicStitchFast")      \
+                              .Device(DEVICE_GPU)        \
+                              .TypeConstraint<type>("T") \
+                              .HostMemory("indices"),    \
+                          DynamicStitchOpGPUV2<type>)    \
   REGISTER_KERNEL_BUILDER(Name("ParallelDynamicStitch")  \
                               .Device(DEVICE_GPU)        \
                               .TypeConstraint<type>("T") \
-                              .HostMemory("indices")     \
-                              .HostMemory("data")        \
-                              .HostMemory("merged"),     \
-                          ParallelDynamicStitchOpCPU<type>)
+                              .HostMemory("indices"),    \
+                          DynamicStitchOpGPUV2<type>)
 
 TF_CALL_GPU_NUMBER_TYPES(REGISTER_DYNAMIC_STITCH_GPU);
 TF_CALL_complex64(REGISTER_DYNAMIC_STITCH_GPU);

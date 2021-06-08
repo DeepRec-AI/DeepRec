@@ -45,6 +45,7 @@ def _DynamicPartitionGrads(op, *grads):
 
 
 @ops.RegisterGradient("DynamicStitch")
+@ops.RegisterGradient("DynamicStitchFast")
 @ops.RegisterGradient("ParallelDynamicStitch")
 def _DynamicStitchGrads(op, grad):
   """Gradients for DynamicStitch and ParallelDynamicStitch."""
