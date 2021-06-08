@@ -54,6 +54,40 @@ struct SegmentSumFunctor {
                   typename TTypes<T, 2>::Tensor output);
 };
 
+template <typename T, typename Index>
+struct SparseSegmentReduceFunctor {
+  void operator()(OpKernelContext* ctx,
+                  const Tensor* input,
+                  const Tensor* indices,
+                  const Tensor* seg_ids,
+                  Tensor* output,
+                  const bool is_mean,
+                  const bool is_sqrtn);
+};
+
+template <typename T, typename Index>
+struct SparseSegmentReduceGradFunctor {
+  void operator()(OpKernelContext* ctx,
+                  const Tensor* input,
+                  const Tensor* indices,
+                  const Tensor* seg_ids,
+                  Tensor* output,
+                  const bool is_sqrtn);
+};
+
+template <typename Index>
+struct FindMaxSegId {
+  void operator()(OpKernelContext* ctx,
+                  const Tensor* seg_ids,
+                  Index& max_id);
+};
+
+template <typename T>
+struct SetValueDefault {
+  void operator()(OpKernelContext* ctx,
+                  Tensor* target,
+                  T default_value);
+};
 #endif
 
 template <typename Device, typename T, typename Index, typename InitialValueF,

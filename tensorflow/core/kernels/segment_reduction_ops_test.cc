@@ -13,7 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <algorithm>
 #include <functional>
+#include <random>
 #include <vector>
 
 #include "tensorflow/core/common_runtime/device.h"
@@ -112,6 +114,312 @@ BM_Reduce_Arg(16, 8, 2);
 BM_Reduce_Arg(64, 32, 2);
 BM_Reduce_Arg(4096, 32, 2);
 BM_Reduce_Arg(4096, 128, 2);
+
+Node* SegmentSumV2Node(Graph* g, Node* data, Node* seg_ids) {
+  Node* ret;
+  TF_CHECK_OK(NodeBuilder(g->NewName("segsum"), "SegmentSum")
+                  .Input(data)
+                  .Input(seg_ids)
+                  .Finalize(g, &ret));
+  return ret;
+}
+
+template <typename Index>
+static Graph* SegmentSumV2(Index num_rows, Index num_cols,
+                           Index segment_size) {
+
+  Graph* g = new Graph(OpRegistry::Global());
+
+  TensorShape shape1({num_rows, num_cols});
+  Tensor input1(DT_FLOAT, shape1);
+  input1.flat<float>().setRandom();
+
+  TensorShape shape2({num_rows});
+  Tensor input2(DataTypeToEnum<Index>::v(), shape2);
+  test::FillFn<Index>(&input2, [&num_rows, &segment_size](Index i) -> Index {
+    return std::min(i / segment_size, num_rows - 1);
+  });
+  Node* data = test::graph::Constant(g, input1);
+  Node* seg_ids = test::graph::Constant(g, input2);
+
+  SegmentSumV2Node(g, data, seg_ids);
+  return g;
+}
+
+#define BM_SEGMENT_SUM_V2(DEVICE, INDEX, R, C)                               \
+  static void BM_##DEVICE##_segsum_##INDEX##_##R##_##C(int iters, int s) {  \
+    int64 bytes_per_iter = static_cast<int64>(R * C * sizeof(float)); \
+    tensorflow::SessionOptions options;                                 \
+    options.config.set_inter_op_parallelism_threads(16);                \
+    options.config.set_intra_op_parallelism_threads(16);                \
+    options.config.mutable_gpu_options()->set_visible_device_list("0"); \
+    testing::BytesProcessed(bytes_per_iter * iters); \
+    testing::UseRealTime();                                             \
+    test::Benchmark(#DEVICE, SegmentSumV2<INDEX>(R,C,s), &options).Run(iters); \
+  }                                                                     \
+  BENCHMARK(BM_##DEVICE##_segsum_##INDEX##_##R##_##C)->Arg(2)
+#if GOOGLE_CUDA
+BM_SEGMENT_SUM_V2(gpu, int64, 64, 32);
+#endif
+BM_SEGMENT_SUM_V2(cpu, int64, 64, 32);
+
+Node* SparseSegmentReductionNode(Graph* g, Node* data,
+                                 Node* data_ids, Node* seg_ids, 
+                                 bool is_mean, bool is_sqrtn) {
+  Node* ret;
+  if (is_mean) {
+    TF_CHECK_OK(NodeBuilder(g->NewName("sparsesegmean"), "SparseSegmentMean")
+                    .Input(data)
+                    .Input(data_ids)
+                    .Input(seg_ids)
+                    .Finalize(g, &ret));
+  } else if (is_sqrtn) {
+    TF_CHECK_OK(NodeBuilder(g->NewName("sparsesegsqrtn"), "SparseSegmentSqrtN")
+                    .Input(data)
+                    .Input(data_ids)
+                    .Input(seg_ids)
+                    .Finalize(g, &ret));
+  } else {
+    TF_CHECK_OK(NodeBuilder(g->NewName("sparsesegsum"), "SparseSegmentSum")
+                    .Input(data)
+                    .Input(data_ids)
+                    .Input(seg_ids)
+                    .Finalize(g, &ret));
+  }
+  return ret;
+}
+
+template <typename Index>
+static Graph* SparseSegmentReduction(Index num_rows,
+                                     Index num_cols,
+                                     Index num_indices,
+                                     Index segment_size,
+                                     bool is_mean,
+                                     bool is_sqrtn) {
+
+  Graph* g = new Graph(OpRegistry::Global());
+
+  TensorShape shape1({num_rows, num_cols});
+  Tensor input1(DT_FLOAT, shape1);
+  input1.flat<float>().setRandom();
+  // indices
+  std::vector<Index> indices_total;
+  for(Index i=0; i<num_rows; i++) {
+    indices_total.emplace_back(i);
+  }
+  auto rng = std::default_random_engine {};
+  std::shuffle(std::begin(indices_total), std::end(indices_total), rng);
+  TensorShape shape2({num_indices});
+  Tensor input2(DataTypeToEnum<Index>::v(), shape2);
+  test::FillFn<Index>(&input2, [&num_rows, &indices_total](Index i) -> Index {
+    return static_cast<Index>(indices_total[i%num_rows]);
+  });
+  // segment_ids
+  TensorShape shape3({num_indices});
+  Tensor input3(DataTypeToEnum<int32>::v(), shape3);
+  test::FillFn<int32>(&input3, [&num_rows, &segment_size](Index i) -> int32 {
+    return static_cast<int32>(std::min(i / segment_size, num_rows - 1));
+  });
+
+  Node* data = test::graph::Constant(g, input1);
+  Node* data_ids = test::graph::Constant(g, input2);
+  Node* seg_ids = test::graph::Constant(g, input3);
+
+  SparseSegmentReductionNode(g, data, data_ids, seg_ids, is_mean, is_sqrtn);
+  return g;
+}
+
+#define BM_SPARSE_SEGMENT_REDUCTION(DEVICE, INDEX, MEAN, SQRTN, R, C, I, S)  \
+  static void BM_##DEVICE##_SR_##INDEX##_##MEAN##_##SQRTN##_##R##_\
+    ##C##_##I##_##S( \
+    int iters, int s) {  \
+    int64 bytes_per_iter = static_cast<int64>(I * C * sizeof(float)); \
+    tensorflow::SessionOptions options;                                 \
+    options.config.set_inter_op_parallelism_threads(16);                \
+    options.config.set_intra_op_parallelism_threads(16);                \
+    options.config.mutable_gpu_options()->set_visible_device_list("0"); \
+    testing::BytesProcessed(bytes_per_iter * iters); \
+    testing::UseRealTime();                                             \
+    test::Benchmark(#DEVICE, SparseSegmentReduction<INDEX>(R,C,I,s,MEAN,SQRTN),\
+    &options).Run(iters); \
+  }                                                                     \
+  BENCHMARK(BM_##DEVICE##_SR_##INDEX##_##MEAN##_##SQRTN##_##R##_##C##_\
+    ##I##_##S)->Arg(S)
+
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, false, 30000, 32, 6000, 10);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, false, 30000, 32, 6000, 100);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, false, 30000, 32, 6000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, false, 30000, 32, 12000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, false, 30000, 32, 1200, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, false, 30000, 32, 120000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, true, false, 30000, 32, 120000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(cpu, int32, false, true, 30000, 32, 120000, 1000);
+#if GOOGLE_CUDA
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, false, 30000, 32, 6000, 10);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, false, 30000, 32, 6000, 100);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, false, 30000, 32, 6000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, false, 30000, 32, 12000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, false, 30000, 32, 1200, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, false, 30000, 32, 120000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, true, false, 30000, 32, 120000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION(gpu, int32, false, true, 30000, 32, 120000, 1000);
+#endif
+
+Node* SparseSegmentReductionGradNode(Graph* g, Node* input,
+                                     Node* data_ids, Node* seg_ids, 
+                                     Node* output_dim0,
+                                     bool is_sqrtn) {
+  Node* ret;
+  if (is_sqrtn) {
+    TF_CHECK_OK(NodeBuilder(g->NewName("sparsesegsqrtngrad"), 
+                            "SparseSegmentSqrtNGrad")
+                  .Input(input)
+                  .Input(data_ids)
+                  .Input(seg_ids)
+                  .Input(output_dim0)
+                  .Finalize(g, &ret));
+  } else {
+    TF_CHECK_OK(NodeBuilder(g->NewName("sparsesegmeangrad"), 
+                            "SparseSegmentMeanGrad")
+                  .Input(input)
+                  .Input(data_ids)
+                  .Input(seg_ids)
+                  .Input(output_dim0)
+                  .Finalize(g, &ret));
+  } 
+  return ret;
+}
+
+template <typename Index>
+static Graph* SparseSegmentReductionGrad(Index num_rows,
+                                         Index num_cols,
+                                         Index num_indices,
+                                         Index segment_size,
+                                         bool is_sqrtn) {
+
+  Graph* g = new Graph(OpRegistry::Global());
+  // indices
+  std::vector<Index> indices_total;
+  for(Index i=0; i<num_rows; i++) {
+    indices_total.emplace_back(i);
+  }
+  auto rng = std::default_random_engine {};
+  std::shuffle(std::begin(indices_total), std::end(indices_total), rng);
+  TensorShape shape2({num_indices});
+  Tensor input2(DataTypeToEnum<Index>::v(), shape2);
+  test::FillFn<Index>(&input2, [&num_rows, &indices_total](Index i) -> Index {
+    return static_cast<Index>(indices_total[i%num_rows]);
+  });
+  // segment_ids
+  TensorShape shape3({num_indices});
+  Tensor input3(DataTypeToEnum<int32>::v(), shape3);
+  test::FillFn<int32>(&input3, [&num_rows, &segment_size](Index i) -> int32 {
+    return static_cast<int32>(std::min(i / segment_size, num_rows - 1));
+  });
+  // input 
+  TensorShape shape1({std::min((num_indices-1)/segment_size, num_rows -1) + 1, 
+                      num_cols});
+  Tensor input1(DataTypeToEnum<float>::v(), shape1);
+  input1.flat<float>().setRandom();
+  // output_dim0
+  Tensor input4(DataTypeToEnum<Index>::v(), TensorShape({}));
+  input4.scalar<int32>()() = num_rows;
+
+  Node* input = test::graph::Constant(g, input1);
+  Node* data_ids = test::graph::Constant(g, input2);
+  Node* seg_ids = test::graph::Constant(g, input3);
+  Node* output_dim0 = test::graph::Constant(g, input4); 
+
+  SparseSegmentReductionGradNode(g, input, data_ids, seg_ids, 
+                                 output_dim0, is_sqrtn);
+  return g;
+}
+
+#define BM_SPARSE_SEGMENT_REDUCTION_GRAD(DEVICE, INDEX, SQRTN, R, C, I, S)  \
+  static void BM_##DEVICE##_SRG_##INDEX##_##SQRTN##_##R##_##C##_##I##_##S( \
+    int iters, int s) {  \
+    int64 bytes_per_iter = static_cast<int64>(I * C * sizeof(float)); \
+    tensorflow::SessionOptions options;                                 \
+    options.config.set_inter_op_parallelism_threads(16);                \
+    options.config.set_intra_op_parallelism_threads(16);                \
+    options.config.mutable_gpu_options()->set_visible_device_list("0"); \
+    testing::BytesProcessed(bytes_per_iter * iters); \
+    testing::UseRealTime();                                             \
+    test::Benchmark(#DEVICE, SparseSegmentReductionGrad<INDEX>(R,C,I,s,SQRTN),\
+    &options).Run(iters); \
+  }                                                                     \
+  BENCHMARK(BM_##DEVICE##_SRG_##INDEX##_##SQRTN##_##R##_##C##_##I##_##S)->Arg(S)
+  
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(cpu, int32, false, 30000, 32, 6000, 10);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(cpu, int32, false, 30000, 32, 6000, 100);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(cpu, int32, false, 30000, 32, 6000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(cpu, int32, false, 30000, 32, 600, 100);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(cpu, int32, false, 30000, 32, 12000, 100);
+#if GOOGLE_CUDA
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(gpu, int32, false, 30000, 32, 6000, 10);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(gpu, int32, false, 30000, 32, 6000, 100);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(gpu, int32, false, 30000, 32, 6000, 1000);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(gpu, int32, false, 30000, 32, 600, 100);
+BM_SPARSE_SEGMENT_REDUCTION_GRAD(gpu, int32, false, 30000, 32, 12000, 100);
+#endif
+
+Node* UnsortedSegmentSumNode(Graph* g, Node* data,
+                             Node* seg_ids, Node* seg_num) {
+  Node* ret;
+  TF_CHECK_OK(NodeBuilder(g->NewName("unsorted_segsum"), "UnsortedSegmentSum")
+                  .Input(data)
+                  .Input(seg_ids)
+                  .Input(seg_num)
+                  .Finalize(g, &ret));
+  return ret;
+}
+
+template <typename Index>
+static Graph* UnsortedSegmentSum(Index num_rows, Index num_cols,
+                                 Index segment_size) {
+
+  Graph* g = new Graph(OpRegistry::Global());
+
+  TensorShape shape1({num_rows, num_cols});
+  Tensor input1(DT_FLOAT, shape1);
+  input1.flat<float>().setRandom();
+
+  TensorShape shape2({num_rows});
+  Tensor input2(DataTypeToEnum<Index>::v(), shape2);
+  test::FillFn<Index>(&input2, [&num_rows, &segment_size](Index i) -> Index {
+    return std::min(i / segment_size, num_rows - 1);
+  });
+
+  Tensor input3(DataTypeToEnum<Index>::v(), TensorShape({}));
+  input3.scalar<Index>()() = num_rows;
+
+  Node* data = test::graph::Constant(g, input1);
+  Node* seg_ids = test::graph::Constant(g, input2);
+  Node* num_seg = test::graph::Constant(g, input3);
+
+  UnsortedSegmentSumNode(g, data, seg_ids, num_seg);
+  return g;
+}
+
+#define BM_UNSORTED_SEGMENT_SUM(DEVICE, INDEX, R, C)                 \
+  static void BM_##DEVICE##_unsorted_segsum_##INDEX##_##R##_##C( \
+    int iters, int s) {  \
+    int64 bytes_per_iter = static_cast<int64>(R * C * sizeof(float)); \
+    tensorflow::SessionOptions options;                                 \
+    options.config.set_inter_op_parallelism_threads(16);                \
+    options.config.set_intra_op_parallelism_threads(16);                \
+    options.config.mutable_gpu_options()->set_visible_device_list("0"); \
+    testing::BytesProcessed(bytes_per_iter * iters); \
+    testing::UseRealTime();                                             \
+    test::Benchmark(#DEVICE, UnsortedSegmentSum<INDEX>(R,C,s), \
+    &options).Run(iters); \
+  }                                                                     \
+  BENCHMARK(BM_##DEVICE##_unsorted_segsum_##INDEX##_##R##_##C)->Arg(2)
+
+BM_UNSORTED_SEGMENT_SUM(cpu, int32, 64, 32);
+#if GOOGLE_CUDA
+BM_UNSORTED_SEGMENT_SUM(gpu, int32, 64, 32);
+#endif
 
 static void SparseSegmentMeanGradHelper(int iters, float uniqueness, int size) {
   testing::StopTiming();

@@ -126,7 +126,300 @@ __global__ void UnsortedSegmentCustomKernel(const int64 input_outer_dim_size,
   }
 }
 
+template <typename T, typename Index>
+__global__ void SparseSegmentSumKernel(const int64 data_sparse_size,
+                                       const int64 output_total_size,
+                                       const int64 data_inner_dim,
+                                       const T* data,
+                                       const Index* indices,
+                                       const int32* seg_ids,
+                                       T* output) {
+
+  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+    const Index sparse_row = input_index / data_inner_dim;
+    const Index sparse_offset = input_index % data_inner_dim;
+    const Index data_row = indices[sparse_row];
+    const Index data_idx = data_row * data_inner_dim + sparse_offset;
+    const Index output_row = seg_ids[sparse_row];
+    const Index output_idx = output_row * data_inner_dim + sparse_offset;
+    if (output_idx < 0 || output_idx >= output_total_size) {
+      continue;
+    }
+    functor::SumOpGpu<T>()(output + output_idx, ldg(data + data_idx));
+  }
+}
+
+template <typename T, typename Index>
+__global__ void SparseSegmentGradKernel(const int64 data_sparse_size,
+                                        const int64 output_total_size,
+                                        const int64 data_inner_dim,
+                                        const T* data,
+                                        const int32* seg_ids,
+                                        const int32* seg_lens,
+                                        const Index* indices,
+                                        T* output, const bool is_sqrtn) {
+
+  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+    const Index sparse_row = input_index / data_inner_dim;
+    const Index sparse_offset = input_index % data_inner_dim;
+    const Index data_row = seg_ids[sparse_row];
+    const Index data_idx = data_row * data_inner_dim + sparse_offset;
+    const Index output_row = indices[sparse_row];
+    const Index output_idx = output_row * data_inner_dim + sparse_offset;
+    if (output_idx < 0 || output_idx >= output_total_size) {
+      continue;
+    }
+    const int32 seg_len = seg_lens[data_row];
+    T scale = seg_len > 1 ? T(1.0)/(is_sqrtn ? std::sqrt(T(seg_len)) : \
+        T(seg_len)) : T(1.0);
+    functor::SumOpGpu<T>()(output + output_idx, ldg(data + data_idx) * scale);
+  }
+}
+
+template <typename T, typename Index>
+__global__ void SparseSegmentLenSumKernel(const int64 num_ids,
+                                          const int64 output_row_size,
+                                          const Index* seg_ids,
+                                          T* seg_lens) {
+  for (int input_index : CudaGridRangeX(num_ids)) {
+    const Index output_idx = seg_ids[input_index];
+    if (output_idx < 0 || output_idx>=output_row_size) {
+      continue;
+    }
+    functor::SumOpGpu<T>()(seg_lens + output_idx, T(1));
+  }
+}
+
+template <typename T, typename Index>
+__global__ void SparseSegmentMeanKernel(const int64 output_total_size,
+                                        const int64 data_inner_dim,
+                                        T* output,
+                                        const T* seg_lens) {
+  for (int input_index : CudaGridRangeX(output_total_size)) {
+    const Index output_row = input_index / data_inner_dim;
+    T count = ldg(seg_lens + output_row);
+    output[input_index] /= (count > 0 ? count : 1);
+  }
+}
+
+template <typename T, typename Index>
+__global__ void SparseSegmentSqrtNKernel(const int64 output_total_size,
+                                         const int64 data_inner_dim,
+                                         T* output,
+                                         const T* seg_lens) {
+  for (int input_index : CudaGridRangeX(output_total_size)) {
+    const Index output_row = input_index / data_inner_dim;
+    T count = ldg(seg_lens + output_row);
+    output[input_index] /= std::sqrt(count > 0 ? count : 1);
+  }
+}
+
+template <typename T, typename Index>
+__global__ void SparseSegmentGradSqrtNKernel(const int64 data_sparse_size,
+                                             const int64 output_total_size,
+                                             const int64 data_inner_dim,
+                                             const T* seg_lens,
+                                             const int32* seg_ids,
+                                             const Index* indices,
+                                             T* output) {
+  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+    const Index sparse_row = input_index / data_inner_dim;
+    const Index sparse_offset = input_index % data_inner_dim;
+    const Index seg_idx = seg_ids[sparse_row];
+    const Index output_row = indices[sparse_row];
+    const Index output_idx = output_row * data_inner_dim + sparse_offset;
+    if (output_idx < 0 || output_idx >= output_total_size) {
+      continue;
+    }
+    T count = ldg(seg_lens + seg_idx);
+    output[output_idx] /= std::sqrt(count > 0 ? count : 1);
+  }
+}
+
+template <typename T, typename Index>
+__global__ void SparseSegmentGradMeanKernel(const int64 data_sparse_size,
+                                            const int64 output_total_size,
+                                            const int64 data_inner_dim,
+                                            const T* seg_lens,
+                                            const int32* seg_ids,
+                                            const Index* indices,
+                                            T* output) {
+  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+    const Index sparse_row = input_index / data_inner_dim;
+    const Index sparse_offset = input_index % data_inner_dim;
+    const Index seg_idx = seg_ids[sparse_row];
+    const Index output_row = indices[sparse_row];
+    const Index output_idx = output_row * data_inner_dim + sparse_offset;
+    if (output_idx < 0 || output_idx >= output_total_size) {
+      continue;
+    }
+    T count = ldg(seg_lens + seg_idx);
+    output[output_idx] /= (count > 0 ? count : 1);
+  }
+}
+
 namespace functor {
+
+template <typename T>
+void SetValueDefault<T>::operator()(OpKernelContext* ctx,
+                                    Tensor* target,
+                                    T default_val) {
+  const GPUDevice d = ctx->eigen_device<GPUDevice>();
+  CudaLaunchConfig config = GetCudaLaunchConfig(target->NumElements(), d);
+  SetToValue<<<config.block_count, config.thread_per_block,
+      0, d.stream()>>>(static_cast<int>(target->NumElements()),
+      target->flat<T>().data(), default_val);
+}
+
+template <typename Index>
+void FindMaxSegId<Index>::operator()(OpKernelContext* ctx,
+                                     const Tensor* seg_ids,
+                                     Index& max_id) {
+  AllocatorAttributes attr;
+  attr.set_on_host(true);
+  attr.set_gpu_compatible(true);
+  Tensor seg_ids_cpu;
+  ctx->allocate_temp(seg_ids->dtype(), TensorShape{seg_ids->NumElements()},
+                         &seg_ids_cpu, attr);
+  if (!ctx->status().ok()) {
+    return;
+  }
+  auto dst_vec = seg_ids_cpu.flat<Index>();
+  auto src_vec = seg_ids->flat<Index>();
+
+  // copy data
+  ctx->eigen_gpu_device().memcpy(dst_vec.data(),
+       src_vec.data(), seg_ids->NumElements()*sizeof(Index));
+  ctx->eigen_gpu_device().synchronize();
+  // find the max
+  max_id = *std::max_element(dst_vec.data(),
+                             dst_vec.data() + seg_ids->NumElements());
+}
+
+template <typename T, typename Index>
+void SparseSegmentReduceFunctor<T, Index>::operator()(OpKernelContext* ctx,
+                                                      const Tensor* input,
+                                                      const Tensor* indices,
+                                                      const Tensor* seg_ids,
+                                                      Tensor* output,
+                                                      const bool is_mean,
+                                                      const bool is_sqrtn) {
+  const int64 num_ids = indices->NumElements();
+  if (input->NumElements() == 0 || num_ids == 0) {
+    return;
+  }
+
+  Tensor seg_lens;
+  const auto data_flat = input->flat_outer_dims<T>();
+  const auto indices_flat = indices->flat<Index>();
+  const auto segment_flat = seg_ids->flat<int32>();
+  auto output_flat = output->flat<T>();
+
+  const int64 data_inner_dim = data_flat.dimension(1);
+  const int64 data_sparse_size = num_ids * data_inner_dim;
+  const int64 output_total_size = output->NumElements();
+  const int64 output_row_size = output_total_size/data_inner_dim;
+
+  const GPUDevice d = ctx->eigen_device<GPUDevice>();
+
+  // initialize output by default value
+  CudaLaunchConfig config = GetCudaLaunchConfig(output_total_size, d);
+  SetToValue<<<config.block_count, config.thread_per_block,
+      0, d.stream()>>>(static_cast<int>(output_total_size),
+      output_flat.data(), T(0.0));
+
+  config = GetCudaLaunchConfig(data_sparse_size, d);
+  // launch a kernel
+  SparseSegmentSumKernel<T, Index>
+      <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
+          data_sparse_size, output_total_size, data_inner_dim, data_flat.data(),
+          indices_flat.data(), segment_flat.data(), output_flat.data());
+
+  if (is_mean | is_sqrtn) {
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(output->dtype(),
+                        TensorShape({output_row_size}),
+                   &seg_lens));
+    auto segment_lens_flat = seg_lens.flat<T>();
+    config = GetCudaLaunchConfig(output_row_size, d);
+    SetZero<T><<<config.block_count, config.thread_per_block,
+      0, d.stream()>>>(static_cast<int>(output_row_size),
+      segment_lens_flat.data());
+    // launch a kernel to sum the seg_lens for each segment
+    config = GetCudaLaunchConfig(num_ids, d);
+    SparseSegmentLenSumKernel<T, int32>
+      <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
+          num_ids, output_row_size, segment_flat.data(),
+          segment_lens_flat.data());
+  }
+  // for mean
+  if (is_mean) {
+    auto segment_lens_flat = seg_lens.flat<T>();
+    config = GetCudaLaunchConfig(output_total_size, d);
+    SparseSegmentMeanKernel<T, Index>
+      <<<config.block_count, config.thread_per_block, 0, d.stream()>>>
+      (output_total_size, data_inner_dim, output_flat.data(),
+       segment_lens_flat.data());
+  } else if (is_sqrtn) {
+    auto segment_lens_flat = seg_lens.flat<T>();
+    config = GetCudaLaunchConfig(output_total_size, d);
+    SparseSegmentSqrtNKernel<T, Index>
+      <<<config.block_count, config.thread_per_block, 0, d.stream()>>>
+      (output_total_size, data_inner_dim, output_flat.data(),
+       segment_lens_flat.data());
+  }
+}
+
+template <typename T, typename Index>
+void SparseSegmentReduceGradFunctor<T, Index>::operator()(OpKernelContext* ctx,
+                                                          const Tensor* input,
+                                                          const Tensor* indices,
+                                                          const Tensor* seg_ids,
+                                                          Tensor* output,
+                                                          const bool is_sqrtn) {
+    typedef int32 SegmentId;
+    const SegmentId num_segments = input->dim_size(0);
+    const int64 N = indices->NumElements();
+    auto output_flat = output->flat_outer_dims<T>();
+    const int64 seg_lens_size = num_segments;
+    // place this on gpu
+    Tensor seg_lens;
+    // prepare counting
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT32,
+                        TensorShape({seg_lens_size}),
+                   &seg_lens));
+    auto segment_lens_flat = seg_lens.flat<int32>();
+    const int64 data_inner_dim = output_flat.dimension(1);
+    const int64 data_sparse_size = N * data_inner_dim;
+    const int64 output_total_size = output->NumElements();
+    const int64 output_row_size = output_total_size/data_inner_dim;
+    const GPUDevice d = ctx->eigen_device<GPUDevice>();
+    // initialize output by default value
+    CudaLaunchConfig config = GetCudaLaunchConfig(output_total_size, d);
+    SetToValue<<<config.block_count, config.thread_per_block,
+        0, d.stream()>>>(static_cast<int>(output_total_size),
+        output->flat<T>().data(), T(0.0));
+    // obtain seg_lens (counts)
+    config = GetCudaLaunchConfig(seg_lens_size, d);
+    SetZero<int32><<<config.block_count, config.thread_per_block,
+      0, d.stream()>>>(static_cast<int>(seg_lens_size),
+      segment_lens_flat.data());
+    // launch a kernel to sum the seg_lens for each segment
+    config = GetCudaLaunchConfig(N, d);
+    SparseSegmentLenSumKernel<int32, SegmentId>
+      <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
+          N, seg_lens_size, seg_ids->flat<SegmentId>().data(),
+          segment_lens_flat.data());
+    // launch a kernel to sum up values
+    config = GetCudaLaunchConfig(data_sparse_size, d);
+    SparseSegmentGradKernel<T, Index>
+        <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
+            data_sparse_size, output_total_size, data_inner_dim, 
+            input->flat<T>().data(),
+            seg_ids->flat<SegmentId>().data(), 
+            segment_lens_flat.data(),
+            indices->flat<Index>().data(), 
+            output->flat<T>().data(), is_sqrtn);
+}
 
 template <typename T, typename Index>
 void SegmentSumFunctor<T, Index>::operator()(
@@ -218,6 +511,31 @@ struct UnsortedSegmentFunctor<GPUDevice, T, Index, InitialValueF, ReductionF> {
 
 TF_CALL_GPU_NUMBER_TYPES(DEFINE_SORTED_GPU_SPECS);
 
+// for sparse gpu functors
+#define DEFINE_SPARSE_GPU_SPEC_REDUCE(T, Index) \
+  template struct SparseSegmentReduceFunctor<T, Index>
+
+#define DEFINE_SPARSE_GPU_SPEC_GRAD_REDUCE(T, Index) \
+  template struct SparseSegmentReduceGradFunctor<T, Index>
+
+#define DEFINE_SPARSE_GPU_SPEC_MAX_SEG_ID(Index) \
+  template struct FindMaxSegId<Index>;
+
+#define DEFINE_SPARSE_GPU_SPEC_SET_VAL(T) \
+  template struct SetValueDefault<T>;
+
+#define DEFINE_SPARSE_GPU_SPEC(T)         \
+  DEFINE_SPARSE_GPU_SPEC_REDUCE(T, int32); \
+  DEFINE_SPARSE_GPU_SPEC_GRAD_REDUCE(T, int32); \
+  DEFINE_SPARSE_GPU_SPEC_REDUCE(T, int64); \
+  DEFINE_SPARSE_GPU_SPEC_GRAD_REDUCE(T, int64);
+
+TF_CALL_float(DEFINE_SPARSE_GPU_SPEC)
+TF_CALL_double(DEFINE_SPARSE_GPU_SPEC)
+TF_CALL_int32(DEFINE_SPARSE_GPU_SPEC_MAX_SEG_ID)
+TF_CALL_float(DEFINE_SPARSE_GPU_SPEC_SET_VAL)
+TF_CALL_double(DEFINE_SPARSE_GPU_SPEC_SET_VAL)
+
 #define DEFINE_REAL_UNSORTED_GPU_SPECS_INDEX(T, Index)                         \
   template struct UnsortedSegmentFunctor<                                      \
       GPUDevice, T, Index, functor::Lowest<T>, functor::MaxOpGpu<T>>;          \
@@ -252,6 +570,10 @@ TF_CALL_complex128(DEFINE_SUM_GPU_SPECS);
 
 #undef DEFINE_SORTED_GPU_SPECS_INDEX
 #undef DEFINE_SORTED_GPU_SPECS
+#undef DEFINE_SPARSE_GPU_SPEC_REDUCE
+#undef DEFINE_SPARSE_GPU_SPEC_SET_VAL
+#undef DEFINE_SPARSE_GPU_SPEC_MAX_SEG_ID
+#undef DEFINE_SPARSE_GPU_SPEC
 #undef DEFINE_REAL_UNSORTED_GPU_SPECS_INDEX
 #undef DEFINE_SUM_UNSORTED_GPU_SPECS_INDEX
 #undef DEFINE_REAL_GPU_SPECS

@@ -905,6 +905,97 @@ class SparseSegmentReductionOpBase : public OpKernel {
   const T default_value_;
 };
 
+#if GOOGLE_CUDA
+template <class T, typename Index>
+class SparseSegmentReductionGpuOpBase : public OpKernel {
+ public:
+  explicit SparseSegmentReductionGpuOpBase(OpKernelConstruction* context,
+                                           bool is_mean, bool is_sqrtn,
+                                           bool has_num_segments,
+                                           T default_value)
+      : OpKernel(context),
+        is_mean_(is_mean),
+        is_sqrtn_(is_sqrtn),
+        has_num_segments_(has_num_segments),
+        default_value_(default_value) {}
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& input = context->input(0);
+    const Tensor& indices = context->input(1);
+    const Tensor& segment_ids = context->input(2);
+
+    int32 output_rows = -1;
+    if (has_num_segments_) {
+      const Tensor& num_segments = context->input(3);
+      OP_REQUIRES(
+          context, num_segments.shape().dims() == 0,
+          errors::InvalidArgument("num_segments should be a scalar, not shape ",
+                                  num_segments.shape().DebugString()));
+      output_rows = internal::SubtleMustCopy(num_segments.scalar<int32>()());
+      OP_REQUIRES(context, output_rows >= 0,
+                  errors::InvalidArgument("segment ids must be >= 0"));
+    }
+
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(indices.shape()),
+                errors::InvalidArgument("indices should be a vector."));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
+                errors::InvalidArgument("segment_ids should be a vector."));
+
+    const int64 num_indices = indices.NumElements();
+    OP_REQUIRES(context, num_indices == segment_ids.NumElements(),
+                errors::InvalidArgument(
+                    "segment_ids and indices should have same size."));
+
+    if (segment_ids.NumElements() == 0) {
+      TensorShape output_shape = input.shape();
+      functor::SetValueDefault<T> setval_functor_;
+      output_shape.set_dim(0, output_rows < 0 ? 0: output_rows);
+      Tensor* output = nullptr;
+      OP_REQUIRES_OK(context, context->allocate_output(
+        0, output_shape, &output));
+      if (output_rows > 0) {
+        setval_functor_(context, output, default_value_);
+      }
+      return;
+    }
+
+    typedef int32 OutputRow;
+    const auto segment_vec = segment_ids.vec<OutputRow>();
+    int32 max_id = 0;
+    functor::FindMaxSegId<OutputRow> find_max_seg_functor_;
+    find_max_seg_functor_(context, &segment_ids, max_id);
+
+    const OutputRow last_segment_id_plus_one = max_id + 1;
+
+    if (has_num_segments_) {
+      OP_REQUIRES(
+          context, output_rows >= last_segment_id_plus_one,
+          errors::InvalidArgument("segment ids must be < num_segments"));
+    } else {
+      output_rows = last_segment_id_plus_one;
+    }
+    OP_REQUIRES(context, output_rows >= 0,
+                errors::InvalidArgument("segment ids must be >= 0"));
+
+    TensorShape output_shape = input.shape();
+    output_shape.set_dim(0, output_rows);
+
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+    // set default value to output
+    functor::SparseSegmentReduceFunctor<T, Index> reduction_functor_;
+    reduction_functor_(context, &input, &indices,
+                       &segment_ids, output, is_mean_, is_sqrtn_);
+  }
+
+ private:
+  const bool is_mean_;
+  const bool is_sqrtn_;
+  const bool has_num_segments_;
+  const T default_value_;
+};
+#endif
+
 template <typename Device, class T>
 class SparseSegmentReductionMeanOp
     : public SparseSegmentReductionOpBase<Device, T> {
@@ -957,6 +1048,71 @@ class SparseSegmentReductionSumOp
             false /* has_num_segments */, T(0) /* default_value */) {}
 };
 
+#if GOOGLE_CUDA
+template <class T, typename Index>
+class SparseSegmentReductionSumGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSumGpuOp(OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, false /*is_sqrtn*/,
+            false /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionSumWithNumSegmentsGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSumWithNumSegmentsGpuOp(
+    OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, false /*is_sqrtn*/,
+            true /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionMeanGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionMeanGpuOp(OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, true /*is_mean*/, false /*is_sqrtn*/,
+            false /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionMeanWithNumSegmentsGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionMeanWithNumSegmentsGpuOp(
+    OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, true /*is_mean*/, false /*is_sqrtn*/,
+            true /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionSqrtNGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSqrtNGpuOp(OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, true /*is_sqrtn*/,
+            false /* has_num_segments */, T(0) /* default_value */) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentReductionSqrtNWithNumSegmentsGpuOp
+    : public SparseSegmentReductionGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentReductionSqrtNWithNumSegmentsGpuOp(
+    OpKernelConstruction* context)
+      : SparseSegmentReductionGpuOpBase<T, Index>(
+            context, false /*is_mean*/, true /*is_sqrtn*/,
+            true /* has_num_segments */, T(0) /* default_value */) {}
+};
+#endif
+
 template <typename Device, class T>
 class SparseSegmentReductionSumWithNumSegmentsOp
     : public SparseSegmentReductionOpBase<Device, T> {
@@ -967,6 +1123,49 @@ class SparseSegmentReductionSumWithNumSegmentsOp
             context, false /*is_mean*/, false /*is_sqrtn*/,
             true /* has_num_segments */, T(0) /* default_value */) {}
 };
+
+#if GOOGLE_CUDA
+#define REGISTER_GPU_SPARSE_KERNELS(type, index_type)                    \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSum")                       \
+                              .Device(DEVICE_GPU)                        \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentReductionSumGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSumWithNumSegments")        \
+        .Device(DEVICE_GPU)                                              \
+        .HostMemory("num_segments")                                      \
+        .TypeConstraint<type>("T")                                       \
+        .TypeConstraint<index_type>("Tidx"),                             \
+    SparseSegmentReductionSumWithNumSegmentsGpuOp<type, index_type>);    \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentMean")                      \
+                              .Device(DEVICE_GPU)                        \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentReductionMeanGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentMeanWithNumSegments")        \
+        .Device(DEVICE_GPU)                                              \
+        .HostMemory("num_segments")                                      \
+        .TypeConstraint<type>("T")                                       \
+        .TypeConstraint<index_type>("Tidx"),                             \
+    SparseSegmentReductionMeanWithNumSegmentsGpuOp<type, index_type>);   \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtN")                     \
+                              .Device(DEVICE_GPU)                        \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentReductionSqrtNGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtNWithNumSegments")      \
+        .Device(DEVICE_GPU)                                              \
+        .HostMemory("num_segments")                                      \
+        .TypeConstraint<type>("T")                                       \
+        .TypeConstraint<index_type>("Tidx"),                             \
+    SparseSegmentReductionSqrtNWithNumSegmentsGpuOp<type, index_type>);
+
+REGISTER_GPU_SPARSE_KERNELS(float, int64)
+REGISTER_GPU_SPARSE_KERNELS(float, int32)
+REGISTER_GPU_SPARSE_KERNELS(double, int32)
+REGISTER_GPU_SPARSE_KERNELS(double, int64)
+#undef REGISTER_GPU_SPARSE_KERNELS
+#endif
 
 /* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_CPU_SPARSE_KERNELS(type)                                \
@@ -1136,6 +1335,85 @@ class SparseSegmentSqrtNGradOp : public SparseSegmentGradOpBase<T> {
   explicit SparseSegmentSqrtNGradOp(OpKernelConstruction* context)
       : SparseSegmentGradOpBase<T>(context, true /*is_sqrtn*/) {}
 };
+
+#if GOOGLE_CUDA
+template <class T, typename Index>
+class SparseSegmentGradGpuOpBase : public OpKernel {
+ public:
+  explicit SparseSegmentGradGpuOpBase(OpKernelConstruction* context,
+                                      bool is_sqrtn)
+      : OpKernel(context), is_sqrtn_(is_sqrtn) {}
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& input = context->input(0);
+    const Tensor& indices = context->input(1);
+    const Tensor& segment_ids = context->input(2);
+    const Tensor& output_dim0 = context->input(3);
+
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(indices.shape()),
+                errors::InvalidArgument("indices should be a vector."));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
+                errors::InvalidArgument("segment_ids should be a vector."));
+    OP_REQUIRES(context, IsLegacyScalar(output_dim0.shape()),
+                errors::InvalidArgument("output_dim0 should be a scalar."));
+
+    const int64 N = indices.NumElements();
+    OP_REQUIRES(context, N == segment_ids.NumElements(),
+                errors::InvalidArgument(
+                    "segment_ids and indices should have same size."));
+    typedef int32 SegmentId;
+    SegmentId M = internal::SubtleMustCopy(output_dim0.scalar<SegmentId>()());
+    // allocate output tensor
+    Tensor* output = nullptr;
+    TensorShape output_shape = input.shape();
+    output_shape.set_dim(0, M);
+    OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+    if (M == 0 || N == 0) return;
+    // invoke gpu functors
+    functor::SparseSegmentReduceGradFunctor<T, Index> reduction_grad_functor_;
+    reduction_grad_functor_(context, &input, &indices,
+                            &segment_ids, output, is_sqrtn_);
+  }
+
+ private:
+  const bool is_sqrtn_;
+};
+
+template <class T, typename Index>
+class SparseSegmentMeanGradGpuOp : 
+  public SparseSegmentGradGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentMeanGradGpuOp(OpKernelConstruction* context)
+      : SparseSegmentGradGpuOpBase<T, Index>(context, false /*is_sqrtn*/) {}
+};
+
+template <class T, typename Index>
+class SparseSegmentSqrtNGradGpuOp : 
+  public SparseSegmentGradGpuOpBase<T, Index> {
+ public:
+  explicit SparseSegmentSqrtNGradGpuOp(OpKernelConstruction* context)
+      : SparseSegmentGradGpuOpBase<T, Index>(context, true /*is_sqrtn*/) {}
+};
+
+#define REGISTER_GPU_SPARSE_KERNELS(type, index_type)                    \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentMeanGrad")                  \
+                              .Device(DEVICE_GPU)                        \
+                              .HostMemory("output_dim0")                 \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentMeanGradGpuOp<type, index_type>); \
+  REGISTER_KERNEL_BUILDER(Name("SparseSegmentSqrtNGrad")                 \
+                              .Device(DEVICE_GPU)                        \
+                              .HostMemory("output_dim0")                 \
+                              .TypeConstraint<type>("T")                 \
+                              .TypeConstraint<index_type>("Tidx"),       \
+                          SparseSegmentSqrtNGradGpuOp<type, index_type>);
+REGISTER_GPU_SPARSE_KERNELS(float, int32)
+REGISTER_GPU_SPARSE_KERNELS(float, int64)
+REGISTER_GPU_SPARSE_KERNELS(double, int32)
+REGISTER_GPU_SPARSE_KERNELS(double, int64)
+#undef REGISTER_GPU_SPARSE_KERNELS
+#endif
 
 /* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
 #define REGISTER_CPU_SPARSE_KERNELS(type)                     \
