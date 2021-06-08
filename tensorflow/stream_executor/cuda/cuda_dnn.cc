@@ -677,28 +677,57 @@ bool RnnTensorOpMathEnabled() {
   return is_enabled;
 }
 
-// A helper function to fetch the engine filter string from
-// TF_CUDNN_ENGINE_FILTER in convolution. Three types of convolution are
-// supported: ConvFwd, ConvBwdData, and ConvBwdFilter. For valid filter string,
-// we need to use the convolution type as the prefix and then specify engine
-// indices. For example:
-// (1) To exclude the forward convolution engine 1 and 4: "ConvFwd_eng(1|4)";
-// (2) To exclude all dgrad engine 1 and wgrad engine 3 and 4:
-// "ConvBwdData_eng1|ConvBwdFilter_eng(3|4)" 
+// The errata sheet (JSON format) for marking the cudnn engines that might be
+// buggy. Users can also specify an additional errata JSON file via
+// CUDNN_ERRATA_JSON_FILE at runtime.
 std::string CudnnExecutionPlanEngineFilter() {
-  static std::string filter_str = [] {
-    std::string str = "";
-    TF_CHECK_OK(tensorflow::ReadStringFromEnvVar(
-                    "TF_CUDNN_ENGINE_FILTER", "", &str));
-    // TODO(kaixih@nvidia): nvbugs/3270255 and nvbugs/3193140.
-    std::string default_str =
-        "(ConvFwd_eng(32|33)|ConvBwdFilter_eng(6|14)|ConvBwdData_eng(10|11))";
-    if (str != "") {
-      return absl::StrCat(default_str, "|(", str, ")");
-    } else {
-      return default_str;
-    }
-  }();
+  static std::string filter_str = R"(
+      { "version" : 1,
+        "rules"   : [
+          { "rule_id"             : "ConvFwd_eng32",
+            "operation"           : "ConvFwd",
+            "engine"              : 32,
+            "knob"                : [],
+            "cudnn_version_start" : 8000,
+            "cudnn_version_end"   : -1
+          },
+          { "rule_id"             : "ConvFwd_eng33",
+            "operation"           : "ConvFwd",
+            "engine"              : 33,
+            "knob"                : [],
+            "cudnn_version_start" : 8000,
+            "cudnn_version_end"   : -1
+          },
+          { "rule_id"             : "ConvBwdFilter_eng6",
+            "operation"           : "ConvBwdFilter",
+            "engine"              : 6,
+            "knob"                : [],
+            "cudnn_version_start" : 8000,
+            "cudnn_version_end"   : -1
+          },
+          { "rule_id"             : "ConvBwdFilter_eng14",
+            "operation"           : "ConvBwdFilter",
+            "engine"              : 14,
+            "knob"                : [],
+            "cudnn_version_start" : 8000,
+            "cudnn_version_end"   : -1
+          },
+          { "rule_id"             : "ConvBwdData_eng10",
+            "operation"           : "ConvBwdData",
+            "engine"              : 10,
+            "knob"                : [],
+            "cudnn_version_start" : 8000,
+            "cudnn_version_end"   : -1
+          },
+          { "rule_id"             : "ConvBwdData_eng11",
+            "operation"           : "ConvBwdData",
+            "engine"              : 11,
+            "knob"                : [],
+            "cudnn_version_start" : 8000,
+            "cudnn_version_end"   : -1
+          }
+        ]
+      })";
 
   return filter_str;
 }
@@ -4567,7 +4596,11 @@ bool CudnnSupport::GetConvolveExecutionPlans(
 
   out_exec_plans->clear();
 
-  std::string filter_str = CudnnExecutionPlanEngineFilter();
+  auto fn = []() { return true; };
+  json json_handle = json::parse(CudnnExecutionPlanEngineFilter());
+  json json_handle_runtime;
+  bool use_runtime_errata = cudnn_frontend::load_from_config(
+                                json_handle_runtime, "");
 
   auto limits = CudnnExecutionPlanEngineMaxLimits();
   if (limits.limit_total()) {
@@ -4590,13 +4623,15 @@ bool CudnnSupport::GetConvolveExecutionPlans(
                     .setEngineConfig(filtered_configs[i])
                     .build();
     if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
-      if (filter_str != "") {
-        std::smatch m;
-        std::regex pattern(absl::StrCat("(", filter_str, ")($|_)"));
-        if (std::regex_search(plan.getTag(), m, pattern)) {
-          VLOG(4) << "Exclude engine: " << plan.getTag();
-          continue;
-        }
+      if (cudnn_frontend::check_errata(json_handle, plan.getTag(),
+                                       cudnn.handle(), fn)) {
+        VLOG(4) << "Exclude engine (static): " << plan.getTag();
+        continue;
+      } else if (use_runtime_errata &&
+                 cudnn_frontend::check_errata(
+                     json_handle_runtime, plan.getTag(), cudnn.handle(), fn)) {
+        VLOG(4) << "Exclude engine (dynamic): " << plan.getTag();
+        continue;
       }
 
       if (i < num_engines_heuristics) {
@@ -4689,7 +4724,11 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
 
   out_exec_plans->clear();
   
-  std::string filter_str = CudnnExecutionPlanEngineFilter();
+  auto fn = []() { return true; };
+  json json_handle = json::parse(CudnnExecutionPlanEngineFilter());
+  json json_handle_runtime;
+  bool use_runtime_errata = cudnn_frontend::load_from_config(
+                                json_handle_runtime, "");
 
   auto limits = CudnnExecutionPlanEngineMaxLimits();
   if (limits.limit_total()) {
@@ -4712,13 +4751,15 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
                     .setEngineConfig(filtered_configs[i], op_graph->getTag())
                     .build();
     if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
-      if (filter_str != "") {
-        std::smatch m;
-        std::regex pattern(absl::StrCat("(", filter_str, ")($|_)"));
-        if (std::regex_search(plan.getTag(), m, pattern)) {
-          VLOG(4) << "Exclude engine: " << plan.getTag();
-          continue;
-        }
+      if (cudnn_frontend::check_errata(json_handle, plan.getTag(),
+                                       cudnn.handle(), fn)) {
+        VLOG(4) << "Exclude engine (static): " << plan.getTag();
+        continue;
+      } else if (use_runtime_errata &&
+                 cudnn_frontend::check_errata(
+                     json_handle_runtime, plan.getTag(), cudnn.handle(), fn)) {
+        VLOG(4) << "Exclude engine (dynamic): " << plan.getTag();
+        continue;
       }
 
       if (i < num_engines_heuristics) {
