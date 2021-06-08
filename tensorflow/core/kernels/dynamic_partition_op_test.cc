@@ -45,13 +45,14 @@ class DynamicPartitionOpTest : public OpsTestBase {
                      .Input(FakeInput(DT_INT32))
                      .Attr("num_partitions", 4)
                      .Finalize(node_def()));
-    TF_ASSERT_OK(InitOp());
+    // TF_ASSERT_OK(InitOp());
   }
 };
 
 TEST_F(DynamicPartitionOpTest, Simple_OneD) {
   MakeOp();
 
+  TF_ASSERT_OK(InitOp());
   // Similar to how we would use this to split embedding ids to be looked up
 
   // Feed and run
@@ -82,9 +83,56 @@ TEST_F(DynamicPartitionOpTest, Simple_OneD) {
   }
 }
 
+TEST_F(DynamicPartitionOpTest, gpu_Simple_OneD) {
+  MakeOp();
+  // adding this line within the TEST_F() function
+  SetDevice(DEVICE_GPU,
+               std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
+                   "GPU", {}, "/job:a/replica:0/task:0")));
+
+  TF_ASSERT_OK(InitOp());
+  // Similar to how we would use this to split embedding ids to be looked up
+
+  // Feed and run
+  AddInputFromArray<float>(TensorShape({6}), {0, 13, 2, 39, 4, 17});
+  AddInputFromArray<int32>(TensorShape({6}), {0, 0, 2, 3, 2, 1});
+  TF_ASSERT_OK(RunOpKernel());
+
+  // Check the output sizes
+  {  // Output 0
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({2}));
+    test::FillValues<float>(&expected, {0, 13});
+    Tensor* result_ptr = GetOutput(0);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 1
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({1}));
+    test::FillValues<float>(&expected, {17});
+    Tensor* result_ptr = GetOutput(1);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 2
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({2}));
+    test::FillValues<float>(&expected, {2, 4});
+    Tensor* result_ptr = GetOutput(2);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 3
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({1}));
+    test::FillValues<float>(&expected, {39});
+    Tensor* result_ptr = GetOutput(3);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+}
+
 TEST_F(DynamicPartitionOpTest, Simple_TwoD) {
   MakeOp();
 
+  TF_ASSERT_OK(InitOp());
   // Feed and run
   AddInputFromArray<float>(
       TensorShape({6, 3}),
@@ -115,9 +163,56 @@ TEST_F(DynamicPartitionOpTest, Simple_TwoD) {
   }
 }
 
+TEST_F(DynamicPartitionOpTest, gpu_Simple_TwoD) {
+  MakeOp();
+  // adding this line within the TEST_F() function
+  SetDevice(DEVICE_GPU,
+               std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
+                   "GPU", {}, "/job:a/replica:0/task:0")));
+
+  TF_ASSERT_OK(InitOp());
+  // Feed and run
+  AddInputFromArray<float>(
+      TensorShape({6, 3}),
+      {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17});
+  AddInputFromArray<int32>(TensorShape({6}), {0, 0, 2, 3, 2, 1});
+  TF_ASSERT_OK(RunOpKernel());
+
+  // Check the output sizes
+  {  // Output 0
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({2, 3}));
+    test::FillValues<float>(&expected, {0, 1, 2, 3, 4, 5});
+    Tensor* result_ptr = GetOutput(0);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 1
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({1, 3}));
+    test::FillValues<float>(&expected, {15, 16, 17});
+    Tensor* result_ptr = GetOutput(1);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 2
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({2, 3}));
+    test::FillValues<float>(&expected, {6, 7, 8, 12, 13, 14});
+    Tensor* result_ptr = GetOutput(2);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 3
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({1, 3}));
+    test::FillValues<float>(&expected, {9, 10, 11});
+    Tensor* result_ptr = GetOutput(3);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+}
+
 TEST_F(DynamicPartitionOpTest, SomeOutputsEmpty) {
   MakeOp();
 
+  TF_ASSERT_OK(InitOp());
   // Feed and run
   AddInputFromArray<float>(TensorShape({6}), {0, 13, 2, 39, 4, 17});
   AddInputFromArray<int32>(TensorShape({6}), {0, 0, 2, 2, 0, 2});
@@ -146,9 +241,54 @@ TEST_F(DynamicPartitionOpTest, SomeOutputsEmpty) {
   }
 }
 
+TEST_F(DynamicPartitionOpTest, gpu_SomeOutputsEmpty) {
+  MakeOp();
+  // adding this line within the TEST_F() function
+  SetDevice(DEVICE_GPU,
+               std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
+                   "GPU", {}, "/job:a/replica:0/task:0")));
+
+  TF_ASSERT_OK(InitOp());
+  // Feed and run
+  AddInputFromArray<float>(TensorShape({6}), {0, 13, 2, 39, 4, 17});
+  AddInputFromArray<int32>(TensorShape({6}), {0, 0, 2, 2, 0, 2});
+  TF_ASSERT_OK(RunOpKernel());
+
+  TensorShape empty_one_dim;
+  empty_one_dim.AddDim(0);
+  Tensor expected_empty(allocator(), DT_FLOAT, empty_one_dim);
+
+  // Check the output sizes
+  {  // Output 0
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({3}));
+    test::FillValues<float>(&expected, {0, 13, 4});
+    Tensor* result_ptr = GetOutput(0);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 1
+    Tensor* result_ptr = GetOutput(1);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected_empty, *result_ptr);
+  }
+  {  // Output 2
+    Tensor expected(allocator(), DT_FLOAT, TensorShape({3}));
+    test::FillValues<float>(&expected, {2, 39, 17});
+    Tensor* result_ptr = GetOutput(2);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected, *result_ptr);
+  }
+  {  // Output 3
+    Tensor* result_ptr = GetOutput(3);
+    TF_EXPECT_OK(device_->Sync());
+    test::ExpectTensorEqual<float>(expected_empty, *result_ptr);
+  }
+}
+
 TEST_F(DynamicPartitionOpTest, Error_IndexOutOfRange) {
   MakeOp();
 
+  TF_ASSERT_OK(InitOp());
   // Feed and run
   AddInputFromArray<float>(TensorShape({5, 3}),
                            {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14});
@@ -187,7 +327,7 @@ static Graph* DynamicPartition(int num_partitions, int dim) {
                        test::graph::Constant(g, partitions), num_partitions);
   return g;
 }
-
+ 
 #define BM_DYNAMIC_PARTITION(DEVICE, T, num)                            \
   static void BM_##DEVICE##_dynpart_##T##_##num(int iters, int dim) {   \
     const int64 items = ((128 << 20) / sizeof(T));                      \
@@ -198,19 +338,19 @@ static Graph* DynamicPartition(int num_partitions, int dim) {
   }                                                                     \
   BENCHMARK(BM_##DEVICE##_dynpart_##T##_##num)->Arg(1)->Arg(256)
 
-BM_DYNAMIC_PARTITION(cpu, float, 2);
-BM_DYNAMIC_PARTITION(cpu, float, 100);
-BM_DYNAMIC_PARTITION(cpu, double, 2);
-BM_DYNAMIC_PARTITION(cpu, double, 100);
-BM_DYNAMIC_PARTITION(cpu, complex64, 2);
-BM_DYNAMIC_PARTITION(cpu, complex64, 100);
+// BM_DYNAMIC_PARTITION(cpu, float, 2);
+// BM_DYNAMIC_PARTITION(cpu, float, 100);
+// BM_DYNAMIC_PARTITION(cpu, double, 2);
+// BM_DYNAMIC_PARTITION(cpu, double, 100);
+// BM_DYNAMIC_PARTITION(cpu, complex64, 2);
+// BM_DYNAMIC_PARTITION(cpu, complex64, 100);
 
 BM_DYNAMIC_PARTITION(gpu, float, 2);
-BM_DYNAMIC_PARTITION(gpu, float, 100);
-BM_DYNAMIC_PARTITION(gpu, double, 2);
-BM_DYNAMIC_PARTITION(gpu, double, 100);
-BM_DYNAMIC_PARTITION(gpu, complex64, 2);
-BM_DYNAMIC_PARTITION(gpu, complex64, 100);
+// BM_DYNAMIC_PARTITION(gpu, float, 100);
+// BM_DYNAMIC_PARTITION(gpu, double, 2);
+// BM_DYNAMIC_PARTITION(gpu, double, 100);
+// BM_DYNAMIC_PARTITION(gpu, complex64, 2);
+// BM_DYNAMIC_PARTITION(gpu, complex64, 100);
 
 }  // namespace
 }  // namespace tensorflow

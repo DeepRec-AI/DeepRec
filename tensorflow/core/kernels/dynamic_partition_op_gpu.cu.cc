@@ -307,27 +307,17 @@ class DynamicPartitionOpGPU : public AsyncOpKernel {
         c, status,
         errors::Internal("Failed to launch copy from device to host."), done);
 
-    // Keep a reference to partition_count so that the buffer
-    // is not deallocated at the end of the function, before
-    // memcpy is completed.
-    TensorReference partition_ref(partition_count);
-    auto wrapped_callback = [this, c, &data, &partitions, indices_out,
-                             partition_ref, cpu_tensor, done]() {
-      OpOutputList outputs;
-      this->AllocateOutputs(c, &data, &partitions, &cpu_tensor, &outputs, done);
-      if (!c->status().ok()) {
-        partition_ref.Unref();
-        return;
-      }
-      int32 N = partitions.NumElements();
-      int64 slice_size = data.NumElements() / N;
-      this->GatherSlices(c, &data, &indices_out, N, slice_size, outputs);
-      partition_ref.Unref();
-      done();
-    };
+    cudaDeviceSynchronize();
 
-    c->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
-        stream, wrapped_callback);
+    OpOutputList outputs;
+    this->AllocateOutputs(c, &data, &partitions, &cpu_tensor, &outputs, done);
+    if (!c->status().ok()) {
+        return;
+    }
+    int32 N = partitions.NumElements();
+    int64 slice_size = data.NumElements() / N;
+    this->GatherSlices(c, &data, &indices_out, N, slice_size, outputs);
+    done();
   }
 
  protected:
@@ -480,6 +470,8 @@ class DynamicPartitionOpGPU : public AsyncOpKernel {
 TF_CALL_GPU_NUMBER_TYPES(REGISTER_DYNAMIC_PARTITION_GPU);
 TF_CALL_complex64(REGISTER_DYNAMIC_PARTITION_GPU);
 TF_CALL_complex128(REGISTER_DYNAMIC_PARTITION_GPU);
+TF_CALL_int32(REGISTER_DYNAMIC_PARTITION_GPU);
+TF_CALL_int64(REGISTER_DYNAMIC_PARTITION_GPU);
 #undef REGISTER_DYNAMIC_PARTITION_GPU
 
 }  // namespace tensorflow

@@ -2600,6 +2600,7 @@ tf_cuda_cc_tests(
     ],
     deps = [
         ":data_flow",
+        ":host_constant_op",
         ":ops_testutil",
         ":ops_util",
         "//tensorflow/core:core_cpu",
