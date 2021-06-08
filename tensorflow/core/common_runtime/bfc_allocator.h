@@ -265,6 +265,10 @@ class BFCAllocator : public Allocator {
     void set_handle(const void* p, ChunkHandle h) { handles_[IndexFor(p)] = h; }
     void erase(const void* p) { set_handle(p, kInvalidChunkHandle); }
 
+    bool is_single_chunk(size_t chunk_size) const {
+        return memory_size_ == chunk_size;
+    }
+
    private:
     void Swap(AllocationRegion* other) {
       std::swap(ptr_, other->ptr_);
@@ -516,6 +520,10 @@ class BFCAllocator : public Allocator {
   AllocatorStats stats_ GUARDED_BY(lock_);
 
   friend class GPUBFCAllocatorPrivateMethodsTest;
+  // Declare the GPUAdjustableAllocator to be friend of the BFCAllocator,
+  // therefore it can adjust the memory limit by modifying the private
+  // member variables of BFCAllocator.
+  friend class GPUAdjustableAllocator;
   TF_DISALLOW_COPY_AND_ASSIGN(BFCAllocator);
 };
 

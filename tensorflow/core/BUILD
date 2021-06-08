@@ -3501,6 +3501,7 @@ cc_library(
 )
 
 GPU_RUNTIME_HEADERS = [
+    "common_runtime/gpu/gpu_adjustable_allocator.h",
     "common_runtime/gpu/gpu_bfc_allocator.h",
     "common_runtime/gpu/gpu_cudamalloc_allocator.h",
     "common_runtime/gpu/gpu_cudamallocasync_allocator.h",
@@ -3523,6 +3524,7 @@ GPU_RUNTIME_HEADERS = [
 tf_cuda_library(
     name = "gpu_runtime_impl",
     srcs = [
+        "common_runtime/gpu/gpu_adjustable_allocator.cc",
         "common_runtime/gpu/gpu_cudamalloc_allocator.cc",
         "common_runtime/gpu/gpu_cudamallocasync_allocator.cc",
         "common_runtime/gpu/gpu_debug_allocator.cc",
@@ -4479,6 +4481,7 @@ tf_cc_tests_gpu(
     name = "gpu_related_tests",
     size = "small",
     srcs = glob(["user_ops/**/*_test.cc"]) + [
+        "common_runtime/gpu/gpu_adjustable_allocator_test.cc",
         "common_runtime/gpu/gpu_bfc_allocator_test.cc",
         "common_runtime/gpu/gpu_device_test.cc",
         "common_runtime/gpu/gpu_id_manager_test.cc",
