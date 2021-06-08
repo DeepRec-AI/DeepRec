@@ -27,6 +27,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/gpu/gpu_id_manager.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_id_utils.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_init.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_vmem_allocator.h"
 #include "tensorflow/core/common_runtime/pool_allocator.h"
 #include "tensorflow/core/common_runtime/shared_counter.h"
 #include "tensorflow/core/framework/allocator.h"
@@ -113,8 +114,10 @@ Allocator* GPUProcessState::GetGPUAllocator(const GPUOptions& options,
     while (bus_id >= gpu_visitors_.size()) {
       gpu_visitors_.push_back({});
     }
+    se::StreamExecutor* stream_exec =
+        GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
     GPUMemAllocator* sub_allocator = new GPUMemAllocator(
-        GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie(),
+        stream_exec,
         platform_gpu_id,
         (options.per_process_gpu_memory_fraction() > 1.0 ||
          options.experimental().use_unified_memory()),
@@ -123,6 +126,13 @@ Allocator* GPUProcessState::GetGPUAllocator(const GPUOptions& options,
         new GPUBFCAllocator(sub_allocator, total_bytes, options,
                             strings::StrCat("GPU_", tf_gpu_id.value(), "_bfc"));
     Allocator* gpu_allocator = gpu_bfc_allocator;
+    // GPUVMemAllocator will allocate host memory as backup after running out of
+    // gpu device memory to avoid OOM failures
+    gpu_allocator = maybe_create_gpu_vmem_allocator(gpu_allocator,
+                                                        bus_id,
+                                                        platform_gpu_id,
+                                                        tf_gpu_id.value(),
+                                                        stream_exec);
     SharedCounter* timing_counter = nullptr;
     if (options.experimental().timestamped_allocator()) {
       timing_counter = new SharedCounter;

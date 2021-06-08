@@ -3516,6 +3516,7 @@ GPU_RUNTIME_HEADERS = [
     "common_runtime/gpu/gpu_process_state.h",
     "common_runtime/gpu/gpu_stream_util.h",
     "common_runtime/gpu/gpu_util.h",
+    "common_runtime/gpu/gpu_vmem_allocator.h",
     "common_runtime/gpu_device_context.h",
 ]
 
@@ -3531,6 +3532,7 @@ tf_cuda_library(
         "common_runtime/gpu/gpu_process_state.cc",
         "common_runtime/gpu/gpu_stream_util.cc",
         "common_runtime/gpu/gpu_util.cc",
+        "common_runtime/gpu/gpu_vmem_allocator.cc",
         "common_runtime/gpu/gpu_util_platform_specific.cc",
     ],
     hdrs = GPU_RUNTIME_HEADERS,
@@ -4480,6 +4482,7 @@ tf_cc_tests_gpu(
         "common_runtime/gpu/gpu_bfc_allocator_test.cc",
         "common_runtime/gpu/gpu_device_test.cc",
         "common_runtime/gpu/gpu_id_manager_test.cc",
+        "common_runtime/gpu/gpu_vmem_allocator_test.cc",
         "common_runtime/gpu/pool_allocator_test.cc",
     ],
     linkstatic = tf_kernel_tests_linkstatic(),
