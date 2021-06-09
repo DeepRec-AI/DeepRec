@@ -828,7 +828,7 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
   //
   // If the available_memory is < 2GiB, we allocate 225MiB to system memory.
   // Otherwise, depending on the capability version assign
-  //  575MiB (for cuda_compute_capability <= 6.x) or
+  //  675MiB (for cuda_compute_capability <= 6.x) or
   // 1064MiB (for cuda_compute_capability <= 7.x) or
   // 1600MiB (for cuda_compute_capability >= 8.x)
   //
@@ -838,7 +838,7 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
     min_system_memory = 225 * 1024 * 1024;
   } else {
     if (cc_major <= 6) {
-      min_system_memory = 575 * 1024 * 1024;
+      min_system_memory = 675 * 1024 * 1024;
     } else if (cc_major <= 7) {
       min_system_memory = 1064 * 1024 * 1024;
     } else {
