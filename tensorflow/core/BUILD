@@ -386,7 +386,7 @@ filegroup(
 cc_library(
     name = "platform_port",
     srcs = [
-        "//tensorflow/core/platform:cpu_info.cc",
+        "//tensorflow/core/platform:cpu_info",
         "//tensorflow/core/platform:legacy_platform_port_srcs",
     ],
     hdrs = [
@@ -889,6 +889,7 @@ tf_cuda_library(
         "framework/ops_util.h",
         "framework/partial_tensor_shape.h",
         "framework/queue_interface.h",
+        "framework/reader_base.h",
         "framework/reader_interface.h",
         "framework/reader_op_kernel.h",
         "framework/register_types.h",

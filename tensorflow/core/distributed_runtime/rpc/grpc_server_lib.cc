@@ -61,7 +61,7 @@ namespace {
 class NoReusePortOption : public ::grpc::ServerBuilderOption {
  public:
   void UpdateArguments(::grpc::ChannelArguments* args) override {
-    args->SetInt(GRPC_ARG_ALLOW_REUSEPORT, 0);
+    args->SetInt(GRPC_ARG_ALLOW_REUSEPORT, 1);
   }
 
   void UpdatePlugins(std::vector<std::unique_ptr<::grpc::ServerBuilderPlugin>>*

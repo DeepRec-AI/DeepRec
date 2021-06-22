@@ -124,6 +124,7 @@ def get_logger():
       _handler.setFormatter(_logging.Formatter(_logging.BASIC_FORMAT, None))
       logger.addHandler(_handler)
 
+    logger.propagate = False
     _logger = logger
     return _logger
 
