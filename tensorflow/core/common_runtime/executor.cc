@@ -173,6 +173,9 @@ struct NodeItem {
   bool is_enter_exit_or_next_iter : 1;
   bool is_run_graph_op;          // True iff IsRunGraph(node)
 
+  // If the kernel is a Const op, this containts points to the constant tensor.
+  const Tensor* const_tensor = nullptr;
+
   // Cached values of node->num_inputs() and node->num_outputs(), to
   // avoid levels of indirection.
   int num_inputs;
@@ -649,6 +652,7 @@ Status ExecutorImpl::Initialize() {
     item->kernel_is_async = (item->kernel->AsAsync() != nullptr);
     item->is_merge = IsMerge(n);
     item->is_enter = IsEnter(n);
+    item->const_tensor = item->kernel->const_tensor();
     if (item->is_enter) {
       bool is_constant_enter;
       TF_RETURN_IF_ERROR(
@@ -1863,6 +1867,17 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
           // 'ScopedAnnotation' will trace the OpKernel execution time.
           tracing::ScopedAnnotation annotation(kernel_label);
           device->Compute(op_kernel, &ctx);
+
+          nodestats::SetOpEnd(stats);
+          s = ProcessOutputs(item, &ctx, &outputs, stats);
+        } else if (item.const_tensor != nullptr && !ctx.track_allocations()) {
+          // Special case for ConstantOp, which is very common.
+          nodestats::SetOpEnd(stats);
+          outputs.resize(1);
+          outputs[0].has_value = true;
+          outputs[0].val_field_is_set = true;
+          outputs[0].alloc_attr = ctx.output_alloc_attr(0);
+          outputs[0].val.Init(*item.const_tensor);
         } else {
           // In the common case, avoid creating any tracing objects.
           if (op_kernel->IsExpensive()) {
@@ -1872,10 +1887,11 @@ void ExecutorState::Process(TaggedNode tagged_node, int64 scheduled_nsec) {
           } else {
             device->Compute(op_kernel, &ctx);
           }
+
+          nodestats::SetOpEnd(stats);
+          s = ProcessOutputs(item, &ctx, &outputs, stats);
         }
 
-        nodestats::SetOpEnd(stats);
-        s = ProcessOutputs(item, &ctx, &outputs, stats);
         if (s.ok() && impl_->device_record_tensor_accesses_) {
           // Get the list of all tensors accessed during the execution
           ctx.retrieve_accessed_tensors(&accessed_tensors);
