@@ -37,6 +37,10 @@ tf_module {
     argspec: "args=[\'x\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "ActivateSparseRecorder"
+    argspec: "args=[\'tensor_names\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "Add"
     argspec: "args=[\'x\', \'y\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -129,11 +133,19 @@ tf_module {
     argspec: "args=[\'var\', \'gradient_accumulator\', \'gradient_squared_accumulator\', \'grad\', \'lr\', \'l1\', \'l2\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
+    name: "ApplyAdagradDecay"
+    argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
     name: "ApplyAdagradV2"
     argspec: "args=[\'var\', \'accum\', \'lr\', \'epsilon\', \'grad\', \'use_locking\', \'update_slots\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'None\'], "
   }
   member_method {
     name: "ApplyAdam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'use_locking\', \'use_nesterov\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "ApplyAdamAsync"
     argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'use_locking\', \'use_nesterov\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
   }
   member_method {
@@ -673,6 +685,10 @@ tf_module {
     argspec: "args=[\'writer\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "CollectSparseIndices"
+    argspec: "args=[\'tensor_name\', \'ktype\', \'config\', \'part_idx\', \'part_count\', \'hash_bucket_size\', \'part_mode\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'-1\', \'0\', \'0\', \'\', \'None\'], "
+  }
+  member_method {
     name: "CollectiveBcastRecv"
     argspec: "args=[\'T\', \'group_size\', \'group_key\', \'instance_key\', \'shape\', \'communication_hint\', \'name\'], varargs=None, keywords=None, defaults=[\'auto\', \'None\'], "
   }
@@ -1001,6 +1017,10 @@ tf_module {
     argspec: "args=[\'handle\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "DenseDecode"
+    argspec: "args=[\'input\', \'max_id\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "DenseToDenseSetOperation"
     argspec: "args=[\'set1\', \'set2\', \'set_operation\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
   }
@@ -1043,6 +1063,10 @@ tf_module {
   member_method {
     name: "DeserializeSparse"
     argspec: "args=[\'serialized_sparse\', \'dtype\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "DestroyKvResourceOp"
+    argspec: "args=[\'resource\', \'ignore_lookup_error\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
   }
   member_method {
     name: "DestroyResourceOp"
@@ -1101,7 +1125,15 @@ tf_module {
     argspec: "args=[\'data\', \'partitions\', \'num_partitions\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "DynamicPartitionFuse"
+    argspec: "args=[\'data\', \'num_total_ids\', \'num_partitions\', \'name\'], varargs=None, keywords=None, defaults=[\'1\', \'None\'], "
+  }
+  member_method {
     name: "DynamicStitch"
+    argspec: "args=[\'indices\', \'data\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "DynamicStitchFast"
     argspec: "args=[\'indices\', \'data\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
@@ -1705,6 +1737,14 @@ tf_module {
     argspec: "args=[\'predictions\', \'targets\', \'k\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "IncrRestore"
+    argspec: "args=[\'prefix\', \'tensor_names\', \'shape_and_slices\', \'is_sparse\', \'in_tensors\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "IncrSave"
+    argspec: "args=[\'prefix\', \'tensor_names\', \'shape_and_slices\', \'is_sparse\', \'tensors\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "InfeedDequeue"
     argspec: "args=[\'dtype\', \'shape\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -1723,6 +1763,10 @@ tf_module {
   member_method {
     name: "InfeedEnqueueTuple"
     argspec: "args=[\'inputs\', \'shapes\', \'layouts\', \'device_ordinal\', \'name\'], varargs=None, keywords=None, defaults=[\'[]\', \'-1\', \'None\'], "
+  }
+  member_method {
+    name: "InitializeKvVariableOp"
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'None\'], "
   }
   member_method {
     name: "InitializeTable"
@@ -1831,6 +1875,78 @@ tf_module {
   member_method {
     name: "IteratorV2"
     argspec: "args=[\'shared_name\', \'container\', \'output_types\', \'output_shapes\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KV2DenseDecode"
+    argspec: "args=[\'input\', \'max_id\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KV2SparseDecode"
+    argspec: "args=[\'input\', \'max_id\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KvResourceExport"
+    argspec: "args=[\'resource_handle\', \'Tkeys\', \'Tvalues\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KvResourceGather"
+    argspec: "args=[\'resource\', \'indices\', \'default_value\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceImport"
+    argspec: "args=[\'resource_handle\', \'value\', \'empty_key\', \'keys\', \'values\', \'versions\', \'shape\', \'steps_to_live\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'\', \'1000\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceImportV2"
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'1000\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceIncrImport"
+    argspec: "args=[\'prefix\', \'resource_handle\', \'tensor_names\', \'empty_key\', \'value\', \'partition_id\', \'partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'1\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceInsert"
+    argspec: "args=[\'resource_handle\', \'keys\', \'values\', \'versions\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KvResourceScatterAdd"
+    argspec: "args=[\'resource\', \'indices\', \'updates\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KvResourceSparseApplyAdagrad"
+    argspec: "args=[\'var\', \'accum\', \'lr\', \'grad\', \'indices\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceSparseApplyAdagradDecay"
+    argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceSparseApplyAdamAsync"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'global_step\', \'use_locking\', \'apply_sparse_rmsprop\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceSparseApplyFtrl"
+    argspec: "args=[\'var\', \'accum\', \'linear\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'lr_power\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceSparseApplyFtrlV2"
+    argspec: "args=[\'var\', \'accum\', \'linear\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'l2_shrinkage\', \'lr_power\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "KvResourceSparseApplyGradientDescent"
+    argspec: "args=[\'var\', \'alpha\', \'grad\', \'indices\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "KvVarHandleOp"
+    argspec: "args=[\'dtype\', \'shape\', \'Tkeys\', \'container\', \'shared_name\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "KvVarIsInitializedOp"
+    argspec: "args=[\'resource\', \'Tkeys\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "KvVariableShape"
+    argspec: "args=[\'input\', \'Tkeys\', \'out_type\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int32\'>\", \'None\'], "
   }
   member_method {
     name: "L2Loss"
@@ -2965,6 +3081,10 @@ tf_module {
     argspec: "args=[\'filename\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "ReadKvVariableOp"
+    argspec: "args=[\'resource\', \'dtype\', \'Tkeys\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "ReadVariableOp"
     argspec: "args=[\'resource\', \'dtype\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -3047,6 +3167,10 @@ tf_module {
   member_method {
     name: "RecordInput"
     argspec: "args=[\'file_pattern\', \'file_random_seed\', \'file_shuffle_shift_ratio\', \'file_buffer_size\', \'file_parallelism\', \'batch_size\', \'compression_type\', \'name\'], varargs=None, keywords=None, defaults=[\'301\', \'0\', \'10000\', \'16\', \'32\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "RecordSparseIndices"
+    argspec: "args=[\'keys\', \'var_name\', \'auto_record\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'False\', \'None\'], "
   }
   member_method {
     name: "RecvTPUEmbeddingActivations"
@@ -3201,11 +3325,19 @@ tf_module {
     argspec: "args=[\'var\', \'gradient_accumulator\', \'gradient_squared_accumulator\', \'grad\', \'lr\', \'l1\', \'l2\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
+    name: "ResourceApplyAdagradDecay"
+    argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
     name: "ResourceApplyAdagradV2"
     argspec: "args=[\'var\', \'accum\', \'lr\', \'epsilon\', \'grad\', \'use_locking\', \'update_slots\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'None\'], "
   }
   member_method {
     name: "ResourceApplyAdam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'use_locking\', \'use_nesterov\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "ResourceApplyAdamAsync"
     argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'use_locking\', \'use_nesterov\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
   }
   member_method {
@@ -3325,8 +3457,16 @@ tf_module {
     argspec: "args=[\'var\', \'gradient_accumulator\', \'gradient_squared_accumulator\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
+    name: "ResourceSparseApplyAdagradDecay"
+    argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
     name: "ResourceSparseApplyAdagradV2"
     argspec: "args=[\'var\', \'accum\', \'lr\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'update_slots\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'None\'], "
+  }
+  member_method {
+    name: "ResourceSparseApplyAdamAsync"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'apply_sparse_rmsprop\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "ResourceSparseApplyCenteredRMSProp"
@@ -3506,7 +3646,7 @@ tf_module {
   }
   member_method {
     name: "SaveV2"
-    argspec: "args=[\'prefix\', \'tensor_names\', \'shape_and_slices\', \'tensors\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'prefix\', \'tensor_names\', \'shape_and_slices\', \'tensors\', \'has_ev\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "ScalarSummary"
@@ -3809,8 +3949,16 @@ tf_module {
     argspec: "args=[\'var\', \'gradient_accumulator\', \'gradient_squared_accumulator\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
+    name: "SparseApplyAdagradDecay"
+    argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
     name: "SparseApplyAdagradV2"
     argspec: "args=[\'var\', \'accum\', \'lr\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'update_slots\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'None\'], "
+  }
+  member_method {
+    name: "SparseApplyAdamAsync"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'apply_sparse_rmsprop\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
   }
   member_method {
     name: "SparseApplyCenteredRMSProp"
@@ -3851,6 +3999,10 @@ tf_module {
   member_method {
     name: "SparseCross"
     argspec: "args=[\'indices\', \'values\', \'shapes\', \'dense_inputs\', \'hashed_output\', \'num_buckets\', \'hash_key\', \'out_type\', \'internal_type\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "SparseDecode"
+    argspec: "args=[\'input\', \'max_id\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "SparseDenseCwiseAdd"
@@ -4183,6 +4335,10 @@ tf_module {
   member_method {
     name: "StringSplit"
     argspec: "args=[\'input\', \'delimiter\', \'skip_empty\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "StringSplitAndPad"
+    argspec: "args=[\'input\', \'delimiter\', \'max_length\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "StringSplitV2"
@@ -4591,6 +4747,26 @@ tf_module {
   member_method {
     name: "TopKV2"
     argspec: "args=[\'input\', \'k\', \'sorted\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "TransCsvID2Dense"
+    argspec: "args=[\'records\', \'max_id\', \'default_value\', \'id_as_value\', \'field_delim\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \',\', \'None\'], "
+  }
+  member_method {
+    name: "TransCsvID2Sparse"
+    argspec: "args=[\'records\', \'max_id\', \'default_value\', \'id_as_value\', \'field_delim\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \',\', \'None\'], "
+  }
+  member_method {
+    name: "TransCsvKV2Dense"
+    argspec: "args=[\'records\', \'max_id\', \'T\', \'field_delim\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'float32\'>\", \',\', \'None\'], "
+  }
+  member_method {
+    name: "TransCsvKV2Sparse"
+    argspec: "args=[\'records\', \'max_id\', \'T\', \'field_delim\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'float32\'>\", \',\', \'None\'], "
+  }
+  member_method {
+    name: "TransCsvToDense"
+    argspec: "args=[\'records\', \'max_id\', \'T\', \'field_delim\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'float32\'>\", \',\', \'None\'], "
   }
   member_method {
     name: "Transpose"

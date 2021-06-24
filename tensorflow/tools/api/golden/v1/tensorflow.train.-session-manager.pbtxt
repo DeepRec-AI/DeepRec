@@ -8,7 +8,7 @@ tf_class {
   }
   member_method {
     name: "prepare_session"
-    argspec: "args=[\'self\', \'master\', \'init_op\', \'saver\', \'checkpoint_dir\', \'checkpoint_filename_with_path\', \'wait_for_checkpoint\', \'max_wait_secs\', \'config\', \'init_feed_dict\', \'init_fn\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'False\', \'7200\', \'None\', \'None\', \'None\'], "
+    argspec: "args=[\'self\', \'master\', \'init_op\', \'saver\', \'checkpoint_dir\', \'checkpoint_filename_with_path\', \'wait_for_checkpoint\', \'max_wait_secs\', \'config\', \'init_feed_dict\', \'init_fn\', \'incr_saver\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'False\', \'7200\', \'None\', \'None\', \'None\', \'None\'], "
   }
   member_method {
     name: "recover_session"

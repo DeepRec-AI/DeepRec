@@ -5556,6 +5556,9 @@ cc_library(
         ":unicode_ops",
         ":unicode_script_op",
         ":unsorted_segment_join_op",
+	":string_split_and_pad_ali_op",
+	":sparse_decode_ali_ops",
+	":trans_csv_ali_ops",
     ],
 )
 
@@ -5579,6 +5582,43 @@ STRING_DEPS = [
     "//tensorflow/core:lib",
     "//tensorflow/core:lib_internal",
 ]
+
+tf_kernel_library(
+    name = "string_split_and_pad_ali_op",
+    prefix = "string_split_and_pad_ali_op",
+    deps = STRING_DEPS,
+)
+
+tf_kernel_library(
+    name = "sparse_decode_ali_ops",
+    prefix = "sparse_decode_ali_ops",
+    deps = STRING_DEPS,
+)
+
+tf_kernel_library(
+    name = "trans_csv_ali_ops",
+    prefix = "trans_csv_ali_ops",
+    deps = STRING_DEPS,
+)
+
+tf_cc_test(
+    name = "trans_csv_ali_ops_test",
+    size = "small",
+    srcs = [
+        "trans_csv_ali_ops_test.cc",
+    ],
+    deps = [
+        ":trans_csv_ali_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
 
 tf_kernel_library(
     name = "string_to_hash_bucket_op",

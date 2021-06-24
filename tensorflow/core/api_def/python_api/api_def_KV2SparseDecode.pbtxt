@@ -1,0 +1,4 @@
+op {
+  graph_op_name: "KV2SparseDecode"
+  visibility: HIDDEN
+}

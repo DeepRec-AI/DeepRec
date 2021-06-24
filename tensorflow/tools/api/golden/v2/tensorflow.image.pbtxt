@@ -29,6 +29,10 @@ tf_module {
     argspec: "args=[\'image\', \'saturation_factor\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "batched_non_max_suppression"
+    argspec: "args=[\'boxes\', \'scores\', \'box_counts\', \'max_output_size\', \'iou_threshold\', \'score_threshold\', \'pad_to_max_output_size\', \'algorithm\', \'name\'], varargs=None, keywords=None, defaults=[\'0.5\', \'-inf\', \'False\', \'auto\', \'None\'], "
+  }
+  member_method {
     name: "central_crop"
     argspec: "args=[\'image\', \'central_fraction\'], varargs=None, keywords=None, defaults=None"
   }

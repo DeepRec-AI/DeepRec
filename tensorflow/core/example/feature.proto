@@ -71,6 +71,13 @@ message FloatList {
 message Int64List {
   repeated int64 value = 1 [packed = true];
 }
+message KvList {
+  repeated int64 id = 1 [packed = true];
+  repeated float value = 5 [packed = true];
+}
+message Int32List {
+  repeated int32 value = 1 [packed = true];
+}
 
 // Containers for non-sequential data.
 message Feature {

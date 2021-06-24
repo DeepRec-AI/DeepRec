@@ -421,6 +421,98 @@ ops.NotDifferentiable("AsString")
 ops.NotDifferentiable("EncodeBase64")
 ops.NotDifferentiable("DecodeBase64")
 
+@tf_export("string_split_and_pad")
+def string_split_and_pad(source, max_length, delimiter=" ",
+                         default_value="</s>"):
+  source = ops.convert_to_tensor(source, dtype=dtypes.string)
+  delimiter = ops.convert_to_tensor(delimiter, dtype=dtypes.string)
+  max_length = ops.convert_to_tensor(max_length, dtype=dtypes.int64)
+  default_value = ops.convert_to_tensor(default_value, dtype=dtypes.string)
+
+  values = gen_string_ops.string_split_and_pad(
+      source, delimiter=delimiter, max_length=max_length,
+      default_value=default_value)
+  return values
+
+ops.NotDifferentiable("StringSplitAndPad")
+
+@tf_export("decode_dense")
+def decode_dense(values, dtype=dtypes.float32, name=None):
+  return gen_string_ops.dense_decode(values, 0, dtype, name=name)
+
+
+@tf_export("decode_dense_int32")
+def decode_dense_int32(values, name=None):
+  return decode_dense(values, dtypes.int32, name=name)
+
+
+@tf_export("decode_sparse")
+def decode_sparse(values, max_id, name=None):
+  tensor_list = gen_string_ops.sparse_decode(
+      values, max_id, [dtypes.int64, dtypes.int64, dtypes.int64], name=name)
+  return sparse_tensor.SparseTensor(indices = tensor_list[0],
+                                    values = tensor_list[1],
+                                    dense_shape = tensor_list[2])
+
+@tf_export("decode_kv2dense")
+def decode_kv2dense(values, max_col, name=None):
+  return gen_string_ops.kv2_dense_decode(
+      values, max_col, [dtypes.float32], name=name)
+
+@tf_export("decode_kv2sparse")
+def decode_kv2sparse(values, max_id, name=None):
+  tensor_list = gen_string_ops.kv2_sparse_decode(
+      values, max_id, [dtypes.int64, dtypes.float32, dtypes.int64], name=name)
+  return sparse_tensor.SparseTensor(indices = tensor_list[0],
+                                    values = tensor_list[1],
+                                    dense_shape = tensor_list[2])
+
+ops.NotDifferentiable("DenseDecode")
+ops.NotDifferentiable("SparseDecode")
+ops.NotDifferentiable("KV2DenseDecode")
+ops.NotDifferentiable("KV2SparseDecode")
+
+@tf_export("trans_csv_id2sparse")
+def trans_csv_id2sparse(records, max_id, id_as_value=True, field_delim=',',
+                        default_value=1, name=None):
+    indices, values, dense_shape = gen_string_ops.trans_csv_id2_sparse(
+        records, max_id, default_value, id_as_value, field_delim, name=name)
+    return sparse_tensor.SparseTensor(indices, values, dense_shape)
+
+
+@tf_export("trans_csv_id2dense")
+def trans_csv_id2dense(records, max_id, id_as_value=False, field_delim=',',
+                       default_value=1, name=None):
+    return gen_string_ops.trans_csv_id2_dense(
+        records, max_id, default_value, id_as_value, field_delim, name=name)
+
+
+@tf_export("trans_csv_kv2sparse")
+def trans_csv_kv2sparse(records, max_id, field_delim=',',
+                        outtype=dtypes.float32, name=None):
+    indices, values, dense_shape = gen_string_ops.trans_csv_kv2_sparse(
+        records, max_id, outtype, field_delim, name=name)
+    return sparse_tensor.SparseTensor(indices, values, dense_shape)
+
+
+@tf_export("trans_csv_kv2dense")
+def trans_csv_kv2dense(records, max_id, field_delim=',',
+                       outtype=dtypes.float32, name=None):
+    return gen_string_ops.trans_csv_kv2_dense(
+        records, max_id, outtype, field_delim, name=name)
+
+
+@tf_export("trans_csv_to_dense")
+def trans_csv_to_dense(records, max_id, field_delim=',',
+                       outtype=dtypes.float32, name=None):
+    return gen_string_ops.trans_csv_to_dense(
+        records, max_id, outtype, field_delim, name=name)
+
+ops.NotDifferentiable("TransCsvID2Sparse")
+ops.NotDifferentiable("TransCsvID2Dense")
+ops.NotDifferentiable("TransCsvKV2Sparse")
+ops.NotDifferentiable("TransCsvKV2Dense")
+ops.NotDifferentiable("TransCsvToDense")
 
 @tf_export("strings.to_number", v1=[])
 @dispatch.add_dispatch_support

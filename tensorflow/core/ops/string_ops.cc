@@ -98,6 +98,169 @@ REGISTER_OP("StringToHash64")
     .Output("output: int64")
     .SetShapeFn(shape_inference::UnchangedShape);
 
+REGISTER_OP("StringSplitAndPad")
+    .Input("input: string")
+    .Input("delimiter: string")
+    .Input("max_length: int64")
+    .Input("default_value: string")
+    .Output("values: string")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 0, &unused));
+
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("DenseDecode")
+    .Input("input: string")
+    .Input("max_id: int64")
+    .Output("output: T")
+    .Attr("T: {float, int32}")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("KV2DenseDecode")
+    .Attr("T: list(type)")
+    .Input("input: string")
+    .Input("max_id: int64")
+    .Output("output: T")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("SparseDecode")
+    .Attr("T: list(type)")
+    .Input("input: string")
+    .Input("max_id: int64")
+    .Output("output: T")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("KV2SparseDecode")
+    .Attr("T: list(type)")
+    .Input("input: string")
+    .Input("max_id: int64")
+    .Output("output: T")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("TransCsvID2Sparse")
+    .Attr("T: {int32,int64,float} = DT_INT64")
+    .Input("records: string")
+    .Input("max_id: int64")
+    .Input("default_value: T")
+    .Output("indices: int64")
+    .Output("values: T")
+    .Output("dense_shape: int64")
+    .Attr("id_as_value: bool = true")
+    .Attr("field_delim: string = ','")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      c->set_output(1, c->Vector(InferenceContext::kUnknownDim));
+      c->set_output(2, c->Vector(2));
+      return Status::OK();
+    });
+
+REGISTER_OP("TransCsvID2Dense")
+    .Attr("T: {int32,int64,float} = DT_INT64")
+    .Input("records: string")
+    .Input("max_id: int64")
+    .Input("default_value: T")
+    .Output("values: T")
+    .Attr("id_as_value: bool = false")
+    .Attr("field_delim: string = ','")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("TransCsvKV2Sparse")
+    .Attr("T: {int32,int64,float} = DT_FLOAT")
+    .Input("records: string")
+    .Input("max_id: int64")
+    .Output("indices: int64")
+    .Output("values: T")
+    .Output("dense_shape: int64")
+    .Attr("field_delim: string = ','")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      c->set_output(1, c->Vector(InferenceContext::kUnknownDim));
+      c->set_output(2, c->Vector(2));
+      return Status::OK();
+    });
+
+REGISTER_OP("TransCsvKV2Dense")
+    .Attr("T: {int32,int64,float} = DT_FLOAT")
+    .Input("records: string")
+    .Input("max_id: int64")
+    .Output("output: T")
+    .Attr("field_delim: string = ','")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
+REGISTER_OP("TransCsvToDense")
+    .Attr("T: {int32,int64,float} = DT_FLOAT")
+    .Input("records: string")
+    .Input("max_id: int64")
+    .Output("output: T")
+    .Attr("field_delim: string = ','")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 1, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      c->set_output(0, c->Matrix(InferenceContext::kUnknownDim,
+                                 InferenceContext::kUnknownDim));
+      return Status::OK();
+    });
+
 REGISTER_OP("ReduceJoin")
     .Input("inputs: string")
     .Input("reduction_indices: int32")

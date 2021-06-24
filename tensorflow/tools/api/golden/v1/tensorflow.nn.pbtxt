@@ -186,11 +186,11 @@ tf_module {
   }
   member_method {
     name: "embedding_lookup"
-    argspec: "args=[\'params\', \'ids\', \'partition_strategy\', \'name\', \'validate_indices\', \'max_norm\'], varargs=None, keywords=None, defaults=[\'mod\', \'None\', \'True\', \'None\'], "
+    argspec: "args=[\'params\', \'ids\', \'partition_strategy\', \'name\', \'validate_indices\', \'max_norm\', \'blocknums\'], varargs=None, keywords=None, defaults=[\'mod\', \'None\', \'True\', \'None\', \'None\'], "
   }
   member_method {
     name: "embedding_lookup_sparse"
-    argspec: "args=[\'params\', \'sp_ids\', \'sp_weights\', \'partition_strategy\', \'name\', \'combiner\', \'max_norm\'], varargs=None, keywords=None, defaults=[\'mod\', \'None\', \'None\', \'None\'], "
+    argspec: "args=[\'params\', \'sp_ids\', \'sp_weights\', \'partition_strategy\', \'name\', \'combiner\', \'max_norm\', \'blocknums\'], varargs=None, keywords=None, defaults=[\'mod\', \'None\', \'None\', \'None\', \'None\'], "
   }
   member_method {
     name: "erosion2d"

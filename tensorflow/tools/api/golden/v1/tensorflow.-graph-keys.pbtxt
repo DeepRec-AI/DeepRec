@@ -23,7 +23,19 @@ tf_class {
     mtype: "<type \'str\'>"
   }
   member {
+    name: "EMBEDDING_VARIABLES"
+    mtype: "<type \'str\'>"
+  }
+  member {
     name: "EVAL_STEP"
+    mtype: "<type \'str\'>"
+  }
+  member {
+    name: "EV_INIT_SLOT_OPS"
+    mtype: "<type \'str\'>"
+  }
+  member {
+    name: "EV_INIT_VAR_OPS"
     mtype: "<type \'str\'>"
   }
   member {

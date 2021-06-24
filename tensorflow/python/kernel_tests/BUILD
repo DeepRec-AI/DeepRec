@@ -3973,3 +3973,42 @@ cuda_py_test(
     tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
+
+tf_py_test(
+    name = "string_split_and_pad_ali_op_test",
+    size = "small",
+    srcs = ["string_split_and_pad_ali_op_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:string_ops",
+    ],
+)
+
+tf_py_test(
+    name = "sparse_decode_ali_ops_test",
+    size = "small",
+    srcs = ["sparse_decode_ali_ops_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:string_ops",
+    ],
+)
+
+tf_py_test(
+    name = "trans_csv_ali_ops_test",
+    size = "small",
+    srcs = ["trans_csv_ali_ops_test.py"],
+    additional_deps = [
+        "//third_party/py/numpy",
+        "//tensorflow/python:client_testlib",
+        "//tensorflow/python:errors",
+        "//tensorflow/python:framework_for_generated_wrappers",
+        "//tensorflow/python:string_ops",
+    ],
+)

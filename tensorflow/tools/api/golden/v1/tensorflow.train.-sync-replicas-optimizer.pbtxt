@@ -29,6 +29,10 @@ tf_class {
     argspec: "args=[\'self\'], varargs=args, keywords=kwargs, defaults=None"
   }
   member_method {
+    name: "doing_loss_scaling"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
     name: "get_chief_queue_runner"
     argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
   }

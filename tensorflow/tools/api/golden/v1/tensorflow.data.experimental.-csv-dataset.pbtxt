@@ -85,7 +85,7 @@ tf_class {
   }
   member_method {
     name: "make_initializable_iterator"
-    argspec: "args=[\'self\', \'shared_name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'self\', \'shared_name\', \'force_deactivate_gpu_prefetching\'], varargs=None, keywords=None, defaults=[\'None\', \'False\'], "
   }
   member_method {
     name: "make_one_shot_iterator"

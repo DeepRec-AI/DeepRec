@@ -1,6 +1,18 @@
 path: "tensorflow.train"
 tf_module {
   member {
+    name: "AdagradDecayOptimizer"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "AdagradDecayOptimizerV2"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "AdamAsyncOptimizer"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "BytesList"
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
   }
@@ -95,5 +107,9 @@ tf_module {
   member_method {
     name: "load_variable"
     argspec: "args=[\'ckpt_dir_or_file\', \'name\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "mark_target_node"
+    argspec: "args=[\'target_nodes_or_tensors\'], varargs=None, keywords=None, defaults=None"
   }
 }
