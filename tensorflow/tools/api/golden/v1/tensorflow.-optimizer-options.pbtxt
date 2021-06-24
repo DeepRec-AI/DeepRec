@@ -41,6 +41,12 @@ tf_proto {
       type_name: ".tensorflow.OptimizerOptions.GlobalJitLevel"
     }
     field {
+      name: "do_op_fusion"
+      number: 7
+      label: LABEL_OPTIONAL
+      type: TYPE_BOOL
+    }
+    field {
       name: "micro_batch_num"
       number: 9
       label: LABEL_OPTIONAL

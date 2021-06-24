@@ -25,6 +25,7 @@ limitations under the License.
 #include "absl/memory/memory.h"
 #include "absl/strings/str_join.h"
 #include "tensorflow/core/common_runtime/device.h"
+#include "tensorflow/core/common_runtime/graph_optimizer.h"
 #include "tensorflow/core/common_runtime/metrics.h"
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 #include "tensorflow/core/common_runtime/placer.h"
@@ -682,6 +683,19 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   optimization_options.flib_def = flib_def_.get();
   optimization_options.device_set = device_set_;
 
+  const OptimizerOptions& session_optimizer_options =
+      session_options_->config.graph_options().optimizer_options();
+  if (session_optimizer_options.do_op_fusion()) {
+    OptimizerOptions opts;
+    opts.set_opt_level(OptimizerOptions::L0);
+    opts.set_do_op_fusion(
+      session_optimizer_options.do_op_fusion());
+    GraphOptimizer optimizer(opts);
+    VLOG(2) << "RUN Graph Optimization Passes before PRE_PLACEMENT";
+    optimizer.Optimize(nullptr, nullptr,
+                      /*device=*/nullptr, &new_graph, /*shape_map=*/nullptr);
+  }
+
   TF_RETURN_IF_ERROR(OptimizationPassRegistry::Global()->RunGrouping(
       OptimizationPassRegistry::PRE_PLACEMENT, optimization_options));
 
@@ -702,8 +716,6 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
     node_name_to_cost_id_map_[n->name()] = n->cost_id();
   }
 
-  const OptimizerOptions& session_optimizer_options =
-    session_options_->config.graph_options().optimizer_options();
   int32 micro_batch_num = session_optimizer_options.micro_batch_num();
   if (micro_batch_num > 1) {
     VLOG(2) << "RUN Graph Optimization: Runtime Pipeline";

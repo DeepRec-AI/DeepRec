@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/node_builder.h"
 #include "tensorflow/core/graph/optimizer_cse.h"
+#include "tensorflow/core/graph/optimizer_fusion_engine.h"
 
 namespace tensorflow {
 
@@ -60,7 +61,11 @@ void GraphOptimizer::Optimize(
       DumpGraph("RemoveIdentityNodes", g);
       changed = true;
     }
-
+    if (opts_.do_op_fusion() && OptimizeFusion(g)) {
+      RemoveDeadNodes(g);
+      DumpGraph("OptimizeFusionEngine", g);
+      changed = true;
+    }
     if (opts_.do_constant_folding()) {
       ConstantFoldingOptions cf_opts;
       cf_opts.shape_map = shape_map;
