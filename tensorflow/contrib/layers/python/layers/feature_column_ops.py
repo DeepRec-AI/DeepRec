@@ -99,7 +99,8 @@ def _input_from_feature_columns(columns_to_tensors,
                                 scope,
                                 output_rank,
                                 default_name,
-                                cols_to_outs=None):
+                                cols_to_outs=None,
+                                blocknums=None):
   """Implementation of `input_from(_sequence)_feature_columns`."""
   columns_to_tensors = columns_to_tensors.copy()
   check_feature_columns(feature_columns)
@@ -129,14 +130,22 @@ def _input_from_feature_columns(columns_to_tensors,
           # pylint: disable=protected-access
           arguments = column._deep_embedding_lookup_arguments(
               transformed_tensor)
-          output_tensors.append(
-              fc._embeddings_from_arguments(  # pylint: disable=protected-access
+          if isinstance(column, fc._DynamicDimensionEmbeddingColumn):
+            output = fc._dynamic_dimension_embeddings_from_arguments(  # pylint: disable=protected-access
                   column,
                   arguments,
                   weight_collections,
                   trainable,
-                  output_rank=output_rank))
-
+                  output_rank=output_rank,
+                  blocknums=blocknums)
+          else:
+            output = fc._embeddings_from_arguments(  # pylint: disable=protected-access
+                  column,
+                  arguments,
+                  weight_collections,
+                  trainable,
+                  output_rank=output_rank)
+          output_tensors.append(output)
         except NotImplementedError as ee:
           try:
             # pylint: disable=protected-access
@@ -158,7 +167,8 @@ def input_from_feature_columns(columns_to_tensors,
                                weight_collections=None,
                                trainable=True,
                                scope=None,
-                               cols_to_outs=None):
+                               cols_to_outs=None,
+                               blocknums=None):
   """A tf.contrib.layers style input layer builder based on FeatureColumns.
 
   Generally a single example in training data is described with feature columns.
@@ -219,7 +229,8 @@ def input_from_feature_columns(columns_to_tensors,
                                      scope,
                                      output_rank=2,
                                      default_name='input_from_feature_columns',
-                                     cols_to_outs=cols_to_outs)
+                                     cols_to_outs=cols_to_outs,
+                                     blocknums=blocknums)
 
 
 @experimental

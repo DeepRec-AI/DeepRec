@@ -2884,3 +2884,336 @@ class _SparseIdLookupConfig(
     return super(_SparseIdLookupConfig,
                  cls).__new__(cls, vocabulary_file, keys, num_oov_buckets,
                               vocab_size, default_value)
+
+class _DeepDynamicDimensionEmbeddingLookupArguments(
+    collections.namedtuple("_DeepDynamicDimensionEmbeddingLookupArguments",
+                           ["input_tensor",
+                            "weight_tensor",
+                            "vocab_size",
+                            "initializer",
+                            "combiner",
+                            "embedding_block_dimension",
+                            "embedding_block_num",
+                            "shared_embedding_name",
+                            "hash_key",
+                            "max_norm",
+                            "trainable",
+                            "use_embedding_var",
+                            "embedding_var_part_num",
+                            "steps_to_live", 
+                            "init_data_source",
+                            "ht_partition_num"])):
+  """Represents the information needed from a column for embedding lookup.
+  Used to compute DNN inputs and weighted sum.
+  """
+  def __new__(cls, *args, **kwargs):
+    if 'use_embedding_var' not in kwargs:
+      kwargs['use_embedding_var'] = False
+    if 'embedding_var_part_num' not in kwargs:
+      kwargs['embedding_var_part_num'] = None
+    if 'steps_to_live' not in kwargs:
+      kwargs['steps_to_live'] = None
+    if 'init_data_source' not in kwargs:
+      kwargs['init_data_source'] = None
+    if 'ht_partition_num' not in kwargs:
+      kwargs['ht_partition_num'] = 1000
+    return super(_DeepDynamicDimensionEmbeddingLookupArguments, cls).__new__(
+        cls, *args, **kwargs)
+  def gen_embedding_attrs(self):
+    attrs = {"bucket_size" : self.bucket_size,
+             "combiner" : self.combiner,
+             "max_norm" : self.max_norm,
+             "is_embedding_var" : self.use_embedding_var}
+    return attrs
+
+class _DynamicDimensionEmbeddingColumn(
+    _FeatureColumn,
+    fc_core._DenseColumn,  # pylint: disable=protected-access
+    collections.namedtuple("_DynamicDimensionEmbeddingColumn", [
+        "sparse_id_column", "embedding_block_dimension", "embedding_block_num", "combiner", "initializer",
+        "ckpt_to_load_from", "tensor_name_in_ckpt", "shared_embedding_name",
+        "shared_vocab_size", "max_norm", "trainable"
+    ])):
+  """Represents an embedding column.
+  Args:
+    sparse_id_column: A `_SparseColumn` which is created by
+      `sparse_column_with_*` or `weighted_sparse_column` functions.
+    dimension: An integer specifying dimension of the embedding.
+    combiner: A string specifying how to reduce if there are multiple entries
+      in a single row. Currently "mean", "sqrtn" and "sum" are supported, with
+      "mean" the default. "sqrtn" often achieves good accuracy, in particular
+      with bag-of-words columns. Each of this can be thought as example level
+      normalizations on the column:
+        * "sum": do not normalize features in the column
+        * "mean": do l1 normalization on features in the column
+        * "sqrtn": do l2 normalization on features in the column
+      For more information: `tf.embedding_lookup_sparse`.
+    initializer: A variable initializer function to be used in embedding
+      variable initialization. If not specified, defaults to
+      `tf.truncated_normal_initializer` with mean 0.0 and standard deviation
+      1/sqrt(sparse_id_column.length).
+    ckpt_to_load_from: (Optional). String representing checkpoint name/pattern
+      to restore the column weights. Required if `tensor_name_in_ckpt` is not
+      None.
+    tensor_name_in_ckpt: (Optional). Name of the `Tensor` in the provided
+      checkpoint from which to restore the column weights. Required if
+      `ckpt_to_load_from` is not None.
+    shared_embedding_name: (Optional). The common name for shared embedding.
+    shared_vocab_size: (Optional). The common vocab_size used for shared
+      embedding space.
+    max_norm: (Optional). If not None, embedding values are l2-normalized to
+      the value of max_norm.
+    trainable: (Optional). Should the embedding be trainable. Default is True.
+  Raises:
+    ValueError: if `initializer` is specified and is not callable. Also,
+      if only one of `ckpt_to_load_from` and `tensor_name_in_ckpt` is specified.
+  """
+  def __new__(cls,
+              sparse_id_column,
+              embedding_block_dimension,
+              embedding_block_num,
+              combiner="mean",
+              initializer=None,
+              ckpt_to_load_from=None,
+              tensor_name_in_ckpt=None,
+              shared_embedding_name=None,
+              shared_vocab_size=None,
+              max_norm=None,
+              trainable=True):
+    if initializer is not None and not callable(initializer):
+      raise ValueError("initializer must be callable if specified. "
+                       "Embedding of column_name: {}".format(
+                           sparse_id_column.name))
+    if (ckpt_to_load_from is None) != (tensor_name_in_ckpt is None):
+      raise ValueError("Must specify both `ckpt_to_load_from` and "
+                       "`tensor_name_in_ckpt` or none of them.")
+    if initializer is None:
+      logging.warn("The default stddev value of initializer will change from "
+                   "\"1/sqrt(vocab_size)\" to \"1/sqrt(dimension)\" after "
+                   "2017/02/25.")
+      stddev = 1 / math.sqrt(sparse_id_column.length)
+      initializer = init_ops.truncated_normal_initializer(
+          mean=0.0, stddev=stddev)
+    return super(_DynamicDimensionEmbeddingColumn, cls).__new__(cls, sparse_id_column,
+                                                embedding_block_dimension, embedding_block_num,
+                                                combiner,
+                                                initializer, ckpt_to_load_from,
+                                                tensor_name_in_ckpt,
+                                                shared_embedding_name,
+                                                shared_vocab_size,
+                                                max_norm,
+                                                trainable)
+  @property
+  def name(self):
+    if self.shared_embedding_name is None:
+      return "{}_embedding".format(self.sparse_id_column.name)
+    else:
+      return "{}_shared_embedding".format(self.sparse_id_column.name)
+  @property
+  def length(self):
+    """Returns id size."""
+    if self.shared_vocab_size is None:
+      return self.sparse_id_column.length
+    else:
+      return self.shared_vocab_size
+  @property
+  def config(self):
+    return _get_feature_config(self.sparse_id_column)
+  @property
+  def key(self):
+    """Returns a string which will be used as a key when we do sorting."""
+    return self._key_without_properties(["initializer"])
+  def insert_transformed_feature(self, columns_to_tensors):
+    if self.sparse_id_column not in columns_to_tensors:
+      self.sparse_id_column.insert_transformed_feature(columns_to_tensors)
+    columns_to_tensors[self] = columns_to_tensors[self.sparse_id_column]
+
+  def _deep_embedding_lookup_arguments(self, input_tensor):
+    if isinstance(self.sparse_id_column, _SparseColumnEmbedding):
+      p = self.sparse_id_column.partition_num
+      steps_to_live = None
+      init_data_source = self.sparse_id_column.init_data_source 
+    else:
+      p = None
+      steps_to_live = None
+      init_data_source = None
+    return _DeepDynamicDimensionEmbeddingLookupArguments(
+        input_tensor=self.sparse_id_column.id_tensor(input_tensor),
+        weight_tensor=self.sparse_id_column.weight_tensor(input_tensor),
+        vocab_size=self.length,
+        embedding_block_dimension=self.embedding_block_dimension,
+        embedding_block_num=self.embedding_block_num,
+        initializer=self.initializer,
+        combiner=self.combiner,
+        shared_embedding_name=self.shared_embedding_name,
+        hash_key=None,
+        max_norm=self.max_norm,
+        trainable=self.trainable,
+        use_embedding_var=isinstance(self.sparse_id_column, _SparseColumnEmbedding),
+        embedding_var_part_num=p,
+        steps_to_live=steps_to_live,  
+        init_data_source=init_data_source)
+        
+  def _checkpoint_path(self):
+    if self.ckpt_to_load_from is not None:
+      return self.ckpt_to_load_from, self.tensor_name_in_ckpt
+    return None
+  # pylint: disable=unused-argument
+  def _wide_embedding_lookup_arguments(self, input_tensor):
+    raise ValueError("Column {} is not supported in linear models. "
+                     "Please use sparse_column.".format(self))
+  @property
+  def _variable_shape(self):
+    return tensor_shape.TensorShape([self.dimension])
+
+  def _get_dense_tensor(self, inputs, weight_collections=None, trainable=None):
+    return _dynamic_dimension_embeddings_from_arguments(
+        self,
+        self._deep_embedding_lookup_arguments(inputs.get(self)),
+        weight_collections, trainable)
+  def _transform_feature(self, inputs):
+    return inputs.get(self.sparse_id_column)
+  @property
+  def _parse_example_spec(self):
+    return self.config
+
+## dynamic embedding column
+def _dynamic_dimension_embeddings_from_arguments(column,
+                               args,
+                               weight_collections,
+                               trainable,
+                               output_rank=2,
+                               blocknums=None):
+  """Returns embeddings for a column based on the computed arguments.
+
+  Args:
+   column: the column name.
+   args: the _DeepEmbeddingLookupArguments for this column.
+   weight_collections: collections to store weights in.
+   trainable: whether these embeddings should be trainable.
+   output_rank: the desired rank of the returned `Tensor`. Inner dimensions will
+     be combined to produce the desired rank.
+
+  Returns:
+   the embeddings.
+
+  Raises:
+   ValueError: if not possible to create.
+  """
+  # pylint: disable=protected-access
+  input_tensor = layers._inner_flatten(args.input_tensor, output_rank)
+  weight_tensor = None
+  if args.weight_tensor is not None:
+    weight_tensor = layers._inner_flatten(args.weight_tensor, output_rank)
+  # pylint: enable=protected-access
+
+  # This option is only enabled for scattered_embedding_column.
+  if args.hash_key:
+    embeddings = contrib_variables.model_variable(
+        name="weights",
+        shape=[args.vocab_size],
+        dtype=dtypes.float32,
+        initializer=args.initializer,
+        trainable=(trainable and args.trainable),
+        collections=weight_collections)
+
+    return embedding_ops.scattered_embedding_lookup_sparse(
+        embeddings,
+        input_tensor,
+        args.dimension,
+        hash_key=args.hash_key,
+        combiner=args.combiner,
+        name="lookup")
+
+  graph = ops.get_default_graph()
+  partition_num = args.embedding_var_part_num
+  if partition_num is None:
+    partitioner = None
+  else:
+    partitioner = partitioned_variables.fixed_size_partitioner(partition_num)
+
+  if args.shared_embedding_name is not None:
+    shared_embedding_collection_name = ("SHARED_EMBEDDING_COLLECTION_" +
+                                        args.shared_embedding_name.upper())
+    graph = ops.get_default_graph()
+    shared_embedding_collection = (
+        graph.get_collection_ref(shared_embedding_collection_name))
+    shape = [args.vocab_size, args.embedding_block_dimension]
+    if shared_embedding_collection:
+      if len(shared_embedding_collection) > 1:
+        raise ValueError("Collection %s can only contain one "
+                         "(partitioned) variable." %
+                         shared_embedding_collection_name)
+      else:
+        embeddings = shared_embedding_collection[0]
+        if (not args.use_embedding_var
+            and embeddings.get_shape() != shape):
+          raise ValueError("The embedding variable with name {} already "
+                           "exists, but its shape does not match required "
+                           "embedding shape here. Please make sure to use "
+                           "different shared_embedding_name for different "
+                           "shared embeddings.".format(
+                               args.shared_embedding_name))
+    else:
+      if args.use_embedding_var:
+        embeddings = variable_scope.get_dynamic_dimension_embedding_variable(
+            name=args.shared_embedding_name,
+            embedding_block_dimension=args.embedding_block_dimension, 
+            embedding_block_num = args.embedding_block_num,
+            key_dtype=dtypes.int64,
+            initializer=args.initializer,
+            trainable=(trainable and args.trainable),
+            collections=weight_collections,
+            partitioner=partitioner,
+            steps_to_live=args.steps_to_live,
+            init_data_source=args.init_data_source,
+            ht_partition_num=args.ht_partition_num)
+        graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, embeddings)
+      else:
+        embeddings = contrib_variables.model_variable(
+            name=args.shared_embedding_name,
+            shape=shape,
+            dtype=dtypes.float32,
+            initializer=args.initializer,
+            trainable=(trainable and args.trainable),
+            collections=weight_collections)
+      graph.add_to_collection(shared_embedding_collection_name, embeddings)
+  else:
+    if args.use_embedding_var:
+      embeddings = variable_scope.get_dynamic_dimension_embedding_variable(
+          name="weights",
+          embedding_block_dimension=args.embedding_block_dimension, 
+          embedding_block_num = args.embedding_block_num,
+          key_dtype=dtypes.int64,
+          initializer=args.initializer,
+          trainable=(trainable and args.trainable),
+          collections=weight_collections,
+          partitioner=partitioner,
+          steps_to_live=args.steps_to_live,
+          init_data_source=args.init_data_source,
+          ht_partition_num=args.ht_partition_num)
+      graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, embeddings)
+    else:
+      embeddings = contrib_variables.model_variable(
+          name="weights",
+          shape=[args.vocab_size, args.dimension],
+          dtype=dtypes.float32,
+          initializer=args.initializer,
+          trainable=(trainable and args.trainable),
+          collections=weight_collections)
+
+  if _is_variable(embeddings):
+    embeddings = [embeddings]
+  else:
+    embeddings = embeddings._get_variable_list()  # pylint: disable=protected-access
+  # pylint: disable=protected-access
+  _maybe_restore_from_checkpoint(column._checkpoint_path(), embeddings)
+  return embedding_ops.safe_embedding_lookup_sparse(
+      embeddings,
+      input_tensor,
+      sparse_weights=weight_tensor,
+      combiner=args.combiner,
+      name=column.name + "weights",
+      max_norm=args.max_norm,
+      blocknums=blocknums)
+

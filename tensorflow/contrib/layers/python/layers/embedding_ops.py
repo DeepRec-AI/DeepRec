@@ -53,7 +53,8 @@ def safe_embedding_lookup_sparse(embedding_weights,
                                  default_id=None,
                                  name=None,
                                  partition_strategy="div",
-                                 max_norm=None):
+                                 max_norm=None,
+                                 blocknums=None):
   """Lookup embedding results, accounting for invalid IDs and empty features.
 
   The partitioned embedding in `embedding_weights` must all be the same shape
@@ -113,7 +114,7 @@ def safe_embedding_lookup_sparse(embedding_weights,
   dtype = sparse_weights.dtype if sparse_weights is not None else None
   if isinstance(embedding_weights, variables.PartitionedVariable):
     embedding_weights = list(embedding_weights)
-  if not isinstance(embedding_weights[0], kv_variable_ops.EmbeddingVariable):
+  if not isinstance(embedding_weights[0], (kv_variable_ops.EmbeddingVariable, kv_variable_ops.DynamicEmbeddingVariable)):
     embedding_weights = [
         ops.convert_to_tensor(w, dtype=dtype) for w in embedding_weights
     ]
@@ -159,7 +160,8 @@ def safe_embedding_lookup_sparse(embedding_weights,
         combiner=combiner,
         partition_strategy=partition_strategy,
         name=None if default_id is None else scope,
-        max_norm=max_norm)
+        max_norm=max_norm,
+        blocknums=blocknums)
 
     if default_id is None:
       # Broadcast is_row_empty to the same shape as embedding_lookup_result,

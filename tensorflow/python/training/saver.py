@@ -604,7 +604,9 @@ class BaseSaverBuilder(object):
               # Create a concat op for this PartitionedVariable. The user may
               # not need it, but we'll try looking it up on MetaGraph restore
               # since it's in a collection.
-              element.as_tensor()
+              params=list(element)
+              if not isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable):
+                element.as_tensor()
       return saver_pb2.SaverDef(
           filename_tensor_name=filename_tensor.name,
           save_tensor_name=save_tensor.name,
