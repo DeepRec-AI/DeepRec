@@ -18,12 +18,14 @@ limitations under the License.
 #include "tensorflow/core/graph/optimizer_fusion_engine.h"
 #include "tensorflow/core/graph/optimizer_fusion_engine_impl.h"
 #include "tensorflow/core/graph/template_base.h"
+#include "tensorflow/core/graph/template_logicsum_base.h"
 
 namespace tensorflow {
 
 bool OptimizeFusion(Graph* g) {
   bool changed = false;
   std::vector<std::unique_ptr<TemplateBase>> templates;
+  templates.emplace_back(new TemplateLogicSumBase());
 
   for (auto& t : templates) {
     std::unique_ptr<OptimizerFusionImpl> opt(new OptimizerFusionImpl(g, t.get()));

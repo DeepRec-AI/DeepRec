@@ -3807,6 +3807,7 @@ cc_library(
         ":cwise_op",
         ":fft_ops",
         ":histogram_op",
+        ":logical_sum_op",
         ":matmul_op",
         ":nextafter_op",
         ":population_count_op",
@@ -3903,6 +3904,17 @@ tf_kernel_library(
     ] + if_cuda([
         "//tensorflow/core/platform/default/build_config:cufft_plugin",
     ]),
+)
+
+tf_kernel_library(
+    name = "logical_sum_op",
+    prefix = "logical_sum_op",
+    deps = [
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+    ]
 )
 
 tf_kernel_library(

@@ -1897,4 +1897,27 @@ REGISTER_OP("NextAfter")
     .Output("output: T")
     .SetShapeFn(shape_inference::BroadcastBinaryOpShapeFn);
 
+REGISTER_OP("LogicalSum")
+    .Input("q_input: float")
+    .Input("k_input: float")
+    .Output("values: T")
+    .Attr("T: {int16,int32,float}")
+    .SetShapeFn([](InferenceContext* c) {
+      auto input_p_shape = c->input(0);
+      auto input_k_shape = c->input(1);
+      auto batch_size = c->Value(c->Dim(input_p_shape, 0));
+      tensorflow::int64 p_d1 = -1;
+      if (c->ValueKnown(c->Dim(input_p_shape, 1))) {
+        p_d1 = c->Value(c->Dim(input_p_shape, 1));
+      }
+      tensorflow::int64 k_d1 = -1;
+      if (c->ValueKnown(c->Dim(input_k_shape, 1))) {
+        k_d1 = c->Value(c->Dim(input_k_shape, 1));
+      }
+      auto seq_length = c->Value(std::max(p_d1, k_d1));
+      auto result_shape = c->MakeShape({batch_size, seq_length});
+      c->set_output(0, result_shape);
+      return Status::OK();
+    });
+
 }  // namespace tensorflow

@@ -1,0 +1,7 @@
+op {
+  graph_op_name: "LogicalSum"
+  summary: "Returns simhah result."
+  description: <<END
+[here](http://docs.scipy.org/doc/numpy/user/basics.broadcasting.html)
+END
+}

@@ -3073,6 +3073,7 @@ GRAPH_HDRS = [
     "graph/star_server_graph_partition.h",
     "graph/subgraph.h",
     "graph/template_base.h",
+    "graph/template_logicsum_base.h",
     "graph/tensor_id.h",
     "graph/testlib.h",
     "graph/types.h",
