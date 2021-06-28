@@ -2295,6 +2295,16 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "sparse_inner_flatten_op",
+    prefix = "sparse_inner_flatten",
+    deps = ["//tensorflow/core:framework",
+            "//tensorflow/core:lib",
+            ":reshape_util",
+            "//tensorflow/core:core_cpu_lib",
+    ],
+)
+
+tf_kernel_library(
     name = "ctc_ops",
     prefix = "ctc",
     deps = [
@@ -3882,7 +3892,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "cwise_op",
     prefix = "cwise_op",
-    deps = MATH_DEPS,
+    deps = MATH_DEPS + if_cuda([":cuda_solvers",]),
 )
 
 tf_kernel_library(
@@ -5136,6 +5146,7 @@ cc_library(
         ":sparse_cross_op",
         ":sparse_dense_binary_op_shared",
         ":sparse_fill_empty_rows_op",
+        ":sparse_inner_flatten_op",
         ":sparse_reduce_op",
         ":sparse_reorder_op",
         ":sparse_reshape_op",

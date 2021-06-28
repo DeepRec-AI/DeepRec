@@ -610,4 +610,18 @@ REGISTER_OP("SparseFillEmptyRowsGrad")
       return Status::OK();
     });
 
+Status SparseInnerFlattenShapeFn(InferenceContext* c) {
+  c->set_output(0, c->UnknownShape());
+  c->set_output(1, c->UnknownShape());
+  return Status::OK();
+}
+
+REGISTER_OP("SparseInnerFlatten")
+    .Input("indices: int64")
+    .Input("dense_shape: int64")
+    .Input("new_rank: int64")
+    .Output("reshape_indices: int64")
+    .Output("reshape_shape: int64")
+    .SetShapeFn(SparseInnerFlattenShapeFn);
+
 }  // namespace tensorflow

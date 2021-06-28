@@ -1,0 +1,4 @@
+op {
+  graph_op_name: "SparseInnerFlatten"
+  summary: "Inner flatten shape of SparseTensor."
+}

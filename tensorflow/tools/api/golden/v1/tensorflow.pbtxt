@@ -2309,6 +2309,10 @@ tf_module {
     argspec: "args=[\'sp_input\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "sparse_inner_flatten"
+    argspec: "args=[\'indices\', \'dense_shape\', \'new_rank\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "sparse_mask"
     argspec: "args=[\'a\', \'mask_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }

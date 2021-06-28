@@ -19,16 +19,31 @@ limitations under the License.
 #include "tensorflow/core/graph/optimizer_fusion_engine_impl.h"
 #include "tensorflow/core/graph/template_base.h"
 #include "tensorflow/core/graph/template_logicsum_base.h"
+#include "tensorflow/core/graph/template_select_then_scalar.h"
+#include "tensorflow/core/graph/template_select_then_scalar_in_grad.h"
+#include "tensorflow/core/graph/template_select_else_scalar.h"
+#include "tensorflow/core/graph/template_select_else_scalar_in_grad.h"
+#include "tensorflow/core/graph/template_select_pruning_else_const.h"
+#include "tensorflow/core/graph/template_select_pruning_then_const.h"
+#include "tensorflow/core/graph/template_sparse_inner_flatten.h"
 
 namespace tensorflow {
 
 bool OptimizeFusion(Graph* g) {
   bool changed = false;
   std::vector<std::unique_ptr<TemplateBase>> templates;
+  templates.emplace_back(new TemplateSparseInnerFlatten());
   templates.emplace_back(new TemplateLogicSumBase());
+  templates.emplace_back(new TemplateSelectPruningElseConst());
+  templates.emplace_back(new TemplateSelectPruningThenConst());
+  templates.emplace_back(new TemplateSelectThenScalar());
+  templates.emplace_back(new TemplateSelectElseScalar());
+  templates.emplace_back(new TemplateSelectElseScalarInGrad());
+  templates.emplace_back(new TemplateSelectThenScalarInGrad());
 
   for (auto& t : templates) {
-    std::unique_ptr<OptimizerFusionImpl> opt(new OptimizerFusionImpl(g, t.get()));
+    std::unique_ptr<OptimizerFusionImpl> opt(
+		    new OptimizerFusionImpl(g, t.get()));
     changed |= opt->Optimize();
   }
   return changed;

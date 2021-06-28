@@ -267,6 +267,160 @@ class WhereOpTest(test.TestCase):
       tf_val = array_ops.where(c_vec, x * x, -x).eval()
     self.assertAllEqual(tf_val, np_val)
 
+  # ~/env1/bin/python -m unittest where_op_test.WhereOpTest.testBatchSelect2
+  def testBatchSelect2(self):
+    x = np.array([[-2, 3, -1] * 64, [1, -3, -3] * 64] * 8192)  # [16384, 192]
+    ones = np.ones( (16384, 192),dtype=np.int32) # [16384, 192]
+    c_vec = np.array([False, True] * 8192)  # [16384]
+    with self.test_session(use_gpu=False):
+      tf_val_1 = array_ops.where(c_vec, x * x, ones).eval()
+      tf_val_2 = array_ops.where(c_vec, x * x, 1).eval()
+    self.assertAllEqual(tf_val_1, tf_val_2)
+  # ~/env1/bin/python -m unittest where_op_test.WhereOpTest.testGpuBatchSelect2
+  def testGpuBatchSelect(self):
+    x = np.array([[-2, 3, -1] * 48, [1, -3, -3] * 48] * 262144, dtype=np.int32)  # [16384, 192]
+    ones = np.ones( (524288, 144),dtype=np.int32) # [16384, 192]
+    c_vec = np.array([False, True] * 262144)  # [16384]
+    with self.test_session(use_gpu=True):
+      tf_val_1 = array_ops.where(c_vec, x * x, ones).eval()
+      tf_val_2 = array_ops.where(c_vec, x * x, 1).eval()
+    self.assertAllEqual(tf_val_1, tf_val_2)
+  def testGpuBatchSelect2(self):
+    x = np.array([[-2, 3, -1] * 48, [1, -3, -3] * 48] * 262144, dtype=np.int32)  # [16384, 192]
+    ones = np.ones( (524288, 144),dtype=np.int32) # [16384, 192]
+    c_vec = np.array([False, True] * 262144)  # [16384]
+    with self.test_session(use_gpu=True):
+      tf_val_1 = array_ops.where(c_vec, ones, x * x).eval()
+      tf_val_2 = array_ops.where(c_vec, 1, x * x).eval()
+    self.assertAllEqual(tf_val_1, tf_val_2)
+  def testElemwiseSelect(self):
+    x = np.array([-2, 3] * 8192)  # [16384]
+    ones = np.ones( (16384),dtype=np.int32) # [16384]
+    c_vec = np.array([False, True] * 8192)  # [16384]
+    with self.test_session(use_gpu=False):
+      tf_val_1 = array_ops.where(c_vec, x * x, ones).eval()
+      tf_val_2 = array_ops.where(c_vec, x * x, 1).eval()
+    self.assertAllEqual(tf_val_1, tf_val_2)
+  def testGpuElemwiseSelect(self):
+    x = np.array([-2, 3] * 81920)  # [16384]
+    ones = np.ones( (163840),dtype=np.int32) # [16384]
+    c_vec = np.array([False, True] * 81920)  # [16384]
+    with self.test_session(use_gpu=True):
+      tf_val_1 = array_ops.where(c_vec, x * x, ones).eval()
+      tf_val_2 = array_ops.where(c_vec, x * x, 1).eval()
+    self.assertAllEqual(tf_val_1, tf_val_2)
+  def testGpuElemwiseSelect2(self):
+    x = np.array([-2, 3] * 81920)  # [16384]
+    ones = np.ones( (163840),dtype=np.int32) # [16384]
+    c_vec = np.array([False, True] * 81920)  # [16384]
+    with self.test_session(use_gpu=True):
+      tf_val_1 = array_ops.where(c_vec, ones, x * x).eval()
+      tf_val_2 = array_ops.where(c_vec, 1, x * x).eval()
+    self.assertAllEqual(tf_val_1, tf_val_2)
+  def testNormalBoradcasting(self):
+    then_tensor = np.asarray(
+        [[10, 11, 12], [20, 21, 22], [30, 31, 32], [40, 41, 42], [50, 51, 52]],
+        dtype=np.int32)
+    else_tensor = np.asarray(
+        [[110, 111, 112], [120, 121, 122], [130, 131, 132], [140, 141, 142], [150, 151, 152]],
+        dtype=np.int32)
+    cond_all_true = np.asarray([True, True, True, True, True])
+    cond_all_false = np.asarray([False, False, False, False, False])
+    cond = np.asarray([True, False, True, True, False])
+    with self.test_session(use_gpu=False):
+      self.assertAllEqual(then_tensor,
+          array_ops.where(cond_all_true, then_tensor, else_tensor).eval())
+      self.assertAllEqual(else_tensor,
+          array_ops.where(cond_all_false, then_tensor, else_tensor).eval())
+      self.assertAllEqual(np.asarray(
+          [[10, 11, 12], [120, 121, 122], [30, 31, 32], [40, 41, 42], [150, 151, 152]], dtype=np.int32),
+          array_ops.where(cond, then_tensor, else_tensor).eval())
+  def testNormalBoradcastingElseScalar(self):
+    then_tensor = np.asarray(
+        [[10, 11, 12], [20, 21, 22], [30, 31, 32], [40, 41, 42], [50, 51, 52]],
+        dtype=np.float32)
+    else_tensor = np.asarray(
+        [[200, 200, 200], [200, 200, 200], [200, 200, 200], [200, 200, 200], [200, 200, 200]],
+        dtype=np.float32)
+    cond_all_true = np.asarray([True, True, True, True, True])
+    cond_all_false = np.asarray([False, False, False, False, False])
+    cond = np.asarray([True, False, True, True, False])
+    with self.test_session(use_gpu=False):
+      self.assertAllEqual(then_tensor,
+          array_ops.where(cond_all_true, then_tensor, else_tensor).eval())
+      self.assertAllEqual(then_tensor,
+          array_ops.where(cond_all_true, then_tensor, 200).eval())
+      self.assertAllEqual(else_tensor,
+          array_ops.where(cond_all_false, then_tensor, else_tensor).eval())
+      self.assertAllEqual(else_tensor,
+          array_ops.where(cond_all_false, then_tensor, 200).eval())
+      self.assertAllEqual(
+          array_ops.where(cond, then_tensor, else_tensor).eval(),
+          array_ops.where(cond, then_tensor, 200).eval())
+  def testNormalBoradcastingThenScalar(self):
+    then_tensor = np.asarray(
+        [[200, 200, 200], [200, 200, 200], [200, 200, 200], [200, 200, 200], [200, 200, 200]],
+        dtype=np.int32)
+    else_tensor = np.asarray(
+        [[10, 11, 12], [20, 21, 22], [30, 31, 32], [40, 41, 42], [50, 51, 52]],
+        dtype=np.int32)
+    cond_all_true = np.asarray([True, True, True, True, True])
+    cond_all_false = np.asarray([False, False, False, False, False])
+    cond = np.asarray([True, False, True, True, False])
+    with self.test_session(use_gpu=False):
+      self.assertAllEqual(then_tensor,
+          array_ops.where(cond_all_true, then_tensor, else_tensor).eval())
+      self.assertAllEqual(then_tensor,
+          array_ops.where(cond_all_true, 200, else_tensor).eval())
+      self.assertAllEqual(else_tensor,
+          array_ops.where(cond_all_false, then_tensor, else_tensor).eval())
+      self.assertAllEqual(else_tensor,
+          array_ops.where(cond_all_false, 200, else_tensor).eval())
+      self.assertAllEqual(
+          array_ops.where(cond, then_tensor, else_tensor).eval(),
+          array_ops.where(cond, 200, else_tensor).eval())
+  def testNormalElementWise(self):
+    then_tensor = np.asarray(
+        [[10, 11, 12], [20, 21, 22], [30, 31, 32], [40, 41, 42]],
+        dtype=np.int32)
+    else_tensor = np.asarray(
+        [[110, 111, 112], [120, 121, 122], [130, 131, 132], [140, 141, 142]],
+        dtype=np.int32)
+    cond = np.asarray([[True, False, True], [False, True, True], [False, False, False], [True, True, True]])
+    result = np.asarray(
+        [[10, 111, 12], [120, 21, 22], [130, 131, 132], [40, 41, 42]],
+        dtype=np.int32)
+    with self.test_session(use_gpu=False):
+      self.assertAllEqual(result,
+          array_ops.where(cond, then_tensor, else_tensor).eval())
+  def testElementWiseElseScalar(self):
+    then_tensor = np.asarray(
+        [[10, 11, 12], [20, 21, 22], [30, 31, 32], [40, 41, 42]],
+        dtype=np.float32)
+    else_tensor = np.asarray(
+        [[200, 200, 200], [200, 200, 200], [200, 200, 200], [200, 200, 200]],
+        dtype=np.float32)
+    cond = np.asarray([[True, False, True], [False, True, True], [False, False, False], [True, True, True]])
+    with self.test_session(use_gpu=False):
+      self.assertAllEqual(
+          array_ops.where(cond, then_tensor, else_tensor).eval(),
+          array_ops.where(cond, then_tensor, 200).eval())
+
+  def testElementWiseThenScalar(self):
+    then_tensor = np.asarray(
+        [[100, 100, 100], [100, 100, 100], [100, 100, 100], [100, 100, 100]],
+        dtype=np.int32)
+    else_tensor = np.asarray(
+        [[10, 11, 12], [20, 21, 22], [30, 31, 32], [40, 41, 42]],
+        dtype=np.int32)
+    cond = np.asarray([[True, False, True], [False, True, True], [False, False, False], [True, True, True]])
+    result = np.asarray(
+        [[100, 11, 100], [20, 100, 100], [30, 31, 32], [100, 100, 100]],
+        dtype=np.int32)
+    with self.test_session(use_gpu=False):
+      self.assertAllEqual(
+          array_ops.where(cond, then_tensor, else_tensor).eval(),
+          array_ops.where(cond, 100, else_tensor).eval())
 
 class WhereBenchmark(test.Benchmark):
 

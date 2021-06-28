@@ -19,6 +19,9 @@ limitations under the License.
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/kernels/cwise_ops_gpu_common.cu.h"
+#include "tensorflow/core/kernels/cuda_solvers.h"
+#include "tensorflow/core/platform/cuda.h"
+#include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace tensorflow {
 namespace functor {
@@ -105,9 +108,133 @@ struct BatchSelectFunctor<GPUDevice, T> {
   }
 };
 
+template <typename T>
+__global__ void Select4ElementThenScalarFunctorKernel(
+    const bool *c, const T *t, const T *e, size_t num, T *o) {
+  CUDA_1D_KERNEL_LOOP(i, num) {
+    if (c[i]) {
+      o[i] = t[0];
+    } else {
+      o[i] = e[i];
+    }
+  }
+}
+
+template <typename T>
+__global__ void Select4ElementElseScalarFunctorKernel(
+    const bool *c, const T *t, const T *e, size_t num, T *o) {
+  CUDA_1D_KERNEL_LOOP(i, num) {
+    if (c[i]) {
+      o[i] = t[i];
+    } else {
+      o[i] = e[0];
+    }
+  }
+}
+
+void calculateBlockAndThread(const int32_t processor_cnt, const int32_t max_thread_per_block,
+    const size_t all_node,
+    size_t& block_count, size_t& pysical_thread_per_block, size_t& thread_per_block) {
+  block_count = processor_cnt;
+  pysical_thread_per_block =  (all_node + block_count -1) / block_count;
+
+  thread_per_block = (pysical_thread_per_block  + 31 ) / 32 * 32;
+  thread_per_block = std::min((size_t)1024, thread_per_block);
+  thread_per_block = std::min((size_t)max_thread_per_block, thread_per_block);
+  thread_per_block = std::max((size_t)32, thread_per_block);
+  return;
+}
+
+template <typename T>
+struct Select4ElementScalarFunctor<GPUDevice, T> {
+  void operator()(const GPUDevice& d, typename TTypes<T>::Flat out,
+                  typename TTypes<bool>::ConstFlat cond_flat,
+                  typename TTypes<T>::ConstFlat then_flat,
+                  typename TTypes<T>::ConstFlat else_flat,
+                  bool then_scalar) {
+    const size_t num = cond_flat.size();
+    const bool* c = cond_flat.data();
+    const T* t = then_flat.data();
+    const T* e = else_flat.data();
+    T* o = out.data();
+
+    size_t block_count, pysical_thread_per_block, thread_per_block;
+    calculateBlockAndThread(d.getNumGpuMultiProcessors(), d.maxGpuThreadsPerBlock(),
+        num, block_count, pysical_thread_per_block, thread_per_block);
+    if (then_scalar) {
+      Select4ElementThenScalarFunctorKernel<<<block_count, thread_per_block, 0, d.stream()>>>(
+          c, t, e, num, o);
+    } else {
+      Select4ElementElseScalarFunctorKernel<<<block_count, thread_per_block, 0, d.stream()>>>(
+          c, t, e, num, o);
+    }
+  }
+};
+
+template <typename T>
+__global__ void BatchSelect4BroadcastingThenScalarFunctorKernel(
+    const bool *c, const T *t, const T *e, size_t batch, size_t batch_size, T *o) {
+  CUDA_1D_KERNEL_LOOP(i, batch * batch_size) {
+    size_t offset = i / batch_size;
+    if (c[offset]) {
+      o[i] = t[0];
+    } else {
+      o[i] = e[i];
+    }
+  }
+}
+
+template <typename T>
+__global__ void BatchSelect4BroadcastingElseScalarFunctorKernel(
+    const bool *c, const T *t, const T *e, size_t batch, size_t batch_size, T *o) {
+  CUDA_1D_KERNEL_LOOP(i, batch * batch_size) {
+    size_t offset = i / batch_size;
+    if (c[offset]) {
+      o[i] = t[i];
+    } else {
+      o[i] = e[0];
+    }
+  }
+}
+
+template <typename T>
+struct BatchSelect4BroadcastingScalarFunctor<GPUDevice, T> {
+  void operator()(const GPUDevice& d,
+                  typename TTypes<T>::Matrix output_flat_outer_dims,
+                  TTypes<bool>::ConstVec cond_vec,
+                  typename TTypes<T>::ConstMatrix then_flat_outer_dims,
+                  typename TTypes<T>::ConstMatrix else_flat_outer_dims,
+                  bool then_scalar) {
+    const size_t batch = cond_vec.size();
+    size_t batch_size = 0;
+    if (then_scalar) {
+      batch_size = else_flat_outer_dims.size() / batch;
+    } else {
+      batch_size = then_flat_outer_dims.size() / batch;
+    }
+    T* output = output_flat_outer_dims.data();
+    const bool* c = cond_vec.data();
+    const T* t = then_flat_outer_dims.data();
+    const T* e = else_flat_outer_dims.data();
+
+    size_t block_count, pysical_thread_per_block, thread_per_block;
+    calculateBlockAndThread(d.getNumGpuMultiProcessors(), d.maxGpuThreadsPerBlock(),
+        batch * batch_size, block_count, pysical_thread_per_block, thread_per_block);
+    if (then_scalar) {
+      BatchSelect4BroadcastingThenScalarFunctorKernel<<<block_count, thread_per_block, 0, d.stream()>>>(
+          c, t, e, batch, batch_size, output);
+    } else {
+      BatchSelect4BroadcastingElseScalarFunctorKernel<<<block_count, thread_per_block, 0, d.stream()>>>(
+          c, t, e, batch, batch_size, output);
+    }
+  }
+};
+
 #define SELECT_FUNCTOR(T)                              \
   template struct SelectFunctor<GPUDevice, T>;         \
   template struct SelectScalarFunctor<GPUDevice, T>;   \
+  template struct Select4ElementScalarFunctor<GPUDevice, T>; \
+  template struct BatchSelect4BroadcastingScalarFunctor<GPUDevice, T>; \
   template struct BatchSelectFunctor<GPUDevice, T>;    \
   template struct BCastSelectFunctor<GPUDevice, T, 1>; \
   template struct BCastSelectFunctor<GPUDevice, T, 2>; \

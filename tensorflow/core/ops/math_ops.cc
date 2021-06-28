@@ -766,6 +766,8 @@ REGISTER_OP("Select")
     .SetShapeFn([](InferenceContext* c) {
       auto* handle_data_1 = c->input_handle_shapes_and_types(1);
       auto* handle_data_2 = c->input_handle_shapes_and_types(2);
+      bool then_scalar = false;
+      bool else_scalar = false;
       // Merge handle shape and dtype if applicable.
       if (handle_data_1 != nullptr && handle_data_2 != nullptr) {
         const auto size = handle_data_1->size();
@@ -785,8 +787,28 @@ REGISTER_OP("Select")
                 "Trying to merge handles pointing to different dtypes.");
           }
           merged_handle_data[i].dtype = s1.dtype;
-          TF_RETURN_IF_ERROR(
-              c->Merge(s1.shape, s2.shape, &merged_handle_data[i].shape));
+          if (c->RankKnown(s1.shape)) {
+              const int32 then_rank = c->Rank(s1.shape);
+              if (then_rank == 0) {
+                  then_scalar = true;
+              }
+          }
+          if (c->RankKnown(s2.shape)) {
+              const int32 else_rank = c->Rank(s2.shape);
+              if (else_rank == 0) {
+                  else_scalar = true;
+              }
+          }
+          if (then_scalar) {
+              TF_RETURN_IF_ERROR(
+                  c->Merge(s2.shape, s2.shape, &merged_handle_data[i].shape));
+          } else if (else_scalar) {
+              TF_RETURN_IF_ERROR(
+                  c->Merge(s1.shape, s1.shape, &merged_handle_data[i].shape));
+          } else {
+              TF_RETURN_IF_ERROR(
+                  c->Merge(s1.shape, s2.shape, &merged_handle_data[i].shape));
+          }
         }
 
         c->set_output_handle_shapes_and_types(0, merged_handle_data);
@@ -795,14 +817,35 @@ REGISTER_OP("Select")
       // The inputs 'then' and 'else' must have the same shape.
       ShapeHandle data = c->input(1);
       ShapeHandle other = c->input(2);
-      TF_RETURN_IF_ERROR(c->Merge(data, other, &data));
+      if (c->RankKnown(data)) {
+          const int32 then_rank = c->Rank(data);
+          if (then_rank == 0) {
+              then_scalar = true;
+          }
+      }
+      if (c->RankKnown(other)) {
+          const int32 else_rank = c->Rank(other);
+          if (else_rank == 0) {
+              else_scalar = true;
+          }
+      }
+      if (then_scalar) {
+          TF_RETURN_IF_ERROR(c->Merge(other, other, &other));
+      } else if (else_scalar) {
+          TF_RETURN_IF_ERROR(c->Merge(data, data, &data));
+      } else {
+          TF_RETURN_IF_ERROR(c->Merge(data, other, &data));
+      }
 
       // The input 'cond' must either have the same shape as 'then' and
       // 'else', or be a vector if 'then' and 'else' are at least vectors.
       ShapeHandle cond = c->input(0);
-
-      if (!c->RankKnown(cond) || !c->RankKnown(data)) {
-        c->set_output(0, data);
+      if (!c->RankKnown(cond) || !c->RankKnown(data) || !c->RankKnown(other)) {
+        if (then_scalar) {
+          c->set_output(0, other);
+        } else {
+          c->set_output(0, data);
+        }
         return Status::OK();
       }
 
@@ -810,10 +853,12 @@ REGISTER_OP("Select")
 
       const int32 cond_rank = c->Rank(cond);
       const int32 data_rank = c->Rank(data);
+      const int32 other_rank = c->Rank(other);
 
       if (cond_rank == 0) {
         // The rank of 'cond' is a scalar.
         // t and e can have any shape.
+        TF_RETURN_IF_ERROR(c->Merge(data, other, &data));
         c->set_output(0, data);
         return Status::OK();
       }
@@ -821,23 +866,32 @@ REGISTER_OP("Select")
       if (cond_rank != 1) {
         // If 'cond' is not a vector, and not a scalar,
         // then shape must match 'then' and 'else'
-        TF_RETURN_IF_ERROR(c->Merge(data, cond, &data));
-        c->set_output(0, data);
-        return Status::OK();
+        if (then_scalar) {
+          TF_RETURN_IF_ERROR(c->Merge(other, cond, &other));
+          c->set_output(0, other);
+        } else {
+          TF_RETURN_IF_ERROR(c->Merge(data, cond, &data));
+          c->set_output(0, data);
+        }
       }
 
-      if (data_rank == 0) {
+      if (data_rank == 0 && other_rank == 0) {
         // if 'then' and 'else' are scalar also the cond must be
         TF_RETURN_IF_ERROR(c->Merge(data, cond, &data));
-        c->set_output(0, data);
+        c->set_output(0, other);
         return Status::OK();
       }
 
       if (cond_rank == 1) {
         // if the cond is a vector and the 'then' is not a scalar,
         // the first dimension of 'then' and 'else'
-        TF_RETURN_IF_ERROR(c->Merge(cond, c->Vector(c->Dim(data, 0)), &cond));
-        c->set_output(0, data);
+        if (then_scalar) {
+          TF_RETURN_IF_ERROR(c->Merge(cond, c->Vector(c->Dim(other, 0)), &cond));
+          c->set_output(0, other);
+        } else {
+          TF_RETURN_IF_ERROR(c->Merge(cond, c->Vector(c->Dim(data, 0)), &cond));
+          c->set_output(0, data);
+        }
         return Status::OK();
       }
 

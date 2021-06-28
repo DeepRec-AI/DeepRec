@@ -1536,6 +1536,42 @@ def _sparsify(array, threshold=0.5):
   shape = array.shape
   return indices, values, shape
 
+class SparseFlattenTest(test.TestCase):
+  def testSparsePartialFlatten(self):
+    """Test `_inner_flatten` on `SparseTensor`s."""
+    shape = [4, 3, 11, 6]
+    np.random.seed(10301)
+    random_ = np.random.rand(*shape)
+    indices, values, _ = _sparsify(random_)
+    for new_rank in [1, 2, 3]:
+      expected_shape = (shape[:new_rank - 1] + [np.prod(shape[new_rank - 1:])])
+      reshaped_random_ = np.reshape(random_, expected_shape)
+      expected_indices, expected_values, _ = _sparsify(reshaped_random_)
+      inputs_t = sparse_tensor.SparseTensor(indices, values, shape)
+      flattened_t = _layers._inner_flatten(inputs_t, new_rank)
+      with self.cached_session() as sess:
+        flattened = sess.run(flattened_t)
+      np.testing.assert_array_equal(expected_indices, flattened.indices)
+      np.testing.assert_array_equal(expected_values, flattened.values)
+      np.testing.assert_array_equal(expected_shape, flattened.dense_shape)
+
+  def testSparsePartialFlattenV2(self):
+    """Test `_inner_flatten` on `SparseTensor`s."""
+    shape = [4, 3, 11, 6]
+    np.random.seed(10301)
+    random_ = np.random.rand(*shape)
+    indices, values, _ = _sparsify(random_)
+    for new_rank in [1, 2, 3]:
+      expected_shape = (shape[:new_rank - 1] + [np.prod(shape[new_rank - 1:])])
+      reshaped_random_ = np.reshape(random_, expected_shape)
+      expected_indices, expected_values, _ = _sparsify(reshaped_random_)
+      inputs_t = sparse_tensor.SparseTensor(indices, values, shape)
+      flattened_t = _layers._sparse_inner_flatten_v2(inputs_t, new_rank)
+      with self.cached_session() as sess:
+        flattened = sess.run(flattened_t)
+      np.testing.assert_array_equal(expected_indices, flattened.indices)
+      np.testing.assert_array_equal(expected_values, flattened.values)
+      np.testing.assert_array_equal(expected_shape, flattened.dense_shape)
 
 class PartialFlattenTest(test.TestCase):
 
@@ -4213,7 +4249,6 @@ class MaxOutTest(test.TestCase):
     graph = _layers.conv2d(inputs, 3, 10)
     with self.assertRaisesRegexp(ValueError, 'number of features'):
       graph = _layers.maxout(graph, num_units=2)
-
 
 if __name__ == '__main__':
   test.main()
