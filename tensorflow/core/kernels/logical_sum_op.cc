@@ -19,7 +19,7 @@ namespace tensorflow {
 using namespace std;
 
 template <typename T>
-struct LogicalSumFuseFunctor {
+struct LogicalSumFunctor {
   static EIGEN_ALWAYS_INLINE Status
   Compute(OpKernelContext* context, const Tensor& q_in, const Tensor& k_in,
                         Tensor* out) {
@@ -125,9 +125,9 @@ struct LogicalSumFuseFunctor {
 };
 
 template <typename T>
-class LogicalSumFuse : public OpKernel {
+class LogicalSum : public OpKernel {
  public:
-  explicit LogicalSumFuse(OpKernelConstruction* context) : OpKernel(context) {
+  explicit LogicalSum(OpKernelConstruction* context) : OpKernel(context) {
   }
 
   void Compute(OpKernelContext* context) override {
@@ -162,16 +162,16 @@ class LogicalSumFuse : public OpKernel {
     out_shape.AddDim(std::max(q_in.dim_size(1),k_in.dim_size(1)));
 
     OP_REQUIRES_OK(context, context->allocate_output(0, out_shape, &output));
-    Status s = LogicalSumFuseFunctor<T>::Compute(
+    Status s = LogicalSumFunctor<T>::Compute(
         context, q_in, k_in, output);
 
     OP_REQUIRES_OK(context, s);
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("LogicalSumFuse")
+REGISTER_KERNEL_BUILDER(Name("LogicalSum")
     .Device(DEVICE_CPU)
     .TypeConstraint<float>("T"),
-    LogicalSumFuse<float>);
+    LogicalSum<float>);
 
 }  // namespace tensorflow
