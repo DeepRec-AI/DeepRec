@@ -917,7 +917,7 @@ Status SingleVirtualDeviceMemoryLimit(const GPUOptions& gpu_options,
     //Convert MBytes to Bytes
     allowable_reserved_memory = allowable_reserved_memory * 1024 * 1024; 
     // TF_DEVICE_MIN_SYS_MEMORY_IN_MB overrides per_process_gpu_memory_fraction
-    if(allowable_reserved_memory <= available_memory) {
+    if((int64)allowable_reserved_memory <= available_memory) {
       allocated_memory = available_memory - allowable_reserved_memory;
       VLOG(1) << "Setting the GPU reserved bytes to "
          << strings::HumanReadableNumBytes(allocated_memory) << " MBytes";
