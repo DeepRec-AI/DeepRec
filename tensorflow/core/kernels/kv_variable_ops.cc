@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/kernels/dense_update_functor.h"
 #include "tensorflow/core/kernels/gather_functor.h"
+#include "tensorflow/core/kernels/kv_variable_ops.h"
 #include "tensorflow/core/kernels/scatter_functor.h"
 #include "tensorflow/core/kernels/training_op_helpers.h"
 #include "tensorflow/core/kernels/variable_ops.h"
@@ -34,8 +35,7 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/util.h"
-#include "tensorflow/core/kernels/kv_variable_ops.h"
-#include "tensorflow/core/kernels/variable_ops.h"
+#include "tensorflow/core/util/work_sharder.h"
 
 namespace tensorflow {
 
@@ -357,10 +357,17 @@ class KvResourceGatherOp : public OpKernel {
               "hashmap's value_len should same with output's dimension(1)",
               std::to_string(slice_elems), std::to_string(hashmap->ValueLen())));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
-      for (int64 i = 0; i < indices_size; i++) {
-        TValue* default_v = &default_values_matrix(i, 0);
-        hashmap->LookupOrCreateHybridV3(indices_flat(i), out_base + i * slice_elems, default_v);
-      }
+      auto do_work = [this, &indices_flat, &default_values_matrix,
+           &out_base, &slice_elems, &hashmap] (int64 start, int64 limit) {
+        for (int64 i = start; i < limit; ++i) {
+          TValue* default_v = &default_values_matrix(i, 0);
+          hashmap->LookupOrCreateHybrid(indices_flat(i),
+              out_base + i * slice_elems, default_v);
+        }
+      };
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
+          slice_bytes, do_work);
     }
   }
 };
