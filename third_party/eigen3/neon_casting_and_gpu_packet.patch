@@ -1,5 +1,2003 @@
+From 3329a8244bc8f367cc08e79c8d482d92fabc6615 Mon Sep 17 00:00:00 2001
+From: "Yu, Weifei" <weifei.yu@intel.com>
+Date: Wed, 19 May 2021 18:02:15 +0800
+Subject: [PATCH] Apply bf16 feature.
+
+---
+ Eigen/Core                                    |   1 +
+ Eigen/src/Core/GenericPacketMath.h            |  16 +
+ Eigen/src/Core/arch/AVX/MathFunctions.h       |   9 +
+ Eigen/src/Core/arch/AVX/PacketMath.h          | 342 ++++++++
+ Eigen/src/Core/arch/AVX/TypeCasting.h         |  66 +-
+ Eigen/src/Core/arch/AVX512/MathFunctions.h    |  20 +
+ Eigen/src/Core/arch/AVX512/PacketMath.h       | 474 ++++++++++-
+ Eigen/src/Core/arch/AVX512/TypeCasting.h      |  27 +
+ Eigen/src/Core/arch/Default/BFloat16.h        | 749 ++++++++++++++++++
+ Eigen/src/Core/arch/Default/TypeCasting.h     |  41 +
+ Eigen/src/Core/arch/NEON/TypeCasting.h        |  66 ++
+ Eigen/src/Core/util/ConfigureVectorization.h  |   3 +
+ Eigen/src/Geometry/arch/Geometry_SSE.h        |  15 +-
+ .../Eigen/CXX11/src/Tensor/TensorRandom.h     |  11 +
+ unsupported/Eigen/SpecialFunctions            |   1 +
+ .../SpecialFunctionsBFloat16.h                |  58 ++
+ 16 files changed, 1867 insertions(+), 32 deletions(-)
+ create mode 100644 Eigen/src/Core/arch/Default/BFloat16.h
+ create mode 100644 unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
+
+diff --git a/Eigen/Core b/Eigen/Core
+index 688361d46..ee5a5f1dd 100644
+--- a/Eigen/Core
++++ b/Eigen/Core
+@@ -163,6 +163,7 @@ using std::ptrdiff_t;
+ #include "src/Core/arch/Default/ConjHelper.h"
+ // Generic half float support
+ #include "src/Core/arch/Default/Half.h"
++#include "src/Core/arch/Default/BFloat16.h"
+ #include "src/Core/arch/Default/TypeCasting.h"
+ #include "src/Core/arch/Default/GenericPacketMathFunctionsFwd.h"
+ 
+diff --git a/Eigen/src/Core/GenericPacketMath.h b/Eigen/src/Core/GenericPacketMath.h
+index fb530e6a4..637aac9f9 100644
+--- a/Eigen/src/Core/GenericPacketMath.h
++++ b/Eigen/src/Core/GenericPacketMath.h
+@@ -137,6 +137,22 @@ template <typename Src, typename Tgt> struct type_casting_traits {
+   };
+ };
+ 
++/** \internal Wrapper to ensure that multiple packet types can map to the same
++    same underlying vector type. */
++template<typename T, int unique_id = 0>
++struct eigen_packet_wrapper
++{
++  EIGEN_ALWAYS_INLINE operator T&() { return m_val; }
++  EIGEN_ALWAYS_INLINE operator const T&() const { return m_val; }
++  EIGEN_ALWAYS_INLINE eigen_packet_wrapper() {}
++  EIGEN_ALWAYS_INLINE eigen_packet_wrapper(const T &v) : m_val(v) {}
++  EIGEN_ALWAYS_INLINE eigen_packet_wrapper& operator=(const T &v) {
++    m_val = v;
++    return *this;
++  }
++
++  T m_val;
++};
+ 
+ /** \internal \returns static_cast<TgtType>(a) (coeff-wise) */
+ template <typename SrcPacket, typename TgtPacket>
+diff --git a/Eigen/src/Core/arch/AVX/MathFunctions.h b/Eigen/src/Core/arch/AVX/MathFunctions.h
+index c5394430f..b746ff43e 100644
+--- a/Eigen/src/Core/arch/AVX/MathFunctions.h
++++ b/Eigen/src/Core/arch/AVX/MathFunctions.h
+@@ -152,6 +152,15 @@ Packet4d prsqrt<Packet4d>(const Packet4d& x) {
+   return _mm256_div_pd(p4d_one, _mm256_sqrt_pd(x));
+ }
+ 
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, psin)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, pcos)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, plog)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, plog1p)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, pexpm1)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, pexp)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, ptanh)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, psqrt)
++BF16_PACKET_FUNCTION(Packet8f, Packet8bf, prsqrt)
+ 
+ }  // end namespace internal
+ 
+diff --git a/Eigen/src/Core/arch/AVX/PacketMath.h b/Eigen/src/Core/arch/AVX/PacketMath.h
+index 5ab989ca9..d7cac56cb 100644
+--- a/Eigen/src/Core/arch/AVX/PacketMath.h
++++ b/Eigen/src/Core/arch/AVX/PacketMath.h
+@@ -31,6 +31,7 @@ namespace internal {
+ typedef __m256  Packet8f;
+ typedef __m256i Packet8i;
+ typedef __m256d Packet4d;
++typedef eigen_packet_wrapper<__m128i, 3> Packet8bf;
+ typedef struct {
+   __m128i x;
+ } Packet8h;
+@@ -39,6 +40,7 @@ template<> struct is_arithmetic<__m256>  { enum { value = true }; };
+ template<> struct is_arithmetic<__m256i> { enum { value = true }; };
+ template<> struct is_arithmetic<__m256d> { enum { value = true }; };
+ template<> struct is_arithmetic<Packet8h> { enum { value = true }; };
++template<> struct is_arithmetic<Packet8bf> { enum { value = true }; };
+ 
+ #define _EIGEN_DECLARE_CONST_Packet8f(NAME,X) \
+   const Packet8f p8f_##NAME = pset1<Packet8f>(X)
+@@ -137,6 +139,36 @@ struct packet_traits<Eigen::half> : default_packet_traits {
+     HasInsert = 1
+   };
+ };
++
++template <>
++struct packet_traits<bfloat16> : default_packet_traits {
++  typedef Packet8bf type;
++  // There is no half-size packet for current Packet8bf.
++  // TODO: support as SSE path.
++  typedef Packet8bf half;
++  enum {
++   Vectorizable = 1,
++    AlignedOnScalar = 1,
++    size = 8,
++    HasHalfPacket = 0,
++
++    HasDiv = 1,
++    HasSin = EIGEN_FAST_MATH,
++    HasCos = EIGEN_FAST_MATH,
++    HasLog = 1,
++    HasLog1p  = 1,
++    HasExpm1  = 1,
++    HasExp = 1,
++    HasNdtri = 1,
++    HasSqrt = 1,
++    HasRsqrt = 1,
++    HasTanh = EIGEN_FAST_MATH,
++    HasBlend = 0,
++    HasRound = 1,
++    HasFloor = 1,
++    HasCeil = 1
++  };
++};
+ #endif
+ 
+ template<> struct scalar_div_cost<float,true> { enum { value = 14 }; };
+@@ -168,6 +200,14 @@ template<> struct unpacket_traits<Packet4d> {
+   enum {size=4, alignment=Aligned32, vectorizable=true, masked_load_available=false, masked_store_available=false};
+ };
+ template<> struct unpacket_traits<Packet8i> { typedef int    type; typedef Packet4i half; enum {size=8, alignment=Aligned32, vectorizable=false, masked_load_available=false, masked_store_available=false}; };
++template<> struct unpacket_traits<Packet8bf> { typedef bfloat16 type; typedef Packet8bf half; enum {size=8, alignment=Aligned16, vectorizable=true, masked_load_available=false, masked_store_available=false}; };
++
++// Helper function for bit packing snippet of low precision comparison.
++// It packs the flags from 16x16 to 8x16.
++EIGEN_STRONG_INLINE __m128i Pack16To8(Packet8f rf) {
++  return _mm_packs_epi32(_mm256_extractf128_si256(_mm256_castps_si256(rf), 0),
++                         _mm256_extractf128_si256(_mm256_castps_si256(rf), 1));
++}
+ 
+ template<> EIGEN_STRONG_INLINE Packet8f pset1<Packet8f>(const float&  from) { return _mm256_set1_ps(from); }
+ template<> EIGEN_STRONG_INLINE Packet4d pset1<Packet4d>(const double& from) { return _mm256_set1_pd(from); }
+@@ -1244,6 +1284,308 @@ ptranspose(PacketBlock<Packet8h,4>& kernel) {
+   kernel.packet[3] = pload<Packet8h>(out[3]);
+ }
+ 
++EIGEN_STRONG_INLINE Packet8f Bf16ToF32(const Packet8bf& a) {
++#ifdef EIGEN_VECTORIZE_AVX2
++  __m256i extend = _mm256_cvtepu16_epi32(a);
++  return _mm256_castsi256_ps(_mm256_slli_epi32(extend, 16));
++#else
++  __m128i lo = _mm_cvtepu16_epi32(a);
++  __m128i hi = _mm_cvtepu16_epi32(_mm_srli_si128(a, 8));
++  __m128i lo_shift = _mm_slli_epi32(lo, 16);
++  __m128i hi_shift = _mm_slli_epi32(hi, 16);
++  return _mm256_castsi256_ps(_mm256_insertf128_si256(_mm256_castsi128_si256(lo_shift), hi_shift, 1));
++#endif
++}
++
++// Convert float to bfloat16 according to round-to-nearest-even/denormals algorithm.
++EIGEN_STRONG_INLINE Packet8bf F32ToBf16(const Packet8f& a) {
++  Packet8bf r;
++
++  // Flush input denormals value to zero with hardware capability.
++  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
++  __m256 flush = _mm256_and_ps(a, a);
++  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_OFF);
++
++  __m256i input = _mm256_castps_si256(flush);
++
++#ifdef EIGEN_VECTORIZE_AVX2
++  // uint32_t lsb = (input >> 16);
++  __m256i t = _mm256_srli_epi32(input, 16);
++  // uint32_t lsb = lsb & 1;
++  t = _mm256_and_si256(t, _mm256_set1_epi32(1));
++  // uint32_t rounding_bias = 0x7fff + lsb;
++  t = _mm256_add_epi32(t, _mm256_set1_epi32(0x7fff));
++  // input += rounding_bias;
++  t = _mm256_add_epi32(t, input);
++  // input = input >> 16;
++  t = _mm256_srli_epi32(t, 16);
++  // Check NaN before converting back to bf16
++  __m256 mask = _mm256_cmp_ps(flush, flush, _CMP_ORD_Q);
++  __m256i nan = _mm256_set1_epi32(0x7fc0);
++  t = _mm256_blendv_epi8(nan, t, _mm256_castps_si256(mask));
++  // output.value = static_cast<uint16_t>(input);
++  return _mm_packus_epi32(_mm256_extractf128_si256(t, 0),
++                         _mm256_extractf128_si256(t, 1));
++#else
++  // uint32_t lsb = (input >> 16);
++  __m128i lo = _mm_srli_epi32(_mm256_extractf128_si256(input, 0), 16);
++  __m128i hi = _mm_srli_epi32(_mm256_extractf128_si256(input, 1), 16);
++  // uint32_t lsb = lsb & 1;
++  lo = _mm_and_si128(lo, _mm_set1_epi32(1));
++  hi = _mm_and_si128(hi, _mm_set1_epi32(1));
++  // uint32_t rounding_bias = 0x7fff + lsb;
++  lo = _mm_add_epi32(lo, _mm_set1_epi32(0x7fff));
++  hi = _mm_add_epi32(hi, _mm_set1_epi32(0x7fff));
++  // input += rounding_bias;
++  lo = _mm_add_epi32(lo, _mm256_extractf128_si256(input, 0));
++  hi = _mm_add_epi32(hi, _mm256_extractf128_si256(input, 1));
++  // input = input >> 16;
++  lo = _mm_srli_epi32(lo, 16);
++  hi = _mm_srli_epi32(hi, 16);
++  // Check NaN before converting back to bf16
++  __m256 mask = _mm256_cmp_ps(flush, flush, _CMP_ORD_Q);
++  __m128i nan = _mm_set1_epi32(0x7fc0);
++  lo = _mm_blendv_epi8(nan, lo, _mm_castps_si128(_mm256_castps256_ps128(mask)));
++  hi = _mm_blendv_epi8(nan, hi, _mm_castps_si128(_mm256_extractf128_ps(mask, 1)));
++  // output.value = static_cast<uint16_t>(input);
++  return _mm_packus_epi32(lo, hi);
++#endif
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pset1<Packet8bf>(const bfloat16& from) {
++  return _mm_set1_epi16(from.value);
++}
++
++template<> EIGEN_STRONG_INLINE bfloat16 pfirst<Packet8bf>(const Packet8bf& from) {
++  return bfloat16_impl::raw_uint16_to_bfloat16(static_cast<unsigned short>(_mm_extract_epi16(from, 0)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pload<Packet8bf>(const bfloat16* from) {
++  return _mm_load_si128(reinterpret_cast<const __m128i*>(from));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf ploadu<Packet8bf>(const bfloat16* from) {
++  return _mm_loadu_si128(reinterpret_cast<const __m128i*>(from));
++}
++
++template<> EIGEN_STRONG_INLINE void pstore<bfloat16>(bfloat16* to, const Packet8bf& from) {
++  _mm_store_si128(reinterpret_cast<__m128i*>(to), from);
++}
++
++template<> EIGEN_STRONG_INLINE void pstoreu<bfloat16>(bfloat16* to, const Packet8bf& from) {
++  _mm_storeu_si128(reinterpret_cast<__m128i*>(to), from);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf
++ploaddup<Packet8bf>(const bfloat16* from) {
++  unsigned short a = from[0].value;
++  unsigned short b = from[1].value;
++  unsigned short c = from[2].value;
++  unsigned short d = from[3].value;
++  return _mm_set_epi16(d, d, c, c, b, b, a, a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf
++ploadquad<Packet8bf>(const bfloat16* from) {
++  unsigned short a = from[0].value;
++  unsigned short b = from[1].value;
++  return _mm_set_epi16(b, b, b, b, a, a, a, a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf ptrue(const Packet8bf& a) {
++ return _mm_cmpeq_epi32(a, a);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet8bf pabs(const Packet8bf& a) {
++  return F32ToBf16(pabs<Packet8f>(Bf16ToF32(a)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet8bf pmin<Packet8bf>(const Packet8bf& a,
++                                                const Packet8bf& b) {
++  return F32ToBf16(pmin<Packet8f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet8bf pmax<Packet8bf>(const Packet8bf& a,
++                                                const Packet8bf& b) {
++  return F32ToBf16(pmax<Packet8f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet8bf plset<Packet8bf>(const bfloat16& a) {
++  return F32ToBf16(plset<Packet8f>(static_cast<float>(a)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf por(const Packet8bf& a,const Packet8bf& b) {
++  return _mm_or_si128(a,b);
++}
++template<> EIGEN_STRONG_INLINE Packet8bf pxor(const Packet8bf& a,const Packet8bf& b) {
++  return _mm_xor_si128(a,b);
++}
++template<> EIGEN_STRONG_INLINE Packet8bf pand(const Packet8bf& a,const Packet8bf& b) {
++  return _mm_and_si128(a,b);
++}
++template<> EIGEN_STRONG_INLINE Packet8bf pandnot(const Packet8bf& a,const Packet8bf& b) {
++  return _mm_andnot_si128(b,a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pselect(const Packet8bf& mask, const Packet8bf& a, const Packet8bf& b) {
++  return _mm_blendv_epi8(b, a, mask);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pround<Packet8bf>(const Packet8bf& a)
++{
++  return F32ToBf16(pround<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pceil<Packet8bf>(const Packet8bf& a) {
++  return F32ToBf16(pceil<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pfloor<Packet8bf>(const Packet8bf& a) {
++  return F32ToBf16(pfloor<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pcmp_eq(const Packet8bf& a,const Packet8bf& b) {
++  return Pack16To8(pcmp_eq(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pcmp_le(const Packet8bf& a,const Packet8bf& b) {
++  return Pack16To8(pcmp_le(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pcmp_lt(const Packet8bf& a,const Packet8bf& b) {
++  return Pack16To8(pcmp_lt(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pcmp_lt_or_nan(const Packet8bf& a,const Packet8bf& b) {
++  return Pack16To8(pcmp_lt_or_nan(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pconj(const Packet8bf& a) { return a; }
++
++template<> EIGEN_STRONG_INLINE Packet8bf pnegate(const Packet8bf& a) {
++  Packet8bf sign_mask = _mm_set1_epi16(static_cast<unsigned short>(0x8000));
++  return _mm_xor_si128(a, sign_mask);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf padd<Packet8bf>(const Packet8bf& a, const Packet8bf& b) {
++  return F32ToBf16(padd<Packet8f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf psub<Packet8bf>(const Packet8bf& a, const Packet8bf& b) {
++  return F32ToBf16(psub<Packet8f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pmul<Packet8bf>(const Packet8bf& a, const Packet8bf& b) {
++  return F32ToBf16(pmul<Packet8f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf pdiv<Packet8bf>(const Packet8bf& a, const Packet8bf& b) {
++  return F32ToBf16(pdiv<Packet8f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++
++template<> EIGEN_STRONG_INLINE Packet8bf pgather<bfloat16, Packet8bf>(const bfloat16* from, Index stride)
++{
++  return _mm_set_epi16(from[7*stride].value, from[6*stride].value, from[5*stride].value, from[4*stride].value, from[3*stride].value, from[2*stride].value, from[1*stride].value, from[0*stride].value);
++}
++
++template<> EIGEN_STRONG_INLINE void pscatter<bfloat16, Packet8bf>(bfloat16* to, const Packet8bf& from, Index stride)
++{
++  EIGEN_ALIGN32 bfloat16 aux[8];
++  pstore(aux, from);
++  to[stride*0] = aux[0];
++  to[stride*1] = aux[1];
++  to[stride*2] = aux[2];
++  to[stride*3] = aux[3];
++  to[stride*4] = aux[4];
++  to[stride*5] = aux[5];
++  to[stride*6] = aux[6];
++  to[stride*7] = aux[7];
++}
++
++template<> EIGEN_STRONG_INLINE bfloat16 predux<Packet8bf>(const Packet8bf& a) {
++  return static_cast<bfloat16>(predux<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE bfloat16 predux_max<Packet8bf>(const Packet8bf& a) {
++  return static_cast<bfloat16>(predux_max<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE bfloat16 predux_min<Packet8bf>(const Packet8bf& a) {
++  return static_cast<bfloat16>(predux_min<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE bfloat16 predux_mul<Packet8bf>(const Packet8bf& a) {
++  return static_cast<bfloat16>(predux_mul<Packet8f>(Bf16ToF32(a)));
++}
++
++template<> EIGEN_STRONG_INLINE Packet8bf preverse(const Packet8bf& a)
++{
++  __m128i m = _mm_setr_epi8(14,15,12,13,10,11,8,9,6,7,4,5,2,3,0,1);
++  return _mm_shuffle_epi8(a,m);
++}
++
++EIGEN_STRONG_INLINE void
++ptranspose(PacketBlock<Packet8bf,8>& kernel) {
++  __m128i a = kernel.packet[0];
++  __m128i b = kernel.packet[1];
++  __m128i c = kernel.packet[2];
++  __m128i d = kernel.packet[3];
++  __m128i e = kernel.packet[4];
++  __m128i f = kernel.packet[5];
++  __m128i g = kernel.packet[6];
++  __m128i h = kernel.packet[7];
++
++  __m128i a03b03 = _mm_unpacklo_epi16(a, b);
++  __m128i c03d03 = _mm_unpacklo_epi16(c, d);
++  __m128i e03f03 = _mm_unpacklo_epi16(e, f);
++  __m128i g03h03 = _mm_unpacklo_epi16(g, h);
++  __m128i a47b47 = _mm_unpackhi_epi16(a, b);
++  __m128i c47d47 = _mm_unpackhi_epi16(c, d);
++  __m128i e47f47 = _mm_unpackhi_epi16(e, f);
++  __m128i g47h47 = _mm_unpackhi_epi16(g, h);
++
++  __m128i a01b01c01d01 = _mm_unpacklo_epi32(a03b03, c03d03);
++  __m128i a23b23c23d23 = _mm_unpackhi_epi32(a03b03, c03d03);
++  __m128i e01f01g01h01 = _mm_unpacklo_epi32(e03f03, g03h03);
++  __m128i e23f23g23h23 = _mm_unpackhi_epi32(e03f03, g03h03);
++  __m128i a45b45c45d45 = _mm_unpacklo_epi32(a47b47, c47d47);
++  __m128i a67b67c67d67 = _mm_unpackhi_epi32(a47b47, c47d47);
++  __m128i e45f45g45h45 = _mm_unpacklo_epi32(e47f47, g47h47);
++  __m128i e67f67g67h67 = _mm_unpackhi_epi32(e47f47, g47h47);
++
++  kernel.packet[0] = _mm_unpacklo_epi64(a01b01c01d01, e01f01g01h01);
++  kernel.packet[1] = _mm_unpackhi_epi64(a01b01c01d01, e01f01g01h01);
++  kernel.packet[2] = _mm_unpacklo_epi64(a23b23c23d23, e23f23g23h23);
++  kernel.packet[3] = _mm_unpackhi_epi64(a23b23c23d23, e23f23g23h23);
++  kernel.packet[4] = _mm_unpacklo_epi64(a45b45c45d45, e45f45g45h45);
++  kernel.packet[5] = _mm_unpackhi_epi64(a45b45c45d45, e45f45g45h45);
++  kernel.packet[6] = _mm_unpacklo_epi64(a67b67c67d67, e67f67g67h67);
++  kernel.packet[7] = _mm_unpackhi_epi64(a67b67c67d67, e67f67g67h67);
++}
++
++EIGEN_STRONG_INLINE void
++ptranspose(PacketBlock<Packet8bf,4>& kernel) {
++  __m128i a = kernel.packet[0];
++  __m128i b = kernel.packet[1];
++  __m128i c = kernel.packet[2];
++  __m128i d = kernel.packet[3];
++
++  __m128i ab_03 = _mm_unpacklo_epi16(a, b);
++  __m128i cd_03 = _mm_unpacklo_epi16(c, d);
++  __m128i ab_47 = _mm_unpackhi_epi16(a, b);
++  __m128i cd_47 = _mm_unpackhi_epi16(c, d);
++
++  kernel.packet[0] = _mm_unpacklo_epi32(ab_03, cd_03);
++  kernel.packet[1] = _mm_unpackhi_epi32(ab_03, cd_03);
++  kernel.packet[2] = _mm_unpacklo_epi32(ab_47, cd_47);
++  kernel.packet[3] = _mm_unpackhi_epi32(ab_47, cd_47);
++}
++
+ } // end namespace internal
+ 
+ } // end namespace Eigen
+diff --git a/Eigen/src/Core/arch/AVX/TypeCasting.h b/Eigen/src/Core/arch/AVX/TypeCasting.h
+index 181043588..d507fb67b 100644
+--- a/Eigen/src/Core/arch/AVX/TypeCasting.h
++++ b/Eigen/src/Core/arch/AVX/TypeCasting.h
+@@ -35,23 +35,6 @@ struct type_casting_traits<int, float> {
+ };
+ 
+ 
+-
+-template<> EIGEN_STRONG_INLINE Packet8i pcast<Packet8f, Packet8i>(const Packet8f& a) {
+-  return _mm256_cvttps_epi32(a);
+-}
+-
+-template<> EIGEN_STRONG_INLINE Packet8f pcast<Packet8i, Packet8f>(const Packet8i& a) {
+-  return _mm256_cvtepi32_ps(a);
+-}
+-
+-template<> EIGEN_STRONG_INLINE Packet8i preinterpret<Packet8i,Packet8f>(const Packet8f& a) {
+-  return _mm256_castps_si256(a);
+-}
+-
+-template<> EIGEN_STRONG_INLINE Packet8f preinterpret<Packet8f,Packet8i>(const Packet8i& a) {
+-  return _mm256_castsi256_ps(a);
+-}
+-
+ #ifndef EIGEN_VECTORIZE_AVX512
+ 
+ template <>
+@@ -63,9 +46,6 @@ struct type_casting_traits<Eigen::half, float> {
+   };
+ };
+ 
+-template<> EIGEN_STRONG_INLINE Packet8f pcast<Packet8h, Packet8f>(const Packet8h& a) {
+-  return half2float(a);
+-}
+ 
+ template <>
+ struct type_casting_traits<float, Eigen::half> {
+@@ -76,12 +56,58 @@ struct type_casting_traits<float, Eigen::half> {
+   };
+ };
+ 
++template <>
++struct type_casting_traits<bfloat16, float> {
++  enum {
++    VectorizedCast = 1,
++    SrcCoeffRatio = 1,
++    TgtCoeffRatio = 1
++  };
++};
++
++template <>
++struct type_casting_traits<float, bfloat16> {
++  enum {
++    VectorizedCast = 1,
++    SrcCoeffRatio = 1,
++    TgtCoeffRatio = 1
++  };
++};
++
+ #endif  // EIGEN_VECTORIZE_AVX512
+ 
++template<> EIGEN_STRONG_INLINE Packet8i pcast<Packet8f, Packet8i>(const Packet8f& a) {
++  return _mm256_cvttps_epi32(a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8f pcast<Packet8i, Packet8f>(const Packet8i& a) {
++  return _mm256_cvtepi32_ps(a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8i preinterpret<Packet8i,Packet8f>(const Packet8f& a) {
++  return _mm256_castps_si256(a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8f preinterpret<Packet8f,Packet8i>(const Packet8i& a) {
++  return _mm256_castsi256_ps(a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8f pcast<Packet8h, Packet8f>(const Packet8h& a) {
++  return half2float(a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet8f pcast<Packet8bf, Packet8f>(const Packet8bf& a) {
++  return Bf16ToF32(a);
++}
++
+ template<> EIGEN_STRONG_INLINE Packet8h pcast<Packet8f, Packet8h>(const Packet8f& a) {
+   return float2half(a);
+ }
+ 
++template<> EIGEN_STRONG_INLINE Packet8bf pcast<Packet8f, Packet8bf>(const Packet8f& a) {
++  return F32ToBf16(a);
++}
++
+ } // end namespace internal
+ 
+ } // end namespace Eigen
+diff --git a/Eigen/src/Core/arch/AVX512/MathFunctions.h b/Eigen/src/Core/arch/AVX512/MathFunctions.h
+index 67043d01b..db278909b 100644
+--- a/Eigen/src/Core/arch/AVX512/MathFunctions.h
++++ b/Eigen/src/Core/arch/AVX512/MathFunctions.h
+@@ -29,6 +29,12 @@ namespace internal {
+ #define _EIGEN_DECLARE_CONST_Packet8d_FROM_INT64(NAME, X) \
+   const Packet8d p8d_##NAME = _mm512_castsi512_pd(_mm512_set1_epi64(X))
+ 
++#define _EIGEN_DECLARE_CONST_Packet16bf(NAME, X) \
++  const Packet16bf p16bf_##NAME = pset1<Packet16bf>(X)
++
++#define _EIGEN_DECLARE_CONST_Packet16bf_FROM_INT(NAME, X) \
++  const Packet16bf p16bf_##NAME =  preinterpret<Packet16bf,Packet16i>(pset1<Packet16i>(X))
++
+ // Natural logarithm
+ // Computes log(x) as log(2^e * m) = C*e + log(m), where the constant C =log(2)
+ // and m is in the range [sqrt(1/2),sqrt(2)). In this range, the logarithm can
+@@ -128,6 +134,8 @@ plog<Packet16f>(const Packet16f& _x) {
+               p16f_nan),
+             p16f_minus_inf);
+ }
++
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, plog)
+ #endif
+ 
+ // Exponential function. Works by writing "x = m*log(2) + r" where
+@@ -253,6 +261,7 @@ pexp<Packet8d>(const Packet8d& _x) {
+   return pmax(pmul(x, e), _x);
+   }*/
+ 
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, pexp)
+ 
+ // Functions for sqrt.
+ // The EIGEN_FAST_MATH version uses the _mm_rsqrt_ps approximation and one step
+@@ -309,6 +318,8 @@ EIGEN_STRONG_INLINE Packet8d psqrt<Packet8d>(const Packet8d& x) {
+ }
+ #endif
+ 
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, psqrt)
++
+ // prsqrt for float.
+ #if defined(EIGEN_VECTORIZE_AVX512ER)
+ 
+@@ -359,6 +370,8 @@ EIGEN_STRONG_INLINE Packet16f prsqrt<Packet16f>(const Packet16f& x) {
+ 
+ #endif
+ 
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, prsqrt)
++
+ // prsqrt for double.
+ #if EIGEN_FAST_MATH
+ template <>
+@@ -412,10 +425,14 @@ Packet16f plog1p<Packet16f>(const Packet16f& _x) {
+   return generic_plog1p(_x);
+ }
+ 
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, plog1p)
++
+ template<> EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS EIGEN_UNUSED
+ Packet16f pexpm1<Packet16f>(const Packet16f& _x) {
+   return generic_expm1(_x);
+ }
++
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, pexpm1)
+ #endif
+ 
+ #endif
+@@ -439,6 +456,9 @@ ptanh<Packet16f>(const Packet16f& _x) {
+   return internal::generic_fast_tanh_float(_x);
+ }
+ 
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, psin)
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, pcos)
++BF16_PACKET_FUNCTION(Packet16f, Packet16bf, ptanh)
+ }  // end namespace internal
+ 
+ }  // end namespace Eigen
+diff --git a/Eigen/src/Core/arch/AVX512/PacketMath.h b/Eigen/src/Core/arch/AVX512/PacketMath.h
+index 99ccc038c..704351660 100644
+--- a/Eigen/src/Core/arch/AVX512/PacketMath.h
++++ b/Eigen/src/Core/arch/AVX512/PacketMath.h
+@@ -31,6 +31,7 @@ namespace internal {
+ typedef __m512 Packet16f;
+ typedef __m512i Packet16i;
+ typedef __m512d Packet8d;
++typedef eigen_packet_wrapper<__m256i, 2> Packet16bf;
+ 
+ template <>
+ struct is_arithmetic<__m512> {
+@@ -374,6 +375,26 @@ EIGEN_STRONG_INLINE Packet16f pcmp_eq(const Packet16f& a, const Packet16f& b) {
+   return _mm512_castsi512_ps(
+       _mm512_mask_set1_epi32(_mm512_set1_epi32(0), mask, 0xffffffffu));
+ }
++
++// Helper function for bit packing snippet of low precision comparison.
++// It packs the flags from 32x16 to 16x16.
++EIGEN_STRONG_INLINE __m256i Pack32To16(Packet16f rf) {
++  // Split data into small pieces and handle with AVX instructions
++  // to guarantee internal order of vector.
++  // Operation:
++  //   dst[15:0]    := Saturate16(rf[31:0])
++  //   dst[31:16]   := Saturate16(rf[63:32])
++  //   ...
++  //   dst[255:240] := Saturate16(rf[255:224])
++  __m256i lo = _mm256_castps_si256(extract256<0>(rf));
++  __m256i hi = _mm256_castps_si256(extract256<1>(rf));
++  __m128i result_lo = _mm_packs_epi32(_mm256_extractf128_si256(lo, 0),
++                                      _mm256_extractf128_si256(lo, 1));
++  __m128i result_hi = _mm_packs_epi32(_mm256_extractf128_si256(hi, 0),
++                                      _mm256_extractf128_si256(hi, 1));
++  return _mm256_insertf128_si256(_mm256_castsi128_si256(result_lo), result_hi, 1);
++}
++
+ template<> EIGEN_STRONG_INLINE Packet16f pcmp_le(const Packet16f& a, const Packet16f& b) {
+   __mmask16 mask = _mm512_cmp_ps_mask(a, b, _CMP_LE_OQ);
+   return _mm512_castsi512_ps(
+@@ -466,9 +487,7 @@ EIGEN_STRONG_INLINE Packet8d pand<Packet8d>(const Packet8d& a,
+ 
+   Packet4d lane1_a = _mm512_extractf64x4_pd(a, 1);
+   Packet4d lane1_b = _mm512_extractf64x4_pd(b, 1);
+-  res = _mm512_insertf64x4(res, _mm256_and_pd(lane1_a, lane1_b), 1);
+-
+-  return res;
++  return _mm512_insertf64x4(res, _mm256_and_pd(lane1_a, lane1_b), 1);
+ #endif
+ }
+ 
+@@ -1036,8 +1055,7 @@ template <>
+ EIGEN_STRONG_INLINE Packet4d predux_half_dowto4<Packet8d>(const Packet8d& a) {
+   __m256d lane0 = _mm512_extractf64x4_pd(a, 0);
+   __m256d lane1 = _mm512_extractf64x4_pd(a, 1);
+-  __m256d res = _mm256_add_pd(lane0, lane1);
+-  return res;
++  return _mm256_add_pd(lane0, lane1);
+ }
+ 
+ template <>
+@@ -1932,6 +1950,452 @@ ptranspose(PacketBlock<Packet16h,4>& kernel) {
+   kernel.packet[3] = pload<Packet16h>(out[3]);
+ }
+ 
++template <> struct is_arithmetic<Packet16bf> { enum { value = true }; };
++
++template <>
++struct packet_traits<bfloat16> : default_packet_traits {
++  typedef Packet16bf type;
++  typedef Packet8bf half;
++  enum {
++    Vectorizable = 1,
++    AlignedOnScalar = 1,
++    size = 16,
++    HasHalfPacket = 1,
++    HasBlend = 0,
++    HasInsert = 1,
++    HasSin = EIGEN_FAST_MATH,
++    HasCos = EIGEN_FAST_MATH,
++#if EIGEN_GNUC_AT_LEAST(5, 3) || (!EIGEN_COMP_GNUC_STRICT)
++#ifdef EIGEN_VECTORIZE_AVX512DQ
++    HasLog = 1,
++    HasLog1p  = 1,
++    HasExpm1  = 1,
++    HasNdtri = 1,
++#endif
++    HasExp = 1,
++    HasSqrt = EIGEN_FAST_MATH,
++    HasRsqrt = EIGEN_FAST_MATH,
++#endif
++    HasDiv = 1
++  };
++};
++
++template <>
++struct unpacket_traits<Packet16bf>
++{
++  typedef bfloat16 type;
++  enum {size=16, alignment=Aligned32, vectorizable=true, masked_load_available=false, masked_store_available=false};
++  typedef Packet8bf half;
++};
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pset1<Packet16bf>(const bfloat16& from) {
++  return _mm256_set1_epi16(from.value);
++}
++
++template <>
++EIGEN_STRONG_INLINE bfloat16 pfirst<Packet16bf>(const Packet16bf& from) {
++  bfloat16 t;
++  t.value = static_cast<unsigned short>(_mm256_extract_epi16(from, 0));
++  return t;
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pload<Packet16bf>(const bfloat16* from) {
++  return _mm256_load_si256(reinterpret_cast<const __m256i*>(from));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf ploadu<Packet16bf>(const bfloat16* from) {
++  return _mm256_loadu_si256(reinterpret_cast<const __m256i*>(from));
++}
++
++template <>
++EIGEN_STRONG_INLINE void pstore<bfloat16>(bfloat16* to,
++                                          const Packet16bf& from) {
++  _mm256_store_si256(reinterpret_cast<__m256i*>(to), from);
++}
++
++template <>
++EIGEN_STRONG_INLINE void pstoreu<bfloat16>(bfloat16* to,
++                                           const Packet16bf& from) {
++  _mm256_storeu_si256(reinterpret_cast<__m256i*>(to), from);
++}
++
++template<> EIGEN_STRONG_INLINE Packet16bf
++ploaddup<Packet16bf>(const bfloat16* from) {
++  Packet16bf r;
++  unsigned short a = from[0].value;
++  unsigned short b = from[1].value;
++  unsigned short c = from[2].value;
++  unsigned short d = from[3].value;
++  unsigned short e = from[4].value;
++  unsigned short f = from[5].value;
++  unsigned short g = from[6].value;
++  unsigned short h = from[7].value;
++  return _mm256_set_epi16(h, h, g, g, f, f, e, e, d, d, c, c, b, b, a, a);
++}
++
++template<> EIGEN_STRONG_INLINE Packet16bf
++ploadquad(const bfloat16* from) {
++  Packet16bf r;
++  unsigned short a = from[0].value;
++  unsigned short b = from[1].value;
++  unsigned short c = from[2].value;
++  unsigned short d = from[3].value;
++  return _mm256_set_epi16(d, d, d, d, c, c, c, c, b, b, b, b, a, a, a, a);
++}
++
++EIGEN_STRONG_INLINE Packet16f Bf16ToF32(const Packet16bf& a) {
++  return _mm512_castsi512_ps(_mm512_slli_epi32(_mm512_cvtepu16_epi32(a), 16));
++}
++
++// Convert float to bfloat16 according to round-to-nearest-even/denormals algorithm.
++EIGEN_STRONG_INLINE Packet16bf F32ToBf16(const Packet16f& a) {
++  Packet16bf r;
++
++  // Flush input denormals value to zero with hardware capability.
++  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
++#if defined(EIGEN_VECTORIZE_AVX512DQ)
++  __m512 flush = _mm512_and_ps(a, a);
++#else
++  __m512 flush = _mm512_max_ps(a, a);
++#endif // EIGEN_VECTORIZE_AVX512DQ
++  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_OFF);
++
++#if defined(EIGEN_VECTORIZE_AVX512BF16) && EIGEN_GNUC_AT_LEAST(10, 1)
++  // Since GCC 10.1 supports avx512bf16 and C style explicit cast
++  // (C++ static_cast is not supported yet), do converion via intrinsic
++  // and register path for performance.
++  r = (__m256i)(_mm512_cvtneps_pbh(flush));
++#else
++  __m512i t;
++  __m512i input = _mm512_castps_si512(flush);
++  __m512i nan = _mm512_set1_epi32(0x7fc0);
++
++  // uint32_t lsb = (input >> 16) & 1;
++  t = _mm512_and_si512(_mm512_srli_epi32(input, 16), _mm512_set1_epi32(1));
++  // uint32_t rounding_bias = 0x7fff + lsb;
++  t = _mm512_add_epi32(t, _mm512_set1_epi32(0x7fff));
++  // input += rounding_bias;
++  t = _mm512_add_epi32(t, input);
++  // input = input >> 16;
++  t = _mm512_srli_epi32(t, 16);
++
++  // Check NaN before converting back to bf16
++  __mmask16 mask = _mm512_cmp_ps_mask(flush, flush, _CMP_ORD_Q);
++  t = _mm512_mask_blend_epi32(mask, nan, t);
++
++  // output.value = static_cast<uint16_t>(input);
++  r = _mm512_cvtepi32_epi16(t);
++#endif // EIGEN_VECTORIZE_AVX512BF16
++
++  return r;
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf ptrue(const Packet16bf& a) {
++  return ptrue<Packet8i>(a);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf por(const Packet16bf& a, const Packet16bf& b) {
++  return por<Packet8i>(a, b);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pxor(const Packet16bf& a, const Packet16bf& b) {
++  return pxor<Packet8i>(a, b);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pand(const Packet16bf& a, const Packet16bf& b) {
++  return pand<Packet8i>(a, b);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pandnot(const Packet16bf& a,
++                                       const Packet16bf& b) {
++  return pandnot<Packet8i>(a, b);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pselect(const Packet16bf& mask,
++                                       const Packet16bf& a,
++                                       const Packet16bf& b) {
++  // Input mask is expected to be all 0/1, handle it with 8-bit
++  // intrinsic for performance.
++  return _mm256_blendv_epi8(b, a, mask);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pcmp_eq(const Packet16bf& a,
++                                       const Packet16bf& b) {
++  return Pack32To16(pcmp_eq(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pcmp_le(const Packet16bf& a,
++                                       const Packet16bf& b) {
++  return Pack32To16(pcmp_le(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pcmp_lt(const Packet16bf& a,
++                                       const Packet16bf& b) {
++  return Pack32To16(pcmp_lt(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pcmp_lt_or_nan(const Packet16bf& a,
++                                              const Packet16bf& b) {
++  return Pack32To16(pcmp_lt_or_nan(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pnegate(const Packet16bf& a) {
++  Packet16bf sign_mask;
++  sign_mask = _mm256_set1_epi16(static_cast<unsigned short>(0x8000));
++  Packet16bf result;
++  return _mm256_xor_si256(a, sign_mask);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pconj(const Packet16bf& a) {
++  return a;
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pabs(const Packet16bf& a) {
++  return F32ToBf16(pabs<Packet16f>(Bf16ToF32(a)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf padd<Packet16bf>(const Packet16bf& a,
++                                                const Packet16bf& b) {
++  return F32ToBf16(padd<Packet16f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf psub<Packet16bf>(const Packet16bf& a,
++                                                const Packet16bf& b) {
++  return F32ToBf16(psub<Packet16f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pmul<Packet16bf>(const Packet16bf& a,
++                                                const Packet16bf& b) {
++  return F32ToBf16(pmul<Packet16f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pdiv<Packet16bf>(const Packet16bf& a,
++                                                const Packet16bf& b) {
++  return F32ToBf16(pdiv<Packet16f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pmin<Packet16bf>(const Packet16bf& a,
++                                                const Packet16bf& b) {
++  return F32ToBf16(pmin<Packet16f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pmax<Packet16bf>(const Packet16bf& a,
++                                                const Packet16bf& b) {
++  return F32ToBf16(pmax<Packet16f>(Bf16ToF32(a), Bf16ToF32(b)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf plset<Packet16bf>(const bfloat16& a) {
++  return F32ToBf16(plset<Packet16f>(static_cast<float>(a)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet8bf predux_half_dowto4<Packet16bf>(const Packet16bf& a) {
++  Packet8bf lane0 = _mm256_extractf128_si256(a, 0);
++  Packet8bf lane1 = _mm256_extractf128_si256(a, 1);
++  return padd<Packet8bf>(lane0, lane1);
++}
++
++template <>
++EIGEN_STRONG_INLINE bfloat16 predux<Packet16bf>(const Packet16bf& p) {
++  return static_cast<bfloat16>(predux<Packet16f>(Bf16ToF32(p)));
++}
++
++template <>
++EIGEN_STRONG_INLINE bfloat16 predux_mul<Packet16bf>(const Packet16bf& from) {
++  return static_cast<bfloat16>(predux_mul<Packet16f>(Bf16ToF32(from)));
++}
++
++template <>
++EIGEN_STRONG_INLINE bfloat16 predux_min<Packet16bf>(const Packet16bf& from) {
++  return static_cast<bfloat16>(predux_min<Packet16f>(Bf16ToF32(from)));
++}
++
++template <>
++EIGEN_STRONG_INLINE bfloat16 predux_max<Packet16bf>(const Packet16bf& from) {
++  return static_cast<bfloat16>(predux_max<Packet16f>(Bf16ToF32(from)));
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf preverse(const Packet16bf& a) {
++  __m256i m = _mm256_setr_epi8(14,15,12,13,10,11,8,9,6,7,4,5,2,3,0,1,
++                               14,15,12,13,10,11,8,9,6,7,4,5,2,3,0,1);
++
++  Packet16bf res;
++  // Swap hi and lo first because shuffle is in 128-bit lanes.
++  res = _mm256_permute2x128_si256(a, a, 1);
++  // Shuffle 8-bit values in src within 2*128-bit lanes.
++  return _mm256_shuffle_epi8(res, m);
++}
++
++template <>
++EIGEN_STRONG_INLINE Packet16bf pgather<bfloat16, Packet16bf>(const bfloat16* from,
++                                                             Index stride) {
++  return _mm256_set_epi16(
++      from[15*stride].value, from[14*stride].value, from[13*stride].value, from[12*stride].value,
++      from[11*stride].value, from[10*stride].value, from[9*stride].value, from[8*stride].value,
++      from[7*stride].value, from[6*stride].value, from[5*stride].value, from[4*stride].value,
++      from[3*stride].value, from[2*stride].value, from[1*stride].value, from[0*stride].value);
++}
++
++template <>
++EIGEN_STRONG_INLINE void pscatter<bfloat16, Packet16bf>(bfloat16* to,
++                                                        const Packet16bf& from,
++                                                        Index stride) {
++  EIGEN_ALIGN64 bfloat16 aux[16];
++  pstore(aux, from);
++  to[stride*0].value = aux[0].value;
++  to[stride*1].value = aux[1].value;
++  to[stride*2].value = aux[2].value;
++  to[stride*3].value = aux[3].value;
++  to[stride*4].value = aux[4].value;
++  to[stride*5].value = aux[5].value;
++  to[stride*6].value = aux[6].value;
++  to[stride*7].value = aux[7].value;
++  to[stride*8].value = aux[8].value;
++  to[stride*9].value = aux[9].value;
++  to[stride*10].value = aux[10].value;
++  to[stride*11].value = aux[11].value;
++  to[stride*12].value = aux[12].value;
++  to[stride*13].value = aux[13].value;
++  to[stride*14].value = aux[14].value;
++  to[stride*15].value = aux[15].value;
++}
++
++EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet16bf,16>& kernel) {
++  __m256i a = kernel.packet[0];
++  __m256i b = kernel.packet[1];
++  __m256i c = kernel.packet[2];
++  __m256i d = kernel.packet[3];
++  __m256i e = kernel.packet[4];
++  __m256i f = kernel.packet[5];
++  __m256i g = kernel.packet[6];
++  __m256i h = kernel.packet[7];
++  __m256i i = kernel.packet[8];
++  __m256i j = kernel.packet[9];
++  __m256i k = kernel.packet[10];
++  __m256i l = kernel.packet[11];
++  __m256i m = kernel.packet[12];
++  __m256i n = kernel.packet[13];
++  __m256i o = kernel.packet[14];
++  __m256i p = kernel.packet[15];
++
++  __m256i ab_07 = _mm256_unpacklo_epi16(a, b);
++  __m256i cd_07 = _mm256_unpacklo_epi16(c, d);
++  __m256i ef_07 = _mm256_unpacklo_epi16(e, f);
++  __m256i gh_07 = _mm256_unpacklo_epi16(g, h);
++  __m256i ij_07 = _mm256_unpacklo_epi16(i, j);
++  __m256i kl_07 = _mm256_unpacklo_epi16(k, l);
++  __m256i mn_07 = _mm256_unpacklo_epi16(m, n);
++  __m256i op_07 = _mm256_unpacklo_epi16(o, p);
++
++  __m256i ab_8f = _mm256_unpackhi_epi16(a, b);
++  __m256i cd_8f = _mm256_unpackhi_epi16(c, d);
++  __m256i ef_8f = _mm256_unpackhi_epi16(e, f);
++  __m256i gh_8f = _mm256_unpackhi_epi16(g, h);
++  __m256i ij_8f = _mm256_unpackhi_epi16(i, j);
++  __m256i kl_8f = _mm256_unpackhi_epi16(k, l);
++  __m256i mn_8f = _mm256_unpackhi_epi16(m, n);
++  __m256i op_8f = _mm256_unpackhi_epi16(o, p);
++
++  __m256i abcd_03 = _mm256_unpacklo_epi32(ab_07, cd_07);
++  __m256i abcd_47 = _mm256_unpackhi_epi32(ab_07, cd_07);
++  __m256i efgh_03 = _mm256_unpacklo_epi32(ef_07, gh_07);
++  __m256i efgh_47 = _mm256_unpackhi_epi32(ef_07, gh_07);
++  __m256i ijkl_03 = _mm256_unpacklo_epi32(ij_07, kl_07);
++  __m256i ijkl_47 = _mm256_unpackhi_epi32(ij_07, kl_07);
++  __m256i mnop_03 = _mm256_unpacklo_epi32(mn_07, op_07);
++  __m256i mnop_47 = _mm256_unpackhi_epi32(mn_07, op_07);
++
++  __m256i abcd_8b = _mm256_unpacklo_epi32(ab_8f, cd_8f);
++  __m256i abcd_cf = _mm256_unpackhi_epi32(ab_8f, cd_8f);
++  __m256i efgh_8b = _mm256_unpacklo_epi32(ef_8f, gh_8f);
++  __m256i efgh_cf = _mm256_unpackhi_epi32(ef_8f, gh_8f);
++  __m256i ijkl_8b = _mm256_unpacklo_epi32(ij_8f, kl_8f);
++  __m256i ijkl_cf = _mm256_unpackhi_epi32(ij_8f, kl_8f);
++  __m256i mnop_8b = _mm256_unpacklo_epi32(mn_8f, op_8f);
++  __m256i mnop_cf = _mm256_unpackhi_epi32(mn_8f, op_8f);
++
++  __m256i abcdefgh_01 = _mm256_unpacklo_epi64(abcd_03, efgh_03);
++  __m256i abcdefgh_23 = _mm256_unpackhi_epi64(abcd_03, efgh_03);
++  __m256i ijklmnop_01 = _mm256_unpacklo_epi64(ijkl_03, mnop_03);
++  __m256i ijklmnop_23 = _mm256_unpackhi_epi64(ijkl_03, mnop_03);
++  __m256i abcdefgh_45 = _mm256_unpacklo_epi64(abcd_47, efgh_47);
++  __m256i abcdefgh_67 = _mm256_unpackhi_epi64(abcd_47, efgh_47);
++  __m256i ijklmnop_45 = _mm256_unpacklo_epi64(ijkl_47, mnop_47);
++  __m256i ijklmnop_67 = _mm256_unpackhi_epi64(ijkl_47, mnop_47);
++  __m256i abcdefgh_89 = _mm256_unpacklo_epi64(abcd_8b, efgh_8b);
++  __m256i abcdefgh_ab = _mm256_unpackhi_epi64(abcd_8b, efgh_8b);
++  __m256i ijklmnop_89 = _mm256_unpacklo_epi64(ijkl_8b, mnop_8b);
++  __m256i ijklmnop_ab = _mm256_unpackhi_epi64(ijkl_8b, mnop_8b);
++  __m256i abcdefgh_cd = _mm256_unpacklo_epi64(abcd_cf, efgh_cf);
++  __m256i abcdefgh_ef = _mm256_unpackhi_epi64(abcd_cf, efgh_cf);
++  __m256i ijklmnop_cd = _mm256_unpacklo_epi64(ijkl_cf, mnop_cf);
++  __m256i ijklmnop_ef = _mm256_unpackhi_epi64(ijkl_cf, mnop_cf);
++
++  // NOTE: no unpacklo/hi instr in this case, so using permute instr.
++  kernel.packet[0] = _mm256_permute2x128_si256(abcdefgh_01, ijklmnop_01, 0x20);
++  kernel.packet[1] = _mm256_permute2x128_si256(abcdefgh_23, ijklmnop_23, 0x20);
++  kernel.packet[2] = _mm256_permute2x128_si256(abcdefgh_45, ijklmnop_45, 0x20);
++  kernel.packet[3] = _mm256_permute2x128_si256(abcdefgh_67, ijklmnop_67, 0x20);
++  kernel.packet[4] = _mm256_permute2x128_si256(abcdefgh_89, ijklmnop_89, 0x20);
++  kernel.packet[5] = _mm256_permute2x128_si256(abcdefgh_ab, ijklmnop_ab, 0x20);
++  kernel.packet[6] = _mm256_permute2x128_si256(abcdefgh_cd, ijklmnop_cd, 0x20);
++  kernel.packet[7] = _mm256_permute2x128_si256(abcdefgh_ef, ijklmnop_ef, 0x20);
++  kernel.packet[8] = _mm256_permute2x128_si256(abcdefgh_01, ijklmnop_01, 0x31);
++  kernel.packet[9] = _mm256_permute2x128_si256(abcdefgh_23, ijklmnop_23, 0x31);
++  kernel.packet[10] = _mm256_permute2x128_si256(abcdefgh_45, ijklmnop_45, 0x31);
++  kernel.packet[11] = _mm256_permute2x128_si256(abcdefgh_67, ijklmnop_67, 0x31);
++  kernel.packet[12] = _mm256_permute2x128_si256(abcdefgh_89, ijklmnop_89, 0x31);
++  kernel.packet[13] = _mm256_permute2x128_si256(abcdefgh_ab, ijklmnop_ab, 0x31);
++  kernel.packet[14] = _mm256_permute2x128_si256(abcdefgh_cd, ijklmnop_cd, 0x31);
++  kernel.packet[15] = _mm256_permute2x128_si256(abcdefgh_ef, ijklmnop_ef, 0x31);
++}
++
++EIGEN_STRONG_INLINE void ptranspose(PacketBlock<Packet16bf,4>& kernel) {
++  __m256i a = kernel.packet[0];
++  __m256i b = kernel.packet[1];
++  __m256i c = kernel.packet[2];
++  __m256i d = kernel.packet[3];
++
++  __m256i ab_07 = _mm256_unpacklo_epi16(a, b);
++  __m256i cd_07 = _mm256_unpacklo_epi16(c, d);
++  __m256i ab_8f = _mm256_unpackhi_epi16(a, b);
++  __m256i cd_8f = _mm256_unpackhi_epi16(c, d);
++
++  __m256i abcd_03 = _mm256_unpacklo_epi32(ab_07, cd_07);
++  __m256i abcd_47 = _mm256_unpackhi_epi32(ab_07, cd_07);
++  __m256i abcd_8b = _mm256_unpacklo_epi32(ab_8f, cd_8f);
++  __m256i abcd_cf = _mm256_unpackhi_epi32(ab_8f, cd_8f);
++
++  // NOTE: no unpacklo/hi instr in this case, so using permute instr.
++  kernel.packet[0] = _mm256_permute2x128_si256(abcd_03, abcd_47, 0x20);
++  kernel.packet[1] = _mm256_permute2x128_si256(abcd_8b, abcd_cf, 0x20);
++  kernel.packet[2] = _mm256_permute2x128_si256(abcd_03, abcd_47, 0x31);
++  kernel.packet[3] = _mm256_permute2x128_si256(abcd_8b, abcd_cf, 0x31);
++}
+ 
+ } // end namespace internal
+ 
+diff --git a/Eigen/src/Core/arch/AVX512/TypeCasting.h b/Eigen/src/Core/arch/AVX512/TypeCasting.h
+index a82176941..08aa52ff4 100644
+--- a/Eigen/src/Core/arch/AVX512/TypeCasting.h
++++ b/Eigen/src/Core/arch/AVX512/TypeCasting.h
+@@ -40,6 +40,33 @@ template<> EIGEN_STRONG_INLINE Packet16h pcast<Packet16f, Packet16h>(const Packe
+   return float2half(a);
+ }
+ 
++
++template <>
++struct type_casting_traits<bfloat16, float> {
++  enum {
++    VectorizedCast = 1,
++    SrcCoeffRatio = 1,
++    TgtCoeffRatio = 1
++  };
++};
++
++template<> EIGEN_STRONG_INLINE Packet16f pcast<Packet16bf, Packet16f>(const Packet16bf& a) {
++  return Bf16ToF32(a);
++}
++
++template <>
++struct type_casting_traits<float, bfloat16> {
++  enum {
++    VectorizedCast = 1,
++    SrcCoeffRatio = 1,
++    TgtCoeffRatio = 1
++  };
++};
++
++template<> EIGEN_STRONG_INLINE Packet16bf pcast<Packet16f, Packet16bf>(const Packet16f& a) {
++  return F32ToBf16(a);
++}
++
+ } // end namespace internal
+ 
+ } // end namespace Eigen
+diff --git a/Eigen/src/Core/arch/Default/BFloat16.h b/Eigen/src/Core/arch/Default/BFloat16.h
+new file mode 100644
+index 000000000..aec73817f
+--- /dev/null
++++ b/Eigen/src/Core/arch/Default/BFloat16.h
+@@ -0,0 +1,749 @@
++/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
++
++Licensed under the Apache License, Version 2.0 (the "License");
++you may not use this file except in compliance with the License.
++You may obtain a copy of the License at
++
++    http://www.apache.org/licenses/LICENSE-2.0
++
++Unless required by applicable law or agreed to in writing, software
++distributed under the License is distributed on an "AS IS" BASIS,
++WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++See the License for the specific language governing permissions and
++limitations under the License.
++==============================================================================*/
++
++
++#ifndef EIGEN_BFLOAT16_H
++#define EIGEN_BFLOAT16_H
++
++#if __cplusplus > 199711L
++#define EIGEN_EXPLICIT_CAST(tgt_type) explicit operator tgt_type()
++#else
++#define EIGEN_EXPLICIT_CAST(tgt_type) operator tgt_type()
++#endif
++
++#define BF16_PACKET_FUNCTION(PACKET_F, PACKET_BF16, METHOD)         \
++  template <>                                                       \
++  EIGEN_DEFINE_FUNCTION_ALLOWING_MULTIPLE_DEFINITIONS EIGEN_UNUSED  \
++  PACKET_BF16 METHOD<PACKET_BF16>(const PACKET_BF16& _x) {          \
++    return F32ToBf16(METHOD<PACKET_F>(Bf16ToF32(_x)));              \
++  }
++
++namespace Eigen {
++
++struct bfloat16;
++
++// explicit conversion operators are no available before C++11 so we first cast
++// bfloat16 to RealScalar rather than to std::complex<RealScalar> directly
++#if !EIGEN_HAS_CXX11
++namespace internal {
++template <typename RealScalar>
++struct cast_impl<bfloat16, std::complex<RealScalar> > {
++  EIGEN_DEVICE_FUNC static inline std::complex<RealScalar> run(const bfloat16 &x)
++  {
++    return static_cast<std::complex<RealScalar> >(static_cast<RealScalar>(x));
++  }
++};
++} // namespace internal
++#endif  // EIGEN_HAS_CXX11
++
++namespace bfloat16_impl {
++
++// Make our own __bfloat16_raw definition.
++struct __bfloat16_raw {
++  EIGEN_DEVICE_FUNC __bfloat16_raw() : value(0) {}
++  explicit EIGEN_DEVICE_FUNC __bfloat16_raw(unsigned short raw) : value(raw) {}
++  unsigned short value;
++};
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw raw_uint16_to_bfloat16(unsigned short value);
++template <bool AssumeArgumentIsNormalOrInfinityOrZero>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw float_to_bfloat16_rtne(float ff);
++// Forward declarations of template specializations, to avoid Visual C++ 2019 errors, saying:
++// > error C2908: explicit specialization; 'float_to_bfloat16_rtne' has already been instantiated
++template <>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw float_to_bfloat16_rtne<false>(float ff);
++template <>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw float_to_bfloat16_rtne<true>(float ff);
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC float bfloat16_to_float(__bfloat16_raw h);
++
++struct bfloat16_base : public __bfloat16_raw {
++  EIGEN_DEVICE_FUNC bfloat16_base() {}
++  EIGEN_DEVICE_FUNC bfloat16_base(const __bfloat16_raw& h) : __bfloat16_raw(h) {}
++};
++
++} // namespace bfloat16_impl
++
++// Class definition.
++struct bfloat16 : public bfloat16_impl::bfloat16_base {
++
++  typedef bfloat16_impl::__bfloat16_raw __bfloat16_raw;
++
++  EIGEN_DEVICE_FUNC bfloat16() {}
++
++  EIGEN_DEVICE_FUNC bfloat16(const __bfloat16_raw& h) : bfloat16_impl::bfloat16_base(h) {}
++
++  explicit EIGEN_DEVICE_FUNC bfloat16(bool b)
++      : bfloat16_impl::bfloat16_base(bfloat16_impl::raw_uint16_to_bfloat16(b ? 0x3f80 : 0)) {}
++  template<class T>
++  explicit EIGEN_DEVICE_FUNC bfloat16(const T& val)
++      : bfloat16_impl::bfloat16_base(bfloat16_impl::float_to_bfloat16_rtne<internal::is_integral<T>::value>(static_cast<float>(val))) {}
++  
++  explicit EIGEN_DEVICE_FUNC bfloat16(float f)
++      : bfloat16_impl::bfloat16_base(bfloat16_impl::float_to_bfloat16_rtne<false>(f)) {}
++
++  // Following the convention of numpy, converting between complex and
++  // float will lead to loss of imag value.
++  template<typename RealScalar>
++  explicit EIGEN_DEVICE_FUNC bfloat16(const std::complex<RealScalar>& val)
++      : bfloat16_impl::bfloat16_base(bfloat16_impl::float_to_bfloat16_rtne<false>(static_cast<float>(val.real()))) {}
++
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(bool) const {
++    // +0.0 and -0.0 become false, everything else becomes true.
++    return (value & 0x7fff) != 0;
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(signed char) const {
++    return static_cast<signed char>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(unsigned char) const {
++    return static_cast<unsigned char>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(short) const {
++    return static_cast<short>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(unsigned short) const {
++    return static_cast<unsigned short>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(int) const {
++    return static_cast<int>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(unsigned int) const {
++    return static_cast<unsigned int>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(long) const {
++    return static_cast<long>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(unsigned long) const {
++    return static_cast<unsigned long>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(long long) const {
++    return static_cast<long long>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(unsigned long long) const {
++    return static_cast<unsigned long long>(bfloat16_to_float(*this));
++  }
++  EIGEN_DEVICE_FUNC operator float() const {
++    return bfloat16_impl::bfloat16_to_float(*this);
++  }
++  EIGEN_DEVICE_FUNC operator double() const {
++    return static_cast<double>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++  template<typename RealScalar>
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(std::complex<RealScalar>) const {
++    return std::complex<RealScalar>(static_cast<RealScalar>(bfloat16_impl::bfloat16_to_float(*this)), RealScalar(0));
++  }
++  EIGEN_DEVICE_FUNC EIGEN_EXPLICIT_CAST(Eigen::half) const {
++    return static_cast<Eigen::half>(bfloat16_impl::bfloat16_to_float(*this));
++  }
++};
++
++} // end namespace Eigen
++
++namespace std {
++template<>
++struct numeric_limits<Eigen::bfloat16> {
++  static const bool is_specialized = true;
++  static const bool is_signed = true;
++  static const bool is_integer = false;
++  static const bool is_exact = false;
++  static const bool has_infinity = true;
++  static const bool has_quiet_NaN = true;
++  static const bool has_signaling_NaN = true;
++  static const float_denorm_style has_denorm = std::denorm_absent;
++  static const bool has_denorm_loss = false;
++  static const std::float_round_style round_style = numeric_limits<float>::round_style;
++  static const bool is_iec559 = false;
++  static const bool is_bounded = true;
++  static const bool is_modulo = false;
++  static const int digits = 8;
++  static const int digits10 = 2;
++  static const int max_digits10 = 4;
++  static const int radix = 2;
++  static const int min_exponent = numeric_limits<float>::min_exponent;
++  static const int min_exponent10 = numeric_limits<float>::min_exponent10;
++  static const int max_exponent = numeric_limits<float>::max_exponent;
++  static const int max_exponent10 = numeric_limits<float>::max_exponent10;
++  static const bool traps = numeric_limits<float>::traps;
++  static const bool tinyness_before = numeric_limits<float>::tinyness_before;
++
++  static Eigen::bfloat16 (min)() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x0080); }
++  static Eigen::bfloat16 lowest() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0xff7f); }
++  static Eigen::bfloat16 (max)() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x7f7f); }
++  static Eigen::bfloat16 epsilon() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x3c00); }
++  static Eigen::bfloat16 round_error() { return Eigen::bfloat16(0x3f00); }
++  static Eigen::bfloat16 infinity() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x7f80); }
++  static Eigen::bfloat16 quiet_NaN() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x7fc0); }
++  static Eigen::bfloat16 signaling_NaN() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x7f81); }
++  static Eigen::bfloat16 denorm_min() { return Eigen::bfloat16_impl::raw_uint16_to_bfloat16(0x0001); }
++};
++
++// If std::numeric_limits<T> is specialized, should also specialize
++// std::numeric_limits<const T>, std::numeric_limits<volatile T>, and
++// std::numeric_limits<const volatile T>
++// https://stackoverflow.com/a/16519653/
++template<>
++struct numeric_limits<const Eigen::bfloat16> : numeric_limits<Eigen::bfloat16> {};
++template<>
++struct numeric_limits<volatile Eigen::bfloat16> : numeric_limits<Eigen::bfloat16> {};
++template<>
++struct numeric_limits<const volatile Eigen::bfloat16> : numeric_limits<Eigen::bfloat16> {};
++} // end namespace std
++
++namespace Eigen {
++
++namespace bfloat16_impl {
++
++// We need to distinguish ‘clang as the CUDA compiler’ from ‘clang as the host compiler,
++// invoked by NVCC’ (e.g. on MacOS). The former needs to see both host and device implementation
++// of the functions, while the latter can only deal with one of them.
++#if !defined(EIGEN_HAS_NATIVE_BF16) || (EIGEN_COMP_CLANG && !EIGEN_COMP_NVCC) // Emulate support for bfloat16 floats
++
++#if EIGEN_COMP_CLANG && defined(EIGEN_CUDACC)
++// We need to provide emulated *host-side* BF16 operators for clang.
++#pragma push_macro("EIGEN_DEVICE_FUNC")
++#undef EIGEN_DEVICE_FUNC
++#if defined(EIGEN_HAS_CUDA_BF16) && defined(EIGEN_HAS_NATIVE_BF16)
++#define EIGEN_DEVICE_FUNC __host__
++#else // both host and device need emulated ops.
++#define EIGEN_DEVICE_FUNC __host__ __device__
++#endif
++#endif
++
++// Definitions for CPUs, mostly working through conversion
++// to/from fp32.
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator + (const bfloat16& a, const bfloat16& b) {
++  return bfloat16(float(a) + float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator + (const bfloat16& a, const int& b) {
++  return bfloat16(float(a) + static_cast<float>(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator + (const int& a, const bfloat16& b) {
++  return bfloat16(static_cast<float>(a) + float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator * (const bfloat16& a, const bfloat16& b) {
++  return bfloat16(float(a) * float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator - (const bfloat16& a, const bfloat16& b) {
++  return bfloat16(float(a) - float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator / (const bfloat16& a, const bfloat16& b) {
++  return bfloat16(float(a) / float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator - (const bfloat16& a) {
++  bfloat16 result;
++  result.value = a.value ^ 0x8000;
++  return result;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16& operator += (bfloat16& a, const bfloat16& b) {
++  a = bfloat16(float(a) + float(b));
++  return a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16& operator *= (bfloat16& a, const bfloat16& b) {
++  a = bfloat16(float(a) * float(b));
++  return a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16& operator -= (bfloat16& a, const bfloat16& b) {
++  a = bfloat16(float(a) - float(b));
++  return a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16& operator /= (bfloat16& a, const bfloat16& b) {
++  a = bfloat16(float(a) / float(b));
++  return a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator++(bfloat16& a) {
++  a += bfloat16(1);
++  return a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator--(bfloat16& a) {
++  a -= bfloat16(1);
++  return a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator++(bfloat16& a, int) {
++  bfloat16 original_value = a;
++  ++a;
++  return original_value;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator--(bfloat16& a, int) {
++  bfloat16 original_value = a;
++  --a;
++  return original_value;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator == (const bfloat16& a, const bfloat16& b) {
++  return numext::equal_strict(float(a),float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator != (const bfloat16& a, const bfloat16& b) {
++  return numext::not_equal_strict(float(a), float(b));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator < (const bfloat16& a, const bfloat16& b) {
++  return float(a) < float(b);
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator <= (const bfloat16& a, const bfloat16& b) {
++  return float(a) <= float(b);
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator > (const bfloat16& a, const bfloat16& b) {
++  return float(a) > float(b);
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool operator >= (const bfloat16& a, const bfloat16& b) {
++  return float(a) >= float(b);
++}
++
++#if EIGEN_COMP_CLANG && defined(EIGEN_CUDACC)
++#pragma pop_macro("EIGEN_DEVICE_FUNC")
++#endif
++#endif  // Emulate support for bfloat16 floats
++
++// Division by an index. Do it in full float precision to avoid accuracy
++// issues in converting the denominator to bfloat16.
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 operator / (const bfloat16& a, Index b) {
++  return bfloat16(static_cast<float>(a) / static_cast<float>(b));
++}
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw truncate_to_bfloat16(const float v) {
++  __bfloat16_raw output;
++  if (Eigen::numext::isnan EIGEN_NOT_A_MACRO(v)) {
++    output.value = std::signbit(v) ? 0xFFC0: 0x7FC0;
++    return output;
++  } else if (std::fabs(v) < std::numeric_limits<float>::min EIGEN_NOT_A_MACRO()) {
++    // Flush denormal to +/- 0.
++    output.value = std::signbit(v) ? 0x8000 : 0;
++    return output;
++  }
++  const uint16_t* p = reinterpret_cast<const uint16_t*>(&v);
++#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++  output.value = p[0];
++#else
++  output.value = p[1];
++#endif
++  return output;
++}
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw raw_uint16_to_bfloat16(unsigned short value) {
++  return __bfloat16_raw(value);
++}
++
++// float_to_bfloat16_rtne template specialization that does not make any
++// assumption about the value of its function argument (ff).
++template <>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw float_to_bfloat16_rtne<false>(float ff) {
++#if (defined(EIGEN_HAS_CUDA_BF16) && defined(EIGEN_HAS_HIP_BF16))
++  // Nothing to do here
++#else
++  __bfloat16_raw output;
++
++  if (Eigen::numext::isnan EIGEN_NOT_A_MACRO(ff)) {
++    // If the value is a NaN, squash it to a qNaN with msb of fraction set,
++    // this makes sure after truncation we don't end up with an inf.
++    //
++    // qNaN magic: All exponent bits set + most significant bit of fraction
++    // set.
++    output.value = std::signbit(ff) ? 0xFFC0: 0x7FC0;
++  } else if (std::fabs(ff) < std::numeric_limits<float>::min EIGEN_NOT_A_MACRO()) {
++    // Flush denormal to +/- 0.0
++    output.value = std::signbit(ff) ? 0x8000 : 0;
++  } else {
++    // Fast rounding algorithm that rounds a half value to nearest even. This
++    // reduces expected error when we convert a large number of floats. Here
++    // is how it works:
++    //
++    // Definitions:
++    // To convert a float 32 to bfloat16, a float 32 can be viewed as 32 bits
++    // with the following tags:
++    //
++    // Sign |  Exp (8 bits) | Frac (23 bits)
++    //  S     EEEEEEEE         FFFFFFLRTTTTTTTTTTTTTTT
++    //
++    //  S: Sign bit.
++    //  E: Exponent bits.
++    //  F: First 6 bits of fraction.
++    //  L: Least significant bit of resulting bfloat16 if we truncate away the
++    //  rest of the float32. This is also the 7th bit of fraction
++    //  R: Rounding bit, 8th bit of fraction.
++    //  T: Sticky bits, rest of fraction, 15 bits.
++    //
++    // To round half to nearest even, there are 3 cases where we want to round
++    // down (simply truncate the result of the bits away, which consists of
++    // rounding bit and sticky bits) and two cases where we want to round up
++    // (truncate then add one to the result).
++    //
++    // The fast converting algorithm simply adds lsb (L) to 0x7fff (15 bits of
++    // 1s) as the rounding bias, adds the rounding bias to the input, then
++    // truncates the last 16 bits away.
++    //
++    // To understand how it works, we can analyze this algorithm case by case:
++    //
++    // 1. L = 0, R = 0:
++    //   Expect: round down, this is less than half value.
++    //
++    //   Algorithm:
++    //   - Rounding bias: 0x7fff + 0 = 0x7fff
++    //   - Adding rounding bias to input may create any carry, depending on
++    //   whether there is any value set to 1 in T bits.
++    //   - R may be set to 1 if there is a carry.
++    //   - L remains 0.
++    //   - Note that this case also handles Inf and -Inf, where all fraction
++    //   bits, including L, R and Ts are all 0. The output remains Inf after
++    //   this algorithm.
++    //
++    // 2. L = 1, R = 0:
++    //   Expect: round down, this is less than half value.
++    //
++    //   Algorithm:
++    //   - Rounding bias: 0x7fff + 1 = 0x8000
++    //   - Adding rounding bias to input doesn't change sticky bits but
++    //   adds 1 to rounding bit.
++    //   - L remains 1.
++    //
++    // 3. L = 0, R = 1, all of T are 0:
++    //   Expect: round down, this is exactly at half, the result is already
++    //   even (L=0).
++    //
++    //   Algorithm:
++    //   - Rounding bias: 0x7fff + 0 = 0x7fff
++    //   - Adding rounding bias to input sets all sticky bits to 1, but
++    //   doesn't create a carry.
++    //   - R remains 1.
++    //   - L remains 0.
++    //
++    // 4. L = 1, R = 1:
++    //   Expect: round up, this is exactly at half, the result needs to be
++    //   round to the next even number.
++    //
++    //   Algorithm:
++    //   - Rounding bias: 0x7fff + 1 = 0x8000
++    //   - Adding rounding bias to input doesn't change sticky bits, but
++    //   creates a carry from rounding bit.
++    //   - The carry sets L to 0, creates another carry bit and propagate
++    //   forward to F bits.
++    //   - If all the F bits are 1, a carry then propagates to the exponent
++    //   bits, which then creates the minimum value with the next exponent
++    //   value. Note that we won't have the case where exponents are all 1,
++    //   since that's either a NaN (handled in the other if condition) or inf
++    //   (handled in case 1).
++    //
++    // 5. L = 0, R = 1, any of T is 1:
++    //   Expect: round up, this is greater than half.
++    //
++    //   Algorithm:
++    //   - Rounding bias: 0x7fff + 0 = 0x7fff
++    //   - Adding rounding bias to input creates a carry from sticky bits,
++    //   sets rounding bit to 0, then create another carry.
++    //   - The second carry sets L to 1.
++    //
++    // Examples:
++    //
++    //  Exact half value that is already even:
++    //    Input:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit) | Frac (last 16 bit)
++    //     S     E E E E E E E E      F F F F F F L     RTTTTTTTTTTTTTTT
++    //     0     0 0 0 0 0 0 0 0      0 0 0 0 0 1 0     1000000000000000
++    //
++    //     This falls into case 3. We truncate the rest of 16 bits and no
++    //     carry is created into F and L:
++    //
++    //    Output:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit)
++    //     S     E E E E E E E E      F F F F F F L
++    //     0     0 0 0 0 0 0 0 0      0 0 0 0 0 1 0
++    //
++    //  Exact half value, round to next even number:
++    //    Input:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit) | Frac (last 16 bit)
++    //     S     E E E E E E E E      F F F F F F L     RTTTTTTTTTTTTTTT
++    //     0     0 0 0 0 0 0 0 0      0 0 0 0 0 0 1     1000000000000000
++    //
++    //     This falls into case 4. We create a carry from R and T,
++    //     which then propagates into L and F:
++    //
++    //    Output:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit)
++    //     S     E E E E E E E E      F F F F F F L
++    //     0     0 0 0 0 0 0 0 0      0 0 0 0 0 1 0
++    //
++    //
++    //  Max denormal value round to min normal value:
++    //    Input:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit) | Frac (last 16 bit)
++    //     S     E E E E E E E E      F F F F F F L     RTTTTTTTTTTTTTTT
++    //     0     0 0 0 0 0 0 0 0      1 1 1 1 1 1 1     1111111111111111
++    //
++    //     This falls into case 4. We create a carry from R and T,
++    //     propagate into L and F, which then propagates into exponent
++    //     bits:
++    //
++    //    Output:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit)
++    //     S     E E E E E E E E      F F F F F F L
++    //     0     0 0 0 0 0 0 0 1      0 0 0 0 0 0 0
++    //
++    //  Max normal value round to Inf:
++    //    Input:
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit) | Frac (last 16 bit)
++    //     S     E E E E E E E E      F F F F F F L     RTTTTTTTTTTTTTTT
++    //     0     1 1 1 1 1 1 1 0      1 1 1 1 1 1 1     1111111111111111
++    //
++    //     This falls into case 4. We create a carry from R and T,
++    //     propagate into L and F, which then propagates into exponent
++    //     bits:
++    //
++    //    Sign |  Exp (8 bit)     | Frac (first 7 bit)
++    //     S     E E E E E E E E      F F F F F F L
++    //     0     1 1 1 1 1 1 1 1      0 0 0 0 0 0 0
++
++    // At this point, ff must be either a normal float, or +/-infinity.
++    output = float_to_bfloat16_rtne<true>(ff);
++  }
++  return output;
++#endif
++}
++
++// float_to_bfloat16_rtne template specialization that assumes that its function
++// argument (ff) is either a normal floating point number, or +/-infinity, or
++// zero. Used to improve the runtime performance of conversion from an integer
++// type to bfloat16.  
++template <>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC __bfloat16_raw float_to_bfloat16_rtne<true>(float ff) {
++#if (defined(EIGEN_HAS_CUDA_BF16) && defined(EIGEN_HAS_HIP_BF16))
++    // Nothing to do here
++#else
++    unsigned int input = numext::as_uint(ff);
++    __bfloat16_raw output;
++
++    // Least significant bit of resulting bfloat.
++    unsigned int lsb = (input >> 16) & 1;
++    unsigned int rounding_bias = 0x7fff + lsb;
++    input += rounding_bias;
++    output.value = static_cast<unsigned short>(input >> 16);
++    return output;
++#endif
++}
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC float bfloat16_to_float(__bfloat16_raw h) {
++    float result = 0;
++    unsigned short* q = reinterpret_cast<unsigned short*>(&result);
++#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
++    q[0] = h.value;
++#else
++    q[1] = h.value;
++#endif
++    return result;
++}
++// --- standard functions ---
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool (isinf)(const bfloat16& a) {
++  return std::isinf EIGEN_NOT_A_MACRO(float(a));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool (isnan)(const bfloat16& a) {
++  return std::isnan EIGEN_NOT_A_MACRO(float(a));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bool (isfinite)(const bfloat16& a) {
++  return !(isinf EIGEN_NOT_A_MACRO (a)) && !(isnan EIGEN_NOT_A_MACRO (a));
++}
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 abs(const bfloat16& a) {
++  bfloat16 result;
++  result.value = a.value & 0x7FFF;
++  return result;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 exp(const bfloat16& a) {
++   return bfloat16(::expf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 expm1(const bfloat16& a) {
++  return bfloat16(numext::expm1(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 log(const bfloat16& a) {
++  return bfloat16(::logf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 log1p(const bfloat16& a) {
++  return bfloat16(numext::log1p(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 log10(const bfloat16& a) {
++  return bfloat16(::log10f(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 sqrt(const bfloat16& a) {
++    return bfloat16(::sqrtf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 pow(const bfloat16& a, const bfloat16& b) {
++  return bfloat16(::powf(float(a), float(b)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 sin(const bfloat16& a) {
++  return bfloat16(::sinf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 cos(const bfloat16& a) {
++  return bfloat16(::cosf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 tan(const bfloat16& a) {
++  return bfloat16(::tanf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 asin(const bfloat16& a) {
++  return bfloat16(::asinf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 acos(const bfloat16& a) {
++  return bfloat16(::acosf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 atan(const bfloat16& a) {
++  return bfloat16(::atanf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 sinh(const bfloat16& a) {
++  return bfloat16(::sinhf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 cosh(const bfloat16& a) {
++  return bfloat16(::coshf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 tanh(const bfloat16& a) {
++  return bfloat16(::tanhf(float(a)));
++}
++#if EIGEN_HAS_CXX11_MATH
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 asinh(const bfloat16& a) {
++  return bfloat16(::asinhf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 acosh(const bfloat16& a) {
++  return bfloat16(::acoshf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 atanh(const bfloat16& a) {
++  return bfloat16(::atanhf(float(a)));
++}
++#endif
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 floor(const bfloat16& a) {
++  return bfloat16(::floorf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 ceil(const bfloat16& a) {
++  return bfloat16(::ceilf(float(a)));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 fmod(const bfloat16& a, const bfloat16& b) {
++  return bfloat16(::fmodf(float(a), float(b)));
++}
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 (min)(const bfloat16& a, const bfloat16& b) {
++  const float f1 = static_cast<float>(a);
++  const float f2 = static_cast<float>(b);
++  return f2 < f1 ? b : a;
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 (max)(const bfloat16& a, const bfloat16& b) {
++  const float f1 = static_cast<float>(a);
++  const float f2 = static_cast<float>(b);
++  return f1 < f2 ? b : a;
++}
++
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 fmin(const bfloat16& a, const bfloat16& b) {
++  const float f1 = static_cast<float>(a);
++  const float f2 = static_cast<float>(b);
++  return bfloat16(::fminf(f1, f2));
++}
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC bfloat16 fmax(const bfloat16& a, const bfloat16& b) {
++  const float f1 = static_cast<float>(a);
++  const float f2 = static_cast<float>(b);
++  return bfloat16(::fmaxf(f1, f2));
++}
++
++#ifndef EIGEN_NO_IO
++EIGEN_ALWAYS_INLINE std::ostream& operator << (std::ostream& os, const bfloat16& v) {
++  os << static_cast<float>(v);
++  return os;
++}
++#endif
++
++} // namespace bfloat16_impl
++
++namespace internal {
++
++template<>
++struct random_default_impl<bfloat16, false, false>
++{
++  static inline bfloat16 run(const bfloat16& x, const bfloat16& y)
++  {
++    return x + (y-x) * bfloat16(float(std::rand()) / float(RAND_MAX));
++  }
++  static inline bfloat16 run()
++  {
++    return run(bfloat16(-1.f), bfloat16(1.f));
++  }
++};
++
++template<> struct is_arithmetic<bfloat16> { enum { value = true }; };
++
++} // namespace internal
++
++template<> struct NumTraits<Eigen::bfloat16>
++    : GenericNumTraits<Eigen::bfloat16>
++{
++  enum {
++    IsSigned = true,
++    IsInteger = false,
++    IsComplex = false,
++    RequireInitialization = false
++  };
++
++  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Eigen::bfloat16 epsilon() {
++    return bfloat16_impl::raw_uint16_to_bfloat16(0x3c00);
++  }
++  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Eigen::bfloat16 dummy_precision() {
++    return bfloat16_impl::raw_uint16_to_bfloat16(0x3D4D);  // bfloat16(5e-2f);
++
++  }
++  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Eigen::bfloat16 highest() {
++    return bfloat16_impl::raw_uint16_to_bfloat16(0x7F7F);
++  }
++  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Eigen::bfloat16 lowest() {
++    return bfloat16_impl::raw_uint16_to_bfloat16(0xFF7F);
++  }
++  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Eigen::bfloat16 infinity() {
++    return bfloat16_impl::raw_uint16_to_bfloat16(0x7f80);
++  }
++  EIGEN_DEVICE_FUNC static EIGEN_STRONG_INLINE Eigen::bfloat16 quiet_NaN() {
++    return bfloat16_impl::raw_uint16_to_bfloat16(0x7fc0);
++  }
++};
++
++} // namespace Eigen
++
++namespace std {
++
++#if __cplusplus > 199711L
++template <>
++struct hash<Eigen::bfloat16> {
++  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE std::size_t operator()(const Eigen::bfloat16& a) const {
++    return hash<float>()(static_cast<float>(a));
++  }
++};
++#endif
++
++} // namespace std
++
++
++namespace Eigen {
++namespace numext {
++
++template<>
++EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
++bool (isnan)(const Eigen::bfloat16& h) {
++  return (bfloat16_impl::isnan)(h);
++}
++
++template<>
++EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
++bool (isinf)(const Eigen::bfloat16& h) {
++  return (bfloat16_impl::isinf)(h);
++}
++
++template<>
++EIGEN_DEVICE_FUNC EIGEN_ALWAYS_INLINE
++bool (isfinite)(const Eigen::bfloat16& h) {
++  return (bfloat16_impl::isfinite)(h);
++}
++
++} // namespace numext
++}  // namespace Eigen
++
++#endif // EIGEN_BFLOAT16_H
+diff --git a/Eigen/src/Core/arch/Default/TypeCasting.h b/Eigen/src/Core/arch/Default/TypeCasting.h
+index b6df98468..c94b09fe8 100644
+--- a/Eigen/src/Core/arch/Default/TypeCasting.h
++++ b/Eigen/src/Core/arch/Default/TypeCasting.h
+@@ -71,6 +71,47 @@ template<>
+ struct functor_traits<scalar_cast_op<Eigen::half, float> >
+ { enum { Cost = NumTraits<float>::AddCost, PacketAccess = false }; };
+ 
++template<>
++struct scalar_cast_op<float, Eigen::bfloat16> {
++  EIGEN_EMPTY_STRUCT_CTOR(scalar_cast_op)
++  typedef Eigen::bfloat16 result_type;
++  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Eigen::bfloat16 operator() (const float& a) const {
++    return Eigen::bfloat16(a);
++  }
++};
++
++template<>
++struct functor_traits<scalar_cast_op<float, Eigen::bfloat16> >
++{ enum { Cost = NumTraits<float>::AddCost, PacketAccess = false }; };
++
++
++template<>
++struct scalar_cast_op<int, Eigen::bfloat16> {
++  EIGEN_EMPTY_STRUCT_CTOR(scalar_cast_op)
++  typedef Eigen::bfloat16 result_type;
++  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Eigen::bfloat16 operator() (const int& a) const {
++    return Eigen::bfloat16(static_cast<float>(a));
++  }
++};
++
++template<>
++struct functor_traits<scalar_cast_op<int, Eigen::bfloat16> >
++{ enum { Cost = NumTraits<float>::AddCost, PacketAccess = false }; };
++
++
++template<>
++struct scalar_cast_op<Eigen::bfloat16, float> {
++  EIGEN_EMPTY_STRUCT_CTOR(scalar_cast_op)
++  typedef float result_type;
++  EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE float operator() (const Eigen::bfloat16& a) const {
++    return static_cast<float>(a);
++  }
++};
++
++template<>
++struct functor_traits<scalar_cast_op<Eigen::bfloat16, float> >
++{ enum { Cost = NumTraits<float>::AddCost, PacketAccess = false }; };
++
+ }
+ }
+ 
 diff --git a/Eigen/src/Core/arch/NEON/TypeCasting.h b/Eigen/src/Core/arch/NEON/TypeCasting.h
-index 4aa98e3..2734eac 100644
+index 4aa98e370..2734eacff 100644
 --- a/Eigen/src/Core/arch/NEON/TypeCasting.h
 +++ b/Eigen/src/Core/arch/NEON/TypeCasting.h
 @@ -347,6 +347,72 @@ template<> EIGEN_STRONG_INLINE Packet2l preinterpret<Packet2l,Packet2ul>(const P
@@ -75,8 +2073,22 @@ index 4aa98e3..2734eac 100644
  #if EIGEN_ARCH_ARM64
  
  template<> EIGEN_STRONG_INLINE Packet2f pcast<Packet2d,Packet2f>(const Packet2d& a) { return vcvt_f32_f64(a); }
+diff --git a/Eigen/src/Core/util/ConfigureVectorization.h b/Eigen/src/Core/util/ConfigureVectorization.h
+index 952abc306..92d9da7b8 100644
+--- a/Eigen/src/Core/util/ConfigureVectorization.h
++++ b/Eigen/src/Core/util/ConfigureVectorization.h
+@@ -289,6 +289,9 @@
+           #define EIGEN_VECTORIZE_AVX512ER
+         #endif
+       #endif
++      #ifdef __AVX512BF16__
++        #define EIGEN_VECTORIZE_AVX512BF16
++      #endif
+     #endif
+ 
+     // Disable AVX support on broken xcode versions
 diff --git a/Eigen/src/Geometry/arch/Geometry_SSE.h b/Eigen/src/Geometry/arch/Geometry_SSE.h
-index 108cc9f..43677f4 100644
+index 108cc9f8e..43677f478 100644
 --- a/Eigen/src/Geometry/arch/Geometry_SSE.h
 +++ b/Eigen/src/Geometry/arch/Geometry_SSE.h
 @@ -33,13 +33,14 @@ struct quat_product<Architecture::SSE, Derived, OtherDerived, float>
@@ -101,3 +2113,104 @@ index 108cc9f..43677f4 100644
      return res;
    }
  };
+diff --git a/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h b/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
+index 445248163..ea286fee1 100644
+--- a/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
++++ b/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
+@@ -101,6 +101,17 @@ Eigen::half RandomToTypeUniform<Eigen::half>(uint64_t* state, uint64_t stream) {
+   return result - Eigen::half(1.0f);
+ }
+ 
++template <> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
++Eigen::bfloat16 RandomToTypeUniform<Eigen::bfloat16>(uint64_t* state, uint64_t stream) {
++  Eigen::bfloat16 result;
++  // Generate 7 random bits for the mantissa
++  unsigned rnd = PCG_XSH_RS_generator(state, stream);
++  result.value = static_cast<uint16_t>(rnd & 0x7fu);
++  // Set the exponent
++  result.value |= (static_cast<uint16_t>(127) << 7);
++  // Return the final result
++  return result - Eigen::bfloat16(1.0f);
++}
+ 
+ template <> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
+ float RandomToTypeUniform<float>(uint64_t* state, uint64_t stream) {
+diff --git a/unsupported/Eigen/SpecialFunctions b/unsupported/Eigen/SpecialFunctions
+index a098ce871..89ee368fc 100644
+--- a/unsupported/Eigen/SpecialFunctions
++++ b/unsupported/Eigen/SpecialFunctions
+@@ -70,6 +70,7 @@ namespace Eigen {
+ #include "src/SpecialFunctions/HipVectorCompatibility.h"
+ #endif
+ #include "src/SpecialFunctions/SpecialFunctionsPacketMath.h"
++#include "src/SpecialFunctions/SpecialFunctionsBFloat16.h"
+ #include "src/SpecialFunctions/SpecialFunctionsHalf.h"
+ #include "src/SpecialFunctions/SpecialFunctionsFunctors.h"
+ #include "src/SpecialFunctions/SpecialFunctionsArrayAPI.h"
+diff --git a/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h b/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
+new file mode 100644
+index 000000000..2d94231f0
+--- /dev/null
++++ b/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
+@@ -0,0 +1,58 @@
++// This file is part of Eigen, a lightweight C++ template library
++// for linear algebra.
++//
++// This Source Code Form is subject to the terms of the Mozilla
++// Public License v. 2.0. If a copy of the MPL was not distributed
++// with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++#ifndef EIGEN_SPECIALFUNCTIONS_BFLOAT16_H
++#define EIGEN_SPECIALFUNCTIONS_BFLOAT16_H
++
++namespace Eigen {
++namespace numext {
++
++#if EIGEN_HAS_C99_MATH
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 lgamma(const Eigen::bfloat16& a) {
++  return Eigen::bfloat16(Eigen::numext::lgamma(static_cast<float>(a)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 digamma(const Eigen::bfloat16& a) {
++  return Eigen::bfloat16(Eigen::numext::digamma(static_cast<float>(a)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 zeta(const Eigen::bfloat16& x, const Eigen::bfloat16& q) {
++  return Eigen::bfloat16(Eigen::numext::zeta(static_cast<float>(x), static_cast<float>(q)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 polygamma(const Eigen::bfloat16& n, const Eigen::bfloat16& x) {
++  return Eigen::bfloat16(Eigen::numext::polygamma(static_cast<float>(n), static_cast<float>(x)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 erf(const Eigen::bfloat16& a) {
++  return Eigen::bfloat16(Eigen::numext::erf(static_cast<float>(a)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 erfc(const Eigen::bfloat16& a) {
++  return Eigen::bfloat16(Eigen::numext::erfc(static_cast<float>(a)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 ndtri(const Eigen::bfloat16& a) {
++  return Eigen::bfloat16(Eigen::numext::ndtri(static_cast<float>(a)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 igamma(const Eigen::bfloat16& a, const Eigen::bfloat16& x) {
++  return Eigen::bfloat16(Eigen::numext::igamma(static_cast<float>(a), static_cast<float>(x)));
++}
++template <>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 igamma_der_a(const Eigen::bfloat16& a, const Eigen::bfloat16& x) {
++  return Eigen::bfloat16(Eigen::numext::igamma_der_a(static_cast<float>(a), static_cast<float>(x)));
++}
++template <>
++EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 gamma_sample_der_alpha(const Eigen::bfloat16& alpha, const Eigen::bfloat16& sample) {
++  return Eigen::bfloat16(Eigen::numext::gamma_sample_der_alpha(static_cast<float>(alpha), static_cast<float>(sample)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 igammac(const Eigen::bfloat16& a, const Eigen::bfloat16& x) {
++  return Eigen::bfloat16(Eigen::numext::igammac(static_cast<float>(a), static_cast<float>(x)));
++}
++template<> EIGEN_STRONG_INLINE EIGEN_DEVICE_FUNC Eigen::bfloat16 betainc(const Eigen::bfloat16& a, const Eigen::bfloat16& b, const Eigen::bfloat16& x) {
++  return Eigen::bfloat16(Eigen::numext::betainc(static_cast<float>(a), static_cast<float>(b), static_cast<float>(x)));
++}
++#endif
++
++}  // end namespace numext
++}  // end namespace Eigen
++
++#endif  // EIGEN_SPECIALFUNCTIONS_BFLOAT16_H
+-- 
+2.21.0.windows.1
+
