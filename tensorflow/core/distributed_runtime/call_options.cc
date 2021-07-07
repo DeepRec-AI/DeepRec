@@ -19,7 +19,8 @@ limitations under the License.
 
 namespace tensorflow {
 
-CallOptions::CallOptions() {}
+CallOptions::CallOptions()
+  : timeout_in_ms_(0), use_wait_for_ready_(false) {}
 
 void CallOptions::StartCancel() {
   mutex_lock l(mu_);
