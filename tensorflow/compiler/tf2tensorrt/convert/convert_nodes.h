@@ -26,6 +26,7 @@ limitations under the License.
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_allocator.h"
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_int8_calibrator.h"
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_logger.h"
+#include "tensorflow/compiler/tf2tensorrt/utils/trt_tensor_proxy.h"
 #include "tensorflow/core/framework/graph.pb.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/grappler/costs/graph_properties.h"
@@ -164,7 +165,6 @@ class OutputEdgeValidator {
   bool operator()(const Edge* out_edge) const;
 };
 
-string DebugString(const nvinfer1::DimensionType type);
 string DebugString(const nvinfer1::DataType trt_dtype);
 string DebugString(const nvinfer1::Dims& dims);
 string DebugString(const nvinfer1::Permutation& permutation, int len);
@@ -264,10 +264,13 @@ class TrtWeightStore {
 class TRT_TensorOrWeights {
  public:
   TRT_TensorOrWeights() {}
+  TRT_TensorOrWeights(ITensorProxyPtr);
+  TRT_TensorOrWeights(ITensorProxyPtr tensor, int batch_size);
 
   // Constructor that makes it an ITensor, doesn't take ownership of 'tensor'.
   // This is used by Converter when building the TRT network, where the ITensor
-  // is owned by the TRT network being built. See comment for 'tensor_' below.
+  // is owned by the TRT network being built. See comment for 'trt_tensor_'
+  // in trt_proxy_tensor.h.
   explicit TRT_TensorOrWeights(nvinfer1::ITensor* tensor, int batch_size = -1);
 
   // Constructor that makes it an ITensor by creating one using provided data
@@ -275,7 +278,7 @@ class TRT_TensorOrWeights {
   // TrtNodeValidator to encapsulate the type and shape information for
   // validation of graph nodes, and the created ITensor is fake and temporary,
   // and should not be used to build any TRT network. See comment for
-  // 'simple_itensor_' below.
+  // 'simple_tensor_' in trt_proxy_tensor.h.
   explicit TRT_TensorOrWeights(nvinfer1::DataType trt_dtype,
                                const nvinfer1::Dims& trt_dims, int batch_size);
 
@@ -289,7 +292,7 @@ class TRT_TensorOrWeights {
   bool is_tensor() const { return initialized_ && is_tensor_; }
   bool is_weights() const { return initialized_ && !is_tensor_; }
 
-  nvinfer1::ITensor* tensor() const;
+  ITensorProxyPtr tensor() const;
 
   TRT_ShapedWeights& weights() {
     CHECK(is_weights());
@@ -308,25 +311,8 @@ class TRT_TensorOrWeights {
   string DebugString() const;
 
  private:
-  class SimpleITensor;
 
   void set_batch_size(int batch_size) { batch_size_ = batch_size; }
-
-  // When it represents an ITensor, the ITensor can be either passed by the
-  // caller via the constructor that takes an ITensor* as parameter, or be
-  // created as a SimpleITensor.
-  //
-  // In the first case, the ITensor pointer is stored in 'tensor_' below, and
-  // the ITensor itself is not owned by this class. This method is used by
-  // Converter (e.g. AddInputTensor) and op converters during TRT network
-  // construction, where the TRT network owns the ITensor.
-  //
-  // In the second case, the created SimpleITensor is stored in
-  // 'simple_itensor_' below and is owned by this class. SimpleITensor is a fake
-  // implementation of ITensor and is used only by TrtNodeValidator to validate
-  // the graph nodes.
-  nvinfer1::ITensor* tensor_ = nullptr;  // Not owned.
-  std::shared_ptr<SimpleITensor> simple_itensor_ = nullptr;
 
   // First dimension of the TF tensor (NOT tensor_) that is represented by
   // tensor_ is treated as the "batch dimension" by TRT, and tensor_'s
@@ -340,6 +326,7 @@ class TRT_TensorOrWeights {
   // is that currently it cannot convert a graph that doesn't have the batch
   // size represented in the shapes or the batch sizes are different. See
   // b/118387490 for more details.
+  ITensorProxyPtr tensor_proxy_ptr_ = nullptr;
   int batch_size_ = -1;
 
   TRT_ShapedWeights weights_;
@@ -482,13 +469,13 @@ class Converter {
   // This should be called on the inputs and outputs of any layer we create
   // where we know that the quantization range does not change during that
   // operation. (e.g. Reshape, Transpose, Identity, MaxPool).
-  void MarkQuantizationRangesAsInferrable(nvinfer1::ITensor* input,
-                                          nvinfer1::ITensor* output);
+  void MarkQuantizationRangesAsInferrable(ITensorProxyPtr* input,
+                                          ITensorProxyPtr* output);
 
   // This function should be called when we know the quantization range of a
   // tensor, either from a quantize/dequantize node or when the output is a
   // fixed range (e.g. SoftMax, Relu6, Sigmoid).
-  void ProvideQuantizationRange(nvinfer1::ITensor* tensor, float min_range,
+  void ProvideQuantizationRange(ITensorProxyPtr* tensor, float min_range,
                                 float max_range);
 
   // Should be called when full TRT network has been constructed and before
@@ -501,9 +488,9 @@ class Converter {
   // Transpose 'input_tensor' with given permutation 'order_with_batch_dim' to
   // 'output_tensor'. The permutation 'order_with_batch_dim' contains the batch
   // dimension which should always be 0.
-  Status TransposeTensor(nvinfer1::ITensor* input_tensor,
+  Status TransposeTensor(ITensorProxyPtr input_tensor,
                          const std::vector<int>& order_with_batch_dim,
-                         nvinfer1::ITensor** output_tensor);
+                         ITensorProxyPtr* output_tensor);
 
   // Converts 'input' into 'tensor' with shape specified by 'dims' (which
   // doesn't contain the batch dimension).
@@ -514,11 +501,11 @@ class Converter {
   Status PrepareTensorForShape(const TRT_TensorOrWeights& input,
                                const nvinfer1::Dims& dims,
                                const bool validation_only,
-                               nvinfer1::ITensor** tensor);
+                               ITensorProxyPtr* tensor);
 
   // Creates an IConstantLayer using 'weights' whose dimensions are specified by
   // 'dims', and returns the output ITensor.
-  nvinfer1::ITensor* CreateConstantLayer(const TRT_ShapedWeights& weights,
+  ITensorProxyPtr CreateConstantLayer(const TRT_ShapedWeights& weights,
                                          const nvinfer1::Dims& dims);
 
  private:
@@ -562,6 +549,7 @@ class Converter {
   // store the range as a single float = max(abs(min_range), abs(max_range)).
   // Range refers to the floating point values, e.g. min_range = 0.0f, max_range
   // = 6.0f for Relu6.
+  std::unordered_map<ITensorProxyPtr*, float> quantization_ranges_proxy_;
   std::unordered_map<nvinfer1::ITensor*, float> quantization_ranges_;
 
   // Edges where quantization ranges can be inferred (copied) across ops - from
@@ -569,6 +557,8 @@ class Converter {
   // known ranges from quantization_ranges_ across these edges, adding the new
   // ranges to quantization_ranges_ so that they can be applied in
   // MaybeApplyQuantizationRanges().
+  std::vector<std::pair<ITensorProxyPtr*, ITensorProxyPtr*>>
+      quantization_infer_proxy_;
   std::vector<std::pair<nvinfer1::ITensor*, nvinfer1::ITensor*>>
       quantization_infer_;
 
