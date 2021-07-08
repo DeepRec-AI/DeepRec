@@ -169,7 +169,8 @@ class MklLRNOp : public OpKernel {
           lrn_prim_desc.PRIMITIVE_DESC_SRC, cpu_engine_));
 
       std::vector<primitive> net;
-      fwd_stream_.reset(CreateStream(context, cpu_engine_));
+      MklDnnThreadPool eigen_tp(context);
+      fwd_stream_.reset(CreateStream(&eigen_tp, cpu_engine_));
 #ifdef ENABLE_MKLDNN_V1
       net.push_back(lrn_forward(lrn_prim_desc));
       std::vector<std::unordered_map<int, memory>> net_args;

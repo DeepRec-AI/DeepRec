@@ -303,7 +303,8 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
       }
 
       std::shared_ptr<stream> stream;
-      stream.reset(CreateStream(context, primitive->GetEngine()));
+      MklDnnThreadPool eigen_tp(context);
+      stream.reset(CreateStream(&eigen_tp, primitive->GetEngine()));
 
       // TODO(intel): Do inplace optimization if meet performance issue.
       MklDnnShape dnn_shape_dst;

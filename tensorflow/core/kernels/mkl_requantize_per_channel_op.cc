@@ -131,7 +131,8 @@ class MklRequantizePerChannelOp : public OpKernel {
               GET_MEMORY_PRIMITIVE_DESC_FROM_MEM_PTR(output_mem_prim),
               cpu_engine_, reorder_attr);
       std::shared_ptr<stream> reorder_stream;
-      reorder_stream.reset(CreateStream(ctx, cpu_engine_));
+      MklDnnThreadPool eigen_tp(ctx);
+      reorder_stream.reset(CreateStream(&eigen_tp, cpu_engine_));
 #ifndef ENABLE_MKLDNN_V1
       reorder_stream->submit(
           {mkldnn::reorder(reorder_pd, *input_mem_prim, *output_mem_prim)});
