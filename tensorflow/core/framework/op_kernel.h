@@ -1258,6 +1258,7 @@ class OpKernelContext {
   Tensor* mutable_output(int index);
   void set_output(int index, const Tensor& tensor);
   mutex* input_ref_mutex(int index);
+  Tensor* input_ref(int index);
   void set_output_ref(int index, mutex* mu, Tensor* tensor_for_ref);
   TensorValue release_output(int index);
 
@@ -1663,6 +1664,13 @@ inline bool OpKernelContext::has_input(int index) const {
   DCHECK_GE(index, 0);
   DCHECK_LT(index, num_inputs());
   return (*params_->inputs)[index].tensor != nullptr;
+}
+
+inline Tensor* OpKernelContext::input_ref(int index) {
+  DCHECK_GE(index, 0);
+  DCHECK_LT(index, num_inputs());
+  DCHECK(input_is_ref(index));
+  return (*params_->inputs)[index].tensor;
 }
 
 inline mutex* OpKernelContext::input_ref_mutex(int index) {

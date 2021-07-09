@@ -169,7 +169,9 @@ Status StarServerBase::Init() {
   ConfigProto config = server_def_.default_session_config();
   sess_opts.config = config;
   master_env_.run_graph_mode = GetRunGraphModeFlag(config);
-  if (master_env_.run_graph_mode) {
+  master_env_.run_graph_mode_v2 = GetRunGraphModeFlagV2(config);
+  if (master_env_.run_graph_mode ||
+      master_env_.run_graph_mode_v2) {
     master_env_.run_graph_mode_with_zero_copy = true;
   }
 
@@ -446,6 +448,14 @@ bool StarServerBase::GetRunGraphModeFlag(const ConfigProto& config) {
   // We do NOT want to add the run_graph_mode flag in
   // config.proto that will make the api_compatibility_test failed.
   // return config.run_graph_mode();
+  return false;
+}
+
+bool StarServerBase::GetRunGraphModeFlagV2(const ConfigProto& config) {
+  if (server_def_.protocol() == "star_server_v2") {
+    return true;
+  }
+
   return false;
 }
 

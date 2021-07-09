@@ -252,6 +252,25 @@ Status BaseRemoteRendezvous::Send(const Rendezvous::ParsedKey& parsed,
   return local_->Send(parsed, args, val, is_dead);
 }
 
+Status BaseRemoteRendezvous::Send(const ParsedKey& parsed,
+                                  const Rendezvous::Args& args,
+                                  Tensor* val, mutex* mu,
+                                  const bool is_dead) {
+  VLOG(1) << "BaseRemoteRendezvous Send " << this << " " << parsed.FullKey();
+  {
+    mutex_lock l(mu_);
+    if (!status_.ok()) return status_;
+    DCHECK(is_initialized_locked());
+    if (!IsLocalDevice(session_->worker_name, parsed.src_device)) {
+      return errors::InvalidArgument(
+          "Invalid rendezvous key (src): ", parsed.FullKey(), " @ ",
+          session_->worker_name);
+    }
+  }
+  // Buffers "val" and "device_context" in local_.
+  return local_->Send(parsed, args, val, mu, is_dead);
+}
+
 Status BaseRemoteRendezvous::ValidateDevices(const ParsedKey& parsed,
                                              bool is_src) {
   // Cache session pointer to avoid repeatedly taking & releasing the lock
@@ -587,6 +606,35 @@ void BaseRemoteRendezvous::FuseRecvFromRemoteAsync(
         FuseDoneCallback done,
         CallOptions* opts) {
     CHECK(false) << "FuseRecvFromRemoteAsync Unimplemented";
+}
+
+void BaseRemoteRendezvous::RecvAsync(const ParsedKey& parsed,
+                                     const Rendezvous::Args& recv_args,
+                                     RefDoneCallback done) {
+  VLOG(1) << "RemoteRendezvous Recv " << this << " " << parsed.FullKey();
+  CHECK(is_initialized()) << "Ref RecvAsync called when uninitialized.";
+  Status s = ValidateDevices(parsed, false /*!is_src*/);
+  if (!s.ok()) {
+    done(s, Args(), Args(), nullptr, nullptr, false);
+    return;
+  }
+
+  // Require same worker
+  if (IsSameWorker(parsed.src, parsed.dst)) {
+    // Recv the tensor from local_.
+    local_->RecvAsync(
+        parsed, recv_args,
+        [this, parsed, done](
+            const Status& status, const Rendezvous::Args& send_args,
+            const Rendezvous::Args& recv_args, Tensor* in, mutex* mu,
+            bool is_dead) {
+            // only support CPU now
+            done(status, send_args, recv_args, in, mu, is_dead);
+        });
+  } else {
+    LOG(ERROR) << "Ref RecvAsync require the same src and dst.";
+    done(s, Args(), Args(), nullptr, nullptr, false);
+  }
 }
 
 void BaseRemoteRendezvous::StartAbort(const Status& s) {

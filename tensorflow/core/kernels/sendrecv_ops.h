@@ -47,6 +47,32 @@ class RecvOp : public AsyncOpKernel {
   TF_DISALLOW_COPY_AND_ASSIGN(RecvOp);
 };
 
+class RefSendOp : public OpKernel {
+ public:
+  explicit RefSendOp(OpKernelConstruction* ctx);
+  void Compute(OpKernelContext* ctx) override;
+
+ private:
+  string key_prefix_;
+  Rendezvous::ParsedKey parsed_key_;
+  bool hostmem_sendrecv_;
+
+  TF_DISALLOW_COPY_AND_ASSIGN(RefSendOp);
+};
+
+class RefRecvOp : public AsyncOpKernel {
+ public:
+  explicit RefRecvOp(OpKernelConstruction* ctx);
+  void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override;
+
+ private:
+  string key_prefix_;
+  Rendezvous::ParsedKey parsed_key_;
+  bool hostmem_sendrecv_;
+
+  TF_DISALLOW_COPY_AND_ASSIGN(RefRecvOp);
+};
+
 }  // end namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_KERNELS_SENDRECV_OPS_H_

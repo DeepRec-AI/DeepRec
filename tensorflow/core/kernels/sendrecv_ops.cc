@@ -198,6 +198,143 @@ REGISTER_KERNEL_BUILDER(Name("_Recv").Device(DEVICE_DEFAULT), RecvOp);
 REGISTER_KERNEL_BUILDER(
     Name("_HostRecv").Device(DEVICE_DEFAULT).HostMemory("tensor"), RecvOp);
 
+RefSendOp::RefSendOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+  string send_device;
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("send_device", &send_device));
+  string recv_device;
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("recv_device", &recv_device));
+  if (send_device != recv_device) {
+    LOG(FATAL) << "RefSendOp require send_device equal recv_device, currently send_device"
+               << send_device << ", recv_device " << recv_device; 
+  }
+  uint64 send_device_incarnation;
+  OP_REQUIRES_OK(
+      ctx, ctx->GetAttr("send_device_incarnation",
+                        reinterpret_cast<int64*>(&send_device_incarnation)));
+  string tensor_name;
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name));
+  key_prefix_ = GetRendezvousKeyPrefix(send_device, recv_device,
+                                       send_device_incarnation, tensor_name);
+  // The vast majority of Send nodes are outside any loop context, so
+  // proactively cache the rendezvous key for the top-level.
+  GetRendezvousKey(key_prefix_, {0, 0}, &parsed_key_.buf_);
+  OP_REQUIRES_OK(ctx, Rendezvous::ParseKey(parsed_key_.buf_, &parsed_key_));
+  if (!ctx->GetAttr("_hostmem_sendrecv", &hostmem_sendrecv_).ok()) {
+    hostmem_sendrecv_ = false;
+  }
+}
+
+void RefSendOp::Compute(OpKernelContext* ctx) {
+  OP_REQUIRES(
+      ctx, ctx->rendezvous() != nullptr,
+      errors::Internal("Op kernel context needs to provide a rendezvous."));
+
+  // The device context may be passed between the Send/Recv
+  // boundary, so that the device context used to produce the Tensor
+  // is used when performing the copy on the recv side (which may be
+  // a different device).
+  Rendezvous::Args args;
+  args.device_context = ctx->op_device_context();
+  args.alloc_attrs = ctx->input_alloc_attr(0);
+
+  mutex* ref_mu = ctx->input_ref_mutex(0);
+  Tensor* ref_input = ctx->input_ref(0);
+  FrameAndIter frame_iter = GetFrameAndIter(ctx, hostmem_sendrecv_);
+  if (frame_iter == FrameAndIter(0, 0)) {
+    // Use the cached rendezvous key.
+    VLOG(2) << "Send " << parsed_key_.buf_;
+    OP_REQUIRES_OK(ctx,
+                   ctx->rendezvous()->Send(parsed_key_, args, ref_input, ref_mu,
+                                           ctx->is_input_dead()));
+  } else {
+    Rendezvous::ParsedKey in_loop_parsed;
+    GetRendezvousKey(key_prefix_, frame_iter, &in_loop_parsed.buf_);
+    VLOG(2) << "Send " << in_loop_parsed.buf_;
+    OP_REQUIRES_OK(ctx,
+                   Rendezvous::ParseKey(in_loop_parsed.buf_, &in_loop_parsed));
+
+    OP_REQUIRES_OK(ctx,
+                   ctx->rendezvous()->Send(in_loop_parsed, args, ref_input, ref_mu,
+                                           ctx->is_input_dead()));
+  }
+}
+
+// RefSend for CPU only
+REGISTER_KERNEL_BUILDER(Name("_RefSend").Device(DEVICE_CPU), RefSendOp);
+
+RefRecvOp::RefRecvOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
+  string send_device;
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("send_device", &send_device));
+  string recv_device;
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("recv_device", &recv_device));
+  if (send_device != recv_device) {
+    LOG(FATAL) << "RefRecvOp require send_device equal recv_device, currently send_device"
+               << send_device << ", recv_device " << recv_device; 
+  }
+  uint64 send_device_incarnation;
+  OP_REQUIRES_OK(
+      ctx, ctx->GetAttr("send_device_incarnation",
+                        reinterpret_cast<int64*>(&send_device_incarnation)));
+  string tensor_name;
+  OP_REQUIRES_OK(ctx, ctx->GetAttr("tensor_name", &tensor_name));
+  key_prefix_ = GetRendezvousKeyPrefix(send_device, recv_device,
+                                       send_device_incarnation, tensor_name);
+  // The vast majority of Recv nodes are outside any loop context, so
+  // proactively cache the rendezvous key for the top-level.
+  GetRendezvousKey(key_prefix_, {0, 0}, &parsed_key_.buf_);
+  OP_REQUIRES_OK(ctx, Rendezvous::ParseKey(parsed_key_.buf_, &parsed_key_));
+  if (!ctx->GetAttr("_hostmem_sendrecv", &hostmem_sendrecv_).ok()) {
+    hostmem_sendrecv_ = false;
+  }
+}
+
+void RefRecvOp::ComputeAsync(OpKernelContext* ctx, DoneCallback done) {
+  OP_REQUIRES(
+      ctx, ctx->rendezvous() != nullptr,
+      errors::Internal("Op kernel context needs to provide a rendezvous."));
+
+  Rendezvous::Args args;
+  args.device_context = ctx->op_device_context();
+  args.alloc_attrs = ctx->output_alloc_attr(0);
+  using namespace std::placeholders;
+  Rendezvous::RefDoneCallback done_cb = std::bind(
+      [ctx](DoneCallback done,
+            // Begin unbound arguments.
+            const Status& s, const Rendezvous::Args& send_args,
+            const Rendezvous::Args& recv_args, Tensor* val, mutex* mu,
+            bool is_dead) {
+        ctx->SetStatus(s);
+        if (s.ok()) {
+          // 'ctx' allocates the output tensor of the expected type.
+          // The runtime checks whether the tensor received here is
+          // the same type.
+          if (!is_dead) {
+            ctx->set_output_ref(0, mu, val);
+          }
+          *ctx->is_output_dead() = is_dead;
+        }
+        done();
+      },
+      std::move(done), _1, _2, _3, _4, _5, _6);
+
+  FrameAndIter frame_iter = GetFrameAndIter(ctx, hostmem_sendrecv_);
+  if (frame_iter == FrameAndIter(0, 0)) {
+    VLOG(2) << "Recv " << parsed_key_.buf_;
+    ctx->rendezvous()->RecvAsync(parsed_key_, args, std::move(done_cb));
+  } else {
+    Rendezvous::ParsedKey in_loop_parsed;
+    GetRendezvousKey(key_prefix_, frame_iter, &in_loop_parsed.buf_);
+    VLOG(2) << "Recv " << in_loop_parsed.buf_;
+    OP_REQUIRES_OK_ASYNC(
+        ctx, Rendezvous::ParseKey(in_loop_parsed.buf_, &in_loop_parsed), done);
+
+    ctx->rendezvous()->RecvAsync(in_loop_parsed, args, std::move(done_cb));
+  }
+}
+
+// RefRecv for CPU only
+REGISTER_KERNEL_BUILDER(Name("_RefRecv").Device(DEVICE_CPU), RefRecvOp);
+
 // Environment variable `DISABLE_HOST_SEND_RECV_REGISTRATION` is used to disable
 // hostSend and hostRecv registration on CPU device in the mock environment.
 static bool InitModule() {

@@ -267,7 +267,8 @@ message RunGraphRequest {
   // Next: 12
 
   bool run_graph_mode = 100;
-  // Next: 101
+  bool run_graph_mode_v2 = 101;
+  // Next: 102
 }
 
 message RunGraphResponse {

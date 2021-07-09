@@ -554,7 +554,8 @@ message ConfigProto {
   bool tensor_fuse = 201;
 
   bool run_graph_mode = 203;
-  // Next: 204
+  bool run_graph_mode_v2 = 204;
+  // Next: 205
 }
 
 // Options for a single Run() call.

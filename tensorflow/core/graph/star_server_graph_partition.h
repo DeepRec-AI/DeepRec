@@ -78,6 +78,9 @@ public:
     output_edges_.insert(output_edges_.end(), output_edges.begin(), output_edges.end());
   }
 
+  bool NodeExisted(int id) {
+    return node_id_set_.find(id) != node_id_set_.end();
+  }
   void SetOnlyVariable() { only_variable_ = true;}
   bool IsOnlyVariable() const { return only_variable_;}
   const KeyEdgeVec& GetInputEdges() const { return input_edges_; }
@@ -131,7 +134,7 @@ private:
   std::string graph_handle_;
   KeyEdgeVec input_edges_;
   KeyEdgeVec output_edges_;
-  std::set<int> node_id_set_;
+  std::unordered_set<int> node_id_set_;
   bool only_variable_;
   // Use _Send/_Recv instead of RunGraph
   bool use_send_recv_;
@@ -154,9 +157,13 @@ class GraphPartitionerBase {
 
  public:
   Status CompleteSubGraphs(std::vector<SubGraph> *sub_graphs);
+  Status CompleteSubGraphsV2(std::vector<SubGraph> *sub_graphs);
 
   Status CompleteMainGraph(const std::vector<SubGraph> &sub_graphs,
                            SubGraph *main_graph);
+  Status CompleteMainGraphV2(
+      const std::vector<SubGraph> &sub_graphs,
+      SubGraph *worker_graph);
 
  protected:
   bool ShouldUseSendRecvMode(Node* src, Node* dst);
@@ -164,8 +171,29 @@ class GraphPartitionerBase {
   Status SplitGraphInternal(std::vector<SubGraph> *sub_graphs,
                             SubGraph *main_graph,
                             bool needResetSwitchOp);
+  Status SplitGraphInternalV2(std::vector<SubGraph> *sub_graphs,
+                              SubGraph *main_graph,
+                              bool needResetSwitchOp);
+
+  std::unordered_set<const Node*> GetClusteringNodes(
+      std::unordered_set<const Node*> *ready,
+      std::unordered_set<const Node*> *nodes);
 
   Status CompleteSubGraph(SubGraph &sub_graph, int graph_idx);
+  Status CompleteSubGraphV2(SubGraph &sub_graph, int graph_idx,
+                            std::unordered_map<const Node*, int> &node_to_subgraph_id);
+
+  Status ProcessSubNodeInputsV2(
+            const Node* node,
+            const std::string &loc,
+            NodeDef *node_def,
+            GraphDef *graph_def,
+            std::map<InputSrcKey, NodeDef*> *input_src_nodes_map,
+            std::map<InputSrcKey, NodeDef*> *local_input_map,
+            std::map<InputSrcKey, NodeDef*> *local_ref_input_map,
+            std::vector<std::pair<std::string, const Edge*>> *boundary_input_edges,
+            SubGraph &sub_graph,
+            std::unordered_map<const Node*, int> &node_to_subgraph_id);
 
   Status ProcessSubNodeInputs(
             const Node* node,
@@ -180,6 +208,15 @@ class GraphPartitionerBase {
                    NodeDef** new_fuse_recv_node,
                    std::unordered_map<std::string, int>& src_to_slot);
 
+  bool UseFuseRecvV2(SubGraph &sub_graph, int graph_idx,
+                     NodeDef** new_fuse_recv_node,
+                     std::unordered_map<std::string, int>& src_to_slot);
+
+  bool UseFuseRecvInternal(SubGraph &sub_graph, int graph_idx,
+                           NodeDef** new_fuse_recv_node,
+                           std::unordered_map<std::string, int>& src_to_slot,
+                           bool is_version1);
+
   // Enable fuse recv op
   Status ProcessSubNodeInputs(
             const Node* node,
@@ -191,6 +228,57 @@ class GraphPartitionerBase {
             bool& has_direct_edge,
             NodeDef* fuse_recv_node,
             std::unordered_map<std::string, int>& key_to_idx);
+
+  // Enable fuse recv op
+  Status ProcessSubNodeInputsV2(
+            const Node* node,
+            const std::string &loc,
+            NodeDef *node_def,
+            GraphDef *graph_def,
+            std::map<InputSrcKey, NodeDef*> *input_src_nodes_map,
+            std::map<InputSrcKey, NodeDef*> *local_input_map,
+            std::map<InputSrcKey, NodeDef*> *local_ref_input_map,
+            std::vector<std::pair<std::string, const Edge*>> *boundary_input_edges,
+            NodeDef* fuse_recv_node,
+            std::unordered_map<std::string, int>& key_to_idx,
+            SubGraph &sub_graph,
+            std::unordered_map<const Node*, int> &node_to_subgraph_id);
+
+  NodeDef* InsertLocalRecvNode(
+      const Edge* in_edge,
+      std::map<InputSrcKey, NodeDef*> *input_src_nodes_map,
+      std::map<InputSrcKey, NodeDef*> *ref_input_src_nodes_map,
+      GraphDef *graph_def,
+      std::unordered_map<const Node*, int> &node_to_subgraph_id);
+ 
+  Status CreateLocalRecvNode(
+      const Edge *in_edge,
+      NodeDef *src_node_def,
+      std::unordered_map<const Node*, int> &node_to_subgraph_id);
+
+  NodeDef* InsertLocalSendNode(
+      const Edge* out_edge,
+      std::map<int, std::unordered_map<std::string, NodeDef*>>
+          &local_send_nodes_map,
+      std::map<int, std::unordered_map<std::string, NodeDef*>> 
+          &local_ref_send_nodes_map,
+      GraphDef *graph_def,
+      std::unordered_map<const Node*, int> &node_to_subgraph_id);
+
+  Status CreateLocalSendNode(
+      const Edge* out_edge,
+      NodeDef *send_node_def,
+      GraphDef *graph_def,
+      std::unordered_map<const Node*, int> &node_to_subgraph_id);
+ 
+  Status ProcessSubNodeOutputsV2(
+            const Node* node,
+            const std::string &loc,
+            NodeDef *node_def,
+            GraphDef *graph_def,
+            std::vector<std::pair<std::string, const Edge*>> *boundary_output_edges,
+            SubGraph &sub_graph,
+            std::unordered_map<const Node*, int> &node_to_subgraph_id);
 
   Status ProcessSubNodeOutputs(
             const Node* node,
@@ -253,8 +341,8 @@ class GraphPartitionerBase {
             GraphDef *graph_def);
 
   void MergeReadyPsSubGraphs(
-            std::set<const SubGraph*> *ps_sub_graph_set,
-            std::set<const Node*> *ready_nodes,
+            std::unordered_set<const SubGraph*> *ps_sub_graph_set,
+            std::unordered_set<const Node*> *ready_nodes,
             std::vector<SubGraph> *merged_ps_sub_graphs);
 
   Status MergePsGraphs(
@@ -262,8 +350,9 @@ class GraphPartitionerBase {
             const std::vector<SubGraph> &ps_sub_graphs,
             std::vector<SubGraph> *merged_ps_graphs);
 
-  void RemoveReadyWorkerNodes(std::set<const Node*> *ready_nodes,
-                              std::set<const Node*> *not_ready_worker_nodes);
+  void RemoveReadyNodes(
+      std::unordered_set<const Node*> *ready_nodes,
+      std::unordered_set<const Node*> *not_ready_worker_nodes);
 
   virtual NodeDef* DealWithSubNodeOutputEdge(
             const Edge* out_edge,
@@ -274,20 +363,12 @@ class GraphPartitionerBase {
             const Edge* out_edge,
             std::unordered_map<std::string, NodeDef*>& send_nodes_map,
             std::unordered_map<std::string, int>& send_nodes_index,
-            GraphDef *graph_def) = 0;
+            GraphDef *graph_def, bool is_version1) = 0;
 
   virtual Status MakeInputSrcNode(const Edge *in_edge,
                                   NodeDef *src_node_def,
                                   std::string *feed_key) = 0;
 
-  virtual void MakeRunGraphNodeDef(const SubGraph &ps_graph,
-                                   const std::string &worker_device,
-                                   NodeDef *run_graph_node_def,
-                                   bool zero_copy,
-                                   int ps_graph_count) = 0;
-
-  virtual void dealWithNodeOfNullptr(std::string *fetch_key,
-                                     const Edge* out_edge) = 0;
 protected:
   PartitionOptions opts_;
   Graph* graph_;
@@ -313,6 +394,9 @@ class TrainGraphPartitioner : public GraphPartitionerBase {
                     std::vector<SubGraph> *ps_sub_graphs,
                     bool merge_ps_graph = true);
 
+  Status SplitGraphV2(SubGraph *worker_sub_graph,
+                      std::vector<SubGraph> *ps_sub_graphs);
+
  protected:
   NodeDef* DealWithSubNodeOutputEdge(
             const Edge* out_edge,
@@ -322,21 +406,12 @@ class TrainGraphPartitioner : public GraphPartitionerBase {
             const Edge* out_edge,
             std::unordered_map<std::string, NodeDef*>& send_nodes_map,
             std::unordered_map<std::string, int>& send_nodes_index,
-            GraphDef *graph_def) override;
+            GraphDef *graph_def, bool is_version1) override;
 
   Status MakeInputSrcNode(const Edge *in_edge,
                           NodeDef *src_node_def,
                           std::string *feed_key) override;
 
-  void MakeRunGraphNodeDef(const SubGraph &ps_graph,
-                           const std::string &worker_device,
-                           NodeDef *run_graph_node_def,
-                           bool zero_copy,
-                           int ps_graph_count) override;
-
-  void dealWithNodeOfNullptr(std::string *fetch_key,
-                             const Edge* out_edge) override;
-                             
 };
 
 class InferGraphPartitioner : public GraphPartitionerBase {
@@ -365,21 +440,12 @@ class InferGraphPartitioner : public GraphPartitionerBase {
             const Edge* out_edge,
             std::unordered_map<std::string, NodeDef*>& send_nodes_map,
             std::unordered_map<std::string, int>& send_nodes_index,
-            GraphDef *graph_def) override;
+            GraphDef *graph_def, bool is_version1) override;
 
   Status MakeInputSrcNode(const Edge *in_edge,
                           NodeDef *src_node_def,
                           std::string *feed_key) override;
 
-  void MakeRunGraphNodeDef(const SubGraph &ps_graph,
-                           const std::string &worker_device,
-                           NodeDef *run_graph_node_def,
-                           bool zero_copy,
-                           int ps_graph_count) override;
-
-  void dealWithNodeOfNullptr(std::string *fetch_key,
-                             const Edge* out_edge) override;    
-                             
 };
 
 std::string node_to_loc(const Node *node);

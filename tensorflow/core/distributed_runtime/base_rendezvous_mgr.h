@@ -137,6 +137,9 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
   Status Send(const ParsedKey& key, const Rendezvous::Args& args,
               const Tensor& val, const bool is_dead) override;
 
+  Status Send(const ParsedKey& key, const Rendezvous::Args& args,
+              Tensor* val, mutex* mu, const bool is_dead) override;
+
   // This method is called only by the RecvOp.  It tests to see
   // whether the value will be produced by a local or remote device
   // and handles accordingly.  In the local case it forwards to
@@ -167,6 +170,10 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
 
   void FuseRecvLocalSync(const std::vector<ParsedKey>& parsed_keys,
                          FuseDoneCallback done);
+
+  // For ref send/recv
+  void RecvAsync(const ParsedKey& key, const Rendezvous::Args& args,
+                 RefDoneCallback done) override;
 
  protected:
   virtual void RecvFromRemoteAsync(const Rendezvous::ParsedKey& parsed,

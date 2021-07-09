@@ -105,6 +105,9 @@ struct MasterEnv {
   // Enable RunGraph or not
   bool run_graph_mode = false;
 
+  // Enable RunGraph V2 or not
+  bool run_graph_mode_v2 = false;
+
   // Enable StarRunGraph or not
   bool run_graph_mode_with_zero_copy = false;
 };

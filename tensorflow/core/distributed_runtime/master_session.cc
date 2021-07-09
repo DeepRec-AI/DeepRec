@@ -1221,17 +1221,34 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
     TrainGraphPartitioner gp(popts, &client_graph->graph,
                              env_->run_graph_mode_with_zero_copy,
                              true); // use fuse recv
-    Status s = gp.SplitGraph(&worker_sub_graph, &ps_sub_graphs);
-    RETURN_IF_NOT_OK(s);
+    Status s;
+    // enable star_server V2
+    if (env_->run_graph_mode_v2) {
+      s = gp.SplitGraphV2(&worker_sub_graph, &ps_sub_graphs);
+      RETURN_IF_NOT_OK(s);
 
-    s = gp.CompleteSubGraphs(&ps_sub_graphs);
-    RETURN_IF_NOT_OK(s);
+      s = gp.CompleteSubGraphsV2(&ps_sub_graphs);
+      RETURN_IF_NOT_OK(s);
 
-    s = DoRegisterPsGraphs(popts, &ps_sub_graphs);
-    RETURN_IF_NOT_OK(s);
+      s = DoRegisterPsGraphs(popts, &ps_sub_graphs);
+      RETURN_IF_NOT_OK(s);
 
-    s = gp.CompleteMainGraph(ps_sub_graphs, &worker_sub_graph);
-    RETURN_IF_NOT_OK(s);
+      s = gp.CompleteMainGraphV2(ps_sub_graphs, &worker_sub_graph);
+      RETURN_IF_NOT_OK(s);
+    } else {
+      // enable star_server V1
+      s = gp.SplitGraph(&worker_sub_graph, &ps_sub_graphs);
+      RETURN_IF_NOT_OK(s);
+
+      s = gp.CompleteSubGraphs(&ps_sub_graphs);
+      RETURN_IF_NOT_OK(s);
+
+      s = DoRegisterPsGraphs(popts, &ps_sub_graphs);
+      RETURN_IF_NOT_OK(s);
+
+      s = gp.CompleteMainGraph(ps_sub_graphs, &worker_sub_graph);
+      RETURN_IF_NOT_OK(s);
+    }
 
     std::unordered_map<string, GraphDef> graph_defs;
     if ((worker_sub_graph.GetNodes().size()) > 0) {
@@ -1679,7 +1696,7 @@ Status MasterSession::StartStep(const BuildGraphOptions& opts, bool is_partial,
           stats_publisher_factory_, is_partial, worker_cache,
           !should_delete_worker_sessions_);*/
       ReffedClientGraph *entry = nullptr;
-      if (env_->run_graph_mode) {
+      if (env_->run_graph_mode || env_->run_graph_mode_v2) {
         entry = new ReffedClientGraphV2(
             handle_, opts, std::move(client_graph), session_opts_,
             stats_publisher_factory_, execution_state_.get(), is_partial,

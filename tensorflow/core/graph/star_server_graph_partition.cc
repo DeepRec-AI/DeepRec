@@ -80,7 +80,7 @@ void SubGraph::CompleteVariables(const PartitionOptions& opts) {
 
       if (src->IsIdentity() && opts.node_to_loc(src) == loc) {
         const Node *var = GetVarOfIdentity(opts, src);
-        if (var == NULL) {
+        if (var == nullptr) {
           continue;
         }
 
@@ -130,7 +130,7 @@ bool GraphPartitionerBase::IsSplitedIgnored(
     return true;
   }
 
-  if (node->IsIdentity() && GetVarOfIdentity(opts_, node) != NULL) {
+  if (node->IsIdentity() && GetVarOfIdentity(opts_, node) != nullptr) {
     return true;
   }
 
@@ -145,14 +145,11 @@ void GraphPartitionerBase::TryAddEdgeNode(
     return;
   }
   std::string loc = opts_.node_to_loc(node);
-  if (loc == cur_loc) {
-    if (node_visited[node->id()]) {
-      return;
-    } else {
-      cur_sub_graph.AddNode(node);
-      node_visited[node->id()] = true;
-      nodes.push_back(node);
-    }
+  if (loc == cur_loc &&
+      !node_visited[node->id()]) {
+    cur_sub_graph.AddNode(node);
+    node_visited[node->id()] = true;
+    nodes.push_back(node);
   }
 }
 
@@ -225,7 +222,8 @@ Status GraphPartitionerBase::ConstructNodeDef(const Node* node, NodeDef *node_de
   return Status::OK();
 }
 
-Status GraphPartitionerBase::ConstructRecvNodeDef(const PartitionOptions &opts,
+Status GraphPartitionerBase::ConstructRecvNodeDef(
+    const PartitionOptions &opts,
     const std::string &node_name,
     const std::string &send_device_name,
     const std::string &recv_device_name,
@@ -234,15 +232,18 @@ Status GraphPartitionerBase::ConstructRecvNodeDef(const PartitionOptions &opts,
     bool client_terminated,
     NodeDef *node_def)
 {
-  return NodeDefBuilder(node_name, "_Recv").Device(recv_device_name)
-      .Attr("tensor_type", tensor_type)
-      .Attr("tensor_name", tensor_name)
-      .Attr("send_device", send_device_name)
-      .Attr("recv_device", recv_device_name)
-      .Attr("send_device_incarnation",
-            static_cast<int64>(opts.get_incarnation(send_device_name)))
-      .Attr("client_terminated", client_terminated)
-      .Finalize(node_def);
+  std::string recv_name("_Recv");
+  if (IsRefType(tensor_type)) recv_name = "_RefRecv";
+  return NodeDefBuilder(node_name, recv_name).Device(recv_device_name)
+      .Attr("tensor_type", IsRefType(tensor_type) ?
+            RemoveRefType(tensor_type) : tensor_type)
+       .Attr("tensor_name", tensor_name)
+       .Attr("send_device", send_device_name)
+       .Attr("recv_device", recv_device_name)
+       .Attr("send_device_incarnation",
+             static_cast<int64>(opts.get_incarnation(send_device_name)))
+       .Attr("client_terminated", client_terminated)
+       .Finalize(node_def);
 }
 
 Status GraphPartitionerBase::ConstructSendNodeDef(
@@ -256,15 +257,19 @@ Status GraphPartitionerBase::ConstructSendNodeDef(
     bool client_terminated,
     NodeDef *node_def)
 {
-  return NodeDefBuilder(node_name, "_Send").Device(send_device_name)
-      .Input(input_node_name, input_idx, tensor_type)
-      .Attr("tensor_name", tensor_name)
-      .Attr("send_device", send_device_name)
-      .Attr("recv_device", recv_device_name)
-      .Attr("send_device_incarnation",
-            static_cast<int64>(opts_.get_incarnation(send_device_name)))
-      .Attr("client_terminated", client_terminated)
-      .Finalize(node_def);
+  std::string send_name("_Send");
+  if (IsRefType(tensor_type)) send_name = "_RefSend";
+  return NodeDefBuilder(node_name, send_name).Device(send_device_name)
+       .Input(input_node_name, input_idx, tensor_type)
+       .Attr("T", IsRefType(tensor_type) ?
+            RemoveRefType(tensor_type) : tensor_type)
+       .Attr("tensor_name", tensor_name)
+       .Attr("send_device", send_device_name)
+       .Attr("recv_device", recv_device_name)
+       .Attr("send_device_incarnation",
+             static_cast<int64>(opts_.get_incarnation(send_device_name)))
+       .Attr("client_terminated", client_terminated)
+       .Finalize(node_def);
 }
 
 #define RETURN_IF_NOT_OK(expr)      \
@@ -294,6 +299,10 @@ Status CreateFeedAndFetchKey(const NodeDef &ndef, std::string *key) {
   // else: native Send/Recv node
   if ((send_device == recv_device && !client_terminated) ||
       (send_device != recv_device && client_terminated)) {
+    LOG(FATAL) << "node has a wrong client_terminated value"
+               << ", send_device = " << send_device
+               << ", recv_device = " << recv_device
+               << ", client_terminated = " << client_terminated;
     return errors::Internal("node has a wrong client_terminated value.");
   }
     
@@ -358,12 +367,6 @@ Status TrainGraphPartitioner::MakeInputSrcNode(
   return Status::OK();
 }
 
-void TrainGraphPartitioner::dealWithNodeOfNullptr(string *fetch_key,
-        const Edge* out_edge)
-{
-  LOG(FATAL) << "Send node is nullptr.";
-}
-
 Status InferGraphPartitioner::MakeInputSrcNode(
     const Edge *in_edge,
     NodeDef *src_node_def,
@@ -380,12 +383,6 @@ Status InferGraphPartitioner::MakeInputSrcNode(
            .Finalize(src_node_def);
   *feed_key = src_node_def->name();
   return s;
-}
-
-void InferGraphPartitioner::dealWithNodeOfNullptr(
-    string *fetch_key,
-    const Edge* out_edge) {
-  *fetch_key = MakeInputName(out_edge);
 }
 
 void ResetInputs(const std::vector<std::string> &input_names,
@@ -407,8 +404,9 @@ void ResetInputs(const std::vector<std::string> &input_names,
   }
 }
 
-void ResetInputs(const std::vector<std::pair<int, std::string>> &inputs,
-                 const Node* node, NodeDef *node_def)
+void ResetInputs(
+    const std::vector<std::pair<int, std::string>> &inputs,
+    const Node* node, NodeDef *node_def)
 {
   node_def->clear_input();
 
@@ -424,6 +422,81 @@ void ResetInputs(const std::vector<std::pair<int, std::string>> &inputs,
   for (const auto& name : input_names) {
     *node_def->add_input() = name;
   }
+}
+
+Status GraphPartitionerBase::ProcessSubNodeInputsV2(
+    const Node* node,
+    const std::string &loc,
+    NodeDef *node_def,
+    GraphDef *graph_def,
+    std::map<InputSrcKey, NodeDef*> *input_src_nodes_map,
+    std::map<InputSrcKey, NodeDef*> *local_input_map,
+    std::map<InputSrcKey, NodeDef*> *local_ref_input_map,
+    std::vector<std::pair<std::string, const Edge*>> *boundary_input_edges,
+    NodeDef* fuse_recv_node,
+    std::unordered_map<std::string, int>& key_to_idx,
+    SubGraph &sub_graph,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id)
+{
+  std::vector<std::pair<int, std::string>> input_names;
+  for (const Edge* in_edge : node->in_edges()) {
+    const Node* src = in_edge->src();
+    if (!src->IsOp()) {
+      continue;
+    }
+
+    // NOTE(jiankeng.pt):
+    // According the latest star server partition algorithm,
+    // two nodes which have the same location and are connected
+    // by one edge directly, will also be divide into two seperate
+    // ps subgraph, so we need to add local `Send/Recv` here.
+    if (loc == opts_.node_to_loc(src)) {
+      if (sub_graph.NodeExisted(src->id())) {
+        input_names.push_back({in_edge->dst_input(), MakeInputName(in_edge)});
+      } else {
+        // Should insert locla `Send/Recv` or `RefSend/RefRecv` nodes
+        // Insert local `Recv/RefRecv` here
+        auto local_recv_node = InsertLocalRecvNode(
+            in_edge, local_input_map,
+            local_ref_input_map, graph_def,
+            node_to_subgraph_id);
+        std::string input_name = MakeInputName(local_recv_node->name(),
+                                               in_edge->IsControlEdge() ?
+                                                   Graph::kControlSlot : 0);
+        input_names.push_back({in_edge->dst_input(), input_name});
+      }
+
+      continue;
+    }
+
+    if (in_edge->IsControlEdge()) {
+      boundary_input_edges->push_back(make_pair("", in_edge));
+      continue;
+    }
+
+    // NOTE(jiankeng.pt): Not use send/recv mode in version2
+    const std::string &src_node_name = in_edge->src()->name();
+    std::string src_tensor_name = strings::StrCat(src_node_name,":",
+                                                  in_edge->src_output());
+    const std::string &device_name = in_edge->dst()->assigned_device_name();
+    const std::string& feed_key =
+        Rendezvous::CreateKey(device_name,
+                              static_cast<uint64>(opts_.get_incarnation(device_name)),
+                              device_name,
+                              src_tensor_name,
+                              FrameAndIter(0, 0));
+    if (key_to_idx.find(feed_key) == key_to_idx.end()) {
+      LOG(FATAL) << "Feed key not found! feed_key=" << feed_key;
+    }
+    input_names.push_back({in_edge->dst_input(),
+                           MakeInputName(fuse_recv_node->name(),
+                                         key_to_idx[feed_key])});
+    boundary_input_edges->push_back(make_pair(feed_key, in_edge));
+  }
+
+  ResetInputs(input_names, node, node_def);
+
+  return Status::OK();
 }
 
 Status GraphPartitionerBase::ProcessSubNodeInputs(
@@ -498,6 +571,73 @@ Status GraphPartitionerBase::ProcessSubNodeInputs(
   return Status::OK();
 }
 
+Status GraphPartitionerBase::ProcessSubNodeInputsV2(
+    const Node* node,
+    const std::string &loc,
+    NodeDef *node_def,
+    GraphDef *graph_def,
+    std::map<InputSrcKey, NodeDef*> *input_src_nodes_map,
+    std::map<InputSrcKey, NodeDef*> *local_input_map,
+    std::map<InputSrcKey, NodeDef*> *local_ref_input_map,
+    std::vector<std::pair<std::string, const Edge*>> *boundary_input_edges,
+    SubGraph &sub_graph,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id)
+{
+  std::vector<std::pair<int, std::string>> input_names;
+  for (const Edge* in_edge : node->in_edges()) {
+    const Node* src = in_edge->src();
+    if (!src->IsOp()) {
+      continue;
+    }
+
+    // NOTE(jiankeng.pt):
+    // According the latest star server partition algorithm,
+    // two nodes which have the same location and are connected
+    // by one edge directly, will also be divide into two seperate
+    // ps subgraph, so we need to add local `Send/Recv` here. 
+    if (loc == opts_.node_to_loc(src)) {
+      if (sub_graph.NodeExisted(src->id())) {
+        input_names.push_back({in_edge->dst_input(), MakeInputName(in_edge)});
+      } else {
+        // Should insert local `Send/RefSend` and local `Recv/RefRecv` nodes
+        // Insert `Recv/RefRecv` here
+        auto local_recv_node = InsertLocalRecvNode(
+            in_edge, local_input_map,
+            local_ref_input_map, graph_def,
+            node_to_subgraph_id);
+        std::string input_name = MakeInputName(local_recv_node->name(),
+                                               in_edge->IsControlEdge() ?
+                                                   Graph::kControlSlot : 0);
+        input_names.push_back({in_edge->dst_input(), input_name});
+      }
+
+      continue;
+    }
+
+    // NOTE(jiankeng.pt) Not use send/recv mode in version2
+    if (in_edge->IsControlEdge()) {
+      boundary_input_edges->push_back(make_pair("", in_edge));
+      continue;
+    }
+
+    std::string feed_key;
+    auto src_node_def = DealWithSubNodeInputEdge(in_edge,
+        input_src_nodes_map, &feed_key, graph_def);
+
+    if (src_node_def != nullptr) {
+      std::string input_name = MakeInputName(src_node_def->name(),
+          in_edge->IsControlEdge() ? Graph::kControlSlot : 0);
+      input_names.push_back({in_edge->dst_input(), input_name});
+
+      boundary_input_edges->push_back(make_pair(feed_key, in_edge));
+    }
+  }
+
+  ResetInputs(input_names, node, node_def);
+
+  return Status::OK();
+}
+
 Status GraphPartitionerBase::ProcessSubNodeInputs(
     const Node* node,
     const std::string &loc,
@@ -548,6 +688,73 @@ Status GraphPartitionerBase::ProcessSubNodeInputs(
   return Status::OK();
 }
 
+Status GraphPartitionerBase::ProcessSubNodeOutputsV2(
+    const Node* node,
+    const std::string &loc,
+    NodeDef *node_def,
+    GraphDef *graph_def,
+    std::vector<std::pair<std::string, const Edge*>> *boundary_output_edges,
+    SubGraph &sub_graph,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id)
+{
+  // NOTE(jiankeng.pt):
+  // record local RefSend(when edge->dst->type is ref type)
+  std::map<int, std::unordered_map<std::string, NodeDef*>>
+      local_ref_send_nodes_map;
+  // record local Send
+  std::map<int, std::unordered_map<std::string, NodeDef*>>
+      local_send_nodes_map;
+  // map for RunGraphOp, record `Send` nodes for every node->name():slot
+  std::unordered_map<std::string, NodeDef*> send_nodes_map;
+  std::unordered_map<std::string, int> send_nodes_index;
+ 
+  for (const Edge* out_edge : node->out_edges()) {
+    const Node* dst = out_edge->dst();
+    if (!dst->IsOp()) {
+      continue;
+    }
+
+    // NOTE(jiankeng.pt):
+    // According the latest star server partition algorithm,
+    // two nodes which have the same location and are connected
+    // by one edge directly, will also be divide into two seperate
+    // ps subgraph, so we need to add local `Send/Recv` here. 
+    if (loc == opts_.node_to_loc(dst)) {
+      if (!sub_graph.NodeExisted(dst->id())) {
+        // Should insert local `Send/RefSend` and local `Recv/RefRecv` nodes
+        // Insert local `Send/RefSend` here
+        InsertLocalSendNode(out_edge, local_send_nodes_map,
+                            local_ref_send_nodes_map,
+                            graph_def, node_to_subgraph_id);
+      }
+
+      continue;
+    }
+
+    // NOTE(jiankeng.pt): Not use send/recv mode in version2
+    if (out_edge->IsControlEdge()) {
+      boundary_output_edges->push_back(make_pair("", out_edge));
+      continue;
+    }
+
+    NodeDef *send_node_def = DealWithSubNodeOutputEdge(
+        out_edge, send_nodes_map, send_nodes_index,
+        graph_def, false);
+    std::string fetch_key;
+    if (send_node_def != nullptr) {
+      Status s = CreateFeedAndFetchKey(*send_node_def, &fetch_key);
+      RETURN_IF_NOT_OK(s);
+    } else {
+      // NOTE(jiankeng.pt): Send node is nullptr, error.
+      LOG(FATAL) << "Send node is nullptr.";
+    }
+
+    boundary_output_edges->push_back(make_pair(fetch_key, out_edge));
+  }
+
+  return Status::OK();
+}
+
 Status GraphPartitionerBase::ProcessSubNodeOutputs(
     const Node* node,
     const std::string &loc,
@@ -556,6 +763,7 @@ Status GraphPartitionerBase::ProcessSubNodeOutputs(
     std::vector<std::pair<std::string, const Edge*>> *boundary_output_edges,
     bool& use_send_recv)
 {
+  // map for RunGraphOp, record `Send` nodes for every node->name():slot
   std::unordered_map<std::string, NodeDef*> send_nodes_map;
   std::unordered_map<std::string, int> send_nodes_index;
  
@@ -578,15 +786,16 @@ Status GraphPartitionerBase::ProcessSubNodeOutputs(
       continue;
     }
 
-    NodeDef *send_node_def = DealWithSubNodeOutputEdge(out_edge,
-        send_nodes_map, send_nodes_index, graph_def);
+    NodeDef *send_node_def = DealWithSubNodeOutputEdge(
+        out_edge, send_nodes_map, send_nodes_index,
+        graph_def, true);
     std::string fetch_key;
     if (send_node_def != nullptr) {
       Status s = CreateFeedAndFetchKey(*send_node_def, &fetch_key);
       RETURN_IF_NOT_OK(s);
     } else {
       // NOTE(jiankeng.pt): Send node is nullptr, error.
-      dealWithNodeOfNullptr(&fetch_key, out_edge);
+      LOG(FATAL) << "Send node is nullptr.";
     }
 
     if (!ShouldUseSendRecvMode(out_edge->src(), out_edge->dst())) {
@@ -603,30 +812,51 @@ bool GraphPartitionerBase::ShouldUseSendRecvMode(Node* src, Node* dst) {
   return send_recv_policy_->UseSendRecvMode(src, dst);
 }
 
-bool GraphPartitionerBase::UseFuseRecv(SubGraph &sub_graph, int graph_idx,
-                                       NodeDef** new_fuse_recv_node,
-                                       std::unordered_map<std::string, int>& src_to_slot) {
+bool GraphPartitionerBase::UseFuseRecv(
+    SubGraph &sub_graph, int graph_idx,
+    NodeDef** new_fuse_recv_node,
+    std::unordered_map<std::string, int>& src_to_slot) {
+  return UseFuseRecvInternal(sub_graph, graph_idx,
+                             new_fuse_recv_node,
+                             src_to_slot, true);
+}
+
+bool GraphPartitionerBase::UseFuseRecvV2(
+    SubGraph &sub_graph, int graph_idx,
+    NodeDef** new_fuse_recv_node,
+    std::unordered_map<std::string, int>& src_to_slot) {
+  return UseFuseRecvInternal(sub_graph, graph_idx,
+                             new_fuse_recv_node,
+                             src_to_slot, false);
+}
+
+bool GraphPartitionerBase::UseFuseRecvInternal(
+    SubGraph &sub_graph, int graph_idx,
+    NodeDef** new_fuse_recv_node,
+    std::unordered_map<std::string, int>& src_to_slot,
+    bool is_version1) {
   // Use fuse recv or not
   if (use_fuse_recv_) {
     static bool should_logging = true;
     if (should_logging) {
       should_logging = false;
       LOG(INFO) << "Use fuse recv for run graph op.";
-    }
+    }    
     std::unordered_map<std::string, const Edge*> name_to_nodes;
     std::vector<const Edge*> fuse_recv_edges;
     const std::string &loc = sub_graph.GetLoc();
 
     for (const Node* node: sub_graph.GetNodes()) {
-      if ((node->IsVariable() || node->IsKvVarHandle ())
-          && !sub_graph.IsOnlyVariable()) {
-        continue;
-      }
-
-      if (node->IsIdentity() &&
-          GetVarOfIdentity(opts_, node) != NULL &&
-          !sub_graph.IsOnlyVariable()) {
-        continue;
+      if (is_version1) {
+        if ((node->IsVariable() || node->IsKvVarHandle ())
+            && !sub_graph.IsOnlyVariable()) {
+          continue;
+        }
+        if (node->IsIdentity() &&
+            GetVarOfIdentity(opts_, node) != NULL &&
+            !sub_graph.IsOnlyVariable()) {
+          continue;
+        }
       }
 
       for (const Edge* in_edge : node->in_edges()) {
@@ -680,7 +910,7 @@ bool GraphPartitionerBase::UseFuseRecv(SubGraph &sub_graph, int graph_idx,
                                           ":", in_edge->src_output());
         send_devices[i] = in_edge->dst()->assigned_device_name();
         recv_devices[i] = in_edge->dst()->assigned_device_name();
-        send_device_incarnations[i] = 
+        send_device_incarnations[i] =
           static_cast<int64>(opts_.get_incarnation(send_devices[i]));
         cast_dtypes[i] = BaseType(in_edge->src()->output_type(in_edge->src_output()));
         const std::string& feed_key =
@@ -769,7 +999,92 @@ Status GraphPartitionerBase::CompleteSubGraph(SubGraph &sub_graph, int graph_idx
   return Status::OK();
 }
 
-Status GraphPartitionerBase::CompleteSubGraphs(std::vector<SubGraph> *sub_graphs) {
+Status GraphPartitionerBase::CompleteSubGraphV2(
+    SubGraph &sub_graph, int graph_idx,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id) {
+  const std::string &loc = sub_graph.GetLoc();
+  GraphDef &graph_def = sub_graph.GetGraphDef();
+  NodeDef* new_fuse_recv_node = nullptr;
+  std::unordered_map<std::string, int> src_to_slot;
+  bool use_fuse_recv = UseFuseRecvV2(sub_graph, graph_idx,
+                                     &new_fuse_recv_node,
+                                     src_to_slot);
+  std::map<InputSrcKey, NodeDef*> input_src_nodes_map;
+  std::map<InputSrcKey, NodeDef*> local_input_map;
+  std::map<InputSrcKey, NodeDef*> local_ref_input_map;
+  for (const Node* node: sub_graph.GetNodes()) {
+    NodeDef *node_def = graph_def.add_node();
+    Status s = ConstructNodeDef(node, node_def);
+    RETURN_IF_NOT_OK(s);
+
+    std::vector<std::pair<std::string, const Edge*>> boundary_input_edges;
+    if (use_fuse_recv) {
+      s = ProcessSubNodeInputsV2(node, loc, node_def,
+                                 &graph_def, &input_src_nodes_map,
+                                 &local_input_map,
+                                 &local_ref_input_map,
+                                 &boundary_input_edges,
+                                 new_fuse_recv_node,
+                                 src_to_slot, sub_graph,
+                                 node_to_subgraph_id);
+    } else {
+      s = ProcessSubNodeInputsV2(node, loc, node_def,
+                                 &graph_def, &input_src_nodes_map,
+                                 &local_input_map,
+                                 &local_ref_input_map,
+                                 &boundary_input_edges,
+                                 sub_graph,
+                                 node_to_subgraph_id);
+    }
+    RETURN_IF_NOT_OK(s);
+
+    sub_graph.AddInputs(boundary_input_edges);
+
+    std::vector<std::pair<std::string, const Edge*>> boundary_output_edges;
+    s = ProcessSubNodeOutputsV2(node, loc, node_def, &graph_def,
+                                &boundary_output_edges,
+                                sub_graph,
+                                node_to_subgraph_id);
+    RETURN_IF_NOT_OK(s);
+
+    sub_graph.AddOutputs(boundary_output_edges);
+  }
+
+  return Status::OK();
+}
+
+Status GraphPartitionerBase::CompleteSubGraphsV2(
+    std::vector<SubGraph> *sub_graphs) {
+  // Map nodes to subgraph id.
+  int idx = -1;
+  std::unordered_map<const Node*, int> node_to_subgraph_id;
+  for (SubGraph &sub_graph : *sub_graphs) {
+    ++idx;
+    for (auto n : sub_graph.GetNodes()) {
+      if (node_to_subgraph_id.find(n) !=
+          node_to_subgraph_id.end()) {
+        LOG(FATAL) << "Many ps subgraph contain one same node: "
+                   << n->DebugString();
+      }
+      node_to_subgraph_id[n] = idx;
+    }
+  }
+
+  idx = 0;
+  for (SubGraph &sub_graph : *sub_graphs) {
+    Status status = CompleteSubGraphV2(sub_graph, idx,
+                                       node_to_subgraph_id);
+    if (!status.ok()) {
+      return status;
+    }
+    ++idx;
+  }
+
+  return Status::OK();
+}
+
+Status GraphPartitionerBase::CompleteSubGraphs(
+    std::vector<SubGraph> *sub_graphs) {
   int idx = 0;
   for (SubGraph &sub_graph : *sub_graphs) {
     Status status = CompleteSubGraph(sub_graph, idx);
@@ -780,6 +1095,32 @@ Status GraphPartitionerBase::CompleteSubGraphs(std::vector<SubGraph> *sub_graphs
   }
 
   return Status::OK();
+}
+
+void MakeRunGraphNodeDef(const SubGraph &ps_graph,
+                         const std::string &worker_device,
+                         NodeDef *run_graph_node_def,
+                         bool zero_copy,
+                         int ps_graph_count) {
+  static int idx = 0;
+  std::string ps_loc = ps_graph.GetLoc();
+  std::replace(ps_loc.begin(), ps_loc.end(), '/', '_');
+  std::replace(ps_loc.begin(), ps_loc.end(), ':', '_');
+
+  run_graph_node_def->set_name(strings::StrCat("run_graph", ps_loc, "_", idx++));
+  if (zero_copy) {
+    run_graph_node_def->set_op("StarRunGraph");
+  } else {
+    run_graph_node_def->set_op("RunGraph");
+  }
+  run_graph_node_def->set_device(worker_device);
+  *((*run_graph_node_def->mutable_attr())["graph_handle"].mutable_s()) = ps_graph.GetGraphHandle();
+  *((*run_graph_node_def->mutable_attr())["loc"].mutable_s()) = ps_graph.GetLoc();
+  *((*run_graph_node_def->mutable_attr())["T2"].mutable_list()) = {};
+  *((*run_graph_node_def->mutable_attr())["T1"].mutable_list()) = {};
+  *((*run_graph_node_def->mutable_attr())["feed_names"].mutable_list()) = {};
+  *((*run_graph_node_def->mutable_attr())["fetch_names"].mutable_list()) = {};
+  (*run_graph_node_def->mutable_attr())["ps_graph_count"].set_i(ps_graph_count);
 }
 
 NodeDef* AddBridgeNode(const PartitionOptions &opts, const Edge *edge,
@@ -933,6 +1274,111 @@ Status GraphPartitionerBase::ProcessRunGraphOutputs(
   return Status::OK();
 }
 
+Status GraphPartitionerBase::CompleteMainGraphV2(
+    const std::vector<SubGraph> &sub_graphs,
+    SubGraph *worker_graph) {
+  std::unordered_map<std::string, int> ps_graph_count;
+  for (auto sub_graph : sub_graphs) {
+    if (ps_graph_count.find(sub_graph.GetLoc()) == ps_graph_count.end()) {
+      ps_graph_count[sub_graph.GetLoc()] = 1;
+    } else {
+      ++ps_graph_count[sub_graph.GetLoc()];
+    }
+  }
+
+  GraphDef &graph_def = worker_graph->GetGraphDef();
+  int64 task_index = -1;
+  Status s = ReadInt64FromEnvVar("TASK_INDEX", -1, &task_index);
+  if (!s.ok() || task_index == -1) {
+    LOG(FATAL) << "Read Env 'TASK_INDEX' failed. task_index=" << task_index;
+  }
+  std::string worker_device = strings::StrCat("/job:worker/replica:0/task:",
+      task_index, "/device:CPU:0");
+  bool is_worker_empty = false;
+  // NOTE(jiankeng.pt): Record these rgo(rungraphop) nodes
+  // when has no worker graph here, we have to add some extra
+  // rgos to trigger these ps graphs be executed.
+  std::vector<NodeDef *> accident_rungraph_op;
+  if ((worker_graph->GetNodes()).size() == 0) {
+    is_worker_empty = true;
+    LOG(WARNING) << "Worker's graph is empty, add a RunStarGraphOp node.";
+    for (auto sub_graph : sub_graphs) {
+      NodeDef *run_graph_node_def = graph_def.add_node();
+      MakeRunGraphNodeDef(sub_graph,
+                          worker_device,
+                          run_graph_node_def,
+                          zero_copy_,
+                          ps_graph_count[sub_graph.GetLoc()]);
+      accident_rungraph_op.push_back(run_graph_node_def);
+    }
+    // NOTE(jiankeng.pt): Can not return now, should
+    // consider one ps maybe connect to other ps case.
+    // We need trasfer data from worker use bridge.
+    // [delete] return Status::OK();
+  }
+
+  std::map<int, NodeDef*> added_nodes;
+  std::map<InputSrcKey, NodeDef*> bridge_nodes_map;
+  int subgraph_idx = -1;
+  for (auto sub_graph : sub_graphs) {
+    ++subgraph_idx;
+    // NOTE(jiankeng.pt): This means ps subgraph has no
+    // any egdes to worker or ps, in this case, like above,
+    // we have to add a extra rgo node to trigger this
+    // ps graph be executed.
+    if (sub_graph.GetInputEdges().empty() &&
+        sub_graph.GetOutputEdges().empty()) {
+      // if is_worker_empty is true, that means
+      // have already create a empty `RunGraphOp` to
+      // trigger this subgraph
+      if (!is_worker_empty) {
+        // Add a empty `RunGraphOp` to trigger the subgraph
+        NodeDef *run_graph_node_def = graph_def.add_node();
+        MakeRunGraphNodeDef(sub_graph,
+                            worker_device,
+                            run_graph_node_def,
+                            zero_copy_,
+                            ps_graph_count[sub_graph.GetLoc()]);
+      }
+
+      // No egdes to any other ps/worker, return
+      continue;
+    }
+
+    NodeDef *run_graph_node_def = nullptr;
+    if (!is_worker_empty) {
+      run_graph_node_def = graph_def.add_node();
+      MakeRunGraphNodeDef(sub_graph, worker_device,
+                          run_graph_node_def, zero_copy_,
+                          ps_graph_count[sub_graph.GetLoc()]);
+    } else {
+      // Already have created a rgo before
+      run_graph_node_def = accident_rungraph_op[subgraph_idx];
+    }
+
+    Status s = ProcessRunGraphInputs(sub_graph, worker_device,
+                                     &graph_def, run_graph_node_def, &bridge_nodes_map);
+    RETURN_IF_NOT_OK(s);
+
+    s = ProcessRunGraphOutputs(sub_graph, worker_device,
+                               &graph_def, run_graph_node_def, &bridge_nodes_map,
+                               &added_nodes);
+    RETURN_IF_NOT_OK(s);
+  }
+
+  for (const Node* node : worker_graph->GetNodes()) {
+    if (added_nodes.find(node->id()) == added_nodes.end()) {
+      NodeDef *node_def = graph_def.add_node();
+      Status s = ConstructNodeDef(node, node_def);
+      if (!s.ok()) {
+        return s;
+      }
+    }
+  }
+
+  return Status::OK();
+}
+
 Status GraphPartitionerBase::CompleteMainGraph(
     const std::vector<SubGraph> &sub_graphs,
     SubGraph *worker_graph)
@@ -1018,7 +1464,7 @@ Status GraphPartitionerBase::CompleteMainGraph(
 
 bool IsReadyPsGraph(const PartitionOptions &opts,
                     const SubGraph &ps_graph,
-                    const set<const Node*> &ready_nodes)
+                    std::unordered_set<const Node*> *ready_nodes)
 {
   const std::string &loc = ps_graph.GetLoc();
   std::vector<const Edge*> in_edges;
@@ -1034,7 +1480,7 @@ bool IsReadyPsGraph(const PartitionOptions &opts,
 
   for (const Edge* in_edge : in_edges) {
     const Node *src = in_edge->src();
-    if (ready_nodes.find(src) == ready_nodes.end()) {
+    if (ready_nodes->find(src) == ready_nodes->end()) {
       return false;
     }
   }
@@ -1043,15 +1489,15 @@ bool IsReadyPsGraph(const PartitionOptions &opts,
 }
 
 void GraphPartitionerBase::MergeReadyPsSubGraphs(
-    set<const SubGraph*> *ps_sub_graph_set,
-    set<const Node*> *ready_nodes,
+    std::unordered_set<const SubGraph*> *ps_sub_graph_set,
+    std::unordered_set<const Node*> *ready_nodes,
     std::vector<SubGraph> *merged_ps_sub_graphs)
 {
   std::vector<const SubGraph*> to_removed;
   std::unordered_map<std::string, SubGraph*> merged_ps_graphs;
   std::unordered_map<std::string, SubGraph*> merged_ps_variable_graphs;
   for (const SubGraph* ps_graph : *ps_sub_graph_set) {
-    if (!IsReadyPsGraph(opts_, *ps_graph, *ready_nodes)) {
+    if (!IsReadyPsGraph(opts_, *ps_graph, ready_nodes)) {
       continue;
     }
 
@@ -1087,34 +1533,38 @@ void GraphPartitionerBase::MergeReadyPsSubGraphs(
       merged_ps_graph->Extend(*ps_graph);
     }
 
-    for (const Node* node : ps_graph->GetNodes()) {
-      ready_nodes->insert(node);
-    }
-
     to_removed.push_back(ps_graph);
   }
 
+  // Mark nodes as ready and erase them from ps_sub_graph_set
   for (size_t i = 0; i < to_removed.size(); i++) {
+    for (const Node* node : to_removed[i]->GetNodes()) {
+      ready_nodes->insert(node);
+    }
     ps_sub_graph_set->erase(to_removed[i]);
   }
 
-  for (auto it = merged_ps_variable_graphs.begin(); it != merged_ps_variable_graphs.end(); it++) {
+  for (auto it = merged_ps_variable_graphs.begin();
+       it != merged_ps_variable_graphs.end(); it++) {
     merged_ps_sub_graphs->push_back(*it->second);
     delete it->second;
   }
 
-  for (auto it = merged_ps_graphs.begin(); it != merged_ps_graphs.end(); it++) {
+  for (auto it = merged_ps_graphs.begin();
+       it != merged_ps_graphs.end(); it++) {
     merged_ps_sub_graphs->push_back(*it->second);
     delete it->second;
   }
 }
 
-void GraphPartitionerBase::RemoveReadyWorkerNodes(
-        set<const Node*> *ready_nodes,
-        set<const Node*> *not_ready_worker_nodes)
+void GraphPartitionerBase::RemoveReadyNodes(
+    std::unordered_set<const Node*> *ready_nodes,
+    std::unordered_set<const Node*> *not_ready_worker_nodes)
 {
+  if (!not_ready_worker_nodes) return;
+
   while (true) {
-    set<const Node*> tmp_ready_nodes;
+    std::unordered_set<const Node*> tmp_ready_nodes;
     for (const Node* node : *not_ready_worker_nodes) {
       size_t ready_input_count = 0;
       for (const Edge* in_edge : node->in_edges()) {
@@ -1234,37 +1684,40 @@ Status GraphPartitionerBase::MergePsGraphs(
     const std::vector<SubGraph> &ps_sub_graphs,
     std::vector<SubGraph> *merged_ps_graphs)
 {
-  set<const Node*> not_ready_worker_nodes;
+  std::unordered_set<const Node*> not_ready_worker_nodes;
   for (const Node* node : worker_sub_graph.GetNodes()) {
     not_ready_worker_nodes.insert(node);
   }
-  set<const SubGraph*> ps_sub_graph_set;
+  std::unordered_set<const SubGraph*> ps_sub_graph_set;
   for (const SubGraph &sub_graph : ps_sub_graphs) {
     ps_sub_graph_set.insert(&sub_graph);
   }
 
-  set<const Node*> ready_nodes;
-
-  // Nodes which have no input edges or inptut edges are inner edge, 
-  // should become ready nodes now.
-  RemoveReadyWorkerNodes(&ready_nodes, &not_ready_worker_nodes);
-
+  std::unordered_set<const Node*> ready_nodes;
   while (!ps_sub_graph_set.empty()) {
+    // Nodes which have no input edges or inptut edges are inner edge, 
+    // should become ready nodes now.
+    RemoveReadyNodes(&ready_nodes, &not_ready_worker_nodes);
+
     size_t last_ps_count = ps_sub_graph_set.size();
-    size_t last_worker_count = not_ready_worker_nodes.size();
+    //size_t last_worker_count = not_ready_worker_nodes.size();
     MergeReadyPsSubGraphs(&ps_sub_graph_set,
                           &ready_nodes,
                           merged_ps_graphs);
-    RemoveReadyWorkerNodes(&ready_nodes, &not_ready_worker_nodes);
-
-    if ((last_ps_count > 0 && last_ps_count == ps_sub_graph_set.size()) &&
-        (last_worker_count == not_ready_worker_nodes.size()))
-    {
-      LOG(ERROR) << "can not merge the ps graphs. left "
+    if (last_ps_count > 0 && 
+        last_ps_count == ps_sub_graph_set.size()) {
+      LOG(FATAL) << "can not merge the ps graphs. left "
                  << ps_sub_graph_set.size() << " ps sub-graph were not be merged.";
       return errors::Internal("can not merge the ps graphs.");
     }
   }
+
+  RemoveReadyNodes(&ready_nodes, &not_ready_worker_nodes);
+  if (not_ready_worker_nodes.size() > 0) { 
+    LOG(ERROR) << "Not all worker nodes can be ready, count " << not_ready_worker_nodes.size();
+    return errors::Internal("Not all worker nodes can be ready.");
+  }
+
   return Status::OK();
 }
 
@@ -1335,6 +1788,178 @@ Status GraphPartitionerBase::ResetSwitchOpDevice() {
   return Status::OK();
 }
 
+std::unordered_set<const Node*> GraphPartitionerBase::GetClusteringNodes(
+    std::unordered_set<const Node*> *ready,
+    std::unordered_set<const Node*> *nodes) {
+  std::unordered_set<const Node*> cluster;
+
+  while (true) {
+    std::unordered_set<const Node*> tmp_ready_nodes;
+    for (const Node* node : *nodes) {
+      size_t ready_input_count = 0;
+      for (const Edge* in_edge : node->in_edges()) {
+        const Node *src = in_edge->src();
+        if (!src->IsOp()) {
+          ready_input_count++;
+          continue;
+        }
+        if (ready->find(src) != ready->end() ||
+            cluster.find(src) != cluster.end()) {
+          ready_input_count++;
+        }
+      }
+
+      if (ready_input_count == node->in_edges().size()) {
+        cluster.insert(node);
+        tmp_ready_nodes.insert(node);
+      }
+    }
+
+    for (const Node *node : tmp_ready_nodes) {
+      nodes->erase(node);
+    }
+
+    if (tmp_ready_nodes.empty()) {
+      break;
+    }
+  }
+
+  return cluster;
+}
+
+Status GraphPartitionerBase::SplitGraphInternalV2(
+    std::vector<SubGraph> *sub_graphs,
+    SubGraph *main_graph,
+    bool needResetSwitchOp) {
+  Status status;
+  GraphInfo g_info;
+  if (!opts_.control_flow_added) {
+    // Add the "code" for distributed execution of control flow. Code is
+    // added only for the frames that are placed on multiple devices. The
+    // new graph is an equivalent transformation of the original graph and
+    // has the property that it can be subsequently partitioned arbitrarily
+    // (down to the level of individual device) for distributed execution.
+    status = AddControlFlow(opts_, graph_, &g_info);
+    if (!status.ok()) return status;
+  }
+
+  // At this point, all the graph mutations have been done. Build memory
+  // and device type info for every node and edge in the graph.
+  RETURN_IF_NOT_OK(BuildMemoryDeviceInfo(*graph_, &g_info));
+
+  if (needResetSwitchOp) {
+    RETURN_IF_NOT_OK(ResetSwitchOpDevice());
+  }
+
+  // NOTE(jiankeng.pt):
+  // Clustering ps nodes via topologic order
+  // There is an corner case: the two nodes which
+  // has a direct edge will be split into two
+  // subgraphs.
+  //
+  // worker_n0      worker_n1
+  //   |              ^   /
+  //   |             /   /
+  //   |   ps_n0    /   /
+  //   |   /   \   /   / 
+  //   v  v     v /   /
+  //   ps_n1  ps_n2  /
+  //            \   /
+  //             v v
+  //            ps_n3
+  //
+  // In this graph, we should split `ps_n2` and `ps_n3`
+  // into two subgraphs to avoid the cycle.
+  //
+  // We need to add LocalSend and LocalRecv between
+  // the two nodes, `ps_n2` and `ps_n3`.
+  // Attention the edge maybe a ref tensor edge, in 
+  // this case, we should add RefLocalSend and
+  // RefLocalRecv nodes to gurantee correctness.
+  //
+  std::unordered_set<const Node*>* worker_nodes_set = nullptr;
+  std::unordered_set<const Node*> fixed_worker_nodes;
+  std::unordered_set<const Node*> ready;
+  std::unordered_map<std::string, std::unordered_set<const Node*>>
+      subgraph_nodes;
+  std::vector<std::unordered_set<const Node*>> ps_subgraphs_set;
+  std::string worker_loc("");
+  for (Node* n : graph_->nodes()) {
+    if (!n->IsOp()) continue;
+    std::string loc = opts_.node_to_loc(n);
+    subgraph_nodes[loc].insert(n);
+    if (!worker_nodes_set && is_main_loc_func_(loc)) {
+      worker_nodes_set = &subgraph_nodes[loc];
+      worker_loc = loc;
+    }
+  }
+  if (worker_nodes_set) {
+    fixed_worker_nodes = *worker_nodes_set;
+  }
+
+  // topological clustering
+  while (true) {
+    RemoveReadyNodes(&ready, worker_nodes_set);
+
+    bool changed = false;
+    std::vector<std::unordered_set<const Node*>> tmp_ps_subgraphs_set;
+    for (auto &nodes_set : subgraph_nodes) {
+      std::unordered_set<const Node*> *cur_subgrpah =
+          &nodes_set.second;
+      // ignore worker graph
+      if (cur_subgrpah == worker_nodes_set) continue;
+
+      std::unordered_set<const Node*> cluster_nodes =
+          GetClusteringNodes(&ready, cur_subgrpah);
+      if (cluster_nodes.size() > 0) {
+        tmp_ps_subgraphs_set.push_back(cluster_nodes);
+        changed = true;
+      }
+    }
+
+    // end or has cycle
+    if (!changed) {
+      for (auto &nodes_set : subgraph_nodes) {
+        if (nodes_set.second.size() > 0) {
+          LOG(FATAL) << "worker/ps have some nodes which can't be clustered.";
+        }
+      }
+      // end and exit the while loop
+      break;
+    }
+
+    // push all new generated subgraphs to ps_subgraphs_set
+    // and mark all nodes in these subgraphs to ready.
+    for (auto g : tmp_ps_subgraphs_set) {
+      ps_subgraphs_set.push_back(g);
+      for (auto n : g) {
+        ready.insert(n);
+      }
+    }
+  }
+
+  // create worker graph and many ps subgraphs
+  SubGraph worker_graph(worker_loc);
+  worker_graph.SetLoc(worker_loc);
+  for (auto n : fixed_worker_nodes) {
+    worker_graph.AddNode(n);
+  }
+  main_graph->Extend(worker_graph);
+  main_graph->SetLoc(worker_loc);
+
+  for (auto g : ps_subgraphs_set) {
+    std::string ps_loc = opts_.node_to_loc(*(g.begin()));
+    SubGraph ps_graph(ps_loc);
+    ps_graph.SetLoc(ps_loc);
+    for (auto n : g) {
+      ps_graph.AddNode(n);
+    }
+    sub_graphs->push_back(ps_graph);
+  }
+
+  return Status::OK();
+}
+
 Status GraphPartitionerBase::SplitGraphInternal(
     std::vector<SubGraph> *sub_graphs,
     SubGraph *main_graph,
@@ -1375,8 +2000,8 @@ Status GraphPartitionerBase::SplitGraphInternal(
     cur_sub_graph.SetLoc(cur_loc);
     node_visited[cur->id()] = true;
 
-    if ((cur->IsVariable() || cur->IsKvVarHandle ())
-        && !is_main_loc_func_(cur_loc)) {
+    if ((cur->IsVariable() || cur->IsKvVarHandle ()) &&
+        !is_main_loc_func_(cur_loc)) {
       for (const auto& out_edge : cur->out_edges()) {
         if (!out_edge->dst()->IsOp()) continue;
         if (opts_.node_to_loc(out_edge->dst()) != cur_loc) {
@@ -1443,32 +2068,15 @@ Status GraphPartitionerBase::SplitGraphInternal(
   return Status::OK();
 }
 
-void TrainGraphPartitioner::MakeRunGraphNodeDef(const SubGraph &ps_graph,
-        const std::string &worker_device,
-        NodeDef *run_graph_node_def,
-        bool zero_copy,
-        int ps_graph_count)
+Status TrainGraphPartitioner::SplitGraphV2(
+    SubGraph *worker_sub_graph,
+    std::vector<SubGraph> *ps_sub_graphs)
 {
-  static int idx = 0;
-  std::string ps_loc = ps_graph.GetLoc();
-  std::replace(ps_loc.begin(), ps_loc.end(), '/', '_');
-  std::replace(ps_loc.begin(), ps_loc.end(), ':', '_');
 
-  run_graph_node_def->set_name(strings::StrCat("run_graph", ps_loc, "_", idx++));
-  if (zero_copy) {
-    run_graph_node_def->set_op("StarRunGraph");
-  } else {
-    run_graph_node_def->set_op("RunGraph");
-  }
-  run_graph_node_def->set_device(worker_device);
-  *((*run_graph_node_def->mutable_attr())["graph_handle"].mutable_s()) =
-      ps_graph.GetGraphHandle();
-  *((*run_graph_node_def->mutable_attr())["loc"].mutable_s()) = ps_graph.GetLoc();
-  *((*run_graph_node_def->mutable_attr())["T2"].mutable_list()) = {};
-  *((*run_graph_node_def->mutable_attr())["T1"].mutable_list()) = {};
-  *((*run_graph_node_def->mutable_attr())["feed_names"].mutable_list()) = {};
-  *((*run_graph_node_def->mutable_attr())["fetch_names"].mutable_list()) = {};
-  (*run_graph_node_def->mutable_attr())["ps_graph_count"].set_i(ps_graph_count);
+  RETURN_IF_NOT_OK(SplitGraphInternalV2(
+      ps_sub_graphs, worker_sub_graph, /*needResetSwitchOp*/true));
+
+  return Status::OK();
 }
 
 Status TrainGraphPartitioner::SplitGraph(
@@ -1516,38 +2124,15 @@ Status InferGraphPartitioner::SplitGraph(
   return Status::OK();
 }
 
-void InferGraphPartitioner::MakeRunGraphNodeDef(const SubGraph &ps_graph,
-        const std::string &worker_device,
-        NodeDef *run_graph_node_def,
-        bool zero_copy,
-        int ps_graph_count)
-{
-  static int idx = 0;
-  std::string ps_loc = ps_graph.GetLoc();
-  std::replace(ps_loc.begin(), ps_loc.end(), '/', '_');
-  std::replace(ps_loc.begin(), ps_loc.end(), ':', '_');
-
-  run_graph_node_def->set_name(strings::StrCat("run_graph", ps_loc, "_", idx++));
-  run_graph_node_def->set_op("RunGraphOp");
-  run_graph_node_def->set_device(worker_device);
-  *((*run_graph_node_def->mutable_attr())["graph_handle"].mutable_s()) = ps_graph.GetGraphHandle();
-  *((*run_graph_node_def->mutable_attr())["loc"].mutable_s()) = ps_graph.GetLoc();
-  *((*run_graph_node_def->mutable_attr())["T2"].mutable_list()) = {};
-  *((*run_graph_node_def->mutable_attr())["T1"].mutable_list()) = {};
-  *((*run_graph_node_def->mutable_attr())["feed_names"].mutable_list()) = {};
-  *((*run_graph_node_def->mutable_attr())["fetch_names"].mutable_list()) = {};
-}
-
-
 NodeDef* TrainGraphPartitioner::DealWithSubNodeOutputEdge(
     const Edge* out_edge,
     std::unordered_map<std::string, NodeDef*>& send_nodes_map,
     std::unordered_map<std::string, int>& send_nodes_index,
-    GraphDef *graph_def)
+    GraphDef *graph_def, bool is_version1)
 {
   NodeDef *send_node_def = nullptr;
   const std::string& output_src_key = strings::StrCat(out_edge->src()->name(),
-                                                        ":", out_edge->src_output());
+                                                      ":", out_edge->src_output());
   auto data_type = DT_FLOAT;
   std::string node_name, tensor_name, input_name;
   int input_slot;
@@ -1594,24 +2179,26 @@ NodeDef* TrainGraphPartitioner::DealWithSubNodeOutputEdge(
   std::string send_device = out_edge->src()->assigned_device_name();
   std::string recv_device = out_edge->src()->assigned_device_name();
   const std::string& dst_device = out_edge->dst()->assigned_device_name();
-  bool shouldUseSendRecvMode = ShouldUseSendRecvMode(out_edge->src(),
-                                                     out_edge->dst());
+  // star server V2 do NOT need send/recv mode.
+  bool should_use_send_recv_mode = is_version1 &&
+                                   ShouldUseSendRecvMode(out_edge->src(),
+                                                         out_edge->dst());
 
   // NOTE(jiankeng.pt): Only one 'send' node is needed when output
   // to different or same device, except 
-  // shouldUseSendRecvMode=true.
+  // should_use_send_recv_mode=true.
   // We always should return the boundary_edge
   // to the run graph op node, the boundary_edge
   // can help to add connection between worker node
   // and run graph op node.
   if (send_nodes_map.find(output_src_key) == send_nodes_map.end() ||
-      shouldUseSendRecvMode) {
+      should_use_send_recv_mode) {
     bool client_terminated = true;
-    if (shouldUseSendRecvMode) {
+    if (should_use_send_recv_mode) {
       recv_device = dst_device;
       client_terminated = false;
     }
-        
+
     send_node_def = graph_def->add_node();
     Status s = ConstructSendNodeDef(node_name,
                                     send_device,
@@ -1627,10 +2214,11 @@ NodeDef* TrainGraphPartitioner::DealWithSubNodeOutputEdge(
       return nullptr;
     }
 
-    // We don't need to record send node when shouldUseSendRecvMode=true.
+    // We don't need to record send node when
+    // should_use_send_recv_mode=true.
     // In case of return the wrong send node
     // that will create the wrong rendezvous key.
-    if (!shouldUseSendRecvMode) {
+    if (!should_use_send_recv_mode) {
       send_nodes_map[output_src_key] = send_node_def;
     }
 
@@ -1671,6 +2259,219 @@ NodeDef* TrainGraphPartitioner::DealWithSubNodeOutputEdge(
   return send_node_def;
 }
 
+Status GraphPartitionerBase::CreateLocalRecvNode(
+    const Edge *in_edge,
+    NodeDef *recv_node_def,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id) {
+  const std::string &src_node_name = in_edge->src()->name();
+  const std::string &src_device_name =
+      in_edge->src()->assigned_device_name();
+  const std::string &dst_device_name =
+      in_edge->dst()->assigned_device_name();
+  if (src_device_name != dst_device_name) {
+    LOG(FATAL) << "LocalRecv node required nodes in same device.";
+  }
+
+  std::string recv_node_name = strings::StrCat("_recv_", node_to_subgraph_id[in_edge->src()],
+                                               "_", node_to_subgraph_id[in_edge->dst()], "_",
+                                               src_node_name, "_local__1");
+  std::string src_tensor_name = strings::StrCat("_local_", node_to_subgraph_id[in_edge->src()],
+                                                "_", node_to_subgraph_id[in_edge->dst()], "_",
+                                                 src_node_name);
+  auto data_type = DT_FLOAT;
+  if (!in_edge->IsControlEdge()) {
+    //data_type = BaseType(in_edge->src()->output_type(in_edge->src_output()));
+    //data_type = in_edge->src()->output_type(in_edge->src_output());
+    data_type = in_edge->dst()->input_type(in_edge->dst_input());
+    recv_node_name = strings::StrCat("_recv_", node_to_subgraph_id[in_edge->src()],
+                                     "_", node_to_subgraph_id[in_edge->dst()], "_",
+                                     src_node_name, "_local_", in_edge->src_output());
+    src_tensor_name = strings::StrCat("_local_", node_to_subgraph_id[in_edge->src()],
+                                      "_", node_to_subgraph_id[in_edge->dst()], "_",
+                                      src_node_name, ":", in_edge->src_output());
+  }
+
+  std::string send_device = dst_device_name;
+  std::string recv_device = dst_device_name;
+  bool client_terminated = false;
+
+  return ConstructRecvNodeDef(opts_, recv_node_name,
+                              send_device,
+                              recv_device,
+                              src_tensor_name,
+                              data_type,
+                              client_terminated,
+                              recv_node_def);
+}
+
+NodeDef* GraphPartitionerBase::InsertLocalRecvNode(
+    const Edge* in_edge,
+    std::map<InputSrcKey, NodeDef*> *local_input_map,
+    std::map<InputSrcKey, NodeDef*> *local_ref_input_map,
+    GraphDef *graph_def,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id) {
+  InputSrcKey input_src_key = MakeInputSrcKey(in_edge);
+  bool is_ref_recv =
+      IsRefType(in_edge->dst()->input_type(in_edge->dst_input())) ?
+      true : false;
+  bool is_control_edge = in_edge->IsControlEdge();
+
+  NodeDef *recv_node_def = nullptr;
+  // NOTE(jiankeng.pt): seperate the RefRecv and Recv
+  if (is_ref_recv && !is_control_edge) {
+    auto it = local_ref_input_map->find(input_src_key);
+    if (it != local_ref_input_map->end())
+      recv_node_def = it->second;
+  } else {
+    auto it = local_input_map->find(input_src_key);
+    if (it != local_input_map->end())
+      recv_node_def = it->second;
+  }
+
+  if (!recv_node_def) {
+    recv_node_def = graph_def->add_node();
+    Status s = CreateLocalRecvNode(in_edge, recv_node_def,
+                                   node_to_subgraph_id);
+    if (!s.ok() || !recv_node_def) {
+      LOG(FATAL) << "create local recv node failed:" << s.error_message();
+      return nullptr;
+    }
+
+    if (is_ref_recv && !is_control_edge) {
+      local_ref_input_map->insert(make_pair(input_src_key,
+                                            recv_node_def));
+    } else {
+      local_input_map->insert(make_pair(input_src_key,
+                                        recv_node_def));
+    }
+  }
+
+  return recv_node_def;
+}
+
+Status GraphPartitionerBase::CreateLocalSendNode(
+  const Edge* out_edge,
+  NodeDef *send_node_def,
+  GraphDef *graph_def,
+  std::unordered_map<const Node*, int> &node_to_subgraph_id) {
+  auto data_type = DT_FLOAT;
+  std::string node_name, tensor_name, input_name;
+  std::string send_device = out_edge->src()->assigned_device_name();
+  std::string recv_device = out_edge->dst()->assigned_device_name();
+  int input_slot;
+  if (send_device != recv_device) {
+    LOG(FATAL) << "LocalSend node required nodes in same device.";
+  }
+
+  if (out_edge->IsControlEdge()) {
+    node_name = strings::StrCat("_send_", node_to_subgraph_id[out_edge->src()],
+                                "_", node_to_subgraph_id[out_edge->dst()], "_",
+                                out_edge->src()->name(), "_local__1");
+    tensor_name = strings::StrCat("_local_", node_to_subgraph_id[out_edge->src()],
+                                  "_", node_to_subgraph_id[out_edge->dst()], "_",
+                                  out_edge->src()->name());
+    Tensor tensor(DT_FLOAT, TensorShape({0}));
+
+    // create a dummy node for control edge
+    NodeDef* dummy = graph_def->add_node();
+    std::string dummy_node_name(strings::StrCat("_dummy_", out_edge->src()->name(), "_local_1"));
+    Status s = NodeDefBuilder(dummy_node_name, "Const")
+                   .Device(out_edge->src()->assigned_device_name())
+                   .Attr("dtype", DT_FLOAT)
+                   .Attr("value", tensor)
+                   .Finalize(dummy);
+    if (!s.ok()) {
+      LOG(ERROR) << "construct dummy node for send failed: " << s.error_message();
+      return s;
+    }
+    AddInput(dummy, out_edge->src()->name(), Graph::kControlSlot);
+    input_name = dummy->name();
+    input_slot = 0;
+  } else {
+    //data_type = BaseType(out_edge->src()->output_type(out_edge->src_output()));
+    //data_type = out_edge->src()->output_type(out_edge->src_output());
+    data_type = out_edge->dst()->input_type(out_edge->dst_input());
+    node_name = strings::StrCat("_send_", node_to_subgraph_id[out_edge->src()],
+                                "_", node_to_subgraph_id[out_edge->dst()], "_",
+                                out_edge->src()->name(), "_local_", out_edge->src_output());
+    tensor_name = strings::StrCat("_local_", node_to_subgraph_id[out_edge->src()],
+                                  "_", node_to_subgraph_id[out_edge->dst()], "_",
+                                  out_edge->src()->name(), ":", out_edge->src_output());
+    input_name = out_edge->src()->name();
+    input_slot = out_edge->src_output();
+  }
+
+  bool client_terminated = false;
+  return ConstructSendNodeDef(node_name,
+                              send_device,
+                              recv_device,
+                              input_name,
+                              input_slot,
+                              tensor_name,
+                              data_type,
+                              client_terminated,
+                              send_node_def);
+}
+
+NodeDef* GraphPartitionerBase::InsertLocalSendNode(
+    const Edge* out_edge,
+    std::map<int, std::unordered_map<std::string, NodeDef*>>
+        &local_send_nodes_map,
+    std::map<int, std::unordered_map<std::string, NodeDef*>> 
+        &local_ref_send_nodes_map,
+    GraphDef *graph_def,
+    std::unordered_map<const Node*, int> &node_to_subgraph_id) {
+  NodeDef *send_node_def = nullptr;
+  int graph_to_graph_key = node_to_subgraph_id[out_edge->dst()];
+  const std::string& output_src_key =
+      strings::StrCat(out_edge->src()->name(), ":", out_edge->src_output());
+  bool is_ref_send =
+      IsRefType(out_edge->dst()->input_type(out_edge->dst_input())) ?
+      true : false;
+  bool is_control_edge = out_edge->IsControlEdge();
+
+  // NOTE(jiankeng.pt): seperate the RefSend and Send
+  if (is_ref_send && !is_control_edge) {
+    auto it = local_ref_send_nodes_map.find(graph_to_graph_key);
+    if (it == local_ref_send_nodes_map.end()) {
+      std::unordered_map<std::string, NodeDef*> m;
+      local_ref_send_nodes_map[graph_to_graph_key] = m;
+    } else {
+      auto it2 = it->second.find(output_src_key);
+      if (it2 != it->second.end())
+        return it2->second;
+    }
+  } else {
+    auto it = local_send_nodes_map.find(graph_to_graph_key);
+    if (it == local_send_nodes_map.end()) {
+      std::unordered_map<std::string, NodeDef*> m;
+      local_send_nodes_map[graph_to_graph_key] = m;
+    } else {
+      auto it2 = it->second.find(output_src_key);
+      if (it2 != it->second.end())
+        return it2->second;
+    }
+  }
+
+  send_node_def = graph_def->add_node();
+  Status s = CreateLocalSendNode(out_edge, send_node_def, graph_def,
+                                 node_to_subgraph_id);
+  if (!s.ok() || !send_node_def) {
+    LOG(FATAL) << "construct local send node failed:" << s.error_message();
+    return nullptr;
+  }
+
+  if (is_ref_send && !is_control_edge) {
+    local_ref_send_nodes_map[graph_to_graph_key][output_src_key] =
+        send_node_def;
+  } else {
+    local_send_nodes_map[graph_to_graph_key][output_src_key] =
+        send_node_def;
+  }
+
+  return send_node_def;
+}
+
 NodeDef* GraphPartitionerBase::DealWithSubNodeInputEdge(
     const Edge* in_edge,
     std::map<InputSrcKey, NodeDef*> *input_src_nodes_map,
@@ -1682,15 +2483,22 @@ NodeDef* GraphPartitionerBase::DealWithSubNodeInputEdge(
   auto it = input_src_nodes_map->find(input_src_key);
   if (it != input_src_nodes_map->end()) {
     src_node_def = it->second;
+    // create feed key
+    Status s = CreateFeedAndFetchKey(*src_node_def, feed_key);
+    if (!s.ok()) {
+      LOG(FATAL) << "create feel key failed:" << s.error_message();
+      return nullptr;
+    }
   } else {
     src_node_def = graph_def->add_node();
     Status s = MakeInputSrcNode(in_edge, src_node_def, feed_key);
     if (!s.ok()) {
-      LOG(ERROR) << "create input src node failed:" << s.error_message();
+      LOG(FATAL) << "create input src node failed:" << s.error_message();
       return nullptr;
     }
     input_src_nodes_map->insert(make_pair(input_src_key, src_node_def));
   }
+
   return src_node_def;
 }
 
@@ -1707,7 +2515,7 @@ NodeDef* InferGraphPartitioner::DealWithSubNodeOutputEdge(
     const Edge* out_edge,
     std::unordered_map<std::string, NodeDef*>& send_nodes_map,
     std::unordered_map<std::string, int>& send_nodes_index,
-    GraphDef *graph_def)
+    GraphDef *graph_def, bool is_version1)
 {
   // TODO(jiankeng.pt) Infer not implement now.
   return nullptr;

@@ -190,8 +190,12 @@ class Node {
   bool IsNextIteration() const { return class_ == NC_NEXT_ITERATION; }
   bool IsLoopCond() const { return class_ == NC_LOOP_COND; }
   bool IsControlTrigger() const { return class_ == NC_CONTROL_TRIGGER; }
-  bool IsSend() const { return class_ == NC_SEND || class_ == NC_HOST_SEND; }
-  bool IsRecv() const { return class_ == NC_RECV || class_ == NC_HOST_RECV; }
+  bool IsSend() const { return class_ == NC_SEND ||
+                               class_ == NC_HOST_SEND ||
+                               class_ == NC_REF_SEND; }
+  bool IsRecv() const { return class_ == NC_RECV ||
+                               class_ == NC_HOST_RECV ||
+                               class_ == NC_REF_RECV; }
   bool IsFuseRecv() const { return class_ == NC_FUSE_RECV ||
                                    class_ == NC_HOST_FUSE_RECV; }
   bool IsConstant() const { return class_ == NC_CONSTANT; }
@@ -302,8 +306,10 @@ class Node {
     NC_CONTROL_TRIGGER,
     NC_SEND,
     NC_HOST_SEND,
+    NC_REF_SEND,
     NC_RECV,
     NC_HOST_RECV,
+    NC_REF_RECV,
     NC_FUSE_RECV,
     NC_HOST_FUSE_RECV,
     NC_CONSTANT,

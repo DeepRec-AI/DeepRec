@@ -78,7 +78,7 @@ Status SeastarServer::StarWorkerCacheFactory(
   *worker_cache = NewSeastarWorkerCacheWithLocalWorker(
       channel_cache.release(), worker_impl_, name_prefix, &worker_env_);
 
-  if (master_env_.run_graph_mode) {
+  if (master_env_.run_graph_mode || master_env_.run_graph_mode_v2) {
     for (auto device : master_env_.local_devices) {
       ResourceMgr *rm = device->resource_manager();
       WorkerResource *worker_resource = new WorkerResource();
@@ -110,7 +110,8 @@ class SeastarServerFactory : public ServerFactory {
 public:
   bool AcceptsOptions(const ServerDef& server_def) override {
     return (server_def.protocol() == "grpc++" ||
-            (server_def.protocol() == "star_server" &&
+            ((server_def.protocol() == "star_server" ||
+              server_def.protocol() == "star_server_v2") &&
              server_def.job_name() != "ps"));
   }
 
