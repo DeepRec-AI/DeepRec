@@ -201,7 +201,7 @@ class StringSplitOp : public OpKernel {
 
   void ParallelSplit(OpKernelContext* ctx,
                       const Eigen::TensorMap<
-                        Eigen::Tensor<const string, 1, 1, int64>,
+                        Eigen::Tensor<const string, 1, 1, long>,
                         16, Eigen::MakePointer> input_vec,
                       const int64 batch_size, const string& delimiter) {
     ThreadPool* thread_pool =
@@ -279,7 +279,7 @@ class StringSplitOp : public OpKernel {
     if (result_cost_ == 0) {
       uint64 start = 0;
       uint64 end = 0;
-      size_t sample_id = rand_r() % batch_size;
+      size_t sample_id = rand() % batch_size;
       start = Env::Default()->NowNanos();
       int last_worker_id = id_to_worker[sample_id][0];
       int64 id_in_last_worker = id_to_worker[sample_id][1];
@@ -325,7 +325,7 @@ class StringSplitOp : public OpKernel {
 
   void SequentialSplit(OpKernelContext* ctx,
                         const Eigen::TensorMap<
-                        Eigen::Tensor<const string, 1, 1, int64>,
+                        Eigen::Tensor<const string, 1, 1, long>,
                         16, Eigen::MakePointer> input_vec,
                         const int64 batch_size, const string& delimiter) {
     std::vector<StringPiece> tokens;
@@ -397,7 +397,7 @@ class StringSplitOp : public OpKernel {
     uint64 end = 0;
 
     if (element_cost_ == 0) {
-      size_t sample_id = rand_r() % batch_size;
+      size_t sample_id = rand() % batch_size;
       std::vector<StringPiece> temp_for_warm_up =
             skip_empty_ ?
                Split(input_vec(sample_id), delimiter, str_util::SkipEmpty())
@@ -435,7 +435,7 @@ class StringSplitV2Op : public OpKernel {
 
   void ParallelSplitV2(OpKernelContext* ctx,
                       const Eigen::TensorMap<
-                      Eigen::Tensor<const string, 1, 1, int64>,
+                      Eigen::Tensor<const string, 1, 1, long>,
                       16, Eigen::MakePointer> input_vec,
                       const int64 batch_size, StringPiece sep) {
     ThreadPool* thread_pool =
@@ -513,7 +513,7 @@ class StringSplitV2Op : public OpKernel {
     if (result_cost_ == 0) {
       uint64 start = 0;
       uint64 end = 0;
-      size_t sample_id = rand_r() % batch_size;
+      size_t sample_id = rand() % batch_size;
       start = Env::Default()->NowNanos();
       int last_worker_id = id_to_worker[sample_id][0];
       int64 id_in_last_worker = id_to_worker[sample_id][1];
@@ -559,7 +559,7 @@ class StringSplitV2Op : public OpKernel {
 
   void SequentialSplitV2(OpKernelContext* ctx,
                           const Eigen::TensorMap<
-                          Eigen::Tensor<const string, 1, 1, int64>,
+                          Eigen::Tensor<const string, 1, 1, long>,
                           16, Eigen::MakePointer> input_vec,
                           const int64 batch_size, StringPiece sep) {
     std::vector<StringPiece> tokens;
@@ -625,7 +625,7 @@ class StringSplitV2Op : public OpKernel {
     uint64 end = 0;
 
     if (element_cost_ == 0) {
-      size_t sample_id = rand_r() % batch_size;
+      size_t sample_id = rand() % batch_size;
       std::vector<StringPiece> temp_for_warm_up =
           SplitV2(input_vec(sample_id), sep, maxsplit_);
       start = Env::Default()->NowNanos();
