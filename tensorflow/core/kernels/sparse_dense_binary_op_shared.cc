@@ -109,7 +109,10 @@ class SparseDenseBinaryOpShared : public OpKernel {
     OP_REQUIRES_OK(
         ctx, ctx->allocate_temp(DataTypeToEnum<T>::value, TensorShape({nnz}),
                                 &dense_gathered));
-
+    bool op_is_div = false;
+    if (absl::StrContains(ctx->op_kernel().type_string(), "Div")) {
+      op_is_div = true;
+    }
     // Pulls relevant entries from the dense side, with reshape and broadcasting
     // *of the dense side* taken into account.  Use a TensorRef to avoid blowing
     // up memory.
@@ -138,6 +141,12 @@ class SparseDenseBinaryOpShared : public OpKernel {
           errors::InvalidArgument("Provided indices are out-of-bounds w.r.t. " \
                                   "dense side with broadcasted shape"));       \
       dense_gathered_flat(i) = rhs_ref.coeff(idx);                             \
+      if (op_is_div) {                                                         \
+        OP_REQUIRES(ctx, dense_gathered_flat(i) != (T)(0),                     \
+                    errors::InvalidArgument(                                   \
+                        "SparseDenseCwiseDiv cannot divide by zero,"           \
+                        "but input dense tensor contains zero "));             \
+      }                                                                        \
     }                                                                          \
     break;                                                                     \
   }
