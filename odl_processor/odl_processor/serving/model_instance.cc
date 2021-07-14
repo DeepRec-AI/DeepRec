@@ -125,7 +125,8 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   while (version_.SavedModelEmpty() || version_.CkptEmpty()) {
     // Wait until saved model meta file ready
     LOG(INFO) << "[Model Instance] SavedModel or Checkpoint dir is empty,"
-              << "will try 1 minute later.";
+              << "will try 1 minute later, current version: "
+              << version_.DebugString();
     sleep(60);
     model_store->GetLatestVersion(version_);
   }
@@ -605,16 +606,17 @@ void ModelUpdater::WorkLoop() {
   while(!is_stop_) {
     Version version;
     auto status = model_store_->GetLatestVersion(version);
+    LOG(INFO) << "[Processor] ModelUpdater::WorkLoop get latest version: "
+              << version.DebugString();
     if (!status.ok()) {
-      status = Status(error::Code::NOT_FOUND,
-          "[TensorFlow] Can't get latest model name, will try 60 seconds later.");
-      LOG(ERROR) << status.error_message() << std::endl;
-    } else {
-      if (GetVersion() < version) {
-        auto status = ModelUpdate(version, model_config_);
-        if (!status.ok()) {
-          LOG(ERROR) << status.error_message() << std::endl;
-        }
+      LOG(WARNING) << "[Processor] Can't get latest model, will try 60 seconds later. "
+                   << status.error_message() << std::endl;
+    }
+
+    if (GetVersion() < version) {
+      auto status = ModelUpdate(version, model_config_);
+      if (!status.ok()) {
+        LOG(ERROR) << status.error_message() << std::endl;
       }
     }
 

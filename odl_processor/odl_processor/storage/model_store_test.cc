@@ -287,7 +287,7 @@ TEST_F(ModelStoreTest,
   EXPECT_EQ(version.full_ckpt_name, "oss://test_checkpoint/model.ckpt-1612142");
   EXPECT_EQ(version.full_ckpt_version, 1612142);
   EXPECT_EQ(version.delta_ckpt_name, "");
-  EXPECT_EQ(version.delta_ckpt_version, 0);
+  EXPECT_EQ(version.delta_ckpt_version, -1);
 }
 
 TEST_F(ModelStoreTest,
@@ -347,7 +347,7 @@ TEST_F(ModelStoreTest,
   EXPECT_EQ(version.full_ckpt_name, "oss://test_checkpoint/model.ckpt-1612142");
   EXPECT_EQ(version.delta_ckpt_name, "");
   EXPECT_EQ(version.full_ckpt_version, 1612142);
-  EXPECT_EQ(version.delta_ckpt_version, 0);
+  EXPECT_EQ(version.delta_ckpt_version, -1);
 }
 
 } // processor
