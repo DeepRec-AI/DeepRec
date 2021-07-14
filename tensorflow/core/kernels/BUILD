@@ -4500,6 +4500,7 @@ cc_library(
     name = "nn",
     deps = [
         ":batch_norm_op",
+        ":bias_grad_ali_op",
         ":bias_op",
         ":conv_ops",
         ":data_format_ops",

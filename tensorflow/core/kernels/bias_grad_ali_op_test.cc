@@ -26,7 +26,6 @@ limitations under the License.
 #include "tensorflow/cc/ops/nn_ops.h"
 #include "tensorflow/cc/ops/nn_ops_internal.h"
 #include "tensorflow/core/common_runtime/device_factory.h"
-#include "tensorflow/core/common_runtime/eigen_thread_pool.h"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/fake_input.h"
@@ -189,8 +188,7 @@ static void BM_BiasGradFloat(int iters, int rows, int cols,
       DeviceFactory::NewDevice("CPU", {}, "/job:a/replica:0/task:0"));
 
   thread::ThreadPool threadpool(Env::Default(), "test", num_threads);
-  EigenThreadPoolWrapper wrapper(&threadpool);
-  Eigen::ThreadPoolDevice eigen_cpu_device(&wrapper, num_threads);
+  Eigen::ThreadPoolDevice eigen_cpu_device(threadpool.AsEigenThreadPool(), num_threads);
   device->set_eigen_cpu_device(&eigen_cpu_device);
 
 #ifdef INTEL_MKL
@@ -296,8 +294,7 @@ static void BM_BiasGradHalf(int iters, int rows, int cols,
       DeviceFactory::NewDevice("CPU", {}, "/job:a/replica:0/task:0"));
 
   thread::ThreadPool threadpool(Env::Default(), "test", num_threads);
-  EigenThreadPoolWrapper wrapper(&threadpool);
-  Eigen::ThreadPoolDevice eigen_cpu_device(&wrapper, num_threads);
+  Eigen::ThreadPoolDevice eigen_cpu_device(threadpool.AsEigenThreadPool(), num_threads);
   device->set_eigen_cpu_device(&eigen_cpu_device);
 
 #ifdef INTEL_MKL

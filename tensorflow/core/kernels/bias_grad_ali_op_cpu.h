@@ -182,30 +182,6 @@ void OneColumnWiseReduction(const float* A, int m, int n, int lda,
     Y[0] = sum;
     return;
   }
-
-  if (m >= block_size_avx2) {
-    int block_num = m / block_size_avx2;
-    int remain_num = m % block_size_avx2;
-
-    register float sum = overwrite ? 0 : Y[0];
-    __m256 val;
-    float* pos = const_cast<float*>(A);
-    for (int i = 0; i < block_num; ++i) {
-      val = _mm256_loadu_ps(pos);
-      sum += _mm256_reduce_add_ps(val);
-      pos += block_size_avx2;
-    }
-
-    if (remain_num != 0) {
-      int block_end = block_num * block_size_avx2;
-      __mmask16 mask = 0xff >> (block_size_avx2 - remain_num);
-      pos = const_cast<float*>(A + block_end);
-      val = _mm256_loadu_ps(pos);
-      sum += _mm256_mask_reduce_add_ps(mask, val);
-    }
-    Y[0] = sum;
-    return;
-  }
 #endif
 #endif
   register float sum = overwrite ? 0 : Y[0];
