@@ -92,6 +92,19 @@ std::unordered_map<std::string, bool> GetNodesHasDynamicShapeMap(const GraphDef&
   return result;
 }
 
+// Sets any parameters not specified in a node to their defaults.
+Status AddDefaultAttributes(const GraphDef& input_graph_def,
+                            GraphDef* output_graph_def) {
+  // Find all of the ops that are currently defined.
+  std::unique_ptr<FunctionLibraryDefinition> flib_def(
+      new FunctionLibraryDefinition(OpRegistry::Global(),
+                                    input_graph_def.library()));
+  // Works in-place, so copy over the original graph.
+  *output_graph_def = input_graph_def;
+  TF_RETURN_IF_ERROR(AddDefaultAttrsToGraphDef(output_graph_def, *flib_def, 0));
+  return Status::OK();
+}
+
 } // namespace processor
 } // namespace tensorflow
 

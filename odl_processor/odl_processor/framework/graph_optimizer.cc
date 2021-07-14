@@ -548,8 +548,17 @@ GraphOptimizer::GraphOptimizer(
   GraphConstructorOptions opts;
   opts.allow_internal_ops = true;
   opts.allow_internal_ops = true;
-  Status s = ConvertGraphDefToGraph(
-      opts, meta_graph_def_->graph_def(), &graph_);
+
+  // Add default attributes
+  GraphDef converted_graph_def;
+  Status s = processor::AddDefaultAttributes(
+    meta_graph_def_->graph_def(), &converted_graph_def);
+  if (!s.ok()) {
+    LOG(WARNING) << "Add default attrs to graphdef failed. "
+                 << s.error_message();
+  }
+  s = ConvertGraphDefToGraph(
+      opts, converted_graph_def/*meta_graph_def_->graph_def()*/, &graph_);
   if (!s.ok()) {
     LOG(FATAL) << "Can not convert graphdef to graph, "
                << s.error_message();
