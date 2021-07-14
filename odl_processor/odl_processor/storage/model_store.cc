@@ -142,12 +142,14 @@ Status ModelStore::DetectLatestCheckpointDir() {
       if (stat.mtime_nsec > latest_mtime_nsec) {
         latest_mtime_nsec = stat.mtime_nsec;
         checkpoint_dir_ = fname.substr(0, fname.rfind('/'));
+        checkpoint_dir_ += "/";
       }
     } else {
       LOG(WARNING) << "[Processor] Path: "<< fname
                    << " not a valid checkpoint_path, meg:" << s.ToString();
     }
   }
+
   LOG(WARNING) << "[Processor] checkpoint_dir: " << checkpoint_dir_;
   return Status::OK();
 }

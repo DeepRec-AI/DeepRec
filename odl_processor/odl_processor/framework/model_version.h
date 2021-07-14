@@ -7,13 +7,13 @@
 namespace tensorflow {
 namespace processor {
 struct Version {
-  int64 full_ckpt_version = 0;
-  std::string full_ckpt_name;
+  int64 full_ckpt_version = -1;
+  std::string full_ckpt_name = "";
 
-  int64 delta_ckpt_version = 0;
-  std::string delta_ckpt_name;
+  int64 delta_ckpt_version = -1;
+  std::string delta_ckpt_name = "";
 
-  std::string savedmodel_dir;
+  std::string savedmodel_dir = "";
 
   Version() = default;
   ~Version() = default;
