@@ -18,7 +18,9 @@ limitations under the License.
 
 #include <unordered_map>
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/graph.pb.h"
+#include "tensorflow/core/framework/graph_def_util.h"
 #include "tensorflow/core/framework/node_def.pb.h"
 #include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
@@ -34,6 +36,9 @@ std::unordered_map<std::string, bool> GetNodesHasControlFlowInputs(const GraphDe
 
 // Whether any output has a dynamic shape
 bool HasDynamicShapeOutput(NodeDef* node);
+
+Status AddDefaultAttributes(const GraphDef& input_graph_def,
+                            GraphDef* output_graph_def);
 
 } // namespace processor
 } // namespace tensorflow
