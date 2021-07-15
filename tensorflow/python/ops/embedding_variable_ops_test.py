@@ -62,6 +62,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
@@ -76,6 +78,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(emb)
       print(sess.run([var.export()]))
@@ -88,6 +92,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     shape = var.total_count()
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb]))
       print(sess.run([shape]))
@@ -102,6 +108,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       save_path = saver.save(sess, os.path.join(checkpoint_directory, "model.ckpt"), global_step=12345)
       print(save_path)
@@ -131,6 +139,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     init = variables.global_variables_initializer()
 
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run(init)
       print("init global done")
       print(sess.run([emb, train_op,loss]))
@@ -156,6 +166,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run(init)
       print("init global done")
       print(sess.run([emb, train_op,loss]))
@@ -178,6 +190,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       gs = training_util.get_or_create_global_step()
       init = variables.global_variables_initializer()
       with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
         for i in range(10):
           print(sess.run([emb, train_op,loss], feed_dict={'ids:0': 2*i}))
@@ -198,6 +212,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run(init)
       print("init global done")
       print(sess.run([emb, train_op,loss]))
@@ -219,6 +235,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
@@ -240,6 +258,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
@@ -261,6 +281,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
@@ -282,6 +304,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v, global_step=gs)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       self.assertEquals(36.0, sess.run([emb, train_op, loss])[2])
       self.assertAlmostEqual(32.444176, sess.run([emb, train_op, loss])[2], delta=1e-05)
@@ -303,6 +327,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
@@ -332,6 +358,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     gs = training_util.get_or_create_global_step()
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run(init)
       builder = saved_model_builder.SavedModelBuilder(checkpoint_directory)
       builder.add_meta_graph_and_variables(sess, ['tag_string'])
@@ -348,6 +376,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,6], dtypes.int64))
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       emb_val = sess.run(emb)
       for i in xrange(2):
@@ -362,6 +392,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1,6], dtypes.int64))
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       emb_val = sess.run(emb)
       print(emb_val)
@@ -384,6 +416,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
@@ -405,6 +439,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     train_op = opt.apply_gradients(g_v)
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))

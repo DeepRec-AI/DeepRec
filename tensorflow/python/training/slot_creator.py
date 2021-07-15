@@ -101,7 +101,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
           emb_index=primary._emb_index,
           block_num=primary.block_num,
           slot_index=slot_config.slot_index,
-          primary_handle=primary._primary_handle,
+          primary=primary._primary,
           primary_slotnum_op=primary._slotnum_op))
   else:
     slot = variable_scope.get_variable(

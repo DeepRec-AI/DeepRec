@@ -2845,7 +2845,7 @@ def default_variable_creator(next_creator=None, **kwargs):
       if evconfig.init_data_source is not None:
         primary_ev.set_init_data_source_initializer(evconfig.init_data_source)
       evlist.append(primary_ev)
-      block_evconfig.primary_handle = primary_ev._handle
+      block_evconfig.primary = primary_ev
       with ops.colocate_with(primary_ev):
         block_evconfig.handle_name = primary_ev._block_handle_name
         for i in range(emb_blocknum - 1):

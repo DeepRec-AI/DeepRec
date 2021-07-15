@@ -107,14 +107,10 @@ class HashMap {
   }
 
   ~HashMap() {
-    kv_->ResetIterator();
-    while (kv_->HasNext() == Status::OK()) {
-      K unused;
-      V* v = nullptr;
-      kv_->Next(unused, &v);
-      TypedAllocator::Deallocate(alloc_, v, value_and_version_len_);
+    if (emb_config_.is_primary()) {
+      kv_->Destroy(value_len_, value_and_version_len_);
+      delete kv_;
     }
-    delete kv_;
     if (use_db_) {
       delete db_kv_;
     }
@@ -149,7 +145,7 @@ class HashMap {
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
   }
-    typename TTypes<V>::Flat flat_emb(ValuePtr<V>* valptr, const EmbeddingConfig embcfg, int64 update_version = -1) {
+  typename TTypes<V>::Flat flat_emb(ValuePtr<V>* valptr, const EmbeddingConfig embcfg, int64 update_version = -1) {
     V* val = LookupOrCreateV3(valptr, embcfg, default_value_, update_version);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
@@ -340,9 +336,6 @@ class HashMap {
 
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list) 
   { return kv_->GetSnapshot(key_list, value_list); }
-
-  Status HasNext() { return kv_->HasNext(); }
-  Status Next(K& key, V** value) { return kv_->Next(key, value); }
 
  private:
   KVInterface<K, V>* kv_;

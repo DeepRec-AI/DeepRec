@@ -36,16 +36,15 @@ template <class V>
 class ValuePtr {
  public:  
   ValuePtr(size_t size) {
-    /* ________________________________________________________________________________
-      |           |               |           |                 |                  |
-      | number of | each bit a V* |  version  |       V*        |       V*         |
-      | embedding |   1 valid     |   int64   |actually pointer | actually pointer |...
-      |  columns  |  0 no-valid   | optional  |   by alloctor   |   by alloctor    |
-      |  (8 bits) |  (56 bits)    | ( 8 bits) |  (8 bits)       |                  |
-       --------------------------------------------------------------------------------
-     
+    /* ____________________________________________________________________
+      |           |               |                  |                  |
+      | number of | each bit a V* |        V*        |        V*        |
+      | embedding |    1 valid    | actually pointer | actually pointer |...
+      |  columns  |   0 no-valid  |    by alloctor   |    by alloctor   |
+      |  (8 bits) |   (56 bits)   |     (8 bytes)    |     (8 bytes)    |
+       --------------------------------------------------------------------
      */
-    // we make sure that we store at least on embedding column
+    // we make sure that we store at least one embedding column
     ptr_ = (void*) malloc(sizeof(int64) * (1 + size));
     memset(ptr_, 0, sizeof(int64) * (1 + size));
   }
@@ -150,12 +149,11 @@ class KVInterface {
                             int emb_index, int primary_emb_index, int64 value_len, int64 steps_to_live) {
     return 0;
   }
+  virtual Status Destroy(int64 value_len, int64 value_version_len) { return Status::OK();}
 
   // hold all partition lock, return size after all lock hold
   virtual int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list) {return 0;}
   virtual Status ResetIterator() { return Status::OK();}
-  virtual Status HasNext() { return Status::OK();}
-  virtual Status Next(K& key, V** value)  { return Status::OK();}
 
   virtual std::string DebugString() const = 0;
 
@@ -310,6 +308,16 @@ class DenseHashMap : public KVInterface<K, V> {
     return "";
   }
 
+  Status Destroy(int64 value_len, int64 value_version_len) {
+    ResetIterator();
+    while (HasNext() == Status::OK()) {
+      K unused;
+      V* v = nullptr;
+      Next(unused, &v);
+      TypedAllocator::Deallocate(cpu_allocator(), v, value_version_len);
+    }
+  }
+
  private:
   const int partition_num_;
   struct dense_hash_map {
@@ -455,6 +463,17 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
     return "";
   }
 
+  Status Destroy(int64 value_len, int64 value_version_len) {
+    for (int i = 0; i< partition_num_; i++) {
+      mutex_lock l(value_ptr_map_[i].mu);
+      for (const auto it : value_ptr_map_[i].hash_map) {
+        (it.second)->Destroy(value_len, value_version_len);
+        delete it.second;
+      }
+    }
+    return Status::OK();
+  }
+
  private:
   const int partition_num_;
   // new ValuePtr
@@ -502,9 +521,6 @@ class SparseHashMap : public KVInterface<K, V> {
   Status Shrink() {
     return Status::OK();
   }
-
-  virtual Status HasNext() { return Status::OK(); }
-  virtual Status Next(K& key, V** value) { return Status::OK();}
 
   std::string DebugString() const {
     LOG(INFO) << "map info size:" << hash_map_.size();
@@ -562,9 +578,6 @@ class CuckooHashMap : public KVInterface<K, V> {
 
     return "";
   }
-
-  virtual Status HasNext() { return Status::OK(); }
-  virtual Status Next(K& key, V** value) { return Status::OK();}
 
  private:
   libcuckoo::cuckoohash_map<K, V*> hash_map_;
@@ -640,8 +653,6 @@ class LevelDBHashMap: public KVInterface<K, V> {
 
   std::string DebugString() const { return "";}
   virtual int64 LockAll() { return 0;}
-  virtual Status HasNext() { return Status::OK(); }
-  virtual Status Next(K& key, V** value) { return Status::OK();}
   virtual Status UnlockAll()  {return Status::OK();}
 
  private:

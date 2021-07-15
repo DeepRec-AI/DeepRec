@@ -361,7 +361,7 @@ class KvResourceGatherOp : public OpKernel {
            &out_base, &slice_elems, &hashmap] (int64 start, int64 limit) {
         for (int64 i = start; i < limit; ++i) {
           TValue* default_v = &default_values_matrix(i, 0);
-          hashmap->LookupOrCreateHybrid(indices_flat(i),
+          hashmap->LookupOrCreateHybridV3(indices_flat(i),
               out_base + i * slice_elems, default_v);
         }
       };

@@ -186,7 +186,7 @@ class EmbeddingVariableConfig(object):
                emb_index=None,
                slot_index=None,
                block_num=None,
-               primary_handle=None,
+               primary=None,
                primary_slotnum_op=None):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
@@ -200,7 +200,7 @@ class EmbeddingVariableConfig(object):
     self.emb_index = emb_index
     self.slot_index = slot_index
     self.block_num = block_num
-    self.primary_handle = primary_handle
+    self.primary = primary
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
 

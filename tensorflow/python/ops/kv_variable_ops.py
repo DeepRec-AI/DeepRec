@@ -255,10 +255,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._slot_index = evconfig.slot_index
     self._block_num = evconfig.block_num
     self._block_handle_name = None
-    self._primary_handle = evconfig.primary_handle
+    self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
-    if self._primary_handle is None:
+    if self._primary is None:
       self._is_primary = True
     else:
       self._is_primary = False
@@ -287,8 +287,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                 shared_name=handle_name,
                 name=name,
                 graph_mode=self._in_graph_mode)
-            if self._primary_handle is None:
-              self._primary_handle = self._handle
+            if self._primary is None:
+              self._primary = self
             self._handle_device = (
                 self._handle.device if self._in_graph_mode else
                 context.get_default_context().device_name)
@@ -315,8 +315,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
               shared_name=handle_name,
               name=name,
               graph_mode=self._in_graph_mode)
-          if self._primary_handle is None:
-            self._primary_handle = self._handle
+          if self._primary is None:
+            self._primary = self
           self._handle_device = (self._handle.device if self._in_graph_mode else
                                  context.get_default_context().device_name)
           self._graph_shape = initial_value.get_shape()
@@ -337,10 +337,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                                                            Tkeys=self._invalid_key_type))
         if initial_value is not None:
           with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
-            self._initializer_op = (
+            with ops.control_dependencies(None if self._is_primary else [self._primary.initializer]):
+              self._initializer_op = (
                 gen_kv_variable_ops.initialize_kv_variable_op(
                     self._handle,
-                    self._primary_handle,
+                    self._primary._handle,
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
                     ops.convert_to_tensor(invalid_key, preferred_dtype=dtypes.int64),
                     self._slotnum_op,
