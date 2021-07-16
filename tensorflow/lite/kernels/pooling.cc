@@ -109,90 +109,97 @@ TfLiteStatus GenericPrepare(TfLiteContext* context, TfLiteNode* node) {
 }
 
 template <KernelType kernel_type>
-void AverageEvalFloat(TfLiteContext* context, TfLiteNode* node,
-                      TfLitePoolParams* params, OpData* data,
-                      const TfLiteTensor* input, TfLiteTensor* output) {
+TfLiteStatus AverageEvalFloat(TfLiteContext* context, TfLiteNode* node,
+                              TfLitePoolParams* params, OpData* data,
+                              const TfLiteTensor* input, TfLiteTensor* output) {
   float activation_min, activation_max;
   CalculateActivationRange(params->activation, &activation_min,
                            &activation_max);
-#define TF_LITE_AVERAGE_POOL(type)                                       \
-  tflite::PoolParams op_params;                                          \
-  op_params.stride_height = params->stride_height;                       \
-  op_params.stride_width = params->stride_width;                         \
-  op_params.filter_height = params->filter_height;                       \
-  op_params.filter_width = params->filter_width;                         \
-  op_params.padding_values.height = data->padding.height;                \
-  op_params.padding_values.width = data->padding.width;                  \
-  op_params.float_activation_min = activation_min;                       \
-  op_params.float_activation_max = activation_max;                       \
-  type::AveragePool(op_params, GetTensorShape(input),                    \
-                    GetTensorData<float>(input), GetTensorShape(output), \
-                    GetTensorData<float>(output))
+#define TF_LITE_AVERAGE_POOL(type)                                            \
+  tflite::PoolParams op_params;                                               \
+  op_params.stride_height = params->stride_height;                            \
+  op_params.stride_width = params->stride_width;                              \
+  op_params.filter_height = params->filter_height;                            \
+  op_params.filter_width = params->filter_width;                              \
+  op_params.padding_values.height = data->padding.height;                     \
+  op_params.padding_values.width = data->padding.width;                       \
+  op_params.float_activation_min = activation_min;                            \
+  op_params.float_activation_max = activation_max;                            \
+  TF_LITE_ENSURE(context, type::AveragePool(op_params, GetTensorShape(input), \
+                                            GetTensorData<float>(input),      \
+                                            GetTensorShape(output),           \
+                                            GetTensorData<float>(output)))
   if (kernel_type == kReference) {
     TF_LITE_AVERAGE_POOL(reference_ops);
   } else {
     TF_LITE_AVERAGE_POOL(optimized_ops);
   }
 #undef TF_LITE_AVERAGE_POOL
+  return kTfLiteOk;
 }
 
 template <KernelType kernel_type>
-void AverageEvalQuantizedUint8(TfLiteContext* context, TfLiteNode* node,
-                               TfLitePoolParams* params, OpData* data,
-                               const TfLiteTensor* input,
-                               TfLiteTensor* output) {
+TfLiteStatus AverageEvalQuantizedUint8(TfLiteContext* context, TfLiteNode* node,
+                                       TfLitePoolParams* params, OpData* data,
+                                       const TfLiteTensor* input,
+                                       TfLiteTensor* output) {
   int32_t activation_min;
   int32_t activation_max;
   CalculateActivationRangeUint8(params->activation, output, &activation_min,
                                 &activation_max);
-#define TF_LITE_AVERAGE_POOL(type)                                         \
-  tflite::PoolParams op_params;                                            \
-  op_params.stride_height = params->stride_height;                         \
-  op_params.stride_width = params->stride_width;                           \
-  op_params.filter_height = params->filter_height;                         \
-  op_params.filter_width = params->filter_width;                           \
-  op_params.padding_values.height = data->padding.height;                  \
-  op_params.padding_values.width = data->padding.width;                    \
-  op_params.quantized_activation_min = activation_min;                     \
-  op_params.quantized_activation_max = activation_max;                     \
-  type::AveragePool(op_params, GetTensorShape(input),                      \
-                    GetTensorData<uint8_t>(input), GetTensorShape(output), \
-                    GetTensorData<uint8_t>(output))
+#define TF_LITE_AVERAGE_POOL(type)                                            \
+  tflite::PoolParams op_params;                                               \
+  op_params.stride_height = params->stride_height;                            \
+  op_params.stride_width = params->stride_width;                              \
+  op_params.filter_height = params->filter_height;                            \
+  op_params.filter_width = params->filter_width;                              \
+  op_params.padding_values.height = data->padding.height;                     \
+  op_params.padding_values.width = data->padding.width;                       \
+  op_params.quantized_activation_min = activation_min;                        \
+  op_params.quantized_activation_max = activation_max;                        \
+  TF_LITE_ENSURE(context, type::AveragePool(op_params, GetTensorShape(input), \
+                                            GetTensorData<uint8_t>(input),    \
+                                            GetTensorShape(output),           \
+                                            GetTensorData<uint8_t>(output)))
   if (kernel_type == kReference) {
     TF_LITE_AVERAGE_POOL(reference_ops);
   } else {
     TF_LITE_AVERAGE_POOL(optimized_ops);
   }
 #undef TF_LITE_AVERAGE_POOL
+  return kTfLiteOk;
 }
 
 template <KernelType kernel_type>
-void AverageEvalQuantizedInt8(TfLiteContext* context, TfLiteNode* node,
-                              TfLitePoolParams* params, OpData* data,
-                              const TfLiteTensor* input, TfLiteTensor* output) {
+TfLiteStatus AverageEvalQuantizedInt8(TfLiteContext* context, TfLiteNode* node,
+                                      TfLitePoolParams* params, OpData* data,
+                                      const TfLiteTensor* input,
+                                      TfLiteTensor* output) {
   int32_t activation_min;
   int32_t activation_max;
   CalculateActivationRangeInt8(params->activation, output, &activation_min,
                                &activation_max);
-#define TF_LITE_AVERAGE_POOL(type)                                        \
-  tflite::PoolParams op_params;                                           \
-  op_params.stride_height = params->stride_height;                        \
-  op_params.stride_width = params->stride_width;                          \
-  op_params.filter_height = params->filter_height;                        \
-  op_params.filter_width = params->filter_width;                          \
-  op_params.padding_values.height = data->padding.height;                 \
-  op_params.padding_values.width = data->padding.width;                   \
-  op_params.quantized_activation_min = activation_min;                    \
-  op_params.quantized_activation_max = activation_max;                    \
-  type::AveragePool(op_params, GetTensorShape(input),                     \
-                    GetTensorData<int8_t>(input), GetTensorShape(output), \
-                    GetTensorData<int8_t>(output))
+#define TF_LITE_AVERAGE_POOL(type)                                            \
+  tflite::PoolParams op_params;                                               \
+  op_params.stride_height = params->stride_height;                            \
+  op_params.stride_width = params->stride_width;                              \
+  op_params.filter_height = params->filter_height;                            \
+  op_params.filter_width = params->filter_width;                              \
+  op_params.padding_values.height = data->padding.height;                     \
+  op_params.padding_values.width = data->padding.width;                       \
+  op_params.quantized_activation_min = activation_min;                        \
+  op_params.quantized_activation_max = activation_max;                        \
+  TF_LITE_ENSURE(context, type::AveragePool(op_params, GetTensorShape(input), \
+                                            GetTensorData<int8_t>(input),     \
+                                            GetTensorShape(output),           \
+                                            GetTensorData<int8_t>(output)))
   if (kernel_type == kReference) {
     TF_LITE_AVERAGE_POOL(reference_integer_ops);
   } else {
     TF_LITE_AVERAGE_POOL(optimized_integer_ops);
   }
 #undef TF_LITE_AVERAGE_POOL
+  return kTfLiteOk;
 }
 
 template <KernelType kernel_type>
@@ -318,16 +325,14 @@ TfLiteStatus AverageEval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* input = GetInput(context, node, 0);
   switch (input->type) {  // Already know in/out types are same.
     case kTfLiteFloat32:
-      AverageEvalFloat<kernel_type>(context, node, params, data, input, output);
-      break;
+      return AverageEvalFloat<kernel_type>(context, node, params, data, input,
+                                           output);
     case kTfLiteUInt8:
-      AverageEvalQuantizedUint8<kernel_type>(context, node, params, data, input,
-                                             output);
-      break;
+      return AverageEvalQuantizedUint8<kernel_type>(context, node, params, data,
+                                                    input, output);
     case kTfLiteInt8:
-      AverageEvalQuantizedInt8<kernel_type>(context, node, params, data, input,
-                                            output);
-      break;
+      return AverageEvalQuantizedInt8<kernel_type>(context, node, params, data,
+                                                   input, output);
     default:
       context->ReportError(context, "Type %d not currently supported.",
                            input->type);
