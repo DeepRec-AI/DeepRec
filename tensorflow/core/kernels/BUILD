@@ -4573,7 +4573,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "bias_grad_ali_op",
     prefix = "bias_grad_ali_op",
-    deps = NN_DEPS,
+    deps = NN_DEPS + mkl_deps(),
 )
 
 tf_cc_test(
