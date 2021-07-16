@@ -39,7 +39,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-namespace {  
+namespace {
 const int64 kEmbeddingVarUseDB = -214;
 const int64 kInitializableEmbeddingVarUseDB = -215;
 }
@@ -168,7 +168,7 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
      // get ev slot_index
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
-    
+
     OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {
@@ -189,7 +189,7 @@ class InitializeKvVariableOp : public OpKernel {
                 errors::InvalidArgument(
                     "Variable and value dtypes don't match; respectively, ",
                     dtype_, " and ", default_values.dtype()));
-    
+
     ResourceHandle handle_self = HandleFromInput(context, 0);
     ResourceHandle handle_primary = HandleFromInput(context, 1);
     std::string opname = handle_self.name();
@@ -197,9 +197,9 @@ class InitializeKvVariableOp : public OpKernel {
     EmbeddingVar<TKey, TValue>* variable = nullptr;
 
     const Tensor& slotnum = context->input(4);
-    int64 slotnum_op = slotnum.scalar<int64>()(); 
-    
-    if (handle_self.name() == handle_primary.name() && 
+    int64 slotnum_op = slotnum.scalar<int64>()();
+
+    if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
 
       OP_REQUIRES_OK(
@@ -213,7 +213,7 @@ class InitializeKvVariableOp : public OpKernel {
                        new HashMap<TKey, TValue>(
                          ht, cpu_allocator(), use_db_,
                          EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname + "-primary", 
+                                                        block_num_, slotnum_op, opname + "-primary",
                                                         steps_to_live_)),
                          steps_to_live_);
              return (*ptr)->Init(default_values);
@@ -234,7 +234,7 @@ class InitializeKvVariableOp : public OpKernel {
                       new HashMap<TKey, TValue>(
                         ht, cpu_allocator(), use_db_,
                         EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
-                                                       block_num_, slotnum_op, opname + "-primary", 
+                                                       block_num_, slotnum_op, opname + "-primary",
                                                        steps_to_live_)),
                         steps_to_live_);
             return (*ptr)->Init(default_values);
@@ -576,9 +576,9 @@ class KvResourceImportV2Op: public OpKernel {
     EmbeddingVar<TKey, TValue>* variable = nullptr;
 
     const Tensor& slotnum = context->input(6);
-    int64 slotnum_op = slotnum.scalar<int64>()(); 
-    
-    if (handle_self.name() == handle_primary.name() && 
+    int64 slotnum_op = slotnum.scalar<int64>()();
+
+    if (handle_self.name() == handle_primary.name() &&
          handle_self.container() == handle_primary.container()) {
       OP_REQUIRES_OK(
         context,
@@ -591,14 +591,14 @@ class KvResourceImportV2Op: public OpKernel {
                        new HashMap<TKey, TValue>(
                          ht, cpu_allocator(), false,
                          EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname + "-primary", 
+                                                        block_num_, slotnum_op, opname + "-primary",
                                                         steps_to_live_)),
                          steps_to_live_);
              return (*ptr)->Init(default_values);
             }));
     } else {
       EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
-      
+
       OP_REQUIRES_OK(
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
@@ -611,7 +611,7 @@ class KvResourceImportV2Op: public OpKernel {
                       new HashMap<TKey, TValue>(
                         ht, cpu_allocator(), false,
                         EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
-                                                       block_num_, slotnum_op, opname + "-primary", 
+                                                       block_num_, slotnum_op, opname + "-primary",
                                                        steps_to_live_)),
                         steps_to_live_);
             return (*ptr)->Init(default_values);
@@ -692,7 +692,7 @@ class KvResourceIncrImportOp: public OpKernel {
     OP_REQUIRES(c, partition_num_ >= 1,
                  errors::InvalidArgument(
                     "partition_num must >= 1, ", std::to_string(partition_num_)));
-   
+
   }
 
   void Compute(OpKernelContext* context) override {
@@ -700,11 +700,11 @@ class KvResourceIncrImportOp: public OpKernel {
     const std::string file_name_string = file_name.scalar<string>()();
     const Tensor& name = context->input(2);
     const std::string name_string = name.scalar<string>()();
-  
+
     EmbeddingVar<TKey, TValue>* variable = nullptr;
     OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 1), &variable));
 
-   
+
     core::ScopedUnref unref_me(variable);
 
     HashMap<TKey, TValue>* hashmap = variable->hashmap();

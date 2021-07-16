@@ -34,7 +34,7 @@ namespace tensorflow {
 template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:
-  EmbeddingVar(const string& name, HashMap<K, V>* hash_map, 
+  EmbeddingVar(const string& name, HashMap<K, V>* hash_map,
       int64 steps_to_live = 0)
   : name_(name), hash_map_(hash_map), steps_to_live_(steps_to_live) {}
 
@@ -64,9 +64,10 @@ class EmbeddingVar : public ResourceBase {
   Status ExportValues(OpKernelContext* ctx) {
     std::vector<K> key_list;
     std::vector<V* > valueptr_list;
-    int64 total_size = hash_map_->GetSnapshot(&key_list, &valueptr_list);
+    std::vector<int64> version_list;
+    int64 total_size = hash_map_->GetSnapshot(&key_list, &valueptr_list, &version_list);
     LOG(INFO) << "EV Export size:" << total_size;
-   
+
     Tensor* key = nullptr;
     Tensor* val = nullptr;
     Tensor* version = nullptr;
@@ -94,7 +95,7 @@ class EmbeddingVar : public ResourceBase {
       int64 dump_version = *(reinterpret_cast<int64*>(val + hash_map_->ValueLen()));
       version_flat(ii) = dump_version;
       ii++;
-    } 
+    }
     return Status::OK();
   }
 

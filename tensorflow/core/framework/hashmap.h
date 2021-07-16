@@ -50,7 +50,7 @@ struct EmbeddingConfig {
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                  int64 block_num = 1, int slot_num = 1,
                  const std::string& name = "", int64 steps_to_live = 0):
-                  emb_index(emb_index), 
+                  emb_index(emb_index),
                   primary_emb_index(primary_emb_index),
                   block_num(block_num), slot_num(slot_num) , name(name),
                   steps_to_live(steps_to_live){}
@@ -132,7 +132,7 @@ class HashMap {
     }
     return val;
   }
-  // for test 
+  // for test
   V* LookupOrCreateV3Test(K key, int64 update_version = -1) {
     ValuePtr<V>* valptr = kv_->Lookup(key, emb_config_.total_num());
     return LookupOrCreateV3(valptr,  emb_config_, default_value_, update_version);
@@ -149,6 +149,13 @@ class HashMap {
     V* val = LookupOrCreateV3(valptr, embcfg, default_value_, update_version);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
+  }
+
+  typename TTypes<V>::Flat flatV3ForTest(K key, int64 update_version = -1) {
+    const V* default_value_ptr =  default_value_;
+    ValuePtr<V>* valptr = kv_->Lookup(key, emb_config_.total_num());
+    LookupOrCreateV3(valptr, emb_config_, default_value_ptr, update_version);
+    return flat_emb(valptr, update_version);
   }
   void LookupOrCreateHybridV3(K key,  V* val, V* default_v)  {
     if (use_db_) {
@@ -169,7 +176,7 @@ class HashMap {
     }
   }
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list) {
-    return kv_->GetSnapshot(key_list, value_list, version_list, 
+    return kv_->GetSnapshot(key_list, value_list, version_list,
       emb_config_.emb_index, emb_config_.primary_emb_index, value_len_, emb_config_.steps_to_live);
   }
 
@@ -320,7 +327,7 @@ class HashMap {
     return Status::OK();
 
   }
-  
+
   int64 ValueLen() const {
     return value_len_;
   }
@@ -334,7 +341,7 @@ class HashMap {
   }
 
 
-  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list) 
+  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list)
   { return kv_->GetSnapshot(key_list, value_list); }
 
  private:

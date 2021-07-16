@@ -25,6 +25,7 @@ limitations under the License.
 #include "leveldb/comparator.h"
 #include "libcuckoo/cuckoohash_map.hh"
 #include "sparsehash/dense_hash_map"
+#include "sparsehash/dense_hash_map_lockless"
 #include "sparsehash/sparse_hash_map"
 #include "tensorflow/core/framework/typed_allocator.h"
 #include "tensorflow/core/lib/core/spin_rw_lock.h"
@@ -32,9 +33,9 @@ limitations under the License.
 
 namespace tensorflow {
 
-template <class V> 
+template <class V>
 class ValuePtr {
- public:  
+ public:
   ValuePtr(size_t size) {
     /* ____________________________________________________________________
       |           |               |                  |                  |
@@ -52,16 +53,16 @@ class ValuePtr {
   ~ValuePtr() {
     free(ptr_);
   }
-  
+
   V* GetOrAllocate(Allocator* allocator, int64 value_len, const V* default_v, int emb_index, bool allocate_version) {
     // fetch meta
     unsigned long metaorig = ((unsigned long*)ptr_)[0];
     unsigned int embnum = metaorig & 0xff;
     std::bitset<56> metadata(metaorig >> 8);
-   
+
     if (!metadata.test(emb_index)) {
 
-      while(flag_.test_and_set(std::memory_order_acquire)); 
+      while(flag_.test_and_set(std::memory_order_acquire));
 
       // need to realloc
       /*
@@ -107,7 +108,7 @@ class ValuePtr {
     unsigned long metaorig = ((unsigned long*)ptr_)[0];
     unsigned int embnum = metaorig & 0xff;
     std::bitset<56> metadata(metaorig >> 8);
-    
+
     for (int i = 0; i< embnum; i++) {
       if (metadata.test(i)) {
         V* val = ((V**)((int64*)ptr_ + 1))[i];
@@ -145,7 +146,7 @@ class KVInterface {
   virtual Status Shrink(int64 step_to_live, int64 gs, int64 value_and_version_len, int64 value_len) { return Status::OK();}
 
 
-  virtual int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list, 
+  virtual int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list,
                             int emb_index, int primary_emb_index, int64 value_len, int64 steps_to_live) {
     return 0;
   }
@@ -243,17 +244,17 @@ class DenseHashMap : public KVInterface<K, V> {
     for (int i = 0; i< partition_num_; i++) {
       spin_rd_lock l(hash_map_[i].mu);
       tot_size += hash_map_[i].hash_map.size();
-      hash_map_dump[i].hash_map = hash_map_[i].hash_map; 
+      hash_map_dump[i].hash_map = hash_map_[i].hash_map;
     }
     for (int i = 0; i< partition_num_; i++) {
       for (const auto it : hash_map_dump[i].hash_map) {
         key_list->push_back(it.first);
         value_list->push_back(it.second);
-      } 
+      }
     }
     return tot_size;
   }
-  
+
   Status ResetIterator() {
     dense_iter_.curr_partition = 0;
     dense_iter_.curr_it = hash_map_[0].hash_map.begin();
@@ -261,11 +262,11 @@ class DenseHashMap : public KVInterface<K, V> {
   }
 
   Status HasNext() {
-   
+
     if (dense_iter_.curr_partition >= partition_num_)
       return errors::NotFound("");
-   
-    while (dense_iter_.curr_it == 
+
+    while (dense_iter_.curr_it ==
         hash_map_[dense_iter_.curr_partition].hash_map.end()) {
       dense_iter_.curr_partition++;
       if (dense_iter_.curr_partition < partition_num_) {
@@ -275,15 +276,15 @@ class DenseHashMap : public KVInterface<K, V> {
         return errors::NotFound("");
       }
     }
-   
-    if (dense_iter_.curr_it != 
+
+    if (dense_iter_.curr_it !=
         hash_map_[dense_iter_.curr_partition].hash_map.end()) {
-      return Status::OK(); 
+      return Status::OK();
     } else {
         return errors::NotFound("");
-    } 
+    }
   }
-  
+
   Status Next(K& key, V** value) {
     key = dense_iter_.curr_it->first;
     *value = dense_iter_.curr_it->second;
@@ -291,7 +292,7 @@ class DenseHashMap : public KVInterface<K, V> {
     dense_iter_.curr_it++;
     return Status::OK();
   }
-  
+
   std::string DebugString() const {
     LOG(INFO) << "map info size:" << Size();
     int64 bucket_count = 0;
@@ -337,33 +338,33 @@ class DenseHashMap : public KVInterface<K, V> {
 template <class K, class V>
 class DynamicDenseHashMap : public KVInterface<K, V> {
  public:
-  DynamicDenseHashMap(int partition_num = 1000) 
+  DynamicDenseHashMap(int partition_num = 1)
   : partition_num_(partition_num),
     value_ptr_map_(nullptr) {
     value_ptr_map_ = new value_ptr_map[partition_num_];
     for (int i = 0; i< partition_num_; i++) {
       value_ptr_map_[i].hash_map.max_load_factor(0.8);
-      value_ptr_map_[i].hash_map.set_empty_key(-1);
-      value_ptr_map_[i].hash_map.set_deleted_key(-2); 
+      value_ptr_map_[i].hash_map.set_empty_key_and_value(EMPTY_KEY_, nullptr);
+      value_ptr_map_[i].hash_map.set_threadnum(1024);
+      value_ptr_map_[i].hash_map.set_deleted_key(DELETED_KEY_);
     }
   }
-  
+
   ~DynamicDenseHashMap() {
     delete []value_ptr_map_;
   }
 
-  // Lookup ValuePtr 
+  // Lookup ValuePtr
   ValuePtr<V>* Lookup(K key, size_t size) {
     int64 l_id = std::abs(key)%partition_num_;
-    mutex_lock l(value_ptr_map_[l_id].mu);
-    auto iter = value_ptr_map_[l_id].hash_map.find(key);
-    if (iter == value_ptr_map_[l_id].hash_map.end()) {
+    auto iter = value_ptr_map_[l_id].hash_map.find_wait_free(key);
+    if (iter.first == EMPTY_KEY_) {
       // insert ValuePtr in-place
       ValuePtr<V>* newval = new ValuePtr<V>(size);
-      value_ptr_map_[l_id].hash_map[key] = newval;
+      value_ptr_map_[l_id].hash_map.insert_lockless(std::move(std::pair<K, ValuePtr<V>*>(key, const_cast<ValuePtr<V>*>(newval))));
       return newval;
     } else {
-      return iter->second;
+      return iter.second;
     }
   }
 
@@ -375,21 +376,19 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
   int64 Size() const {
     int64 ret = 0;
     for (int i = 0; i< partition_num_; i++) {
-      mutex_lock l(value_ptr_map_[i].mu);
-      ret += value_ptr_map_[i].hash_map.size();
+      ret += value_ptr_map_[i].hash_map.size_lockless();
     }
     return ret;
   }
- 
+
   // Remove KV
   Status Remove(K key, int64 value_len, int64 value_and_version_len) {
     int64 l_id = std::abs(key) % partition_num_;
-    mutex_lock l(value_ptr_map_[l_id].mu);
-    auto iter = value_ptr_map_[l_id].hash_map.find(key);
-    if (iter != value_ptr_map_[l_id].hash_map.end()) {
-      (iter->second)->Destroy(value_len, value_and_version_len);
-      delete iter->second;
-      value_ptr_map_[l_id].hash_map.erase(key);
+    auto iter = value_ptr_map_[l_id].hash_map.find_wait_free(key);
+    if (iter.first != EMPTY_KEY_) {
+      (iter.second)->Destroy(value_len, value_and_version_len);
+      delete iter.second;
+      value_ptr_map_[l_id].hash_map.erase_lockless(key);
     }
 
     return Status::OK();
@@ -397,50 +396,66 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
 
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list, int emb_index, int primary_emb_index, int64 value_len, int64 steps_to_live) {
     int64 tot_size = 0;
-    for (int i = 0; i< partition_num_; i++) {
-      mutex_lock l(value_ptr_map_[i].mu);
-      for (const auto it : value_ptr_map_[i].hash_map) {
-        V* val = (it.second)->GetValue(emb_index);
-        V* primary_val = (it.second)->GetValue(primary_emb_index);
-        if (val != nullptr && primary_val != nullptr) {
-          key_list->push_back(it.first);
-          value_list->push_back((it.second)->GetValue(emb_index));
-          // for version
-          if (steps_to_live != 0) {
-            int64 dump_version = *(reinterpret_cast<int64*>(primary_val + value_len));
-            version_list->push_back(dump_version);
-          } else {
-            version_list->push_back(0);
+    int64 bucket_count[partition_num_];
+    std::pair<const K, ValuePtr<V>*> *hash_map_dump[partition_num_];
+    for (int i = 0; i < partition_num_; i++) {
+      std::pair<std::pair<const K, ValuePtr<V>*>*, long unsigned int> it = value_ptr_map_[i].hash_map.GetSnapshot();
+      hash_map_dump[i] = it.first;
+      bucket_count[i] = it.second;
+    }
+
+    for (int i = 0; i < partition_num_; i++) {
+      for (int64 j = 0; j < bucket_count[i]; j++) {
+        if (hash_map_dump[i][j].first != EMPTY_KEY_ && hash_map_dump[i][j].first != DELETED_KEY_) {
+          V* val = (hash_map_dump[i][j].second)->GetValue(emb_index);
+          V* primary_val = (hash_map_dump[i][j].second)->GetValue(primary_emb_index);
+          if (val != nullptr && primary_val != nullptr) {
+            key_list->push_back(hash_map_dump[i][j].first);
+            value_list->push_back((hash_map_dump[i][j].second)->GetValue(emb_index));
+            if (steps_to_live != 0) {
+              int64 dump_version = *(reinterpret_cast<int64*>(primary_val+value_len));
+              version_list->push_back(dump_version);
+            } else {
+              version_list->push_back(0);
+            }
+            tot_size++;
           }
-          tot_size++;
         }
       }
+      free(hash_map_dump[i]);
     }
     return tot_size;
-  } 
+  }
 
   Status Shrink(int64 step_to_live, int64 gs, int64 value_and_version_len, int64 value_len) {
-    for (int i = 0; i< partition_num_; i++) {
-      mutex_lock l(value_ptr_map_[i].mu);
+    int64 bucket_count[partition_num_];
+    std::pair<const K, ValuePtr<V>*> *hash_map_dump[partition_num_];
+    for (int i = 0; i < partition_num_; i++) {
+      std::pair<std::pair<const K, ValuePtr<V>*>*, long unsigned int> it = value_ptr_map_[i].hash_map.GetSnapshot();
+      hash_map_dump[i] = it.first;
+      bucket_count[i] = it.second;
       std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
-      for (const auto it : value_ptr_map_[i].hash_map) {
-        ValuePtr<V>* valptr = it.second;
-        V* primary_val = valptr->GetValue(0);        
-        if (primary_val != nullptr) {
-          int64 version = *(reinterpret_cast<int64*>(primary_val + value_len));
-          VLOG(2) << "key:" << it.first << ", primary_val:" << primary_val << ", gs:" << gs << ", version:" << version 
+      for (int64 j = 0; j < bucket_count[i]; j++) {
+        if (hash_map_dump[i][j].first != EMPTY_KEY_ && hash_map_dump[i][j].first != DELETED_KEY_) {
+          ValuePtr<V>* valptr = hash_map_dump[i][j].second;
+          V* primary_val = valptr->GetValue(0);
+          if (primary_val != nullptr) {
+            int64 version = *(reinterpret_cast<int64*>(primary_val + value_len));
+            VLOG(2) << "key:" << hash_map_dump[i][j].first << ", primary_val:" << primary_val << ", gs:" << gs << ", version:" << version
               <<", step_to_live:" << step_to_live << ", value_len:" << value_len;
-          if (gs - version > step_to_live) {
-            to_deleted.push_back(std::pair<K, ValuePtr<V>* >(it.first, it.second));
-            VLOG(2) << i << " shrink remove:" << version;
+            if (gs - version > step_to_live) {
+              to_deleted.push_back(std::pair<K, ValuePtr<V>*>(hash_map_dump[i][j].first, hash_map_dump[i][j].second));
+              VLOG(2) << i << "shrink remove:" << version;
+            }
           }
         }
       }
+      free(hash_map_dump[i]);
       for (const auto it : to_deleted) {
         (it.second)->Destroy(value_len, value_and_version_len);
         delete it.second;
-        if (!value_ptr_map_[i].hash_map.erase(it.first)) {
-          LOG(ERROR) << "dense hash map erase key failed: " << it.first;
+        if (!value_ptr_map_[i].hash_map.erase_lockless(it.first)) {
+          LOG(ERROR) << "dense hash map erase key failed " << it.first;
         }
       }
     }
@@ -451,7 +466,6 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
     LOG(INFO) << "map info size:" << Size();
     int64 bucket_count = 0;
     for (int i = 0; i< partition_num_; i++) {
-      mutex_lock l(value_ptr_map_[i].mu);
       bucket_count += value_ptr_map_[i].hash_map.bucket_count();
     }
     LOG(INFO) << "map info bucket_count:" << bucket_count;
@@ -464,22 +478,30 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
   }
 
   Status Destroy(int64 value_len, int64 value_version_len) {
+    int64 bucket_count[partition_num_];
+    std::pair<const K, ValuePtr<V>*> *hash_map_dump[partition_num_];
     for (int i = 0; i< partition_num_; i++) {
-      mutex_lock l(value_ptr_map_[i].mu);
-      for (const auto it : value_ptr_map_[i].hash_map) {
-        (it.second)->Destroy(value_len, value_version_len);
-        delete it.second;
+      std::pair<std::pair<const K, ValuePtr<V>*>*, long unsigned int> it = value_ptr_map_[i].hash_map.GetSnapshot();
+      hash_map_dump[i] = it.first;
+      bucket_count[i] = it.second;
+      for (int64 j = 0; j < bucket_count[i]; j++){
+        if (hash_map_dump[i][j].first != EMPTY_KEY_ && hash_map_dump[i][j].first != DELETED_KEY_) {
+          (hash_map_dump[i][j].second)->Destroy(value_len, value_version_len);
+          delete hash_map_dump[i][j].second;
+        }
       }
+      free(hash_map_dump[i]);
     }
     return Status::OK();
   }
 
  private:
+  static const int EMPTY_KEY_ = -1;
+  static const int DELETED_KEY_ = -2;
   const int partition_num_;
   // new ValuePtr
   struct value_ptr_map {
-    mutable mutex mu;
-    google::dense_hash_map<K, ValuePtr<V>* > hash_map;
+    google::dense_hash_map_lockless<K, ValuePtr<V>* > hash_map;
   };
   value_ptr_map* value_ptr_map_;
 
@@ -609,7 +631,7 @@ class LevelDBHashMap: public KVInterface<K, V> {
 
     leveldb::Slice db_key((char*)&key, sizeof(key));
     leveldb::Slice db_value((char*)val, value_len);
-  
+
     leveldb::Status st;
     st = db_hash_map_->Put(options, db_key, db_value);
     if (!st.ok()) {
@@ -631,12 +653,12 @@ class LevelDBHashMap: public KVInterface<K, V> {
       return Status::OK();
     }
   }
- 
+
   virtual Status Lookup(K key, V** val) { return Status::OK(); }
   Status Insert(K key, const V* val, V** exist_val) {
     return Status::OK();
   }
-  
+
   Status Remove(K key) {
     return Status::OK();
   }
