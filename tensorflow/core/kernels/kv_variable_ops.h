@@ -136,7 +136,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   std::vector<int64> tot_version_list;
   HashMap<K, V>* hash_map = ev->hashmap();
   int64 total_size = hash_map->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list);
-  LOG(INFO) << "EV:" << tensor_key << ", save size:" << total_size;
+  VLOG(1) << "EV:" << tensor_key << ", save size:" << total_size;
   
   std::vector<std::vector<K> > key_list_parts;
   std::vector<std::vector<V* > > valueptr_list_parts;
@@ -186,8 +186,8 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   writer->Add(tensor_key + "-partition_offset", *part_offset_tensor);
 
 
-  LOG(INFO) << "EV before partition:" << tensor_key << ", keysize:" <<  tot_key_list.size() << ", valueptr size:" << tot_valueptr_list.size();
-  LOG(INFO) << "EV after partition:" << tensor_key << ", ptsize:" << ptsize << " ,keysize:" <<  partitioned_tot_key_list.size() << ", valueptr size:" << partitioned_tot_valueptr_list.size();
+  VLOG(1) << "EV before partition:" << tensor_key << ", keysize:" <<  tot_key_list.size() << ", valueptr size:" << tot_valueptr_list.size();
+  VLOG(1) << "EV after partition:" << tensor_key << ", ptsize:" << ptsize << ", keysize:" <<  partitioned_tot_key_list.size() << ", valueptr size:" << partitioned_tot_valueptr_list.size();
 
   size_t bytes_limit = 8 << 20;
   char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
@@ -389,8 +389,8 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
         }
       }
        
-      LOG(INFO) <<  "old form, EV name:" << name_string << ", partition_id:" << partition_id 
-            << ", old partition_num:" << orig_partnum << ", new partition num:" << partition_num;
+      VLOG(1) << "old form, EV name:" << name_string << ", partition_id:" << partition_id
+              << ", old partition_num:" << orig_partnum << ", new partition num:" << partition_num;
       Status s = DynamicRestoreValue(hashmap, reader, name_string, orig_partnum,  partition_id, partition_num);
       if (!s.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
@@ -407,7 +407,7 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
 
       // then  we use primary  partition number to compose with sub partition number
 
-      LOG(INFO) << "new form:" << name_string << ", partition_id:" << partition_id << ", partition_num:" << partition_num;
+      VLOG(1) << "new form:" << name_string << ", partition_id:" << partition_id << ", partition_num:" << partition_num;
 
       int orig_partnum = 0;
       size_t buffer_size = 8 << 20;
@@ -429,7 +429,7 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
         TensorShape key_shape, value_shape, version_shape;      
         Status st = reader->LookupTensorShape(tensor_key, &key_shape);
         if (!st.ok()) {
-          LOG(INFO) << "ev part " << tensor_key << " not exist, reach the end of restoring";
+          VLOG(1) << "ev part " << tensor_key << " not exist, reach the end of restoring";
           break;
         }
         st = reader->LookupTensorShape(tensor_value, &value_shape);
@@ -484,7 +484,7 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
           int64 value_part_offset = subpart_offset *  value_unit_bytes;
           int64 version_part_offset = subpart_offset * sizeof(int64);
 
-          LOG(INFO) <<  "dynamically load ev : " << name_string <<  " ,subpartid:" << loaded_parts[i] << " ,subpart_offset:" << subpart_offset <<  ", partition_id:" << partition_id << ", partition_num:" << partition_num << " ,keynum:" << tot_key_num;
+          VLOG(1) <<  "dynamically load ev : " << name_string <<  ", subpartid:" << loaded_parts[i] << ", subpart_offset:" << subpart_offset <<  ", partition_id:" << partition_id << ", partition_num:" << partition_num << ", keynum:" << tot_key_num;
 
           int64 tot_key_bytes_read(0), tot_value_bytes_read(0), tot_version_bytes_read(0);
           size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0;

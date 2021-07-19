@@ -105,10 +105,10 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name, BundleWriter* writer
     total_bytes_written += sizeof(T);
   }
   if (!dump_happened) {
-    LOG(INFO) << tensor_name << " only one buffer written, size:" << bytes_written;
+    VLOG(1) << tensor_name << " only one buffer written, size:" << bytes_written;
     writer->AddCompeleteData(dump_buffer, bytes_written);
   } else {
-    LOG(INFO) << tensor_name << " mutiple buffer written, size:" << total_bytes_written << ", bytes written:" << bytes_written;
+    VLOG(1) << tensor_name << " mutiple buffer written, size:" << total_bytes_written << ", bytes written:" << bytes_written;
     writer->AppendSegmentData(dump_buffer, bytes_written);
     writer->EndSegmentData(total_bytes_written,  bytes_written);
   }
