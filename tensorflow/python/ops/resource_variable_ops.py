@@ -1891,6 +1891,9 @@ def _to_proto_fn(v, export_scope=None):
 
 def _from_proto_fn(v, import_scope=None):
   """Creates Variable or ResourceVariable from VariableDef as needed."""
+  if v.is_embedding_var:
+    from tensorflow.python.ops import kv_variable_ops
+    return kv_variable_ops.EmbeddingVariable.from_proto(v, import_scope=import_scope)
   if v.is_resource:
     return ResourceVariable.from_proto(v, import_scope=import_scope)
   return variables.Variable.from_proto(v, import_scope=import_scope)

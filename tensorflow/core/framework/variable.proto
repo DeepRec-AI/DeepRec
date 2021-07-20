@@ -71,6 +71,9 @@ message VariableDef {
 
   // Indicates how a distributed variable will be aggregated.
   VariableAggregation aggregation = 9;
+
+  // EmebddingVariable
+  bool is_embedding_var = 91;
 }
 
 message SaveSliceInfoDef {
