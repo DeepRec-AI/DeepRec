@@ -187,7 +187,8 @@ class EmbeddingVariableConfig(object):
                slot_index=None,
                block_num=None,
                primary=None,
-               primary_slotnum_op=None):
+               primary_slotnum_op=None,
+               min_freq = 0):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
@@ -203,6 +204,7 @@ class EmbeddingVariableConfig(object):
     self.primary = primary
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
+    self.min_freq = min_freq
 
 
   def reveal(self):

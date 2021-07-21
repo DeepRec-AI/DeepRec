@@ -138,6 +138,7 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("block_num: int = 1")
     .Attr("slot_index: int = 0")
     .Attr("ht_partition_num: int = 1000")
+    .Attr("min_freq: int = 10")
     // .SetShapeFn(CreateAssignShapeFn)
     .SetShapeFn([](InferenceContext* c) { 
 

@@ -55,6 +55,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
 
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(activate_op)
       sess.run(apply_incr)

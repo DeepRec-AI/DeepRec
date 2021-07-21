@@ -170,6 +170,8 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
 
     OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("min_freq", &min_freq_));
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {
       LOG(INFO) << "hashmap use db";
@@ -213,8 +215,8 @@ class InitializeKvVariableOp : public OpKernel {
                        new HashMap<TKey, TValue>(
                          ht, cpu_allocator(), use_db_,
                          EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname + "-primary",
-                                                        steps_to_live_)),
+                                                        block_num_, slotnum_op, opname + "-primary", 
+                                                        steps_to_live_, min_freq_)),
                          steps_to_live_);
              return (*ptr)->Init(default_values);
             }));
@@ -234,8 +236,8 @@ class InitializeKvVariableOp : public OpKernel {
                       new HashMap<TKey, TValue>(
                         ht, cpu_allocator(), use_db_,
                         EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
-                                                       block_num_, slotnum_op, opname + "-primary",
-                                                       steps_to_live_)),
+                                                       block_num_, slotnum_op, opname + "-primary", 
+                                                       steps_to_live_, min_freq_)),
                         steps_to_live_);
             return (*ptr)->Init(default_values);
            }));
@@ -251,7 +253,7 @@ class InitializeKvVariableOp : public OpKernel {
                          primary_variable->hashmap()->kv(), cpu_allocator(), use_db_,
                          EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
                                                         block_num_, slotnum_op, opname,
-                                                        steps_to_live_)),
+                                                        steps_to_live_, min_freq_)),
                          steps_to_live_);
 
              return (*ptr)->Init(default_values);
@@ -274,6 +276,7 @@ class InitializeKvVariableOp : public OpKernel {
   int64 slot_index_;
   std::string ht_type_;
   int64 ht_partition_num_;
+  int64 min_freq_;
   bool use_db_;
 };
 

@@ -1866,7 +1866,8 @@ def get_embedding_variable(name,
                            constraint=None,
                            steps_to_live=None,
                            init_data_source=None,
-                           ht_partition_num=1000):
+                           ht_partition_num=1000,
+                           min_freq = 0):
   if key_dtype == dtypes.int64:
     invalid_key = -1
   elif key_dtype == dtypes.string:
@@ -1883,7 +1884,7 @@ def get_embedding_variable(name,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
-        steps_to_live=steps_to_live, init_data_source=init_data_source),
+        steps_to_live=steps_to_live, init_data_source=init_data_source, min_freq = min_freq),
       ht_partition_num=ht_partition_num)
 
 

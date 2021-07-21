@@ -651,6 +651,80 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
 
 }
 
+TEST(EmbeddingVariableTest, TestFeatureFilter) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new HashMap<int64, float>(
+          new DynamicDenseHashMap<int64, float>(),
+          cpu_allocator(),
+          false, 
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 5)));
+
+  var->Init(value);
+
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+
+  for (int i = 0; i < 7; i++) {
+    var->hashmap()->LookupOrCreateHybridV3(20, val, nullptr);
+    ASSERT_EQ(var->hashmap()->LookupValuePtr(20)->GetFreq(), i+1);
+    if (i < 4) {
+      ASSERT_EQ(var->hashmap()->LookupValuePtr(20)->GetValue(0), nullptr);
+    } else {
+      ASSERT_EQ(val[0], 10.0);
+    }
+  }
+   
+   std::vector<int64> keylist;
+   std::vector<float *> valuelist;
+   std::vector<int64> version_list;
+   
+  var->hashmap()->LookupOrCreateHybridV3(30, val, nullptr);
+  var->hashmap()->GetSnapshot(&keylist, &valuelist, &version_list);
+  ASSERT_EQ(var->hashmap()->Size(), 2);  
+  ASSERT_EQ(keylist.size(), 1);
+   
+}
+
+void MultiFilter(EmbeddingVar<int64, float>* variable, int value_size) {
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+  variable->hashmap()->LookupOrCreateHybridV3(20, val, nullptr);
+}
+
+TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new HashMap<int64, float>(
+          new DynamicDenseHashMap<int64, float>(),
+          cpu_allocator(),
+          false, 
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 7)));
+
+  var->Init(value);
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+  int thread_num = 5;
+  std::vector<std::thread> insert_threads(thread_num);
+  for (size_t i = 0 ; i < thread_num; i++) {
+    insert_threads[i] = std::thread(MultiFilter, var, value_size);
+  }
+  for (auto &t : insert_threads) {
+    t.join();
+  }
+
+  ASSERT_EQ(var->hashmap()->LookupValuePtr(20)->GetFreq(), thread_num);
+}
+
+
 EmbeddingVar<int64, float>* InitEV_Lockless(int64 value_size) {
   Tensor value(DT_INT64, TensorShape({value_size}));
   test::FillValues<int64>(&value, std::vector<int64>(value_size, 10));

@@ -46,14 +46,15 @@ struct EmbeddingConfig {
   int64 slot_num;
   std::string name;
   int64 steps_to_live;
+  int64 min_freq;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                  int64 block_num = 1, int slot_num = 1,
-                 const std::string& name = "", int64 steps_to_live = 0):
-                  emb_index(emb_index),
+                 const std::string& name = "", int64 steps_to_live = 0, int64 min_freq = 0):
+                  emb_index(emb_index), 
                   primary_emb_index(primary_emb_index),
                   block_num(block_num), slot_num(slot_num) , name(name),
-                  steps_to_live(steps_to_live){}
+                  steps_to_live(steps_to_live), min_freq(min_freq){}
 
   bool is_primary() const {
     return emb_index == primary_emb_index;
@@ -61,6 +62,10 @@ struct EmbeddingConfig {
 
   int64 total_num() {
     return block_num * (slot_num + 1);
+  }
+
+  int64 get_min_freq() {
+    return min_freq;
   }
 
   std::string DebugString() const {
@@ -130,6 +135,7 @@ class HashMap {
       int64* version = reinterpret_cast<int64*>(val + value_len_);
       *version = update_version;
     }
+
     return val;
   }
   V* LookupOrCreateV3(K key, int64 update_version = -1) {
@@ -145,7 +151,12 @@ class HashMap {
     return typename TTypes<V>::Flat(val, dims);
   }
   typename TTypes<V>::Flat flat_emb(ValuePtr<V>* valptr, const EmbeddingConfig embcfg, int64 update_version = -1) {
-    V* val = LookupOrCreateV3(valptr, embcfg, default_value_, update_version);
+    V* val;
+    if (valptr->GetFreq() >= emb_config_.min_freq) {
+      val = LookupOrCreateV3(valptr, emb_config_, default_value_, update_version);
+    } else {
+      val = default_value_;
+    }
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
   }
@@ -170,8 +181,13 @@ class HashMap {
     } else {
       const V* default_value_ptr = (default_v == NULL) ? default_value_ : default_v;
       ValuePtr<V>* valptr = kv_->Lookup(key, emb_config_.total_num());
-      V* mem_val = LookupOrCreateV3(valptr, emb_config_, default_value_ptr);
-      memcpy(val, mem_val, sizeof(V) * value_len_);
+      valptr->AddFreq();
+      if (valptr->GetFreq() >= emb_config_.min_freq) {
+        V* mem_val = LookupOrCreateV3(valptr, emb_config_, default_value_ptr);
+        memcpy(val, mem_val, sizeof(V) * value_len_);
+      } else {
+        memcpy(val, default_value_, sizeof(V) * value_len_);
+      }
     }
   }
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list) {
@@ -193,7 +209,9 @@ class HashMap {
         continue;
       }
       ValuePtr<V>* valptr = kv_->Lookup(key_buff[i], emb_config_.total_num());
-      LookupOrCreateV3(valptr, emb_config_, value_buff + i * value_len_, version_buff[i]);
+      if (valptr->GetFreq() >= emb_config_.min_freq) {
+        LookupOrCreateV3(valptr, emb_config_, value_buff + i * value_len_, version_buff[i]);
+      }
     }
     return Status::OK();
   }
@@ -333,6 +351,10 @@ class HashMap {
 
   int64 Size() const {
     return kv_->Size();
+  }
+
+  int64 MinFreq() {
+    return emb_config_.min_freq;
   }
 
   void DebugString() const {

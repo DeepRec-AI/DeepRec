@@ -37,17 +37,18 @@ template <class V>
 class ValuePtr {
  public:
   ValuePtr(size_t size) {
-    /* ____________________________________________________________________
-      |           |               |                  |                  |
-      | number of | each bit a V* |        V*        |        V*        |
-      | embedding |    1 valid    | actually pointer | actually pointer |...
-      |  columns  |   0 no-valid  |    by alloctor   |    by alloctor   |
-      |  (8 bits) |   (56 bits)   |     (8 bytes)    |     (8 bytes)    |
-       --------------------------------------------------------------------
+    /* _______________________________________________________________________________________
+      |           |               |               |                    |                  |
+      | number of | each bit a V* | freq counter  |          V*        |        V*        |
+      | embedding |    1 valid    |     int64     | actually pointer   | actually pointer |...
+      |  columns  |   0 no-valid  |   (8 bytes)   |      by alloctor   |    by alloctor   |
+      |  (8 bits) |   (56 bits)   |               |       (8 bytes)    |     (8 bytes)    |
+       ---------------------------------------------------------------------------------------
      */
     // we make sure that we store at least one embedding column
-    ptr_ = (void*) malloc(sizeof(int64) * (1 + size));
-    memset(ptr_, 0, sizeof(int64) * (1 + size));
+    ptr_ = (void*) malloc(sizeof(int64) * (2 + size));
+    memset(ptr_, 0, sizeof(int64) * (2 + size));
+    *((int64 *)ptr_ + 1) = 0;
   }
 
   ~ValuePtr() {
@@ -59,11 +60,13 @@ class ValuePtr {
     unsigned long metaorig = ((unsigned long*)ptr_)[0];
     unsigned int embnum = metaorig & 0xff;
     std::bitset<56> metadata(metaorig >> 8);
-
+     
     if (!metadata.test(emb_index)) {
 
-      while(flag_.test_and_set(std::memory_order_acquire));
-
+      while(flag_.test_and_set(std::memory_order_acquire)); 
+      
+      if (metadata.test(emb_index)) 
+        return ((V**)((int64*)ptr_ + 2))[emb_index];
       // need to realloc
       /*
       if (emb_index + 1 > embnum) {
@@ -75,9 +78,10 @@ class ValuePtr {
         alloc_value_len = value_len + (sizeof(int64) + sizeof(V) - 1) / sizeof(V);
       }
       V* tensor_val = TypedAllocator::Allocate<V>(allocator, alloc_value_len, AllocationAttributes());
+
       memcpy(tensor_val, default_v, sizeof(V) * value_len);
 
-      ((V**)((int64*)ptr_ + 1))[emb_index]  = tensor_val;
+      ((V**)((int64*)ptr_ + 2))[emb_index]  = tensor_val;
 
       metadata.set(emb_index);
       // NOTE:if we use ((unsigned long*)((char*)ptr_ + 1))[0] = metadata.to_ulong();
@@ -88,7 +92,7 @@ class ValuePtr {
       flag_.clear(std::memory_order_release);
       return tensor_val;
     } else {
-      return ((V**)((int64*)ptr_ + 1))[emb_index];
+      return ((V**)((int64*)ptr_ + 2))[emb_index];
     }
   }
 
@@ -98,10 +102,20 @@ class ValuePtr {
     unsigned long metaorig = ((unsigned long*)ptr_)[0];
     std::bitset<56> metadata(metaorig >> 8);
     if (metadata.test(emb_index)) {
-      return ((V**)((int64*)ptr_ + 1))[emb_index];
+      return ((V**)((int64*)ptr_ + 2))[emb_index];
     } else {
       return nullptr;
     }
+  }
+
+  int64 GetFreq() {
+    return *((int64*)ptr_ + 1);
+  }
+
+  void AddFreq() {
+    while(flag_.test_and_set(std::memory_order_acquire)); 
+    *((int64*)ptr_ + 1) = std::min(max_freq_, *((int64*)ptr_ + 1)+1);
+    flag_.clear(std::memory_order_release);
   }
   	
   void Destroy(int64 value_len, int64 value_version_len) {
@@ -111,11 +125,14 @@ class ValuePtr {
 
     for (int i = 0; i< embnum; i++) {
       if (metadata.test(i)) {
-        V* val = ((V**)((int64*)ptr_ + 1))[i];
-        if (i == 0) {
-          TypedAllocator::Deallocate(cpu_allocator(), val, value_version_len);
-        } else {
-          TypedAllocator::Deallocate(cpu_allocator(), val, value_len);
+        V* val = ((V**)((int64*)ptr_ + 2))[i];
+        int64 freq = *((int64*)ptr_ + 1);
+        if (val != nullptr) {
+          if (i == 0) {
+            TypedAllocator::Deallocate(cpu_allocator(), val, value_version_len);
+          } else {
+            TypedAllocator::Deallocate(cpu_allocator(), val, value_len);
+          }
         }
       }
     }
@@ -123,6 +140,7 @@ class ValuePtr {
 
  private:
   void* ptr_;
+  static const int64 max_freq_ = 100000;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 };
 
@@ -361,7 +379,14 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
     if (iter.first == EMPTY_KEY_) {
       // insert ValuePtr in-place
       ValuePtr<V>* newval = new ValuePtr<V>(size);
-      value_ptr_map_[l_id].hash_map.insert_lockless(std::move(std::pair<K, ValuePtr<V>*>(key, const_cast<ValuePtr<V>*>(newval))));
+      auto it = value_ptr_map_[l_id].hash_map.insert_lockless(std::move(std::pair<K, ValuePtr<V>*>(key, const_cast<ValuePtr<V>*>(newval))));
+      if((*(it.first)).second != newval){
+        delete newval;
+        auto newit = value_ptr_map_[l_id].hash_map.find_wait_free(key);
+        //(newit.second)->AddFreq();
+        return newit.second;
+
+      }
       return newval;
     } else {
       return iter.second;
@@ -406,7 +431,7 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
 
     for (int i = 0; i < partition_num_; i++) {
       for (int64 j = 0; j < bucket_count[i]; j++) {
-        if (hash_map_dump[i][j].first != EMPTY_KEY_ && hash_map_dump[i][j].first != DELETED_KEY_) {
+        if (hash_map_dump[i][j].first != EMPTY_KEY_ && hash_map_dump[i][j].first != DELETED_KEY_ && (hash_map_dump[i][j].second)->GetValue(primary_emb_index) != nullptr) {
           V* val = (hash_map_dump[i][j].second)->GetValue(emb_index);
           V* primary_val = (hash_map_dump[i][j].second)->GetValue(primary_emb_index);
           if (val != nullptr && primary_val != nullptr) {

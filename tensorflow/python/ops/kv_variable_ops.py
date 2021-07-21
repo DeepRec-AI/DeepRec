@@ -258,6 +258,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
+    self._min_freq = evconfig.min_freq
     if self._primary is None:
       self._is_primary = True
     else:
@@ -351,6 +352,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     slot_index=self._slot_index,
                     ht_type=self._ht_type,
                     ht_partition_num=self._ht_partition_num,
+                    min_freq = self._min_freq,
                     name=n))
         with ops.name_scope("Read"), ops.colocate_with(self._handle):
           # Manually assign reads to the handle's device to avoid log
