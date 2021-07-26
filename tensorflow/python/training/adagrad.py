@@ -81,7 +81,7 @@ class AdagradOptimizer(optimizer.Optimizer):
         init = self._init_constant_op(v, dtype)
       self._get_or_make_slot_with_initializer(v, init, v.get_shape(), dtype,
                                               "accumulator", self._name,
-                                              slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=2))
+                                              slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=1))
 
   def _init_constant_op(self, v, dtype):
     def init():

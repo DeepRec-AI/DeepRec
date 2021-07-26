@@ -120,24 +120,24 @@ class AdamAsyncOptimizer(optimizer.Optimizer):
     # Create slots for the moments.
     for v in var_list:
       with ops.colocate_with(v):
-        self._zeros_slot(v, "m", self._name)
-        self._zeros_slot(v, "v", self._name)
+        self._zeros_slot(v, "m", self._name, slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=4))
+        self._zeros_slot(v, "v", self._name, slot_config=slot_creator.SlotConfig(slot_index=2, slot_num=4))
         if isinstance(v, kv_variable_ops.EmbeddingVariable):
           self._get_or_make_slot(v,
               array_ops.expand_dims(
                 ops.convert_to_tensor(self._beta1, dtype=v.dtype.base_dtype), -1),
-              "beta1_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=4))
+              "beta1_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=3, slot_num=4))
           self._get_or_make_slot(v,
               array_ops.expand_dims(
                 ops.convert_to_tensor(self._beta2, dtype=v.dtype.base_dtype), -1),
-              "beta2_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=2, slot_num=4))
+              "beta2_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=4, slot_num=4))
         else:
           self._get_or_make_slot(v,
               ops.convert_to_tensor(self._beta1, dtype=v.dtype.base_dtype),
-              "beta1_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=3, slot_num=4))
+              "beta1_power", self._name)
           self._get_or_make_slot(v,
               ops.convert_to_tensor(self._beta2, dtype=v.dtype.base_dtype),
-              "beta2_power", self._name, slot_config=slot_creator.SlotConfig(slot_index=4, slot_num=4))
+              "beta2_power", self._name)
 
   def _prepare(self):
     self._lr_t = ops.convert_to_tensor(self._lr, name="learning_rate")
