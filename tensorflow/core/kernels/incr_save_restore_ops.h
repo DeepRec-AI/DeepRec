@@ -218,7 +218,8 @@ class IncrEVValueDumpIterator : public  DumpIterator<K, T> {
       keys_idx_++;
       col_idx_ = 0;
     }
-    return emb_var_->hashmap()->flat(*keys_iter_)(col_idx_++);
+    ValuePtr<T>* valptr = emb_var_->hashmap()->LookupValuePtr(*keys_iter_);
+    return emb_var_->hashmap()->flat_emb(valptr)(col_idx_++);
   }
 
  private:

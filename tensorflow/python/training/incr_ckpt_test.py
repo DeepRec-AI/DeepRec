@@ -80,6 +80,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     activate_op = gen_io_ops. activate_sparse_recorder(["var_ev1"])
 
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(emb)
       sess.run(apply_incr)
@@ -181,6 +183,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     ev_tensors = []  
     ev_var_name = "var_ev1"
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(emb_var_norm)
       sess.run(emb_var_ev)
@@ -227,6 +231,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       #print(sess.graph.as_graph_def())
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(train_op, feed_dict={"ids:0": 1})
       incr_saver.incremental_save(sess, incr_path, global_step=12345)
@@ -260,6 +266,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
       #print(sess.graph.as_graph_def())
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(train_op, feed_dict={"ids:0": 1})
       saver.save(sess, path, global_step=12345)
@@ -306,6 +314,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
 
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(train_op, feed_dict={"ids:0": 1})
       saver.save(sess, path, global_step=12345)
@@ -348,6 +358,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
 
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(train_op, feed_dict={"ids:0": 1})
       saver.save(sess, path, global_step=12345)
@@ -400,6 +412,8 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
 
     init = variables.global_variables_initializer()
     with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(train_op, feed_dict={"ids:0": 1})
       saver.save(sess, path, global_step=12345)

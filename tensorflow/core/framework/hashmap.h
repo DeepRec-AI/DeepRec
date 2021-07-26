@@ -132,8 +132,7 @@ class HashMap {
     }
     return val;
   }
-  // for test
-  V* LookupOrCreateV3Test(K key, int64 update_version = -1) {
+  V* LookupOrCreateV3(K key, int64 update_version = -1) {
     ValuePtr<V>* valptr = kv_->Lookup(key, emb_config_.total_num());
     return LookupOrCreateV3(valptr,  emb_config_, default_value_, update_version);
   }
@@ -271,7 +270,7 @@ class HashMap {
   }
 
   int64 GetVersion(K key) {
-    return *(reinterpret_cast<int64*>(LookupOrCreate(key, default_value_) + ValueLen()));
+    return *(reinterpret_cast<int64*>(LookupOrCreateV3(key) + ValueLen()));
   }
 
   Status Shrink(int64 steps_to_live, int64 gs) {
