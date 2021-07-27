@@ -20,11 +20,14 @@ from __future__ import print_function
 from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
+from tensorflow.python.training import slot_creator
 from tensorflow.python.ops import state_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
+from tensorflow.python.training import training_util
 from tensorflow.python.util.tf_export import tf_export
 
 
@@ -128,8 +131,8 @@ class AdamOptimizer(optimizer.Optimizer):
 
     # Create slots for the first and second moments.
     for v in var_list:
-      self._zeros_slot(v, "m", self._name)
-      self._zeros_slot(v, "v", self._name)
+      self._zeros_slot(v, "m", self._name, slot_config=slot_creator.SlotConfig(slot_index=1, slot_num=2))
+      self._zeros_slot(v, "v", self._name, slot_config=slot_creator.SlotConfig(slot_index=2, slot_num=2))
 
   def _prepare(self):
     lr = self._call_if_callable(self._lr)
@@ -219,7 +222,22 @@ class AdamOptimizer(optimizer.Optimizer):
       return x.value()
 
   def _resource_apply_sparse(self, grad, var, indices):
-    return self._apply_sparse_shared(grad, var, indices,
+    m = self.get_slot(var, "m")
+    v = self.get_slot(var, "v")
+    beta1_power, beta2_power = self._get_beta_accumulators()
+    if isinstance(var, kv_variable_ops.EmbeddingVariable):
+      global_step = training_util.get_or_create_global_step()
+      return training_ops.kv_resource_sparse_apply_adam(
+        var.handle, m.handle, v.handle,
+        math_ops.cast(beta1_power, grad.dtype),
+        math_ops.cast(beta2_power, grad.dtype),
+        math_ops.cast(self._lr_t, grad.dtype),
+        math_ops.cast(self._beta1_t, grad.dtype),
+        math_ops.cast(self._beta2_t, grad.dtype),
+        math_ops.cast(self._epsilon_t, grad.dtype),
+        grad, indices, global_step, use_locking=self._use_locking)
+    else:
+      return self._apply_sparse_shared(grad, var, indices,
                                      self._resource_scatter_add)
 
   def _finish(self, update_ops, name_scope):

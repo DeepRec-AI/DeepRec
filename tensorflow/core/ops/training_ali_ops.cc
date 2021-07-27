@@ -401,6 +401,48 @@ REGISTER_OP("ResourceSparseApplyAdamAsync")
       return ApplyAdamAsyncShapeFn(c, true /* sparse */);
     });
 
+static Status KvResourceApplyAdamShapeFn(InferenceContext* c, bool sparse) {
+  ShapeHandle unused;
+  ShapeHandle s = ShapeOrHandleShape(c, 0);                       // var
+  TF_RETURN_IF_ERROR(c->Merge(s, ShapeOrHandleShape(c, 1), &s));  // m
+  TF_RETURN_IF_ERROR(c->Merge(s, ShapeOrHandleShape(c, 2), &s));  // v
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 0, &unused));       // beta1_power
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 0, &unused));       // beta2_power
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(5), 0, &unused));       // lr
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(6), 0, &unused));       // beta1
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(7), 0, &unused));       // beta2
+  TF_RETURN_IF_ERROR(c->WithRank(c->input(8), 0, &unused));       // epsilon
+  TF_RETURN_IF_ERROR(
+      HandleKvGradAndIndicesInputs(c, sparse, 9 /* grad_idx */, &s));
+  if (c->num_outputs() > 0) {
+    c->set_output(0, s);
+  }
+  return Status::OK();
+}
+
+REGISTER_OP("KvResourceSparseApplyAdam")
+    .Input("var: resource")
+    .Input("m: resource")
+    .Input("v: resource")
+    .Input("beta1_power: T")
+    .Input("beta2_power: T")
+    .Input("lr: T")
+    .Input("beta1: T")
+    .Input("beta2: T")
+    .Input("epsilon: T")
+    .Input("grad: T")
+    .Input("indices: Tindices")
+    .Input("global_step: Tstep")
+    .Attr("T: numbertype")
+    .Attr("Tindices: {int32, int64, string}")
+    .Attr("Tstep: {int32, int64}")
+    .Attr("use_locking: bool = false")
+    .SetShapeFn([](InferenceContext* c) {
+      return KvResourceApplyAdamShapeFn(c, true /* sparse */);
+    })
+    .Doc(R"doc(
+)doc");
+
 static Status KvApplyAdamAsyncShapeFn(InferenceContext* c, bool sparse) {
   ShapeHandle unused;
   ShapeHandle s = ShapeOrHandleShape(c, 0);                       // var
