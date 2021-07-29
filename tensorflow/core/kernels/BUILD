@@ -3921,6 +3921,26 @@ tf_mkl_kernel_library(
     deps = MATH_DEPS + mkl_deps(),
 )
 
+tf_cuda_cc_test(
+    name = "mkl_batch_matmul_op_test",
+    size = "large",
+    srcs = ["mkl_batch_matmul_op_test.cc"],
+    deps = [
+        ":batch_matmul_op",
+        ":mkl_batch_matmul_op",
+        ":broadcast_to_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_kernel_library(
     name = "betainc_op",
     prefix = "betainc_op",
@@ -4022,6 +4042,26 @@ tf_mkl_kernel_library(
     ],
     hdrs = ["mkl_matmul_ops_common.h"],
     deps = MATH_DEPS + mkl_deps(),
+)
+
+tf_cc_test_mkl(
+    name = "mkl_matmul_op_test",
+    size = "large",
+    srcs = ["mkl_matmul_op_test.cc"],
+    deps = [
+        ":ops_testutil",
+        ":ops_util",
+        ":mkl_matmul_op",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_kernel_library(
@@ -7334,6 +7374,28 @@ tf_cc_test(
 )
 
 tf_cc_test(
+    name = "mkl_transpose_op_test",
+    srcs = ["mkl_transpose_op_test.cc"],
+    deps = [
+        ":transpose_op",
+        ":mkl_transpose_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//third_party/eigen3",
+    ],
+)
+
+tf_cc_test(
     name = "quantized_conv_ops_test",
     size = "small",
     srcs = ["quantized_conv_ops_test.cc"],
@@ -7967,7 +8029,7 @@ tf_cc_test_mkl(
 
 tf_cc_test_mkl(
     name = "mkl_relu_op_test",
-    size = "small",
+    size = "medium",
     srcs = ["mkl_relu_op_test.cc"],
     linkstatic = 1,  # Fixes dyld error on MacOS.
     deps = [
@@ -8089,6 +8151,26 @@ tf_mkl_kernel_library(
     ] + mkl_deps(),
 )
 
+tf_cc_test_mkl(
+    name = "mkl_softmax_op_test",
+    size = "medium",
+    srcs = ["mkl_softmax_op_test.cc"],
+    deps = [
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_mkl_kernel_library(
     name = "mkl_tmp_bf16_ops",
     prefix = "mkl_tmp_bf16_ops",
@@ -8134,10 +8216,54 @@ tf_mkl_kernel_library(
     deps = MATH_DEPS + mkl_deps(),
 )
 
+tf_cc_test_mkl(
+    name = "mkl_aggregate_ops_test",
+    size = "medium",
+    srcs = ["mkl_aggregate_ops_test.cc"],
+    deps = [
+        ":aggregate_ops",
+        ":mkl_aggregate_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_mkl_kernel_library(
     name = "mkl_concat_op",
     prefix = "mkl_concat_op",
     deps = [":quantization_utils"] + ARRAY_DEPS + mkl_deps(),
+)
+
+tf_cc_test_mkl(
+    name = "mkl_concat_op_test",
+    size = "medium",
+    srcs = ["mkl_concat_op_test.cc"],
+    deps = [
+        ":concat_op",
+        ":mkl_concat_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_mkl_kernel_library(
@@ -8146,10 +8272,54 @@ tf_mkl_kernel_library(
     deps = ARRAY_DEPS + mkl_deps(),
 )
 
+tf_cc_test_mkl(
+    name = "mkl_reshape_op_test",
+    size = "medium",
+    srcs = ["mkl_reshape_op_test.cc"],
+    deps = [
+        ":reshape_op",
+        ":mkl_reshape_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_mkl_kernel_library(
     name = "mkl_slice_op",
     prefix = "mkl_slice_op",
     deps = ARRAY_DEPS + mkl_deps(),
+)
+
+tf_cc_test_mkl(
+    name = "mkl_slice_op_test",
+    size = "medium",
+    srcs = ["mkl_slice_op_test.cc"],
+    deps = [
+        ":slice_op",
+        ":mkl_slice_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_mkl_kernel_library(

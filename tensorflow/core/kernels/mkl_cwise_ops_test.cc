@@ -301,6 +301,7 @@ static Graph* Cwise(const string& op_name, const string& kind,
   auto* graph = new Graph(OpRegistry::Global());
   const string node_name = kind + "_" + op_name;
   const bool isDefault = (kind == "Default");
+
   DataType dtype = DataTypeToEnum<T>::v();
 
   auto init_input = [&](const TensorShape& shape, const std::string& name) {
@@ -316,64 +317,65 @@ static Graph* Cwise(const string& op_name, const string& kind,
   Node* not_mkl_shape =
       test::graph::Constant(graph, GetMklMetaTensor(), "not_mkl");
 
-  Node* cwise;
-  // Default forward op.
-  if (isDefault) {
-    TF_CHECK_OK(NodeBuilder(graph->NewName(node_name), op_name)
+  auto nodeBuilder = NodeBuilder(graph->NewName(node_name), isDefault ? op_name : "_Mkl" + op_name)
                     .Input(input0)
                     .Input(input1)
-                    .Attr("T", dtype)
-                    .Finalize(graph, &cwise));
-    return graph;
-  }
+                    .Attr("T", dtype);
+
+  isDefault ? nodeBuilder : nodeBuilder.Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Attr("_kernel", "MklLayoutDependentOp");
 
   // MKL forward op.
-  TF_CHECK_OK(NodeBuilder(graph->NewName(node_name), "_Mkl" + op_name)
-                  .Input(input0)
-                  .Input(input1)
-                  .Input(not_mkl_shape)
-                  .Input(not_mkl_shape)
-                  .Attr("T", dtype)
-                  .Attr("_kernel", "MklLayoutDependentOp")
-                  .Finalize(graph, &cwise));
+  TF_CHECK_OK(nodeBuilder.Finalize(graph, nullptr));
   return graph;
 }
 
-#define BM_Cwise(op, kind, name, shape_info_0, shape_info_1, T, type)        \
-  static void BM_##name(int iters) {                                         \
-    int64 num_computed_elements =                                            \
-        shape_info_0.num_elements() > shape_info_1.num_elements()            \
-            ? shape_info_0.num_elements()                                    \
-            : shape_info_1.num_elements();                                   \
-    int64 flops_per_iter = num_computed_elements;                            \
-    testing::UseRealTime();                                                  \
-    testing::ItemsProcessed(static_cast<int64>(iters) * flops_per_iter);     \
-    test::Benchmark(#type, Cwise<T>(#op, #kind, shape_info_0, shape_info_1)) \
-        .Run(iters);                                                         \
-  }                                                                          \
-  BENCHMARK(BM_##name);
+#define BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, NTH)     \
+  static void BM_##name##NTH(int iters) {                                           \
+    int64 num_computed_elements =                                                   \
+        shape_info_0.num_elements() > shape_info_1.num_elements()                   \
+            ? shape_info_0.num_elements()                                           \
+            : shape_info_1.num_elements();                                          \
+    int64 flops_per_iter = num_computed_elements;                                   \
+    testing::UseRealTime();                                                         \
+    SessionOptions opts;                                                            \
+    opts.config.set_intra_op_parallelism_threads(NTH);                              \
+    testing::ItemsProcessed(static_cast<int64>(iters) * flops_per_iter);            \
+    test::Benchmark(#type, Cwise<T>(#op, #kind, shape_info_0, shape_info_1), &opts) \
+        .Run(iters);                                                                \
+  }                                                                                 \
+  BENCHMARK(BM_##name##NTH);                                                        \
 
-#define BM_Cwise_2D(op, kind, A0, B0, A1, B1, T, type)                    \
-  BM_Cwise(op, kind, op##_##kind##type##_##A0##_##B0##_##A1##_##B1##_##T, \
-           TensorShape({A0, B0}), TensorShape({A1, B1}), T, type)
+#define BM_Cwise_NTH(op, kind, name, shape_info_0, shape_info_1, T, type) \
+  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 1);  \
+  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 2);  \
+  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 4);  \
+  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 8);  \
+
+#define BM_Cwise_2D(op, kind, A0, B0, A1, B1, T, type)                         \
+  BM_Cwise_NTH(op, kind, op##_##kind##type##_##A0##_##B0##_##A1##_##B1##_##T,  \
+           TensorShape({A0, B0}), TensorShape({A1, B1}), T, type)              \
+
 #define BM_2D(op, A0, B0, A1, B1, T, type)           \
   BM_Cwise_2D(op, Default, A0, B0, A1, B1, T, type); \
-  BM_Cwise_2D(op, Mkl, A0, B0, A1, B1, T, type);
+  BM_Cwise_2D(op, Mkl, A0, B0, A1, B1, T, type);     \
 
 #define BM_Cwise_4D(op, kind, A0, B0, C0, D0, A1, B1, C1, D1, T, type)                 \
-  BM_Cwise(                                                                            \
+  BM_Cwise_NTH(                                                                        \
       op, kind,                                                                        \
       op##_##kind##type##_##A0##_##B0##_##C0##_##D0##_##A1##_##B1##_##C1##_##D1##_##T, \
-      TensorShape({A0, B0, C0, D0}), TensorShape({A1, B1, C1, D1}), T, type)
+      TensorShape({A0, B0, C0, D0}), TensorShape({A1, B1, C1, D1}), T, type)           \
+
 #define BM_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, type)           \
   BM_Cwise_4D(op, Default, A0, B0, C0, D0, A1, B1, C1, D1, T, type); \
-  BM_Cwise_4D(op, Mkl, A0, B0, C0, D0, A1, B1, C1, D1, T, type);
+  BM_Cwise_4D(op, Mkl, A0, B0, C0, D0, A1, B1, C1, D1, T, type);     \
 
-#define TEST_ALL_SIZES(op, T)                         \
-  BM_2D(op, 1, 384, 384, 384, T, cpu);                \
-  BM_2D(op, 384, 384, 384, 384, T, cpu);              \
-  BM_4D(op, 1, 12, 384, 384, 1, 1, 384, 384, T, cpu); \
-  BM_4D(op, 1, 12, 384, 384, 1, 12, 384, 384, T, cpu);
+#define TEST_ALL_SIZES(op, T)                          \
+  BM_2D(op, 1, 384, 384, 384, T, cpu);                 \
+  BM_2D(op, 384, 384, 384, 384, T, cpu);               \
+  BM_4D(op, 1, 12, 384, 384, 1, 1, 384, 384, T, cpu);  \
+  BM_4D(op, 1, 12, 384, 384, 1, 12, 384, 384, T, cpu); \
 
 TEST_ALL_SIZES(Add, float)
 TEST_ALL_SIZES(Add, bfloat16)
