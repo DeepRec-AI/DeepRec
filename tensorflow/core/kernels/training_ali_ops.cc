@@ -115,18 +115,25 @@ class KvSparseApplyAdagradOp : public OpKernel {
         T lr_scalar = lr.scalar<T>()();
         Tstep gs = global_step.scalar<Tstep>()();
 
-        for (int64 i = 0; i < N; i++) {
-          const TKey index = indices_vec(i);
-          ValuePtr<float>* valptr = var->LookupValuePtr(index);
-          if (valptr->GetFreq() >= var->MinFreq()) {
-            auto a = accum->flat_emb(valptr, gs);
-            auto g = grad_flat.template chip<0>(i);
-            auto v = var->flat_emb(valptr, gs);
+        auto do_work = [this, &indices_vec, var, accum, &grad_flat,
+            &gs, &lr_scalar] (int64 start_i, int64 limit_i) {
 
-            a += g.square();
-            v -= g.constant(lr_scalar) * g * a.rsqrt();
+          for (int64 i = start_i; i < limit_i; i++) {
+            const TKey index = indices_vec(i);
+            ValuePtr<float>* valptr = var->LookupValuePtr(index);
+            if (valptr->GetFreq() >= var->MinFreq()) {
+              auto a = accum->flat_emb(valptr, gs);
+              auto g = grad_flat.template chip<0>(i);
+              auto v = var->flat_emb(valptr, gs);
+
+              a += g.square();
+              v -= g.constant(lr_scalar) * g * a.rsqrt();
+            }
           }
-        }
+        };
+        const int64 cost = 1000; //very unreliable estimate for cost per step.
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       }
     }
   }
@@ -237,23 +244,24 @@ class KvSparseApplyFtrlOp : public OpKernel {
     }
 
     if (N > 0) {
-      auto DoWork = [this, ctx, inner_dim, &var_,
-                     &indices, &accum_, &linear_, &grad,
-                     &lr, &l1, &l2, &lr_power,
-                     &l2_shrinkage] (int64 start_i, int64 limit_i) {
-        if (inner_dim > 0) {
-          auto indices_vec = indices.vec<TKey>();
-          auto grad_flat = grad.flat_outer_dims<T>();
-          T lr_scalar = lr.scalar<T>()();
-          T l1_scalar = l1.scalar<T>()();
-          T l2_scalar = l2.scalar<T>()();
-          T l2_shrinkage_scalar;
-          if (has_l2_shrinkage) {
-            l2_shrinkage_scalar = l2_shrinkage->scalar<T>()();
-          }
-          T lr_power_scalar = lr_power.scalar<T>()();
+      if (inner_dim > 0) {
+        auto indices_vec = indices.vec<TKey>();
+        auto grad_flat = grad.flat_outer_dims<T>();
+        T lr_scalar = lr.scalar<T>()();
+        T l1_scalar = l1.scalar<T>()();
+        T l2_scalar = l2.scalar<T>()();
+        T l2_shrinkage_scalar;
+        if (has_l2_shrinkage) {
+          l2_shrinkage_scalar = l2_shrinkage->scalar<T>()();
+        }
+        T lr_power_scalar = lr_power.scalar<T>()();
+        auto do_work = [this, ctx, inner_dim, &var_,
+                       &indices_vec, &accum_, &linear_, &grad_flat,
+                       &lr_scalar, &l1_scalar, &l2_scalar, &lr_power,
+                       &l2_shrinkage_scalar, &lr_power_scalar]
+                       (int64 start_i, int64 limit_i) {
 
-          for (int64 i = (int64)start_i; i < (int64)limit_i; i++) {
+          for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
             ValuePtr<float>* valptr = var_->LookupValuePtr(index);
             if (valptr->GetFreq() >= var_->MinFreq()){
@@ -303,12 +311,12 @@ class KvSparseApplyFtrlOp : public OpKernel {
             }  
           }
 #undef COMPUTE_FTRL
-        }
-      };
+        };
 
-      const int64 cost = 4500; //very unreliable estimate for cost per step.
-      auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
-      Shard(worker_threads.num_threads, worker_threads.workers, N, cost, DoWork);
+        const int64 cost = 4500; //very unreliable estimate for cost per step.
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
+      }
     }
 
     MaybeForwardRefInputToRefOutput(ctx, 0, 0);
@@ -590,48 +598,62 @@ class SparseApplyAdagradDecayOp : public OpKernel {
         auto var_flat = var.flat_outer_dims<T>();
         auto accum_flat = accum.flat_outer_dims<T>();
         auto grad_flat = grad.flat_outer_dims<T>();
-
-        for (Tindex i = 0; i < N; i++) {
-          const Tindex index = internal::SubtleMustCopy(indices_vec(i));
-          OP_REQUIRES(ctx, FastBoundsCheck(index, first_dim_size),
-                      errors::InvalidArgument(
-                          strings::StrCat("Index ", index, " at offset ", i,
-                                          " in indices is out of range")));
-          auto a = accum_flat.template chip<0>(index);
-          auto g = grad_flat.template chip<0>(i);
-          auto v = var_flat.template chip<0>(index);
-          if (global_step_scalar / decay_step_scalar > accum_decay_power_flat(index)) {
-            a *= a.constant(decay_rate_scalar);
-            a = a.cwiseMax(decay_baseline_scalar);
-            accum_decay_power_flat(index) += 1;
+        auto do_work = [this, &indices_vec, &first_dim_size, ctx,
+            &accum_flat, &grad_flat, &var_flat, &global_step_scalar,
+            &decay_step_scalar, &accum_decay_power_flat, &decay_rate_scalar,
+            &decay_baseline_scalar, &lr_scalar] (int64 start_i, int64 limit_i) {
+          for (Tindex i = start_i; i < limit_i; i++) {
+            const Tindex index = internal::SubtleMustCopy(indices_vec(i));
+            OP_REQUIRES(ctx, FastBoundsCheck(index, first_dim_size),
+                        errors::InvalidArgument(
+                            strings::StrCat("Index ", index, " at offset ", i,
+                                            " in indices is out of range")));
+            auto a = accum_flat.template chip<0>(index);
+            auto g = grad_flat.template chip<0>(i);
+            auto v = var_flat.template chip<0>(index);
+            if (global_step_scalar / decay_step_scalar > accum_decay_power_flat(index)) {
+              a *= a.constant(decay_rate_scalar);
+              a = a.cwiseMax(decay_baseline_scalar);
+              accum_decay_power_flat(index) += 1;
+            }
+            a += g.square();
+            v -= g.constant(lr_scalar) * g * a.rsqrt();
           }
-          a += g.square();
-          v -= g.constant(lr_scalar) * g * a.rsqrt();
-        }
+        };
+        const int64 cost = 1000;
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       } else {
         auto var_flat = var.flat<T>();
         auto accum_flat = accum.flat<T>();
         auto grad_flat = grad.flat<T>();
         const Tindex first_dim_size = accum_flat.size();
-
-        for (Tindex i = 0; i < N; i++) {
-          const Tindex index = internal::SubtleMustCopy(indices_vec(i));
-          OP_REQUIRES(ctx, FastBoundsCheck(index, first_dim_size),
-                      errors::InvalidArgument(
-                          strings::StrCat("Index ", index, " at offset ", i,
-                                          " in indices is out of range")));
-          T& a = accum_flat(index);
-          const T& g = grad_flat(i);
-          if (global_step_scalar / decay_step_scalar > accum_decay_power_flat(index)) {
-            a *= decay_rate_scalar;
-            if (a < decay_baseline_scalar) {
-              a = decay_baseline_scalar;
+        auto do_work = [this, ctx, &indices_vec, &first_dim_size, &accum_flat, &grad_flat,
+            &global_step_scalar, &decay_step_scalar, &accum_decay_power_flat,
+            &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar, &var_flat] 
+                (int64 start_i, int64 limit_i) {
+          for (Tindex i = start_i; i < limit_i; i++) {
+            const Tindex index = internal::SubtleMustCopy(indices_vec(i));
+            OP_REQUIRES(ctx, FastBoundsCheck(index, first_dim_size),
+                        errors::InvalidArgument(
+                            strings::StrCat("Index ", index, " at offset ", i,
+                                            " in indices is out of range")));
+            T& a = accum_flat(index);
+            const T& g = grad_flat(i);
+            if (global_step_scalar / decay_step_scalar > accum_decay_power_flat(index)) {
+              a *= decay_rate_scalar;
+              if (a < decay_baseline_scalar) {
+                a = decay_baseline_scalar;
+              }
+              accum_decay_power_flat(index) += 1;
             }
-            accum_decay_power_flat(index) += 1;
+            a += g * g;
+            var_flat(index) -= lr_scalar * g / Eigen::numext::sqrt(a);
           }
-          a += g * g;
-          var_flat(index) -= lr_scalar * g / Eigen::numext::sqrt(a);
-        }
+        };
+        const int64 cost = 1000;
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       }
     }
 
@@ -756,27 +778,34 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
 
       if (inner_dim > 0) {
         auto grad_flat = grad.flat_outer_dims<T>();
+        auto do_work = [this, &indices_vec, &var, &accum, &global_step_scalar,
+            &grad_flat, accum_decay_power_var, &global_step_scalar, &decay_step_scalar,
+            &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar]
+                (int64 start_i, int64 limit_i) {
+          for (int64 i = start_i; i < limit_i; i++) {
+            const Tindex index = indices_vec(i);
+            ValuePtr<float>* valptr = var->LookupValuePtr(index);
+            if (valptr->GetFreq() >= var->MinFreq()) {
+              auto a = accum->flat_emb(valptr, global_step_scalar);
 
-        for (int64 i = 0; i < N; i++) {
-          const Tindex index = indices_vec(i);
-          ValuePtr<float>* valptr = var->LookupValuePtr(index);
-          if (valptr->GetFreq() >= var->MinFreq()) {
-            auto a = accum->flat_emb(valptr, global_step_scalar);
+              auto g = grad_flat.template chip<0>(i);
 
-            auto g = grad_flat.template chip<0>(i);
+              auto v = var->flat_emb(valptr, global_step_scalar);
+              auto accum_decay_power = accum_decay_power_var->flat_emb(valptr, global_step_scalar);
 
-            auto v = var->flat_emb(valptr, global_step_scalar);
-            auto accum_decay_power = accum_decay_power_var->flat_emb(valptr, global_step_scalar);
-
-            if (global_step_scalar / decay_step_scalar > accum_decay_power(0)) {
-              a *= a.constant(decay_rate_scalar);
-              a = a.cwiseMax(decay_baseline_scalar);
-              accum_decay_power(0) += 1;
+              if (global_step_scalar / decay_step_scalar > accum_decay_power(0)) {
+                a *= a.constant(decay_rate_scalar);
+                a = a.cwiseMax(decay_baseline_scalar);
+                accum_decay_power(0) += 1;
+              }
+              a += g.square();
+              v -= g.constant(lr_scalar) * g * a.rsqrt();
             }
-            a += g.square();
-            v -= g.constant(lr_scalar) * g * a.rsqrt();
           }
-        }
+        };
+        const int64 cost = 1000;
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       }
     }
 
@@ -1096,23 +1125,29 @@ class SparseApplyAdamAsyncOp : public OpKernel {
         const T beta1_scalar = beta1.scalar<T>()();
         const T beta2_scalar = beta2.scalar<T>()();
         const T epsilon_scalar = epsilon.scalar<T>()();
+        auto do_work = [this, ctx, &indices_vec, &v_flat, &m_flat,
+            &grad_flat, &beta2_scalar, &beta1_scalar, &epsilon_scalar,
+            &lr_scalar, &var_flat] (int64 start_i, int64 limit_i) {
+          for (Tindex i = start_i; i < limit_i; i++) {
+            const Tindex index = indices_vec(i);
 
-        for (Tindex i = 0; i < N; i++) {
-          const Tindex index = indices_vec(i);
+            auto v_ = v_flat.template chip<0>(index);
+            auto m_ = m_flat.template chip<0>(index);
+            auto grad_ = grad_flat.template chip<0>(i);
 
-          auto v_ = v_flat.template chip<0>(index);
-          auto m_ = m_flat.template chip<0>(index);
-          auto grad_ = grad_flat.template chip<0>(i);
+            v_ = v_ * v_.constant(beta2_scalar) +
+                  grad_.square() * grad_.constant(T(1) - beta2_scalar);
+            m_ = m_ * m_.constant(beta1_scalar) +
+                   (v_ + v_.constant(epsilon_scalar)).rsqrt() *
+                       v_.constant(lr_scalar) * grad_;
 
-          v_ = v_ * v_.constant(beta2_scalar) +
-                grad_.square() * grad_.constant(T(1) - beta2_scalar);
-          m_ = m_ * m_.constant(beta1_scalar) +
-                 (v_ + v_.constant(epsilon_scalar)).rsqrt() *
-                     v_.constant(lr_scalar) * grad_;
-
-          auto v = var_flat.template chip<0>(index);
-          v -= m_;
-        }
+            auto v = var_flat.template chip<0>(index);
+            v -= m_;
+          }
+        };
+        const int64 cost = 1000;
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       } else {
         auto beta1_power_flat = beta1_power.flat<T>();
         auto beta2_power_flat = beta2_power.flat<T>();
@@ -1124,7 +1159,7 @@ class SparseApplyAdamAsyncOp : public OpKernel {
             Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_flat(0)) /
             (static_cast<T>(1) - beta1_power_flat(0));
 
-        auto DoWork = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
+        auto do_work = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
              &beta1_power_flat, &beta2_power_flat, &lr_scalar, &beta1_scalar,
              &beta2_scalar, &epsilon_scalar, &alpha] (int64 start_i, int64 limit_i) {
           if (inner_dim > 1) {
@@ -1178,7 +1213,7 @@ class SparseApplyAdamAsyncOp : public OpKernel {
 
         const int64 cost = 1000;
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
-        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, DoWork);
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       }
     }
 
@@ -1303,25 +1338,32 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         const T beta2_scalar = beta2.scalar<T>()();
         const T epsilon_scalar = epsilon.scalar<T>()();
 
-        for (Tindex i = 0; i < N; i++) {
-          const Tindex index = indices_vec(i);
-          ValuePtr<T>* valptr = var->LookupValuePtr(index);
-          if (valptr->GetFreq() >= var->MinFreq()) {
-            auto v_ = v->flat_emb(valptr);
+        auto do_work = [this, ctx, &indices_vec, &var, v, m, &grad_flat,
+            &beta2_scalar, &beta1_scalar, &epsilon_scalar, &lr_scalar]
+                (int64 start_i, int64 limit_i) {
+          for (Tindex i = start_i; i < limit_i; i++) {
+            const Tindex index = indices_vec(i);
+            ValuePtr<T>* valptr = var->LookupValuePtr(index);
+            if (valptr->GetFreq() >= var->MinFreq()) {
+              auto v_ = v->flat_emb(valptr);
             
-            auto m_ = m->flat_emb(valptr);
-            auto grad_ = grad_flat.template chip<0>(i);
+              auto m_ = m->flat_emb(valptr);
+              auto grad_ = grad_flat.template chip<0>(i);
 
-            v_ = v_ * v_.constant(beta2_scalar) +
-                  grad_.square() * grad_.constant(T(1) - beta2_scalar);
-            m_ = m_ * m_.constant(beta1_scalar) +
-                   (v_ + v_.constant(epsilon_scalar)).rsqrt() *
-                       v_.constant(lr_scalar) * grad_;
+              v_ = v_ * v_.constant(beta2_scalar) +
+              grad_.square() * grad_.constant(T(1) - beta2_scalar);
+              m_ = m_ * m_.constant(beta1_scalar) +
+                     (v_ + v_.constant(epsilon_scalar)).rsqrt() *
+                         v_.constant(lr_scalar) * grad_;
 
-            auto v = var->flat_emb(valptr);
-            v -= m_;
+              auto v = var->flat_emb(valptr);
+              v -= m_;
+            }
           }
-        }
+        };
+        const int64 cost = 1000;
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       } else {
         ValuePtr<T>* beta1_ptr = beta1_power->LookupValuePtr(0);
         auto beta1_power_flat = beta1_power->flat_emb(beta1_ptr);
@@ -1334,7 +1376,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             Eigen::numext::sqrt(static_cast<T>(1) - beta2_scalar) /
             (static_cast<T>(1) - beta1_scalar);
 
-        auto DoWork = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
+        auto do_work = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
              &beta1_power_flat, &beta2_power_flat, &lr_scalar, &beta1_scalar,
              &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
           if (inner_dim > 0) {
@@ -1363,7 +1405,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
         const int64 cost = 1000;
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
-        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, DoWork);
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       }
     }
 
@@ -1452,16 +1494,21 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
 
       if (inner_dim > 0) {
         auto grad_flat = grad.flat_outer_dims<T>();
-
-        for (int64 i = 0; i < N; i++) {
-          const Tindex index = indices_vec(i);
-          ValuePtr<float>* valptr = var->LookupValuePtr(index);
-          if (valptr->GetFreq() >= var->MinFreq()) {
-            auto g = grad_flat.template chip<0>(i);
-            auto v = var->flat_emb(valptr, global_step_scalar);
-            v -= g.constant(lr_scalar) * g;
+        auto do_work = [this, ctx, &indices_vec, var, &grad_flat, &global_step_scalar,
+            &lr_scalar] (int64 start_i, int64 limit_i) { 
+          for (int64 i = start_i; i < limit_i; i++) {
+            const Tindex index = indices_vec(i);
+            ValuePtr<float>* valptr = var->LookupValuePtr(index);
+            if (valptr->GetFreq() >= var->MinFreq()) {
+              auto g = grad_flat.template chip<0>(i);
+              auto v = var->flat_emb(valptr, global_step_scalar);
+              v -= g.constant(lr_scalar) * g;
+            }
           }
-        }
+        };
+        const int64 cost = 1000;
+        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       }
     }
 
