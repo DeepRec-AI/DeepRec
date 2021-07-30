@@ -209,9 +209,9 @@ class StagingMap : public ResourceBase {
                                    const OptionalTuple& tuple)
       EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     if (tuple[index].has_value()) {
-      return Status(errors::InvalidArgument(
+      return errors::InvalidArgument(
           "The tensor for index '", index, "' for key '", key.scalar<int64>()(),
-          "' was already initialized '", dtypes_.size(), "'."));
+          "' was already initialized '", dtypes_.size(), "'.");
     }
 
     return Status::OK();
@@ -219,6 +219,10 @@ class StagingMap : public ResourceBase {
 
   // Check that the indices are strictly ordered
   Status check_index_ordering(const Tensor& indices) {
+    if (indices.NumElements() == 0) {
+      return errors::InvalidArgument("Indices are empty");
+    }
+
     auto findices = indices.flat<int>();
 
     for (std::size_t i = 0; i < findices.dimension(0) - 1; ++i) {
@@ -226,8 +230,7 @@ class StagingMap : public ResourceBase {
         continue;
       }
 
-      return Status(
-          errors::InvalidArgument("Indices are not strictly ordered"));
+      return errors::InvalidArgument("Indices are not strictly ordered");
     }
 
     return Status::OK();
@@ -236,10 +239,10 @@ class StagingMap : public ResourceBase {
   // Check bytes are within memory limits memory limits
   Status check_memory_limit(std::size_t bytes) EXCLUSIVE_LOCKS_REQUIRED(mu_) {
     if (has_memory_limit() && bytes > memory_limit_) {
-      return Status(errors::ResourceExhausted(
+      return errors::ResourceExhausted(
           "Attempted to insert tensors with combined size of '", bytes,
           "' bytes into Staging Area with a memory limit of '", memory_limit_,
-          "'."));
+          "'.");
     }
 
     return Status::OK();
