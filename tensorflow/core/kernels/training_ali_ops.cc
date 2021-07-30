@@ -1518,8 +1518,8 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         T beta2_scalar = beta2.scalar<T>()();
         T epsilon_scalar = epsilon.scalar<T>()();
         const T alpha = lr_scalar *
-            Eigen::numext::sqrt(static_cast<T>(1) - beta2_scalar) /
-            (static_cast<T>(1) - beta1_scalar);
+            Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_flat(0)) /
+            (static_cast<T>(1) - beta1_power_flat(0));
 
         auto do_work = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
              &beta1_power_flat, &beta2_power_flat, &lr_scalar, &beta1_scalar,
