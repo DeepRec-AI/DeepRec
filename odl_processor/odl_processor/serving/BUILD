@@ -48,13 +48,22 @@ cc_library(
 )
 
 cc_library(
+    name = "tracer",
+    hdrs = ["tracer.h"],
+    deps = [
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//tensorflow/core:framework",
+        ],
+)
+
+cc_library(
     name = "model_config",
     srcs = ["model_config.cc"],
     hdrs = ["model_config.h"],
     deps = [
         "@jsoncpp_git//:jsoncpp",
         "@org_tensorflow//tensorflow/core:framework",
-        ],
+        "tracer",],
 )
 
 cc_test(
@@ -91,7 +100,8 @@ cc_library(
         "model_config",
         "model_message",
         "tf_predict_proto_cc",
-        "utils"],
+        "utils",
+        "tracer"],
 )
 
 cc_test(

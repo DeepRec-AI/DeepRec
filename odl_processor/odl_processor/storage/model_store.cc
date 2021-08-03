@@ -3,6 +3,7 @@
 #include "odl_processor/storage/model_store.h"
 #include "odl_processor/storage/feature_store_mgr.h"
 #include "tensorflow/cc/saved_model/loader.h"
+#include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/cc/saved_model/constants.h"
@@ -80,8 +81,12 @@ Status ModelStore::GetValidSavedModelDir(Version& version) {
   if (file_system_->FileExists(saved_model_pb_path).ok() ||
       file_system_->FileExists(saved_model_pbtxt_path).ok()) {
     version.savedmodel_dir = savedmodel_dir_;
+    return Status::OK();
   }
-  return Status::OK();
+
+  TF_RETURN_IF_ERROR(file_system_->FileExists(saved_model_pb_path));
+  TF_RETURN_IF_ERROR(file_system_->FileExists(saved_model_pbtxt_path));
+  return errors::NotFound(saved_model_pb_path, " unknow error.");
 }
 
 Status ModelStore::GetFullModelVersion(Version& version) {

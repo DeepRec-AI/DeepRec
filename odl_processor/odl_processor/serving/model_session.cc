@@ -1,6 +1,7 @@
 #include <random>
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/serving/model_message.h"
+#include "odl_processor/serving/tracer.h"
 #include "odl_processor/serving/util.h"
 #include "odl_processor/storage/model_store.h"
 #include "odl_processor/storage/feature_store_mgr.h"
@@ -224,8 +225,18 @@ Status ModelSession::Predict(Request& req, Response& resp) {
   req.inputs.emplace_back(sparse_storage_name_, sparse_storage_tensor_);
   req.inputs.emplace_back(model_version_name_, model_version_tensor_);
   ++counter_;
-  auto status = session_->Run(req.inputs, req.output_tensor_names,
-      {}, &resp.outputs);
+  Status status;
+  if (Tracer::GetTracer()->NeedTracing()) {
+    tensorflow::RunOptions run_options;
+    run_options.set_trace_level(tensorflow::RunOptions::FULL_TRACE);
+    tensorflow::RunMetadata run_metadata;
+    status = session_->Run(run_options, req.inputs,
+        req.output_tensor_names, {}, &resp.outputs, &run_metadata);
+    Tracer::GetTracer()->GenTimeline(run_metadata);
+  } else {
+    status = session_->Run(req.inputs, req.output_tensor_names,
+        {}, &resp.outputs);
+  }
   --counter_;
   return status;
 }
@@ -236,8 +247,18 @@ Status ModelSession::LocalPredict(Request& req, Response& resp) {
         "Remote sparse storage, please use Predict.");
   }
   ++counter_;
-  auto status = session_->Run(req.inputs, req.output_tensor_names,
-      {}, &resp.outputs);
+  Status status;
+  if (Tracer::GetTracer()->NeedTracing()) {
+    tensorflow::RunOptions run_options;
+    run_options.set_trace_level(tensorflow::RunOptions::FULL_TRACE);
+    tensorflow::RunMetadata run_metadata;
+    status = session_->Run(run_options, req.inputs,
+        req.output_tensor_names, {}, &resp.outputs, &run_metadata);
+    Tracer::GetTracer()->GenTimeline(run_metadata); 
+  } else {
+    status = session_->Run(req.inputs, req.output_tensor_names,
+        {}, &resp.outputs);
+  }
   --counter_;
   return status;
 }

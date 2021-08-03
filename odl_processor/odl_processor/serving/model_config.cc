@@ -1,6 +1,7 @@
 #include <stdlib.h>
 
 #include "odl_processor/serving/model_config.h"
+#include "odl_processor/serving/tracer.h"
 #include "include/json/json.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -263,6 +264,16 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
       json_config["lock_timeout"].asInt();
   } else {
     (*config)->lock_timeout = 15 * 60; // 900 seconds
+  }
+
+  // enable trace timeline
+  if (!json_config["timeline_start_step"].isNull() &&
+      !json_config["timeline_interval_step"].isNull() &&
+      !json_config["timeline_trace_count"].isNull()) {
+    auto start_step = json_config["timeline_start_step"].asInt();
+    auto interval_step = json_config["timeline_interval_step"].asInt();
+    auto trace_count = json_config["timeline_trace_count"].asInt();
+    Tracer::GetTracer()->SetParams(start_step, interval_step, trace_count);
   }
 
   return Status::OK();
