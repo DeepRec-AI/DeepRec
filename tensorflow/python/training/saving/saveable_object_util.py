@@ -144,7 +144,8 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
           x = v.read_value()
           return array_ops.identity(x)
       return f
-    unused_tensor = _read_variable_closure(var)
+    #unused_tensor = _read_variable_closure(var)
+    unused_tensor = var.handle
 
     specs = []
     specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-keys", dtype=self.key_type, device=var.device))

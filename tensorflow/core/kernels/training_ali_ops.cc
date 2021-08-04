@@ -69,10 +69,10 @@ class KvSparseApplyAdagradOp : public OpKernel {
     auto locks =
         MaybeLockEmbeddingVariableInputMutexesInOrder<TKey, T>(ctx, use_exclusive_lock_, {0, 1});
 
-    HashMap<TKey, T>* var = NULL;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &var));
-    HashMap<TKey, T>* accum = NULL;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 1, &accum));
+    EmbeddingVar<TKey, T>* var = NULL;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
+    EmbeddingVar<TKey, T>* accum = NULL;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum));
 
     const Tensor& lr = ctx->input(2);
     OP_REQUIRES(ctx, IsLegacyScalar(lr.shape()),
@@ -115,16 +115,16 @@ class KvSparseApplyAdagradOp : public OpKernel {
         T lr_scalar = lr.scalar<T>()();
         Tstep gs = global_step.scalar<Tstep>()();
 
-        auto do_work = [this, &indices_vec, var, accum, &grad_flat,
+        auto do_work = [this, ctx, &indices_vec, var, accum, &grad_flat,
             &gs, &lr_scalar] (int64 start_i, int64 limit_i) {
-
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
-            ValuePtr<float>* valptr = var->LookupValuePtr(index);
-            if (valptr->GetFreq() >= var->MinFreq()) {
-              auto a = accum->flat_emb(valptr, gs);
+            ValuePtr<T>* value_ptr = nullptr;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
+            if (value_ptr->GetFreq() >= var->MinFreq()) {
+              auto a = accum->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
-              auto v = var->flat_emb(valptr, gs);
+              auto v = var->flat(value_ptr);
 
               a += g.square();
               v -= g.constant(lr_scalar) * g * a.rsqrt();
@@ -172,12 +172,12 @@ class KvSparseApplyFtrlOp : public OpKernel {
     auto locks =
         MaybeLockEmbeddingVariableInputMutexesInOrder<TKey, T>(ctx, use_exclusive_lock_, {0, 1, 2});
 
-    HashMap<TKey, T>* var_ = NULL;;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &var_));
-    HashMap<TKey, T>* accum_ = NULL;;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 1, &accum_));
-    HashMap<TKey, T>* linear_ = NULL;;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 2, &linear_));
+    EmbeddingVar<TKey, T>* var_ = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var_));
+    EmbeddingVar<TKey, T>* accum_ = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum_));
+    EmbeddingVar<TKey, T>* linear_ = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &linear_));
 
     const Tensor& grad = ctx->input(3);
     const Tensor& indices = ctx->input(4);
@@ -263,11 +263,12 @@ class KvSparseApplyFtrlOp : public OpKernel {
 
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
-            ValuePtr<float>* valptr = var_->LookupValuePtr(index);
-            if (valptr->GetFreq() >= var_->MinFreq()){
-              auto var = var_->flat_emb(valptr);
-              auto accum = accum_->flat_emb(valptr);
-              auto linear = linear_->flat_emb(valptr);
+            ValuePtr<T>* value_ptr = nullptr;
+            OP_REQUIRES_OK(ctx, var_->LookupOrCreateKey(index, &value_ptr));
+            if (value_ptr->GetFreq() >= var_->MinFreq()){
+              auto var = var_->flat(value_ptr);
+              auto accum = accum_->flat(value_ptr);
+              auto linear = linear_->flat(value_ptr);
               auto grad = grad_flat.template chip<0>(i);
 
 // Use a macro to implement the computation here due to the templating of the
@@ -308,7 +309,7 @@ class KvSparseApplyFtrlOp : public OpKernel {
               } else {
                 COMPUTE_FTRL(grad);
               }
-            }  
+            }
           }
 #undef COMPUTE_FTRL
         };
@@ -630,7 +631,7 @@ class SparseApplyAdagradDecayOp : public OpKernel {
         const Tindex first_dim_size = accum_flat.size();
         auto do_work = [this, ctx, &indices_vec, &first_dim_size, &accum_flat, &grad_flat,
             &global_step_scalar, &decay_step_scalar, &accum_decay_power_flat,
-            &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar, &var_flat] 
+            &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar, &var_flat]
                 (int64 start_i, int64 limit_i) {
           for (Tindex i = start_i; i < limit_i; i++) {
             const Tindex index = internal::SubtleMustCopy(indices_vec(i));
@@ -706,14 +707,14 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
     auto locks = MaybeLockEmbeddingVariableInputMutexesInOrder<Tindex, T>(
       ctx, use_exclusive_lock_, {0, 1, 2});
 
-    HashMap<Tindex, T>* var = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &var));
+    EmbeddingVar<Tindex, T>* var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
 
-    HashMap<Tindex, T>* accum = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 1, &accum));
+    EmbeddingVar<Tindex, T>* accum = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum));
 
-    HashMap<Tindex, T>* accum_decay_power_var = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 2, &accum_decay_power_var));
+    EmbeddingVar<Tindex, T>* accum_decay_power_var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &accum_decay_power_var));
 
     const Tensor& lr = ctx->input(3);
     OP_REQUIRES(
@@ -771,29 +772,30 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
     if (N > 0) {
       auto indices_vec = indices.vec<Tindex>();
       T lr_scalar = lr.scalar<T>()();
-      Tstep global_step_scalar = global_step.scalar<Tstep>()();
+      Tstep gs = global_step.scalar<Tstep>()();
       Tstep decay_step_scalar = decay_step.scalar<Tstep>()();
       T decay_rate_scalar = decay_rate.scalar<T>()();
       T decay_baseline_scalar = decay_baseline.scalar<T>()();
 
       if (inner_dim > 0) {
         auto grad_flat = grad.flat_outer_dims<T>();
-        auto do_work = [this, &indices_vec, &var, &accum, &global_step_scalar,
-            &grad_flat, accum_decay_power_var, &global_step_scalar, &decay_step_scalar,
+        auto do_work = [this, ctx, &indices_vec, &var, &accum, &gs,
+            &grad_flat, accum_decay_power_var, &decay_step_scalar,
             &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar]
                 (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<float>* valptr = var->LookupValuePtr(index);
-            if (valptr->GetFreq() >= var->MinFreq()) {
-              auto a = accum->flat_emb(valptr, global_step_scalar);
+            ValuePtr<T>* value_ptr = nullptr;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
+            if (value_ptr->GetFreq() >= var->MinFreq()) {
+              auto a = accum->flat(value_ptr);
 
               auto g = grad_flat.template chip<0>(i);
 
-              auto v = var->flat_emb(valptr, global_step_scalar);
-              auto accum_decay_power = accum_decay_power_var->flat_emb(valptr, global_step_scalar);
+              auto v = var->flat(value_ptr);
+              auto accum_decay_power = accum_decay_power_var->flat(value_ptr);
 
-              if (global_step_scalar / decay_step_scalar > accum_decay_power(0)) {
+              if (gs / decay_step_scalar > accum_decay_power(0)) {
                 a *= a.constant(decay_rate_scalar);
                 a = a.cwiseMax(decay_baseline_scalar);
                 accum_decay_power(0) += 1;
@@ -848,14 +850,14 @@ class KvSparseApplyAdamOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
     auto locks = MaybeLockEmbeddingVariableInputMutexesInOrder<Tindex, T>(ctx, use_exclusive_lock_,
                                                       {0, 1, 2});
-    HashMap<Tindex, T>* var = NULL;;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &var));
+    EmbeddingVar<Tindex, T>* var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
 
-    HashMap<Tindex, T>* m = nullptr;		
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 1, &m));
+    EmbeddingVar<Tindex, T>* m = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &m));
 
-    HashMap<Tindex, T>* v = nullptr;		
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 2, &v));
+    EmbeddingVar<Tindex, T>* v = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &v));
 
     const Tensor& beta1_power = ctx->input(3);
     const Tensor& beta2_power = ctx->input(4);
@@ -941,12 +943,13 @@ class KvSparseApplyAdamOp : public OpKernel {
 
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<float>* valptr = var->LookupValuePtr(index);
-            if (valptr->GetFreq() >= var->MinFreq()) {
+            ValuePtr<T>* value_ptr = nullptr;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
+            if (value_ptr->GetFreq() >= var->MinFreq()) {
 
-              auto var_i = var->flat_emb(valptr, gs);
-              auto m_a = m->flat_emb(valptr, gs);
-              auto v_a = v->flat_emb(valptr, gs);
+              auto var_i = var->flat(value_ptr);
+              auto m_a = m->flat(value_ptr);
+              auto v_a = v->flat(value_ptr);
 
               auto g = grad_flat.template chip<0>(i);
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
@@ -1405,20 +1408,20 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
     auto locks = MaybeLockEmbeddingVariableInputMutexesInOrder<Tindex, T>(
       ctx, use_exclusive_lock_, {0, 1, 2, 3, 4});
-    HashMap<Tindex, T>* var = NULL;;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &var));
+    EmbeddingVar<Tindex, T>* var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
 
-    HashMap<Tindex, T>* m = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 1, &m));
+    EmbeddingVar<Tindex, T>* m = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &m));
 
-    HashMap<Tindex, T>* v = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 2, &v));
+    EmbeddingVar<Tindex, T>* v = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &v));
 
-    HashMap<Tindex, T>* beta1_power = NULL;;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 3, &beta1_power));
+    EmbeddingVar<Tindex, T>* beta1_power = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 3, &beta1_power));
 
-    HashMap<Tindex, T>* beta2_power = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 4, &beta2_power));
+    EmbeddingVar<Tindex, T>* beta2_power = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 4, &beta2_power));
 
     const Tensor& lr = ctx->input(5);
     const Tensor& beta1 = ctx->input(6);
@@ -1484,15 +1487,16 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         const T epsilon_scalar = epsilon.scalar<T>()();
 
         auto do_work = [this, ctx, &indices_vec, &var, v, m, &grad_flat,
-            &beta2_scalar, &beta1_scalar, &epsilon_scalar, &lr_scalar]
+            &beta2_scalar, &beta1_scalar, &epsilon_scalar, &lr_scalar, &global_step]
                 (int64 start_i, int64 limit_i) {
+          Tstep gs = global_step.scalar<Tstep>()();
           for (Tindex i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<T>* valptr = var->LookupValuePtr(index);
-            if (valptr->GetFreq() >= var->MinFreq()) {
-              auto v_ = v->flat_emb(valptr);
-            
-              auto m_ = m->flat_emb(valptr);
+            ValuePtr<T>* value_ptr = nullptr;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
+            if (value_ptr->GetFreq() >= var->MinFreq()) {
+              auto v_ = v->flat(value_ptr);
+              auto m_ = m->flat(value_ptr);
               auto grad_ = grad_flat.template chip<0>(i);
 
               v_ = v_ * v_.constant(beta2_scalar) +
@@ -1501,7 +1505,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                      (v_ + v_.constant(epsilon_scalar)).rsqrt() *
                          v_.constant(lr_scalar) * grad_;
 
-              auto v = var->flat_emb(valptr);
+              auto v = var->flat(value_ptr);
               v -= m_;
             }
           }
@@ -1510,9 +1514,10 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       } else {
-        ValuePtr<T>* beta1_ptr = beta1_power->LookupValuePtr(0);
-        auto beta1_power_flat = beta1_power->flat_emb(beta1_ptr);
-        auto beta2_power_flat = beta2_power->flat_emb(beta1_ptr);
+        ValuePtr<T>* beta1_ptr = nullptr;
+        OP_REQUIRES_OK(ctx, beta1_power->LookupOrCreateKey(0, &beta1_ptr));
+        auto beta1_power_flat = beta1_power->flat(beta1_ptr);
+        auto beta2_power_flat = beta2_power->flat(beta1_ptr);
         T lr_scalar = lr.scalar<T>()();
         T beta1_scalar = beta1.scalar<T>()();
         T beta2_scalar = beta2.scalar<T>()();
@@ -1531,12 +1536,13 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
             for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
               const Tindex index = indices_vec(i);
-              ValuePtr<T>* valptr = var->LookupValuePtr(index);
-              if (valptr->GetFreq() >= var->MinFreq()) {
-                auto m_a = m->flat_emb(valptr, gs);
-                auto v_a = v->flat_emb(valptr, gs);
+              ValuePtr<T>* value_ptr = nullptr;
+              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
+              if (value_ptr->GetFreq() >= var->MinFreq()) {
+                auto m_a = m->flat(value_ptr);
+                auto v_a = v->flat(value_ptr);
                 auto g = grad_flat.template chip<0>(i);
-                auto var_i = var->flat_emb(valptr, gs);
+                auto var_i = var->flat(value_ptr);
 
                 m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
                 v_a = v_a * beta2_scalar + g.square() * (static_cast<T>(1) - beta2_scalar);
@@ -1594,8 +1600,8 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
     auto locks = MaybeLockEmbeddingVariableInputMutexesInOrder<Tindex, T>(
       ctx, use_exclusive_lock_, {0});
 
-    HashMap<Tindex, float>* var = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &var));
+    EmbeddingVar<Tindex, T>* var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
 
     const Tensor& lr = ctx->input(1);
     OP_REQUIRES(
@@ -1635,18 +1641,19 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
     if (N > 0) {
       auto indices_vec = indices.vec<Tindex>();
       T lr_scalar = lr.scalar<T>()();
-      Tstep global_step_scalar = global_step.scalar<Tstep>()();
+      Tstep gs = global_step.scalar<Tstep>()();
 
       if (inner_dim > 0) {
         auto grad_flat = grad.flat_outer_dims<T>();
-        auto do_work = [this, ctx, &indices_vec, var, &grad_flat, &global_step_scalar,
-            &lr_scalar] (int64 start_i, int64 limit_i) { 
+        auto do_work = [this, ctx, &indices_vec, var, &grad_flat, &gs,
+            &lr_scalar] (int64 start_i, int64 limit_i) {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
-            ValuePtr<float>* valptr = var->LookupValuePtr(index);
-            if (valptr->GetFreq() >= var->MinFreq()) {
+            ValuePtr<T>* value_ptr = nullptr;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
+            if (value_ptr->GetFreq() >= var->MinFreq()) {
               auto g = grad_flat.template chip<0>(i);
-              auto v = var->flat_emb(valptr, global_step_scalar);
+              auto v = var->flat(value_ptr);
               v -= g.constant(lr_scalar) * g;
             }
           }

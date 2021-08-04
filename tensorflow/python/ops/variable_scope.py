@@ -2816,7 +2816,6 @@ def default_variable_creator(next_creator=None, **kwargs):
         shape=shape)
   elif use_resource and invalid_key is not None:
     emb_blocknum = embedding_block_num[0]
-    evconfig.ht_type='dynamic_dense_hash_map'
     if emb_blocknum is None: 
       ev = kv_variable_ops.EmbeddingVariable(
           initial_value=initial_value, trainable=trainable,

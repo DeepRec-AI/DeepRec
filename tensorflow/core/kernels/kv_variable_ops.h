@@ -18,10 +18,12 @@ limitations under the License.
 
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/bounds_check.h"
+#include "tensorflow/core/framework/embedding/embedding_var.h"
+#include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/kv_factory.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/resource_mgr.h"
-#include "tensorflow/core/framework/embedding_var.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/mutex.h"
@@ -32,8 +34,6 @@ limitations under the License.
 #include "tensorflow/core/lib/random/random_distributions.h"
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 
-#include "tensorflow/core/framework/hashmap.h"
-
 namespace tensorflow {
 namespace {
   const int kSavedPartitionNum = 1000;
@@ -42,7 +42,7 @@ namespace {
 template<class K, class T>
 class EVKeyDumpIterator: public  DumpIterator<K, T> {
  public:
-  EVKeyDumpIterator(HashMap<T, K>*& hash_map, std::vector<T>& key_list):hash_map_(hash_map), key_list_(key_list) {
+  EVKeyDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<T>& key_list):ev_(ev), key_list_(key_list) {
     keys_idx_ = 0;
   }
 
@@ -56,14 +56,14 @@ class EVKeyDumpIterator: public  DumpIterator<K, T> {
 
  private:
   int64 keys_idx_;
-  HashMap<T, K>* hash_map_;
+  EmbeddingVar<T, K>* ev_;
   std::vector<T>& key_list_;
 };
 
 template<class K, class T>
 class EVValueDumpIterator: public  DumpIterator<K, T> {
  public:
-  EVValueDumpIterator(HashMap<K, T>*& hash_map, std::vector<T* >& valueptr_list):hash_map_(hash_map), valueptr_list_(valueptr_list) {
+  EVValueDumpIterator(EmbeddingVar<K, T>*& ev, std::vector<T* >& valueptr_list):ev_(ev), valueptr_list_(valueptr_list) {
     keys_idx_ = 0;
     col_idx_ = 0;
   }
@@ -73,23 +73,23 @@ class EVValueDumpIterator: public  DumpIterator<K, T> {
       if (keys_idx_ < valueptr_list_.size() - 1)
         return true;
       else
-        return col_idx_ < hash_map_->ValueLen();
+        return col_idx_ < ev_->ValueLen();
     } else
       return false;
   }
 
   T Next() {
-    if (col_idx_ >= hash_map_->ValueLen()) {
+    if (col_idx_ >= ev_->ValueLen()) {
       keys_idx_++;
       col_idx_ = 0;
     }
-    Eigen::array<Eigen::DenseIndex, 1> dims({hash_map_->ValueLen()});
+    Eigen::array<Eigen::DenseIndex, 1> dims({ev_->ValueLen()});
     typename TTypes<T>::Flat value_flat = typename TTypes<T>::Flat(valueptr_list_[keys_idx_], dims);
     return value_flat(col_idx_++);
   }
 
  private:
-  HashMap<K, T>* hash_map_;
+  EmbeddingVar<K, T>* ev_;
   std::vector<T* >& valueptr_list_;
   int64 keys_idx_;
   int64 col_idx_;
@@ -99,7 +99,7 @@ class EVValueDumpIterator: public  DumpIterator<K, T> {
 template<class K, class T>
 class EVVersionDumpIterator: public  DumpIterator<K, T> {
  public:
-  EVVersionDumpIterator(HashMap<T, K>*& hash_map, std::vector<int64 >& version_list):hash_map_(hash_map), version_list_(version_list) {
+  EVVersionDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<int64 >& version_list):ev_(ev), version_list_(version_list) {
     keys_idx_ = 0;
   }
 
@@ -112,17 +112,15 @@ class EVVersionDumpIterator: public  DumpIterator<K, T> {
   }
 
  private:
-  HashMap<T, K>* hash_map_;
+  EmbeddingVar<T, K>* ev_;
   std::vector<int64>& version_list_;
   int64 keys_idx_;
 };
 
 template <class K, class V>
-Status GetInputHashMap(OpKernelContext* ctx, int input,
-                       HashMap<K, V>** hashmap) {
-  EmbeddingVar<K, V>* var = nullptr;
-  if (LookupResource(ctx, HandleFromInput(ctx, input), &var).ok()) {
-    *hashmap = var->hashmap();
+Status GetInputEmbeddingVar(OpKernelContext* ctx, int input,
+                            EmbeddingVar<K, V>** var) {
+  if (LookupResource(ctx, HandleFromInput(ctx, input), var).ok()) {
     return Status::OK();
   } else {
     return errors::Internal("Invalid versioned variable reference.");
@@ -134,8 +132,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   std::vector<K> tot_key_list;
   std::vector<V* > tot_valueptr_list;
   std::vector<int64> tot_version_list;
-  HashMap<K, V>* hash_map = ev->hashmap();
-  int64 total_size = hash_map->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list);
+  int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list);
   VLOG(1) << "EV:" << tensor_key << ", save size:" << total_size;
   
   std::vector<std::vector<K> > key_list_parts;
@@ -192,21 +189,21 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   size_t bytes_limit = 8 << 20;
   char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
   Status st;
-  EVKeyDumpIterator<V, K> ev_key_dump_iter(hash_map, partitioned_tot_key_list);
+  EVKeyDumpIterator<V, K> ev_key_dump_iter(ev, partitioned_tot_key_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer, bytes_limit, &ev_key_dump_iter, TensorShape({partitioned_tot_key_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
-  EVValueDumpIterator<K, V> ev_value_dump_iter(hash_map, partitioned_tot_valueptr_list);
-  st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer, bytes_limit, &ev_value_dump_iter, TensorShape({partitioned_tot_key_list.size(), hash_map->ValueLen()}));
+  EVValueDumpIterator<K, V> ev_value_dump_iter(ev, partitioned_tot_valueptr_list);
+  st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer, bytes_limit, &ev_value_dump_iter, TensorShape({partitioned_tot_key_list.size(), ev->ValueLen()}));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
-  EVVersionDumpIterator<V, K> ev_version_dump_iter(hash_map, partitioned_tot_version_list);
+  EVVersionDumpIterator<V, K> ev_version_dump_iter(ev, partitioned_tot_version_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-versions", writer, dump_buffer, bytes_limit, &ev_version_dump_iter, TensorShape({partitioned_tot_key_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
@@ -221,7 +218,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
 }
 
 template<typename K, typename V>
-Status DynamicRestoreValue(HashMap<K, V>* hashmap, BundleReader* reader, std::string name_string, int orig_partnum,
+Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string name_string, int orig_partnum,
        int64 partition_id = 0, int64 partition_num = 1) {
   string part_str = "part_";
   string curr_partid_str = std::to_string(partition_id);
@@ -279,7 +276,7 @@ Status DynamicRestoreValue(HashMap<K, V>* hashmap, BundleReader* reader, std::st
       if (key_bytes_read > 0) {
         read_key_num = key_bytes_read / sizeof(K);
         VLOG(2) << "repartition, read_key_num:" << read_key_num;
-        st = hashmap->ImportV2(restore_buff, read_key_num, kSavedPartitionNum, partition_id, partition_num);  
+        st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum, partition_id, partition_num);  
         if (!st.ok()) {
           return st;
         }
@@ -292,7 +289,7 @@ Status DynamicRestoreValue(HashMap<K, V>* hashmap, BundleReader* reader, std::st
 
 
 template<typename K, typename V>
-Status RestoreValue(HashMap<K, V>* hashmap, BundleReader* reader, std::string tensor_key, std::string tensor_value, std::string tensor_version) {
+Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string tensor_key, std::string tensor_value, std::string tensor_version) {
   TensorShape key_shape, value_shape, version_shape;
   reader->LookupTensorShape(tensor_key, &key_shape);
   reader->LookupTensorShape(tensor_value, &value_shape);
@@ -327,7 +324,7 @@ Status RestoreValue(HashMap<K, V>* hashmap, BundleReader* reader, std::string te
       read_key_num = key_bytes_read / sizeof(K);
       VLOG(2) << "restore, read_key_num:" << read_key_num;
      
-      st = hashmap->ImportV2(restore_buff, read_key_num, 1, 0, 1);
+      st = ev->Import(restore_buff, read_key_num, 1, 0, 1);
       if (!st.ok())
         return st;
        
@@ -339,7 +336,7 @@ Status RestoreValue(HashMap<K, V>* hashmap, BundleReader* reader, std::string te
 }
 
 template<typename K, typename V>
-Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int partition_id, int partition_num, 
+Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int partition_id, int partition_num, 
           OpKernelContext* context, BundleReader* reader, std::string part_offset_tensor_suffix,
           std::string key_suffix, std::string value_suffix, std::string version_suffix) {
 
@@ -347,7 +344,7 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
     string part_str = "part_";
     if (name_string.find(part_str) == std::string::npos) {
       // no partition    
-      Status s = RestoreValue(hashmap, reader, name_string + key_suffix, name_string + value_suffix, name_string + version_suffix);
+      Status s = RestoreValue(ev, reader, name_string + key_suffix, name_string + value_suffix, name_string + version_suffix);
       if (!s.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << s.ToString();		    
       }
@@ -391,7 +388,7 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
        
       VLOG(1) << "old form, EV name:" << name_string << ", partition_id:" << partition_id
               << ", old partition_num:" << orig_partnum << ", new partition num:" << partition_num;
-      Status s = DynamicRestoreValue(hashmap, reader, name_string, orig_partnum,  partition_id, partition_num);
+      Status s = DynamicRestoreValue(ev, reader, name_string, orig_partnum,  partition_id, partition_num);
       if (!s.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
       }
@@ -499,7 +496,7 @@ Status EVRestoreDynamically(HashMap<K, V>* hashmap, std::string name_string, int
             if (key_bytes_read > 0) {
               read_key_num = key_bytes_read / sizeof(K);
               VLOG(2) << "restore, read_key_num:" << read_key_num;
-              st = hashmap->ImportV3(restore_buff, read_key_num, kSavedPartitionNum, partition_id, partition_num);
+              st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum, partition_id, partition_num);
               if (!st.ok()) {
                 LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
               }

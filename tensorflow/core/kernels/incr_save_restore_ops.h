@@ -207,19 +207,20 @@ class IncrEVValueDumpIterator : public  DumpIterator<K, T> {
       if (keys_idx_ < incr_keys_.size())
         return true;
       else
-        return col_idx_ < emb_var_->hashmap()->ValueLen();
+        return col_idx_ < emb_var_->ValueLen();
     } else
       return false;
   }
 
   T Next() {
-    if (col_idx_ >= emb_var_->hashmap()->ValueLen()) {
+    if (col_idx_ >= emb_var_->ValueLen()) {
       keys_iter_++;
       keys_idx_++;
       col_idx_ = 0;
     }
-    ValuePtr<T>* valptr = emb_var_->hashmap()->LookupValuePtr(*keys_iter_);
-    return emb_var_->hashmap()->flat_emb(valptr)(col_idx_++);
+    ValuePtr<T>* value_ptr = NULL;
+    TF_CHECK_OK(emb_var_->LookupOrCreateKey(*keys_iter_, &value_ptr));
+    return emb_var_->flat(value_ptr)(col_idx_++);
   }
 
  private:
@@ -243,7 +244,7 @@ class IncrEVVersionDumpIterator : public  DumpIterator<K, T> {
 
   T Next() {
     K key = *keys_iter_;
-    int64 dump_version = emb_var_->hashmap()->GetVersion(key);
+    int64 dump_version = emb_var_->GetVersion(key);
     keys_iter_++;
     return dump_version;
   }
@@ -415,7 +416,7 @@ class IndicesIncrRecorder: public ResourceBase {
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_values",
                                    writer, dump_buffer, bytes_limit,
                                    &ev_value_dump_iter,
-                                   TensorShape({(uint64)partitioned_incr_keys.size(), emb_var->hashmap()->ValueLen()}));
+                                   TensorShape({(uint64)partitioned_incr_keys.size(), emb_var->ValueLen()}));
     if (!st.ok()) {
       free(dump_buffer);
       return st;

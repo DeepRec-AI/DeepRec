@@ -54,62 +54,17 @@ REGISTER_KV_VAR_HANDLE(int32, float)
 REGISTER_KV_VAR_HANDLE(int64, float)
 #undef REGISTER_KV_VAR_HANDLE
 
-template <typename TIndex>
-class ReadKvVariableOp : public OpKernel {
- public:
-  explicit ReadKvVariableOp(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
-  }
-
-  void Compute(OpKernelContext* ctx) override {
-    EmbeddingVar<TIndex, float>* variable = nullptr;
-    ResourceHandle handle = HandleFromInput(ctx, 0);
-    const auto status = LookupResource(ctx, handle, &variable);
-    OP_REQUIRES(ctx, status.ok(),
-                errors::NotFound(
-                    "Error while reading resource variable ", handle.name(),
-                    " from Container: ", handle.container(),
-                    ". This could mean that the variable was not initialized. ",
-                    status.ToString()));
-
-    core::ScopedUnref unref_me(variable);
-    HashMap<TIndex, float>* hashmap = variable->hashmap();
-    TensorShape value_shape({hashmap->ValueLen()});
-    Tensor* out;
-    OP_REQUIRES_OK(ctx, ctx->allocate_output("value", value_shape, &out));
-    //hashmap->Lookup(0, out);
-    OP_REQUIRES(
-        ctx, dtype_ == out->dtype(),
-        errors::InvalidArgument(
-            "Trying to read variable with wrong dtype. Expected ",
-            DataTypeString(dtype_), " got ", DataTypeString(out->dtype())));
-  }
-
- private:
-  DataType dtype_;
-};
-
-#define REGISTER_READ_KV_VARIABLE(dev, type)                      \
-  REGISTER_KERNEL_BUILDER(Name("ReadKvVariableOp")                \
-                          .Device(DEVICE_##dev)                   \
-                          .TypeConstraint<type>("Tkeys"),         \
-                          ReadKvVariableOp<type>);
-REGISTER_READ_KV_VARIABLE(CPU, int64)
-REGISTER_READ_KV_VARIABLE(CPU, int32)
-#undef REGISTER_READ_KV_VARIABLE
-
 template <typename T, typename TKey, typename TValue>
 class KvVariableShapeOp : public OpKernel {
  public:
   explicit KvVariableShapeOp(OpKernelConstruction* c) : OpKernel(c) {}
 
   void Compute(OpKernelContext* ctx) override {
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
     OP_REQUIRES_OK(ctx,
-                   LookupResource(ctx, HandleFromInput(ctx, 0), &variable));
-    core::ScopedUnref unref_me(variable);
-    HashMap<TKey, TValue>* hashmap = variable->hashmap();
-    TensorShape shape({hashmap->Size(), hashmap->ValueLen()});
+                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    TensorShape shape({ev->Size(), ev->ValueLen()});
     Tensor* output;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {shape.dims()}, &output));
     for (int i = 0; i < shape.dims(); ++i) {
@@ -156,7 +111,7 @@ REGISTER_KERNEL_BUILDER(Name("DestroyKvResourceOp").Device(DEVICE_CPU),
 template <typename TKey, typename TValue>
 class InitializeKvVariableOp : public OpKernel {
  public:
-  explicit InitializeKvVariableOp(OpKernelConstruction* c) : OpKernel(c), use_db_(false) {
+  explicit InitializeKvVariableOp(OpKernelConstruction* c) : OpKernel(c) {
     OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
     OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
     OP_REQUIRES(c, shape_.dims() == 1,
@@ -175,7 +130,7 @@ class InitializeKvVariableOp : public OpKernel {
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {
       LOG(INFO) << "hashmap use db";
-      use_db_ = true;
+      //use_db_ = true;
     } else {
       OP_REQUIRES(c, steps_to_live_ >= 0,
                  errors::InvalidArgument(
@@ -196,7 +151,7 @@ class InitializeKvVariableOp : public OpKernel {
     ResourceHandle handle_primary = HandleFromInput(context, 1);
     std::string opname = handle_self.name();
 
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
 
     const Tensor& slotnum = context->input(4);
     int64 slotnum_op = slotnum.scalar<int64>()();
@@ -207,17 +162,16 @@ class InitializeKvVariableOp : public OpKernel {
       OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, handle_self, &variable,
-            [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
-              auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+            context, handle_self, &ev,
+            [this, default_values, opname, slotnum_op,
+             handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+              auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
-              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                       new HashMap<TKey, TValue>(
-                         ht, cpu_allocator(), use_db_,
-                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname + "-primary", 
-                                                        steps_to_live_, min_freq_)),
-                         steps_to_live_);
+              *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
+                         ht, cpu_allocator(),
+                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
+                                         block_num_, slotnum_op, opname + "-primary", 
+                                         steps_to_live_, min_freq_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -228,17 +182,16 @@ class InitializeKvVariableOp : public OpKernel {
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
            context, handle_primary, &primary_variable,
-           [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
+           [this, default_values, opname, slotnum_op,
+            handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+             auto ht = KVFactory<TKey, TValue>::CreateKV(
                  ht_type_, ht_partition_num_);
-             *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                      new HashMap<TKey, TValue>(
-                        ht, cpu_allocator(), use_db_,
-                        EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
-                                                       block_num_, slotnum_op, opname + "-primary", 
-                                                       steps_to_live_, min_freq_)),
-                        steps_to_live_);
+             *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
+                        ht, cpu_allocator(),
+                        EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
+                                        block_num_, slotnum_op, opname + "-primary", 
+                                        steps_to_live_, min_freq_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -246,24 +199,22 @@ class InitializeKvVariableOp : public OpKernel {
       OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, handle_self, &variable,
-            [this, default_values, opname, primary_variable, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
-              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                       new HashMap<TKey, TValue>(
-                         primary_variable->hashmap()->kv(), cpu_allocator(), use_db_,
-                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname,
-                                                        steps_to_live_, min_freq_)),
-                         steps_to_live_);
-
+            context, handle_self, &ev,
+            [this, default_values, opname, primary_variable, slotnum_op,
+             handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+              *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
+                         primary_variable->kv(), cpu_allocator(),
+                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
+                                         block_num_, slotnum_op, opname,
+                                         steps_to_live_, min_freq_));
              return (*ptr)->Init(default_values);
             }));
 
       core::ScopedUnref unref_me(primary_variable);
     }
-    core::ScopedUnref unref_me(variable);
+    core::ScopedUnref unref_me(ev);
     if (steps_to_live_ != kEmbeddingVarUseDB) {
-      variable->SetInitialized();
+      ev->SetInitialized();
     }
   }
 
@@ -277,7 +228,6 @@ class InitializeKvVariableOp : public OpKernel {
   std::string ht_type_;
   int64 ht_partition_num_;
   int64 min_freq_;
-  bool use_db_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -302,11 +252,11 @@ class KvResourceIsInitializedOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     Tensor* output;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {}, &output));
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
     bool found;
-    if (LookupResource<EmbeddingVar<TKey, TValue>>(ctx, HandleFromInput(ctx, 0), &variable).ok()) {
-      found = variable->IsInitialized();
-      variable->Unref();
+    if (LookupResource<EmbeddingVar<TKey, TValue>>(ctx, HandleFromInput(ctx, 0), &ev).ok()) {
+      found = ev->IsInitialized();
+      ev->Unref();
     } else {
       found = false;
     }
@@ -329,20 +279,19 @@ class KvResourceGatherOp : public OpKernel {
   explicit KvResourceGatherOp(OpKernelConstruction* c) : OpKernel(c) {}
 
   void Compute(OpKernelContext* c) override {
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
-    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &variable));
-    core::ScopedUnref unref_me(variable);
-    HashMap<TKey, TValue>* hashmap = variable->hashmap();
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
+    core::ScopedUnref unref_me(ev);
 
     const Tensor& indices = c->input(1);
     const int64 N = indices.NumElements();
 
     Tensor default_values(c->input(2));
     auto default_values_matrix = default_values.shaped<TValue, 2>(
-        {default_values.NumElements()/hashmap->ValueLen(), hashmap->ValueLen()});
+        {default_values.NumElements()/ev->ValueLen(), ev->ValueLen()});
 
     TensorShape result_shape = indices.shape();
-    TensorShape value_shape({hashmap->ValueLen()});
+    TensorShape value_shape({ev->ValueLen()});
     result_shape.AppendShape(value_shape);
 
     Tensor* out = nullptr;
@@ -355,16 +304,18 @@ class KvResourceGatherOp : public OpKernel {
       auto indices_flat = indices.flat<TKey>();
       const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
       const int64 slice_elems = out_flat.dimension(1);
-      OP_REQUIRES(c, hashmap->ValueLen() == slice_elems,
+      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
           errors::InvalidArgument(
-              "hashmap's value_len should same with output's dimension(1)",
-              std::to_string(slice_elems), std::to_string(hashmap->ValueLen())));
+              "ev's value_len should same with output's dimension(1)",
+              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
-      auto do_work = [this, &indices_flat, &default_values_matrix,
-           &out_base, &slice_elems, &hashmap] (int64 start, int64 limit) {
+      auto do_work = [this, indices_flat, default_values_matrix,
+           out_base, slice_elems, c, ev] (int64 start, int64 limit) {
         for (int64 i = start; i < limit; ++i) {
           TValue* default_v = &default_values_matrix(i, 0);
-          hashmap->LookupOrCreateHybridV3(indices_flat(i),
+          //OP_REQUIRES_OK(c, ev->LookupOrCreate(indices_flat(i),
+          //    out_base + i * slice_elems, default_v));
+          ev->LookupOrCreate(indices_flat(i),
               out_base + i * slice_elems, default_v);
         }
       };
@@ -400,67 +351,7 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_GATHER_CPU);
 #undef REGISTER_GATHER_ALL_INDICES
 #undef REGISTER_GATHER_FULL
 
-template <typename Device, typename TKey, typename TValue, scatter_op::UpdateOp op>
-class KvResourceScatterUpdateOp : public OpKernel {
- public:
-  explicit KvResourceScatterUpdateOp(OpKernelConstruction* c) : OpKernel(c) {}
-
-  void Compute(OpKernelContext* c) override {
-    EmbeddingVar<TKey, float>* variable = nullptr;
-    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &variable));
-    core::ScopedUnref unref_me(variable);
-    HashMap<TKey, float>* hashmap = variable->hashmap();
-    TensorShape value_shape({hashmap->ValueLen()});
-    const Tensor& indices = c->input(1);
-    const Tensor& updates = c->input(2);
-
-    auto indices_flat = indices.flat<TKey>();
-    auto updates_flat = updates.flat<TValue>();
-    const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
-    for (int64 i = 0; i < indices_size; i++) {
-      Tensor param(DT_FLOAT, value_shape);
-      //OP_REQUIRES_OK(c, hashmap->Lookup(indices_flat(i), &param));
-
-      auto param_flat = param.flat<TValue>();
-      // TODO(dingchen): param_size as object member
-      const int64 param_size = static_cast<int64>(param_flat.dimension(0));
-      int64 j = i * param_size;
-      for (int64 k = 0; k < param_size; ++k) {
-        param_flat(k) += updates_flat(j++);
-      }
-    }
-  }
-};
-
-#define REGISTER_SCATTER_KERNEL_INDEX(ktype, vtype, dev, name, op)     \
-  REGISTER_KERNEL_BUILDER(                                             \
-      Name(name)                                                       \
-          .Device(DEVICE_##dev)                                        \
-          .HostMemory("resource")                                      \
-          .TypeConstraint<vtype>("dtype")                              \
-          .TypeConstraint<ktype>("Tkeys"),                             \
-      KvResourceScatterUpdateOp<dev##Device, ktype, vtype, op>)
-
-#define REGISTER_SCATTER_KERNEL(type, dev, name, op)           \
-  REGISTER_SCATTER_KERNEL_INDEX(int32, type, dev, name, op);   \
-  REGISTER_SCATTER_KERNEL_INDEX(int64, type, dev, name, op);
-
-// TODO(apassos) add the other types here.
-#define REGISTER_SCATTER_ARITHEMTIC(type, dev)                 \
-  REGISTER_SCATTER_KERNEL(type, dev, "KvResourceScatterAdd",   \
-                          scatter_op::UpdateOp::ADD);
-
-// Registers CPU kernels.
-#define REGISTER_SCATTER_ARITHEMTIC_CPU(type)                  \
-  REGISTER_SCATTER_ARITHEMTIC(type, CPU);
-
-TF_CALL_NUMBER_TYPES(REGISTER_SCATTER_ARITHEMTIC_CPU);
-
-#undef REGISTER_SCATTER_ARITHEMTIC
-#undef REGISTER_SCATTER_ARITHEMTIC_CPU
-#undef REGISTER_SCATTER_KERNEL
-#undef REGISTER_SCATTER_KERNEL_INDEX
-
+/*
 // Op that outputs tensors of all keys and all values.
 template <typename TKey, typename TValue>
 class KvResourceImportOp : public OpKernel {
@@ -490,7 +381,7 @@ class KvResourceImportOp : public OpKernel {
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, HandleFromInput(context, 0), &variable,
             [this, default_values](EmbeddingVar<TKey, TValue>** ptr) {
-              auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+              auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
                        new HashMap<TKey, TValue>(
@@ -530,7 +421,7 @@ TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
 TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
-
+*/
 template <typename TKey, typename TValue>
 class KvResourceImportV2Op: public OpKernel {
  public:
@@ -576,7 +467,7 @@ class KvResourceImportV2Op: public OpKernel {
     ResourceHandle handle_self = HandleFromInput(context, 1);
     ResourceHandle handle_primary = HandleFromInput(context, 2);
     std::string opname = handle_self.name();
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
 
     const Tensor& slotnum = context->input(6);
     int64 slotnum_op = slotnum.scalar<int64>()();
@@ -586,17 +477,16 @@ class KvResourceImportV2Op: public OpKernel {
       OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, handle_self, &variable,
-            [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
-              auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+            context, handle_self, &ev,
+            [this, default_values, opname, slotnum_op, 
+             handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+              auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
-              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                       new HashMap<TKey, TValue>(
-                         ht, cpu_allocator(), false,
-                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname + "-primary",
-                                                        steps_to_live_)),
-                         steps_to_live_);
+              *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
+                         ht, cpu_allocator(),
+                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
+                                         block_num_, slotnum_op, opname + "-primary",
+                                         steps_to_live_));
              return (*ptr)->Init(default_values);
             }));
     } else {
@@ -606,47 +496,42 @@ class KvResourceImportV2Op: public OpKernel {
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
            context, handle_primary, &primary_variable,
-           [this, default_values, opname, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
+           [this, default_values, opname, slotnum_op,
+            handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             auto ht = HashMapFactory<TKey, TValue>::CreateHashMap(
+             auto ht = KVFactory<TKey, TValue>::CreateKV(
                  ht_type_, ht_partition_num_);
-             *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                      new HashMap<TKey, TValue>(
-                        ht, cpu_allocator(), false,
-                        EmbeddingConfig(primary_emb_index +  block_num_ * primary_slot_index, primary_emb_index,
-                                                       block_num_, slotnum_op, opname + "-primary",
-                                                       steps_to_live_)),
-                        steps_to_live_);
+             *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
+                        ht, cpu_allocator(),
+                        EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
+                                        block_num_, slotnum_op, opname + "-primary",
+                                        steps_to_live_));
             return (*ptr)->Init(default_values);
            }));
 
       OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, handle_self, &variable,
-            [this, default_values, opname, primary_variable, slotnum_op](EmbeddingVar<TKey, TValue>** ptr) {
-              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                       new HashMap<TKey, TValue>(
-                         primary_variable->hashmap()->kv(), cpu_allocator(), false,
-                         EmbeddingConfig(emb_index_ +  block_num_ * slot_index_, emb_index_,
-                                                        block_num_, slotnum_op, opname,
-                                                        steps_to_live_)),
-                         steps_to_live_);
-
+            context, handle_self, &ev,
+            [this, default_values, opname, primary_variable, slotnum_op,
+             handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+              *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
+                         primary_variable->kv(), cpu_allocator(),
+                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
+                                         block_num_, slotnum_op, opname,
+                                         steps_to_live_));
              return (*ptr)->Init(default_values);
             }));
 
       core::ScopedUnref unref_me(primary_variable);
     }
-    core::ScopedUnref unref_me(variable);
+    core::ScopedUnref unref_me(ev);
 
-    HashMap<TKey, TValue>* hashmap = variable->hashmap();
     BundleReader reader(Env::Default(), file_name_string);
     OP_REQUIRES_OK(context, reader.status());
 
-
-    EVRestoreDynamically(hashmap, name_string, partition_id_, partition_num_, context, &reader, "-partition_offset", "-keys", "-values", "-versions");
-    variable->SetInitialized();
+    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader, "-partition_offset", "-keys", "-values", "-versions");
+    ev->SetInitialized();
   }
 
 
@@ -666,7 +551,7 @@ class KvResourceImportV2Op: public OpKernel {
 
 
 #define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV2")             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV2")           \
                             .Device(DEVICE_CPU)                \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
@@ -678,8 +563,6 @@ TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
 TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
-
-
 
 template <typename TKey, typename TValue>
 class KvResourceIncrImportOp: public OpKernel {
@@ -704,19 +587,18 @@ class KvResourceIncrImportOp: public OpKernel {
     const Tensor& name = context->input(2);
     const std::string name_string = name.scalar<string>()();
 
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
-    OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 1), &variable));
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 1), &ev));
 
 
-    core::ScopedUnref unref_me(variable);
+    core::ScopedUnref unref_me(ev);
 
-    HashMap<TKey, TValue>* hashmap = variable->hashmap();
     BundleReader reader(Env::Default(), file_name_string);
     OP_REQUIRES_OK(context, reader.status());
 
     LOG(INFO) << "incr import, evname:" << name_string << "partition_num:" <<partition_num_;
-    EVRestoreDynamically(hashmap, name_string, partition_id_, partition_num_, context, &reader, "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values", "-sparse_incr_versions");
-    variable->SetInitialized();
+    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader, "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values", "-sparse_incr_versions");
+    ev->SetInitialized();
   }
 
  private:
@@ -732,7 +614,7 @@ class KvResourceIncrImportOp: public OpKernel {
 
 
 #define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceIncrImport")             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceIncrImport")         \
                             .Device(DEVICE_CPU)                \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
@@ -744,7 +626,7 @@ TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
 TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
-
+/*
 // Op that outputs tensors of all keys and all values.
 template <typename TKey>
 class KvResourceExportOp : public OpKernel {
@@ -800,6 +682,6 @@ TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
 TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
-
+*/
 }  // namespace tensorflow
 

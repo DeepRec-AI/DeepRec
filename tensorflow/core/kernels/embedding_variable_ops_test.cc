@@ -1,3 +1,5 @@
+#include <thread>
+
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/graph/graph.h"
@@ -27,7 +29,7 @@
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
 
 #include <sys/resource.h>
-#include "tensorflow/core/framework/hashmap.h"
+#include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/kernels/kv_variable_ops.h"
 #ifdef TENSORFLOW_USE_JEMALLOC
 #include "jemalloc/jemalloc.h"
@@ -105,8 +107,10 @@ TEST(TensorBundleTest, TestEVShrink) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
 
-  HashMap<int64, float>* emb_var = new HashMap<int64, float>(
-      new DenseHashMap<int64, float>(), cpu_allocator());
+  int steps_to_live = 5;
+  EmbeddingVar<int64, float>* emb_var
+    = new EmbeddingVar<int64, float>("name",
+        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", steps_to_live));
   emb_var ->Init(value);
 
 
@@ -114,14 +118,17 @@ TEST(TensorBundleTest, TestEVShrink) {
 
 
   for (int64 i=0; i < insert_num; ++i) {
-    emb_var->LookupOrCreate(i, fill_v);
+    ValuePtr<float>* value_ptr = nullptr;
+    emb_var->LookupOrCreateKey(i, &value_ptr, i);
+    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr);
   }
 
   int size = emb_var->Size();
-  emb_var->Shrink(5, insert_num);
+  emb_var->Shrink(insert_num);
   LOG(INFO) << "Before shrink size:" << size;
   LOG(INFO) << "After shrink size:" << emb_var->Size();
 
+  ASSERT_EQ(emb_var->Size(), steps_to_live);
 }
 
 TEST(TensorBundleTest, TestEVShrinkLockless) {
@@ -132,8 +139,10 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
 
-  HashMap<int64, float>* emb_var = new HashMap<int64, float>(
-      new DynamicDenseHashMap<int64, float>(), cpu_allocator(), false, EmbeddingConfig(0, 0, 1, 1, "", 5));
+  int steps_to_live = 5;
+  EmbeddingVar<int64, float>* emb_var
+    = new EmbeddingVar<int64, float>("name",
+        new LocklessHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", steps_to_live));
   emb_var ->Init(value);
 
 
@@ -141,17 +150,19 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
 
 
   for (int64 i=0; i < insert_num; ++i) {
-    typename TTypes<float>::Flat vflat = emb_var->flatV3ForTest(i, 1);
+    ValuePtr<float>* value_ptr = nullptr;
+    emb_var->LookupOrCreateKey(i, &value_ptr, i);
+    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr);
   }
 
   int size = emb_var->Size();
-  emb_var->Shrink(5, insert_num);
+  emb_var->Shrink(insert_num);
 
   LOG(INFO) << "Before shrink size:" << size;
   LOG(INFO) << "After shrink size: " << emb_var->Size();
 
   ASSERT_EQ(size, insert_num);
-  ASSERT_EQ(emb_var->Size(), 0);
+  ASSERT_EQ(emb_var->Size(), steps_to_live);
 
 }
 
@@ -165,12 +176,10 @@ TEST(EmbeddingVariableTest, TestEmptyEV) {
   {
     EmbeddingVar<int64, float>* variable
               = new EmbeddingVar<int64, float>("EmbeddingVar",
-                  new HashMap<int64, float>(
-                    new DenseHashMap<int64, float>(), cpu_allocator()),
-                  1);
+                  new DenseHashMap<int64, float>(), cpu_allocator());
     variable->Init(value);
 
-    LOG(INFO) << "size:" << variable->hashmap()->Size();
+    LOG(INFO) << "size:" << variable->Size();
     Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
     BundleWriter writer(Env::Default(), Prefix("foo"));
@@ -231,18 +240,18 @@ TEST(EmbeddingVariableTest, TestEVExportSmall) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DenseHashMap<int64, float>(), cpu_allocator()),
-        1);
+        new DenseHashMap<int64, float>(), cpu_allocator());
   variable->Init(value);
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
   for (int64 i = 0; i < 5; i++) {
-    typename TTypes<float>::Flat vflat = variable->hashmap()->flat(i, i);
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
     vflat(i) = 5.0;
   }
 
-  LOG(INFO) << "size:" << variable->hashmap()->Size();
+  LOG(INFO) << "size:" << variable->Size();
 
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
@@ -304,19 +313,19 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DynamicDenseHashMap<int64, float>(), cpu_allocator()),
-        1);
+        new LocklessHashMap<int64, float>(), cpu_allocator());
   variable->Init(value);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
   for (int64 i = 0; i < 5; i++) {
-    typename TTypes<float>::Flat vflat = variable->hashmap()->flatV3ForTest(i, i);
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
     vflat(i) = 5.0;
   }
 
-  LOG(INFO) << "size:" << variable->hashmap()->Size();
+  LOG(INFO) << "size:" << variable->Size();
 
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
@@ -379,18 +388,16 @@ TEST(EmbeddingVariableTest, TestEVExportLarge) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DenseHashMap<int64, float>(), cpu_allocator()),
-        0);
+        new DenseHashMap<int64, float>(), cpu_allocator());
   variable->Init(value);
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
   int64 ev_size = 10048576;
   for (int64 i = 0; i < ev_size; i++) {
-    variable->hashmap()->LookupOrCreate(i, fill_v);
+    variable->LookupOrCreate(i, fill_v, nullptr);
   }
 
-  LOG(INFO) << "size:" << variable->hashmap()->Size();
+  LOG(INFO) << "size:" << variable->Size();
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
   DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
@@ -454,19 +461,19 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DynamicDenseHashMap<int64, float>(), cpu_allocator()),
-        0);
+        new LocklessHashMap<int64, float>(), cpu_allocator());
   variable->Init(value);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
   int64 ev_size = 10048576;
   for (int64 i = 0; i < ev_size; i++) {
-    typename TTypes<float>::Flat vflat = variable->hashmap()->flatV3ForTest(i, i);
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
   }
 
-  LOG(INFO) << "size:" << variable->hashmap()->Size();
+  LOG(INFO) << "size:" << variable->Size();
 
   BundleWriter writer(Env::Default(), Prefix("foo"));
   DumpEmbeddingValues(variable, "var/part_0", &writer, &part_offset_tensor);
@@ -520,41 +527,11 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
   }
 }
 
-TEST(EmbeddingVariableTest, TestColdDataStorage) {
-
-  int64 value_size = 4096;
-  Tensor value(DT_FLOAT, TensorShape({value_size}));
-  test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
-  float* fill_v = (float*)malloc(value_size * sizeof(float));
-
-  EmbeddingVar<int64, float>* variable
-    = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DenseHashMap<int64, float>(),
-          cpu_allocator(),
-          true));
-
-  variable->Init(value);
-  LOG(INFO) << "begin write " << variable->hashmap()->HybridSize();
-
-  float* db_values = (float*)malloc(value_size * sizeof(float));
-  for (int i = 0; i < 1024; i++) {
-    variable->hashmap()->HybridInsert(i, db_values);
-  }
-
-
-  LOG(INFO) << "after write " << variable->hashmap()->HybridSize();
-  srand((unsigned) time(NULL));
-  float* gather_values = (float*)malloc(value_size * sizeof(float));
-  for (int64 i = 0; i < 1024; i++) {
-      variable->hashmap()->LookupOrCreateHybrid(i, gather_values, fill_v);
-  }
-
-}
-
 void multi_insertion(EmbeddingVar<int64, float>* variable, int64 value_size){
   for (long j = 0; j < 5; j++) {
-    variable->hashmap()->flatV3ForTest(j, j);
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(j, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
   }
 }
 
@@ -566,10 +543,7 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DynamicDenseHashMap<int64, float>(),
-          cpu_allocator(),
-          true));
+        new LocklessHashMap<int64, float>(), cpu_allocator());
 
   variable->Init(value);
 
@@ -584,18 +558,17 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
   std::vector<int64> tot_key_list;
   std::vector<float* > tot_valueptr_list;
   std::vector<int64> tot_version_list;
-  HashMap<int64, float>* hash_map = variable->hashmap();
-  int64 total_size = hash_map->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list);
+  int64 total_size = variable->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list);
 
-  ASSERT_EQ(variable->hashmap()->Size(), 5);
-  ASSERT_EQ(variable->hashmap()->Size(), total_size);
+  ASSERT_EQ(variable->Size(), 5);
+  ASSERT_EQ(variable->Size(), total_size);
 }
 
 void InsertAndLookup(EmbeddingVar<int64, int64>* variable, int64 *keys, long ReadLoops, int value_size){
   for (long j = 0; j < ReadLoops; j++) {
     int64 *val = (int64 *)malloc((value_size+1)*sizeof(int64));
-    variable->hashmap()->LookupOrCreateHybridV3(keys[j], val, &(keys[j]));
-    variable->hashmap()->LookupOrCreateHybridV3(keys[j], val, (&keys[j]+1));
+    variable->LookupOrCreate(keys[j], val, &(keys[j]));
+    variable->LookupOrCreate(keys[j], val, (&keys[j]+1));
     ASSERT_EQ(keys[j] , val[0]);
     free(val);
   }
@@ -609,10 +582,7 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
 
   EmbeddingVar<int64, int64>* variable
     = new EmbeddingVar<int64, int64>("EmbeddingVar",
-        new HashMap<int64, int64>(
-          new DynamicDenseHashMap<int64, int64>(),
-          cpu_allocator(),
-          false));
+        new LocklessHashMap<int64, int64>(), cpu_allocator());
 
   variable->Init(value);
 
@@ -660,40 +630,39 @@ TEST(EmbeddingVariableTest, TestFeatureFilter) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DynamicDenseHashMap<int64, float>(),
-          cpu_allocator(),
-          false, 
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 5)));
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 5));
 
   var->Init(value);
 
   float *val = (float *)malloc((value_size+1)*sizeof(float));
 
   for (int i = 0; i < 7; i++) {
-    var->hashmap()->LookupOrCreateHybridV3(20, val, nullptr);
-    ASSERT_EQ(var->hashmap()->LookupValuePtr(20)->GetFreq(), i+1);
+    var->LookupOrCreate(20, val, nullptr);
+    ValuePtr<float>* value_ptr = nullptr;
+    var->LookupOrCreateKey(20, &value_ptr);
+    ASSERT_EQ(value_ptr->GetFreq(), i+1);
     if (i < 4) {
-      ASSERT_EQ(var->hashmap()->LookupValuePtr(20)->GetValue(0), nullptr);
+      ASSERT_EQ(value_ptr->GetValue(0), nullptr);
     } else {
       ASSERT_EQ(val[0], 10.0);
     }
   }
    
-   std::vector<int64> keylist;
-   std::vector<float *> valuelist;
-   std::vector<int64> version_list;
+  std::vector<int64> keylist;
+  std::vector<float *> valuelist;
+  std::vector<int64> version_list;
    
-  var->hashmap()->LookupOrCreateHybridV3(30, val, nullptr);
-  var->hashmap()->GetSnapshot(&keylist, &valuelist, &version_list);
-  ASSERT_EQ(var->hashmap()->Size(), 2);  
+  var->LookupOrCreate(30, val, nullptr);
+  var->GetSnapshot(&keylist, &valuelist, &version_list);
+  ASSERT_EQ(var->Size(), 2);  
   ASSERT_EQ(keylist.size(), 1);
    
 }
 
 void MultiFilter(EmbeddingVar<int64, float>* variable, int value_size) {
   float *val = (float *)malloc((value_size+1)*sizeof(float));
-  variable->hashmap()->LookupOrCreateHybridV3(20, val, nullptr);
+  variable->LookupOrCreate(20, val, nullptr);
 }
 
 TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
@@ -704,11 +673,8 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DynamicDenseHashMap<int64, float>(),
-          cpu_allocator(),
-          false, 
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 7)));
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 7));
 
   var->Init(value);
   float *val = (float *)malloc((value_size+1)*sizeof(float));
@@ -721,7 +687,9 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
     t.join();
   }
 
-  ASSERT_EQ(var->hashmap()->LookupValuePtr(20)->GetFreq(), thread_num);
+  ValuePtr<float>* value_ptr = nullptr;
+  var->LookupOrCreateKey(20, &value_ptr);
+  ASSERT_EQ(value_ptr->GetFreq(), thread_num);
 }
 
 
@@ -731,24 +699,16 @@ EmbeddingVar<int64, float>* InitEV_Lockless(int64 value_size) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DynamicDenseHashMap<int64, float>(),
-          cpu_allocator(),
-          false));
+        new LocklessHashMap<int64, float>(), cpu_allocator());
 
   variable->Init(value);
   return variable;
 }
 
-void MultiLookup_lockless(EmbeddingVar<int64, float>* variable, int64 InsertLoop, int thread_num, int i) {
-  for (int64 j = i * InsertLoop/thread_num; j < (i+1)*InsertLoop/thread_num; j++) {
-    variable->hashmap()->LookupValuePtr(j);
-  }
-}
-
 void MultiLookup(EmbeddingVar<int64, float>* variable, int64 InsertLoop, int thread_num, int i) {
   for (int64 j = i * InsertLoop/thread_num; j < (i+1)*InsertLoop/thread_num; j++) {
-    variable->hashmap()->LookupOrCreate(j, nullptr);
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(j, &value_ptr);
   }
 }
 
@@ -763,14 +723,16 @@ void BM_MULTIREAD_LOCKLESS(int iters, int thread_num) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
 
   for (int64 i = 0; i < InsertLoop; i++){
-    variable->hashmap()->flatV3ForTest(i, i);
+    ValuePtr<float>* value_ptr = nullptr;
+    variable->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = variable->flat(value_ptr);
   }
 
   testing::StartTiming();
   while(iters--){
     std::vector<std::thread> insert_threads(thread_num);
     for (size_t i = 0 ; i < thread_num; i++) {
-      insert_threads[i] = std::thread(MultiLookup_lockless, variable, InsertLoop, thread_num, i);
+      insert_threads[i] = std::thread(MultiLookup, variable, InsertLoop, thread_num, i);
     }
     for (auto &t : insert_threads) {
       t.join();
@@ -785,10 +747,7 @@ EmbeddingVar<int64, float>* InitEV(int64 value_size) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new HashMap<int64, float>(
-          new DenseHashMap<int64, float>(),
-          cpu_allocator(),
-          true));
+        new DenseHashMap<int64, float>(), cpu_allocator());
 
   variable->Init(value);
   return variable;
@@ -805,7 +764,7 @@ void BM_MULTIREAD(int iters, int thread_num) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
 
   for (int64 i = 0; i < InsertLoop; i++){
-    variable->hashmap()->LookupOrCreate(i, fill_v);
+    variable->LookupOrCreate(i, fill_v, nullptr);
   }
 
   testing::StartTiming();
@@ -819,16 +778,10 @@ void BM_MULTIREAD(int iters, int thread_num) {
     }
   }
 }
-void hybrid_process_lockless(EmbeddingVar<int64, float>* variable, int64* keys, int64 InsertLoop, int thread_num, int64 i, int64 value_size) {
+void hybrid_process(EmbeddingVar<int64, float>* variable, int64* keys, int64 InsertLoop, int thread_num, int64 i, int64 value_size) {
   float *val = (float *)malloc(sizeof(float)*(value_size + 1));
   for (int64 j = i * InsertLoop/thread_num; j < (i+1) * InsertLoop/thread_num; j++) {
-    variable->hashmap()->LookupOrCreateHybridV3(keys[j], val, nullptr);
-  }
-}
-
-void hybrid_process(EmbeddingVar<int64, float>* variable, int64* keys, int64 InsertLoop, int thread_num, int64 i) {
-  for (int64 j = i * InsertLoop/thread_num; j < (i+1) * InsertLoop/thread_num; j++) {
-    variable->hashmap()->LookupOrCreate(keys[j], nullptr);
+    variable->LookupOrCreate(keys[j], val, nullptr);
   }
 }
 
@@ -851,7 +804,7 @@ void BM_HYBRID_LOCKLESS(int iters, int thread_num) {
   while (iters--) {
     std::vector<std::thread> insert_threads(thread_num);
     for (size_t i = 0 ; i < thread_num; i++) {
-      insert_threads[i] = std::thread(hybrid_process_lockless, variable, keys, InsertLoop, thread_num, i, value_size);
+      insert_threads[i] = std::thread(hybrid_process, variable, keys, InsertLoop, thread_num, i, value_size);
     }
     for (auto &t : insert_threads) {
       t.join();
@@ -878,7 +831,7 @@ void BM_HYBRID(int iters, int thread_num) {
   while (iters--) {
     std::vector<std::thread> insert_threads(thread_num);
     for (size_t i = 0 ; i < thread_num; i++) {
-      insert_threads[i] = std::thread(hybrid_process, variable, keys, InsertLoop, thread_num, i);
+      insert_threads[i] = std::thread(hybrid_process, variable, keys, InsertLoop, thread_num, i, value_size);
     }
     for (auto &t : insert_threads) {
       t.join();

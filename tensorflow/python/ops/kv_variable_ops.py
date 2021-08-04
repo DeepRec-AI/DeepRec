@@ -354,25 +354,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     ht_partition_num=self._ht_partition_num,
                     min_freq = self._min_freq,
                     name=n))
-        with ops.name_scope("Read"), ops.colocate_with(self._handle):
-          # Manually assign reads to the handle's device to avoid log
-          # messages.
-          with ops.device(self._handle_device):
-            value = self._read_variable_op()
-          self._graph_element = value
-          if caching_device is not None:
-            # Variables may be created in a tf.device() or ops.colocate_with()
-            # context. At the same time, users would expect caching device to
-            # be independent of this context, and/or would not expect the
-            # current device context to be merged with the caching device
-            # spec.  Therefore we reset the colocation stack before creating
-            # the cached value. Note that resetting the colocation stack will
-            # also reset the device stack.
-            with ops.colocate_with(None, ignore_existing=True):
-              with ops.device(caching_device):
-                self._cached_value = array_ops.identity(value)
-          else:
-            self._cached_value = None
+        self._graph_element = self._handle
+        self._cached_value = None
         if not context.executing_eagerly():
           ops.add_to_collections(collections, self)
           self.add_ev_to_collection(handle_name)
@@ -453,7 +436,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._initial_value = ops.convert_to_tensor(
                               [0], name="initial_value", dtype=self._dtype)
     self._invalid_key_type = dtypes.as_dtype(self._handle.op.get_attr("Tkeys"))
-    self._graph_element = self.value()
+    self._graph_element = self._handle
     self._constraint = None
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
@@ -590,11 +573,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
 
   def value(self):
     """A cached operation which reads the value of this variable."""
-    if self._cached_value is not None:
-      return self._cached_value
-    with ops.colocate_with(None, ignore_existing=True):
-      with ops.device(self._handle_device):
-        return self._read_variable_op()
+    raise NotImplementedError("EV value")
 
   def _as_graph_element(self):
     """Conversion function for Graph.as_graph_element()."""
@@ -645,11 +624,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     return self._save_slice_info
 
   def _read_variable_op(self):
-    if self.trainable:
-      tape.variable_accessed(self)
-    return gen_kv_variable_ops.read_kv_variable_op(self._handle,
-                                                   self._dtype,
-                                                   Tkeys=self._invalid_key_type)
+    raise NotImplementedError("_read_variable_op")
 
   def read_value(self):
     """Constructs an op which reads the value of this variable.
@@ -660,14 +635,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     Returns:
      the read operation.
     """
-    #raise NotImplementedError("EmbeddingVariable does not implement read_value()")
-    with ops.name_scope("Read"):
-      # Ensure we read the variable in the same device as the handle.
-      with ops.colocate_with(self._handle):
-        value = self._read_variable_op()
-    # Return an identity so it can get placed on whatever device the context
-    # specifies instead of the device where the variable is.
-    return array_ops.identity(value)
+    raise NotImplementedError("EmbeddingVariable does not implement read_value()")
 
   def sparse_read(self, indices, name=None):
     """Reads the value of this variable sparsely, using `gather`."""
