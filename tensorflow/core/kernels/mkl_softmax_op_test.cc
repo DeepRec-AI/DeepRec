@@ -80,18 +80,18 @@ static Graph* Softmax(const string& kind, const TensorShape& in_shape) {
   }                                                                          \
   BENCHMARK(BM_Softmax_##T##_##kind##name##_##NTH);                          \
 
-#define BM_Softmax_NTH(T, kind, name, in_shape, DEVICE) \
-  BM_Softmax_Base(T, kind, name, in_shape, DEVICE, 1);  \
-  BM_Softmax_Base(T, kind, name, in_shape, DEVICE, 4);  \
-  BM_Softmax_Base(T, kind, name, in_shape, DEVICE, 8);  \
+#define BM_Softmax_Kind(T, name, in_shape, DEVICE, NTH)     \
+  BM_Softmax_Base(T, Default, name, in_shape, DEVICE, NTH); \
+  BM_Softmax_Base(T, MKL, name, in_shape, DEVICE, NTH);     \
 
-#define BM_Softmax_Kind(T, name, in_shape, DEVICE)    \
-  BM_Softmax_NTH(T, Default, name, in_shape, DEVICE); \
-  BM_Softmax_NTH(T, MKL, name, in_shape, DEVICE);     \
+#define BM_Softmax_NTH(T, name, in_shape, DEVICE) \
+  BM_Softmax_Kind(T, name, in_shape, DEVICE, 1);  \
+  BM_Softmax_Kind(T, name, in_shape, DEVICE, 4);  \
+  BM_Softmax_Kind(T, name, in_shape, DEVICE, 8);  \
 
 #define BM_Softmax_DT(name, in_shape)             \
-  BM_Softmax_Kind(float, name, in_shape, cpu);    \
-  BM_Softmax_Kind(bfloat16, name, in_shape, cpu); \
+  BM_Softmax_NTH(float, name, in_shape, cpu);    \
+  BM_Softmax_NTH(bfloat16, name, in_shape, cpu); \
 
 #define BM_SoftmaxND(name, ...)                    \
   BM_Softmax_DT(name, TensorShape({__VA_ARGS__})); \

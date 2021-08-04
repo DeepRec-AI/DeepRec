@@ -74,25 +74,24 @@ static Graph* AddN(const string& kind, int num_inputs, const TensorShape& shape)
   }                                                                                       \
   BENCHMARK(BM_AddN##_##kind##_##T##_##name##_##DEVICE##_##NTH);                          \
 
-#define BM_AddN_NTH(kind, T, name, nums, tf_shape, DEVICE) \
-  BM_AddN_Base(kind, T, name, nums, tf_shape, DEVICE, 1);  \
-  BM_AddN_Base(kind, T, name, nums, tf_shape, DEVICE, 2);  \
-  BM_AddN_Base(kind, T, name, nums, tf_shape, DEVICE, 4);  \
-  BM_AddN_Base(kind, T, name, nums, tf_shape, DEVICE, 8);  \
+#define BM_AddN_kind(T, name, nums, tf_shape, DEVICE, NTH)     \
+  BM_AddN_Base(Default, T, name, nums, tf_shape, DEVICE, NTH); \
+  BM_AddN_Base(Mkl, T, name, nums, tf_shape, DEVICE, NTH);     \
 
-#define BM_AddN_kind(T, name, nums, tf_shape, DEVICE)    \
-  BM_AddN_NTH(Default, T, name, nums, tf_shape, DEVICE); \
-  BM_AddN_NTH(Mkl, T, name, nums, tf_shape, DEVICE);     \
+#define BM_AddN_NTH(T, name, nums, tf_shape, DEVICE) \
+  BM_AddN_kind(T, name, nums, tf_shape, DEVICE, 1);  \
+  BM_AddN_kind(T, name, nums, tf_shape, DEVICE, 4);  \
+  BM_AddN_kind(T, name, nums, tf_shape, DEVICE, 8);  \
 
-#define BM_AddN_DT(name, nums, tf_shape)             \
-  BM_AddN_kind(float, name, nums, tf_shape, cpu);    \
-  BM_AddN_kind(bfloat16, name, nums, tf_shape, cpu); \
+#define BM_AddN_DT(name, nums, tf_shape)            \
+  BM_AddN_NTH(float, name, nums, tf_shape, cpu);    \
+  BM_AddN_NTH(bfloat16, name, nums, tf_shape, cpu); \
 
 #define BM_AddN_2D(num_inputs, A, B)                                            \
-  BM_AddN_DT(num_inputs##_##2##D##_##A##_##B, num_inputs, TensorShape({A, B})); \
+  BM_AddN_DT(num_inputs##_##2D##_##A##x##B, num_inputs, TensorShape({A, B})); \
 
 #define BM_AddN_3D(num_inputs, A, B, C)                                            \
-  BM_AddN_DT(num_inputs##_##3##D##_##A##_##B##_##C, num_inputs, TensorShape({A, B, C})); \
+  BM_AddN_DT(num_inputs##_##3D##_##A##x##B##x##C, num_inputs, TensorShape({A, B, C})); \
 
 // dims = 2
 BM_AddN_2D(4, 128, 128);

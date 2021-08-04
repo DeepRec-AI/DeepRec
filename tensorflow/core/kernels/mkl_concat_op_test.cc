@@ -89,18 +89,18 @@ static Graph* Concat(const string& kind, int num_inputs,
   }                                                                                     \
   BENCHMARK(BM_Concat##_##kind##_##NI##name##_##T##_##CD##_##DEVICE##_##NTH);           \
 
-#define BM_Concat_NTH(kind, name, NI, in_shape, CD, T, DEVICE) \
-  BM_Concat_Base(kind, name, NI, in_shape, CD, T, DEVICE, 1);  \
-  BM_Concat_Base(kind, name, NI, in_shape, CD, T, DEVICE, 4);  \
-  BM_Concat_Base(kind, name, NI, in_shape, CD, T, DEVICE, 8);  \
+#define BM_Concat_kind(name, NI, in_shape, CD, T, DEVICE, NTH)     \
+  BM_Concat_Base(Default, name, NI, in_shape, CD, T, DEVICE, NTH); \
+  BM_Concat_Base(Mkl, name, NI, in_shape, CD, T, DEVICE, NTH);     \
 
-#define BM_Concat_kind(name, NI, in_shape, CD, T, DEVICE)    \
-  BM_Concat_NTH(Default, name, NI, in_shape, CD, T, DEVICE); \
-  BM_Concat_NTH(Mkl, name, NI, in_shape, CD, T, DEVICE);     \
+#define BM_Concat_NTH(name, NI, in_shape, CD, T, DEVICE) \
+  BM_Concat_kind(name, NI, in_shape, CD, T, DEVICE, 1);  \
+  BM_Concat_kind(name, NI, in_shape, CD, T, DEVICE, 4);  \
+  BM_Concat_kind(name, NI, in_shape, CD, T, DEVICE, 8);  \
 
 #define BM_Concat_DT(name, NI, in_shape, CD)             \
-  BM_Concat_kind(name, NI, in_shape, CD, float, cpu);    \
-  BM_Concat_kind(name, NI, in_shape, CD, bfloat16, cpu); \
+  BM_Concat_NTH(name, NI, in_shape, CD, float, cpu);    \
+  BM_Concat_NTH(name, NI, in_shape, CD, bfloat16, cpu); \
 
 #define BM_ConcatND(name, NI, ...)                       \
   BM_Concat_DT(name, NI, TensorShape({__VA_ARGS__}), 0); \

@@ -80,18 +80,18 @@ static Graph* Transpose(const string& kind, const TensorShape& in_shape, const T
   }                                                                                         \
   BENCHMARK(BM_Transpose_##T##_##kind##name##_##NTH);                                       \
 
-#define BM_Transpose_NTH(T, kind, name, in_shape, perm_tensor, DEVICE) \
-  BM_Transpose_Base(T, kind, name, in_shape, perm_tensor, DEVICE, 1);  \
-  BM_Transpose_Base(T, kind, name, in_shape, perm_tensor, DEVICE, 4);  \
-  BM_Transpose_Base(T, kind, name, in_shape, perm_tensor, DEVICE, 8);  \
+#define BM_Transpose_Kind(T, name, in_shape, perm_tensor, DEVICE, NTH)     \
+  BM_Transpose_Base(T, Default, name, in_shape, perm_tensor, DEVICE, NTH); \
+  BM_Transpose_Base(T, MKL, name, in_shape, perm_tensor, DEVICE, NTH);     \
 
-#define BM_Transpose_Kind(T, name, in_shape, perm_tensor, DEVICE)    \
-  BM_Transpose_NTH(T, Default, name, in_shape, perm_tensor, DEVICE); \
-  BM_Transpose_NTH(T, MKL, name, in_shape, perm_tensor, DEVICE);     \
+#define BM_Transpose_NTH(T, name, in_shape, perm_tensor, DEVICE) \
+  BM_Transpose_Kind(T, name, in_shape, perm_tensor, DEVICE, 1);  \
+  BM_Transpose_Kind(T, name, in_shape, perm_tensor, DEVICE, 4);  \
+  BM_Transpose_Kind(T, name, in_shape, perm_tensor, DEVICE, 8);  \
 
-#define BM_Transpose_DT(name, in_shape, perm_tensor)             \
-  BM_Transpose_Kind(float, name, in_shape, perm_tensor, cpu);    \
-  BM_Transpose_Kind(bfloat16, name, in_shape, perm_tensor, cpu); \
+#define BM_Transpose_DT(name, in_shape, perm_tensor)            \
+  BM_Transpose_NTH(float, name, in_shape, perm_tensor, cpu);    \
+  BM_Transpose_NTH(bfloat16, name, in_shape, perm_tensor, cpu); \
 
 #define BM_Transpose2D(name, A, B, size, ...)                                   \
   BM_Transpose_DT(_2D##name, TensorShape({A, B}), S_TENSOR(size, __VA_ARGS__)); \

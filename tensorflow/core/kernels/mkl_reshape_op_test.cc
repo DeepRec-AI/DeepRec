@@ -82,19 +82,18 @@ Tensor AsTensor(gtl::ArraySlice<T> vals, const TensorShape& shape) {
   }                                                                                        \
   BENCHMARK(BM_Reshape##_##kind##_##T##name##_##DEVICE##_##NTH);                           \
 
-#define BM_Reshape_NTH(kind, T, name, in_shape, shape_tensor, DEVICE) \
-  BM_Reshape_Base(kind, T, name, in_shape, shape_tensor, DEVICE, 1);  \
-  BM_Reshape_Base(kind, T, name, in_shape, shape_tensor, DEVICE, 2);  \
-  BM_Reshape_Base(kind, T, name, in_shape, shape_tensor, DEVICE, 4);  \
-  BM_Reshape_Base(kind, T, name, in_shape, shape_tensor, DEVICE, 8);  \
+#define BM_Reshape_kind(T, name, in_shape, shape_tensor, DEVICE, NTH)     \
+  BM_Reshape_Base(Default, T, name, in_shape, shape_tensor, DEVICE, NTH); \
+  BM_Reshape_Base(Mkl, T, name, in_shape, shape_tensor, DEVICE, NTH);     \
 
-#define BM_Reshape_kind(T, name, in_shape, shape_tensor, DEVICE)    \
-  BM_Reshape_NTH(Default, T, name, in_shape, shape_tensor, DEVICE); \
-  BM_Reshape_NTH(Mkl, T, name, in_shape, shape_tensor, DEVICE);     \
+#define BM_Reshape_NTH(T, name, in_shape, shape_tensor, DEVICE) \
+  BM_Reshape_kind(T, name, in_shape, shape_tensor, DEVICE, 1);  \
+  BM_Reshape_kind(T, name, in_shape, shape_tensor, DEVICE, 4);  \
+  BM_Reshape_kind(T, name, in_shape, shape_tensor, DEVICE, 8);  \
 
 #define BM_Reshape_DT(name, in_shape, shape_tensor)             \
-  BM_Reshape_kind(float, name, in_shape, shape_tensor, cpu);    \
-  BM_Reshape_kind(bfloat16, name, in_shape, shape_tensor, cpu); \
+  BM_Reshape_NTH(float, name, in_shape, shape_tensor, cpu);    \
+  BM_Reshape_NTH(bfloat16, name, in_shape, shape_tensor, cpu); \
 
 #define BM_Reshape2D(name, A, B, size, ...)                                   \
   BM_Reshape_DT(_2D##name, TensorShape({A, B}), S_TENSOR(size, __VA_ARGS__)); \
@@ -105,8 +104,8 @@ Tensor AsTensor(gtl::ArraySlice<T> vals, const TensorShape& shape) {
 #define BM_Reshape4D(name, A, B, C, D, size, ...)                                   \
   BM_Reshape_DT(_4D##name, TensorShape({A, B, C, D}), S_TENSOR(size, __VA_ARGS__)); \
 
-BM_Reshape2D(_128x128_To_256x64, 128, 128, 2, 256, 64);
-BM_Reshape2D(_128x128_To_256x8x2, 128, 128, 3, 256, 16, 4);
+BM_Reshape2D(_1024x1024_To_256x4096, 1024, 1024, 2, 256, 4096);
+BM_Reshape2D(_1024x1024_To_16x256x256, 1024, 1024, 3, 16, 256, 256);
 
 BM_Reshape3D(_128x128x256_To_256x128x128, 128, 128, 256, 3, 256, 128, 128);
 

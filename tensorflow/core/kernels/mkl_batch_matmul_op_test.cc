@@ -75,24 +75,25 @@ static Graph* BatchMatmul(const string& kind, int b, int m, int k, int n, bool a
   BENCHMARK(                                                                                   \
       BM_BatchMatmul##_##kind##_##B##_##M##_##K##_##N##_##TA##_##TB##_##T##_##DEVICE##_##NTH); \
 
-#define BM_BatchMatmul_NTH(kind, B, M, K, N, TA, TB, T, DEVICE) \
-  BM_BatchMatmul_Base(kind, B, M, K, N, TA, TB, T, DEVICE, 1);  \
-  BM_BatchMatmul_Base(kind, B, M, K, N, TA, TB, T, DEVICE, 4);  \
-  BM_BatchMatmul_Base(kind, B, M, K, N, TA, TB, T, DEVICE, 8);  \
+#define BM_BatchMatmul_kind(B, M, K, N, TA, TB, T, DEVICE, NTH)     \
+  BM_BatchMatmul_Base(Default, B, M, K, N, TA, TB, T, DEVICE, NTH); \
+  BM_BatchMatmul_Base(Mkl, B, M, K, N, TA, TB, T, DEVICE, NTH);     \
 
-#define BM_BatchMatmul_kind(B, M, K, N, TA, TB, T, DEVICE)    \
-  BM_BatchMatmul_NTH(Default, B, M, K, N, TA, TB, T, DEVICE); \
-  BM_BatchMatmul_NTH(Mkl, B, M, K, N, TA, TB, T, DEVICE);     \
+#define BM_BatchMatmul_NTH(B, M, K, N, TA, TB, T, DEVICE) \
+  BM_BatchMatmul_kind(B, M, K, N, TA, TB, T, DEVICE, 1);  \
+  BM_BatchMatmul_kind(B, M, K, N, TA, TB, T, DEVICE, 4);  \
+  BM_BatchMatmul_kind(B, M, K, N, TA, TB, T, DEVICE, 8);  \
 
-#define BM_BatchMatmul(B, M, K, N, TA, TB)                \
-  BM_BatchMatmul_kind(B, M, K, N, TA, TB, float, cpu);    \
-  BM_BatchMatmul_kind(B, M, K, N, TA, TB, bfloat16, cpu); \
+#define BM_BatchMatmul(B, M, K, N, TA, TB)               \
+  BM_BatchMatmul_NTH(B, M, K, N, TA, TB, float, cpu);    \
+  BM_BatchMatmul_NTH(B, M, K, N, TA, TB, bfloat16, cpu); \
 
+/*
 // Typical fully connected layers
-//BM_BatchMatmul(1, 1, 1024, 1024, false, false);
-//BM_BatchMatmul(1, 8, 1024, 1024, false, false);
-//BM_BatchMatmul(1, 16, 1024, 1024, false, false);
-//BM_BatchMatmul(1, 128, 1024, 1024, false, false);
+BM_BatchMatmul(1, 1, 1024, 1024, false, false);
+BM_BatchMatmul(1, 8, 1024, 1024, false, false);
+BM_BatchMatmul(1, 16, 1024, 1024, false, false);
+BM_BatchMatmul(1, 128, 1024, 1024, false, false);
 BM_BatchMatmul(2, 1, 1024, 1024, false, false);
 BM_BatchMatmul(2, 8, 1024, 1024, false, false);
 BM_BatchMatmul(2, 16, 1024, 1024, false, false);
@@ -107,11 +108,11 @@ BM_BatchMatmul(32, 16, 1024, 1024, false, false);
 BM_BatchMatmul(32, 128, 1024, 1024, false, false);
 
 // Square matmul.
-//BM_BatchMatmul(1, 32, 32, 32, false, false);
-//BM_BatchMatmul(1, 128, 128, 128, false, false);
-//BM_BatchMatmul(1, 256, 256, 256, false, false);
-//BM_BatchMatmul(1, 1024, 1024, 1024, false, false);
-//BM_BatchMatmul(1, 2048, 2048, 2048, false, false);
+BM_BatchMatmul(1, 32, 32, 32, false, false);
+BM_BatchMatmul(1, 128, 128, 128, false, false);
+BM_BatchMatmul(1, 256, 256, 256, false, false);
+BM_BatchMatmul(1, 1024, 1024, 1024, false, false);
+BM_BatchMatmul(1, 2048, 2048, 2048, false, false);
 BM_BatchMatmul(2, 32, 32, 32, false, false);
 BM_BatchMatmul(2, 128, 128, 128, false, false);
 BM_BatchMatmul(2, 256, 256, 256, false, false);
@@ -134,32 +135,50 @@ BM_BatchMatmul(32, 1024, 1024, 1024, false, false);
 BM_BatchMatmul(32, 2048, 2048, 2048, false, false);
 
 // Matrix-vector multiplies.
-//BM_BatchMatmul(1, 10000, 200, 1, false, false);
+BM_BatchMatmul(1, 10000, 200, 1, false, false);
 BM_BatchMatmul(8, 10000, 200, 1, false, false);
 BM_BatchMatmul(32, 10000, 200, 1, false, false);
-//BM_BatchMatmul(1, 10000, 200, 1, true, false);
+BM_BatchMatmul(1, 10000, 200, 1, true, false);
 BM_BatchMatmul(8, 10000, 200, 1, true, false);
 BM_BatchMatmul(32, 10000, 200, 1, true, false);
-//BM_BatchMatmul(1, 10000, 200, 1, false, true);
+BM_BatchMatmul(1, 10000, 200, 1, false, true);
 BM_BatchMatmul(8, 10000, 200, 1, false, true);
 BM_BatchMatmul(32, 10000, 200, 1, false, true);
-//BM_BatchMatmul(1, 10000, 200, 1, true, true);
+BM_BatchMatmul(1, 10000, 200, 1, true, true);
 BM_BatchMatmul(8, 10000, 200, 1, true, true);
 BM_BatchMatmul(32, 10000, 200, 1, true, true);
 
 // Vector-matrix multiplies.
-//BM_BatchMatmul(1, 1, 200, 10000, false, false);
+BM_BatchMatmul(1, 1, 200, 10000, false, false);
 BM_BatchMatmul(8, 1, 200, 10000, false, false);
 BM_BatchMatmul(32, 1, 200, 10000, false, false);
-//BM_BatchMatmul(1, 1, 200, 10000, true, false);
+BM_BatchMatmul(1, 1, 200, 10000, true, false);
 BM_BatchMatmul(8, 1, 200, 10000, true, false);
 BM_BatchMatmul(32, 1, 200, 10000, true, false);
-//BM_BatchMatmul(1, 1, 200, 10000, false, true);
+BM_BatchMatmul(1, 1, 200, 10000, false, true);
 BM_BatchMatmul(8, 1, 200, 10000, false, true);
 BM_BatchMatmul(32, 1, 200, 10000, false, true);
-//BM_BatchMatmul(1, 1, 200, 10000, true, true);
+BM_BatchMatmul(1, 1, 200, 10000, true, true);
 BM_BatchMatmul(8, 1, 200, 10000, true, true);
 BM_BatchMatmul(32, 1, 200, 10000, true, true);
+*/
+
+BM_BatchMatmul(8192,  32, 1, 48, false, true);
+BM_BatchMatmul(8192,  48, 1, 32, false, false);
+
+BM_BatchMatmul(8192,  1, 32, 48, false, true);
+BM_BatchMatmul(8192,  1, 48, 32, false, false);
+
+BM_BatchMatmul(8192,  48, 32, 1, false, true);
+BM_BatchMatmul(8192,  32, 48, 1, false, false);
+
+BM_BatchMatmul(8192, 50, 50, 16, false, false);
+BM_BatchMatmul(8192, 50, 16, 50, false, true);
+BM_BatchMatmul(8192, 50, 50, 16, true, false);
+
+BM_BatchMatmul(8192, 48, 32, 48, false, true);
+BM_BatchMatmul(8192, 48, 48, 32, false, false);
+BM_BatchMatmul(8192, 48, 48, 32, true, false);
 
 
 Node* BroadcastTo(Graph* g, Node* input, Node* shape) {
@@ -246,50 +265,52 @@ static Graph* BatchMatmulWithBroadcast(const string& kind, int b0, int b1, int m
   BENCHMARK(                                                                                         \
       BM_BatchMatmulBCast##_##kind##_##B1##_##B2##_##M##_##K##_##N##_##MB##_##T##_##DEVICE##_##NTH); \
 
-#define BM_BatchMatmulBCast_NTH(kind, B1, B2, M, K, N, MB, T, DEVICE) \
-  BM_BatchMatmulBCast_Base(kind, B1, B2, M, K, N, MB, T, DEVICE, 1);  \
-  BM_BatchMatmulBCast_Base(kind, B1, B2, M, K, N, MB, T, DEVICE, 4);  \
-  BM_BatchMatmulBCast_Base(kind, B1, B2, M, K, N, MB, T, DEVICE, 8);  \
+#define BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, T, D, NTH)     \
+  BM_BatchMatmulBCast_Base(Default, B1, B2, M, K, N, MB, T, D, NTH); \
+  BM_BatchMatmulBCast_Base(Mkl, B1, B2, M, K, N, MB, T, D, NTH);     \
 
-#define BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, T, D)    \
-  BM_BatchMatmulBCast_NTH(Default, B1, B2, M, K, N, MB, T, D); \
-  BM_BatchMatmulBCast_NTH(Mkl, B1, B2, M, K, N, MB, T, D);     \
+#define BM_BatchMatmulBCast_NTH(B1, B2, M, K, N, MB, T, DEVICE) \
+  BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, T, DEVICE, 1);  \
+  BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, T, DEVICE, 4);  \
+  BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, T, DEVICE, 8);  \
 
-#define BM_BatchMatmulBCast(B1, B2, M, K, N, MB)                \
-  BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, float, cpu);    \
-  BM_BatchMatmulBCast_kind(B1, B2, M, K, N, MB, bfloat16, cpu); \
+#define BM_BatchMatmulBCast(B1, B2, M, K, N, MB)               \
+  BM_BatchMatmulBCast_NTH(B1, B2, M, K, N, MB, float, cpu);    \
+  BM_BatchMatmulBCast_NTH(B1, B2, M, K, N, MB, bfloat16, cpu); \
 
-//// Typical fully connected layers
-//BM_BatchMatmulBCast(1, 128, 1, 1024, 1024, true);
-//BM_BatchMatmulBCast(1, 128, 1, 1024, 1024, false);
-//BM_BatchMatmulBCast(128, 1, 1, 1024, 1024, true);
-//BM_BatchMatmulBCast(128, 1, 1, 1024, 1024, false);
-//BM_BatchMatmulBCast(1, 128, 128, 1024, 1024, true);
-//BM_BatchMatmulBCast(1, 128, 128, 1024, 1024, false);
-//BM_BatchMatmulBCast(128, 1, 128, 1024, 1024, true);
-//BM_BatchMatmulBCast(128, 1, 128, 1024, 1024, false);
-//
-//// Square matmul.
-//BM_BatchMatmulBCast(1, 128, 512, 512, 512, true);
-//BM_BatchMatmulBCast(1, 128, 512, 512, 512, false);
-//BM_BatchMatmulBCast(128, 1, 512, 512, 512, true);
-//BM_BatchMatmulBCast(128, 1, 512, 512, 512, false);
-//BM_BatchMatmulBCast(1, 128, 1024, 1024, 1024, true);
-//BM_BatchMatmulBCast(1, 128, 1024, 1024, 1024, false);
-//BM_BatchMatmulBCast(128, 1, 1024, 1024, 1024, true);
-//BM_BatchMatmulBCast(128, 1, 1024, 1024, 1024, false);
-//
-//// Matrix-vector multiplies.
-//BM_BatchMatmulBCast(1, 128, 10000, 200, 1, true);
-//BM_BatchMatmulBCast(1, 128, 10000, 200, 1, false);
-//BM_BatchMatmulBCast(128, 1, 10000, 200, 1, true);
-//BM_BatchMatmulBCast(128, 1, 10000, 200, 1, false);
-//
-//// Vector-matrix multiplies.
-//BM_BatchMatmulBCast(1, 128, 1, 200, 10000, true);
-//BM_BatchMatmulBCast(1, 128, 1, 200, 10000, false);
-//BM_BatchMatmulBCast(128, 1, 1, 200, 10000, true);
-//BM_BatchMatmulBCast(128, 1, 1, 200, 10000, false);
+/*
+// Typical fully connected layers
+BM_BatchMatmulBCast(1, 128, 1, 1024, 1024, true);
+BM_BatchMatmulBCast(1, 128, 1, 1024, 1024, false);
+BM_BatchMatmulBCast(128, 1, 1, 1024, 1024, true);
+BM_BatchMatmulBCast(128, 1, 1, 1024, 1024, false);
+BM_BatchMatmulBCast(1, 128, 128, 1024, 1024, true);
+BM_BatchMatmulBCast(1, 128, 128, 1024, 1024, false);
+BM_BatchMatmulBCast(128, 1, 128, 1024, 1024, true);
+BM_BatchMatmulBCast(128, 1, 128, 1024, 1024, false);
+
+// Square matmul.
+BM_BatchMatmulBCast(1, 128, 512, 512, 512, true);
+BM_BatchMatmulBCast(1, 128, 512, 512, 512, false);
+BM_BatchMatmulBCast(128, 1, 512, 512, 512, true);
+BM_BatchMatmulBCast(128, 1, 512, 512, 512, false);
+BM_BatchMatmulBCast(1, 128, 1024, 1024, 1024, true);
+BM_BatchMatmulBCast(1, 128, 1024, 1024, 1024, false);
+BM_BatchMatmulBCast(128, 1, 1024, 1024, 1024, true);
+BM_BatchMatmulBCast(128, 1, 1024, 1024, 1024, false);
+
+// Matrix-vector multiplies.
+BM_BatchMatmulBCast(1, 128, 10000, 200, 1, true);
+BM_BatchMatmulBCast(1, 128, 10000, 200, 1, false);
+BM_BatchMatmulBCast(128, 1, 10000, 200, 1, true);
+BM_BatchMatmulBCast(128, 1, 10000, 200, 1, false);
+
+// Vector-matrix multiplies.
+BM_BatchMatmulBCast(1, 128, 1, 200, 10000, true);
+BM_BatchMatmulBCast(1, 128, 1, 200, 10000, false);
+BM_BatchMatmulBCast(128, 1, 1, 200, 10000, true);
+BM_BatchMatmulBCast(128, 1, 1, 200, 10000, false);
+*/
 
 }  // namespace
 }  // namespace tensorflow

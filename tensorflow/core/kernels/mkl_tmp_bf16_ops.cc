@@ -45,20 +45,6 @@ namespace tensorflow {
       Name("AvgPool").Device(DEVICE_CPU).TypeConstraint<T>("T"), NoOp);       \
   REGISTER_KERNEL_BUILDER(                                                    \
       Name("AvgPoolGrad").Device(DEVICE_CPU).TypeConstraint<T>("T"), NoOp);   \
-  REGISTER_KERNEL_BUILDER(Name("FusedBatchNormV3")                            \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<bfloat16>("T")                  \
-                              .TypeConstraint<float>("U"),                    \
-                          NoOp);                                              \
-  REGISTER_KERNEL_BUILDER(Name("FusedBatchNormGradV3")                        \
-                              .Device(DEVICE_CPU)                             \
-                              .TypeConstraint<bfloat16>("T")                  \
-                              .TypeConstraint<float>("U"),                    \
-                          NoOp);                                              \
-  REGISTER_KERNEL_BUILDER(                                                    \
-      Name("_FusedMatMul").Device(DEVICE_CPU).TypeConstraint<T>("T"), NoOp);  \
-  REGISTER_KERNEL_BUILDER(                                                    \
-      Name("BatchMatMulV2").Device(DEVICE_CPU).TypeConstraint<T>("T"), NoOp); 
 
 TF_CALL_bfloat16(REGISTER_CPU);
 #undef REGISTER_CPU

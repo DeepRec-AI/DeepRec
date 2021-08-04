@@ -331,45 +331,45 @@ static Graph* Cwise(const string& op_name, const string& kind,
   return graph;
 }
 
-#define BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, NTH)     \
-  static void BM_##name##NTH(int iters) {                                           \
-    int64 num_computed_elements =                                                   \
-        shape_info_0.num_elements() > shape_info_1.num_elements()                   \
-            ? shape_info_0.num_elements()                                           \
-            : shape_info_1.num_elements();                                          \
-    int64 flops_per_iter = num_computed_elements;                                   \
-    testing::UseRealTime();                                                         \
-    SessionOptions opts;                                                            \
-    opts.config.set_intra_op_parallelism_threads(NTH);                              \
-    testing::ItemsProcessed(static_cast<int64>(iters) * flops_per_iter);            \
-    test::Benchmark(#type, Cwise<T>(#op, #kind, shape_info_0, shape_info_1), &opts) \
-        .Run(iters);                                                                \
-  }                                                                                 \
-  BENCHMARK(BM_##name##NTH);                                                        \
+#define BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, DEVICE, NTH)     \
+  static void BM_##kind##_##name##_##NTH(int iters) {                                 \
+    int64 num_computed_elements =                                                     \
+        shape_info_0.num_elements() > shape_info_1.num_elements()                     \
+            ? shape_info_0.num_elements()                                             \
+            : shape_info_1.num_elements();                                            \
+    int64 flops_per_iter = num_computed_elements;                                     \
+    testing::UseRealTime();                                                           \
+    SessionOptions opts;                                                              \
+    opts.config.set_intra_op_parallelism_threads(NTH);                                \
+    testing::ItemsProcessed(static_cast<int64>(iters) * flops_per_iter);              \
+    test::Benchmark(#DEVICE, Cwise<T>(#op, #kind, shape_info_0, shape_info_1), &opts) \
+        .Run(iters);                                                                  \
+  }                                                                                   \
+  BENCHMARK(BM_##kind##_##name##_##NTH);                                              \
 
-#define BM_Cwise_NTH(op, kind, name, shape_info_0, shape_info_1, T, type) \
-  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 1);  \
-  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 2);  \
-  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 4);  \
-  BM_Cwise_Base(op, kind, name, shape_info_0, shape_info_1, T, type, 8);  \
+#define BM_Cwise_kind(op, name, shape_info_0, shape_info_1, T, DEVICE, NTH)     \
+  BM_Cwise_Base(op, Default, name, shape_info_0, shape_info_1, T, DEVICE, NTH); \
+  BM_Cwise_Base(op, Mkl, name, shape_info_0, shape_info_1, T, DEVICE, NTH);     \
 
-#define BM_Cwise_2D(op, kind, A0, B0, A1, B1, T, type)                         \
-  BM_Cwise_NTH(op, kind, op##_##kind##type##_##A0##_##B0##_##A1##_##B1##_##T,  \
-           TensorShape({A0, B0}), TensorShape({A1, B1}), T, type)              \
+#define BM_Cwise_NTH(op, name, shape_info_0, shape_info_1, T, DEVICE) \
+  BM_Cwise_kind(op, name, shape_info_0, shape_info_1, T, DEVICE, 1);  \
+  BM_Cwise_kind(op, name, shape_info_0, shape_info_1, T, DEVICE, 4);  \
+  BM_Cwise_kind(op, name, shape_info_0, shape_info_1, T, DEVICE, 8);  \
 
-#define BM_2D(op, A0, B0, A1, B1, T, type)           \
-  BM_Cwise_2D(op, Default, A0, B0, A1, B1, T, type); \
-  BM_Cwise_2D(op, Mkl, A0, B0, A1, B1, T, type);     \
+#define BM_Cwise_2D(op, A0, B0, A1, B1, T, DEVICE)                  \
+  BM_Cwise_NTH(op, op##_##DEVICE##_##A0##x##B0##*##A1##x##B1##_##T, \
+           TensorShape({A0, B0}), TensorShape({A1, B1}), T, DEVICE) \
 
-#define BM_Cwise_4D(op, kind, A0, B0, C0, D0, A1, B1, C1, D1, T, type)                 \
+#define BM_2D(op, A0, B0, A1, B1, T, DEVICE)  \
+  BM_Cwise_2D(op, A0, B0, A1, B1, T, DEVICE); \
+
+#define BM_Cwise_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, DEVICE)                     \
   BM_Cwise_NTH(                                                                        \
-      op, kind,                                                                        \
-      op##_##kind##type##_##A0##_##B0##_##C0##_##D0##_##A1##_##B1##_##C1##_##D1##_##T, \
-      TensorShape({A0, B0, C0, D0}), TensorShape({A1, B1, C1, D1}), T, type)           \
+      op, op##_##DEVICE##_##A0##x##B0##x##C0##x##D0##*##A1##x##B1##x##C1##x##D1##_##T, \
+      TensorShape({A0, B0, C0, D0}), TensorShape({A1, B1, C1, D1}), T, DEVICE)         \
 
-#define BM_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, type)           \
-  BM_Cwise_4D(op, Default, A0, B0, C0, D0, A1, B1, C1, D1, T, type); \
-  BM_Cwise_4D(op, Mkl, A0, B0, C0, D0, A1, B1, C1, D1, T, type);     \
+#define BM_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, DEVICE)  \
+  BM_Cwise_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, DEVICE); \
 
 #define TEST_ALL_SIZES(op, T)                          \
   BM_2D(op, 1, 384, 384, 384, T, cpu);                 \

@@ -84,19 +84,18 @@ static Graph* Slice2D(const string& kind, DataType type, int size) {
   }                                                                                \
   BENCHMARK(BM_Slice2D##_##kind##_##size##_##T##_##TFTYPE##_##DEVICE##_##NTH);     \
 
-#define BM_Slice2D_NTH(kind, size, T, TFTYPE, DEVICE) \
-  BM_Slice2D_Base(kind, size, T, TFTYPE, DEVICE, 1);  \
-  BM_Slice2D_Base(kind, size, T, TFTYPE, DEVICE, 2);  \
-  BM_Slice2D_Base(kind, size, T, TFTYPE, DEVICE, 4);  \
-  BM_Slice2D_Base(kind, size, T, TFTYPE, DEVICE, 8);  \
+#define BM_Slice2D_kind(size, T, TFTYPE, DEVICE, NTH)     \
+  BM_Slice2D_Base(Default, size, T, TFTYPE, DEVICE, NTH); \
+  BM_Slice2D_Base(Mkl, size, T, TFTYPE, DEVICE, NTH);     \
 
-#define BM_Slice2D_kind(size, T, TFTYPE, DEVICE)    \
-  BM_Slice2D_NTH(Default, size, T, TFTYPE, DEVICE); \
-  BM_Slice2D_NTH(Mkl, size, T, TFTYPE, DEVICE);     \
+#define BM_Slice2D_NTH(size, T, TFTYPE, DEVICE) \
+  BM_Slice2D_kind(size, T, TFTYPE, DEVICE, 1);  \
+  BM_Slice2D_kind(size, T, TFTYPE, DEVICE, 4);  \
+  BM_Slice2D_kind(size, T, TFTYPE, DEVICE, 8);  \
 
-#define BM_Slice2D_DT(size)                          \
-  BM_Slice2D_kind(size, float, DT_FLOAT, cpu);       \
-  BM_Slice2D_kind(size, bfloat16, DT_BFLOAT16, cpu); \
+#define BM_Slice2D_DT(size)                         \
+  BM_Slice2D_NTH(size, float, DT_FLOAT, cpu);       \
+  BM_Slice2D_NTH(size, bfloat16, DT_BFLOAT16, cpu); \
 
 #define BM_Slice2D(size) \
   BM_Slice2D_DT(size)    \

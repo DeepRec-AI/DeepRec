@@ -190,6 +190,7 @@ class FusedMatMulOp : public OpKernel {
       FusedMatMulOp<CPUDevice, T>);
 
 TF_CALL_float(REGISTER_FUSED_CPU_MATMUL);
+TF_CALL_bfloat16(REGISTER_FUSED_CPU_MATMUL);
 
 #undef REGISTER_FUSED_CPU_MATMUL
 

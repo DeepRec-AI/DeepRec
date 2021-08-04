@@ -86,34 +86,37 @@ static Graph* Activation(const string& op_name, const string& kind,
   return graph;
 }
 
-#define BM_Activation_Base(op, kind, A, B, C, D, T, device, NTH)                             \
-  static void BM_##op##_##kind##_##T##_##A##_##B##_##C##_##D##_##device##_##NTH(int iters) { \
-    testing::UseRealTime();                                                                  \
-    testing::ItemsProcessed(static_cast<int64>(iters) * A * B * C * D);                      \
-    SessionOptions opts;                                                                     \
-    opts.config.set_intra_op_parallelism_threads(NTH);                                       \
-    test::Benchmark(#device, Activation<T>(#op, #kind, {A, B, C, D}), &opts).Run(iters);     \
-  }                                                                                          \
-  BENCHMARK(BM_##op##_##kind##_##T##_##A##_##B##_##C##_##D##_##device##_##NTH)               \
+#define BM_Activation_Base(op, kind, name, in_shape, T, device, NTH)                 \
+  static void BM_##op##_##kind##_##T##name##_##device##_##NTH(int iters) {           \
+    int64 num_elements = in_shape.num_elements();                                    \
+    testing::UseRealTime();                                                          \
+    testing::ItemsProcessed(static_cast<int64>(iters) * num_elements);               \
+    SessionOptions opts;                                                             \
+    opts.config.set_intra_op_parallelism_threads(NTH);                               \
+    test::Benchmark(#device, Activation<T>(#op, #kind, in_shape), &opts).Run(iters); \
+  }                                                                                  \
+  BENCHMARK(BM_##op##_##kind##_##T##name##_##device##_##NTH)                         \
 
-#define BM_Activation_NTH(op, kind, A, B, C, D, T, device) \
-  BM_Activation_Base(op, kind, A, B, C, D, T, device, 1);  \
-  BM_Activation_Base(op, kind, A, B, C, D, T, device, 4);  \
-  BM_Activation_Base(op, kind, A, B, C, D, T, device, 8);  \
+#define BM_Activation_Kind(op, name, in_shape, T, device, NTH)     \
+  BM_Activation_Base(op, Default, name, in_shape, T, device, NTH); \
+  BM_Activation_Base(op, Mkl, name, in_shape, T, device, NTH);     \
 
-#define BM_Activation_Kind(op, A, B, C, D, T, device)    \
-  BM_Activation_NTH(op, Default, A, B, C, D, T, device); \
-  BM_Activation_NTH(op, Mkl, A, B, C, D, T, device);     \
+#define BM_Activation_NTH(op, name, in_shape, T, device) \
+  BM_Activation_Kind(op, name, in_shape, T, device, 1);  \
+  BM_Activation_Kind(op, name, in_shape, T, device, 4);  \
+  BM_Activation_Kind(op, name, in_shape, T, device, 8);  \
 
-#define BM_Activation(op, A, B, C, D)                \
-  BM_Activation_Kind(op, A, B, C, D, float, cpu);    \
-  BM_Activation_Kind(op, A, B, C, D, bfloat16, cpu); \
+#define BM_Activation_ND(op, name, ...)                                   \
+  BM_Activation_NTH(op, name, TensorShape({__VA_ARGS__}), float, cpu);    \
+  BM_Activation_NTH(op, name, TensorShape({__VA_ARGS__}), bfloat16, cpu); \
 
-#define TEST_Activation_ALL(OP)        \
-  BM_Activation(OP, 2, 4, 8, 16);      \
-  BM_Activation(OP, 3, 5, 9, 17);      \
-  BM_Activation(OP, 32, 64, 128, 256); \
-  BM_Activation(OP, 33, 65, 129, 257); \
+#define TEST_Activation_ALL(OP)                              \
+  BM_Activation_ND(OP, _2D_1x512, 1, 512);                   \
+  BM_Activation_ND(OP, _2D_512x1, 512, 1);                   \
+  BM_Activation_ND(OP, _2D_32x32, 32, 32);                   \
+  BM_Activation_ND(OP, _2D_512x512, 512, 512);               \
+  BM_Activation_ND(OP, _3D_32x128x128, 32, 128, 128);        \
+  BM_Activation_ND(OP, _4D_32x32x128x128, 32, 32, 128, 128); \
 
 TEST_Activation_ALL(Tanh)
 TEST_Activation_ALL(TanhGrad)

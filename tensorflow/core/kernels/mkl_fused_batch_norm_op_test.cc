@@ -31,6 +31,7 @@ limitations under the License.
 #include "tensorflow/core/platform/test_benchmark.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/public/session.h"
+#include "tensorflow/core/util/mkl_util.h"
 
 namespace tensorflow {
 
@@ -114,8 +115,10 @@ class CommonTestUtilities : public OpsTestBase {
     ASSERT_EQ(batch_var.shape(), mkl_batch_var.shape());
 
     test::ExpectClose(output, mkl_output, 1e-5);
-    test::ExpectClose(batch_mean, mkl_batch_mean, 1e-5);
-    test::ExpectClose(batch_var, mkl_batch_var, 1e-5);
+    if(is_training){
+      test::ExpectClose(batch_mean, mkl_batch_mean, 1e-5);
+      test::ExpectClose(batch_var, mkl_batch_var, 1e-5);
+    }
   }
 
  private:
@@ -257,6 +260,208 @@ using FusedBatchNormDataTypes = ::testing::Types<float>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Test, FusedBatchNormOpTest,
                                FusedBatchNormDataTypes);
 
+
+//----------------------------------------------------------------------------//
+// Performance benchmarks are below.                                          //
+//----------------------------------------------------------------------------//
+
+template <typename T>
+static Graph* FusedBatchNorm(const string& kind, int n, int h, int w, int c,
+                                      bool is_training,
+                                      TensorFormat data_format) {
+  Graph* g = new Graph(OpRegistry::Global());
+  DataType dtype = DataTypeToEnum<T>::value;
+
+  const bool isDefault = (kind == "Default");
+  string op_name = isDefault ? "FusedBatchNormV3" : "_MklFusedBatchNormV3";
+
+  Tensor x_t(dtype, data_format == FORMAT_NHWC ? TensorShape({n, h, w, c})
+                                               : TensorShape({n, c, h, w}));
+  x_t.flat<T>().setRandom();
+
+  Tensor other_t(DT_FLOAT, TensorShape({c}));
+  other_t.flat<float>().setRandom();
+
+  Tensor empty_t(DT_FLOAT, TensorShape({0}));
+
+  Node* x = test::graph::Constant(g, x_t, "x");
+  Node* other = test::graph::Constant(g, other_t, "other");
+  Node* empty = test::graph::Constant(g, empty_t, "empty");
+
+  Node* not_mkl_shape =
+      test::graph::Constant(g, GetMklMetaTensor(), "not_mkl");
+
+  auto nodeBuilder = NodeBuilder(g->NewName(op_name), op_name)
+                       .Input(x)
+                       .Input(other)                        // scale
+                       .Input(other)                        // offset
+                       .Input(is_training ? empty : other)  // mean
+                       .Input(is_training ? empty : other)  // variance
+                       .Attr("T", dtype)
+                       .Attr("U", DT_FLOAT)
+                       .Attr("epsilon", 0.001)
+                       .Attr("is_training", is_training)
+                       .Attr("data_format", ToString(data_format));
+
+  isDefault ? nodeBuilder : nodeBuilder.Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Attr("_kernel", "MklLayoutDependentOp");
+
+  TF_CHECK_OK(nodeBuilder.Finalize(g, nullptr));
+
+  return g;
+}
+
+template <typename T>
+static Graph* FusedBatchNormGrad(const string& kind, int n, int h, int w, int c, bool is_training,
+                                 TensorFormat data_format) {
+  Graph* g = new Graph(OpRegistry::Global());
+  DataType dtype = DataTypeToEnum<T>::value;
+
+  const bool isDefault = (kind == "Default");
+  string op_name = isDefault ? "FusedBatchNormGradV3" : "_MklFusedBatchNormGradV3";
+
+  TensorShape shape = data_format == FORMAT_NHWC ? TensorShape({n, h, w, c})
+                                                 : TensorShape({n, c, h, w});
+
+  Tensor y_backprop_t(dtype, shape);
+  y_backprop_t.flat<T>().setRandom();
+
+  Tensor x_t(dtype, shape);
+  x_t.flat<T>().setRandom();
+
+  Tensor other_t(DT_FLOAT, TensorShape({c}));
+  other_t.flat<float>().setRandom();
+
+  Node* y_backprop = test::graph::Constant(g, y_backprop_t, "y_backprop");
+  Node* x = test::graph::Constant(g, x_t, "x");
+  Node* other = test::graph::Constant(g, other_t, "other");
+
+  Node* not_mkl_shape =
+      test::graph::Constant(g, GetMklMetaTensor(), "not_mkl");
+  auto nodeBuilder = NodeBuilder(g->NewName(op_name), op_name)
+                       .Input(y_backprop)
+                       .Input(x)
+                       .Input(other)  // scale
+                       .Input(other)  // saved_mean_or_pop_mean
+                       .Input(other)  // saved_maybe_inv_var_or_pop_var
+                       .Input(other)  // reserve_space
+                       .Attr("T", dtype)
+                       .Attr("U", DT_FLOAT)
+                       .Attr("epsilon", 0.001)
+                       .Attr("is_training", is_training)
+                       .Attr("data_format", ToString(data_format));
+
+  isDefault ? nodeBuilder : nodeBuilder.Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Input(not_mkl_shape)
+                                       .Attr("_kernel", "MklLayoutDependentOp");
+
+  TF_CHECK_OK(nodeBuilder.Finalize(g, nullptr));
+
+  return g;
+}
+
+#define BM_NAME(kind, NAME, N, H, W, C, T, IT, FORMAT, DEVICE, NTH)                     \
+  BM_##NAME##_##kind##_##N##_##H##_##W##_##C##_##IT##_##FORMAT##_##T##_##DEVICE##_##NTH \
+
+// -------------------------------------------------------------------------- //
+// FusedBatchNorm benchmarks
+// -------------------------------------------------------------------------- //
+
+#define BM_FusedBatchNorm_Base(kind, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH)        \
+  static void BM_NAME(kind, FusedBatchNorm, N, H, W, C, T, IS_TRAINING, FORMAT,              \
+                      DEVICE, NTH)(int iters) {                                              \
+    testing::UseRealTime();                                                                  \
+    testing::ItemsProcessed(static_cast<int64>(iters) * N * H * W * C);                      \
+    SessionOptions opts;                                                                     \
+    opts.config.set_intra_op_parallelism_threads(NTH);                                       \
+    test::Benchmark(#DEVICE, FusedBatchNorm<T>(                                              \
+                               #kind, N, H, W, C, IS_TRAINING, FORMAT_##FORMAT), &opts)      \
+                      .Run(iters);                                                           \
+  }                                                                                          \
+  BENCHMARK(BM_NAME(kind, FusedBatchNorm, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH)); \
+
+#define BM_FusedBatchNorm_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH)     \
+  BM_FusedBatchNorm_Base(Default, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH); \
+  BM_FusedBatchNorm_Base(Mkl, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH);     \
+
+#define BM_FusedBatchNorm_NTH(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE) \
+  BM_FusedBatchNorm_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, 1);  \
+  BM_FusedBatchNorm_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, 4);  \
+  BM_FusedBatchNorm_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, 8);  \
+
+#define BM_FusedBatchNorm_dt(N, H, W, C, IS_TRAINING, FORMAT)            \
+  BM_FusedBatchNorm_NTH(N, H, W, C, float, IS_TRAINING, FORMAT, cpu);    \
+  BM_FusedBatchNorm_NTH(N, H, W, C, bfloat16, IS_TRAINING, FORMAT, cpu); \
+
+#define BM_FusedBatchNorm_isT(N, H, W, C, FORMAT)  \
+  BM_FusedBatchNorm_dt(N, H, W, C, true, FORMAT);  \
+  BM_FusedBatchNorm_dt(N, H, W, C, false, FORMAT); \
+
+#define BM_FusedBatchNorm(N, H, W, C, FORMAT) \
+  BM_FusedBatchNorm_isT(N, H, W, C, FORMAT);  \
+
+BM_FusedBatchNorm(64, 14, 14, 256, NHWC);
+
+// -------------------------------------------------------------------------- //
+// FusedBatchNorm gradient
+// -------------------------------------------------------------------------- //
+
+#define BM_FusedBatchNormGrad_Base(kind, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH)        \
+  static void BM_NAME(kind, FusedBatchNormGrad, N, H, W, C, T, IS_TRAINING, FORMAT,              \
+                      DEVICE, NTH)(int iters) {                                                  \
+    testing::UseRealTime();                                                                      \
+    testing::ItemsProcessed(static_cast<int64>(iters) * N * H * W * C);                          \
+    SessionOptions opts;                                                                         \
+    opts.config.set_intra_op_parallelism_threads(NTH);                                           \
+    test::Benchmark(#DEVICE, FusedBatchNormGrad<T>(                                              \
+                               #kind, N, H, W, C, IS_TRAINING, FORMAT_##FORMAT), &opts)          \
+                    .Run(iters);                                                                 \
+  }                                                                                              \
+  BENCHMARK(BM_NAME(kind, FusedBatchNormGrad, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH)); \
+
+#define BM_FusedBatchNormGrad_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH)     \
+  BM_FusedBatchNormGrad_Base(Default, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH); \
+  BM_FusedBatchNormGrad_Base(Mkl, N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, NTH);     \
+
+#define BM_FusedBatchNormGrad_NTH(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE) \
+  BM_FusedBatchNormGrad_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, 1);  \
+  BM_FusedBatchNormGrad_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, 4);  \
+  BM_FusedBatchNormGrad_kind(N, H, W, C, T, IS_TRAINING, FORMAT, DEVICE, 8);  \
+
+#define BM_FusedBatchNormGrad_dt(N, H, W, C, IS_TRAINING, FORMAT)            \
+  BM_FusedBatchNormGrad_NTH(N, H, W, C, float, IS_TRAINING, FORMAT, cpu);    \
+  BM_FusedBatchNormGrad_NTH(N, H, W, C, bfloat16, IS_TRAINING, FORMAT, cpu); \
+
+#define BM_FusedBatchNormGrad_isT(N, H, W, C, FORMAT)  \
+  BM_FusedBatchNormGrad_dt(N, H, W, C, true, FORMAT);  \
+  BM_FusedBatchNormGrad_dt(N, H, W, C, false, FORMAT); \
+
+#define BM_FusedBatchNormGrad(N, H, W, C, FORMAT) \
+  BM_FusedBatchNormGrad_isT(N, H, W, C, FORMAT);  \
+
+BM_FusedBatchNormGrad(64, 56, 56, 64, NHWC);
+
+/* ResnetShapes
+BM_FusedBatchNormGrad(64, 56, 56, 64, NHWC);
+BM_FusedBatchNormGrad(64, 56, 56, 128, NHWC);
+BM_FusedBatchNormGrad(64, 56, 56, 256, NHWC);
+
+BM_FusedBatchNormGrad(64, 28, 28, 128, NHWC);
+BM_FusedBatchNormGrad(64, 28, 28, 256, NHWC);
+BM_FusedBatchNormGrad(64, 28, 28, 512, NHWC);
+
+BM_FusedBatchNormGrad(64, 14, 14, 128, NHWC);
+BM_FusedBatchNormGrad(64, 14, 14, 256, NHWC);
+BM_FusedBatchNormGrad(64, 14, 14, 1024, NHWC);
+*/
 }  // namespace tensorflow
 
 #endif  // INTEL_MKL

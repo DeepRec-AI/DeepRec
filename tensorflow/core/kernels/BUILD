@@ -8328,10 +8328,53 @@ tf_mkl_kernel_library(
     deps = ARRAY_DEPS + mkl_deps(),
 )
 
+tf_cc_test_mkl(
+    name = "mkl_identity_op_test",
+    size = "medium",
+    srcs = ["mkl_identity_op_test.cc"],
+    deps = [
+        ":identity_op",
+        ":mkl_identity_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_mkl_kernel_library(
     name = "mkl_lrn_op",
     prefix = "mkl_lrn_op",
     deps = NN_DEPS + mkl_deps(),
+)
+
+tf_cc_test_mkl(
+    name = "mkl_lrn_op_test",
+    size = "large",
+    srcs = ["mkl_lrn_op_test.cc"],
+    deps = [
+        ":ops_testutil",
+        ":ops_util",
+        ":lrn_op",
+        ":mkl_lrn_op",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_mkl_kernel_library(
