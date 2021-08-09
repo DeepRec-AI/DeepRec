@@ -269,11 +269,21 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   // enable trace timeline
   if (!json_config["timeline_start_step"].isNull() &&
       !json_config["timeline_interval_step"].isNull() &&
-      !json_config["timeline_trace_count"].isNull()) {
+      !json_config["timeline_trace_count"].isNull() &&
+      !json_config["timeline_path"].isNull()) {
+    if ((*config)->oss_endpoint == "" ||
+        (*config)->oss_access_id == "" ||
+        (*config)->oss_access_key == "") {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "Timeline require oss_endpoint, oss_access_id, and oss_access_key.");
+    }
     auto start_step = json_config["timeline_start_step"].asInt();
     auto interval_step = json_config["timeline_interval_step"].asInt();
     auto trace_count = json_config["timeline_trace_count"].asInt();
-    Tracer::GetTracer()->SetParams(start_step, interval_step, trace_count);
+    auto path = json_config["timeline_path"].asString();
+    Tracer::GetTracer()->SetParams(start_step, interval_step, trace_count,
+        (*config)->oss_endpoint, (*config)->oss_access_id,
+        (*config)->oss_access_key, path);
   }
 
   return Status::OK();

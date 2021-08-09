@@ -51,6 +51,7 @@ cc_library(
     name = "tracer",
     hdrs = ["tracer.h"],
     deps = [
+        "@aliyun_oss_c_sdk",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core:framework",
         ],
