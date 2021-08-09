@@ -33,9 +33,9 @@ struct ModelConfig {
 
   // OSS Config
   std::string model_store_type;
-  std::string oss_endpoint;
-  std::string oss_access_id;
-  std::string oss_access_key;
+  std::string oss_endpoint = "";
+  std::string oss_access_id = "";
+  std::string oss_access_key = "";
 };
 
 class ModelConfigFactory {
