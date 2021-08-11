@@ -167,7 +167,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "sparsehash_c11",
-        patch_file = "//third_party:0001-add-lockless-dense-hash-map.patch",
+        patch_file = "//third_party:0001-optimize-Size-function-when-lockless.patch",
         build_file = "//third_party:sparsehash_c11.BUILD",
         sha256 = "d4a43cad1e27646ff0ef3a8ce3e18540dbcb1fdec6cc1d1cb9b5095a9ca2a755",
         strip_prefix = "sparsehash-c11-2.11.1",

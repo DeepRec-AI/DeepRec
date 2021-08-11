@@ -363,7 +363,7 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
     for (int i = 0; i< partition_num_; i++) {
       value_ptr_map_[i].hash_map.max_load_factor(0.8);
       value_ptr_map_[i].hash_map.set_empty_key_and_value(EMPTY_KEY_, nullptr);
-      value_ptr_map_[i].hash_map.set_threadnum(1024);
+      value_ptr_map_[i].hash_map.set_threadnum(96);
       value_ptr_map_[i].hash_map.set_deleted_key(DELETED_KEY_);
     }
   }
@@ -717,7 +717,7 @@ class HashMapFactory {
       return new DenseHashMap<K, V>(partition_num);
     } else if ("dynamic_dense_hash_map" == ht_type) {
       VLOG(2) << "Use dynamic dense_hash_map as EV data struct";
-      return new DynamicDenseHashMap<K, V>(partition_num);
+      return new DynamicDenseHashMap<K, V>(1);
     } else if ("sparse_hash_map" == ht_type) {
       return nullptr;
       // TODO
