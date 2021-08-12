@@ -8599,6 +8599,9 @@ tf_kernel_library(
     prefix = "unique_ali_op",
     copts = ["-fexceptions"],
     nocopts = "-fno-exceptions",
+    hdrs = [
+        "task_runner.h",
+    ],
     deps = ARRAY_DEPS + [
         "@com_google_absl//absl/container:flat_hash_map",
         "@sparsehash_c11//:dense_hash_map",

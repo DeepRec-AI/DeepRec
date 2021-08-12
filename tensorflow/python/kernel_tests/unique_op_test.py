@@ -18,9 +18,15 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import numpy as np
 
+# set environ before tf initializing global varialbes
+PreservedKey = 1 << 10
+os.environ["DEEPREC_CONFIG_RAND_64"] = str(PreservedKey)
+
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors_impl
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.platform import test
@@ -32,7 +38,7 @@ class UniqueTest(test.TestCase):
     x = np.random.randint(0, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx = array_ops.unique(x)
-      tf_y, tf_idx = self.evaluate([y, idx])
+      tf_y, tf_idx = sess.run([y, idx])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -43,7 +49,33 @@ class UniqueTest(test.TestCase):
     x = np.random.randint(2, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx = array_ops.unique(x, out_idx=dtypes.int64)
-      tf_y, tf_idx = self.evaluate([y, idx])
+      tf_y, tf_idx = sess.run([y, idx])
+
+    self.assertEqual(len(x), len(tf_idx))
+    self.assertEqual(len(tf_y), len(np.unique(x)))
+    for i in range(len(x)):
+      self.assertEqual(x[i], tf_y[tf_idx[i]])
+
+  def testInt64OutIdxInt64(self):
+    np.random.seed(0)
+    x = np.random.randint(-1000000000, high=1000000000, size=1000000,
+      dtype=np.int64)
+    with self.cached_session() as sess:
+      y, idx = array_ops.unique(x, out_idx=dtypes.int64)
+      tf_y, tf_idx = sess.run([y, idx])
+
+    self.assertEqual(len(x), len(tf_idx))
+    self.assertEqual(len(tf_y), len(np.unique(x)))
+    for i in range(len(x)):
+      self.assertEqual(x[i], tf_y[tf_idx[i]])
+
+  def testInt64OutIdxInt32(self):
+    np.random.seed(0)
+    x = np.random.randint(-1000000000, high=1000000000, size=1000000,
+      dtype=np.int64)
+    with self.cached_session() as sess:
+      y, idx = array_ops.unique(x, out_idx=dtypes.int32)
+      tf_y, tf_idx = sess.run([y, idx])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -55,7 +87,7 @@ class UniqueTest(test.TestCase):
     x = [chr(i) for i in indx]
     with self.cached_session() as sess:
       y, idx = array_ops.unique(x)
-      tf_y, tf_idx = self.evaluate([y, idx])
+      tf_y, tf_idx = sess.run([y, idx])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -67,9 +99,9 @@ class UniqueTest(test.TestCase):
       x = np.array([[1, 0, 0], [1, 0, 0], [2, 0, 0]])
       with self.cached_session() as sess:
         y0, idx0 = gen_array_ops.unique_v2(x, axis=np.array([0], dtype))
-        tf_y0, tf_idx0 = self.evaluate([y0, idx0])
+        tf_y0, tf_idx0 = sess.run([y0, idx0])
         y1, idx1 = gen_array_ops.unique_v2(x, axis=np.array([1], dtype))
-        tf_y1, tf_idx1 = self.evaluate([y1, idx1])
+        tf_y1, tf_idx1 = sess.run([y1, idx1])
       self.assertAllEqual(tf_y0, np.array([[1, 0, 0], [2, 0, 0]]))
       self.assertAllEqual(tf_idx0, np.array([0, 0, 1]))
       self.assertAllEqual(tf_y1, np.array([[1, 0], [1, 0], [2, 0]]))
@@ -81,35 +113,65 @@ class UniqueTest(test.TestCase):
     x = np.random.randint(2, high=10, size=7000)
     with self.cached_session() as sess:
       y, idx = gen_array_ops.unique_v2(x, axis=np.array([], np.int32))
-      tf_y, tf_idx = self.evaluate([y, idx])
+      tf_y, tf_idx = sess.run([y, idx])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
     for i in range(len(x)):
       self.assertEqual(x[i], tf_y[tf_idx[i]])
 
-  def testBool(self):
-    x = np.random.choice([True, False], size=7000)
+  def IllegalIdForMultMapUnique(self):
+    recover_env = False
+    if 'DEEPREC_UNIQUE_OP_PARTITION_SIZE' in os.environ:
+      recover_env = True
+      old_env = os.environ['DEEPREC_UNIQUE_OP_PARTITION_SIZE']
+    os.environ['DEEPREC_UNIQUE_OP_PARTITION_SIZE'] = '2'
+
     with self.cached_session() as sess:
-      y, idx = array_ops.unique(x)
-      tf_y, tf_idx = self.evaluate([y, idx])
+      x = np.array([-1, 0, 1, PreservedKey], dtype=np.int64)
+      y, idx = array_ops.unique(x, out_idx=dtypes.int64)
+      with self.assertRaisesRegexp(
+          errors_impl.InvalidArgumentError,
+          "Input id is preserved key of dense_hash_map, "
+          "not supported: " + str(PreservedKey)):
+        tf_y, tf_idx = sess.run([y, idx])
 
-    self.assertEqual(len(x), len(tf_idx))
-    self.assertEqual(len(tf_y), len(np.unique(x)))
-    for i in range(len(x)):
-      self.assertEqual(x[i], tf_y[tf_idx[i]])
+    del os.environ['DEEPREC_UNIQUE_OP_PARTITION_SIZE']
+    if recover_env:
+      os.environ['DEEPREC_UNIQUE_OP_PARTITION_SIZE'] = old_env
 
-  def testBoolV2(self):
-    x = np.random.choice([True, False], size=7000)
-    with self.cached_session() as sess:
-      y, idx = gen_array_ops.unique_v2(x, axis=np.array([], np.int32))
-      tf_y, tf_idx = self.evaluate([y, idx])
+  def RunUniqueWithDifferentMaps(self, map_type,
+                                 test_illegal_key=False):
+    recover_env = False
+    if 'DEEPREC_UNIQUE_OP_HASH_MAP' in os.environ:
+      recover_env = True
+      old_env = os.environ['DEEPREC_UNIQUE_OP_HASH_MAP']
 
-    self.assertEqual(len(x), len(tf_idx))
-    self.assertEqual(len(tf_y), len(np.unique(x)))
-    for i in range(len(x)):
-      self.assertEqual(x[i], tf_y[tf_idx[i]])
+    os.environ['DEEPREC_UNIQUE_OP_HASH_MAP'] = map_type
+    self.testInt32()
+    self.testInt32OutIdxInt64()
+    self.testInt64OutIdxInt64()
+    self.testInt64OutIdxInt32()
+    self.testInt32Axis()
+    self.testInt32V2()
+    if test_illegal_key:
+      self.IllegalIdForMultMapUnique()
 
+    del os.environ['DEEPREC_UNIQUE_OP_HASH_MAP']
+    if recover_env:
+      os.environ['DEEPREC_UNIQUE_OP_HASH_MAP'] = old_env
+
+  def testUniqueMultiMap(self):
+    self.RunUniqueWithDifferentMaps('MULTIMAP', True)
+
+  def testUniqueStlMap(self):
+    self.RunUniqueWithDifferentMaps('STL')
+
+  def testUniqueAbslMap(self):
+    self.RunUniqueWithDifferentMaps('ABSL')
+
+  def testUniqueDenseHashMap(self):
+    self.RunUniqueWithDifferentMaps('GOOGLE')
 
 class UniqueWithCountsTest(test.TestCase):
 
@@ -117,7 +179,7 @@ class UniqueWithCountsTest(test.TestCase):
     x = np.random.randint(2, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx, count = array_ops.unique_with_counts(x)
-      tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
+      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -130,7 +192,7 @@ class UniqueWithCountsTest(test.TestCase):
     x = np.random.randint(2, high=1000, size=700000)
     with self.cached_session() as sess:
       y, idx, count = array_ops.unique_with_counts(x, out_idx=dtypes.int64)
-      tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
+      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -145,7 +207,7 @@ class UniqueWithCountsTest(test.TestCase):
 
     with self.cached_session() as sess:
       y, idx, count = array_ops.unique_with_counts(x)
-      tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
+      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -161,10 +223,10 @@ class UniqueWithCountsTest(test.TestCase):
       with self.cached_session() as sess:
         y0, idx0, count0 = gen_array_ops.unique_with_counts_v2(
             x, axis=np.array([0], dtype))
-        tf_y0, tf_idx0, tf_count0 = self.evaluate([y0, idx0, count0])
+        tf_y0, tf_idx0, tf_count0 = sess.run([y0, idx0, count0])
         y1, idx1, count1 = gen_array_ops.unique_with_counts_v2(
             x, axis=np.array([1], dtype))
-        tf_y1, tf_idx1, tf_count1 = self.evaluate([y1, idx1, count1])
+        tf_y1, tf_idx1, tf_count1 = sess.run([y1, idx1, count1])
       self.assertAllEqual(tf_y0, np.array([[1, 0, 0], [2, 0, 0]]))
       self.assertAllEqual(tf_idx0, np.array([0, 0, 1]))
       self.assertAllEqual(tf_count0, np.array([2, 1]))
@@ -179,7 +241,7 @@ class UniqueWithCountsTest(test.TestCase):
     with self.cached_session() as sess:
       y, idx, count = gen_array_ops.unique_with_counts_v2(
           x, axis=np.array([], np.int32))
-      tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
+      tf_y, tf_idx, tf_count = sess.run([y, idx, count])
 
     self.assertEqual(len(x), len(tf_idx))
     self.assertEqual(len(tf_y), len(np.unique(x)))
@@ -188,32 +250,33 @@ class UniqueWithCountsTest(test.TestCase):
     for value, count in zip(tf_y, tf_count):
       self.assertEqual(count, np.sum(x == value))
 
-  def testBool(self):
-    x = np.random.choice([True, False], size=7000)
-    with self.cached_session() as sess:
-      y, idx, count = array_ops.unique_with_counts(x)
-      tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
+  def RunUniqueWithCountsWithDifferentMaps(self, map_type):
+    recover_env = False
+    if 'DEEPREC_UNIQUE_OP_HASH_MAP' in os.environ:
+      recover_env = True
+      old_env = os.environ['DEEPREC_UNIQUE_OP_HASH_MAP']
 
-    self.assertEqual(len(x), len(tf_idx))
-    self.assertEqual(len(tf_y), len(np.unique(x)))
-    for i in range(len(x)):
-      self.assertEqual(x[i], tf_y[tf_idx[i]])
-    for value, count in zip(tf_y, tf_count):
-      self.assertEqual(count, np.sum(x == value))
+    os.environ['DEEPREC_UNIQUE_OP_HASH_MAP'] = map_type
+    self.testInt32()
+    self.testInt32OutIdxInt64()
+    self.testInt32Axis()
+    self.testInt32V2()
 
-  def testBoolV2(self):
-    x = np.random.choice([True, False], size=7000)
-    with self.cached_session() as sess:
-      y, idx, count = gen_array_ops.unique_with_counts_v2(
-          x, axis=np.array([], np.int32))
-      tf_y, tf_idx, tf_count = self.evaluate([y, idx, count])
+    del os.environ['DEEPREC_UNIQUE_OP_HASH_MAP']
+    if recover_env:
+      os.environ['DEEPREC_UNIQUE_OP_HASH_MAP'] = old_env
 
-    self.assertEqual(len(x), len(tf_idx))
-    self.assertEqual(len(tf_y), len(np.unique(x)))
-    for i in range(len(x)):
-      self.assertEqual(x[i], tf_y[tf_idx[i]])
-    for value, count in zip(tf_y, tf_count):
-      self.assertEqual(count, np.sum(x == value))
+  def testUniqueWithCountsMultiMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('MULTIMAP')
+
+  def testUniqueWithCountsStlMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('STL')
+
+  def testUniqueWithCountsAbslMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('ABSL')
+
+  def testUniqueWithCountsDenseHashMap(self):
+    self.RunUniqueWithCountsWithDifferentMaps('GOOGLE')
 
 
 if __name__ == '__main__':

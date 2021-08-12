@@ -29,6 +29,11 @@ uint64 New64();
 // std::mersenne_twister_engine::default_seed as seed value.
 uint64 New64DefaultSeed();
 
+// Call New64 to generate a 64-bit random value
+// if env var DEEPREC_CONFIG_RAND_64 not set.
+// Otherwise, return int64 from DEEPREC_CONFIG_RAND_64
+uint64 New64Configuable();
+
 }  // namespace random
 }  // namespace tensorflow
 

@@ -18,6 +18,7 @@ limitations under the License.
 #include <random>
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 namespace random {
@@ -43,6 +44,13 @@ uint64 New64DefaultSeed() {
   static mutex mu(LINKER_INITIALIZED);
   mutex_lock l(mu);
   return rng();
+}
+
+uint64 New64Configuable() {
+  int64 random_64;
+  CHECK(ReadInt64FromEnvVar("DEEPREC_CONFIG_RAND_64",
+      New64(), &random_64).ok());
+  return static_cast<uint64>(random_64);
 }
 
 }  // namespace random
