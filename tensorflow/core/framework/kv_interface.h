@@ -363,7 +363,7 @@ class DynamicDenseHashMap : public KVInterface<K, V> {
     for (int i = 0; i< partition_num_; i++) {
       value_ptr_map_[i].hash_map.max_load_factor(0.8);
       value_ptr_map_[i].hash_map.set_empty_key_and_value(EMPTY_KEY_, nullptr);
-      value_ptr_map_[i].hash_map.set_threadnum(96);
+      value_ptr_map_[i].hash_map.set_counternum(16);
       value_ptr_map_[i].hash_map.set_deleted_key(DELETED_KEY_);
     }
   }
