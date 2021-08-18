@@ -90,12 +90,12 @@ class KvSparseApplyAdagradOp : public OpKernel {
         "global_step is not a scalar: ", global_step.shape().DebugString()));
 
     int64 inner_dim = 1;
-    TensorShape var_shape({var->Size(), var->ValueLen()});
-    for (int d = 1; d < var_shape.dims(); d++) {
-      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d),
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
                   errors::InvalidArgument(strings::StrCat(
-                      "var and grad must match in dimension ", d)));
-      inner_dim *= grad.dim_size(d);
+                      "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
     }
 
     const TKey N = indices.dim_size(0);
@@ -214,12 +214,12 @@ class KvSparseApplyFtrlOp : public OpKernel {
                                         "non-positive scalar: ",
                                         lr_power.shape().DebugString()));
     int64 inner_dim = 1;
-    TensorShape var_shape({var_->Size(), var_->ValueLen()});
-    for (int d = 1; d < var_shape.dims(); d++) {
-      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d),
+    TensorShape var_shape({var_->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
                   errors::InvalidArgument(strings::StrCat(
-                      "var and grad must match in dimension ", d)));
-      inner_dim *= grad.dim_size(d);
+                      "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
     }
     const int64 N = indices.dim_size(0);
     OP_REQUIRES(
@@ -752,12 +752,12 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
                 errors::InvalidArgument("indices must be one-dimensional"));
 
     int64 inner_dim = 1;
-    TensorShape var_shape({var->Size(), var->ValueLen()});
-    for (int d = 1; d < var_shape.dims(); d++) {
-      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d),
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
                   errors::InvalidArgument(strings::StrCat(
-                      "var and grad must match in dimension ", d)));
-      inner_dim *= grad.dim_size(d);
+                      "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
     }
     OP_REQUIRES(
       ctx, inner_dim > 0,
@@ -898,12 +898,12 @@ class KvSparseApplyAdamOp : public OpKernel {
         errors::InvalidArgument("indices must be one-dimensional"));
 
     int64 inner_dim = 1;
-    TensorShape var_shape({var->Size(), var->ValueLen()});
-    for (int d = 1; d < var_shape.dims(); d++) {
-      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d),
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
                   errors::InvalidArgument(strings::StrCat(
-                      "var and grad must match in dimension ", d)));
-      inner_dim *= grad.dim_size(d);
+                      "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
     }
     OP_REQUIRES(
         ctx, inner_dim > 0,
@@ -1452,13 +1452,13 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         errors::InvalidArgument("indices must be one-dimensional"));
 
     int64 inner_dim = 1;
-    TensorShape var_shape({var->Size(), var->ValueLen()});
-    for (int d = 1; d < var_shape.dims(); d++) {
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
       OP_REQUIRES(
-          ctx, var_shape.dim_size(d) == grad.dim_size(d),
+          ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
           errors::InvalidArgument(strings::StrCat(
-                "var and grad must match in dimension ", d)));
-      inner_dim *= grad.dim_size(d);
+                "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
     }
     OP_REQUIRES(
         ctx, inner_dim > 0,
@@ -1621,12 +1621,12 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
         "global_step is not a scalar: ", global_step.shape().DebugString()));
 
     int64 inner_dim = 1;
-    TensorShape var_shape({var->Size(), var->ValueLen()});
-    for (int d = 1; d < var_shape.dims(); d++) {
-      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d),
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
                   errors::InvalidArgument(strings::StrCat(
-                      "var and grad must match in dimension ", d)));
-      inner_dim *= grad.dim_size(d);
+                      "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
     }
     OP_REQUIRES(
       ctx, inner_dim > 0,
