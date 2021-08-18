@@ -117,6 +117,27 @@ class EVVersionDumpIterator: public  DumpIterator<K, T> {
   int64 keys_idx_;
 };
 
+template<class K, class T>
+class EVFreqDumpIterator: public  DumpIterator<K, T> {
+ public:
+  EVFreqDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<int64 >& freq_list):ev_(ev), freq_list_(freq_list) {
+    keys_idx_ = 0;
+  }
+
+  bool HasNext() const {
+    return keys_idx_ < freq_list_.size();
+  }
+
+  T Next() {
+    return freq_list_[keys_idx_++];
+  }
+
+ private:
+  EmbeddingVar<T, K>* ev_;
+  std::vector<int64>& freq_list_;
+  int64 keys_idx_;
+};
+
 template <class K, class V>
 Status GetInputEmbeddingVar(OpKernelContext* ctx, int input,
                             EmbeddingVar<K, V>** var) {
@@ -132,20 +153,24 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   std::vector<K> tot_key_list;
   std::vector<V* > tot_valueptr_list;
   std::vector<int64> tot_version_list;
-  int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list);
+  std::vector<int64> tot_freq_list;
+  int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list);
   VLOG(1) << "EV:" << tensor_key << ", save size:" << total_size;
   
   std::vector<std::vector<K> > key_list_parts;
   std::vector<std::vector<V* > > valueptr_list_parts;
   std::vector<std::vector<int64 > > version_list_parts;
+  std::vector<std::vector<int64 > > freq_list_parts;
 
   std::vector<K> partitioned_tot_key_list;
   std::vector<V* > partitioned_tot_valueptr_list;
   std::vector<int64> partitioned_tot_version_list;
+  std::vector<int64> partitioned_tot_freq_list;
 
   key_list_parts.resize(kSavedPartitionNum);
   valueptr_list_parts.resize(kSavedPartitionNum);
   version_list_parts.resize(kSavedPartitionNum);
+  freq_list_parts.resize(kSavedPartitionNum);
   //partitioned_tot_key_list.resize(tot_key_list.size());
   //partitioned_tot_valueptr_list.resize(tot_valueptr_list.size());
 
@@ -157,6 +182,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
         key_list_parts[partid].push_back(tot_key_list[i]);
         valueptr_list_parts[partid].push_back(tot_valueptr_list[i]);
         version_list_parts[partid].push_back(tot_version_list[i]);
+        freq_list_parts[partid].push_back(tot_freq_list[i]);
         break;
       }
     }
@@ -170,12 +196,14 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
     std::vector<K>& key_list = key_list_parts[partid];
     std::vector<V* >& valueptr_list = valueptr_list_parts[partid];
     std::vector<int64>& version_list = version_list_parts[partid];
+    std::vector<int64>& freq_list = freq_list_parts[partid];
 
     ptsize += key_list.size(); 
     for (int inpid = 0; inpid < key_list.size(); inpid++) {
       partitioned_tot_key_list.push_back(key_list[inpid]);
       partitioned_tot_valueptr_list.push_back(valueptr_list[inpid]);
       partitioned_tot_version_list.push_back(version_list[inpid]);
+      partitioned_tot_freq_list.push_back(freq_list[inpid]);
     } 
 
     part_offset_flat(partid + 1) = part_offset_flat(partid) + key_list.size();
@@ -210,6 +238,12 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
     return st;
   }
 
+  EVFreqDumpIterator<V, K> ev_freq_dump_iter(ev, partitioned_tot_freq_list);
+  st = SaveTensorWithFixedBuffer(tensor_key + "-freqs", writer, dump_buffer, bytes_limit, &ev_freq_dump_iter, TensorShape({partitioned_tot_key_list.size()}));
+  if (!st.ok()) {
+    free(dump_buffer);
+    return st;
+  }
     
     
   free(dump_buffer);
@@ -222,6 +256,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
        int64 partition_id = 0, int64 partition_num = 1) {
   string part_str = "part_";
   string curr_partid_str = std::to_string(partition_id);
+  bool filter_flag = true;
   for (int i = 0; i < orig_partnum; i++) {
     string part_id = std::to_string(i);
     string pre_subname = name_string.substr(0, name_string.find("part_"));
@@ -231,7 +266,8 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
     string tensor_key = tensor_name + "-keys";
     string tensor_value = tensor_name + "-values";
     string tensor_version = tensor_name + "-versions";
-    TensorShape key_shape, value_shape, version_shape;      
+    string tensor_freq = tensor_name + "-freqs";
+    TensorShape key_shape, value_shape, version_shape, freq_shape;      
     Status st = reader->LookupTensorShape(tensor_key, &key_shape);
     if (!st.ok()) {
       return st;
@@ -243,6 +279,15 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
     st = reader->LookupTensorShape(tensor_version, &version_shape);
     if (!st.ok()) {
       return st;
+    }
+
+    st = reader->LookupTensorShape(tensor_version, &freq_shape);
+    if (!st.ok()) {
+      if (st.code() == error::NOT_FOUND) {
+        freq_shape = version_shape;
+      }else {
+        return st;
+      }
     }
     reader->LookupHeader(tensor_key, sizeof(K) * key_shape.dim_size(0));
     if (!st.ok()) {
@@ -256,13 +301,23 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
     if (!st.ok()) {
       return st;
     }
+    st = reader->LookupHeader(tensor_freq, sizeof(int64) * freq_shape.dim_size(0));
+    if (!st.ok()) {
+      if (st.code() == error::NOT_FOUND) {
+        filter_flag = false;
+      }else {
+        return st;
+      }
+    }
+
     size_t buffer_size = 8 << 20;
     RestoreBuffer restore_buff;
     restore_buff.key_buffer = new char[buffer_size];
     restore_buff.value_buffer = new char[buffer_size];
     restore_buff.version_buffer = new char[buffer_size];
+    restore_buff.freq_buffer = new char[buffer_size];
  
-    size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0;
+    size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0, freq_bytes_read = 0;
     int64 tot_key_num = key_shape.dim_size(0);
     size_t value_unit_bytes = sizeof(V) *  value_shape.dim_size(1);
 
@@ -272,6 +327,17 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
       reader->LookupSegment(tensor_key, read_key_num * sizeof(K), restore_buff.key_buffer, key_bytes_read);
       reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
       reader->LookupSegment(tensor_version, read_key_num * sizeof(int64), restore_buff.version_buffer, version_bytes_read);
+      if (filter_flag) {
+        reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+      } else {
+        int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
+        int64 len = version_bytes_read / sizeof(int64);
+        for (int64 i = 0; i < len; i++) {
+          freq_tmp[i] = ev->MinFreq();
+        }
+        memcpy(restore_buff.freq_buffer, freq_tmp, version_bytes_read);
+        free(freq_tmp);
+      }
 
       if (key_bytes_read > 0) {
         read_key_num = key_bytes_read / sizeof(K);
@@ -289,12 +355,21 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
 
 
 template<typename K, typename V>
-Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string tensor_key, std::string tensor_value, std::string tensor_version) {
-  TensorShape key_shape, value_shape, version_shape;
+Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string tensor_key, std::string tensor_value, std::string tensor_version, std::string tensor_freq) {
+  TensorShape key_shape, value_shape, version_shape, freq_shape;
+  Status st;
   reader->LookupTensorShape(tensor_key, &key_shape);
   reader->LookupTensorShape(tensor_value, &value_shape);
   reader->LookupTensorShape(tensor_version, &version_shape);
-  Status st;
+  st = reader->LookupTensorShape(tensor_version, &freq_shape);
+  if (!st.ok()) {
+    if (st.code() == error::NOT_FOUND) {
+      freq_shape = version_shape;
+    }else {
+      return st;
+    }
+  }
+  bool filter_flag = true;
   st = reader->LookupHeader(tensor_key, sizeof(K) * key_shape.dim_size(0));
   if (!st.ok())
     return st;
@@ -304,22 +379,44 @@ Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string te
   st = reader->LookupHeader(tensor_version, sizeof(int64) * version_shape.dim_size(0));
   if (!st.ok())
     return st;
+  
+  st = reader->LookupHeader(tensor_freq, sizeof(int64) * freq_shape.dim_size(0));
+  if (!st.ok()) {
+    if (st.code() == error::NOT_FOUND) {
+      filter_flag = false;
+    }else {
+      return st;
+    }
+  }
+  
   size_t buffer_size = 8 << 20;
   RestoreBuffer restore_buff;
   restore_buff.key_buffer = new char[buffer_size];
   restore_buff.value_buffer = new char[buffer_size];
   restore_buff.version_buffer = new char[buffer_size];
-  size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0;
+  restore_buff.freq_buffer = new char[buffer_size];
+  size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0, freq_bytes_read = 0;
    
   int64 tot_key_num = key_shape.dim_size(0);
   size_t value_unit_bytes = sizeof(V) *  value_shape.dim_size(1);
   std::string key_str = "|";
-  while(tot_key_num > 0) {  
+  while(tot_key_num > 0) {
     size_t read_key_num = std::min(std::min(buffer_size / sizeof(K), buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
     read_key_num = std::min((int64)read_key_num, tot_key_num);
     reader->LookupSegment(tensor_key, read_key_num * sizeof(K), restore_buff.key_buffer, key_bytes_read);
     reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
     reader->LookupSegment(tensor_version, read_key_num * sizeof(int64), restore_buff.version_buffer, version_bytes_read);
+    if (filter_flag) {
+      reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+    } else {
+      int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
+      int64 len = version_bytes_read / sizeof(int64);
+      for (int64 i = 0; i < len; i++) {
+        freq_tmp[i] = ev->MinFreq();
+      }
+      memcpy(restore_buff.freq_buffer, freq_tmp, version_bytes_read);
+      free(freq_tmp);
+    }
     if (key_bytes_read > 0) {
       read_key_num = key_bytes_read / sizeof(K);
       VLOG(2) << "restore, read_key_num:" << read_key_num;
@@ -338,13 +435,13 @@ Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string te
 template<typename K, typename V>
 Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int partition_id, int partition_num, 
           OpKernelContext* context, BundleReader* reader, std::string part_offset_tensor_suffix,
-          std::string key_suffix, std::string value_suffix, std::string version_suffix) {
+          std::string key_suffix, std::string value_suffix, std::string version_suffix, std::string freq_suffix) {
 
     // first check whether there is partition
     string part_str = "part_";
     if (name_string.find(part_str) == std::string::npos) {
       // no partition    
-      Status s = RestoreValue(ev, reader, name_string + key_suffix, name_string + value_suffix, name_string + version_suffix);
+      Status s = RestoreValue(ev, reader, name_string + key_suffix, name_string + value_suffix, name_string + version_suffix, name_string + freq_suffix);
       if (!s.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << s.ToString();		    
       }
@@ -395,6 +492,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
     } else {
 
        // first find out which sub parts we should load
+      bool filter_flag = true;
       std::vector<int> loaded_parts;
       for (int i = 0; i < kSavedPartitionNum; i++) {
         if (i % partition_num == partition_id) {
@@ -412,6 +510,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
       restore_buff.key_buffer = new char[buffer_size];
       restore_buff.value_buffer = new char[buffer_size];
       restore_buff.version_buffer = new char[buffer_size];
+      restore_buff.freq_buffer = new char[buffer_size];
 
       for (;  ; orig_partnum++) {
         string part_id = std::to_string(orig_partnum);
@@ -423,7 +522,8 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
         string tensor_key = tensor_name + key_suffix;
         string tensor_value = tensor_name + value_suffix;
         string tensor_version = tensor_name + version_suffix;
-        TensorShape key_shape, value_shape, version_shape;      
+        string tensor_freq = tensor_name + freq_suffix;
+        TensorShape key_shape, value_shape, version_shape, freq_shape;      
         Status st = reader->LookupTensorShape(tensor_key, &key_shape);
         if (!st.ok()) {
           VLOG(1) << "ev part " << tensor_key << " not exist, reach the end of restoring";
@@ -437,6 +537,14 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
         if (!st.ok()) {
           break;
         }
+        st = reader->LookupTensorShape(tensor_version, &freq_shape);
+        if (!st.ok()) {
+          if (st.code() == error::NOT_FOUND) {
+            freq_shape = version_shape;
+          }else {
+            return st;
+          }
+        }
 
         reader->LookupHeader(tensor_key, sizeof(K) * key_shape.dim_size(0));
         if (!st.ok()) {
@@ -449,6 +557,14 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
         st = reader->LookupHeader(tensor_version, sizeof(int64) * version_shape.dim_size(0));
         if (!st.ok()) {
           break;
+        }
+        st = reader->LookupHeader(tensor_freq, sizeof(int64) * freq_shape.dim_size(0));
+        if (!st.ok()) {
+          if (st.code() == error::NOT_FOUND) {
+            filter_flag = false;
+          }else {
+            return st;
+          }
         }
         TensorShape part_offset_shape;
         DataType part_offset_type; 
@@ -480,11 +596,12 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
           int64 key_part_offset = subpart_offset * sizeof(K); 
           int64 value_part_offset = subpart_offset *  value_unit_bytes;
           int64 version_part_offset = subpart_offset * sizeof(int64);
+          int64 freq_part_offset = subpart_offset * sizeof(int64);
 
           VLOG(1) <<  "dynamically load ev : " << name_string <<  ", subpartid:" << loaded_parts[i] << ", subpart_offset:" << subpart_offset <<  ", partition_id:" << partition_id << ", partition_num:" << partition_num << ", keynum:" << tot_key_num;
 
-          int64 tot_key_bytes_read(0), tot_value_bytes_read(0), tot_version_bytes_read(0);
-          size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0;
+          int64 tot_key_bytes_read(0), tot_value_bytes_read(0), tot_version_bytes_read(0), tot_freq_bytes_read(0);
+          size_t key_bytes_read = 0, value_bytes_read = 0, version_bytes_read = 0, freq_bytes_read = 0;
           while(tot_key_num > 0) {  
             size_t read_key_num = std::min(std::min(buffer_size / sizeof(K), buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
             read_key_num = std::min((int64)read_key_num, tot_key_num);
@@ -493,6 +610,18 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
             reader->LookupSegmentOffset(tensor_value, value_part_offset + tot_value_bytes_read, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
 
             reader->LookupSegmentOffset(tensor_version, version_part_offset + tot_version_bytes_read, read_key_num * sizeof(int64) , restore_buff.version_buffer, version_bytes_read);
+            if (filter_flag) {
+              reader->LookupSegmentOffset(tensor_freq, freq_part_offset + tot_freq_bytes_read,read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+            }else {
+              int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
+              int64 len = version_bytes_read / sizeof(int64);
+              for (int64 i = 0; i < len; i++) {
+                freq_tmp[i] = ev->MinFreq();
+              }
+              memcpy(restore_buff.freq_buffer, freq_tmp, version_bytes_read);
+              freq_bytes_read = version_bytes_read;
+              free(freq_tmp);
+            }
             if (key_bytes_read > 0) {
               read_key_num = key_bytes_read / sizeof(K);
               VLOG(2) << "restore, read_key_num:" << read_key_num;
@@ -505,6 +634,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
             tot_key_bytes_read += key_bytes_read;
             tot_value_bytes_read += value_bytes_read;
             tot_version_bytes_read += version_bytes_read;
+            tot_freq_bytes_read += freq_bytes_read;
           }
         }
       }

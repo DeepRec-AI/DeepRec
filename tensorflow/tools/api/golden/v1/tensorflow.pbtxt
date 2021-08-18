@@ -1418,10 +1418,14 @@ tf_module {
   }
   member_method {
     name: "get_embedding_variable"
+    argspec: "args=[\'name\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'ev\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'<tensorflow.python.ops.variables.EVConfig object instance>'], "
+  }
+  member_method {
+    name: "get_embedding_variable_internal"
     argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ht_partition_num\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'1000\'], "
   }
   member_method {
-    name: "get_embedding_variable_v2"
+    name: "get_embedding_variable_v2_internal"
     argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'evconfig\', \'ht_partition_num\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableConfig object instance>\', \'1000\'], "
   }
   member_method {

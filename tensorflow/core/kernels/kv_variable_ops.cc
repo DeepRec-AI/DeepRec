@@ -126,7 +126,15 @@ class InitializeKvVariableOp : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
 
-    OP_REQUIRES_OK(c, c->GetAttr("min_freq", &min_freq_));
+    OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
+
+    if (filter_freq_ < 0) {
+      LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
+      filter_freq_ = 0;
+    }
+
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {
       LOG(INFO) << "hashmap use db";
@@ -171,7 +179,7 @@ class InitializeKvVariableOp : public OpKernel {
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary", 
-                                         steps_to_live_, min_freq_));
+                                         steps_to_live_, filter_freq_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -191,7 +199,7 @@ class InitializeKvVariableOp : public OpKernel {
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary", 
-                                        steps_to_live_, min_freq_));
+                                        steps_to_live_, filter_freq_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -206,7 +214,8 @@ class InitializeKvVariableOp : public OpKernel {
                          primary_variable->kv(), cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
-                                         steps_to_live_, min_freq_));
+                                         steps_to_live_, filter_freq_));
+             (*ptr)->SetMinFreq(primary_variable->MinFreq());
              return (*ptr)->Init(default_values);
             }));
 
@@ -227,7 +236,8 @@ class InitializeKvVariableOp : public OpKernel {
   int64 slot_index_;
   std::string ht_type_;
   int64 ht_partition_num_;
-  int64 min_freq_;
+  int64 filter_freq_;
+  int64 max_freq_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -449,6 +459,7 @@ class KvResourceImportV2Op: public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
       // get ev slot_index
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
+    OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
   }
 
@@ -486,7 +497,7 @@ class KvResourceImportV2Op: public OpKernel {
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary",
-                                         steps_to_live_));
+                                         steps_to_live_, filter_freq_));
              return (*ptr)->Init(default_values);
             }));
     } else {
@@ -505,7 +516,7 @@ class KvResourceImportV2Op: public OpKernel {
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary",
-                                        steps_to_live_));
+                                        steps_to_live_, filter_freq_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -519,7 +530,7 @@ class KvResourceImportV2Op: public OpKernel {
                          primary_variable->kv(), cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
-                                         steps_to_live_));
+                                         steps_to_live_, filter_freq_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -530,7 +541,8 @@ class KvResourceImportV2Op: public OpKernel {
     BundleReader reader(Env::Default(), file_name_string);
     OP_REQUIRES_OK(context, reader.status());
 
-    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader, "-partition_offset", "-keys", "-values", "-versions");
+    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader,
+                         "-partition_offset", "-keys", "-values", "-versions", "-freqs");
     ev->SetInitialized();
   }
 
@@ -547,6 +559,7 @@ class KvResourceImportV2Op: public OpKernel {
   int64 emb_index_;
   int64 slot_index_;
   int64 block_num_;
+  int64 filter_freq_;
 };
 
 
@@ -597,7 +610,9 @@ class KvResourceIncrImportOp: public OpKernel {
     OP_REQUIRES_OK(context, reader.status());
 
     LOG(INFO) << "incr import, evname:" << name_string << "partition_num:" <<partition_num_;
-    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader, "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values", "-sparse_incr_versions");
+    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader,
+                         "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values",
+                         "-sparse_incr_versions", "-sparse_incr_freqs");
     ev->SetInitialized();
   }
 

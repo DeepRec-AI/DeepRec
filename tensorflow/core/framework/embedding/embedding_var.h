@@ -36,11 +36,13 @@ struct RestoreBuffer {
   char* key_buffer;
   char* value_buffer;
   char* version_buffer;
+  char* freq_buffer;
 
   ~RestoreBuffer() {
     delete key_buffer;
     delete value_buffer;
     delete version_buffer;
+    delete freq_buffer;
   }
 };
 
@@ -51,16 +53,18 @@ struct EmbeddingConfig {
   int64 slot_num;
   std::string name;
   int64 steps_to_live;
-  int64 min_freq;
+  int64 max_freq;
+  int64 filter_freq;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                   int64 block_num = 1, int slot_num = 1,
                   const std::string& name = "", int64 steps_to_live = 0,
-                  int64 min_freq = 0):
+                  int64 filter_freq = 0, int64 max_freq = 999999):
       emb_index(emb_index), primary_emb_index(primary_emb_index),
       block_num(block_num), slot_num(slot_num),
       name(name), steps_to_live(steps_to_live),
-      min_freq(min_freq) {}
+      filter_freq(filter_freq),
+      max_freq(max_freq) {}
 
   bool is_primary() const {
     return emb_index == primary_emb_index;
@@ -70,8 +74,8 @@ struct EmbeddingConfig {
     return block_num * (slot_num + 1);
   }
 
-  int64 get_min_freq() {
-    return min_freq;
+  int64 get_filter_freq() {
+    return filter_freq;
   }
 
   std::string DebugString() const {
@@ -156,15 +160,21 @@ class EmbeddingVar : public ResourceBase {
     return value_ptr->GetStep();
   }
 
+  int64 GetFreq(K key) {
+    ValuePtr<V>* value_ptr = nullptr;
+    TF_CHECK_OK(LookupOrCreateKey(key, &value_ptr));
+    return value_ptr->GetFreq();
+  }
+
   void LookupOrCreate(K key, V* val, V* default_v)  {
     const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
     ValuePtr<V>* value_ptr = nullptr;
     TF_CHECK_OK(LookupOrCreateKey(key, &value_ptr));
-    value_ptr->AddFreq();
-    if (value_ptr->GetFreq() >= emb_config_.min_freq) {
+    if (emb_config_.filter_freq == 0 || value_ptr->GetFreq() >= emb_config_.filter_freq) {
       V* mem_val = LookupOrCreateEmb(value_ptr, emb_config_, default_value_ptr);
       memcpy(val, mem_val, sizeof(V) * value_len_);
     } else {
+      value_ptr->AddFreq();
       memcpy(val, default_value_ptr, sizeof(V) * value_len_);
     }
   }
@@ -188,7 +198,11 @@ class EmbeddingVar : public ResourceBase {
   }
 
   int64 MinFreq() {
-    return emb_config_.min_freq;
+    return emb_config_.filter_freq;
+  }
+
+  void SetMinFreq(int64 min_freq) {
+    emb_config_.filter_freq = min_freq;
   }
 
   std::string DebugString() const {
@@ -203,6 +217,7 @@ class EmbeddingVar : public ResourceBase {
     K* key_buff = (K*)restore_buff.key_buffer;
     V* value_buff = (V*)restore_buff.value_buffer;
     int64* version_buff = (int64*)restore_buff.version_buffer;
+    int64* freq_buff = (int64*)restore_buff.freq_buffer;
     for (auto i = 0; i < key_num; ++i) {
       // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
       if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
@@ -211,14 +226,20 @@ class EmbeddingVar : public ResourceBase {
       }
       ValuePtr<V>* value_ptr = nullptr;
       TF_CHECK_OK(LookupOrCreateKey(key_buff[i], &value_ptr, version_buff[i]));
-      if (value_ptr->GetFreq() >= emb_config_.min_freq) {
-        LookupOrCreateEmb(value_ptr, emb_config_, value_buff + i * value_len_);
+      if (emb_config_.is_primary()){
+       if (freq_buff[i] <= emb_config_.filter_freq) {
+          value_ptr->SetFreq(emb_config_.filter_freq);
+        }else {
+          value_ptr->SetFreq(freq_buff[i]);
+        }
       }
+      LookupOrCreateEmb(value_ptr, emb_config_, value_buff + i * value_len_);
     }
     return Status::OK();
   }
 
-  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list, std::vector<int64>* version_list) {
+  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list,
+                    std::vector<int64>* version_list, std::vector<int64>* freq_list) {
     std::vector<ValuePtr<V>* > value_ptr_list;
     std::vector<K> key_list_tmp;
     kv_->GetSnapshot(&key_list_tmp, &value_ptr_list);
@@ -228,6 +249,12 @@ class EmbeddingVar : public ResourceBase {
       if (val != nullptr && primary_val != nullptr) {
         value_list->push_back(val);
         key_list->push_back(key_list_tmp[i]);
+        if (emb_config_.filter_freq != 0) {
+          int64 dump_freq = value_ptr_list[i]->GetFreq();
+          freq_list->push_back(dump_freq); 
+        } else {
+          freq_list->push_back(0);
+        }
         if (emb_config_.steps_to_live != 0) {
           int64 dump_version = value_ptr_list[i]->GetStep();
           version_list->push_back(dump_version);

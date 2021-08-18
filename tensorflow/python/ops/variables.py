@@ -172,7 +172,59 @@ def validate_synchronization_aggregation_trainable(synchronization, aggregation,
   if trainable is None:
     trainable = synchronization != VariableSynchronization.ON_READ
   return synchronization, aggregation, trainable
+  
+class FreqStrategyConfig(object):
+  def __init__(self,
+               filter_freq = 0,
+               max_freq = 999999):
+    self.filter_freq = filter_freq
+    self.max_freq = max_freq
+  def __enter__(self):
+    return self
+  def __exit__(self, exc_type, exc_val, exc_tb):
+    return True
 
+class EvictConfig(object):
+  def __init__(self,
+               steps_to_live = None,
+               l2_weight = None,
+               steps_to_live_l2reg=None,
+               l2reg_theta=None,
+               l2reg_lambda=None):
+    self.steps_to_live = steps_to_live
+    self.l2_weight = l2_weight
+    self.steps_to_live_l2reg = steps_to_live_l2reg
+    self.l2reg_theta = l2reg_theta
+    self.l2reg_lambda = l2reg_lambda
+    if steps_to_live != None and l2_weight != None:
+      raise ValueError("step_to_live and l2_weight can't be enabled at same time.")
+
+class CkptConfig(object):
+  def __init__(self,
+               ckpt_to_load_from=None,
+               tensor_name_in_ckpt=None,
+               always_load_from_specific_ckpt=False,
+               init_data_source=None):
+    self.ckpt_to_load_from = ckpt_to_load_from
+    self.tensor_name_in_ckpt = tensor_name_in_ckpt
+    self.always_load_from_specific_ckpt = always_load_from_specific_ckpt
+    self.init_data_source = init_data_source
+
+class EVConfig(object):
+  def __init__(self,
+               embedding_dim,
+               ht_type="",
+               ht_partition_num = 1000,
+               filter_freq = 0,
+               evict = EvictConfig(),
+               ckpt = CkptConfig()):
+    self.embedding_dim = embedding_dim
+    self.ht_type = ht_type
+    self.ht_partition_num = ht_partition_num
+    self.filter_freq = filter_freq
+    self.evict = evict
+    self.ckpt = ckpt
+    
 class EmbeddingVariableConfig(object):
   def __init__(self,
                steps_to_live=None, steps_to_live_l2reg=None, 
@@ -187,8 +239,7 @@ class EmbeddingVariableConfig(object):
                slot_index=None,
                block_num=None,
                primary=None,
-               primary_slotnum_op=None,
-               min_freq = 0):
+               primary_slotnum_op=None):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
@@ -204,7 +255,6 @@ class EmbeddingVariableConfig(object):
     self.primary = primary
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
-    self.min_freq = min_freq
 
 
   def reveal(self):
@@ -245,6 +295,7 @@ class VariableMetaclass(type):
                         shape=None,
                         invalid_key=None,
                         evconfig=EmbeddingVariableConfig(),
+                        freqconfig=FreqStrategyConfig(),
                         embedding_initializer=None,
                         ht_partition_num=1000):
     """Call on Variable class. Useful to force the signature."""
@@ -274,6 +325,7 @@ class VariableMetaclass(type):
         shape=shape,
         invalid_key=invalid_key,
         evconfig=evconfig,
+        freqconfig=freqconfig,
         embedding_initializer=embedding_initializer,
         ht_partition_num=ht_partition_num)
 

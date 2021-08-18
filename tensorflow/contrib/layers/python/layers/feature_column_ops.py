@@ -308,7 +308,7 @@ def _create_embedding_lookup(column,
       None, default_name=column.name, values=columns_to_tensors.values()):
     if embedding_lookup_arguments.use_embedding_var:
       graph = ops.get_default_graph()
-      variable = variable_scope.get_embedding_variable(
+      variable = variable_scope.get_embedding_variable_internal(
           name="weights",
           embedding_dim=num_outputs,
           key_dtype=dtypes.int64,

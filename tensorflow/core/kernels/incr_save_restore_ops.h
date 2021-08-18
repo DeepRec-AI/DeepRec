@@ -256,6 +256,30 @@ class IncrEVVersionDumpIterator : public  DumpIterator<K, T> {
 };
 
 template<class K, class T>
+class IncrEVFreqDumpIterator : public  DumpIterator<K, T> {
+ public:
+  IncrEVFreqDumpIterator(std::vector<K>& incr_keys, EmbeddingVar<int64, float>*& emb_var):incr_keys_(incr_keys), emb_var_(emb_var){
+    keys_iter_ = incr_keys_.begin();
+  }
+
+  bool HasNext () const {
+    return keys_iter_ != incr_keys_.end();
+  }
+
+  T Next() {
+    K key = *keys_iter_;
+    int64 dump_version = emb_var_->GetFreq(key);
+    keys_iter_++;
+    return dump_version;
+  }
+
+ private:
+  std::vector<K>& incr_keys_;
+  typename std::vector<K>::iterator keys_iter_;
+  EmbeddingVar<int64, float>* emb_var_;
+};
+
+template<class K, class T>
 class IncrNormalValueDumpIterator : public  DumpIterator<K, T> {
  public:
   IncrNormalValueDumpIterator(std::vector<K>& incr_keys, const Tensor& variable):incr_keys_(incr_keys), variable_(variable){
@@ -375,7 +399,7 @@ class IndicesIncrRecorder: public ResourceBase {
  
     for (auto& ik: incr_keys) {
       for (int partid = 0; partid < kSavedPartitionNum; partid++) {
-        if (ik % kSavedPartitionNum == partid) {
+        if (ik % kSavedPartitionNum == partid && emb_var->GetFreq(ik) >= emb_var->MinFreq()) {
           incr_keys_parts[partid].push_back(ik);
           break;
         }
@@ -426,6 +450,15 @@ class IndicesIncrRecorder: public ResourceBase {
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_versions",
                                    writer, dump_buffer, bytes_limit,
                                    &ev_version_dump_iter,
+                                   TensorShape({(uint64)partitioned_incr_keys.size()}));
+    if (!st.ok()) {
+      free(dump_buffer);
+      return st;
+    }
+    IncrEVFreqDumpIterator<T, int64> ev_freq_dump_iter(partitioned_incr_keys, emb_var);
+    st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_freqs",
+                                   writer, dump_buffer, bytes_limit,
+                                   &ev_freq_dump_iter,
                                    TensorShape({(uint64)partitioned_incr_keys.size()}));
     if (!st.ok()) {
       free(dump_buffer);

@@ -151,6 +151,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
     specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-keys", dtype=self.key_type, device=var.device))
     specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-values", dtype=dtypes.float32, device=var.device))
     specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-versions", dtype=dtypes.int64, device=var.device))
+    specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-freqs", dtype=dtypes.int64, device=var.device))
     # pylint: disable=protected-access
     super(EmbeddingVariableSaveable, self).__init__(var, specs, name)
 
@@ -175,6 +176,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               block_num=self.var.block_num,
               ht_type=self.ht_type,
               ht_partition_num=self.ht_partition_num,
+              filter_freq = self.var._filter_freq,
               partition_id=self.partition_id, partition_num=self.partition_num)
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):

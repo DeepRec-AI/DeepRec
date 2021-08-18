@@ -1378,7 +1378,7 @@ def _embeddings_from_arguments(column,
                                args.shared_embedding_name))
     else:
       if args.use_embedding_var:
-        embeddings = variable_scope.get_embedding_variable(
+        embeddings = variable_scope.get_embedding_variable_internal(
             name=args.shared_embedding_name,
             embedding_dim=args.dimension,
             key_dtype=dtypes.int64,
@@ -1401,7 +1401,7 @@ def _embeddings_from_arguments(column,
       graph.add_to_collection(shared_embedding_collection_name, embeddings)
   else:
     if args.use_embedding_var:
-      embeddings = variable_scope.get_embedding_variable(
+      embeddings = variable_scope.get_embedding_variable_internal(
           name="weights",
           embedding_dim=args.dimension,
           key_dtype=dtypes.int64,

@@ -121,7 +121,7 @@ class KvSparseApplyAdagradOp : public OpKernel {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (value_ptr->GetFreq() >= var->MinFreq()) {
+            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
               auto a = accum->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);
@@ -265,7 +265,7 @@ class KvSparseApplyFtrlOp : public OpKernel {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             OP_REQUIRES_OK(ctx, var_->LookupOrCreateKey(index, &value_ptr));
-            if (value_ptr->GetFreq() >= var_->MinFreq()){
+            if (var_->MinFreq() == 0 || value_ptr->GetFreq() >= var_->MinFreq()){
               auto var = var_->flat(value_ptr);
               auto accum = accum_->flat(value_ptr);
               auto linear = linear_->flat(value_ptr);
@@ -787,7 +787,7 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (value_ptr->GetFreq() >= var->MinFreq()) {
+            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
               auto a = accum->flat(value_ptr);
 
               auto g = grad_flat.template chip<0>(i);
@@ -945,7 +945,7 @@ class KvSparseApplyAdamOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (value_ptr->GetFreq() >= var->MinFreq()) {
+            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
 
               auto var_i = var->flat(value_ptr);
               auto m_a = m->flat(value_ptr);
@@ -1494,7 +1494,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (value_ptr->GetFreq() >= var->MinFreq()) {
+            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
               auto v_ = v->flat(value_ptr);
               auto m_ = m->flat(value_ptr);
               auto grad_ = grad_flat.template chip<0>(i);
@@ -1538,7 +1538,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
               const Tindex index = indices_vec(i);
               ValuePtr<T>* value_ptr = nullptr;
               OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-              if (value_ptr->GetFreq() >= var->MinFreq()) {
+              if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
                 auto m_a = m->flat(value_ptr);
                 auto v_a = v->flat(value_ptr);
                 auto g = grad_flat.template chip<0>(i);
@@ -1651,7 +1651,7 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (value_ptr->GetFreq() >= var->MinFreq()) {
+            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);
               v -= g.constant(lr_scalar) * g;

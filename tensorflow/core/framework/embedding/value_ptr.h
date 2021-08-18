@@ -92,14 +92,16 @@ class ValuePtr {
     *((int64*)ptr_ + 1) = gs;
   }
 
+  void SetFreq(int64 freq) {
+    *((int64*)ptr_ + 2) = freq;
+  }
+
   int64 GetFreq() {
     return *((int64*)ptr_ + 2);
   }
 
   void AddFreq() {
-    while(flag_.test_and_set(std::memory_order_acquire)); 
-    *((int64*)ptr_ + 2) = std::min(max_freq_, *((int64*)ptr_ + 2) + 1);
-    flag_.clear(std::memory_order_release);
+    __sync_bool_compare_and_swap((int64*)ptr_ + 2, *((int64*)ptr_ + 2), *((int64*)ptr_ + 2) + 1); 
   }
   	
   void Destroy(int64 value_len) {
@@ -119,7 +121,6 @@ class ValuePtr {
 
  private:
   void* ptr_;
-  static const int64 max_freq_ = 100000;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 };
 
