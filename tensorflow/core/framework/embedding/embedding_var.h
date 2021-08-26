@@ -55,16 +55,18 @@ struct EmbeddingConfig {
   int64 steps_to_live;
   int64 max_freq;
   int64 filter_freq;
+  float l2_weight_threshold;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                   int64 block_num = 1, int slot_num = 1,
                   const std::string& name = "", int64 steps_to_live = 0,
-                  int64 filter_freq = 0, int64 max_freq = 999999):
+                  int64 filter_freq = 0, int64 max_freq = 999999, float l2_weight_threshold = -1.0):
       emb_index(emb_index), primary_emb_index(primary_emb_index),
       block_num(block_num), slot_num(slot_num),
       name(name), steps_to_live(steps_to_live),
       filter_freq(filter_freq),
-      max_freq(max_freq) {}
+      max_freq(max_freq),
+      l2_weight_threshold(l2_weight_threshold) {}
 
   bool is_primary() const {
     return emb_index == primary_emb_index;
@@ -183,6 +185,10 @@ class EmbeddingVar : public ResourceBase {
     return value_ptr->GetOrAllocate(alloc_, value_len_, default_v, embcfg.emb_index);
   }
 
+  V* LookupPrimaryEmb(ValuePtr<V>* value_ptr, const EmbeddingConfig& embcfg, const V* default_v) {
+    return value_ptr->GetOrAllocate(alloc_, value_len_, default_v, 0);
+  }
+
   typename TTypes<V>::Flat flat(ValuePtr<V>* value_ptr) {
     V* val = LookupOrCreateEmb(value_ptr, emb_config_, default_value_);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
@@ -203,6 +209,14 @@ class EmbeddingVar : public ResourceBase {
 
   void SetMinFreq(int64 min_freq) {
     emb_config_.filter_freq = min_freq;
+  }
+
+  void SetL2WeightThreshold(float l2_weight_threshold) {
+    emb_config_.l2_weight_threshold = l2_weight_threshold;
+  }
+
+  float GetL2WeightThreshold() {
+    return emb_config_.l2_weight_threshold;
   }
 
   std::string DebugString() const {
@@ -285,6 +299,31 @@ class EmbeddingVar : public ResourceBase {
         kv_->Remove(it.first);
       }
     }
+    return Status::OK();
+  }
+
+  Status Shrink() {
+      std::vector<K> key_list;
+      std::vector<ValuePtr<V>* > value_ptr_list;
+      kv_->GetSnapshot(&key_list, &value_ptr_list);
+      std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
+      for (int64 i = 0; i < key_list.size(); ++i) {
+        V* val = LookupPrimaryEmb(value_ptr_list[i], emb_config_, default_value_);
+        V l2_weight = 0.0;
+        for (int64 j = 0; j < value_len_; j++) {
+            l2_weight += val[j] * val[j];
+        }
+        l2_weight *= 0.5;
+        if (l2_weight < emb_config_.l2_weight_threshold) {
+          to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+        }
+      }
+      for (const auto it : to_deleted) {
+        // TODO memory recycle
+        //(it.second)->Destroy(value_len_);
+        //delete it.second;
+        kv_->Remove(it.first);
+      }
     return Status::OK();
   }
 

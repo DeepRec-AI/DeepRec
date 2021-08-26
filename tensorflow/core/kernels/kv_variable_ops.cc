@@ -130,6 +130,8 @@ class InitializeKvVariableOp : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
 
+    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
@@ -179,8 +181,8 @@ class InitializeKvVariableOp : public OpKernel {
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary", 
-                                         steps_to_live_, filter_freq_));
-             return (*ptr)->Init(default_values);
+                                         steps_to_live_, filter_freq_, max_freq_,l2_weight_threshold_ ));
+            return (*ptr)->Init(default_values);
             }));
 
     } else {
@@ -199,7 +201,7 @@ class InitializeKvVariableOp : public OpKernel {
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary", 
-                                        steps_to_live_, filter_freq_));
+                                        steps_to_live_, filter_freq_, max_freq_,l2_weight_threshold_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -215,6 +217,7 @@ class InitializeKvVariableOp : public OpKernel {
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
                                          steps_to_live_, filter_freq_));
+             (*ptr)->SetL2WeightThreshold(primary_variable->GetL2WeightThreshold());                            
              (*ptr)->SetMinFreq(primary_variable->MinFreq());
              return (*ptr)->Init(default_values);
             }));
@@ -238,6 +241,7 @@ class InitializeKvVariableOp : public OpKernel {
   int64 ht_partition_num_;
   int64 filter_freq_;
   int64 max_freq_;
+  float l2_weight_threshold_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -246,12 +250,14 @@ class InitializeKvVariableOp : public OpKernel {
                               .TypeConstraint<ktype>("Tkeys")        \
                               .TypeConstraint<vtype>("dtype"),       \
                           InitializeKvVariableOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                             \
-  REGISTER_KERNELS(int32, type)                                      \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
+
+#define REGISTER_CPU_KERNELS(T)        \
+  REGISTER_KERNELS(int32, T);     \
+  REGISTER_KERNELS(int64, T);
+
+TF_CALL_float(REGISTER_CPU_KERNELS);
+TF_CALL_double(REGISTER_CPU_KERNELS);
+#undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
@@ -354,8 +360,9 @@ class KvResourceGatherOp : public OpKernel {
 #define REGISTER_GATHER_CPU(type) REGISTER_GATHER_ALL_INDICES(CPU, type)
 
 // Registration of the CPU implementations.
-TF_CALL_ALL_TYPES(REGISTER_GATHER_CPU);
-TF_CALL_QUANTIZED_TYPES(REGISTER_GATHER_CPU);
+TF_CALL_float(REGISTER_GATHER_CPU);
+TF_CALL_double(REGISTER_GATHER_CPU);
+//TF_CALL_QUANTIZED_TYPES(REGISTER_GATHER_CPU);
 
 #undef REGISTER_GATHER_CPU
 #undef REGISTER_GATHER_ALL_INDICES
@@ -572,8 +579,9 @@ class KvResourceImportV2Op: public OpKernel {
 #define REGISTER_KERNELS_ALL_INDEX(type)                       \
   REGISTER_KERNELS(int32, type)                                \
   REGISTER_KERNELS(int64, type)
-TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
+//TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
@@ -637,8 +645,9 @@ class KvResourceIncrImportOp: public OpKernel {
 #define REGISTER_KERNELS_ALL_INDEX(type)                       \
   REGISTER_KERNELS(int32, type)                                \
   REGISTER_KERNELS(int64, type)
-TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
+//TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 /*

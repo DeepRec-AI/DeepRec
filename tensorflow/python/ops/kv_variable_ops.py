@@ -262,6 +262,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
     self._filter_freq = freqconfig.filter_freq
+    self._l2_weight_threshold = evconfig.l2_weight_threshold
     self._max_freq = freqconfig.max_freq
     if self._primary is None:
       self._is_primary = True
@@ -357,6 +358,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     ht_type=self._ht_type,
                     ht_partition_num=self._ht_partition_num,
                     filter_freq = self._filter_freq,
+                    l2_weight_threshold = self._l2_weight_threshold,
                     max_freq = self._max_freq,
                     name=n))
         self._graph_element = self._handle

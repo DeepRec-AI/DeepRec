@@ -140,6 +140,7 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("ht_partition_num: int = 1000")
     .Attr("filter_freq: int = 0")
     .Attr("max_freq: int = 999999")
+    .Attr("l2_weight_threshold: float =-1.0")
     // .SetShapeFn(CreateAssignShapeFn)
     .SetShapeFn([](InferenceContext* c) { 
 

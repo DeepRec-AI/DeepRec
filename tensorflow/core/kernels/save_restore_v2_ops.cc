@@ -133,12 +133,18 @@ class SaveV2 : public OpKernel {
         if (tensor_types_[0] == DT_INT32) {
           int32 global_step_scalar = global_step.scalar<int32>()();
           core::ScopedUnref s(variable);
-          OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+          if(variable->GetL2WeightThreshold() != -1.0)
+            OP_REQUIRES_OK(context, variable->Shrink());
+          else
+            OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
           OP_REQUIRES_OK(context, DumpEmbeddingValues(variable,tensor_name, &writer, &part_offset_tensor));
         } else {
           int64 global_step_scalar = global_step.scalar<int64>()();
           core::ScopedUnref s(variable);
-          OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+          if(variable->GetL2WeightThreshold() != -1.0)
+            OP_REQUIRES_OK(context, variable->Shrink());
+          else
+            OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
           OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name, &writer, &part_offset_tensor));
         }
       } else {

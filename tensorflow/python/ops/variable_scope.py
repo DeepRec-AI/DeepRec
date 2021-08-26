@@ -1880,7 +1880,8 @@ def get_embedding_variable(name,
                            init_data_source=None,
                            filter_freq = 0,
                            ht_partition_num=1000,
-                           ht_type = ""):
+                           ht_type = "",
+                           ev = variables.EVConfig()):
   if key_dtype == dtypes.int64:
     invalid_key = -1
   elif key_dtype == dtypes.string:
@@ -1889,6 +1890,14 @@ def get_embedding_variable(name,
     raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
+  if steps_to_live != None:
+    print("Warning: We suggest that steps_to_live should be set in EvictConfig")
+  if ev.evict.steps_to_live != None:
+    if steps_to_live != None:
+      print("Warning: steps_to_live is double set, the steps_to_live in EvcitConfig is valid")
+    steps_to_live = ev.evict.steps_to_live
+  if steps_to_live != None and ev.evict.l2_weight_threshold > 0:
+      raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
   return get_variable_scope().get_embedding_variable(
       _get_default_variable_store(), name, shape=embedding_dim, dtype=value_dtype,
       initializer=initializer, regularizer=regularizer, trainable=trainable,
@@ -1897,7 +1906,8 @@ def get_embedding_variable(name,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
-        steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ht_type),
+        steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ht_type,
+        l2_weight_threshold=ev.evict.l2_weight_threshold),
       freqconfig = variables.FreqStrategyConfig(filter_freq=filter_freq),
       ht_partition_num=ht_partition_num)
 

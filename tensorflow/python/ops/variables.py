@@ -187,17 +187,20 @@ class FreqStrategyConfig(object):
 class EvictConfig(object):
   def __init__(self,
                steps_to_live = None,
-               l2_weight = None,
+               l2_weight_threshold = -1.0,
                steps_to_live_l2reg=None,
                l2reg_theta=None,
                l2reg_lambda=None):
     self.steps_to_live = steps_to_live
-    self.l2_weight = l2_weight
+    self.l2_weight_threshold = l2_weight_threshold
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
-    self.l2reg_lambda = l2reg_lambda
-    if steps_to_live != None and l2_weight != None:
-      raise ValueError("step_to_live and l2_weight can't be enabled at same time.")
+    self.l2reg_lambda = l2reg_lambda     
+    if l2_weight_threshold <= 0 and l2_weight_threshold != -1.0:
+      print("l2_weight_threshold is invalid, l2_weight-based eviction is disabled")
+      self.l2_weight_threshold = -1.0 
+    if self.steps_to_live != None and self.l2_weight_threshold != -1.0:
+      raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
 
 class CkptConfig(object):
   def __init__(self,
@@ -212,13 +215,11 @@ class CkptConfig(object):
 
 class EVConfig(object):
   def __init__(self,
-               embedding_dim,
                ht_type="",
                ht_partition_num = 1000,
                filter_freq = 0,
                evict = EvictConfig(),
                ckpt = CkptConfig()):
-    self.embedding_dim = embedding_dim
     self.ht_type = ht_type
     self.ht_partition_num = ht_partition_num
     self.filter_freq = filter_freq
@@ -229,6 +230,7 @@ class EmbeddingVariableConfig(object):
   def __init__(self,
                steps_to_live=None, steps_to_live_l2reg=None, 
                l2reg_theta=None, l2reg_lambda=None,
+               l2_weight_threshold = -1.0,
                ht_type=None,
                ckpt_to_load_from=None,
                tensor_name_in_ckpt=None,
@@ -255,6 +257,7 @@ class EmbeddingVariableConfig(object):
     self.primary = primary
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
+    self.l2_weight_threshold = l2_weight_threshold
 
 
   def reveal(self):

@@ -125,6 +125,45 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     with self.test_session() as sess:
       saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
       self.assertAllEqual(emb_ori, sess.run(emb))
+  
+  def testEmbeddingVariableForL2FeatureEviction(self):
+    print("testEmbeddingVariableForL2FeatureEviction")
+    checkpoint_directory = self.get_temp_dir()
+    evict = variables.EvictConfig(l2_weight_threshold=0.9)
+    var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev = variables.EVConfig(evict=evict))
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,0,0,1,1,2], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb_ori = sess.run([emb, train_op])
+      print(emb_ori)
+      save_path = saver.save(sess, os.path.join(checkpoint_directory, "model1.ckpt"), global_step=12345)
+      print(save_path)
+      #for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
+      #  print('loading... ', name, shape)
+    with self.test_session() as sess:
+      saver.restore(sess, os.path.join(checkpoint_directory, "model1.ckpt-12345"))
+      emb_right = [[0.8282884, 0.8282884, 0.8282884],
+                   [0.8282884, 0.8282884, 0.8282884],
+                   [0.8282884, 0.8282884, 0.8282884],
+                   [0.7927219, 0.7927219, 0.7927219],
+                   [0.7927219, 0.7927219, 0.7927219],
+                   [1.0, 1.0, 1.0]]
+      emb_ori = sess.run(emb)
+      for i in range(6):
+        for j in range(3):
+          self.assertAlmostEqual(emb_ori[i][j], emb_right[i][j])
 
   def testEmbeddingVariableForSparseColumnSharedEmbeddingCol(self):
     columns_list=[]

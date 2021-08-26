@@ -91,7 +91,6 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
     else:
       ops.add_to_collection(ops.GraphKeys.EV_INIT_SLOT_OPS,  primary._slotnum_op.assign(slot_config.slot_num))
       primary._slotnum_op._initializer_op = primary._slotnum_op.assign(slot_config.slot_num)
-      ev = variables.EVConfig(embedding_dim=shape)
       slot = variable_scope.get_embedding_variable_v2_internal(
         scope, initializer=val, trainable=False,
         embedding_dim=shape, key_dtype=primary._invalid_key_type,

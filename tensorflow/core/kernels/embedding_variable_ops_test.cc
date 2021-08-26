@@ -98,6 +98,31 @@ std::vector<string> AllTensorKeys(BundleReader* reader) {
   return ret;
 }
 
+TEST(TensorBundleTest, TestEVShrinkL2) {
+  int64 value_size = 3;
+  int64 insert_num = 5;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 1.0));
+  //float* fill_v = (float*)malloc(value_size * sizeof(float));
+  EmbeddingVar<int64, float>* emb_var
+    = new EmbeddingVar<int64, float>("name",
+        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", -1, 0, 99999, 14.0));
+  emb_var ->Init(value);
+  
+  for (int64 i=0; i < insert_num; ++i) {
+    ValuePtr<float>* value_ptr = nullptr;
+    emb_var->LookupOrCreateKey(i, &value_ptr);
+    typename TTypes<float>::Flat vflat = emb_var->flat(value_ptr);
+    vflat += vflat.constant((float)i);
+  }
+
+  int size = emb_var->Size();
+  emb_var->Shrink();
+  LOG(INFO) << "Before shrink size:" << size;
+  LOG(INFO) << "After shrink size:" << emb_var->Size();
+
+  ASSERT_EQ(emb_var->Size(), 2);
+}
 
 TEST(TensorBundleTest, TestEVShrink) {
 
