@@ -25,6 +25,7 @@ import numpy as np
 from tensorflow.python.client import session
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes as dtypes_lib
+from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import gradient_checker
@@ -271,6 +272,20 @@ class SegmentReductionOpTest(SegmentReductionHelper):
             x_init_value=np_x.astype(np.double),
             delta=1)
       self.assertAllClose(jacob_t, jacob_n)
+
+  def testInvalidIds(self):
+    # Test case for GitHub issue 46888.
+    for op in [
+        math_ops.segment_max,
+        math_ops.segment_min,
+        math_ops.segment_mean,
+        math_ops.segment_sum,
+        math_ops.segment_prod,
+    ]:
+      with self.cached_session():
+        with self.assertRaises((ValueError, errors_impl.InternalError)):
+          s = op(data=np.ones((1, 10, 1)), segment_ids=[1676240524292489355])
+          self.evaluate(s)
 
 
 class UnsortedSegmentTest(SegmentReductionHelper):
