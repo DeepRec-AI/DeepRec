@@ -260,6 +260,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._ht_partition_num = ht_partition_num
     self._filter_freq = evconfig.filter_freq
     self._l2_weight_threshold = evconfig.l2_weight_threshold
+    if self._steps_to_live is 0 and self._filter_freq is 0 and self._l2_weight_threshold == -1.0:
+      self._layout = "light"
+    else:
+      self._layout = "normal"
+
     if self._primary is None:
       self._is_primary = True
     else:
@@ -357,6 +362,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     filter_freq = self._filter_freq,
                     l2_weight_threshold = self._l2_weight_threshold,
                     max_freq = 99999,
+                    layout = self._layout,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None

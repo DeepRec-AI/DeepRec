@@ -10,108 +10,178 @@
 
 namespace tensorflow {
 
+enum class LayoutType {
+  LIGHT,
+  NORMAL,
+};
+
+namespace {
+constexpr int COLUMN_BITSET_BYTES = 5;
+constexpr int COLUMN_BITSET_SIZE = COLUMN_BITSET_BYTES * sizeof(char);
+
+struct MetaHeader {
+  unsigned char embed_num;
+  unsigned char value_type;
+  unsigned char header_size;
+  unsigned char column_bitset[COLUMN_BITSET_BYTES];
+
+  static const int kEmbeddingNumStartIndex = 0;
+  static const int kValueTypeStartIndex =
+      kEmbeddingNumStartIndex + sizeof(char);
+  static const int kHeaderSizeStartIndex =
+      kValueTypeStartIndex + sizeof(char);
+  static const int kColumnBitsetIndex =
+      kHeaderSizeStartIndex + sizeof(char);
+
+  inline unsigned int GetEmbeddingNum() {
+    return (unsigned int) embed_num;
+  }
+
+  inline void SetEmbeddingNum(size_t s) {
+    embed_num = (unsigned char)s;
+  }
+
+  inline std::bitset<COLUMN_BITSET_SIZE> GetColumnBitset() {
+    unsigned long meta = ((unsigned long*)this)[0];
+    std::bitset<COLUMN_BITSET_SIZE> bs(meta >> (8 * kColumnBitsetIndex));
+    return bs;
+  }
+
+  inline void SetColumnBitset(const std::bitset<COLUMN_BITSET_SIZE>& bs,
+      unsigned int embnum) {
+    ((unsigned long*)(this))[0] =
+      (bs.to_ulong() << (8 * kColumnBitsetIndex)) |
+      (header_size << (8 * kHeaderSizeStartIndex)) |
+      (value_type << (8 * kValueTypeStartIndex)) |
+      (embnum << (8 * kEmbeddingNumStartIndex));
+  }
+
+  inline unsigned int GetHeaderSize() {
+    return (unsigned int) header_size;
+  }
+
+  inline void SetHeaderSize(size_t size) {
+    header_size = (unsigned char)size;
+  }
+
+  inline void SetLayoutType(LayoutType vt) {
+    value_type = (unsigned char)vt;
+  }
+
+  inline LayoutType GetLayoutType() {
+    return (LayoutType)value_type;
+  }
+};
+
+struct LightHeader {
+/*__________________________________________________________________________________________
+ |           |          |          |               |    embedding     |       slot       |
+ | number of | valueptr |  header  | each bit a V* |        V*        |        V*        |
+ | embedding | type     |   size   |    1 valid    | actually pointer | actually pointer |...
+ |  columns  |          |          |   0 no-valid  |    by alloctor   |    by alloctor   |
+ |  (8 bits) | (8 bits) | (8 bits) |   (40 bits)   |     (8 bytes)    |     (8 bytes)    |
+ --------------------------------------------------------------------------------------------
+*/
+  MetaHeader meta;
+  LightHeader() {
+    memset(this, 0, sizeof(LightHeader));
+    meta.SetLayoutType(LayoutType::LIGHT);
+    meta.SetHeaderSize(sizeof(LightHeader) / sizeof(int64));
+  }
+};
+
+struct NormalHeader {
+/*_________________________________________________________________________________________________________________________
+  |           |          |          |               |             |               |    embedding     |       slot       |
+  | number of | valueptr |  header  | each bit a V* | global step | freq counter  |        V*        |        V*        |
+  | embedding | type     |   size   |    1 valid    |             |               | actually pointer | actually pointer |...
+  |  columns  |          |          |   0 no-valid  |    int64    |     int64     |    by alloctor   |    by alloctor   |
+  |  (8 bits) | (8 bits) | (8 bits) |   (40 bits)   |  (8 bytes)  |   (8 bytes)   |     (8 bytes)    |     (8 bytes)    |
+  --------------------------------------------------------------------------------------------------------------------------
+ */
+  MetaHeader meta;
+  int64 global_step;
+  int64 freq_counter;
+
+  NormalHeader() {
+    memset(this, 0, sizeof(NormalHeader));
+    meta.SetLayoutType(LayoutType::NORMAL);
+    meta.SetHeaderSize(sizeof(NormalHeader) / sizeof(int64));
+  }
+
+  inline int64 GetGlobalStep() {
+    return global_step;
+  }
+
+  inline void SetGlobalStep(int64 gs) {
+    global_step = gs;
+  }
+
+  inline int64 GetFreqCounter() {
+    return freq_counter;
+  }
+
+  inline void SetFreqCounter(int64 fc) {
+    freq_counter = fc;
+  }
+
+  inline void AddFreq() {
+    __sync_bool_compare_and_swap(&freq_counter,
+        freq_counter, freq_counter + 1);
+  }
+};
+} // namespace
+
 template <class V>
 class ValuePtr {
  public:
-  ValuePtr(size_t size) {
-    /*___________________________________________________________________________________________________
-      |           |               |             |               |    embedding     |       slot       |
-      | number of | each bit a V* | global step | freq counter  |        V*        |        V*        |
-      | embedding |    1 valid    |             |               | actually pointer | actually pointer |...
-      |  columns  |   0 no-valid  |    int64    |     int64     |    by alloctor   |    by alloctor   |
-      |  (8 bits) |   (56 bits)   |  (8 bytes)  |   (8 bytes)   |     (8 bytes)    |     (8 bytes)    |
-      ---------------------------------------------------------------------------------------------------
-     */
-    // we make sure that we store at least one embedding column
-    ptr_ = (void*) malloc(sizeof(int64) * (3 + size));
-    memset(ptr_, 0, sizeof(int64) * (3 + size));
-  }
-
-  ~ValuePtr() {
-    free(ptr_);
-  }
+  ~ValuePtr() {}
 
   V* GetOrAllocate(Allocator* allocator, int64 value_len, const V* default_v, int emb_index) {
-    // fetch meta
-    unsigned long metaorig = ((unsigned long*)ptr_)[0];
-    unsigned int embnum = metaorig & 0xff;
-    std::bitset<56> metadata(metaorig >> 8);
-     
-    if (!metadata.test(emb_index)) {
+    MetaHeader* meta = (MetaHeader*)ptr_;
+    unsigned int embnum = (unsigned int)meta->embed_num;
+    auto metadata = meta->GetColumnBitset();
 
-      while(flag_.test_and_set(std::memory_order_acquire)); 
-      
-      if (metadata.test(emb_index)) 
-        return ((V**)((int64*)ptr_ + 3))[emb_index];
-      // need to realloc
-      /*
-      if (emb_index + 1 > embnum) {
-        ptr_ = (void*)realloc(ptr_, sizeof(int64) * (1 + emb_index + 1));
-      }*/
+    if (!metadata.test(emb_index)) {
+      while(flag_.test_and_set(std::memory_order_acquire));
+      if (metadata.test(emb_index))
+        return ((V**)((int64*)ptr_ + (unsigned int)meta->header_size))[emb_index];
       embnum++ ;
       int64 alloc_value_len = value_len;
-      //if (allocate_version) {
-      //  alloc_value_len = value_len + (sizeof(int64) + sizeof(V) - 1) / sizeof(V);
-      //}
       V* tensor_val = TypedAllocator::Allocate<V>(allocator, alloc_value_len, AllocationAttributes());
-
       memcpy(tensor_val, default_v, sizeof(V) * value_len);
-
-      ((V**)((int64*)ptr_ + 3))[emb_index]  = tensor_val;
+      ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[emb_index]  = tensor_val;
 
       metadata.set(emb_index);
       // NOTE:if we use ((unsigned long*)((char*)ptr_ + 1))[0] = metadata.to_ulong();
       // the ptr_ will be occaionally  modified from 0x7f18700912a0 to 0x700912a0
       // must use  ((V**)ptr_ + 1 + 1)[emb_index] = tensor_val;  to avoid
-      ((unsigned long*)(ptr_))[0] = (metadata.to_ulong() << 8) | embnum;
-
+      meta->SetColumnBitset(metadata, embnum);
       flag_.clear(std::memory_order_release);
       return tensor_val;
     } else {
-      return ((V**)((int64*)ptr_ + 3))[emb_index];
+      return ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[emb_index];
     }
   }
 
-
   // simple getter for V* and version
   V* GetValue(int emb_index) {
-    unsigned long metaorig = ((unsigned long*)ptr_)[0];
-    std::bitset<56> metadata(metaorig >> 8);
+    MetaHeader* meta = (MetaHeader*)ptr_;
+    auto metadata = meta->GetColumnBitset();
     if (metadata.test(emb_index)) {
-      return ((V**)((int64*)ptr_ + 3))[emb_index];
+      return ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[emb_index];
     } else {
       return nullptr;
     }
   }
 
-  int64 GetStep() {
-    return *((int64*)ptr_ + 1);
-  }
-
-  void SetStep(int64 gs) {
-    *((int64*)ptr_ + 1) = gs;
-  }
-
-  void SetFreq(int64 freq) {
-    *((int64*)ptr_ + 2) = freq;
-  }
-
-  int64 GetFreq() {
-    return *((int64*)ptr_ + 2);
-  }
-
-  void AddFreq() {
-    __sync_bool_compare_and_swap((int64*)ptr_ + 2, *((int64*)ptr_ + 2), *((int64*)ptr_ + 2) + 1); 
-  }
-  	
   void Destroy(int64 value_len) {
-    unsigned long metaorig = ((unsigned long*)ptr_)[0];
-    unsigned int embnum = metaorig & 0xff;
-    std::bitset<56> metadata(metaorig >> 8);
-
+    MetaHeader* meta = (MetaHeader*)ptr_;
+    unsigned int embnum = (unsigned int)meta->embed_num;
+    auto metadata = meta->GetColumnBitset();
     for (int i = 0; i< embnum; i++) {
       if (metadata.test(i)) {
-        V* val = ((V**)((int64*)ptr_ + 3))[i];
+        V* val = ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[i];
         if (val != nullptr) {
           TypedAllocator::Deallocate(cpu_allocator(), val, value_len);
         }
@@ -119,9 +189,86 @@ class ValuePtr {
     }
   }
 
- private:
+  // Global Step
+  virtual int64 GetStep() {
+    LOG(FATAL) << "Unsupport GlobalStep in subclass of ValuePtrBase";
+  }
+
+  virtual void SetStep(int64 gs) {
+    LOG(FATAL) << "Unsupport GlobalStep in subclass of ValuePtrBase";
+  }
+
+  // Frequency Counter
+  virtual int64 GetFreq() {
+    LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
+  }
+
+  virtual void SetFreq(int64 freq) {
+    LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
+  }
+
+  virtual void AddFreq() {
+    LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
+  }
+
+ protected:
   void* ptr_;
+
+ private:
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+};
+
+template <class V>
+class LightValuePtr : public ValuePtr<V> {
+ public:
+  LightValuePtr(size_t size) {
+    this->ptr_ = (void*) malloc(sizeof(LightHeader) + sizeof(int64) * size);
+    memset(this->ptr_ + sizeof(LightHeader), 0, sizeof(int64) * size);
+    new ((char*)this->ptr_) LightHeader();
+  }
+
+  ~LightValuePtr() {
+    free(this->ptr_);
+  }
+};
+
+template <class V>
+class NormalValuePtr : public ValuePtr<V> {
+ public:
+  NormalValuePtr(size_t size) {
+    this->ptr_ = (void*) malloc(sizeof(NormalHeader) + sizeof(int64) * size);
+    memset(this->ptr_ + sizeof(NormalHeader), 0, sizeof(int64) * size);
+    new ((char*)this->ptr_) NormalHeader();
+  }
+
+  ~NormalValuePtr() {
+    free(this->ptr_);
+  }
+
+  int64 GetStep() {
+    MetaHeader* meta = (MetaHeader*)this->ptr_;
+    return ((NormalHeader*)this->ptr_)->GetGlobalStep();
+  }
+
+  void SetStep(int64 gs) {
+    MetaHeader* meta = (MetaHeader*)this->ptr_;
+    ((NormalHeader*)this->ptr_)->SetGlobalStep(gs);
+  }
+
+  int64 GetFreq() {
+    MetaHeader* meta = (MetaHeader*)this->ptr_;
+    return ((NormalHeader*)this->ptr_)->GetFreqCounter();
+  }
+
+  void SetFreq(int64 freq) {
+    MetaHeader* meta = (MetaHeader*)this->ptr_;
+    ((NormalHeader*)this->ptr_)->SetFreqCounter(freq);
+  }
+
+  void AddFreq() {
+    MetaHeader* meta = (MetaHeader*)this->ptr_;
+    return ((NormalHeader*)this->ptr_)->AddFreq();
+  }
 };
 
 }  // namespace tensorflow

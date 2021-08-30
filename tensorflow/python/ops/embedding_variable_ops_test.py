@@ -254,6 +254,9 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       emb_ori = sess.run(emb)
+      emb_ori = sess.run(emb)
+      emb_ori = sess.run(emb)
+      emb_ori = sess.run(emb)
       save_path = saver.save(sess, os.path.join(checkpoint_directory, "model.ckpt"), global_step=12345)
       print(save_path)
       for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
@@ -629,7 +632,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var)
       emb2 = runTestAdagrad(self, var)
@@ -927,6 +930,67 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
+
+  def testEmbeddingVariableForLayout(self):
+    print("testEmbeddingVariableForLayout")
+    def runTestAdagrad(self, var, g):
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        return r
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb1 = runTestAdagrad(self, emb_var, g)
+      emb2 = runTestAdagrad(self, var, g)
+
+      for i in range(0, 6):
+        for j in range(0, 3):
+          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5)
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb1 = runTestAdagrad(self, emb_var, g)
+      emb2 = runTestAdagrad(self, var, g)
+
+      for i in range(0, 6):
+        for j in range(0, 3):
+          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            ev = variables.EVConfig(filter_freq=5))
+      emb1 = runTestAdagrad(self, emb_var, g)
+
+      for i in range(0, 6):
+        for j in range(0, 3):
+          self.assertEqual(emb1.tolist()[i][j], 1.0)
+
 
 if __name__ == "__main__":
   googletest.main()

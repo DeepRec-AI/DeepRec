@@ -132,6 +132,8 @@ class InitializeKvVariableOp : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
 
+    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
+
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
@@ -180,8 +182,9 @@ class InitializeKvVariableOp : public OpKernel {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum_op, opname + "-primary", 
-                                         steps_to_live_, filter_freq_, max_freq_,l2_weight_threshold_ ));
+                                         block_num_, slotnum_op, opname + "-primary",
+                                         steps_to_live_, filter_freq_, max_freq_,
+                                         l2_weight_threshold_, layout_));
             return (*ptr)->Init(default_values);
             }));
 
@@ -200,8 +203,9 @@ class InitializeKvVariableOp : public OpKernel {
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slotnum_op, opname + "-primary", 
-                                        steps_to_live_, filter_freq_, max_freq_,l2_weight_threshold_));
+                                        block_num_, slotnum_op, opname + "-primary",
+                                        steps_to_live_, filter_freq_, max_freq_,
+                                        l2_weight_threshold_, layout_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -216,9 +220,9 @@ class InitializeKvVariableOp : public OpKernel {
                          primary_variable->kv(), cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
-                                         steps_to_live_, filter_freq_));
-             (*ptr)->SetL2WeightThreshold(primary_variable->GetL2WeightThreshold());                            
-             (*ptr)->SetMinFreq(primary_variable->MinFreq());
+                                         steps_to_live_, primary_variable->MinFreq(),
+                                         max_freq_, primary_variable->GetL2WeightThreshold(),
+                                         layout_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -242,6 +246,7 @@ class InitializeKvVariableOp : public OpKernel {
   int64 filter_freq_;
   int64 max_freq_;
   float l2_weight_threshold_;
+  std::string layout_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -470,6 +475,7 @@ class KvResourceImportV2Op: public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -498,7 +504,7 @@ class KvResourceImportV2Op: public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, slotnum_op, 
+            [this, default_values, opname, slotnum_op,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
@@ -506,7 +512,9 @@ class KvResourceImportV2Op: public OpKernel {
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary",
-                                         steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_));
+                                         steps_to_live_, filter_freq_,
+                                         max_freq_, l2_weight_threshold_,
+                                         layout_));
              return (*ptr)->Init(default_values);
             }));
     } else {
@@ -525,7 +533,9 @@ class KvResourceImportV2Op: public OpKernel {
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary",
-                                        steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_));
+                                        steps_to_live_, filter_freq_,
+                                        max_freq_, l2_weight_threshold_,
+                                        layout_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -539,7 +549,9 @@ class KvResourceImportV2Op: public OpKernel {
                          primary_variable->kv(), cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
-                                         steps_to_live_, filter_freq_));
+                                         steps_to_live_, filter_freq_,
+                                         999, .0,
+                                         layout_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -571,6 +583,7 @@ class KvResourceImportV2Op: public OpKernel {
   int64 filter_freq_;
   int64 max_freq_;
   float l2_weight_threshold_;
+  std::string layout_;
 };
 
 
