@@ -41,6 +41,7 @@ from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import variables
+from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import deprecation
 from tensorflow.python.util import function_utils
@@ -2618,6 +2619,76 @@ class variable_scope(object):
       raise TypeError("The auxiliary_name_scope must be `True` or `False`, "
                       "while get {}".format(auxiliary_name_scope))
     self._auxiliary_name_scope = auxiliary_name_scope
+
+  def _get_custom_getter(self, dtype):
+    """Returns a custom getter that this class's methods must be called under.
+
+    All methods of this class must be called under a variable scope that was
+    passed this custom getter. Example:
+
+    ```python
+    network = ConvNetBuilder(...)
+    with tf.compat.v1.variable_scope('cg',
+                                    custom_getter=network.get_custom_getter()):
+      network.conv(...)
+      # Call more methods of network here
+    ```
+
+    Currently, this custom getter only does anything if self.use_tf_layers is
+    True. In that case, it causes variables to be stored as dtype
+    self.variable_type, then casted to the requested dtype, instead of directly
+    storing the variable as the requested dtype.
+    """
+
+    def inner_custom_getter(getter, *args, **kwargs):
+      """Custom getter that forces variables to have type self.variable_type."""
+      cast_to_bfloat16 = False
+      requested_dtype = kwargs['dtype']
+      if requested_dtype == dtypes.bfloat16:
+        # Only change the variable dtype if doing so does not decrease variable
+        # precision.
+        kwargs['dtype'] = dtype
+        cast_to_bfloat16 = True
+      var = getter(*args, **kwargs)
+      # This if statement is needed to guard the cast, because batch norm
+      # assigns directly to the return value of this custom getter. The cast
+      # makes the return value not a variable so it cannot be assigned. Batch
+      # norm variables are always in fp32 so this if statement is never
+      # triggered for them.
+      if cast_to_bfloat16:
+        index = var.name.rfind(':')
+        if index != -1: # found
+          cast_name = var.name[:index] + '/cast'
+          var = math_ops.cast(var, dtypes.bfloat16, name=cast_name)
+        else:
+          var = math_ops.cast(var, dtypes.bfloat16)
+      return var
+
+    return inner_custom_getter
+
+  def keep_weights(self, dtype=dtypes.float32):
+    """Scope class for bfloat16 variables so that the model uses custom getter.
+
+    This enables variables to be read as bfloat16 type when using get_variable.
+
+    ```python
+    import tensorflow as tf
+    from tensorflow.contrib import layers
+
+    with tf.variable_scope(...).keep_weights(dtype=tf.float32):
+      data_bf16 = tf.cast(data, dtype=tf.bfloat16)
+
+      matmul_0 = tf.layers.dense(data_bf16, 64, activation=tf.nn.relu)
+      matmul_0 = tf.layers.batch_normalization(matmul_0, training=True)
+      matmul_0 = tf.cast(matmul_0, dtype=tf.float32)
+
+      matmul_1 = layers.fully_connected(data_bf16, 128,
+                                        activation_fn=tf.nn.leaky_relu)
+      matmul_1 = tf.cast(matmul_1, dtype=tf.float32)
+    ```
+    """
+    self._custom_getter = self._get_custom_getter(dtype=dtype)
+    return self
 
   def __enter__(self):
     # If the default graph is building a function, then we should not replace it
