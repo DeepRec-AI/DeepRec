@@ -1009,12 +1009,17 @@ cc_library(
         "framework/numeric_types.h",
         "framework/tracking_allocator.h",
         "framework/type_traits.h",
+        "framework/pmem_allocator.cc",
     ],
     deps = [
         ":lib",
         "//third_party/eigen3",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
+    ],
+    linkopts=[
+        "-L/usr/local/lib",
+	"-lmemkind",
     ],
     alwayslink = 1,
 )
@@ -2913,6 +2918,7 @@ tf_cuda_library(
             "**/*main.cc",
             "framework/allocator.cc",
             "framework/cpu_allocator_impl.cc",
+            "framework/pmem_allocator.cc",
             "framework/allocator_registry.cc",
             "framework/tracking_allocator.cc",
             "example/example_parser_configuration.*",

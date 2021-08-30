@@ -83,6 +83,16 @@ Allocator* cpu_allocator(int numa_node) {
   }
 }
 
+Allocator* pmem_allocator() {
+  static Allocator* pmem_alloc =
+      AllocatorFactoryRegistry::singleton()->GetPMEMAllocator();
+      //This is the function when we use pmem as allocation destination
+  if (cpu_allocator_collect_full_stats && !pmem_alloc->TracksAllocationSizes()) {
+      pmem_alloc = new TrackingAllocator(pmem_alloc, true);
+  }
+  return pmem_alloc;
+}
+
 SubAllocator::SubAllocator(const std::vector<Visitor>& alloc_visitors,
                            const std::vector<Visitor>& free_visitors)
     : alloc_visitors_(alloc_visitors), free_visitors_(free_visitors) {}
