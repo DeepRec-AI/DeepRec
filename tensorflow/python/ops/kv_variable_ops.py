@@ -793,6 +793,20 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       return self.value()
 
 
+class MultiHashVariable(resource_variable_ops.ResourceVariable):
+  def __init__(self, name, val_list, mhvconfig):
+    if not val_list:
+      raise ValueError("val list must not be empty")
+    self._val_list = val_list
+    self._name = name
+    self._mhvconfig = mhvconfig
+  @property
+  def val_list(self):
+    return self._val_list
+  @property
+  def mhvconfig(self):
+    return self._mhvconfig
+
 class DynamicEmbeddingVariable(resource_variable_ops.ResourceVariable):
   def __init__(self, name, ev_list):
     if not ev_list:

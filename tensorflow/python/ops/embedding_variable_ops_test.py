@@ -102,6 +102,143 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       sess.run([emb])
       self.assertAllEqual([6, 3], sess.run(shape))
 
+  def testEmbeddingVariableForMultiHashAdd(self):
+    print("testEmbeddingVariableForMultiHashAdd")
+    with ops.device('/cpu:0'):
+      var1 = variable_scope.get_variable("var_1", shape=[5,6],
+                                      initializer=init_ops.ones_initializer(dtypes.float32),
+                                      partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      var2 = variable_scope.get_variable("var_2", shape=[3,6],
+                                      initializer=init_ops.ones_initializer(dtypes.float32),
+                                      partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      ids_Q = math_ops.cast([0//5, 1//5, 2//5 , 4//5, 6//5, 7//5],dtypes.int64)
+      ids_R = math_ops.cast([0%3, 1%3, 2%3 , 4%3, 6%3, 7%3],dtypes.int64)
+      emb1 =  embedding_ops.embedding_lookup(var1, ids_Q)
+      emb2 =  embedding_ops.embedding_lookup(var2, ids_R)
+      emb = math_ops.add(emb1, emb2)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+
+      ids = math_ops.cast([0, 1, 2, 4, 6, 7], dtypes.int64)
+      var_multi = variable_scope.get_multihash_variable("var_multi",
+                                         [[5,6],[3,6]],
+                                         complementary_strategy="Q-R",
+                                         initializer=init_ops.ones_initializer,
+                                         partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2)
+                                        )
+      emb_multi =  embedding_ops.embedding_lookup(var_multi, ids)
+      fun_m = math_ops.multiply(emb_multi, 2.0, name='multiply')
+      loss_m = math_ops.reduce_sum(fun_m, name='reduce_sum')
+      gs_m = training_util.get_or_create_global_step()
+      opt_m = adagrad_decay.AdagradDecayOptimizer(0.1, gs_m)
+      g_v_m = opt_m.compute_gradients(loss_m)
+      train_op_m = opt_m.apply_gradients(g_v_m)
+      init = variables.global_variables_initializer()
+      with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run([train_op, train_op_m])
+        val_list = sess.run([emb, emb_multi])
+        for i in range(ids.shape.as_list()[0]):
+          self.assertAllEqual(val_list[0][i], val_list[1][i])
+
+  def testEmbeddingVariableForMultiHashMul(self):
+    print("testEmbeddingVariableForMultiHashMul")
+    with ops.device('/cpu:0'):
+      var1 = variable_scope.get_variable("var_1", shape=[5,6],
+                                      initializer=init_ops.ones_initializer(dtypes.float32),
+                                      partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      var2 = variable_scope.get_variable("var_2", shape=[3,6],
+                                      initializer=init_ops.ones_initializer(dtypes.float32),
+                                      partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      ids_Q = math_ops.cast([0//5, 1//5, 2//5 , 4//5, 6//5, 7//5],dtypes.int64)
+      ids_R = math_ops.cast([0%3, 1%3, 2%3 , 4%3, 6%3, 7%3],dtypes.int64)
+      emb1 =  embedding_ops.embedding_lookup(var1, ids_Q)
+      emb2 =  embedding_ops.embedding_lookup(var2, ids_R)
+      emb = math_ops.multiply(emb1, emb2)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+
+      ids = math_ops.cast([0, 1, 2, 4, 6, 7], dtypes.int64)
+      var_multi = variable_scope.get_multihash_variable("var_multi",
+                                         [[5,6],[3,6]],
+                                         complementary_strategy="Q-R",
+                                         operation="mul",
+                                         initializer=init_ops.ones_initializer,
+                                         partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2)
+                                        )
+      emb_multi =  embedding_ops.embedding_lookup(var_multi, ids)
+      fun_m = math_ops.multiply(emb_multi, 2.0, name='multiply')
+      loss_m = math_ops.reduce_sum(fun_m, name='reduce_sum')
+      gs_m = training_util.get_or_create_global_step()
+      opt_m = adagrad_decay.AdagradDecayOptimizer(0.1, gs_m)
+      g_v_m = opt_m.compute_gradients(loss_m)
+      train_op_m = opt_m.apply_gradients(g_v_m)
+      init = variables.global_variables_initializer()
+      with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run([train_op, train_op_m])
+        val_list = sess.run([emb, emb_multi])
+        for i in range(ids.shape.as_list()[0]):
+          self.assertAllEqual(val_list[0][i], val_list[1][i])
+
+  def testEmbeddingVariableForMultiHashConcat(self):
+    print("testEmbeddingVariableForMultiHashConcat")
+    with ops.device('/cpu:0'):
+      var1 = variable_scope.get_variable("var_1", shape=[5,6],
+                                      initializer=init_ops.ones_initializer(dtypes.float32),
+                                      partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      var2 = variable_scope.get_variable("var_2", shape=[3,6],
+                                      initializer=init_ops.ones_initializer(dtypes.float32),
+                                      partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      ids_Q = math_ops.cast([0//5, 1//5, 2//5 , 4//5, 6//5, 7//5],dtypes.int64)
+      ids_R = math_ops.cast([0%3, 1%3, 2%3 , 4%3, 6%3, 7%3],dtypes.int64)
+      emb1 =  embedding_ops.embedding_lookup(var1, ids_Q)
+      emb2 =  embedding_ops.embedding_lookup(var2, ids_R)
+      emb = array_ops.concat([emb1, emb2], 1)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+
+      ids = math_ops.cast([0, 1, 2, 4, 6, 7], dtypes.int64)
+      var_multi = variable_scope.get_multihash_variable("var_multi",
+                                         [[5,6],[3,6]],
+                                         complementary_strategy="Q-R",
+                                         operation="concat",
+                                         initializer=init_ops.ones_initializer,
+                                         partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2)
+                                        )
+      emb_multi =  embedding_ops.embedding_lookup(var_multi, ids)
+      fun_m = math_ops.multiply(emb_multi, 2.0, name='multiply')
+      loss_m = math_ops.reduce_sum(fun_m, name='reduce_sum')
+      gs_m = training_util.get_or_create_global_step()
+      opt_m = adagrad_decay.AdagradDecayOptimizer(0.1, gs_m)
+      g_v_m = opt_m.compute_gradients(loss_m)
+      train_op_m = opt_m.apply_gradients(g_v_m)
+      init = variables.global_variables_initializer()
+      with self.test_session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run([train_op, train_op_m])
+        val_list = sess.run([emb, emb_multi])
+        for i in range(ids.shape.as_list()[0]):
+          self.assertAllEqual(val_list[0][i], val_list[1][i])
+
   def testEmbeddingVariableForSaveAndRestore(self):
     print("testEmbeddingVariableForSaveAndRestore")
     checkpoint_directory = self.get_temp_dir()

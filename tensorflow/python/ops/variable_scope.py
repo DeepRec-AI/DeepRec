@@ -52,7 +52,8 @@ __all__ = [
     "AUTO_REUSE", "VariableScope", "get_variable_scope", "get_variable",
     "get_local_variable", "variable_scope", "variable_op_scope",
     "no_regularizer", "VariableSynchronization", "VariableAggregation",
-    "get_embedding_variable", "get_dynamic_dimension_embedding_variable"
+    "get_embedding_variable", "get_dynamic_dimension_embedding_variable",
+    "get_multihash_variable"
 ]
 
 _api_usage_gauge = monitoring.BoolGauge(
@@ -1380,7 +1381,7 @@ class VariableScope(object):
           evconfig=evconfig,
           freqconfig = freqconfig,
           ht_partition_num=ht_partition_num)
-  
+
   def get_dynamic_dimension_embedding_variable(self,
                              var_store,
                              name,
@@ -1987,6 +1988,62 @@ def get_embedding_variable_v2_internal(name,
       evconfig=evconfig,
       ht_partition_num=ht_partition_num)
 
+
+@tf_export(v1=["get_multihash_variable"])
+def get_multihash_variable(name,
+                           dims,
+                           complementary_strategy="Q-R",
+                           operation="add",
+                           dtype=float,
+                           initializer=None,
+                           regularizer=None,
+                           trainable=None,
+                           collections=None,
+                           caching_device=None,
+                           partitioner=None,
+                           validate_shape=True,
+                           use_resource = None,
+                           custom_getter=None,
+                           constraint=None,
+                           synchronization=VariableSynchronization.AUTO,
+                           aggregation=VariableAggregation.NONE):
+  strategy_list = ["Q-R"]
+  op_list = ["add", "mul", "concat"]
+  num_of_partitions = len(dims)
+  if complementary_strategy not in strategy_list:
+    raise ValueError("The strategy %s is not supported" % complementary_strategy)
+  if operation not in op_list: 
+    raise ValueError("The operation %s is not supported" % operation)
+  if initializer is None:
+    initializer = init_ops.truncated_normal_initializer()
+  if complementary_strategy == 'Q-R':
+    if num_of_partitions != 2:
+      raise ValueError("the num_of_partitions must be 2 when using Q-R strategy.")
+    val_Q = get_variable_scope().get_variable(
+            _get_default_variable_store(), name +'/multhash_Q',
+            shape=dims[0], dtype=dtype,
+            initializer=initializer, regularizer=regularizer, trainable=trainable,
+            collections=collections, caching_device=caching_device,
+            partitioner=partitioner, validate_shape=validate_shape,
+            use_resource=use_resource, custom_getter=custom_getter,
+            constraint=constraint,synchronization=synchronization,
+            aggregation=aggregation)
+    val_R = get_variable_scope().get_variable(
+            _get_default_variable_store(), name +'/multhash_R',
+            shape=dims[1], dtype=dtype,
+            initializer=initializer, regularizer=regularizer, trainable=trainable,
+            collections=collections, caching_device=caching_device,
+            partitioner=partitioner, validate_shape=validate_shape,
+            use_resource=use_resource, custom_getter=custom_getter,
+            constraint=constraint,synchronization=synchronization,
+            aggregation=aggregation)
+    mhv = kv_variable_ops.MultiHashVariable(name, [val_Q, val_R],
+                                            variables.MultihashConfig(num_of_partitions,
+                                                                      complementary_strategy,
+                                                                      operation,
+                                                                      dims))
+    return mhv
+  
 
 @tf_export(v1=["get_dynamic_dimension_embedding_variable"])
 def get_dynamic_dimension_embedding_variable(name,

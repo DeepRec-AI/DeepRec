@@ -184,6 +184,19 @@ class FreqStrategyConfig(object):
   def __exit__(self, exc_type, exc_val, exc_tb):
     return True
 
+class MultihashConfig(object):
+  def __init__(self,
+               num_of_partitions = None,
+               strategy="",
+               operation="",
+               size = []):
+    self.num_of_partitions = num_of_partitions
+    self.strategy = strategy
+    self.operation = operation
+    self.size = size
+
+
+
 class EvictConfig(object):
   def __init__(self,
                steps_to_live = None,

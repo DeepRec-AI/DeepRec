@@ -132,6 +132,20 @@ def _embedding_lookup_and_transform(params,
     params = list(params)  # Iterate to get the underlying Variables.
   if not isinstance(params, list):
     params = [params]
+  if isinstance(params[0], kv_variable_ops.MultiHashVariable):
+    if params[0].mhvconfig.strategy == "Q-R":
+      ids_tensor = ops.convert_to_tensor(ids, dtypes.int64)
+      ids_Q = math_ops.floordiv(ids_tensor, params[0].mhvconfig.size[0][0])
+      ids_R = math_ops.floormod(ids_tensor, params[0].mhvconfig.size[1][0])
+      result_Q = _embedding_lookup_and_transform(params[0]._val_list[0], ids_Q)
+      result_R = _embedding_lookup_and_transform(params[0]._val_list[1], ids_R)
+      if params[0].mhvconfig.operation == "add":
+        return math_ops.add(result_Q, result_R)
+      if params[0].mhvconfig.operation == "mul":
+        return math_ops.multiply(result_Q, result_R)
+      if params[0].mhvconfig.operation == "concat":
+        return array_ops.concat([result_Q, result_R], 1)
+
 
   with ops.name_scope(name, "embedding_lookup", params + [ids]) as name:
     np = len(params)  # Number of partitions
