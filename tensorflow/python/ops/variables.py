@@ -245,6 +245,7 @@ class EmbeddingVariableConfig(object):
                l2reg_theta=None, l2reg_lambda=None,
                l2_weight_threshold = -1.0,
                ht_type=None,
+               filter_freq=None,
                ckpt_to_load_from=None,
                tensor_name_in_ckpt=None,
                always_load_from_specific_ckpt=False,
@@ -271,6 +272,8 @@ class EmbeddingVariableConfig(object):
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
     self.l2_weight_threshold = l2_weight_threshold
+    self.filter_freq = filter_freq
+
 
 
   def reveal(self):
@@ -311,7 +314,6 @@ class VariableMetaclass(type):
                         shape=None,
                         invalid_key=None,
                         evconfig=EmbeddingVariableConfig(),
-                        freqconfig=FreqStrategyConfig(),
                         embedding_initializer=None,
                         ht_partition_num=1000):
     """Call on Variable class. Useful to force the signature."""
@@ -341,7 +343,6 @@ class VariableMetaclass(type):
         shape=shape,
         invalid_key=invalid_key,
         evconfig=evconfig,
-        freqconfig=freqconfig,
         embedding_initializer=embedding_initializer,
         ht_partition_num=ht_partition_num)
 

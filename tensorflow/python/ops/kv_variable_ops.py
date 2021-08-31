@@ -89,7 +89,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                constraint=None,
                invalid_key=None,
                evconfig=variables.EmbeddingVariableConfig(),
-               freqconfig = variables.FreqStrategyConfig(),
                ht_partition_num=1000):
     """Creates a variable.
 
@@ -162,7 +161,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           constraint=constraint,
           invalid_key=invalid_key,
           evconfig=evconfig,
-          freqconfig=freqconfig,
           ht_partition_num=ht_partition_num)
 
   def __repr__(self):
@@ -187,7 +185,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                       constraint=None,
                       invalid_key=-1,
                       evconfig=variables.EmbeddingVariableConfig(),
-                      freqconfig = variables.FreqStrategyConfig(),
                       ht_partition_num=1000):
     """Creates a variable.
 
@@ -261,9 +258,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
-    self._filter_freq = freqconfig.filter_freq
+    self._filter_freq = evconfig.filter_freq
     self._l2_weight_threshold = evconfig.l2_weight_threshold
-    self._max_freq = freqconfig.max_freq
     if self._primary is None:
       self._is_primary = True
     else:
@@ -359,7 +355,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     ht_partition_num=self._ht_partition_num,
                     filter_freq = self._filter_freq,
                     l2_weight_threshold = self._l2_weight_threshold,
-                    max_freq = self._max_freq,
+                    max_freq = 99999,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None

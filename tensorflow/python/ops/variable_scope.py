@@ -306,7 +306,6 @@ class _VariableStore(object):
                    aggregation=VariableAggregation.NONE,
                    invalid_key=None,
                    evconfig=variables.EmbeddingVariableConfig(),
-                   freqconfig = variables.FreqStrategyConfig(),
                    ht_partition_num=1000):
     """Gets an existing variable with these parameters or create a new one.
 
@@ -459,7 +458,6 @@ class _VariableStore(object):
         aggregation=VariableAggregation.NONE,
         invalid_key=None,
         evconfig=variables.EmbeddingVariableConfig(),
-        freqconfig = variables.FreqStrategyConfig(),
         ht_partition_num=1000):
       is_scalar = (
           shape is not None and isinstance(shape, collections_lib.Sequence) and
@@ -489,7 +487,6 @@ class _VariableStore(object):
               aggregation=aggregation,
               invalid_key=invalid_key,
               evconfig=evconfig,
-              freqconfig = freqconfig,
               ht_partition_num=ht_partition_num)
 
       # Special case for partitioned variable to allow reuse without having to
@@ -515,7 +512,6 @@ class _VariableStore(object):
             aggregation=aggregation,
             invalid_key=invalid_key,
             evconfig=evconfig,
-            freqconfig = freqconfig,
             ht_partition_num=ht_partition_num)
 
       # Single variable case
@@ -543,7 +539,6 @@ class _VariableStore(object):
           aggregation=aggregation,
           invalid_key=invalid_key,
           evconfig=evconfig,
-          freqconfig = freqconfig,
           ht_partition_num=ht_partition_num)
 
     synchronization, aggregation, trainable = (
@@ -572,7 +567,6 @@ class _VariableStore(object):
           "aggregation": aggregation,
           "invalid_key": invalid_key,
           "evconfig": evconfig,
-          "freqconfig":freqconfig,
           "ht_partition_num": ht_partition_num,
       }
       # `fn_args` and `has_kwargs` can handle functions, `functools.partial`,
@@ -601,7 +595,6 @@ class _VariableStore(object):
           aggregation=aggregation,
           invalid_key=invalid_key,
           evconfig=evconfig,
-          freqconfig=freqconfig,
           ht_partition_num=ht_partition_num)
 
   def _get_partitioned_variable(self,
@@ -623,7 +616,6 @@ class _VariableStore(object):
                                 aggregation=VariableAggregation.NONE,
                                 invalid_key=None,
                                 evconfig=variables.EmbeddingVariableConfig(),
-                                freqconfig = variables.FreqStrategyConfig(),
                                 ht_partition_num=1000):
     """Gets or creates a sharded variable list with these parameters.
 
@@ -828,7 +820,6 @@ class _VariableStore(object):
             aggregation=aggregation,
             invalid_key=invalid_key,
             evconfig=evconfig,
-            freqconfig=freqconfig,
             ht_partition_num=ht_partition_num)
 
       # pylint: disable=protected-access
@@ -871,7 +862,6 @@ class _VariableStore(object):
                            aggregation=VariableAggregation.NONE,
                            invalid_key=None,
                            evconfig=variables.EmbeddingVariableConfig(),
-                           freqconfig = variables.FreqStrategyConfig(),
                            ht_partition_num=1000):
     """Get or create a single Variable (e.g.
 
@@ -999,7 +989,6 @@ class _VariableStore(object):
         aggregation=aggregation,
         invalid_key=invalid_key,
         evconfig=evconfig,
-        freqconfig=freqconfig,
         embedding_initializer=initializer,
         ht_partition_num=ht_partition_num)
     if context.executing_eagerly() and self._store_eager_variables:
@@ -1331,7 +1320,6 @@ class VariableScope(object):
                              constraint=None,
                              invalid_key=None,
                              evconfig=variables.EmbeddingVariableConfig(),
-                             freqconfig = variables.FreqStrategyConfig(),
                              ht_partition_num=1000):
     """Gets an existing variable with this name or create a new one."""
     if regularizer is None:
@@ -1379,7 +1367,6 @@ class VariableScope(object):
           use_resource=use_resource, custom_getter=custom_getter,
           constraint=constraint, invalid_key=invalid_key,
           evconfig=evconfig,
-          freqconfig = freqconfig,
           ht_partition_num=ht_partition_num)
 
   def get_dynamic_dimension_embedding_variable(self,
@@ -1879,7 +1866,6 @@ def get_embedding_variable(name,
                            constraint=None,
                            steps_to_live=None,
                            init_data_source=None,
-                           filter_freq = 0,
                            ht_partition_num=1000,
                            ht_type = "",
                            ev = variables.EVConfig()):
@@ -1908,8 +1894,8 @@ def get_embedding_variable(name,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
         steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ht_type,
-        l2_weight_threshold=ev.evict.l2_weight_threshold),
-      freqconfig = variables.FreqStrategyConfig(filter_freq=filter_freq),
+        l2_weight_threshold=ev.evict.l2_weight_threshold,
+        filter_freq=ev.filter_freq),
       ht_partition_num=ht_partition_num)
 
 
@@ -1931,7 +1917,7 @@ def get_embedding_variable_internal(name,
                            steps_to_live=None,
                            init_data_source=None,
                            ht_partition_num=1000,
-                           freqconfig = variables.FreqStrategyConfig(),
+                           evconfig = variables.EVConfig(),
                            ):
   if key_dtype == dtypes.int64:
     invalid_key = -1
@@ -1949,8 +1935,10 @@ def get_embedding_variable_internal(name,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
-        steps_to_live=steps_to_live, init_data_source=init_data_source),
-      freqconfig = freqconfig,
+        steps_to_live=steps_to_live, init_data_source=init_data_source,
+        ht_type=evconfig.ht_type,
+        l2_weight_threshold=evconfig.evict.l2_weight_threshold,
+        filter_freq=evconfig.filter_freq),
       ht_partition_num=ht_partition_num)
 
 
@@ -2911,7 +2899,6 @@ def default_variable_creator(next_creator=None, **kwargs):
   shape = kwargs.get("shape", None)
   invalid_key = kwargs.get("invalid_key", None)
   evconfig = kwargs.get("evconfig", None)
-  freqconfig = kwargs.get("freqconfig", None)
   initializer = kwargs.get("embedding_initializer", None)
   ht_partition_num = kwargs.get("ht_partition_num", None)
 
@@ -2947,7 +2934,6 @@ def default_variable_creator(next_creator=None, **kwargs):
           constraint=constraint, variable_def=variable_def,
           import_scope=import_scope, invalid_key=invalid_key,
           evconfig=evconfig,
-          freqconfig=freqconfig,
           initializer=initializer, ht_partition_num=ht_partition_num)
       if evconfig.init_data_source is not None:
         ev.set_init_data_source_initializer(evconfig.init_data_source)
@@ -2965,7 +2951,6 @@ def default_variable_creator(next_creator=None, **kwargs):
         constraint=constraint, variable_def=variable_def,
         import_scope=import_scope, invalid_key=invalid_key,
         evconfig=block_evconfig,
-        freqconfig=freqconfig,
         initializer=initializer, ht_partition_num=ht_partition_num)
       if evconfig.init_data_source is not None:
         primary_ev.set_init_data_source_initializer(evconfig.init_data_source)

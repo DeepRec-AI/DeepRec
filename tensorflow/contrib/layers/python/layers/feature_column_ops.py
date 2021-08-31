@@ -36,6 +36,7 @@ from tensorflow.python.ops import parsing_ops
 from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variable_scope
+from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.util import nest
 
@@ -316,7 +317,9 @@ def _create_embedding_lookup(column,
           trainable=trainable,
           collections=weight_collections,
           partitioner=partitioner,
-          steps_to_live=embedding_lookup_arguments.steps_to_live)
+          steps_to_live=embedding_lookup_arguments.steps_to_live,
+          ht_partition_num=embedding_lookup_arguments.ht_partition_num,
+          evconfig=embedding_lookup_arguments.evconfig)
       graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, variable)
     else:
       variable = contrib_variables.model_variable(

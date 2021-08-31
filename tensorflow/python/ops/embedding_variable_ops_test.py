@@ -405,8 +405,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForAdagradDecayFilter")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            filter_freq = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
+            ev = variables.EVConfig(filter_freq=3),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -433,7 +433,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForFtrlFilter")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            filter_freq = 3,
+            ev = variables.EVConfig(filter_freq=3),
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     #var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
@@ -462,7 +462,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForAdamAsynsFilter")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            filter_freq = 3,
+            ev = variables.EVConfig(filter_freq=3),
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
@@ -490,7 +490,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForGradientDescentFilter")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            filter_freq = 3,
+            ev = variables.EVConfig(filter_freq=3),
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
@@ -518,7 +518,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForAdagradDecayV2Filter")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            filter_freq = 3,
+            ev = variables.EVConfig(filter_freq=3),
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
@@ -546,7 +546,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForAdamFilter")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            filter_freq = 3,
+            ev = variables.EVConfig(filter_freq=3),
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
