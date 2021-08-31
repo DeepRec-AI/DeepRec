@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/core/framework/function_handle_cache.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/resource_mgr.h"
+#include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/kernels/data/dataset_utils.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/lib/core/threadpool.h"
@@ -111,8 +112,20 @@ class ToTFRecordOp : public AsyncOpKernel {
               },
               std::move(done));
 
+          const int num_output_dtypes = dataset->output_dtypes().size();
+          if (num_output_dtypes != 1) {
+            OP_REQUIRES_OK_ASYNC(ctx, errors::InvalidArgument(
+                "ToTFRecordOp currently only support datasets of 1 single column, ",
+                "but got ", num_output_dtypes), done);
+          }
+          const DataType dt = dataset->output_dtypes()[0];
+          if (dt != DT_STRING) {
+            OP_REQUIRES_OK_ASYNC(ctx, errors::InvalidArgument(
+                "ToTFRecordOp currently only supports DT_STRING dataypes, but got ",
+                DataTypeString(dt)), done);
+          }
           std::vector<Tensor> components;
-          components.reserve(dataset->output_dtypes().size());
+          components.reserve(num_output_dtypes);
           bool end_of_sequence;
           do {
             OP_REQUIRES_OK_ASYNC(
