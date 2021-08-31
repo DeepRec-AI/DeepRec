@@ -428,6 +428,12 @@ config_setting(
 )
 
 config_setting(
+    name = "with_pmem_support",
+    values = {"define": "with_pmem_support=true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "with_mpi_support",
     values = {"define": "with_mpi_support=true"},
     visibility = ["//visibility:public"],

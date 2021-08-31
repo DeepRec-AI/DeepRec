@@ -1432,6 +1432,10 @@ def main():
   set_build_var(environ_cp, 'TF_NEED_STAR', 'STAR', 'with_star_support',
                 False, 'star')
 
+  set_build_var(environ_cp, 'TF_ENABLE_PMEM', 'PMEM', 'with_pmem_support',
+                False, 'pmem')
+
+
   set_action_env_var(
       environ_cp,
       'TF_NEED_OPENCL_SYCL',

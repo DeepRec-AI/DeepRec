@@ -1009,18 +1009,25 @@ cc_library(
         "framework/numeric_types.h",
         "framework/tracking_allocator.h",
         "framework/type_traits.h",
-        "framework/pmem_allocator.cc",
-    ],
+    ] + select({
+        "//tensorflow:with_pmem_support": [
+            "framework/pmem_allocator.cc"
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":lib",
         "//third_party/eigen3",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
     ],
-    linkopts=[
-        "-L/usr/local/lib",
-	"-lmemkind",
-    ],
+    linkopts = select({
+        "//tensorflow:with_pmem_support": [
+            "-L/usr/local/lib",
+            "-lmemkind"
+        ],
+        "//conditions:default": [],
+    }),
     alwayslink = 1,
 )
 

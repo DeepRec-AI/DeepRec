@@ -167,7 +167,7 @@ class PMEMAllocatorFactory : public AllocatorFactory {
   };
 };
 
-REGISTER_MEM_ALLOCATOR("PMEMAllocator", 200, PMEMAllocatorFactory);
+REGISTER_MEM_ALLOCATOR("PMEMAllocator", 20, PMEMAllocatorFactory);
 }  // namespace
 
 }  // namespace tensorflow
