@@ -1,0 +1,25 @@
+# Dockerfile for WDL training
+# Base img
+FROM ubuntu:18.04
+
+# copy code & data into container
+ADD data/*.csv /home/data/
+ADD *.py /home
+
+# set proxy
+# ENV http_proxy=""
+# ENV https_proxy=""
+
+# install python
+RUN apt update \
+    && apt install python3.6 -y\
+    && apt-get install python3-pip -y\
+    && ln /usr/bin/python3 /usr/bin/python \
+    && ln /usr/bin/pip3 /usr/bin/pip \
+    && python -m pip install --upgrade pip
+
+# install tensorflow 1.15
+RUN pip install tensorflow==1.15
+
+RUN mkdir /home/result
+
