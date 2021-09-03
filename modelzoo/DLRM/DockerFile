@@ -1,16 +1,16 @@
-# Dockerfile for WDL training
+# Dockerfile for DLRM training
 # Base img
 FROM ubuntu:18.04
 
 # copy code & data into container
+ADD train_stand.py /root/train_stand.py
 ADD data/*.csv /root/data/
-ADD *.py /home
 
 RUN mkdir /root/result
 
 # set proxy
-# ENV http_proxy=""
-# ENV https_proxy=""
+# ENV http_proxy=
+# ENV https_proxy=
 
 # install python
 RUN apt update \
@@ -22,3 +22,5 @@ RUN apt update \
 
 # install tensorflow 1.15
 RUN pip install tensorflow==1.15
+
+

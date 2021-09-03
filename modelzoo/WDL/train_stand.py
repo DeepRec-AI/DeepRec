@@ -65,35 +65,6 @@ HASH_BUCKET_SIZES = {
     'C26': 100000
 }
 
-HASH_BUCKET_SIZES_LARGE = {
-    'C1': 2500,
-    'C2': 2000,
-    'C3': 5000000,
-    'C4': 1500000,
-    'C5': 1000,
-    'C6': 100,
-    'C7': 20000,
-    'C8': 4000,
-    'C9': 20,
-    'C10': 100000,
-    'C11': 10000,
-    'C12': 5000000,
-    'C13': 40000,
-    'C14': 100,
-    'C15': 100,
-    'C16': 3000000,
-    'C17': 50,
-    'C18': 10000,
-    'C19': 4000,
-    'C20': 20,
-    'C21': 4000000,
-    'C22': 100,
-    'C23': 100,
-    'C24': 250000,
-    'C25': 400,
-    'C26': 100000
-}
-
 IDENTITY_NUM_BUCKETS = {'I10': 10}
 
 EMBEDDING_DIMENSIONS = {
@@ -335,9 +306,6 @@ def get_arg_parser():
                         help='Save steps of profile hooks, zero to close',
                         type=int,
                         default=0)
-    parser.add_argument('--large_version',
-                        help='Use large version model',
-                        default=False)
     parser.add_argument('--save_steps',
                         help='set the number of steps on saving checkpoints',
                         type=int,
@@ -393,17 +361,8 @@ if __name__ == "__main__":
     export_dir = args.output_dir
 
     # create model by estimator
-    if args.large_version:
-        print("Large Version")
-        HASH_BUCKET_SIZES = HASH_BUCKET_SIZES_LARGE
-        m = build_estimator(checkpoint_dir, train_file, test_file,
-                            wide_optimizer, deep_optimizer, args.deep_dropout,
-                            [1536, 768, 64])
-    else:
-        print("Small Version")
-        m = build_estimator(checkpoint_dir, train_file, test_file,
-                            wide_optimizer, deep_optimizer, args.deep_dropout,
-                            [1024, 512, 256])
+    m = build_estimator(checkpoint_dir, train_file, test_file, wide_optimizer,
+                        deep_optimizer, args.deep_dropout, [1024, 512, 256])
 
     # add hooks
     hooks = []
