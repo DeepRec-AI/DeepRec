@@ -328,8 +328,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
         if self._is_primary:
-          self._slotnum_op = variables.RefVariable(1, trainable=False, dtype=dtypes.int64, name="slotnum")
-          ops.add_to_collection(ops.GraphKeys.EV_INIT_VAR_OPS,  self._slotnum_op.assign(1))
+          with ops.colocate_with(self._handle):
+            self._slotnum_op = variables.RefVariable(1, trainable=False, dtype=dtypes.int64, name="slotnum")
+            ops.add_to_collection(ops.GraphKeys.EV_INIT_VAR_OPS,  self._slotnum_op.assign(1))
         else:
           self._slotnum_op = evconfig.primary_slotnum_op
 
