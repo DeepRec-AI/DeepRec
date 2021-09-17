@@ -4812,6 +4812,17 @@ py_library(
 )
 
 pybind_extension(
+    name = "_pywrap_tensor_float_32_execution",
+    srcs = ["util/tensor_float_32.cc"],
+    hdrs = ["//tensorflow/core/platform:tensor_float_32_hdr"],
+    module_name = "_pywrap_tensor_float_32_execution",
+    deps = [
+        "//tensorflow/core/platform:tensor_float_32_utils",
+        "@pybind11",
+    ],
+)
+
+pybind_extension(
     name = "_tf_stack",
     srcs = ["util/tf_stack.cc"],
     copts = ["-fexceptions"],
@@ -4842,6 +4853,7 @@ py_library(
     ],
     deps = [
         ":_tf_stack",
+        ":_pywrap_tensor_float_32_execution",
         "@org_python_pypi_backports_weakref",
         "@com_google_protobuf//:protobuf_python",
         "//third_party/py/numpy",

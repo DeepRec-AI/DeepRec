@@ -284,6 +284,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "tensor_float_32_utils",
+    srcs = ["tensor_float_32_utils.cc"],
+    hdrs = ["tensor_float_32_utils.h"],
+    copts = tf_copts(),
+)
+
+filegroup(
+    name = "tensor_float_32_hdr",
+    srcs = ["tensor_float_32_utils.h"],
+)
+
+
 # --------------------------------------------------------------------------
 #     Below libraries are here only to make sure the legacy build rules
 #     in tensorflow/core/BUILD are working!
