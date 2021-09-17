@@ -36,6 +36,12 @@ struct ModelConfig {
   std::string oss_endpoint = "";
   std::string oss_access_id = "";
   std::string oss_access_key = "";
+
+  // shard user embedding
+  std::string id_type = "";
+  int shard_instance_count = 0;
+  bool shard_embedding = false;
+  std::vector<std::string> shard_embedding_names;
 };
 
 class ModelConfigFactory {

@@ -67,6 +67,12 @@ cc_library(
         "tracer",],
 )
 
+cc_library(
+    name = "model_partition",
+    hdrs = ["model_partition.h"],
+    deps = ["model_config",],
+)
+
 cc_test(
     name = "model_config_test",
     srcs = ["model_config_test.cc",],
@@ -128,6 +134,7 @@ cc_library(
         "//odl_processor/framework:model_version",
         "//odl_processor/storage:model_store",
         "model_config",
+        "model_partition",
         "model_session",
         "model_message",
         "tf_predict_proto_cc",
