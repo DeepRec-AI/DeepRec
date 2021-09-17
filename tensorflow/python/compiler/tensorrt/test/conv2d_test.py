@@ -23,6 +23,7 @@ import numpy as np
 from tensorflow.python.compiler.tensorrt.test import tf_trt_integration_test_base as trt_test
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import nn_ops
@@ -115,6 +116,8 @@ class Conv2DNCHWTest(trt_test.TfTrtIntegrationTestBase):
     return super(Conv2DNCHWTest, self).ExpectedRelativeTolerance(run_params)
 
 
+@test_util.run_without_tensor_float_32("TF32 capable devices fail the test"
+                                          " due to reduced matmul precision")
 class Conv2DNHWCTest(trt_test.TfTrtIntegrationTestBase):
   """Testing conversion of Conv2D (data_format=NCHW) in TF-TRT conversion."""
 
