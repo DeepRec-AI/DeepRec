@@ -586,8 +586,22 @@ Status SavedModelOptimizer::Optimize() {
 }
 
 Status SavedModelOptimizer::RunNativeTFGraphPass() {
-  // Add incr_restore_op for load delta model
-  TF_RETURN_IF_ERROR(AddIncrRestoreOps());
+  if (option_.shard_embedding) {
+    // Find all variables ops which should be rewrite,
+    // include partitioned or non-partitoned variables
+    std::unordered_map<std::string, std::vector<Node*>> var_parts;
+    TF_RETURN_IF_ERROR(FindVariableParts(var_parts));
+
+    std::unordered_map<std::string, std::vector<Node*>> import_nodes;
+    TF_RETURN_IF_ERROR(FindKvResourceImportNode(var_parts, import_nodes));
+
+    // Rewrite subgraph
+    TF_RETURN_IF_ERROR(RewriteEmbeddingLookupGraph(var_parts, import_nodes));
+
+  } else {
+    // Add incr_restore_op for load delta model
+    TF_RETURN_IF_ERROR(AddIncrRestoreOps());
+ }
 
   // Add other passes here
 
@@ -904,7 +918,534 @@ Status CreateRestoreAllNode(const std::string& name,
   return Status::OK();
 }
 
+Status FindGatherNode(Node* n, const std::unordered_set<std::string>& stop_nodes,
+    Node** gather_node) {
+  *gather_node = nullptr;
+  std::unordered_set<Node*> pushed;
+  std::queue<Node*> q;
+  q.push(n);
+  pushed.insert(n);
+  while (!q.empty()) {
+    Node* curr = q.front();
+    q.pop();
+    if (curr->op_def().name() == "KvResourceGather") {
+      if (*gather_node) {
+        LOG(FATAL) << "Find many KvResourceGather op from variable: " << n->DebugString()
+                   << ", gather1: " << (*gather_node)->DebugString()
+                   << ", gather2: " << curr->DebugString();
+      }
+      *gather_node = curr;
+      continue;
+    }
+
+    if (stop_nodes.find(curr->op_def().name()) == stop_nodes.end()) {
+      for (const Edge* edge : curr->out_edges()) {
+        if (pushed.find(edge->dst()) == pushed.end()) {
+          pushed.insert(edge->dst());
+          q.push(edge->dst());
+        }
+      }
+    }
+  }
+
+  return Status::OK();
+}
+
+bool IsDynamicStitchOp(Node* n) {
+  return n->op_def().name() == "DynamicStitch" ||
+         n->op_def().name() == "DynamicStitchFast" ||
+         n->op_def().name() == "ParallelDynamicStitch";
+}
+
+Node* FindDynamicStitchNode(Node* gather_node) {
+  // Supported pattern:
+  //
+  //        KvResourceGather
+  //              |
+  //           Identity
+  //              |
+  //             ...
+  //              |
+  //           Identity
+  //              |
+  //     ParallelDynamicStitch
+  //
+  if (gather_node->num_outputs() != 1) {
+    LOG(FATAL) << "Gather node has more than one edge, "
+               << gather_node->DebugString();
+  }
+
+  for (const Edge* edge : gather_node->out_edges()) {
+    Node* dest = edge->dst();
+    while (dest->op_def().name() == "Identity") {
+      Node* tmp = nullptr;
+      for (const Edge* e : dest->out_edges()) {
+        tmp = e->dst();
+        break;
+      }
+      dest = tmp;
+    }
+
+    if (IsDynamicStitchOp(dest)) {
+      return dest;
+    }
+  }
+
+  return nullptr;
+}
+
+Node* CheckDynamicStitchNode(std::vector<Node*> gather_nodes) {
+  Node* ds_node = nullptr;
+  for (size_t i = 0; i < gather_nodes.size(); ++i) {
+    Node* tmp = FindDynamicStitchNode(gather_nodes[i]);
+    if (!ds_node) ds_node = tmp;
+    if (!tmp) {
+      LOG(FATAL) << "Gather node do not output to a DynamicStitch node, "
+                 << gather_nodes[i]->DebugString();
+    }
+    if (tmp != ds_node) {
+      LOG(FATAL) << "Gather Node output to different DynamicStitch node"
+                 << ", gather node1: " << gather_nodes[0]->DebugString()
+                 << ", DynamicStitch node1: " << ds_node->DebugString()
+                 << ", gather node2: " << gather_nodes[i]->DebugString()
+                 << ", DynamicStitch node2: " << tmp->DebugString(); 
+    }
+  }
+
+  return ds_node;
+}
+
+Node* CheckReshapeNode(Node* dynamic_stitch) {
+  Node* reshape_node = nullptr;
+  for (const Edge* edge : dynamic_stitch->out_edges()) {
+    if (!edge->IsControlEdge() &&
+        edge->dst()->op_def().name() == "Reshape") {
+      if (reshape_node) {
+        LOG(FATAL) << "Found many reshape node edges from DynamicStitch node: "
+                   << dynamic_stitch->DebugString();
+      }
+      reshape_node = edge->dst();
+    }
+  }
+
+  if (!reshape_node) {
+    LOG(FATAL) << "Can not found reshape node edges from DynamicStitch node: "
+               << dynamic_stitch->DebugString(); 
+  }
+
+  return reshape_node;
+}
+
+Node* InternalFindUniqueNode(Node* n) {
+  std::unordered_set<Node*> pushed;
+  std::queue<Node*> q;
+  q.push(n);
+  pushed.insert(n);
+  while (!q.empty()) {
+    Node* curr = q.front();
+    q.pop();
+    if (curr->op_def().name() == "Unique" ||
+        curr->op_def().name() == "UniqueV2") {
+      return curr;
+    }
+
+    for (const Edge* edge : curr->in_edges()) {
+      if (edge->IsControlEdge()) continue;
+      if (pushed.find(edge->src()) == pushed.end()) {
+        pushed.insert(edge->src());
+        q.push(edge->src());
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+Node* CheckUniqueNode(std::vector<Node*> gather_nodes) {
+  Node* unique_node = nullptr;
+ 
+  for (size_t i = 0; i < gather_nodes.size(); ++i) {
+    Node* tmp_node = InternalFindUniqueNode(gather_nodes[i]);
+    if (!tmp_node) {
+      LOG(FATAL) << "Can not found unique node from current gather node: "
+                 << gather_nodes[i]->DebugString();
+    }
+    if (!unique_node) unique_node = tmp_node;
+
+    if (tmp_node != unique_node) {
+      LOG(FATAL) << "Found different unique nodes from two gather node "
+                 << ", gather node1: " << gather_nodes[0]->DebugString()
+                 << ", unique node1: " << unique_node->DebugString()
+                 << ", gather node2: " << gather_nodes[i]->DebugString()
+                 << ", unique node2: " << tmp_node->DebugString();
+    }
+  }
+
+  return unique_node;
+}
+
+Status ModifySharedNameAttr(Node* new_var_op, int curr_partition_id) {
+  std::string shared_name;
+  TF_RETURN_IF_ERROR(GetNodeAttr(new_var_op->attrs(), "shared_name", &shared_name));
+  if (shared_name == "") {
+    LOG(FATAL) << "KvVarHandleOp can not contain the shared_name attr: "
+               << new_var_op->DebugString();
+  }
+
+  auto offset = shared_name.find("/part_");
+  if (offset == std::string::npos) {
+    shared_name = shared_name + "/part_" + std::to_string(curr_partition_id);
+  } else {
+    // Inference graph is not contain slot variable node, so we do not need to consider
+    // xx/yy/zz/part_0/aa pattern here
+    shared_name = shared_name.substr(0, offset) +
+        "/part_" + std::to_string(curr_partition_id);
+  }
+
+  new_var_op->ClearAttr("shared_name");
+  new_var_op->AddAttr("shared_name", shared_name);
+
+  return Status::OK();
+}
+
+Node* CheckInputDefaultValNode(Node* node, int slot, int* src_slot) {
+  for (const Edge* edge : node->in_edges()) {
+    if (!edge->IsControlEdge() && edge->dst_input() == slot) {
+      *src_slot = edge->src_output();
+      return edge->src();
+    }
+  }
+
+  LOG(FATAL) << "Can not found DefaultValNode in in_edges: "
+             << node->DebugString() << ", slot: " << slot;
+
+  return nullptr;
+}
+
+Status CreateScalarStringConstOp(const std::string& name,
+                                 const std::string& value,
+                                 Graph* graph, Node** new_node) {
+  NodeDef const_def;
+  const_def.set_name(name);
+  const_def.set_op("Const");
+  auto* attr = const_def.mutable_attr();
+  (*attr)["dtype"].set_type(DT_STRING);
+  Tensor const_tensor(DT_STRING, TensorShape({}));
+  const_tensor.scalar<std::string>()() = value;
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
+
+  Status s_add_node;
+  *new_node = graph->AddNode(const_def, &s_add_node);
+  return s_add_node;
+}
+
+Node* CreateKvResourceImportNode(Graph* graph, Node* origin_import_node,
+    Node* new_var_op, int partition_id, int shard_instance_count) {
+  // create new tensor_name node
+  std::string shared_name;
+  if (!GetNodeAttr(new_var_op->attrs(), "shared_name", &shared_name).ok()) {
+    LOG(FATAL) << "Get nodet attr failed, attr: shared_name, node: "
+               << new_var_op->DebugString();
+  }
+  Node* new_tensor_name_node = nullptr;
+  Status status;
+  status = CreateScalarStringConstOp(
+      new_var_op->name()+"/tensor_names",
+      shared_name, graph, &new_tensor_name_node);
+  if (!status.ok()) {
+    LOG(FATAL) << "Create tensor name const node failed, "
+               << status.error_message();
+  }
+
+  NodeDef new_import_opdef = origin_import_node->def();
+  new_import_opdef.set_name(new_var_op->name()+"/KvResourceImportV2");
+  new_import_opdef.set_input(1, new_var_op->name());
+  new_import_opdef.set_input(3, new_tensor_name_node->name());
+  Node* new_import_op = graph->AddNode(new_import_opdef, &status);
+  if (!status.ok()) {
+    LOG(FATAL) << "Create new import node failed, "
+               << status.error_message()
+               << ", origin_import_node: "
+               << origin_import_node->DebugString();
+  }
+  new_import_op->ClearAttr("partition_id");
+  new_import_op->ClearAttr("partition_num");
+  new_import_op->AddAttr("partition_id", partition_id);
+  new_import_op->AddAttr("partition_num", shard_instance_count);
+
+  // origin import node will be deleted later
+  //graph->RemoveNode(origin_import_node);
+
+  return new_import_op;
+}
+
+Status CreateNewEmbeddingLookupGraph(
+    Graph* graph, Node* origin_var_node, const std::string& new_var_name,
+    Node* gather_node, Node* reshape_node, Node* unique_node,
+    Node* default_val_node, int default_val_node_slot, int curr_partition_id,
+    int shard_instance_count, Node* origin_import_node,
+    Node** new_kv_import_op) {
+  Status status;
+  // Add new KvVarHandleOp node
+  NodeDef new_var_opdef = origin_var_node->def();
+  new_var_opdef.set_name(
+      new_var_name+"/odl_var_part/part_"+std::to_string(curr_partition_id));
+  Node* new_var_op = graph->AddNode(new_var_opdef, &status);
+  TF_RETURN_IF_ERROR(status);
+  // reset the shared_name attr
+  TF_RETURN_IF_ERROR(ModifySharedNameAttr(new_var_op, curr_partition_id));
+
+  // Add new KvResourceGather node
+  NodeDef new_gather_def = gather_node->def();
+  new_gather_def.set_name(new_var_op->name()+"/KvResourceGather");
+  new_gather_def.clear_input();
+  Node* new_gather_op = graph->AddNode(new_gather_def, &status);
+  TF_RETURN_IF_ERROR(status);
+  // No need add control edges here.
+  graph->AddEdge(new_var_op, 0, new_gather_op, 0);
+  graph->AddEdge(unique_node, 0, new_gather_op, 1);
+  graph->AddEdge(default_val_node, default_val_node_slot, new_gather_op, 2);
+
+  // Add New Identity Node
+  DataType gather_dtype;
+  if (!GetNodeAttr(new_gather_op->attrs(), "dtype", &gather_dtype).ok()) {
+    LOG(FATAL) << "Get nodet attr failed, attr: dtype, node: "
+               << new_gather_op->DebugString();
+  }
+  NodeDef identity_op_def;
+  identity_op_def.set_name(new_var_op->name()+"/Identity");
+  identity_op_def.set_op("Identity");
+   (*identity_op_def.mutable_attr())["T"].set_type(gather_dtype);
+  identity_op_def.add_input(new_var_op->name()+"/KvResourceGather");
+  Node* identity_op_node = graph->AddNode(identity_op_def, &status);
+  if (!status.ok()) {
+    LOG(FATAL) << "Create Identity node failed when CreateNewEmbeddingLookupGraph.";
+  }
+
+  for (const Edge* edge : reshape_node->out_edges()) {
+    int slot = 0;
+    if (edge->IsControlEdge()) {
+      slot = Graph::kControlSlot;
+    }
+
+    graph->AddEdge(identity_op_node, slot, edge->dst(),
+                   edge->dst_input());
+  }
+
+  // Create new KvResourceImportV2 node
+  *new_kv_import_op =
+      CreateKvResourceImportNode(graph, origin_import_node,
+                                 new_var_op, curr_partition_id,
+                                 shard_instance_count);
+ 
+  return Status::OK();
+}
+
+void DeleteOriginEmbeddingLookupGraphNodes(
+    const std::vector<Node*>& var_parts, Graph* graph) {
+  for (Node* n : var_parts) {
+    std::unordered_set<Node*> pushed;
+    std::queue<Node*> q;
+    q.push(n);
+    pushed.insert(n);
+    while (!q.empty()) {
+      Node* curr = q.front();
+      q.pop();
+
+      for (const Edge* edge : curr->out_edges()) {
+        if (pushed.find(edge->dst()) == pushed.end()) {
+          pushed.insert(edge->dst());
+          q.push(edge->dst());
+        }
+      }
+
+      graph->RemoveNode(curr);
+    }
+  }
+}
+
 } // namespace
+
+Status SavedModelOptimizer::RewriteEmbeddingLookupGraph(
+    std::unordered_map<std::string, std::vector<Node*>>& var_parts_map,
+    std::unordered_map<std::string, std::vector<Node*>>& origin_import_nodes) {
+  int curr_partition_id = option_.partition_id;
+  int shard_instance_count = option_.shard_instance_count;
+  std::vector<Node*> new_kv_import_nodes;
+ std::unordered_map<std::string, bool> delete_origin_graph_nodes;
+  for (auto vp : var_parts_map) {
+    if (vp.second.size() == 1 && vp.first == vp.second[0]->name()) {
+      delete_origin_graph_nodes[vp.first] = false;
+      // non-partitoned variable
+      // rename node, from "xx/yy/zz" to "xx/yy/zz/part_curr_partition_id",
+      // this will let KvResourceImportOp load variable slice according
+      // the partition policy.
+      Status status;
+      NodeDef new_var_opdef = vp.second[0]->def();
+      new_var_opdef.set_name(vp.second[0]->name() + "/odl_var_part/part_" + std::to_string(curr_partition_id));
+      Node* new_var_op = graph_.AddNode(new_var_opdef, &status);
+      TF_RETURN_IF_ERROR(status);
+
+      // reset the shared_name attr
+      TF_RETURN_IF_ERROR(ModifySharedNameAttr(new_var_op, curr_partition_id));
+
+      for (const Edge* edge : vp.second[0]->out_edges()) {
+        graph_.AddEdge(new_var_op, edge->src_output(),
+                       edge->dst(), edge->dst_input());
+      }
+
+      // remove old var node
+      graph_.RemoveNode(vp.second[0]);
+
+      // Create new KvResourceImportV2 node
+      Node* new_kv_import_op =
+          CreateKvResourceImportNode(&graph_, origin_import_nodes[vp.first][0],
+                                     new_var_op, curr_partition_id, shard_instance_count);
+      new_kv_import_nodes.push_back(new_kv_import_op);
+    } else {
+      delete_origin_graph_nodes[vp.first] = true;
+      // partitioned variable, like 'xx/yy/zz/part_0', 'xx/yy/zz/part_1' ...
+      // delete these part nodes, and create "xx/yy/zz/part_curr_partition_id" node,
+      // then, rewrite the embedding lookup subgraph.
+      std::unordered_set<std::string> stop_nodes
+          { "SparseSegmentSqrtN", "SparseSegmentSum",
+            "SparseSegmentMean", "DynamicStitch",
+            "ParallelDynamicStitch" };
+      std::vector<Node*> gather_nodes;
+      gather_nodes.resize(vp.second.size());
+      for (size_t i = 0; i < vp.second.size(); ++i) {
+        gather_nodes[i] = nullptr;
+        TF_RETURN_IF_ERROR(FindGatherNode(vp.second[i], stop_nodes, &gather_nodes[i]));
+      }
+
+      //                           Unique
+      //                             |
+      //                            ...
+      //                             | 
+      //                       DynamicPartition
+      //                             |
+      //          ----------------------------------------
+      //          |                  |                   |
+      //    KvResourceGather  KvResourceGather_1  KvResourceGather_2
+      //          |                  |                   |
+      //          ----------------------------------------
+      //                             |
+      //                       DynamicStitch
+      //                             |
+      //                          Reshape
+      //                             |
+      //                      SparseSegmentMean (or clip ops)
+      //
+      Node* dynamic_stitch_node = CheckDynamicStitchNode(gather_nodes);
+      Node* reshape_node = CheckReshapeNode(dynamic_stitch_node);
+
+      Node* unique_node = CheckUniqueNode(gather_nodes);
+
+      // create a default value node, not use origin default value.
+      // Node* origin_default_val_node = CheckInputDefaultValNode(gather_nodes[0], 2, &src_slot);
+      Node* default_val_node = nullptr;
+      int src_slot = 0; 
+      int default_value_dim = 0;
+      TF_RETURN_IF_ERROR(GetShapeValue(vp.second[0], &default_value_dim));
+      DataType default_val_type;
+      TF_RETURN_IF_ERROR(GetNodeAttr(gather_nodes[0]->attrs(),
+                                     "dtype", &default_val_type));
+      // shape = [dim]
+      TF_RETURN_IF_ERROR(CreateDefaultValueNode(
+          &graph_, default_value_dim, &default_val_node, default_val_type,
+          vp.first+"/odl_var_part/part_"+std::to_string(curr_partition_id) +"/default_value"));
+
+      //  Convert subgraph above to below:
+      //
+      //                 Unique
+      //                   |
+      //      KvResourceGather_partition_id
+      //                   |
+      //                Identity
+      //                   |
+      //             SparseSegmentMean (or clip ops)
+      //
+      Node* new_kv_import_op = nullptr;
+      TF_RETURN_IF_ERROR(
+          CreateNewEmbeddingLookupGraph(&graph_, vp.second[0], vp.first, gather_nodes[0],
+                                        reshape_node, unique_node, default_val_node,
+                                        src_slot, curr_partition_id, shard_instance_count,
+                                        origin_import_nodes[vp.first][0], &new_kv_import_op));
+      new_kv_import_nodes.push_back(new_kv_import_op);
+
+      // delete Reshape and DynamicStitch node
+      graph_.RemoveNode(reshape_node);
+      graph_.RemoveNode(dynamic_stitch_node);
+    }
+  }
+
+  // create new restore_op
+  Node* restore_shard =
+      UpdateRestoreShardNodeInputs(origin_import_nodes, new_kv_import_nodes);
+
+  // delete nodes from variable node(KvVarHandleOp) to Reshape node
+  for (auto vp : var_parts_map) {
+    if (delete_origin_graph_nodes[vp.first]) {
+      DeleteOriginEmbeddingLookupGraphNodes(vp.second, &graph_);
+    }
+  }
+
+  // Add IncrRestore node
+  std::vector<SrcInfo> input_nodes;
+  for (const Edge* edge : restore_shard->in_edges()) {
+    input_nodes.push_back({edge->src(), edge->src_output()});
+  }
+  return CreateRestoreAllNode(
+      meta_graph_def_->saver_def().restore_op_name() +
+          GetKvIncrRestoreAllNameSuffix(),
+      "NoOp", input_nodes, &graph_);
+}
+
+Status SavedModelOptimizer::FindKvResourceImportNode(
+    std::unordered_map<std::string, std::vector<Node*>>& var_parts,
+    std::unordered_map<std::string, std::vector<Node*>>& import_nodes) {
+  for (auto vp : var_parts) {
+    for (Node* n : vp.second) {
+      for (const Edge* edge : n->out_edges()) {
+        if (edge->dst()->op_def().name() == "KvResourceImportV2") {
+          import_nodes[vp.first].push_back(edge->dst());
+        }
+      }
+    }
+    if (import_nodes.find(vp.first) == import_nodes.end() ||
+        import_nodes[vp.first].size() != var_parts[vp.first].size()) {
+      LOG(FATAL) << "KvVarHandle node count != KvResourceImportV2 node count "
+                 << ", " << vp.first; 
+    }
+  }
+
+  return Status::OK();
+}
+
+Status SavedModelOptimizer::FindVariableParts(
+    std::unordered_map<std::string, std::vector<Node*>>& var_parts) {
+  // TODO: only support embedding variable currently
+  for (Node* node : graph_.nodes()) {
+    if (node->op_def().name() == "KvVarHandleOp") {
+      for (auto sname : option_.shard_embedding_names) {
+        if (node->name() == sname ||
+            node->name().find(sname+"/part_") != std::string::npos) {
+          var_parts[sname].push_back(node);
+        }
+      }
+    }
+  }
+
+  for (auto sname : option_.shard_embedding_names) {
+    if (var_parts.find(sname) == var_parts.end() ||
+        var_parts[sname].size() == 0) {
+      return tensorflow::errors::Internal(
+          "Can not found variable info in graph: ", sname);
+    }
+  }
+
+  return Status::OK();
+}
 
 Status SavedModelOptimizer::GetFeature2IdAttr(
     const std::string& name,
@@ -1646,7 +2187,7 @@ Status SavedModelOptimizer::ConvertKvImportToKvInsert(
   return Status::OK();
 }
 
-Status SavedModelOptimizer::AddIncrRestoreOps() {
+Node* SavedModelOptimizer::FindRestoreShardNode() {
   const std::string restore_op_name =
       meta_graph_def_->saver_def().restore_op_name();
   Node* restore_op = nullptr;
@@ -1658,47 +2199,86 @@ Status SavedModelOptimizer::AddIncrRestoreOps() {
   }
 
   if (!restore_op) {
-    return errors::Internal(
-        "Can not find restore op: " + restore_op_name);
+    LOG(FATAL) << "Can not find restore op: "
+               << restore_op_name;
   }
 
   if (restore_op->in_edges().size() != 1) {
     LOG(FATAL) << "Restore all op only allow 1 input: "
                << restore_op->DebugString();
   }
-  std::vector<SrcInfo> input_nodes;
+
+  Node* restore_shard = nullptr;
   for (const Edge* edge : restore_op->in_edges()) {
-    const Node* src = edge->src();
-    if (src->type_string() != "NoOp") {
+    restore_shard = edge->src();
+    if (restore_shard->type_string() != "NoOp") {
       LOG(FATAL) << "Restore op " << restore_op_name
                  << " has input node which type is not NoOp."
-                 << src->DebugString();
+                 << restore_shard->DebugString();
     }
+  }
 
-    for (const Edge* inner_edge : src->in_edges()) {
-      Node* inner_src = inner_edge->src();
-      // KvResourceImportV2 -> KvResourceInsert
-      if (inner_src->op_def().name() == "KvResourceImportV2") {
-        if (inner_edge->src_output() != -1) {
-          LOG(FATAL) << "Invalid tensorflow graph, restore_shard op is: "
-                     << src->DebugString() << ", KvResourceImportV2 op is: "
-                     << inner_src->DebugString();
-        }
+  return restore_shard; 
+}
 
-        Node* insert_op = nullptr;
-        Status s = ConvertKvImportToKvInsert(inner_src, &insert_op);
-        TF_RETURN_IF_ERROR(s);
+Status SavedModelOptimizer::AddIncrRestoreOps() {
+  Node* shard_node = FindRestoreShardNode();
 
-        input_nodes.push_back({insert_op, inner_edge->src_output()});
-      } else {
-        input_nodes.push_back({inner_src, inner_edge->src_output()});
+  std::vector<SrcInfo> input_nodes;
+  for (const Edge* inner_edge : shard_node->in_edges()) {
+    Node* inner_src = inner_edge->src();
+    // KvResourceImportV2 -> KvResourceInsert
+    if (inner_src->op_def().name() == "KvResourceImportV2") {
+      if (inner_edge->src_output() != -1) {
+        LOG(FATAL) << "Invalid tensorflow graph, restore_shard op is: "
+                   << shard_node->DebugString() << ", KvResourceImportV2 op is: "
+                   << inner_src->DebugString();
       }
+
+      Node* insert_op = nullptr;
+      Status s = ConvertKvImportToKvInsert(inner_src, &insert_op);
+      TF_RETURN_IF_ERROR(s);
+
+      input_nodes.push_back({insert_op, inner_edge->src_output()});
+    } else {
+      input_nodes.push_back({inner_src, inner_edge->src_output()});
     }
   }
 
   return CreateRestoreAllNode(
-      restore_op_name + GetKvIncrRestoreAllNameSuffix(),
+      meta_graph_def_->saver_def().restore_op_name() +
+          GetKvIncrRestoreAllNameSuffix(),
       "NoOp", input_nodes, &graph_);
+}
+
+Node* SavedModelOptimizer::UpdateRestoreShardNodeInputs(
+    std::unordered_map<std::string, std::vector<Node*>>& origin_import_nodes,
+    std::vector<Node*>& new_kv_import_nodes) {
+  std::unordered_set<Node*> m;
+  for (auto node_map : origin_import_nodes) {
+    for (Node* n : node_map.second) { m.insert(n); }
+  }
+
+  Node* shard_node = FindRestoreShardNode();
+
+  // remove odl import node, origin edges
+  std::vector<Node*> delete_candidate;
+  for (const Edge* edge : shard_node->in_edges()) {
+    if (m.find(edge->src()) != m.end()) {
+      delete_candidate.push_back(edge->src());
+    }
+  }
+  for (Node* n : delete_candidate) {
+    graph_.RemoveNode(n);
+  }
+
+  // add new edges
+  for (Node* n : new_kv_import_nodes) {
+    graph_.AddEdge(n, Graph::kControlSlot,
+                   shard_node, Graph::kControlSlot);
+  }
+
+  return shard_node;
 }
 
 } // namespace processor

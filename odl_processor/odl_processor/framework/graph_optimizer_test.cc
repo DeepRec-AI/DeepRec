@@ -1182,6 +1182,617 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   EXPECT_TRUE(nodes["save/restore_all/Kv_incr_all"].op() == "NoOp");
   EXPECT_TRUE(1);
 }
+
+/*
+                KvVarHandleOp
+         ......  /        \   unique default_value
+             \  /          \    /   / 
+            KvResource     KvResource
+    assign   ImportV2        Gather
+       \        |               \
+        \       |                \
+        NoOp(save/restore_shard) Identity
+                |
+       NoOp(save/restore_all)
+
+                   ||
+                   ||
+                   \/
+
+  ==> curr_id = 1, total_instance = 3
+
+              KvVarHandleOp/part_1
+          ......  /        \   unique default_value
+              \  /          \    /    /
+  assign   KvResource      part_1/KvResource
+     \ \    ImportV2         Gather
+      \ \    /   \              \
+       \ -- /--\  \              \
+        NoOp     NoOp         Identity  
+(restore_shard) (restore_delta) 
+         |
+ NoOp(save/restore_all)
+
+*/
+TEST(GraphOptimizerTest, ShardEmbeddingOptimizer1) {
+  GraphDef graph_def;
+
+  NodeDef* n_prefix_const_0 = graph_def.add_node();
+  n_prefix_const_0->set_name("prefix/Const");
+  n_prefix_const_0->set_op("Const");
+  (*n_prefix_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr = n_prefix_const_0->mutable_attr();
+  Tensor const_tensor(DT_STRING, TensorShape({1}));
+  const_tensor.vec<std::string>()(0) = "AAAAAAAAAAAAAAAAAAAAA";
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
+
+  NodeDef* n_value_const_0 = graph_def.add_node();
+  n_value_const_0->set_name("value/Const");
+  n_value_const_0->set_op("Const");
+  (*n_value_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_tsname_const_0 = graph_def.add_node();
+  n_tsname_const_0->set_name("tsname/Const");
+  n_tsname_const_0->set_op("Const");
+  (*n_tsname_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr1 = n_tsname_const_0->mutable_attr();
+  Tensor const_tensor1(DT_STRING, TensorShape({1}));
+  const_tensor1.vec<std::string>()(0) = "BBBBBBBBBBBBBBBBBBBB";
+  const_tensor1.AsProtoTensorContent((*attr1)["value"].mutable_tensor());
+
+  NodeDef* n_ek_const_0 = graph_def.add_node();
+  n_ek_const_0->set_name("empty_key/Const");
+  n_ek_const_0->set_op("Const");
+  (*n_ek_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+
+  // KvVarHandle
+  NodeDef* n_var_0 = graph_def.add_node();
+  n_var_0->set_name("var_0");
+  n_var_0->set_op("KvVarHandleOp");
+  AttrValue value_shape;
+  tensorflow::TensorShapeProto tshape_proto;
+  tshape_proto.add_dim()->set_size(1);
+  *value_shape.mutable_shape() = tshape_proto;
+  (*n_var_0->mutable_attr())["shape"] = value_shape;
+  tensorflow::AttrValue container_attr;
+  *container_attr.mutable_s() = "A";
+  (*n_var_0->mutable_attr())["container"] = container_attr;
+  tensorflow::AttrValue shared_name_attr;
+  *shared_name_attr.mutable_s() = "B/feature";
+  (*n_var_0->mutable_attr())["shared_name"] = shared_name_attr;
+  (*n_var_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  (*n_var_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  AttrValue var_value0;
+  tensorflow::TensorShapeProto var_shape0;
+  var_shape0.add_dim()->set_size(1);
+  *var_value0.mutable_shape() = var_shape0;
+  (*n_var_0->mutable_attr())["shape"] = var_value0;
+
+  // KvResourceImportV2
+  NodeDef* n_lookup_import_0 = graph_def.add_node();
+  n_lookup_import_0->set_name("KvResourceImportV2_0");
+  n_lookup_import_0->set_op("KvResourceImportV2");
+  (*n_lookup_import_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_import_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  AttrValue value0;
+  tensorflow::TensorShapeProto tshape0;
+  tshape0.add_dim()->set_size(-1);
+  *value0.mutable_shape() = tshape0;
+  (*n_lookup_import_0->mutable_attr())["shape"] = value0;
+  n_lookup_import_0->add_input("prefix/Const");
+  n_lookup_import_0->add_input("var_0");
+  n_lookup_import_0->add_input("value/Const");
+  n_lookup_import_0->add_input("tsname/Const");
+  n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("^prefix/Const");
+
+  REGISTER_OP("MyFakeAssign")
+      .Output("x: int32");
+  NodeDef* fake_assign_0 = graph_def.add_node();
+  fake_assign_0->set_name("FakeAssign");
+  fake_assign_0->set_op("MyFakeAssign");
  
+  // restore_shard/NoOp
+  NodeDef* n_noop_0 = graph_def.add_node(); 
+  n_noop_0->set_name("save/restore");
+  n_noop_0->set_op("NoOp");
+  n_noop_0->add_input("^KvResourceImportV2_0");
+  n_noop_0->add_input("^FakeAssign");
+
+  // restore_all/NoOp
+  NodeDef* n_restore_all = graph_def.add_node();
+  n_restore_all->set_name("save/restore_all");
+  n_restore_all->set_op("NoOp");
+  n_restore_all->add_input("^save/restore");
+
+   // KvResourceGather
+  NodeDef* n_default_const_0 = graph_def.add_node();
+  n_default_const_0->set_name("default/Const");
+  n_default_const_0->set_op("Const");
+  (*n_default_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_unique_0 = graph_def.add_node();
+  n_unique_0->set_name("Uniue");
+  n_unique_0->set_op("FakeUnique");
+ 
+  NodeDef* n_lookup_find_0 = graph_def.add_node();
+  n_lookup_find_0->set_name("KvResourceGather_0");
+  n_lookup_find_0->set_op("KvResourceGather");
+  (*n_lookup_find_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_find_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  n_lookup_find_0->add_input("var_0");
+  n_lookup_find_0->add_input("Uniue");
+  n_lookup_find_0->add_input("default/Const");
+  n_lookup_find_0->add_input("^var_0");
+
+  // Identity
+  NodeDef* n_identity_0 = graph_def.add_node();
+  n_identity_0->set_name("lookup/Identity");
+  n_identity_0->set_op("Identity");
+  (*n_identity_0->mutable_attr())["T"].set_type(DT_FLOAT);
+  n_identity_0->add_input("KvResourceGather_0");
+
+  SaverDef saver_def;
+  saver_def.set_restore_op_name("save/restore_all");
+
+  SavedModelBundle saved_model_bundle;
+  *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
+  *(saved_model_bundle.meta_graph_def.mutable_saver_def()) = saver_def;
+
+  GraphOptimizerOption option;
+  option.native_tf_mode = true;
+  // shard user embedding or not
+  option.shard_embedding = true;
+  // which user embeddings will be sharded
+  option.shard_embedding_names.push_back("var_0");
+  // current instance partition id
+  option.partition_id = 1;
+  option.shard_instance_count = 3;
+
+  SavedModelOptimizer opt("serving_default",
+                          &saved_model_bundle.meta_graph_def,
+                          option);
+  opt.Optimize();
+
+  GraphDef new_graph_def = saved_model_bundle.meta_graph_def.graph_def();
+
+  std::unordered_map<std::string, NodeDef> nodes;
+  int node_count = 0;
+  for (auto n : new_graph_def.node()) {
+    nodes[n.name()] = n;
+    ++node_count;
+  }
+
+  EXPECT_TRUE(node_count == 15);
+  EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_1/KvResourceImportV2") != nodes.end());
+  EXPECT_TRUE(nodes.find("save/restore_all/Kv_incr_all") != nodes.end());
+  EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_1/tensor_names") != nodes.end());
+  EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_1") != nodes.end());
+ 
+  EXPECT_TRUE(1);
+}
+
+/*
+                                     unique
+                                       |
+        --------------------------------------------------------
+        |                                                      |  
+        |               KvVarHandleOp/    KvVarHandleOp/       |
+    ...  ...               part_0            part_1        ...   ...    
+     \    /                  / \             /    \          \   /
+ -- dynamic                 /   \           /      \        dynamic--------------------      
+ |  patition default_value /     \         /        \      patition:1  default_value  |
+ |     \       |          /       \       /          \        /          /            |
+ |       KvResourceGather   KvResource  KvResource     KvResourceGather_1             |
+ |             |             ImportV2   ImportV2_1             |                      |
+ |          Identity             \          /              Identity_1                 |
+ |             |                  \        /                   |                      |
+ |             |          NoOp(save/restore_shard)             |                      |
+ |             |                      |                        |                      |
+ |             |            NoOp(save/restore_all)             |                      |
+ |             |                                               |                      |
+ |             |                                               |                      |
+ |             |                                               |                      |
+ |----------------------> ParallelDynamicStitch <--------------------------------------
+                                     |
+                                  Reshape
+                                     |
+                                  AAAAAAA
+
+                                    ||
+                                    ||
+                                    \/
+
+  ==> curr_id = 0, total_instance = 3  (partition 0)
+  ==> curr_id = 1, total_instance = 3  (partition 1)
+  ==> curr_id = 2, total_instance = 3  (partition 2)
+
+              KvVarHandleOp/part_2
+          ......  /        \   unique default_value
+              \  /          \    /    /
+           KvResource      part_2/KvResource
+           ImportV2_2         Gather
+             /   \              \
+            /     \              \
+        NoOp     NoOp            part_2/Identity  
+(restore_shard) (restore_delta)        |
+         |                          AAAAAAA
+ NoOp(save/restore_all)
+
+*/
+TEST(GraphOptimizerTest, ShardEmbeddingOptimizer2) {
+  GraphDef graph_def;
+
+  NodeDef* n_unique_0 = graph_def.add_node();
+  n_unique_0->set_name("Unique");
+  n_unique_0->set_op("Unique");
+  (*n_unique_0->mutable_attr())["T"].set_type(DT_INT64);
+  (*n_unique_0->mutable_attr())["out_idx"].set_type(DT_INT32);
+
+  NodeDef* shape_const_0 = graph_def.add_node();
+  shape_const_0->set_name("const_shape");
+  shape_const_0->set_op("Const");
+  (*shape_const_0->mutable_attr())["dtype"].set_type(DT_INT32);
+  auto* shape_const_0_attr = shape_const_0->mutable_attr();
+  Tensor shape_const_tensor(DT_INT32, TensorShape({1}));
+  shape_const_tensor.vec<int>()(0) = -1;
+  shape_const_tensor.AsProtoTensorContent((*shape_const_0_attr)["value"].mutable_tensor());
+
+  NodeDef* reshape_0 = graph_def.add_node();
+  reshape_0->set_name("unique_reshape");
+  reshape_0->set_op("Reshape");
+  (*reshape_0->mutable_attr())["T"].set_type(DT_INT64);
+  (*reshape_0->mutable_attr())["Tshape"].set_type(DT_INT32);
+  reshape_0->add_input("Unique");
+  reshape_0->add_input("const_shape");
+
+  NodeDef* size_0 = graph_def.add_node();
+  size_0->set_name("unique_size");
+  size_0->set_op("Size");
+  (*size_0->mutable_attr())["T"].set_type(DT_INT64);
+  (*size_0->mutable_attr())["out_type"].set_type(DT_INT32);
+  size_0->add_input("unique_reshape");
+
+  NodeDef* start_const_0 = graph_def.add_node();
+  start_const_0->set_name("const_start");
+  start_const_0->set_op("Const");
+  (*start_const_0->mutable_attr())["dtype"].set_type(DT_INT32);
+  auto* start_const_0_attr = start_const_0->mutable_attr();
+  Tensor start_const_tensor(DT_INT32, TensorShape({}));
+  start_const_tensor.scalar<int>()() = 0;
+  start_const_tensor.AsProtoTensorContent((*start_const_0_attr)["value"].mutable_tensor());
+
+  NodeDef* delta_const_0 = graph_def.add_node();
+  delta_const_0->set_name("const_delta");
+  delta_const_0->set_op("Const");
+  (*delta_const_0->mutable_attr())["dtype"].set_type(DT_INT32);
+  auto* delta_const_0_attr = delta_const_0->mutable_attr();
+  Tensor delta_const_tensor(DT_INT32, TensorShape({}));
+  delta_const_tensor.scalar<int>()() = 1;
+  delta_const_tensor.AsProtoTensorContent((*delta_const_0_attr)["value"].mutable_tensor());
+
+  NodeDef* range_0 = graph_def.add_node();
+  range_0->set_name("range");
+  range_0->set_op("Range");
+  (*range_0->mutable_attr())["Tidx"].set_type(DT_INT32);
+  range_0->add_input("const_start");
+  range_0->add_input("unique_size");
+  range_0->add_input("const_delta");
+
+  NodeDef* cast_1 = graph_def.add_node();
+  cast_1->set_name("cast1");
+  cast_1->set_op("Cast");
+  (*cast_1->mutable_attr())["DstT"].set_type(DT_INT64);
+  (*cast_1->mutable_attr())["SrcT"].set_type(DT_INT32);
+  (*cast_1->mutable_attr())["Truncate"].set_b(false);
+  cast_1->add_input("range");
+
+  NodeDef* cast_0 = graph_def.add_node();
+  cast_0->set_name("cast");
+  cast_0->set_op("Cast");
+  (*cast_0->mutable_attr())["DstT"].set_type(DT_INT32);
+  (*cast_0->mutable_attr())["SrcT"].set_type(DT_INT64);
+  (*cast_0->mutable_attr())["Truncate"].set_b(false);
+
+  // create DynamicPartition
+  NodeDef* dynamic_partition_0 = graph_def.add_node();
+  dynamic_partition_0->set_name("dynamic_partition");
+  dynamic_partition_0->set_op("DynamicPartition");
+  (*dynamic_partition_0->mutable_attr())["T"].set_type(DT_INT64);
+  (*dynamic_partition_0->mutable_attr())["num_partitions"].set_i(2);
+  dynamic_partition_0->add_input("cast1");
+  dynamic_partition_0->add_input("cast");
+
+  NodeDef* dynamic_partition_cast = graph_def.add_node();
+  dynamic_partition_cast->set_name("dynamic_partition_cast");
+  dynamic_partition_cast->set_op("Cast");
+  (*dynamic_partition_cast->mutable_attr())["DstT"].set_type(DT_INT32);
+  (*dynamic_partition_cast->mutable_attr())["SrcT"].set_type(DT_INT64);
+  (*dynamic_partition_cast->mutable_attr())["Truncate"].set_b(false);
+  dynamic_partition_cast->add_input("dynamic_partition");
+
+  NodeDef* dynamic_partition_cast1 = graph_def.add_node();
+  dynamic_partition_cast1->set_name("dynamic_partition_cast_2");
+  dynamic_partition_cast1->set_op("Cast");
+  (*dynamic_partition_cast1->mutable_attr())["DstT"].set_type(DT_INT32);
+  (*dynamic_partition_cast1->mutable_attr())["SrcT"].set_type(DT_INT64);
+  (*dynamic_partition_cast1->mutable_attr())["Truncate"].set_b(false);
+  dynamic_partition_cast1->add_input("dynamic_partition:1");
+
+  // ----------------------------------------------
+ 
+  NodeDef* n_prefix_const_0 = graph_def.add_node();
+  n_prefix_const_0->set_name("prefix/Const");
+  n_prefix_const_0->set_op("Const");
+  (*n_prefix_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr = n_prefix_const_0->mutable_attr();
+  Tensor const_tensor(DT_STRING, TensorShape({1}));
+  const_tensor.vec<std::string>()(0) = "AAAAAAAAAAAAAAAAAAAAA/part_0";
+  const_tensor.AsProtoTensorContent((*attr)["value"].mutable_tensor());
+
+  NodeDef* n_value_const_0 = graph_def.add_node();
+  n_value_const_0->set_name("value/Const");
+  n_value_const_0->set_op("Const");
+  (*n_value_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_tsname_const_0 = graph_def.add_node();
+  n_tsname_const_0->set_name("tsname/Const");
+  n_tsname_const_0->set_op("Const");
+  (*n_tsname_const_0->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr1 = n_tsname_const_0->mutable_attr();
+  Tensor const_tensor1(DT_STRING, TensorShape({1}));
+  const_tensor1.vec<std::string>()(0) = "BBBBBBBBBBBBBBBBBBBB/part_0";
+  const_tensor1.AsProtoTensorContent((*attr1)["value"].mutable_tensor());
+
+  NodeDef* n_ek_const_0 = graph_def.add_node();
+  n_ek_const_0->set_name("empty_key/Const");
+  n_ek_const_0->set_op("Const");
+  (*n_ek_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+
+  // KvVarHandle/part-0
+  NodeDef* n_var_0 = graph_def.add_node();
+  n_var_0->set_name("var_0/part_0");
+  n_var_0->set_op("KvVarHandleOp");
+  AttrValue value_shape;
+  tensorflow::TensorShapeProto tshape_proto;
+  tshape_proto.add_dim()->set_size(1);
+  *value_shape.mutable_shape() = tshape_proto;
+  (*n_var_0->mutable_attr())["shape"] = value_shape;
+  tensorflow::AttrValue container_attr;
+  *container_attr.mutable_s() = "A";
+  (*n_var_0->mutable_attr())["container"] = container_attr;
+  tensorflow::AttrValue shared_name_attr;
+  *shared_name_attr.mutable_s() = "var_0/part_0";
+  (*n_var_0->mutable_attr())["shared_name"] = shared_name_attr;
+  (*n_var_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  (*n_var_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  AttrValue var_value0;
+  tensorflow::TensorShapeProto var_shape0;
+  var_shape0.add_dim()->set_size(1);
+  *var_value0.mutable_shape() = var_shape0;
+  (*n_var_0->mutable_attr())["shape"] = var_value0;
+
+  // part_0/KvResourceImportV2
+  NodeDef* n_lookup_import_0 = graph_def.add_node();
+  n_lookup_import_0->set_name("part_0/KvResourceImportV2");
+  n_lookup_import_0->set_op("KvResourceImportV2");
+  (*n_lookup_import_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_import_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  AttrValue value0;
+  tensorflow::TensorShapeProto tshape0;
+  tshape0.add_dim()->set_size(-1);
+  *value0.mutable_shape() = tshape0;
+  (*n_lookup_import_0->mutable_attr())["shape"] = value0;
+  n_lookup_import_0->add_input("prefix/Const");
+  n_lookup_import_0->add_input("var_0/part_0");
+  n_lookup_import_0->add_input("value/Const");
+  n_lookup_import_0->add_input("tsname/Const");
+  n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("^prefix/Const");
+
+  REGISTER_OP("MyFakeAssign2")
+      .Output("x: int32");
+  NodeDef* fake_assign_0 = graph_def.add_node();
+  fake_assign_0->set_name("FakeAssign");
+  fake_assign_0->set_op("MyFakeAssign2");
+
+  // part_0/KvResourceGather
+  NodeDef* n_default_const_0 = graph_def.add_node();
+  n_default_const_0->set_name("default/Const");
+  n_default_const_0->set_op("Const");
+  (*n_default_const_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_lookup_find_0 = graph_def.add_node();
+  n_lookup_find_0->set_name("part_0/KvResourceGather");
+  n_lookup_find_0->set_op("KvResourceGather");
+  (*n_lookup_find_0->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_find_0->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  n_lookup_find_0->add_input("var_0/part_0");
+  n_lookup_find_0->add_input("dynamic_partition");
+  n_lookup_find_0->add_input("default/Const");
+  n_lookup_find_0->add_input("^var_0/part_0");
+
+  // Identity
+  NodeDef* n_identity_0 = graph_def.add_node();
+  n_identity_0->set_name("lookup/Identity");
+  n_identity_0->set_op("Identity");
+  (*n_identity_0->mutable_attr())["T"].set_type(DT_FLOAT);
+  n_identity_0->add_input("part_0/KvResourceGather");
+
+  // ----------------------------------------------
+
+  NodeDef* n_value_const_1 = graph_def.add_node();
+  n_value_const_1->set_name("value/Const_1");
+  n_value_const_1->set_op("Const");
+  (*n_value_const_1->mutable_attr())["dtype"].set_type(DT_FLOAT);
+
+  NodeDef* n_tsname_const_1 = graph_def.add_node();
+  n_tsname_const_1->set_name("tsname/Const_1");
+  n_tsname_const_1->set_op("Const");
+  (*n_tsname_const_1->mutable_attr())["dtype"].set_type(DT_STRING);
+  auto* attr1_1 = n_tsname_const_1->mutable_attr();
+  Tensor const_tensor1_1(DT_STRING, TensorShape({1}));
+  const_tensor1_1.vec<std::string>()(0) = "BBBBBBBBBBBBBBBBBBBB/part_1";
+  const_tensor1_1.AsProtoTensorContent((*attr1_1)["value"].mutable_tensor());
+
+  NodeDef* n_ek_const_1 = graph_def.add_node();
+  n_ek_const_1->set_name("empty_key/Const_1");
+  n_ek_const_1->set_op("Const");
+  (*n_ek_const_1->mutable_attr())["dtype"].set_type(DT_INT64);
+
+  // KvVarHandle/part-1
+  NodeDef* n_var_1 = graph_def.add_node();
+  n_var_1->set_name("var_0/part_1");
+  n_var_1->set_op("KvVarHandleOp");
+  AttrValue value_shape_1;
+  tensorflow::TensorShapeProto tshape_proto_1;
+  tshape_proto_1.add_dim()->set_size(1);
+  *value_shape_1.mutable_shape() = tshape_proto_1;
+  (*n_var_1->mutable_attr())["shape"] = value_shape_1;
+  tensorflow::AttrValue container_attr_1;
+  *container_attr_1.mutable_s() = "A";
+  (*n_var_1->mutable_attr())["container"] = container_attr_1;
+  tensorflow::AttrValue shared_name_attr_1;
+  *shared_name_attr_1.mutable_s() = "var_0/part_1";
+  (*n_var_1->mutable_attr())["shared_name"] = shared_name_attr_1;
+  (*n_var_1->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  (*n_var_1->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  AttrValue var_value0_1;
+  tensorflow::TensorShapeProto var_shape0_1;
+  var_shape0_1.add_dim()->set_size(1);
+  *var_value0_1.mutable_shape() = var_shape0_1;
+  (*n_var_1->mutable_attr())["shape"] = var_value0_1;
+
+  // part_1/KvResourceImportV2
+  NodeDef* n_lookup_import_1 = graph_def.add_node();
+  n_lookup_import_1->set_name("part_1/KvResourceImportV2");
+  n_lookup_import_1->set_op("KvResourceImportV2");
+  (*n_lookup_import_1->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_import_1->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  AttrValue value0_1;
+  tensorflow::TensorShapeProto tshape0_1;
+  tshape0_1.add_dim()->set_size(-1);
+  *value0_1.mutable_shape() = tshape0_1;
+  (*n_lookup_import_1->mutable_attr())["shape"] = value0_1;
+  n_lookup_import_1->add_input("prefix/Const");
+  n_lookup_import_1->add_input("var_0/part_1");
+  n_lookup_import_1->add_input("value/Const_1");
+  n_lookup_import_1->add_input("tsname/Const_1");
+  n_lookup_import_1->add_input("empty_key/Const_1");
+  n_lookup_import_1->add_input("^prefix/Const");
+
+  // part_1/KvResourceGather
+  NodeDef* n_lookup_find_1 = graph_def.add_node();
+  n_lookup_find_1->set_name("part_1/KvResourceGather");
+  n_lookup_find_1->set_op("KvResourceGather");
+  (*n_lookup_find_1->mutable_attr())["Tkeys"].set_type(DT_INT64);
+  (*n_lookup_find_1->mutable_attr())["dtype"].set_type(DT_FLOAT);
+  n_lookup_find_1->add_input("var_0/part_1");
+  n_lookup_find_1->add_input("dynamic_partition:1");
+  n_lookup_find_1->add_input("default/Const");
+  n_lookup_find_1->add_input("^var_0/part_1");
+
+  // Identity
+  NodeDef* n_identity_1 = graph_def.add_node();
+  n_identity_1->set_name("lookup/Identity_1");
+  n_identity_1->set_op("Identity");
+  (*n_identity_1->mutable_attr())["T"].set_type(DT_FLOAT);
+  n_identity_1->add_input("part_1/KvResourceGather");
+
+  // ----------------------------------------------
+
+  NodeDef* n_dynamic_stitch = graph_def.add_node(); 
+  n_dynamic_stitch->set_name("dynamic_stitch");
+  n_dynamic_stitch->set_op("ParallelDynamicStitch");
+  (*n_dynamic_stitch->mutable_attr())["N"].set_i(2);
+  (*n_dynamic_stitch->mutable_attr())["T"].set_type(DT_FLOAT);
+  n_dynamic_stitch->add_input("dynamic_partition_cast");
+  n_dynamic_stitch->add_input("dynamic_partition_cast_2");
+  n_dynamic_stitch->add_input("lookup/Identity");
+  n_dynamic_stitch->add_input("lookup/Identity_1");
+
+  NodeDef* ds_reshape = graph_def.add_node();
+  ds_reshape->set_name("ds_reshape");
+  ds_reshape->set_op("Reshape");
+  (*ds_reshape->mutable_attr())["T"].set_type(DT_FLOAT);
+  (*ds_reshape->mutable_attr())["Tshape"].set_type(DT_INT32);
+  ds_reshape->add_input("dynamic_stitch");
+
+  NodeDef* n_identity_x = graph_def.add_node();
+  n_identity_x->set_name("Identity_x");
+  n_identity_x->set_op("Identity");
+  (*n_identity_x->mutable_attr())["T"].set_type(DT_FLOAT);
+  n_identity_x->add_input("ds_reshape");
+
+  // ----------------------------------------------
+
+  // restore_shard/NoOp
+  NodeDef* n_noop_0 = graph_def.add_node(); 
+  n_noop_0->set_name("save/restore");
+  n_noop_0->set_op("NoOp");
+  n_noop_0->add_input("^part_0/KvResourceImportV2");
+  n_noop_0->add_input("^part_1/KvResourceImportV2");
+  n_noop_0->add_input("^FakeAssign");
+
+  // restore_all/NoOp
+  NodeDef* n_restore_all = graph_def.add_node();
+  n_restore_all->set_name("save/restore_all");
+  n_restore_all->set_op("NoOp");
+  n_restore_all->add_input("^save/restore");
+
+  SaverDef saver_def;
+  saver_def.set_restore_op_name("save/restore_all");
+
+  // TEST: option.partition_id = 0,1,2
+  for (int id = 0; id < 3; ++id)
+  {
+    SavedModelBundle saved_model_bundle;
+    *(saved_model_bundle.meta_graph_def.mutable_graph_def()) = graph_def;
+    *(saved_model_bundle.meta_graph_def.mutable_saver_def()) = saver_def;
+
+    GraphOptimizerOption option;
+    option.native_tf_mode = true;
+    // shard user embedding or not
+    option.shard_embedding = true;
+    // which user embeddings will be sharded
+    option.shard_embedding_names.push_back("var_0");
+    // current instance partition id
+    option.partition_id = id;
+    option.shard_instance_count = 3;
+
+    SavedModelOptimizer opt("serving_default",
+                            &saved_model_bundle.meta_graph_def,
+                            option);
+    opt.Optimize();
+
+    GraphDef new_graph_def = saved_model_bundle.meta_graph_def.graph_def();
+
+    std::unordered_map<std::string, NodeDef> nodes;
+    int node_count = 0;
+    for (auto n : new_graph_def.node()) {
+      nodes[n.name()] = n;
+      ++node_count;
+    }
+
+    EXPECT_TRUE(node_count == 31);
+    EXPECT_TRUE(nodes.find("var_0/part_0") == nodes.end());
+    EXPECT_TRUE(nodes.find("var_0/part_1") == nodes.end());
+    EXPECT_TRUE(nodes.find("part_0/KvResourceImportV2") == nodes.end());
+    EXPECT_TRUE(nodes.find("part_1/KvResourceImportV2") == nodes.end());
+    EXPECT_TRUE(nodes.find("part_0/KvResourceGather") == nodes.end());
+    EXPECT_TRUE(nodes.find("part_1/KvResourceGather") == nodes.end());
+    EXPECT_TRUE(nodes.find("dynamic_stitch") == nodes.end());
+
+    EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_"+std::to_string(id)) != nodes.end());
+    EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_"+std::to_string(id)+"/KvResourceGather") != nodes.end());
+    EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_"+std::to_string(id)+"/Identity") != nodes.end());
+    EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_"+std::to_string(id)+"/KvResourceImportV2") != nodes.end());
+    EXPECT_TRUE(nodes.find("save/restore_all/Kv_incr_all") != nodes.end());
+    EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_"+std::to_string(id)+"/default_value") != nodes.end());
+  }
+
+  EXPECT_TRUE(1);
+}
+
 } // namespace processor
 } // namespace tensorflow

@@ -266,6 +266,43 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     (*config)->lock_timeout = 15 * 60; // 900 seconds
   }
 
+  (*config)->shard_embedding = false;
+  bool shard_embedding = false;
+  if (!json_config["shard_embedding"].isNull()) {
+    shard_embedding = json_config["shard_embedding"].asBool();
+  }
+
+  if (shard_embedding) {
+    if ((*config)->feature_store_type != "memory") {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] Sharded embedding must be load in memory,"
+          "this require feature_store_type must be 'memory' mode.");
+    }
+
+    (*config)->shard_embedding = true;
+    if (json_config["embedding_names"].isNull() ||
+        json_config["shard_instance_count"].isNull() ||
+        json_config["id_type"].isNull()) {
+        return Status(error::Code::INVALID_ARGUMENT,
+            "[TensorFlow] Shard embedding require args: embedding_names, "
+            "shard_instance_count and id_type.");
+    }
+
+    std::string embedding_names = json_config["embedding_names"].asString();
+    (*config)->shard_instance_count = json_config["shard_instance_count"].asInt();
+    // "string" or "int64"
+    (*config)->id_type = json_config["id_type"].asString();
+
+    // "name1;name2;name3"
+    auto idx = embedding_names.find(";");
+    while (idx != std::string::npos) {
+      (*config)->shard_embedding_names.push_back(embedding_names.substr(0, idx));
+      embedding_names = embedding_names.substr(idx+1);
+      idx = embedding_names.find(";");
+    }
+    (*config)->shard_embedding_names.push_back(embedding_names);
+  }
+
   // enable trace timeline
   if (!json_config["timeline_start_step"].isNull() &&
       !json_config["timeline_interval_step"].isNull() &&

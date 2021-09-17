@@ -127,6 +127,23 @@ struct GraphOptimizerOption {
   // Convert EV ops to HashTable ops
   // to support local graph execution.
   bool native_tf_mode = false;
+
+  // The embeddings which will be partitioned can be found
+  // in GraphOptimizerOption.shard_embedding_names.
+  // GraphOptimizerOption.partition_id and
+  // GraphOptimizerOptionshard_instance_count are for
+  // partiton policy.
+  // GraphOptimizerOptionshard_instance_count means the slices
+  // the embedding will be partitioned, GraphOptimizerOption.partition_id
+  // means which slice current instance will load.
+  //
+  // shard embedding or not
+  bool shard_embedding = false;
+  // which embeddings will be sharded
+  std::vector<std::string> shard_embedding_names;
+  // current instance partition id
+  int partition_id = -1;
+  int shard_instance_count = 0;
 };
 
 struct SrcInfo {
@@ -219,6 +236,24 @@ class SavedModelOptimizer : public GraphOptimizer {
   // Each feature name will be map to a uint64 num,
   // the num will be as the prefix of a query key.
   Status GenerateIdsForFeatures();
+
+  // Partition embeddings according partition policy.
+  Status RewriteEmbeddingLookupGraph(
+    std::unordered_map<std::string, std::vector<Node*>>& var_parts_map,
+    std::unordered_map<std::string, std::vector<Node*>>& origin_import_nodes);
+ 
+  Status FindVariableParts(
+      std::unordered_map<std::string, std::vector<Node*> >& var_parts);
+
+  Status FindKvResourceImportNode(
+      std::unordered_map<std::string, std::vector<Node*>>& var_parts,
+      std::unordered_map<std::string, std::vector<Node*>>& import_nodes);
+
+  Node* FindRestoreShardNode();
+
+  Node* UpdateRestoreShardNodeInputs(
+      std::unordered_map<std::string, std::vector<Node*>>& origin_import_nodes,
+      std::vector<Node*>& new_kv_import_nodes);
 
   Node* storage_pointer_node_ = nullptr;// storage placeholder node
   Node* version_node_ = nullptr; // version placeholder node

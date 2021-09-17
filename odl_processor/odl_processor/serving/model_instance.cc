@@ -1,5 +1,6 @@
 #include <fstream>
 #include "odl_processor/serving/model_instance.h"
+#include "odl_processor/serving/model_partition.h"
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/serving/tf_predict.pb.h"
 #include "odl_processor/serving/util.h"
@@ -121,6 +122,9 @@ LocalSessionInstance::LocalSessionInstance(
 
 Status LocalSessionInstance::Init(ModelConfig* config,
     ModelStore* model_store) {
+  // init local partition policy
+  PartitionPolicy::GetGlobalPolicy()->Init(config);
+
   model_store->GetLatestVersion(version_);
   while (version_.SavedModelEmpty() || version_.CkptEmpty()) {
     // Wait until saved model meta file ready
@@ -139,6 +143,13 @@ Status LocalSessionInstance::Init(ModelConfig* config,
 
   GraphOptimizerOption option;
   option.native_tf_mode = true;
+  if (config->shard_embedding) {
+    option.shard_embedding = config->shard_embedding;
+    option.shard_embedding_names = config->shard_embedding_names;
+    option.partition_id = PartitionPolicy::GetGlobalPolicy()->GetEmbeddingGroupId();
+    option.shard_instance_count =
+        PartitionPolicy::GetGlobalPolicy()->GetShardInstanceCount();
+  }
 
   optimizer_ = new SavedModelOptimizer(config->signature_name,
       &meta_graph_def_, option);

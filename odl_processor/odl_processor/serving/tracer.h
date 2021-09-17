@@ -139,7 +139,7 @@ class Tracer {
     options->ctl = aos_http_controller_create(options->pool, 0);
   }
 
-  bool InitOss() {
+  void InitOss() {
     if (aos_http_io_initialize(NULL, 0) != AOSE_OK) {
       LOG(FATAL) << "Init oss env failed.";
     }
