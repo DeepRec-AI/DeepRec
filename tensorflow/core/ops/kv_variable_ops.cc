@@ -364,6 +364,8 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("ht_type: string = ''")
     .Attr("filter_freq: int = 0")
     .Attr("ht_partition_num: int = 1000")
+    .Attr("max_freq: int = 999999")
+    .Attr("l2_weight_threshold: float =-1.0")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));

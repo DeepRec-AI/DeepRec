@@ -468,6 +468,8 @@ class KvResourceImportV2Op: public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
     OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
+    OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
+    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -504,7 +506,7 @@ class KvResourceImportV2Op: public OpKernel {
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary",
-                                         steps_to_live_, filter_freq_));
+                                         steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_));
              return (*ptr)->Init(default_values);
             }));
     } else {
@@ -523,7 +525,7 @@ class KvResourceImportV2Op: public OpKernel {
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary",
-                                        steps_to_live_, filter_freq_));
+                                        steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -567,6 +569,8 @@ class KvResourceImportV2Op: public OpKernel {
   int64 slot_index_;
   int64 block_num_;
   int64 filter_freq_;
+  int64 max_freq_;
+  float l2_weight_threshold_;
 };
 
 

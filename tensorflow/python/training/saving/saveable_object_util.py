@@ -177,6 +177,8 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               ht_type=self.ht_type,
               ht_partition_num=self.ht_partition_num,
               filter_freq = self.var._filter_freq,
+              max_freq = 99999,
+              l2_weight_threshold = self.var._l2_weight_threshold,
               partition_id=self.partition_id, partition_num=self.partition_num)
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
