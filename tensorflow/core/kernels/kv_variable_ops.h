@@ -459,7 +459,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
       }
       return s;
     }
-
+    
     // then check whether checkpoint is in old form
     bool is_oldform = false;
     string curr_partid_str = std::to_string(partition_id);

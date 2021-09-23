@@ -258,13 +258,27 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
-    self._filter_freq = evconfig.filter_freq
+    if evconfig.counter_filter_strategy  != None:
+      self._filter_freq = evconfig.counter_filter_strategy.filter_freq
+      self._max_element_size = 0
+      self._false_positive_probability = -1.0
+      self._counter_type = dtypes.uint64
+    elif evconfig.bloom_filter_strategy  != None:
+      self._filter_freq = evconfig.bloom_filter_strategy.filter_freq
+      self._max_element_size = evconfig.bloom_filter_strategy.max_element_size
+      self._false_positive_probability = evconfig.bloom_filter_strategy.false_positive_probability
+      self._counter_type = evconfig.bloom_filter_strategy.counter_type
+    else:
+      self._filter_freq = 0
+      self._max_element_size = 0
+      self._false_positive_probability = -1.0
+      self._counter_type = dtypes.uint64
+      
     self._l2_weight_threshold = evconfig.l2_weight_threshold
     if self._steps_to_live is 0 and self._filter_freq is 0 and self._l2_weight_threshold == -1.0:
       self._layout = "light"
     else:
       self._layout = "normal"
-
     if self._primary is None:
       self._is_primary = True
     else:
@@ -360,6 +374,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     ht_partition_num=self._ht_partition_num,
                     filter_freq = self._filter_freq,
                     l2_weight_threshold = self._l2_weight_threshold,
+                    max_element_size = self._max_element_size,
+                    false_positive_probability = self._false_positive_probability,
+                    counter_type = self._counter_type,
                     max_freq = 99999,
                     layout = self._layout,
                     name=n))

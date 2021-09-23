@@ -140,6 +140,9 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("ht_partition_num: int = 1000")
     .Attr("filter_freq: int = 0")
     .Attr("max_freq: int = 999999")
+    .Attr("max_element_size: int  = 0")
+    .Attr("counter_type: type")
+    .Attr("false_positive_probability: float = -1.0")
     .Attr("l2_weight_threshold: float =-1.0")
     .Attr("layout: string = 'normal'")
     .SetShapeFn([](InferenceContext* c) { 
@@ -363,9 +366,12 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("ht_type: string = ''")
     .Attr("filter_freq: int = 0")
     .Attr("ht_partition_num: int = 1000")
-    .Attr("max_freq: int = 999999")
+    .Attr("max_element_size: int  = 0")
+    .Attr("counter_type: type")
+    .Attr("false_positive_probability: float = -1.0")
     .Attr("l2_weight_threshold: float =-1.0")
     .Attr("layout: string = 'normal'")
+    .Attr("max_freq: int = 999999")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));

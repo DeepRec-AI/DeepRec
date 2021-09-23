@@ -1898,7 +1898,8 @@ def get_embedding_variable(name,
       evconfig=variables.EmbeddingVariableConfig(
         steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ht_type,
         l2_weight_threshold=ev.evict.l2_weight_threshold,
-        filter_freq=ev.filter_freq),
+        bloom_filter_strategy=ev.bloom_filter_strategy,
+        counter_filter_strategy = ev.counter_filter_strategy),
       ht_partition_num=ht_partition_num)
 
 
@@ -1943,8 +1944,9 @@ def get_embedding_variable_internal(name,
         steps_to_live=steps_to_live, init_data_source=init_data_source,
         ht_type=evconfig.ht_type,
         l2_weight_threshold=evconfig.evict.l2_weight_threshold,
-        filter_freq=evconfig.filter_freq),
-        ht_partition_num=ht_partition_num)
+        bloom_filter_strategy=evconfig.bloom_filter_strategy,
+        counter_filter_strategy = evconfig.counter_filter_strategy),
+      ht_partition_num=ht_partition_num)
 
 
 #@tf_export(v1=["get_embedding_variable_v2"])

@@ -17,7 +17,6 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_EMBEDDING_VAR_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_EMBEDDING_VAR_H_
 
-
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -29,6 +28,8 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
+#include "tensorflow/core/framework/embedding/embedding_filter.h"
+#include "tensorflow/core/framework/embedding/embedding_config.h"
 
 namespace tensorflow {
 
@@ -46,72 +47,6 @@ struct RestoreBuffer {
   }
 };
 
-struct EmbeddingConfig {
-  int64 emb_index;
-  int64 primary_emb_index;
-  int64 block_num;
-  int64 slot_num;
-  std::string name;
-  int64 steps_to_live;
-  int64 filter_freq;
-  int64 max_freq;
-  float l2_weight_threshold;
-  LayoutType layout_type;
-
-  EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
-                  int64 block_num = 1, int slot_num = 1,
-                  const std::string& name = "", int64 steps_to_live = 0,
-                  int64 filter_freq = 0, int64 max_freq = 999999,
-                  float l2_weight_threshold = -1.0, const std::string& layout = "normal"):
-      emb_index(emb_index),
-      primary_emb_index(primary_emb_index),
-      block_num(block_num),
-      slot_num(slot_num),
-      name(name),
-      steps_to_live(steps_to_live),
-      filter_freq(filter_freq),
-      max_freq(max_freq),
-      l2_weight_threshold(l2_weight_threshold) {
-    if ("normal" == layout) {
-      layout_type = LayoutType::NORMAL;
-    } else if ("light" == layout) {
-      layout_type = LayoutType::LIGHT;
-    } else {
-      LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
-      layout_type = LayoutType::NORMAL;
-    }
-  }
-
-  bool is_primary() const {
-    return emb_index == primary_emb_index;
-  }
-
-  int64 total_num() {
-    return block_num * (slot_num + 1);
-  }
-
-  int64 get_filter_freq() {
-    return filter_freq;
-  }
-
-  LayoutType get_layout_type() {
-    return layout_type;
-  }
-
-  std::string DebugString() const {
-    return strings::StrCat("opname: ", name,
-                           " emb_index: ", emb_index,
-                           " primary_emb_index: ", primary_emb_index,
-                           " block_num: ", block_num,
-                           " slot_num: ", slot_num,
-                           " layout_type: ", static_cast<int>(layout_type),
-                           " steps_to_live: ", steps_to_live,
-                           " filter_freq: ", filter_freq,
-                           " max_freq: ", max_freq,
-                           " l2_weight_threshold: ", l2_weight_threshold);
-  }
-};
-
 template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:
@@ -125,14 +60,15 @@ class EmbeddingVar : public ResourceBase {
       value_len_(0),
       alloc_(alloc),
       emb_config_(emb_cfg) {
-    if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
-      new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
-    } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
-      new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
-    } else {
-      LOG(FATAL) << name_ << ", Unsupport EmbeddingVariable LayoutType.";
-    }
-  }
+        if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
+          new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
+        } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
+          new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
+        } else {
+          LOG(FATAL) << name_ << ", Unsupport EmbeddingVariable LayoutType.";
+        }
+        filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_cfg, this);
+      }
 
   Status Init(const Tensor& default_tensor) {
     if (default_tensor.dims() != 1) {
@@ -157,6 +93,11 @@ class EmbeddingVar : public ResourceBase {
     return is_initialized_;
   }
 
+  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, bool* is_filter,
+      int64 update_version = -1) {
+    return filter_->LookupOrCreateKey(key, value_ptr, is_filter, update_version);
+  }
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, int64 update_version = -1) {
     Status s = LookupOrCreateKeyInternal(key, value_ptr, emb_config_.total_num());
     TF_CHECK_OK(s);
@@ -173,34 +114,25 @@ class EmbeddingVar : public ResourceBase {
   }
 
   int64 GetFreq(K key) {
-    ValuePtr<V>* value_ptr = nullptr;
-    TF_CHECK_OK(LookupOrCreateKey(key, &value_ptr));
-    return value_ptr->GetFreq();
+    return filter_->GetFreq(key);
   }
 
   void LookupOrCreate(K key, V* val, V* default_v)  {
     const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
-    ValuePtr<V>* value_ptr = nullptr;
-    TF_CHECK_OK(LookupOrCreateKey(key, &value_ptr));
-    if (emb_config_.filter_freq == 0 || value_ptr->GetFreq() >= emb_config_.filter_freq) {
-      V* mem_val = LookupOrCreateEmb(value_ptr, emb_config_, default_value_ptr);
-      memcpy(val, mem_val, sizeof(V) * value_len_);
-    } else {
-      value_ptr->AddFreq();
-      memcpy(val, default_value_ptr, sizeof(V) * value_len_);
-    }
+    filter_->LookupOrCreate(key, val, default_value_ptr);
   }
 
-  V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const EmbeddingConfig& embcfg, const V* default_v) {
-    return value_ptr->GetOrAllocate(alloc_, value_len_, default_v, embcfg.emb_index);
+  V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {
+    return value_ptr->GetOrAllocate(alloc_, value_len_, default_v,
+        emb_config_.emb_index);
   }
 
-  V* LookupPrimaryEmb(ValuePtr<V>* value_ptr, const EmbeddingConfig& embcfg, const V* default_v) {
+  V* LookupPrimaryEmb(ValuePtr<V>* value_ptr, const V* default_v) {
     return value_ptr->GetOrAllocate(alloc_, value_len_, default_v, 0);
   }
 
   typename TTypes<V>::Flat flat(ValuePtr<V>* value_ptr) {
-    V* val = LookupOrCreateEmb(value_ptr, emb_config_, default_value_);
+    V* val = LookupOrCreateEmb(value_ptr, default_value_);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
   }
@@ -223,6 +155,10 @@ class EmbeddingVar : public ResourceBase {
 
   std::string DebugString() const {
     return emb_config_.DebugString();
+  }
+
+  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* GetFilter() const {
+    return filter_;
   }
 
   Status Import(RestoreBuffer& restore_buff,
@@ -254,7 +190,7 @@ class EmbeddingVar : public ResourceBase {
           value_ptr->SetStep(version_buff[i]);
         }
       }
-      LookupOrCreateEmb(value_ptr, emb_config_, value_buff + i * value_len_);
+      LookupOrCreateEmb(value_ptr, value_buff + i * value_len_);
     }
     return Status::OK();
   }
@@ -271,8 +207,8 @@ class EmbeddingVar : public ResourceBase {
         value_list->push_back(val);
         key_list->push_back(key_list_tmp[i]);
         if (emb_config_.filter_freq != 0) {
-          int64 dump_freq = value_ptr_list[i]->GetFreq();
-          freq_list->push_back(dump_freq);
+          int64 dump_freq = filter_->GetFreq(key_list_tmp[i], value_ptr_list[i]);
+          freq_list->push_back(dump_freq); 
         }
         if (emb_config_.steps_to_live != 0) {
           int64 dump_version = value_ptr_list[i]->GetStep();
@@ -308,7 +244,7 @@ class EmbeddingVar : public ResourceBase {
       kv_->GetSnapshot(&key_list, &value_ptr_list);
       std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
       for (int64 i = 0; i < key_list.size(); ++i) {
-        V* val = LookupPrimaryEmb(value_ptr_list[i], emb_config_, default_value_);
+        V* val = LookupPrimaryEmb(value_ptr_list[i], default_value_);
         V l2_weight = 0.0;
         for (int64 j = 0; j < value_len_; j++) {
             l2_weight += val[j] * val[j];
@@ -383,6 +319,7 @@ class EmbeddingVar : public ResourceBase {
   int64 value_len_;
   Allocator* alloc_;
   EmbeddingConfig emb_config_;
+  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
 
   ~EmbeddingVar() override {
     if (emb_config_.is_primary()) {

@@ -179,6 +179,9 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               filter_freq = self.var._filter_freq,
               max_freq = 99999,
               l2_weight_threshold = self.var._l2_weight_threshold,
+              max_element_size = self.var._max_element_size,
+              false_positive_probability = self.var._false_positive_probability,
+              counter_type = self.var._counter_type,
               partition_id=self.partition_id, partition_num=self.partition_num)
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):

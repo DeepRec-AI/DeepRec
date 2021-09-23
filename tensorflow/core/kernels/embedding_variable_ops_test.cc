@@ -402,13 +402,10 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
       TF_ASSERT_OK(reader.Lookup(key, &val));
       LOG(INFO) << "read versions:" << val.DebugString();
     }
-
   }
-
 }
 
 TEST(EmbeddingVariableTest, TestEVExportLarge) {
-
   int64 value_size = 128;
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
@@ -599,6 +596,324 @@ void InsertAndLookup(EmbeddingVar<int64, int64>* variable, int64 *keys, long Rea
     variable->LookupOrCreate(keys[j], val, (&keys[j]+1));
     ASSERT_EQ(keys[j] , val[0]);
     free(val);
+  }
+}
+
+void MultiBloomFilter(EmbeddingVar<int64, float>* var, int value_size, int64 i) {
+  float *default_value = (float *)malloc((value_size+1)*sizeof(float));
+  for (long j = 0; j < 1; j++) {
+    float *val = (float *)malloc((value_size+1)*sizeof(float));
+    var->LookupOrCreate(i+1, val, default_value);
+  }
+}
+
+TEST(EmbeddingVariableTest, TestBloomFilter) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01));
+
+  var->Init(value);
+
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+  float *default_value = (float *)malloc((value_size+1)*sizeof(float));
+  var->LookupOrCreate(1, val, default_value);
+  var->LookupOrCreate(1, val, default_value);
+  var->LookupOrCreate(1, val, default_value);
+  var->LookupOrCreate(1, val, default_value);
+  var->LookupOrCreate(2, val, default_value);
+  
+  std::vector<int64> keylist;
+  std::vector<float *> valuelist;
+  std::vector<int64> version_list;
+  std::vector<int64> freq_list;
+
+   
+  var->GetSnapshot(&keylist, &valuelist, &version_list, &freq_list);
+  ASSERT_EQ(var->Size(), keylist.size());  
+
+}
+
+TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT64));
+
+  var->Init(value);
+
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+
+  std::vector<int64> hash_val1= {17, 7, 48, 89, 9, 20, 56};
+  std::vector<int64> hash_val2= {58, 14, 10, 90, 28, 14, 67};
+  std::vector<int64> hash_val3= {64, 63, 9, 77, 7, 38, 11};
+  std::vector<int64> hash_val4= {39, 10, 79, 28, 58, 55, 60};
+
+  std::map<int64, int> tab;
+  for (auto it: hash_val1)
+    tab[it] = 1;
+  for (auto it: hash_val2) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val3) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val4) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+
+  std::vector<std::thread> insert_threads(4);
+  for (size_t i = 0 ; i < 4; i++) {
+    insert_threads[i] = std::thread(MultiBloomFilter, var, value_size, i);
+  }
+  for (auto &t : insert_threads) {
+    t.join();
+  }
+
+  auto filter = var->GetFilter();
+  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
+  int64* counter = (int64*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+
+  for (auto it: hash_val1) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val2) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val3) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val4) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+}
+
+TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT32));
+
+  var->Init(value);
+
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+
+  std::vector<int64> hash_val1= {17, 7, 48, 89, 9, 20, 56};
+  std::vector<int64> hash_val2= {58, 14, 10, 90, 28, 14, 67};
+  std::vector<int64> hash_val3= {64, 63, 9, 77, 7, 38, 11};
+  std::vector<int64> hash_val4= {39, 10, 79, 28, 58, 55, 60};
+
+  std::map<int64, int> tab;
+  for (auto it: hash_val1)
+    tab[it] = 1;
+  for (auto it: hash_val2) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val3) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val4) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+
+  std::vector<std::thread> insert_threads(4);
+  for (size_t i = 0 ; i < 4; i++) {
+    insert_threads[i] = std::thread(MultiBloomFilter, var, value_size, i);
+  }
+  for (auto &t : insert_threads) {
+    t.join();
+  }
+
+  auto filter = var->GetFilter();
+  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
+  int32* counter = (int32*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+
+  for (auto it: hash_val1) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val2) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val3) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val4) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+}
+
+TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT16));
+
+  var->Init(value);
+
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+
+  std::vector<int64> hash_val1= {17, 7, 48, 89, 9, 20, 56};
+  std::vector<int64> hash_val2= {58, 14, 10, 90, 28, 14, 67};
+  std::vector<int64> hash_val3= {64, 63, 9, 77, 7, 38, 11};
+  std::vector<int64> hash_val4= {39, 10, 79, 28, 58, 55, 60};
+
+  std::map<int64, int> tab;
+  for (auto it: hash_val1)
+    tab[it] = 1;
+  for (auto it: hash_val2) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val3) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val4) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+
+  std::vector<std::thread> insert_threads(4);
+  for (size_t i = 0 ; i < 4; i++) {
+    insert_threads[i] = std::thread(MultiBloomFilter, var, value_size, i);
+  }
+  for (auto &t : insert_threads) {
+    t.join();
+  }
+
+  //int16* counter = (int16 *)var->GetBloomCounter(); 
+  auto filter = var->GetFilter();
+  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
+  int16* counter = (int16*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+
+  for (auto it: hash_val1) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val2) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val3) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+  for (auto it: hash_val4) {
+    ASSERT_EQ(counter[it], tab[it]);
+  }
+}
+
+TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
+  int value_size = 10;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
+
+
+  EmbeddingVar<int64, float>* var 
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new LocklessHashMap<int64, float>(), cpu_allocator(),
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT8));
+
+  var->Init(value);
+
+  float *val = (float *)malloc((value_size+1)*sizeof(float));
+
+  std::vector<int64> hash_val1= {17, 7, 48, 89, 9, 20, 56};
+  std::vector<int64> hash_val2= {58, 14, 10, 90, 28, 14, 67};
+  std::vector<int64> hash_val3= {64, 63, 9, 77, 7, 38, 11};
+  std::vector<int64> hash_val4= {39, 10, 79, 28, 58, 55, 60};
+
+  std::map<int64, int> tab;
+  for (auto it: hash_val1)
+    tab[it] = 1;
+  for (auto it: hash_val2) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val3) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+  for (auto it: hash_val4) {
+    if (tab.find(it) != tab.end())
+      tab[it]++;
+    else
+      tab[it] = 1;
+  }
+
+  std::vector<std::thread> insert_threads(4);
+  for (size_t i = 0 ; i < 4; i++) {
+    insert_threads[i] = std::thread(MultiBloomFilter, var, value_size, i);
+  }
+  for (auto &t : insert_threads) {
+    t.join();
+  }
+
+  auto filter = var->GetFilter();
+  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
+  int8* counter = (int8*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+  //int8* counter = (int8 *)var->GetBloomCounter(); 
+
+  for (auto it: hash_val1) {
+    ASSERT_EQ((int)counter[it], tab[it]);
+  }
+  for (auto it: hash_val2) {
+    ASSERT_EQ((int)counter[it], tab[it]);
+  }
+  for (auto it: hash_val3) {
+    ASSERT_EQ((int)counter[it], tab[it]);
+  }
+  for (auto it: hash_val4) {
+    ASSERT_EQ((int)counter[it], tab[it]);
   }
 }
 

@@ -195,8 +195,6 @@ class MultihashConfig(object):
     self.operation = operation
     self.size = size
 
-
-
 class EvictConfig(object):
   def __init__(self,
                steps_to_live = None,
@@ -230,22 +228,51 @@ class EVConfig(object):
   def __init__(self,
                ht_type="",
                ht_partition_num = 1000,
-               filter_freq = 0,
                evict = EvictConfig(),
-               ckpt = CkptConfig()):
+               ckpt = CkptConfig(),
+               bloom_filter_strategy = None,
+               counter_filter_strategy = None):
+    if counter_filter_strategy != None and bloom_filter_strategy != None:
+      raise ValueError("Counter filter and bloom filter can not be enabled at same time.")
     self.ht_type = ht_type
     self.ht_partition_num = ht_partition_num
-    self.filter_freq = filter_freq
     self.evict = evict
     self.ckpt = ckpt
-    
+    self.bloom_filter_strategy = bloom_filter_strategy
+    self.counter_filter_strategy = counter_filter_strategy
+
+class CounterFilterStrategy(object):
+  def __init__(self, filter_freq = 0):
+    self.filter_freq = filter_freq
+
+class BloomFilterStrategy(object):
+  def __init__(self,
+               filter_freq = 0,
+               max_element_size = 0,
+               false_positive_probability = -1.0,
+               counter_type = dtypes.uint64):
+    if false_positive_probability != -1.0:
+      if false_positive_probability <= 0.0:
+        raise ValueError("false_positive_probablity must larger than 0")
+      else:
+       if max_element_size <= 0:
+          raise ValueError("max_element_size must larger than 0 when false_positive_probability is not -1.0")
+    else:
+      if max_element_size != 0:
+        raise ValueError("max_element_size can't be set when false_probability is -1.0")
+    self.max_element_size = max_element_size
+    self.false_positive_probability = false_positive_probability
+    self.counter_type = counter_type
+    self.filter_freq = filter_freq
+
 class EmbeddingVariableConfig(object):
   def __init__(self,
                steps_to_live=None, steps_to_live_l2reg=None, 
                l2reg_theta=None, l2reg_lambda=None,
                l2_weight_threshold = -1.0,
                ht_type=None,
-               filter_freq=None,
+               bloom_filter_strategy = None,
+               counter_filter_strategy = None,
                ckpt_to_load_from=None,
                tensor_name_in_ckpt=None,
                always_load_from_specific_ckpt=False,
@@ -272,7 +299,8 @@ class EmbeddingVariableConfig(object):
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
     self.l2_weight_threshold = l2_weight_threshold
-    self.filter_freq = filter_freq
+    self.bloom_filter_strategy = bloom_filter_strategy
+    self.counter_filter_strategy = counter_filter_strategy
 
 
 
