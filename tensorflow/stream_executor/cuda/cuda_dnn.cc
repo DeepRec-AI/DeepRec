@@ -4067,20 +4067,27 @@ port::Status CudnnSupport::DoConvolve(
                              isDownConvertingInputs);
     }
 
-    std::string filter_str = CudnnExecutionPlanEngineFilter();
+    auto fn = []() { return true; };
+    json json_handle = json::parse(CudnnExecutionPlanEngineFilter());
+    json json_handle_runtime;
+    bool use_runtime_errata = cudnn_frontend::load_from_config(
+                                  json_handle_runtime, "");
     for (int i = 0; i < filtered_configs.size(); i++) {
       auto plan = cudnn_frontend::ExecutionPlanBuilder()
                       .setHandle(cudnn.handle())
                       .setEngineConfig(filtered_configs[i])
                       .build();
       if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
-        if (filter_str != "") {
-          std::smatch m;
-          std::regex pattern(absl::StrCat("(", filter_str, ")($|_)"));
-          if (std::regex_search(plan.getTag(), m, pattern)) {
-            VLOG(4) << "Exclude engine: " << plan.getTag();
-            continue;
-          }
+        if (cudnn_frontend::check_errata(json_handle, plan.getTag(),
+                                         cudnn.handle(), fn)) {
+          VLOG(4) << "Exclude engine (static): " << plan.getTag();
+          continue;
+        } else if (use_runtime_errata &&
+                   cudnn_frontend::check_errata(
+                       json_handle_runtime, plan.getTag(), cudnn.handle(),
+                       fn)) {
+          VLOG(4) << "Exclude engine (dynamic): " << plan.getTag();
+          continue;
         }
 
         bool specify_workspace_limit = scratch_allocator != nullptr;
@@ -4252,20 +4259,27 @@ port::Status CudnnSupport::DoFusedConvolveImpl(
                              isDownConvertingInputs);
     }
 
-    std::string filter_str = CudnnExecutionPlanEngineFilter();
+    auto fn = []() { return true; };
+    json json_handle = json::parse(CudnnExecutionPlanEngineFilter());
+    json json_handle_runtime;
+    bool use_runtime_errata = cudnn_frontend::load_from_config(
+                                  json_handle_runtime, "");
     for (int i = 0; i < filtered_configs.size(); i++) {
       auto plan = cudnn_frontend::ExecutionPlanBuilder()
                       .setHandle(cudnn.handle())
                       .setEngineConfig(filtered_configs[i], op_graph->getTag())
                       .build();
       if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
-        if (filter_str != "") {
-          std::smatch m;
-          std::regex pattern(absl::StrCat("(", filter_str, ")($|_)"));
-          if (std::regex_search(plan.getTag(), m, pattern)) {
-            VLOG(4) << "Exclude engine: " << plan.getTag();
-            continue;
-          }
+        if (cudnn_frontend::check_errata(json_handle, plan.getTag(),
+                                         cudnn.handle(), fn)) {
+          VLOG(4) << "Exclude engine (static): " << plan.getTag();
+          continue;
+        } else if (use_runtime_errata &&
+                   cudnn_frontend::check_errata(
+                       json_handle_runtime, plan.getTag(), cudnn.handle(),
+                       fn)) {
+          VLOG(4) << "Exclude engine (dynamic): " << plan.getTag();
+          continue;
         }
 
         bool specify_workspace_limit = scratch_allocator != nullptr;
