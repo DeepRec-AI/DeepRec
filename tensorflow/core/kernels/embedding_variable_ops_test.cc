@@ -266,7 +266,7 @@ TEST(EmbeddingVariableTest, TestEVExportSmall) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new DenseHashMap<int64, float>(), cpu_allocator());
+        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
@@ -340,7 +340,7 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator());
+        new LocklessHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
@@ -416,7 +416,7 @@ TEST(EmbeddingVariableTest, TestEVExportLarge) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new DenseHashMap<int64, float>(), cpu_allocator());
+        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
@@ -489,7 +489,7 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator());
+        new LocklessHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
