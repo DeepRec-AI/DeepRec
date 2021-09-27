@@ -1078,7 +1078,8 @@ class MultiWorkerMirroredStrategyTest(
 
   def testMinimizeLossGraph(self, distribution):
     self._configure_distribution_strategy(distribution)
-    self._test_minimize_loss_graph(distribution, learning_rate=0.05)
+    learning_rate = 0.05 / context.num_gpus()
+    self._test_minimize_loss_graph(distribution, learning_rate=learning_rate)
 
   def testDeviceScope(self, distribution):
     """Test the device scope of multi-worker MirroredStrategy."""
@@ -1092,12 +1093,12 @@ class MultiWorkerMirroredStrategyTest(
 
   def testMakeInputFnIteratorWithDataset(self, distribution):
     self._configure_distribution_strategy(distribution)
-    dataset_fn = lambda: dataset_ops.Dataset.range(100)
     num_gpus = context.num_gpus()
     num_workers = 2
+    dataset_fn = lambda: dataset_ops.Dataset.range(16 * num_gpus)
 
     expected_values = [[i+j for j in range(num_gpus)] * num_workers
-                       for i in range(0, 100, num_gpus)]
+                       for i in range(0, 16 * num_gpus, num_gpus)]
 
     with context.graph_mode(), self.cached_session() as sess:
       # `expected_input_pipeline_id` is None because the input_fn will be called
@@ -1113,15 +1114,15 @@ class MultiWorkerMirroredStrategyTest(
 
   def testMakeInputFnIteratorWithCallable(self, distribution):
     self._configure_distribution_strategy(distribution)
-    def fn():
-      dataset = dataset_ops.Dataset.range(100)
-      it = dataset.make_one_shot_iterator()
-      return it.get_next
     num_gpus = context.num_gpus()
     num_workers = 2
+    def fn():
+      dataset = dataset_ops.Dataset.range(16 * num_gpus)
+      it = dataset.make_one_shot_iterator()
+      return it.get_next
 
     expected_values = []
-    for i in range(0, 100, num_gpus):
+    for i in range(0, 16 * num_gpus, num_gpus):
       expected_values.append([i+j for j in range(num_gpus)] * num_workers)
 
     with context.graph_mode(), self.cached_session() as sess:
@@ -1168,7 +1169,8 @@ class MultiWorkerMirroredStrategyTestWithChief(
       strategy = mirrored_strategy.MirroredStrategy(
           cross_device_ops=self._make_cross_device_ops())
       strategy.configure(cluster_spec=self._cluster_spec)
-      self._test_minimize_loss_graph(strategy, learning_rate=0.05)
+      learning_rate = 0.05 / context.num_gpus()
+      self._test_minimize_loss_graph(strategy, learning_rate=learning_rate)
 
   def testMinimizeLossGraphMirroredStrategy(self):
     with context.graph_mode():
@@ -1176,7 +1178,8 @@ class MultiWorkerMirroredStrategyTestWithChief(
           mirrored_strategy.all_local_devices(),
           cross_device_ops=self._make_cross_device_ops())
       strategy.configure(cluster_spec=self._cluster_spec)
-      self._test_minimize_loss_graph(strategy, learning_rate=0.05)
+      learning_rate = 0.05 / context.num_gpus()
+      self._test_minimize_loss_graph(strategy, learning_rate=learning_rate)
 
   def testMinimizeLossGraphMirroredStrategyWithOneNode(self):
     with context.graph_mode():
@@ -1189,7 +1192,8 @@ class MultiWorkerMirroredStrategyTestWithChief(
         self.assertIsInstance(strategy.extended._inferred_cross_device_ops,
                               cross_device_ops_lib.NcclAllReduce)
       self.skipTest("b/130551176, run the following once fixed.")
-      self._test_minimize_loss_graph(strategy, learning_rate=0.05)
+      learning_rate = 0.05 / context.num_gpus()
+      self._test_minimize_loss_graph(strategy, learning_rate=learning_rate)
 
   def testInitializeFromTFConfig(self):
     with context.graph_mode():
