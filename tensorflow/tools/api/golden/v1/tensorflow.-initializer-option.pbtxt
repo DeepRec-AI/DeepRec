@@ -1,0 +1,9 @@
+path: "tensorflow.InitializerOption"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.variables.InitializerOption\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'initializer\', \'default_value_dim\'], varargs=None, keywords=None, defaults=[\'None\', \'4096\'], "
+  }
+}
