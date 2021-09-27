@@ -5214,6 +5214,14 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "fused_embedding_ops",
+    gpu_srcs = [
+        "fused_embedding_ops_gpu.cu.cc"
+    ],
+    deps = REQUIRED_DEPS,
+)
+
+tf_kernel_library(
     name = "run_graph_op",
     prefix = "run_graph_op",
     deps = REQUIRED_DEPS + [
