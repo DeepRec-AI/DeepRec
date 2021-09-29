@@ -40,9 +40,9 @@ namespace {
 }
 
 template<class K, class T>
-class EVKeyDumpIterator: public  DumpIterator<T> {
+class EVKeyDumpIterator: public  DumpIterator<K, T> {
  public:
-  EVKeyDumpIterator(std::vector<T>& key_list):key_list_(key_list) {
+  EVKeyDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<T>& key_list):ev_(ev), key_list_(key_list) {
     keys_idx_ = 0;
   }
 
@@ -56,11 +56,12 @@ class EVKeyDumpIterator: public  DumpIterator<T> {
 
  private:
   int64 keys_idx_;
+  EmbeddingVar<T, K>* ev_;
   std::vector<T>& key_list_;
 };
 
 template<class K, class T>
-class EVValueDumpIterator: public  DumpIterator<T> {
+class EVValueDumpIterator: public  DumpIterator<K, T> {
  public:
   EVValueDumpIterator(EmbeddingVar<K, T>*& ev, std::vector<T* >& valueptr_list):ev_(ev), valueptr_list_(valueptr_list) {
     keys_idx_ = 0;
@@ -95,10 +96,10 @@ class EVValueDumpIterator: public  DumpIterator<T> {
 };
 
 
-template<class T>
-class EVVersionDumpIterator: public  DumpIterator<T> {
+template<class K, class T>
+class EVVersionDumpIterator: public  DumpIterator<K, T> {
  public:
-  EVVersionDumpIterator(std::vector<T >& version_list):version_list_(version_list) {
+  EVVersionDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<int64 >& version_list):ev_(ev), version_list_(version_list) {
     keys_idx_ = 0;
   }
 
@@ -111,14 +112,15 @@ class EVVersionDumpIterator: public  DumpIterator<T> {
   }
 
  private:
-  std::vector<T>& version_list_;
+  EmbeddingVar<T, K>* ev_;
+  std::vector<int64>& version_list_;
   int64 keys_idx_;
 };
 
-template<class T>
-class EVFreqDumpIterator: public  DumpIterator<T> {
+template<class K, class T>
+class EVFreqDumpIterator: public  DumpIterator<K, T> {
  public:
-  EVFreqDumpIterator(std::vector<T>& freq_list):freq_list_(freq_list) {
+  EVFreqDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<int64 >& freq_list):ev_(ev), freq_list_(freq_list) {
     keys_idx_ = 0;
   }
 
@@ -131,7 +133,8 @@ class EVFreqDumpIterator: public  DumpIterator<T> {
   }
 
  private:
-  std::vector<T>& freq_list_;
+  EmbeddingVar<T, K>* ev_;
+  std::vector<int64>& freq_list_;
   int64 keys_idx_;
 };
 
@@ -245,14 +248,14 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
     return st;
   }
 
-  EVVersionDumpIterator<int64> ev_version_dump_iter(partitioned_tot_version_list);
+  EVVersionDumpIterator<V, K> ev_version_dump_iter(ev, partitioned_tot_version_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-versions", writer, dump_buffer, bytes_limit, &ev_version_dump_iter, TensorShape({partitioned_tot_version_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
-  EVFreqDumpIterator<int64> ev_freq_dump_iter(partitioned_tot_freq_list);
+  EVFreqDumpIterator<V, K> ev_freq_dump_iter(ev, partitioned_tot_freq_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-freqs", writer, dump_buffer, bytes_limit, &ev_freq_dump_iter, TensorShape({partitioned_tot_freq_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
@@ -566,11 +569,11 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
         if (!st.ok()) {
           break;
         }
-        st = reader->LookupHeader(tensor_version, sizeof(K) * version_shape.dim_size(0));
+        st = reader->LookupHeader(tensor_version, sizeof(int64) * version_shape.dim_size(0));
         if (!st.ok()) {
           break;
         }
-        st = reader->LookupHeader(tensor_freq, sizeof(K) * freq_shape.dim_size(0));
+        st = reader->LookupHeader(tensor_freq, sizeof(int64) * freq_shape.dim_size(0));
         if (!st.ok()) {
           if (st.code() == error::NOT_FOUND) {
             filter_flag = false;
@@ -607,8 +610,8 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
           int64 tot_key_num = part_offset_flat(subpart_id + 1) - subpart_offset;
           int64 key_part_offset = subpart_offset * sizeof(K);
           int64 value_part_offset = subpart_offset *  value_unit_bytes;
-          int64 version_part_offset = subpart_offset * sizeof(K);
-          int64 freq_part_offset = subpart_offset * sizeof(K);
+          int64 version_part_offset = subpart_offset * sizeof(int64);
+          int64 freq_part_offset = subpart_offset * sizeof(int64);
 
           VLOG(1) <<  "dynamically load ev : " << name_string <<  ", subpartid:" << loaded_parts[i] << ", subpart_offset:" << subpart_offset <<  ", partition_id:" << partition_id << ", partition_num:" << partition_num << ", keynum:" << tot_key_num;
 
@@ -621,12 +624,12 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
 
             reader->LookupSegmentOffset(tensor_value, value_part_offset + tot_value_bytes_read, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
 
-            reader->LookupSegmentOffset(tensor_version, version_part_offset + tot_version_bytes_read, read_key_num * sizeof(K) , restore_buff.version_buffer, version_bytes_read);
+            reader->LookupSegmentOffset(tensor_version, version_part_offset + tot_version_bytes_read, read_key_num * sizeof(int64) , restore_buff.version_buffer, version_bytes_read);
             if (filter_flag) {
-              reader->LookupSegmentOffset(tensor_freq, freq_part_offset + tot_freq_bytes_read,read_key_num * sizeof(K), restore_buff.freq_buffer, freq_bytes_read);
-            }else {
-              K *freq_tmp = (K *)malloc(version_bytes_read);
-              int64 len = version_bytes_read / sizeof(K);
+              reader->LookupSegmentOffset(tensor_freq, freq_part_offset + tot_freq_bytes_read,read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+            } else {
+              int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
+              int64 len = version_bytes_read / sizeof(int64);
               for (int64 i = 0; i < len; i++) {
                 freq_tmp[i] = ev->MinFreq();
               }

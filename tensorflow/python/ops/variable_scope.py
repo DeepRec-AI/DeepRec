@@ -1871,13 +1871,11 @@ def get_embedding_variable(name,
                            ht_type = "",
                            ev = variables.EVConfig()):
   if key_dtype == dtypes.int64:
-    invalid_key = 9223372036854775807
-  elif key_dtype == dtypes.int32:
     invalid_key = -1
   elif key_dtype == dtypes.string:
     invalid_key = ""
   else:
-    raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
+    raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
   if steps_to_live != None:
@@ -1923,13 +1921,11 @@ def get_embedding_variable_internal(name,
                            evconfig = variables.EVConfig(),
                            ):
   if key_dtype == dtypes.int64:
-    invalid_key = 9223372036854775807
-  elif key_dtype == dtypes.int32:
     invalid_key = -1
   elif key_dtype == dtypes.string:
     invalid_key = ""
   else:
-    raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
+    raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
   return get_variable_scope().get_embedding_variable(
@@ -1944,7 +1940,7 @@ def get_embedding_variable_internal(name,
         ht_type=evconfig.ht_type,
         l2_weight_threshold=evconfig.evict.l2_weight_threshold,
         filter_freq=evconfig.filter_freq),
-        ht_partition_num=ht_partition_num)
+      ht_partition_num=ht_partition_num)
 
 
 #@tf_export(v1=["get_embedding_variable_v2"])
@@ -1964,13 +1960,11 @@ def get_embedding_variable_v2_internal(name,
                            evconfig=variables.EmbeddingVariableConfig(),
                            ht_partition_num=1000):
   if key_dtype == dtypes.int64:
-    invalid_key = 9223372036854775807
-  elif key_dtype == dtypes.int32:
     invalid_key = -1
   elif key_dtype == dtypes.string:
     invalid_key = ""
   else:
-    raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
+    raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
   return get_variable_scope().get_embedding_variable(
@@ -2059,13 +2053,11 @@ def get_dynamic_dimension_embedding_variable(name,
                           init_data_source=None,
                           ht_partition_num=1000):
   if key_dtype == dtypes.int64:
-    invalid_key = 9223372036854775807
-  elif key_dtype == dtypes.int32:
     invalid_key = -1
   elif key_dtype == dtypes.string:
     invalid_key = ""
   else:
-    raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
+    raise ValueError("Not support key_dtype: %s, only support int64/string" % key_dtype)
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
   return get_variable_scope().get_dynamic_dimension_embedding_variable(

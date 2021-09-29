@@ -63,7 +63,6 @@ REGISTER_OP("SaveV2")
     .Input("shape_and_slices: string")
     .Input("tensors: dtypes")
     .Attr("dtypes: list(type)")
-    .Attr("ev_key_types: list(type)")
     .Attr("has_ev: bool = false")
     .SetIsStateful()
     .SetShapeFn([](InferenceContext* c) {
