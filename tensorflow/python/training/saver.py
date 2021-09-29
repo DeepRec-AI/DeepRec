@@ -129,6 +129,7 @@ class BaseSaverBuilder(object):
     # pylint: disable=protected-access
     tensor_names = []
     tensors = []
+    ev_key_types = []
     tensor_slices = []
     resource_handles = []
     has_ev = False
@@ -145,6 +146,7 @@ class BaseSaverBuilder(object):
         tensor_names.append(saveable.name)
         tensors.append(saveable.handle_op)
         tensor_slices.append("")
+        ev_key_types.append(saveable.key_type)
         continue
       for spec in saveable.specs:
         tensor_names.append(spec.name)
@@ -160,7 +162,7 @@ class BaseSaverBuilder(object):
       # "filename_tensor" is interpreted *NOT AS A FILENAME*, but as a prefix
       # of a V2 checkpoint: e.g. "/fs/train/ckpt-<step>/tmp/worker<i>-<step>".
       return io_ops.save_v2(filename_tensor, tensor_names, tensor_slices,
-                            tensors, has_ev)
+                            tensors, ev_key_types, has_ev)
     else:
       raise RuntimeError("Unexpected write_version: " + self._write_version)
 

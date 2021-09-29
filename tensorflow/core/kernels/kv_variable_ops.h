@@ -39,10 +39,10 @@ namespace {
   const int kSavedPartitionNum = 1000;
 }
 
-template<class K, class T>
-class EVKeyDumpIterator: public  DumpIterator<K, T> {
+template<class T>
+class EVKeyDumpIterator: public  DumpIterator<T> {
  public:
-  EVKeyDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<T>& key_list):ev_(ev), key_list_(key_list) {
+  EVKeyDumpIterator(std::vector<T>& key_list):key_list_(key_list) {
     keys_idx_ = 0;
   }
 
@@ -56,12 +56,11 @@ class EVKeyDumpIterator: public  DumpIterator<K, T> {
 
  private:
   int64 keys_idx_;
-  EmbeddingVar<T, K>* ev_;
   std::vector<T>& key_list_;
 };
 
 template<class K, class T>
-class EVValueDumpIterator: public  DumpIterator<K, T> {
+class EVValueDumpIterator: public  DumpIterator<T> {
  public:
   EVValueDumpIterator(EmbeddingVar<K, T>*& ev, std::vector<T* >& valueptr_list):ev_(ev), valueptr_list_(valueptr_list) {
     keys_idx_ = 0;
@@ -96,10 +95,10 @@ class EVValueDumpIterator: public  DumpIterator<K, T> {
 };
 
 
-template<class K, class T>
-class EVVersionDumpIterator: public  DumpIterator<K, T> {
+template<class T>
+class EVVersionDumpIterator: public  DumpIterator<T> {
  public:
-  EVVersionDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<int64 >& version_list):ev_(ev), version_list_(version_list) {
+  EVVersionDumpIterator(std::vector<T >& version_list):version_list_(version_list) {
     keys_idx_ = 0;
   }
 
@@ -112,15 +111,14 @@ class EVVersionDumpIterator: public  DumpIterator<K, T> {
   }
 
  private:
-  EmbeddingVar<T, K>* ev_;
-  std::vector<int64>& version_list_;
+  std::vector<T>& version_list_;
   int64 keys_idx_;
 };
 
-template<class K, class T>
-class EVFreqDumpIterator: public  DumpIterator<K, T> {
+template<class T>
+class EVFreqDumpIterator: public  DumpIterator<T> {
  public:
-  EVFreqDumpIterator(EmbeddingVar<T, K>*& ev, std::vector<int64 >& freq_list):ev_(ev), freq_list_(freq_list) {
+  EVFreqDumpIterator(std::vector<T>& freq_list):freq_list_(freq_list) {
     keys_idx_ = 0;
   }
 
@@ -133,8 +131,7 @@ class EVFreqDumpIterator: public  DumpIterator<K, T> {
   }
 
  private:
-  EmbeddingVar<T, K>* ev_;
-  std::vector<int64>& freq_list_;
+  std::vector<T>& freq_list_;
   int64 keys_idx_;
 };
 
@@ -234,7 +231,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   size_t bytes_limit = 8 << 20;
   char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
   Status st;
-  EVKeyDumpIterator<V, K> ev_key_dump_iter(ev, partitioned_tot_key_list);
+  EVKeyDumpIterator<K> ev_key_dump_iter(partitioned_tot_key_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer, bytes_limit, &ev_key_dump_iter, TensorShape({partitioned_tot_key_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
@@ -248,14 +245,14 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
     return st;
   }
 
-  EVVersionDumpIterator<V, K> ev_version_dump_iter(ev, partitioned_tot_version_list);
+  EVVersionDumpIterator<int64> ev_version_dump_iter(partitioned_tot_version_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-versions", writer, dump_buffer, bytes_limit, &ev_version_dump_iter, TensorShape({partitioned_tot_version_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
-  EVFreqDumpIterator<V, K> ev_freq_dump_iter(ev, partitioned_tot_freq_list);
+  EVFreqDumpIterator<int64> ev_freq_dump_iter(partitioned_tot_freq_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-freqs", writer, dump_buffer, bytes_limit, &ev_freq_dump_iter, TensorShape({partitioned_tot_freq_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);

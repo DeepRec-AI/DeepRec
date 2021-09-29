@@ -336,7 +336,8 @@ class KvSparseApplyFtrlOp : public OpKernel {
       KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false>);
 #define REGISTER_CPU_KERNELS(T) \
   REGISTER_KERNELS(string, T);  \
-  REGISTER_KERNELS(int64, T);
+  REGISTER_KERNELS(int64, T);   \
+  REGISTER_KERNELS(int32, T);
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 
@@ -352,7 +353,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
       KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true>);
 #define REGISTER_CPU_KERNELS(T) \
   REGISTER_KERNELS(string, T);  \
-  REGISTER_KERNELS(int64, T);
+  REGISTER_KERNELS(int64, T);   \
+  REGISTER_KERNELS(int32, T);
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 
@@ -834,6 +836,8 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
   REGISTER_KERNELS(T, string, int64);  \
   REGISTER_KERNELS(T, int64, int32);   \
   REGISTER_KERNELS(T, int64, int64);   \
+  REGISTER_KERNELS(T, int32, int32);   \
+  REGISTER_KERNELS(T, int32, int64);   \
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 
@@ -1683,6 +1687,8 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
 #define REGISTER_CPU_KERNELS(T)        \
   REGISTER_KERNELS(T, int64, int32);   \
   REGISTER_KERNELS(T, int64, int64);   \
+  REGISTER_KERNELS(T, int32, int32);   \
+  REGISTER_KERNELS(T, int32, int64);   \
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 

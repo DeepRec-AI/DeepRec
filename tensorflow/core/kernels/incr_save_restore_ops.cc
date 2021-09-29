@@ -180,7 +180,7 @@ class IncrSaveOp: public OpKernel {
   void DumpIncrSparse(OpKernelContext* context, int i, const int& kFixedInputs, const string& tensor_name, BundleWriter* writer, IndicesIncrRecorder<T>* sparse_incr_res) {
     if (tensor_types_[i] == DT_RESOURCE) {
       // ev, must be sparse
-      EmbeddingVar<int64, float>* variable = nullptr;
+      EmbeddingVar<T, float>* variable = nullptr;
       OP_REQUIRES_OK(context,
           LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
       OP_REQUIRES_OK(context, 
@@ -404,10 +404,10 @@ private:
         Tensor *keys_out = nullptr;
         Tensor *global_keys_out = nullptr;
         TF_RETURN_IF_ERROR(ctx->allocate_output(0,
-                        TensorShape({filtered_indices.size()}), &keys_out));
+                        TensorShape({(int64)filtered_indices.size()}), &keys_out));
         
         TF_RETURN_IF_ERROR(ctx->allocate_output(1,
-                        TensorShape({filtered_indices.size()}), &global_keys_out));
+                        TensorShape({(int64)filtered_indices.size()}), &global_keys_out));
         
         auto keys_out_flat = keys_out->flat<KeyType>();
         auto global_keys_out_flat = global_keys_out->flat<KeyType>();
