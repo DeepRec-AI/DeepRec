@@ -137,7 +137,7 @@ REGISTER_OP("KvResourceSparseApplyFtrl")
     .Input("l2: T")
     .Input("lr_power: T")
     .Attr("T: numbertype")
-    .Attr("Tindices: {int64, string}")
+    .Attr("Tindices: {int32, int64, string}")
     .Attr("use_locking: bool = false")
     .SetShapeFn([](InferenceContext* c) {
       return KvResourceApplyFtrlShapeFn(c, true /* sparse */);
@@ -157,7 +157,7 @@ REGISTER_OP("KvResourceSparseApplyFtrlV2")
     .Input("l2_shrinkage: T")
     .Input("lr_power: T")
     .Attr("T: numbertype")
-    .Attr("Tindices: {int64, string}")
+    .Attr("Tindices: {int32, int64, string}")
     .Attr("use_locking: bool = false")
     .SetShapeFn([](InferenceContext* c) {
       return KvResourceApplyFtrlShapeFn(c, true /* sparse */);

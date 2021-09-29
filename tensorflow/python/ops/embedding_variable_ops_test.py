@@ -72,6 +72,31 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
       print(sess.run([emb, train_op,loss]))
+
+  def testEmbeddingVariableForLookupInt32(self):
+    print("testEmbeddingVariableForLookupInt32")
+    checkpoint_directory = self.get_temp_dir()
+    var = variable_scope.get_embedding_variable("var_1",
+                                                embedding_dim = 3,
+                                                key_dtype=dtypes.int32,
+                                                initializer=init_ops.ones_initializer(dtypes.float32),
+                                                partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,-7], dtypes.int32))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      sess.run([train_op])
+      model_path = os.path.join(checkpoint_directory, "model.ckpt")
+      save_path = saver.save(sess, model_path, global_step=12345)
+      saver.restore(sess, save_path)
   '''
   def testEmbeddingVariableForExport(self):
     print("testEmbeddingVariableForExport")
@@ -728,8 +753,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           r, _, _ = sess.run([emb, train_op,loss])
           r, _, _ = sess.run([emb, train_op,loss])
           r, _, _ = sess.run([emb, train_op,loss])
-          #r, _, _ = sess.run([emb, train_op,loss])
-          #r, _, _ = sess.run([emb, train_op,loss])
+          r, _, _ = sess.run([emb, train_op,loss])
+          r, _, _ = sess.run([emb, train_op,loss])
           r = sess.run(emb)
           return r
       emb_var = variable_scope.get_embedding_variable("var_1",

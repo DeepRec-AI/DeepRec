@@ -94,7 +94,36 @@ class SaveV2 : public OpKernel {
  public:
   explicit SaveV2(OpKernelConstruction* context) : OpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("dtypes", &tensor_types_));
+    OP_REQUIRES_OK(context, context->GetAttr("ev_key_types", &ev_key_types_));
     OP_REQUIRES_OK(context, context->GetAttr("has_ev", &has_ev_));
+  }
+
+  template <typename TKey, typename TValue>
+  void DumpEvWithGlobalStep(OpKernelContext* context, int variable_index, const string& tensor_name, BundleWriter& writer, DataType global_step_type) {
+    if (global_step_type == DT_INT32) {
+      DumpEv<TKey, TValue, int32>(context, variable_index, tensor_name, writer);
+    } else {
+      DumpEv<TKey, TValue, int64>(context, variable_index, tensor_name, writer);
+    }
+  }
+
+  template <typename TKey, typename TValue, typename TGlobalStep>
+  void DumpEv(OpKernelContext* context, int variable_index, const string& tensor_name, BundleWriter& writer) {
+    EmbeddingVar<TKey, TValue>* variable = nullptr;
+    OP_REQUIRES_OK(context,
+                   LookupResource(context, HandleFromInput(context, variable_index), &variable));
+    const Tensor& global_step = context->input(3);
+    Tensor part_offset_tensor;
+    context->allocate_temp(DT_INT32,
+                           TensorShape({kSavedPartitionNum + 1}),
+                           &part_offset_tensor);
+    TGlobalStep global_step_scalar = global_step.scalar<TGlobalStep>()();
+    core::ScopedUnref s(variable);
+    if(variable->GetL2WeightThreshold() != -1.0)
+      OP_REQUIRES_OK(context, variable->Shrink());
+    else
+      OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+    OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name, &writer, &part_offset_tensor));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -119,34 +148,17 @@ class SaveV2 : public OpKernel {
       start_index = 1;
     }
 
+    int start_ev_key_index = 0;
+
     for (int i = start_index; i < num_tensors; ++i) {
       const string& tensor_name = tensor_names_flat(i);
       if (tensor_types_[i] == DT_RESOURCE) {
-        EmbeddingVar<int64, float>* variable = nullptr;
-        OP_REQUIRES_OK(context,
-            LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
-        const Tensor& global_step = context->input(3);
-        Tensor part_offset_tensor;
-        context->allocate_temp(DT_INT32,
-                                         TensorShape({kSavedPartitionNum + 1}),
-                                         &part_offset_tensor);
-        if (tensor_types_[0] == DT_INT32) {
-          int32 global_step_scalar = global_step.scalar<int32>()();
-          core::ScopedUnref s(variable);
-          if(variable->GetL2WeightThreshold() != -1.0)
-            OP_REQUIRES_OK(context, variable->Shrink());
-          else
-            OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
-          OP_REQUIRES_OK(context, DumpEmbeddingValues(variable,tensor_name, &writer, &part_offset_tensor));
-        } else {
-          int64 global_step_scalar = global_step.scalar<int64>()();
-          core::ScopedUnref s(variable);
-          if(variable->GetL2WeightThreshold() != -1.0)
-            OP_REQUIRES_OK(context, variable->Shrink());
-          else
-            OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
-          OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name, &writer, &part_offset_tensor));
+        if (ev_key_types_[start_ev_key_index] == DT_INT32) {
+          DumpEvWithGlobalStep<int32, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
+        } else if (ev_key_types_[start_ev_key_index] == DT_INT64) {
+          DumpEvWithGlobalStep<int64, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
         }
+        start_ev_key_index++;
       } else {
         const Tensor& tensor = context->input(i + kFixedInputs);
 
@@ -176,6 +188,7 @@ class SaveV2 : public OpKernel {
   }
  private:
   DataTypeVector tensor_types_;
+  DataTypeVector ev_key_types_;
   bool has_ev_;
 };
 REGISTER_KERNEL_BUILDER(Name("SaveV2").Device(DEVICE_CPU), SaveV2);

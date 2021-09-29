@@ -274,8 +274,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                           if init_from_fn else [initial_value]) as name:
         # pylint: disable=protected-access
         self._invalid_key = invalid_key
-        self._invalid_key_type = ops.convert_to_tensor(invalid_key,
-                name="invalid_key", preferred_dtype=dtypes.int64).dtype.base_dtype
+        self._invalid_key_type = ops.convert_to_tensor(invalid_key, name="invalid_key").dtype.base_dtype
         handle_name = ops.name_from_scope_name(name)
         if init_from_fn:
           # Use attr_scope and device(None) to simulate the behavior of
@@ -351,7 +350,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     self._handle,
                     self._primary._handle,
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
-                    ops.convert_to_tensor(invalid_key, preferred_dtype=dtypes.int64),
+                    ops.convert_to_tensor(invalid_key),
                     self._slotnum_op,
                     shape=initial_value.get_shape(),
                     steps_to_live=self._steps_to_live,
@@ -467,7 +466,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       kv_init_op = gen_kv_variable_ops.initialize_kv_variable_op(
           self._handle,
           variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
-          ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+          ops.convert_to_tensor(self._invalid_key),
           shape=self._initial_value.get_shape(),
           steps_to_live=steps_to_live_hybrid,
           name=n)
@@ -480,7 +479,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                self._init_data_source, 
                self._handle, 
                variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
-               ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+               ops.convert_to_tensor(self._invalid_key),
                self._initial_value.get_shape(), 
                self._steps_to_live, partition_id, partition_num)
         )
@@ -502,7 +501,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       kv_init_op = gen_kv_variable_ops.initialize_kv_variable_op(
           self._handle,
           variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
-          ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+          ops.convert_to_tensor(self._invalid_key),
           shape=self._initial_value.get_shape(),
           steps_to_live=steps_to_live_hybrid,
           name=n)
@@ -512,7 +511,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                self._init_data_source, 
                self._handle, 
                variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
-               ops.convert_to_tensor(self._invalid_key, preferred_dtype=dtypes.int64),
+               ops.convert_to_tensor(self._invalid_key),
                self._initial_value.get_shape(), 
                self._steps_to_live, partition_id, partition_num)
         )

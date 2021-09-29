@@ -174,8 +174,8 @@ class ParallelHashMap {
   int min_part_size_;
 };
 
-template <class K, class T>
-class IncrKeyDumpIterator : public DumpIterator<K, T> {
+template <class K>
+class IncrKeyDumpIterator : public DumpIterator<K> {
  public:
   IncrKeyDumpIterator(std::vector<T>& incr_keys):incr_keys_(incr_keys)  {
     keys_iter_  = incr_keys_.begin();
@@ -185,16 +185,16 @@ class IncrKeyDumpIterator : public DumpIterator<K, T> {
     return keys_iter_ != incr_keys_.end(); 
   }
 
-  T Next() {
+  K Next() {
     return *keys_iter_++;
   }
  private:
-  std::vector<T>& incr_keys_;
-  typename std::vector<T>::iterator keys_iter_;
+  std::vector<K>& incr_keys_;
+  typename std::vector<K>::iterator keys_iter_;
 };
 
 template<class K, class T>
-class IncrEVValueDumpIterator : public  DumpIterator<K, T> {
+class IncrEVValueDumpIterator : public  DumpIterator<T> {
  public:
   IncrEVValueDumpIterator(std::vector<K>& incr_keys, EmbeddingVar<int64, T>*& emb_var):incr_keys_(incr_keys), emb_var_(emb_var){
     keys_iter_ = incr_keys_.begin();
@@ -228,13 +228,13 @@ class IncrEVValueDumpIterator : public  DumpIterator<K, T> {
   int64 col_idx_;
   typename std::vector<K>::iterator keys_iter_;
   std::vector<K>& incr_keys_;
-  EmbeddingVar<int64, T>* emb_var_;
+  EmbeddingVar<K, T>* emb_var_;
 };
 
 template<class K, class T>
-class IncrEVVersionDumpIterator : public  DumpIterator<K, T> {
+class IncrEVVersionDumpIterator : public  DumpIterator<T> {
  public:
-  IncrEVVersionDumpIterator(std::vector<K>& incr_keys, EmbeddingVar<int64, float>*& emb_var):incr_keys_(incr_keys), emb_var_(emb_var){
+  IncrEVVersionDumpIterator(std::vector<K>& incr_keys, EmbeddingVar<K, V>*& emb_var):incr_keys_(incr_keys), emb_var_(emb_var){
     keys_iter_ = incr_keys_.begin();
   }
 
@@ -252,13 +252,13 @@ class IncrEVVersionDumpIterator : public  DumpIterator<K, T> {
  private:
   std::vector<K>& incr_keys_;
   typename std::vector<K>::iterator keys_iter_;
-  EmbeddingVar<int64, float>* emb_var_;
+  EmbeddingVar<K, T>* emb_var_;
 };
 
 template<class K, class T>
-class IncrEVFreqDumpIterator : public  DumpIterator<K, T> {
+class IncrEVFreqDumpIterator : public  DumpIterator<T> {
  public:
-  IncrEVFreqDumpIterator(std::vector<K>& incr_keys, EmbeddingVar<int64, float>*& emb_var):incr_keys_(incr_keys), emb_var_(emb_var){
+  IncrEVFreqDumpIterator(std::vector<K>& incr_keys, EmbeddingVar<K, T>*& emb_var):incr_keys_(incr_keys), emb_var_(emb_var){
     keys_iter_ = incr_keys_.begin();
   }
 
@@ -276,11 +276,11 @@ class IncrEVFreqDumpIterator : public  DumpIterator<K, T> {
  private:
   std::vector<K>& incr_keys_;
   typename std::vector<K>::iterator keys_iter_;
-  EmbeddingVar<int64, float>* emb_var_;
+  EmbeddingVar<K, T>* emb_var_;
 };
 
 template<class K, class T>
-class IncrNormalValueDumpIterator : public  DumpIterator<K, T> {
+class IncrNormalValueDumpIterator : public  DumpIterator<T> {
  public:
   IncrNormalValueDumpIterator(std::vector<K>& incr_keys, const Tensor& variable):incr_keys_(incr_keys), variable_(variable){
     var_data_ = (T*)variable.flat<T>().data();
@@ -320,7 +320,7 @@ class IncrNormalValueDumpIterator : public  DumpIterator<K, T> {
   const Tensor& variable_;
 };
 
-template <typename T>
+template <typename K, typename V = float>
 class IndicesIncrRecorder: public ResourceBase {
  public:
   explicit IndicesIncrRecorder(const std::string &name, 
@@ -355,13 +355,13 @@ class IndicesIncrRecorder: public ResourceBase {
     char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
     Status st;
 
-    std::set<T> incr_keys_set;
+    std::set<K> incr_keys_set;
     incr_indices_.GetKeys(incr_keys_set);
-    std::vector<T> incr_keys;
+    std::vector<K> incr_keys;
     incr_keys.assign(incr_keys_set.begin(), incr_keys_set.end());
 
    
-    IncrKeyDumpIterator<int64, T> key_dump_iter(incr_keys);
+    IncrKeyDumpIterator<K> key_dump_iter(incr_keys);
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_keys", 
                                    writer, dump_buffer, bytes_limit, 
                                    &key_dump_iter, 
@@ -371,7 +371,7 @@ class IndicesIncrRecorder: public ResourceBase {
       return st;
     }
 
-    IncrNormalValueDumpIterator<T, float> value_dump_iter(incr_keys, variable);
+    IncrNormalValueDumpIterator<K, V> value_dump_iter(incr_keys, variable);
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_values", 
                                    writer, dump_buffer, bytes_limit, 
                                    &value_dump_iter, 
@@ -385,16 +385,16 @@ class IndicesIncrRecorder: public ResourceBase {
     return Status::OK();
   }
 
-  Status DumpSparseEmbeddingTensor(const string& tensor_name, EmbeddingVar<int64, float>* emb_var, BundleWriter* writer, OpKernelContext* context) {
+  Status DumpSparseEmbeddingTensor(const string& tensor_name, EmbeddingVar<K, V>* emb_var, BundleWriter* writer, OpKernelContext* context) {
     mutex_lock l(mu_);
     size_t bytes_limit = 8 << 20;
     char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
     Status st;
 
-    std::set<T> incr_keys;
+    std::set<K> incr_keys;
     incr_indices_.GetKeys(incr_keys);
 
-    std::vector<std::vector<T> > incr_keys_parts;
+    std::vector<std::vector<K> > incr_keys_parts;
     incr_keys_parts.resize(kSavedPartitionNum);
  
     for (auto& ik: incr_keys) {
@@ -406,14 +406,14 @@ class IndicesIncrRecorder: public ResourceBase {
       }
     }
 
-    std::vector<T> partitioned_incr_keys;
+    std::vector<K> partitioned_incr_keys;
     Tensor part_offset_tensor;
     context->allocate_temp(DT_INT32, TensorShape({kSavedPartitionNum + 1}), &part_offset_tensor);
     auto part_offset_flat = part_offset_tensor.flat<int32>();
     part_offset_flat(0) = 0;
     int ptsize = 0;
     for (int partid = 0; partid < kSavedPartitionNum; partid++) {
-      std::vector<T>& key_list = incr_keys_parts[partid];
+      std::vector<K>& key_list = incr_keys_parts[partid];
 
       ptsize += key_list.size();
       for (int inpid = 0; inpid < key_list.size(); inpid++) {
@@ -426,7 +426,7 @@ class IndicesIncrRecorder: public ResourceBase {
 
 
 
-    IncrKeyDumpIterator<int64, T> key_dump_iter(partitioned_incr_keys);
+    IncrKeyDumpIterator<K> key_dump_iter(partitioned_incr_keys);
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_keys",
                                    writer, dump_buffer, bytes_limit,
                                    &key_dump_iter,
@@ -436,7 +436,7 @@ class IndicesIncrRecorder: public ResourceBase {
       return st;
     }
      
-    IncrEVValueDumpIterator<T, float> ev_value_dump_iter(partitioned_incr_keys, emb_var);
+    IncrEVValueDumpIterator<K, V> ev_value_dump_iter(partitioned_incr_keys, emb_var);
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_values",
                                    writer, dump_buffer, bytes_limit,
                                    &ev_value_dump_iter,
@@ -446,7 +446,7 @@ class IndicesIncrRecorder: public ResourceBase {
       return st;
     }
    
-    IncrEVVersionDumpIterator<T, int64> ev_version_dump_iter(partitioned_incr_keys, emb_var);
+    IncrEVVersionDumpIterator<K, int64> ev_version_dump_iter(partitioned_incr_keys, emb_var);
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_versions",
                                    writer, dump_buffer, bytes_limit,
                                    &ev_version_dump_iter,
@@ -455,7 +455,7 @@ class IndicesIncrRecorder: public ResourceBase {
       free(dump_buffer);
       return st;
     }
-    IncrEVFreqDumpIterator<T, int64> ev_freq_dump_iter(partitioned_incr_keys, emb_var);
+    IncrEVFreqDumpIterator<K, int64> ev_freq_dump_iter(partitioned_incr_keys, emb_var);
     st = SaveTensorWithFixedBuffer(tensor_name + "-sparse_incr_freqs",
                                    writer, dump_buffer, bytes_limit,
                                    &ev_freq_dump_iter,
@@ -481,7 +481,7 @@ class IndicesIncrRecorder: public ResourceBase {
  private:
   mutex mu_;
   string name_;
-  ParallelHashMap<T> incr_indices_;
+  ParallelHashMap<K> incr_indices_;
   std::atomic<int64> global_version_ = {-1};
 
   TF_DISALLOW_COPY_AND_ASSIGN(IndicesIncrRecorder);
