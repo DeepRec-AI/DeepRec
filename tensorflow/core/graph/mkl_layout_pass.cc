@@ -499,7 +499,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                       FusedDepthwiseConv2DRewrite,
                       kRewriteForLayoutPropagation});
     rinfo_.push_back({csinfo_.fused_matmul, csinfo_.mkl_fused_matmul,
-                      CopyAttrsAllCheckConstFilter, FusedMatMulRewrite});
+                      CopyAttrsAllCheckConstFilter, FusedMatMulRewrite,
+                      kRewriteForOpNameChange});
     rinfo_.push_back({csinfo_.fused_batch_matmul,
                       csinfo_.mkl_fused_batch_matmul, CopyAttrsAll,
                       AlwaysRewrite, kRewriteForOpNameChange});
