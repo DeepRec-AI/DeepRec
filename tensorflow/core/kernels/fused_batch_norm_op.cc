@@ -1066,6 +1066,20 @@ class FusedBatchNormOpBase : public OpKernel {
                   errors::InvalidArgument("Error during tensor copy."));
     }
 
+    const auto num_channels = GetTensorDim(x, tensor_format_, 'C');
+    if (!is_training_) {
+      OP_REQUIRES(context, estimated_mean.NumElements() == num_channels,
+                  errors::InvalidArgument(
+                      "When is_training=false, mean must have the same number "
+                      "of elements as the channels of x, got ",
+                      estimated_mean.NumElements(), " and ", num_channels));
+      OP_REQUIRES(context, estimated_variance.NumElements() == num_channels,
+                  errors::InvalidArgument(
+                      "When is_training=false, variance must have the same "
+                      "number of elements as the channels of x, got ",
+                      estimated_variance.NumElements(), " and ", num_channels));
+    }
+
     if (has_side_input_) {
       OP_REQUIRES(context, side_input.shape() == x.shape(),
                   errors::InvalidArgument(
@@ -1226,6 +1240,12 @@ class FusedBatchNormGradOpBase : public OpKernel {
                 errors::InvalidArgument(
                     "saved variance must be 1-dimensional",
                     saved_maybe_inv_var_or_pop_var.shape().DebugString()));
+    OP_REQUIRES(
+        context, x.shape() == y_backprop.shape(),
+        errors::InvalidArgument(
+            "x and y_backprop must have same shape, but x has shape ",
+            x.shape(), " and y_backprop has shape ", y_backprop.shape()));
+
     bool use_reshape = (x.dims() == 5);
     auto x_shape = x.shape();
     TensorShape dest_shape;
@@ -1242,6 +1262,23 @@ class FusedBatchNormGradOpBase : public OpKernel {
       OP_REQUIRES(context, y_backprop.CopyFrom(y_backprop, dest_shape),
                   errors::InvalidArgument("Error during tensor copy."));
     }
+
+    const auto num_channels = GetTensorDim(x, tensor_format_, 'C');
+    OP_REQUIRES(
+        context, scale.NumElements() == num_channels,
+        errors::InvalidArgument("scale must have the same number of elements "
+                                "as the channels of x, got ",
+                                scale.NumElements(), " and ", num_channels));
+    OP_REQUIRES(
+        context, saved_mean_or_pop_mean.NumElements() == num_channels,
+        errors::InvalidArgument("reserve_space_1 must have the same number of "
+                                "elements as the channels of x, got ",
+                                scale.NumElements(), " and ", num_channels));
+    OP_REQUIRES(
+        context, saved_maybe_inv_var_or_pop_var.NumElements() == num_channels,
+        errors::InvalidArgument("reserve_space_2 must have the same number of "
+                                "elements as the channels of x, got ",
+                                scale.NumElements(), " and ", num_channels));
 
     Tensor* x_backprop = nullptr;
 	  auto alloc_shape = use_reshape ? dest_shape : x_shape;
