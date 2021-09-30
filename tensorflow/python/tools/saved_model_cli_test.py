@@ -211,7 +211,7 @@ Defined Functions:
     Option #1
       Callable with:
         Argument #1
-          y: TensorSpec(shape=(), dtype=tf.int32, name=u'y')
+          y: TensorSpec(shape=(), dtype=tf.int32, name='y')
         Argument #2
           DType: int
           Value: 7
@@ -220,9 +220,9 @@ Defined Functions:
     Option #1
       Callable with:
         Argument #1
-          a: TensorSpec(shape=(), dtype=tf.int32, name=u'a')
+          a: TensorSpec(shape=(), dtype=tf.int32, name='a')
         Argument #2
-          b: TensorSpec(shape=(), dtype=tf.int32, name=u'b')
+          b: TensorSpec(shape=(), dtype=tf.int32, name='b')
         Argument #3
           DType: bool
           Value: True
@@ -231,7 +231,7 @@ Defined Functions:
     Option #1
       Callable with:
         Argument #1
-          x: TensorSpec(shape=(2, 2), dtype=tf.float32, name=u'x')
+          x: TensorSpec(shape=(2, 2), dtype=tf.float32, name='x')
 """.strip()  # pylint: enable=line-too-long
     self.maxDiff = None  # Produce a useful error msg if the comparison fails
     self.assertMultiLineEqual(output, exp_out)
@@ -311,7 +311,7 @@ Defined Functions:
     input_expr_str = 'input3=np.zeros([2,2]);input4=[4,5]'
     input_dict = saved_model_cli.preprocess_inputs_arg_string(input_str)
     input_expr_dict = saved_model_cli.preprocess_input_exprs_arg_string(
-        input_expr_str)
+        input_expr_str, safe=False)
     self.assertTrue(input_dict['input1'] == ('/path/file.txt', 'ab3'))
     self.assertTrue(input_dict['input2'] == ('file2', None))
     print(input_expr_dict['input3'])
@@ -319,6 +319,11 @@ Defined Functions:
     self.assertAllClose(input_expr_dict['input4'], [4, 5])
     self.assertTrue(len(input_dict) == 2)
     self.assertTrue(len(input_expr_dict) == 2)
+
+  def testInputPreprocessExampleWithCodeInjection(self):
+    input_examples_str = 'inputs=os.system("echo hacked")'
+    with self.assertRaisesRegex(RuntimeError, 'not a valid python literal.'):
+      saved_model_cli.preprocess_input_examples_arg_string(input_examples_str)
 
   def testInputPreProcessFileNames(self):
     input_str = (r'inputx=C:\Program Files\data.npz[v:0];'
@@ -336,8 +341,8 @@ Defined Functions:
     with self.assertRaises(RuntimeError):
       saved_model_cli.preprocess_inputs_arg_string(input_str)
     input_str = 'inputx:np.zeros((5))'
-    with self.assertRaises(RuntimeError):
-      saved_model_cli.preprocess_input_exprs_arg_string(input_str)
+    with self.assertRaisesRegex(RuntimeError, 'format is incorrect'):
+      saved_model_cli.preprocess_input_exprs_arg_string(input_str, safe=False)
 
   def testInputParserNPY(self):
     x0 = np.array([[1], [2]])
