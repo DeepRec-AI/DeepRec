@@ -2,7 +2,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import sparse_fused_embedding_ops
+from tensorflow.python.ops import fused_embedding_ops
 from tensorflow.python.framework import dtypes
 from tensorflow.contrib.framework.python.ops import variables as contrib_variables
 from tensorflow.contrib.layers.python.layers.feature_column_ops import check_feature_columns
@@ -18,6 +18,9 @@ def embeddings_from_arguments_fused(column,
     # This option is only enabled for scattered_embedding_column.
     if args.hash_key:
         raise NotImplementedError("not implemented yet for hash_key")
+    if args.max_norm is not None:
+        raise NotImplementedError("not implemented yet for max_norm")
+
     graph = ops.get_default_graph()
     partition_num = args.embedding_var_part_num
     if partition_num is None:
@@ -60,13 +63,10 @@ def embeddings_from_arguments_fused(column,
         embeddings = embeddings._get_variable_list()  # pylint: disable=protected-access
     # pylint: disable=protected-access
     fc._maybe_restore_from_checkpoint(column._checkpoint_path(), embeddings)
-    return embedding_ops.safe_embedding_lookup_sparse(
+    return fused_embedding_ops.fused_embedding_sparse_lookup(
         embeddings,
         args.input_tensor,
-        sparse_weights=args.weight_tensor,
-        combiner=args.combiner,
-        name=column.name + "weights",
-        max_norm=args.max_norm)
+        combiner=args.combiner)
 
 
 def input_from_feature_columns_fused(columns_to_tensors,

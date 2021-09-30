@@ -2080,13 +2080,22 @@ tf_gen_op_wrapper_private_py(
     ],
 )
 
+py_library(
+    name = "fused_embedding_ops",
+    srcs = ["ops/fused_embedding_ops.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":fused_embedding_ops_gen",
+        ":framework",
+        ":util"
+    ],
+)
+
 tf_gen_op_wrapper_private_py(
     name = "fused_embedding_ops_gen",
     visibility = [
-        "//learning/brain/python/ops:__pkg__",
         "//tensorflow:__subpackages__",
     ],
-    out = "python/ops/gen_fused_embedding_ops.py",
     deps = [
         "//tensorflow/core:fused_embedding_ops_op_lib"
     ]
