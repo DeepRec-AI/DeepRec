@@ -1810,7 +1810,7 @@ class Function(object):
     self._function_attributes = attributes or {}
     self._capture_by_value = capture_by_value
 
-    self._lock = threading.Lock()
+    self._lock = threading.RLock()
     # _descriptor_cache is a of instance of a class to an instance-specific
     # `Function`, used to make sure defun-decorated methods create different
     # functions for each instance.
