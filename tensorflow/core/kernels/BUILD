@@ -5218,7 +5218,12 @@ tf_kernel_library(
     gpu_srcs = [
         "fused_embedding_ops_gpu.cu.cc"
     ],
-    deps = REQUIRED_DEPS,
+    deps = [
+        "//third_party/eigen3",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal"
+    ],
 )
 
 tf_kernel_library(

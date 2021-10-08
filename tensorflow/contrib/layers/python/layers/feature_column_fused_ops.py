@@ -13,8 +13,7 @@ from tensorflow.contrib.layers.python.layers import feature_column as fc
 def embeddings_from_arguments_fused(column,
                                     args,
                                     weight_collections,
-                                    trainable,
-                                    output_rank=2):
+                                    trainable):
     # This option is only enabled for scattered_embedding_column.
     if args.hash_key:
         raise NotImplementedError("not implemented yet for hash_key")
@@ -71,11 +70,9 @@ def embeddings_from_arguments_fused(column,
 
 def input_from_feature_columns_fused(columns_to_tensors,
                                      feature_columns,
-                                     weight_collections,
-                                     trainable,
-                                     scope,
-                                     output_rank,
-                                     default_name,
+                                     weight_collections=None,
+                                     trainable=None,
+                                     scope=None,
                                      cols_to_outs=None,
                                      blocknums=None):
 
@@ -90,7 +87,7 @@ def input_from_feature_columns_fused(columns_to_tensors,
     if cols_to_outs is not None and not isinstance(cols_to_outs, dict):
         raise ValueError('cols_to_outs must be a dict unless None')
     with variable_scope.variable_scope(scope,
-                                       default_name=default_name,
+                                       default_name="input_from_feature_columns_fused",
                                        values=columns_to_tensors.values()):
         output_tensors = []
         transformer = _Transformer(columns_to_tensors)
@@ -101,9 +98,12 @@ def input_from_feature_columns_fused(columns_to_tensors,
                                                values=columns_to_tensors.values()):
                 transformed_tensor = transformer.transform(column)
                 # pylint: disable=protected-access
+                import pdb;pdb.set_trace()
                 args = column._deep_embedding_lookup_arguments(
                     transformed_tensor)
 
+                output = embeddings_from_arguments_fused(column, args, weight_collections, trainable)
+                output_tensors.append(output)
                 if cols_to_outs is not None:
                     cols_to_outs[column] = output_tensors[-1]
-        return array_ops.concat(output_tensors, output_rank - 1)
+        return array_ops.concat(output_tensors, 1)
