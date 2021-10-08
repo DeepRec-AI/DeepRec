@@ -318,6 +318,16 @@ void DnnPoolingGradOp<T>::Compute(
   if (!context->status().ok()) {
     return;
   }
+  if (tensor_out) {
+    OP_REQUIRES(context, tensor_out->shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected orig_output shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", tensor_out->shape()));
+  }
+  OP_REQUIRES(context, out_backprop.shape() == params.forward_output_shape(),
+              errors::InvalidArgument("Expected grad shape to be ",
+                                      params.forward_output_shape(),
+                                      ", but got ", out_backprop.shape()));
 
 #if CUDNN_VERSION < 7300
   /// For now, cudnn does not support NHWC format, so we need to convert it
