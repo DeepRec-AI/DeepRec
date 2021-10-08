@@ -69,7 +69,7 @@ Status RestoreTensorsV2(OpKernelContext* context, const Tensor& prefix,
                         const Tensor& shape_and_slices,
                         gtl::ArraySlice<DataType> dtypes);
 
-template<class K, class T>
+template<class T>
 class DumpIterator {
  public:
   virtual ~DumpIterator() {}
@@ -77,9 +77,9 @@ class DumpIterator {
   virtual T Next() = 0;
 };
 
-template<typename K, typename T>
+template<typename T>
 Status SaveTensorWithFixedBuffer(const string& tensor_name, BundleWriter* writer, char* dump_buffer, size_t bytes_limit,
-    DumpIterator<K, T>* dump_iter, const TensorShape& dump_tensor_shape, bool use_shape = true) {
+    DumpIterator<T>* dump_iter, const TensorShape& dump_tensor_shape, bool use_shape = true) {
   bool dump_happened = false;
   size_t bytes_written = 0;
   int buffer_idx = 0;

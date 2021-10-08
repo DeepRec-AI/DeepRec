@@ -124,12 +124,12 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
   def __init__(self, var, name):
     self.handle_op = var.handle
     self.invalid_key = var.invalid_key
+    self.dtype = var._dtype
     self.key_type = var._invalid_key_type
     self.steps_to_live = var.steps_to_live
     self.ht_type = var._ht_type
     self.ht_partition_num= var._ht_partition_num
     name = var._shared_name
-    self.handle_op = var.handle
     self.var = var
     is_partitioned_ev = not isinstance(self.var._save_slice_info, str)
     self.partition_id = 0
@@ -169,7 +169,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               self.handle_op, self.var._primary._handle,
               variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
               self.name,
-              ops.convert_to_tensor(self.invalid_key, preferred_dtype=dtypes.int64),
+              ops.convert_to_tensor(self.invalid_key),
               self.var._slotnum_op,
               shape=self.op.initial_value.get_shape(), steps_to_live=self.steps_to_live,
               emb_index=self.var._emb_index, slot_index=self.var._slot_index,
@@ -177,6 +177,11 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               ht_type=self.ht_type,
               ht_partition_num=self.ht_partition_num,
               filter_freq = self.var._filter_freq,
+              max_freq = 99999,
+              l2_weight_threshold = self.var._l2_weight_threshold,
+              max_element_size = self.var._max_element_size,
+              false_positive_probability = self.var._false_positive_probability,
+              counter_type = self.var._counter_type,
               partition_id=self.partition_id, partition_num=self.partition_num)
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
@@ -185,7 +190,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
       handle_name = ops.name_from_scope_name(self.name)
       return gen_kv_variable_ops.kv_resource_incr_import(
               restored_tensors[0], self.handle_op, self.name,
-              ops.convert_to_tensor(self.invalid_key, preferred_dtype=dtypes.int64),
+              ops.convert_to_tensor(self.invalid_key),
               variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
               partition_id=self.partition_id, partition_num=self.partition_num)
 

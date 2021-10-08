@@ -120,8 +120,10 @@ class KvSparseApplyAdagradOp : public OpKernel {
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
+            bool is_filter = false;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter,
+                  gs));
+            if (is_filter) {
               auto a = accum->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);
@@ -264,8 +266,9 @@ class KvSparseApplyFtrlOp : public OpKernel {
           for (int64 i = start_i; i < limit_i; i++) {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
-            OP_REQUIRES_OK(ctx, var_->LookupOrCreateKey(index, &value_ptr));
-            if (var_->MinFreq() == 0 || value_ptr->GetFreq() >= var_->MinFreq()){
+            bool is_filter = false;
+            OP_REQUIRES_OK(ctx, var_->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            if (is_filter) {
               auto var = var_->flat(value_ptr);
               auto accum = accum_->flat(value_ptr);
               auto linear = linear_->flat(value_ptr);
@@ -335,8 +338,8 @@ class KvSparseApplyFtrlOp : public OpKernel {
           .TypeConstraint<Tindices>("Tindices"),                              \
       KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/false>);
 #define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(string, T);  \
-  REGISTER_KERNELS(int64, T);
+  REGISTER_KERNELS(int64, T);   \
+  REGISTER_KERNELS(int32, T);
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 
@@ -351,8 +354,8 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
           .TypeConstraint<Tindices>("Tindices"),                             \
       KvSparseApplyFtrlOp<CPUDevice, Tindices, T, /*has_l2_shrinkage=*/true>);
 #define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(string, T);  \
-  REGISTER_KERNELS(int64, T);
+  REGISTER_KERNELS(int64, T);   \
+  REGISTER_KERNELS(int32, T);
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 
@@ -786,8 +789,9 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
+            bool is_filter = false;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            if (is_filter) {
               auto a = accum->flat(value_ptr);
 
               auto g = grad_flat.template chip<0>(i);
@@ -830,10 +834,10 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
                           KvSparseApplyAdagradDecayOp<T, Tindices, Tstep>);
 
 #define REGISTER_CPU_KERNELS(T)        \
-  REGISTER_KERNELS(T, string, int32);  \
-  REGISTER_KERNELS(T, string, int64);  \
   REGISTER_KERNELS(T, int64, int32);   \
   REGISTER_KERNELS(T, int64, int64);   \
+  REGISTER_KERNELS(T, int32, int32);   \
+  REGISTER_KERNELS(T, int32, int64);   \
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 
@@ -944,9 +948,9 @@ class KvSparseApplyAdamOp : public OpKernel {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
-
+            bool is_filter =false;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            if (is_filter) {
               auto var_i = var->flat(value_ptr);
               auto m_a = m->flat(value_ptr);
               auto v_a = v->flat(value_ptr);
@@ -977,7 +981,6 @@ class KvSparseApplyAdamOp : public OpKernel {
                               .TypeConstraint<Tindices>("Tindices"),  \
                           KvSparseApplyAdamOp<CPUDevice, T, Tindices>);
 #define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(T, string);  \
   REGISTER_KERNELS(T, int32);   \
   REGISTER_KERNELS(T, int64);
 
@@ -1493,8 +1496,9 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
           for (Tindex i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
+            bool is_filter = false;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            if (is_filter) {
               auto v_ = v->flat(value_ptr);
               auto m_ = m->flat(value_ptr);
               auto grad_ = grad_flat.template chip<0>(i);
@@ -1537,8 +1541,9 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
               const Tindex index = indices_vec(i);
               ValuePtr<T>* value_ptr = nullptr;
-              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-              if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
+              bool is_filter = false;
+              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+              if (is_filter) {
                 auto m_a = m->flat(value_ptr);
                 auto v_a = v->flat(value_ptr);
                 auto g = grad_flat.template chip<0>(i);
@@ -1650,8 +1655,9 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
           for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, gs));
-            if (var->MinFreq() == 0 || value_ptr->GetFreq() >= var->MinFreq()) {
+            bool is_filter = false;
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            if (is_filter) {
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);
               v -= g.constant(lr_scalar) * g;
@@ -1683,6 +1689,8 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
 #define REGISTER_CPU_KERNELS(T)        \
   REGISTER_KERNELS(T, int64, int32);   \
   REGISTER_KERNELS(T, int64, int64);   \
+  REGISTER_KERNELS(T, int32, int32);   \
+  REGISTER_KERNELS(T, int32, int64);   \
 
 TF_CALL_float(REGISTER_CPU_KERNELS);
 

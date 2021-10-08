@@ -113,6 +113,7 @@ class InitializeKvVariableOp : public OpKernel {
  public:
   explicit InitializeKvVariableOp(OpKernelConstruction* c) : OpKernel(c) {
     OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
+    OP_REQUIRES_OK(c, c->GetAttr("counter_type", &counter_type_));
     OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
     OP_REQUIRES(c, shape_.dims() == 1,
                 errors::InvalidArgument("KvVariable dimension must be 1"));
@@ -130,7 +131,13 @@ class InitializeKvVariableOp : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
 
+    OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability", &false_positive_probability_));
+
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
 
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
@@ -180,8 +187,10 @@ class InitializeKvVariableOp : public OpKernel {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum_op, opname + "-primary", 
-                                         steps_to_live_, filter_freq_, max_freq_,l2_weight_threshold_ ));
+                                         block_num_, slotnum_op, opname + "-primary",
+                                         steps_to_live_, filter_freq_, max_freq_,
+                                         l2_weight_threshold_, layout_,
+                                         max_element_size_, false_positive_probability_, counter_type_));
             return (*ptr)->Init(default_values);
             }));
 
@@ -200,8 +209,10 @@ class InitializeKvVariableOp : public OpKernel {
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slotnum_op, opname + "-primary", 
-                                        steps_to_live_, filter_freq_, max_freq_,l2_weight_threshold_));
+                                        block_num_, slotnum_op, opname + "-primary",
+                                        steps_to_live_, filter_freq_, max_freq_,
+                                        l2_weight_threshold_, layout_,
+                                        max_element_size_, false_positive_probability_, counter_type_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -216,9 +227,9 @@ class InitializeKvVariableOp : public OpKernel {
                          primary_variable->kv(), cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
-                                         steps_to_live_, filter_freq_));
-             (*ptr)->SetL2WeightThreshold(primary_variable->GetL2WeightThreshold());                            
-             (*ptr)->SetMinFreq(primary_variable->MinFreq());
+                                         steps_to_live_, primary_variable->MinFreq(),
+                                         max_freq_, primary_variable->GetL2WeightThreshold(),
+                                         layout_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -232,6 +243,7 @@ class InitializeKvVariableOp : public OpKernel {
 
  private:
   DataType dtype_;
+  DataType counter_type_;
   TensorShape shape_;
   int64 steps_to_live_;
   int64 emb_index_;
@@ -242,6 +254,9 @@ class InitializeKvVariableOp : public OpKernel {
   int64 filter_freq_;
   int64 max_freq_;
   float l2_weight_threshold_;
+  std::string layout_;
+  int64 max_element_size_;
+  float false_positive_probability_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -340,6 +355,7 @@ class KvResourceGatherOp : public OpKernel {
           slice_bytes, do_work);
     }
   }
+
 };
 
 #define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
@@ -444,6 +460,7 @@ class KvResourceImportV2Op: public OpKernel {
  public:
   explicit KvResourceImportV2Op(OpKernelConstruction* c) : OpKernel(c) {
     OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
+    OP_REQUIRES_OK(c, c->GetAttr("counter_type", &counter_type_));
     OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
     OP_REQUIRES(c, shape_.dims() == 1,
                 errors::InvalidArgument("KvVariable dimension must be 1"));
@@ -468,6 +485,13 @@ class KvResourceImportV2Op: public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
     OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability", &false_positive_probability_));
+    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
+    OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -496,7 +520,7 @@ class KvResourceImportV2Op: public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, slotnum_op, 
+            [this, default_values, opname, slotnum_op,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
@@ -504,7 +528,9 @@ class KvResourceImportV2Op: public OpKernel {
                          ht, cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary",
-                                         steps_to_live_, filter_freq_));
+                                         steps_to_live_, filter_freq_,
+                                         max_freq_, l2_weight_threshold_,
+                                         layout_,  max_element_size_, false_positive_probability_, counter_type_));
              return (*ptr)->Init(default_values);
             }));
     } else {
@@ -523,7 +549,9 @@ class KvResourceImportV2Op: public OpKernel {
                         ht, cpu_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary",
-                                        steps_to_live_, filter_freq_));
+                                        steps_to_live_, filter_freq_,
+                                        max_freq_, l2_weight_threshold_,
+                                        layout_,  max_element_size_, false_positive_probability_, counter_type_));
             return (*ptr)->Init(default_values);
            }));
 
@@ -537,7 +565,9 @@ class KvResourceImportV2Op: public OpKernel {
                          primary_variable->kv(), cpu_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
-                                         steps_to_live_, filter_freq_));
+                                         steps_to_live_, filter_freq_,
+                                         999,  primary_variable->GetL2WeightThreshold(),
+                                         layout_));
              return (*ptr)->Init(default_values);
             }));
 
@@ -558,6 +588,9 @@ class KvResourceImportV2Op: public OpKernel {
   int64 partition_id_;
   int64 partition_num_;
   DataType dtype_;
+  DataType counter_type_;
+  int64 max_element_size_;
+  float false_positive_probability_;
   TensorShape shape_;
   int64 steps_to_live_;
   bool restore_versions_;
@@ -567,6 +600,9 @@ class KvResourceImportV2Op: public OpKernel {
   int64 slot_index_;
   int64 block_num_;
   int64 filter_freq_;
+  float l2_weight_threshold_;
+  std::string layout_;
+  int64 max_freq_;
 };
 
 

@@ -490,41 +490,6 @@ bool BaseGPUDevice::RequiresRecordingAccessedTensors() const {
   return streams_.size() > 1;
 }
 
-Status BaseGPUDevice::FillContextMap(const Graph* graph,
-                                     DeviceContextMap* device_context_map) {
-  VLOG(2) << "FillContextMap";
-
-  const size_t num_streams = streams_.size();
-  // Special case for single stream.
-  if (num_streams == 1) {
-    return Status::OK();
-  }
-  const int64 before = Env::Default()->NowMicros();
-  gpu_stream_util::AssignStreamsOpts opts;
-  opts.max_streams = static_cast<int32>(num_streams);
-  std::unordered_map<int, int> node_to_stream_id;
-  TF_RETURN_IF_ERROR(
-      gpu_stream_util::AssignStreams(graph, opts, &node_to_stream_id));
-  int64 elapsed = Env::Default()->NowMicros() - before;
-  VLOG(3) << "AssignStreams took " << elapsed << "us";
-
-  // Fill in the context map.  It is OK for this map to contain
-  // duplicate DeviceContexts so long as we increment the refcount.
-  device_context_map->resize(graph->num_node_ids());
-  for (Node* n : graph->nodes()) {
-    auto mapped_stream = node_to_stream_id[n->id()];
-    CHECK_LE(mapped_stream, num_streams);
-    auto ctx = device_contexts_[mapped_stream];
-    VLOG(3) << "Assigned stream " << node_to_stream_id[n->id()]
-            << " ==> stream[" << ctx->stream_id() << "] for node id " << n->id()
-            << " " << n->type_string() << " " << n->name();
-    ctx->Ref();
-    (*device_context_map)[n->id()] = ctx;
-  }
-
-  return Status::OK();
-}
-
 string BaseGPUDevice::ComputeOpKernelDebugString(const OpKernel& op_kernel,
                                                  const int& stream_id) {
   return strings::StrCat(op_kernel.name(), " op ", op_kernel.type_string(),
