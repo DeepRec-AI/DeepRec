@@ -303,6 +303,14 @@ class MaxPoolingGradOp : public OpKernel {
     if (!context->status().ok()) {
       return;
     }
+    OP_REQUIRES(context, tensor_out.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected orig_output shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", tensor_out.shape()));
+    OP_REQUIRES(context, out_backprop.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected grad shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", out_backprop.shape()));
 
     Tensor* output = nullptr;
     OP_REQUIRES_OK(context, context->forward_input_or_allocate_output(
@@ -529,6 +537,18 @@ class MaxPoolingGradGradOp : public OpKernel {
 
     PoolParameters params{context,  ksize,       stride,
                           padding_, FORMAT_NHWC, tensor_in.shape()};
+    if (!context->status().ok()) {
+      return;
+    }
+    OP_REQUIRES(context, tensor_out.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected orig_output shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", tensor_out.shape()));
+    OP_REQUIRES(
+        context, out_grad_backprop.shape() == tensor_in.shape(),
+        errors::InvalidArgument("Expected grad shape to be ", tensor_in.shape(),
+                                ", but got ", out_grad_backprop.shape()));
+
     Tensor* output = nullptr;
     OP_REQUIRES_OK(context, context->forward_input_or_allocate_output(
                                 {2}, 0, tensor_out.shape(), &output));
@@ -728,6 +748,17 @@ class MaxPoolingGradGradOp<Eigen::GpuDevice, T> : public OpKernel {
 
     PoolParameters params{context,  ksize,        stride,
                           padding_, data_format_, tensor_in.shape()};
+    if (!context->status().ok()) {
+      return;
+    }
+    OP_REQUIRES(context, tensor_out.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected orig_output shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", tensor_out.shape()));
+    OP_REQUIRES(
+        context, out_grad_backprop.shape() == tensor_in.shape(),
+        errors::InvalidArgument("Expected grad shape to be ", tensor_in.shape(),
+                                ", but got ", out_grad_backprop.shape()));
 
     functor::MaxPoolGradBackwardNoMask<T>()(
         data_format_, tensor_in.flat<T>().data(), tensor_out.flat<T>().data(),
@@ -1047,6 +1078,14 @@ class MaxPoolingGradWithArgmaxOp : public OpKernel {
     if (!context->status().ok()) {
       return;
     }
+    OP_REQUIRES(context, grad_in.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected grad shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", grad_in.shape()));
+    OP_REQUIRES(context, argmax.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected argmax shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", argmax.shape()));
 
     TensorShape out_shape({params.tensor_in_batch, params.tensor_in_rows,
                            params.tensor_in_cols, params.depth});
@@ -1100,6 +1139,14 @@ class MaxPoolingGradGradWithArgmaxOp : public OpKernel {
     if (!context->status().ok()) {
       return;
     }
+    OP_REQUIRES(
+        context, grad_in.shape() == tensor_in.shape(),
+        errors::InvalidArgument("Expected grad shape to be ", tensor_in.shape(),
+                                ", but got ", grad_in.shape()));
+    OP_REQUIRES(context, argmax.shape() == params.forward_output_shape(),
+                errors::InvalidArgument("Expected argmax shape to be ",
+                                        params.forward_output_shape(),
+                                        ", but got ", argmax.shape()));
 
     TensorShape out_shape({params.tensor_in_batch, params.out_height,
                            params.out_width, params.depth});
