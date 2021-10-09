@@ -1260,6 +1260,7 @@ class _EmbeddingColumn(
       steps_to_live = None
       init_data_source = None
       ht_partition_num = None
+      evconfig = variables.EVConfig()
     return _DeepEmbeddingLookupArguments(
         input_tensor=self.sparse_id_column.id_tensor(input_tensor),
         weight_tensor=self.sparse_id_column.weight_tensor(input_tensor),
