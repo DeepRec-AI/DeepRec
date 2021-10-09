@@ -1,0 +1,41 @@
+apiVersion: kubeflow.org/v1
+kind: TFJob
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  cleanPodPolicy: Running
+  tfReplicaSpecs:
+    Chief:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          hostIPC: true
+          hostPID: true
+          containers:
+          - name: tensorflow
+            image: {{ .Values.image }}
+            imagePullPolicy: Always
+            resources:
+              requests:
+                nvidia.com/gpu: {{ .Values.gpu }}
+              limits:
+                nvidia.com/gpu: {{ .Values.gpu }}
+            securityContext:
+              capabilities:
+                add:
+                  {{- range .Values.caps }}
+                  - {{ . }}
+                  {{- end }}
+            args:
+            - bash
+            - -c
+            - tail -f /dev/null
+            workingDir: /workspace
+            env:
+            - name: PYTHONPATH
+              value: "$PYTHONPATH:/workspace"
+            ports:
+            - containerPort: 20000
+              name: tfjob-port
+
