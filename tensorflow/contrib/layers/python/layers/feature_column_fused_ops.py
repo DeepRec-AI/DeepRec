@@ -62,8 +62,8 @@ def embeddings_from_arguments_fused(column,
         embeddings = embeddings._get_variable_list()  # pylint: disable=protected-access
     # pylint: disable=protected-access
     fc._maybe_restore_from_checkpoint(column._checkpoint_path(), embeddings)
-    return fused_embedding_ops.fused_embedding_sparse_lookup(
-        embeddings,
+    return fused_embedding_ops.fused_embedding_sparse_look_up(
+        embeddings[0],
         args.input_tensor,
         combiner=args.combiner)
 
@@ -98,12 +98,12 @@ def input_from_feature_columns_fused(columns_to_tensors,
                                                values=columns_to_tensors.values()):
                 transformed_tensor = transformer.transform(column)
                 # pylint: disable=protected-access
-                import pdb;pdb.set_trace()
+
                 args = column._deep_embedding_lookup_arguments(
                     transformed_tensor)
-
-                output = embeddings_from_arguments_fused(column, args, weight_collections, trainable)
-                output_tensors.append(output)
+                output = embeddings_from_arguments_fused(
+                    column, args, weight_collections, trainable)
+                output_tensors.append(output[0])
                 if cols_to_outs is not None:
                     cols_to_outs[column] = output_tensors[-1]
         return array_ops.concat(output_tensors, 1)

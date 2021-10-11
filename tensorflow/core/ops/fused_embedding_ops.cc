@@ -15,10 +15,14 @@ REGISTER_OP("FusedEmbeddingSparseLookUp")
     .Input("sp_dense_shape: int64")
     .Input("emb_variable: T")
     .Output("emb_vector: T")
-    .Output("values_offset: int64")
+    .Output("sp_values_offset: int32")
     .SetShapeFn([](InferenceContext* ctx) {
+      ShapeHandle temp;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 1, &temp));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 2, &temp));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2), 1, &temp));
       ShapeHandle emb_var_shape;
-      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2), 2, &emb_var_shape));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(3), 2, &emb_var_shape));
 
       DimensionHandle emb_vec_size_dim = ctx->Dim(emb_var_shape, 1);
       DimensionHandle batch_dim = ctx->UnknownDim();
@@ -35,12 +39,15 @@ REGISTER_OP("FusedEmbeddingSparseLookUpGrad")
     .Attr("combiner: string")
     .Input("top_grad: T")
     .Input("sp_values: int64")
-    .Input("sp_values_offset: int64")
-    .Output("grad_sp_values: T")
-    .Output("grad_sp_indices: int64")
+    .Input("sp_values_offset: int32")
+    .Output("grad_emb_weight_sp_values: T")
+    .Output("grad_emb_weight_sp_indices: int64")
     .SetShapeFn([](InferenceContext* ctx) {
-      ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim()}));
-      ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), 2}));
+      ShapeHandle top_grad_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
+      DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
+      ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
+      ctx->set_output(1, ctx->MakeShape({ctx->UnknownDim()}));
 
       return Status::OK();
     })
