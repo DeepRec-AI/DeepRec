@@ -3,6 +3,7 @@
 #define EIGEN_USE_GPU
 
 #include <exception>
+#include <string>
 
 #include "tensorflow/core/framework/op_kernel.h"
 
@@ -124,7 +125,9 @@ __global__ void DoEmbeddingGrad(const float* top_grad, const int64_t* values,
 class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
  public:
   explicit FusedEmbeddingSparseLookUpGPUOp(OpKernelConstruction* ctx)
-      : OpKernel(ctx) {}
+      : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
+  }
 
   void Compute(OpKernelContext* ctx) override {
     auto stream = ctx->eigen_device<GPUDevice>().stream();
@@ -181,15 +184,21 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
     {
       const int blocks = int(batch_size);
       const int threads = int(emb_vec_size);
-      EmbeddingLookUp<Sqrt><<<blocks, threads, 0, stream>>>(
-          reinterpret_cast<const float*>(
-              emb_variable_tensor->flat<float>().data()),
-          reinterpret_cast<const int64_t*>(values_tensor->flat<int64>().data()),
-          values_offset_tensor->flat<int>().data(),
-          reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
-          int(emb_vec_size), batch_size, nnz);
+      if (combiner_ == "sqrt") {
+        EmbeddingLookUp<Sqrt><<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<const float*>(
+                emb_variable_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
+            values_offset_tensor->flat<int>().data(),
+            reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
+            int(emb_vec_size), batch_size, nnz);
+      }
     }
   }
+
+ private:
+  std::string combiner_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparseLookUp")
@@ -200,7 +209,9 @@ REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparseLookUp")
 class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
  public:
   explicit FusedEmbeddingSparseLookUpGradOp(OpKernelConstruction* ctx)
-      : OpKernel(ctx) {}
+      : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
+  }
 
   void Compute(OpKernelContext* ctx) override {
     auto stream = ctx->eigen_device<GPUDevice>().stream();
@@ -233,17 +244,25 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
     {
       const int blocks = int(batch_size);
       const int threads = int(emb_vec_size);
-      DoEmbeddingGrad<Sqrt><<<blocks, threads, 0, stream>>>(
-          reinterpret_cast<const float*>(top_grad_tensor->flat<float>().data()),
-          reinterpret_cast<const int64_t*>(values_tensor->flat<int64>().data()),
-          values_offset_tensor->flat<int>().data(),
-          reinterpret_cast<float*>(
-              grad_emb_weight_sp_values_tensor->flat<float>().data()),
-          reinterpret_cast<int64_t*>(
-              grad_emb_weight_sp_indice_tensor->flat<int64>().data()),
-          emb_vec_size, batch_size, nnz);
+
+      if (combiner_ == "sqrt") {
+        DoEmbeddingGrad<Sqrt><<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<const float*>(
+                top_grad_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
+            values_offset_tensor->flat<int>().data(),
+            reinterpret_cast<float*>(
+                grad_emb_weight_sp_values_tensor->flat<float>().data()),
+            reinterpret_cast<int64_t*>(
+                grad_emb_weight_sp_indice_tensor->flat<int64>().data()),
+            emb_vec_size, batch_size, nnz);
+      }
     }
   }
+
+ private:
+  std::string combiner_;
 };
 
 REGISTER_KERNEL_BUILDER(
