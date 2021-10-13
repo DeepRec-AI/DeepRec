@@ -9,7 +9,7 @@ using shape_inference::ShapeHandle;
 
 REGISTER_OP("FusedEmbeddingSparseLookUp")
     .Attr("T: {float32}")
-    .Attr("combiner: {'sqrt'}")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
     .Input("sp_dense_shape: int64")
@@ -36,7 +36,7 @@ REGISTER_OP("FusedEmbeddingSparseLookUp")
 
 REGISTER_OP("FusedEmbeddingSparseLookUpGrad")
     .Attr("T: {float32}")
-    .Attr("combiner: {'sqrt'}")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Input("top_grad: T")
     .Input("sp_values: int64")
     .Input("sp_values_offset: int32")

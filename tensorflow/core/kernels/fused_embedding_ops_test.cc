@@ -33,13 +33,13 @@ namespace tensorflow {
 namespace {
 
 enum class Device { CPU, GPU };
-enum Combiner { Sqrt };
+enum Combiner { Sqrtn, Mean, Sum };
 
 template <typename T, Combiner combiner>
 void fill_emb_vector_expected(Tensor* expected);
 
 template <>
-void fill_emb_vector_expected<float, Sqrt>(Tensor* expected) {
+void fill_emb_vector_expected<float, Sqrtn>(Tensor* expected) {
   test::FillValues<float>(
       expected, {22.627416610717773, 24.0416316986084,   25.45584487915039,
                  26.870058059692383, 28.284271240234375, 29.698484420776367,
@@ -54,6 +54,31 @@ void fill_emb_vector_expected<float, Sqrt>(Tensor* expected) {
                  115.96551513671875, 117.37973022460938});
 }
 
+template <>
+void fill_emb_vector_expected<float, Mean>(Tensor* expected) {
+  test::FillValues<float>(
+      expected, {16.00000000000000, 17.00000000000000, 18.00000000000000,
+                 19.00000000000000, 20.00000000000000, 21.00000000000000,
+                 22.00000000000000, 23.00000000000000, 42.66666793823242,
+                 43.66666793823242, 44.66666793823242, 45.66666793823242,
+                 46.66666793823242, 47.66666793823242, 48.66666793823242,
+                 49.66666793823242, 72.00000000000000, 73.00000000000000,
+                 74.00000000000000, 75.00000000000000, 76.00000000000000,
+                 77.00000000000000, 78.00000000000000, 79.00000000000000,
+                 76.00000000000000, 77.00000000000000, 78.00000000000000,
+                 79.00000000000000, 80.00000000000000, 81.00000000000000,
+                 82.00000000000000, 83.00000000000000});
+}
+
+template <>
+void fill_emb_vector_expected<float, Sum>(Tensor* expected) {
+  test::FillValues<float>(
+      expected, {32.0,  34.0,  36.0,  38.0,  40.0,  42.0,  44.0,  46.0,
+                 128.0, 131.0, 134.0, 137.0, 140.0, 143.0, 146.0, 149.0,
+                 216.0, 219.0, 222.0, 225.0, 228.0, 231.0, 234.0, 237.0,
+                 152.0, 154.0, 156.0, 158.0, 160.0, 162.0, 164.0, 166.0});
+}
+
 class FusedEmbeddingSparseLookUpOpTest : public OpsTestBase {
  protected:
   template <typename T, Combiner combiner>
@@ -65,8 +90,12 @@ class FusedEmbeddingSparseLookUpOpTest : public OpsTestBase {
     }
     DataType dtype = DataTypeToEnum<T>::value;
     std::string combiner_str;
-    if (combiner == Sqrt) {
-      combiner_str = "sqrt";
+    if (combiner == Sqrtn) {
+      combiner_str = "sqrtn";
+    } else if (combiner == Mean) {
+      combiner_str = "mean";
+    } else {
+      combiner_str = "sum";
     }
 
     TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_look_up",
@@ -137,7 +166,7 @@ template <typename T, Combiner combiner>
 void fill_grad_expected(Tensor* expected);
 
 template <>
-void fill_grad_expected<float, Sqrt>(Tensor* expected) {
+void fill_grad_expected<float, Sqrtn>(Tensor* expected) {
   test::FillValues<float>(
       expected, {0.000000000000000,  0.7071067690849304, 1.4142135381698608,
                  2.1213204860687256, 2.8284270763397217, 3.535533905029297,
@@ -168,6 +197,51 @@ void fill_grad_expected<float, Sqrt>(Tensor* expected) {
                  21.21320343017578,  21.920310974121094});
 }
 
+template <>
+void fill_grad_expected<float, Mean>(Tensor* expected) {
+  test::FillValues<float>(
+      expected, {0.000000000000000,  0.500000000000000,  1.000000000000000,
+                 1.500000000000000,  2.000000000000000,  2.500000000000000,
+                 3.000000000000000,  3.500000000000000,  0.000000000000000,
+                 0.500000000000000,  1.000000000000000,  1.500000000000000,
+                 2.000000000000000,  2.500000000000000,  3.000000000000000,
+                 3.500000000000000,  2.6666667461395264, 3.000000000000000,
+                 3.3333332538604736, 3.6666667461395264, 4.000000000000000,
+                 4.333333492279053,  4.666666507720947,  5.000000000000000,
+                 2.6666667461395264, 3.000000000000000,  3.3333332538604736,
+                 3.6666667461395264, 4.000000000000000,  4.333333492279053,
+                 4.666666507720947,  5.000000000000000,  2.6666667461395264,
+                 3.000000000000000,  3.3333332538604736, 3.6666667461395264,
+                 4.000000000000000,  4.333333492279053,  4.666666507720947,
+                 5.000000000000000,  5.333333492279053,  5.666666507720947,
+                 6.000000000000000,  6.333333492279053,  6.666666507720947,
+                 7.000000000000000,  7.333333492279053,  7.666666507720947,
+                 5.333333492279053,  5.666666507720947,  6.000000000000000,
+                 6.333333492279053,  6.666666507720947,  7.000000000000000,
+                 7.333333492279053,  7.666666507720947,  5.333333492279053,
+                 5.666666507720947,  6.000000000000000,  6.333333492279053,
+                 6.666666507720947,  7.000000000000000,  7.333333492279053,
+                 7.666666507720947,  12.000000000000000, 12.500000000000000,
+                 13.000000000000000, 13.500000000000000, 14.000000000000000,
+                 14.500000000000000, 15.000000000000000, 15.500000000000000,
+                 12.000000000000000, 12.500000000000000, 13.000000000000000,
+                 13.500000000000000, 14.000000000000000, 14.500000000000000,
+                 15.000000000000000, 15.500000000000000});
+}
+
+template <>
+void fill_grad_expected<float, Sum>(Tensor* expected) {
+  test::FillValues<float>(
+      expected,
+      {0.0,  1.0,  2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  0.0,  1.0,  2.0,  3.0,
+       4.0,  5.0,  6.0,  7.0,  8.0,  9.0,  10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+       8.0,  9.0,  10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 8.0,  9.0,  10.0, 11.0,
+       12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0,
+       16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 16.0, 17.0, 18.0, 19.0,
+       20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0,
+       24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0});
+}
+
 class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
  protected:
   template <typename T, Combiner combiner>
@@ -179,8 +253,12 @@ class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
     }
     DataType dtype = DataTypeToEnum<T>::value;
     std::string combiner_str;
-    if (combiner == Sqrt) {
-      combiner_str = "sqrt";
+    if (combiner == Sqrtn) {
+      combiner_str = "sqrtn";
+    } else if (combiner == Mean) {
+      combiner_str = "mean";
+    } else {
+      combiner_str = "sum";
     }
 
     TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_look_up_grad",
@@ -227,13 +305,31 @@ class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
 };
 
 #ifdef GOOGLE_CUDA
-TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatGpu) {
-  Run<float, Sqrt>(Device::GPU);
+TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatSqrtnGpu) {
+  Run<float, Sqrtn>(Device::GPU);
+}
+
+TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatMeanGpu) {
+  Run<float, Mean>(Device::GPU);
+}
+
+TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatSumGpu) {
+  Run<float, Sum>(Device::GPU);
 }
 
 TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
        EmbeddingSparseLookUpGradFloatGpu) {
-  Run<float, Sqrt>(Device::GPU);
+  Run<float, Sqrtn>(Device::GPU);
+}
+
+TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
+       EmbeddingSparseLookUpGradFloatMeanGpu) {
+  Run<float, Mean>(Device::GPU);
+}
+
+TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
+       EmbeddingSparseLookUpGradFloatSumGpu) {
+  Run<float, Sum>(Device::GPU);
 }
 
 #endif

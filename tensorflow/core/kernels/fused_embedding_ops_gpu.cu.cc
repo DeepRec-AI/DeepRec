@@ -12,42 +12,50 @@ using GPUDevice = Eigen::GpuDevice;
 
 namespace {
 
-enum Combiner { Mean, Sum, Sqrt };
+enum Combiner { Mean, Sum, Sqrtn };
 
 template <Combiner combiner>
-__forceinline__ __device__ float Combine(const float* emb_variable,
-                                         const int64_t* values,
-                                         const int value_offset,
-                                         const int feature_num,
-                                         const int emb_vec_size);
+__forceinline__ __device__ float Combine(const float out,
+                                         const int feature_num);
 
 template <>
-__forceinline__ __device__ float Combine<Sqrt>(const float* emb_variable,
-                                               const int64_t* values,
-                                               const int value_offset,
-                                               const int feature_num,
-                                               const int emb_vec_size) {
-  float out = 0.0f;
-  for (int i = 0; i < feature_num; i++) {
-    int64_t value_index = values[value_offset + i];
-    out += emb_variable[int(value_index) * emb_vec_size + threadIdx.x];
-  }
+__forceinline__ __device__ float Combine<Sqrtn>(const float out,
+                                                const int feature_num) {
   return out / sqrtf(feature_num);
 }
 
-template <Combiner combiner>
-__forceinline__ __device__ float CombineGrad(const float* top_grad,
-                                             const int64_t element_row,
-                                             const int feature_num,
-                                             const int emb_vec_size);
+template <>
+__forceinline__ __device__ float Combine<Mean>(const float out,
+                                               const int feature_num) {
+  return out / feature_num;
+}
 
 template <>
-__forceinline__ __device__ float CombineGrad<Sqrt>(const float* top_grad,
-                                                   const int64_t element_row,
-                                                   const int feature_num,
-                                                   const int emb_vec_size) {
-  const float grad = top_grad[int(element_row) * emb_vec_size + threadIdx.x];
+__forceinline__ __device__ float Combine<Sum>(const float out,
+                                              const int feature_num) {
+  return out;
+}
+
+template <Combiner combiner>
+__forceinline__ __device__ float CombineGrad(const float grad,
+                                             const int feature_num);
+
+template <>
+__forceinline__ __device__ float CombineGrad<Sqrtn>(const float grad,
+                                                    const int feature_num) {
   return grad / sqrtf(feature_num);
+}
+
+template <>
+__forceinline__ __device__ float CombineGrad<Mean>(const float grad,
+                                                   const int feature_num) {
+  return grad / feature_num;
+}
+
+template <>
+__forceinline__ __device__ float CombineGrad<Sum>(const float grad,
+                                                  const int feature_num) {
+  return grad;
 }
 
 __global__ void SetToIntMaxSTG128(int* values_offset, const int batch_size) {
@@ -86,9 +94,14 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
     } else {
       feature_num = values_offset[blockIdx.x + 1] - value_offset;
     }
+    float out = 0.0f;
+    for (int i = 0; i < feature_num; i++) {
+      int64_t value_index = values[value_offset + i];
+      out += emb_variable[int(value_index) * emb_vec_size + threadIdx.x];
+    }
+
     // combine
-    const float out = Combine<combiner>(emb_variable, values, value_offset,
-                                        feature_num, emb_vec_size);
+    out = Combine<combiner>(out, feature_num);
 
     // store the embedding vector
     embedding_vector[blockIdx.x * emb_vec_size + threadIdx.x] = out;
@@ -107,8 +120,8 @@ __global__ void DoEmbeddingGrad(const float* top_grad, const int* values_offset,
     } else {
       feature_num = values_offset[blockIdx.x + 1] - value_offset;
     }
-    float grad = CombineGrad<combiner>(top_grad, int64_t(blockIdx.x),
-                                       feature_num, emb_vec_size);
+    float grad = top_grad[blockIdx.x * emb_vec_size + threadIdx.x];
+    grad = CombineGrad<combiner>(grad, feature_num);
     for (int i = 0; i < feature_num; i++) {
       grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad;
     }
@@ -179,8 +192,26 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
     {
       const int blocks = int(batch_size);
       const int threads = int(emb_vec_size);
-      if (combiner_ == "sqrt") {
-        EmbeddingLookUp<Sqrt><<<blocks, threads, 0, stream>>>(
+      if (combiner_ == "sqrtn") {
+        EmbeddingLookUp<Sqrtn><<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<const float*>(
+                emb_variable_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
+            values_offset_tensor->flat<int>().data(),
+            reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
+            int(emb_vec_size), batch_size, nnz);
+      } else if (combiner_ == "mean") {
+        EmbeddingLookUp<Mean><<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<const float*>(
+                emb_variable_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
+            values_offset_tensor->flat<int>().data(),
+            reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
+            int(emb_vec_size), batch_size, nnz);
+      } else {
+        EmbeddingLookUp<Sum><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 emb_variable_tensor->flat<float>().data()),
             reinterpret_cast<const int64_t*>(
@@ -233,8 +264,24 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
       const int blocks = int(batch_size);
       const int threads = int(emb_vec_size);
 
-      if (combiner_ == "sqrt") {
-        DoEmbeddingGrad<Sqrt><<<blocks, threads, 0, stream>>>(
+      if (combiner_ == "sqrtn") {
+        DoEmbeddingGrad<Sqrtn><<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<const float*>(
+                top_grad_tensor->flat<float>().data()),
+            values_offset_tensor->flat<int>().data(),
+            reinterpret_cast<float*>(
+                grad_emb_weight_sp_values_tensor->flat<float>().data()),
+            emb_vec_size, batch_size, nnz);
+      } else if (combiner_ == "mean") {
+        DoEmbeddingGrad<Mean><<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<const float*>(
+                top_grad_tensor->flat<float>().data()),
+            values_offset_tensor->flat<int>().data(),
+            reinterpret_cast<float*>(
+                grad_emb_weight_sp_values_tensor->flat<float>().data()),
+            emb_vec_size, batch_size, nnz);
+      } else {
+        DoEmbeddingGrad<Sum><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
             values_offset_tensor->flat<int>().data(),
