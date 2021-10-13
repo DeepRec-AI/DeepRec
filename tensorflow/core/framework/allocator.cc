@@ -93,6 +93,16 @@ Allocator* pmem_allocator() {
   return pmem_alloc;
 }
 
+Allocator* ev_allocator() {
+  static Allocator* ev_alloc =
+      AllocatorFactoryRegistry::singleton()->GetEVAllocator();
+      //This is the function when we use ev as allocation destination
+  if (cpu_allocator_collect_full_stats && !ev_alloc->TracksAllocationSizes()) {
+      ev_alloc = new TrackingAllocator(ev_alloc, true);
+  }
+  return ev_alloc;
+}
+
 SubAllocator::SubAllocator(const std::vector<Visitor>& alloc_visitors,
                            const std::vector<Visitor>& free_visitors)
     : alloc_visitors_(alloc_visitors), free_visitors_(free_visitors) {}

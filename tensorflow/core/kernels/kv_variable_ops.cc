@@ -185,7 +185,7 @@ class InitializeKvVariableOp : public OpKernel {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
-                         ht, cpu_allocator(),
+                         ht, ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary",
                                          steps_to_live_, filter_freq_, max_freq_,
@@ -207,7 +207,7 @@ class InitializeKvVariableOp : public OpKernel {
              auto ht = KVFactory<TKey, TValue>::CreateKV(
                  ht_type_, ht_partition_num_);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                        ht, cpu_allocator(),
+                        ht, ev_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary",
                                         steps_to_live_, filter_freq_, max_freq_,
@@ -224,7 +224,7 @@ class InitializeKvVariableOp : public OpKernel {
             [this, default_values, opname, primary_variable, slotnum_op,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
-                         primary_variable->kv(), cpu_allocator(),
+                         primary_variable->kv(), ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
                                          steps_to_live_, primary_variable->MinFreq(),
@@ -525,7 +525,7 @@ class KvResourceImportV2Op: public OpKernel {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
-                         ht, cpu_allocator(),
+                         ht, ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname + "-primary",
                                          steps_to_live_, filter_freq_,
@@ -546,7 +546,7 @@ class KvResourceImportV2Op: public OpKernel {
              auto ht = KVFactory<TKey, TValue>::CreateKV(
                  ht_type_, ht_partition_num_);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                        ht, cpu_allocator(),
+                        ht, ev_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
                                         block_num_, slotnum_op, opname + "-primary",
                                         steps_to_live_, filter_freq_,
@@ -562,7 +562,7 @@ class KvResourceImportV2Op: public OpKernel {
             [this, default_values, opname, primary_variable, slotnum_op,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
-                         primary_variable->kv(), cpu_allocator(),
+                         primary_variable->kv(), ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum_op, opname,
                                          steps_to_live_, filter_freq_,

@@ -52,7 +52,7 @@ class EmbeddingVar : public ResourceBase {
  public:
   EmbeddingVar(const string& name,
                KVInterface<K, V>* kv,
-               Allocator* alloc = cpu_allocator(),
+               Allocator* alloc = ev_allocator(),
                EmbeddingConfig emb_cfg = EmbeddingConfig()):
       name_(name),
       kv_(kv),
@@ -224,7 +224,7 @@ class EmbeddingVar : public ResourceBase {
     std::vector<ValuePtr<V>* > value_ptr_list;
     kv_->GetSnapshot(&key_list, &value_ptr_list);
     for (auto value_ptr : value_ptr_list) {
-      value_ptr->Destroy(value_len);
+      value_ptr->Destroy(alloc_, value_len);
       delete value_ptr;
     }
     return Status::OK();
@@ -277,7 +277,7 @@ class EmbeddingVar : public ResourceBase {
       }
       for (const auto it : to_deleted) {
         // TODO memory recycle
-        (it.second)->Destroy(value_len_);
+        (it.second)->Destroy(alloc_, value_len_);
         delete it.second;
         kv_->Remove(it.first);
       }
