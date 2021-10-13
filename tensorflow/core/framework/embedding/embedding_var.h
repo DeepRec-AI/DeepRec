@@ -108,6 +108,24 @@ class EmbeddingVar : public ResourceBase {
       new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
     } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
       new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
+    } else if (LayoutType::LEVELDB == emb_config_.get_layout_type()) {
+     if (emb_config_.is_primary()) {
+      db_name_ = "./level_db_";
+      db_name_.append(std::to_string(Env::Default()->NowMicros()));
+      leveldb::Status st;
+      leveldb::Options options;
+      options.create_if_missing = true;
+      //options.write_buffer_size = 1024 * 1024 * 1024;
+      //options.error_if_exists = true;
+      leveldb::DB* level_db;
+      st = leveldb::DB::Open(options, db_name_.c_str(), &level_db);
+      if (!st.ok()) {
+        LOG(FATAL) << "Fail to open leveldb: " << st.ToString();
+      } else {
+        VLOG(1) << "Open DB Success, db_name: " << db_name_;
+      }
+      new_value_ptr_fn = [level_db] (size_t size) { return new DBValuePtr<V>(size, level_db); };
+     }
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
     }
@@ -122,6 +140,11 @@ class EmbeddingVar : public ResourceBase {
       alloc_ = pmem_allocator();
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered PMEM AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type()) {
+      alloc_ = ev_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
       }
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
@@ -186,7 +209,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
-    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index);
+    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, value_len_);
     return primary_val;
   }
 
@@ -194,6 +217,10 @@ class EmbeddingVar : public ResourceBase {
     V* val = LookupOrCreateEmb(value_ptr, default_value_);
     Eigen::array<Eigen::DenseIndex, 1> dims({value_len_});
     return typename TTypes<V>::Flat(val, dims);
+  }
+
+  void Commit(ValuePtr<V>* value_ptr, const V* v) {
+    value_ptr->Commit(value_len_, v, emb_config_.emb_index);
   }
 
   int64 ValueLen() const {
@@ -253,7 +280,8 @@ class EmbeddingVar : public ResourceBase {
           value_ptr->SetStep(version_buff[i]);
         }
       }
-      LookupOrCreateEmb(value_ptr, value_buff + i * value_len_);
+      V* v = LookupOrCreateEmb(value_ptr, value_buff + i * value_len_);
+      value_ptr->Free(v);
     }
     return Status::OK();
   }
@@ -264,8 +292,8 @@ class EmbeddingVar : public ResourceBase {
     std::vector<K> key_list_tmp;
     kv_->GetSnapshot(&key_list_tmp, &value_ptr_list);
     for (int64 i = 0; i < key_list_tmp.size(); ++i) {
-      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index);
-      V* primary_val = value_ptr_list[i]->GetValue(emb_config_.primary_emb_index);
+      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index, value_len_);
+      V* primary_val = value_ptr_list[i]->GetValue(emb_config_.primary_emb_index, value_len_);
       if (val != nullptr && primary_val != nullptr) {
         value_list->push_back(val);
         key_list->push_back(key_list_tmp[i]);
@@ -316,6 +344,7 @@ class EmbeddingVar : public ResourceBase {
         if (l2_weight < emb_config_.l2_weight_threshold) {
           to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
         }
+        value_ptr_list[i]->Free(val);
       }
       for (const auto it : to_deleted) {
         // TODO memory recycle
@@ -399,9 +428,15 @@ class EmbeddingVar : public ResourceBase {
   Allocator* alloc_;
   EmbeddingConfig emb_config_;
   EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
+  std::string db_name_;
 
   ~EmbeddingVar() override {
     if (emb_config_.is_primary()) {
+      if (LayoutType::LEVELDB == emb_config_.get_layout_type()) {
+        int64 undeleted_files = 0;
+        int64 undeleted_dirs = 0;
+        TF_CHECK_OK(Env::Default()->DeleteRecursively(db_name_, &undeleted_files, &undeleted_dirs));
+      }
       Destroy(value_len_);
       delete kv_;
     }

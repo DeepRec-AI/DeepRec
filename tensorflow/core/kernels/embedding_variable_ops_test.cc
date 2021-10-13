@@ -984,7 +984,7 @@ TEST(EmbeddingVariableTest, TestFeatureFilter) {
     ValuePtr<float>* value_ptr = nullptr;
     var->LookupOrCreateKey(20, &value_ptr);
     if (i < 4) {
-      ASSERT_EQ(value_ptr->GetValue(0), nullptr);
+      ASSERT_EQ(value_ptr->GetValue(0, value_size), nullptr);
     } else {
       ASSERT_EQ(val[0], 10.0);
     }

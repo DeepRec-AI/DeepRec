@@ -57,6 +57,9 @@ struct EmbeddingConfig {
       kHashFunc = 0;
       num_counter = 0;
     }
+    if (embedding::LEVELDB == storage_type) {
+      layout_type = LayoutType::LEVELDB;
+    }
   }
   
   int64 calc_num_counter(int64 max_element_size, float false_positive_probability) {
