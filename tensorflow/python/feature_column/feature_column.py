@@ -2538,6 +2538,8 @@ class _EmbeddingColumn(
         dense_tensor=dense_tensor, sequence_length=sequence_length)
 
 
+class _FusedEmbeddingColumn()
+
 def _get_graph_for_variable(var):
   if isinstance(var, variables.PartitionedVariable):
     return list(var)[0].graph

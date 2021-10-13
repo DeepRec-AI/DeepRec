@@ -23,11 +23,11 @@ def fused_embedding_sparse_look_up(
 
 @ops.RegisterGradient("FusedEmbeddingSparseLookUp")
 def fused_embedding_sparse_look_up_grad(op, top_grad_emb_vec, top_grad_values_offset):
-    grad_sp_values, grad_sp_indices = gen_fused_embedding_ops.fused_embedding_sparse_look_up_grad(
+    grad_sp_values = gen_fused_embedding_ops.fused_embedding_sparse_look_up_grad(
         top_grad=top_grad_emb_vec, sp_values=op.inputs[0], sp_values_offset=op.outputs[1], combiner=op.get_attr(
             "combiner")
     )
     grads = ops.IndexedSlices(values=grad_sp_values,
-                              indices=grad_sp_indices)
+                              indices=op.inputs[0])
 
     return [None, None, None, grads]

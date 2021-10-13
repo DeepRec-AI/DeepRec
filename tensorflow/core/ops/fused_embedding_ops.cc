@@ -41,14 +41,11 @@ REGISTER_OP("FusedEmbeddingSparseLookUpGrad")
     .Input("sp_values: int64")
     .Input("sp_values_offset: int32")
     .Output("grad_emb_weight_sp_values: T")
-    .Output("grad_emb_weight_sp_indices: int64")
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle top_grad_shape;
       TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
       DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
       ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
-      ctx->set_output(1, ctx->MakeShape({ctx->UnknownDim()}));
-
       return Status::OK();
     })
     .Doc(R"doc()doc");

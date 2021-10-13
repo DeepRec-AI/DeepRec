@@ -54,7 +54,7 @@ void fill_emb_vector_expected<float, Sqrt>(Tensor* expected) {
                  115.96551513671875, 117.37973022460938});
 }
 
-class FusedEmbeddingOpTest : public OpsTestBase {
+class FusedEmbeddingSparseLookUpOpTest : public OpsTestBase {
  protected:
   template <typename T, Combiner combiner>
   void Run(Device device) {
@@ -65,7 +65,7 @@ class FusedEmbeddingOpTest : public OpsTestBase {
     }
     DataType dtype = DataTypeToEnum<T>::value;
     std::string combiner_str;
-    if(combiner == Sqrt) {
+    if (combiner == Sqrt) {
       combiner_str = "sqrt";
     }
 
@@ -89,7 +89,7 @@ class FusedEmbeddingOpTest : public OpsTestBase {
     Tensor sp_values(DT_INT64, {nnz});
     Tensor sp_indices(DT_INT64, {nnz, 2});
     Tensor sp_dense_shape(DT_INT64, {2});
-    Tensor emb_variable(DT_FLOAT, {bucket_size, emb_vector_dim});
+    Tensor emb_variable(dtype, {bucket_size, emb_vector_dim});
 
     test::FillValues<int64>(&sp_values, {3, 1, 4, 5, 7, 3, 12, 12, 15, 4});
     test::FillValues<int64>(&sp_indices, {0, 1, 0, 5, 1, 2, 1, 1, 1, 7,
@@ -97,23 +97,19 @@ class FusedEmbeddingOpTest : public OpsTestBase {
     test::FillValues<int64>(&sp_dense_shape, {batch_size, entries});
     test::FillValues<T>(
         &emb_variable,
-        {
-            0.0,   1.0,   2.0,   3.0,   4.0,   5.0,   6.0,   7.0,   8.0,
-            9.0,   10.0,  11.0,  12.0,  13.0,  14.0,  15.0,  16.0,  17.0,
-            18.0,  19.0,  20.0,  21.0,  22.0,  23.0,  24.0,  25.0,  26.0,
-            27.0,  28.0,  29.0,  30.0,  31.0,  32.0,  33.0,  34.0,  35.0,
-            36.0,  37.0,  38.0,  39.0,  40.0,  41.0,  42.0,  43.0,  44.0,
-            45.0,  46.0,  47.0,  48.0,  49.0,  50.0,  51.0,  52.0,  53.0,
-            54.0,  55.0,  56.0,  57.0,  58.0,  59.0,  60.0,  61.0,  62.0,
-            63.0,  64.0,  65.0,  66.0,  67.0,  68.0,  69.0,  70.0,  71.0,
-            72.0,  73.0,  74.0,  75.0,  76.0,  77.0,  78.0,  79.0,  80.0,
-            81.0,  82.0,  83.0,  84.0,  85.0,  86.0,  87.0,  88.0,  89.0,
-            90.0,  91.0,  92.0,  93.0,  94.0,  95.0,  96.0,  97.0,  98.0,
-            99.0,  100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0,
-            108.0, 109.0, 110.0, 111.0, 112.0, 113.0, 114.0, 115.0, 116.0,
-            117.0, 118.0, 119.0, 120.0, 121.0, 122.0, 123.0, 124.0, 125.0,
-            126.0, 127.0,
-        });
+        {0.0,   1.0,   2.0,   3.0,   4.0,   5.0,   6.0,   7.0,   8.0,   9.0,
+         10.0,  11.0,  12.0,  13.0,  14.0,  15.0,  16.0,  17.0,  18.0,  19.0,
+         20.0,  21.0,  22.0,  23.0,  24.0,  25.0,  26.0,  27.0,  28.0,  29.0,
+         30.0,  31.0,  32.0,  33.0,  34.0,  35.0,  36.0,  37.0,  38.0,  39.0,
+         40.0,  41.0,  42.0,  43.0,  44.0,  45.0,  46.0,  47.0,  48.0,  49.0,
+         50.0,  51.0,  52.0,  53.0,  54.0,  55.0,  56.0,  57.0,  58.0,  59.0,
+         60.0,  61.0,  62.0,  63.0,  64.0,  65.0,  66.0,  67.0,  68.0,  69.0,
+         70.0,  71.0,  72.0,  73.0,  74.0,  75.0,  76.0,  77.0,  78.0,  79.0,
+         80.0,  81.0,  82.0,  83.0,  84.0,  85.0,  86.0,  87.0,  88.0,  89.0,
+         90.0,  91.0,  92.0,  93.0,  94.0,  95.0,  96.0,  97.0,  98.0,  99.0,
+         100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0,
+         110.0, 111.0, 112.0, 113.0, 114.0, 115.0, 116.0, 117.0, 118.0, 119.0,
+         120.0, 121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0});
 
     AddInputFromArray<int64>(sp_values.shape(), sp_values.flat<int64>());
     AddInputFromArray<int64>(sp_indices.shape(), sp_indices.flat<int64>());
@@ -137,10 +133,109 @@ class FusedEmbeddingOpTest : public OpsTestBase {
   }
 };
 
+template <typename T, Combiner combiner>
+void fill_grad_expected(Tensor* expected);
+
+template <>
+void fill_grad_expected<float, Sqrt>(Tensor* expected) {
+  test::FillValues<float>(
+      expected, {0.000000000000000,  0.7071067690849304, 1.4142135381698608,
+                 2.1213204860687256, 2.8284270763397217, 3.535533905029297,
+                 4.242640972137451,  4.949747562408447,  0.000000000000000,
+                 0.7071067690849304, 1.4142135381698608, 2.1213204860687256,
+                 2.8284270763397217, 3.535533905029297,  4.242640972137451,
+                 4.949747562408447,  4.618802070617676,  5.196152687072754,
+                 5.773502826690674,  6.350852966308594,  6.928203582763672,
+                 7.505553722381592,  8.082903861999512,  8.66025447845459,
+                 4.618802070617676,  5.196152687072754,  5.773502826690674,
+                 6.350852966308594,  6.928203582763672,  7.505553722381592,
+                 8.082903861999512,  8.66025447845459,   4.618802070617676,
+                 5.196152687072754,  5.773502826690674,  6.350852966308594,
+                 6.928203582763672,  7.505553722381592,  8.082903861999512,
+                 8.66025447845459,   9.237604141235352,  9.81495475769043,
+                 10.392305374145508, 10.96965503692627,  11.547005653381348,
+                 12.124356269836426, 12.701705932617188, 13.279056549072266,
+                 9.237604141235352,  9.81495475769043,   10.392305374145508,
+                 10.96965503692627,  11.547005653381348, 12.124356269836426,
+                 12.701705932617188, 13.279056549072266, 9.237604141235352,
+                 9.81495475769043,   10.392305374145508, 10.96965503692627,
+                 11.547005653381348, 12.124356269836426, 12.701705932617188,
+                 13.279056549072266, 16.970563888549805, 17.677669525146484,
+                 18.384777069091797, 19.091882705688477, 19.79899024963379,
+                 20.5060977935791,   21.21320343017578,  21.920310974121094,
+                 16.970563888549805, 17.677669525146484, 18.384777069091797,
+                 19.091882705688477, 19.79899024963379,  20.5060977935791,
+                 21.21320343017578,  21.920310974121094});
+}
+
+class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
+ protected:
+  template <typename T, Combiner combiner>
+  void Run(Device device) {
+    if (device == Device::GPU) {
+      SetDevice(DEVICE_GPU,
+                std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
+                    "GPU", {}, "/job:a/replica:0/task:0")));
+    }
+    DataType dtype = DataTypeToEnum<T>::value;
+    std::string combiner_str;
+    if (combiner == Sqrt) {
+      combiner_str = "sqrt";
+    }
+
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_look_up_grad",
+                                "FusedEmbeddingSparseLookUpGrad")
+                     .Input(FakeInput(dtype))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT32))
+                     .Attr("T", dtype)
+                     .Attr("combiner", combiner_str)
+                     .Finalize(node_def()));
+    TF_EXPECT_OK(InitOp());
+
+    const int nnz = 10;
+    const int batch_size = 4;
+    const int emb_vector_dim = 8;
+
+    Tensor top_grad(dtype, {batch_size, emb_vector_dim});
+    Tensor sp_values(DT_INT64, {nnz});
+    Tensor sp_values_offset(DT_INT32, {batch_size});
+
+    test::FillValues<T>(
+        &top_grad,
+        {0.0,  1.0,  2.0,  3.0,  4.0,  5.0,  6.0,  7.0,  8.0,  9.0,  10.0,
+         11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0,
+         22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0});
+    test::FillValues<int64>(&sp_values, {3, 1, 4, 5, 7, 3, 12, 12, 15, 4});
+    test::FillValues<int32>(&sp_values_offset, {0, 2, 5, 8});
+
+    AddInputFromArray<T>(top_grad.shape(), top_grad.flat<T>());
+    AddInputFromArray<int64>(sp_values.shape(), sp_values.flat<int64>());
+    AddInputFromArray<int32>(sp_values_offset.shape(),
+                             sp_values_offset.flat<int32>());
+
+    TF_ASSERT_OK(RunOpKernel());
+
+    Tensor grad_expected(dtype, {nnz, emb_vector_dim});
+    fill_grad_expected<T, combiner>(&grad_expected);
+
+    const Tensor& grad = *GetOutput(0);
+    TF_EXPECT_OK(device_->Sync());
+
+    test::ExpectTensorNear<T>(grad_expected, grad, 1e-5);
+  }
+};
+
 #ifdef GOOGLE_CUDA
-TEST_F(FusedEmbeddingOpTest, FusedEmbeddingFloatGpu) {
+TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatGpu) {
   Run<float, Sqrt>(Device::GPU);
 }
+
+TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
+       EmbeddingSparseLookUpGradFloatGpu) {
+  Run<float, Sqrt>(Device::GPU);
+}
+
 #endif
 
 }  // namespace

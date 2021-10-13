@@ -96,9 +96,8 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
 }
 
 template <Combiner combiner>
-__global__ void DoEmbeddingGrad(const float* top_grad, const int64_t* values,
-                                const int* values_offset, float* grad_values,
-                                int64_t* grad_indices, const int emb_vec_size,
+__global__ void DoEmbeddingGrad(const float* top_grad, const int* values_offset,
+                                float* grad_values, const int emb_vec_size,
                                 const int64_t batch_size, const int64_t nnz) {
   if (blockIdx.x < int(batch_size) && threadIdx.x < emb_vec_size) {
     const int value_offset = values_offset[blockIdx.x];
@@ -112,10 +111,6 @@ __global__ void DoEmbeddingGrad(const float* top_grad, const int64_t* values,
                                        feature_num, emb_vec_size);
     for (int i = 0; i < feature_num; i++) {
       grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad;
-      if (threadIdx.x == 0) {
-        const int64_t index = values[value_offset + i];
-        grad_indices[value_offset + i] = index;
-      }
     }
   }
 }
@@ -234,13 +229,6 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
         ctx, ctx->allocate_output(0, grad_emb_weight_sp_values_tensor_shape,
                                   &grad_emb_weight_sp_values_tensor));
 
-    Tensor* grad_emb_weight_sp_indice_tensor;
-    TensorShape grad_emb_weight_sp_indice_tensor_shape =
-        TensorShape(std::vector<int64>({nnz}));
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output(1, grad_emb_weight_sp_indice_tensor_shape,
-                                  &grad_emb_weight_sp_indice_tensor));
-
     {
       const int blocks = int(batch_size);
       const int threads = int(emb_vec_size);
@@ -249,13 +237,9 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
         DoEmbeddingGrad<Sqrt><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
-            reinterpret_cast<const int64_t*>(
-                values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            reinterpret_cast<int64_t*>(
-                grad_emb_weight_sp_indice_tensor->flat<int64>().data()),
             emb_vec_size, batch_size, nnz);
       }
     }
