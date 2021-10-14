@@ -3,7 +3,7 @@ name: GPU Tests
 on: workflow_dispatch #[push, pull_request]
 
 env:
-  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc/deeprec:developer-ubuntu18.04-py3.6-cuda11.2
+  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec2106-gpu-cibuild-py36-cu110-ubuntu18.04
   JOBNAME: deeprec-ci-gpu-${{ github.run_id }}
   PODNAME: deeprec-ci-gpu-${{ github.run_id }}-chief-0
   BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}

@@ -3,7 +3,7 @@ name: CPU Tests
 on: workflow_dispatch #[push, pull_request]
 
 env:
-  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc/deeprec:developer-ubuntu18.04-py3.6
+  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec2106-cpu-cibuild-py36-ubuntu18.04
   JOBNAME: deeprec-ci-cpu-${{ github.run_id }}
   PODNAME: deeprec-ci-cpu-${{ github.run_id }}-chief-0
   BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}
