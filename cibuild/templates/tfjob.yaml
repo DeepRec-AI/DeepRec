@@ -3,7 +3,7 @@ kind: TFJob
 metadata:
   name: {{ .Release.Name }}
 spec:
-  cleanPodPolicy: Running
+  cleanPodPolicy: All
   tfReplicaSpecs:
     Chief:
       replicas: 1
