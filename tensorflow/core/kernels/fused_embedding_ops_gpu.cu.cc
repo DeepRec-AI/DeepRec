@@ -84,8 +84,11 @@ __global__ void CalcPerElementRowInBatchValuesOffset(const int64_t* indices,
 template <Combiner combiner>
 __global__ void EmbeddingLookUp(const float* emb_variable,
                                 const int64_t* values, const int* values_offset,
-                                float* embedding_vector, const int emb_vec_size,
+                                float* embedding_vector, const float max_norm,
+                                const int emb_vec_size,
                                 const int64_t batch_size, const int64_t nnz) {
+  __shared__ float l2_sum[1];
+
   if (blockIdx.x < int(batch_size) && threadIdx.x < emb_vec_size) {
     int value_offset = values_offset[blockIdx.x];
     int feature_num;
@@ -96,8 +99,21 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
     }
     float out = 0.0f;
     for (int i = 0; i < feature_num; i++) {
-      int64_t value_index = values[value_offset + i];
-      out += emb_variable[int(value_index) * emb_vec_size + threadIdx.x];
+      float emb_element =
+          emb_variable[int(values[value_offset + i]) * emb_vec_size +
+                       threadIdx.x];
+      if (max_norm >= 0.0f) {
+        // calc l2 norm of this emb row(per block) and compare with max_norm.
+        // if greater than max_norm, then clip every element with factor
+        // max_norm / l2norm
+        atomicAdd(l2_sum, emb_element * emb_element);
+        __syncthreads();
+        float l2_norm = sqrtf(l2_sum[0]);
+        if (l2_norm > max_norm) {
+          emb_element *= max_norm / l2_norm;
+        }
+      }
+      out += emb_element;
     }
 
     // combine
@@ -109,9 +125,13 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
 }
 
 template <Combiner combiner>
-__global__ void DoEmbeddingGrad(const float* top_grad, const int* values_offset,
-                                float* grad_values, const int emb_vec_size,
+__global__ void DoEmbeddingGrad(const float* top_grad,
+                                const float* emb_variable,
+                                const int64_t* values, const int* values_offset,
+                                float* grad_values, const float max_norm,
+                                const int emb_vec_size,
                                 const int64_t batch_size, const int64_t nnz) {
+  __shared__ float l2_sum[1];
   if (blockIdx.x < int(batch_size) && threadIdx.x < emb_vec_size) {
     const int value_offset = values_offset[blockIdx.x];
     int feature_num;
@@ -123,6 +143,17 @@ __global__ void DoEmbeddingGrad(const float* top_grad, const int* values_offset,
     float grad = top_grad[blockIdx.x * emb_vec_size + threadIdx.x];
     grad = CombineGrad<combiner>(grad, feature_num);
     for (int i = 0; i < feature_num; i++) {
+      if (max_norm > 0.0f) {
+        float emb_element =
+            emb_variable[int(values[value_offset + i]) * emb_vec_size +
+                         threadIdx.x];
+        atomicAdd(l2_sum, emb_element * emb_element);
+        __syncthreads();
+        float l2_norm = sqrtf(l2_sum[0]);
+        if (l2_norm > max_norm) {
+          grad *= max_norm / l2_norm;
+        }
+      }
       grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad;
     }
   }
@@ -135,6 +166,7 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
   explicit FusedEmbeddingSparseLookUpGPUOp(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -200,7 +232,7 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
-            int(emb_vec_size), batch_size, nnz);
+            max_norm_, int(emb_vec_size), batch_size, nnz);
       } else if (combiner_ == "mean") {
         EmbeddingLookUp<Mean><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
@@ -209,7 +241,7 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
-            int(emb_vec_size), batch_size, nnz);
+            max_norm_, int(emb_vec_size), batch_size, nnz);
       } else {
         EmbeddingLookUp<Sum><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
@@ -218,13 +250,14 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
-            int(emb_vec_size), batch_size, nnz);
+            max_norm_, int(emb_vec_size), batch_size, nnz);
       }
     }
   }
 
  private:
   std::string combiner_;
+  float max_norm_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparseLookUp")
@@ -237,6 +270,7 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
   explicit FusedEmbeddingSparseLookUpGradOp(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -244,6 +278,9 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
 
     Tensor const* top_grad_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("top_grad", &top_grad_tensor));
+
+    Tensor const* emb_variable_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("emb_variable", &emb_variable_tensor));
     Tensor const* values_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_values", &values_tensor));
     Tensor const* values_offset_tensor = nullptr;
@@ -268,31 +305,44 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
         DoEmbeddingGrad<Sqrtn><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
+            reinterpret_cast<const float*>(
+                emb_variable_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            emb_vec_size, batch_size, nnz);
+            max_norm_, emb_vec_size, batch_size, nnz);
       } else if (combiner_ == "mean") {
         DoEmbeddingGrad<Mean><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
+            reinterpret_cast<const float*>(
+                emb_variable_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            emb_vec_size, batch_size, nnz);
+            max_norm_, emb_vec_size, batch_size, nnz);
       } else {
         DoEmbeddingGrad<Sum><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
+            reinterpret_cast<const float*>(
+                emb_variable_tensor->flat<float>().data()),
+            reinterpret_cast<const int64_t*>(
+                values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            emb_vec_size, batch_size, nnz);
+            max_norm_, emb_vec_size, batch_size, nnz);
       }
     }
   }
 
  private:
+  float max_norm_;
   std::string combiner_;
 };
 
