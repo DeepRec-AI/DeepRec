@@ -401,14 +401,19 @@ REGISTER_OP("KvResourceExport")
     .Output("keys: Tkeys")
     .Output("values: Tvalues")
     .Output("versions: int64")
+    .Output("freqs: int64")
     .Attr("Tkeys: {int64,int32,string}")
     .Attr("Tvalues: type")
     .SetShapeFn([](InferenceContext* c) {
       ShapeHandle values = c->UnknownShape();
       TF_RETURN_IF_ERROR(c->WithRankAtLeast(values, 1, &values));
       ShapeHandle keys = c->UnknownShapeOfRank(2);
+      ShapeHandle versions = c->UnknownShapeOfRank(3);
+      ShapeHandle freqs = c->UnknownShapeOfRank(4);
       c->set_output(0, keys);
       c->set_output(1, values);
+      c->set_output(2, versions);
+      c->set_output(3, freqs);
       return Status::OK();
     })
     .Doc(R"doc(
@@ -417,6 +422,8 @@ Outputs all keys and values in the kv resource.
 resource_handle: Handle to the kvResource.
 keys: Vector of all keys present in the table.
 values: Tensor of all values in the table. Indexed in parallel with `keys`.
+versions: Vector of all versions present in the table.
+freqs: Vector of all freqs present in the table.
 )doc");
 
 REGISTER_OP("KvResourceInsert")

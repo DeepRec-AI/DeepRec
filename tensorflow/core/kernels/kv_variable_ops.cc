@@ -686,30 +686,75 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
 //TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
-/*
+
 // Op that outputs tensors of all keys and all values.
-template <typename TKey>
+template<typename TKey, typename TValue>
 class KvResourceExportOp : public OpKernel {
  public:
-  explicit KvResourceExportOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+  explicit KvResourceExportOp(OpKernelConstruction *ctx) : OpKernel(ctx) {}
 
-  void Compute(OpKernelContext* ctx) override {
-    EmbeddingVar<TKey, float>* variable = nullptr;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &variable));
-    core::ScopedUnref unref_me(variable);
-    OP_REQUIRES_OK(ctx, variable->ExportValues(ctx));
+  void Compute(OpKernelContext *ctx) override {
+    EmbeddingVar<TKey, TValue> *ev = nullptr;
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    std::vector<TKey> tot_key_list;
+    std::vector<TValue *> tot_valueptr_list;
+    std::vector<int64> tot_version_list;
+    std::vector<int64> tot_freq_list;
+    int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list);
+
+    // Create an output tensor
+    Tensor *keys_output_tensor = NULL;
+    Tensor *values_output_tensor = NULL;
+    Tensor *versions_output_tensor = NULL;
+    Tensor *freq_output_tensor = NULL;
+
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({total_size}),
+                                             &keys_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(1, TensorShape({total_size, ev->ValueLen()}),
+                                             &values_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(2, TensorShape({tot_version_list.size()}),
+                                             &versions_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(3, TensorShape({tot_freq_list.size()}),
+                                             &freq_output_tensor));
+
+    auto keys_output = keys_output_tensor->template flat<TKey>();
+    auto val_matrix = values_output_tensor->matrix<TValue>();
+    auto versions_output = versions_output_tensor->template flat<int64>();
+    auto freq_output = freq_output_tensor->template flat<int64>();
+
+    for(size_t i = 0; i < total_size; i++) {
+      keys_output(i) = tot_key_list[i];
+      TValue *value = tot_valueptr_list[i];
+      for(int64 m = 0; m < ev->ValueLen(); m++) {
+        val_matrix(i, m) = *(value + m);
+      }
+      if (tot_version_list.size() != 0) {
+        versions_output(i) = tot_version_list[i];
+      }
+      if (tot_freq_list.size() != 0) {
+        freq_output(i) = tot_freq_list[i];
+      }
+    }
   }
 };
 
-#define REGISTER_KERNEL(ktype)                                 \
+#define REGISTER_KERNELS(ktype, vtype)                         \
   REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
                             .Device(DEVICE_CPU)                \
-                            .TypeConstraint<ktype>("Tkeys"),   \
-                          KvResourceExportOp<ktype>);
-REGISTER_KERNEL(int32)
-REGISTER_KERNEL(int64)
-#undef REGISTER_KERNEL
+                            .TypeConstraint<ktype>("Tkeys")    \
+                            .TypeConstraint<vtype>("Tvalues"), \
+                          KvResourceExportOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                       \
+  REGISTER_KERNELS(int32, type)                                \
+  REGISTER_KERNELS(int64, type)
 
+REGISTER_KERNELS_ALL_INDEX(float);
+
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
+
+/*
 // Op that outputs tensors of all keys and all values.
 template <typename T, typename TIndex>
 class KvResourceInsertOp : public OpKernel {

@@ -39,6 +39,7 @@ from tensorflow.python.ops import gen_state_ops
 from tensorflow.python.ops import gen_math_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import state_ops
+from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training.tracking import base as trackable
 from tensorflow.python.util import compat
@@ -172,7 +173,7 @@ def validate_synchronization_aggregation_trainable(synchronization, aggregation,
   if trainable is None:
     trainable = synchronization != VariableSynchronization.ON_READ
   return synchronization, aggregation, trainable
-  
+
 class FreqStrategyConfig(object):
   def __init__(self,
                filter_freq = 0,
@@ -206,10 +207,10 @@ class EvictConfig(object):
     self.l2_weight_threshold = l2_weight_threshold
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
-    self.l2reg_lambda = l2reg_lambda     
+    self.l2reg_lambda = l2reg_lambda
     if l2_weight_threshold <= 0 and l2_weight_threshold != -1.0:
       print("l2_weight_threshold is invalid, l2_weight-based eviction is disabled")
-      self.l2_weight_threshold = -1.0 
+      self.l2_weight_threshold = -1.0
     if self.steps_to_live != None and self.l2_weight_threshold != -1.0:
       raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
 
@@ -267,7 +268,7 @@ class BloomFilterStrategy(object):
 
 class EmbeddingVariableConfig(object):
   def __init__(self,
-               steps_to_live=None, steps_to_live_l2reg=None, 
+               steps_to_live=None, steps_to_live_l2reg=None,
                l2reg_theta=None, l2reg_lambda=None,
                l2_weight_threshold = -1.0,
                ht_type=None,
@@ -3205,6 +3206,21 @@ class PartitionedVariable(object):
     if read_value:
       return assign_list
     return [assign.op for assign in assign_list]
+
+  def export(self):
+    full_keys = []
+    full_values = []
+    full_versions = []
+    full_freqs = []
+    for v in self._variable_list:
+      if not isinstance(v, kv_variable_ops.EmbeddingVariable):
+        raise Exception("The export function does not support variables of type other than ev variable")
+      keys, values, versions, freqs = v.export()
+      full_keys.append(keys)
+      full_values.append(values)
+      full_versions.append(versions)
+      full_freqs.append(freqs)
+    return array_ops.concat(full_keys, 0), array_ops.concat(full_values, 0), array_ops.concat(full_versions, 0), array_ops.concat(full_freqs, 0)
 
 
 # Register a conversion function which reads the value of the variable,
