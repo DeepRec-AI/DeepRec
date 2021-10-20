@@ -106,6 +106,10 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
         // calc l2 norm of this emb row(per block) and compare with max_norm.
         // if greater than max_norm, then clip every element with factor
         // max_norm / l2norm
+        if (threadIdx.x == 0) {
+          l2_sum[0] = 0.0f;
+        }
+        __syncthreads();
         atomicAdd(l2_sum, emb_element * emb_element);
         __syncthreads();
         float l2_norm = sqrtf(l2_sum[0]);
@@ -143,18 +147,23 @@ __global__ void DoEmbeddingGrad(const float* top_grad,
     float grad = top_grad[blockIdx.x * emb_vec_size + threadIdx.x];
     grad = CombineGrad<combiner>(grad, feature_num);
     for (int i = 0; i < feature_num; i++) {
+      float grad_i = grad;
       if (max_norm > 0.0f) {
         float emb_element =
             emb_variable[int(values[value_offset + i]) * emb_vec_size +
                          threadIdx.x];
+        if (threadIdx.x == 0) {
+          l2_sum[0] = 0.0f;
+        }
+        __syncthreads();
         atomicAdd(l2_sum, emb_element * emb_element);
         __syncthreads();
         float l2_norm = sqrtf(l2_sum[0]);
         if (l2_norm > max_norm) {
-          grad *= max_norm / l2_norm;
+          grad_i *= max_norm / l2_norm;
         }
       }
-      grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad;
+      grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad_i;
     }
   }
 }
