@@ -149,6 +149,10 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.filter_freq;
   }
 
+  int64 StepsToLive() const {
+    return emb_config_.steps_to_live;
+  }
+
   float GetL2WeightThreshold() {
     return emb_config_.l2_weight_threshold;
   }
