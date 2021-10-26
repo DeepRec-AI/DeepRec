@@ -113,7 +113,7 @@ void fill_emb_vector_expected<SqrtnAndMaxNorm200>(Tensor* expected) {
        77.87342834, 78.98532867});
 }
 
-class FusedEmbeddingSparseLookUpOpTest : public OpsTestBase {
+class FusedEmbeddingLocalSparseLookUpOpTest : public OpsTestBase {
  protected:
   template <typename T, TestCase test_case>
   void Run(Device device) {
@@ -128,8 +128,8 @@ class FusedEmbeddingSparseLookUpOpTest : public OpsTestBase {
 
     get_node_attr_from_test_case<test_case>(combiner_str, max_norm);
 
-    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_look_up",
-                                "FusedEmbeddingSparseLookUp")
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_local_sparse_look_up",
+                                "FusedEmbeddingLocalSparseLookUp")
                      .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT64))
@@ -295,7 +295,7 @@ void fill_grad_expected<MeanAndMaxNorm100>(Tensor* expected) {
        13.41707039, 13.91399956, 14.41092777, 14.90785599, 15.40478516});
 }
 
-class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
+class FusedEmbeddingLocalSparseLookUpGradOpTest : public OpsTestBase {
  protected:
   template <typename T, TestCase test_case>
   void Run(Device device) {
@@ -309,8 +309,8 @@ class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
     float max_norm;
     get_node_attr_from_test_case<test_case>(combiner_str, max_norm);
 
-    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_look_up_grad",
-                                "FusedEmbeddingSparseLookUpGrad")
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_local_sparse_look_up_grad",
+                                "FusedEmbeddingLocalSparseLookUpGrad")
                      .Input(FakeInput(dtype))
                      .Input(FakeInput(dtype))
                      .Input(FakeInput(DT_INT64))
@@ -373,40 +373,40 @@ class FusedEmbeddingSparseLookUpGradOpTest : public OpsTestBase {
 };
 
 #ifdef GOOGLE_CUDA
-TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatSqrtnGpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpOpTest, EmbeddingLocalSparseLookUpFloatSqrtnGpu) {
   Run<float, Sqrtn>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatMeanGpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpOpTest, EmbeddingLocalSparseLookUpFloatMeanGpu) {
   Run<float, Mean>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpOpTest, EmbeddingSparseLookUpFloatSumGpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpOpTest, EmbeddingLocalSparseLookUpFloatSumGpu) {
   Run<float, Sum>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpOpTest,
-       EmbeddingSparseLookUpFloatSqrtnAndMaxNorm200Gpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpOpTest,
+       EmbeddingLocalSparseLookUpFloatSqrtnAndMaxNorm200Gpu) {
   Run<float, SqrtnAndMaxNorm200>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
-       EmbeddingSparseLookUpGradFloatGpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpGradOpTest,
+       EmbeddingLocalSparseLookUpGradFloatGpu) {
   Run<float, Sqrtn>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
-       EmbeddingSparseLookUpGradFloatMeanGpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpGradOpTest,
+       EmbeddingLocalSparseLookUpGradFloatMeanGpu) {
   Run<float, Mean>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
-       EmbeddingSparseLookUpGradFloatSumGpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpGradOpTest,
+       EmbeddingLocalSparseLookUpGradFloatSumGpu) {
   Run<float, Sum>(Device::GPU);
 }
 
-TEST_F(FusedEmbeddingSparseLookUpGradOpTest,
-       EmbeddingSparseLookUpGradFloatMeanAndMaxNorm100Gpu) {
+TEST_F(FusedEmbeddingLocalSparseLookUpGradOpTest,
+       EmbeddingLocalSparseLookUpGradFloatMeanAndMaxNorm100Gpu) {
   Run<float, MeanAndMaxNorm100>(Device::GPU);
 }
 

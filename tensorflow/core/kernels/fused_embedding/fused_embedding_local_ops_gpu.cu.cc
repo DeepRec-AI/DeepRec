@@ -170,9 +170,9 @@ __global__ void DoEmbeddingGrad(const float* top_grad,
 
 }  // namespace
 
-class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
+class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
  public:
-  explicit FusedEmbeddingSparseLookUpGPUOp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingLocalSparseLookUpGPUOp(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
@@ -269,14 +269,14 @@ class FusedEmbeddingSparseLookUpGPUOp : public OpKernel {
   float max_norm_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparseLookUp")
+REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingLocalSparseLookUp")
                             .Device(DEVICE_GPU)
                             .HostMemory("sp_dense_shape"),
-                        FusedEmbeddingSparseLookUpGPUOp);
+                        FusedEmbeddingLocalSparseLookUpGPUOp);
 
-class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
+class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
  public:
-  explicit FusedEmbeddingSparseLookUpGradOp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingLocalSparseLookUpGradOp(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
@@ -356,8 +356,8 @@ class FusedEmbeddingSparseLookUpGradOp : public OpKernel {
 };
 
 REGISTER_KERNEL_BUILDER(
-    Name("FusedEmbeddingSparseLookUpGrad").Device(DEVICE_GPU),
-    FusedEmbeddingSparseLookUpGradOp);
+    Name("FusedEmbeddingLocalSparseLookUpGrad").Device(DEVICE_GPU),
+    FusedEmbeddingLocalSparseLookUpGradOp);
 
 }  // namespace tensorflow
 

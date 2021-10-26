@@ -7,7 +7,7 @@ using shape_inference::DimensionHandle;
 using shape_inference::InferenceContext;
 using shape_inference::ShapeHandle;
 
-REGISTER_OP("FusedEmbeddingSparseLookUp")
+REGISTER_OP("FusedEmbeddingLocalSparseLookUp")
     .Attr("T: {float32}")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
@@ -35,7 +35,7 @@ REGISTER_OP("FusedEmbeddingSparseLookUp")
     })
     .Doc(R"doc()doc");
 
-REGISTER_OP("FusedEmbeddingSparseLookUpGrad")
+REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     .Attr("T: {float32}")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
