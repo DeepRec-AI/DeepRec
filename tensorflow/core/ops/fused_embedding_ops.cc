@@ -53,4 +53,33 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     })
     .Doc(R"doc()doc");
 
+REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
+    .Attr("num_partitions: {int32, int64} >= 1 = 1")
+    .Attr(
+        "partition_axis: {int32, int64} <= 0 = 0")  // for now only support = 0,
+                                                    // will consider support = 1
+                                                    // if necessary
+    .Input("sp_values: int64")
+    .Input("sp_indices: int64")
+    .Input("sp_dense_shape: int64")
+    .Output("outputs: num_partitions * int64")
+    .SetShapeFn([](InferenceContext* ctx) {
+      ShapeHandle temp;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 1, &temp));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 2, &temp));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2), 1, &temp));
+
+      int64 num_partitions;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
+      int64 partition_axis;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("partition_axis", &partition_axis));
+      ShapeHandle result_shape = ctx->MakeShape({ctx->UnknownDim()});
+      for (int i = 0; i < ctx->num_outputs(); ++i) {
+        c->set_output(i, result_shape);
+      }
+
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
 }  // namespace tensorflow
