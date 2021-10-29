@@ -129,9 +129,8 @@ class BaseSaverBuilder(object):
     # pylint: disable=protected-access
     tensor_names = []
     tensors = []
-    ev_key_types = []
     tensor_slices = []
-    resource_handles = []
+    ev_key_types = []
     has_ev = False
     for saveable in saveables:
       if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):

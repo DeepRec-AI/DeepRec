@@ -1421,21 +1421,6 @@ tf_py_test(
 )
 
 tf_py_test(
-    name = "select_fusion_test",
-    size = "small",
-    srcs = ["select_fusion_test.py"],
-    additional_deps = [
-        "//third_party/py/numpy",
-        "//tensorflow/python:array_ops",
-        "//tensorflow/python:client_testlib",
-        "//tensorflow/python:framework_for_generated_wrappers",
-        "//tensorflow/python:math_ops",
-        "//tensorflow/contrib/layers:layers_py",
-        "//tensorflow/contrib/framework:framework_py",
-    ],
-)
-
-tf_py_test(
     name = "variable_scope_test",
     size = "small",
     srcs = ["variable_scope_test.py"],
