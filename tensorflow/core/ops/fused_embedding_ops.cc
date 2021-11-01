@@ -59,17 +59,40 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
     .Attr("partition_axis: T <= 0 = 0")  // for now only support = 0,
                                          // will consider support = 1
                                          // if necessary
-    .Input("sp_values: int64")
     .Input("partition_shapes: num_partitions * T")
-    .Output("outputs: num_partitions * int64")
+    .Input("sp_values: int64")
+    .Input("sp_indices: int64")
+    .Output("partitioned_values: num_partitions * int64")
+    .Output("partitioned_indices: num_partitions * int64")
     .SetShapeFn([](InferenceContext* ctx) {
       int64 num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
       int64 partition_axis;
       TF_RETURN_IF_ERROR(ctx->GetAttr("partition_axis", &partition_axis));
-      ShapeHandle result_shape = ctx->MakeShape({ctx->UnknownDim()});
-      for (int i = 0; i < ctx->num_outputs(); ++i) {
-        c->set_output(i, result_shape);
+
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(c->input(int(num_partitions)), 1, &unused));
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(c->input(int(num_partitions) + 1), 2, &unused));
+      DimensionHandle unused_dim;
+      TF_RETURN_IF_ERROR(c->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
+
+      for (int i = 0; i < int(num_partitions); i++) {
+        ShapeHandle partition_shape;
+        TF_RETURN_IF_ERROR(c->WithRank(ctx->input(i), 1, &partition_shape));
+        TF_RETURN_IF_ERROR(
+            c->WithValue(ctx->NumElements(partition_shape), 2, &unused_dim));
+
+        ShapeHandle values_result_shape, indices_result_shape;
+        if (int(partition_axis) == 0) {
+          values_result_shape ctx->MakeShape({ctx->UnknownDim()});
+          indices_result_shape = ctx->MakeShape({ctx->UnknownDim(), 2});
+        } else {
+          return errors::InvalidArgument("partition_axis > 0 not implemented!");
+        }
+        c->set_output(i, values_result_shape);
+        c->set_output(i + int(num_partitions), indices_result_shape);
       }
       return Status::OK();
     })

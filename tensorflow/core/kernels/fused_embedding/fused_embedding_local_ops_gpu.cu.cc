@@ -1,11 +1,11 @@
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
-#define EIGEN_USE_GPU
-
 #include <exception>
 #include <string>
 
 #include "tensorflow/core/framework/op_kernel.h"
+
+#if GOOGLE_CUDA
+
+#define EIGEN_USE_GPU
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
@@ -222,8 +222,7 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
     }
     {
       const int threads = 1024;
-      int blocks = nnz / threads;
-      blocks = nnz % threads == 0 ? blocks : blocks + 1;
+      int blocks = nnz % threads == 0 ? (nnz / threads) : (nnz / threads + 1);
 
       // calculate values offset
       TF_CHECK_OK(GpuLaunchKernel(
