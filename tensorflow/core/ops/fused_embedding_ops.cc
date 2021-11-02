@@ -15,7 +15,7 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUp")
     .Input("sp_indices: int64")
     .Input("sp_dense_shape: int64")
     .Input("emb_variable: T")
-    .Output("emb_vector: T")
+    .Output("emb_vectors: T")
     .Output("sp_values_offset: int32")
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle temp;
@@ -97,5 +97,19 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
       return Status::OK();
     })
     .Doc(R"doc()doc");
+
+REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
+    .Attr("num_partitions: T >= 1 = 1")
+    .Attr("partition_axis: T <= 0 = 0")  // for now only support = 0,
+                                         // will consider support = 1
+                                         // if necessary
+    .Attr("T : {float32}")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
+    .Attr("max_norm: float = -1.0")
+    .Input("emb_shards: num_partitions * T")
+    .Input("partitioned_indices: num_partitions * int64")
+    .Input("sp_dense_shape: int64")
+    .Output("emb_vectors: T")
+    .Output("sp_values_offset: int32")
 
 }  // namespace tensorflow

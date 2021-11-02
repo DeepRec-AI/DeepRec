@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/kernels/fused_embedding_common.cuh"
 
 #if GOOGLE_CUDA
 
@@ -16,6 +17,11 @@ namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
 namespace {
+
+struct IndicePair {
+  int64_t row_in_batch;
+  int64_t entry_in_column;
+};
 
 __global__ void CalcElementsOffsetPerPartition(
     const int64_t* values_sorted, int64_t* partition_sizes,
@@ -81,13 +87,10 @@ class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
                 errors::InvalidArgument(
                     "num_partitions does not match partition_shapes size"));
 
-    partitioned_sizes_.clear();
     for (const Tensor& shape : partition_shapes) {
       OP_REQUIRES(ctx, shape.dims <= 2,
                   errors::InvalidArgument(
                       "input partition_shapes must all less than rank 2"));
-      const int size = shape->flat<int>().data()[partition_axis_];
-      partitioned_sizes_.push_back(size);
     }
 
     // 2. sort the sp_values and indices
@@ -101,10 +104,10 @@ class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
     cub::DeviceRadixSort::SortPairs(
         NULL, temp_storage_bytes,
         reinterpret_cast<int64_t*>(values_tensor->flat<int64>().data()),
-        reinterpret_cast<int64_t*>(values_sorted->flat<int64>().data()),
-        reinterpret_cast<int4*>(indices_tensor->flat<int64>().data()),
-        reinterpret_cast<int4*>(indices_sorted->flat<int64>().data()), int(nnz),
-        0, sizeof(int64) * 8, stream);
+        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+        reinterpret_cast<IndicePair*>(indices_tensor->flat<int64>().data()),
+        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
+        int(nnz), 0, sizeof(int64) * 8, stream);
 
     ctx->allocate_temp(DT_INT8,
                        TensorShape({static_cast<int64>(temp_storage_bytes)}),
@@ -113,10 +116,10 @@ class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
     cub::DeviceRadixSort::SortPairs(
         cub_temp_storage.flat<int8>().data(), temp_storage_bytes,
         reinterpret_cast<int64_t*>(values_tensor->flat<int64>().data()),
-        reinterpret_cast<int64_t*>(values_sorted->flat<int64>().data()),
-        reinterpret_cast<int4*>(indices_tensor->flat<int64>().data()),
-        reinterpret_cast<int4*>(indices_sorted->flat<int64>().data()), int(nnz),
-        0, sizeof(int64) * 8, stream);
+        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+        reinterpret_cast<IndicePair*>(indices_tensor->flat<int64>().data()),
+        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
+        int(nnz), 0, sizeof(int64) * 8, stream);
 
     // 3. calculate how many elements for each partition
     Tensor partition_sizes;
@@ -133,9 +136,9 @@ class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
       TF_CHECK_OK(GpuLaunchKernel(
           CalcElementsOffsetPerPartition, blocks, threads, 0, stream,
           reinterpret_cast<int64_t*>(values_sorted->flat<int64>().data()),
-          reinterpret_cast<int64_t*>(partition_sizes->flat<int64>().data()),
+          reinterpret_cast<int64_t*>(partition_sizes.flat<int64>().data()),
           reinterpret_cast<int64_t*>(
-              elements_offset_per_partition->flat<int64>().data()),
+              elements_offset_per_partition.flat<int64>().data()),
           int(nnz)));
     }
     elements_offset_per_partition_.clear();
@@ -161,17 +164,14 @@ class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
       int64_t size = elements_offset_per_partition_[i] - partition_start_base;
 
       Tensor* sub_partitioned_values;
-      OP_REQUIRES_OK(
-          ctx, partitioned_values->allocate(
-                   i, TensorShape({static_cast<int64>(partitioned_sizes_[i])}),
-                   &sub_partitioned_values));
+      OP_REQUIRES_OK(ctx, partitioned_values.allocate(
+                              i, TensorShape({static_cast<int64>(size)}),
+                              &sub_partitioned_values));
 
       Tensor* sub_partitioned_indices;
-      OP_REQUIRES_OK(
-          ctx,
-          partitioned_indices->allocate(
-              i, TensorShape({static_cast<int64>(partitioned_sizes_[i]), 2}),
-              &sub_partitioned_indices));
+      OP_REQUIRES_OK(ctx, partitioned_indices.allocate(
+                              i, TensorShape({static_cast<int64>(size), 2}),
+                              &sub_partitioned_indices));
 
       if (size > 0) {
         // some partition does not have any element that falls in it
@@ -186,14 +186,16 @@ class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
             partition_start_base, size));
 
         stream_executor::DeviceMemoryBase sub_indices_sorted_wrapped(
-            indices_sorted.flat<int64>().data() + 2 * partition_start_base,
-            size * 2 * sizeof(int64_t));
+            reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()) +
+                partition_start_base,
+            size * sizeof(IndicePair));
 
         stream_executor::DeviceMemoryBase sub_indices_out_wrapped(
-            sub_partitioned_indices.flat<int64>().data(),
-            size * 2 * sizeof(int64_t));
+            reinterpret_cast<IndicePair*>(
+                sub_partitioned_indices.flat<int64>().data()),
+            size * sizeof(IndicePair));
 
-        stream->ThenMemcpy(sub_indices_out_wrapped, sub_indices_sorted_wrapped,
+        stream->ThenMemcpy(&sub_indices_out_wrapped, sub_indices_sorted_wrapped,
                            size * 2 * sizeof(int64_t));
       }
       partition_start_base = elements_offset_per_partition_[i];
@@ -210,5 +212,133 @@ REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingDistributedSparsePreLookUp")
                             .Device(DEVICE_GPU)
                             .HostMemory("partition_shapes"),
                         FusedEmbeddingDistributedSparsePreLookUp);
+
+__global__ void SumUpEmbeddingShard(const float* emb_shard,
+                                    const int64_t* partitioned_indice,
+                                    float* emb_vectors, int* feature_nums,
+                                    const float max_norm,
+                                    const int emb_vec_size) {
+  __shared__ float l2_sum[1];
+
+  const int64_t row_in_batch = partitioned_indice[2 * blockIdx.x];
+  float emb_element = emb_shard[blockIdx.x * emb_vec_size + threadIdx.x];
+  if (max_norm >= 0.0f) {
+    if (threadIdx.x == 0) {
+      l2_sum[0] = 0.0f;
+    }
+    __syncthreads();
+    atomicAdd(l2_sum, emb_element * emb_element);
+    __syncthreads();
+    float l2_norm = sqrtf(l2_sum[0]);
+    if (l2_norm > max_norm) {
+      emb_element *= max_norm / l2_norm;
+    }
+  }
+
+  atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
+            emb_element);
+
+  if (threadIdx.x == 0) {
+    atomicAdd(feature_nums + row_in_batch, 1);
+  }
+}
+
+template <Combiner combiner>
+__global void Combine(float* emb_vectors, const int* feature_nums) {
+  const int offset = blockIdx.x * blockDim.x + threadIdx.x;
+  const int feature_num = feature_nums[blockIdx.x];
+  const float emb_element = emb_vectors[offset];
+  emb_vectors[offset] = Combine<combiner>(emb_element, feature_num);
+}
+
+class FusedEmbeddingDistributedSparsePostLookUp : public OpKernel {
+ public:
+  explicit FusedEmbeddingDistributedSparsePostLookUp(OpKernelConstruction* ctx)
+      : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
+  }
+
+  void Compute(OpKernelContext* ctx) override {
+    auto stream = ctx->eigen_device<GPUDevice>().stream();
+
+    OpInputList emb_shards;
+    OP_REQUIRES_OK(ctx, ctx->input_list("emb_shards", &emb_shards));
+    OP_REQUIRES(ctx, num_partitions_ == emb_shards.size(),
+                errors::InvalidArgument(
+                    "num_partitions does not match emb_shards size"));
+
+    OpInputList partitioned_indices;
+    OP_REQUIRES_OK(
+        ctx, ctx->input_list("partitioned_indices", &partitioned_indices));
+    OP_REQUIRES(ctx, num_partitions_ == partitioned_indices.size(),
+                errors::InvalidArgument(
+                    "num_partitions does not match partitioned_indices size"));
+
+    Tensor const* dense_shape_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape_tensor));
+
+    const size_t emb_vec_size = emb_shards[0]->shape().dim_size(1);
+    auto dense_shape = dense_shape_tensor->flat<int64>().data();
+    const size_t batch_size = dense_shape[0];
+
+    // 1. sum up emb values from different entries and dump into output
+    Tensor* emb_vectors_tensor = nullptr;
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_output(0, TensorShape({batch_size, emb_vec_size}),
+                                  &emb_vectors_tensor));
+    stream_executor::DeviceMemoryBase emb_vectors_wrapper(
+        emb_vectors_tensor.flat<float>().data(),
+        emb_vectors_tensor->NumElements() * sizeof(float));
+    stream->ThenMemZero(&emb_vectors_wrapper,
+                        emb_vectors_tensor->NumElements() * sizeof(float));
+
+    Tensor feature_nums;
+    ctx->allocate_temp(DT_INT32, TensorShape({batch_size}), &feature_nums);
+    stream_executor::DeviceMemoryBase feature_nums_wrapper(
+        feature_nums.flat<int>().data(),
+        feature_nums.NumElements() * sizeof(int));
+    stream->ThenMemZero(&feature_nums_wrapper,
+                        feature_nums.NumElements() * sizeof(int));
+
+    for (int i = 0; i < num_partitions_; i++) {
+      const int sub_nnz = emb_shards[i]->shape().dim_size(0);
+      OP_REQUIRES(
+          ctx, sub_nnz == partitioned_indices[i]->shape().dim_size(0),
+          errors::InvalidArgument(
+              "emb_shard and partitioned_indice dosn't have the same length"));
+
+      {
+        const int blocks = sub_nnz;
+        const int threads = emb_vec_size;
+        TF_CHECK_OK(GpuLaunchKernel(
+            SumUpEmbeddingShard, blocks, threads, 0, stream,
+            emb_shards[i]->flat<float>().data(),
+            reinterpret_cast<int64_t>(
+                partitioned_indices[i]->flat<int64_t>().data()),
+            emb_vectors_tensor.flat<float>().data(),
+            feature_nums.flat<int>().data(), max_norm_, emb_vec_size));
+      }
+    }
+
+    // 2. do max_norm and combiner
+    {
+      const int blocks = batch_size;
+      const int threads = emb_vec_size;
+      TF_CHECK_OK(GpuLaunchKernel(Combine, blocks, threads, 0, stream,
+                                  emb_vectors_tensor.flat<float>().data(),
+                                  feature_nums.flat<int>().data()));
+    }
+
+
+   private:
+    int num_partitions_;
+    int partition_axis_;
+    std::string combiner_;
+    float max_norm_;
+  }
+}
 
 }  // namespace
