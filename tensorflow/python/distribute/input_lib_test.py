@@ -764,9 +764,20 @@ class DistributedIteratorMultiWorkerTest(
             collective_all_reduce_strategy.CollectiveAllReduceStrategy):
           # Autosharded
           if task_id == 0:
-            expected_values = [[[0, 1]], [[4]]]
+            if (context.num_gpus() == 1):
+              expected_values = [[[0, 1]], [[4]]]
+            else:
+              expected_values = [[[0, 1], [4]]]
+              expected_values[0].extend(
+                                      [[] for _ in range(context.num_gpus()-2)])
+
           else:
-            expected_values = [[[2, 3]], [[]]]
+            if (context.num_gpus() == 1):
+              expected_values = [[[2, 3]], [[]]]
+            else:
+              expected_values = [[[2, 3], []]]
+              expected_values[0].extend(
+                                      [[] for _ in range(context.num_gpus()-2)])
 
           # input_context is for between-graph auto-sharding.
           input_context = distribute_lib.InputContext(
@@ -774,7 +785,14 @@ class DistributedIteratorMultiWorkerTest(
               input_pipeline_id=task_id,
               num_replicas_in_sync=2)
         else:
-          expected_values = [[[0, 1]], [[2, 3]], [[4]]]
+          if (context.num_gpus() == 1):
+            expected_values = [[[0, 1]], [[2, 3]], [[4]]]
+          elif (context.num_gpus() == 2):
+            expected_values = [[[0, 1], [2, 3]], [[4], []]]
+          elif (context.num_gpus() >= 3):
+            expected_values = [[[0, 1], [2, 3], [4]]]
+            expected_values[0].extend([[] for _ in range(context.num_gpus()-3)])
+
           input_context = None
 
         strategy.extended.experimental_enable_get_next_as_optional = True
