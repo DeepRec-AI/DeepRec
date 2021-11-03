@@ -5235,17 +5235,19 @@ tf_kernel_library(
     deps = REQUIRED_DEPS,
 )
 
+tf_cuda_library(
+    name = "fused_embedding_common_cuh",
+    hdrs = ["fused_embedding/fused_embedding_common.cu.h"],
+)
+
 tf_kernel_library(
     name = "fused_embedding_ops",
     gpu_srcs = [
-        "fused_embedding/fused_embedding_local_ops_gpu.cu.cc"
+        "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
+        "fused_embedding/fused_embedding_distributed_ops_gpus.cu.cc"
     ],
-    deps = [
-        "//third_party/eigen3",
-        "//tensorflow/core:framework",
-        "//tensorflow/core:lib",
-        "//tensorflow/core:lib_internal"
-    ],
+    deps = ["//third_party/eigen3"] + DYNAMIC_DEPS +
+           if_cuda(["@cub_archive//:cub", ":fused_embedding_common_cuh"]),
 )
 
 tf_kernel_library(

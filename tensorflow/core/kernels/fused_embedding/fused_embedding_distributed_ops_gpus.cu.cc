@@ -3,11 +3,13 @@
 #include <vector>
 
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/kernels/fused_embedding_common.cuh"
 
 #if GOOGLE_CUDA
 
 #define EIGEN_USE_GPU
+
+#include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
+#include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "third_party/cub/device/device_radix_sort.cuh"
 #include "third_party/cub/device/device_reduce.cuh"
 #include "third_party/cub/iterator/constant_input_iterator.cuh"
@@ -28,7 +30,7 @@ __global__ void CalcElementsOffsetPerPartition(
     int64_t* elements_offset_per_partition, int nnz) {
   // dichotomy
   const int64_t target = partition_sizes[blockIdx.x];
-  const int pos = nnz / 2;
+  int pos = nnz / 2;
   while (1) {
     if (pos == 0) {
       pos = -1;
@@ -51,7 +53,7 @@ __global__ void CalcElementsOffsetPerPartition(
 }
 
 __global__ void GatherAndConvertToSubPartition(
-    const int64_t* values_sorted, const int64_t* sub_partitioned_values,
+    const int64_t* values_sorted, int64_t* sub_partitioned_values,
     const int64_t partition_start_base, const int64_t partition_size) {
   const int t_offset = blockIdx.x * blockDim.x + threadIdx.x;
   if (t_offset < partition_size) {
@@ -61,157 +63,6 @@ __global__ void GatherAndConvertToSubPartition(
     sub_partitioned_values[t_offset] = value;
   }
 }
-
-class FusedEmbeddingDistributedSparsePreLookUp : public OpKernel {
- public:
-  explicit FusedEmbeddingDistributedSparsePreLookUp(OpKernelConstruction* ctx)
-      : OpKernel(ctx) {
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
-  }
-
-  void Compute(OpKernelContext* ctx) override {
-    auto stream = ctx->eigen_device<GPUDevice>().stream();
-
-    // 1. bind inputs
-    Tensor const* values_tensor = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("sp_values", &values_tensor));
-    const int64 nnz = values_tensor->shape().dim_size(0);
-
-    Tensor const* indices_tensor = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("sp_indices", &indices_tensor));
-
-    OpInputList partition_shapes;
-    OP_REQUIRES_OK(ctx, ctx->input_list("partition_shapes", &partition_shapes));
-    OP_REQUIRES(ctx, num_partitions_ == partition_shapes.size(),
-                errors::InvalidArgument(
-                    "num_partitions does not match partition_shapes size"));
-
-    for (const Tensor& shape : partition_shapes) {
-      OP_REQUIRES(ctx, shape.dims <= 2,
-                  errors::InvalidArgument(
-                      "input partition_shapes must all less than rank 2"));
-    }
-
-    // 2. sort the sp_values and indices
-    Tensor values_sorted;
-    ctx->allocate_temp(DT_INT64, values_tensor->shape(), &values_sorted);
-    Tensor indices_sorted;
-    ctx->allocate_temp(DT_INT64, indices_tensor->shape(), &indices_sorted);
-
-    Tensor cub_temp_storage;
-    size_t temp_storage_bytes = 0;
-    cub::DeviceRadixSort::SortPairs(
-        NULL, temp_storage_bytes,
-        reinterpret_cast<int64_t*>(values_tensor->flat<int64>().data()),
-        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
-        reinterpret_cast<IndicePair*>(indices_tensor->flat<int64>().data()),
-        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
-        int(nnz), 0, sizeof(int64) * 8, stream);
-
-    ctx->allocate_temp(DT_INT8,
-                       TensorShape({static_cast<int64>(temp_storage_bytes)}),
-                       &cub_temp_storage);
-
-    cub::DeviceRadixSort::SortPairs(
-        cub_temp_storage.flat<int8>().data(), temp_storage_bytes,
-        reinterpret_cast<int64_t*>(values_tensor->flat<int64>().data()),
-        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
-        reinterpret_cast<IndicePair*>(indices_tensor->flat<int64>().data()),
-        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
-        int(nnz), 0, sizeof(int64) * 8, stream);
-
-    // 3. calculate how many elements for each partition
-    Tensor partition_sizes;
-    ctx->allocate_temp(DT_INT64,
-                       TensorShape({static_cast<int64>(num_partitions_)}),
-                       &partition_sizes);
-    Tensor elements_offset_per_partition;
-    ctx->allocate_temp(DT_INT64,
-                       TensorShape({static_cast<int64>(num_partitions_)}),
-                       &elements_offset_per_partition);
-    {
-      const int blocks = num_partitions_;
-      const int threads = 1;
-      TF_CHECK_OK(GpuLaunchKernel(
-          CalcElementsOffsetPerPartition, blocks, threads, 0, stream,
-          reinterpret_cast<int64_t*>(values_sorted->flat<int64>().data()),
-          reinterpret_cast<int64_t*>(partition_sizes.flat<int64>().data()),
-          reinterpret_cast<int64_t*>(
-              elements_offset_per_partition.flat<int64>().data()),
-          int(nnz)));
-    }
-    elements_offset_per_partition_.clear();
-    elements_offset_per_partition_.resize(num_partitions_);
-    stream_executor::DeviceMemoryBase elements_offset_per_partition_wrapped(
-        elements_offset_per_partition->flat<int64>().data(), num_partitions_);
-
-    stream->ThenMemcpy(elements_offset_per_partition_.data(),
-                       elements_offset_per_partition_wrapped,
-                       num_partitions_ * sizeof(int64_t));
-    stream->BlockHostUntilDone();
-
-    // 4. set output
-    OpOutputList partitioned_values;
-    OP_REQUIRES_OK(ctx,
-                   ctx->output_list("partitioned_values", partitioned_values));
-    OpOutputList partitioned_indices;
-    OP_REQUIRES_OK(
-        ctx, ctx->output_list("partitioned_indices", partitioned_indices));
-
-    int64_t partition_start_base = 0;
-    for (int i = 0; i < num_partitions_; i++) {
-      int64_t size = elements_offset_per_partition_[i] - partition_start_base;
-
-      Tensor* sub_partitioned_values;
-      OP_REQUIRES_OK(ctx, partitioned_values.allocate(
-                              i, TensorShape({static_cast<int64>(size)}),
-                              &sub_partitioned_values));
-
-      Tensor* sub_partitioned_indices;
-      OP_REQUIRES_OK(ctx, partitioned_indices.allocate(
-                              i, TensorShape({static_cast<int64>(size), 2}),
-                              &sub_partitioned_indices));
-
-      if (size > 0) {
-        // some partition does not have any element that falls in it
-        const int threads = 1024;
-        int blocks =
-            size % threads == 0 ? (size / threads) : (size / threads + 1);
-        TF_CHECK_OK(GpuLaunchKernel(
-            GatherAndConvertToSubPartition, blocks, threads, 0, stream,
-            reinterpret_cast<int64_t*>(values_sorted->flat<int64>().data()),
-            reinterpret_cast<int64_t*>(
-                sub_partitioned_values->flat<int64>().data()),
-            partition_start_base, size));
-
-        stream_executor::DeviceMemoryBase sub_indices_sorted_wrapped(
-            reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()) +
-                partition_start_base,
-            size * sizeof(IndicePair));
-
-        stream_executor::DeviceMemoryBase sub_indices_out_wrapped(
-            reinterpret_cast<IndicePair*>(
-                sub_partitioned_indices.flat<int64>().data()),
-            size * sizeof(IndicePair));
-
-        stream->ThenMemcpy(&sub_indices_out_wrapped, sub_indices_sorted_wrapped,
-                           size * 2 * sizeof(int64_t));
-      }
-      partition_start_base = elements_offset_per_partition_[i];
-    }
-  }
-
- private:
-  int num_partitions_;
-  int partition_axis_;
-  std::vector<int64_t> elements_offset_per_partition_;
-}
-
-REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingDistributedSparsePreLookUp")
-                            .Device(DEVICE_GPU)
-                            .HostMemory("partition_shapes"),
-                        FusedEmbeddingDistributedSparsePreLookUp);
 
 __global__ void SumUpEmbeddingShard(const float* emb_shard,
                                     const int64_t* partitioned_indice,
@@ -244,16 +95,193 @@ __global__ void SumUpEmbeddingShard(const float* emb_shard,
 }
 
 template <Combiner combiner>
-__global void Combine(float* emb_vectors, const int* feature_nums) {
+__global__ void Combine(float* emb_vectors, const int* feature_nums) {
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
   const int feature_num = feature_nums[blockIdx.x];
   const float emb_element = emb_vectors[offset];
   emb_vectors[offset] = Combine<combiner>(emb_element, feature_num);
 }
 
-class FusedEmbeddingDistributedSparsePostLookUp : public OpKernel {
+__global__ void DistributeGradToShard(const float* top_grad,
+                                      const int64_t* partitioned_indice,
+                                      float* grad_shard, const int64_t sub_nnz,
+                                      const int64_t emb_vec_size) {
+  __shared__ int64_t row_in_batch_shared[1];
+  if (threadIdx.x == 0) {
+    row_in_batch_shared[0] = partitioned_indice[2 * blockIdx.x];
+  }
+  __syncthreads();
+  const int64_t row_in_batch = row_in_batch_shared[0];
+  const float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
+  grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = grad;
+}
+
+}  // namespace
+
+class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingDistributedSparsePostLookUp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingDistributedSparsePreLookUpGPU(
+      OpKernelConstruction* ctx)
+      : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
+  }
+
+  void Compute(OpKernelContext* ctx) override {
+    auto stream = ctx->eigen_device<GPUDevice>().stream();
+
+    // 1. bind inputs
+    Tensor const* values_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_values", &values_tensor));
+    const int64 nnz = values_tensor->shape().dim_size(0);
+
+    Tensor const* indices_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_indices", &indices_tensor));
+
+    OpInputList partition_shapes;
+    OP_REQUIRES_OK(ctx, ctx->input_list("partition_shapes", &partition_shapes));
+    OP_REQUIRES(ctx, num_partitions_ == partition_shapes.size(),
+                errors::InvalidArgument(
+                    "num_partitions does not match partition_shapes size"));
+
+    for (const Tensor& shape : partition_shapes) {
+      OP_REQUIRES(ctx, shape.dims() <= 2,
+                  errors::InvalidArgument(
+                      "input partition_shapes must all less than rank 2"));
+    }
+
+    // 2. sort the sp_values and indices
+    Tensor values_sorted;
+    ctx->allocate_temp(DT_INT64, values_tensor->shape(), &values_sorted);
+    Tensor indices_sorted;
+    ctx->allocate_temp(DT_INT64, indices_tensor->shape(), &indices_sorted);
+
+    Tensor cub_temp_storage;
+    size_t temp_storage_bytes = 0;
+    cub::DeviceRadixSort::SortPairs(
+        NULL, temp_storage_bytes,
+        reinterpret_cast<const int64_t*>(values_tensor->flat<int64>().data()),
+        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+        reinterpret_cast<const IndicePair*>(
+            indices_tensor->flat<int64>().data()),
+        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
+        int(nnz), 0, sizeof(int64) * 8, stream);
+
+    ctx->allocate_temp(DT_INT8,
+                       TensorShape({static_cast<int64>(temp_storage_bytes)}),
+                       &cub_temp_storage);
+
+    cub::DeviceRadixSort::SortPairs(
+        cub_temp_storage.flat<int8>().data(), temp_storage_bytes,
+        reinterpret_cast<const int64_t*>(values_tensor->flat<int64>().data()),
+        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+        reinterpret_cast<const IndicePair*>(
+            indices_tensor->flat<int64>().data()),
+        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
+        int(nnz), 0, sizeof(int64) * 8, stream);
+
+    // 3. calculate how many elements for each partition
+    Tensor partition_sizes;
+    ctx->allocate_temp(DT_INT64,
+                       TensorShape({static_cast<int64>(num_partitions_)}),
+                       &partition_sizes);
+    Tensor elements_offset_per_partition;
+    ctx->allocate_temp(DT_INT64,
+                       TensorShape({static_cast<int64>(num_partitions_)}),
+                       &elements_offset_per_partition);
+    {
+      const int blocks = num_partitions_;
+      const int threads = 1;
+      CalcElementsOffsetPerPartition<<<blocks, threads, 0, stream>>>(
+          reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+          reinterpret_cast<int64_t*>(partition_sizes.flat<int64>().data()),
+          reinterpret_cast<int64_t*>(
+              elements_offset_per_partition.flat<int64>().data()),
+          int(nnz));
+    }
+    elements_offset_per_partition_.clear();
+    elements_offset_per_partition_.resize(num_partitions_);
+    // stream_executor::DeviceMemoryBase elements_offset_per_partition_wrapped(
+    //     elements_offset_per_partition.flat<int64>().data(), num_partitions_);
+    // stream->ThenMemcpy(elements_offset_per_partition_.data(),
+    //                    elements_offset_per_partition_wrapped,
+    //                    num_partitions_ * sizeof(int64_t));
+    // stream->BlockHostUntilDone();
+
+    cudaMemcpyAsync(elements_offset_per_partition_.data(),
+                    elements_offset_per_partition.flat<int64>().data(),
+                    num_partitions_ * sizeof(int64_t), cudaMemcpyDeviceToHost);
+    cudaStreamSynchronize(stream);
+
+    // 4. set output
+    OpOutputList partitioned_values;
+    OP_REQUIRES_OK(ctx,
+                   ctx->output_list("partitioned_values", &partitioned_values));
+    OpOutputList partitioned_indices;
+    OP_REQUIRES_OK(
+        ctx, ctx->output_list("partitioned_indices", &partitioned_indices));
+
+    int64_t partition_start_base = 0;
+    for (int i = 0; i < num_partitions_; i++) {
+      int64_t size = elements_offset_per_partition_[i] - partition_start_base;
+
+      Tensor* sub_partitioned_values;
+      OP_REQUIRES_OK(ctx, partitioned_values.allocate(
+                              i, TensorShape({static_cast<int64>(size)}),
+                              &sub_partitioned_values));
+
+      Tensor* sub_partitioned_indices;
+      OP_REQUIRES_OK(ctx, partitioned_indices.allocate(
+                              i, TensorShape({static_cast<int64>(size), 2}),
+                              &sub_partitioned_indices));
+
+      if (size > 0) {
+        // some partition does not have any element that falls in it
+        const int threads = 1024;
+        int blocks =
+            size % threads == 0 ? (size / threads) : (size / threads + 1);
+        GatherAndConvertToSubPartition<<<blocks, threads, 0, stream>>>(
+            reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+            reinterpret_cast<int64_t*>(
+                sub_partitioned_values->flat<int64>().data()),
+            partition_start_base, size);
+
+        // stream_executor::DeviceMemoryBase sub_indices_sorted_wrapped(
+        //     reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data())
+        //     +
+        //         partition_start_base,
+        //     size * sizeof(IndicePair));
+        // stream_executor::DeviceMemoryBase sub_indices_out_wrapped(
+        //     reinterpret_cast<IndicePair*>(
+        //         sub_partitioned_indices.flat<int64>().data()),
+        //     size * sizeof(IndicePair));
+        // stream->ThenMemcpy(&sub_indices_out_wrapped,
+        //                    sub_indices_sorted_wrapped,
+        //                    size * 2 * sizeof(int64_t));
+        cudaMemcpyAsync(
+            sub_partitioned_indices->flat<int64>().data(),
+            indices_sorted.flat<int64>().data() + 2 * partition_start_base,
+            size * 2 * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+      }
+      partition_start_base = elements_offset_per_partition_[i];
+    }
+  }
+
+ private:
+  int num_partitions_;
+  int partition_axis_;
+  std::vector<int64_t> elements_offset_per_partition_;
+};
+
+REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingDistributedSparsePreLookUp")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("partition_shapes"),
+                        FusedEmbeddingDistributedSparsePreLookUpGPU);
+
+class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
+ public:
+  explicit FusedEmbeddingDistributedSparsePostLookUpGPU(
+      OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
@@ -280,46 +308,54 @@ class FusedEmbeddingDistributedSparsePostLookUp : public OpKernel {
     Tensor const* dense_shape_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape_tensor));
 
-    const size_t emb_vec_size = emb_shards[0]->shape().dim_size(1);
+    const size_t emb_vec_size = emb_shards[0].shape().dim_size(1);
     auto dense_shape = dense_shape_tensor->flat<int64>().data();
     const size_t batch_size = dense_shape[0];
 
     // 1. sum up emb values from different entries and dump into output
     Tensor* emb_vectors_tensor = nullptr;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output(0, TensorShape({batch_size, emb_vec_size}),
-                                  &emb_vectors_tensor));
-    stream_executor::DeviceMemoryBase emb_vectors_wrapper(
-        emb_vectors_tensor.flat<float>().data(),
-        emb_vectors_tensor->NumElements() * sizeof(float));
-    stream->ThenMemZero(&emb_vectors_wrapper,
-                        emb_vectors_tensor->NumElements() * sizeof(float));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+                            0,
+                            TensorShape({static_cast<long long>(batch_size),
+                                         static_cast<long long>(emb_vec_size)}),
+                            &emb_vectors_tensor));
+    // stream_executor::DeviceMemoryBase emb_vectors_wrapper(
+    //    emb_vectors_tensor.flat<float>().data(),
+    //    emb_vectors_tensor->NumElements() * sizeof(float));
+    // stream->ThenMemZero(&emb_vectors_wrapper,
+    //                    emb_vectors_tensor->NumElements() * sizeof(float));
+
+    cudaMemsetAsync(emb_vectors_tensor->flat<float>().data(), 0x0,
+                    sizeof(float) * emb_vectors_tensor->NumElements(), stream);
 
     Tensor feature_nums;
-    ctx->allocate_temp(DT_INT32, TensorShape({batch_size}), &feature_nums);
-    stream_executor::DeviceMemoryBase feature_nums_wrapper(
-        feature_nums.flat<int>().data(),
-        feature_nums.NumElements() * sizeof(int));
-    stream->ThenMemZero(&feature_nums_wrapper,
-                        feature_nums.NumElements() * sizeof(int));
+    ctx->allocate_temp(DT_INT32,
+                       TensorShape({static_cast<long long>(batch_size)}),
+                       &feature_nums);
+    // stream_executor::DeviceMemoryBase feature_nums_wrapper(
+    //    feature_nums.flat<int>().data(),
+    //    feature_nums.NumElements() * sizeof(int));
+    // stream->ThenMemZero(&feature_nums_wrapper,
+    //                    feature_nums.NumElements() * sizeof(int));
+    cudaMemsetAsync(feature_nums.flat<int>().data(), 0x0,
+                    sizeof(int) * feature_nums.NumElements(), stream);
 
     for (int i = 0; i < num_partitions_; i++) {
-      const int sub_nnz = emb_shards[i]->shape().dim_size(0);
+      const size_t sub_nnz = emb_shards[i].shape().dim_size(0);
       OP_REQUIRES(
-          ctx, sub_nnz == partitioned_indices[i]->shape().dim_size(0),
+          ctx, sub_nnz == partitioned_indices[i].shape().dim_size(0),
           errors::InvalidArgument(
               "emb_shard and partitioned_indice dosn't have the same length"));
 
       {
         const int blocks = sub_nnz;
         const int threads = emb_vec_size;
-        TF_CHECK_OK(GpuLaunchKernel(
-            SumUpEmbeddingShard, blocks, threads, 0, stream,
-            emb_shards[i]->flat<float>().data(),
-            reinterpret_cast<int64_t>(
-                partitioned_indices[i]->flat<int64_t>().data()),
-            emb_vectors_tensor.flat<float>().data(),
-            feature_nums.flat<int>().data(), max_norm_, emb_vec_size));
+        SumUpEmbeddingShard<<<blocks, threads, 0, stream>>>(
+            emb_shards[i].flat<float>().data(),
+            reinterpret_cast<const int64_t*>(
+                partitioned_indices[i].flat<int64>().data()),
+            emb_vectors_tensor->flat<float>().data(),
+            feature_nums.flat<int>().data(), max_norm_, emb_vec_size);
       }
     }
 
@@ -327,18 +363,93 @@ class FusedEmbeddingDistributedSparsePostLookUp : public OpKernel {
     {
       const int blocks = batch_size;
       const int threads = emb_vec_size;
-      TF_CHECK_OK(GpuLaunchKernel(Combine, blocks, threads, 0, stream,
-                                  emb_vectors_tensor.flat<float>().data(),
-                                  feature_nums.flat<int>().data()));
+      if (combiner_ == "sqrtn") {
+        Combine<Sqrtn><<<blocks, threads, 0, stream>>>(
+            emb_vectors_tensor->flat<float>().data(),
+            feature_nums.flat<int>().data());
+      } else if (combiner_ == "mean") {
+        Combine<Mean><<<blocks, threads, 0, stream>>>(
+            emb_vectors_tensor->flat<float>().data(),
+            feature_nums.flat<int>().data());
+      } else {
+        Combine<Sum><<<blocks, threads, 0, stream>>>(
+            emb_vectors_tensor->flat<float>().data(),
+            feature_nums.flat<int>().data());
+      }
     }
-
-
-   private:
-    int num_partitions_;
-    int partition_axis_;
-    std::string combiner_;
-    float max_norm_;
   }
-}
 
-}  // namespace
+ private:
+  int num_partitions_;
+  int partition_axis_;
+  std::string combiner_;
+  float max_norm_;
+};
+
+REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingDistributedSparsePostLookUp")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("partition_shapes"),
+                        FusedEmbeddingDistributedSparsePostLookUpGPU);
+
+class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
+ public:
+  explicit FusedEmbeddingDistributedSparsePostLookUpGradGPU(
+      OpKernelConstruction* ctx)
+      : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
+  }
+
+  void Compute(OpKernelContext* ctx) override {
+    auto stream = ctx->eigen_device<GPUDevice>().stream();
+
+    Tensor const* top_grad_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("top_grad", &top_grad_tensor));
+
+    OpInputList partitioned_indices;
+    OP_REQUIRES_OK(
+        ctx, ctx->input_list("partitioned_indices", &partitioned_indices));
+    OP_REQUIRES(ctx, num_partitions_ == partitioned_indices.size(),
+                errors::InvalidArgument(
+                    "num_partitions does not match partitioned_indices size"));
+
+    OpOutputList grad_shards;
+    OP_REQUIRES_OK(ctx, ctx->output_list("grad_shards", &grad_shards));
+    const size_t emb_vec_size = grad_shards[0]->shape().dim_size(1);
+
+    for (int i = 0; i < num_partitions_; i++) {
+      auto partitioned_indice = partitioned_indices[i];
+      const size_t sub_nnz = partitioned_indice.shape().dim_size(0);
+
+      Tensor* grad_shard;
+      OP_REQUIRES_OK(ctx,
+                     grad_shards.allocate(
+                         i,
+                         TensorShape({static_cast<long long>(sub_nnz),
+                                      static_cast<long long>(emb_vec_size)}),
+                         &grad_shard));
+
+      {
+        const int blocks = sub_nnz;
+        const int threads = emb_vec_size;
+        DistributeGradToShard<<<blocks, threads, 0, stream>>>(
+            top_grad_tensor->flat<float>().data(),
+            reinterpret_cast<int64_t*>(
+                partitioned_indice.flat<int64>().data()),
+            grad_shard->flat<float>().data(), sub_nnz, emb_vec_size);
+      }
+    }
+  }
+
+ private:
+  int num_partitions_;
+  int partition_axis_;
+  std::string combiner_;
+  float max_norm_;
+};
+
+}  // namespace tensorflow
+
+#endif  // GOOGLE_CUDA

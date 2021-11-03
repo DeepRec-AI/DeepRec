@@ -55,10 +55,10 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
 
 REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
     .Attr("T: {int32, int64}")
-    .Attr("num_partitions: T >= 1 = 1")
-    .Attr("partition_axis: T <= 0 = 0")  // for now only support = 0,
-                                         // will consider support = 1
-                                         // if necessary
+    .Attr("num_partitions: int >= 1 = 1")
+    .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
+                                           // will consider support = 1
+                                           // if necessary
     .Input("partition_shapes: num_partitions * T")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
@@ -72,44 +72,60 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(c->input(int(num_partitions)), 1, &unused));
+          ctx->WithRank(ctx->input(int(num_partitions)), 1, &unused));
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(c->input(int(num_partitions) + 1), 2, &unused));
+          ctx->WithRank(ctx->input(int(num_partitions) + 1), 2, &unused));
       DimensionHandle unused_dim;
-      TF_RETURN_IF_ERROR(c->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
+      TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
 
       for (int i = 0; i < int(num_partitions); i++) {
         ShapeHandle partition_shape;
-        TF_RETURN_IF_ERROR(c->WithRank(ctx->input(i), 1, &partition_shape));
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 1, &partition_shape));
         TF_RETURN_IF_ERROR(
-            c->WithValue(ctx->NumElements(partition_shape), 2, &unused_dim));
+            ctx->WithValue(ctx->NumElements(partition_shape), 2, &unused_dim));
 
         ShapeHandle values_result_shape, indices_result_shape;
         if (int(partition_axis) == 0) {
-          values_result_shape ctx->MakeShape({ctx->UnknownDim()});
+          values_result_shape = ctx->MakeShape({ctx->UnknownDim()});
           indices_result_shape = ctx->MakeShape({ctx->UnknownDim(), 2});
         } else {
           return errors::InvalidArgument("partition_axis > 0 not implemented!");
         }
-        c->set_output(i, values_result_shape);
-        c->set_output(i + int(num_partitions), indices_result_shape);
+        ctx->set_output(i, values_result_shape);
+        ctx->set_output(i + int(num_partitions), indices_result_shape);
       }
       return Status::OK();
     })
     .Doc(R"doc()doc");
 
 REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
-    .Attr("num_partitions: T >= 1 = 1")
-    .Attr("partition_axis: T <= 0 = 0")  // for now only support = 0,
-                                         // will consider support = 1
-                                         // if necessary
     .Attr("T : {float32}")
+    .Attr("num_partitions: int >= 1 = 1")
+    .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
+                                           // will consider support = 1
+                                           // if necessary
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
     .Input("emb_shards: num_partitions * T")
     .Input("partitioned_indices: num_partitions * int64")
     .Input("sp_dense_shape: int64")
     .Output("emb_vectors: T")
-    .Output("sp_values_offset: int32")
+    .Output("feature_nums: int32")
+    .Doc(R"doc()doc");
+
+REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
+    .Attr("T : {float32}")
+    .Attr("num_partitions: int >= 1 = 1")
+    .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
+                                           // will consider support = 1
+                                           // if necessary
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
+    .Attr("max_norm: float = -1.0")
+    .Input("top_grad: T")
+    .Input("emb_shards: num_partitions * T")
+    .Input("feature_nums: int32")
+    .Input("partitioned_indices: num_partitions * int64")
+    .Output("grad_shards: num_partitions * T")
+    .Doc(R"doc()doc");
 
 }  // namespace tensorflow

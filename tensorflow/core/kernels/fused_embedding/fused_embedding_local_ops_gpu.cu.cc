@@ -2,11 +2,13 @@
 #include <string>
 
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/kernels/fused_embedding_common.cuh"
 
 #if GOOGLE_CUDA
 
 #define EIGEN_USE_GPU
+
+#include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
+#include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
@@ -121,9 +123,9 @@ __global__ void DoEmbeddingGrad(const float* top_grad,
 
 }  // namespace
 
-class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
+class FusedEmbeddingLocalSparseLookUpGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingLocalSparseLookUpGPUOp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingLocalSparseLookUpGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
@@ -167,54 +169,49 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
       const int threads = 1024;
       int blocks = batch_size / threads;
       blocks = batch_size % threads == 0 ? blocks : blocks + 1;
-      TF_CHECK_OK(GpuLaunchKernel(SetToIntMaxSTG128, blocks, threads, 0, stream,
-                                  values_offset_tensor->flat<int>().data(),
-                                  int(batch_size)));
+      SetToIntMaxSTG128<<<blocks, threads, 0, stream>>>(
+          values_offset_tensor->flat<int>().data(), int(batch_size));
     }
     {
       const int threads = 1024;
       int blocks = nnz % threads == 0 ? (nnz / threads) : (nnz / threads + 1);
 
       // calculate values offset
-      TF_CHECK_OK(GpuLaunchKernel(
-          CalcPerElementRowInBatchValuesOffset, blocks, threads, 0, stream,
+      CalcPerElementRowInBatchValuesOffset<<<blocks, threads, 0, stream>>>(
           reinterpret_cast<const int64_t*>(
               indices_tensor->flat<int64>().data()),
-          values_offset_tensor->flat<int>().data(), nnz));
+          values_offset_tensor->flat<int>().data(), nnz);
     }
     {
       const int blocks = int(batch_size);
       const int threads = int(emb_vec_size);
       if (combiner_ == "sqrtn") {
-        TF_CHECK_OK(GpuLaunchKernel(
-            EmbeddingLookUp<Sqrtn>, blocks, threads, 0, stream,
+        EmbeddingLookUp<Sqrtn><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 emb_variable_tensor->flat<float>().data()),
             reinterpret_cast<const int64_t*>(
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(emb_vectors_tensor->flat<float>().data()),
-            max_norm_, int(emb_vec_size), batch_size, nnz));
+            max_norm_, int(emb_vec_size), batch_size, nnz);
       } else if (combiner_ == "mean") {
-        TF_CHECK_OK(GpuLaunchKernel(
-            EmbeddingLookUp<Mean>, blocks, threads, 0, stream,
+        EmbeddingLookUp<Mean><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 emb_variable_tensor->flat<float>().data()),
             reinterpret_cast<const int64_t*>(
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(emb_vectors_tensor->flat<float>().data()),
-            max_norm_, int(emb_vec_size), batch_size, nnz));
+            max_norm_, int(emb_vec_size), batch_size, nnz);
       } else {
-        TF_CHECK_OK(GpuLaunchKernel(
-            EmbeddingLookUp<Sum>, blocks, threads, 0, stream,
+        EmbeddingLookUp<Sum><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 emb_variable_tensor->flat<float>().data()),
             reinterpret_cast<const int64_t*>(
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(emb_vectors_tensor->flat<float>().data()),
-            max_norm_, int(emb_vec_size), batch_size, nnz));
+            max_norm_, int(emb_vec_size), batch_size, nnz);
       }
     }
   }
@@ -227,11 +224,11 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingLocalSparseLookUp")
                             .Device(DEVICE_GPU)
                             .HostMemory("sp_dense_shape"),
-                        FusedEmbeddingLocalSparseLookUpGPUOp);
+                        FusedEmbeddingLocalSparseLookUpGPU);
 
-class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
+class FusedEmbeddingLocalSparseLookUpGradGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingLocalSparseLookUpGradOp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingLocalSparseLookUpGradGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
@@ -266,8 +263,7 @@ class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
       const int threads = int(emb_vec_size);
 
       if (combiner_ == "sqrtn") {
-        TF_CHECK_OK(GpuLaunchKernel(
-            DoEmbeddingGrad<Sqrtn>, blocks, threads, 0, stream,
+        DoEmbeddingGrad<Sqrtn><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
             reinterpret_cast<const float*>(
@@ -277,10 +273,9 @@ class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            max_norm_, emb_vec_size, batch_size, nnz));
+            max_norm_, emb_vec_size, batch_size, nnz);
       } else if (combiner_ == "mean") {
-        TF_CHECK_OK(GpuLaunchKernel(
-            DoEmbeddingGrad<Mean>, blocks, threads, 0, stream,
+        DoEmbeddingGrad<Mean><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
             reinterpret_cast<const float*>(
@@ -290,10 +285,9 @@ class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            max_norm_, emb_vec_size, batch_size, nnz));
+            max_norm_, emb_vec_size, batch_size, nnz);
       } else {
-        TF_CHECK_OK(GpuLaunchKernel(
-            DoEmbeddingGrad<Sum>, blocks, threads, 0, stream,
+        DoEmbeddingGrad<Sum><<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const float*>(
                 top_grad_tensor->flat<float>().data()),
             reinterpret_cast<const float*>(
@@ -303,7 +297,7 @@ class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
             values_offset_tensor->flat<int>().data(),
             reinterpret_cast<float*>(
                 grad_emb_weight_sp_values_tensor->flat<float>().data()),
-            max_norm_, emb_vec_size, batch_size, nnz));
+            max_norm_, emb_vec_size, batch_size, nnz);
       }
     }
   }
@@ -315,8 +309,7 @@ class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
 
 REGISTER_KERNEL_BUILDER(
     Name("FusedEmbeddingLocalSparseLookUpGrad").Device(DEVICE_GPU),
-    FusedEmbeddingLocalSparseLookUpGradOp);
+    FusedEmbeddingLocalSparseLookUpGradGPU);
 
 }  // namespace tensorflow
-
 #endif  // GOOGLE_CUDA
