@@ -30,6 +30,14 @@ std::tuple<int, int, int> GetLoadedTensorRTVersion();
 }  // namespace tensorrt
 }  // namespace tensorflow
 
+#define IS_TRT_VERSION_GE(major, minor, patch, build)           \
+  ((NV_TENSORRT_MAJOR > major) ||                               \
+   (NV_TENSORRT_MAJOR == major && NV_TENSORRT_MINOR > minor) || \
+   (NV_TENSORRT_MAJOR == major && NV_TENSORRT_MINOR == minor && \
+    NV_TENSORRT_PATCH > patch) ||                               \
+   (NV_TENSORRT_MAJOR == major && NV_TENSORRT_MINOR == minor && \
+    NV_TENSORRT_PATCH == patch && NV_TENSORRT_BUILD >= build))
+
 #if GOOGLE_CUDA && GOOGLE_TENSORRT
 
 #include "tensorflow/core/platform/logging.h"
@@ -38,13 +46,6 @@ std::tuple<int, int, int> GetLoadedTensorRTVersion();
 namespace tensorflow {
 namespace tensorrt {
 
-#define IS_TRT_VERSION_GE(major, minor, patch, build)           \
-  ((NV_TENSORRT_MAJOR > major) ||                               \
-   (NV_TENSORRT_MAJOR == major && NV_TENSORRT_MINOR > minor) || \
-   (NV_TENSORRT_MAJOR == major && NV_TENSORRT_MINOR == minor && \
-    NV_TENSORRT_PATCH > patch) ||                               \
-   (NV_TENSORRT_MAJOR == major && NV_TENSORRT_MINOR == minor && \
-    NV_TENSORRT_PATCH == patch && NV_TENSORRT_BUILD >= build))
 
 #define LOG_WARNING_WITH_PREFIX LOG(WARNING) << "TF-TRT Warning: "
 

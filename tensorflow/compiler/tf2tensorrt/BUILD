@@ -37,7 +37,7 @@ cc_library(
         "stub/nvinfer_stub.cc",
         "stub/nvinfer_plugin_stub.cc",
     ]),
-    textual_hdrs = glob(["stub/*.inc"]),
+    textual_hdrs = glob(["stub/*.inc", "common/utils.h"]),
     deps = if_tensorrt([
         "@local_config_tensorrt//:tensorrt_headers",
         "//tensorflow/core:lib",
