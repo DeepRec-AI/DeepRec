@@ -12,8 +12,11 @@
 #include "tensorflow/core/graph/costmodel.h"
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/graph/graph_partition.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
+
+bool IsChiefRole();
 
 // Define policy that use Send/Recv instead of RunGraph.
 // Eg: RunGraph can't solve cycle problem, here we use
@@ -385,8 +388,9 @@ class TrainGraphPartitioner : public GraphPartitionerBase {
                          bool zero_copy, bool use_fuse_recv,
                          SendRecvPolicy* user_define_policy = nullptr)
      : GraphPartitionerBase(popts, g, zero_copy, use_fuse_recv,
-                            [](const std::string loc){
-                              return loc.find("worker") != std::string::npos;
+                            [](const std::string loc) {
+                              return loc.find("worker") != std::string::npos ||
+                                     loc.find("chief") != std::string::npos;
                             }, user_define_policy) {}
   ~TrainGraphPartitioner() {}
 

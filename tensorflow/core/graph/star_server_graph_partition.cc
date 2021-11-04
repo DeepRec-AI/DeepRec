@@ -22,11 +22,29 @@
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/device_name_utils.h"
-#include "tensorflow/core/util/env_var.h"
 
 using namespace std;
 
 namespace tensorflow {
+
+bool IsChiefRole() {
+  bool is_chief = false;
+  std::string stype;
+  std::string tf_config;
+  ReadStringFromEnvVar("TF_CONFIG", "", &tf_config);
+  if (!tf_config.empty()) {
+    auto start_idx = tf_config.find("\"type\":");
+    start_idx += 6;
+    while (tf_config[start_idx] != '"') start_idx++;
+    start_idx++;
+    while (tf_config[start_idx] != '"') {
+      stype += tf_config[start_idx++];
+    }
+    if (stype == "chief") is_chief = true;
+  }
+
+  return is_chief;
+}
 
 std::string node_to_loc(const Node *node) {
   DeviceNameUtils::ParsedName p;
@@ -1294,6 +1312,11 @@ Status GraphPartitionerBase::CompleteMainGraphV2(
   }
   std::string worker_device = strings::StrCat("/job:worker/replica:0/task:",
       task_index, "/device:CPU:0");
+
+  if (IsChiefRole()) {
+    worker_device = "/job:chief/replica:0/task:0/device:CPU:0";
+  }
+
   bool is_worker_empty = false;
   // NOTE(jiankeng.pt): Record these rgo(rungraphop) nodes
   // when has no worker graph here, we have to add some extra
@@ -1402,6 +1425,10 @@ Status GraphPartitionerBase::CompleteMainGraph(
   }
   std::string worker_device = strings::StrCat("/job:worker/replica:0/task:",
       task_index, "/device:CPU:0");
+  if (IsChiefRole()) {
+    worker_device = "/job:chief/replica:0/task:0/device:CPU:0";
+  }
+
   if ((worker_graph->GetNodes()).size() == 0) {
     LOG(WARNING) << "Worker's graph is empty, add a RunStarGraphOp node.";
 
@@ -1410,11 +1437,10 @@ Status GraphPartitionerBase::CompleteMainGraph(
     for (auto sub_graph : sub_graphs) {
       NodeDef *run_graph_node_def = graph_def.add_node();
       MakeRunGraphNodeDef(sub_graph,
-                          strings::StrCat("/job:worker/replica:0/task:",
-                          task_index, "/device:CPU:0"),
+                          worker_device,
                           run_graph_node_def,
                           zero_copy_,
-                          ps_graph_count[sub_graph.GetLoc()]);
+                          ps_graph_count[sub_graph.GetLoc()]); 
     }
 
     return Status::OK();
