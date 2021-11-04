@@ -111,6 +111,28 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
     .Input("sp_dense_shape: int64")
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
+    .SetShapeFn([](InferenceContext* ctx) {
+      int64 num_partitions;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
+
+      ShapeHandle first_emb_shard_shape;
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(0), 2, &first_emb_shard_shape));
+
+      ShapeHandle unused;
+      for (int i = 0; i < num_partitions; i++) {
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
+        TF_RETURN_IF_ERROR(
+            ctx->WithRank(ctx->input(i + num_partitions), 2, &unused));
+      }
+
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(2 * num_partitions), 2, &unused));
+
+      DimensionHandle emb_vec_size_dim = ctx->Dim(first_emb_shard_shape, 1);
+      ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
+      ctx->set_output(1, ctx->MakeShape({ctx->UnknownDim()}));
+    })
     .Doc(R"doc()doc");
 
 REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
@@ -126,6 +148,30 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
     .Input("feature_nums: int32")
     .Input("partitioned_indices: num_partitions * int64")
     .Output("grad_shards: num_partitions * T")
+    .SetShapeFn([](InferenceContext* ctx) {
+      int64 num_partitions;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
+
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &unused));
+      for (int i = 1; i < num_partitions + 1; i++) {
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
+      }
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(num_partitions + 2), 1, &unused));
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(num_partitions + 3), 2, &unused));
+
+      ShapeHandle top_grad_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
+      DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
+
+      ShapeHandle output_shape =
+          ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim});
+      for (int i = 0; i < num_partitions; i++) {
+        ctx->set_output(i, output_shape);
+      }
+    })
     .Doc(R"doc()doc");
 
 }  // namespace tensorflow

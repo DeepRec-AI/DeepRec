@@ -95,24 +95,48 @@ __global__ void SumUpEmbeddingShard(const float* emb_shard,
 }
 
 template <Combiner combiner>
-__global__ void Combine(float* emb_vectors, const int* feature_nums) {
+__global__ void ApplyCombiner(float* emb_vectors, const int* feature_nums) {
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
   const int feature_num = feature_nums[blockIdx.x];
   const float emb_element = emb_vectors[offset];
   emb_vectors[offset] = Combine<combiner>(emb_element, feature_num);
 }
 
+template <Combiner combiner>
 __global__ void DistributeGradToShard(const float* top_grad,
+                                      const float* emb_shard,
                                       const int64_t* partitioned_indice,
+                                      const int* feature_nums,
                                       float* grad_shard, const int64_t sub_nnz,
-                                      const int64_t emb_vec_size) {
+                                      const int64_t emb_vec_size,
+                                      const float max_norm) {
   __shared__ int64_t row_in_batch_shared[1];
+  __shared__ int feature_num_shared[1];
+  __shared__ float l2_sum[1];
   if (threadIdx.x == 0) {
     row_in_batch_shared[0] = partitioned_indice[2 * blockIdx.x];
   }
   __syncthreads();
   const int64_t row_in_batch = row_in_batch_shared[0];
-  const float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
+  float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
+  if (threadIdx.x == 0) {
+    feature_num_shared[0] = feature_nums[row_in_batch];
+  }
+  __syncthreads();
+  const int feature_num = feature_num_shared[0];
+  grad = CombineGrad<combiner>(grad, feature_num);
+  if (max_norm >= 0.0f) {
+    const float emb_element =
+        emb_shard[blockIdx.x * emb_vec_size + threadIdx.x];
+    if (threadIdx.x == 0) {
+      l2_sum[0] = 0.0f;
+    }
+    __syncthreads();
+    atomicAdd(l2_sum, emb_element * emb_element);
+    __syncthreads();
+    float l2_norm = sqrtf(l2_sum[0]);
+    grad *= max_norm / l2_norm;
+  }
   grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = grad;
 }
 
@@ -140,9 +164,6 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
 
     OpInputList partition_shapes;
     OP_REQUIRES_OK(ctx, ctx->input_list("partition_shapes", &partition_shapes));
-    OP_REQUIRES(ctx, num_partitions_ == partition_shapes.size(),
-                errors::InvalidArgument(
-                    "num_partitions does not match partition_shapes size"));
 
     for (const Tensor& shape : partition_shapes) {
       OP_REQUIRES(ctx, shape.dims() <= 2,
@@ -294,16 +315,10 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
 
     OpInputList emb_shards;
     OP_REQUIRES_OK(ctx, ctx->input_list("emb_shards", &emb_shards));
-    OP_REQUIRES(ctx, num_partitions_ == emb_shards.size(),
-                errors::InvalidArgument(
-                    "num_partitions does not match emb_shards size"));
 
     OpInputList partitioned_indices;
     OP_REQUIRES_OK(
         ctx, ctx->input_list("partitioned_indices", &partitioned_indices));
-    OP_REQUIRES(ctx, num_partitions_ == partitioned_indices.size(),
-                errors::InvalidArgument(
-                    "num_partitions does not match partitioned_indices size"));
 
     Tensor const* dense_shape_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape_tensor));
@@ -328,17 +343,18 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
     cudaMemsetAsync(emb_vectors_tensor->flat<float>().data(), 0x0,
                     sizeof(float) * emb_vectors_tensor->NumElements(), stream);
 
-    Tensor feature_nums;
-    ctx->allocate_temp(DT_INT32,
-                       TensorShape({static_cast<long long>(batch_size)}),
-                       &feature_nums);
+    Tensor* feature_nums;
+    OP_REQUIRES_OK(ctx,
+                   ctx->allocate_output(
+                       1, TensorShape({static_cast<long long>(batch_size)}),
+                       &feature_nums));
     // stream_executor::DeviceMemoryBase feature_nums_wrapper(
     //    feature_nums.flat<int>().data(),
     //    feature_nums.NumElements() * sizeof(int));
     // stream->ThenMemZero(&feature_nums_wrapper,
     //                    feature_nums.NumElements() * sizeof(int));
-    cudaMemsetAsync(feature_nums.flat<int>().data(), 0x0,
-                    sizeof(int) * feature_nums.NumElements(), stream);
+    cudaMemsetAsync(feature_nums->flat<int>().data(), 0x0,
+                    sizeof(int) * feature_nums->NumElements(), stream);
 
     for (int i = 0; i < num_partitions_; i++) {
       const size_t sub_nnz = emb_shards[i].shape().dim_size(0);
@@ -355,7 +371,7 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
             reinterpret_cast<const int64_t*>(
                 partitioned_indices[i].flat<int64>().data()),
             emb_vectors_tensor->flat<float>().data(),
-            feature_nums.flat<int>().data(), max_norm_, emb_vec_size);
+            feature_nums->flat<int>().data(), max_norm_, emb_vec_size);
       }
     }
 
@@ -364,17 +380,17 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
       const int blocks = batch_size;
       const int threads = emb_vec_size;
       if (combiner_ == "sqrtn") {
-        Combine<Sqrtn><<<blocks, threads, 0, stream>>>(
+        ApplyCombiner<Sqrtn><<<blocks, threads, 0, stream>>>(
             emb_vectors_tensor->flat<float>().data(),
-            feature_nums.flat<int>().data());
+            feature_nums->flat<int>().data());
       } else if (combiner_ == "mean") {
-        Combine<Mean><<<blocks, threads, 0, stream>>>(
+        ApplyCombiner<Mean><<<blocks, threads, 0, stream>>>(
             emb_vectors_tensor->flat<float>().data(),
-            feature_nums.flat<int>().data());
+            feature_nums->flat<int>().data());
       } else {
-        Combine<Sum><<<blocks, threads, 0, stream>>>(
+        ApplyCombiner<Sum><<<blocks, threads, 0, stream>>>(
             emb_vectors_tensor->flat<float>().data(),
-            feature_nums.flat<int>().data());
+            feature_nums->flat<int>().data());
       }
     }
   }
@@ -408,12 +424,15 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
     Tensor const* top_grad_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("top_grad", &top_grad_tensor));
 
+    OpInputList emb_shards;
+    OP_REQUIRES_OK(ctx, ctx->input_list("emb_shards", &emb_shards));
+
     OpInputList partitioned_indices;
     OP_REQUIRES_OK(
         ctx, ctx->input_list("partitioned_indices", &partitioned_indices));
-    OP_REQUIRES(ctx, num_partitions_ == partitioned_indices.size(),
-                errors::InvalidArgument(
-                    "num_partitions does not match partitioned_indices size"));
+
+    Tensor const* feature_nums = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("feature_nums", &feature_nums));
 
     OpOutputList grad_shards;
     OP_REQUIRES_OK(ctx, ctx->output_list("grad_shards", &grad_shards));
@@ -434,11 +453,34 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
       {
         const int blocks = sub_nnz;
         const int threads = emb_vec_size;
-        DistributeGradToShard<<<blocks, threads, 0, stream>>>(
-            top_grad_tensor->flat<float>().data(),
-            reinterpret_cast<int64_t*>(
-                partitioned_indice.flat<int64>().data()),
-            grad_shard->flat<float>().data(), sub_nnz, emb_vec_size);
+        if (combiner_ == "sqrtn") {
+          DistributeGradToShard<Sqrtn><<<blocks, threads, 0, stream>>>(
+              top_grad_tensor->flat<float>().data(),
+              emb_shards[i].flat<float>().data(),
+              reinterpret_cast<int64_t*>(
+                  partitioned_indice.flat<int64>().data()),
+              feature_nums->flat<int>().data(),
+              grad_shard->flat<float>().data(), sub_nnz, emb_vec_size,
+              max_norm_);
+        } else if (combiner_ == "mean") {
+          DistributeGradToShard<Mean><<<blocks, threads, 0, stream>>>(
+              top_grad_tensor->flat<float>().data(),
+              emb_shards[i].flat<float>().data(),
+              reinterpret_cast<int64_t*>(
+                  partitioned_indice.flat<int64>().data()),
+              feature_nums->flat<int>().data(),
+              grad_shard->flat<float>().data(), sub_nnz, emb_vec_size,
+              max_norm_);
+        } else {
+          DistributeGradToShard<Sum><<<blocks, threads, 0, stream>>>(
+              top_grad_tensor->flat<float>().data(),
+              emb_shards[i].flat<float>().data(),
+              reinterpret_cast<int64_t*>(
+                  partitioned_indice.flat<int64>().data()),
+              feature_nums->flat<int>().data(),
+              grad_shard->flat<float>().data(), sub_nnz, emb_vec_size,
+              max_norm_);
+        }
       }
     }
   }
