@@ -4,9 +4,9 @@
   - [Model Structure](#model-structure)
   - [Usage](#usage)
     - [Stand-alone Training](#stand-alone-training)
-  - [Benchmark](#benchmark)
+  - [Benchmark: Stand-alone Training](#benchmark-stand-alone-training)
     - [Test Environment](#test-environment)
-    - [Stand-alone Training](#stand-alone-training-1)
+    - [Performance Result](#performance-result)
   - [Dataset](#dataset)
     - [Prepare](#prepare)
     - [Fields](#fields)
@@ -67,58 +67,61 @@ The triangles represent mlp network. The inputs consists of dense features and s
 <!-- ### Distribute Training
 How to train distribute model -->
 
-## Benchmark
+## Benchmark: Stand-alone Training
+
 ### Test Environment
-The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **hfg7**](https://help.aliyun.com/document_detail/25378.html?spm=5176.2020520101.vmBInfo.instanceType.4a944df5PvCcED#hfg7).
+The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **ecs.hfg7.2xlarge**](https://help.aliyun.com/document_detail/25378.html?spm=5176.2020520101.vmBInfo.instanceType.4a944df5PvCcED#hfg7).
 - Hardware 
-  - CPU:                    Intel(R) Xeon(R) Platinum 8369HB CPU @ 3.30GHz  
-  - vCPU(s):                16
-  - Socket(s):              1
-  - Core(s) per socket:     8
-  - Thread(s) per core:     2
-  - Memory:                 64G  
-  - L1d cache:              32K
-  - L1i cache:              32K
-  - L2 cache:               1024K
-  - L3 cache:               33792K
+  - Model name:          Intel(R) Xeon(R) Platinum 8369HC CPU @ 3.30GHz
+  - CPU(s):              8
+  - Socket(s):           1
+  - Core(s) per socket:  4
+  - Thread(s) per core:  2
+  - Memory:              32G
 
 - Software
-  - kernel:                 4.18.0-305.3.1.el8.x86_64
-  - OS:                     CentOS 8.4.2105
+  - kernel:                 4.18.0-305.12.1.el8_4.x86_64
+  - OS:                     CentOS Linux release 8.4.2105
   - GCC:                    8.4.1
-  - Docker:                 20.10.8
-  - Python:                 3.6.9
+  - Docker:                 20.10.9
+  - Python:                 3.6.8
 
-### Stand-alone Training 
-Google tensorflow v1.15 is selected to compare with DeepRec.
+### Performance Result
 
 <table>
     <tr>
-        <td colspan="2"></td>
+        <td colspan="1"></td>
+        <td>Framework</td>
+        <td>DType</td>
         <td>Accuracy</td>
         <td>AUC</td>
         <td>Globalsetp/Sec</td>
     </tr>
     <tr>
         <td rowspan="3">DLRM</td>
-        <td>google TF FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>Community TensorFlow</td>
+        <td>FP32</td>
+        <td>0.74596</td>
+        <td>0.74893</td>
+        <td>97.7156 (baseline)</td>
     </tr>
     <tr>
-        <td>DeepRec FP32 w/ oneDNN</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>DeepRec w/ oneDNN</td>
+        <td>FP32</td>
+        <td>0.74596</td>
+        <td>0.74683</td>
+        <td>106.7571 (+1.09x)</td>
     </tr>
     <tr>
-        <td>DeepRec BF16 w/ oneDNN</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>DeepRec w/ oneDNN</td>
+        <td>FP32+BF16</td>
+        <td>0.74596</td>
+        <td>0.74104</td>
+        <td>121.5268 (+1.24x)</td>
     </tr>
 </table>
+
+- Community TensorFlow version is v1.15.5.
 
 ## Dataset
 Train & eval dataset using ***Kaggle Display Advertising Challenge Dataset (Criteo Dataset)***.
