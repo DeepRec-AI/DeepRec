@@ -520,38 +520,6 @@ void BaseGPUDevice::Compute(OpKernel* op_kernel, OpKernelContext* context) {
             << ComputeOpKernelDebugString(*op_kernel, stream_id);
   }
 
-  const auto num_streams = streams_.size();
-  if (num_streams > 1) {
-    // If this op's device context is different from the other contexts,
-    // we must wait on the stream.
-    for (int i = 0; i < context->num_inputs(); ++i) {
-      const GPUDeviceContext* idc =
-          static_cast<GPUDeviceContext*>(context->input_device_context(i));
-      OP_REQUIRES(context, idc != nullptr,
-                  errors::Internal("Input device context ", i,
-                                   " was not set properly."));
-      if (vlog_2) {
-        const void* base;
-        size_t len;
-        if (context->has_input(i)) {
-          if (IsRefType(context->input_dtype(i))) {
-            Tensor tensor = context->mutable_input(i, false);
-            base = DMAHelper::base(&tensor);
-            len = tensor.TotalBytes();
-          } else {
-            const Tensor& tensor = context->input(i);
-            base = DMAHelper::base(&tensor);
-            len = tensor.TotalBytes();
-          }
-          LOG(INFO) << "Input " << i << " " << base << "  " << len;
-          LOG(INFO) << "  stream[" << stream_id << "].ThenWaitFor(stream["
-                    << idc->stream_id() << "])"
-                    << ((idc->stream() == stream) ? " not needed" : "");
-        }
-      }
-      if (idc->stream() != stream) stream->ThenWaitFor(idc->stream());
-    }
-  }
   if (kernel_tracker_.get()) {
     context->set_record_memory_consumption(true);
     if (pending_cap_ > 0) {
