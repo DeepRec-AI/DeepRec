@@ -36,7 +36,7 @@ enum class Device { CPU, GPU };
 
 class FusedEmbeddingDistributedSparsePreLookUpOpTest : public OpsTestBase {
  protected:
-  void MakeOpAndSetDevice(Device deivce, int num_partitions, DataType dtype) {
+  void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
@@ -55,7 +55,7 @@ class FusedEmbeddingDistributedSparsePreLookUpOpTest : public OpsTestBase {
             .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
-}
+};
 
 TEST_F(FusedEmbeddingDistributedSparsePreLookUpOpTest, Parition3_Int64) {
   MakeOpAndSetDevice(Device::GPU, 3, DT_INT64);

@@ -402,10 +402,9 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
   float max_norm_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingDistributedSparsePostLookUp")
-                            .Device(DEVICE_GPU)
-                            .HostMemory("partition_shapes"),
-                        FusedEmbeddingDistributedSparsePostLookUpGPU);
+REGISTER_KERNEL_BUILDER(
+    Name("FusedEmbeddingDistributedSparsePostLookUp").Device(DEVICE_GPU),
+    FusedEmbeddingDistributedSparsePostLookUpGPU);
 
 class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
  public:
@@ -491,6 +490,10 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
   std::string combiner_;
   float max_norm_;
 };
+
+REGISTER_KERNEL_BUILDER(
+    Name("FusedEmbeddingDistributedSparsePostLookUpGrad").Device(DEVICE_GPU),
+    FusedEmbeddingDistributedSparsePostLookUpGradGPU);
 
 }  // namespace tensorflow
 
