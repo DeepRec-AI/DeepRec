@@ -4,9 +4,11 @@
   - [Model Structure](#model-structure)
   - [Usage](#usage)
     - [Stand-alone Training](#stand-alone-training)
-  - [Benchmark: Stand-alone Training](#benchmark-stand-alone-training)
-    - [Test Environment](#test-environment)
-    - [Performance Result](#performance-result)
+    - [Distribute Training](#distribute-training)
+  - [Benchmark](#benchmark)
+    - [Stand-alone Training](#stand-alone-training-1)
+      - [Test Environment](#test-environment)
+      - [Performance Result](#performance-result)
   - [Dataset](#dataset)
     - [Prepare](#prepare)
     - [Fields](#fields)
@@ -53,23 +55,45 @@ The triangles represent mlp network. The inputs consists of dense features and s
 4.  Training.  
     ```
     cd /root/
-    python train_stand.py
+    python train.py
+    ```
+    Use argument `--bf16` to enable DeepRec BF16 in deep model.
+    ```
+    python train.py --bf16
     ```
     Use arguments to set up a custom configuation:
     - `--data_location`: Full path of train & eval data, default is `./data`.
     - `--output_dir`: Full path to output directory for logs and saved model, default is `./result`.
+    - `--checkpoint`: Full path to checkpoints input/output directory, default is `$(OUTPUT_DIR)/model_$(MODEL_NAME)_$(TIMESTAMPS)`
     - `--steps`: Set the number of steps on train dataset. Default will be set to 10 epoch.
     - `--batch_size`: Batch size to train. Default is 512.
-    - `--save_steps`: Set the number of steps on saving checkpoints. Default will be set to 500.
+    - `--timeline`: Save steps of profile hooks to record timeline, zero to close, defualt to 0.
+    - `--save_steps`: Set the number of steps on saving checkpoints, zero to close. Default will be set to 0.
     - `--keep_checkpoint_max`: Maximum number of recent checkpoint to keep. Default is 1.
     - `--learning_rate`: Learning rate for network. Default is 0.1.
+    - `--interaction_op`: Choose interaction op before top MLP layer("dot", "cat"). Default to "cat".
+    - `--bf16`: Enable DeepRec BF16 feature in DeepRec. Use FP32 by default.
+    - `--no_eval`: Do not evaluate trained model by eval dataset.
+    - `--inter`: Set inter op parallelism threads. Default to 0.
+    - `--intra`: Set intra op parallelism threads. Default to 0.
+    - `--input_layer_partitioner`: Slice size of input layer partitioner(units MB).
+    - `--dense_layer_partitioner`: Slice size of dense layer partitioner(units kB).
+    - `--protocol`: Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
 
-<!-- ### Distribute Training
-How to train distribute model -->
 
-## Benchmark: Stand-alone Training
+### Distribute Training
+1. Prepare a K8S cluster and shared storage volume.
+2. Create a PVC(PeritetVolumeClaim) for storage volumn in cluster.
+3. Prepare docker image by DockerFile.
+4. Edit k8s yaml file
+- `replicas`: numbers of cheif, worker, ps.
+- `image`: where nodes can pull the docker image.
+- `claimName`: PVC name.
 
-### Test Environment
+## Benchmark
+### Stand-alone Training
+
+#### Test Environment
 The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **ecs.hfg7.2xlarge**](https://help.aliyun.com/document_detail/25378.html?spm=5176.2020520101.vmBInfo.instanceType.4a944df5PvCcED#hfg7).
 - Hardware 
   - Model name:          Intel(R) Xeon(R) Platinum 8369HC CPU @ 3.30GHz
@@ -86,7 +110,7 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
   - Docker:                 20.10.9
   - Python:                 3.6.8
 
-### Performance Result
+#### Performance Result
 
 <table>
     <tr>
