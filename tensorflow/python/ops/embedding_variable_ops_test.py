@@ -100,7 +100,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForExport(self):
     print("testEmbeddingVariableForExport")
-    ev_config = variables.EVConfig(filter_freq=1)
+    ev_config = variables.EVConfig(counter_filter_strategy=variables.CounterFilterStrategy(filter_freq=1))
     var = variable_scope.get_embedding_variable("var_1", embedding_dim=3,
             initializer=init_ops.ones_initializer(dtypes.float32), steps_to_live=10000, ev=ev_config)
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
@@ -913,7 +913,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       print(emb2.tolist())
       for i in range(0, 6):
         for j in range(0, 3):
-          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+          self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j], delta=1e-05)
 
   def testEmbeddingVariableForAdamAsync(self):
     print("testEmbeddingVariableForAdamAsync")

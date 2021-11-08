@@ -70,7 +70,6 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/distribute:values_test "\
 "-//tensorflow/python/distribute:parameter_server_strategy_test "\
 "-//tensorflow/python/eager:remote_test "\
-"-//tensorflow/python:embedding_variable_ops_test "\
 "-//tensorflow/python/keras/distribute:multi_worker_fault_tolerance_test "\
 "-//tensorflow/python/keras:callbacks_test "\
 "-//tensorflow/python/keras:core_test "\
