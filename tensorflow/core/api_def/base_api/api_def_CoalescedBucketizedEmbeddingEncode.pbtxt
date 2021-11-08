@@ -1,0 +1,15 @@
+op {
+  graph_op_name: "CoalescedBucketizedEmbeddingEncode"
+  in_arg {
+    name: "ids"
+  }
+  in_arg {
+    name: "local_offset"
+  }
+  in_arg {
+    name: "global_offset"
+  }
+  out_arg {
+    name: "output"
+  }
+}

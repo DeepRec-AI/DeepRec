@@ -1024,6 +1024,130 @@ class SafeEmbeddingLookupSparseTest(test.TestCase):
       self.assertRaises(ValueError, embedding_ops.safe_embedding_lookup_sparse,
                         embedding_weights, sparse_ids, sparse_weights)
 
+  @test_util.run_deprecated_v1
+  def test_safe_embedding_lookup_sparse_multidim(self):
+    weight_values = [1., 2., 0.5, 1., 2., 3., 4., 0.1]
+    values = [1, 2, 3, 4, 5, 6, 7, 8]
+    indices = [[0,0,0], [0,0,1], [0,1,0], [1,0,0], [1,1,0], [1,1,1], [1,1,2], [2,0,0]]
+    dense_shape = [3, 3, 3]
+    sp_ids = sparse_tensor.SparseTensor(
+        constant_op.constant(indices, dtypes.int64),
+        constant_op.constant(values, dtypes.int32),
+        constant_op.constant(dense_shape, dtypes.int64))
+    sp_weights = sparse_tensor.SparseTensor(
+        constant_op.constant(indices, dtypes.int64),
+        constant_op.constant(weight_values, dtypes.float32),
+        constant_op.constant(dense_shape, dtypes.int64))
+    vocab_size = 13
+    batch_size = 5
+    param_shape = [2]
+    num_shards = 1
+    dtype = dtypes.float32
+    combiner1 = ['mean', 'sum']
+    expect_embedding1 = [[1.75, 1.75],
+                         [5, 5],
+                         [0.1, 0.1]]
+    weight_axis1 = 2
+    use_weight1 = True
+    combiner2 = ['min', 'max']
+    expect_embedding2 = [[0.5, 0.5],
+                         [1.0, 1.0],
+                         [0.1, 0.1]]
+    weight_axis2 = 2
+    use_weight2 = True
+    combiner3 = ['sqrtn', 'sum']
+    expect_embedding3 = [[2.214, 2.214],
+                         [3.162, 3.162],
+                         [1., 1.]]
+    weight_axis3 = 1
+    use_weight3 = True
+    combiner4 = ['mean', 'max']
+    expect_embedding4 = [[1., 1.],
+                         [1., 1.],
+                         [1., 1.]]
+    weight_axis4 = 2
+    use_weight4 = False
+    combiner5 = ['tile', 'sum']
+    expect_embedding5 = [[3., 3., 0.5, 0.5, 0., 0.],
+                         [1., 1., 9., 9., 0., 0.],
+                         [0.1, 0.1, 0., 0., 0., 0.]]
+    weight_axis5 = 2
+    use_weight5 = True
+    combiner6 = ['mean', 'tile']
+    expect_embedding6 = [[0.75, 0.75, 1., 1., 0., 0.],
+                         [0.75, 0.75, 0.75, 0.75, 1., 1.],
+                         [1., 1., 0., 0., 0., 0.]]
+    weight_axis6 = 1
+    use_weight6 = True
+    combiner7 = ['sum']
+    expect_embedding7 = [[[3., 3.], [0.5, 0.5], [0., 0.]],
+                         [[1., 1.], [9., 9.], [0., 0.]],
+                         [[0.1, 0.1], [0., 0.], [0., 0.]]]
+    weight_axis7 = 2
+    use_weight7 = True
+    with self.cached_session():
+      p, params, feed_dict = _EmbeddingParams(
+          num_shards, vocab_size, shape=param_shape, dtype=dtype)
+      embedding_comb1 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight1 else None,
+          combiners=combiner1,
+          weight_axis=weight_axis1)
+      embedding_comb2 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight2 else None,
+          combiners=combiner2,
+          weight_axis=weight_axis2)
+      embedding_comb3 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight3 else None,
+          combiners=combiner3,
+          weight_axis=weight_axis3)
+      embedding_comb4 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight4 else None,
+          combiners=combiner4,
+          weight_axis=weight_axis4)
+      embedding_comb5 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight5 else None,
+          combiners=combiner5,
+          weight_axis=weight_axis5)
+      embedding_comb6 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight6 else None,
+          combiners=combiner6,
+          weight_axis=weight_axis6)
+      embedding_comb7 = embedding_ops.safe_embedding_lookup_multi_dim(
+          p,
+          sp_ids,
+          sp_weights if use_weight7 else None,
+          combiners=combiner7,
+          weight_axis=weight_axis7)
+      self.assertEqual(embedding_comb1.dtype, dtypes.float32)
+      tf_embedding1 = embedding_comb1.eval()
+      tf_embedding2 = embedding_comb2.eval()
+      tf_embedding3 = embedding_comb3.eval()
+      tf_embedding4 = embedding_comb4.eval()
+      tf_embedding5 = embedding_comb5.eval()
+      tf_embedding6 = embedding_comb6.eval()
+      tf_embedding7 = embedding_comb7.eval()
+      rtol = 1e-2
+      atol = rtol
+      self.assertAllClose(expect_embedding1, tf_embedding1, rtol, atol)
+      self.assertAllClose(expect_embedding2, tf_embedding2, rtol, atol)
+      self.assertAllClose(expect_embedding3, tf_embedding3, rtol, atol)
+      self.assertAllClose(expect_embedding4, tf_embedding4, rtol, atol)
+      self.assertAllClose(expect_embedding5, tf_embedding5, rtol, atol)
+      self.assertAllClose(expect_embedding6, tf_embedding6, rtol, atol)
+      self.assertAllClose(expect_embedding7, tf_embedding7, rtol, atol)
+
 
 class DynamicStitchOpTest(test.TestCase):
 

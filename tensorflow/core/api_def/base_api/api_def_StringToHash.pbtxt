@@ -1,0 +1,34 @@
+op {
+  graph_op_name: "StringToHash"
+  in_arg {
+    name: "input"
+    description: <<END
+The strings to hash.
+END
+  }
+  out_arg {
+    name: "output"
+    description: <<END
+A Tensor of the same shape as the input `string_tensor`.
+END
+  }
+  attr {
+    name: "hash_type"
+    description: <<END
+The type to hash.
+END
+  }
+  attr {
+    name: "allow_neg"
+    description: <<END
+Allow output negative.
+END
+  }
+  attr {
+    name: "num_buckets"
+    description: <<END
+The number of buckets.
+END
+  }
+  summary: "Converts each string in the input Tensor to its hash mod by a number of buckets by specified hash function."
+}

@@ -5259,6 +5259,8 @@ cc_library(
         ":sparse_add_grad_op",
         ":sparse_add_op",
         ":sparse_concat_ali_op",
+        ":sparse_valid_cutoff_op",
+        ":sparse_reverse_op",
         ":sparse_cross_op",
         ":sparse_dense_binary_op_shared",
         ":sparse_fill_empty_rows_op",
@@ -5305,6 +5307,17 @@ tf_kernel_library(
 tf_kernel_library(
     name = "sparse_fill_empty_rows_op",
     prefix = "sparse_fill_empty_rows_op",
+    deps = SPARSE_DEPS,
+)
+
+tf_kernel_library(
+    name = "sparse_valid_cutoff_op",
+    prefix = "sparse_valid_cutoff_op",
+    deps = SPARSE_DEPS,
+)
+tf_kernel_library(
+    name = "sparse_reverse_op",
+    prefix = "sparse_reverse_op",
     deps = SPARSE_DEPS,
 )
 
@@ -8549,6 +8562,19 @@ tf_kernel_library(
         "//tensorflow/core/summary:schema",
         "//tensorflow/core/summary:summary_db_writer",
         "//tensorflow/core/summary:summary_file_writer",
+    ],
+)
+
+tf_kernel_library(
+    name = "feature_column_ops",
+    srcs = ["feature_column_ops.cc"],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core:feature_column_ops_op_lib",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:core_cpu_lib",
+        "//third_party/eigen3",
     ],
 )
 

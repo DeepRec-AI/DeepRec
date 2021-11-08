@@ -46,6 +46,7 @@ py_library(
         "//tensorflow/python:variable_scope",
         "//tensorflow/python:variables",
         "//tensorflow/python/keras:engine",
+        "//tensorflow/python:feature_column_ops_gen",
         "@six_archive//:six",
     ],
 )
@@ -207,7 +208,7 @@ py_library(
 
 py_library(
     name = "utils",
-    srcs = ["utils.py"],
+    srcs = ["utils.py", "coalesced_utils.py"],
     srcs_version = "PY2AND3",
     deps = [
         "//tensorflow/python:array_ops",

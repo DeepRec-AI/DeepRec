@@ -125,12 +125,16 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
     # remove "'linear//weight' + '/'" and ':0'.
     real_slot_name = slot.name[len(primary.op.name + "/"):-2]
     slice_info = primary._save_slice_info
-    slot._set_save_slice_info(variables.Variable.SaveSliceInfo(
-        slice_info.full_name + "/" + real_slot_name,
-        slice_info.full_shape[:],
-        slice_info.var_offset[:],
-        slice_info.var_shape[:],
-        var_full_name=slice_info.var_full_name + "/" + real_slot_name))
+    if isinstance(slice_info, variables.Variable.SaveSliceInfo):
+      slot._set_save_slice_info(variables.Variable.SaveSliceInfo(
+          slice_info.full_name + "/" + real_slot_name,
+          slice_info.full_shape[:],
+          slice_info.var_offset[:],
+          slice_info.var_shape[:],
+          var_full_name=slice_info.var_full_name + "/" + real_slot_name))
+    else:
+      slot._set_save_slice_info(
+            slice_info.slot_save_slice_info(real_slot_name))
   # pylint: enable=protected-access
   return slot
 

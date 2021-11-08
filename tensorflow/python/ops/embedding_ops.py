@@ -442,6 +442,17 @@ def embedding_lookup_v2(params, ids, max_norm=None, name=None):
   return embedding_lookup(params, ids, "div", name, max_norm=max_norm)
 
 
+def _tile_combine_embedding(embeddings, segment_ids, column_ids, sp_shape):
+  column_ids = math_ops.cast(column_ids, dtypes.int32)
+  sp_shape = math_ops.cast(sp_shape, dtypes.int32)
+  segment_ids = segment_ids * sp_shape[1] + column_ids
+  total_size = sp_shape[0] * sp_shape[1]
+  embeddings = math_ops.unsorted_segment_sum(embeddings, segment_ids, total_size)
+  embeddings = array_ops.reshape(
+      embeddings, [sp_shape[0], sp_shape[1] * array_ops.shape(embeddings)[-1]])
+  return embeddings
+
+
 @tf_export(v1=["nn.embedding_lookup_sparse"])
 def embedding_lookup_sparse(params,
                             sp_ids,
@@ -475,11 +486,11 @@ def embedding_lookup_sparse(params,
       if `len(params) > 1`. Currently `"div"` and `"mod"` are supported. Default
       is `"mod"`. See `tf.nn.embedding_lookup` for more details.
     name: Optional name for the op.
-    combiner: A string specifying the reduction op. Currently "mean", "sqrtn"
-      and "sum" are supported. "sum" computes the weighted sum of the embedding
-      results for each row. "mean" is the weighted sum divided by the total
-      weight. "sqrtn" is the weighted sum divided by the square root of the sum
-      of the squares of the weights.
+    combiner: A string specifying the reduction op. Currently "mean", "sqrtn",
+      "tile" and "sum" are supported. "sum" computes the weighted sum of the
+      embedding results for each row. "mean" is the weighted sum divided by the
+      total weight. "sqrtn" is the weighted sum divided by the square root of the
+      sum of the squares of the weights.
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value, before combining.
 
@@ -527,7 +538,7 @@ def embedding_lookup_sparse(params,
     logging.warn("The default value of combiner will change from \"mean\" "
                  "to \"sqrtn\" after 2016/11/01.")
     combiner = "mean"
-  if combiner not in ("mean", "sqrtn", "sum"):
+  if combiner not in ("mean", "sqrtn", "sum", "tile"):
     raise ValueError("combiner must be one of 'mean', 'sqrtn' or 'sum'")
   if isinstance(params, variables.PartitionedVariable):
     params = list(params)  # Iterate to get the underlying Variables.
@@ -606,6 +617,12 @@ def embedding_lookup_sparse(params,
         weight_sum = math_ops.segment_sum(weights_squared, segment_ids)
         weight_sum_sqrt = math_ops.sqrt(weight_sum)
         embeddings = math_ops.div(embeddings, weight_sum_sqrt, name=name)
+      elif combiner == "tile":
+        column_ids = sp_ids.indices[:, 1]
+        embeddings = _tile_combine_embedding(embeddings,
+                                             segment_ids,
+                                             column_ids,
+                                             sp_ids.dense_shape)
       else:
         assert False, "Unrecognized combiner"
     else:
@@ -619,6 +636,13 @@ def embedding_lookup_sparse(params,
       elif combiner == "sqrtn":
         embeddings = math_ops.sparse_segment_sqrt_n(
             embeddings, idx, segment_ids, name=name)
+      elif combiner == "tile":
+        embeddings = array_ops.gather(embeddings, idx)
+        column_ids = sp_ids.indices[:, 1]
+        embeddings = _tile_combine_embedding(embeddings,
+                                             segment_ids,
+                                             column_ids,
+                                             sp_ids.dense_shape)
       else:
         assert False, "Unrecognized combiner"
 
@@ -652,11 +676,11 @@ def embedding_lookup_sparse_v2(params,
     sp_weights: either a `SparseTensor` of float / double weights, or `None` to
       indicate all weights should be taken to be 1. If specified, `sp_weights`
       must have exactly the same shape and indices as `sp_ids`.
-    combiner: A string specifying the reduction op. Currently "mean", "sqrtn"
-      and "sum" are supported. "sum" computes the weighted sum of the embedding
-      results for each row. "mean" is the weighted sum divided by the total
-      weight. "sqrtn" is the weighted sum divided by the square root of the sum
-      of the squares of the weights.
+    combiner: A string specifying the reduction op. Currently "mean", "sqrtn",
+      "tile" and "sum" are supported. "sum" computes the weighted sum of the
+      embedding results for each row. "mean" is the weighted sum divided by the
+      total weight. "sqrtn" is the weighted sum divided by the square root of the
+      sum of the squares of the weights.
     max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
       than this value, before combining.
     name: Optional name for the op.
@@ -705,6 +729,223 @@ def embedding_lookup_sparse_v2(params,
                                  combiner, max_norm)
 
 
+@tf_export("nn.embedding_lookup_sparse_multi_dim")
+def embedding_lookup_sparse_multi_dim(params,
+                                      sp_ids,
+                                      sp_weights,
+                                      partition_strategy="mod",
+                                      name=None,
+                                      combiners=None,
+                                      max_norm=None,
+                                      weight_axis=-1):
+  """Computes embeddings for the given ids and weights like
+     embedding_lookup_sparse.
+
+  Args:
+    params: A single tensor representing the complete embedding tensor, or a
+      list of P tensors all of same shape except for the first dimension,
+      representing sharded embedding tensors.  Alternatively, a
+      `PartitionedVariable`, created by partitioning along dimension 0. Each
+      element must be appropriately sized for ``"div"`` `partition_strategy`.
+    sp_ids: N x M `SparseTensor` of int64 ids where N is typically batch size
+      and M is arbitrary.
+    sp_weights: either a `SparseTensor` of float / double weights, or `None` to
+      indicate all weights should be taken to be 1. If specified, `sp_weights`
+      must have exactly the same shape and indices as `sp_ids`.
+    combiners: A list of string specifying the reduction op. Currently "mean",
+      "sqrtn", "tile" and "sum" are supported. "sum" computes the weighted sum of
+      the embedding results for each row. "mean" is the weighted sum divided by the 
+      total weight. "sqrtn" is the weighted sum divided by the square root of the 
+      sum of the squares of the weights.
+    max_norm: If not `None`, each embedding is clipped if its l2-norm is larger
+      than this value, before combining.
+    name: Optional name for the op.
+    weight_axis: Specify axis to use weight.
+
+  Returns:
+    A dense tensor representing the combined embeddings for the
+    sparse ids. For each row in the dense tensor represented by `sp_ids`, the op
+    looks up the embeddings for all ids in that row, multiplies them by the
+    corresponding weight, and combines these embeddings as specified.
+
+  Raises:
+    TypeError: If `sp_ids` is not a `SparseTensor`, or if `sp_weights` is
+      neither `None` nor `SparseTensor`.
+    ValueError: If `combiner` is not one of {"mean", "sqrtn", "sum", "tile"}.
+  """
+
+  if combiners is None:
+    logging.warn("The default value of combiner will change from \"mean\" "
+                 "to \"sqrtn\" after 2016/11/01.")
+    combiners = ["mean"]
+  if not isinstance(combiners, (list, tuple)):
+    combiners = (combiners,)
+  for comb in combiners:
+    if comb not in ("mean", "sqrtn", "sum", "max", "min", "tile"):
+      raise ValueError("combiner must be one of 'mean', 'sqrtn', 'sum', 'max' or 'min'")
+  if isinstance(params, variables.PartitionedVariable):
+    params = list(params)  # Iterate to get the underlying Variables.
+  if not isinstance(params, list):
+    params = [params]
+  if not isinstance(sp_ids, sparse_tensor.SparseTensor):
+    raise TypeError("sp_ids must be SparseTensor")
+  if not len(sp_ids.shape) == len(combiners) + 1:
+    raise ValueError("SparseTensor to embedding lookup rank should be combiner nums -1,"
+        "sparse tensor rank: {}, num combiners: {}".format(len(sp_ids.shape), len(combiners)))
+  if weight_axis is None:
+    weight_axis = -1
+  if weight_axis < 0:
+    weight_axis = len(sp_ids.shape) + weight_axis
+  ignore_weights = sp_weights is None
+  if not ignore_weights:
+    if not isinstance(sp_weights, sparse_tensor.SparseTensor):
+      raise TypeError("sp_weights must be either None or SparseTensor")
+    sp_ids.values.get_shape().assert_is_compatible_with(
+        sp_weights.values.get_shape())
+    sp_ids.indices.get_shape().assert_is_compatible_with(
+        sp_weights.indices.get_shape())
+    sp_ids.dense_shape.get_shape().assert_is_compatible_with(
+        sp_weights.dense_shape.get_shape())
+  with ops.name_scope(name, "embedding_lookup_sparse",
+                      params + [sp_ids]) as name:
+    ids = sp_ids.values
+    ids, idx = array_ops.unique(ids)
+    embeddings = embedding_lookup(
+        params, ids, partition_strategy=partition_strategy, max_norm=max_norm)
+    if embeddings.dtype in (dtypes.float16, dtypes.bfloat16):
+      embeddings = math_ops.to_float(embeddings)
+    weights = None if sp_weights is None else sp_weights.values
+    embeddings, _ = _combine_embedding(embeddings,
+                                       sp_ids.indices,
+                                       sp_ids.dense_shape,
+                                       combiners,
+                                       unique_idx=idx,
+                                       weights=weights,
+                                       weight_axis=weight_axis,
+                                       name=name)
+    return embeddings
+
+
+def _internal_combine(embeddings, segment_ids, combiner,
+                      weights=None, max_size=None, seg_offset=None,
+                      use_weight=False,
+                      name=None):
+  if combiner == "sum":
+    embeddings = math_ops.segment_sum(embeddings, segment_ids, name=name)
+  elif combiner == "mean":
+    if use_weight:
+      embeddings = math_ops.segment_sum(embeddings, segment_ids)
+      weight_sum = math_ops.segment_sum(weights, segment_ids)
+      embeddings = math_ops.div(embeddings, weight_sum, name=name)
+    else:
+      embeddings = math_ops.segment_mean(embeddings, segment_ids, name=name)
+  elif combiner == "sqrtn":
+    embeddings = math_ops.segment_sum(embeddings, segment_ids)
+    if use_weight:
+      weights = math_ops.pow(weights, 2)
+    else:
+      weights = array_ops.ones_like(segment_ids)
+    weight_sum = math_ops.segment_sum(weights, segment_ids)
+    weight_sum_sqrt = math_ops.sqrt(weight_sum)
+    embeddings = math_ops.div(embeddings, weight_sum_sqrt, name=name)
+  elif combiner == "max":
+    embeddings = math_ops.segment_max(embeddings, segment_ids, name=name)
+  elif combiner == "min":
+    embeddings = math_ops.segment_min(embeddings, segment_ids, name=name)
+  elif combiner == "tile":
+    assert seg_offset is not None and max_size is not None, \
+        "seg_offset or max_size not set when combine with tile"
+    seg_offset = math_ops.cast(seg_offset, dtypes.int32)
+    max_size = math_ops.cast(max_size, dtypes.int32)
+    dynamic_ids = seg_offset + segment_ids * max_size
+    full_size = (math_ops.reduce_max(segment_ids) + 1) * max_size
+    embeddings = math_ops.unsorted_segment_sum(embeddings, dynamic_ids, full_size)
+    embeddings = array_ops.reshape(
+        embeddings, [-1, array_ops.shape(embeddings)[-1] * max_size])
+  else:
+    assert False, "Unrecognized combiner"
+  if weights is not None:
+    weights = math_ops.segment_mean(weights, segment_ids)
+  return embeddings, weights
+
+
+def _get_valid_embeddings(embeddings, weights, segment_ids, cur_indices, next_segment_ids):
+  valid_index, valid_idx = array_ops.unique(next_segment_ids)
+  embeddings = array_ops.gather(embeddings, valid_index)
+  weights = array_ops.gather(weights, valid_index)
+  segment_ids = math_ops.segment_max(segment_ids, valid_idx)
+  cur_indices = math_ops.segment_max(cur_indices, valid_idx)
+  return embeddings, weights, segment_ids, cur_indices
+
+
+def _combine_embedding(embeddings,
+                       indices,
+                       dense_shape,
+                       combiners,
+                       segment_ids=None,
+                       unique_idx=None,
+                       weights=None,
+                       weight_axis=1,
+                       name=None):
+  assert weight_axis > 0, "weight_axis should more than 1 in " \
+      "_internal_embedding_combine, current weight_axis: {}".format(weight_axis)
+  if segment_ids is None:
+    segment_ids = indices[:, 0]
+  if segment_ids.dtype != dtypes.int32:
+    segment_ids = math_ops.cast(segment_ids, dtypes.int32)
+  embeddings = array_ops.gather(embeddings, unique_idx)
+  if weights is None:
+    use_weight = False
+    weights = array_ops.ones([array_ops.shape(embeddings)[0]], dtype=dtypes.float32)
+  else:
+    use_weight = True
+  if weights.dtype != embeddings.dtype:
+    weights = math_ops.cast(weights, embeddings.dtype)
+  # Reshape weights to allow broadcast
+  ones = array_ops.fill(
+      array_ops.expand_dims(array_ops.rank(embeddings) - 1, 0), 1)
+  bcast_weights_shape = array_ops.concat([array_ops.shape(weights), ones],
+                                         0)
+  
+  orig_weights_shape = weights.get_shape()
+  weights = array_ops.reshape(weights, bcast_weights_shape)
+  
+  # Set the weight shape, since after reshaping to bcast_weights_shape,
+  # the shape becomes None.
+  if embeddings.get_shape().ndims is not None:
+    weights.set_shape(
+        orig_weights_shape.concatenate(
+            [1 for _ in range(embeddings.get_shape().ndims - 1)]))
+  embeddings *= weights
+  segment_ids_list = [segment_ids]
+  for i in range(len(combiners) - 1):
+    tmp_indices = math_ops.cast(indices[:, i + 1], dtypes.int32)
+    segment_ids = segment_ids * math_ops.cast(dense_shape[i + 1], dtypes.int32) + tmp_indices
+    segment_ids_list.append(segment_ids)
+  for i in range(len(combiners)):
+    axis = len(combiners) - i
+    if not i == 0:
+      cur_indices = indices[:, axis]
+      embeddings, weights, segment_ids, cur_indice_offset = \
+          _get_valid_embeddings(embeddings,
+                                weights,
+                                segment_ids_list[axis - 1],
+                                cur_indices,
+                                segment_ids_list[axis])
+    else:
+      cur_indice_offset = indices[:, axis]
+      segment_ids = segment_ids_list[axis - 1]
+    embeddings, weights = _internal_combine(embeddings,
+                                            segment_ids,
+                                            combiners[axis - 1],
+                                            weights=weights,
+                                            max_size=dense_shape[axis],
+                                            seg_offset=cur_indice_offset,
+                                            use_weight=use_weight and (weight_axis == axis),
+                                            name=name + str(axis))
+  return embeddings, weights
+
+
 @tf_export("nn.safe_embedding_lookup_sparse", v1=[])
 def safe_embedding_lookup_sparse_v2(embedding_weights,
                                     sparse_ids,
@@ -745,8 +986,8 @@ def safe_embedding_lookup_sparse_v2(embedding_weights,
       float weights corresponding to `sparse_ids`, or `None` if all weights are
       be assumed to be 1.0.
     combiner: A string specifying how to combine embedding results for each
-      entry. Currently "mean", "sqrtn" and "sum" are supported, with "mean" the
-      default.
+      entry. Currently "mean", "sqrtn", "tile" and "sum" are supported, with
+      "mean" the default.
     default_id: The id to use for an entry with no features.
     max_norm: If not `None`, all embeddings are l2-normalized to max_norm before
       combining.
@@ -777,7 +1018,8 @@ def safe_embedding_lookup_sparse(embedding_weights,
                                  default_id=None,
                                  name=None,
                                  partition_strategy="div",
-                                 max_norm=None):
+                                 max_norm=None,
+                                 prune=True):
   """Lookup embedding results, accounting for invalid IDs and empty features.
 
   The partitioned embedding in `embedding_weights` must all be the same shape
@@ -857,11 +1099,12 @@ def safe_embedding_lookup_sparse(embedding_weights,
                                                   sparse_weights.values,
                                                   sparse_ids.dense_shape)
 
-    # Prune invalid ids and weights.
-    sparse_ids, sparse_weights = _prune_invalid_ids(sparse_ids, sparse_weights)
-    if combiner != "sum":
-      sparse_ids, sparse_weights = _prune_invalid_weights(
-          sparse_ids, sparse_weights)
+    if prune:
+      # Prune invalid ids and weights.
+      sparse_ids, sparse_weights = _prune_invalid_ids(sparse_ids, sparse_weights)
+      if combiner != "sum":
+        sparse_ids, sparse_weights = _prune_invalid_weights(
+            sparse_ids, sparse_weights)
 
     # Fill in dummy values for empty features, if necessary.
     sparse_ids, is_row_empty = sparse_ops.sparse_fill_empty_rows(
@@ -902,6 +1145,74 @@ def safe_embedding_lookup_sparse(embedding_weights,
             (tensor_shape.Dimension(original_rank_dim) - 1).value).concatenate(
                 result.get_shape()[1:]))
     return final_result
+
+
+@tf_export("nn.safe_embedding_lookup_multi_dim")
+def safe_embedding_lookup_multi_dim(embedding_weights,
+                                    sparse_ids,
+                                    sparse_weights=None,
+                                    combiners=['mean'],
+                                    name=None,
+                                    partition_strategy='div',
+                                    max_norm=None,
+                                    weight_axis=1,
+                                    prune=True):
+  if combiners is None:
+    combiners = ["mean"]
+  if not isinstance(combiners, (list, tuple)):
+    combiners = (combiners,)
+  for comb in combiners:
+    if comb not in ("mean", "sqrtn", "sum", "max", "min", "tile"):
+      raise ValueError("combiner must be one of 'mean', 'sqrtn', 'sum', 'max', 'min' or 'tile'")
+  combiners = list(combiners)
+  real_combiner_size = len(combiners)
+  tile_combiner_nums = sum([1 if comb == 'tile' else 0 for comb in combiners])
+  if sparse_ids.shape is not None and sparse_ids.shape.rank > len(combiners) + 1:
+    tile_num = (sparse_ids.shape.rank - 1 - len(combiners))
+    combiners = ['tile'] * tile_num + combiners
+  if embedding_weights is None:
+    raise ValueError('Missing embedding_weights %s.' % embedding_weights)
+  if isinstance(embedding_weights, variables.PartitionedVariable):
+    embedding_weights = list(embedding_weights)  # get underlying Variables.
+  if not isinstance(embedding_weights, list):
+    embedding_weights = [embedding_weights]
+  if len(embedding_weights) < 1:
+    raise ValueError('Missing embedding_weights %s.' % embedding_weights)
+  dtype = sparse_weights.dtype if sparse_weights is not None else None
+  embedding_weights = [
+      ops.convert_to_tensor(w, dtype=dtype) for w in embedding_weights
+  ]
+  with ops.name_scope(name, 'embedding_lookup',
+                      embedding_weights + [sparse_ids,
+                                           sparse_weights]) as scope:
+    # Reshape higher-rank sparse ids and weights to linear segment ids.
+    original_shape = sparse_ids.dense_shape
+    if prune:
+      # Prune invalid ids and weights.
+      sparse_ids, sparse_weights = _prune_invalid_ids(sparse_ids, sparse_weights)
+      if 'sum' not in combiners:
+        sparse_ids, sparse_weights = _prune_invalid_weights(
+            sparse_ids, sparse_weights)
+    result = embedding_lookup_sparse_multi_dim(
+        embedding_weights,
+        sparse_ids,
+        sparse_weights,
+        combiners=combiners,
+        partition_strategy=partition_strategy,
+        name=None,
+        max_norm=max_norm,
+        weight_axis=weight_axis)
+    batch_size = math_ops.cast(original_shape[0], dtype=dtypes.int32)
+    pad_list = [[0, batch_size - array_ops.shape(result)[0]], [0, 0]]
+    result = array_ops.pad(result, pad_list)
+    output_shape = array_ops.concat([
+      array_ops.slice(math_ops.cast(original_shape, dtypes.int32),
+                      [0],
+                      [array_ops.size(original_shape) - real_combiner_size]),
+      [-1]
+      ], 0)
+    result = array_ops.reshape(result, output_shape)
+    return result
 
 
 def _prune_invalid_ids(sparse_ids, sparse_weights):

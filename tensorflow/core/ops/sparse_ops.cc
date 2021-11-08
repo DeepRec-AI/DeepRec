@@ -249,6 +249,53 @@ REGISTER_OP("SparseConcat")
       return Status::OK();
     });
 
+REGISTER_OP("SparseValidCutoff")
+    .Input("indices: int64")
+    .Input("values: T")
+    .Input("dense_shape: int64")
+    .Output("output_indices: int64")
+    .Output("output_values: T")
+    .Output("output_dense_shape: int64")
+    .Attr("axis: int")
+    .Attr("length: int")
+    .Attr("side: {'left', 'right'} = 'right'")
+    .Attr("T: type")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle indices;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &indices));
+      ShapeHandle shape;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &shape));
+      c->set_output(
+          0, c->Matrix(InferenceContext::kUnknownDim, c->Dim(indices, 1)));
+      c->set_output(1, c->Vector(c->UnknownDim()));
+      c->set_output(2, shape);
+      return Status::OK();
+    });
+
+REGISTER_OP("SparseReverse")
+    .Input("indices: int64")
+    .Input("values: T")
+    .Input("dense_shape: int64")
+    .Output("output_indices: int64")
+    .Output("output_values: T")
+    .Output("output_dense_shape: int64")
+    .Attr("axis: int")
+    .Attr("T: type")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle indices;
+      ShapeHandle values;
+      ShapeHandle shape;
+
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 2, &indices));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 1, &values));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 1, &shape));
+
+      c->set_output(0, indices);
+      c->set_output(1, values);
+      c->set_output(2, shape);
+      return Status::OK();
+    });
+
 REGISTER_OP("SparseCross")
     .Input("indices: N * int64")
     .Input("values: sparse_types")

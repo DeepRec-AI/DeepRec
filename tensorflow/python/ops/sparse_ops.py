@@ -912,6 +912,44 @@ def sparse_split(keyword_required=KeywordRequired(),
   return sparse_tensors
 
 
+@tf_export("sparse.valid_cutoff")
+def sparse_valid_cutoff(sp_input, axis, cutoff_length,
+                        side="right", reverse=False,
+                        name=None):
+  """Cutoff a `SparseTensor` along `axis`."""
+  sp_input = _convert_to_sparse_tensor(sp_input)
+  with ops.name_scope(name, "SparseValidCutoff", [sp_input]) as name:
+    output_indices, output_values, output_shape = gen_sparse_ops.sparse_valid_cutoff(
+        sp_input.indices,
+        sp_input.values,
+        sp_input.dense_shape,
+        axis,
+        cutoff_length,
+        side,
+        name=name)
+    sp_out = sparse_tensor.SparseTensor(output_indices, output_values,
+                                        output_shape)
+    if reverse:
+      sp_out = sparse_reverse(sp_out, axis)
+    return sp_out
+
+
+@tf_export("sparse.reverse")
+def sparse_reverse(sp_input, axis, name=None):
+  """Reverse a `SparseTensor` along `axis`."""
+  sp_input = _convert_to_sparse_tensor(sp_input)
+  with ops.name_scope(name, "SparseReverse", [sp_input]) as name:
+    output_indices, output_values, output_shape = gen_sparse_ops.sparse_reverse(
+        sp_input.indices,
+        sp_input.values,
+        sp_input.dense_shape,
+        axis,
+        name=name)
+    sp_out = sparse_tensor.SparseTensor(output_indices, output_values,
+                                        output_shape)
+    return sparse_reorder(sp_out)
+
+
 @tf_export("sparse.split", v1=[])
 def sparse_split_v2(sp_input=None,
                     num_split=None,

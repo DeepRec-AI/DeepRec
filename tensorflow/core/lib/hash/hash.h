@@ -32,6 +32,8 @@ namespace tensorflow {
 
 extern uint32 Hash32(const char* data, size_t n, uint32 seed);
 extern uint64 Hash64(const char* data, size_t n, uint64 seed);
+extern uint64 SDBMHash64(const char* data, size_t len);
+extern uint64 DJB2Hash64(const char* data, size_t len);
 
 extern uint64 Hash64V3(const char* data, size_t n, uint64 seed);
 
@@ -79,6 +81,34 @@ inline uint64 Hash64(const char* data, size_t n) {
 
 inline uint64 Hash64(const string& str) {
   return Hash64(str.data(), str.size());
+}
+
+inline uint64 MurMurHash64(const char* data, size_t n) {
+  return Hash64(data, n, 0);
+}
+
+inline uint64 MurMurHash64(const string& str) {
+  return MurMurHash64(str.data(), str.size());
+}
+
+inline uint64 MurMurHash64(StringPiece sp) {
+  return MurMurHash64(sp.data(), sp.size());
+}
+
+inline uint64 SDBMHash64(const string& str) {
+  return SDBMHash64(str.c_str(), str.size());
+}
+
+inline uint64 SDBMHash64(StringPiece sp) {
+  return SDBMHash64(sp.data(), sp.size());
+}
+
+inline uint64 DJB2Hash64(const string& str) {
+  return DJB2Hash64(str.c_str(), str.size());
+}
+
+inline uint64 DJB2Hash64(StringPiece sp) {
+  return DJB2Hash64(sp.data(), sp.size());
 }
 
 inline uint64 Hash64Combine(uint64 a, uint64 b) {

@@ -13,22 +13,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/kernels/string_to_hash_bucket_ali_op.h"
-
-#include "tensorflow/core/platform/strong_hash.h"
+#include "tensorflow/core/framework/common_shape_fns.h"
+#include "tensorflow/core/framework/numeric_op.h"
+#include "tensorflow/core/framework/op.h"
+#include "tensorflow/core/framework/shape_inference.h"
 
 namespace tensorflow {
 
-// StringToHashBucket is deprecated in favor of StringToHashBucketFast/Strong.
-REGISTER_KERNEL_BUILDER(Name("StringToHashBucketFast").Device(DEVICE_CPU),
-                        StringToHashBucketBatchAliOp<Fingerprint64>);
+REGISTER_OP("CoalescedBucketizedEmbeddingEncode")
+    .Input("ids: int64")
+    .Input("local_offset: int64")
+    .Input("global_offset: int64")
+    .Output("output: int64")
+    .SetIsStateful()
+    .SetShapeFn(shape_inference::UnchangedShape);
 
-REGISTER_KERNEL_BUILDER(Name("StringToHashBucketStrong").Device(DEVICE_CPU),
-                        StringToKeyedHashBucketAliOp<StrongKeyedHash>);
-
-REGISTER_KERNEL_BUILDER(Name("StringToHash64").Device(DEVICE_CPU),
-                        StringToHash64Op<Fingerprint64>);
-
-REGISTER_KERNEL_BUILDER(Name("StringToHash").Device(DEVICE_CPU),
-                        StringToHashOp);
 }  // namespace tensorflow

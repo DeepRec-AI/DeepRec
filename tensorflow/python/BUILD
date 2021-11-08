@@ -2199,6 +2199,13 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+    name = "feature_column_ops_gen",
+    visibility = [
+        "//tensorflow/python/feature_column:__pkg__"
+    ]
+)
+
+tf_gen_op_wrapper_private_py(
     name = "stateful_random_ops_gen",
     visibility = ["//learning/brain/python/ops:__pkg__"],
 )
