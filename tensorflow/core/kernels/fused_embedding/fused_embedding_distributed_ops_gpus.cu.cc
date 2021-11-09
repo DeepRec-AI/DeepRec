@@ -15,6 +15,116 @@
 #include "third_party/cub/iterator/constant_input_iterator.cuh"
 #include "third_party/cub/thread/thread_operators.cuh"
 
+/*********** debug function ***********/
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <functional>
+#include <numeric>
+#include <string>
+#include <vector>
+template <typename T>
+void printGPUTensorHelper(const T* src, const std::vector<int>& dims,
+                          const std::vector<int>& max_num_to_print,
+                          bool if_exit = true) {
+  int element_num = 1;
+  int dim_num = (int)dims.size();
+
+  printf("Tensor size: (");
+  for (int i = 0; i < dim_num; i++) {
+    element_num *= dims[i];
+    printf("%d, ", dims[i]);
+  }
+  printf(")\n");
+  T* host_buffer = new T[element_num];
+  cudaMemcpy((void*)host_buffer, (void*)src, sizeof(T) * element_num,
+             cudaMemcpyDeviceToHost);
+
+  std::vector<int> strides(dim_num, 1);
+  for (int i = dim_num - 2; i >= 0; i--) {
+    strides[i] = strides[i + 1] * dims[i + 1];
+    printf("%d ", strides[i]);
+  }
+
+  printf("================== start printing tensor =====================\n");
+
+  std::function<void(int, int)> recursive_print;
+  recursive_print = [&recursive_print, host_buffer, &dims = dims,
+                     &max_num_to_print = max_num_to_print, &strides = strides](
+                        int current_dim, int current_dim_offset) -> void {
+    if (current_dim < dims.size() - 1) {
+      for (int i = 0; i < current_dim; i++) {
+        printf(" ");
+      }
+      printf("[ dim %d\n", current_dim);
+
+      if (2 * max_num_to_print[current_dim] >= dims[current_dim]) {
+        for (int i = 0; i < dims[current_dim]; i++) {
+          recursive_print(current_dim + 1,
+                          current_dim_offset + i * strides[current_dim]);
+        }
+      } else {
+        for (int i = 0; i < max_num_to_print[current_dim]; i++) {
+          recursive_print(current_dim + 1,
+                          current_dim_offset + i * strides[current_dim]);
+        }
+        for (int i = 0; i < current_dim; i++) {
+          printf(" ");
+        }
+        printf(" ......\n");
+        for (int i = dims[current_dim] - max_num_to_print[current_dim];
+             i < dims[current_dim]; i++) {
+          recursive_print(current_dim + 1,
+                          current_dim_offset + i * strides[current_dim]);
+        }
+      }
+      for (int i = 0; i < current_dim; i++) {
+        printf(" ");
+      }
+      printf("]\n");
+    } else {
+      for (int i = 0; i < current_dim; i++) {
+        printf(" ");
+      }
+      printf("[ ");
+      printf("dim %d, offset: %d, ", current_dim, current_dim_offset);
+      if (2 * max_num_to_print[current_dim] >= dims[current_dim]) {
+        for (int i = 0; i < dims[current_dim]; i++) {
+          printf("%s ",
+                 std::to_string(
+                     host_buffer[current_dim_offset + i * strides[current_dim]])
+                     .c_str());
+        }
+      } else {
+        for (int i = 0; i < max_num_to_print[current_dim]; i++) {
+          printf("%s ",
+                 std::to_string(
+                     host_buffer[current_dim_offset + i * strides[current_dim]])
+                     .c_str());
+        }
+        printf("...... ");
+        for (int i = dims[current_dim] - max_num_to_print[current_dim];
+             i < dims[current_dim]; i++) {
+          printf("%s ",
+                 std::to_string(
+                     host_buffer[current_dim_offset + i * strides[current_dim]])
+                     .c_str());
+        }
+      }
+      printf("]\n");
+    }
+  };
+
+  recursive_print(0, 0);
+
+  printf("\n================== stop =====================\n");
+  delete[] host_buffer;
+
+  if (if_exit) {
+    exit(0);
+  }
+};
+/*********** debug function ***********/
+
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
@@ -26,11 +136,14 @@ struct IndicePair {
 };
 
 __global__ void CalcElementsOffsetPerPartition(
-    const int64_t* values_sorted, int64_t* partition_sizes,
+    const int64_t* values_sorted, int64_t* partition_sizes_accumulate,
     int64_t* elements_offset_per_partition, int nnz) {
   // dichotomy
-  const int64_t target = partition_sizes[blockIdx.x];
-  int pos = nnz / 2;
+  const int64_t target = partition_sizes_accumulate[blockIdx.x];
+  int roof = nnz;
+  int floor = 0;
+
+  int pos = (roof + floor) / 2;
   while (1) {
     if (pos == 0) {
       pos = -1;
@@ -44,20 +157,21 @@ __global__ void CalcElementsOffsetPerPartition(
       break;
     }
     if (value < target) {
-      pos = (pos + nnz) / 2;
+      floor = pos;
     } else {
-      pos = pos / 2;
+      roof = pos;
     }
+    pos = (roof + floor) / 2;
   }
   elements_offset_per_partition[blockIdx.x] = int64_t(pos + 1);
 }
 
 __global__ void GatherAndConvertToSubPartition(
-    const int64_t* values_sorted, int64_t* sub_partitioned_values,
+    const int64_t* sub_values_sorted, int64_t* sub_partitioned_values,
     const int64_t partition_start_base, const int64_t partition_size) {
   const int t_offset = blockIdx.x * blockDim.x + threadIdx.x;
   if (t_offset < partition_size) {
-    int64_t value = values_sorted[t_offset];
+    int64_t value = sub_values_sorted[t_offset];
     // rebase value to it's corresponding sub partition
     value = value - partition_start_base;
     sub_partitioned_values[t_offset] = value;
@@ -165,10 +279,16 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
     OpInputList partition_shapes;
     OP_REQUIRES_OK(ctx, ctx->input_list("partition_shapes", &partition_shapes));
 
+    partition_sizes_accumulate_.clear();
     for (const Tensor& shape : partition_shapes) {
       OP_REQUIRES(ctx, shape.dims() <= 2,
                   errors::InvalidArgument(
                       "input partition_shapes must all less than rank 2"));
+      const int64_t accu = partition_sizes_accumulate_.empty()
+                               ? shape.flat<int64>().data()[0]
+                               : shape.flat<int64>().data()[0] +
+                                     partition_sizes_accumulate_.back();
+      partition_sizes_accumulate_.push_back(accu);
     }
 
     // 2. sort the sp_values and indices
@@ -202,24 +322,31 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
         int(nnz), 0, sizeof(int64) * 8, stream);
 
     // 3. calculate how many elements for each partition
-    Tensor partition_sizes;
+    Tensor partition_sizes_accumulate;
     ctx->allocate_temp(DT_INT64,
                        TensorShape({static_cast<int64>(num_partitions_)}),
-                       &partition_sizes);
+                       &partition_sizes_accumulate);
+    cudaMemcpyAsync(partition_sizes_accumulate.flat<int64>().data(),
+                    partition_sizes_accumulate_.data(),
+                    num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice);
+
     Tensor elements_offset_per_partition;
     ctx->allocate_temp(DT_INT64,
                        TensorShape({static_cast<int64>(num_partitions_)}),
                        &elements_offset_per_partition);
+
     {
       const int blocks = num_partitions_;
       const int threads = 1;
       CalcElementsOffsetPerPartition<<<blocks, threads, 0, stream>>>(
           reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
-          reinterpret_cast<int64_t*>(partition_sizes.flat<int64>().data()),
+          reinterpret_cast<int64_t*>(
+              partition_sizes_accumulate.flat<int64>().data()),
           reinterpret_cast<int64_t*>(
               elements_offset_per_partition.flat<int64>().data()),
           int(nnz));
     }
+
     elements_offset_per_partition_.clear();
     elements_offset_per_partition_.resize(num_partitions_);
     // stream_executor::DeviceMemoryBase elements_offset_per_partition_wrapped(
@@ -242,9 +369,9 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(
         ctx, ctx->output_list("partitioned_indices", &partitioned_indices));
 
-    int64_t partition_start_base = 0;
+    int64_t sub_start_offset = 0;
     for (int i = 0; i < num_partitions_; i++) {
-      int64_t size = elements_offset_per_partition_[i] - partition_start_base;
+      int64_t size = elements_offset_per_partition_[i] - sub_start_offset;
 
       Tensor* sub_partitioned_values;
       OP_REQUIRES_OK(ctx, partitioned_values.allocate(
@@ -261,8 +388,11 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
         const int threads = 1024;
         int blocks =
             size % threads == 0 ? (size / threads) : (size / threads + 1);
+
+        const int partition_start_base = i == 0 ? 0 : partition_sizes_accumulate_[i - 1];
         GatherAndConvertToSubPartition<<<blocks, threads, 0, stream>>>(
-            reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+            reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()) +
+                sub_start_offset,
             reinterpret_cast<int64_t*>(
                 sub_partitioned_values->flat<int64>().data()),
             partition_start_base, size);
@@ -281,16 +411,17 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
         //                    size * 2 * sizeof(int64_t));
         cudaMemcpyAsync(
             sub_partitioned_indices->flat<int64>().data(),
-            indices_sorted.flat<int64>().data() + 2 * partition_start_base,
+            indices_sorted.flat<int64>().data() + 2 * sub_start_offset,
             size * 2 * sizeof(int64_t), cudaMemcpyDeviceToDevice);
       }
-      partition_start_base = elements_offset_per_partition_[i];
+      sub_start_offset = elements_offset_per_partition_[i];
     }
   }
 
  private:
   int num_partitions_;
   int partition_axis_;
+  std::vector<int64_t> partition_sizes_accumulate_;
   std::vector<int64_t> elements_offset_per_partition_;
 };
 

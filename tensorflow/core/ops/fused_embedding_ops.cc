@@ -54,12 +54,11 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     .Doc(R"doc()doc");
 
 REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
-    .Attr("T: {int32, int64}")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
                                            // if necessary
-    .Input("partition_shapes: num_partitions * T")
+    .Input("partition_shapes: num_partitions * int64")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
     .Output("partitioned_values: num_partitions * int64")

@@ -46,12 +46,11 @@ class FusedEmbeddingDistributedSparsePreLookUpOpTest : public OpsTestBase {
     TF_EXPECT_OK(
         NodeDefBuilder("fused_embedding_distributed_sparse_pre_look_up",
                        "FusedEmbeddingDistributedSparsePreLookUp")
+            .Attr("num_partitions", num_partitions)
+            .Attr("partition_axis", 0)
             .Input(FakeInput(dtype))
             .Input(FakeInput(DT_INT64))
             .Input(FakeInput(DT_INT64))
-            .Attr("T", dtype)
-            .Attr("num_partitions", num_partitions)
-            .Attr("partition_axis", 0)
             .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
@@ -74,7 +73,7 @@ TEST_F(FusedEmbeddingDistributedSparsePreLookUpOpTest, Parition3_Int64) {
     test::FillValues<int64>(&expected_values, {0, 1, 3, 5, 5, 5});
     test::ExpectTensorEqual<int64>(expected_values, *GetOutput(0));
 
-    Tensor expected_indices(allocator(), DT_INT64, TensorShape({12}));
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({6, 2}));
     test::FillValues<int64>(&expected_indices,
                             {11, 6, 2, 3, 1, 6, 4, 6, 7, 9, 11, 8});
     test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(3));
@@ -82,20 +81,19 @@ TEST_F(FusedEmbeddingDistributedSparsePreLookUpOpTest, Parition3_Int64) {
 
   {
     Tensor expected_values(allocator(), DT_INT64, TensorShape({2}));
-    test::FillValues<int64>(&expected_values, {6, 7});
+    test::FillValues<int64>(&expected_values, {0, 1});
     test::ExpectTensorEqual<int64>(expected_values, *GetOutput(1));
-
-    Tensor expected_indices(allocator(), DT_INT64, TensorShape({4}));
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({2, 2}));
     test::FillValues<int64>(&expected_indices, {12, 12, 13, 0});
     test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(4));
   }
 
   {
     Tensor expected_values(allocator(), DT_INT64, TensorShape({4}));
-    test::FillValues<int64>(&expected_values, {11, 12, 14, 15});
+    test::FillValues<int64>(&expected_values, {2, 3, 5, 6});
     test::ExpectTensorEqual<int64>(expected_values, *GetOutput(2));
 
-    Tensor expected_indices(allocator(), DT_INT64, TensorShape({8}));
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({4, 2}));
     test::FillValues<int64>(&expected_indices, {12, 13, 12, 12, 11, 5, 15, 0});
     test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(5));
   }
