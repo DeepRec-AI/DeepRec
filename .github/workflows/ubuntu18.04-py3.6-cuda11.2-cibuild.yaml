@@ -30,6 +30,9 @@ jobs:
     - name: Build Wheel
       run: |-
         kubectl exec -it ${PODNAME} -- cibuild/build-gpu.sh
+    - name: Unit Test
+      run: |-
+        kubectl exec -ti ${PODNAME} -- cibuild/gpu-ut.sh
     - name: Uninstall Pod
       run: |-
         helm uninstall ${JOBNAME}
