@@ -4636,14 +4636,18 @@ tf_kernel_library(
 tf_kernel_library(
     name = "bias_grad_ali_op",
     prefix = "bias_grad_ali_op",
-    deps = NN_DEPS + mkl_deps(),
+    deps = NN_DEPS + mkl_deps() + [
+        ":redux_functor",
+    ],
 )
 
 tf_cc_test(
     name = "bias_grad_ali_op_test",
+    size = "large",
     srcs = ["bias_grad_ali_op_test.cc"],
     deps = [
         ":bias_grad_ali_op",
+        ":bias_op",
         ":ops_testutil",
         ":ops_util",
         "//tensorflow/cc:cc_ops",

@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/kernels/redux_functor.h"
 #include "tensorflow/core/util/tensor_format.h"
 
 namespace tensorflow {
@@ -56,6 +57,33 @@ void GetBiasValueDims(const Tensor& value_tensor, TensorFormat data_format,
   }
 }
 
+void GetBiasValueDims(const Tensor& value_tensor, TensorFormat data_format,
+                      int32* batch, int32* height, int32* width, int32* depth,
+                      int32* channel) {
+  *batch = 1;
+  *height = 1;
+  *width = 1;
+  *depth = 1;
+  *channel = 1;
+  if (data_format == FORMAT_NHWC) {
+    int32 channel_dim = value_tensor.dims() - 1;
+    *channel = static_cast<int32>(value_tensor.dim_size(channel_dim));
+    for (int32 i = 0; i < channel_dim; i++) {
+      *batch *= static_cast<int32>(value_tensor.dim_size(i));
+    }
+  } else if (data_format == FORMAT_NCHW) {
+    *batch = static_cast<int32>(value_tensor.dim_size(0));
+    *channel = static_cast<int32>(value_tensor.dim_size(1));
+    *height = static_cast<int32>(value_tensor.dim_size(2));
+    if (value_tensor.dims() > 3) {
+      *width = static_cast<int32>(value_tensor.dim_size(3));
+    }
+    if (value_tensor.dims() > 4) {
+      *depth = static_cast<int32>(value_tensor.dim_size(4));
+    }
+  }
+}
+
 }  // namespace
 
 template <typename Device, typename T>
@@ -85,9 +113,9 @@ class BiasGradAliOp : public OpKernel {
                         std::numeric_limits<int32>::max()),
         errors::InvalidArgument("BiasGrad requires tensor size <= int32 max"));
 
-    int32 batch, height, width, channel;
+    int32 batch, height, width, depth, channel;
     GetBiasValueDims(output_backprop, data_format_, &batch, &height, &width,
-                     &channel);
+                     &depth, &channel);
     Tensor* output = nullptr;
     TensorShape output_shape{channel};
     OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
@@ -99,10 +127,7 @@ class BiasGradAliOp : public OpKernel {
       output->template flat<T>().setZero();
     } else {
       // Added by intel_tf to support NCHW on CPU regardless of MKL used or not.
-      if (data_format_ == FORMAT_NCHW) {
-        OP_REQUIRES(context, output_backprop.dims() == 4,
-                    errors::InvalidArgument(
-                        "NCHW format supports only 4D input/output tensor."));
+      if (data_format_ == FORMAT_NCHW && output_backprop.dims() == 4) {
         Eigen::DSizes<Eigen::Index, 4> four_dims(batch, channel, height, width);
 #ifdef EIGEN_HAS_INDEX_LIST
         using idx0 = Eigen::type2index<0>;
@@ -118,6 +143,16 @@ class BiasGradAliOp : public OpKernel {
                 .reshape(four_dims)
                 .sum(reduction_axes)
                 .template cast<T>();  // End of code by intel_tf.
+      } else if (data_format_ == FORMAT_NCHW) {
+        using AccumT = typename AccumulatorType<T>::type;
+        const functor::ReduceMiddleDimensions<
+            T, AccumT, T, Eigen::internal::scalar_sum_op<AccumT>,
+            Eigen::internal::SumReducer<T>>
+            redux;
+        Eigen::DSizes<Eigen::Index, 3> three_dims(batch, channel,
+                                                  height * width * depth);
+        redux(context->eigen_device<Device>(), three_dims, output_backprop,
+              output, 1);
       } else {
         Eigen::DSizes<int, 2> two_dims(batch * height * width, channel);
         functor::BiasGrad2D<Device, T> functor;
