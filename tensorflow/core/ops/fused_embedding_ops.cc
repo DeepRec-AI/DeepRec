@@ -108,6 +108,11 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
     .Input("emb_shards: num_partitions * T")
     .Input("partitioned_indices: num_partitions * int64")
     .Input("sp_dense_shape: int64")
+    .Input(
+        "partitioned_values: num_partitions * int64")  // only for backward use.
+                                                       // actually directly port
+                                                       // to python grad op
+                                                       // output
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
     .SetShapeFn([](InferenceContext* ctx) {
@@ -144,8 +149,8 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
     .Attr("max_norm: float = -1.0")
     .Input("top_grad: T")
     .Input("emb_shards: num_partitions * T")
-    .Input("feature_nums: int32")
     .Input("partitioned_indices: num_partitions * int64")
+    .Input("feature_nums: int32")
     .Output("grad_shards: num_partitions * T")
     .SetShapeFn([](InferenceContext* ctx) {
       int64 num_partitions;

@@ -15,116 +15,6 @@
 #include "third_party/cub/iterator/constant_input_iterator.cuh"
 #include "third_party/cub/thread/thread_operators.cuh"
 
-/*********** debug function ***********/
-#include <cuda_runtime.h>
-#include <stdio.h>
-#include <functional>
-#include <numeric>
-#include <string>
-#include <vector>
-template <typename T>
-void printGPUTensorHelper(const T* src, const std::vector<int>& dims,
-                          const std::vector<int>& max_num_to_print,
-                          bool if_exit = true) {
-  int element_num = 1;
-  int dim_num = (int)dims.size();
-
-  printf("Tensor size: (");
-  for (int i = 0; i < dim_num; i++) {
-    element_num *= dims[i];
-    printf("%d, ", dims[i]);
-  }
-  printf(")\n");
-  T* host_buffer = new T[element_num];
-  cudaMemcpy((void*)host_buffer, (void*)src, sizeof(T) * element_num,
-             cudaMemcpyDeviceToHost);
-
-  std::vector<int> strides(dim_num, 1);
-  for (int i = dim_num - 2; i >= 0; i--) {
-    strides[i] = strides[i + 1] * dims[i + 1];
-    printf("%d ", strides[i]);
-  }
-
-  printf("================== start printing tensor =====================\n");
-
-  std::function<void(int, int)> recursive_print;
-  recursive_print = [&recursive_print, host_buffer, &dims = dims,
-                     &max_num_to_print = max_num_to_print, &strides = strides](
-                        int current_dim, int current_dim_offset) -> void {
-    if (current_dim < dims.size() - 1) {
-      for (int i = 0; i < current_dim; i++) {
-        printf(" ");
-      }
-      printf("[ dim %d\n", current_dim);
-
-      if (2 * max_num_to_print[current_dim] >= dims[current_dim]) {
-        for (int i = 0; i < dims[current_dim]; i++) {
-          recursive_print(current_dim + 1,
-                          current_dim_offset + i * strides[current_dim]);
-        }
-      } else {
-        for (int i = 0; i < max_num_to_print[current_dim]; i++) {
-          recursive_print(current_dim + 1,
-                          current_dim_offset + i * strides[current_dim]);
-        }
-        for (int i = 0; i < current_dim; i++) {
-          printf(" ");
-        }
-        printf(" ......\n");
-        for (int i = dims[current_dim] - max_num_to_print[current_dim];
-             i < dims[current_dim]; i++) {
-          recursive_print(current_dim + 1,
-                          current_dim_offset + i * strides[current_dim]);
-        }
-      }
-      for (int i = 0; i < current_dim; i++) {
-        printf(" ");
-      }
-      printf("]\n");
-    } else {
-      for (int i = 0; i < current_dim; i++) {
-        printf(" ");
-      }
-      printf("[ ");
-      printf("dim %d, offset: %d, ", current_dim, current_dim_offset);
-      if (2 * max_num_to_print[current_dim] >= dims[current_dim]) {
-        for (int i = 0; i < dims[current_dim]; i++) {
-          printf("%s ",
-                 std::to_string(
-                     host_buffer[current_dim_offset + i * strides[current_dim]])
-                     .c_str());
-        }
-      } else {
-        for (int i = 0; i < max_num_to_print[current_dim]; i++) {
-          printf("%s ",
-                 std::to_string(
-                     host_buffer[current_dim_offset + i * strides[current_dim]])
-                     .c_str());
-        }
-        printf("...... ");
-        for (int i = dims[current_dim] - max_num_to_print[current_dim];
-             i < dims[current_dim]; i++) {
-          printf("%s ",
-                 std::to_string(
-                     host_buffer[current_dim_offset + i * strides[current_dim]])
-                     .c_str());
-        }
-      }
-      printf("]\n");
-    }
-  };
-
-  recursive_print(0, 0);
-
-  printf("\n================== stop =====================\n");
-  delete[] host_buffer;
-
-  if (if_exit) {
-    exit(0);
-  }
-};
-/*********** debug function ***********/
-
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
@@ -227,17 +117,16 @@ __global__ void DistributeGradToShard(const float* top_grad,
   __shared__ int64_t row_in_batch_shared[1];
   __shared__ int feature_num_shared[1];
   __shared__ float l2_sum[1];
+  int64_t row_in_batch;
   if (threadIdx.x == 0) {
-    row_in_batch_shared[0] = partitioned_indice[2 * blockIdx.x];
-  }
-  __syncthreads();
-  const int64_t row_in_batch = row_in_batch_shared[0];
-  float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
-  if (threadIdx.x == 0) {
+    row_in_batch = partitioned_indice[2 * blockIdx.x];
+    row_in_batch_shared[0] = row_in_batch;
     feature_num_shared[0] = feature_nums[row_in_batch];
   }
   __syncthreads();
+  row_in_batch = row_in_batch_shared[0];
   const int feature_num = feature_num_shared[0];
+  float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
   grad = CombineGrad<combiner>(grad, feature_num);
   if (max_norm >= 0.0f) {
     const float emb_element =
@@ -249,7 +138,9 @@ __global__ void DistributeGradToShard(const float* top_grad,
     atomicAdd(l2_sum, emb_element * emb_element);
     __syncthreads();
     float l2_norm = sqrtf(l2_sum[0]);
-    grad *= max_norm / l2_norm;
+    if (l2_norm > max_norm) {
+      grad *= max_norm / l2_norm;
+    }
   }
   grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = grad;
 }
@@ -389,7 +280,8 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
         int blocks =
             size % threads == 0 ? (size / threads) : (size / threads + 1);
 
-        const int partition_start_base = i == 0 ? 0 : partition_sizes_accumulate_[i - 1];
+        const int partition_start_base =
+            i == 0 ? 0 : partition_sizes_accumulate_[i - 1];
         GatherAndConvertToSubPartition<<<blocks, threads, 0, stream>>>(
             reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()) +
                 sub_start_offset,
@@ -566,11 +458,11 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
 
     OpOutputList grad_shards;
     OP_REQUIRES_OK(ctx, ctx->output_list("grad_shards", &grad_shards));
-    const size_t emb_vec_size = grad_shards[0]->shape().dim_size(1);
+
+    const size_t emb_vec_size = emb_shards[0].shape().dim_size(1);
 
     for (int i = 0; i < num_partitions_; i++) {
-      auto partitioned_indice = partitioned_indices[i];
-      const size_t sub_nnz = partitioned_indice.shape().dim_size(0);
+      const size_t sub_nnz = partitioned_indices[i].shape().dim_size(0);
 
       Tensor* grad_shard;
       OP_REQUIRES_OK(ctx,
@@ -587,8 +479,8 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
           DistributeGradToShard<Sqrtn><<<blocks, threads, 0, stream>>>(
               top_grad_tensor->flat<float>().data(),
               emb_shards[i].flat<float>().data(),
-              reinterpret_cast<int64_t*>(
-                  partitioned_indice.flat<int64>().data()),
+              reinterpret_cast<const int64_t*>(
+                  partitioned_indices[i].flat<int64>().data()),
               feature_nums->flat<int>().data(),
               grad_shard->flat<float>().data(), sub_nnz, emb_vec_size,
               max_norm_);
@@ -596,8 +488,8 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
           DistributeGradToShard<Mean><<<blocks, threads, 0, stream>>>(
               top_grad_tensor->flat<float>().data(),
               emb_shards[i].flat<float>().data(),
-              reinterpret_cast<int64_t*>(
-                  partitioned_indice.flat<int64>().data()),
+              reinterpret_cast<const int64_t*>(
+                  partitioned_indices[i].flat<int64>().data()),
               feature_nums->flat<int>().data(),
               grad_shard->flat<float>().data(), sub_nnz, emb_vec_size,
               max_norm_);
@@ -605,8 +497,8 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
           DistributeGradToShard<Sum><<<blocks, threads, 0, stream>>>(
               top_grad_tensor->flat<float>().data(),
               emb_shards[i].flat<float>().data(),
-              reinterpret_cast<int64_t*>(
-                  partitioned_indice.flat<int64>().data()),
+              reinterpret_cast<const int64_t*>(
+                  partitioned_indices[i].flat<int64>().data()),
               feature_nums->flat<int>().data(),
               grad_shard->flat<float>().data(), sub_nnz, emb_vec_size,
               max_norm_);
