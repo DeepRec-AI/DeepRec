@@ -1449,7 +1449,6 @@ def _embeddings_from_arguments(column,
       name=column.name + "weights",
       max_norm=args.max_norm)
 
-
 def _maybe_restore_from_checkpoint(checkpoint_path, variable):
   if checkpoint_path is not None:
     path, tensor_name = checkpoint_path
