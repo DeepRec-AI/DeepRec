@@ -1595,7 +1595,8 @@ void GraphPartitionerBase::RemoveReadyNodes(
       size_t ready_input_count = 0;
       for (const Edge* in_edge : node->in_edges()) {
         const Node *src = in_edge->src();
-        if (!src->IsOp()) {
+        if (!src->IsOp() ||
+            src->op_def().name() == "NextIteration") {
           ready_input_count++;
           continue;
         }
