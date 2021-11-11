@@ -577,8 +577,8 @@ Status ExecutorState<PropagatorStateType>::ProcessSync(
   if (TF_PREDICT_FALSE(MightTrace(item, event_collector_))) {
     const string& op_name = op_kernel->name();
     int64 id = step_id_;
-    if (step_container_ && step_container_->step_id()) {
-      id = step_container_->step_id();
+    if (step_container_ && step_container_->StepId()) {
+      id = step_container_->StepId();
     }    
     const string kernel_label = strings::StrCat(
         op_name, ":", op_kernel->type_string(), "#id=", id,
@@ -660,8 +660,8 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
     profiler::TraceMe activity(
           [&] {
             int64 id = step_id_;
-            if (step_container_ && step_container_->step_id()) {
-              id = step_container_->step_id();
+            if (step_container_ && step_container_->StepId()) {
+              id = step_container_->StepId();
             }
             return strings::StrCat(
                 async_kernel->name(), ":", async_kernel->type_string(),
