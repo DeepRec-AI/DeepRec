@@ -42,6 +42,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/c:c_api_function_test "\
 "-//tensorflow/c:c_api_test_gpu "\
 "-//tensorflow/c/eager:c_api_experimental_test_gpu "\
+"-//tensorflow/c:kernels_test_gpu "\
 "-//tensorflow/c:while_loop_test "\
 "-//tensorflow/compiler/mlir/... "\
 "-//tensorflow/compiler/tests:unary_ops_test_cpu "\
@@ -95,7 +96,9 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/core:variant_op_copy_test "\
 "-//tensorflow/core:util_gpu_kernel_helper_test_gpu "\
 "-//tensorflow/core:common_runtime_gpu_gpu_vmem_allocator_test "\
+"-//tensorflow/core:common_runtime_gpu_gpu_bfc_allocator_test "\
 "-//tensorflow/core:common_runtime_ring_gatherer_test "\
+"-//tensorflow/core:common_runtime_ring_reducer_test "\
 "-//tensorflow/examples/adding_an_op:cuda_op_test "\
 "-//tensorflow/stream_executor/cuda:redzone_allocator_test_gpu "\
 "-//tensorflow/python/autograph/pyct:inspect_utils_test_par "\
@@ -160,4 +163,4 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/python/training/tracking:util_xla_test_gpu "\
 
-bazel test -c opt --config=opt --verbose_failures --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  --test_timeout="300,450,1200,3600" --local_test_jobs=4  -- $TF_BUILD_BAZEL_TARGET
+bazel test -c opt --config=cuda --verbose_failures --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  --test_timeout="300,450,1200,3600" --local_test_jobs=2  -- $TF_BUILD_BAZEL_TARGET

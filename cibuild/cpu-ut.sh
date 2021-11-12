@@ -45,13 +45,10 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/compiler/tests:unary_ops_test_cpu "\
 "-//tensorflow/contrib/android/... "\
 "-//tensorflow/contrib/compiler/tests:addsign_test_cpu "\
-"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_benchmark "\
-"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_test "\
 "-//tensorflow/contrib/distribute/python:parameter_server_strategy_test "\
 "-//tensorflow/contrib/distributions:batch_normalization_test "\
 "-//tensorflow/contrib/distributions:wishart_test "\
 "-//tensorflow/contrib/quantize:quantize_parameterized_test "\
-"-//tensorflow/contrib/rnn:gru_ops_test "\
 "-//tensorflow/contrib/rpc/python/kernel_tests:rpc_op_test "\
 "-//tensorflow/core/common_runtime/eager:eager_op_rewrite_registry_test "\
 "-//tensorflow/core/distributed_runtime:cluster_function_library_runtime_test "\
@@ -62,9 +59,6 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/autograph/pyct:ast_util_test "\
 "-//tensorflow/python/data/experimental/kernel_tests:prefetch_with_slack_test "\
 "-//tensorflow/python/debug:debugger_cli_common_test "\
-"-//tensorflow/python/debug:source_remote_test "\
-"-//tensorflow/python/debug:session_debug_grpc_test "\
-"-//tensorflow/python/debug:grpc_large_data_test "\
 "-//tensorflow/python/debug:dist_session_debug_grpc_test "\
 "-//tensorflow/python:deprecation_test "\
 "-//tensorflow/python/distribute:values_test "\
@@ -76,12 +70,10 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/keras:simplernn_test "\
 "-//tensorflow/python/keras:lstm_test "\
 "-//tensorflow/python/keras:hdf5_format_test "\
-"-//tensorflow/python/kernel_tests:bias_op_test "\
 "-//tensorflow/python:layers_core_test "\
 "-//tensorflow/python/profiler:model_analyzer_test "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
-"-//tensorflow/core:graph_star_server_graph_partition_test "\
 "-//tensorflow/contrib/quantize:fold_batch_norms_test "\
 "-//tensorflow/contrib/layers:layers_test "\
 "-//tensorflow/python/kernel_tests:unique_op_test "\
