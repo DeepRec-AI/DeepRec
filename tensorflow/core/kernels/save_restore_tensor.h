@@ -19,6 +19,9 @@ limitations under the License.
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 #include "tensorflow/core/util/tensor_slice_reader.h"
 #include "tensorflow/core/util/tensor_slice_writer.h"
+#include "tensorflow/core/framework/hash_table/tensible_variable.h"
+#include "tensorflow/core/framework/hash_table/hash_table.h"
+#include "tensorflow/core/framework/hash_table/bloom_filter_strategy.h"
 
 namespace tensorflow {
 
@@ -68,6 +71,37 @@ Status RestoreTensorsV2(OpKernelContext* context, const Tensor& prefix,
                         const Tensor& tensor_names,
                         const Tensor& shape_and_slices,
                         gtl::ArraySlice<DataType> dtypes);
+
+Status SaveHashTable(
+    BundleWriter* writer, HashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const string& table_name, const std::vector<string>& tensibles_name,
+    int64 slice_beg, int64 slice_length, int64 slice_size);
+
+void RestoreHashTable(
+    std::function<void(std::function<void()>)> runner,
+    BundleReader* reader, HashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const string& table_name, const std::vector<string>& tensibles_name,
+    int64 slice_beg, int64 slice_length, int64 slice_size,
+    std::function<void(Status)> done);
+
+void RestoreCoalescedHashTable(
+    std::function<void(std::function<void()>)> runner,
+    BundleReader* reader, CoalescedHashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const std::vector<string>& table_names,
+    const std::vector<std::vector<string>>& tensibles_names,
+    int64 slice_beg, int64 slice_length, int64 slice_size,
+    bool clear, std::function<void(Status)> done);
+
+Status SaveBloomFilter(
+    BundleWriter* writer, BloomFilterAdmitStrategy* strategy,
+    const string& name, int64 slice_beg, int64 slice_length, int64 slice_size);
+
+Status RestoreBloomFilter(
+    BundleReader* reader, BloomFilterAdmitStrategy* strategy,
+    const string& name, int64 slice_beg, int64 slice_length, int64 slice_size);
 
 template<class T>
 class DumpIterator {

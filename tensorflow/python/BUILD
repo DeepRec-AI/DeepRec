@@ -118,6 +118,7 @@ py_library(
         ":gradient_checker",
         ":gradient_checker_v2",
         ":graph_util",
+        ":hash_table",
         ":histogram_ops",
         ":image_ops",
         ":initializers_ns",
@@ -2211,6 +2212,14 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+    name = "hash_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
+    name = "hash_training_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
     name = "resource_variable_ops_gen",
     visibility = [
         "//tensorflow/compiler/tf2xla:internal",
@@ -2227,6 +2236,76 @@ tf_gen_op_wrapper_private_py(
         "//tensorflow/python/data/experimental/ops:__pkg__",
     ],
 )
+
+py_library(
+    name = "hash_table",
+    srcs = glob(
+        ["ops/hash_table/**/*.py"],
+    ),
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":data_flow_ops",
+        ":dtypes",
+        ":framework_ops",
+        ":function",
+        ":hash_ops_gen",
+        ":hash_training_ops_gen",
+        ":math_ops",
+        ":tensor_shape",
+        ":util",
+        "//tensorflow/core:protos_all_py",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/eager:tape",
+    ],
+)
+
+py_test(
+    name = "hash_table_test",
+    size = "small",
+    srcs = ["ops/hash_table/hash_table_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "grappler",
+        "no_pip",
+    ],
+    deps = [
+        ":hash_table",
+        ":array_ops",
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":math_ops",
+        ":model_analyzer",
+        ":state_ops",
+        "//tensorflow/contrib:contrib_py",
+        "//tensorflow/core:protos_all_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
+    name = "admit_strategy_test",
+    size = "small",
+    srcs = ["ops/hash_table/admit_strategy_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "grappler",
+        "no_pip",
+    ],
+    deps = [
+        ":hash_table",
+        ":array_ops",
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":math_ops",
+        ":model_analyzer",
+        ":state_ops",
+        "//tensorflow/contrib:contrib_py",
+        "//tensorflow/core:protos_all_py",
+        "//third_party/py/numpy",
+    ],
+)
+
 
 tf_gen_op_wrapper_private_py(
     name = "list_ops_gen",
@@ -4549,6 +4628,7 @@ py_library(
         ":errors",
         ":framework",
         ":framework_ops",
+        ":hash_table",
         ":io_ops",
         ":io_ops_gen",
         ":platform",

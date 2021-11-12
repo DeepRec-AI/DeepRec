@@ -54,6 +54,7 @@ class SaveSpec(object):
 
 class SaveableObject(object):
   """Base class for saving and restoring saveable objects."""
+  custom_restore = False
 
   def __init__(self, op, specs, name):
     """Creates a `SaveableObject` object.

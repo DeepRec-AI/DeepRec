@@ -689,6 +689,7 @@ cc_library(
     copts = if_not_windows(["-Wno-sign-compare"]),
     deps = [
         ":bounds_check",
+        ":hash_ops",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/util/tensor_bundle",
@@ -8578,6 +8579,28 @@ tf_kernel_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:core_cpu_lib",
+        "//third_party/eigen3",
+    ],
+)
+
+tf_kernel_library(
+    name = "hash_ops",
+    srcs = glob(["hash_ops/*.cc"]),
+    hdrs = glob(["hash_ops/*.h", "captured_function.h", "data/captured_function.h", "data/dataset.h"]),
+    deps = [
+        ":bounds_check",
+        ":dense_update_functor",
+        ":gather_functor",
+        ":mutex_ops",
+        ":scatter_functor",
+        ":training_ops",
+        ":variable_ops",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:hash_ops_op_lib",
+        "//tensorflow/core:hash_training_ops_op_lib",
+        "//tensorflow/core/kernels/data:captured_function",
+        "//tensorflow/core:core_cpu_lib",
+        "//tensorflow/core:protos_all_cc",
         "//third_party/eigen3",
     ],
 )

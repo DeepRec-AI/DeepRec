@@ -180,6 +180,24 @@ class _DenseResourceVariableProcessor(_OptimizableVariable):
       return update_op
 
 
+class _HashTableProcessor(_OptimizableVariable):
+  """Processor for HashTable."""
+
+  def __init__(self, v):
+    self._v = v
+
+  def target(self):
+    return self._v.handle
+
+  def update_op(self, optimizer, g):
+    # pylint: disable=protected-access
+    if isinstance(g, ops.IndexedSlices):
+      return optimizer._hash_table_apply_sparse_duplicate_indices(
+          g.values, self._v, g.indices)
+    else:
+      raise RuntimeError("HashTable grad should be Sparse not Dense")
+
+
 class _TensorProcessor(_OptimizableVariable):
   """Processor for ordinary Tensors.
 
@@ -200,6 +218,7 @@ class _TensorProcessor(_OptimizableVariable):
 
 def _get_processor(v):
   """The processor of v."""
+  from tensorflow.python.ops import hash_table
   if context.executing_eagerly():
     if isinstance(v, ops.Tensor):
       return _TensorProcessor(v)
@@ -208,6 +227,8 @@ def _get_processor(v):
   if resource_variable_ops.is_resource_variable(v) and not v._in_graph_mode:  # pylint: disable=protected-access
     # True if and only if `v` was initialized eagerly.
     return _DenseResourceVariableProcessor(v)
+  if isinstance(v, hash_table.HashTable):
+    return _HashTableProcessor(v)
   if v.op.type == "VarHandleOp":
     return _DenseResourceVariableProcessor(v)
   if v.op.type == "KvVarHandleOp":
@@ -1133,6 +1154,49 @@ class Optimizer(
 
     Returns:
       An `Operation`.
+    """
+    raise NotImplementedError()
+
+  def _hash_table_apply_sparse_duplicate_indices(self, grad, hash_table, indices):
+    """Add ops to apply sparse gradients to `hash_table`, with repeated indices.
+
+    Optimizers which override this method must deal with repeated indices. See
+    the docstring of `_apply_sparse_duplicate_indices` for details. By default
+    the correct behavior, to sum non-unique indices and their associated
+    gradients, is enforced by first pre-processing `grad` and `indices` and
+    passing them on to `_resource_apply_sparse`. Optimizers which deal correctly
+    with duplicate indices may instead override this method to avoid the
+    overhead of summing.
+
+    Args:
+      grad: a `Tensor` representing the gradient for the affected indices.
+      hash_table: a `HashTable` which points to the variable to be updated.
+      indices: a `Tensor` of integral type representing the indices for
+       which the gradient is nonzero. Indices may be repeated.
+
+    Returns:
+      An `Operation` which updates the value of the variable.
+    """
+    summed_grad, unique_indices = _deduplicate_indexed_slices(
+        values=grad, indices=indices)
+    return self._hash_table_apply_sparse(summed_grad, hash_table, unique_indices)
+
+  def _hash_table_apply_sparse(self, grad, hash_table, indices):
+    """Add ops to apply sparse gradients to the variable `hash_table`.
+
+    Similar to `_apply_sparse`, the `indices` argument to this method has been
+    de-duplicated. Optimizers which deal correctly with non-unique indices may
+    instead override `_resource_apply_sparse_duplicate_indices` to avoid this
+    overhead.
+
+    Args:
+      grad: a `Tensor` representing the gradient for the affected indices.
+      hash_table: a `HashTable` which points to the variable to be updated.
+      indices: a `Tensor` of integral type representing the indices for
+       which the gradient is nonzero. Indices are unique.
+
+    Returns:
+      An `Operation` which updates the value of the variable.
     """
     raise NotImplementedError()
 

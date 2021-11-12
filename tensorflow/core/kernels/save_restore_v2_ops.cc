@@ -34,10 +34,17 @@ limitations under the License.
 #include "tensorflow/core/util/saved_tensor_slice_util.h"
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
 #include "tensorflow/core/util/tensor_slice_reader.h"
+#include "tensorflow/core/framework/hash_table/tensible_variable.h"
+#include "tensorflow/core/framework/hash_table/hash_table.h"
 
 namespace tensorflow {
 
 namespace {
+
+template<typename T>
+bool IsHandle(const ResourceHandle& handle) {
+  return handle.hash_code() == MakeTypeIndex<T>().hash_code();
+}
 
 // Shared validations of the inputs to the SaveV2 and RestoreV2 ops.
 void ValidateInputs(bool is_save_op, OpKernelContext* context,
@@ -153,10 +160,81 @@ class SaveV2 : public OpKernel {
     for (int i = start_index; i < num_tensors; ++i) {
       const string& tensor_name = tensor_names_flat(i);
       if (tensor_types_[i] == DT_RESOURCE) {
-        if (ev_key_types_[start_ev_key_index] == DT_INT32) {
-          DumpEvWithGlobalStep<int32, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
-        } else if (ev_key_types_[start_ev_key_index] == DT_INT64) {
-          DumpEvWithGlobalStep<int64, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
+        auto& handle = HandleFromInput(context, i + kFixedInputs);
+        if (IsHandle<EmbeddingVar<int64, float>>(handle)) {
+          EmbeddingVar<int64, float>* variable = nullptr;
+          OP_REQUIRES_OK(context,
+              LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
+          const Tensor& global_step = context->input(3);
+          Tensor part_offset_tensor;
+          context->allocate_temp(DT_INT32,
+                                 TensorShape({kSavedPartitionNum + 1}),
+                                 &part_offset_tensor);
+          if (ev_key_types_[start_ev_key_index] == DT_INT32) {
+            DumpEvWithGlobalStep<int32, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
+          } else if (ev_key_types_[start_ev_key_index] == DT_INT64) {
+            DumpEvWithGlobalStep<int64, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
+          }
+        } else if (IsHandle<HashTableResource>(handle)) {
+          auto handles = context->input(i + kFixedInputs).flat<ResourceHandle>();
+          int tensible_size = handles.size() - 1;
+          std::vector<core::ScopedUnref> unrefs;
+          HashTable* hashtable;
+          std::vector<TensibleVariable*> tensibles;
+
+          HashTableResource* htr;
+          OP_REQUIRES_OK(context,
+              LookupResource(context, handles(0), &htr));
+          unrefs.emplace_back(htr);
+          hashtable = htr->Internal();
+
+          for (int j = 0; j < tensible_size; j++) {
+            TensibleVariableResource* tvr;
+            OP_REQUIRES_OK(context,
+                LookupResource(context, handles(j + 1), &tvr));
+            unrefs.emplace_back(tvr);
+            tensibles.push_back(tvr->Internal());
+          }
+
+          string shape_spec = shape_and_slices_flat(i);
+          TensorShape shape;
+          TensorSlice slice(1);
+          TensorShape slice_shape;
+
+          OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
+              shape_spec, &shape, &slice, &slice_shape));
+
+          std::vector<string> names_lst = str_util::Split(tensor_name, '|');
+          for (auto&& name : names_lst) {
+            std::vector<string> tensor_name_x =
+                str_util::Split(name, ';');
+            OP_REQUIRES(context, tensor_name_x.size() == tensible_size + 1,
+                errors::InvalidArgument("save tensor name error", tensor_name));
+            string table_name = tensor_name_x[0];
+            std::vector<string> tensible_name(
+                tensor_name_x.begin() + 1, tensor_name_x.end());
+            OP_REQUIRES_OK(context, SaveHashTable(
+                  &writer, hashtable, tensibles, table_name, tensible_name,
+                  slice.start(0), slice.length(0), slice_shape.dim_size(0)));
+          }
+        } else if (IsHandle<HashTableAdmitStrategyResource>(handle)) {
+          HashTableAdmitStrategyResource* resource;
+          OP_REQUIRES_OK(context,
+              LookupResource(context, HandleFromInput(context, i + kFixedInputs), &resource));
+          HashTableAdmitStrategy* strategy = resource->Internal();
+          BloomFilterAdmitStrategy* bf = dynamic_cast<BloomFilterAdmitStrategy*>(strategy);
+          CHECK(bf != nullptr) << "Cannot save Non-BloomFilterAdmitStrategy!";
+
+          string shape_spec = shape_and_slices_flat(i);
+          TensorShape shape;
+          TensorSlice slice(1);
+          TensorShape slice_shape;
+          OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
+              shape_spec, &shape, &slice, &slice_shape));
+
+          OP_REQUIRES_OK(context, SaveBloomFilter(
+              &writer, bf, tensor_name, slice.start(0),
+              slice.length(0), slice_shape.dim_size(0)));
         }
         start_ev_key_index++;
       } else {
@@ -192,6 +270,147 @@ class SaveV2 : public OpKernel {
   bool has_ev_;
 };
 REGISTER_KERNEL_BUILDER(Name("SaveV2").Device(DEVICE_CPU), SaveV2);
+
+// Restores a list of named tensors from a tensor bundle (V2 checkpoint format).
+class RestoreHashTableOp : public AsyncOpKernel {
+ public:
+  explicit RestoreHashTableOp(OpKernelConstruction* context) : AsyncOpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("clear", &clear_));
+  }
+
+  void ComputeAsync(OpKernelContext* context, DoneCallback done) override {
+    const Tensor& prefix = context->input(0);
+    const Tensor& tensor_names = context->input(1);
+    const Tensor& shape_and_slices = context->input(2);
+    const Tensor& handles = context->input(3);
+    const string& prefix_string = prefix.scalar<string>()();
+    const string& shape_and_slices_string = shape_and_slices.scalar<string>()();
+    auto tensor_names_flat = tensor_names.flat<string>();
+    auto handles_flat = handles.flat<ResourceHandle>();
+
+    std::unique_ptr<BundleReader> reader(
+        new BundleReader(Env::Default(), prefix_string));
+    OP_REQUIRES_OK_ASYNC(context, reader->status(), done);
+
+    TensorShape shape;
+    TensorSlice slice(1);
+    TensorShape slice_shape;
+
+    OP_REQUIRES_OK_ASYNC(context, checkpoint::ParseShapeAndSlice(
+        shape_and_slices_string, &shape, &slice, &slice_shape), done);
+
+    std::unique_ptr<std::vector<core::ScopedUnref>> unrefs(
+        new std::vector<core::ScopedUnref>);
+    HashTable* hashtable;
+    std::vector<TensibleVariable*> tensibles;
+
+    HashTableResource* htr;
+    {
+      OP_REQUIRES_OK_ASYNC(context,
+          LookupResource(context, handles_flat(0), &htr), done);
+      unrefs->emplace_back(htr);
+      hashtable = htr->Internal();
+    }
+
+    std::vector<TensibleVariableResource*> tvrs;
+    for (int i = 1; i < handles_flat.size(); i++) {
+      TensibleVariableResource* tvr;
+      OP_REQUIRES_OK_ASYNC(context,
+          LookupResource(context, handles_flat(i), &tvr), done);
+      tvrs.emplace_back(tvr);
+      unrefs->emplace_back(tvr);
+      tensibles.push_back(tvr->Internal());
+    }
+
+    std::vector<core::ScopedUnref>* unrefs_x = unrefs.release();
+    BundleReader* reader_x = reader.release();
+    auto done_cb = [htr, tvrs, unrefs_x, reader_x, context, done](Status st){
+      htr->SetInitialized(true);
+      for (auto&& item : tvrs) {
+        item->SetInitialized(true);
+      }
+      delete unrefs_x;
+      delete reader_x;
+      OP_REQUIRES_OK_ASYNC(context, st, done);
+      done();
+    };
+
+    std::vector<string> table_names;
+    std::vector<std::vector<string>> tensibles_names;
+    for (size_t i = 0; i < tensor_names_flat.size(); ++i) {
+      std::vector<string> tensor_names_x = str_util::Split(
+          tensor_names_flat(i), ';');
+      OP_REQUIRES_ASYNC(
+          context, tensor_names_x.size() == handles_flat.size(),
+          errors::InvalidArgument("tensor_name size should be same to handle"),
+          done);
+      table_names.push_back(tensor_names_x[0]);
+      tensibles_names.emplace_back(tensor_names_x.begin() + 1,
+                                   tensor_names_x.end());
+    }
+
+    CoalescedHashTable* coalesced_table =
+        dynamic_cast<CoalescedHashTable*>(hashtable);
+    if (coalesced_table == nullptr) {
+      OP_REQUIRES_ASYNC(
+          context, 1 == table_names.size(),
+          errors::InvalidArgument("raw hash table should be 1"),
+          done);
+      RestoreHashTable(*context->runner(), reader_x, hashtable, tensibles,
+                       table_names[0], tensibles_names[0], slice.start(0),
+                       slice.length(0), shape.dim_size(0), done_cb);
+    } else {
+      RestoreCoalescedHashTable(*context->runner(), reader_x, coalesced_table,
+                                tensibles, table_names, tensibles_names,
+                                slice.start(0), slice.length(0),
+                                shape.dim_size(0), clear_, done_cb);
+    }
+  }
+
+ private:
+  bool clear_;
+};
+REGISTER_KERNEL_BUILDER(Name("RestoreHashTable").Device(DEVICE_CPU), RestoreHashTableOp);
+
+class RestoreBloomFilterOp : public AsyncOpKernel {
+ public:
+  explicit RestoreBloomFilterOp(OpKernelConstruction* context)
+    : AsyncOpKernel(context) {}
+  void ComputeAsync(OpKernelContext* context, DoneCallback done) override {
+    const Tensor& prefix = context->input(0);
+    const Tensor& tensor_name = context->input(1);
+    const Tensor& shape_and_slice = context->input(2);
+    const Tensor& handle = context->input(3);
+    const string& prefix_string = prefix.scalar<string>()();
+    const string& shape_slice_string = shape_and_slice.scalar<string>()();
+    auto tensor_name_flat = tensor_name.scalar<string>()();
+    auto handle_flat = handle.scalar<ResourceHandle>()();
+
+    std::unique_ptr<BundleReader> reader(
+        new BundleReader(Env::Default(), prefix_string));
+    OP_REQUIRES_OK_ASYNC(context, reader->status(), done);
+
+    TensorShape shape;
+    TensorSlice slice(1);
+    TensorShape slice_shape;
+    OP_REQUIRES_OK_ASYNC(context, checkpoint::ParseShapeAndSlice(
+        shape_slice_string, &shape, &slice, &slice_shape), done);
+    HashTableAdmitStrategyResource* resource = nullptr;
+    BloomFilterAdmitStrategy* strategy = nullptr;
+    {
+      OP_REQUIRES_OK_ASYNC(
+          context, LookupResource(context, handle_flat, &resource), done);
+      strategy = dynamic_cast<BloomFilterAdmitStrategy*>(resource->Internal());
+      CHECK(strategy != nullptr) << "Cannot restore BloomFilter from another strategy";
+    }
+    Status st = RestoreBloomFilter(
+        reader.get(), strategy, tensor_name_flat, slice.start(0),
+        slice.length(0), shape.dim_size(0));
+    resource->SetInitialized(true);
+    done();
+  }
+};
+REGISTER_KERNEL_BUILDER(Name("RestoreBloomFilter").Device(DEVICE_CPU), RestoreBloomFilterOp);
 
 // Restores a list of named tensors from a tensor bundle (V2 checkpoint format).
 class RestoreV2 : public OpKernel {

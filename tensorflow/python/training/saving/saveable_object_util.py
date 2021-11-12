@@ -448,6 +448,10 @@ def validate_and_slice_inputs(names_to_saveables):
   for name, op in sorted(names_to_saveables.items(),
                          # Avoid comparing ops, sort only by name.
                          key=lambda x: x[0]):
-    for converted_saveable_object in saveable_objects_for_op(op, name):
-      _add_saveable(saveables, seen_ops, converted_saveable_object)
+    from tensorflow.python.ops import hash_table
+    if isinstance(name, hash_table.HashTable):
+      _add_saveable(saveables, seen_ops, HashTableSaveable(op[1], op[0]))
+    else:
+      for converted_saveable_object in saveable_objects_for_op(op, name):
+        _add_saveable(saveables, seen_ops, converted_saveable_object)
   return saveables

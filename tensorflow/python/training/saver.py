@@ -70,6 +70,91 @@ get_checkpoint_mtimes = checkpoint_management.get_checkpoint_mtimes
 remove_checkpoint = checkpoint_management.remove_checkpoint
 
 
+class BloomFilterSaveable(saveable_object.SaveableObject):
+  """SaveableObject implementation that handles BloomFilterAdmitStrategy"""
+  custom_restore = True
+
+  def __init__(self, bloom_filter):
+    self._init = bloom_filter.false_initializer
+    self._handle = bloom_filter.handle
+    slice_spec = "{} {},{}".format(bloom_filter.max_slice_size,
+        bloom_filter.slice_offset, bloom_filter.slice_size)
+    self._restore_name = bloom_filter.distributed_name
+    spec = saveable_object.SaveSpec(self._handle, slice_spec, self._restore_name)
+    self._restore_slice = slice_spec
+    super(BloomFilterSaveable, self).__init__(self._handle, [spec], bloom_filter.name)
+
+  def restore_specs(self):
+    return []
+
+  def restore(self, restored_tensors, restored_shapes):
+    with ops.colocate_with(self._handle):
+      with ops.control_dependencies([self._init]):
+        return gen_io_ops.restore_bloom_filter(
+            restored_tensors[0], self._restore_name, self._restore_slice,
+            self._handle)
+
+class HashTableSaveable(saveable_object.SaveableObject):
+  """SaveableObject implementation that handles HashTable."""
+  custom_restore = True
+
+  def __init__(self,
+               hash_tables,
+               restore_tensor_names=None):
+    simple_hash_table = hash_tables[0].hash_table
+    ht = [simple_hash_table] + hash_tables
+    inits = [i.false_initializer for i in hash_tables]
+    self._restore_name = []
+    with ops.colocate_with(ht[0]):
+      if restore_tensor_names is None:
+        names = [i.distributed_name for i in ht]
+        distributed_name = names[0]
+        names[0] += "/ids"
+        if not simple_hash_table.children:
+          self._restore_name.append(";".join(names))
+        else:
+          for child in simple_hash_table.children:
+            child_names = [name.replace(distributed_name, child)
+                for name in names]
+            self._restore_name.append(";".join(child_names))
+      else:
+        names = [restore_tensor_names[0]] + restore_tensor_names
+        names[0] += "/ids"
+        self._restore_name.append(";".join(names))
+      self._restore_name.sort()
+      handles = [i.handle for i in ht]
+      handles = array_ops.stack(handles)
+      self._handles = handles
+      slicex = "{} {},{}".format(ht[0].slicer[2], ht[0].slicer[0],
+          ht[0].slicer[1] - ht[0].slicer[0])
+      spec = saveable_object.SaveSpec(
+          handles, slicex, "|".join(self._restore_name))
+      self._restore_slice = slicex
+      self._restore_specs = []
+      self._inits = inits
+      for i in ht:
+        if i is ht[0]:
+          name = i.distributed_name + "/ids"
+        else:
+          name = i.distributed_name
+        handle = i.handle
+        self._restore_specs.append(saveable_object.SaveSpec(handle, slicex, name))
+      super(HashTableSaveable, self).__init__(
+          handles, [spec], ht[0].name)
+
+  def restore_specs(self):
+    return []
+
+  def restore(self, restored_tensors, restored_shapes):
+    from tensorflow.python.ops.hash_table import hash_table
+    restore_clear = hash_table.restore_clear()
+    with ops.colocate_with(self._handles):
+      with ops.control_dependencies(self._inits):
+        return gen_io_ops.restore_hash_table(
+            restored_tensors[0], self._restore_name, self._restore_slice,
+            self._handles, clear=restore_clear)
+
+
 class BaseSaverBuilder(object):
   """Base class for Savers.
 
@@ -403,10 +488,14 @@ class BaseSaverBuilder(object):
           shapes.append(shape)
       if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
         saveable_tensors = [filename_tensor]
+        assign_ops.append(saveable.restore(saveable_tensors, shapes))
+      elif saveable.custom_restore:
+        saveable_tensors = [filename_tensor]
+        assign_ops.append(saveable.restore(saveable_tensors, shapes))
       else:
         saveable_tensors = all_tensors[idx:idx + len(saveable.specs)]
         idx += len(saveable.specs)
-      assign_ops.append(saveable.restore(saveable_tensors, shapes))
+        assign_ops.append(saveable.restore(saveable_tensors, shapes))
 
     # Create a Noop that has control dependencies from all the updates.
     return control_flow_ops.group(*assign_ops, name=name)
@@ -630,10 +719,12 @@ class BulkSaverBuilder(BaseSaverBuilder):
     for saveable in saveables:
       if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
         continue
+      if saveable.custom_restore:
+        continue
       for spec in saveable.specs:
         restore_specs.append((spec.name, spec.slice_spec, spec.dtype))
 
-    if len(restore_specs) > 0:    
+    if len(restore_specs) > 0:
       names, slices, dtypes = zip(*restore_specs)
       # Load all tensors onto CPU 0 for compatibility with existing code.
       with ops.device("cpu:0"):
@@ -928,6 +1019,44 @@ class Saver(object):
       if self._var_list is None:
         # pylint: disable=protected-access
         self._var_list = variables._all_saveable_objects()
+      from tensorflow.python.ops import hash_table
+      if isinstance(self._var_list, dict):
+        ht = {}
+        lst = {}
+        for name, x in self._var_list.items():
+          if isinstance(x, hash_table.HashTable):
+            if x.hash_table not in ht:
+              ht[x.hash_table] = [x]
+            else:
+              ht[x.hash_table].append(x)
+          elif isinstance(x, hash_table.BloomFilterAdmitStrategy):
+            lst[name] = BloomFilterSaveable(x)
+          else:
+            lst[name] = x
+        if len(ht) != 0 and not self._sharded:
+          raise ValueError("HashTable can only use sharded saver")
+        for x, y in ht.items():
+          lst[x.name] = HashTableSaveable(y)
+        self._var_list = lst
+      else:
+        ht = {}
+        lst = []
+        for x in self._var_list:
+          if isinstance(x, hash_table.HashTable):
+            if x.hash_table not in ht:
+              ht[x.hash_table] = [x]
+            else:
+              ht[x.hash_table].append(x)
+          elif isinstance(x, hash_table.BloomFilterAdmitStrategy):
+            lst.append(BloomFilterSaveable(x))
+          else:
+            lst.append(x)
+        if len(ht) != 0 and not self._sharded:
+          raise ValueError("HashTable can only use sharded saver")
+        for x, y in ht.items():
+          lst.append(HashTableSaveable(y))
+        self._var_list = lst
+
       if not self._var_list:
         if self._allow_empty:
           self._is_empty = True

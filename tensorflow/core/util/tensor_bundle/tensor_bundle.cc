@@ -518,6 +518,24 @@ Status BundleWriter::AddTensorHeader(StringPiece key, DataType dtype) {
   return status_;
 }
 
+Status BundleWriter::AddSliceHeader(
+    string tensor_name, const TensorShape& shape, DataType type, bool is_hash,
+    TensorSliceProto** proto) {
+  if (!status_.ok()) return status_;
+  BundleEntryProto* full_entry = &entries_[tensor_name];
+  if (full_entry->dtype() != DT_INVALID) {
+    CHECK_EQ(full_entry->dtype(), type);
+  }
+  if (full_entry->has_shape()) {
+    CHECK(TensorShape(full_entry->shape()) == shape);
+  }
+
+  full_entry->set_is_hash_table(is_hash);
+  full_entry->set_dtype(type);
+  shape.AsProto(full_entry->mutable_shape());
+  *proto = full_entry->add_slices();
+  return Status::OK();
+}
 
 Status BundleWriter::AddTensorHeader(StringPiece key, DataType dtype, TensorShape shape) {
   if (!status_.ok()) return status_;
@@ -749,6 +767,74 @@ static Status MergeOneBundle(Env* env, StringPiece prefix,
   return Status::OK();
 }
 
+Status FixMergeHashTableBundles(MergeState* state) {
+  std::unordered_map<string, string> bundle_mapping;
+  for (auto&& item : state->entries) {
+    if (!item.second.is_hash_table()) {
+      continue;
+    }
+    std::multimap<int64, TensorSliceProto*> sorter;
+    for (int slice = 0; slice < item.second.slices_size(); slice++) {
+      sorter.emplace(item.second.slices(slice).hash_slice_begin(),
+          item.second.mutable_slices(slice));
+    }
+    int64 idx = 0;
+    std::vector<TensorSliceProto> slices;
+    for (auto&& itemx : sorter) {
+      if (itemx.second->extent(0).length() > 0) {
+        slices.emplace_back();
+        TensorSliceProto& slice = slices.back();
+        slice.CopyFrom(*itemx.second);
+        slice.mutable_extent(0)->set_start(idx);
+        idx += slice.extent(0).length();
+        TensorSlice from_slice(1);
+        from_slice.set_start(0, slice.hash_slice_begin());
+        from_slice.set_length(0, slice.hash_slice_length());
+        string from = checkpoint::EncodeTensorNameSlice(
+            item.first, from_slice);
+        string to = checkpoint::EncodeTensorNameSlice(
+            item.first, TensorSlice(slice));
+        if (!bundle_mapping.emplace(from, to).second) {
+          return errors::FailedPrecondition(
+              "FixMergeHashTableBundles has some error when create bundle mapping.");
+        }
+      } else {
+        TensorSlice from_slice(1);
+        from_slice.set_start(0, itemx.second->hash_slice_begin());
+        from_slice.set_length(0, itemx.second->hash_slice_length());
+        string from = checkpoint::EncodeTensorNameSlice(
+            item.first, from_slice);
+        if (!bundle_mapping.emplace(from, "").second) {
+          return errors::FailedPrecondition(
+              "FixMergeHashTableBundles has some error when create bundle mapping. 2");
+        }
+      }
+    }
+    item.second.clear_slices();
+    for (auto&& itemx : slices) {
+      item.second.add_slices()->CopyFrom(itemx);
+    }
+    item.second.mutable_shape()->mutable_dim(0)->set_size(idx);
+  }
+  std::map<string, BundleEntryProto> entries_tmp;
+  entries_tmp.swap(state->entries);
+  for (auto&& item : entries_tmp) {
+    auto iter = bundle_mapping.find(item.first);
+    string real_name;
+    if (iter == bundle_mapping.end()) {
+      real_name = item.first;
+    } else {
+      real_name = iter->second;
+    }
+    if (real_name == "") {
+      LOG(INFO) << "Ignore Hash Table: " << str_util::CEscape(item.first);
+      continue;
+    }
+    state->entries.emplace(real_name, item.second);
+  }
+  return Status::OK();
+};
+
 Status MergeBundles(Env* env, gtl::ArraySlice<tstring> prefixes,
                     StringPiece merged_prefix) {
   // Merges all metadata tables.
@@ -759,6 +845,8 @@ Status MergeBundles(Env* env, gtl::ArraySlice<tstring> prefixes,
   for (int i = 0; i < prefixes.size(); ++i) {
     TF_RETURN_IF_ERROR(MergeOneBundle(env, prefixes[i], &merge));
   }
+
+  TF_RETURN_IF_ERROR(FixMergeHashTableBundles(&merge));
 
   // Renames data files to contain the merged bundle prefix.
   for (const auto& p : merge.shard_ids) {
@@ -1074,6 +1162,18 @@ Status BundleReader::LookupSegmentOffset(StringPiece key, uint64_t offset, size_
   return Status::OK();
 }
 
+Status BundleReader::GetTensorInfo(
+    StringPiece key, int64* size,
+    std::unique_ptr<RandomAccessFile>* file, int64* offset) {
+  BundleEntryProto entry;
+  TF_RETURN_IF_ERROR(GetBundleEntryProto(key, &entry));
+  TF_RETURN_IF_ERROR(env_->NewRandomAccessFile(
+        DataFilename(prefix_, entry.shard_id(), num_shards_), file));
+  *size = entry.size();
+  *offset = entry.offset();
+  return Status::OK();
+}
+
 Status BundleReader::ReadCurrent(Tensor* val) {
   CHECK(val != nullptr);
   BundleEntryProto entry;
@@ -1110,6 +1210,18 @@ Status BundleReader::LookupSlice(StringPiece full_tensor_key,
   BundleEntryProto entry;
   TF_RETURN_IF_ERROR(GetBundleEntryProto(full_tensor_key, &entry));
   return GetSliceValue(full_tensor_key, entry, slice_spec, val);
+}
+
+Status BundleReader::LookupTensorSliceProtos(
+      StringPiece key, std::vector<TensorSliceProto>* slices) {
+  slices->clear();
+  BundleEntryProto entry;
+  TF_RETURN_IF_ERROR(GetBundleEntryProto(key, &entry));
+  slices->reserve(entry.slices_size());
+  for (const auto& slice : entry.slices()) {
+    slices->emplace_back(slice);
+  }
+  return Status::OK();
 }
 
 Status BundleReader::GetSliceValue(StringPiece full_tensor_key,
@@ -1314,6 +1426,113 @@ Status FileOutputBuffer::FlushBuffer() {
     TF_RETURN_IF_ERROR(file_->Append(StringPiece(&buffer_[0], position_)));
     position_ = 0;
   }
+  return Status::OK();
+}
+
+SegmentBundleWriter::SegmentBundleWriter(
+    BundleWriter* writer, const string& name,
+    const TensorShape& shape, DataType type, int64 buffer_size)
+  : writer_(writer), name_(name), shape_(shape), type_(type),
+    buffer_size_(buffer_size), buffer_(new char[buffer_size]),
+    buffer_ptr_(0), write_counter_(0) {}
+
+Status SegmentBundleWriter::Begin() {
+  return writer_->AddTensorHeader(name_, type_, shape_);
+}
+
+Status SegmentBundleWriter::WriteData(const void* data, int64 size) {
+  while (size > 0) {
+    if (buffer_ptr_ + size <= buffer_size_) {
+      memcpy(buffer_.get() + buffer_ptr_, data, size);
+      buffer_ptr_ += size;
+      size = 0;
+    } else {
+      int64 w = buffer_size_ - buffer_ptr_;
+      memcpy(buffer_.get() + buffer_ptr_, data, w);
+      TF_RETURN_IF_ERROR(writer_->AppendSegmentData(buffer_.get(), buffer_size_));
+      size -= w;
+      data = (const char*)data + w;
+      buffer_ptr_ = 0;
+      write_counter_++;
+    }
+  }
+  return Status::OK();
+}
+
+Status SegmentBundleWriter::End() {
+  if (write_counter_ * buffer_size_ + buffer_ptr_ !=
+      shape_.num_elements() * DataTypeSize(type_)) {
+    return errors::Internal("SegmentBundleWriter write size error");
+  }
+  if (write_counter_ == 0) {
+    return writer_->AddCompeleteData(buffer_.get(), buffer_ptr_);
+  } else if (buffer_ptr_ > 0) {
+    TF_RETURN_IF_ERROR(writer_->AppendSegmentData(buffer_.get(), buffer_ptr_));
+    writer_->EndSegmentData(
+        write_counter_ * buffer_size_ + buffer_ptr_,  buffer_ptr_);
+    return Status::OK();
+  } else {
+    writer_->EndSegmentData(
+        write_counter_ * buffer_size_ + buffer_ptr_,  buffer_size_);
+    return Status::OK();
+  }
+}
+
+SegmentBundleReader::SegmentBundleReader(
+    BundleReader* reader, const string& name,
+    int64 offset, int64 size, int64 buffer_size)
+  : reader_(reader), name_(name), buffer_size_(buffer_size),
+    offset_(offset), size_(size) { }
+
+Status SegmentBundleReader::Begin() {
+  TF_RETURN_WITH_CONTEXT_IF_ERROR(reader_->LookupDtypeAndShape(name_, &type_, &shape_), "xx1");
+  if (size_ == -1) {
+    size_ = shape_.dim_size(0);
+  }
+  if (offset_ + size_ > shape_.dim_size(0)) {
+    return errors::InvalidArgument("SegmentBundleReader offset error");
+  }
+  int64 xsize = DataTypeSize(type_);
+  for (int i = 1; i < shape_.dims(); i++) {
+    xsize *= shape_.dim_size(i);
+  }
+  int64 real_size_ = xsize * size_;
+  if (real_size_ < buffer_size_) {
+    buffer_size_ = real_size_;
+  }
+  remain_size_ = real_size_;
+  int64 var_offset;
+  int64 var_size;
+  TF_RETURN_IF_ERROR(reader_->GetTensorInfo(name_, &var_size, &file_, &var_offset));
+  input_.reset(new io::InputBuffer(file_.get(), buffer_size_));
+  TF_RETURN_IF_ERROR(input_->Seek(var_offset + xsize * offset_));
+  return Status::OK();
+}
+
+const TensorShape& SegmentBundleReader::shape() {
+  return shape_;
+}
+
+DataType SegmentBundleReader::type() {
+  return type_;
+}
+
+Status SegmentBundleReader::Read(void* data, int64 size) {
+  if (size > remain_size_) {
+    return errors::InvalidArgument("SegmentBundleReader Read Exhuasted");
+  }
+  size_t read_size;
+  TF_RETURN_IF_ERROR(input_->ReadNBytes(size, (char*)data, &read_size));
+  remain_size_ -= size;
+  return Status::OK();
+}
+
+Status SegmentBundleReader::Skip(int64 size) {
+  if (size > remain_size_) {
+    return errors::InvalidArgument("SegmentBundleReader Read Exhuasted");
+  }
+  TF_RETURN_IF_ERROR(input_->SkipNBytes(size));
+  remain_size_ -= size;
   return Status::OK();
 }
 
