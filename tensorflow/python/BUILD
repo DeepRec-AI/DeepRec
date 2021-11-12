@@ -135,6 +135,8 @@ py_library(
         ":nn",
         ":ops",
         ":platform",
+	    ":prefetch",
+        ":prefetch_runner",
         ":proto_ops",
         ":pywrap_tensorflow",
         ":rnn_ops_gen",
@@ -2231,6 +2233,10 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+   name = "data_buffer_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
     name = "stateless_random_ops_gen",
     visibility = [
         "//tensorflow/python/data/experimental/ops:__pkg__",
@@ -2870,6 +2876,35 @@ py_library(
         ":tensor_util",
         "//tensorflow/python/eager:context",
         "@six_archive//:six",
+    ],
+)
+
+py_library(
+    name = "prefetch",
+    srcs = ["ops/prefetch.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":clip_ops",
+        ":control_flow_ops",
+        ":data_buffer_ops_gen",
+	":framework",
+	":framework_ops",
+	":framework_for_generated_wrappers",
+    ],
+)
+
+py_library(
+    name = "prefetch_runner",
+    srcs = ["ops/prefetch_runner.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":clip_ops",
+        ":control_flow_ops",
+        ":data_buffer_ops_gen",
+	":framework",
+        ":framework_for_generated_wrappers",
     ],
 )
 
@@ -6460,6 +6495,27 @@ tf_py_test(
 )
 
 py_test(
+    name = "prefetch_test",
+    size = "small",
+    srcs = ["ops/prefetch_test.py"],
+    srcs_version = "PY2AND3",
+    tags = ["no_windows"],
+    deps = [
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":partitioned_variables",
+        ":variable_scope",
+        ":embedding_ops",
+	":prefetch",
+        #":data_buffer_ops_gen",
+        ":prefetch_runner",
+        ":state_ops",
+        "//tensorflow/contrib/layers:layers_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
     name = "embedding_variable_ops_test",
     size = "small",
     srcs = ["ops/embedding_variable_ops_test.py"],
@@ -6487,8 +6543,8 @@ py_test(
       ":client_testlib",
       ":framework_for_generated_wrappers",
       ":partitioned_variables",
-      ":variable_scope",
-      ":embedding_ops",
+      ":array_ops",
+      ":parsing_ops",
       ":state_ops",
       "//tensorflow/contrib/layers:layers_py",
       "//third_party/py/numpy",

@@ -2769,6 +2769,23 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "data_buffer_ops",
+    hdrs = ["data_buffer_ops.h"],
+    srcs = ["data_buffer_ops.cc"],
+    deps=[
+      ":bounds_check",
+      "//tensorflow/core:framework",
+      "//tensorflow/core:protos_all_cc",
+      "//tensorflow/core:proto_text",
+      "//tensorflow/core:lib",
+      "//tensorflow/core:data_buffer_ops_op_lib",
+      "//tensorflow/core",
+      "//third_party/eigen3",
+    ],
+
+)
+
+tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc"],
