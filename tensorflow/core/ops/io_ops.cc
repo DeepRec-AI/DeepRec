@@ -206,6 +206,27 @@ REGISTER_OP("Restore")
       return Status::OK();
     });
 
+REGISTER_OP("RestoreHashTable")
+    .Input("file_pattern: string")
+    .Input("tensor_name: string")
+    .Input("shape_and_slices: string")
+    .Input("handles: resource")
+    .Attr("clear: bool = true")
+    .SetIsStateful()
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    });
+
+REGISTER_OP("RestoreBloomFilter")
+    .Input("file_pattern: string")
+    .Input("tensor_name: string")
+    .Input("shape_and_slice: string")
+    .Input("handle: resource")
+    .SetIsStateful()
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    });
+
 REGISTER_OP("RestoreSlice")
     .Input("file_pattern: string")
     .Input("tensor_name: string")

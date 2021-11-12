@@ -62,11 +62,14 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
+from tensorflow.python.ops import init_ops
+from tensorflow.python.ops.hash_table import hash_table
 import tensorflow.python.ops.nn_grad  # pylint: disable=unused-import
 from tensorflow.python.platform import gfile
 from tensorflow.python.platform import test
 from tensorflow.python.summary import summary
 from tensorflow.python.training import adam
+from tensorflow.python.training import adagrad
 from tensorflow.python.training import checkpoint_management
 from tensorflow.python.training import gradient_descent
 from tensorflow.python.training import queue_runner_impl
@@ -3118,6 +3121,46 @@ class TrackableCompatibilityTests(test.TestCase):
           root.model.variables + root.optimizer.variables())
       saver.restore(sess=None, save_path=save_path)
       self._check_sentinels(root)
+
+  def testHashTable(self):
+    checkpoint_directory = self.get_temp_dir()
+    checkpoint_prefix = os.path.join(checkpoint_directory, "ckpt")
+
+    save_graph = ops_lib.Graph()
+    with self.session(graph=save_graph) as sess:
+      ht = hash_table.DistributedHashTable(
+          [10], dtypes.float32, init_ops.zeros_initializer(dtypes.float32),
+          partitioner=hash_table.FixedSizeHashTablePartitioner(2))
+      var = variables.VariableV1([0], name="variable1", dtype=dtypes.float32)
+      loss = math_ops.reduce_sum(ht.lookup([0, 1, 2])) + var
+      optimizer = adagrad.AdagradOptimizer(0.1)
+      train = optimizer.minimize(loss)
+      sess.run(variables.global_variables_initializer())
+      sess.run(train)
+      e1 = sess.run(var)
+      r1 = sess.run(ht.lookup([0, 1, 2]))
+      self.assertTrue((np.abs(e1 - r1) < 1e-5).all())
+      object_saver = saver_module.Saver(sharded=True)
+      save_path = object_saver.save(sess, checkpoint_prefix)
+
+    restore_graph = ops_lib.Graph()
+    with self.test_session(
+        graph=restore_graph) as sess:
+      ht = hash_table.DistributedHashTable(
+          [10], dtypes.float32, init_ops.zeros_initializer(dtypes.float32),
+          partitioner=hash_table.FixedSizeHashTablePartitioner(2))
+      var = variables.VariableV1([0.0], name="variable1")
+      loss = math_ops.reduce_sum(ht.lookup([0, 1, 2, 3])) + var
+      optimizer = adagrad.AdagradOptimizer(0.1)
+      train = optimizer.minimize(loss)
+      object_saver = saver_module.Saver(sharded=True)
+      object_saver.restore(sess, save_path)
+      sess.run(train)
+      e2 = sess.run(var)
+      r2 = sess.run(ht.lookup([0, 1, 2]))
+      r3 = sess.run(ht.lookup([3]))
+      self.assertTrue((np.abs(e2 - r2) < 1e-5).all())
+      self.assertTrue((np.abs(e1 - r3) < 1e-5).all())
 
 
 if __name__ == "__main__":

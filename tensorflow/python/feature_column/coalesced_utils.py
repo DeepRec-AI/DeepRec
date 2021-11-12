@@ -22,6 +22,7 @@ import six
 import json
 import collections
 import copy
+import contextlib
 
 from tensorflow.core.framework import variable_pb2
 from tensorflow.python.eager import context
@@ -38,6 +39,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 from tensorflow.python.ops import sparse_ops
+from tensorflow.python.ops import init_ops
 from tensorflow.python.util import nest
 
 class CoalescedScopeBase(object):
@@ -232,7 +234,6 @@ class CoalescedSaveSliceInfo(object):
 
   def to_proto(self):
     """Returns a SaveSliceInfoDef() proto.
-
     Args:
       export_scope: Optional `string`. Name scope to remove
 
@@ -257,11 +258,14 @@ def add_embedding_signature(column, dimension, combiner, initializer,
       dimension, dtype, initializer, combiner, trainable, hash_combiner,
       bucket_size)
 
-def make_cluster_signature(column):
-  global _embedding_signatures
-  if column not in _embedding_signatures:
-    raise ValueError('signautre not found for column: {}'.format(column))
-  attr = _embedding_signatures[column]
+def make_cluster_signature(column, hashtable_column=False):
+  if hashtable_column:
+    attr = column
+  else:
+    global _embedding_signatures
+    if column not in _embedding_signatures:
+      raise ValueError('signautre not found for column: {}'.format(column))
+    attr = _embedding_signatures[column]
   signature = {
       'dimension': str(tensor_shape.TensorShape(attr.dimension)),
       'dtype': dtypes.as_dtype(attr.dtype).name,
@@ -270,16 +274,23 @@ def make_cluster_signature(column):
   }
   return json.dumps(signature, sort_keys=True)
 
-def _make_runtime_signature(column):
-  global _embedding_signatures
-  if column not in _embedding_signatures:
-    raise ValueError('signautre not found for column: {}'.format(column))
-  attr = _embedding_signatures[column]
+def _make_runtime_signature(column, hashtable_column=False):
+  if hashtable_column:
+    attr = column
+  else:
+    global _embedding_signatures
+    if column not in _embedding_signatures:
+      raise ValueError('signautre not found for column: {}'.format(column))
+    attr = _embedding_signatures[column]
   signature = {
       'combiner': attr.combiner,
       'trainable': attr.trainable,
-      'hash_combiner': attr.hash_combiner
   }
+  if hashtable_column:
+    signature['filter_hook'] = [type(hook).__name__ for hook in attr.embedding_lookup_hooks]
+    signature['filter_hook_config'] = [hook.get_config() for hook in attr.embedding_lookup_hooks]
+  else:
+    signature['hash_combiner'] = attr.hash_combiner
   return json.dumps(signature, sort_keys=True)
 
 def get_signature_attributes(column):
@@ -287,12 +298,12 @@ def get_signature_attributes(column):
     raise ValueError('signautre not found for column: {}'.format(column))
   return _embedding_signatures[column]
 
-def check_coalesced_columns_compatible(columns):
+def check_coalesced_columns_compatible(columns, hashtable_column=False):
   base = None
   for i, c in enumerate(columns):
     if base is None:
-      base = make_cluster_signature(c)
-    elif make_cluster_signature(c) != base:
+      base = make_cluster_signature(c, hashtable_column)
+    elif make_cluster_signature(c, hashtable_column) != base:
       raise ValueError('signature of column 0 not match with column %d' % i)
 
 def deduplicate_shared_embedding(columns):
@@ -446,9 +457,7 @@ def coalesce_sparse_data(ids_list, weights_list, weight_type, format_rank=2):
 
 def add_to_collections(var, weight_collections):
   """Adds a var to the list of weight_collections provided.
-
   Handles the case for partitioned and non-partitioned variables.
-
   Args:
     var: A variable or Partitioned Variable.
     weight_collections: List of collections to add variable to.
@@ -462,3 +471,39 @@ def add_to_collections(var, weight_collections):
         ops.add_to_collection(weight_collection, constituent_var)
     else:
       ops.add_to_collection(weight_collection, var)
+
+def check_initializer_compatible(i1, i2):
+  if not isinstance(i1, init_ops.Initializer):
+    raise ValueError('i1 must be an Initializer object')
+  if not isinstance(i2, init_ops.Initializer):
+    raise ValueError('i2 must be an Initializer object')
+  if i1.__class__ != i2.__class__:
+    return False
+  if i1.get_config() != i2.get_config():
+    return False
+  return True
+
+def check_share_compatible(c1, c2):
+  error = 'Cannot share HashTable with incompatible {}: {} vs {}'
+  if c1.dimension != c2.dimension:
+    return error.format('dimension', c1.dimension, c2.dimension)
+  if c1.dtype != c2.dtype:
+    return error.format('dtype', c1.dtype, c2.dtype)
+  if not check_initializer_compatible(c1.initializer, c2.initializer):
+    return 'Cannot share HashTable with incompatible initializer'
+  if c1.trainable != c2.trainable:
+    return error.format('trainable', c1.trainable, c2.trainable)
+  return None
+
+@contextlib.contextmanager
+def merged_embedding_lookup_hook(hooks):
+  if hooks is None:
+    hooks = tuple()
+  if hasattr(contextlib, "nested"):
+    with contextlib.nested(*hooks):
+      yield
+  else:
+    with contextlib.ExitStack() as stack:
+      for hook in hooks:
+        stack.enter_context(hook)
+      yield

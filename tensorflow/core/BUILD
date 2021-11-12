@@ -917,6 +917,8 @@ tf_cuda_library(
         "framework/type_traits.h",
         "framework/typed_allocator.h",
         "framework/types.h",
+        "framework/hash_table/tensor_generator.h",
+        "framework/hash_table/bloom_filter_strategy.h",
         "public/version.h",
         "util/activation_mode.h",
         "util/batch_util.h",
@@ -966,6 +968,7 @@ tf_cuda_library(
     deps = [
         ":framework_internal",
         "@com_google_absl//absl/base",
+        "@sparsehash_c11//:dense_hash_map",
     ],
 )
 
@@ -1169,6 +1172,8 @@ tf_gen_op_libs(
         "feature_column_ops",
         "function_ops",
         "functional_ops",
+        "hash_ops",
+        "hash_training_ops",
         "fuserecv_ops",
         "image_ops",
         "io_ops",
@@ -1408,6 +1413,8 @@ cc_library(
         ":function_ops_op_lib",
         ":functional_ops_op_lib",
         ":fuserecv_ops_op_lib",
+        ":hash_ops_op_lib",
+        ":hash_training_ops_op_lib",
         ":image_ops_op_lib",
         ":io_ops_op_lib",
         ":linalg_ops_op_lib",
@@ -1588,6 +1595,7 @@ cc_library(
         "//tensorflow/core/kernels:function_ops",
         "//tensorflow/core/kernels:functional_ops",
         "//tensorflow/core/kernels:grappler",
+        "//tensorflow/core/kernels:hash_ops",
         "//tensorflow/core/kernels:histogram_op",
         "//tensorflow/core/kernels:image",
         "//tensorflow/core/kernels:io",
@@ -2935,6 +2943,7 @@ tf_cuda_library(
             "example/feature_util.cc",
             "util/reporter.cc",
             "framework/fake_input.*",
+            "framework/hash_table/*.cc",
             "framework/op_gen_lib.*",
             "framework/reader_base.*",
             "util/memmapped_file_system.*",
@@ -2971,6 +2980,7 @@ tf_cuda_library(
         ":protos_all_cc",
         ":stats_calculator_portable",
         ":version_lib",
+        ":framework_internal_impl_hash_table",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -2983,6 +2993,48 @@ tf_cuda_library(
         "//tensorflow/core/profiler:nvtx_utils",
         "//tensorflow/core/profiler/lib:traceme",
         "//third_party/eigen3",
+    ] + if_static(
+        extra_deps = ["@com_google_protobuf//:protobuf"],
+        otherwise = ["@com_google_protobuf//:protobuf_headers"],
+    ) + mkl_deps(),
+    alwayslink = 1,
+)
+
+tf_cuda_library(
+    name = "framework_internal_impl_hash_table",
+    srcs = FRAMEWORK_INTERNAL_PRIVATE_HEADERS + glob(
+        [
+            "framework/hash_table/*.cc",
+        ],
+        exclude = [
+            "**/*test*",
+        ],
+    ),
+    hdrs = FRAMEWORK_INTERNAL_PUBLIC_HEADERS,
+    copts = tf_copts(),
+    nocopts = "-fno-exceptions",
+    linkopts = select({
+        "//tensorflow:freebsd": ["-lm"],
+        "//tensorflow:windows": [],
+        "//conditions:default": [
+            "-ldl",
+            "-lm",
+        ],
+    }),
+    deps = [
+        ":feature_util",
+        ":lib",
+        ":lib_internal",
+        ":protos_all_proto_text",
+        ":error_codes_proto_text",
+        ":protos_all_cc",
+        ":stats_calculator_portable",
+        ":version_lib",
+        "//tensorflow/core/platform/default/build_config:platformlib",
+        "//tensorflow/core/kernels:bounds_check",
+        "//tensorflow/core:gpu_id",
+        "//third_party/eigen3",
+        "core_cpu_lib",
     ] + if_static(
         extra_deps = ["@com_google_protobuf//:protobuf"],
         otherwise = ["@com_google_protobuf//:protobuf_headers"],
@@ -5543,6 +5595,54 @@ tf_cc_tests(
         "//tensorflow/cc:client_session",
         "//tensorflow/cc:function_ops",
         "//tensorflow/cc:ops",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_tensor_generator_test",
+    size = "small",
+    srcs = ["framework/hash_table/tensor_generator_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_tensible_variable_test",
+    size = "small",
+    srcs = ["framework/hash_table/tensible_variable_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_hash_table_test",
+    size = "small",
+    srcs = ["framework/hash_table/hash_table_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_bloom_filter_strategy_test",
+    size = "small",
+    srcs = ["framework/hash_table/bloom_filter_strategy_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
     ],
 )
 

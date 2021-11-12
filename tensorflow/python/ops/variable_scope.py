@@ -54,7 +54,7 @@ __all__ = [
     "get_local_variable", "variable_scope", "variable_op_scope",
     "no_regularizer", "VariableSynchronization", "VariableAggregation",
     "get_embedding_variable", "get_dynamic_dimension_embedding_variable",
-    "get_multihash_variable"
+    "get_multihash_variable", "get_hash_table"
 ]
 
 _api_usage_gauge = monitoring.BoolGauge(
@@ -286,6 +286,212 @@ class _VariableStore(object):
     self._vars = {}  # A dictionary of the stored TensorFlow variables.
     self._partitioned_vars = {}  # A dict of the stored PartitionedVariables.
     self._store_eager_variables = False
+
+  def get_hashtable(self,
+                    name,
+                    shape=None,
+                    dtype=dtypes.float32,
+                    initializer=None,
+                    collections=None,
+                    reuse=None,
+                    trainable=None,
+                    synchronization=VariableSynchronization.AUTO,
+                    partitioner=None,
+                    children=None):
+    if context.executing_eagerly():
+      if not self._store_eager_variables and reuse:
+        raise RuntimeError(
+            "When eager execution is enabled variable reuse is only supported"
+            " when an EagerVariableStore is active. See the documentation on"
+            " EagerVariableStore for example usage.")
+      if self._store_eager_variables:
+        reuse = AUTO_REUSE
+    try:
+      dtype = dtype.base_dtype
+    except AttributeError:
+      # .base_dtype not existing means that we will try and use the raw dtype
+      # which was passed in - this might be a NumPy type which is valid.
+      pass
+    def _hashtable_getter(name,
+                          shape=None,
+                          dtype=dtypes.float32,
+                          initializer=None,
+                          collections=None,
+                          reuse=None,
+                          trainable=None,
+                          partitioner=None,
+                          children=None):
+      # HashTable cases
+      if partitioner is not None:
+        if not callable(partitioner):
+          raise ValueError(
+              "Partitioner must be callable, but received: %s" % partitioner)
+        return self._get_distribute_hashtable(name=name,
+                                              shape=shape,
+                                              dtype=dtype,
+                                              initializer=initializer,
+                                              collections=collections,
+                                              reuse=reuse,
+                                              trainable=trainable,
+                                              partitioner=partitioner,
+                                              children=children)
+      else:
+        return self._get_hashtable(name=name,
+                                   shape=shape,
+                                   dtype=dtype,
+                                   initializer=initializer,
+                                   reuse=reuse,
+                                   collections=collections,
+                                   trainable=trainable,
+                                   partitioner=partitioner,
+                                   children=children)
+
+    return _hashtable_getter(name,
+                             shape=shape,
+                             dtype=dtype,
+                             initializer=initializer,
+                             collections=collections,
+                             reuse=reuse,
+                             trainable=trainable,
+                             partitioner=partitioner,
+                             children=children)
+
+  def _get_hashtable(self,
+                     name,
+                     shape=None,
+                     dtype=dtypes.float32,
+                     initializer=None,
+                     reuse=None,
+                     collections=None,
+                     trainable=None,
+                     partitioner=None,
+                     children=None):
+
+    from tensorflow.python.ops.hash_table import hash_table
+    if context.executing_eagerly():
+      raise NotImplementedError("Hashtable variables are not yet supported "
+                                "when eager execution is enabled.")
+    if partitioner is not None:
+      raise ValueError(
+          "Trying to get a hashtable %s, but partitioner is not None." % name)
+
+    if name in self._vars:
+      if reuse is False:
+        raise ValueError(
+            "Hashtable variable with name %s already exists. Did you mean to "
+            "set reuse=True or reuse=tf.AUTO_REUSE in VarScope?"
+            % name)
+      existing_var = self._vars[name]
+      shape = tensor_shape.as_shape(shape)
+      if not isinstance(existing_var, hash_table.HashTable):
+        raise ValueError(
+            "Trying to reuse hashtable variable %s, but an existing variable is not"
+            " a HashTable, can not reuse it." % (name))
+      if not shape.is_compatible_with(existing_var.shape):
+        raise ValueError(
+            "Trying to reuse hashtable variable %s, but specified shape %s "
+            "and found shape %s."
+            % (name, shape, existing_var.get_shape()))
+      if not dtype.is_compatible_with(existing_var.dtype):
+        raise ValueError(
+            "Trying to reuse hashtable variable %s, but specified dtype %s "
+            "and found dtype %s."
+            % (name, dtype.name, existing_var.dtype.name))
+      return existing_var
+
+    if reuse is True:
+      raise ValueError("Hashtable %s does not exist, or was not "
+                       "created with tf.get_variable(). Did you mean to set "
+                       "reuse=False or reuse=tf.AUTO_REUSE in VarScope?" % name)
+
+    hashtable_var = hash_table.HashTable(shape=shape,
+                                         dtype=dtype,
+                                         distributed_name=name,
+                                         initializer=initializer,
+                                         collections=collections,
+                                         trainable=trainable,
+                                         children=children,
+                                         name=name)
+    self._vars[name] = hashtable_var
+
+    return hashtable_var
+
+  def _get_distribute_hashtable(self,
+                                name,
+                                shape=None,
+                                dtype=dtypes.float32,
+                                initializer=None,
+                                reuse=None,
+                                collections=None,
+                                trainable=None,
+                                partitioner=None,
+                                children=None):
+
+    from tensorflow.python.ops.hash_table import hash_table
+    if context.executing_eagerly():
+      raise NotImplementedError("Distribute Hashtable variables are not yet supported "
+                                "when eager execution is enabled.")
+
+    if partitioner is None:
+      raise ValueError(
+          "Trying to get a distribute hashtable %s, but partitioner is not specified." % name)
+
+    if name in self._vars:
+      raise ValueError(
+          "A distribute hashtable was provided, but an single version of the "
+          "variable was found: %s.  Perhaps a variable of the same name was "
+          "already created with single?" % name)
+    if name in self._partitioned_vars:
+      if reuse is False:
+        raise ValueError(
+            "Hashtable variable with name %s already exists. Did you mean to "
+            "set reuse=True or reuse=tf.AUTO_REUSE in VarScope?"
+            % name)
+      existing_var = self._partitioned_vars[name]
+      if not isinstance(existing_var, hash_table.DistributedHashTable):
+        raise ValueError(
+            "Trying to reuse distribute hashtable variable %s, but an existing variable is not"
+            " a DistributedHashTable, can not reuse it." % (name))
+      shape = tensor_shape.as_shape(shape)
+      if not shape.is_compatible_with(existing_var.shape):
+        raise ValueError(
+            "Trying to reuse distribute hashtable variable %s, but specified shape %s "
+            "and found shape %s."
+            % (name, shape, existing_var.get_shape()))
+      if not dtype.is_compatible_with(existing_var.dtype):
+        raise ValueError(
+            "Trying to reuse distribute hashtable variable %s, but specified dtype %s "
+            "and found dtype %s."
+            % (name, dtype.name, existing_var.dtype.name))
+      cur_slicer = partitioner(hash_table.DistributedHashTable._DEFAULT_SLICER_SIZE)
+      if cur_slicer != existing_var._slicer:
+        raise ValueError(
+            "Trying to reuse distribute hashtable variable %s, but specified partitioner split result is not equal to origin: [{}, {}]".format(cur_slicer, existing_var._slicer))
+
+      return existing_var
+
+    if reuse is True:
+      raise ValueError("Distribute hashtable %s does not exist, or was not "
+                       "created with tf.get_variable(). Did you mean to set "
+                       "reuse=False or reuse=tf.AUTO_REUSE in VarScope?" % name)
+
+    distribute_hashtable_var = hash_table.DistributedHashTable(shape=shape,
+                                                              dtype=dtype,
+                                                              initializer=initializer,
+                                                              collections=collections,
+                                                              trainable=trainable,
+                                                              partitioner=partitioner,
+                                                              children=children,
+                                                              name=name)
+    for i in range(len(distribute_hashtable_var.partitions)):
+      hashtable_full_name = "%s/HashTable_%d" % (name, i)
+      if hashtable_full_name in self._vars:
+        raise ValueError("Hashtable variable with name %s already exists. Conflict when create "
+                         "distribute hashtable with partition %d." % (hashtable_full_name, i))
+      self._vars[hashtable_full_name] = distribute_hashtable_var.partitions[i]
+
+    self._partitioned_vars[name] = distribute_hashtable_var
+    return distribute_hashtable_var
 
   def get_variable(self,
                    name,
@@ -730,6 +936,11 @@ class _VariableStore(object):
             "set reuse=True or reuse=tf.AUTO_REUSE in VarScope?" % name)
 
       existing_var = self._partitioned_vars[name]
+      from tensorflow.python.ops.hash_table import hash_table
+      if isinstance(existing_var, (hash_table.HashTable, hash_table.DistributedHashTable)):
+        raise ValueError(
+            "Trying to reuse partitioned variable %s, but an existing variable is a"
+            " HashTable or DistributedHashTable, can not reuse it." % (name))
       if not shape.is_compatible_with(existing_var.get_shape()):
         raise ValueError(
             "Trying to reuse partitioned variable %s, but specified shape %s "
@@ -923,6 +1134,11 @@ class _VariableStore(object):
         raise ValueError("%s Originally defined at:\n\n%s" %
                          (err_msg, "".join(traceback.format_list(tb))))
       found_var = self._vars[name]
+      from tensorflow.python.ops.hash_table import hash_table
+      if isinstance(found_var, (hash_table.HashTable, hash_table.DistributedHashTable)):
+        raise ValueError(
+            "Trying to reuse variable %s, but an existing variable is a"
+            " HashTable or DistributedHashTable, can not reuse it." % (name))
       if not shape.is_compatible_with(found_var.get_shape()):
         raise ValueError("Trying to share variable %s, but specified shape %s"
                          " and found shape %s." %
@@ -1302,6 +1518,54 @@ class VariableScope(object):
           constraint=constraint,
           synchronization=synchronization,
           aggregation=aggregation)
+
+  def get_hash_table(self,
+                     var_store,
+                     name,
+                     shape=None,
+                     dtype=None,
+                     initializer=None,
+                     collections=None,
+                     reuse=None,
+                     trainable=True,
+                     synchronization=VariableSynchronization.AUTO,
+                     partitioner=None,
+                     children=None):
+    """Gets an existing variable with this name or create a new one."""
+    if partitioner is None:
+      partitioner = self._partitioner
+    if not context.executing_eagerly():
+      if reuse is None:
+        reuse = self._reuse
+    else:
+      reuse = AUTO_REUSE
+
+    full_name = self.name + "/" + name if self.name else name
+    # Variable names only depend on variable_scope (full_name here),
+    # not name_scope, so we reset it below for the time of variable creation.
+    with ops.name_scope(None):
+      # Check that `initializer` dtype and `dtype` are consistent before
+      # replacing them with defaults.
+      if (dtype is not None and initializer is not None and
+          not callable(initializer)):
+        init_dtype = ops.convert_to_tensor(initializer).dtype.base_dtype
+        if init_dtype != dtype:
+          raise ValueError("Initializer type '%s' and explicit dtype '%s' "
+                           "don't match." % (init_dtype, dtype))
+      if initializer is None:
+        initializer = self._initializer
+      if dtype is None:
+        dtype = self._dtype
+      return var_store.get_hashtable(full_name,
+                                     shape=shape,
+                                     dtype=dtype,
+                                     initializer=initializer,
+                                     reuse=reuse,
+                                     collections=collections,
+                                     trainable=trainable,
+                                     synchronization=synchronization,
+                                     partitioner=partitioner,
+                                     children=children)
 
   def get_embedding_variable(self,
                              var_store,
@@ -1850,6 +2114,29 @@ get_local_variable.__doc__ = get_variable_or_local_docstring % (
     "Behavior is the same as in `get_variable`, except that variables are\n"
     "added to the `LOCAL_VARIABLES` collection and `trainable` is set to\n"
     "`False`.\n", "", "GraphKeys.LOCAL_VARIABLES")
+
+@tf_export(v1=["get_hash_table"])
+def get_hash_table(name,
+                   embedding_dim,
+                   dtype=None,
+                   initializer=None,
+                   collections=None,
+                   trainable=True,
+                   synchronization=VariableSynchronization.AUTO,
+                   partitioner=None,
+                   children=None):
+  return get_variable_scope().get_hash_table(
+          _get_default_variable_store(),
+          name,
+          shape=embedding_dim,
+          dtype=dtype,
+          initializer=initializer,
+          collections=collections,
+          trainable=trainable,
+          synchronization=synchronization,
+          partitioner=partitioner,
+          children=children)
+
 
 @tf_export(v1=["get_embedding_variable"])
 def get_embedding_variable(name,

@@ -124,6 +124,13 @@ def _embedding_lookup_and_transform(params,
   Raises:
     ValueError: If `params` is empty.
   """
+  from tensorflow.python.ops.hash_table import hash_table
+  from tensorflow.python.ops.hash_table import embedding
+  if isinstance(params, hash_table.HashTable) or isinstance(params, hash_table.DistributedHashTable):
+    return embedding.embedding_lookup(params, ids, name=name)[0]
+  if isinstance(params, list) and len(params) == 1:
+    if isinstance(params[0], hash_table.HashTable) or isinstance(params[0], hash_table.DistributedHashTable):
+      return embedding.embedding_lookup(params[0], ids, name=name)[0]
   if params is None:
     raise ValueError("params must be specified")
   if isinstance(params, (list, tuple)) and not params:
@@ -1073,12 +1080,14 @@ def safe_embedding_lookup_sparse(embedding_weights,
     raise ValueError("Missing embedding_weights %s." % embedding_weights)
 
   dtype = sparse_weights.dtype if sparse_weights is not None else None
-  embedding_weights = [
-      w if (isinstance(w, resource_variable_ops.ResourceVariable)
-            and dtype in (None, w.dtype))
-      else ops.convert_to_tensor(w, dtype=dtype)
-      for w in embedding_weights
-  ]
+  tmp_embedding_weights = []
+  for w in embedding_weights:
+    from tensorflow.python.ops.hash_table import hash_table
+    if not isinstance(w, (hash_table.DistributedHashTable, hash_table.HashTable)):
+      if not (isinstance(w, resource_variable_ops.ResourceVariable) and dtype in (None, w.dtype)):
+        w = ops.convert_to_tensor(w, dtype=dtype)
+    tmp_embedding_weights.append(w)
+  embedding_weights = tmp_embedding_weights
 
   with ops.name_scope(name, "embedding_lookup", embedding_weights +
                       [sparse_ids, sparse_weights]) as scope:

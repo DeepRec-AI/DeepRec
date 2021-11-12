@@ -216,6 +216,19 @@ class StateManager(object):
     del feature_column, name, shape, dtype, trainable, use_resource, initializer
     raise NotImplementedError('StateManager.create_variable')
 
+  def create_hashtable(self,
+                       feature_column,
+                       name,
+                       shape,
+                       dtype,
+                       initializer,
+                       partitioner,
+                       trainable):
+    """Creates a new variable.
+    """
+    del feature_column, name, shape, dtype, initializer, partitioner, trainable
+    raise NotImplementedError('StateManager.create_hashtable')
+
   def add_variable(self, feature_column, var):
     """Adds an existing variable to the state.
 
@@ -309,6 +322,25 @@ class _StateManagerImpl(StateManager):
         getter=variable_scope.get_variable)
     self._cols_to_vars_map[feature_column][name] = var
     return var
+
+  def create_hashtable(self,
+                       feature_column,
+                       name,
+                       shape,
+                       dtype,
+                       initializer,
+                       partitioner,
+                       trainable):
+    if name in self._cols_to_vars_map[feature_column]:
+      raise ValueError('Variable already exists.')
+
+    table = variable_scope.get_hash_table(
+      name, shape, dtype=dtype,
+      initializer=initializer,
+      partitioner=partitioner,
+      trainable=self._trainable and trainable)
+    self._cols_to_vars_map[feature_column][name] = table
+    return table
 
   def get_variable(self, feature_column, name):
     if name in self._cols_to_vars_map[feature_column]:

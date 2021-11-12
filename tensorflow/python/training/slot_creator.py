@@ -43,6 +43,7 @@ from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import hash_table
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -201,6 +202,14 @@ def create_slot_with_initializer(primary, initializer, shape, dtype, name,
     prefix = primary._shared_name  # pylint: disable=protected-access
   else:
     prefix = primary.op.name
+  if isinstance(primary, hash_table.HashTable):
+    with variable_scope.variable_scope(None, prefix + "/" + name):
+      slot = primary.create_slot(shape,
+                                 dtype,
+                                 primary.distributed_name + "/slots/" + name,
+                                 initializer,
+                                 name=name)
+      return slot
   with variable_scope.variable_scope(None, prefix + "/" + name):
     if colocate_with_primary:
       distribution_strategy = distribution_strategy_context.get_strategy()

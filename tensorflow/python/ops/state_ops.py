@@ -25,6 +25,7 @@ from __future__ import print_function
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import gen_hash_ops
 from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.ops import gen_math_ops
 from tensorflow.python.ops import gen_resource_variable_ops
@@ -135,6 +136,12 @@ def is_variable_initialized(ref, name=None):
     return gen_kv_variable_ops.kv_var_is_initialized_op(ref.handle,
                                                         ref._invalid_key_type,
                                                         name=name)
+  elif ref.op.type == "BloomFilterAdmitStrategyOp":
+    return gen_hash_ops.bloom_filter_is_initialized_op(ref.handle,
+                                                       name=name)
+  elif ref.op.type == "TensibleVariableOp":
+    return gen_hash_ops.tensible_variable_is_initialized_op(ref.handle,
+                                                            name=name)
   # Handle resource variables.
   return ref.is_initialized(name=name)
 

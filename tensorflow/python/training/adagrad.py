@@ -21,6 +21,7 @@ from __future__ import print_function
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_array_ops
+from tensorflow.python.ops import gen_hash_training_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
@@ -123,6 +124,16 @@ class AdagradOptimizer(optimizer.Optimizer):
         math_ops.cast(self._learning_rate_tensor, var.dtype.base_dtype),
         grad.values,
         grad.indices,
+        use_locking=self._use_locking)
+
+  def _hash_table_apply_sparse(self, grad, var, indices):
+    acc = self.get_slot(var, "accumulator")
+    return gen_hash_training_ops.tensible_variable_apply_adagrad(
+        var.handle,
+        acc.handle,
+        math_ops.cast(self._learning_rate_tensor, grad.dtype),
+        grad,
+        indices,
         use_locking=self._use_locking)
 
   def _resource_apply_sparse(self, grad, var, indices):

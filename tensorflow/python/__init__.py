@@ -142,6 +142,8 @@ from tensorflow.python.eager.remote import connect_to_remote_host
 from tensorflow.python.eager.def_function import function
 from tensorflow.python.framework.ops import enable_eager_execution
 
+from tensorflow.python.ops import hash_table
+
 # Check whether TF2_BEHAVIOR is turned on.
 from tensorflow.python.eager import monitoring as _monitoring
 from tensorflow.python import tf2 as _tf2
