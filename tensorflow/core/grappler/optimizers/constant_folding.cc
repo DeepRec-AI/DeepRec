@@ -1297,6 +1297,18 @@ Status ConstantFolding::EvaluateOneFoldable(const NodeDef& node,
     }
     TF_RETURN_IF_ERROR(CheckAttrExists(*input_node, "value"));
     const TensorProto& raw_val = input_node->attr().at("value").tensor();
+    if (raw_val.dtype() == DT_INVALID) {
+      return Status(
+          error::INVALID_ARGUMENT,
+          strings::StrCat("A tensor in the input node, with TensorId of ",
+                          input_tensor.ToString(),
+                          " has a dtype of DT_INVALID."));
+    }
+    if (IsRefType(raw_val.dtype())) {
+      return errors::InvalidArgument(
+          "Not allowed to construct a tensor with reference dtype, got ",
+          DataTypeString(raw_val.dtype()));
+    }
     Tensor* value = new Tensor(raw_val.dtype(), raw_val.tensor_shape());
     CHECK(value->FromProto(raw_val));
     inputs.emplace_back(value);
