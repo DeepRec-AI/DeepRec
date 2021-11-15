@@ -147,10 +147,9 @@ __global__ void DistributeGradToShard(const float* top_grad,
 
 }  // namespace
 
-class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
+class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingDistributedSparsePreLookUpGPU(
-      OpKernelConstruction* ctx)
+  explicit FusedEmbeddingSparsePreLookUpGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
@@ -317,15 +316,14 @@ class FusedEmbeddingDistributedSparsePreLookUpGPU : public OpKernel {
   std::vector<int64_t> elements_offset_per_partition_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingDistributedSparsePreLookUp")
+REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePreLookUp")
                             .Device(DEVICE_GPU)
                             .HostMemory("partition_shapes"),
-                        FusedEmbeddingDistributedSparsePreLookUpGPU);
+                        FusedEmbeddingSparsePreLookUpGPU);
 
-class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
+class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingDistributedSparsePostLookUpGPU(
-      OpKernelConstruction* ctx)
+  explicit FusedEmbeddingSparsePostLookUpGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
@@ -347,8 +345,7 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape_tensor));
 
     const size_t emb_vec_size = emb_shards[0].shape().dim_size(1);
-    auto dense_shape = dense_shape_tensor->flat<int64>().data();
-    const size_t batch_size = dense_shape[0];
+    const size_t batch_size = dense_shape_tensor->flat<int64>().data()[0];
 
     // 1. sum up emb values from different entries and dump into output
     Tensor* emb_vectors_tensor = nullptr;
@@ -425,14 +422,14 @@ class FusedEmbeddingDistributedSparsePostLookUpGPU : public OpKernel {
   float max_norm_;
 };
 
-REGISTER_KERNEL_BUILDER(
-    Name("FusedEmbeddingDistributedSparsePostLookUp").Device(DEVICE_GPU),
-    FusedEmbeddingDistributedSparsePostLookUpGPU);
+REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePostLookUp")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("sp_dense_shape"),
+                        FusedEmbeddingSparsePostLookUpGPU);
 
-class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
+class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingDistributedSparsePostLookUpGradGPU(
-      OpKernelConstruction* ctx)
+  explicit FusedEmbeddingSparsePostLookUpGradGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
@@ -515,8 +512,8 @@ class FusedEmbeddingDistributedSparsePostLookUpGradGPU : public OpKernel {
 };
 
 REGISTER_KERNEL_BUILDER(
-    Name("FusedEmbeddingDistributedSparsePostLookUpGrad").Device(DEVICE_GPU),
-    FusedEmbeddingDistributedSparsePostLookUpGradGPU);
+    Name("FusedEmbeddingSparsePostLookUpGrad").Device(DEVICE_GPU),
+    FusedEmbeddingSparsePostLookUpGradGPU);
 
 }  // namespace tensorflow
 

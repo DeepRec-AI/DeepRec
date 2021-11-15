@@ -2,7 +2,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import fused_embedding_ops
+from tensorflow.python.ops.fused_embedding_ops import fused_embedding_lookup_sparse
 from tensorflow.python.framework import dtypes
 from tensorflow.contrib.framework.python.ops import variables as contrib_variables
 from tensorflow.contrib.layers.python.layers.feature_column_ops import check_feature_columns
@@ -12,7 +12,7 @@ from tensorflow.contrib.layers.python.layers import feature_column as fc
 
 def input_from_feature_columns_fused(columns_to_tensors,
                                      feature_columns,
-                                     trainable=None,
+                                     trainable=True,
                                      scope=None,
                                      cols_to_outs=None):
   """Implementation of `input_from(_sequence)_feature_columns`."""
@@ -35,8 +35,8 @@ def input_from_feature_columns_fused(columns_to_tensors,
         args = column._deep_embedding_lookup_arguments(
             transformed_tensor)
         output = embeddings_from_arguments_fused(
-            column, args, weight_collections, trainable)
-        output_tensors.append(output[0])
+            column, args, trainable)
+        output_tensors.append(output)
         if cols_to_outs is not None:
           cols_to_outs[column] = output_tensors[-1]
   return array_ops.concat(output_tensors, 1)
@@ -44,7 +44,6 @@ def input_from_feature_columns_fused(columns_to_tensors,
 
 def embeddings_from_arguments_fused(column,
                                     args,
-                                    weight_collections,
                                     trainable):
     # This option is only enabled for scattered_embedding_column.
   if args.hash_key:
@@ -85,7 +84,7 @@ def embeddings_from_arguments_fused(column,
           key_dtype=dtypes.int64,
           initializer=args.initializer,
           trainable=(trainable and args.trainable),
-          collections=weight_collections,
+          collections=None,
           partitioner=partitioner,
           steps_to_live=args.steps_to_live,
           init_data_source=args.init_data_source,
@@ -100,7 +99,7 @@ def embeddings_from_arguments_fused(column,
           dtype=dtypes.float32,
           initializer=args.initializer,
           trainable=(trainable and args.trainable),
-          collections=weight_collections)
+          collections=None)
       graph.add_to_collection(
         shared_embedding_collection_name, embeddings)
   else:
@@ -111,7 +110,7 @@ def embeddings_from_arguments_fused(column,
         key_dtype=dtypes.int64,
         initializer=args.initializer,
         trainable=(trainable and args.trainable),
-        collections=weight_collections,
+        collections=None,
         partitioner=partitioner,
         steps_to_live=args.steps_to_live,
         init_data_source=args.init_data_source,
@@ -126,7 +125,7 @@ def embeddings_from_arguments_fused(column,
         dtype=dtypes.float32,
         initializer=args.initializer,
         trainable=(trainable and args.trainable),
-        collections=weight_collections)
+        collections=None)
 
   if fc._is_variable(embeddings):
     embeddings = [embeddings]
@@ -136,3 +135,5 @@ def embeddings_from_arguments_fused(column,
   fc._maybe_restore_from_checkpoint(column._checkpoint_path(), embeddings)
 
   # 2. look up
+  return fused_embedding_lookup_sparse(embeddings, args.input_tensor,
+                                       combiner=args.combiner, max_norm=args.max_norm)

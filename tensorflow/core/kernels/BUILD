@@ -1948,7 +1948,7 @@ tf_cuda_cc_test(
     name = "fused_embedding_ops_test",
     size = "small",
     srcs = ["fused_embedding/fused_embedding_local_ops_test.cc",
-            "fused_embedding/fused_embedding_distributed_ops_test.cc"],
+            "fused_embedding/fused_embedding_ops_test.cc"],
     tags = tf_cuda_tests_tags(),
     deps = [
         ":fused_embedding_ops",
@@ -5245,7 +5245,7 @@ tf_kernel_library(
     name = "fused_embedding_ops",
     gpu_srcs = [
         "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
-        "fused_embedding/fused_embedding_distributed_ops_gpus.cu.cc"
+        "fused_embedding/fused_embedding_ops_gpus.cu.cc"
     ],
     deps = ["//third_party/eigen3"] + DYNAMIC_DEPS +
            if_cuda(["@cub_archive//:cub", ":fused_embedding_common_cuh"]),

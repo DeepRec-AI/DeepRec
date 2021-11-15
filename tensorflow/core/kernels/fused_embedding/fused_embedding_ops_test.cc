@@ -34,7 +34,7 @@ namespace {
 
 enum class Device { CPU, GPU };
 
-class FusedEmbeddingDistributedSparsePreLookUpOpTest : public OpsTestBase {
+class FusedEmbeddingSparsePreLookUpOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions) {
     if (device == Device::GPU) {
@@ -44,8 +44,8 @@ class FusedEmbeddingDistributedSparsePreLookUpOpTest : public OpsTestBase {
     }
 
     TF_EXPECT_OK(
-        NodeDefBuilder("fused_embedding_distributed_sparse_pre_look_up",
-                       "FusedEmbeddingDistributedSparsePreLookUp")
+        NodeDefBuilder("fused_embedding__sparse_pre_look_up",
+                       "FusedEmbeddingSparsePreLookUp")
             .Attr("num_partitions", num_partitions)
             .Attr("partition_axis", 0)
             .Input(FakeInput(DT_INT64))
@@ -56,7 +56,7 @@ class FusedEmbeddingDistributedSparsePreLookUpOpTest : public OpsTestBase {
   }
 };
 
-TEST_F(FusedEmbeddingDistributedSparsePreLookUpOpTest, Parition3_Int64) {
+TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Parition3_Int64) {
   MakeOpAndSetDevice(Device::GPU, 3);
   AddInputFromArray<int64>(TensorShape({2}), {6, 16});
   AddInputFromArray<int64>(TensorShape({2}), {3, 16});
@@ -99,7 +99,7 @@ TEST_F(FusedEmbeddingDistributedSparsePreLookUpOpTest, Parition3_Int64) {
   }
 }
 
-class FusedEmbeddingDistributedSparsePostLookUpOpTest : public OpsTestBase {
+class FusedEmbeddingSparsePostLookUpOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
                           const std::string& combiner, float max_norm = -1.0) {
@@ -110,8 +110,8 @@ class FusedEmbeddingDistributedSparsePostLookUpOpTest : public OpsTestBase {
     }
 
     TF_EXPECT_OK(
-        NodeDefBuilder("fused_embedding_distributed_sparse_post_look_up",
-                       "FusedEmbeddingDistributedSparsePostLookUp")
+        NodeDefBuilder("fused_embedding__sparse_post_look_up",
+                       "FusedEmbeddingSparsePostLookUp")
             .Attr("T", dtype)
             .Attr("num_partitions", num_partitions)
             .Attr("partition_axis", 0)
@@ -126,7 +126,7 @@ class FusedEmbeddingDistributedSparsePostLookUpOpTest : public OpsTestBase {
   }
 };
 
-TEST_F(FusedEmbeddingDistributedSparsePostLookUpOpTest,
+TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
        Partition3_Sqrtn_MaxNorm200_Float) {
   const int nnz = 10;
   const int batch_size = 4;
@@ -187,7 +187,7 @@ TEST_F(FusedEmbeddingDistributedSparsePostLookUpOpTest,
   }
 }
 
-class FusedEmbeddingDistributedSparsePostLookUpGradOpTest : public OpsTestBase {
+class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
                           const std::string& combiner, float max_norm = -1.0) {
@@ -198,8 +198,8 @@ class FusedEmbeddingDistributedSparsePostLookUpGradOpTest : public OpsTestBase {
     }
 
     TF_EXPECT_OK(
-        NodeDefBuilder("fused_embedding_distributed_sparse_post_look_up_grad",
-                       "FusedEmbeddingDistributedSparsePostLookUpGrad")
+        NodeDefBuilder("fused_embedding__sparse_post_look_up_grad",
+                       "FusedEmbeddingSparsePostLookUpGrad")
             .Attr("T", dtype)
             .Attr("num_partitions", num_partitions)
             .Attr("partition_axis", 0)
@@ -214,7 +214,7 @@ class FusedEmbeddingDistributedSparsePostLookUpGradOpTest : public OpsTestBase {
   }
 };
 
-TEST_F(FusedEmbeddingDistributedSparsePostLookUpGradOpTest,
+TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
        Partition2_Mean_MaxNorm100_Float) {
   const int nnz = 10;
   const int batch_size = 4;

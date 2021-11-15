@@ -1,6 +1,8 @@
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
+#include <stdio.h>
+
 namespace tensorflow {
 
 using shape_inference::DimensionHandle;
@@ -53,7 +55,7 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     })
     .Doc(R"doc()doc");
 
-REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
+REGISTER_OP("FusedEmbeddingSparsePreLookUp")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
@@ -64,9 +66,9 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
     .Output("partitioned_values: num_partitions * int64")
     .Output("partitioned_indices: num_partitions * int64")
     .SetShapeFn([](InferenceContext* ctx) {
-      int64 num_partitions;
+      int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
-      int64 partition_axis;
+      int partition_axis;
       TF_RETURN_IF_ERROR(ctx->GetAttr("partition_axis", &partition_axis));
 
       ShapeHandle unused;
@@ -97,7 +99,7 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePreLookUp")
     })
     .Doc(R"doc()doc");
 
-REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
+REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
@@ -116,7 +118,7 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
     .SetShapeFn([](InferenceContext* ctx) {
-      int64 num_partitions;
+      int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
 
       ShapeHandle first_emb_shard_shape;
@@ -131,15 +133,16 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUp")
       }
 
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(2 * num_partitions), 2, &unused));
+          ctx->WithRank(ctx->input(2 * num_partitions), 1, &unused));
 
       DimensionHandle emb_vec_size_dim = ctx->Dim(first_emb_shard_shape, 1);
       ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
       ctx->set_output(1, ctx->MakeShape({ctx->UnknownDim()}));
+      return Status::OK();
     })
     .Doc(R"doc()doc");
 
-REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
+REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
@@ -153,21 +156,19 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
     .Input("feature_nums: int32")
     .Output("grad_shards: num_partitions * T")
     .SetShapeFn([](InferenceContext* ctx) {
-      int64 num_partitions;
+      int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
 
       ShapeHandle unused;
-      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &unused));
-      for (int i = 1; i < num_partitions + 1; i++) {
+      ShapeHandle top_grad_shape;
+
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
+      for (int i = 1; i < 2 * num_partitions + 1; i++) {
         TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
       }
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(num_partitions + 2), 1, &unused));
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(num_partitions + 3), 2, &unused));
+          ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
 
-      ShapeHandle top_grad_shape;
-      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
       DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
 
       ShapeHandle output_shape =
@@ -175,6 +176,7 @@ REGISTER_OP("FusedEmbeddingDistributedSparsePostLookUpGrad")
       for (int i = 0; i < num_partitions; i++) {
         ctx->set_output(i, output_shape);
       }
+      return Status::OK();
     })
     .Doc(R"doc()doc");
 
