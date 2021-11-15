@@ -730,6 +730,50 @@ class BulkSaverBuilder(BaseSaverBuilder):
       with ops.device("cpu:0"):
         return io_ops.restore_v2(filename_tensor, names, slices, dtypes)
 
+class PartialRestoreSaverBuilder(BulkSaverBuilder):
+  """SaverBuilder with support for custom save and restore.
+  """
+  def __init__(self, *args, **kwargs):
+    self._ckpt_dir_or_file = kwargs.pop("checkpoint_dir", True)
+    super(PartialRestoreSaverBuilder, self).__init__(*args, **kwargs)
+
+  def restore_op(self, filename_tensor, saveable, preferred_shard):
+    """Create ops to restore 'saveable'.
+    """
+    if hasattr(saveable, "load_from_checkpoint"):
+      return saveable.load_from_checkpoint(
+          self._ckpt_dir_or_file, filename_tensor, preferred_shard)
+    return super(PartialRestoreSaverBuilder, self).restore_op(
+        filename_tensor, saveable, preferred_shard)
+
+  def bulk_restore(self, filename_tensor, saveables, preferred_shard,
+                   restore_sequentially):
+    """Restore all tensors contained in saveables.
+    """
+    custom_saveables = []
+    other_saveables = []
+    offset = 0
+    for saveable in saveables:
+      if hasattr(saveable, "load_from_checkpoint"):
+        custom_saveables.append(
+            (offset,
+             saveable.load_from_checkpoint(
+                 self._ckpt_dir_or_file, filename_tensor, preferred_shard)))
+      else:
+        other_saveables.append(saveable)
+        offset += len(saveable.specs)
+    other_tensors = super(PartialRestoreSaverBuilder, self).bulk_restore(
+        filename_tensor, other_saveables, preferred_shard, restore_sequentially)
+    all_tensors = []
+    prev_offset = 0
+    for offset, tensors in custom_saveables:
+      if offset > prev_offset:
+        all_tensors.extend(other_tensors[prev_offset:offset])
+        prev_offset = offset
+      all_tensors.extend(tensors)
+    if len(other_tensors) > prev_offset:
+      all_tensors.extend(other_tensors[prev_offset: len(other_tensors)])
+    return all_tensors
 
 def _get_saver_or_default(incremental_save_restore=False):
   """Returns the saver from SAVERS collection, or creates a default one.

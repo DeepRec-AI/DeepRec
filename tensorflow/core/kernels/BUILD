@@ -2782,7 +2782,6 @@ tf_kernel_library(
       "//tensorflow/core",
       "//third_party/eigen3",
     ],
-
 )
 
 tf_kernel_library(
@@ -2808,6 +2807,21 @@ tf_kernel_library(
         "@sparsehash_c11//:dense_hash_map",
         "@libcuckoo//:libcuckoo",
         "@com_github_google_leveldb//:leveldb",
+    ],
+)
+
+tf_kernel_library(
+    name = "work_queue_ops",
+    srcs = ["work_queue_ops.cc"],
+    deps=[
+      ":bounds_check",
+      "//tensorflow/core:framework",
+      "//tensorflow/core:protos_all_cc",
+      "//tensorflow/core:proto_text",
+      "//tensorflow/core:lib",
+      "//tensorflow/core:work_queue_ops_op_lib",
+      "//tensorflow/core",
+      "//third_party/eigen3",
     ],
 )
 

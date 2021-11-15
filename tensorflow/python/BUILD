@@ -2237,6 +2237,10 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+   name = "work_queue_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
     name = "stateless_random_ops_gen",
     visibility = [
         "//tensorflow/python/data/experimental/ops:__pkg__",
@@ -2904,6 +2908,21 @@ py_library(
         ":control_flow_ops",
         ":data_buffer_ops_gen",
 	":framework",
+        ":framework_for_generated_wrappers",
+    ],
+)
+
+py_library(
+    name = "work_queue",
+    srcs = ["ops/work_queue.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":clip_ops",
+        ":control_flow_ops",
+        ":work_queue_ops_gen",
+        ":framework",
+        ":framework_ops",
         ":framework_for_generated_wrappers",
     ],
 )
@@ -6509,6 +6528,25 @@ py_test(
 	":prefetch",
         #":data_buffer_ops_gen",
         ":prefetch_runner",
+        ":state_ops",
+        "//tensorflow/contrib/layers:layers_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
+    name = "work_queue_test",
+    size = "small",
+    srcs = ["ops/work_queue_test.py"],
+    srcs_version = "PY2AND3",
+    tags = ["no_windows"],
+    deps = [
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":partitioned_variables",
+        ":variable_scope",
+        ":embedding_ops",
+        ":work_queue",
         ":state_ops",
         "//tensorflow/contrib/layers:layers_py",
         "//third_party/py/numpy",
