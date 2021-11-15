@@ -1280,6 +1280,14 @@ tf_gen_op_libs(
 )
 
 tf_gen_op_libs(
+    is_external = False,
+    op_lib_names = [
+        "work_queue_ops"
+    ],
+    deps = [":lib"],
+)
+
+tf_gen_op_libs(
     op_lib_names = [
         "tpu_configuration_ops",
         "tpu_cross_replica_ops",
@@ -1609,6 +1617,7 @@ cc_library(
         "//tensorflow/core/kernels:io",
         "//tensorflow/core/kernels:kv_variable_ops",
         "//tensorflow/core/kernels:data_buffer_ops",
+        "//tensorflow/core/kernels:work_queue_ops",
         "//tensorflow/core/kernels:linalg",
         "//tensorflow/core/kernels:lookup",
         "//tensorflow/core/kernels:logging",
