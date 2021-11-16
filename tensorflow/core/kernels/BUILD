@@ -828,7 +828,7 @@ cc_library(
         "//tensorflow:ios": [],
         "//tensorflow:linux_aarch64": [],
         "//tensorflow:linux_ppc64le": [],
-        "//conditions:default": ["@mkl_dnn//:mkldnn_single_threaded"],
+        "//conditions:default": ["@mkl_dnn_v1//:mkl_dnn"],
     }),
 )
 

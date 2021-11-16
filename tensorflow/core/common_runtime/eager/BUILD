@@ -282,6 +282,7 @@ cc_library(
     nocopts = "-fno-exceptions",
     deps = [
         ":eager_op_rewrite_registry",
+        "//tensorflow/core:all_kernels",
         "//tensorflow/core:framework",
         "//tensorflow/core:graph",
         "//tensorflow/core:lib",
