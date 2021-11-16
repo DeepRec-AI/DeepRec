@@ -43,13 +43,12 @@ def fused_embedding_lookup_sparse(embedding_weights,
 
     partition_nums = len(embedding_weights)
     if partition_nums == 1:
-      emb_vectors = fused_embedding_local_sparse_look_up(sp_values=sparse_ids.values,
-                                                         sp_indices=sparse_ids.indices,
-                                                         sp_dense_shape=sparse_ids.dense_shape,
-                                                         emb_variable=embedding_weights[0],
-                                                         T=embedding_weights[0].dtype,
-                                                         combiner=combiner,
-                                                         max_norm=max_norm)
+      emb_vectors, _ = fused_embedding_local_sparse_look_up(sp_values=sparse_ids.values,
+                                                            sp_indices=sparse_ids.indices,
+                                                            sp_dense_shape=sparse_ids.dense_shape,
+                                                            emb_variable=embedding_weights[0],
+                                                            combiner=combiner,
+                                                            max_norm=max_norm)
     else:
       partition_shapes = [w.shape for w in embedding_weights]
       partitioned_values, partitioned_indices = fused_embedding_sparse_pre_look_up(
@@ -65,7 +64,7 @@ def fused_embedding_lookup_sparse(embedding_weights,
           shard = array_ops.gather(embedding, sub_partition_values)
           emb_shards.append(shard)
 
-      emb_vectors, unused = fused_embedding_sparse_post_look_up(
+      emb_vectors, _ = fused_embedding_sparse_post_look_up(
         emb_shards=emb_shards, partitioned_indices=partitioned_indices,
         sp_dense_shape=sparse_ids.dense_shape,
         partitioned_values=partitioned_values,
@@ -84,7 +83,6 @@ def fused_embedding_local_sparse_look_up_grad(op, top_grad_emb_vec, _):
   )
   grads = ops.IndexedSlices(values=grad_sp_values,
                             indices=op.inputs[0])
-
   return [None, None, None, grads]
 
 
@@ -98,7 +96,7 @@ def fused_embedding_sparse_post_look_up_grad(op, top_grad_emb_vec, _):
     max_norm=op.get_attr("max_norm")
   )
 
-  grad_shards = [ops.IndexedSlices(values=grad_shards[i],
-                                   indices=op.inputs[i + num_partitions]) for i in range(num_partitions)]
-
+  #grad_shards = [ops.IndexedSlices(values=grad_shards[i],
+  #                                 indices=op.inputs[i + 2 * num_partitions + 1],
+  #                                 dense_shape=op.inputs[i].shape) for i in range(num_partitions)]
   return grad_shards + [None for _ in range(0, 2 * num_partitions + 1)]
