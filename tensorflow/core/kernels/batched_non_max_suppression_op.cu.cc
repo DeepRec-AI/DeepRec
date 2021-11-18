@@ -1,4 +1,6 @@
+#if GOOGLE_CUDA
 #include <limits>
+
 #include "tensorflow/core/kernels/batched_non_max_suppression_op.h"
 
 #include "absl/strings/str_cat.h"
@@ -1497,4 +1499,6 @@ REGISTER_KERNEL_BUILDER(Name("BatchedNonMaxSuppression")
                         tensorflow::BatchedNonMaxSuppressionGPUOp);
 
 }  // namespace tensorflow
+
+#endif
 #endif

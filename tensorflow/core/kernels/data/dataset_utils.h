@@ -50,7 +50,7 @@ class AnonymousResourceOp : public OpKernel {
 
     Tensor* handle_t;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({}), &handle_t));
-    ResourceHandle handle = MakeResourceHandle(ctx, container_name, unique_name,
+    ResourceHandle handle = MakeResourceHandle(container_name, unique_name, *ctx->device(),
                                                MakeTypeIndex<T>());
     handle_t->scalar<ResourceHandle>()() = handle;
 

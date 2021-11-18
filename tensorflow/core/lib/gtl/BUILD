@@ -166,7 +166,7 @@ filegroup(
         "subtle/map_traits.h",
         "top_n.h",
     ],
-    visibility = ["//tensorflow/core:__pkg__"],
+    visibility = ["//tensorflow/core:__pkg__", "//tensorflow/core/platform:__pkg__"],
 )
 
 filegroup(

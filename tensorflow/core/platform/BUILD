@@ -584,6 +584,15 @@ cc_library(
     ],
     deps = [
         "@com_google_absl//absl/strings",
+	"@com_google_absl//absl/meta:type_traits",
+	"@com_google_protobuf//:protobuf_headers",
+	"@double_conversion//:double-conversion",
+        "//tensorflow/core/platform:logging",
+        "//tensorflow/core/platform:macros",
+        "//tensorflow/core/platform:stringpiece",
+        "//tensorflow/core/platform:types",
+	"//tensorflow/core:lib_internal",
+	":stringprintf",
     ],
 )
 

@@ -27,6 +27,7 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import hash_table
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -301,6 +302,40 @@ class AdamAsyncOptimizerTest(test.TestCase):
           # Validate updated params
           self.assertAllCloseAccordingToType(var0_np, var0.eval())
           self.assertAllCloseAccordingToType(var1_np, var1.eval())
+
+  def testHashTable(self):
+    for dtype in [dtypes.float32, dtypes.float64]:
+      with self.cached_session() as sess:
+        m0, v0, m1, v1 = 0.0, 0.0, 0.0, 0.0
+        var0_np = np.array([0.0, 0.0], dtype=dtype.as_numpy_dtype)
+        grads0_np = np.array([1.0, 1.0], dtype=dtype.as_numpy_dtype)
+        var1_np = np.array([1.0, 1.0], dtype=dtype.as_numpy_dtype)
+        grads1_np = np.array([1.0, 1.0], dtype=dtype.as_numpy_dtype)
+
+        with ops.name_scope("scope"):
+          ht0 = hash_table.HashTable(
+              [], dtype, "t1", init_ops.zeros_initializer)
+          ht1 = hash_table.HashTable(
+              [], dtype, "t2", init_ops.ones_initializer)
+        res0 = ht0.lookup([0, 1])
+        res1 = ht1.lookup([1, 2])
+        loss = res0 + res1
+        opt = adam_async.AdamAsyncOptimizer()
+        step_op = opt.minimize(loss, var_list=[ht0, ht1])
+        beta1_power = opt.get_slot(ht0, "beta1_power")
+        beta2_power = opt.get_slot(ht0, "beta2_power")
+
+        variables.global_variables_initializer().run()
+        for t in range(1, 4):
+          self.assertAllCloseAccordingToType(0.9**t, beta1_power.eval())
+          self.assertAllCloseAccordingToType(0.999**t, beta2_power.eval())
+          step_op.run()
+
+          var0_np, m0, v0 = adam_update_numpy(var0_np, grads0_np, t, m0, v0)
+          var1_np, m1, v1 = adam_update_numpy(var1_np, grads1_np, t, m1, v1)
+
+          self.assertAllCloseAccordingToType(var0_np, res0.eval())
+          self.assertAllCloseAccordingToType(var1_np, res1.eval())
 
 if __name__ == "__main__":
   test.main()

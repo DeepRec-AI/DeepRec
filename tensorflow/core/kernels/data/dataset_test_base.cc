@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/data/dataset_test_base.h"
 
 #include "tensorflow/core/common_runtime/executor.h"
+#include "tensorflow/core/common_runtime/rendezvous_mgr.h"
 #include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/framework/versions.pb.h"
 #include "tensorflow/core/lib/io/record_writer.h"

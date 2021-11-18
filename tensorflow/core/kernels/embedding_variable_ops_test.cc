@@ -106,7 +106,7 @@ TEST(TensorBundleTest, TestEVShrinkL2) {
   //float* fill_v = (float*)malloc(value_size * sizeof(float));
   EmbeddingVar<int64, float>* emb_var
     = new EmbeddingVar<int64, float>("name",
-        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", -1, 0, 99999, 14.0));
+        new DenseHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", -1, 0, 99999, 14.0));
   emb_var ->Init(value);
   
   for (int64 i=0; i < insert_num; ++i) {
@@ -135,7 +135,7 @@ TEST(TensorBundleTest, TestEVShrink) {
   int steps_to_live = 5;
   EmbeddingVar<int64, float>* emb_var
     = new EmbeddingVar<int64, float>("name",
-        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", steps_to_live));
+        new DenseHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", steps_to_live));
   emb_var ->Init(value);
 
 
@@ -167,7 +167,7 @@ TEST(TensorBundleTest, TestEVShrinkLockless) {
   int steps_to_live = 5;
   EmbeddingVar<int64, float>* emb_var
     = new EmbeddingVar<int64, float>("name",
-        new LocklessHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", steps_to_live));
+        new LocklessHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", steps_to_live));
   emb_var ->Init(value);
 
 
@@ -201,7 +201,7 @@ TEST(EmbeddingVariableTest, TestEmptyEV) {
   {
     EmbeddingVar<int64, float>* variable
               = new EmbeddingVar<int64, float>("EmbeddingVar",
-                  new DenseHashMap<int64, float>(), cpu_allocator());
+                  new DenseHashMap<int64, float>(), ev_allocator());
     variable->Init(value);
 
     LOG(INFO) << "size:" << variable->Size();
@@ -266,7 +266,7 @@ TEST(EmbeddingVariableTest, TestEVExportSmall) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
+        new DenseHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
@@ -340,7 +340,7 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
+        new LocklessHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
@@ -413,7 +413,7 @@ TEST(EmbeddingVariableTest, TestEVExportLarge) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new DenseHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
+        new DenseHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
 
@@ -486,7 +486,7 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
+        new LocklessHashMap<int64, float>(), ev_allocator(), EmbeddingConfig(0, 0, 1, 1, "", 5));
   variable->Init(value);
 
   Tensor part_offset_tensor(DT_INT32,  TensorShape({kSavedPartitionNum + 1}));
@@ -567,7 +567,7 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator());
+        new LocklessHashMap<int64, float>(), ev_allocator());
 
   variable->Init(value);
 
@@ -616,7 +616,7 @@ TEST(EmbeddingVariableTest, TestBloomFilter) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01));
 
   var->Init(value);
@@ -648,7 +648,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT64));
 
   var->Init(value);
@@ -717,7 +717,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT32));
 
   var->Init(value);
@@ -786,7 +786,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT16));
 
   var->Init(value);
@@ -856,7 +856,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT8));
 
   var->Init(value);
@@ -925,7 +925,7 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
 
   EmbeddingVar<int64, int64>* variable
     = new EmbeddingVar<int64, int64>("EmbeddingVar",
-        new LocklessHashMap<int64, int64>(), cpu_allocator());
+        new LocklessHashMap<int64, int64>(), ev_allocator());
 
   variable->Init(value);
 
@@ -973,7 +973,7 @@ TEST(EmbeddingVariableTest, TestFeatureFilter) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 5));
 
   var->Init(value);
@@ -1017,7 +1017,7 @@ TEST(EmbeddingVariableTest, TestFeatureFilterParallel) {
 
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator(),
+        new LocklessHashMap<int64, float>(), ev_allocator(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 7));
 
   var->Init(value);
@@ -1043,7 +1043,7 @@ EmbeddingVar<int64, float>* InitEV_Lockless(int64 value_size) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new LocklessHashMap<int64, float>(), cpu_allocator());
+        new LocklessHashMap<int64, float>(), ev_allocator());
 
   variable->Init(value);
   return variable;
@@ -1091,7 +1091,7 @@ EmbeddingVar<int64, float>* InitEV(int64 value_size) {
 
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
-        new DenseHashMap<int64, float>(), cpu_allocator());
+        new DenseHashMap<int64, float>(), ev_allocator());
 
   variable->Init(value);
   return variable;
@@ -1208,6 +1208,22 @@ BENCHMARK(BM_HYBRID)
     ->Arg(4)
     ->Arg(8)
     ->Arg(16);
+
+TEST(EmbeddingVariableTest, TestAllocate) {
+  int value_len = 8;
+  double t0 = getResident()*getpagesize()/1024.0/1024.0;
+  double t1 = 0;
+  LOG(INFO) << "memory t0: " << t0;
+  for (int64 i = 0; i < 1000; ++i) {
+    float* tensor_val = TypedAllocator::Allocate<float>(ev_allocator(), value_len, AllocationAttributes());
+    t1 = getResident()*getpagesize()/1024.0/1024.0;
+    memset(tensor_val, 0, sizeof(float) * value_len);
+  }
+  double t2 = getResident()*getpagesize()/1024.0/1024.0;
+  LOG(INFO) << "memory t1-t0: " << t1-t0;
+  LOG(INFO) << "memory t2-t1: " << t2-t1;
+  LOG(INFO) << "memory t2-t0: " << t2-t0;
+}
 
 } // namespace
 } // namespace tensorflow

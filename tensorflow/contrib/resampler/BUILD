@@ -101,6 +101,7 @@ cuda_py_test(
     ],
 )
 
+'''
 tf_xla_py_test(
     name = "resampler_ops_xla_test",
     size = "small",
@@ -123,3 +124,4 @@ tf_xla_py_test(
         "//third_party/py/numpy",
     ],
 )
+'''

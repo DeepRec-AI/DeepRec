@@ -41,6 +41,9 @@ class AllocatorFactory {
   //Create PMEM Allocator.
   virtual Allocator* CreatePMEMAllocator() {return CreateAllocator();};
 
+  //Create EV Allocator.
+  virtual Allocator* CreateEVAllocator() {return CreateAllocator();};
+
   // Create a SubAllocator. If NumaEnabled() is true, then returned SubAllocator
   // will allocate memory local to numa_node.  If numa_node == kNUMANoAffinity
   // then allocated memory is not specific to any NUMA node.
@@ -76,6 +79,8 @@ class AllocatorFactoryRegistry {
 
   //If use PMEMallocator, then factory pick this one
   Allocator* GetPMEMAllocator();
+
+  Allocator* GetEVAllocator();
 
   // Returns 'best fit' SubAllocator.  First look for the highest priority
   // factory that is NUMA-enabled.  If none is registered, fall back to the

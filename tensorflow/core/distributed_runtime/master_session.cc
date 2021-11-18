@@ -1204,6 +1204,29 @@ Status MasterSession::ReffedClientGraphV2::DoRegisterPsGraphs(
     return s;                                   \
   }
 
+namespace {
+void AddFunctionlibrary(PartitionOptions opts, const Graph* g,
+                        SubGraph& sub_graph) {
+  const FunctionLibraryDefinition* flib_def = opts.flib_def;
+  if (flib_def == nullptr) {
+    flib_def = &g->flib_def();
+  }
+
+  // Set versions, function library
+  *(sub_graph.GetGraphDef().mutable_versions()) = g->versions();
+  // Prune unreachable functions from `flib_def` before adding them to `gdef`.
+  *(sub_graph.GetGraphDef().mutable_library()) =
+      flib_def->ReachableDefinitions(sub_graph.GetGraphDef()).ToProto();
+}
+
+void AddFunctionlibrary(PartitionOptions opts, const Graph* g,
+                        std::vector<SubGraph>& sub_graphs) {
+  for (auto& sg : sub_graphs) {
+    AddFunctionlibrary(opts, g, sg);
+  }
+}
+} // namespace
+
 Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
     PartitionOptions popts) {
   mu_.lock();
@@ -1216,6 +1239,7 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
     std::swap(client_graph_before_register_, client_graph);
     mu_.unlock();
 
+    popts.flib_def = client_graph->flib_def.get();
     SubGraph worker_sub_graph;
     std::vector<SubGraph> ps_sub_graphs;
     TrainGraphPartitioner gp(popts, &client_graph->graph,
@@ -1230,11 +1254,17 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
       s = gp.CompleteSubGraphsV2(&ps_sub_graphs);
       RETURN_IF_NOT_OK(s);
 
+      // Add Function library
+      AddFunctionlibrary(popts, &(client_graph->graph),
+                         ps_sub_graphs);
       s = DoRegisterPsGraphs(popts, &ps_sub_graphs);
       RETURN_IF_NOT_OK(s);
 
       s = gp.CompleteMainGraphV2(ps_sub_graphs, &worker_sub_graph);
       RETURN_IF_NOT_OK(s);
+      // Add Function library
+      AddFunctionlibrary(popts, &(client_graph->graph),
+                         worker_sub_graph);
     } else {
       // enable star_server V1
       s = gp.SplitGraph(&worker_sub_graph, &ps_sub_graphs);
@@ -1243,14 +1273,21 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
       s = gp.CompleteSubGraphs(&ps_sub_graphs);
       RETURN_IF_NOT_OK(s);
 
+      // Add Function library
+      AddFunctionlibrary(popts, &(client_graph->graph),
+                         ps_sub_graphs);
       s = DoRegisterPsGraphs(popts, &ps_sub_graphs);
       RETURN_IF_NOT_OK(s);
 
       s = gp.CompleteMainGraph(ps_sub_graphs, &worker_sub_graph);
       RETURN_IF_NOT_OK(s);
+      // Add Function library
+      AddFunctionlibrary(popts, &(client_graph->graph),
+                         worker_sub_graph);
     }
 
     std::unordered_map<string, GraphDef> graph_defs;
+
     if ((worker_sub_graph.GetNodes().size()) > 0) {
       graph_defs[worker_sub_graph.GetLoc()] = worker_sub_graph.GetGraphDef();
     } else {
@@ -1262,6 +1299,10 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
 
       std::string location = strings::StrCat("/job:worker/replica:0/task:",
                                              task_index);
+      if (IsChiefRole()) {
+        location = "/job:chief/replica:0/task:0";
+      }
+
       graph_defs[location] = worker_sub_graph.GetGraphDef();
     }
 

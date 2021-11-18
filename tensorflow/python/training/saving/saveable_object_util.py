@@ -77,6 +77,23 @@ class ReferenceVariableSaveable(saveable_object.SaveableObject):
         self.op.get_shape().is_fully_defined())
 
 
+class CoalescedVariableSaveable(saveable_object.SaveableObject):
+  """SaveableObject implementation that handles CoalescedVariables."""
+
+  def __init__(self, var, save_info, name, full_name=None):
+    specs = []
+    for info, ts in zip(save_info.save_slices, save_info.tensor_slices):
+      specs.append(saveable_object.SaveSpec(
+          var[ts], info.spec, info.full_name, dtype=var.dtype))
+    super(CoalescedVariableSaveable, self).__init__(
+        var, specs, name)
+    self._full_name = full_name
+
+  def restore(self, restored_tensors, restored_shapes):
+    restored_tensor = array_ops.concat(restored_tensors, axis=0)
+    return state_ops.assign(self.op, restored_tensor)
+
+
 class ResourceVariableSaveable(saveable_object.SaveableObject):
   """SaveableObject implementation that handles ResourceVariables."""
 
@@ -240,8 +257,12 @@ def saveable_objects_for_op(op, name):
             (slice_name, variable._save_slice_info.full_name))
       if variable.op.type in ["Variable", "VariableV2",
                               "AutoReloadVariable"]:
-        yield ReferenceVariableSaveable(
-            variable, variable._save_slice_info.spec, name, variable._save_slice_info.var_full_name)
+        if isinstance(variable._save_slice_info, variables.Variable.SaveSliceInfo):
+          yield ReferenceVariableSaveable(
+              variable, variable._save_slice_info.spec, name, variable._save_slice_info.var_full_name)
+        else:
+          yield CoalescedVariableSaveable(
+              variable, variable._save_slice_info, name)
       elif isinstance(variable, kv_variable_ops.EmbeddingVariable):
         yield EmbeddingVariableSaveable(variable, name)
       else:
@@ -427,6 +448,10 @@ def validate_and_slice_inputs(names_to_saveables):
   for name, op in sorted(names_to_saveables.items(),
                          # Avoid comparing ops, sort only by name.
                          key=lambda x: x[0]):
-    for converted_saveable_object in saveable_objects_for_op(op, name):
-      _add_saveable(saveables, seen_ops, converted_saveable_object)
+    from tensorflow.python.ops import hash_table
+    if isinstance(name, hash_table.HashTable):
+      _add_saveable(saveables, seen_ops, HashTableSaveable(op[1], op[0]))
+    else:
+      for converted_saveable_object in saveable_objects_for_op(op, name):
+        _add_saveable(saveables, seen_ops, converted_saveable_object)
   return saveables

@@ -116,6 +116,7 @@ class DispatchTest(test_util.TensorFlowTestCase):
       def override_for_some_op(x, y):  # pylint: disable=unused-variable
         return x if x.score > 0 else y
 
+  '''
   @test.mock.patch.object(tf_logging, "warning", autospec=True)
   def testInteractionWithDeprecationWarning(self, mock_warning):
     @deprecation.deprecated(date=None, instructions="Instructions")
@@ -130,7 +131,7 @@ class DispatchTest(test_util.TensorFlowTestCase):
         message,
         r".*some_op \(from __main__\) is deprecated and will be "
         "removed in a future version.*")
-
+  '''
 
 if __name__ == "__main__":
   googletest.main()

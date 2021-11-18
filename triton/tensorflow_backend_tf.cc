@@ -24,6 +24,7 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#if GOOGLE_CUDA
 #include "triton/tensorflow_backend_tf.h"
 
 #include "tensorflow/cc/saved_model/loader.h"
@@ -1142,4 +1143,4 @@ TRITONTF_ModelRun(
 
   return m->Run(input_tensors, output_tensor_names, output_tensors);
 }
-
+#endif

@@ -15,8 +15,6 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/string_to_hash_bucket_ali_op.h"
 
-#include "tensorflow/core/lib/hash/hash.h"
-#include "tensorflow/core/platform/fingerprint.h"
 #include "tensorflow/core/platform/strong_hash.h"
 
 namespace tensorflow {
@@ -31,4 +29,6 @@ REGISTER_KERNEL_BUILDER(Name("StringToHashBucketStrong").Device(DEVICE_CPU),
 REGISTER_KERNEL_BUILDER(Name("StringToHash64").Device(DEVICE_CPU),
                         StringToHash64Op<Fingerprint64>);
 
+REGISTER_KERNEL_BUILDER(Name("StringToHash").Device(DEVICE_CPU),
+                        StringToHashOp);
 }  // namespace tensorflow

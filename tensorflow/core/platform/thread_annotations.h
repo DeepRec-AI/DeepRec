@@ -44,6 +44,12 @@ limitations under the License.
 #define THREAD_ANNOTATION_ATTRIBUTE__(x)  // no-op
 #endif
 
+#if defined(__clang__) && (!defined(SWIG))
+#define TF_INTERNAL_THREAD_ANNOTATION_ATTRIBUTE(x) __attribute__((x))
+#else
+#define TF_INTERNAL_THREAD_ANNOTATION_ATTRIBUTE(x)  // no-op
+#endif
+
 // Document if a shared variable/field needs to be protected by a mutex.
 // GUARDED_BY allows the user to specify a particular mutex that should be
 // held when accessing the annotated variable.  GUARDED_VAR indicates that
@@ -95,6 +101,9 @@ limitations under the License.
 
 // For XLA that use the upstream name.
 #define TF_EXCLUSIVE_LOCKS_REQUIRED EXCLUSIVE_LOCKS_REQUIRED
+
+#define TF_SHARED_LOCKS_REQUIRED(...) \
+  TF_INTERNAL_THREAD_ANNOTATION_ATTRIBUTE(shared_locks_required(__VA_ARGS__))
 
 #define SHARED_LOCKS_REQUIRED(...) \
   THREAD_ANNOTATION_ATTRIBUTE__(shared_locks_required(__VA_ARGS__))
@@ -161,6 +170,13 @@ limitations under the License.
 // or (b) the function contains race conditions that are known to be benign.
 #define NO_THREAD_SAFETY_ANALYSIS \
   THREAD_ANNOTATION_ATTRIBUTE__(no_thread_safety_analysis)
+
+// Turns off thread safety checking within the body of a particular function.
+// This is used as an escape hatch for cases where either (a) the function
+// is correct, but the locking is more complicated than the analyzer can handle,
+// or (b) the function contains race conditions that are known to be benign.
+#define TF_NO_THREAD_SAFETY_ANALYSIS \
+  TF_INTERNAL_THREAD_ANNOTATION_ATTRIBUTE(no_thread_safety_analysis)
 
 // TS_UNCHECKED should be placed around lock expressions that are not valid
 // C++ syntax, but which are present for documentation purposes.  These

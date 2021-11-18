@@ -334,6 +334,8 @@ Allocator* cpu_allocator(int numa_node = port::kNUMANoAffinity);
 //If use PMEM as allocator, please call this function
 Allocator* pmem_allocator();
 
+Allocator* ev_allocator();
+
 // If 'enable' is true, the default CPU allocator implementation will collect
 // AllocatorStats. By default, it's disabled.
 void EnableCPUAllocatorStats(bool enable);

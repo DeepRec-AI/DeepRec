@@ -204,10 +204,10 @@ def _internal_input_layer(features,
             builder,
             weight_collections=weight_collections,
             trainable=trainable)
-        num_elements = column._variable_shape.num_elements()  # pylint: disable=protected-access
+        output_shape = column._output_shape(tensor)  # pylint: disable=protected-access
         batch_size = array_ops.shape(tensor)[0]
         output_tensor = array_ops.reshape(
-            tensor, shape=(batch_size, num_elements))
+            tensor, shape=output_shape)
         output_tensors.append(output_tensor)
         if cols_to_vars is not None:
           # Retrieve any variables created (some _DenseColumn's don't create
@@ -218,7 +218,7 @@ def _internal_input_layer(features,
         if cols_to_output_tensors is not None:
           cols_to_output_tensors[column] = output_tensor
     _verify_static_batch_size_equality(output_tensors, ordered_columns)
-    return array_ops.concat(output_tensors, 1)
+    return array_ops.concat(output_tensors, -1)
 
   # If we're constructing from the `make_template`, that by default adds a
   # variable scope with the name of the layer. In that case, we dont want to
@@ -1899,6 +1899,12 @@ class _DenseColumn(_FeatureColumn):
       `Tensor` of shape [batch_size] + `_variable_shape`.
     """
     pass
+
+  def _output_shape(self, inputs):
+    """Tuple of column output shape"""
+    batch_size = array_ops.shape(inputs)[0]
+    num_elements = self._variable_shape.num_elements()
+    return (batch_size, num_elements)
 
 
 def _create_weighted_sum(column,

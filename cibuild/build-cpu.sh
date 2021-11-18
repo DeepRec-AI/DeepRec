@@ -26,21 +26,11 @@ export TF_NEED_MPI=0
 
 yes "" | bash ./configure || true
 
-if [[ ! -z "$BAZEL_CACHE" ]]; then
-  wget -nv -O cibuild/bazel_cache.tar $BAZEL_CACHE
-  tar -xf cibuild/bazel_cache.tar -C $(bazel info output_base)/../cache
-fi
-
 set -x
 
-mkdir -p cibuild/cache
 bazel build \
---disk_cache=cibuild/cache \
---config=nogcp \
 --verbose_failures \
-//tensorflow/tools/pip_package:build_pip_package \
---copt="-march=native" \
---copt="-Wno-sign-compare"
+//tensorflow/tools/pip_package:build_pip_package
 
 bazel-bin/tensorflow/tools/pip_package/build_pip_package \
 cibuild/

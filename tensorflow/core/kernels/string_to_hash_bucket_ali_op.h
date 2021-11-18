@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/util/work_sharder.h"
+#include "tensorflow/core/platform/fingerprint.h"
 
 namespace tensorflow {
 
@@ -292,6 +293,73 @@ class StringToHash64Op : public OpKernel {
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(StringToHash64Op);
+};
+
+class StringToHashOp : public OpKernel {
+ public:
+  explicit StringToHashOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    bool allow_neg;
+    int num_buckets;
+    std::string hash_type;
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("hash_type", &hash_type));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("allow_neg", &allow_neg));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("num_buckets", &num_buckets));
+    InitHashFunc(hash_type, allow_neg, num_buckets);
+  }
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor* input_tensor;
+    OP_REQUIRES_OK(context, context->input("input", &input_tensor));
+    const auto& input_flat = input_tensor->flat<string>();
+    Tensor* output_tensor = nullptr;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output("output", input_tensor->shape(),
+                                            &output_tensor));
+    auto output_flat = output_tensor->flat<int64>();
+    auto RunTask = [this, &input_flat, &output_flat](int64 start, int64 end) {
+      typedef decltype(input_flat.size()) Index;
+      for (Index i = start; i < end; ++i) {
+        uint64 input_hash = hashfunc_ptr_(input_flat(i));
+        input_hash = bucket_func_(input_hash);
+        output_flat(i) = positive_func_(input_hash);
+      }
+    };
+    auto worker_threads = context->device()->tensorflow_cpu_worker_threads();
+    const int64 element_cost = 100;  // Estimated for 32 byte strings.
+    // NOTE(zycao): Here we have to use 'num_threads - 1' to make sure no more
+    // task fractions should be created. The cost is also a coarse estimation.
+    Shard(worker_threads->num_threads - 1, worker_threads->workers,
+          input_flat.size(), element_cost, RunTask);
+  }
+ private:
+  uint64 (*hashfunc_ptr_)(StringPiece);
+  std::function<uint64(uint64)> bucket_func_;
+  std::function<uint64(uint64)> positive_func_;
+  TF_DISALLOW_COPY_AND_ASSIGN(StringToHashOp);
+
+  void InitHashFunc(string hash_type, bool allow_neg, int num_buckets) {
+    if (hash_type == "murmur") {
+      hashfunc_ptr_ = MurMurHash64;
+    } else if (hash_type == "sdbm"){
+      hashfunc_ptr_ = SDBMHash64;
+    } else if (hash_type == "djb2") {
+      hashfunc_ptr_ = DJB2Hash64;
+    } else if (hash_type == "farm") {
+      hashfunc_ptr_ = Fingerprint64;
+    } else {
+      LOG(FATAL) << "Hash type not supported, expected one of `farm/murmur/sdbm/djb2`, got " << hash_type << ".";
+    }
+    if (num_buckets != 0) {
+      bucket_func_ = [num_buckets](uint64 inputs) {return inputs % num_buckets;};
+    } else {
+      bucket_func_ = [](uint64 inputs) {return inputs;};
+    }
+    if (allow_neg) {
+      positive_func_ = [](uint64 inputs) {return inputs;};
+    } else {
+      positive_func_ = [](uint64 inputs) {return inputs & kint64max;};
+    }
+  }
 };
 
 }  // namespace tensorflow

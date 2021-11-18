@@ -1,0 +1,51 @@
+op {
+  graph_op_name: "SparseReverse"
+  in_arg {
+    name: "indices"
+    description: <<END
+0-D, 1-D, or 2-D.  `indices[i]` contains the complete
+index where `values[i]` will be placed.
+END
+  }
+  in_arg {
+    name: "values"
+    description: <<END
+1-D.  Values corresponding to each row of `indices`,
+or a scalar value to be used for all sparse indices.
+END
+  }
+  in_arg {
+    name: "dense_shape"
+    description: <<END
+1-D.  Shape of the sparse tensor.
+END
+  }
+  out_arg {
+    name: "output_indices"
+    description: <<END
+2-D.  Indices of the concatenated `SparseTensor`.
+END
+  }
+  out_arg {
+    name: "output_values"
+    description: <<END
+1-D.  Non-empty values of the concatenated `SparseTensor`.
+END
+  }
+  out_arg {
+    name: "output_dense_shape"
+    description: <<END
+1-D.  Shape of the concatenated `SparseTensor`.
+END
+  }
+  attr {
+    name: "axis"
+    description: <<END
+Dimension to reverse.
+END
+  }
+  summary: "Reverse `SparseTensor` along the specified dimension."
+  description: <<END
+Reverse one SparseTensor alone the specified dimension
+END
+}
