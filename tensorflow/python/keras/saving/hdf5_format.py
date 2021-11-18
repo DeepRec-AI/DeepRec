@@ -157,7 +157,7 @@ def load_model_from_hdf5(filepath, custom_objects=None, compile=True):  # pylint
     model_config = f.attrs.get('model_config')
     if model_config is None:
       raise ValueError('No model found in config file.')
-    model_config = json.loads(model_config.decode('utf-8'))
+    model_config = json.loads(model_config)
     model = model_config_lib.model_from_config(model_config,
                                                custom_objects=custom_objects)
 
@@ -171,7 +171,7 @@ def load_model_from_hdf5(filepath, custom_objects=None, compile=True):  # pylint
         logging.warning('No training configuration found in save file: '
                         'the model was *not* compiled. Compile it manually.')
         return model
-      training_config = json.loads(training_config.decode('utf-8'))
+      training_config = json.loads(training_config)
 
       # Compile model.
       model.compile(**saving_utils.compile_args_from_training_config(
@@ -642,11 +642,11 @@ def load_weights_from_hdf5_group(f, layers):
           and weights file.
   """
   if 'keras_version' in f.attrs:
-    original_keras_version = f.attrs['keras_version'].decode('utf8')
+    original_keras_version = f.attrs['keras_version']
   else:
     original_keras_version = '1'
   if 'backend' in f.attrs:
-    original_backend = f.attrs['backend'].decode('utf8')
+    original_backend = f.attrs['backend']
   else:
     original_backend = None
 
@@ -709,11 +709,11 @@ def load_weights_from_hdf5_group_by_name(f, layers):
           and weights file.
   """
   if 'keras_version' in f.attrs:
-    original_keras_version = f.attrs['keras_version'].decode('utf8')
+    original_keras_version = f.attrs['keras_version']
   else:
     original_keras_version = '1'
   if 'backend' in f.attrs:
-    original_backend = f.attrs['backend'].decode('utf8')
+    original_backend = f.attrs['backend']
   else:
     original_backend = None
 
@@ -816,13 +816,13 @@ def load_attributes_from_hdf5_group(group, name):
       data: Attributes data.
   """
   if name in group.attrs:
-    data = [n.decode('utf8') for n in group.attrs[name]]
+    data = [n for n in group.attrs[name]]
   else:
     data = []
     chunk_id = 0
     while '%s%d' % (name, chunk_id) in group.attrs:
       data.extend(
-          [n.decode('utf8') for n in group.attrs['%s%d' % (name, chunk_id)]])
+          [n for n in group.attrs['%s%d' % (name, chunk_id)]])
       chunk_id += 1
   return data
 

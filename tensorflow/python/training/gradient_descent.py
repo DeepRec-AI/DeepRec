@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import gen_hash_training_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -84,6 +85,12 @@ class GradientDescentOptimizer(optimizer.Optimizer):
         math_ops.cast(self._learning_rate_tensor, var.dtype.base_dtype),
         grad.indices, grad.dense_shape)
     return var.scatter_sub(delta, use_locking=self._use_locking)
+
+  def _hash_table_apply_sparse(self, grad, var, indices):
+    return gen_hash_training_ops.tensible_variable_apply_gradient_descent(
+        var.handle,
+        math_ops.cast(self._learning_rate_tensor, grad.dtype.base_dtype),
+        grad, indices, use_locking=self._use_locking)
 
   def _prepare(self):
     learning_rate = self._call_if_callable(self._learning_rate)

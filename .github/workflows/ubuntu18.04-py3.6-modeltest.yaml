@@ -1,0 +1,65 @@
+name: Manual model test
+
+on:
+  workflow_dispatch:
+    # Inputs the workflow accepts.
+    inputs:
+      branch_name:
+        description: 'choice the branch:[master|...]'
+        default: 'master'
+        required: true
+      model_name:
+        description: 'choice the model: [all|wdl|din|dien|dlrm|...]'
+        default: 'all'
+        required: true
+      deeprec_pkg:
+        description: 'deeprec release package: [<url>]'
+        default: ''
+        required: true
+      data_location:
+        description: 'train data position:'
+        default: '/tmp/modelzoo_data'
+        required: true
+      train_options:
+        description: 'options of train.py: e.g. [--steps=500]'
+        default: '--steps=1000 --no_eval'
+        required: false
+
+env:
+  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec-dev-cpu-cibuild-py36-ubuntu18.04
+  JOBNAME: deeprec-ci-cpu-${{ github.run_id }}
+  PODNAME: deeprec-ci-cpu-${{ github.run_id }}-chief-0
+  BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: PAI DLC
+    steps:
+    - name: Setup Environment
+      uses: aliyun/ack-set-context@v1
+      with:
+        access-key-id: "${{ secrets.ACCESS_KEY_ID }}"
+        access-key-secret: "${{ secrets.ACCESS_KEY_SECRET }}"
+        cluster-id: "${{ secrets.ACK_CLUSTER_ID }}"
+    - name: Checkout Code
+      uses: actions/checkout@v2
+      with:
+        ref: ${{ github.event.inputs.branch_name }}
+    - name: Install Pod
+      run: |-
+        helm install ${JOBNAME} cibuild/ --set image=${IMAGE}
+    - name: Upload Source
+      run: |-
+        cibuild/upload.sh ${PODNAME} ../cibuild
+    - name: Test model "${{ github.event.inputs.model_name }}"
+      run: |-
+        kubectl exec -it ${PODNAME} -- cibuild/model-test.sh \
+          ${{ github.event.inputs.model_name }} \
+          ${{ github.event.inputs.deeprec_pkg }} \
+          ${{ github.event.inputs.data_location }} \
+          ${{ github.event.inputs.train_options }}
+    - name: Uninstall Pod
+      run: |-
+        helm uninstall ${JOBNAME}
+

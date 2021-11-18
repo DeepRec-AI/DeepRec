@@ -92,6 +92,7 @@ from tensorflow.python.ops import metrics
 from tensorflow.python.ops import nn
 from tensorflow.python.ops import ragged
 from tensorflow.python.ops import sets
+from tensorflow.python.ops import prefetch
 from tensorflow.python.ops import stateful_random_ops
 from tensorflow.python.ops.distributions import distributions
 from tensorflow.python.ops.linalg import linalg
@@ -141,6 +142,8 @@ from tensorflow.python.eager.context import executing_eagerly
 from tensorflow.python.eager.remote import connect_to_remote_host
 from tensorflow.python.eager.def_function import function
 from tensorflow.python.framework.ops import enable_eager_execution
+
+from tensorflow.python.ops import hash_table
 
 # Check whether TF2_BEHAVIOR is turned on.
 from tensorflow.python.eager import monitoring as _monitoring

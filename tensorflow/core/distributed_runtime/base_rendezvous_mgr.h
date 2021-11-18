@@ -178,14 +178,12 @@ class BaseRemoteRendezvous : public RemoteRendezvous {
  protected:
   virtual void RecvFromRemoteAsync(const Rendezvous::ParsedKey& parsed,
                                    const Rendezvous::Args& args,
-                                   DoneCallback done,
-                                   CallOptions* opts = nullptr) = 0;
+                                   DoneCallback done) = 0;
 
   virtual void FuseRecvFromRemoteAsync(
       const std::vector<Rendezvous::ParsedKey>& parsed_keys,
       const Rendezvous::Args& args,
-      FuseDoneCallback done,
-      CallOptions* opts = nullptr);
+      FuseDoneCallback done);
 
   // Returns true if "src" and "dst" are located in the same worker,
   // and hence may use a local rendezvous.

@@ -1,6 +1,11 @@
 package(
     default_visibility = [
-        "//tensorflow:__subpackages__",
+        # tensorflow/core:lib effectively exposes all targets under tensorflow/core/lib/**
+        "//tensorflow/core:__pkg__",
+        # tensorflow/core/framework references some of the headers in this package
+        "//tensorflow/core/framework:__subpackages__",
+        # tensorflow/core/platform still references some of the headers in this package
+        "//tensorflow/core/platform:__subpackages__",
     ],
     licenses = ["notice"],  # Apache 2.0
 )
@@ -76,7 +81,7 @@ filegroup(
         "strcat.h",
         "stringprintf.h",
     ],
-    visibility = ["//tensorflow/core:__pkg__"],
+    visibility = ["//tensorflow/core:__pkg__", "//tensorflow/core/framework:__subpackages__", "//tensorflow/core/platform:__subpackages__",],
 )
 
 filegroup(
@@ -90,7 +95,7 @@ filegroup(
         "scanner.cc",
         "strcat.cc",
     ],
-    visibility = ["//tensorflow/core:__pkg__"],
+    visibility = ["//tensorflow/core:__pkg__", "//tensorflow/core/framework:__subpackages__", "//tensorflow/core/platform:__subpackages__",],
 )
 
 filegroup(

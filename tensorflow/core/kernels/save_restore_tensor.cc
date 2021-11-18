@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/types.h"
+#include "tensorflow/core/util/saved_tensor_slice_util.h"
 #include "tensorflow/core/lib/core/threadpool.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
 #include "tensorflow/core/lib/strings/str_util.h"
@@ -34,6 +35,7 @@ limitations under the License.
 #include "tensorflow/core/util/tensor_slice_reader.h"
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
 #include "tensorflow/core/util/tensor_slice_writer.h"
+#include "tensorflow/core/framework/hash_table/status_collector.h"
 
 namespace tensorflow {
 
@@ -230,6 +232,498 @@ void RestoreTensor(OpKernelContext* context,
           "Restoring data type ", DataTypeString(type), " not yet supported"));
   }
 #undef READER_COPY
+}
+
+Status SaveBloomFilter(
+    BundleWriter* writer, BloomFilterAdmitStrategy* strategy,
+    const string& name, int64 slice_beg, int64 slice_length, int64 slice_size) {
+  LOG(INFO) << "Save BloomFilter" << ": name=" << name
+      << ", slice_beg=" << slice_beg << ", slice_length=" << slice_length
+      << ", slice_size=" << slice_size;
+  std::vector<int8> snapshot = strategy->Snapshot();
+  TensorSlice slice(1);
+  slice.set_start(0, slice_beg);
+  slice.set_length(0, slice_length);
+  {
+    TensorSliceProto* tensor_slice_proto;
+    TF_RETURN_IF_ERROR(writer->AddSliceHeader(
+        name, TensorShape({0}), DataType::DT_INT8, true,
+        &tensor_slice_proto));
+    TensorSlice xslice(1);
+    xslice.set_start(0, 0);
+    xslice.set_length(0, snapshot.size());
+    xslice.AsProto(tensor_slice_proto);
+    tensor_slice_proto->set_hash_slice_begin(slice_beg);
+    tensor_slice_proto->set_hash_slice_length(slice_length);
+    tensor_slice_proto->set_hash_slice_size(slice_size);
+    std::string xname = checkpoint::EncodeTensorNameSlice(
+        name, slice);
+    SegmentBundleWriter segment_writer(
+        writer, xname, TensorShape({(int64)snapshot.size()}), DataType::DT_INT8);
+    TF_RETURN_IF_ERROR(segment_writer.Begin());
+    for (auto&& val : snapshot) {
+      TF_RETURN_IF_ERROR(segment_writer.WriteData(&val, sizeof(int8)));
+    }
+    TF_RETURN_IF_ERROR(segment_writer.End());
+  }
+  LOG(INFO) << "Save BloomFilter Done";
+  return Status::OK();
+}
+
+Status RestoreBloomFilter(
+    BundleReader* reader, BloomFilterAdmitStrategy* strategy,
+    const string& name, int64 slice_beg, int64 slice_length,
+    int64 slice_size) {
+  LOG(INFO) << "Restore BloomFilter" << ": name=" << name
+      << ", slice_beg=" << slice_beg << ", slice_length=" << slice_length
+      << ", slice_size=" << slice_size;
+  std::vector<TensorSliceProto> slices;
+  TF_RETURN_IF_ERROR(reader->LookupTensorSliceProtos(
+      name, &slices));
+  std::sort(slices.begin(), slices.end(),
+      [](const TensorSliceProto& lhs, const TensorSliceProto& rhs) -> bool {
+        return lhs.hash_slice_begin() < rhs.hash_slice_begin();
+  });
+  for (auto&& slice : slices) {
+    if (slice.hash_slice_begin() >= slice_beg + slice_length ||
+        slice_beg >= slice.hash_slice_begin() + slice.hash_slice_length()) {
+      continue;
+    }
+    std::unique_ptr<SegmentBundleReader> bundle_reader;
+    std::string xname = checkpoint::EncodeTensorNameSlice(
+        name, TensorSlice(slice));
+    bundle_reader.reset(new SegmentBundleReader(reader, xname, 0, -1));
+    TF_RETURN_IF_ERROR(bundle_reader->Begin());
+    int64 size = bundle_reader->shape().dim_size(0);
+    std::vector<int8> buffer(size, 0);
+    TF_RETURN_IF_ERROR(bundle_reader->Read(buffer.data(), size * sizeof(int8)));
+    strategy->Restore(slice.hash_slice_begin(), slice.hash_slice_length(),
+                      slice_beg, slice_length, buffer);
+  }
+  LOG(INFO) << "Restore BloomFilter Done";
+  return Status::OK();
+}
+
+Status SaveHashTableHelper(
+    BundleWriter* writer, const std::vector<std::pair<int64, int64>>& data,
+    const std::vector<TensibleVariable*>& tensibles,
+    const string& table_name, const std::vector<string>& tensibles_name,
+    int64 slice_beg, int64 slice_length, int64 slice_size) {
+  if (tensibles.size() != tensibles_name.size()) {
+    return errors::InvalidArgument("save tensor name error");
+  }
+  if (data.size() == 0 && slice_beg != 0) {
+    return Status::OK();
+  }
+  TensorSlice slice(1);
+  slice.set_start(0, slice_beg);
+  slice.set_length(0, slice_length);
+  {
+    TensorSliceProto* tensor_slice_proto;
+    TF_RETURN_IF_ERROR(writer->AddSliceHeader(
+            table_name, TensorShape({0}), DataType::DT_INT64, true,
+            &tensor_slice_proto));
+    TensorSlice xslice(1);
+    xslice.set_start(0, 0);
+    xslice.set_length(0, data.size());
+    xslice.AsProto(tensor_slice_proto);
+    tensor_slice_proto->set_hash_slice_begin(slice_beg);
+    tensor_slice_proto->set_hash_slice_length(slice_length);
+    tensor_slice_proto->set_hash_slice_size(slice_size);
+    string xname = checkpoint::EncodeTensorNameSlice(
+        table_name, slice);
+    SegmentBundleWriter segment_writer(
+        writer, xname,
+        TensorShape({(int64)data.size()}), DataType::DT_INT64);
+    TF_RETURN_IF_ERROR(segment_writer.Begin());
+    for (auto&& item : data) {
+      TF_RETURN_IF_ERROR(segment_writer.WriteData(&item.first, sizeof(int64)));
+    }
+    TF_RETURN_IF_ERROR(segment_writer.End());
+  }
+  for (size_t i = 0; i < tensibles.size(); i++) {
+    TensorShape tsx = tensibles[i]->shape();
+    tsx.set_dim(0, 0);
+    TensorSliceProto* tensor_slice_proto;
+    TF_RETURN_IF_ERROR(writer->AddSliceHeader(
+            tensibles_name[i], tsx, tensibles[i]->dtype(), true,
+            &tensor_slice_proto));
+    TensorSlice xslice(tsx.dims());
+    xslice.set_start(0, 0);
+    xslice.set_length(0, data.size());
+    xslice.AsProto(tensor_slice_proto);
+    tensor_slice_proto->set_hash_slice_begin(slice_beg);
+    tensor_slice_proto->set_hash_slice_length(slice_length);
+    tensor_slice_proto->set_hash_slice_size(slice_size);
+    string xname = checkpoint::EncodeTensorNameSlice(
+        tensibles_name[i], slice);
+    TensorShape ts = tensibles[i]->shape();
+    ts.set_dim(0, data.size());
+    SegmentBundleWriter segment_writer(
+        writer, xname, ts, tensibles[i]->dtype());
+    TF_RETURN_IF_ERROR(segment_writer.Begin());
+    int64 slice_size = tensibles[i]->SliceSize();
+    for (auto&& item : data) {
+      TF_RETURN_IF_ERROR(segment_writer.WriteData(
+              tensibles[i]->GetSlice<void>(item.second), slice_size));
+    }
+    TF_RETURN_IF_ERROR(segment_writer.End());
+  }
+  return Status::OK();
+}
+
+Status SaveHashTable(
+    BundleWriter* writer, HashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const string& table_name, const std::vector<string>& tensibles_name,
+    int64 slice_beg, int64 slice_length, int64 slice_size) {
+  LOG(INFO) << "Save";
+  std::vector<std::pair<int64, int64>> snapshot;
+  CoalescedHashTable* coalesced_table =
+      dynamic_cast<CoalescedHashTable*>(table);
+  if (coalesced_table == nullptr) {
+    snapshot = table->Snapshot();
+  } else {
+    TF_RETURN_IF_ERROR(coalesced_table->ChildSnapshot(table_name, &snapshot));
+  }
+  TF_RETURN_IF_ERROR(SaveHashTableHelper(
+      writer, snapshot, tensibles, table_name, tensibles_name,
+      slice_beg, slice_length, slice_size));
+  LOG(INFO) << "Save Done";
+  return Status::OK();
+}
+
+namespace {
+struct RestoreHashTableSlice {
+  int64 slice_id;
+  int64 beg, len;
+};
+}
+
+Status LookupSliceInfo(
+    BundleReader* reader, const string& table_name,
+    const std::vector<string>& tensibles_name,
+    std::vector<TensorSliceProto>* out_table_slices,
+    std::vector<std::vector<TensorSliceProto>>* out_tensible_slices) {
+  std::vector<TensorSliceProto> table_slices;
+  TF_RETURN_IF_ERROR(reader->LookupTensorSliceProtos(
+          table_name, &table_slices));
+
+  std::sort(table_slices.begin(), table_slices.end(),
+  [](const TensorSliceProto& lhs, const TensorSliceProto& rhs) -> bool {
+    return lhs.hash_slice_begin() < rhs.hash_slice_begin();
+  });
+
+  std::vector<std::vector<TensorSliceProto>> tensible_slices(
+      tensibles_name.size());
+  for (size_t i = 0; i < tensibles_name.size(); i++) {
+    Status st = reader->LookupTensorSliceProtos(
+        tensibles_name[i], &tensible_slices[i]);
+    if (!st.ok())  {
+      LOG(ERROR) << "Slice " << tensibles_name[i] << " not found, ignored!";
+      tensible_slices[i].clear();
+      continue;
+    }
+    std::sort(tensible_slices[i].begin(), tensible_slices[i].end(),
+    [](const TensorSliceProto& lhs, const TensorSliceProto& rhs) -> bool {
+      return lhs.hash_slice_begin() < rhs.hash_slice_begin();
+    });
+  }
+  for (auto&& slice : tensible_slices) {
+    if (slice.empty()) {
+      continue;
+    }
+    if (slice.size() != table_slices.size()) {
+      return errors::FailedPrecondition("Checkpoint's Slice is mismatched");
+    }
+    for (size_t i = 0; i < table_slices.size(); ++i) {
+      if (slice[i].hash_slice_begin() != table_slices[i].hash_slice_begin()) {
+        return errors::FailedPrecondition("Checkpoint's Slice is mismatched");
+      }
+      if (slice[i].hash_slice_length() != table_slices[i].hash_slice_length()) {
+        return errors::FailedPrecondition("Checkpoint's Slice is mismatched");
+      }
+      if (slice[i].extent(0).start() != table_slices[i].extent(0).start()) {
+        return errors::FailedPrecondition("Checkpoint's Slice is mismatched");
+      }
+      if (slice[i].extent(0).length() != table_slices[i].extent(0).length()) {
+        return errors::FailedPrecondition("Checkpoint's Slice is mismatched");
+      }
+    }
+  }
+  *out_table_slices = std::move(table_slices);
+  *out_tensible_slices = std::move(tensible_slices);
+  return Status::OK();
+}
+
+void BuildRestoreSlice(
+    const std::vector<TensorSliceProto>& table_slices,
+    int64 slice_beg, int64 slice_length,
+    std::vector<RestoreHashTableSlice>* out_slices) {
+  int64 kBlock = 1 << 20;
+  for (size_t i = 0; i < table_slices.size(); i++) {
+    if (table_slices[i].hash_slice_begin() >= slice_beg + slice_length ||
+        slice_beg >= table_slices[i].hash_slice_begin() +
+            table_slices[i].hash_slice_length()) {
+      continue;
+    }
+    int64 idx = table_slices[i].extent(0).length();
+    for (int64 j = 0; j < idx; j += kBlock) {
+      int64 len = std::min(idx - j, kBlock);
+      out_slices->emplace_back();
+      out_slices->back().slice_id = i;
+      out_slices->back().beg = j;
+      out_slices->back().len = len;
+    }
+  }
+}
+
+Status InsertTable(
+    BundleReader* reader, HashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const string& table_name, const std::vector<string>& tensibles_name,
+    const std::vector<TensorSliceProto>& table_slices,
+    const std::vector<std::vector<TensorSliceProto>>& tensible_slices,
+    const RestoreHashTableSlice& slice, mutex* mu,
+    int64 slice_beg, int64 slice_length, int64 slice_size,
+    const std::function<void(int64*,size_t)>& revise_fn = nullptr) {
+  std::unique_ptr<SegmentBundleReader> table_bundle_reader;
+  std::vector<std::unique_ptr<SegmentBundleReader>> tensible_bundle_readers;
+  {
+    mutex_lock lock(*mu);
+    string xname = checkpoint::EncodeTensorNameSlice(
+        table_name, TensorSlice(table_slices[slice.slice_id]));
+    table_bundle_reader.reset(new SegmentBundleReader(
+            reader, xname, slice.beg, slice.len));
+    TF_RETURN_IF_ERROR(table_bundle_reader->Begin());
+
+    for (size_t j = 0; j < tensibles.size(); j++) {
+      if (tensible_slices[j].empty()) {
+        tensible_bundle_readers.emplace_back(nullptr);
+        continue;
+      }
+      string xname = checkpoint::EncodeTensorNameSlice(
+          tensibles_name[j], TensorSlice(tensible_slices[j][slice.slice_id]));
+      tensible_bundle_readers.emplace_back(new SegmentBundleReader(
+              reader, xname, slice.beg, slice.len));
+      TF_RETURN_IF_ERROR(tensible_bundle_readers.back()->Begin());
+    }
+  }
+  int64 id_size = slice.len;
+  constexpr int64 kSlice = 1 << 15;
+  int64 slice_end = slice_beg + slice_length;
+  while (id_size > 0) {
+    int64 xid = std::min(id_size, kSlice);
+    id_size -= xid;
+    int64 key[kSlice];
+    TF_RETURN_IF_ERROR(table_bundle_reader->Read(key, xid * sizeof(int64)));
+    if (revise_fn) {
+      revise_fn(key, xid);
+    }
+    std::vector<int64> real_key, real_id, real_offset;
+    for (int j = 0; j < xid; j++) {
+      int64 slice_idx = (uint64_t)(key[j]) % (uint64_t)(slice_size);
+      if (slice_beg <= slice_idx && slice_idx < slice_end) {
+        real_key.push_back(key[j]);
+        real_offset.push_back(j);
+      }
+    }
+    real_id.resize(real_key.size());
+    int64 size = table->GetIdsWithoutResize(
+        &real_key[0], &real_id[0], real_key.size());
+    for (size_t j = 0; j < tensibles.size(); j++) {
+      tensibles[j]->ZeroCostResize(size);
+    }
+    real_offset.push_back(-1);
+    int64 idx = 0;
+    for (int64 j = 0; j < xid; j++) {
+      if (real_offset[idx] == j) {
+        for (size_t k = 0; k < tensibles.size(); k++) {
+          if (tensible_bundle_readers[k]) {
+            TF_RETURN_IF_ERROR(tensible_bundle_readers[k]->Read(
+                    tensibles[k]->GetSlice<void>(real_id[idx]),
+                    tensibles[k]->SliceSize()));
+          }
+        }
+        idx++;
+      } else {
+        for (size_t k = 0; k < tensibles.size(); k++) {
+          if (tensible_bundle_readers[k]) {
+            TF_RETURN_IF_ERROR(tensible_bundle_readers[k]->Skip(
+                    tensibles[k]->SliceSize()));
+          }
+        }
+      }
+    }
+  }
+  return Status::OK();
+}
+
+void RestoreHashTable(
+    std::function<void(std::function<void()>)> runner,
+    BundleReader* reader, HashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const string& table_name, const std::vector<string>& tensibles_name,
+    int64 slice_beg, int64 slice_length, int64 slice_size,
+    std::function<void(Status)> done) {
+  LOG(INFO) << "Restore";
+  table->Clear([=](Status st) {
+    if (!st.ok()) {
+      done(st);
+      return;
+    }
+    std::vector<TensorSliceProto> table_slices;
+    std::vector<std::vector<TensorSliceProto>> tensible_slices(tensibles.size());
+    if (tensibles.size() != tensibles_name.size()) {
+      done(errors::FailedPrecondition("Tensible Size is not equal to names"));
+      return;
+    }
+
+    Status res = LookupSliceInfo(
+        reader, table_name, tensibles_name, &table_slices, &tensible_slices);
+    if (!res.ok()) {
+      done(res);
+      return;
+    }
+
+    std::vector<RestoreHashTableSlice> slices;
+    BuildRestoreSlice(table_slices, slice_beg, slice_length, &slices);
+
+    mutex* mu = new mutex;
+    auto insert_table = std::bind(
+        InsertTable, reader, table, tensibles, table_name,
+        tensibles_name, table_slices, tensible_slices, std::placeholders::_1,
+        mu, slice_beg, slice_length, slice_size, nullptr);
+
+    auto after_add_table = [=](Status st) {
+      delete mu;
+      if (!st.ok()) {
+        done(st);
+        return;
+      };
+      std::set<TensibleVariable*> restored_variable(
+          tensibles.begin(), tensibles.end());
+      std::vector<TensibleVariable*> vars = table->Tensibles();
+      StatusCollector* stc = new StatusCollector(vars.size(), done);
+      for (auto&& tensible : vars) {
+        if (restored_variable.find(tensible) != restored_variable.end()) {
+          tensible->Pad(table->Size(), stc->AddStatusFunc());
+        } else {
+          tensible->Resize(table->Size(), stc->AddStatusFunc());
+        }
+      }
+      LOG(INFO) << "Restore Done";
+      stc->Start();
+    };
+    StatusCollector* stc = new StatusCollector(slices.size(), after_add_table);
+    for (auto s : slices) {
+      runner([=]{
+        Status st = insert_table(s);
+        stc->AddStatus(st);
+      });
+    }
+    stc->Start();
+  });
+}
+
+std::vector<string> ChildrenInCheckpoints(
+    BundleReader* reader, const std::vector<string>& table_names) {
+  std::vector<string> result;
+  for (auto&& table_name : table_names) {
+    std::vector<TensorSliceProto> slices;
+    Status st = reader->LookupTensorSliceProtos(table_name, &slices);
+    if (st.ok()) {
+      result.push_back(table_name);
+    }
+  }
+  return result;
+}
+
+void RestoreCoalescedHashTable(
+    std::function<void(std::function<void()>)> runner,
+    BundleReader* reader, CoalescedHashTable* table,
+    const std::vector<TensibleVariable*>& tensibles,
+    const std::vector<string>& table_names,
+    const std::vector<std::vector<string>>& tensibles_names,
+    int64 slice_beg, int64 slice_length, int64 slice_size,
+    bool clear, std::function<void(Status)> done) {
+  LOG(INFO) << "Restore CoalescedHashTable";
+  auto after_clear = [=](Status st) {
+    if (!st.ok()) {
+      done(st);
+      return;
+    }
+    if (table_names.size() != tensibles_names.size()) {
+      done(errors::FailedPrecondition("Tensible Size is not equal to names"));
+      return;
+    }
+    std::vector<std::function<Status(void)>> insert_table_fns;
+    mutex* mu = new mutex;
+    for (size_t i = 0; i < table_names.size(); ++i) {
+      string table_name = table_names[i];
+      std::vector<string> tensibles_name = tensibles_names[i];
+      Status res = table->ValidChild(table_name);
+      if (!res.ok()) {
+        done(res);
+        return;
+      }
+      std::vector<TensorSliceProto> table_slices;
+      std::vector<std::vector<TensorSliceProto>> tensible_slices;
+      res = LookupSliceInfo(
+          reader, table_name, tensibles_name, &table_slices,
+          &tensible_slices);
+      // ignore non-existed child table
+      if (!res.ok()) {
+        LOG(ERROR) << res.ToString();
+        continue;
+      }
+      std::vector<RestoreHashTableSlice> slices;
+      BuildRestoreSlice(table_slices, slice_beg, slice_length, &slices);
+      for (auto&& slice : slices) {
+        insert_table_fns.push_back(std::bind(
+                InsertTable, reader, table, tensibles, table_name, 
+                tensibles_name, table_slices, tensible_slices,
+                slice, mu, slice_beg, slice_length, slice_size,
+                table->MakeReviserFn(table_name)));
+      }
+    }
+    auto after_add_table = [=](Status st) {
+      delete mu;
+      if (!st.ok()) {
+        done(st);
+        return;
+      }
+      std::set<TensibleVariable*> restored_variable(
+          tensibles.begin(), tensibles.end());
+      std::vector<TensibleVariable*> vars = table->Tensibles();
+      StatusCollector* stc = new StatusCollector(vars.size(), done);
+      for (auto&& tensible: vars) {
+        if (restored_variable.find(tensible) != restored_variable.end()) {
+          tensible->Pad(table->Size(), stc->AddStatusFunc());
+        } else {
+          tensible->Resize(table->Size(), stc->AddStatusFunc());
+        }
+      }
+      LOG(INFO) << "Restore CoalescedHashTable Done";
+      stc->Start();
+    };
+    StatusCollector* stc = new StatusCollector(
+        insert_table_fns.size(), after_add_table);
+    for (auto&& fn : insert_table_fns) {
+      runner([=] {
+        Status st = fn();
+        stc->AddStatus(st);
+      });
+    }
+    stc->Start();
+  };
+  if (clear) {
+    table->Clear(after_clear);
+  } else {
+    std::vector<string> children_names = ChildrenInCheckpoints(
+        reader, table_names);
+    table->ClearChildren(children_names, after_clear);
+  }
 }
 
 namespace {

@@ -501,6 +501,10 @@ tf_module {
     argspec: "args=[\'input\', \'block_shape\', \'crops\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "batched_non_max_suppression"
+    argspec: "args=[\'boxes\', \'scores\', \'box_counts\', \'max_output_size\', \'iou_threshold\', \'score_threshold\', \'pad_to_max_output_size\', \'algorithm\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'-1\', \'None\'], "
+  }
+  member_method {
     name: "bitcast"
     argspec: "args=[\'input\', \'type\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -782,7 +786,7 @@ tf_module {
   }
   member_method {
     name: "initialize_kv_variable_op"
-    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'None\'], "
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'None\'], "
   }
   member_method {
     name: "is_tensor"
@@ -802,7 +806,7 @@ tf_module {
   }
   member_method {
     name: "kv_resource_import_v2"
-    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'1000\', \'None\'], "
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'None\'], "
   }
   member_method {
     name: "kv_resource_incr_import"
@@ -823,6 +827,10 @@ tf_module {
   member_method {
     name: "kv_resource_sparse_apply_adagrad_decay"
     argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "kv_resource_sparse_apply_adam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "kv_resource_sparse_apply_adam_async"
@@ -883,6 +891,10 @@ tf_module {
   member_method {
     name: "logical_or"
     argspec: "args=[\'x\', \'y\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "logical_sum"
+    argspec: "args=[\'q_input\', \'k_input\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "make_ndarray"
@@ -1159,6 +1171,10 @@ tf_module {
   member_method {
     name: "sparse_apply_adam_async"
     argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'apply_sparse_rmsprop\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "sparse_inner_flatten"
+    argspec: "args=[\'indices\', \'dense_shape\', \'new_rank\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "split"

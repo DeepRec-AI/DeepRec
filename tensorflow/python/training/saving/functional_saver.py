@@ -32,6 +32,7 @@ from tensorflow.python.ops import io_ops
 from tensorflow.python.ops import string_ops
 from tensorflow.python.training.saving import saveable_object
 from tensorflow.python.training.saving import saveable_object_util
+from tensorflow.python.training import training_util
 from tensorflow.python.util import nest
 
 
@@ -63,13 +64,30 @@ class _SingleDeviceSaver(object):
     tensor_names = []
     tensors = []
     tensor_slices = []
+    ev_key_types = []
+    has_ev = False
     for saveable in self._saveable_objects:
+      if isinstance(saveable, saveable_object_util.EmbeddingVariableSaveable):
+        tensors.append(training_util.get_or_create_global_step())
+        tensor_names.append("global_step")
+        tensor_slices.append("")
+        has_ev = True
+        break
+
+    for saveable in self._saveable_objects:
+      if isinstance(saveable, saveable_object_util.EmbeddingVariableSaveable):
+        tensor_names.append(saveable.name)
+        tensors.append(saveable.handle_op)
+        tensor_slices.append("")
+        ev_key_types.append(saveable.key_type)
+        continue
       for spec in saveable.specs:
         tensor_names.append(spec.name)
         tensors.append(spec.tensor)
         tensor_slices.append(spec.slice_spec)
     with ops.device("cpu:0"):
-      return io_ops.save_v2(file_prefix, tensor_names, tensor_slices, tensors)
+      return io_ops.save_v2(file_prefix, tensor_names, tensor_slices, tensors,
+              ev_key_types, has_ev)
 
   def restore(self, file_prefix):
     """Restore the saveable objects from a checkpoint with `file_prefix`.

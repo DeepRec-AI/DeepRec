@@ -155,7 +155,6 @@ load("@io_bazel_rules_closure//closure:defs.bzl", "closure_proto_library")
 load(
     "//third_party/mkl:build_defs.bzl",
     "if_mkl",
-    "mkl_deps",
 )
 # Placeholder for Google-internal load statements.
 
@@ -917,6 +916,8 @@ tf_cuda_library(
         "framework/type_traits.h",
         "framework/typed_allocator.h",
         "framework/types.h",
+        "framework/hash_table/tensor_generator.h",
+        "framework/hash_table/bloom_filter_strategy.h",
         "public/version.h",
         "util/activation_mode.h",
         "util/batch_util.h",
@@ -966,6 +967,7 @@ tf_cuda_library(
     deps = [
         ":framework_internal",
         "@com_google_absl//absl/base",
+        "@sparsehash_c11//:dense_hash_map",
     ],
 )
 
@@ -1166,9 +1168,12 @@ tf_gen_op_libs(
         "decode_proto_ops",
         "encode_proto_ops",
         "experimental_dataset_ops",
+        "feature_column_ops",
         "function_ops",
         "functional_ops",
         "fused_embedding_ops",
+        "hash_ops",
+        "hash_training_ops",
         "fuserecv_ops",
         "image_ops",
         "io_ops",
@@ -1262,6 +1267,22 @@ tf_gen_op_libs(
     is_external = False,
     op_lib_names = [
         "kv_variable_ops",
+    ],
+    deps = [":lib"],
+)
+
+tf_gen_op_libs(
+    is_external = False,
+    op_lib_names = [
+        "data_buffer_ops"
+    ],
+    deps = [":lib"],
+)
+
+tf_gen_op_libs(
+    is_external = False,
+    op_lib_names = [
+        "work_queue_ops"
     ],
     deps = [":lib"],
 )
@@ -1404,10 +1425,13 @@ cc_library(
         ":decode_proto_ops_op_lib",
         ":encode_proto_ops_op_lib",
         ":experimental_dataset_ops_op_lib",
+        ":feature_column_ops_op_lib",
         ":function_ops_op_lib",
         ":functional_ops_op_lib",
         ":fused_embedding_ops_op_lib",
         ":fuserecv_ops_op_lib",
+        ":hash_ops_op_lib",
+        ":hash_training_ops_op_lib",
         ":image_ops_op_lib",
         ":io_ops_op_lib",
         ":linalg_ops_op_lib",
@@ -1584,14 +1608,18 @@ cc_library(
         "//tensorflow/core/kernels:decode_proto_op",
         "//tensorflow/core/kernels:encode_proto_op",
         "//tensorflow/core/kernels:fake_quant_ops",
+        "//tensorflow/core/kernels:feature_column_ops",
         "//tensorflow/core/kernels:function_ops",
         "//tensorflow/core/kernels:functional_ops",
         "//tensorflow/core/kernels:fused_embedding_ops",
         "//tensorflow/core/kernels:grappler",
+        "//tensorflow/core/kernels:hash_ops",
         "//tensorflow/core/kernels:histogram_op",
         "//tensorflow/core/kernels:image",
         "//tensorflow/core/kernels:io",
         "//tensorflow/core/kernels:kv_variable_ops",
+        "//tensorflow/core/kernels:data_buffer_ops",
+        "//tensorflow/core/kernels:work_queue_ops",
         "//tensorflow/core/kernels:linalg",
         "//tensorflow/core/kernels:lookup",
         "//tensorflow/core/kernels:logging",
@@ -2935,6 +2963,7 @@ tf_cuda_library(
             "example/feature_util.cc",
             "util/reporter.cc",
             "framework/fake_input.*",
+            "framework/hash_table/*.cc",
             "framework/op_gen_lib.*",
             "framework/reader_base.*",
             "util/memmapped_file_system.*",
@@ -2971,6 +3000,7 @@ tf_cuda_library(
         ":protos_all_cc",
         ":stats_calculator_portable",
         ":version_lib",
+        ":framework_internal_impl_hash_table",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -2986,7 +3016,49 @@ tf_cuda_library(
     ] + if_static(
         extra_deps = ["@com_google_protobuf//:protobuf"],
         otherwise = ["@com_google_protobuf//:protobuf_headers"],
-    ) + mkl_deps(),
+    ),
+    alwayslink = 1,
+)
+
+tf_cuda_library(
+    name = "framework_internal_impl_hash_table",
+    srcs = FRAMEWORK_INTERNAL_PRIVATE_HEADERS + glob(
+        [
+            "framework/hash_table/*.cc",
+        ],
+        exclude = [
+            "**/*test*",
+        ],
+    ),
+    hdrs = FRAMEWORK_INTERNAL_PUBLIC_HEADERS,
+    copts = tf_copts(),
+    nocopts = "-fno-exceptions",
+    linkopts = select({
+        "//tensorflow:freebsd": ["-lm"],
+        "//tensorflow:windows": [],
+        "//conditions:default": [
+            "-ldl",
+            "-lm",
+        ],
+    }),
+    deps = [
+        ":feature_util",
+        ":lib",
+        ":lib_internal",
+        ":protos_all_proto_text",
+        ":error_codes_proto_text",
+        ":protos_all_cc",
+        ":stats_calculator_portable",
+        ":version_lib",
+        "//tensorflow/core/platform/default/build_config:platformlib",
+        "//tensorflow/core/kernels:bounds_check",
+        "//tensorflow/core:gpu_id",
+        "//third_party/eigen3",
+        "core_cpu_lib",
+    ] + if_static(
+        extra_deps = ["@com_google_protobuf//:protobuf"],
+        otherwise = ["@com_google_protobuf//:protobuf_headers"],
+	),
     alwayslink = 1,
 )
 
@@ -3217,9 +3289,12 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/debugger_state_interface.h",
     "common_runtime/device_resolver_local.h",
     "common_runtime/dma_helper.h",
+    "common_runtime/entry.h",
     "common_runtime/executor.h",
     "common_runtime/executor_factory.h",
     "common_runtime/graph_optimizer.h",
+    "common_runtime/graph_view.h",
+    "common_runtime/immutable_executor_state.h",
     "common_runtime/input_colocation_exemption_registry.h",
     "common_runtime/isolate_placer_inspection_required_ops_pass.h",
     "common_runtime/local_device.h",
@@ -3237,6 +3312,8 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/partitioning_utils.h",
     "common_runtime/placer.h",
     "common_runtime/process_util.h",
+    "common_runtime/propagator_debug_utils.h",
+    "common_runtime/propagator_state.h",
     "common_runtime/inspecting_placer.h",
     "common_runtime/profile_handler.h",
     "common_runtime/renamed_device.h",
@@ -3246,6 +3323,7 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/ring_alg.h",
     "common_runtime/ring_gatherer.h",
     "common_runtime/session_factory.h",
+    "common_runtime/simple_propagator_state.h",
     "common_runtime/single_threaded_cpu_device.h",
     "common_runtime/stats_publisher_interface.h",
     "common_runtime/step_stats_collector.h",
@@ -3283,7 +3361,9 @@ tf_cuda_library(
         "common_runtime/function.cc",
         "common_runtime/graph_optimizer.cc",
         "common_runtime/graph_runner.cc",
+        "common_runtime/graph_view.cc",
         "common_runtime/hierarchical_tree_broadcaster.cc",
+        "common_runtime/immutable_executor_state.cc",
         "common_runtime/input_colocation_exemption_registry.cc",
         "common_runtime/inspecting_placer.cc",
         "common_runtime/isolate_placer_inspection_required_ops_pass.cc",
@@ -3307,6 +3387,8 @@ tf_cuda_library(
         "common_runtime/process_function_library_runtime.cc",
         "common_runtime/process_state.cc",
         "common_runtime/process_util.cc",
+        "common_runtime/propagator_debug_utils.cc",
+        "common_runtime/propagator_state.cc",
         "common_runtime/renamed_device.cc",
         "common_runtime/rendezvous_mgr.cc",
         "common_runtime/rendezvous_util.cc",
@@ -3317,6 +3399,7 @@ tf_cuda_library(
         "common_runtime/session_factory.cc",
         "common_runtime/session_options.cc",
         "common_runtime/session_state.cc",
+        "common_runtime/simple_propagator_state.cc",
         "common_runtime/single_threaded_cpu_device.cc",
         "common_runtime/stats_publisher_interface.cc",
         "common_runtime/step_stats_collector.cc",
@@ -3351,7 +3434,7 @@ tf_cuda_library(
         "//tensorflow/core/profiler:nvtx_utils",
         "//tensorflow/core/profiler/lib:traceme",
         "//tensorflow/core/profiler/internal:traceme_recorder",
-    ] + mkl_deps(),
+    ],
     alwayslink = 1,
 )
 
@@ -3397,7 +3480,7 @@ tf_cuda_library(
         "//tensorflow/core/grappler/clusters:virtual_cluster",
         "//tensorflow/core/grappler/optimizers:meta_optimizer",
         "//third_party/eigen3",
-    ] + mkl_deps() + tf_additional_core_deps() + if_static([
+    ] + tf_additional_core_deps() + if_static([
         ":core_cpu_impl",
         ":function_ops_op_lib",
         ":functional_grad",
@@ -4641,7 +4724,7 @@ tf_cuda_only_cc_test(
         ":test",
         ":test_main",
         "//third_party/eigen3",
-    ] + mkl_deps(),
+    ],
 )
 
 tf_cc_test_gpu(
@@ -5532,6 +5615,54 @@ tf_cc_tests(
         "//tensorflow/cc:client_session",
         "//tensorflow/cc:function_ops",
         "//tensorflow/cc:ops",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_tensor_generator_test",
+    size = "small",
+    srcs = ["framework/hash_table/tensor_generator_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_tensible_variable_test",
+    size = "small",
+    srcs = ["framework/hash_table/tensible_variable_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_hash_table_test",
+    size = "small",
+    srcs = ["framework/hash_table/hash_table_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "hash_table_bloom_filter_strategy_test",
+    size = "small",
+    srcs = ["framework/hash_table/bloom_filter_strategy_test.cc"],
+    deps = [
+        ":framework_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
     ],
 )
 

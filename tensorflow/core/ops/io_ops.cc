@@ -63,7 +63,7 @@ REGISTER_OP("SaveV2")
     .Input("shape_and_slices: string")
     .Input("tensors: dtypes")
     .Attr("dtypes: list(type)")
-    .Attr("ev_key_types: list(type)")
+    .Attr("ev_key_types: list(type) = []")
     .Attr("has_ev: bool = false")
     .SetIsStateful()
     .SetShapeFn([](InferenceContext* c) {
@@ -203,6 +203,27 @@ REGISTER_OP("Restore")
       TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &unused));
       TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
       c->set_output(0, c->UnknownShape());
+      return Status::OK();
+    });
+
+REGISTER_OP("RestoreHashTable")
+    .Input("file_pattern: string")
+    .Input("tensor_name: string")
+    .Input("shape_and_slices: string")
+    .Input("handles: resource")
+    .Attr("clear: bool = true")
+    .SetIsStateful()
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    });
+
+REGISTER_OP("RestoreBloomFilter")
+    .Input("file_pattern: string")
+    .Input("tensor_name: string")
+    .Input("shape_and_slice: string")
+    .Input("handle: resource")
+    .SetIsStateful()
+    .SetShapeFn([](InferenceContext* c) {
       return Status::OK();
     });
 

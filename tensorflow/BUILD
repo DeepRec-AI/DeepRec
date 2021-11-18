@@ -602,6 +602,7 @@ tf_cc_shared_object(
     ] + tf_additional_binary_deps(),
 )
 
+'''
 tf_cc_shared_object(
     name = "tensorflow_triton",
     framework_so = [],
@@ -651,6 +652,7 @@ tf_cc_shared_object(
     ] + if_ngraph(["@ngraph_tf//:ngraph_tf"])
       + tf_additional_binary_deps(),
 )
+'''
 
 # -------------------------------------------
 # New rules should be added above this target.

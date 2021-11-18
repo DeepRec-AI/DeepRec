@@ -4,9 +4,11 @@
   - [Model Structure](#model-structure)
   - [Usage](#usage)
     - [Stand-alone Training](#stand-alone-training)
+    - [Distribute Training](#distribute-training)
   - [Benchmark](#benchmark)
-    - [Test Environment](#test-environment)
     - [Stand-alone Training](#stand-alone-training-1)
+      - [Test Environment](#test-environment)
+      - [Performance Result](#performance-result)
   - [Dataset](#dataset)
     - [Prepare](#prepare)
     - [Fields](#fields)
@@ -73,76 +75,95 @@ input:                                          |
 4.  Training.  
     ```
     cd /root/
-    python train_stand.py
+    python train.py
     ```
     Use argument `--bf16` to enable DeepRec BF16 in deep model.
     ```
-    python train_stand.py --bf16 True
+    python train.py --bf16
     ```
     Use arguments to set up a custom configuation:
-    - `--data_location`: Full path of train & eval data, default is `./data`.
-    - `--output_dir`: Full path to output directory for logs and saved model, default is `./result`.
+    - `--data_location`: Full path of train & eval data, default to `./data`.
+    - `--output_dir`: Full path to output directory for logs and saved model, default to `./result`.
+    - `--checkpoint`: Full path to checkpoints input/output directory, default to `$(OUTPUT_DIR)/model_$(MODEL_NAME)_$(TIMESTAMPS)`
     - `--steps`: Set the number of steps on train dataset. Default will be set to 10 epoch.
-    - `--batch_size`: Batch size to train. Default is 512.
-    - `--profile_steps`: Save steps of profile hooks to record timeline, zero to close, defualt is 0.
-    - `--save_steps`: Set the number of steps on saving checkpoints. Default will be set to 500.
-    - `--keep_checkpoint_max`: Maximum number of recent checkpoint to keep. Default is 1.
-    - `--deep_learning_rate`: Learning rate for deep network. Default is 0.05.
-    - `--linear_learning_rate`: Learning rate for linear model. Default is 0.2.
-    - `--bf16`: Enable DeepRec BF16 feature in deep model. Use FP32 by default.
+    - `--batch_size`: Batch size to train. Default to 512.
+    - `--timeline`: Save steps of profile hooks to record timeline, zero to close, defualt to 0.
+    - `--save_steps`: Set the number of steps on saving checkpoints, zero to close. Default will be set to 0.
+    - `--keep_checkpoint_max`: Maximum number of recent checkpoint to keep. Default to 1.
+    - `--deep_learning_rate`: Learning rate for deep network. Default to 0.05.
+    - `--linear_learning_rate`: Learning rate for linear model. Default to 0.2.
+    - `--bf16`: Enable DeepRec BF16 feature in DeepRec. Use FP32 by default.
+    - `--no_eval`: Do not evaluate trained model by eval dataset.
+    - `--inter`: Set inter op parallelism threads. Default to 0.
+    - `--intra`: Set intra op parallelism threads. Default to 0.
+    - `--input_layer_partitioner`: Slice size of input layer partitioner(units MB).
+    - `--dense_layer_partitioner`: Slice size of dense layer partitioner(units kB).
+    - `--protocol`: Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
+
+### Distribute Training
+1. Prepare a K8S cluster and shared storage volume.
+2. Create a PVC(PeritetVolumeClaim) for storage volumn in cluster.
+3. Prepare docker image by DockerFile.
+4. Edit k8s yaml file
+- `replicas`: numbers of cheif, worker, ps.
+- `image`: where nodes can pull the docker image.
+- `claimName`: PVC name.
 
 ## Benchmark
-### Test Environment
-The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **hfg7**](https://help.aliyun.com/document_detail/25378.html?spm=5176.2020520101.vmBInfo.instanceType.4a944df5PvCcED#hfg7).
+### Stand-alone Training
+#### Test Environment
+The benchmark is performed on the [Alibaba Cloud ECS general purpose instance family with high clock speeds - **ecs.hfg7.2xlarge**](https://help.aliyun.com/document_detail/25378.html?spm=5176.2020520101.vmBInfo.instanceType.4a944df5PvCcED#hfg7).
 - Hardware 
-  - CPU:                    Intel(R) Xeon(R) Platinum 8369HB CPU @ 3.30GHz  
-  - vCPU(s):                16
-  - Socket(s):              1
-  - Core(s) per socket:     8
-  - Thread(s) per core:     2
-  - Memory:                 64G  
-  - L1d cache:              32K
-  - L1i cache:              32K
-  - L2 cache:               1024K
-  - L3 cache:               33792K
+  - Model name:          Intel(R) Xeon(R) Platinum 8369HC CPU @ 3.30GHz
+  - CPU(s):              8
+  - Socket(s):           1
+  - Core(s) per socket:  4
+  - Thread(s) per core:  2
+  - Memory:              32G
 
 - Software
-  - kernel:                 4.18.0-305.3.1.el8.x86_64
-  - OS:                     CentOS 8.4.2105
+  - kernel:                 4.18.0-305.12.1.el8_4.x86_64
+  - OS:                     CentOS Linux release 8.4.2105
   - GCC:                    8.4.1
-  - Docker:                 20.10.8
-  - Python:                 3.6.9
+  - Docker:                 20.10.9
+  - Python:                 3.6.8
 
-### Stand-alone Training 
-Google tensorflow v1.15 is selected to compare with DeepRec.
+#### Performance Result
 
 <table>
     <tr>
-        <td colspan="2"></td>
+        <td colspan="1"></td>
+        <td>Framework</td>
+        <td>DType</td>
         <td>Accuracy</td>
         <td>AUC</td>
         <td>Globalsetp/Sec</td>
     </tr>
     <tr>
         <td rowspan="3">WDL</td>
-        <td>google TF FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>Community TensorFlow</td>
+        <td>FP32</td>
+        <td>0.7671165</td>
+        <td>0.7502928</td>
+        <td>31.1121 (baseline)</td>
     </tr>
     <tr>
-        <td>DeepRec FP32 w/ oneDNN</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>DeepRec w/ oneDNN</td>
+        <td>FP32</td>
+        <td>0.7664720</td>
+        <td>0.7505082</td>
+        <td>31.1755 (+1.00x)</td>
     </tr>
     <tr>
-        <td>DeepRec BF16 w/ oneDNN</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>DeepRec w/ oneDNN</td>
+        <td>FP32+BF16</td>
+        <td>0.7690585</td>
+        <td>0.7568862</td>
+        <td>44.3273 (+1.42x)</td>
     </tr>
 </table>
+
+- Community TensorFlow version is v1.15.5.
 
 ## Dataset
 Train & eval dataset using ***Kaggle Display Advertising Challenge Dataset (Criteo Dataset)***.
@@ -174,6 +195,5 @@ Categorical column's numbers of types is as follow:
 - Categorical columns **C[1-26]** is processed with `tf.feature_column.embedding_column()` function after using `tf.feature_column.categorical_column_with_hash_bucket()` function.
 
 ## TODO LIST
-- Distribute training
 - Benchmark
 - DeepRec DockerFile

@@ -22,13 +22,6 @@ cc_library(
         "src-cpp/TopicPartitionImpl.cpp",
         "src/crc32c.c",
         "src/crc32c.h",
-        "src/lz4.c",
-        "src/lz4.h",
-        "src/lz4frame.c",
-        "src/lz4frame.h",
-        "src/lz4frame_static.h",
-        "src/lz4hc.c",
-        "src/lz4hc.h",
         "src/lz4opt.h",
         "src/queue.h",
         "src/rd.h",
@@ -135,8 +128,6 @@ cc_library(
         "src/snappy.h",
         "src/tinycthread.c",
         "src/tinycthread.h",
-        "src/xxhash.c",
-        "src/xxhash.h",
     ] + select({
         "@org_tensorflow//tensorflow:windows": [
             "src/rdkafka_sasl_win32.c",
@@ -150,7 +141,6 @@ cc_library(
         "config.h",
         "src-cpp/rdkafkacpp.h",
         "src-cpp/rdkafkacpp_int.h",
-        "src/lz4.c",
         "src/snappy_compat.h",
     ],
     copts = select({
@@ -176,5 +166,6 @@ cc_library(
     deps = [
         "@boringssl//:ssl",
         "@zlib_archive//:zlib",
+        "@lz4",
     ],
 )

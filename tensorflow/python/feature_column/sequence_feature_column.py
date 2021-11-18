@@ -113,6 +113,11 @@ class SequenceFeatures(fc._BaseFeaturesLayer):
   def _target_shape(self, input_shape, total_elements):
     return (input_shape[0], input_shape[1], total_elements)
 
+  def _process_dense_tensor(self, column, tensor):
+    num_elements = column.variable_shape.num_elements()
+    target_shape = self._target_shape(array_ops.shape(tensor), num_elements)
+    return array_ops.reshape(tensor, shape=target_shape)
+
   def call(self, features):
     """Returns sequence input corresponding to the `feature_columns`.
 

@@ -22,8 +22,12 @@ import six
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import sparse_tensor
+from tensorflow.python.framework.sparse_tensor import SparseTensor
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.ops.ragged import ragged_tensor
+from tensorflow.python.ops.ragged.ragged_tensor import RaggedTensor
 from tensorflow.python.util import nest
 
 
@@ -63,6 +67,12 @@ def assert_key_is_string(key):
     raise ValueError(
         'key must be a string. Got: type {}. Given key: {}.'.format(
             type(key), key))
+
+
+def assert_float_or_int(dtype, prefix):
+  if (not dtype.is_floating) and (not dtype.is_integer):
+    raise ValueError(
+        '{} dtype must be float or integer. dtype: {}.'.format(prefix, dtype))
 
 
 def check_default_value(shape, default_value, dtype, key):
@@ -152,3 +162,34 @@ def _is_shape_and_default_value_compatible(default_value, shape):
     if not _is_shape_and_default_value_compatible(default_value[i], shape[1:]):
       return False
   return True
+
+def _convert_to_sparse_tensor(tensor):
+  if tensor is None or isinstance(tensor, SparseTensor):
+    return tensor
+  if isinstance(tensor, sparse_tensor.SparseTensorValue):
+    return SparseTensor.from_value(tensor)
+  if isinstance(tensor, RaggedTensor):
+    return tensor.to_sparse()
+  else:
+    raise ValueError("tensor should be SparseTensor or RaggedTensor, "
+                     "Given {}".format(tensor))
+
+def parse_sparse_data(data):
+  if isinstance(data, (sparse_tensor.SparseTensor,
+                       ragged_tensor.RaggedTensor)):
+    return (_convert_to_sparse_tensor(data), None)
+  elif hasattr(data, 'id_tensor') and hasattr(data, 'weight_tensor'):
+    return (_convert_to_sparse_tensor(data.id_tensor),
+            _convert_to_sparse_tensor(data.weight_tensor))
+  elif isinstance(data, (list, tuple)):
+    ids = data[0]
+    weights = data[1] if len(data) > 1 else None
+    if not isinstance(ids, (sparse_tensor.SparseTensor,
+                            ragged_tensor.RaggedTensor)):
+      raise ValueError("Invalid type for embedding, which should be "
+                       "SparseTensor or RaggedTensor, but got {}".format(ids))
+    return (_convert_to_sparse_tensor(ids),
+            _convert_to_sparse_tensor(weights))
+  else:
+    raise ValueError("Only _CategoricalColumn.IdWeightPair, SparseTensor tuple, "
+                     "RaggedTensor tuple allowed, but got {}".format(data))

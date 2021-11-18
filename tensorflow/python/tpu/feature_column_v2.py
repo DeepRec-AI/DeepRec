@@ -288,7 +288,8 @@ class _TPUEmbeddingColumnV2(_TPUBaseEmbeddingColumn, fc_lib.EmbeddingColumn):
         ckpt_to_load_from=None,
         tensor_name_in_ckpt=None,
         max_norm=None,
-        trainable=True)
+        trainable=True,
+        coalesced_scope=None)
 
   def __init__(self,
                categorical_column,
@@ -459,7 +460,8 @@ class _TPUSharedEmbeddingColumnV2(_TPUBaseEmbeddingColumn,
         categorical_column,
         combiner=combiner,
         shared_embedding_column_creator=shared_embedding_column_creator,
-        max_norm=None)
+        max_norm=None,
+        coalesced_scope=None)
 
   def __init__(self,
                categorical_column,

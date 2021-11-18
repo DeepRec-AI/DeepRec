@@ -98,6 +98,14 @@ REGISTER_OP("StringToHash64")
     .Output("output: int64")
     .SetShapeFn(shape_inference::UnchangedShape);
 
+REGISTER_OP("StringToHash")
+    .Input("input: string")
+    .Attr("hash_type: string = 'farm'")
+    .Attr("allow_neg: bool = true")
+    .Attr("num_buckets: int >= 0 = 0")
+    .Output("output: int64")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
 REGISTER_OP("StringSplitAndPad")
     .Input("input: string")
     .Input("delimiter: string")

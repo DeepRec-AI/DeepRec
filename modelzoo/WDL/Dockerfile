@@ -4,13 +4,7 @@ FROM ubuntu:18.04
 
 # copy code & data into container
 ADD data/*.csv /root/data/
-ADD *.py /home
-
-RUN mkdir /root/result
-
-# set proxy
-# ENV http_proxy=""
-# ENV https_proxy=""
+ADD *.py /root/
 
 # install python
 RUN apt update \

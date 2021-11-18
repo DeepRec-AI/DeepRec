@@ -97,21 +97,33 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       model_path = os.path.join(checkpoint_directory, "model.ckpt")
       save_path = saver.save(sess, model_path, global_step=12345)
       saver.restore(sess, save_path)
-  '''
+
   def testEmbeddingVariableForExport(self):
     print("testEmbeddingVariableForExport")
+    ev_config = variables.EVConfig(counter_filter_strategy=variables.CounterFilterStrategy(filter_freq=1))
     var = variable_scope.get_embedding_variable("var_1", embedding_dim=3,
-            initializer=init_ops.ones_initializer(dtypes.float32))
+            initializer=init_ops.ones_initializer(dtypes.float32), steps_to_live=10000, ev=ev_config)
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
     init = variables.global_variables_initializer()
+    keys, values, versions, freqs = var.export()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       sess.run(emb)
-      print(sess.run([var.export()]))
-  '''
-  
+      sess.run(emb)
+      sess.run(emb)
+      fetches = sess.run([keys, values, versions, freqs])
+      self.assertAllEqual([0, 1, 2, 5, 6, 7], fetches[0])
+      self.assertAllEqual([[1., 1., 1.],
+                           [1., 1., 1.],
+                           [1., 1., 1.],
+                           [1., 1., 1.],
+                           [1., 1., 1.],
+                           [1., 1., 1.]], fetches[1])
+      self.assertAllEqual([0, 0, 0, 0, 0, 0], fetches[2])
+      self.assertAllEqual([1, 1, 1, 1, 1, 1], fetches[3])
+
   def testEmbeddingVariableForGetShape(self):
     print("testEmbeddingVariableForGetShape")
     var = variable_scope.get_embedding_variable("var_1",
@@ -290,7 +302,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     with self.test_session() as sess:
       saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
       self.assertAllEqual(emb_ori, sess.run(emb))
-  
+
   def testEmbeddingVariableForL2FeatureEviction(self):
     print("testEmbeddingVariableForL2FeatureEviction")
     checkpoint_directory = self.get_temp_dir()
@@ -673,7 +685,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
-  
+
   def testEmbeddingVariableForAdagradDecayV2Filter(self):
     print("testEmbeddingVariableForAdagradDecayV2Filter")
     var = variable_scope.get_embedding_variable("var_1",
@@ -865,7 +877,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-  
+
   def testEmbeddingVariableForAdam(self):
     print("testEmbeddingVariableForAdam")
     with ops.device('/cpu:0'):
@@ -901,7 +913,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       print(emb2.tolist())
       for i in range(0, 6):
         for j in range(0, 3):
-          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+          self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j], delta=1e-05)
 
   def testEmbeddingVariableForAdamAsync(self):
     print("testEmbeddingVariableForAdamAsync")

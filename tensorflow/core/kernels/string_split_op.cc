@@ -396,7 +396,7 @@ class StringSplitOp : public OpKernel {
     uint64 start = 0;
     uint64 end = 0;
 
-    if (element_cost_ == 0) {
+    if (element_cost_ == 0 && batch_size) {
       size_t sample_id = rand() % batch_size;
       std::vector<StringPiece> temp_for_warm_up =
             skip_empty_ ?
@@ -624,7 +624,7 @@ class StringSplitV2Op : public OpKernel {
     uint64 start = 0;
     uint64 end = 0;
 
-    if (element_cost_ == 0) {
+    if (element_cost_ == 0 && batch_size) {
       size_t sample_id = rand() % batch_size;
       std::vector<StringPiece> temp_for_warm_up =
           SplitV2(input_vec(sample_id), sep, maxsplit_);

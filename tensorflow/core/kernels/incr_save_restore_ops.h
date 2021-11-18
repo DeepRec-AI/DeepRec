@@ -243,10 +243,15 @@ class IncrEVVersionDumpIterator : public  DumpIterator<T> {
   }
 
   T Next() {
-    K key = *keys_iter_;
-    int64 dump_version = emb_var_->GetVersion(key);
-    keys_iter_++;
-    return dump_version;
+    if (emb_var_->StepsToLive() == 0) {
+      keys_iter_++;
+      return 0;
+    } else {
+      K key = *keys_iter_;
+      int64 dump_version = emb_var_->GetVersion(key);
+      keys_iter_++;
+      return dump_version;
+    }
   }
 
  private:

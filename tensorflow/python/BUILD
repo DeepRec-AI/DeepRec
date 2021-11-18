@@ -118,6 +118,7 @@ py_library(
         ":gradient_checker",
         ":gradient_checker_v2",
         ":graph_util",
+        ":hash_table",
         ":histogram_ops",
         ":image_ops",
         ":initializers_ns",
@@ -134,6 +135,8 @@ py_library(
         ":nn",
         ":ops",
         ":platform",
+	    ":prefetch",
+        ":prefetch_runner",
         ":proto_ops",
         ":pywrap_tensorflow",
         ":rnn_ops_gen",
@@ -2220,8 +2223,23 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+    name = "feature_column_ops_gen",
+    visibility = [
+        "//tensorflow/python/feature_column:__pkg__"
+    ]
+)
+
+tf_gen_op_wrapper_private_py(
     name = "stateful_random_ops_gen",
     visibility = ["//learning/brain/python/ops:__pkg__"],
+)
+
+tf_gen_op_wrapper_private_py(
+    name = "hash_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
+    name = "hash_training_ops_gen",
 )
 
 tf_gen_op_wrapper_private_py(
@@ -2236,11 +2254,89 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+   name = "data_buffer_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
+   name = "work_queue_ops_gen",
+)
+
+tf_gen_op_wrapper_private_py(
     name = "stateless_random_ops_gen",
     visibility = [
         "//tensorflow/python/data/experimental/ops:__pkg__",
     ],
 )
+
+py_library(
+    name = "hash_table",
+    srcs = glob(
+        ["ops/hash_table/**/*.py"],
+    ),
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":data_flow_ops",
+        ":dtypes",
+        ":framework_ops",
+        ":function",
+        ":hash_ops_gen",
+        ":hash_training_ops_gen",
+        ":math_ops",
+        ":tensor_shape",
+        ":util",
+        "//tensorflow/core:protos_all_py",
+        "//tensorflow/python/eager:context",
+        "//tensorflow/python/eager:tape",
+    ],
+)
+
+py_test(
+    name = "hash_table_test",
+    size = "small",
+    srcs = ["ops/hash_table/hash_table_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "grappler",
+        "no_pip",
+    ],
+    deps = [
+        ":hash_table",
+        ":array_ops",
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":math_ops",
+        ":model_analyzer",
+        ":state_ops",
+        "//tensorflow/contrib:contrib_py",
+        "//tensorflow/core:protos_all_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
+    name = "admit_strategy_test",
+    size = "small",
+    srcs = ["ops/hash_table/admit_strategy_test.py"],
+    srcs_version = "PY2AND3",
+    tags = [
+        "grappler",
+        "no_pip",
+    ],
+    deps = [
+        ":hash_table",
+        ":array_ops",
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":math_ops",
+        ":model_analyzer",
+        ":state_ops",
+        "//tensorflow/contrib:contrib_py",
+        "//tensorflow/core:protos_all_py",
+        "//third_party/py/numpy",
+    ],
+)
+
 
 tf_gen_op_wrapper_private_py(
     name = "list_ops_gen",
@@ -2805,6 +2901,50 @@ py_library(
         ":tensor_util",
         "//tensorflow/python/eager:context",
         "@six_archive//:six",
+    ],
+)
+
+py_library(
+    name = "prefetch",
+    srcs = ["ops/prefetch.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":clip_ops",
+        ":control_flow_ops",
+        ":data_buffer_ops_gen",
+	":framework",
+	":framework_ops",
+	":framework_for_generated_wrappers",
+    ],
+)
+
+py_library(
+    name = "prefetch_runner",
+    srcs = ["ops/prefetch_runner.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":clip_ops",
+        ":control_flow_ops",
+        ":data_buffer_ops_gen",
+	":framework",
+        ":framework_for_generated_wrappers",
+    ],
+)
+
+py_library(
+    name = "work_queue",
+    srcs = ["ops/work_queue.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":array_ops",
+        ":clip_ops",
+        ":control_flow_ops",
+        ":work_queue_ops_gen",
+        ":framework",
+        ":framework_ops",
+        ":framework_for_generated_wrappers",
     ],
 )
 
@@ -4563,6 +4703,7 @@ py_library(
         ":errors",
         ":framework",
         ":framework_ops",
+        ":hash_table",
         ":io_ops",
         ":io_ops_gen",
         ":platform",
@@ -6394,6 +6535,46 @@ tf_py_test(
 )
 
 py_test(
+    name = "prefetch_test",
+    size = "small",
+    srcs = ["ops/prefetch_test.py"],
+    srcs_version = "PY2AND3",
+    tags = ["no_windows"],
+    deps = [
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":partitioned_variables",
+        ":variable_scope",
+        ":embedding_ops",
+	":prefetch",
+        #":data_buffer_ops_gen",
+        ":prefetch_runner",
+        ":state_ops",
+        "//tensorflow/contrib/layers:layers_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
+    name = "work_queue_test",
+    size = "small",
+    srcs = ["ops/work_queue_test.py"],
+    srcs_version = "PY2AND3",
+    tags = ["no_windows"],
+    deps = [
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":partitioned_variables",
+        ":variable_scope",
+        ":embedding_ops",
+        ":work_queue",
+        ":state_ops",
+        "//tensorflow/contrib/layers:layers_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+py_test(
     name = "embedding_variable_ops_test",
     size = "small",
     srcs = ["ops/embedding_variable_ops_test.py"],
@@ -6421,8 +6602,8 @@ py_test(
       ":client_testlib",
       ":framework_for_generated_wrappers",
       ":partitioned_variables",
-      ":variable_scope",
-      ":embedding_ops",
+      ":array_ops",
+      ":parsing_ops",
       ":state_ops",
       "//tensorflow/contrib/layers:layers_py",
       "//third_party/py/numpy",

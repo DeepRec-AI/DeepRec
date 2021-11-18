@@ -43,6 +43,7 @@ from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import hash_table
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -125,12 +126,16 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
     # remove "'linear//weight' + '/'" and ':0'.
     real_slot_name = slot.name[len(primary.op.name + "/"):-2]
     slice_info = primary._save_slice_info
-    slot._set_save_slice_info(variables.Variable.SaveSliceInfo(
-        slice_info.full_name + "/" + real_slot_name,
-        slice_info.full_shape[:],
-        slice_info.var_offset[:],
-        slice_info.var_shape[:],
-        var_full_name=slice_info.var_full_name + "/" + real_slot_name))
+    if isinstance(slice_info, variables.Variable.SaveSliceInfo):
+      slot._set_save_slice_info(variables.Variable.SaveSliceInfo(
+          slice_info.full_name + "/" + real_slot_name,
+          slice_info.full_shape[:],
+          slice_info.var_offset[:],
+          slice_info.var_shape[:],
+          var_full_name=slice_info.var_full_name + "/" + real_slot_name))
+    else:
+      slot._set_save_slice_info(
+            slice_info.slot_save_slice_info(real_slot_name))
   # pylint: enable=protected-access
   return slot
 
@@ -197,6 +202,14 @@ def create_slot_with_initializer(primary, initializer, shape, dtype, name,
     prefix = primary._shared_name  # pylint: disable=protected-access
   else:
     prefix = primary.op.name
+  if isinstance(primary, hash_table.HashTable):
+    with variable_scope.variable_scope(None, prefix + "/" + name):
+      slot = primary.create_slot(shape,
+                                 dtype,
+                                 primary.distributed_name + "/slots/" + name,
+                                 initializer,
+                                 name=name)
+      return slot
   with variable_scope.variable_scope(None, prefix + "/" + name):
     if colocate_with_primary:
       distribution_strategy = distribution_strategy_context.get_strategy()

@@ -20,7 +20,7 @@ PODNAME=$1
 DISTDIR=$2
 
 mkdir -p ${DISTDIR}
-tar -czf ${DISTDIR}/archive.tar.gz .
+tar --exclude=.git -czf ${DISTDIR}/archive.tar.gz .
 kubectl wait --for=condition=ready pod ${PODNAME}
 kubectl cp ${DISTDIR}/archive.tar.gz ${PODNAME}:/workspace/archive.tar.gz
 kubectl exec -it ${PODNAME} -- tar -xzf /workspace/archive.tar.gz -C /workspace

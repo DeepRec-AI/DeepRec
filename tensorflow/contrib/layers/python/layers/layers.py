@@ -1655,7 +1655,7 @@ def _sparse_inner_flatten(inputs, new_rank):
   return flattened
 
 def _sparse_inner_flatten_v2(inputs, new_rank):
-  reshaped_ind, reshaped_shape = array_ops.sparse_inner_flatten(inputs.indices,
+  reshaped_ind, reshaped_shape = sparse_ops.sparse_inner_flatten(inputs.indices,
       inputs.dense_shape, new_rank)
   return sparse_tensor.SparseTensor(reshaped_ind, inputs.values, reshaped_shape)
 

@@ -603,8 +603,7 @@ void BaseRemoteRendezvous::FuseRecvLocalAsyncInternal(
 void BaseRemoteRendezvous::FuseRecvFromRemoteAsync(
         const std::vector<Rendezvous::ParsedKey>& parsed_keys,
         const Rendezvous::Args& args,
-        FuseDoneCallback done,
-        CallOptions* opts) {
+        FuseDoneCallback done) {
     CHECK(false) << "FuseRecvFromRemoteAsync Unimplemented";
 }
 

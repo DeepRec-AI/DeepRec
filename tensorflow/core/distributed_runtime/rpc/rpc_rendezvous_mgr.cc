@@ -46,14 +46,12 @@ class RpcRemoteRendezvous : public BaseRemoteRendezvous {
  protected:
   void RecvFromRemoteAsync(const Rendezvous::ParsedKey& parsed,
                            const Rendezvous::Args& args,
-                           DoneCallback done,
-                           CallOptions* opts) override;
+                           DoneCallback done) override;
 
   void FuseRecvFromRemoteAsync(
       const std::vector<Rendezvous::ParsedKey>& parsed_keys,
       const Rendezvous::Args& args,
-      FuseDoneCallback done,
-      CallOptions* opts = nullptr) override;
+      FuseDoneCallback done) override;
 
  private:
   ~RpcRemoteRendezvous() override {}
@@ -223,7 +221,7 @@ static RpcRecvTensorFreeList* get_call_freelist() {
 
 void RpcRemoteRendezvous::RecvFromRemoteAsync(
     const Rendezvous::ParsedKey& parsed, const Rendezvous::Args& recv_args,
-    DoneCallback done, CallOptions* opts) {
+    DoneCallback done) {
   CHECK(is_initialized());
   Status s;
 
@@ -296,13 +294,9 @@ void RpcRemoteRendezvous::RecvFromRemoteAsync(
 
 class FuseRpcRecvTensorCall : public BaseRecvTensorCall {
  public:
-  FuseRpcRecvTensorCall(CallOptions* opts) :
+  FuseRpcRecvTensorCall() :
     wi_(nullptr),
     dst_device_(nullptr) {
-    if (opts != nullptr) {
-      opts_.SetUseWaitForReady(opts->UseWaitForReady());
-      opts_.SetTimeout(opts->GetTimeout());
-    }
   }
 
   void Init(WorkerInterface* wi, int64 step_id,
@@ -425,7 +419,7 @@ class FuseRpcRecvTensorFreeList {
     }
   }
 
-  FuseRpcRecvTensorCall* New(CallOptions* opts) {
+  FuseRpcRecvTensorCall* New() {
     {
       mutex_lock l(mu_);
       if (!objects_.empty()) {
@@ -434,7 +428,7 @@ class FuseRpcRecvTensorFreeList {
         return result;
       }
     }
-    return new FuseRpcRecvTensorCall(opts);
+    return new FuseRpcRecvTensorCall();
   }
 
   void Release(FuseRpcRecvTensorCall* obj, WorkerCacheInterface* wc) {
@@ -464,14 +458,13 @@ static FuseRpcRecvTensorFreeList* get_fuse_call_freelist() {
 
 void RpcRemoteRendezvous::FuseRecvFromRemoteAsync(
     const std::vector<Rendezvous::ParsedKey>& parsed_keys,
-    const Rendezvous::Args& recv_args, FuseDoneCallback done,
-    CallOptions* opts) {
+    const Rendezvous::Args& recv_args, FuseDoneCallback done) {
   CHECK(is_initialized());
   int fuse_count = parsed_keys.size();
   Status s;
 
   // Prepare a RecvTensor call that can handle being aborted.
-  FuseRpcRecvTensorCall* call = get_fuse_call_freelist()->New(opts);
+  FuseRpcRecvTensorCall* call = get_fuse_call_freelist()->New();
 
   // key.src_device identifies a remote device.
   if (!DeviceNameUtils::SplitDeviceName(parsed_keys[0].src_device,

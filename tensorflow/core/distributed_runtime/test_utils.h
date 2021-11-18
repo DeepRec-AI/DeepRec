@@ -35,6 +35,13 @@ class TestWorkerInterface : public WorkerInterface {
                       StatusCallback done) override {
     done(errors::Unimplemented("GetStatusAsync"));
   }
+  
+  void GetStatusAsyncWithOptions(const GetStatusRequest* request,
+                                 GetStatusResponse* response,
+                                 StatusCallback done,
+                                 CallOptions* call_opts) override {
+    done(errors::Unimplemented("GetStatusAsyncWithOptions"));
+  }
 
   void CreateWorkerSessionAsync(const CreateWorkerSessionRequest* request,
                                 CreateWorkerSessionResponse* response,
