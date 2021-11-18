@@ -302,10 +302,10 @@ void TensorShapeRep::ClearAllButDataType() {
 }
 
 template <class Shape>
-void TensorShapeBase<Shape>::RecomputeNumElements() {
+Status TensorShapeBase<Shape>::RecomputeNumElements() {
   if (unknown_rank()) {
     set_num_elements(-1);
-    return;
+    return Status::OK();
   }
   int64 n = 1;
   for (auto dim : *this) {
@@ -314,9 +314,14 @@ void TensorShapeBase<Shape>::RecomputeNumElements() {
       break;
     }
     n = MultiplyWithoutOverflow(n, dim.size);
-    CHECK_LE(0, n);
+    if (TF_PREDICT_FALSE(n < 0)) {
+      return errors::InvalidArgument(
+          "Shape ", this->DebugString(),
+          " results in overflow when computing number of elements");
+    }
   }
   set_num_elements(n);
+  return Status::OK();
 }
 
 template <class Shape>
@@ -332,6 +337,38 @@ void TensorShapeBase<Shape>::AddDim(int64 size) {
     CHECK_LE(0, new_num_elements);
   }
   UnsafeAddDim(size, new_num_elements);
+}
+
+template <class Shape>
+Status TensorShapeBase<Shape>::AddDimWithStatus(int64 size) {
+  if (!kIsPartial) {
+    if (TF_PREDICT_FALSE(size < 0)) {
+      return errors::Internal("Expected a non-negative size, got ", size);
+    }
+  }
+
+  if (unknown_rank()) {
+    return Status::OK();
+  }
+
+  if (TF_PREDICT_FALSE(ndims_byte() >= MaxDimensions())) {
+    return errors::Internal("Too many dimensions in tensor");
+  }
+
+  int64 new_num_elements;
+  if (kIsPartial && (num_elements() < 0 || size < 0)) {
+    new_num_elements = -1;
+  } else {
+    new_num_elements = MultiplyWithoutOverflow(num_elements(), size);
+    if (TF_PREDICT_FALSE(new_num_elements < 0)) {
+      return errors::Internal("Encountered overflow when multiplying ",
+                              num_elements(), " with ", size,
+                              ", result: ", new_num_elements);
+    }
+  }
+
+  UnsafeAddDim(size, new_num_elements);
+  return Status::OK();
 }
 
 template <class Shape>
@@ -431,7 +468,46 @@ void TensorShapeBase<Shape>::set_dim(int d, int64 size) {
       AddDim(dval);
     }
   }
-  RecomputeNumElements();
+  TF_CHECK_OK(RecomputeNumElements());
+}
+
+template <class Shape>
+Status TensorShapeBase<Shape>::SetDimWithStatus(int d, int64 size) {
+  if (TF_PREDICT_FALSE(d < 0)) {
+    return errors::Internal("Index must be non-negative, got ", d);
+  }
+  if (TF_PREDICT_FALSE(d >= dims())) {
+    return errors::Internal("Index must be less than ", dims(), ", got ", d);
+  }
+  if (TF_PREDICT_FALSE(size < 0)) {
+    return errors::Internal("Expected a non-negative size, got ", size);
+  }
+
+  if (tag() == REP16 && size < kMaxRep16) {
+    as16()->dims_[d] =
+        kIsPartial && size < 0 ? kUnknownRep16 : static_cast<uint16>(size);
+  } else if (tag() == REP32 && size < kMaxRep32) {
+    as32()->dims_[d] =
+        kIsPartial && size < 0 ? kUnknownRep32 : static_cast<uint32>(size);
+  } else if (tag() == REP_OUT_OF_LINE) {
+    (*as64()->dims_)[d] = size;
+  } else {
+    // Must upgrade
+    gtl::InlinedVector<int64, 8> vals;
+    AppendTo(*this, &vals);
+    vals[d] = size;
+    ClearAllButDataType();
+
+    Status s = Status::OK();
+    for (auto dval : vals) {
+      s.Update(AddDimWithStatus(dval));
+      if (!s.ok()) {
+        return s;
+      }
+    }
+  }
+
+  return RecomputeNumElements();
 }
 
 template <class Shape>
@@ -451,7 +527,7 @@ void TensorShapeBase<Shape>::RemoveDimRange(int begin, int end) {
   for (auto dval : vals) {
     AddDim(dval);
   }
-  RecomputeNumElements();
+  TF_CHECK_OK(RecomputeNumElements());
 }
 
 bool TensorShape::IsSameSize(const TensorShape& b) const {

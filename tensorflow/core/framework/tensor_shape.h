@@ -188,6 +188,10 @@ class TensorShapeBase : public TensorShapeRep {
   /// REQUIRES: `size >= 0`
   void AddDim(int64 size);
 
+  /// Same as `AddDim` but returns a `Status`.
+  /// Use if unsure is `size >= 0`, to prevent `CHECK`-crashes.
+  Status AddDimWithStatus(int64 size);
+
   /// Appends all the dimensions from `shape`.
   void AppendShape(const TensorShapeBase& shape);
 
@@ -200,6 +204,11 @@ class TensorShapeBase : public TensorShapeRep {
   /// REQUIRES: `0 <= d < dims()`
   /// REQUIRES: `size >= 0`
   void set_dim(int d, int64 size);
+
+  /// Same as `set_dim` but returns a `Status`.
+  /// Use if unsure if requirements in `set_dim` are satistified, to prevent
+  /// `CHECK`-fail crashes.
+  Status SetDimWithStatus(int d, int64 size);
 
   /// \brief Removes dimension `d` from the `TensorShape`.
   /// REQUIRES: `0 <= d < dims()`
@@ -255,7 +264,7 @@ class TensorShapeBase : public TensorShapeRep {
   TensorShapeIter<Shape> end() const;
 
  private:
-  void RecomputeNumElements();
+  Status RecomputeNumElements();
   void InitDims(gtl::ArraySlice<int64> dim_sizes);
 
   // True for PartialTensorShape, false for TensorShape
