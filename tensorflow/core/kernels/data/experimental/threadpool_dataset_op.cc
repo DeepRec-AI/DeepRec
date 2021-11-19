@@ -27,6 +27,22 @@ namespace data {
 namespace experimental {
 namespace {
 
+namespace {
+// To prevent integer overflow issues when allocating threadpool memory for an
+// unreasonable number of threads.
+constexpr int kThreadLimit = 65536;
+
+Status ValidateNumThreads(int32_t num_threads) {
+  if (num_threads < 1) {
+    return errors::InvalidArgument("`num_threads` must be >= 1");
+  }
+  if (num_threads >= kThreadLimit) {
+    return errors::InvalidArgument("`num_threads` must be < ", kThreadLimit);
+  }
+  return Status::OK();
+}
+}  // namespace
+
 class ThreadPoolResource : public ResourceBase {
  public:
   ThreadPoolResource(Env* env, const ThreadOptions& thread_options,
@@ -71,9 +87,7 @@ class ThreadPoolHandleOp : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_threads", &num_threads_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_intra_op_parallelism",
                                      &max_intra_op_parallelism_));
-    OP_REQUIRES(
-        ctx, num_threads_ > 0,
-        errors::InvalidArgument("`num_threads` must be greater than zero."));
+    OP_REQUIRES_OK(ctx, ValidateNumThreads(num_threads_));
   }
 
   // The resource is deleted from the resource manager only when it is private
@@ -348,8 +362,7 @@ class PrivateThreadPoolDatasetOp : public UnaryDatasetOpKernel {
     int64 num_threads = 0;
     OP_REQUIRES_OK(
         ctx, ParseScalarArgument<int64>(ctx, "num_threads", &num_threads));
-    OP_REQUIRES(ctx, num_threads >= 1,
-                errors::InvalidArgument("`num_threads` must be >= 1"));
+    OP_REQUIRES_OK(ctx, ValidateNumThreads(num_threads));
     *output = new Dataset(ctx, input, num_threads);
   }
 
