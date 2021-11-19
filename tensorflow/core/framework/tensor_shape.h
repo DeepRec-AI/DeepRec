@@ -176,6 +176,19 @@ class TensorShapeBase : public TensorShapeRep {
 
   TensorShapeBase(const TensorShapeProto& proto);
 
+  // These factory methods should be used instead of the constructors that take
+  // an array of sizes if calling code cannot validate that the sizes specify a
+  // valid `TensorShape`.
+  // The value in `*out` is valid iff the returned value is `Status::OK`.
+  static Status BuildTensorShapeBase(gtl::ArraySlice<int64> dim_sizes,
+                                     TensorShapeBase* out);
+  static Status BuildTensorShapeBase(std::initializer_list<int64> dim_sizes,
+                                     TensorShapeBase* out) {
+    return BuildTensorShapeBase(gtl::ArraySlice<int64>(dim_sizes), out);
+  }
+  static Status BuildTensorShapeBase(const TensorShapeProto& proto,
+                                     TensorShapeBase* out);
+
   /// Returns `true` iff `proto` is a valid tensor shape.
   // For TensorShape, the proto shape must be fully defined.
   static bool IsValid(const TensorShapeProto& proto);
