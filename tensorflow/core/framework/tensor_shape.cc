@@ -161,7 +161,7 @@ template <class Shape>
 TensorShapeBase<Shape>::TensorShapeBase(gtl::ArraySlice<int64> dim_sizes) {
   set_tag(REP16);
   set_data_type(DT_INVALID);
-  InitDims(dim_sizes);
+  TF_CHECK_OK(InitDims(dim_sizes));
 }
 
 template <class Shape>
@@ -189,7 +189,7 @@ static inline bool Set16(bool partial, uint16* dst, int dim, int64 val) {
 }
 
 template <class Shape>
-void TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
+Status TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
   DCHECK_EQ(tag(), REP16);
 
   // Allow sizes that are under kint64max^0.25 so that 4-way multiplication
@@ -205,6 +205,15 @@ void TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
     }
   }
 
+  if (!kIsPartial && !large_size) {
+    for (auto s : dim_sizes) {
+      if (TF_PREDICT_FALSE(s < 0)) {
+        return errors::Internal(
+            "Expected shape dimensions to be non-negative, got ", s);
+      }
+    }
+  }
+
   if (!large_size) {
     // Every size fits in 16 bits; use fast-paths for dims in {1,2,3,4}.
     uint16* dst = as16()->dims_;
@@ -214,7 +223,7 @@ void TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
         const int64 size = dim_sizes[0];
         const bool neg = Set16(kIsPartial, dst, 0, size);
         set_num_elements(neg ? -1 : size);
-        return;
+        return Status::OK();
       }
       case 2: {
         set_ndims_byte(2);
@@ -223,7 +232,7 @@ void TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
         bool neg = Set16(kIsPartial, dst, 0, size0);
         neg |= Set16(kIsPartial, dst, 1, size1);
         set_num_elements(neg ? -1 : (size0 * size1));
-        return;
+        return Status::OK();
       }
       case 3: {
         set_ndims_byte(3);
@@ -234,7 +243,7 @@ void TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
         neg |= Set16(kIsPartial, dst, 1, size1);
         neg |= Set16(kIsPartial, dst, 2, size2);
         set_num_elements(neg ? -1 : (size0 * size1 * size2));
-        return;
+        return Status::OK();
       }
       case 4: {
         set_ndims_byte(4);
@@ -247,16 +256,22 @@ void TensorShapeBase<Shape>::InitDims(gtl::ArraySlice<int64> dim_sizes) {
         neg |= Set16(kIsPartial, dst, 2, size2);
         neg |= Set16(kIsPartial, dst, 3, size3);
         set_num_elements(neg ? -1 : (size0 * size1 * size2 * size3));
-        return;
+        return Status::OK();
       }
     }
   }
 
   set_ndims_byte(0);
   set_num_elements(1);
+  Status status = Status::OK();
   for (int64 s : dim_sizes) {
-    AddDim(internal::SubtleMustCopy(s));
+    status.Update(AddDimWithStatus(internal::SubtleMustCopy(s)));
+    if (!status.ok()) {
+      return status;
+    }
   }
+
+  return status;
 }
 
 template <class Shape>
