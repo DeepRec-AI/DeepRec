@@ -133,10 +133,43 @@ TensorShapeBase<Shape>::TensorShapeBase(const TensorShapeProto& proto) {
 }
 
 template <class Shape>
+Status TensorShapeBase<Shape>::BuildTensorShapeBase(
+    const TensorShapeProto& proto, TensorShapeBase* out) {
+  out->set_tag(REP16);
+  out->set_data_type(DT_INVALID);
+  // NOTE(irving): Unfortunately, TensorShape allows parsing protos with
+  // unknown_shape() set, and it seems hard to remove this without backwards
+  // compatibility issues.
+  if (kIsPartial && proto.unknown_rank()) {
+    out->set_ndims_byte(kUnknownRank);
+    out->set_num_elements(-1);
+  } else {
+    out->set_ndims_byte(0);
+    out->set_num_elements(1);
+    Status s = Status::OK();
+    for (const auto& d : proto.dim()) {
+      s = out->AddDimWithStatus(d.size());
+      if (!s.ok()) {
+        return s;
+      }
+    }
+  }
+  return Status::OK();
+}
+
+template <class Shape>
 TensorShapeBase<Shape>::TensorShapeBase(gtl::ArraySlice<int64> dim_sizes) {
   set_tag(REP16);
   set_data_type(DT_INVALID);
   InitDims(dim_sizes);
+}
+
+template <class Shape>
+Status TensorShapeBase<Shape>::BuildTensorShapeBase(
+    gtl::ArraySlice<int64> dim_sizes, TensorShapeBase* out) {
+  out->set_tag(REP16);
+  out->set_data_type(DT_INVALID);
+  return out->InitDims(dim_sizes);
 }
 
 // Returns true iff partial is true and val is < 0.
