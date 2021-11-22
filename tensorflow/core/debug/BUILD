@@ -34,11 +34,11 @@ package(
 )
 
 # Check that tensorflow/core:tensorflow does not depend on grpc.
-check_deps(
-    name = "core_tensorflow_check_deps",
-    disallowed_deps = ["@grpc//:grpc++"],
-    deps = ["//tensorflow/core:tensorflow"],
-)
+#check_deps(
+#    name = "core_tensorflow_check_deps",
+#    disallowed_deps = ["@grpc//:grpc++"],
+#    deps = ["//tensorflow/core:tensorflow"],
+#)
 
 tf_proto_library(
     name = "debug_service_proto",

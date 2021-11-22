@@ -25,6 +25,7 @@ cc_library(
     name = "cryptopp",
     hdrs = glob(["*.h"]),
     include_prefix = "cryptopp",
+    linkopts = ["-lgomp"],
     visibility = ["//visibility:public"],
     deps = [":cryptopp_internal"],
 )

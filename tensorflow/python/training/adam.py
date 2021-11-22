@@ -25,6 +25,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.training import slot_creator
 from tensorflow.python.ops import state_ops
+from tensorflow.python.ops import gen_hash_training_ops
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import training_ops
 from tensorflow.python.training import training_util
@@ -215,6 +216,21 @@ class AdamOptimizer(optimizer.Optimizer):
             i,
             v,
             use_locking=self._use_locking))
+
+  def _hash_table_apply_sparse(self, grad, var, indices):
+    m = self.get_slot(var, "m")
+    v = self.get_slot(var, "v")
+    beta1_power, beta2_power = self._get_beta_accumulators()
+    return gen_hash_training_ops.tensible_variable_apply_adam(
+        var.handle, m.handle, v.handle,
+        math_ops.cast(beta1_power, grad.dtype.base_dtype),
+        math_ops.cast(beta2_power, grad.dtype.base_dtype),
+        math_ops.cast(self._lr_t, grad.dtype.base_dtype),
+        math_ops.cast(self._beta1_t, grad.dtype.base_dtype),
+        math_ops.cast(self._beta2_t, grad.dtype.base_dtype),
+        math_ops.cast(self._epsilon_t, grad.dtype.base_dtype),
+        grad, indices, use_locking=self._use_locking,
+        use_nesterov=self._use_nesterov)
 
   def _resource_scatter_add(self, x, i, v):
     with ops.control_dependencies(

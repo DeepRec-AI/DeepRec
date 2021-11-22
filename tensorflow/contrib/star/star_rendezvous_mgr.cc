@@ -26,14 +26,12 @@ class StarRemoteRendezvous : public BaseRemoteRendezvous {
  protected:
   void RecvFromRemoteAsync(const Rendezvous::ParsedKey& parsed,
                            const Rendezvous::Args& args,
-                           DoneCallback done,
-                           CallOptions* opts) override;
+                           DoneCallback done) override;
 
   void FuseRecvFromRemoteAsync(
       const std::vector<Rendezvous::ParsedKey>& parsed_keys,
       const Rendezvous::Args& args,
-      FuseDoneCallback done,
-      CallOptions* opts) override;
+      FuseDoneCallback done) override;
 
  private:
   ~StarRemoteRendezvous() override {}
@@ -194,7 +192,7 @@ static StarRecvTensorFreeList* get_call_freelist() {
 
 void StarRemoteRendezvous::RecvFromRemoteAsync(
     const Rendezvous::ParsedKey& parsed, const Rendezvous::Args& recv_args,
-    DoneCallback done, CallOptions* opts) {
+    DoneCallback done) {
   CHECK(is_initialized());
   Status s;
 
@@ -422,8 +420,7 @@ static StarFuseRecvTensorFreeList* get_fuse_call_freelist() {
 
 void StarRemoteRendezvous::FuseRecvFromRemoteAsync(
     const std::vector<Rendezvous::ParsedKey>& parsed_keys,
-    const Rendezvous::Args& recv_args, FuseDoneCallback done,
-    CallOptions* opts) {
+    const Rendezvous::Args& recv_args, FuseDoneCallback done) {
   CHECK(is_initialized());
   int fuse_count = parsed_keys.size();
   Status s;

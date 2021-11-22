@@ -117,6 +117,12 @@ tf_proto {
       label: LABEL_OPTIONAL
       type: TYPE_BOOL
     }
+    field {
+      name: "run_graph_mode_v2"
+      number: 204
+      label: LABEL_OPTIONAL
+      type: TYPE_BOOL
+    }
     nested_type {
       name: "DeviceCountEntry"
       field {

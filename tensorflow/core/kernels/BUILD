@@ -689,6 +689,7 @@ cc_library(
     copts = if_not_windows(["-Wno-sign-compare"]),
     deps = [
         ":bounds_check",
+        ":hash_ops",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/util/tensor_bundle",
@@ -827,7 +828,7 @@ cc_library(
         "//tensorflow:ios": [],
         "//tensorflow:linux_aarch64": [],
         "//tensorflow:linux_ppc64le": [],
-        "//conditions:default": ["@mkl_dnn//:mkldnn_single_threaded"],
+        "//conditions:default": ["@mkl_dnn_v1//:mkl_dnn"],
     }),
 )
 
@@ -2791,6 +2792,22 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
+    name = "data_buffer_ops",
+    hdrs = ["data_buffer_ops.h"],
+    srcs = ["data_buffer_ops.cc"],
+    deps=[
+      ":bounds_check",
+      "//tensorflow/core:framework",
+      "//tensorflow/core:protos_all_cc",
+      "//tensorflow/core:proto_text",
+      "//tensorflow/core:lib",
+      "//tensorflow/core:data_buffer_ops_op_lib",
+      "//tensorflow/core",
+      "//third_party/eigen3",
+    ],
+)
+
+tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc"],
@@ -2813,6 +2830,21 @@ tf_kernel_library(
         "@sparsehash_c11//:dense_hash_map",
         "@libcuckoo//:libcuckoo",
         "@com_github_google_leveldb//:leveldb",
+    ],
+)
+
+tf_kernel_library(
+    name = "work_queue_ops",
+    srcs = ["work_queue_ops.cc"],
+    deps=[
+      ":bounds_check",
+      "//tensorflow/core:framework",
+      "//tensorflow/core:protos_all_cc",
+      "//tensorflow/core:proto_text",
+      "//tensorflow/core:lib",
+      "//tensorflow/core:work_queue_ops_op_lib",
+      "//tensorflow/core",
+      "//third_party/eigen3",
     ],
 )
 
@@ -4659,14 +4691,18 @@ tf_kernel_library(
 tf_kernel_library(
     name = "bias_grad_ali_op",
     prefix = "bias_grad_ali_op",
-    deps = NN_DEPS + mkl_deps(),
+    deps = NN_DEPS + mkl_deps() + [
+        ":redux_functor",
+    ],
 )
 
 tf_cc_test(
     name = "bias_grad_ali_op_test",
+    size = "large",
     srcs = ["bias_grad_ali_op_test.cc"],
     deps = [
         ":bias_grad_ali_op",
+        ":bias_op",
         ":ops_testutil",
         ":ops_util",
         "//tensorflow/cc:cc_ops",
@@ -5297,6 +5333,8 @@ cc_library(
         ":sparse_add_grad_op",
         ":sparse_add_op",
         ":sparse_concat_ali_op",
+        ":sparse_valid_cutoff_op",
+        ":sparse_reverse_op",
         ":sparse_cross_op",
         ":sparse_dense_binary_op_shared",
         ":sparse_fill_empty_rows_op",
@@ -5343,6 +5381,17 @@ tf_kernel_library(
 tf_kernel_library(
     name = "sparse_fill_empty_rows_op",
     prefix = "sparse_fill_empty_rows_op",
+    deps = SPARSE_DEPS,
+)
+
+tf_kernel_library(
+    name = "sparse_valid_cutoff_op",
+    prefix = "sparse_valid_cutoff_op",
+    deps = SPARSE_DEPS,
+)
+tf_kernel_library(
+    name = "sparse_reverse_op",
+    prefix = "sparse_reverse_op",
     deps = SPARSE_DEPS,
 )
 
@@ -8587,6 +8636,41 @@ tf_kernel_library(
         "//tensorflow/core/summary:schema",
         "//tensorflow/core/summary:summary_db_writer",
         "//tensorflow/core/summary:summary_file_writer",
+    ],
+)
+
+tf_kernel_library(
+    name = "feature_column_ops",
+    srcs = ["feature_column_ops.cc"],
+    deps = [
+        "//tensorflow/core:framework",
+        "//tensorflow/core:feature_column_ops_op_lib",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:core_cpu_lib",
+        "//third_party/eigen3",
+    ],
+)
+
+tf_kernel_library(
+    name = "hash_ops",
+    srcs = glob(["hash_ops/*.cc"]),
+    hdrs = glob(["hash_ops/*.h", "captured_function.h", "data/captured_function.h", "data/dataset.h"]),
+    deps = [
+        ":bounds_check",
+        ":dense_update_functor",
+        ":gather_functor",
+        ":mutex_ops",
+        ":scatter_functor",
+        ":training_ops",
+        ":variable_ops",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:hash_ops_op_lib",
+        "//tensorflow/core:hash_training_ops_op_lib",
+        "//tensorflow/core/kernels/data:captured_function",
+        "//tensorflow/core:core_cpu_lib",
+        "//tensorflow/core:protos_all_cc",
+        "//third_party/eigen3",
     ],
 )
 

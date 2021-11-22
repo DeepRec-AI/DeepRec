@@ -22,6 +22,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import gen_hash_training_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import kv_variable_ops
@@ -184,6 +185,29 @@ class AdamAsyncOptimizer(optimizer.Optimizer):
         math_ops.cast(self._epsilon_t, var.dtype.base_dtype),
         grad.values, grad.indices, use_locking=self._use_locking,
         apply_sparse_rmsprop=self._apply_sparse_rmsprop)
+
+  def _hash_table_apply_sparse(self, grad, var, indices):
+    m = self.get_slot(var, "m")
+    v = self.get_slot(var, "v")
+    beta1_power = self.get_slot(var, "beta1_power")
+    beta2_power = self.get_slot(var, "beta2_power")
+    update_op = gen_hash_training_ops.tensible_variable_apply_adam(
+        var.handle, m.handle, v.handle,
+        math_ops.cast(beta1_power, grad.dtype.base_dtype),
+        math_ops.cast(beta2_power, grad.dtype.base_dtype),
+        math_ops.cast(self._lr_t, grad.dtype.base_dtype),
+        math_ops.cast(self._beta1_t, grad.dtype.base_dtype),
+        math_ops.cast(self._beta2_t, grad.dtype.base_dtype),
+        math_ops.cast(self._epsilon_t, grad.dtype.base_dtype),
+        grad, indices, use_locking=self._use_locking)
+    with ops.control_dependencies([update_op]):
+      update_beta1 = beta1_power.assign(
+          beta1_power * math_ops.cast(self._beta1_t, var.dtype.base_dtype),
+          use_locking=self._use_locking)
+      update_beta2 = beta2_power.assign(
+          beta2_power * math_ops.cast(self._beta2_t, var.dtype.base_dtype),
+          use_locking=self._use_locking)
+    return control_flow_ops.group(update_beta1, update_beta2)
 
   def _resource_apply_sparse(self, grad, var, indices):
     m = self.get_slot(var, "m")

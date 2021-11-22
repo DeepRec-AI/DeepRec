@@ -78,6 +78,13 @@ class FakeWorker : public TestWorkerInterface {
     }
     done(Status::OK());
   }
+  
+  void GetStatusAsyncWithOptions(const GetStatusRequest* request,
+                                 GetStatusResponse* response,
+                                 StatusCallback done,
+                                 CallOptions* call_opts) override {
+    GetStatusAsync(request, response, done);
+  }
 
  private:
   string name_;

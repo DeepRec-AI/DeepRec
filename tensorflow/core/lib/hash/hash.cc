@@ -80,6 +80,72 @@ uint32 Hash32(const char* data, size_t n, uint32 seed) {
   return h;
 }
 
+uint64 SDBMHash64(const char *key, size_t len) {
+  register uint64 hash_value = 0;
+  constexpr size_t alignment = 8;
+  register auto quotient = len / alignment;
+  register auto remainder = len % alignment;
+  register auto j = 0;
+  for (size_t i = 0; i < quotient; ++i) {
+    char c0 = key[j];
+    char c1 = key[j + 1];
+    char c2 = key[j + 2];
+    char c3 = key[j + 3];
+    char c4 = key[j + 4];
+    char c5 = key[j + 5];
+    char c6 = key[j + 6];
+    char c7 = key[j + 7];
+    hash_value = c0 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c1 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c2 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c3 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c4 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c5 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c6 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    hash_value = c7 + (hash_value << 6) + (hash_value << 16) - hash_value;
+    j += alignment;
+  }
+  for (size_t i = 0; i < remainder; ++i) {
+    char c = key[j];
+    hash_value = c + (hash_value << 6) + (hash_value << 16) - hash_value;
+    ++j;
+  }
+  return hash_value;
+}
+
+uint64 DJB2Hash64(const char *key, size_t len) {
+  register uint64 hash_value = 5381;
+  constexpr size_t alignment = 8;
+  register auto quotient = len / alignment;
+  register auto remainder = len % alignment;
+  register auto j = 0;
+  for (size_t i = 0; i < quotient; ++i) {
+      char c0 = key[j];
+      char c1 = key[j + 1];
+      char c2 = key[j + 2];
+      char c3 = key[j + 3];
+      char c4 = key[j + 4];
+      char c5 = key[j + 5];
+      char c6 = key[j + 6];
+      char c7 = key[j + 7];
+      hash_value = ((hash_value << 5) + hash_value) + c0;
+      hash_value = ((hash_value << 5) + hash_value) + c1;
+      hash_value = ((hash_value << 5) + hash_value) + c2;
+      hash_value = ((hash_value << 5) + hash_value) + c3;
+      hash_value = ((hash_value << 5) + hash_value) + c4;
+      hash_value = ((hash_value << 5) + hash_value) + c5;
+      hash_value = ((hash_value << 5) + hash_value) + c6;
+      hash_value = ((hash_value << 5) + hash_value) + c7;
+      j += alignment;
+  }
+  for (size_t i = 0; i < remainder; ++i) {
+      char c = key[j];
+      hash_value = ((hash_value << 5) + hash_value) + c;
+      ++j;
+  }
+  return hash_value;
+}
+
 uint64 Hash64(const char* data, size_t n, uint64 seed) {
   const uint64 m = 0xc6a4a7935bd1e995;
   const int r = 47;

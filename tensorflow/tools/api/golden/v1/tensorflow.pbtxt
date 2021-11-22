@@ -925,6 +925,10 @@ tf_module {
     argspec: "args=[\'input\', \'block_shape\', \'crops\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "batched_non_max_suppression"
+    argspec: "args=[\'boxes\', \'scores\', \'box_counts\', \'max_output_size\', \'iou_threshold\', \'score_threshold\', \'pad_to_max_output_size\', \'algorithm\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'-1\', \'None\'], "
+  }
+  member_method {
     name: "betainc"
     argspec: "args=[\'a\', \'b\', \'x\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -1418,15 +1422,7 @@ tf_module {
   }
   member_method {
     name: "get_embedding_variable"
-    argspec: "args=[\'name\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'ev\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'<tensorflow.python.ops.variables.EVConfig object instance>'], "
-  }
-  member_method {
-    name: "get_embedding_variable_internal"
-    argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ht_partition_num\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'1000\'], "
-  }
-  member_method {
-    name: "get_embedding_variable_v2_internal"
-    argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'evconfig\', \'ht_partition_num\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableConfig object instance>\', \'1000\'], "
+    argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ht_partition_num\', \'ht_type\', \'ev\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'1000\', \'\', \'<tensorflow.python.ops.variables.EVConfig object instance>\'], "
   }
   member_method {
     name: "get_local_variable"
@@ -1435,6 +1431,10 @@ tf_module {
   member_method {
     name: "get_logger"
     argspec: "args=[], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_multihash_variable"
+    argspec: "args=[\'name\', \'dims\', \'complementary_strategy\', \'operation\', \'dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'use_resource\', \'custom_getter\', \'constraint\', \'synchronization\', \'aggregation\'], varargs=None, keywords=None, defaults=[\'Q-R\', \'add\', \"<class \'float\'>\", \'None\', \'None\', \'None\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'VariableSynchronization.AUTO\', \'VariableAggregation.NONE\'], "
   }
   member_method {
     name: "get_seed"
@@ -1566,7 +1566,7 @@ tf_module {
   }
   member_method {
     name: "initialize_kv_variable_op"
-    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'None\'], "
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'None\'], "
   }
   member_method {
     name: "initialize_local_variables"
@@ -1626,7 +1626,7 @@ tf_module {
   }
   member_method {
     name: "kv_resource_import_v2"
-    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'1000\', \'None\'], "
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'None\'], "
   }
   member_method {
     name: "kv_resource_incr_import"
@@ -1647,6 +1647,10 @@ tf_module {
   member_method {
     name: "kv_resource_sparse_apply_adagrad_decay"
     argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "kv_resource_sparse_apply_adam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "kv_resource_sparse_apply_adam_async"
@@ -1743,6 +1747,10 @@ tf_module {
   member_method {
     name: "logical_or"
     argspec: "args=[\'x\', \'y\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "logical_sum"
+    argspec: "args=[\'q_input\', \'k_input\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "logical_xor"
@@ -2470,6 +2478,10 @@ tf_module {
   }
   member_method {
     name: "string_strip"
+    argspec: "args=[\'input\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "string_to_hash64"
     argspec: "args=[\'input\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {

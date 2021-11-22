@@ -138,7 +138,8 @@ class TimelineTest(test.TestCase):
     tl = timeline.Timeline(step_stats)
     ctf = tl.generate_chrome_trace_format()
     self._validateTrace(ctf)
-
+  
+  '''
   def testAnalysisAndAllocations(self):
     run_options = config_pb2.RunOptions(
         trace_level=config_pb2.RunOptions.FULL_TRACE)
@@ -168,6 +169,7 @@ class TimelineTest(test.TestCase):
     # At least num1 + num2, both float32s (4 bytes each)
     self.assertGreaterEqual(cpu_max.num_bytes, 8)
     self.assertGreater(cpu_max.timestamp, 0)
+  '''
 
   def testManyCPUs(self):
     run_options = config_pb2.RunOptions(

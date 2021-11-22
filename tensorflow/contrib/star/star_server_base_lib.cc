@@ -374,10 +374,7 @@ Status StarServerBase::Stop() {
       return Status::OK();
     case STARTED:
       LOG(WARNING) << "Clean shutdown is not currently implemented";
-      server_->Shutdown();
-      master_service_->Shutdown();
-      state_ = STOPPED;
-      return Status::OK();
+      return errors::Unimplemented("Clean shutdown is not currently implemented");
     case STOPPED:
       LOG(INFO) << "Server already stopped (target: " << target() << ")";
       return Status::OK();

@@ -175,7 +175,7 @@ class ValuePtr {
     }
   }
 
-  void Destroy(int64 value_len) {
+  void Destroy(Allocator* allocator, int64 value_len) {
     MetaHeader* meta = (MetaHeader*)ptr_;
     unsigned int embnum = (unsigned int)meta->embed_num;
     auto metadata = meta->GetColumnBitset();
@@ -183,7 +183,7 @@ class ValuePtr {
       if (metadata.test(i)) {
         V* val = ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[i];
         if (val != nullptr) {
-          TypedAllocator::Deallocate(cpu_allocator(), val, value_len);
+          TypedAllocator::Deallocate(allocator, val, value_len);
         }
       }
     }

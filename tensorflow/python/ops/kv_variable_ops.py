@@ -388,6 +388,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         elif ops.GraphKeys.GLOBAL_STEP in collections:
           ops.add_to_collections(ops.GraphKeys.GLOBAL_STEP, self)
 
+  def export(self):
+    return gen_kv_variable_ops.kv_resource_export(self._handle, Tkeys=self._invalid_key_type)
+
   def add_ev_to_collection(self, handle_name):
     '''
     schema:

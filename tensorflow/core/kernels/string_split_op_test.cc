@@ -126,4 +126,64 @@ BENCHMARK(BM_StringSplitV2)
     ->Arg(128)
     ->Arg(256);
 
+class StringSplitTest : public OpsTestBase {
+ protected:
+  void CreateOp() {
+    TF_ASSERT_OK(NodeDefBuilder("op", "StringSplit")
+                     .Input(FakeInput(DT_STRING))
+                     .Input(FakeInput(DT_STRING))
+                     .Finalize(node_def()));
+  }
+};
+
+TEST_F(StringSplitTest, NullInput) {
+  CreateOp();
+  TF_ASSERT_OK(InitOp());
+
+  // input
+  AddInputFromArray<string>(TensorShape({0}), {});
+  AddInputFromArray<string>(TensorShape({}), {","});
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected0(DT_INT64, {0, 2});
+  Tensor expected1(DT_STRING, {0});
+  Tensor expected2(DT_INT64, {2});
+  test::FillValues<int64>(&expected2, {0, 0});
+
+  test::ExpectTensorEqual<int64>(expected0, *GetOutput(0));
+  test::ExpectTensorEqual<string>(expected1, *GetOutput(1));
+  test::ExpectTensorEqual<int64>(expected2, *GetOutput(2));
+}
+
+class StringSplitV2Test : public OpsTestBase {
+ protected:
+  void CreateOp() {
+    TF_ASSERT_OK(NodeDefBuilder("op", "StringSplitV2")
+                     .Input(FakeInput(DT_STRING))
+                     .Input(FakeInput(DT_STRING))
+                     .Finalize(node_def()));
+  }
+};
+
+TEST_F(StringSplitV2Test, NullInput) {
+  CreateOp();
+  TF_ASSERT_OK(InitOp());
+
+  // input
+  AddInputFromArray<string>(TensorShape({0}), {});
+  AddInputFromArray<string>(TensorShape({}), {","});
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected0(DT_INT64, {0, 2});
+  Tensor expected1(DT_STRING, {0});
+  Tensor expected2(DT_INT64, {2});
+  test::FillValues<int64>(&expected2, {0, 0});
+
+  test::ExpectTensorEqual<int64>(expected0, *GetOutput(0));
+  test::ExpectTensorEqual<string>(expected1, *GetOutput(1));
+  test::ExpectTensorEqual<int64>(expected2, *GetOutput(2));
+}
+
 }  // end namespace tensorflow

@@ -1219,7 +1219,7 @@ def tf_cc_test_mkl(
                     "-lm",
                 ],
             }) + _rpath_linkopts(src_to_test_name(src)),
-            deps = deps + tf_binary_dynamic_kernel_deps(kernels) + mkl_deps(),
+            deps = deps + tf_binary_dynamic_kernel_deps(kernels) + if_mkl_ml(["//third_party/mkl:intel_binary_blob"]),
             data = data + tf_binary_dynamic_kernel_dsos(),
             exec_compatible_with = tf_exec_compatible_with({"tags": tags}),
             linkstatic = linkstatic,
@@ -2518,7 +2518,7 @@ def tf_python_pybind_extension(
         hdrs = hdrs,
         features = features,
         copts = copts,
-        deps = deps + tf_binary_pybind_deps(),
+        deps = deps + tf_binary_pybind_deps() + if_mkl_ml(["//third_party/mkl:intel_binary_blob"]),
     )
 
 def if_cuda_or_rocm(if_true, if_false = []):

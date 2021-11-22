@@ -16,8 +16,9 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_COMMON_RUNTIME_EXECUTOR_H_
 #define TENSORFLOW_CORE_COMMON_RUNTIME_EXECUTOR_H_
 
+#include "absl/time/time.h"
+#include "absl/types/optional.h"
 #include "tensorflow/core/common_runtime/device.h"
-#include "tensorflow/core/common_runtime/rendezvous_mgr.h"
 #include "tensorflow/core/framework/rendezvous.h"
 #include "tensorflow/core/framework/session_state.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -83,12 +84,15 @@ class Executor {
   //
   // RunAsync() dispatches closures to "runner". Typically, "runner"
   // is backed up by a bounded threadpool.
-  typedef std::function<Status(const int64, const DeviceMgr*, Rendezvous** r)>
+  //
+  // "start_time_usecs" is a timestamp for the start of RunAsync()
+  // execution. Used for system-wide latency metrics.
+  typedef std::function<Status(const int64, const DeviceMgr*, Rendezvous** r)> 
       RendezvousFactory;
 
   struct Args {
-    int64 step_id = 0;
-    int64 round_step_id = 0;
+    int64_t step_id = 0;
+    int64_t round_step_id = 0;
     Rendezvous* rendezvous = nullptr;
     Rendezvous* global_rendezvous = nullptr;
     StepStatsCollectorInterface* stats_collector = nullptr;
@@ -101,6 +105,9 @@ class Executor {
     ScopedStepContainer* step_container = nullptr;
     CollectiveExecutor* collective_executor = nullptr;
     thread::ThreadPoolInterface* user_intra_op_threadpool = nullptr;
+    int64_t start_time_usecs = 0;
+    // The deadline for the kernel to complete by. Empty if unspecified.
+    absl::optional<absl::Time> deadline;
 
     // If true, calls Sync() on the device.
     bool sync_on_finish = false;
@@ -108,12 +115,16 @@ class Executor {
     typedef std::function<void()> Closure;
     typedef std::function<void(Closure)> Runner;
     Runner runner = nullptr;
+
+    // If true, all kernels will be treated as "inexpensive", and hence executed
+    // on the scheduling thread.
+    bool run_all_kernels_inline = false;
   };
   typedef std::function<void(const Status&)> DoneCallback;
   virtual void RunAsync(const Args& args, DoneCallback done) = 0;
 
   // Synchronous wrapper for RunAsync().
-  Status Run(const Args& args) {
+  virtual Status Run(const Args& args) {
     Status ret;
     Notification n;
     RunAsync(args, [&ret, &n](const Status& s) {
@@ -148,6 +159,14 @@ struct LocalExecutorParams {
 
   Executor::RendezvousFactory rendezvous_factory;
 };
+
+// Creates an Executor that computes the given "graph".
+//
+// If successful, returns the constructed executor in "*executor". Otherwise,
+// returns an error status.
+//
+// "params" provides a set of context for the executor. We expect that
+// different context would provide different implementations.
 ::tensorflow::Status NewLocalExecutor(const LocalExecutorParams& params,
                                       std::unique_ptr<const Graph> graph,
                                       Executor** executor);
@@ -185,8 +204,8 @@ class ExecutorBarrier {
   StatusCallback done_cb_ = nullptr;
 
   mutable mutex mu_;
-  int pending_ GUARDED_BY(mu_) = 0;
-  StatusGroup status_group_ GUARDED_BY(mu_);
+  int pending_ TF_GUARDED_BY(mu_) = 0;
+  StatusGroup status_group_ TF_GUARDED_BY(mu_);
 
   void WhenDone(const Status& s) {
     Rendezvous* error_rendez = nullptr;
@@ -239,7 +258,7 @@ class ExecutorBarrier {
 
 // A few helpers to facilitate create/delete kernels.
 
-// Creates a kernel based on "ndef" on device "device". The kernel can
+// Creates a kernel based on "props" on device "device". The kernel can
 // access the functions in the "flib". The caller takes ownership of
 // returned "*kernel".
 Status CreateNonCachedKernel(Device* device, FunctionLibraryRuntime* flib,
@@ -252,3 +271,4 @@ void DeleteNonCachedKernel(OpKernel* kernel);
 }  // end namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_COMMON_RUNTIME_EXECUTOR_H_
+

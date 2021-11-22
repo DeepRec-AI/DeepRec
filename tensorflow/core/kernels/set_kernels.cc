@@ -186,6 +186,43 @@ void OutputSparseTensor(OpKernelContext* ctx, const TensorShape& output_shape,
   }
 }
 
+// For 2D input tensor
+template <typename T>
+void OutputSparseTensor(OpKernelContext* ctx, const TensorShape& output_shape,
+                        const int64 num_values,
+                        const std::vector<std::pair<int64_t, T>>& group_values) {
+  // Allocate 3 output tensors for sparse data.
+  Tensor *out_indices_t, *out_values_t, *out_shape_t;
+  OP_REQUIRES_OK(ctx, ctx->allocate_output(
+                          0, TensorShape({num_values, output_shape.dims()}),
+                          &out_indices_t));
+  OP_REQUIRES_OK(
+      ctx, ctx->allocate_output(1, TensorShape({num_values}), &out_values_t));
+  OP_REQUIRES_OK(ctx, ctx->allocate_output(
+                          2, TensorShape({output_shape.dims()}), &out_shape_t));
+  auto out_indices_mat = out_indices_t->matrix<int64>();
+  auto out_values_flat = out_values_t->vec<T>();
+
+  // For each group, write its indices and values to output tensors.
+  int64 value_index = 0;
+  for (auto it = group_values.begin(); it != group_values.end(); ++it) {
+    const auto group_index = it->first;
+    const auto& value = it->second;
+
+    out_indices_mat(value_index, 0) = group_index;
+    out_indices_mat(value_index, 1) = 0;
+
+    out_values_flat(value_index) = value;
+    ++value_index;
+  }
+
+  // Write output shape.
+  auto out_shape_flat = out_shape_t->vec<int64>();
+  for (int32 i = 0; i < output_shape.dims(); ++i) {
+    out_shape_flat(i) = output_shape.dim_size(i);
+  }
+}
+
 bool ValidateIndicesFromContext(OpKernelConstruction* ctx) {
   bool result;
   if (ctx->GetAttr("validate_indices", &result).ok()) {
@@ -219,6 +256,26 @@ void PopulateFromDenseGroup(OpKernelContext* ctx, const Tensor& input_tensor,
   }
 }
 
+template <typename T>
+void PopulateFromDenseGroup(OpKernelContext* ctx, const Tensor& input_tensor,
+                            const VarDimArray& input_strides,
+                            const std::vector<int64>& group_indices,
+                            std::unordered_set<T>* result) {
+  OP_REQUIRES(ctx, group_indices.size() == input_strides.size() - 1,
+              errors::Internal("group_indices.size ", group_indices.size(),
+                               ", !=  input_strides.size-1 ",
+                               input_strides.size() - 1, "."));
+  result->clear();
+  auto input_flat = input_tensor.flat<T>();
+  const auto start = std::inner_product(
+      group_indices.begin(), group_indices.end(), input_strides.begin(), 0LL);
+  const TensorShape& input_shape = input_tensor.shape();
+  const auto end = start + input_shape.dim_size(input_shape.dims() - 1);
+  for (int64 i = start; i < end; ++i) {
+    result->insert(input_flat(i));
+  }
+}
+
 // Populate `result` set from `group`. `sparse_tensor_shape` is the shape of the
 // `SparseTensor` from which group was created, and is used to sanity check the
 // indices in `group'.
@@ -226,6 +283,18 @@ template <typename T>
 void PopulateFromSparseGroup(OpKernelContext* ctx, const sparse::Group& group,
                              const VarDimArray& sparse_tensor_shape,
                              std::set<T>* result) {
+  CheckGroup<T>(ctx, group, sparse_tensor_shape);
+  result->clear();
+  const auto& group_values = group.values<T>();
+  for (int64 i = 0; i < group_values.size(); ++i) {
+    result->insert(group_values(i));
+  }
+}
+
+template <typename T>
+void PopulateFromSparseGroup(OpKernelContext* ctx, const sparse::Group& group,
+                             const VarDimArray& sparse_tensor_shape,
+                             std::unordered_set<T>* result) {
   CheckGroup<T>(ctx, group, sparse_tensor_shape);
   result->clear();
   const auto& group_values = group.values<T>();
@@ -344,6 +413,8 @@ class SetOperationOp : public OpKernel {
  private:
   void ApplySetOperation(const std::set<T>& set1, const std::set<T>& set2,
                          std::set<T>* result) const;
+  void ApplySetOperation(const std::unordered_set<T>& set1, const std::unordered_set<T>& set2,
+                         std::set<T>* result) const;
   void ComputeDenseToDense(OpKernelContext* ctx) const;
   void ComputeDenseToSparse(OpKernelContext* ctx) const;
   void ComputeSparseToSparse(OpKernelContext* ctx) const;
@@ -372,6 +443,57 @@ void SetOperationOp<T>::ApplySetOperation(const std::set<T>& set1,
     case UNION:
       std::set_union(set1.begin(), set1.end(), set2.begin(), set2.end(),
                      std::inserter(*result, result->begin()));
+      break;
+  }
+}
+
+template <typename T>
+void SetDifference(const std::unordered_set<T>& set1,
+                   const std::unordered_set<T>& set2,
+                   std::set<T>* result) {
+  for (const T& elem : set1) {
+    if (set2.find(elem) == set2.end()) result->insert(elem);
+  }
+}
+
+template <typename T>
+void SetIntersection(const std::unordered_set<T>& set1,
+                     const std::unordered_set<T>& set2,
+                     std::set<T>* result) {
+  if (set1.size() <= set2.size()) {
+    for (const T& elem : set1) {
+      if (set2.find(elem) != set2.end()) result->insert(elem);
+    }
+  } else {
+    for (const T& elem : set2) {
+      if (set1.find(elem) != set1.end()) result->insert(elem);
+    }
+  }
+}
+
+template <typename T>
+void SetUnion(const std::unordered_set<T>& set1,
+              const std::unordered_set<T>& set2, std::set<T>* result) {
+  result->insert(set1.begin(), set1.end());
+  result->insert(set2.begin(), set2.end());
+}
+
+template <typename T>
+void SetOperationOp<T>::ApplySetOperation(const std::unordered_set<T>& set1,
+                                          const std::unordered_set<T>& set2,
+                                          std::set<T>* result) const {
+  switch (set_operation_) {
+    case A_MINUS_B:
+      SetDifference<T>(set1, set2, result);
+      break;
+    case B_MINUS_A:
+      SetDifference<T>(set2, set1, result);
+      break;
+    case INTERSECTION:
+      SetIntersection<T>(set1, set2, result);
+      break;
+    case UNION:
+      SetUnion<T>(set1, set2, result);
       break;
   }
 }
@@ -435,6 +557,53 @@ void SetOperationOp<T>::ComputeDenseToDense(OpKernelContext* ctx) const {
   const auto shape2 = TensorShapeToArray(set2_t.shape());
   OP_REQUIRES_OK(ctx, GroupShapeFromInputs(shape1, shape2, &group_shape));
 
+  // Input tensors are 2D
+  if (group_shape.size() == 1 && set_operation_ == INTERSECTION
+      && (shape1[1] == 1 || shape2[1] == 1)) {
+    bool dealed = false;
+
+    auto input1_flat = set1_t.flat<T>();
+    auto input2_flat = set2_t.flat<T>();
+
+    auto multi_inputs = (shape1[1] == 1 ? input2_flat : input1_flat);
+    auto single_inputs = (shape1[1] == 1 ? input1_flat : input2_flat);
+    const auto dim1 = (shape1[1] == 1 ? shape2[1] : shape1[1]);
+
+    std::vector<std::pair<int64_t, T>> group_values;
+    int64_t num_result_values = 0;
+    int64_t max_set_size = 0;
+
+    int64_t dim0 = group_shape[0];
+    for (int64_t i = 0; i < dim0; ++i) {
+      std::set<T> group_set;
+      T single_val = single_inputs(i); // extract the single value
+
+      bool intersected = false;
+      for (int64 offset = i * dim1; offset < (i + 1) * dim1; ++offset) {
+        if (multi_inputs(offset) == single_val) { // matches
+          intersected = true;
+          break;
+        }
+      }
+
+      // Stat max group size, total element size
+      if (intersected) {
+        if (max_set_size < 1) {
+          max_set_size = 1;
+        }
+        num_result_values += 1;
+        group_values.push_back({i, single_val});
+      }
+    }
+
+    // Organize to output
+    TensorShape output_shape;
+    OP_REQUIRES_OK(ctx, TensorShapeUtils::MakeShape(group_shape, &output_shape));
+    output_shape.AddDim(max_set_size);
+    OutputSparseTensor<T>(ctx, output_shape, num_result_values, group_values);
+    return;
+  }
+
   const auto set1_strides = Strides(shape1);
   const auto set2_strides = Strides(shape2);
 
@@ -442,8 +611,8 @@ void SetOperationOp<T>::ComputeDenseToDense(OpKernelContext* ctx) const {
   int64 num_result_values = 0;
   int64 max_set_size = 0;
 
-  std::set<T> set1_group_set;
-  std::set<T> set2_group_set;
+  std::unordered_set<T> set1_group_set;
+  std::unordered_set<T> set2_group_set;
   std::vector<int64> group_indices;
   int64 num_elements;
   OP_REQUIRES_OK(ctx,
@@ -498,8 +667,8 @@ void SetOperationOp<T>::ComputeDenseToSparse(OpKernelContext* ctx) const {
   int64 num_result_values = 0;
   int64 max_set_size = 0;
 
-  std::set<T> set1_group_set;
-  std::set<T> set2_group_set;
+  std::unordered_set<T> set1_group_set;
+  std::unordered_set<T> set2_group_set;
   auto set2_grouper =
       set2_st.group(set2_st.order().subspan(0, set2_st.order().size() - 1));
   auto set2_group_it = set2_grouper.begin();
@@ -619,8 +788,8 @@ void SetOperationOp<T>::ComputeSparseToSparse(OpKernelContext* ctx) const {
   int64 num_result_values = 0;
   int64 max_set_size = 0;
 
-  std::set<T> set1_group_set;
-  std::set<T> set2_group_set;
+  std::unordered_set<T> set1_group_set;
+  std::unordered_set<T> set2_group_set;
   auto set1_grouper =
       set1_st.group(set1_st.order().subspan(0, set1_st.order().size() - 1));
   auto set1_group_it = set1_grouper.begin();
