@@ -1,62 +1,19 @@
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-
-#define EIGEN_USE_GPU
-
 #include <exception>
 #include <string>
 
 #include "tensorflow/core/framework/op_kernel.h"
 
+#if GOOGLE_CUDA
+
+#define EIGEN_USE_GPU
+
+#include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
+#include "tensorflow/core/util/gpu_kernel_helper.h"
+
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
 namespace {
-
-enum Combiner { Mean, Sum, Sqrtn };
-
-template <Combiner combiner>
-__forceinline__ __device__ float Combine(const float out,
-                                         const int feature_num);
-
-template <>
-__forceinline__ __device__ float Combine<Sqrtn>(const float out,
-                                                const int feature_num) {
-  return out / sqrtf(feature_num);
-}
-
-template <>
-__forceinline__ __device__ float Combine<Mean>(const float out,
-                                               const int feature_num) {
-  return out / feature_num;
-}
-
-template <>
-__forceinline__ __device__ float Combine<Sum>(const float out,
-                                              const int feature_num) {
-  return out;
-}
-
-template <Combiner combiner>
-__forceinline__ __device__ float CombineGrad(const float grad,
-                                             const int feature_num);
-
-template <>
-__forceinline__ __device__ float CombineGrad<Sqrtn>(const float grad,
-                                                    const int feature_num) {
-  return grad / sqrtf(feature_num);
-}
-
-template <>
-__forceinline__ __device__ float CombineGrad<Mean>(const float grad,
-                                                   const int feature_num) {
-  return grad / feature_num;
-}
-
-template <>
-__forceinline__ __device__ float CombineGrad<Sum>(const float grad,
-                                                  const int feature_num) {
-  return grad;
-}
 
 __global__ void SetToIntMaxSTG128(int* values_offset, const int batch_size) {
   const int thread_offset = 4 * (blockIdx.x * blockDim.x + threadIdx.x);
@@ -89,43 +46,41 @@ __global__ void EmbeddingLookUp(const float* emb_variable,
                                 const int64_t batch_size, const int64_t nnz) {
   __shared__ float l2_sum[1];
 
-  if (blockIdx.x < int(batch_size) && threadIdx.x < emb_vec_size) {
-    int value_offset = values_offset[blockIdx.x];
-    int feature_num;
-    if (blockIdx.x == int(batch_size) - 1) {
-      feature_num = int(nnz) - value_offset;
-    } else {
-      feature_num = values_offset[blockIdx.x + 1] - value_offset;
-    }
-    float out = 0.0f;
-    for (int i = 0; i < feature_num; i++) {
-      float emb_element =
-          emb_variable[int(values[value_offset + i]) * emb_vec_size +
-                       threadIdx.x];
-      if (max_norm >= 0.0f) {
-        // calc l2 norm of this emb row(per block) and compare with max_norm.
-        // if greater than max_norm, then clip every element with factor
-        // max_norm / l2norm
-        if (threadIdx.x == 0) {
-          l2_sum[0] = 0.0f;
-        }
-        __syncthreads();
-        atomicAdd(l2_sum, emb_element * emb_element);
-        __syncthreads();
-        float l2_norm = sqrtf(l2_sum[0]);
-        if (l2_norm > max_norm) {
-          emb_element *= max_norm / l2_norm;
-        }
-      }
-      out += emb_element;
-    }
-
-    // combine
-    out = Combine<combiner>(out, feature_num);
-
-    // store the embedding vector
-    embedding_vector[blockIdx.x * emb_vec_size + threadIdx.x] = out;
+  int value_offset = values_offset[blockIdx.x];
+  int feature_num;
+  if (blockIdx.x == int(batch_size) - 1) {
+    feature_num = int(nnz) - value_offset;
+  } else {
+    feature_num = values_offset[blockIdx.x + 1] - value_offset;
   }
+  float out = 0.0f;
+  for (int i = 0; i < feature_num; i++) {
+    float emb_element =
+        emb_variable[int(values[value_offset + i]) * emb_vec_size +
+                     threadIdx.x];
+    if (max_norm >= 0.0f) {
+      // calc l2 norm of this emb row(per block) and compare with max_norm.
+      // if greater than max_norm, then clip every element with factor
+      // max_norm / l2norm
+      if (threadIdx.x == 0) {
+        l2_sum[0] = 0.0f;
+      }
+      __syncthreads();
+      atomicAdd(l2_sum, emb_element * emb_element);
+      __syncthreads();
+      float l2_norm = sqrtf(l2_sum[0]);
+      if (l2_norm > max_norm) {
+        emb_element *= max_norm / l2_norm;
+      }
+    }
+    out += emb_element;
+  }
+
+  // combine
+  out = Combine<combiner>(out, feature_num);
+
+  // store the embedding vector
+  embedding_vector[blockIdx.x * emb_vec_size + threadIdx.x] = out;
 }
 
 template <Combiner combiner>
@@ -136,43 +91,41 @@ __global__ void DoEmbeddingGrad(const float* top_grad,
                                 const int emb_vec_size,
                                 const int64_t batch_size, const int64_t nnz) {
   __shared__ float l2_sum[1];
-  if (blockIdx.x < int(batch_size) && threadIdx.x < emb_vec_size) {
-    const int value_offset = values_offset[blockIdx.x];
-    int feature_num;
-    if (blockIdx.x == int(batch_size) - 1) {
-      feature_num = int(nnz) - value_offset;
-    } else {
-      feature_num = values_offset[blockIdx.x + 1] - value_offset;
-    }
-    float grad = top_grad[blockIdx.x * emb_vec_size + threadIdx.x];
-    grad = CombineGrad<combiner>(grad, feature_num);
-    for (int i = 0; i < feature_num; i++) {
-      float grad_i = grad;
-      if (max_norm > 0.0f) {
-        float emb_element =
-            emb_variable[int(values[value_offset + i]) * emb_vec_size +
-                         threadIdx.x];
-        if (threadIdx.x == 0) {
-          l2_sum[0] = 0.0f;
-        }
-        __syncthreads();
-        atomicAdd(l2_sum, emb_element * emb_element);
-        __syncthreads();
-        float l2_norm = sqrtf(l2_sum[0]);
-        if (l2_norm > max_norm) {
-          grad_i *= max_norm / l2_norm;
-        }
+  const int value_offset = values_offset[blockIdx.x];
+  int feature_num;
+  if (blockIdx.x == int(batch_size) - 1) {
+    feature_num = int(nnz) - value_offset;
+  } else {
+    feature_num = values_offset[blockIdx.x + 1] - value_offset;
+  }
+  float grad = top_grad[blockIdx.x * emb_vec_size + threadIdx.x];
+  grad = CombineGrad<combiner>(grad, feature_num);
+  for (int i = 0; i < feature_num; i++) {
+    float grad_i = grad;
+    if (max_norm > 0.0f) {
+      float emb_element =
+          emb_variable[int(values[value_offset + i]) * emb_vec_size +
+                       threadIdx.x];
+      if (threadIdx.x == 0) {
+        l2_sum[0] = 0.0f;
       }
-      grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad_i;
+      __syncthreads();
+      atomicAdd(l2_sum, emb_element * emb_element);
+      __syncthreads();
+      float l2_norm = sqrtf(l2_sum[0]);
+      if (l2_norm > max_norm) {
+        grad_i *= max_norm / l2_norm;
+      }
     }
+    grad_values[(value_offset + i) * emb_vec_size + threadIdx.x] = grad_i;
   }
 }
 
 }  // namespace
 
-class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
+class FusedEmbeddingLocalSparseLookUpGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingLocalSparseLookUpGPUOp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingLocalSparseLookUpGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
@@ -195,14 +148,14 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
     const int64 nnz = indices_tensor->shape().dim_size(0);
     const int64 emb_vec_size = emb_variable_tensor->shape().dim_size(1);
 
-    TensorShape emb_vector_tensor_shape;
+    TensorShape emb_vectors_tensor_shape;
 
-    emb_vector_tensor_shape = TensorShape(
+    emb_vectors_tensor_shape = TensorShape(
         std::vector<int64>({static_cast<long long>(batch_size), emb_vec_size}));
-    Tensor* emb_vector_tensor = nullptr;
+    Tensor* emb_vectors_tensor = nullptr;
     // allocate output
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, emb_vector_tensor_shape,
-                                             &emb_vector_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, emb_vectors_tensor_shape,
+                                             &emb_vectors_tensor));
 
     // allocate offset tensor
     TensorShape values_offset_tensor_shape =
@@ -221,8 +174,7 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
     }
     {
       const int threads = 1024;
-      int blocks = nnz / threads;
-      blocks = nnz % threads == 0 ? blocks : blocks + 1;
+      int blocks = nnz % threads == 0 ? (nnz / threads) : (nnz / threads + 1);
 
       // calculate values offset
       CalcPerElementRowInBatchValuesOffset<<<blocks, threads, 0, stream>>>(
@@ -240,7 +192,7 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
             reinterpret_cast<const int64_t*>(
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
-            reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
+            reinterpret_cast<float*>(emb_vectors_tensor->flat<float>().data()),
             max_norm_, int(emb_vec_size), batch_size, nnz);
       } else if (combiner_ == "mean") {
         EmbeddingLookUp<Mean><<<blocks, threads, 0, stream>>>(
@@ -249,7 +201,7 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
             reinterpret_cast<const int64_t*>(
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
-            reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
+            reinterpret_cast<float*>(emb_vectors_tensor->flat<float>().data()),
             max_norm_, int(emb_vec_size), batch_size, nnz);
       } else {
         EmbeddingLookUp<Sum><<<blocks, threads, 0, stream>>>(
@@ -258,7 +210,7 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
             reinterpret_cast<const int64_t*>(
                 values_tensor->flat<int64>().data()),
             values_offset_tensor->flat<int>().data(),
-            reinterpret_cast<float*>(emb_vector_tensor->flat<float>().data()),
+            reinterpret_cast<float*>(emb_vectors_tensor->flat<float>().data()),
             max_norm_, int(emb_vec_size), batch_size, nnz);
       }
     }
@@ -272,11 +224,11 @@ class FusedEmbeddingLocalSparseLookUpGPUOp : public OpKernel {
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingLocalSparseLookUp")
                             .Device(DEVICE_GPU)
                             .HostMemory("sp_dense_shape"),
-                        FusedEmbeddingLocalSparseLookUpGPUOp);
+                        FusedEmbeddingLocalSparseLookUpGPU);
 
-class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
+class FusedEmbeddingLocalSparseLookUpGradGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingLocalSparseLookUpGradOp(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingLocalSparseLookUpGradGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
@@ -357,8 +309,7 @@ class FusedEmbeddingLocalSparseLookUpGradOp : public OpKernel {
 
 REGISTER_KERNEL_BUILDER(
     Name("FusedEmbeddingLocalSparseLookUpGrad").Device(DEVICE_GPU),
-    FusedEmbeddingLocalSparseLookUpGradOp);
+    FusedEmbeddingLocalSparseLookUpGradGPU);
 
 }  // namespace tensorflow
-
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA
