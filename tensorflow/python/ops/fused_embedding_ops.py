@@ -42,34 +42,33 @@ def fused_embedding_lookup_sparse(embedding_weights,
       raise TypeError("sparse_ids must be SparseTensor")
 
     partition_nums = len(embedding_weights)
-    if partition_nums == 1:
-      emb_vectors, _ = fused_embedding_local_sparse_look_up(sp_values=sparse_ids.values,
-                                                            sp_indices=sparse_ids.indices,
-                                                            sp_dense_shape=sparse_ids.dense_shape,
-                                                            emb_variable=embedding_weights[0],
-                                                            combiner=combiner,
-                                                            max_norm=max_norm)
-    else:
-      partition_shapes = [w.shape for w in embedding_weights]
-      partitioned_values, partitioned_indices = fused_embedding_sparse_pre_look_up(
-        partition_shapes=partition_shapes,
-        sp_values=sparse_ids.values,
-        sp_indices=sparse_ids.indices,
-      )
-      emb_shards = []
-      for i in range(partition_nums):
-        embedding = embedding_weights[i]
-        sub_partition_values = partitioned_values[i]
-        with ops.colocate_with(embedding):
-          shard = array_ops.gather(embedding, sub_partition_values)
-          emb_shards.append(shard)
-
-      emb_vectors, _ = fused_embedding_sparse_post_look_up(
-        emb_shards=emb_shards, partitioned_indices=partitioned_indices,
-        sp_dense_shape=sparse_ids.dense_shape,
-        partitioned_values=partitioned_values,
-        combiner=combiner, max_norm=max_norm
-      )
+    # Local fused embedding lookup. Only support local look up and tf.Variable as
+    # embedding weight. So skip it for now.
+    #emb_vectors, _ = fused_embedding_local_sparse_look_up(sp_values=sparse_ids.values,
+    #                                                      sp_indices=sparse_ids.indices,
+    #                                                      sp_dense_shape=sparse_ids.dense_shape,
+    #                                                      emb_variable=embedding_weights[0],
+    #                                                      combiner=combiner,
+    #                                                      max_norm=max_norm)
+    partition_shapes = [w.shape for w in embedding_weights]
+    partitioned_values, partitioned_indices = fused_embedding_sparse_pre_look_up(
+      partition_shapes=partition_shapes,
+      sp_values=sparse_ids.values,
+      sp_indices=sparse_ids.indices,
+    )
+    emb_shards = []
+    for i in range(partition_nums):
+      embedding = embedding_weights[i]
+      sub_partition_values = partitioned_values[i]
+      with ops.colocate_with(embedding):
+        shard = array_ops.gather(embedding, sub_partition_values)
+        emb_shards.append(shard)
+    emb_vectors, _ = fused_embedding_sparse_post_look_up(
+      emb_shards=emb_shards, partitioned_indices=partitioned_indices,
+      sp_dense_shape=sparse_ids.dense_shape,
+      partitioned_values=partitioned_values,
+      combiner=combiner, max_norm=max_norm
+    )
     return emb_vectors
 
 
