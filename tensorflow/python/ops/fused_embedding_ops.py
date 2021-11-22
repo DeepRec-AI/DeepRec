@@ -95,8 +95,4 @@ def fused_embedding_sparse_post_look_up_grad(op, top_grad_emb_vec, _):
     feature_nums=op.outputs[1], combiner=op.get_attr("combiner"),
     max_norm=op.get_attr("max_norm")
   )
-
-  #grad_shards = [ops.IndexedSlices(values=grad_shards[i],
-  #                                 indices=op.inputs[i + 2 * num_partitions + 1],
-  #                                 dense_shape=op.inputs[i].shape) for i in range(num_partitions)]
   return grad_shards + [None for _ in range(0, 2 * num_partitions + 1)]
