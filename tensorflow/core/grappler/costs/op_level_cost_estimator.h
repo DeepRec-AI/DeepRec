@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/costs/op_context.h"
 #include "tensorflow/core/grappler/costs/op_performance_data.pb.h"
 #include "tensorflow/core/util/padding.h"
+#include "tensorflow/stream_executor/lib/statusor.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -171,7 +172,7 @@ class OpLevelCostEstimator {
       bool* found_unknown_shapes);
 
   // For Pooling, FusedBatchNorm, and their grad ops.
-  static ConvolutionDimensions OpDimensionsFromInputs(
+  static se::port::StatusOr<ConvolutionDimensions> OpDimensionsFromInputs(
       const TensorShapeProto& original_image_shape, const OpInfo& op_info,
       bool* found_unknown_shapes);
 
