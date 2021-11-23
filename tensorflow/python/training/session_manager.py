@@ -202,6 +202,8 @@ class SessionManager(object):
       return sess, False
 
     if checkpoint_filename_with_path:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       saver.restore(sess, checkpoint_filename_with_path)
       return sess, True
 
