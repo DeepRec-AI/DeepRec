@@ -1586,7 +1586,7 @@ Status ConcatShapeHelper(InferenceContext* c, int start_value_index,
   const int32 concat_dim = concat_dim_t->scalar<int32>()();
 
   // Minimum required number of dimensions.
-  const int min_rank = concat_dim < 0 ? -concat_dim : concat_dim + 1;
+  const int64 min_rank = concat_dim < 0 ? -concat_dim : concat_dim + 1;
 
   ShapeHandle output_before;
   ShapeHandle output_after;
