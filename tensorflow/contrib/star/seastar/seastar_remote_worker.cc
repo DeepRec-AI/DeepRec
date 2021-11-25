@@ -16,7 +16,6 @@
 #include "tensorflow/core/platform/tracing.h"
 #include "tensorflow/core/protobuf/worker.pb.h"
 
-
 namespace tensorflow {
 
 class SeastarRemoteWorker : public WorkerInterface, public StarWorkerInterface {

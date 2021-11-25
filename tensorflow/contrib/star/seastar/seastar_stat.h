@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <sys/time.h>
 
-
 namespace tensorflow {
 namespace {
 const static size_t COUNTER_INTERVAL = 1000;

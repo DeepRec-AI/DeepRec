@@ -9,7 +9,6 @@
 #include "tensorflow/core/platform/cpu_info.h"
 #include "tensorflow/core/platform/logging.h"
 
-
 namespace tensorflow {
 
 namespace {
@@ -87,7 +86,7 @@ void CpusetAllocator::CreateDir() {
 void CpusetAllocator::CreateFiles() {
   // todo: port::NumAllCPUs(), all phsical core should be available in docker, or this would bug here
   // fuxi set value is better.
-  for (auto i = INIT_CPU_ID; i < port::NumSchedulableCPUs(); ++i) {
+  for (size_t i = INIT_CPU_ID; i < (size_t)port::NumSchedulableCPUs(); ++i) {
     auto file_name = std::to_string(i);
 
     std::string file_path;
