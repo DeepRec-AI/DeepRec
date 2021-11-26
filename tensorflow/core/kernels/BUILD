@@ -2411,6 +2411,7 @@ DATA_FLOW_DEPS = [
     ":queue_base",
     ":queue_op",
     ":sparse_conditional_accumulator",
+    ":sparse_conditional_accumulator_ali",
     ":split_lib",
     ":tensor_array",
     ":typed_conditional_accumulator_base",
@@ -2517,6 +2518,7 @@ tf_kernel_library(
     name = "sparse_conditional_accumulator_op",
     prefix = "sparse_conditional_accumulator_op",
     deps = DATA_FLOW_DEPS,
+    nocopts = "-fno-exceptions",
 )
 
 cc_library(
@@ -2730,6 +2732,14 @@ cc_library(
 cc_library(
     name = "sparse_conditional_accumulator",
     hdrs = ["sparse_conditional_accumulator.h"],
+    deps = [
+        ":typed_conditional_accumulator_base",
+    ],
+)
+
+cc_library(
+    name = "sparse_conditional_accumulator_ali",
+    hdrs = ["sparse_conditional_accumulator_ali.h", "task_runner.h"],
     deps = [
         ":typed_conditional_accumulator_base",
     ],
