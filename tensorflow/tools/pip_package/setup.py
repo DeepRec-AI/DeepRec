@@ -68,7 +68,7 @@ REQUIRED_PACKAGES = [
     'six >= 1.10.0',
     'protobuf >= 3.6.1',
     'tensorboard >= 1.15.0, < 1.16.0',
-    'tensorflow-estimator == 1.15.1',
+    'tensorflow-estimator >= 1.15.1, < 1.15.5',
     'termcolor >= 1.1.0',
     # python3 requires wheel 0.26
     'wheel >= 0.26;python_version>="3"',
