@@ -168,7 +168,7 @@ class _LinearEmbeddingLookupArguments(
     collections.namedtuple("_LinearEmbeddingLookupArguments", [
         "input_tensor", "weight_tensor", "vocab_size", "initializer", "combiner",
         "use_embedding_var", "embedding_var_part_num", "steps_to_live","init_data_source",
-        "ht_partition_num", "evconfig"
+        "ht_partition_num", "ev_option"
     ])):
   """Represents the information needed from a column for embedding lookup.
 
@@ -185,8 +185,8 @@ class _LinearEmbeddingLookupArguments(
       kwargs['init_data_source'] = None
     if 'ht_partition_num' not in kwargs:
       kwargs['ht_partition_num'] = 1000
-    if 'evconfig' not in kwargs:
-      kwargs['evconfig'] = variables.EVConfig()
+    if 'ev_option' not in kwargs:
+      kwargs['ev_option'] = variables.EmbeddingVariableOption()
     return super(_LinearEmbeddingLookupArguments, cls).__new__(
         cls, *args, **kwargs)
 
@@ -205,7 +205,7 @@ class _DeepEmbeddingLookupArguments(
         "combiner", "dimension", "shared_embedding_name", "hash_key",
         "max_norm", "trainable",
         "use_embedding_var", "embedding_var_part_num", "steps_to_live",
-        "init_data_source", "ht_partition_num", "evconfig"
+        "init_data_source", "ht_partition_num", "ev_option"
     ])):
   """Represents the information needed from a column for embedding lookup.
 
@@ -222,8 +222,8 @@ class _DeepEmbeddingLookupArguments(
       kwargs['init_data_source'] = None
     if 'ht_partition_num' not in kwargs:
       kwargs['ht_partition_num'] = 1000
-    if 'evconfig' not in kwargs:
-      kwargs['evconfig'] = variables.EVConfig()
+    if 'ev_option' not in kwargs:
+      kwargs['ev_option'] = variables.EmbeddingVariableOption()
     return super(_DeepEmbeddingLookupArguments, cls).__new__(
         cls, *args, **kwargs)
 
@@ -348,7 +348,7 @@ class _SparseColumn(
     collections.namedtuple("_SparseColumn", [
         "column_name", "is_integerized", "bucket_size", "lookup_config",
         "combiner", "dtype", "partition_num", "steps_to_live", "init_data_source",
-        "ht_partition_num", "evconfig"
+        "ht_partition_num", "ev_option"
     ])):
   """Represents a sparse feature column also known as categorical features.
 
@@ -391,7 +391,7 @@ class _SparseColumn(
               steps_to_live=None,
               init_data_source=None,
               ht_partition_num=1000,
-              evconfig = variables.EVConfig()):
+              ev_option = variables.EmbeddingVariableOption()):
     if is_integerized and bucket_size is None:
       raise ValueError("bucket_size must be set if is_integerized is True. "
                        "column_name: {}".format(column_name))
@@ -440,7 +440,7 @@ class _SparseColumn(
         steps_to_live=steps_to_live,
         init_data_source=init_data_source,
         ht_partition_num=ht_partition_num,
-        evconfig=evconfig)
+        ev_option=ev_option)
 
   @property
   def name(self):
@@ -736,7 +736,7 @@ class _SparseColumnEmbedding(_SparseColumn):
         steps_to_live=self.steps_to_live,
         init_data_source=self.init_data_source,
         ht_partition_num=self.ht_partition_num,
-        evconfig=self.evconfig)
+        ev_option=self.ev_option)
 
 def sparse_column_with_embedding(column_name,
                                  dtype=dtypes.string,
@@ -744,7 +744,7 @@ def sparse_column_with_embedding(column_name,
                                  steps_to_live=None,
                                  init_data_source=None,
                                  ht_partition_num=1000,
-                                 evconfig = variables.EVConfig()):
+                                 ev_option = variables.EmbeddingVariableOption()):
   """parameter bucket_size is unused, just for inherit from _SparseColumn"""
   return _SparseColumnEmbedding(column_name,
                                 bucket_size=1,
@@ -753,7 +753,7 @@ def sparse_column_with_embedding(column_name,
                                 steps_to_live=steps_to_live,
                                 init_data_source=init_data_source,
                                 ht_partition_num=ht_partition_num,
-                                evconfig = evconfig)
+                                ev_option = ev_option)
 
 
 class _SparseColumnKeys(_SparseColumn):
@@ -1254,13 +1254,13 @@ class _EmbeddingColumn(
       steps_to_live = self.sparse_id_column.steps_to_live
       init_data_source = self.sparse_id_column.init_data_source
       ht_partition_num = self.sparse_id_column.ht_partition_num
-      evconfig = self.sparse_id_column.evconfig
+      ev_option = self.sparse_id_column.ev_option
     else:
       p = None
       steps_to_live = None
       init_data_source = None
       ht_partition_num = None
-      evconfig = variables.EVConfig()
+      ev_option = variables.EmbeddingVariableOption()
     return _DeepEmbeddingLookupArguments(
         input_tensor=self.sparse_id_column.id_tensor(input_tensor),
         weight_tensor=self.sparse_id_column.weight_tensor(input_tensor),
@@ -1277,7 +1277,7 @@ class _EmbeddingColumn(
         steps_to_live=steps_to_live,
         init_data_source=init_data_source,
         ht_partition_num=ht_partition_num,
-        evconfig=evconfig)
+        ev_option=ev_option)
 
   def _checkpoint_path(self):
     if self.ckpt_to_load_from is not None:
@@ -1400,7 +1400,7 @@ def _embeddings_from_arguments(column,
             steps_to_live=args.steps_to_live,
             init_data_source=args.init_data_source,
             ht_partition_num=args.ht_partition_num,
-            evconfig=args.evconfig)
+            ev_option=args.ev_option)
         graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, embeddings)
       else:
         embeddings = contrib_variables.model_variable(
@@ -1424,7 +1424,7 @@ def _embeddings_from_arguments(column,
           steps_to_live=args.steps_to_live,
           init_data_source=args.init_data_source,
           ht_partition_num=args.ht_partition_num,
-          evconfig=args.evconfig)
+          ev_option=args.ev_option)
       graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, embeddings)
     else:
       embeddings = contrib_variables.model_variable(
