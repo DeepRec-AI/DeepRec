@@ -1,8 +1,5 @@
-#include "seastar/core/channel.hh"
-#include "seastar/core/packet_queue.hh"
-#include "seastar/core/temporary_buffer.hh"
 #include "tensorflow/contrib/star/seastar/seastar_client_tag.h"
-
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 
 namespace tensorflow {
 namespace {

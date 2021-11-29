@@ -3,11 +3,7 @@
 
 #include <sys/time.h>
 
-#include "seastar/core/channel.hh"
-#include "seastar/core/future-util.hh"
-#include "seastar/core/shared_ptr.hh"
-#include "seastar/net/api.hh"
-
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 
 namespace seastar {
 class channel;

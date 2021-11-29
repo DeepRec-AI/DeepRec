@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/conditional_accumulator_base_op.h"
 #include "tensorflow/core/kernels/sparse_conditional_accumulator.h"
+#include "tensorflow/core/kernels/sparse_conditional_accumulator_ali.h"
 
 namespace tensorflow {
 
@@ -61,6 +62,51 @@ class SparseConditionalAccumulatorOp : public ConditionalAccumulatorBaseOp {
                               .Device(DEVICE_##dev)            \
                               .TypeConstraint<type>("dtype"),  \
                           SparseConditionalAccumulatorOp<dev##Device, type>)
+
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS(type, CPU)
+
+TF_CALL_half(REGISTER_KERNELS_CPU);
+TF_CALL_float(REGISTER_KERNELS_CPU);
+TF_CALL_double(REGISTER_KERNELS_CPU);
+
+#undef REGISTER_KERNELS_CPU
+#undef REGISTER_KERNELS
+
+template <typename Device, typename T>
+class SparseConditionalAccumulatorMultiMapOp : public ConditionalAccumulatorBaseOp {
+ public:
+  explicit SparseConditionalAccumulatorMultiMapOp(OpKernelConstruction* context)
+      : ConditionalAccumulatorBaseOp(context) {}
+
+ protected:
+  Creator GetCreator() const override {
+    return [this](ConditionalAccumulatorBase** ret) {
+      SparseConditionalAccumulatorMultiMap<Device, T>* accumulator =
+          new SparseConditionalAccumulatorMultiMap<Device, T>(
+              dtype_, shape_, cinfo_.name(), reduction_type_);
+      *ret = accumulator;
+      return Status::OK();
+    };
+  }
+
+  Status CheckSignature(OpKernelContext* ctx) override {
+    TF_RETURN_IF_ERROR(ctx->MatchSignature({}, {DT_STRING_REF}));
+    return Status::OK();
+  }
+
+  void SetHandleToOutput(OpKernelContext* ctx)
+      SHARED_LOCKS_REQUIRED(mu_) override {
+    ctx->set_output_ref(0, &mu_, accumulator_handle_.AccessTensor(ctx));
+  }
+
+  TF_DISALLOW_COPY_AND_ASSIGN(SparseConditionalAccumulatorMultiMapOp);
+};
+
+#define REGISTER_KERNELS(type, dev)                                    \
+  REGISTER_KERNEL_BUILDER(Name("SparseConditionalAccumulatorMultiMap") \
+                              .Device(DEVICE_##dev)                    \
+                              .TypeConstraint<type>("dtype"),          \
+                          SparseConditionalAccumulatorMultiMapOp<dev##Device, type>)
 
 #define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS(type, CPU)
 

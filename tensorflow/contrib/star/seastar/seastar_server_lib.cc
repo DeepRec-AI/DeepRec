@@ -32,7 +32,6 @@
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/util/env_var.h"
 
-
 namespace tensorflow {
 
 SeastarServer::SeastarServer(const ServerDef& server_def, Env* env)

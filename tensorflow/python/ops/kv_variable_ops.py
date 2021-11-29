@@ -258,16 +258,17 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
-    if evconfig.counter_filter_strategy  != None:
-      self._filter_freq = evconfig.counter_filter_strategy.filter_freq
-      self._max_element_size = 0
-      self._false_positive_probability = -1.0
-      self._counter_type = dtypes.uint64
-    elif evconfig.bloom_filter_strategy  != None:
-      self._filter_freq = evconfig.bloom_filter_strategy.filter_freq
-      self._max_element_size = evconfig.bloom_filter_strategy.max_element_size
-      self._false_positive_probability = evconfig.bloom_filter_strategy.false_positive_probability
-      self._counter_type = evconfig.bloom_filter_strategy.counter_type
+    if evconfig.filter_strategy != None:
+      if isinstance(evconfig.filter_strategy, variables.CounterFilter):
+        self._filter_freq = evconfig.filter_strategy.filter_freq
+        self._max_element_size = 0
+        self._false_positive_probability = -1.0
+        self._counter_type = dtypes.uint64
+      elif isinstance(evconfig.filter_strategy, variables.CBFFilter):
+        self._filter_freq = evconfig.filter_strategy.filter_freq
+        self._max_element_size = evconfig.filter_strategy.max_element_size
+        self._false_positive_probability = evconfig.filter_strategy.false_positive_probability
+        self._counter_type = evconfig.filter_strategy.counter_type
     else:
       self._filter_freq = 0
       self._max_element_size = 0

@@ -6,10 +6,8 @@
 #include <map>
 #include <thread>
 
-#include "seastar/core/app-template.hh"
-#include "seastar/core/distributed.hh"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/core/platform/macros.h"
-
 
 namespace seastar {
 class channel;

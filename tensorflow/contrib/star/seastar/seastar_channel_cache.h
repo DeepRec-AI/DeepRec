@@ -8,7 +8,6 @@
 
 #include "tensorflow/core/lib/core/status.h"
 
-
 namespace seastar {
 class channel;
 }

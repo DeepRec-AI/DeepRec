@@ -991,7 +991,7 @@ tf_py_test(
 tf_py_test(
     name = "sparse_conditional_accumulator_test",
     size = "small",
-    srcs = ["sparse_conditional_accumulator_test.py"],
+    srcs = ["sparse_conditional_accumulator_test.py", "sparse_conditional_accumulator_ali_test.py"],
     additional_deps = [
         "//third_party/py/numpy",
         "//tensorflow/python:array_ops",

@@ -3,7 +3,6 @@
 
 #include "tensorflow/contrib/star/star_server_tag.h"
 
-
 namespace seastar {
 class channel;
 class user_packet;

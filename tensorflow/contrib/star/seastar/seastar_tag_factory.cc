@@ -1,11 +1,10 @@
-#include "seastar/core/channel.hh"
 #include "tensorflow/contrib/star/seastar/seastar_client_tag.h"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/seastar/seastar_server_tag.h"
 #include "tensorflow/contrib/star/seastar/seastar_tag_factory.h"
 #include "tensorflow/contrib/star/star_message.h"
 #include "tensorflow/contrib/star/star_tensor_coding.h"
 #include "tensorflow/contrib/star/star_worker_service.h"
-
 
 namespace tensorflow {
 
