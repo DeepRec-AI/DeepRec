@@ -2,11 +2,10 @@
 #define TENSORFLOW_CONTRIB_STAR_SEASTAR_SEASTAR_TAG_FACTORY_H_
 
 #include <functional>
-#include "seastar/core/temporary_buffer.hh"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/star_worker_service_method.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/worker.pb.h"
-
 
 namespace seastar {
 class channel;

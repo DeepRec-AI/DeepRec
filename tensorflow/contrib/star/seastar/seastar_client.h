@@ -4,9 +4,7 @@
 #include <iostream>
 #include <string>
 
-#include "seastar/core/future-util.hh"
-#include "seastar/net/api.hh"
-
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 
 namespace seastar {
 class channel;

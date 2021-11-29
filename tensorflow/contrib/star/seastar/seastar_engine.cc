@@ -2,10 +2,9 @@
 #include <netdb.h>
 #include <stdio.h>
 
-#include "seastar/core/alien.hh"
-#include "seastar/core/channel.hh"
 #include "tensorflow/contrib/star/seastar/seastar_client.h"
 #include "tensorflow/contrib/star/seastar/seastar_cpuset.h"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/seastar/seastar_engine.h"
 #include "tensorflow/contrib/star/seastar/seastar_server.h"
 #include "tensorflow/contrib/star/seastar/seastar_tag_factory.h"
@@ -13,7 +12,6 @@
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/env_var.h"
-
 
 namespace tensorflow {
 namespace {

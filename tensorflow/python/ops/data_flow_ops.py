@@ -1385,13 +1385,22 @@ class SparseConditionalAccumulator(ConditionalAccumulatorBase):
                shape=None,
                shared_name=None,
                name="sparse_conditional_accumulator",
-               reduction_type="MEAN"):
-    accumulator_ref = gen_data_flow_ops.sparse_conditional_accumulator(
-        dtype=dtype,
-        shape=shape,
-        shared_name=shared_name,
-        name=name,
-        reduction_type=reduction_type)
+               reduction_type="MEAN",
+               accumulator_type="multi_map"):
+    if accumulator_type == "multi_map":
+      accumulator_ref = gen_data_flow_ops.sparse_conditional_accumulator_multi_map(
+          dtype=dtype,
+          shape=shape,
+          shared_name=shared_name,
+          name=name,
+          reduction_type=reduction_type)
+    else:
+      accumulator_ref = gen_data_flow_ops.sparse_conditional_accumulator(
+          dtype=dtype,
+          shape=shape,
+          shared_name=shared_name,
+          name=name,
+          reduction_type=reduction_type)
     super(SparseConditionalAccumulator, self).__init__(dtype, shape,
                                                        accumulator_ref)
 
