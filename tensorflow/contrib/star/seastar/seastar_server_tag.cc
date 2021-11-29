@@ -1,6 +1,4 @@
-#include "seastar/core/channel.hh"
-#include "seastar/core/packet_queue.hh"
-#include "seastar/core/temporary_buffer.hh"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/seastar/seastar_server_tag.h"
 #include "tensorflow/contrib/star/star_worker_service.h"
 

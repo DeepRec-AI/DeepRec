@@ -319,7 +319,7 @@ def _create_embedding_lookup(column,
           partitioner=partitioner,
           steps_to_live=embedding_lookup_arguments.steps_to_live,
           ht_partition_num=embedding_lookup_arguments.ht_partition_num,
-          evconfig=embedding_lookup_arguments.evconfig)
+          ev_option=embedding_lookup_arguments.ev_option)
       graph.add_to_collection(ops.GraphKeys.EMBEDDING_VARIABLES, variable)
     else:
       variable = contrib_variables.model_variable(

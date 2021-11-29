@@ -1,5 +1,5 @@
-#include "seastar/core/channel.hh"
 #include "tensorflow/contrib/star/seastar/seastar_channel_cache.h"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/seastar/seastar_engine.h"
 #include "tensorflow/contrib/star/star_channel_spec.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -13,7 +13,6 @@
 #include "tensorflow/core/platform/thread_annotations.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/device_name_utils.h"
-
 
 namespace tensorflow {
 namespace {

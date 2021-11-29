@@ -1,7 +1,6 @@
 #include "tensorflow/contrib/star/seastar/seastar_stat.h"
 #include "tensorflow/core/platform/logging.h"
 
-
 namespace tensorflow {
 
 SeastarStat::SeastarStat() {

@@ -2,14 +2,12 @@
 #include <exception>
 
 #include "boost/asio/ip/address_v4.hpp"
-#include "seastar/core/channel.hh"
-#include "seastar/core/reactor.hh"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/seastar/seastar_server.h"
 #include "tensorflow/contrib/star/seastar/seastar_server_tag.h"
 #include "tensorflow/contrib/star/seastar/seastar_tag_factory.h"
 #include "tensorflow/contrib/star/star_message.h"
 #include "tensorflow/core/platform/logging.h"
-
 
 namespace tensorflow {
 

@@ -2156,7 +2156,7 @@ def get_embedding_variable(name,
                            init_data_source=None,
                            ht_partition_num=1000,
                            ht_type = "",
-                           ev = variables.EVConfig()):
+                           ev_option = variables.EmbeddingVariableOption()):
   if key_dtype == dtypes.int64:
     invalid_key = 9223372036854775807
   elif key_dtype == dtypes.int32:
@@ -2165,15 +2165,22 @@ def get_embedding_variable(name,
     invalid_key = ""
   else:
     raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
+  l2_weight_threshold = -1.0
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
   if steps_to_live != None:
-    print("Warning: We suggest that steps_to_live should be set in EvictConfig")
-  if ev.evict.steps_to_live != None:
-    if steps_to_live != None:
-      print("Warning: steps_to_live is double set, the steps_to_live in EvcitConfig is valid")
-    steps_to_live = ev.evict.steps_to_live
-  if steps_to_live != None and ev.evict.l2_weight_threshold > 0:
+    logging.warn("steps_to_live is deprecated,"
+               " use tf.GlobaStepEvcit(steps_to_live)")
+  if ev_option.evict != None:
+    if isinstance(ev_option.evict, variables.GlobalStepEvict):
+      if steps_to_live != None:
+        logging.warning("Warning: steps_to_live is double set, the steps_to_live in GlobalStepEvict is valid")
+      steps_to_live = ev_option.evict.steps_to_live
+    elif isinstance(ev_option.evict, variables.L2WeightEvict):
+      l2_weight_threshold = ev_option.evict.l2_weight_threshold
+  else:
+    l2_weight_threshold = -1.0
+  if steps_to_live != None and l2_weight_threshold > 0:
       raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
   return get_variable_scope().get_embedding_variable(
       _get_default_variable_store(), name, shape=embedding_dim, dtype=value_dtype,
@@ -2183,11 +2190,10 @@ def get_embedding_variable(name,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
-        steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ht_type,
-        l2_weight_threshold=ev.evict.l2_weight_threshold,
-        bloom_filter_strategy=ev.bloom_filter_strategy,
-        counter_filter_strategy = ev.counter_filter_strategy),
-      ht_partition_num=ht_partition_num)
+        steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ev_option.ht_type,
+        l2_weight_threshold=l2_weight_threshold,
+        filter_strategy=ev_option.filter_strategy),
+      ht_partition_num=ev_option.ht_partition_num)
 
 
 
@@ -2208,7 +2214,7 @@ def get_embedding_variable_internal(name,
                            steps_to_live=None,
                            init_data_source=None,
                            ht_partition_num=1000,
-                           evconfig = variables.EVConfig(),
+                           ev_option = variables.EmbeddingVariableOption(),
                            ):
   if key_dtype == dtypes.int64:
     invalid_key = 9223372036854775807
@@ -2218,8 +2224,21 @@ def get_embedding_variable_internal(name,
     invalid_key = ""
   else:
     raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
+  l2_weight_threshold = -1.0
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer()
+  if ev_option.evict != None:
+    if isinstance(ev_option.evict, variables.GlobalStepEvict):
+      if steps_to_live != None:
+        logging.warning("Warning: steps_to_live is double set, the steps_to_live in EvcitConfig is valid")
+      steps_to_live = ev_option.evict.steps_to_live
+    elif isinstance(ev_option.evict, variables.L2WeightEvict):
+      l2_weight_threshold = ev_option.evict.l2_weight_threshold
+  else:
+    steps_to_live = None
+    l2_weight_threshold = -1.0
+  if steps_to_live != None and l2_weight_threshold > 0:
+      raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
   return get_variable_scope().get_embedding_variable(
       _get_default_variable_store(), name, shape=embedding_dim, dtype=value_dtype,
       initializer=initializer, regularizer=regularizer, trainable=trainable,
@@ -2229,10 +2248,9 @@ def get_embedding_variable_internal(name,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
         steps_to_live=steps_to_live, init_data_source=init_data_source,
-        ht_type=evconfig.ht_type,
-        l2_weight_threshold=evconfig.evict.l2_weight_threshold,
-        bloom_filter_strategy=evconfig.bloom_filter_strategy,
-        counter_filter_strategy = evconfig.counter_filter_strategy),
+        ht_type=ev_option.ht_type,
+        l2_weight_threshold=l2_weight_threshold,
+        filter_strategy=ev_option.filter_strategy),
       ht_partition_num=ht_partition_num)
 
 
@@ -2322,7 +2340,7 @@ def get_multihash_variable(name,
             constraint=constraint,synchronization=synchronization,
             aggregation=aggregation)
     mhv = kv_variable_ops.MultiHashVariable(name, [val_Q, val_R],
-                                            variables.MultihashConfig(num_of_partitions,
+                                            variables.MultihashOption(num_of_partitions,
                                                                       complementary_strategy,
                                                                       operation,
                                                                       dims))

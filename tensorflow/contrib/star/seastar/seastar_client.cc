@@ -1,12 +1,9 @@
-#include "seastar/core/channel.hh"
-#include "seastar/core/reactor.hh"
-#include "seastar/core/sleep.hh"
 #include "tensorflow/contrib/star/seastar/seastar_client.h"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #include "tensorflow/contrib/star/seastar/seastar_client_tag.h"
 #include "tensorflow/contrib/star/seastar/seastar_tag_factory.h"
 #include "tensorflow/contrib/star/star_message.h"
 #include "tensorflow/core/platform/logging.h"
-
 
 using namespace std::chrono_literals;
 

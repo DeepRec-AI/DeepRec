@@ -66,16 +66,13 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/eager:remote_test "\
 "-//tensorflow/python/keras/distribute:multi_worker_fault_tolerance_test "\
 "-//tensorflow/python/keras:callbacks_test "\
-"-//tensorflow/python/keras:core_test "\
 "-//tensorflow/python/keras:simplernn_test "\
 "-//tensorflow/python/keras:lstm_test "\
 "-//tensorflow/python/keras:hdf5_format_test "\
-"-//tensorflow/python:layers_core_test "\
 "-//tensorflow/python/profiler:model_analyzer_test "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/contrib/quantize:fold_batch_norms_test "\
-"-//tensorflow/contrib/layers:layers_test "\
 "-//tensorflow/python/kernel_tests:unique_op_test "\
 
 bazel test -c opt --config=opt --verbose_failures -- $TF_BUILD_BAZEL_TARGET

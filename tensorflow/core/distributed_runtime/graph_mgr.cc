@@ -19,9 +19,7 @@ limitations under the License.
 #include <vector>
 
 #ifdef TENSORFLOW_USE_STAR
-#include "seastar/core/distributed.hh"
-#include "seastar/core/reactor.hh"
-#include "seastar/core/alien.hh"
+#include "tensorflow/contrib/star/seastar/seastar_header.h"
 #endif // TENSORFLOW_USE_STAR
 
 #include "tensorflow/core/common_runtime/build_graph_options.h"

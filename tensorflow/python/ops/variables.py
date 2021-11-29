@@ -174,18 +174,7 @@ def validate_synchronization_aggregation_trainable(synchronization, aggregation,
     trainable = synchronization != VariableSynchronization.ON_READ
   return synchronization, aggregation, trainable
 
-class FreqStrategyConfig(object):
-  def __init__(self,
-               filter_freq = 0,
-               max_freq = 999999):
-    self.filter_freq = filter_freq
-    self.max_freq = max_freq
-  def __enter__(self):
-    return self
-  def __exit__(self, exc_type, exc_val, exc_tb):
-    return True
-
-class MultihashConfig(object):
+class MultihashOption(object):
   def __init__(self,
                num_of_partitions = None,
                strategy="",
@@ -196,7 +185,8 @@ class MultihashConfig(object):
     self.operation = operation
     self.size = size
 
-class EvictConfig(object):
+@tf_export(v1=["EvictOption"])
+class EvictOption(object):
   def __init__(self,
                steps_to_live = None,
                l2_weight_threshold = -1.0,
@@ -208,13 +198,25 @@ class EvictConfig(object):
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
     self.l2reg_lambda = l2reg_lambda
-    if l2_weight_threshold <= 0 and l2_weight_threshold != -1.0:
-      print("l2_weight_threshold is invalid, l2_weight-based eviction is disabled")
-      self.l2_weight_threshold = -1.0
     if self.steps_to_live != None and self.l2_weight_threshold != -1.0:
       raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
 
-class CkptConfig(object):
+@tf_export(v1=["GlobalStepEvict"])
+class GlobalStepEvict(object):
+  def __init__(self,
+               steps_to_live = None):
+    self.steps_to_live = steps_to_live
+
+@tf_export(v1=["L2WeightEvict"])
+class L2WeightEvict(object):
+  def __init__(self,
+               l2_weight_threshold = -1.0):
+    self.l2_weight_threshold = l2_weight_threshold
+    if l2_weight_threshold <= 0 and l2_weight_threshold != -1.0:
+      logging.warning("l2_weight_threshold is invalid, l2_weight-based eviction is disabled")
+
+@tf_export(v1=["CheckpointOption"])
+class CheckpointOption(object):
   def __init__(self,
                ckpt_to_load_from=None,
                tensor_name_in_ckpt=None,
@@ -225,28 +227,27 @@ class CkptConfig(object):
     self.always_load_from_specific_ckpt = always_load_from_specific_ckpt
     self.init_data_source = init_data_source
 
-class EVConfig(object):
+@tf_export(v1=["EmbeddingVariableOption"])
+class EmbeddingVariableOption(object):
   def __init__(self,
                ht_type="",
                ht_partition_num = 1000,
-               evict = EvictConfig(),
-               ckpt = CkptConfig(),
-               bloom_filter_strategy = None,
-               counter_filter_strategy = None):
-    if counter_filter_strategy != None and bloom_filter_strategy != None:
-      raise ValueError("Counter filter and bloom filter can not be enabled at same time.")
+               evict_option = None,
+               ckpt = None,
+               filter_option = None):
     self.ht_type = ht_type
     self.ht_partition_num = ht_partition_num
-    self.evict = evict
+    self.evict = evict_option
     self.ckpt = ckpt
-    self.bloom_filter_strategy = bloom_filter_strategy
-    self.counter_filter_strategy = counter_filter_strategy
-
-class CounterFilterStrategy(object):
+    self.filter_strategy = filter_option
+    
+@tf_export(v1=["CounterFilter"])
+class CounterFilter(object):
   def __init__(self, filter_freq = 0):
     self.filter_freq = filter_freq
 
-class BloomFilterStrategy(object):
+@tf_export(v1=["CBFFilter"])
+class CBFFilter(object):
   def __init__(self,
                filter_freq = 0,
                max_element_size = 0,
@@ -272,8 +273,7 @@ class EmbeddingVariableConfig(object):
                l2reg_theta=None, l2reg_lambda=None,
                l2_weight_threshold = -1.0,
                ht_type=None,
-               bloom_filter_strategy = None,
-               counter_filter_strategy = None,
+               filter_strategy=None,
                ckpt_to_load_from=None,
                tensor_name_in_ckpt=None,
                always_load_from_specific_ckpt=False,
@@ -300,10 +300,7 @@ class EmbeddingVariableConfig(object):
     self.primary_slotnum_op = primary_slotnum_op
     self.ht_type = ht_type
     self.l2_weight_threshold = l2_weight_threshold
-    self.bloom_filter_strategy = bloom_filter_strategy
-    self.counter_filter_strategy = counter_filter_strategy
-
-
+    self.filter_strategy = filter_strategy
 
   def reveal(self):
     if self.steps_to_live is None:

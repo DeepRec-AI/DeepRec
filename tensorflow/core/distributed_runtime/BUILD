@@ -423,7 +423,8 @@ cc_library(
 cc_library(
     name = "graph_mgr",
     srcs = ["graph_mgr.cc"],
-    hdrs = ["graph_mgr.h"],
+    hdrs = ["graph_mgr.h",
+	    "//tensorflow/contrib/star:seastar/seastar_header.h"],
     copts = select({"//tensorflow:with_star_support": ["-std=gnu++1y",
                                                        "-DFMT_HEADER_ONLY",
                                                        "-DNO_EXCEPTION_HACK",
