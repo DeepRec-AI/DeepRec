@@ -1076,6 +1076,20 @@ tf_cc_test(
 )
 
 tf_kernel_library(
+    name = "kafka_dataset_op",
+    srcs = ["kafka_dataset_op.cc"],
+    deps = [
+        "@kafka150",
+        ":name_utils",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:dataset_ops_op_lib",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+    ],
+)
+
+tf_kernel_library(
     name = "iterator_ops",
     srcs = ["iterator_ops.cc"],
     hdrs = ["iterator_ops.h"],
@@ -1280,6 +1294,7 @@ tf_kernel_library(
         ":tensor_slice_dataset_op",
         ":text_line_dataset_op",
         ":tf_record_dataset_op",
+        ":kafka_dataset_op",
         ":window_dataset_op",
         ":zip_dataset_op",
         "//tensorflow/core:array_ops_op_lib",

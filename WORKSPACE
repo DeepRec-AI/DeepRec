@@ -252,6 +252,22 @@ http_archive(
     urls = ["https://github.com/cameron314/readerwriterqueue/archive/v1.0.1.tar.gz"],
 )
 
+http_archive(
+    name = "kafka150",
+    build_file = "//third_party:kafka.BUILD",
+    patch_cmds = [
+        "rm -f src/win32_config.h",
+        # TODO: Remove the fowllowing once librdkafka issue is resolved.
+        """sed -i.bak '\|rd_kafka_log(rk,|,/ exceeded);/ s/^/\/\//' src/rdkafka_cgrp.c""",
+    ],
+    sha256 = "f7fee59fdbf1286ec23ef0b35b2dfb41031c8727c90ced6435b8cf576f23a656",
+    strip_prefix = "librdkafka-1.5.0",
+    urls = [
+        "https://mirror.tensorflow.org/github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
+        "https://github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
+    ],
+)
+
 load("//third_party:repo.bzl", "tf_http_archive")
 tf_http_archive(
     name = "seastar_repo",
