@@ -2039,6 +2039,14 @@ def weighted_categorical_column_with_multi_hash_bucket(
       dtype=dtype)
 
 
+@tf_export('feature_column.categorical_column_with_embedding')
+def categorical_column_with_embedding(key,
+                                      dtype=dtypes.string,
+                                      partition_num=None,
+                                      ev_option=variables.EmbeddingVariableOption()
+                                      ):
+  return EmbeddingCategoricalColumn(key, dtype, partition_num, ev_option)
+
 @tf_export('feature_column.categorical_column_with_hash_bucket')
 def categorical_column_with_hash_bucket(key,
                                         hash_bucket_size,
@@ -4245,7 +4253,22 @@ class EmbeddingColumn(
     if (weight_collections and
         ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections):
       weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
-    embedding_weights = variable_scope.get_variable(
+    if isinstance(self.categorical_column, EmbeddingCategoricalColumn):
+      if self.categorical_column.partition_num is None:
+        partitioner = None
+      else:
+         partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+      embedding_weights = variable_scope.get_embedding_variable_internal(
+        name='embedding_weights',
+        embedding_dim=self.dimension,
+        initializer=self.initializer,
+        trainable=self.trainable and trainable,
+        collections=weight_collections,
+        partitioner=partitioner,
+        ev_option=self.categorical_column.ev_option
+      )
+    else:
+      embedding_weights = variable_scope.get_variable(
         name='embedding_weights',
         shape=embedding_shape,
         dtype=dtypes.float32,
@@ -5792,6 +5815,111 @@ class HashedCategoricalColumn(
                           _FEATURE_COLUMN_DEPRECATION)
   def _num_buckets(self):
     return self.num_buckets
+
+  def get_sparse_tensors(self, transformation_cache, state_manager):
+    """See `CategoricalColumn` base class."""
+    return CategoricalColumn.IdWeightPair(
+        transformation_cache.get(self, state_manager), None)
+
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _get_sparse_tensors(self, inputs, weight_collections=None,
+                          trainable=None):
+    del weight_collections
+    del trainable
+    return CategoricalColumn.IdWeightPair(inputs.get(self), None)
+
+  @property
+  def parents(self):
+    """See 'FeatureColumn` base class."""
+    return [self.key]
+
+  def _get_config(self):
+    """See 'FeatureColumn` base class."""
+    config = dict(zip(self._fields, self))
+    config['dtype'] = self.dtype.name
+    return config
+
+  @classmethod
+  def _from_config(cls, config, custom_objects=None, columns_by_name=None):
+    """See 'FeatureColumn` base class."""
+    _check_config_keys(config, cls._fields)
+    kwargs = _standardize_and_copy_config(config)
+    kwargs['dtype'] = dtypes.as_dtype(config['dtype'])
+    return cls(**kwargs)
+
+class EmbeddingCategoricalColumn(
+    CategoricalColumn,
+    fc_old._CategoricalColumn,  # pylint: disable=protected-access
+    collections.namedtuple('HashedCategoricalColumn',
+                           ('key', 'dtype', 'partition_num', 'ev_option'))):
+
+  @property
+  def _is_v2_column(self):
+    return True
+
+  @property
+  def name(self):
+    """See `FeatureColumn` base class."""
+    return self.key
+
+  @property
+  def parse_example_spec(self):
+    """See `FeatureColumn` base class."""
+    return {self.key: parsing_ops.VarLenFeature(self.dtype)}
+
+  @property
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _parse_example_spec(self):
+    return self.parse_example_spec
+
+  def _transform_input_tensor(self, input_tensor):
+    """Hashes the values in the feature_column."""
+    if not isinstance(input_tensor, sparse_tensor_lib.SparseTensor):
+      raise ValueError('SparseColumn input must be a SparseTensor.')
+
+    fc_utils.assert_string_or_int(
+        input_tensor.dtype,
+        prefix='column_name: {} input_tensor'.format(self.key))
+
+    if self.dtype.is_integer != input_tensor.dtype.is_integer:
+      raise ValueError(
+          'Column dtype and SparseTensors dtype must be compatible. '
+          'key: {}, column dtype: {}, tensor dtype: {}'.format(
+              self.key, self.dtype, input_tensor.dtype))
+
+    if self.dtype == dtypes.string:
+        max_value = np.iinfo(dtypes.int64.as_numpy_dtype).max
+        sparse_id_values = string_ops.string_to_hash_bucket_fast(
+                               input_tensor.values, max_value)
+    else:
+        sparse_id_values = input_tensor.values
+    return sparse_tensor_lib.SparseTensor(
+        input_tensor.indices, sparse_id_values, input_tensor.dense_shape)
+
+  def transform_feature(self, transformation_cache, state_manager):
+    """Hashes the values in the feature_column."""
+    input_tensor = _to_sparse_input_and_drop_ignore_values(
+        transformation_cache.get(self.key, state_manager))
+    return self._transform_input_tensor(input_tensor)
+
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _transform_feature(self, inputs):
+    input_tensor = _to_sparse_input_and_drop_ignore_values(inputs.get(self.key))
+    return self._transform_input_tensor(input_tensor)
+
+  @property
+  def num_buckets(self):
+    """Returns number of buckets in this sparse feature."""
+    return 1
+
+  @property
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _num_buckets(self):
+    return 1
 
   def get_sparse_tensors(self, transformation_cache, state_manager):
     """See `CategoricalColumn` base class."""

@@ -421,7 +421,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             dimension=3,
             initializer=init_ops.ones_initializer(dtypes.float32))
     ids={}
-    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,1],[2,2],[3,3],[4,4],[0,1],[0,2],[0,3], [1,0],[2,0]], values=math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64), dense_shape=[5, 4])
+    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0]], values=math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64), dense_shape=[10, 1])
     emb = feature_column_ops.input_from_feature_columns(columns_to_tensors=ids, feature_columns=[W])
 
     fun = math_ops.multiply(emb, 2.0, name='multiply')
