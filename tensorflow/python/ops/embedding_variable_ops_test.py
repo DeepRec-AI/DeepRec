@@ -1154,11 +1154,12 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForHTPartitionNum(self):
     print("testEmbeddingVariableForHTPartitionNum")
+    ev_option = variables.EmbeddingVariableOption(ht_partition_num=20)
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            ht_partition_num=20,
             initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+            ev_option=ev_option)
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,-7], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
