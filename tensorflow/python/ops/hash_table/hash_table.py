@@ -114,6 +114,11 @@ class SimpleHashTable(object):
   def from_proto(v, import_scope=None):
     return None
 
+  def __lt__(self, other):
+    if isinstance(other, SimpleHashTable):
+      other = other._name
+    return self._name < other
+
   def lookup(self, keys, admit_strategy=None, frequencies=None, name=None):
     if admit_strategy is None:
       with ops.colocate_with(self._handle):
@@ -331,6 +336,11 @@ class HashTable(object):
   def from_proto(v, import_scope=None):
     return None
 
+  def __lt__(self, other):
+    if isinstance(other, HashTable):
+      other = other._name
+    return self._name < other
+
   def scatter_update(self, keys, values, name=None):
     with ops.colocate_with(self._handle):
       with ops.name_scope(name, "tensible_scatter_update") as name:
@@ -517,6 +527,11 @@ class DistributedHashTable(object):
 
   def from_proto(v, import_scope=None):
     return None
+
+  def __lt__(self, other):
+    if isinstance(other, DistributedHashTable):
+      other = other._name
+    return self._name < other
 
   def scatter_update(self, keys, values, name=None):
     with ops.name_scope(name, "DistributedHashTable_Scatter_Update") as name:
