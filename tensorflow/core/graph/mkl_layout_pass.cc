@@ -819,6 +819,22 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                       // CheckForMklOp
                       FuseMaxPool3D,
                       CopyAttrsPooling});
+
+    reco_ops_list_ = gtl::FlatSet<string> {
+      "BatchMatMul", "BatchMatMulV2", "BiasAdd", "BiasAddGrad",
+      "_FusedMatMul", "_FusedBatchMatMul", "_FusedBatchMatMulV2",
+      "Identity", "LeakyRelu", "LeakyReluGrad", "MatMul",
+      "Relu", "ReluGrad", "Relu6", "Relu6Grad", "Gelu", "GeluGrad",
+      "Tanh", "TanhGrad", "Reshape"
+    };
+    // Enable "TF_MKL_PRIMITIVE_ONLY_FOR_RECO" by default
+    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=true and reco_ops -> oneDNN replaces eigen ops
+    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=true and not reco_ops -> oneDNN doesn't replace eigen ops
+    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=false and reco_ops -> oneDNN replaces eigen ops
+    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=false and not reco_ops -> oneDNN replaces eigen ops
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_MKL_PRIMITIVE_ONLY_FOR_RECO",
+                                   /*default_val=*/true, &enable_reco_ops_list_));
+    VLOG(1) << "MklLayoutRewritePass: TF_MKL_PRIMITIVE_ONLY_FOR_RECO = " << enable_reco_ops_list_;
   }
 
   // Standard interface to run pass
@@ -1043,6 +1059,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
 
   /// Maintain structure of constant strings
   static ConstStringsInfo csinfo_;
+
+  gtl::FlatSet<string> reco_ops_list_;
+  bool enable_reco_ops_list_;
 
  private:
   // Is OpDef::ArgDef a list type? It could be N * T or list(type).
@@ -1468,6 +1487,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   // @return RewriteInfo* for the applicable rewrite rule
   const RewriteInfo* CheckForNodeRewrite(const Node* n) const;
   const RewriteInfo* CheckForQuantizedNodeRewrite(const Node* n) const;
+  bool CheckForRecoOpsListNodeRewrite(const Node* n) const;
 
   // Default rewrite rule to be used in scenario 1 for rewrite.
   // @return - true (since we want to always rewrite)
@@ -3797,6 +3817,10 @@ MklLayoutRewritePass::CheckForQuantizedNodeRewrite(const Node* n) const {
   return nullptr;
 }
 
+bool MklLayoutRewritePass::CheckForRecoOpsListNodeRewrite(const Node* n) const {
+  return reco_ops_list_.count(n->type_string());
+}
+
 const MklLayoutRewritePass::RewriteInfo*
 MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
   CHECK_NOTNULL(n);
@@ -3846,6 +3870,7 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
   // We now check if rewrite rule applies for this op. If rewrite rule passes
   // for this op, then we rewrite it to Mkl op.
   // Find matching RewriteInfo and then check that rewrite rule applies.
+  if (enable_reco_ops_list_ && !CheckForRecoOpsListNodeRewrite(n)) return nullptr;
   for (auto ri = rinfo_.cbegin(); ri != rinfo_.cend(); ++ri) {
     if (n->type_string().compare(ri->name) == 0 && ri->rewrite_rule(n)) {
       return &*ri;
@@ -4085,7 +4110,6 @@ bool MklLayoutRewritePass::FixMklMetaDataEdges(std::unique_ptr<Graph>* g,
 ///////////////////////////////////////////////////////////////////////////////
 //              Run function for the pass
 ///////////////////////////////////////////////////////////////////////////////
-
 bool MklLayoutRewritePass::RunPass(std::unique_ptr<Graph>* g) {
   bool result = false;
   CHECK_NOTNULL(g);
