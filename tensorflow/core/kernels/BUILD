@@ -1945,6 +1945,29 @@ tf_cuda_cc_test(
     ],
 )
 
+tf_cuda_cc_test(
+    name = "fused_embedding_ops_test",
+    size = "small",
+    srcs = ["fused_embedding/fused_embedding_local_ops_test.cc",
+            "fused_embedding/fused_embedding_ops_test.cc"],
+    tags = tf_cuda_tests_tags(),
+    deps = [
+        ":fused_embedding_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
 tf_cc_test(
     name = "in_topk_op_test",
     size = "small",
@@ -5257,6 +5280,21 @@ tf_kernel_library(
     name = "fuserecv_ops",
     prefix = "fuserecv_ops",
     deps = REQUIRED_DEPS,
+)
+
+tf_cuda_library(
+    name = "fused_embedding_common_cuh",
+    hdrs = ["fused_embedding/fused_embedding_common.cu.h"],
+)
+
+tf_kernel_library(
+    name = "fused_embedding_ops",
+    gpu_srcs = [
+        "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
+        "fused_embedding/fused_embedding_ops_gpus.cu.cc"
+    ],
+    deps = ["//third_party/eigen3"] + DYNAMIC_DEPS +
+           if_cuda(["@cub_archive//:cub", ":fused_embedding_common_cuh"]),
 )
 
 tf_kernel_library(
