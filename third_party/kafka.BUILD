@@ -67,6 +67,7 @@ cc_library(
     deps = [
         "@boringssl//:ssl",
         "@zlib_archive//:zlib",
+        "@lz4"
     ],
 )
 
