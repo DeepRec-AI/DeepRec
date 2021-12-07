@@ -18,13 +18,17 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import time
 import numpy as np
+from numpy import random
 
+from tensorflow.python.client import session
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import sparse_tensor as sparse_tensor_lib
 from tensorflow.python.framework import test_util
+
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import sets
@@ -47,21 +51,24 @@ def _constant(values, dtype):
   return constant_op.constant(_values(values, dtype), dtype=dtype)
 
 
-def _dense_to_sparse(dense, dtype):
+def _dense_to_sparse(dense, dtype, sparsity=False):
   indices = []
   values = []
   max_row_len = 0
   for row in dense:
     max_row_len = max(max_row_len, len(row))
   shape = [len(dense), max_row_len]
-  row_ix = 0
+  row_ix = -1
   for row in dense:
-    col_ix = 0
+    row_ix += 1
+    col_ix = -1
     for cell in row:
+      col_ix += 1
+      if sparsity and random.choice([True, False]):
+        continue
       indices.append([row_ix, col_ix])
       values.append(str(cell) if dtype == dtypes.string else cell)
-      col_ix += 1
-    row_ix += 1
+
   return sparse_tensor_lib.SparseTensor(
       constant_op.constant(indices, dtypes.int64),
       constant_op.constant(values, dtype),
@@ -1264,6 +1271,64 @@ class SetOpsTest(test_util.TensorFlowTestCase):
                      "Expected %s, got %s, at %s." % (expected_set, actual_set,
                                                       last_indices))
     self.assertAllEqual(expected_shape, sparse_tensor_value.dense_shape)
+
+
+class SetsBenchmarks(googletest.Benchmark):
+  """Benchmarks for reductions."""
+
+  def _run(self, func, num_iters, name):
+    # call func to warm up
+    for _ in range(5):
+      func()
+    start = time.time()
+    for _ in range(num_iters):
+      func()
+    end = time.time()
+    mean_us = (end - start) * 1e6 / num_iters
+    self.report_benchmark(
+        name=name,
+        iters=num_iters,
+        wall_time=mean_us)
+
+  def benchmark_sets_operation(self):
+    num_iters=10
+    m_row_list = [120, 180]
+    n_row_list = [20, 30, 50, 80, 130]
+
+    for (m_rows, n_rows) in [(i, j) for i in m_row_list for j in n_row_list]:
+      name = f"{m_rows}_{n_rows}"
+      a_values = []
+      for i in range(m_rows):
+        a_values.append([f'{i+j:10d}' for j in range(n_rows)])
+
+      self.a_dense_tensor = _constant(a_values, dtype=dtypes.string)
+      self.b_sparse_tensor = _dense_to_sparse(a_values, dtype=dtypes.string,
+                                              sparsity=True)
+
+      self._sparse_to_sparse_set_operation(num_iters, name)
+      self._dense_to_sparse_set_operation(num_iters, name)
+      self._dense_to_dense_set_operation(num_iters, name)
+
+  def _sparse_to_sparse_set_operation(self, num_iters, name=""):
+    with session.Session() as sess:
+      def fn():
+        set_op = sets.set_intersection(self.b_sparse_tensor, self.b_sparse_tensor)
+        self.evaluate(set_op)
+      self._run(fn, num_iters, name=f"_sparse_to_sparse_set_operation{name}")
+
+  def _dense_to_sparse_set_operation(self, num_iters, name=""):
+    with session.Session() as sess:
+      def fn():
+        set_op = sets.set_intersection(self.a_dense_tensor, self.b_sparse_tensor)
+        self.evaluate(set_op)
+      self._run(fn, num_iters, name=f"_dense_to_sparse_set_operation{name}")
+
+  def _dense_to_dense_set_operation(self, num_iters, name=""):
+    with session.Session() as sess:
+      def fn():
+        set_op = sets.set_intersection(self.a_dense_tensor, self.a_dense_tensor)
+        self.evaluate(set_op)
+      self._run(fn, num_iters, name=f"_dense_to_dense_set_operation{name}")
 
 
 if __name__ == "__main__":
