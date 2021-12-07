@@ -2804,7 +2804,7 @@ class ResizeImagesV2Test(test_util.TensorFlowTestCase):
 
   def testLargeDim(self):
     with self.session():
-      with self.assertRaises(errors.InternalError):
+      with self.assertRaises(errors.InvalidArgumentError):
         x = np.ones((5, 1, 1, 2))
         v = image_ops.resize_images_v2(
           x, [1610637938, 1610637938], image_ops.ResizeMethod.BILINEAR)

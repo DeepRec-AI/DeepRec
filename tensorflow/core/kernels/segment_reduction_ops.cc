@@ -22,6 +22,9 @@ limitations under the License.
 
 #include "tensorflow/core/kernels/segment_reduction_ops.h"
 
+#include <cstdint>
+#include <vector>
+
 #include "third_party/eigen3/Eigen/Core"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
@@ -35,6 +38,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/profiler/nvtx_utils.h"
+#include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/util.h"
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -708,6 +712,7 @@ class SparseSegmentReductionOpBase : public OpKernel {
                                         bool is_mean, bool is_sqrtn,
                                         bool has_num_segments, T default_value)
       : OpKernel(context),
+        dtidx_(DataTypeToEnum<Index>::v()),
         is_mean_(is_mean),
         is_sqrtn_(is_sqrtn),
         has_num_segments_(has_num_segments),
@@ -748,6 +753,15 @@ class SparseSegmentReductionOpBase : public OpKernel {
     const auto segment_vec = segment_ids.vec<OutputRow>();
     // Note that the current implementation assumes that segment_vec values are
     // sorted.
+    const int64 last_segment_id =
+        num_indices > 0 ? segment_vec(num_indices - 1) : 0;
+    int64 limit = dtidx_ == DataType::DT_INT32 ? kint32max : kint64max;
+
+    OP_REQUIRES(
+        context, last_segment_id < limit,
+        errors::InvalidArgument("Last segment id must be < kintmax, got ",
+                                last_segment_id, " limit ", limit));
+
     const OutputRow last_segment_id_plus_one =
         num_indices > 0
             ? internal::SubtleMustCopy(segment_vec(num_indices - 1)) + 1
@@ -843,6 +857,7 @@ class SparseSegmentReductionOpBase : public OpKernel {
   }
 
  private:
+  const DataType dtidx_;
   typedef int32 Index;
 
   int64 Reduce(const typename TTypes<T>::ConstMatrix& input_flat,
