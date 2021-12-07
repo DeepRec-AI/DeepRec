@@ -1,0 +1,50 @@
+path: "tensorflow.feature_column.CoalescedScope"
+tf_class {
+  is_instance: "<class \'tensorflow.python.feature_column.hash_table_column.CoalescedScope\'>"
+  is_instance: "<class \'tensorflow.python.feature_column.coalesced_utils.CoalescedScopeBase\'>"
+  is_instance: "<type \'object\'>"
+  member {
+    name: "name"
+    mtype: "<type \'property\'>"
+  }
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "add_column"
+    argspec: "args=[\'self\', \'column\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "allowed_column_types"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "build"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "create_state_by_column"
+    argspec: "args=[\'self\', \'column\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_coalesced_column_by_column"
+    argspec: "args=[\'self\', \'column\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_coalesced_name_by_column"
+    argspec: "args=[\'self\', \'column\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_dense_tensor_by_column"
+    argspec: "args=[\'self\', \'column\', \'inputs\', \'weight_collections\', \'trainable\'], varargs=None, keywords=None, defaults=[\'None\', \'None\'], "
+  }
+  member_method {
+    name: "get_dense_tensor_by_column_v2"
+    argspec: "args=[\'self\', \'column\', \'transformation_cache\', \'state_manager\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_name"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+}

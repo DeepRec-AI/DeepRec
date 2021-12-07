@@ -1,0 +1,9 @@
+path: "tensorflow.CheckpointOption"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.variables.CheckpointOption\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'ckpt_to_load_from\', \'tensor_name_in_ckpt\', \'always_load_from_specific_ckpt\', \'init_data_source\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'False\', \'None\'], "
+  }
+}

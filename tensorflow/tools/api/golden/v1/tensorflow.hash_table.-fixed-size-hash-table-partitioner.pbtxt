@@ -1,0 +1,9 @@
+path: "tensorflow.hash_table.FixedSizeHashTablePartitioner"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.hash_table.FixedSizeHashTablePartitioner\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'part_num\'], varargs=None, keywords=None, defaults=None"
+  }
+}

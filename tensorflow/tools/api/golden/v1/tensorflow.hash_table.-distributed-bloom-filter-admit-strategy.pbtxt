@@ -1,0 +1,29 @@
+path: "tensorflow.hash_table.DistributedBloomFilterAdmitStrategy"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.admit_strategy.DistributedBloomFilterAdmitStrategy\'>"
+  is_instance: "<type \'object\'>"
+  member {
+    name: "device"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "partitions"
+    mtype: "<type \'property\'>"
+  }
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'minimum_frequency\', \'max_element_size\', \'false_positive_probability\', \'partitioner\', \'slice_size\', \'slicer\', \'hash_tables\', \'collections\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'0.01\', \'None\', \'None\', \'None\', \'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "admit"
+    argspec: "args=[\'self\', \'keys\', \'frequency\'], varargs=None, keywords=None, defaults=None"
+  }
+}

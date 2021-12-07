@@ -1,0 +1,85 @@
+path: "tensorflow.hash_table.BloomFilterAdmitStrategy"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.admit_strategy.BloomFilterAdmitStrategy\'>"
+  is_instance: "<type \'object\'>"
+  member {
+    name: "device"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "distributed_name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "dtype"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "false_initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "false_positive_probability"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "graph"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "handle"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "max_element_size"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "max_slice_size"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "minimum_frequency"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "op"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "shape"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "slice_offset"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "slice_size"
+    mtype: "<type \'property\'>"
+  }
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'minimum_frequency\', \'max_element_size\', \'false_positive_probability\', \'slicer\', \'hash_table\', \'distributed_name\', \'collections\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "admit"
+    argspec: "args=[\'self\', \'keys\', \'frequency\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "from_proto"
+    argspec: "args=[\'v\', \'import_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "to_proto"
+    argspec: "args=[\'v\', \'export_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+}

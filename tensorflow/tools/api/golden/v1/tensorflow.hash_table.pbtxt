@@ -1,0 +1,55 @@
+path: "tensorflow.hash_table"
+tf_module {
+  member {
+    name: "BloomFilterAdmitStrategy"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "BloomFilterLookupHook"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "DistributedBloomFilterAdmitStrategy"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "DistributedHashTable"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "EmbeddingLookupHook"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "FixedSizeHashTablePartitioner"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "HashTable"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "HashTableKeyMapperFactory"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "ReadOnlyHook"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "SimpleHashTable"
+    mtype: "<type \'type\'>"
+  }
+  member_method {
+    name: "embedding_lookup"
+    argspec: "args=[\'hash_table\', \'origin_keys\', \'default_value\', \'counts\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "embedding_lookup_sparse"
+    argspec: "args=[\'hash_table\', \'sp_ids\', \'sp_weights\', \'default_value\', \'name\', \'combiner\', \'sp_uniq_ids\'], varargs=None, keywords=None, defaults=[\'0\', \'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "restore_without_clear_scope"
+    argspec: "args=[], varargs=args, keywords=kwds, defaults=None"
+  }
+}

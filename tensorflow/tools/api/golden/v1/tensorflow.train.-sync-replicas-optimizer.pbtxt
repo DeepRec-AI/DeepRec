@@ -18,7 +18,7 @@ tf_class {
   }
   member_method {
     name: "__init__"
-    argspec: "args=[\'self\', \'opt\', \'replicas_to_aggregate\', \'total_num_replicas\', \'variable_averages\', \'variables_to_average\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'False\', \'sync_replicas\'], "
+    argspec: "args=[\'self\', \'opt\', \'replicas_to_aggregate\', \'total_num_replicas\', \'variable_averages\', \'variables_to_average\', \'use_locking\', \'name\', \'sparse_reduction_type\', \'sparse_accumulator_type\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'False\', \'sync_replicas\', \'MEAN\', \'multi_map\'], "
   }
   member_method {
     name: "apply_gradients"

@@ -1,0 +1,65 @@
+path: "tensorflow.hash_table.SimpleHashTable"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.hash_table.SimpleHashTable\'>"
+  is_instance: "<type \'object\'>"
+  member {
+    name: "children"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "device"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "distributed_name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "false_initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "graph"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "handle"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "op"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "slicer"
+    mtype: "<type \'property\'>"
+  }
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'distributed_name\', \'concurrent_read\', \'slicer\', \'children\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "from_proto"
+    argspec: "args=[\'v\', \'import_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "lookup"
+    argspec: "args=[\'self\', \'keys\', \'admit_strategy\', \'frequencies\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "size"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "to_proto"
+    argspec: "args=[\'v\', \'export_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+}

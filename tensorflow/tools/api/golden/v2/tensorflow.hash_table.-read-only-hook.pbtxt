@@ -1,0 +1,22 @@
+path: "tensorflow.hash_table.ReadOnlyHook"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.embedding.ReadOnlyHook\'>"
+  is_instance: "<class \'tensorflow.python.ops.hash_table.embedding.EmbeddingLookupHook\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_admit_strategy"
+    argspec: "args=[\'self\', \'ht\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_admit_strategy_factory"
+    argspec: "args=[\'self\', \'distributed_hash_table\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "on_embedding_lookup"
+    argspec: "args=[\'self\', \'ctx\'], varargs=None, keywords=None, defaults=None"
+  }
+}

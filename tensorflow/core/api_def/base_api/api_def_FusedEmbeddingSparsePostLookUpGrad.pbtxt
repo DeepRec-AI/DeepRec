@@ -1,0 +1,4 @@
+op {
+  graph_op_name: "FusedEmbeddingSparsePostLookUpGrad"
+  summary: "Calculate gradient of FusedEmbeddingSparsePostLookUp"
+}

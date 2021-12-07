@@ -1,0 +1,93 @@
+path: "tensorflow.hash_table.DistributedHashTable"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.hash_table.DistributedHashTable\'>"
+  is_instance: "<type \'object\'>"
+  member {
+    name: "device"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "dtype"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "partitions"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "shape"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "snapshot"
+    mtype: "<type \'property\'>"
+  }
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'shape\', \'dtype\', \'initializer\', \'init_func\', \'segment_size\', \'collections\', \'trainable\', \'partitioner\', \'slice_size\', \'slicer\', \'hash_tables\', \'concurrent_read\', \'children\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "create_slot"
+    argspec: "args=[\'self\', \'shape\', \'dtype\', \'initializer\', \'init_func\', \'segment_size\', \'collections\', \'trainable\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "from_proto"
+    argspec: "args=[\'v\', \'import_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "gen_ids"
+    argspec: "args=[\'self\', \'keys\', \'admit_strategy_factory\', \'frequencies\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "initializer_without_hashtable"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "lookup"
+    argspec: "args=[\'self\', \'keys\', \'admit_strategy_factory\', \'frequencies\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'0\', \'None\'], "
+  }
+  member_method {
+    name: "lookup_by_id"
+    argspec: "args=[\'self\', \'gather_ids_per_device\', \'indices_per_device\', \'dense_shape\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\'], "
+  }
+  member_method {
+    name: "scatter_add"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_div"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_mul"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_sub"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_update"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "size"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "split_values_by_key"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "to_proto"
+    argspec: "args=[\'v\', \'export_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+}

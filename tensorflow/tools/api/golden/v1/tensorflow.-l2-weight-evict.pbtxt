@@ -1,0 +1,9 @@
+path: "tensorflow.L2WeightEvict"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.variables.L2WeightEvict\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'l2_weight_threshold\'], varargs=None, keywords=None, defaults=[\'-1.0\'], "
+  }
+}

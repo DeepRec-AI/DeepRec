@@ -1,0 +1,7 @@
+op {
+  graph_op_name: "FusedEmbeddingLocalSparseLookUp"
+  summary: "FusedEmbedding ops that performs a local embedding lookup. The process will perform embedding vector copying from emb_variable."
+  description: <<END
+The input is usually a SparseTensor. The output sp_values_offset is reserved for gradient calculation.
+END
+}
