@@ -1,5 +1,6 @@
 # TensorFlow external dependencies that can be loaded in WORKSPACE files.
 
+load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("//third_party/gpus:cuda_configure.bzl", "cuda_configure")
 load("//third_party/gpus:rocm_configure.bzl", "rocm_configure")
 load("//third_party/tensorrt:tensorrt_configure.bzl", "tensorrt_configure")
@@ -1039,6 +1040,13 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
             "https://github.com/google/leveldb/archive/5d94ad4d95c09d3ac203ddaf9922e55e730706a8.tar.gz",
             "https://github.com/google/leveldb/archive/5d94ad4d95c09d3ac203ddaf9922e55e730706a8.tar.gz"
         ],
+    )
+
+    new_git_repository(
+        name = "seastar_repo",
+        remote = "https://github.com/AlibabaPAI/seastar.git",
+        commit = "b9357c525a552ad21b5609622c900e0649921712",
+        build_file = str(Label("//third_party:seastar.BUILD")),
     )
 
 def tf_bind():
