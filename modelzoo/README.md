@@ -7,3 +7,4 @@ Contained models are as follow:
 - [DSSM](DSSM/README.md)
 - [DIEN](DIEN/README.md)
 - [DIN](DIN/README.md)
+- [DeepFM](DeepFM/README.md)
