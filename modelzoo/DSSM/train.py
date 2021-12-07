@@ -188,7 +188,6 @@ class DSSM():
                  beta2=0.999,
                  inputs=None,
                  bf16=False,
-                 tf_config=None,
                  input_layer_partitioner=None,
                  dense_layer_partitioner=None):
         if not inputs:
@@ -210,20 +209,19 @@ class DSSM():
         self.beta1 = beta1
         self.beta2 = beta2
         self.bf16 = bf16
-        self.tf_config = tf_config
-        self.hooks = []
 
-        self._is_training = tf.constant(True, tf.bool)
+        self._is_training = True
 
         self.predict = self.prediction()
-        self.train_op, self.loss = self.optimizor()
-        self.acc, self.acc_op = tf.metrics.accuracy(labels=self.label,
-                                                    predictions=self.predict)
-        self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
-                                               predictions=self.predict,
-                                               num_thresholds=1000)
-        tf.summary.scalar('eval_acc', self.acc)
-        tf.summary.scalar('eval_auc', self.auc)
+        with tf.name_scope('head'):
+            self.train_op, self.loss = self.optimizer()
+            self.acc, self.acc_op = tf.metrics.accuracy(
+                labels=self.label, predictions=self.predict)
+            self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
+                                                   predictions=self.predict,
+                                                   num_thresholds=1000)
+            tf.summary.scalar('eval_acc', self.acc)
+            tf.summary.scalar('eval_auc', self.auc)
 
     def evalmodel(self):
         self._is_training = False
@@ -391,7 +389,7 @@ class DSSM():
 
         return predict
 
-    def optimizor(self):
+    def optimizer(self):
         loss_func = tf.keras.losses.CategoricalCrossentropy()
         self.predict = tf.squeeze(self.predict)
         loss = tf.math.reduce_mean(loss_func(self.label, self.predict))
@@ -408,19 +406,13 @@ class DSSM():
             decay_rate=0.5)
         tf.summary.scalar('learning_rate', learning_rate)
 
-        optimizor = tf.train.AdamOptimizer(learning_rate=learning_rate,
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate,
                                            beta1=self.beta1,
                                            beta2=self.beta2,
                                            name='Adam')
-        # if self.tf_config:
-        #     optimizor = tf.train.SyncReplicasOptimizer(
-        #         optimizor,
-        #         replicas_to_aggregate=len(self.tf_config['worker_hosts']),
-        #         total_num_replicas=len(self.tf_config['worker_hosts']),
-        #         use_locking=True)
-        # self.hooks.append(optimizor.make_session_run_hook(self.tf_config['is_chief']))
-
-        train_op = optimizor.minimize(loss, global_step=self.global_step)
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(update_ops):
+            train_op = optimizer.minimize(loss, global_step=self.global_step)
 
         return train_op, loss
 
@@ -568,15 +560,17 @@ def main(tf_config=None, server=None):
                  learning_rate=args.learning_rate,
                  bf16=args.bf16,
                  inputs=next_element,
-                 tf_config=tf_config,
                  input_layer_partitioner=input_layer_partitioner,
                  dense_layer_partitioner=dense_layer_partitioner)
 
-    if tf_config:
+    sess_config = tf.ConfigProto()
+    if args.inter:
+        sess_config.inter_op_parallelism_threads = args.inter
+    if args.intra:
+        sess_config.intra_op_parallelism_threads = args.intra
         hooks = []
-        if model.hooks:
-            hooks.extend(model.hooks)
-        print('train steps : %d' % train_steps)
+
+    if tf_config:
         hooks.append(tf.train.StopAtStepHook(last_step=train_steps))
         hooks.append(
             tf.train.LoggingTensorHook(
@@ -585,13 +579,6 @@ def main(tf_config=None, server=None):
                     'loss': model.loss
                 },
                 every_n_iter=100))
-
-        sess_config = tf.ConfigProto(allow_soft_placement=True,
-                                     log_device_placement=False)
-        if args.inter:
-            sess_config.inter_op_parallelism_threads = args.inter
-        if args.intra:
-            sess_config.intra_op_parallelism_threads = args.intra
 
         scaffold = tf.train.Scaffold(
             local_init_op=tf.group(tf.global_variables_initializer(
@@ -609,12 +596,6 @@ def main(tf_config=None, server=None):
             while not sess.should_stop():
                 _, train_loss = sess.run([model.train_op, model.loss])
     else:
-        sess_config = tf.ConfigProto()
-        if args.inter:
-            sess_config.inter_op_parallelism_threads = args.inter
-        if args.intra:
-            sess_config.intra_op_parallelism_threads = args.intra
-
         with tf.Session(config=sess_config) as sess:
             sess.run(tf.global_variables_initializer())
             sess.run(tf.local_variables_initializer())
@@ -649,7 +630,7 @@ def main(tf_config=None, server=None):
                         run_metadata.step_stats)
                     chrome_trace = fetched_timeline.generate_chrome_trace_format(
                     )
-                    print("Save timeline to %s" % checkpoint_path)
+                    print("Save timeline to %s" % checkpoint_dir)
                     with open(
                             os.path.join(checkpoint_dir,
                                          'timeline-%d.json' % _in), 'w') as f:
@@ -674,6 +655,7 @@ def main(tf_config=None, server=None):
                     os.path.join(checkpoint_dir, 'eval'))
 
                 sess.run(test_init_op)
+                sess.run(tf.local_variables_initializer())
                 model.evalmodel()
                 for _in in range(1, test_steps + 1):
                     if (_in != test_steps):
@@ -683,7 +665,7 @@ def main(tf_config=None, server=None):
                             print("Evaluation complate:[{}/{}]".format(
                                 _in, test_steps))
                     else:
-                        eval_acc, _, eval_auc, _, events = sess.run([
+                        _, eval_acc, _, eval_auc, events = sess.run([
                             model.acc, model.acc_op, model.auc, model.auc_op,
                             merged
                         ])
@@ -725,7 +707,6 @@ if __name__ == "__main__":
         task_index = task_config.get('index') + (1 if task_type == 'worker'
                                                  and chief_hosts else 0)
 
-        # print(task_index)
         if task_type == 'chief':
             task_type = 'worker'
 
