@@ -2154,8 +2154,6 @@ def get_embedding_variable(name,
                            constraint=None,
                            steps_to_live=None,
                            init_data_source=None,
-                           ht_partition_num=1000,
-                           ht_type = "",
                            ev_option = variables.EmbeddingVariableOption()):
   if key_dtype == dtypes.int64:
     invalid_key = 9223372036854775807
@@ -2213,8 +2211,7 @@ def get_embedding_variable_internal(name,
                            constraint=None,
                            steps_to_live=None,
                            init_data_source=None,
-                           ht_partition_num=1000,
-                           ev_option = variables.EmbeddingVariableOption(),
+                           ev_option = variables.EmbeddingVariableOption()
                            ):
   if key_dtype == dtypes.int64:
     invalid_key = 9223372036854775807
@@ -2235,7 +2232,6 @@ def get_embedding_variable_internal(name,
     elif isinstance(ev_option.evict, variables.L2WeightEvict):
       l2_weight_threshold = ev_option.evict.l2_weight_threshold
   else:
-    steps_to_live = None
     l2_weight_threshold = -1.0
   if steps_to_live != None and l2_weight_threshold > 0:
       raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
@@ -2251,7 +2247,7 @@ def get_embedding_variable_internal(name,
         ht_type=ev_option.ht_type,
         l2_weight_threshold=l2_weight_threshold,
         filter_strategy=ev_option.filter_strategy),
-      ht_partition_num=ht_partition_num)
+      ht_partition_num=ev_option.ht_partition_num)
 
 
 #@tf_export(v1=["get_embedding_variable_v2"])

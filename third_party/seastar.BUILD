@@ -1,43 +1,47 @@
 licenses(["notice"])  # Apache 2.0
 
-exports_files(["LICENSE"])
+package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "seastar",
-    srcs = glob(
-        ["src/**/*.cc"],
-        exclude = [
-            "src/testing/*.cc",
-			"demos/**",
-			"tests/**",
-			"build/**",
-			"apps/**",
-			"src/rpc/**",
-			"src/core/prometheus.cc",
-			"src/net/tls.cc",
-			"src/core/dpdk_rte.cc",
-			"hack-build/release/gen/proto/**"
-        ],
-    ) + glob(
-        ["src/**/*.hh"],
-    ),
-    hdrs = glob(
-        ["include/seastar/**/*.hh"],
-        exclude = [
-            "include/seastar/testing/*.hh",
-        ],
-    ) + [
-        "include/seastar/http/request_parser.hh",
-        "include/seastar/http/response_parser.hh",
-    ],
-    copts = [
-        "-DSEASTAR_NO_EXCEPTION_HACK",
-        "-DNO_EXCEPTION_INTERCEPT",
-        "-DSEASTAR_DEFAULT_ALLOCATOR",
-        "-DSEASTAR_HAVE_NUMA",
-    ],
     includes = [
-        "src",
+        ".", "cached-fmt", "cached-c-ares",
+        "cached-build/release/gen",
+        "cached-build/release/c-ares"],
+    srcs = glob(["**/*.cc"],
+                exclude= [
+                    "demo/**",
+                    "demo-tf/**",
+                    "demo-tf-test/**",
+                    "cached-c-ares/c-ares/test/**",
+                    "cached-fmt/test/**",
+                    "cached-dpdk/**",
+                    "tests/**",
+                    "build/**",
+                    "apps/**",
+                    "rpc/**",
+                    "core/prometheus.cc",
+                    "net/proxy.cc",
+                    "net/virtio.cc",
+                    "net/dpdk.cc",
+                    "net/ip.cc",
+                    "net/ethernet.cc",
+                    "net/arp.cc",
+                    "net/native-stack.cc",
+                    "net/ip_checksum.cc",
+                    "net/udp.cc",
+                    "net/tcp.cc",
+                    "net/dhcp.cc",
+                    "net/tls.cc",
+                    "net/dns.cc",
+                    "core/dpdk_rte.cc",
+                    "cached-build/release/gen/proto/**",
+                ]),
+    copts = [
+        "-std=gnu++1y",
+        "-DNO_EXCEPTION_HACK",
+        "-DDEFAULT_ALLOCATOR",
+        "-DHAVE_NUMA",
     ],
     linkopts = [
         "-ldl",
@@ -45,8 +49,6 @@ cc_library(
         "-lrt",
         "-lstdc++fs",
     ],
-    strip_include_prefix = "include",
-    visibility = ["//visibility:public"],
     deps = [
         "@boost//:asio",
         "@boost//:filesystem",
@@ -56,37 +58,11 @@ cc_library(
         "@boost//:system",
         "@boost//:thread",
         "@boost//:variant",
-        "@cares",
-        "@cryptopp",
-        "@fmtlib",
-        "@lz4",
-        "@org_lzma_lzma//:lzma",
-        "@readerwriterqueue",
-        "@sctp",
         "@systemtap-sdt",
         "@xfs",
-        "@yaml-cpp",
+        "@lz4",
+        "@libaio",
+        "@sctp",
     ],
 )
 
-genrule(
-    name = "generate_http_request_parser",
-    srcs = ["src/http/request_parser.rl"],
-    outs = ["include/seastar/http/request_parser.hh"],
-    cmd = "\n".join([
-        "$(location @ragel//:ragelc) -G2 -o $@ $<",
-        "sed -i -e '1h;2,$$H;$$!d;g' -re 's/static const char _nfa[^;]*;//g' $@",
-    ]),
-    tools = ["@ragel//:ragelc"],
-)
-
-genrule(
-    name = "generate_http_response_parser",
-    srcs = ["src/http/response_parser.rl"],
-    outs = ["include/seastar/http/response_parser.hh"],
-    cmd = "\n".join([
-        "$(location @ragel//:ragelc) -G2 -o $@ $<",
-        "sed -i -e '1h;2,$$H;$$!d;g' -re 's/static const char _nfa[^;]*;//g' $@",
-    ]),
-    tools = ["@ragel//:ragelc"],
-)

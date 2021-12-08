@@ -1,0 +1,11 @@
+op {
+  graph_op_name: "FusedEmbeddingSparsePreLookUp"
+  summary: "A fused embedding op, usually using for partitioned and distriuted embedding variables."
+  description: <<END
+FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
+This op will first read the partition pattern of embedding variables through partition_shapes,
+then sort, re-calculate and assign the embedding indices to the corresponding partition. Several Gather ops
+usually should be appended after this op to gather embedding shards from multiple partitioned embedding
+variables. This op has no gradient function.
+END
+}

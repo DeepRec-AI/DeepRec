@@ -1,6 +1,6 @@
 name: CPU Tests
 
-on: [workflow_dispatch, push, pull_request]
+on: workflow_dispatch
 
 env:
   IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec-dev-cpu-cibuild-py36-ubuntu18.04

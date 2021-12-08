@@ -1,0 +1,9 @@
+path: "tensorflow.CBFFilter"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.variables.CBFFilter\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'filter_freq\', \'max_element_size\', \'false_positive_probability\', \'counter_type\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'-1.0\', \"<dtype: \'uint64\'>\"], "
+  }
+}

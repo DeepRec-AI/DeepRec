@@ -108,7 +108,9 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/data/experimental/kernel_tests:prefetch_with_slack_test "\
 "-//tensorflow/python:collective_ops_gpu_test_gpu "\
 "-//tensorflow/python:collective_ops_gpu_test "\
+"-//tensorflow/python/debug:local_cli_wrapper_test "\
 "-//tensorflow/python/debug:debugger_cli_common_test "\
+"-//tensorflow/python/debug:framework_test "\
 "-//tensorflow/python/debug:source_remote_test "\
 "-//tensorflow/python/debug:session_debug_grpc_test "\
 "-//tensorflow/python/debug:grpc_large_data_test "\
@@ -122,6 +124,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/distribute:moving_averages_test_gpu "\
 "-//tensorflow/python/distribute:moving_averages_test "\
 "-//tensorflow/python/distribute:metrics_v1_test "\
+"-//tensorflow/python/distribute:metrics_v1_test_gpu "\
 "-//tensorflow/python/distribute:keras_metrics_test "\
 "-//tensorflow/python/distribute:keras_metrics_test_gpu "\
 "-//tensorflow/python/eager:remote_test "\

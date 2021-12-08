@@ -1,0 +1,9 @@
+path: "tensorflow.GlobalStepEvict"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.variables.GlobalStepEvict\'>"
+  is_instance: "<type \'object\'>"
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'steps_to_live\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+}

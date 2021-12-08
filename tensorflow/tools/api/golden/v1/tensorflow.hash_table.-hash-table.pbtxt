@@ -1,0 +1,141 @@
+path: "tensorflow.hash_table.HashTable"
+tf_class {
+  is_instance: "<class \'tensorflow.python.ops.hash_table.hash_table.HashTable\'>"
+  is_instance: "<type \'object\'>"
+  member {
+    name: "DEFAULT_SLICE_SIZE"
+    mtype: "<type \'int\'>"
+  }
+  member {
+    name: "children"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "device"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "distributed_name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "dtype"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "false_initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "graph"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "handle"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "hash_table"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "initializer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "name"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "op"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "shape"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "slicer"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "slots"
+    mtype: "<type \'property\'>"
+  }
+  member {
+    name: "snapshot"
+    mtype: "<type \'property\'>"
+  }
+  member_method {
+    name: "__init__"
+    argspec: "args=[\'self\', \'shape\', \'dtype\', \'distributed_name\', \'initializer\', \'init_func\', \'segment_size\', \'collections\', \'trainable\', \'slicer\', \'hash_table\', \'concurrent_read\', \'children\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'True\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "create_slot"
+    argspec: "args=[\'self\', \'shape\', \'dtype\', \'distributed_name\', \'initializer\', \'init_func\', \'segment_size\', \'collections\', \'trainable\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "from_proto"
+    argspec: "args=[\'v\', \'import_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "gen_ids"
+    argspec: "args=[\'self\', \'keys\', \'admit_strategy\', \'frequencies\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\'], "
+  }
+  member_method {
+    name: "get_or_create_slot"
+    argspec: "args=[\'self\', \'shape\', \'dtype\', \'distributed_name\', \'initializer\', \'init_func\', \'segment_size\', \'collections\', \'trainable\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "get_shape"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "get_slot"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "initialize_resource_op"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "initializer_without_hashtable"
+    argspec: "args=[\'self\', \'initialized\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "lookup"
+    argspec: "args=[\'self\', \'keys\', \'admit_strategy\', \'frequencies\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'0\', \'None\'], "
+  }
+  member_method {
+    name: "lookup_by_id"
+    argspec: "args=[\'self\', \'ids\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\'], "
+  }
+  member_method {
+    name: "scatter_add"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_div"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_mul"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_sub"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "scatter_update"
+    argspec: "args=[\'self\', \'keys\', \'values\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "size"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "to_proto"
+    argspec: "args=[\'v\', \'export_scope\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+}

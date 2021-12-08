@@ -42,31 +42,38 @@ The benchmark of Standing-alone training
 
 <table>
     <tr>
-        <td colspan="2"></td>
+        <td colspan="1"></td>
+        <td>Framework</td>
+        <td>DType</td>
         <td>Accuracy</td>
         <td>AUC</td>
         <td>Globalsetp/Sec</td>
     </tr>
     <tr>
         <td rowspan="3">Model Type</td>
-        <td>google TF FP32</td>
-        <td>1</td>
-        <td>1</td>
-        <td>1</td>
+        <td>Community TensorFlow</td>
+        <td>FP32</td>
+        <td></td>
+        <td></td>
+        <td> (baseline)</td>
     </tr>
     <tr>
-        <td>DeepRec FP32 w/ oneDNN</td>
-        <td>1</td>
-        <td>1</td>
-        <td>1</td>
+        <td>DeepRec w/ oneDNN</td>
+        <td>FP32</td>
+        <td></td>
+        <td></td>
+        <td> (+1.00x)</td>
     </tr>
     <tr>
-        <td>DeepRec BF16 w/ oneDNN</td>
-        <td>1</td>
-        <td>1</td>
-        <td>1</td>
+        <td>DeepRec w/ oneDNN</td>
+        <td>FP32+BF16</td>
+        <td></td>
+        <td></td>
+        <td> (+1.00x)</td>
     </tr>
 </table>
+
+- Community TensorFlow version is v1.15.5.
 
 ### Distribute Training 
 The benchmark of distribute training 

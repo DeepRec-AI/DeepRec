@@ -26,7 +26,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.feature_column import feature_column as fc_old
 from tensorflow.python.feature_column import utils as fc_utils
 from tensorflow.python.feature_column import coalesced_utils
-from tensorflow.python.feature_column.feature_column_v2 import DenseColumn, WeightedCategoricalColumn
+from tensorflow.python.feature_column.feature_column_v2 import DenseColumn, WeightedCategoricalColumn, CutoffCategoricalColumn
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import tensor_shape
@@ -138,10 +138,10 @@ class HashTableColumn(
 
   @property
   def table_name(self):
-    if isinstance(self.categorical_column, WeightedCategoricalColumn):
-      return self.categorical_column.categorical_column.name
-    else:
-      return self.categorical_column.name
+    c = self.categorical_column
+    while isinstance(c, (WeightedCategoricalColumn, CutoffCategoricalColumn)):
+      c = c.categorical_column
+    return c.name
 
   @property
   def var_scope_name(self):

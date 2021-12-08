@@ -13,12 +13,20 @@ tf_module {
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
   }
   member {
+    name: "CBFFilter"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "COMPILER_VERSION"
     mtype: "<type \'str\'>"
   }
   member {
     name: "CXX11_ABI_FLAG"
     mtype: "<type \'int\'>"
+  }
+  member {
+    name: "CheckpointOption"
+    mtype: "<type \'type\'>"
   }
   member {
     name: "ConditionalAccumulator"
@@ -31,6 +39,10 @@ tf_module {
   member {
     name: "ConfigProto"
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
+  }
+  member {
+    name: "CounterFilter"
+    mtype: "<type \'type\'>"
   }
   member {
     name: "CriticalSection"
@@ -49,8 +61,16 @@ tf_module {
     mtype: "<type \'type\'>"
   }
   member {
+    name: "EmbeddingVariableOption"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "Event"
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
+  }
+  member {
+    name: "EvictOption"
+    mtype: "<type \'type\'>"
   }
   member {
     name: "FIFOQueue"
@@ -87,6 +107,10 @@ tf_module {
   member {
     name: "GRAPH_DEF_VERSION_MIN_PRODUCER"
     mtype: "<type \'int\'>"
+  }
+  member {
+    name: "GlobalStepEvict"
+    mtype: "<type \'type\'>"
   }
   member {
     name: "GradientTape"
@@ -126,6 +150,10 @@ tf_module {
   }
   member {
     name: "InteractiveSession"
+    mtype: "<type \'type\'>"
+  }
+  member {
+    name: "L2WeightEvict"
     mtype: "<type \'type\'>"
   }
   member {
@@ -439,6 +467,10 @@ tf_module {
   member {
     name: "half"
     mtype: "<class \'tensorflow.python.framework.dtypes.DType\'>"
+  }
+  member {
+    name: "hash_table"
+    mtype: "<type \'module\'>"
   }
   member {
     name: "image"
@@ -941,6 +973,26 @@ tf_module {
     argspec: "args=[\'input\', \'type\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "black_list_hash_table_admit_strategy_op"
+    argspec: "args=[\'shared_name\', \'container\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "bloom_filter_admit_op"
+    argspec: "args=[\'admit_strategy\', \'keys\', \'frequencies\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "bloom_filter_admit_strategy_op"
+    argspec: "args=[\'shared_name\', \'container\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "bloom_filter_initialize_op"
+    argspec: "args=[\'admit_strategy\', \'min_frequency\', \'num_hash_func\', \'dtype\', \'shape\', \'initialized\', \'slice_offset\', \'max_slice_size\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'1\', \'None\'], "
+  }
+  member_method {
+    name: "bloom_filter_is_initialized_op"
+    argspec: "args=[\'resource\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "boolean_mask"
     argspec: "args=[\'tensor\', \'mask\', \'name\', \'axis\'], varargs=None, keywords=None, defaults=[\'boolean_mask\', \'None\'], "
   }
@@ -995,6 +1047,10 @@ tf_module {
   member_method {
     name: "clip_by_value"
     argspec: "args=[\'t\', \'clip_value_min\', \'clip_value_max\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "coalesced_bucketized_embedding_encode"
+    argspec: "args=[\'ids\', \'local_offset\', \'global_offset\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "collect_sparse_indices"
@@ -1053,6 +1109,10 @@ tf_module {
     argspec: "args=[\'value\', \'dtype\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\'], "
   }
   member_method {
+    name: "copy_tensor"
+    argspec: "args=[\'src\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "cos"
     argspec: "args=[\'x\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -1091,6 +1151,26 @@ tf_module {
   member_method {
     name: "custom_gradient"
     argspec: "args=[\'f\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "data_buffer_cancel"
+    argspec: "args=[\'container\', \'is_cancelled\', \'shared_name\', \'shared_capacity\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'True\', \'\', \'1\', \'None\'], "
+  }
+  member_method {
+    name: "data_buffer_close"
+    argspec: "args=[\'container\', \'shared_name\', \'shared_capacity\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'None\'], "
+  }
+  member_method {
+    name: "data_buffer_put"
+    argspec: "args=[\'record\', \'container\', \'shared_name\', \'shared_capacity\', \'timeout_millis\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'1000\', \'None\'], "
+  }
+  member_method {
+    name: "data_buffer_size"
+    argspec: "args=[\'container\', \'shared_name\', \'shared_capacity\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'None\'], "
+  }
+  member_method {
+    name: "data_buffer_take"
+    argspec: "args=[\'dtypes\', \'container\', \'shared_name\', \'shared_capacity\', \'shared_threads\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'1\', \'None\'], "
   }
   member_method {
     name: "decode_base64"
@@ -1422,7 +1502,11 @@ tf_module {
   }
   member_method {
     name: "get_embedding_variable"
-    argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ht_partition_num\', \'ht_type\', \'ev\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'1000\', \'\', \'<tensorflow.python.ops.variables.EVConfig object instance>\'], "
+    argspec: "args=[\'name\', \'embedding_dim\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ev_option\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableOption object instance>\'], "
+  }
+  member_method {
+    name: "get_hash_table"
+    argspec: "args=[\'name\', \'embedding_dim\', \'dtype\', \'initializer\', \'collections\', \'trainable\', \'synchronization\', \'partitioner\', \'children\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'True\', \'VariableSynchronization.AUTO\', \'None\', \'None\'], "
   }
   member_method {
     name: "get_local_variable"
@@ -1497,6 +1581,50 @@ tf_module {
     argspec: "args=[\'input\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "hash_slice"
+    argspec: "args=[\'slicer\', \'keys\', \'segment_size\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_delete_key_op"
+    argspec: "args=[\'hashtable\', \'keys\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_direct_restore_op"
+    argspec: "args=[\'keys\', \'ids\', \'exts\', \'hashtable\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_filter_op"
+    argspec: "args=[\'hashtable\', \'other_arguments\', \'f\', \'block_size\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_initialize_op"
+    argspec: "args=[\'hashtable\', \'initialized\', \'concurrent_read\', \'children\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'[]\', \'None\'], "
+  }
+  member_method {
+    name: "hash_table_lookup_op"
+    argspec: "args=[\'hashtable\', \'keys\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_lookup_with_admit_op"
+    argspec: "args=[\'hashtable\', \'keys\', \'admit_strategy\', \'freq\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_map_op"
+    argspec: "args=[\'hashtable\', \'mapper_other_args\', \'mapper\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_op"
+    argspec: "args=[\'shared_name\', \'container\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "hash_table_size_op"
+    argspec: "args=[\'hashtable\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "hash_table_snapshot_op"
+    argspec: "args=[\'hashtable\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "hessians"
     argspec: "args=[\'ys\', \'xs\', \'name\', \'colocate_gradients_with_ops\', \'gate_gradients\', \'aggregation_method\'], varargs=None, keywords=None, defaults=[\'hessians\', \'False\', \'False\', \'None\'], "
   }
@@ -1553,6 +1681,10 @@ tf_module {
     argspec: "args=[\'prefix\', \'tensor_names\', \'shape_and_slices\', \'is_sparse\', \'tensors\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "init_black_list"
+    argspec: "args=[\'strategies\', \'fea_names\', \'slices\', \'thresholds\', \'file_names\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "init_scope"
     argspec: "args=[], varargs=None, keywords=None, defaults=None"
   }
@@ -1579,6 +1711,14 @@ tf_module {
   member_method {
     name: "invert_permutation"
     argspec: "args=[\'x\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_kafka_dataset"
+    argspec: "args=[\'topics\', \'servers\', \'group\', \'eof\', \'timeout\', \'config_global\', \'config_topic\', \'message_key\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_write_kafka"
+    argspec: "args=[\'message\', \'topic\', \'servers\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "is_finite"
@@ -1759,6 +1899,10 @@ tf_module {
   member_method {
     name: "make_ndarray"
     argspec: "args=[\'tensor\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "make_prefetch_hook"
+    argspec: "args=[\'daemon\', \'start\'], varargs=None, keywords=None, defaults=[\'True\', \'True\'], "
   }
   member_method {
     name: "make_template"
@@ -1949,6 +2093,10 @@ tf_module {
     argspec: "args=[\'x\', \'y\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "prefetch_join"
+    argspec: "args=[\'thread_to_features\', \'feed_list\', \'feed_generator\', \'capacity\', \'num_clients\', \'timeout_millis\', \'closed_exception_types\', \'ignored_exception_types\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'1\', \'1\', \'300000\', \'None\', \'None\', \'None\'], "
+  }
+  member_method {
     name: "print"
     argspec: "args=[], varargs=inputs, keywords=kwargs, defaults=None"
   }
@@ -2015,6 +2163,10 @@ tf_module {
   member_method {
     name: "read_kv_variable_op"
     argspec: "args=[\'resource\', \'dtype\', \'Tkeys\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "read_only_hash_table_admit_strategy_op"
+    argspec: "args=[\'shared_name\', \'container\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
   }
   member_method {
     name: "real"
@@ -2119,6 +2271,14 @@ tf_module {
   member_method {
     name: "resource_variables_enabled"
     argspec: "args=[], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "restore_bloom_filter"
+    argspec: "args=[\'file_pattern\', \'tensor_name\', \'shape_and_slice\', \'handle\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "restore_hash_table"
+    argspec: "args=[\'file_pattern\', \'tensor_name\', \'shape_and_slices\', \'handles\', \'clear\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
   }
   member_method {
     name: "reverse"
@@ -2325,6 +2485,10 @@ tf_module {
     argspec: "args=[\'axis\', \'sp_inputs\', \'name\', \'expand_nonconcat_dim\', \'concat_dim\', \'expand_nonconcat_dims\'], varargs=None, keywords=None, defaults=[\'None\', \'False\', \'None\', \'None\'], "
   }
   member_method {
+    name: "sparse_conditional_accumulator_multi_map"
+    argspec: "args=[\'dtype\', \'shape\', \'container\', \'shared_name\', \'reduction_type\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'MEAN\', \'None\'], "
+  }
+  member_method {
     name: "sparse_fill_empty_rows"
     argspec: "args=[\'sp_input\', \'default_value\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -2389,6 +2553,10 @@ tf_module {
     argspec: "args=[\'sp_input\', \'to_retain\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
+    name: "sparse_reverse"
+    argspec: "args=[\'indices\', \'values\', \'dense_shape\', \'axis\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "sparse_segment_mean"
     argspec: "args=[\'data\', \'indices\', \'segment_ids\', \'name\', \'num_segments\'], varargs=None, keywords=None, defaults=[\'None\', \'None\'], "
   }
@@ -2433,6 +2601,10 @@ tf_module {
     argspec: "args=[\'sp_input\', \'perm\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\'], "
   }
   member_method {
+    name: "sparse_valid_cutoff"
+    argspec: "args=[\'indices\', \'values\', \'dense_shape\', \'axis\', \'length\', \'side\', \'name\'], varargs=None, keywords=None, defaults=[\'right\', \'None\'], "
+  }
+  member_method {
     name: "split"
     argspec: "args=[\'value\', \'num_or_size_splits\', \'axis\', \'num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\', \'split\'], "
   }
@@ -2457,6 +2629,10 @@ tf_module {
     argspec: "args=[\'values\', \'axis\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'stack\'], "
   }
   member_method {
+    name: "staged"
+    argspec: "args=[\'features\', \'feed_list\', \'feed_generator\', \'capacity\', \'num_threads\', \'num_clients\', \'timeout_millis\', \'closed_exception_types\', \'ignored_exception_types\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'1\', \'1\', \'1\', \'300000\', \'None\', \'None\', \'None\'], "
+  }
+  member_method {
     name: "stop_gradient"
     argspec: "args=[\'input\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -2479,6 +2655,10 @@ tf_module {
   member_method {
     name: "string_strip"
     argspec: "args=[\'input\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "string_to_hash"
+    argspec: "args=[\'input\', \'hash_type\', \'allow_neg\', \'num_buckets\', \'name\'], varargs=None, keywords=None, defaults=[\'farm\', \'True\', \'0\', \'None\'], "
   }
   member_method {
     name: "string_to_hash64"
@@ -2527,6 +2707,94 @@ tf_module {
   member_method {
     name: "tanh"
     argspec: "args=[\'x\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_adadelta"
+    argspec: "args=[\'var\', \'accum\', \'accum_update\', \'lr\', \'rho\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_adagrad"
+    argspec: "args=[\'var\', \'accum\', \'lr\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_adagrad_da"
+    argspec: "args=[\'var\', \'gradient_accumulator\', \'gradient_squared_accumulator\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'global_step\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_adam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'use_nesterov\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_centered_rms_prop"
+    argspec: "args=[\'var\', \'mg\', \'ms\', \'mom\', \'lr\', \'rho\', \'momentum\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_ftrl"
+    argspec: "args=[\'var\', \'accum\', \'linear\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'lr_power\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_ftrl_v2"
+    argspec: "args=[\'var\', \'accum\', \'linear\', \'grad\', \'indices\', \'lr\', \'l1\', \'l2\', \'l2_shrinkage\', \'lr_power\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_gradient_descent"
+    argspec: "args=[\'var\', \'alpha\', \'delta\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_momentum"
+    argspec: "args=[\'var\', \'accum\', \'lr\', \'grad\', \'indices\', \'momentum\', \'use_locking\', \'use_nesterov\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_proximal_adagrad"
+    argspec: "args=[\'var\', \'accum\', \'lr\', \'l1\', \'l2\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_proximal_gradient_descent"
+    argspec: "args=[\'var\', \'alpha\', \'l1\', \'l2\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_apply_rms_prop"
+    argspec: "args=[\'var\', \'ms\', \'mom\', \'lr\', \'rho\', \'momentum\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_direct_restore_op"
+    argspec: "args=[\'value\', \'resource\', \'hashtable\', \'dtype\', \'shape\', \'factory\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_gather"
+    argspec: "args=[\'resource\', \'indices\', \'default_value\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_initialize_op"
+    argspec: "args=[\'resource\', \'hashtable\', \'dtype\', \'shape\', \'factory\', \'initialized\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_is_initialized_op"
+    argspec: "args=[\'resource\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_op"
+    argspec: "args=[\'dtype\', \'shape\', \'shared_name\', \'container\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_scatter_add"
+    argspec: "args=[\'resource\', \'indices\', \'updates\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_scatter_div"
+    argspec: "args=[\'resource\', \'indices\', \'updates\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_scatter_mul"
+    argspec: "args=[\'resource\', \'indices\', \'updates\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_scatter_sub"
+    argspec: "args=[\'resource\', \'indices\', \'updates\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "tensible_variable_scatter_update"
+    argspec: "args=[\'resource\', \'indices\', \'updates\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "tensor_scatter_add"

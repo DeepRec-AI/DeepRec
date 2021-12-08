@@ -153,6 +153,10 @@ tf_module {
     argspec: "args=[\'params\', \'sp_ids\', \'sp_weights\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\'], "
   }
   member_method {
+    name: "embedding_lookup_sparse_multi_dim"
+    argspec: "args=[\'params\', \'sp_ids\', \'sp_weights\', \'partition_strategy\', \'name\', \'combiners\', \'max_norm\', \'weight_axis\'], varargs=None, keywords=None, defaults=[\'mod\', \'None\', \'None\', \'None\', \'-1\'], "
+  }
+  member_method {
     name: "erosion2d"
     argspec: "args=[\'value\', \'filters\', \'strides\', \'padding\', \'data_format\', \'dilations\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
@@ -251,6 +255,10 @@ tf_module {
   member_method {
     name: "relu6"
     argspec: "args=[\'features\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "safe_embedding_lookup_multi_dim"
+    argspec: "args=[\'embedding_weights\', \'sparse_ids\', \'sparse_weights\', \'combiners\', \'name\', \'partition_strategy\', \'max_norm\', \'weight_axis\', \'prune\'], varargs=None, keywords=None, defaults=[\'None\', \"[\'mean\']\", \'None\', \'div\', \'None\', \'1\', \'True\'], "
   }
   member_method {
     name: "safe_embedding_lookup_sparse"

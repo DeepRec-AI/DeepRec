@@ -54,6 +54,7 @@ from tensorflow.python.platform import test
 from tensorflow.python.training import rmsprop
 from tensorflow.python.training import saver as saver_module
 from tensorflow.python.training import adagrad
+from tensorflow.python.training import ftrl
 from tensorflow.python.training import checkpoint_utils
 
 
@@ -7501,6 +7502,89 @@ class EmbeddingColumnTest(test.TestCase):
             values=np.array([b'omar', b'stringer'], dtype=np.object_),
             dense_shape=[1, 2]), self.evaluate(features['aaa']))
 
+  @test_util.run_deprecated_v1
+  def testEmbeddingVariableForL2FeatureEviction(self):
+    print("testEmbeddingVariableForL2FeatureEviction")
+    checkpoint_directory = self.get_temp_dir()
+    evict = variables_lib.L2WeightEvict(l2_weight_threshold=0.9)
+    columns = fc.categorical_column_with_embedding(
+                                        "col_emb",
+                                        dtype=dtypes.int64,
+                                        ev_option = variables_lib.EmbeddingVariableOption(evict_option=evict))
+    W = fc.embedding_column(categorical_column=columns,
+            dimension=3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            combiner="mean")
+    ids = {}
+    ids["col_emb"] = sparse_tensor.SparseTensor(
+                      indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]],
+                      values=math_ops.cast([0,0,0,1,1,2], dtypes.int64),
+                      dense_shape=[6, 1])
+    emb= fc_old.input_layer(
+           ids, [W])
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    saver = saver_module.Saver()
+    init = variables_lib.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb_ori = sess.run([emb, train_op])
+      print(emb_ori)
+      save_path = saver.save(sess, os.path.join(checkpoint_directory, "model1.ckpt"), global_step=12345)
+      print(save_path)
+      #for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
+      #  print('loading... ', name, shape)
+    with self.test_session() as sess:
+      saver.restore(sess, os.path.join(checkpoint_directory, "model1.ckpt-12345"))
+      emb_right = [[0.8282884, 0.8282884, 0.8282884],
+                   [0.8282884, 0.8282884, 0.8282884],
+                   [0.8282884, 0.8282884, 0.8282884],
+                   [0.7927219, 0.7927219, 0.7927219],
+                   [0.7927219, 0.7927219, 0.7927219],
+                   [1.0, 1.0, 1.0]]
+      emb_ori = sess.run(emb)
+      for i in range(6):
+        for j in range(3):
+          self.assertAlmostEqual(emb_ori[i][j], emb_right[i][j])
+
+  @test_util.run_deprecated_v1
+  def testEmbeddingVariableForFeatureFilter(self):
+    print("testEmbeddingVariableForFeatureFilter")
+    columns = fc.categorical_column_with_embedding("col_emb", dtype=dtypes.int64,
+                                                          ev_option = variables_lib.EmbeddingVariableOption(filter_option=variables_lib.CounterFilter(filter_freq=3)))
+    W = fc.embedding_column(categorical_column=columns,
+            dimension=3,
+            initializer=init_ops.ones_initializer(dtypes.float32))
+    ids={}
+    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0]], values=math_ops.cast([1,1,1,1,2,2,2,3,3,4], dtypes.int64), dense_shape=[10, 1])
+    emb = fc_old.input_layer(ids, [W])
+
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables_lib.global_variables_initializer()
+
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      for val in emb1.tolist()[0]:
+        self.assertEqual(val, 1.0)
+      emb1, top, l = sess.run([emb, train_op, loss])
+      for val in emb1.tolist()[0]:
+        self.assertNotEqual(val, 1.0)
+   
   @test_util.run_deprecated_v1
   def test_transform_feature(self):
     a = fc.categorical_column_with_identity(key='aaa', num_buckets=3)

@@ -23,6 +23,9 @@ limitations under the License.
 #include <sys/types.h>
 #include <memory>
 #include "tensorflow/core/graph/graph.h"
+#include "tensorflow/core/util/env_var.h"
+#include "tensorflow/core/lib/strings/str_util.h"
+#include "tensorflow/core/lib/gtl/flatset.h"
 
 namespace tensorflow {
 // Interface to invoke the pass for unit test

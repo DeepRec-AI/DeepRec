@@ -347,9 +347,6 @@ def get_arg_parser():
                         help='number of steps on saving timeline. Default 0',
                         type=int,
                         default=0)
-    # parser.add_argument('--ev',
-    #                     help='enable EV feature. Default closed',
-    #                     action='store_true')
     parser.add_argument('--bf16',
                         help='enable DeepRec BF16 in deep model. Default FP32',
                         action='store_true')

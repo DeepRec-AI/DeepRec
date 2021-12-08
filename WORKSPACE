@@ -165,22 +165,6 @@ load("@com_github_nelhage_rules_boost//:boost/boost.bzl", "boost_deps")
 boost_deps()
 
 http_archive(
-    name = "fmtlib",
-    build_file = "//third_party:fmtlib.BUILD",
-    sha256 = "3c812a18e9f72a88631ab4732a97ce9ef5bcbefb3235e9fd465f059ba204359b",
-    strip_prefix = "fmt-5.2.1",
-    urls = ["https://github.com/fmtlib/fmt/archive/5.2.1.tar.gz"],
-)
-
-http_archive(
-    name = "yaml-cpp",
-    build_file = "//third_party:yaml-cpp.BUILD",
-    sha256 = "77ea1b90b3718aa0c324207cb29418f5bced2354c2e483a9523d98c3460af1ed",
-    strip_prefix = "yaml-cpp-yaml-cpp-0.6.3",
-    urls = ["https://github.com/jbeder/yaml-cpp/archive/yaml-cpp-0.6.3.tar.gz"],
-)
-
-http_archive(
     name = "colm",
     build_file = "//third_party:colm.BUILD",
     sha256 = "4644956dd82bedf3795bb1a6fdf9ee8bdd33bd1e7769ef81ffdaa3da70c5a349",
@@ -194,14 +178,6 @@ http_archive(
     sha256 = "08bac6ff8ea9ee7bdd703373fe4d39274c87fecf7ae594774dfdc4f4dd4a5340",
     strip_prefix = "ragel-7.0.0.11",
     urls = ["http://www.colm.net/files/ragel/ragel-7.0.0.11.tar.gz"],
-)
-
-http_archive(
-    name = "cryptopp",
-    build_file = "//third_party:cryptopp.BUILD",
-    sha256 = "e3bcd48a62739ad179ad8064b523346abb53767bcbefc01fe37303412292343e",
-    strip_prefix = "cryptopp-CRYPTOPP_8_2_0",
-    urls = ["https://github.com/weidai11/cryptopp/archive/CRYPTOPP_8_2_0.tar.gz"],
 )
 
 http_archive(
@@ -245,21 +221,29 @@ http_archive(
 )
 
 http_archive(
-    name = "readerwriterqueue",
-    build_file = "//third_party:readerwriterqueue.BUILD",
-    sha256 = "67a761278457ab1f113086449c1938e501f272be7f0fd50be28887c1274fe580",
-    strip_prefix = "readerwriterqueue-1.0.1",
-    urls = ["https://github.com/cameron314/readerwriterqueue/archive/v1.0.1.tar.gz"],
+    name = "libaio",
+    build_file = "//third_party:libaio.BUILD",
+    sha256 = "b7cf93b29bbfb354213a0e8c0e82dfcf4e776157940d894750528714a0af2272",
+    strip_prefix = "libaio-libaio-0.3.112",
+    patches = [
+        "//third_party:libaio.patch",
+    ],
+    urls = ["https://pagure.io/libaio/archive/libaio-0.3.112/libaio-libaio-0.3.112.tar.gz"],
 )
 
-load("//third_party:repo.bzl", "tf_http_archive")
-tf_http_archive(
-    name = "seastar_repo",
-    build_file = "//third_party:seastar.BUILD",
-    patch_file = "//third_party:seastar.patch",
-    sha256 = "27f1d42e77acfb8bcccd102e417fdaa81b3c8d589a8e7b009dd3312dcf6fbeef",
-    strip_prefix = "seastar-seastar-19.06.0",
-    urls = ["https://storage.googleapis.com/mirror.tensorflow.org/github.com/scylladb/seastar/archive/seastar-19.06.0.tar.gz",
-            "https://github.com/scylladb/seastar/archive/seastar-19.06.0.tar.gz"],
+http_archive(
+    name = "kafka150",
+    build_file = "//third_party:kafka.BUILD",
+    patch_cmds = [
+        "rm -f src/win32_config.h",
+        # TODO: Remove the fowllowing once librdkafka issue is resolved.
+        """sed -i.bak '\|rd_kafka_log(rk,|,/ exceeded);/ s/^/\/\//' src/rdkafka_cgrp.c""",
+    ],
+    sha256 = "f7fee59fdbf1286ec23ef0b35b2dfb41031c8727c90ced6435b8cf576f23a656",
+    strip_prefix = "librdkafka-1.5.0",
+    urls = [
+        "https://mirror.tensorflow.org/github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
+        "https://github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
+    ],
 )
 

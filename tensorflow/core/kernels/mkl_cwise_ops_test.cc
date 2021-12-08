@@ -357,7 +357,7 @@ static Graph* Cwise(const string& op_name, const string& kind,
   BM_Cwise_kind(op, name, shape_info_0, shape_info_1, T, DEVICE, 8);  \
 
 #define BM_Cwise_2D(op, A0, B0, A1, B1, T, DEVICE)                  \
-  BM_Cwise_NTH(op, op##_##DEVICE##_##A0##x##B0##*##A1##x##B1##_##T, \
+  BM_Cwise_NTH(op, op##_##DEVICE##_##A0##x##B0##_##A1##x##B1##_##T, \
            TensorShape({A0, B0}), TensorShape({A1, B1}), T, DEVICE) \
 
 #define BM_2D(op, A0, B0, A1, B1, T, DEVICE)  \
@@ -365,7 +365,7 @@ static Graph* Cwise(const string& op_name, const string& kind,
 
 #define BM_Cwise_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, DEVICE)                     \
   BM_Cwise_NTH(                                                                        \
-      op, op##_##DEVICE##_##A0##x##B0##x##C0##x##D0##*##A1##x##B1##x##C1##x##D1##_##T, \
+      op, op##_##DEVICE##_##A0##x##B0##x##C0##x##D0##_##A1##x##B1##x##C1##x##D1##_##T, \
       TensorShape({A0, B0, C0, D0}), TensorShape({A1, B1, C1, D1}), T, DEVICE)         \
 
 #define BM_4D(op, A0, B0, C0, D0, A1, B1, C1, D1, T, DEVICE)  \

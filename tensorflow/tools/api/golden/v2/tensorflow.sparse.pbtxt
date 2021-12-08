@@ -34,7 +34,7 @@ tf_module {
   }
   member_method {
     name: "from_dense"
-    argspec: "args=[\'tensor\', 'name'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'tensor\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "mask"
@@ -71,6 +71,10 @@ tf_module {
   member_method {
     name: "retain"
     argspec: "args=[\'sp_input\', \'to_retain\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
+    name: "reverse"
+    argspec: "args=[\'sp_input\', \'axis\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "segment_mean"
@@ -111,5 +115,9 @@ tf_module {
   member_method {
     name: "transpose"
     argspec: "args=[\'sp_input\', \'perm\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\'], "
+  }
+  member_method {
+    name: "valid_cutoff"
+    argspec: "args=[\'sp_input\', \'axis\', \'cutoff_length\', \'side\', \'reverse\', \'name\'], varargs=None, keywords=None, defaults=[\'right\', \'False\', \'None\'], "
   }
 }

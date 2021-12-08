@@ -2401,7 +2401,10 @@ Status GraphPartitionerBase::CreateLocalSendNode(
 
     // create a dummy node for control edge
     NodeDef* dummy = graph_def->add_node();
-    std::string dummy_node_name(strings::StrCat("_dummy_", out_edge->src()->name(), "_local_1"));
+    // Attention, maybe there are multi output nodes from the same src node 
+    std::string dummy_node_name(strings::StrCat("_dummy_",
+        out_edge->src()->name(), "_to_",
+        out_edge->dst()->name(),"_local_1"));
     Status s = NodeDefBuilder(dummy_node_name, "Const")
                    .Device(out_edge->src()->assigned_device_name())
                    .Attr("dtype", DT_FLOAT)

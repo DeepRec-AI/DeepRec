@@ -869,4 +869,31 @@ REGISTER_OP("MultiDeviceIteratorFromStringHandle")
     .Attr("output_shapes: list(shape) >= 0 = []")
     .SetShapeFn(shape_inference::ScalarShape);
 
+REGISTER_OP("IOKafkaDataset")
+    .Input("topics: string")
+    .Input("servers: string")
+    .Input("group: string")
+    .Input("eof: bool")
+    .Input("timeout: int64")
+    .Input("config_global: string")
+    .Input("config_topic: string")
+    .Input("message_key: bool")
+    .Output("handle: variant")
+    .SetIsStateful()
+    .SetShapeFn(shape_inference::ScalarShape);
+
+REGISTER_OP("IOWriteKafka")
+    .Input("message: string")
+    .Input("topic: string")
+    .Input("servers: string")
+    .Output("content: string")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      shape_inference::ShapeHandle unused;
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 0, &unused));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 0, &unused));
+      c->set_output(0, c->Scalar());
+      return Status::OK();
+    });
+
 }  // namespace tensorflow

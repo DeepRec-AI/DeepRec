@@ -89,9 +89,6 @@ struct NodeItem {
   // The kernel for this node.
   OpKernel* kernel = nullptr;
 
-  // If the kernel is a Const op, this containts points to the constant tensor.
-  const Tensor* const_tensor = nullptr;
-
   // Cached values of node->num_inputs() and node->num_outputs(), to
   // avoid levels of indirection.
   int num_inputs;
