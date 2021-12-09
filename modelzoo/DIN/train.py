@@ -172,13 +172,11 @@ def train(data_location='data',
         n_uid, n_mid, n_cat = train_data.get_n()
 
         if bf16:
-            model = Model_DIN_bf16(
-                n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE,
-                ATTENTION_SIZE)
+            model = Model_DIN_bf16(n_uid, n_mid, n_cat, EMBEDDING_DIM,
+                                   HIDDEN_SIZE, ATTENTION_SIZE)
         else:
-            model = Model_DIN(n_uid, n_mid, n_cat,
-                                                    EMBEDDING_DIM, HIDDEN_SIZE,
-                                                    ATTENTION_SIZE)
+            model = Model_DIN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE,
+                              ATTENTION_SIZE)
 
         if ev:
             sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
@@ -298,13 +296,11 @@ def test(data_location='data',
         n_uid, n_mid, n_cat = train_data.get_n()
 
         if bf16:
-            model = Model_DIN_bf16(
-                n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE,
-                ATTENTION_SIZE)
+            model = Model_DIN_bf16(n_uid, n_mid, n_cat, EMBEDDING_DIM,
+                                   HIDDEN_SIZE, ATTENTION_SIZE)
         else:
-            model = Model_DIN(n_uid, n_mid, n_cat,
-                                                    EMBEDDING_DIM, HIDDEN_SIZE,
-                                                    ATTENTION_SIZE)
+            model = Model_DIN(n_uid, n_mid, n_cat, EMBEDDING_DIM, HIDDEN_SIZE,
+                              ATTENTION_SIZE)
 
         model.restore(sess, model_path)
         print(
@@ -353,6 +349,9 @@ def get_arg_parser():
     parser.add_argument('--no_eval',
                         help='not evaluate trained model by eval dataset.',
                         action='store_true')
+    parser.add_argument('--smartstaged',
+                        help='enable DeepRec Smart Staged. Default close',
+                        action='store_true')
     return parser
 
 
@@ -364,6 +363,10 @@ if __name__ == '__main__':
     tf.set_random_seed(SEED)
     numpy.random.seed(SEED)
     random.seed(SEED)
+
+    # TODO
+    if args.smartstaged:
+        print("Smartstaged is not enabled in this model now.")
 
     if args.job == 'train':
         train(data_location=args.data_location,

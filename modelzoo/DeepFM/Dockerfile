@@ -14,5 +14,5 @@ RUN apt update \
     && ln /usr/bin/pip3 /usr/bin/pip \
     && python -m pip install --upgrade pip
 
-# install tensorflow 1.15
-RUN pip install tensorflow==1.15
+# install tensorflow 1.15.5
+RUN pip install tensorflow==1.15.5

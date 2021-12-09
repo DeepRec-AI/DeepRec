@@ -82,6 +82,10 @@ input:                                          |
     python train.py --bf16
     ```
     Use arguments to set up a custom configuation:
+    - Swtich to enable DeepRec's feature:
+      - `--bf16`: Enable BF16 feature in DeepRec. Use FP32 by default.
+      - `--smartstaged`: Enable DeepRec smartstaged feature. Default to close.
+      - `--protocol`: Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
     - `--data_location`: Full path of train & eval data, default to `./data`.
     - `--output_dir`: Full path to output directory for logs and saved model, default to `./result`.
     - `--checkpoint`: Full path to checkpoints input/output directory, default to `$(OUTPUT_DIR)/model_$(MODEL_NAME)_$(TIMESTAMPS)`
@@ -92,13 +96,11 @@ input:                                          |
     - `--keep_checkpoint_max`: Maximum number of recent checkpoint to keep. Default to 1.
     - `--deep_learning_rate`: Learning rate for deep network. Default to 0.05.
     - `--linear_learning_rate`: Learning rate for linear model. Default to 0.2.
-    - `--bf16`: Enable DeepRec BF16 feature in DeepRec. Use FP32 by default.
     - `--no_eval`: Do not evaluate trained model by eval dataset.
     - `--inter`: Set inter op parallelism threads. Default to 0.
     - `--intra`: Set intra op parallelism threads. Default to 0.
     - `--input_layer_partitioner`: Slice size of input layer partitioner(units MB).
     - `--dense_layer_partitioner`: Slice size of dense layer partitioner(units kB).
-    - `--protocol`: Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
 
 ### Distribute Training
 1. Prepare a K8S cluster and shared storage volume.
