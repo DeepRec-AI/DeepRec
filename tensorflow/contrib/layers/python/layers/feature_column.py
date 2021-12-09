@@ -203,7 +203,7 @@ class _DeepEmbeddingLookupArguments(
         "combiner", "dimension", "shared_embedding_name", "hash_key",
         "max_norm", "trainable",
         "use_embedding_var", "embedding_var_part_num", "steps_to_live",
-        "init_data_source", "ev_option"
+        "init_data_source", "ev_option", "use_fused_lookup"
     ])):
   """Represents the information needed from a column for embedding lookup.
 
@@ -220,6 +220,8 @@ class _DeepEmbeddingLookupArguments(
       kwargs['init_data_source'] = None
     if 'ev_option' not in kwargs:
       kwargs['ev_option'] = variables.EmbeddingVariableOption()
+    if 'use_fused_lookup' not in kwargs:
+      kwargs['use_fused_lookup'] = False
     return super(_DeepEmbeddingLookupArguments, cls).__new__(
         cls, *args, **kwargs)
 
@@ -1209,6 +1211,16 @@ class _EmbeddingColumn(
                               shared_vocab_size, max_norm, trainable)
 
   @property
+  def use_fused_lookup(self):
+    if not hasattr(self, "_use_fused_lookup"):
+      self._use_fused_lookup = False
+    return self._use_fused_lookup
+
+  @use_fused_lookup.setter
+  def use_fused_lookup(self, value):
+      self._use_fused_lookup = value
+
+  @property
   def name(self):
     if self.shared_embedding_name is None:
       return "{}_embedding".format(self.sparse_id_column.name)
@@ -1263,7 +1275,8 @@ class _EmbeddingColumn(
         embedding_var_part_num=p,
         steps_to_live=steps_to_live,
         init_data_source=init_data_source,
-        ev_option=ev_option)
+        ev_option=ev_option,
+        use_fused_lookup=self.use_fused_lookup)
 
   def _checkpoint_path(self):
     if self.ckpt_to_load_from is not None:
@@ -1328,6 +1341,9 @@ def _embeddings_from_arguments(column,
 
   # This option is only enabled for scattered_embedding_column.
   if args.hash_key:
+    if args.use_fused_lookup:
+      raise ValueError("Both use_fused_lookup and hash_key is set. Not support yet.")
+
     embeddings = contrib_variables.model_variable(
         name="weights",
         shape=[args.vocab_size],
@@ -1425,13 +1441,24 @@ def _embeddings_from_arguments(column,
     embeddings = embeddings._get_variable_list()  # pylint: disable=protected-access
   # pylint: disable=protected-access
   _maybe_restore_from_checkpoint(column._checkpoint_path(), embeddings)
-  return embedding_ops.safe_embedding_lookup_sparse(
+
+  if args.use_fused_lookup:
+    return embedding_ops.safe_fused_embedding_lookup_sparse(
       embeddings,
       input_tensor,
       sparse_weights=weight_tensor,
       combiner=args.combiner,
       name=column.name + "weights",
-      max_norm=args.max_norm)
+      max_norm=args.max_norm
+    )
+  else:
+    return embedding_ops.safe_embedding_lookup_sparse(
+        embeddings,
+        input_tensor,
+        sparse_weights=weight_tensor,
+        combiner=args.combiner,
+        name=column.name + "weights",
+        max_norm=args.max_norm)
 
 def _maybe_restore_from_checkpoint(checkpoint_path, variable):
   if checkpoint_path is not None:

@@ -4152,6 +4152,16 @@ class EmbeddingColumn(
   """See `embedding_column`."""
 
   @property
+  def use_fused_lookup(self):
+    if not hasattr(self, "_use_fused_lookup"):
+      self._use_fused_lookup = False
+    return self._use_fused_lookup
+
+  @use_fused_lookup.setter
+  def use_fused_lookup(self, value):
+      self._use_fused_lookup = value
+
+  @property
   def _is_v2_column(self):
     return (isinstance(self.categorical_column, FeatureColumn) and
             self.categorical_column._is_v2_column)  # pylint: disable=protected-access
@@ -4231,13 +4241,22 @@ class EmbeddingColumn(
       })
 
     # Return embedding lookup result.
-    return embedding_ops.safe_embedding_lookup_sparse(
-        embedding_weights=embedding_weights,
-        sparse_ids=sparse_ids,
-        sparse_weights=sparse_weights,
-        combiner=self.combiner,
-        name='%s_weights' % self.name,
-        max_norm=self.max_norm)
+    if self.use_fused_lookup:
+      return embedding_ops.safe_fused_embedding_lookup_sparse(
+            embedding_weights,
+            sparse_ids,
+            sparse_weights=sparse_weights,
+            combiner=self.combiner,
+            name='%s_weights' % self.name,
+            max_norm=self.max_norm)
+    else:
+      return embedding_ops.safe_embedding_lookup_sparse(
+          embedding_weights=embedding_weights,
+          sparse_ids=sparse_ids,
+          sparse_weights=sparse_weights,
+          combiner=self.combiner,
+          name='%s_weights' % self.name,
+          max_norm=self.max_norm)
 
   def _get_dense_tensor_internal(self, sparse_tensors, state_manager):
     """Private method that follows the signature of get_dense_tensor."""

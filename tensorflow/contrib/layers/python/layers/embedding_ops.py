@@ -38,6 +38,7 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python.ops import fused_embedding_ops
 
 __all__ = [
     "safe_embedding_lookup_sparse", "scattered_embedding_lookup",
@@ -187,6 +188,100 @@ def safe_embedding_lookup_sparse(embedding_weights,
             (original_rank_dim - 1).value).concatenate(result.get_shape()[1:]))
     return final_result
 
+def safe_fused_embedding_lookup_sparse(embedding_weights,
+                                       sparse_ids,
+                                       sparse_weights=None,
+                                       combiner=None,
+                                       default_id=None,
+                                       name=None,
+                                       partition_strategy="div",
+                                       max_norm=None,
+                                       blocknums=None):
+  """Functionally the same as safe_embedding_lookup_sparse but using fused embedding
+  lookup ops in this method.
+  """
+  logging.info("Is using fused embedding lookup for this scope {}".format(name))
+
+  if combiner is None:
+    logging.warn("The default value of combiner will change from \"mean\" "
+                 "to \"sqrtn\" after 2016/11/01.")
+    combiner = "mean"
+  if embedding_weights is None:
+    raise ValueError("Missing embedding_weights %s." % embedding_weights)
+  if isinstance(embedding_weights, variables.PartitionedVariable):
+    embedding_weights = list(embedding_weights)  # get underlying Variables.
+  if not isinstance(embedding_weights, list):
+    embedding_weights = [embedding_weights]
+  if len(embedding_weights) < 1:
+    raise ValueError("Missing embedding_weights %s." % embedding_weights)
+
+  if sparse_weights is not None:
+    raise ValueError("sparse_weights is not supported yet" )
+
+  if isinstance(embedding_weights, variables.PartitionedVariable):
+    embedding_weights = list(embedding_weights)
+  if not isinstance(embedding_weights[0], (kv_variable_ops.EmbeddingVariable, kv_variable_ops.DynamicEmbeddingVariable)):
+    embedding_weights = [
+        ops.convert_to_tensor(w) for w in embedding_weights
+    ]
+
+  contrib_tensor_util.assert_same_float_dtype(embedding_weights)
+
+  with ops.name_scope(name, "fused_embedding_lookup", embedding_weights +
+                      [sparse_ids]) as scope:
+    # Reshape higher-rank sparse ids and weights to linear segment ids.
+    original_shape = sparse_ids.dense_shape
+    original_rank_dim = tensor_shape.Dimension(
+        tensor_shape.dimension_value(sparse_ids.dense_shape.get_shape()[0]))
+    original_rank = (
+        array_ops.size(original_shape)
+        if original_rank_dim.value is None else original_rank_dim.value)
+    sparse_ids = sparse_ops.sparse_reshape(sparse_ids, [
+        math_ops.reduce_prod(
+            array_ops.slice(original_shape, [0], [original_rank - 1])),
+        array_ops.gather(original_shape, original_rank - 1)
+    ])
+
+    # Prune invalid ids and weights.
+    sparse_ids, _ = _prune_invalid_ids(sparse_ids, None)
+
+    # Fill in dummy values for empty features, if necessary.
+    sparse_ids, is_row_empty = sparse_ops.sparse_fill_empty_rows(
+        sparse_ids, default_id or 0)
+
+    result = fused_embedding_ops.fused_embedding_lookup_sparse(
+      embedding_weights,
+      sparse_ids,
+      partition_strategy,
+      name,
+      combiner,
+      max_norm,
+      blocknums
+    )
+
+    if default_id is None:
+      # Broadcast is_row_empty to the same shape as embedding_lookup_result,
+      # for use in Select.
+      is_row_empty = array_ops.tile(
+          array_ops.reshape(is_row_empty, [-1, 1]),
+          array_ops.stack([1, array_ops.shape(result)[1]]))
+
+      result = array_ops.where(
+          is_row_empty, array_ops.zeros_like(result), result, name=scope)
+
+    # Reshape back from linear ids back into higher-dimensional dense result.
+    final_result = array_ops.reshape(
+        result,
+        array_ops.concat([
+            array_ops.slice(
+                math_ops.cast(original_shape, dtypes.int32), [0],
+                [original_rank - 1]),
+            array_ops.slice(array_ops.shape(result), [1], [-1])
+        ], 0))
+    final_result.set_shape(
+        tensor_shape.unknown_shape(
+            (original_rank_dim - 1).value).concatenate(result.get_shape()[1:]))
+  return final_result
 
 def _prune_invalid_ids(sparse_ids, sparse_weights):
   """Prune invalid IDs (< 0) from the input ids and weights."""
