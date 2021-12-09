@@ -173,7 +173,7 @@ class BiasGradAliOp : public OpKernel {
       Name("BiasAddGrad").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
       BiasGradAliOp<CPUDevice, type>);
 
-TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
+TF_CALL_REAL_NUMBER_TYPES_NO_BFLOAT16(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
 
 }  // namespace tensorflow
