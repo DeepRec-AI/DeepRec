@@ -683,6 +683,9 @@ class Trackable(object):
       ValueError: If the variable name is not unique.
     """
     self._maybe_initialize_trackable()
+    use_embeddingvar = False
+    if "ev_option" in kwargs_for_getter:
+      use_embeddingvar = True
     with ops.init_scope():
       if context.executing_eagerly():
         # If this is a variable with a single Tensor stored in the checkpoint,
@@ -704,7 +707,16 @@ class Trackable(object):
         # "best effort" to set the initializer with the highest restore UID.
         initializer = checkpoint_initializer
         shape = None
-    new_variable = getter(
+    if use_embeddingvar:
+      new_variable = getter(
+        name = name,
+        embedding_dim = shape,
+        value_dtype = dtype,
+        initializer = initializer,
+        **kwargs_for_getter
+      )
+    else:
+      new_variable = getter(
         name=name,
         shape=shape,
         dtype=dtype,

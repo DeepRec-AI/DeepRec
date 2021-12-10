@@ -549,11 +549,20 @@ class _FCLinearWrapper(base.Layer):
 
   def build(self, _):
     if isinstance(self._feature_column, _CategoricalColumn):
-      weight = self.add_variable(
-          name='weights',
-          shape=(self._feature_column._num_buckets, self._units),  # pylint: disable=protected-access
-          initializer=init_ops.zeros_initializer(),
-          trainable=self.trainable)
+      from tensorflow.python.feature_column import feature_column_v2 as fc_new
+      if isinstance(self._feature_column, fc_new.EmbeddingCategoricalColumn):
+        weight = self.add_variable(
+            name='weights',
+            shape= self._units,  # pylint: disable=protected-access
+            initializer=init_ops.zeros_initializer(),
+            trainable=self.trainable,
+            ev_option = self._feature_column.ev_option)
+      else:
+        weight = self.add_variable(
+            name='weights',
+            shape=(self._feature_column._num_buckets, self._units),  # pylint: disable=protected-access
+            initializer=init_ops.zeros_initializer(),
+            trainable=self.trainable)
     else:
       num_elements = self._feature_column._variable_shape.num_elements()  # pylint: disable=protected-access
       weight = self.add_variable(
