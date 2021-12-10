@@ -176,7 +176,8 @@ def _internal_input_layer(features,
                           cols_to_vars=None,
                           scope=None,
                           cols_to_output_tensors=None,
-                          from_template=False):
+                          from_template=False,
+                          adaptive_mask_tensors=None):
   """See input_layer. `scope` is a name or variable scope to use."""
 
   feature_columns = _normalize_feature_columns(feature_columns)
@@ -193,7 +194,7 @@ def _internal_input_layer(features,
     weight_collections.append(ops.GraphKeys.MODEL_VARIABLES)
 
   def _get_logits():  # pylint: disable=missing-docstring
-    builder = _LazyBuilder(features)
+    builder = _LazyBuilder(features, adaptive_mask_tensors)
     output_tensors = []
     ordered_columns = []
     for column in sorted(feature_columns, key=lambda x: x.name):
@@ -237,7 +238,8 @@ def input_layer(features,
                 weight_collections=None,
                 trainable=True,
                 cols_to_vars=None,
-                cols_to_output_tensors=None):
+                cols_to_output_tensors=None,
+                adaptive_mask_tensors=None):
   """Returns a dense `Tensor` as input layer based on given `feature_columns`.
 
   Generally a single example in training data is described with FeatureColumns.
@@ -300,7 +302,8 @@ def input_layer(features,
       weight_collections=weight_collections,
       trainable=trainable,
       cols_to_vars=cols_to_vars,
-      cols_to_output_tensors=cols_to_output_tensors)
+      cols_to_output_tensors=cols_to_output_tensors,
+      adaptive_mask_tensors=adaptive_mask_tensors)
 
 
 # TODO(akshayka): InputLayer should be a subclass of Layer, and it
@@ -2120,7 +2123,7 @@ class _LazyBuilder(object):
   The `_LazyBuilder` eliminates this duplication.
   """
 
-  def __init__(self, features):
+  def __init__(self, features, adaptive_mask_tensors=None):
     """Creates a `_LazyBuilder`.
 
     Args:
@@ -2133,6 +2136,7 @@ class _LazyBuilder(object):
     """
     self._features = features.copy()
     self._feature_tensors = {}
+    self._adaptive_mask_tensors = adaptive_mask_tensors
 
   def get(self, key):
     """Returns a `Tensor` for the given key.
@@ -2170,6 +2174,8 @@ class _LazyBuilder(object):
 
     column = key
     logging.debug('Transforming feature_column %s.', column)
+    if self._adaptive_mask_tensors is not None and column.name in self._adaptive_mask_tensors:
+      column.set_adaptive_mask_tensor(self._adaptive_mask_tensors[column.name])
     transformed = column._transform_feature(self)  # pylint: disable=protected-access
     if transformed is None:
       raise ValueError('Column {} is not supported.'.format(column.name))

@@ -153,6 +153,7 @@ from tensorflow.python.keras.engine.base_layer import Layer
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import check_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import data_flow_ops
 from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import gen_feature_column_ops
 from tensorflow.python.ops import init_ops
@@ -2046,6 +2047,19 @@ def categorical_column_with_embedding(key,
                                       ev_option=variables.EmbeddingVariableOption()
                                       ):
   return EmbeddingCategoricalColumn(key, dtype, partition_num, ev_option)
+
+@tf_export('feature_column.categorical_column_with_adaptive_embedding')
+def categorical_column_with_adaptive_embedding(key,
+                                               hash_bucket_size,
+                                               dtype=dtypes.string,
+                                               partition_num=None,
+                                               ev_option=variables.EmbeddingVariableOption()
+                                               ):
+  return AdaptiveEmbeddingCategoricalColumn(key,
+                                            hash_bucket_size,
+                                            dtype,
+                                            partition_num,
+                                            ev_option)
 
 @tf_export('feature_column.categorical_column_with_hash_bucket')
 def categorical_column_with_hash_bucket(key,
@@ -4239,6 +4253,32 @@ class EmbeddingColumn(
         name='%s_weights' % self.name,
         max_norm=self.max_norm)
 
+  def _get_dense_tensor_internal_adaptive_helper(self, sparse_tensors,
+                                                 hash_embeddings, ev_embeddings):
+    sparse_ids = sparse_tensors.id_tensor
+    sparse_weights = sparse_tensors.weight_tensor
+
+    if self.ckpt_to_load_from is not None:
+      for to_restore in [hash_embeddings, ev_embeddings]:
+        if isinstance(to_restore, variables.PartitionedVariable):
+          to_restore = to_restore._get_variable_list()  # pylint: disable=protected-access
+        checkpoint_utils.init_from_checkpoint(self.ckpt_to_load_from, {
+            self.tensor_name_in_ckpt: to_restore
+        })
+
+    # Return embedding lookup result.
+    return embedding_ops.safe_adaptive_embedding_lookup_sparse(
+        hash_embedding_weights=hash_embeddings,
+        ev_embedding_weights=ev_embeddings,
+        sparse_ids=sparse_ids,
+        hash_ev_ids=self.categorical_column.hash_ev_ids,
+        sparse_weights=sparse_weights,
+        combiner=self.combiner,
+        name='%s_weights' % self.name,
+        max_norm=self.max_norm,
+        adaptive_mask_tensor=self.categorical_column.adaptive_mask_tensor)
+
+
   def _get_dense_tensor_internal(self, sparse_tensors, state_manager):
     """Private method that follows the signature of get_dense_tensor."""
     embedding_weights = state_manager.get_variable(
@@ -4253,11 +4293,31 @@ class EmbeddingColumn(
     if (weight_collections and
         ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections):
       weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
-    if isinstance(self.categorical_column, EmbeddingCategoricalColumn):
+    if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn) \
+      or isinstance(self.categorical_column, EmbeddingCategoricalColumn):
       if self.categorical_column.partition_num is None:
         partitioner = None
       else:
-         partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+        partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+    if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn):
+      ev_embeddings = variable_scope.get_embedding_variable_internal(
+        name="ev_weights",
+        embedding_dim=self.dimension,
+        initializer=self.initializer,
+        trainable=(trainable and self.trainable),
+        collections=weight_collections,
+        partitioner=partitioner,
+        ev_option=self.categorical_column.ev_option)
+      hash_embeddings = variable_scope.get_variable(
+        name="hash_weights",
+        shape=embedding_shape,
+        dtype=dtypes.float32,
+        initializer=self.initializer,
+        trainable=(trainable and self.trainable),
+        collections=weight_collections)
+      return self._get_dense_tensor_internal_adaptive_helper(sparse_tensors,
+                                                             hash_embeddings, ev_embeddings)
+    elif isinstance(self.categorical_column, EmbeddingCategoricalColumn):
       embedding_weights = variable_scope.get_embedding_variable_internal(
         name='embedding_weights',
         embedding_dim=self.dimension,
@@ -4267,6 +4327,8 @@ class EmbeddingColumn(
         partitioner=partitioner,
         ev_option=self.categorical_column.ev_option
       )
+      return self._get_dense_tensor_internal_helper(sparse_tensors,
+                                                    embedding_weights)
     else:
       embedding_weights = variable_scope.get_variable(
         name='embedding_weights',
@@ -4275,8 +4337,8 @@ class EmbeddingColumn(
         initializer=self.initializer,
         trainable=self.trainable and trainable,
         collections=weight_collections)
-    return self._get_dense_tensor_internal_helper(sparse_tensors,
-                                                  embedding_weights)
+      return self._get_dense_tensor_internal_helper(sparse_tensors,
+                                                    embedding_weights)
 
   def get_dense_tensor(self, transformation_cache, state_manager):
     """Returns tensor after doing the embedding lookup.
@@ -5920,6 +5982,119 @@ class EmbeddingCategoricalColumn(
                           _FEATURE_COLUMN_DEPRECATION)
   def _num_buckets(self):
     return 1
+
+  def get_sparse_tensors(self, transformation_cache, state_manager):
+    """See `CategoricalColumn` base class."""
+    return CategoricalColumn.IdWeightPair(
+        transformation_cache.get(self, state_manager), None)
+
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _get_sparse_tensors(self, inputs, weight_collections=None,
+                          trainable=None):
+    del weight_collections
+    del trainable
+    return CategoricalColumn.IdWeightPair(inputs.get(self), None)
+
+  @property
+  def parents(self):
+    """See 'FeatureColumn` base class."""
+    return [self.key]
+
+  def _get_config(self):
+    """See 'FeatureColumn` base class."""
+    config = dict(zip(self._fields, self))
+    config['dtype'] = self.dtype.name
+    return config
+
+  @classmethod
+  def _from_config(cls, config, custom_objects=None, columns_by_name=None):
+    """See 'FeatureColumn` base class."""
+    _check_config_keys(config, cls._fields)
+    kwargs = _standardize_and_copy_config(config)
+    kwargs['dtype'] = dtypes.as_dtype(config['dtype'])
+    return cls(**kwargs)
+
+
+class AdaptiveEmbeddingCategoricalColumn(
+    CategoricalColumn,
+    fc_old._CategoricalColumn,  # pylint: disable=protected-access
+    collections.namedtuple('AdaptiveEmbeddingCategoricalColumn',
+                           ('key', 'hash_bucket_size', 'dtype',
+                            'partition_num', 'ev_option',
+                            #'adaptive_mask_tensor', 'hash_ev_ids'))):
+                            #'hash_ev_ids'))):
+                            ))):
+
+  @property
+  def _is_v2_column(self):
+    return True
+
+  @property
+  def name(self):
+    """See `FeatureColumn` base class."""
+    return self.key
+
+  @property
+  def parse_example_spec(self):
+    """See `FeatureColumn` base class."""
+    return {self.key: parsing_ops.VarLenFeature(self.dtype)}
+
+  @property
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _parse_example_spec(self):
+    return self.parse_example_spec
+
+  def set_adaptive_mask_tensor(self, adaptive_mask_tensor):
+    self.adaptive_mask_tensor = adaptive_mask_tensor
+
+  def _transform_input_tensor(self, input_tensor):
+    flat_ids = array_ops.reshape(input_tensor.values, [-1])
+    original_indices = math_ops.range(array_ops.size(flat_ids))
+    parts = data_flow_ops.dynamic_partition(original_indices, self.adaptive_mask_tensor, 2)
+    spids_part = data_flow_ops.dynamic_partition(flat_ids, self.adaptive_mask_tensor, 2)
+
+    if self.dtype == dtypes.string:
+      hash_ids = string_ops.string_to_hash_bucket_fast(
+        spids_part[0], self.hash_bucket_size, name="lookup_hash")
+      ev_ids = string_ops.string_to_hash_bucket_fast(
+        spids_part[1], np.iinfo(dtypes.int64.as_numpy_dtype).max)
+      self.hash_ev_ids = string_ops.string_to_hash_bucket_fast(
+        spids_part[1], self.hash_bucket_size, name="lookup_hash_ev")
+      sparse_id_values = data_flow_ops.dynamic_stitch(parts, [hash_ids, ev_ids])
+    else:
+      hash_ids = string_ops.string_to_hash_bucket_fast(
+              string_ops.as_string(spids_part[0]), self.hash_bucket_size, name="lookup_hash")
+      self.hash_ev_ids = string_ops.string_to_hash_bucket_fast(
+              string_ops.as_string(spids_part[1]), self.hash_bucket_size, name="lookup_hash_ev")
+      ev_ids = spids_part[1]
+      sparse_id_values = data_flow_ops.dynamic_stitch(parts, [hash_ids, ev_ids])
+    return sparse_tensor_lib.SparseTensor(input_tensor.indices, sparse_id_values,
+                                         input_tensor.dense_shape)
+
+  def transform_feature(self, transformation_cache, state_manager):
+    """Hashes the values in the feature_column."""
+    input_tensor = _to_sparse_input_and_drop_ignore_values(
+        transformation_cache.get(self.key, state_manager))
+    return self._transform_input_tensor(input_tensor)
+
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _transform_feature(self, inputs):
+    input_tensor = _to_sparse_input_and_drop_ignore_values(inputs.get(self.key))
+    return self._transform_input_tensor(input_tensor)
+
+  @property
+  def num_buckets(self):
+    """Returns number of buckets in this sparse feature."""
+    return self.hash_bucket_size
+
+  @property
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _num_buckets(self):
+    return self.num_buckets
 
   def get_sparse_tensors(self, transformation_cache, state_manager):
     """See `CategoricalColumn` base class."""

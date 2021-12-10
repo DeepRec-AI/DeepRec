@@ -247,6 +247,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._initializer = initializer
     if trainable and ops.GraphKeys.TRAINABLE_VARIABLES not in collections:
       collections = list(collections) + [ops.GraphKeys.TRAINABLE_VARIABLES]
+    if ops.GraphKeys.EMBEDDING_VARIABLES not in collections:
+      collections = list(collections) + [ops.GraphKeys.EMBEDDING_VARIABLES]
     self._save_slice_info = None
     self._in_graph_mode = not context.executing_eagerly()
     self._steps_to_live = evconfig.steps_to_live
@@ -383,43 +385,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._cached_value = None
         if not context.executing_eagerly():
           ops.add_to_collections(collections, self)
-          self.add_ev_to_collection(handle_name)
         elif ops.GraphKeys.GLOBAL_STEP in collections:
           ops.add_to_collections(ops.GraphKeys.GLOBAL_STEP, self)
 
   def export(self):
     return gen_kv_variable_ops.kv_resource_export(self._handle, Tkeys=self._invalid_key_type)
-
-  def add_ev_to_collection(self, handle_name):
-    '''
-    schema:
-    "EMBEDDING_VARIABLES": "{
-      "emb_name_1": {
-        "embedding_dim": 8,
-        "tensors": [
-          "emb_name_1/part_0",
-          "emb_name_1/part_1"
-        ]
-      },
-      ...
-    }"
-    '''
-    #ev info except ev's slots
-    if self._trainable:
-      var_name = handle_name
-      if "/part_" in var_name:
-        var_name = var_name[:var_name.index("/part_")]
-      if not ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLES):
-        ops.add_to_collections(ops.GraphKeys.EMBEDDING_VARIABLES, "{}")
-      emb_list = ops.get_collection_ref(ops.GraphKeys.EMBEDDING_VARIABLES)
-      emb_dict = json.loads(emb_list[0])
-      if var_name in emb_dict:
-        emb_dict[var_name]["tensors"].append(handle_name)
-      else:
-        emb_dict[var_name]={}
-        emb_dict[var_name]["tensors"]=[handle_name]
-        emb_dict[var_name]["embedding_dim"]=self.shape.dims[0].value
-      emb_list[0] = json.dumps(emb_dict)
 
   def _init_from_proto(self, variable_def, import_scope=None):
     """Initializes from `VariableDef` proto."""
@@ -665,15 +635,17 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     """
     raise NotImplementedError("EmbeddingVariable does not implement read_value()")
 
-  def sparse_read(self, indices, name=None):
+  def sparse_read(self, indices, name=None, ev_init_value=None):
     """Reads the value of this variable sparsely, using `gather`."""
     with ops.name_scope("Gather" if name is None else name) as name:
       if self._trainable:
         tape.variable_accessed(self)
-      init = self._initializer(array_ops.concat([array_ops.shape(indices),
-                                                 self._graph_shape.as_list()],
-                                                axis=0), dtype=self._dtype)
-      default_value = init
+      if ev_init_value is not None:
+        default_value = ev_init_value
+      else:
+        default_value = self._initializer(array_ops.concat([array_ops.shape(indices),
+                                                            self._graph_shape.as_list()],
+                                                           axis=0), dtype=self._dtype)
       value = gen_kv_variable_ops.kv_resource_gather(self._handle,
               indices,
               default_value, name=name)

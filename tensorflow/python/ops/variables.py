@@ -1089,7 +1089,7 @@ class Variable(six.with_metaclass(VariableMetaclass, trackable.Trackable)):
     """
     raise NotImplementedError
 
-  def sparse_read(self, indices, name=None):
+  def sparse_read(self, indices, name=None, ev_init_value=None):
     r"""Gather slices from params axis axis according to indices.
 
     This function supports a subset of tf.gather, see tf.gather for details on
