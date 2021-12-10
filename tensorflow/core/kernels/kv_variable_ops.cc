@@ -170,8 +170,8 @@ class InitializeKvVariableOp : public OpKernel {
 
     EmbeddingVar<TKey, TValue>* ev = nullptr;
 
-    const Tensor& slotnum = context->input(4);
-    int64 slotnum_op = slotnum.scalar<int64>()();
+    const Tensor& slotnum_tensor = context->input(4);
+    int64 slotnum = slotnum_tensor.scalar<int64>()();
 
     if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
@@ -180,14 +180,14 @@ class InitializeKvVariableOp : public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, slotnum_op,
+            [this, default_values, opname, slotnum,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          ht, ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum_op, opname + "-primary",
+                                         block_num_, slotnum, opname + "-primary",
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_, counter_type_));
@@ -201,7 +201,7 @@ class InitializeKvVariableOp : public OpKernel {
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
            context, handle_primary, &primary_variable,
-           [this, default_values, opname, slotnum_op,
+           [this, default_values, opname, slotnum,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              auto ht = KVFactory<TKey, TValue>::CreateKV(
@@ -209,7 +209,7 @@ class InitializeKvVariableOp : public OpKernel {
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         ht, ev_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slotnum_op, opname + "-primary",
+                                        block_num_, slotnum, opname + "-primary",
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_, counter_type_));
@@ -221,18 +221,18 @@ class InitializeKvVariableOp : public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, primary_variable, slotnum_op,
+            [this, default_values, opname, primary_variable, slotnum,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          primary_variable->kv(), ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum_op, opname,
+                                         block_num_, slotnum, opname,
                                          steps_to_live_, primary_variable->MinFreq(),
                                          max_freq_, primary_variable->GetL2WeightThreshold(),
                                          layout_));
              return (*ptr)->Init(default_values);
             }));
-
+      primary_variable->SetSlotNum(slotnum);
       core::ScopedUnref unref_me(primary_variable);
     }
     core::ScopedUnref unref_me(ev);
@@ -511,8 +511,8 @@ class KvResourceImportV2Op: public OpKernel {
     std::string opname = handle_self.name();
     EmbeddingVar<TKey, TValue>* ev = nullptr;
 
-    const Tensor& slotnum = context->input(6);
-    int64 slotnum_op = slotnum.scalar<int64>()();
+    const Tensor& slotnum_tensor = context->input(6);
+    int64 slotnum = slotnum_tensor.scalar<int64>()();
 
     if (handle_self.name() == handle_primary.name() &&
          handle_self.container() == handle_primary.container()) {
@@ -520,14 +520,14 @@ class KvResourceImportV2Op: public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, slotnum_op,
+            [this, default_values, opname, slotnum,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          ht, ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum_op, opname + "-primary",
+                                         block_num_, slotnum, opname + "-primary",
                                          steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
                                          layout_,  max_element_size_, false_positive_probability_, counter_type_));
@@ -540,7 +540,7 @@ class KvResourceImportV2Op: public OpKernel {
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
            context, handle_primary, &primary_variable,
-           [this, default_values, opname, slotnum_op,
+           [this, default_values, opname, slotnum,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              auto ht = KVFactory<TKey, TValue>::CreateKV(
@@ -548,7 +548,7 @@ class KvResourceImportV2Op: public OpKernel {
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         ht, ev_allocator(),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slotnum_op, opname + "-primary",
+                                        block_num_, slotnum, opname + "-primary",
                                         steps_to_live_, filter_freq_,
                                         max_freq_, l2_weight_threshold_,
                                         layout_,  max_element_size_, false_positive_probability_, counter_type_));
@@ -559,18 +559,18 @@ class KvResourceImportV2Op: public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, primary_variable, slotnum_op,
+            [this, default_values, opname, primary_variable, slotnum,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          primary_variable->kv(), ev_allocator(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum_op, opname,
+                                         block_num_, slotnum, opname,
                                          steps_to_live_, filter_freq_,
                                          999,  primary_variable->GetL2WeightThreshold(),
                                          layout_));
              return (*ptr)->Init(default_values);
             }));
-
+      primary_variable->SetSlotNum(slotnum);
       core::ScopedUnref unref_me(primary_variable);
     }
     core::ScopedUnref unref_me(ev);

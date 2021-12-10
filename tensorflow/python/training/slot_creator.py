@@ -44,6 +44,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import hash_table
+from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -90,8 +91,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         steps_to_live=primary._steps_to_live,
         ht_partition_num=primary._ht_partition_num)
     else:
-      ops.add_to_collection(ops.GraphKeys.EV_INIT_SLOT_OPS,  primary._slotnum_op.assign(slot_config.slot_num))
-      primary._slotnum_op._initializer_op = primary._slotnum_op.assign(slot_config.slot_num)
+      slotnum_op = ops.convert_to_tensor(slot_config.slot_num, preferred_dtype=dtypes.int64)
       slot = variable_scope.get_embedding_variable_v2_internal(
         scope, initializer=val, trainable=False,
         embedding_dim=shape, key_dtype=primary._invalid_key_type,
@@ -103,7 +103,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
           block_num=primary.block_num,
           slot_index=slot_config.slot_index,
           primary=primary._primary,
-          primary_slotnum_op=primary._slotnum_op))
+          primary_slotnum_op=slotnum_op))
   else:
     slot = variable_scope.get_variable(
         scope,

@@ -289,6 +289,10 @@ class EmbeddingVar : public ResourceBase {
     return Status::OK();
   }
 
+  void SetSlotNum(int64 slot_num) {
+    emb_config_.slot_num = slot_num;
+  }
+
  private:
   Status LookupOrCreateKeyInternal(K key, ValuePtr<V>** value_ptr, size_t size) {
     Status s = kv_->Lookup(key, value_ptr);
