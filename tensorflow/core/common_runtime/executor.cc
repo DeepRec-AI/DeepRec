@@ -706,6 +706,7 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
 
   OpKernelContext::Params params;
   params.step_id = step_id_;
+  params.round_step_id = round_step_id_;
   // Override device's threadpool if user provides an intra_op_threadpool
   Device* device = immutable_state_.params().device;
   if (user_device_) {
