@@ -41,16 +41,13 @@
     python train.py --bf16
     ```
     Use arguments to set up a custom configuation:
-    - Swtich to enable DeepRec's feature:
-      - `--bf16`: Enable BF16 feature in DeepRec. Use FP32 by default.
-      - `--smartstaged`(TODO): Enable DeepRec smartstaged feature. Default to close.
-      - `--protocol`(TODO): Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
     - `--data_location`: Full path of train & eval data, default is `./data`.
     - `--output_dir`: Full path to output directory for logs and saved model, default is `./result`.
     - `--steps`: Set the number of steps on train dataset. Default will be set to 10 epoch.
     - `--batch_size`: Batch size to train. Default is 512.
     - `--timeline`: Save steps of profile hooks to record timeline, zero to close, defualt to 0.
     - `--save_steps`: Set the number of steps on saving checkpoints, zero to close. Default will be set to 0.
+    - `--bf16`: Enable DeepRec BF16 feature in DeepRec. Use FP32 by default.
     - `--no_eval`: Do not evaluate trained model by eval dataset.
 
 

@@ -62,10 +62,6 @@ The triangles represent mlp network. The inputs consists of dense features and s
     python train.py --bf16
     ```
     Use arguments to set up a custom configuation:
-    - Swtich to enable DeepRec's feature:
-      - `--bf16`: Enable BF16 feature in DeepRec. Use FP32 by default.
-      - `--smartstaged`: Enable DeepRec smartstaged feature. Default to close.
-      - `--protocol`: Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
     - `--data_location`: Full path of train & eval data, default is `./data`.
     - `--output_dir`: Full path to output directory for logs and saved model, default is `./result`.
     - `--checkpoint`: Full path to checkpoints input/output directory, default is `$(OUTPUT_DIR)/model_$(MODEL_NAME)_$(TIMESTAMPS)`
@@ -76,11 +72,13 @@ The triangles represent mlp network. The inputs consists of dense features and s
     - `--keep_checkpoint_max`: Maximum number of recent checkpoint to keep. Default is 1.
     - `--learning_rate`: Learning rate for network. Default is 0.1.
     - `--interaction_op`: Choose interaction op before top MLP layer("dot", "cat"). Default to "cat".
+    - `--bf16`: Enable DeepRec BF16 feature in DeepRec. Use FP32 by default.
     - `--no_eval`: Do not evaluate trained model by eval dataset.
     - `--inter`: Set inter op parallelism threads. Default to 0.
     - `--intra`: Set intra op parallelism threads. Default to 0.
     - `--input_layer_partitioner`: Slice size of input layer partitioner(units MB).
     - `--dense_layer_partitioner`: Slice size of dense layer partitioner(units kB).
+    - `--protocol`: Set the protocol("grpc", "grpc++", "star_server") used when starting server in distributed training. Default to grpc. 
 
 
 ### Distribute Training

@@ -460,9 +460,6 @@ def get_arg_parser():
     parser.add_argument('--no_eval',
                         help='not evaluate trained model by eval dataset.',
                         action='store_true')
-    parser.add_argument('--smartstaged',
-                        help='enable DeepRec Smart Staged. Default close',
-                        action='store_true')
     parser.add_argument('--timeline',
                         help='number of steps on saving timeline. Default 0',
                         type=int,
@@ -488,14 +485,6 @@ def get_arg_parser():
                         type=int,
                         default=0)
     return parser
-
-
-# Get session object of sess._sess._sess._sess._sess
-def get_session(sess):
-    session = sess
-    while type(session).__name__ != 'Session':
-        session = session._sess
-    return session
 
 
 def main(tf_config=None, server=None):
@@ -550,8 +539,6 @@ def main(tf_config=None, server=None):
     iterator = tf.data.Iterator.from_structure(train_dataset.output_types,
                                                test_dataset.output_shapes)
     next_element = iterator.get_next()
-    if args.smartstaged:
-        next_element = tf.staged(next_element, num_threads=8, capacity=40)
 
     train_init_op = iterator.make_initializer(train_dataset)
     test_init_op = iterator.make_initializer(test_dataset)
@@ -581,7 +568,7 @@ def main(tf_config=None, server=None):
         sess_config.inter_op_parallelism_threads = args.inter
     if args.intra:
         sess_config.intra_op_parallelism_threads = args.intra
-    hooks = []
+        hooks = []
 
     if tf_config:
         hooks.append(tf.train.StopAtStepHook(last_step=train_steps))
@@ -609,35 +596,27 @@ def main(tf_config=None, server=None):
             while not sess.should_stop():
                 _, train_loss = sess.run([model.train_op, model.loss])
     else:
-        scaffold = None
-        if args.smartstaged:
-            sess_config.graph_options.optimizer_options.do_smart_stage = True
-            hooks.append(tf.make_prefetch_hook())
-        scaffold = tf.train.Scaffold(
-            local_init_op=tf.group(tf.global_variables_initializer(
-            ), tf.local_variables_initializer(), train_init_op))
-
-        saver = tf.train.Saver(tf.global_variables(),
+        with tf.Session(config=sess_config) as sess:
+            sess.run(tf.global_variables_initializer())
+            sess.run(tf.local_variables_initializer())
+            merged = tf.summary.merge_all()
+            writer = tf.summary.FileWriter(checkpoint_dir, sess.graph)
+            saver = tf.train.Saver(tf.global_variables(),
                                    max_to_keep=args.keep_checkpoint_max)
-        merged = tf.summary.merge_all()
-        with tf.train.MonitoredTrainingSession(hooks=hooks,
-                                               scaffold=scaffold,
-                                               config=sess_config) as sess:
             options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
             run_metadata = tf.RunMetadata()
 
             # train model
-            writer = tf.summary.FileWriter(checkpoint_dir, sess.graph)
+            sess.run(train_init_op)
 
             start = time.perf_counter()
             for _in in range(0, train_steps):
-                if (args.save_steps > 0 and
-                    (_in % args.save_steps == 0 or _in == train_steps - 1)
-                    ) or (not args.no_eval and _in == train_steps - 1):
+                if args.save_steps > 0 and (_in % args.save_steps == 0
+                                            or _in == train_steps - 1):
                     _, train_loss, events = sess.run(
                         [model.train_op, model.loss, merged])
                     writer.add_summary(events, _in)
-                    checkpoint_path = saver.save(get_session(sess),
+                    checkpoint_path = saver.save(sess,
                                                  save_path=os.path.join(
                                                      checkpoint_dir,
                                                      'dssm-checkpoint'),
@@ -670,20 +649,14 @@ def main(tf_config=None, server=None):
                         train_loss, _in, cost_time))
                     start = time.perf_counter()
 
-        # eval model
-        if not args.no_eval:
-            scaffold = tf.train.Scaffold(local_init_op=tf.group(
-                tf.local_variables_initializer(), test_init_op))
-            with tf.train.MonitoredTrainingSession(hooks=hooks,
-                                                   scaffold=scaffold,
-                                                   config=sess_config) as sess:
-                latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
-                saver.restore(sess, latest_checkpoint)
-
+            # eval model
+            if not args.no_eval:
                 writer = tf.summary.FileWriter(
                     os.path.join(checkpoint_dir, 'eval'))
-                model.evalmodel()
 
+                sess.run(test_init_op)
+                sess.run(tf.local_variables_initializer())
+                model.evalmodel()
                 for _in in range(1, test_steps + 1):
                     if (_in != test_steps):
                         sess.run(

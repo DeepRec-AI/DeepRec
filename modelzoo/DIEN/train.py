@@ -353,9 +353,6 @@ def get_arg_parser():
     parser.add_argument('--no_eval',
                         help='not evaluate trained model by eval dataset.',
                         action='store_true')
-    parser.add_argument('--smartstaged',
-                        help='enable DeepRec Smart Staged. Default close',
-                        action='store_true')
     return parser
 
 
@@ -367,10 +364,6 @@ if __name__ == '__main__':
     tf.set_random_seed(SEED)
     numpy.random.seed(SEED)
     random.seed(SEED)
-
-    # TODO
-    if args.smartstaged:
-        print("Smartstaged is not enabled in this model now.")
 
     if args.job == 'train':
         train(data_location=args.data_location,
