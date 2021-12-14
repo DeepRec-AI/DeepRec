@@ -725,7 +725,7 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   if (session_optimizer_options.do_smart_stage()) {
     VLOG(2) << "RUN Graph Optimization: SmartStage";
     std::string tn;
-    ReadStringFromEnvVar("TARGET_NDOES_NAME", "", &tn);
+    ReadStringFromEnvVar("TARGET_NODES_NAME", "", &tn);
     std::vector<std::string> target_nodes;
     for (std::string s : str_util::Split(tn, ';')) {
       target_nodes.push_back(s.substr(0, s.find_last_of(':')));
