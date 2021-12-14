@@ -16,11 +16,15 @@ from tensorflow.python.util.tf_export import tf_export
 @tf_export(v1=["nn.fused_embedding_lookup_sparse"])
 def fused_embedding_lookup_sparse(params,
                                   sp_ids,
+                                  sparse_weights=None,
                                   partition_strategy=None,
                                   name=None,
                                   combiner=None,
                                   max_norm=None,
                                   blocknums=None):
+  if sparse_weights is not None:
+    raise ValueError("sparse_weights is not supported yet" )
+
   valid_partition_strategy = ['div']
   if partition_strategy not in valid_partition_strategy:
     raise ValueError("{} is not supported yet. Currently only support {}".format(

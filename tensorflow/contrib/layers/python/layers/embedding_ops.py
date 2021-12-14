@@ -215,9 +215,6 @@ def safe_fused_embedding_lookup_sparse(embedding_weights,
   if len(embedding_weights) < 1:
     raise ValueError("Missing embedding_weights %s." % embedding_weights)
 
-  if sparse_weights is not None:
-    raise ValueError("sparse_weights is not supported yet" )
-
   if isinstance(embedding_weights, variables.PartitionedVariable):
     embedding_weights = list(embedding_weights)
   if not isinstance(embedding_weights[0], (kv_variable_ops.EmbeddingVariable, kv_variable_ops.DynamicEmbeddingVariable)):
@@ -252,11 +249,12 @@ def safe_fused_embedding_lookup_sparse(embedding_weights,
     result = fused_embedding_ops.fused_embedding_lookup_sparse(
       embedding_weights,
       sparse_ids,
-      partition_strategy,
-      name,
-      combiner,
-      max_norm,
-      blocknums
+      sparse_weights=sparse_weights,
+      partition_strategy=partition_strategy,
+      name=name,
+      combiner=combiner,
+      max_norm=max_norm,
+      blocknums=blocknums
     )
 
     if default_id is None:
