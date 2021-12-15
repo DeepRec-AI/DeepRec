@@ -2959,7 +2959,6 @@ py_library(
         ":data_flow_ops",
         ":framework",
         ":framework_for_generated_wrappers",
-        ":fused_embedding_ops",
         ":math_ops",
         ":platform",
         ":resource_variable_ops",
@@ -2967,6 +2966,7 @@ py_library(
         ":tensor_shape",
         ":variables",
         ":kv_variable_ops",
+        ":fused_embedding_ops",
     ],
 )
 
