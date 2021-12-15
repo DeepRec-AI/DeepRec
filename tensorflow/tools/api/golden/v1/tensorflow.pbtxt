@@ -1466,7 +1466,7 @@ tf_module {
   }
   member_method {
     name: "gather"
-    argspec: "args=[\'params\', \'indices\', \'validate_indices\', \'name\', \'axis\', \'batch_dims\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'0\'], "
+    argspec: "args=[\'params\', \'indices\', \'validate_indices\', \'name\', \'axis\', \'batch_dims\', \'ev_init_value\', \'counts\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'0\', \'None\', \'None\'], "
   }
   member_method {
     name: "gather_nd"
@@ -1759,6 +1759,10 @@ tf_module {
   member_method {
     name: "kv_resource_gather"
     argspec: "args=[\'resource\', \'indices\', \'default_value\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
+    name: "kv_resource_gather_v1"
+    argspec: "args=[\'resource\', \'indices\', \'default_value\', \'counts\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
   }
   member_method {
     name: "kv_resource_import"

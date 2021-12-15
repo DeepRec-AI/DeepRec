@@ -129,6 +129,11 @@ struct NormalHeader {
     __sync_bool_compare_and_swap(&freq_counter,
         freq_counter, freq_counter + 1);
   }
+
+  inline void AddFreq(int64 count) {
+    __sync_bool_compare_and_swap(&freq_counter,
+        freq_counter, freq_counter + count);
+  }
 };
 } // namespace
 
@@ -211,6 +216,10 @@ class ValuePtr {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
   }
 
+  virtual void AddFreq(int64 count) {
+    LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
+  }
+
  protected:
   void* ptr_;
 
@@ -268,6 +277,11 @@ class NormalValuePtr : public ValuePtr<V> {
   void AddFreq() {
     MetaHeader* meta = (MetaHeader*)this->ptr_;
     return ((NormalHeader*)this->ptr_)->AddFreq();
+  }
+
+  void AddFreq(int64 count) {
+    MetaHeader* meta = (MetaHeader*)this->ptr_;
+    return ((NormalHeader*)this->ptr_)->AddFreq(count);
   }
 };
 

@@ -122,6 +122,11 @@ class EmbeddingVar : public ResourceBase {
     filter_->LookupOrCreate(key, val, default_value_ptr);
   }
 
+  void LookupOrCreate(K key, V* val, V* default_v, int64 count)  {
+    const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
+    filter_->LookupOrCreate(key, val, default_value_ptr, count);
+  }
+
   V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {
     return value_ptr->GetOrAllocate(alloc_, value_len_, default_v,
         emb_config_.emb_index);

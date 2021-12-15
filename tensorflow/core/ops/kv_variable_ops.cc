@@ -218,6 +218,53 @@ ignore_lookup_error: whether to ignore the error when the resource
   doesn't exist.
 )");
 
+REGISTER_OP("KvResourceGatherV1")
+    .Input("resource: resource")
+    .Input("indices: Tkeys")
+    .Input("default_value: dtype")
+    .Input("counts: counts_type")
+    .Attr("validate_indices: bool = true")
+    .Output("output: dtype")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64,int32,string}")
+    .Attr("counts_type: {int32, int64} = DT_INT32")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeAndType handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(
+          c->WithRankAtLeast(handle_shape_and_type.shape, 1, &unused));
+      ShapeHandle params_subshape;
+	  params_subshape = handle_shape_and_type.shape;
+      //TF_RETURN_IF_ERROR(
+      //    c->Subshape(handle_shape_and_type.shape, 1, &params_subshape));
+      ShapeHandle indices_shape = c->input(1);
+      ShapeHandle out;
+      TF_RETURN_IF_ERROR(c->Concatenate(indices_shape, params_subshape, &out));
+      c->set_output(0, out);
+      return Status::OK();
+    })
+    .Doc(R"doc(
+Gather slices from the variable pointed to by `resource` according to `indices`.
+
+`indices` must be an integer tensor of any dimension (usually 0-D or 1-D).
+Produces an output tensor with shape `indices.shape + params.shape[1:]` where:
+
+```python
+    # Scalar indices
+    output[:, ..., :] = params[indices, :, ... :]
+
+    # Vector indices
+    output[i, :, ..., :] = params[indices[i], :, ... :]
+
+    # Higher rank indices
+    output[i, ..., j, :, ... :] = params[indices[i, ..., j], :, ..., :]
+```
+
+)doc");
+
 REGISTER_OP("KvResourceGather")
     .Input("resource: resource")
     .Input("indices: Tkeys")

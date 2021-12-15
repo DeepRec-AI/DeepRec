@@ -98,7 +98,8 @@ def _embedding_lookup_and_transform(params,
                                     max_norm=None,
                                     transform_fn=None,
                                     ev_init_value=None,
-                                    blocknums=None):
+                                    blocknums=None,
+                                    counts=None):
   """Helper function for embedding_lookup and _compute_sampled_logits.
 
   This function is a generalization of embedding_lookup that optionally
@@ -178,7 +179,8 @@ def _embedding_lookup_and_transform(params,
       else:
         with ops.colocate_with(params[0]):
           result = _clip(array_ops.gather(params[0], ids, name=name,
-                                          ev_init_value=ev_init_value),
+                                          ev_init_value=ev_init_value,
+                                          counts=counts),
                          ids, max_norm)
           if transform_fn:
             result = transform_fn(result)
@@ -285,7 +287,7 @@ def _embedding_lookup_and_transform(params,
               new_ev_init_value = None
             else:
               new_ev_init_value = gather_ev_init_value[p]
-            result = array_ops.gather(params[p], pids, ev_init_value=new_ev_init_value)
+            result = array_ops.gather(params[p], pids, ev_init_value=new_ev_init_value, counts=counts)
             if transform_fn:
               # If transform_fn is provided, the clip_by_norm precedes
               # the transform and hence must be co-located. See below
@@ -349,7 +351,8 @@ def embedding_lookup(
     validate_indices=True,  # pylint: disable=unused-argument
     max_norm=None,
     ev_init_value=None,
-    blocknums=None):
+    blocknums=None,
+    counts=None):
   """Looks up `ids` in a list of embedding tensors.
 
   This function is used to perform parallel lookups on the list of
@@ -411,7 +414,8 @@ def embedding_lookup(
       max_norm=max_norm,
       transform_fn=None,
       ev_init_value=ev_init_value,
-      blocknums=blocknums)
+      blocknums=blocknums,
+      counts=counts)
 
 
 @tf_export("nn.embedding_lookup", v1=[])
@@ -585,7 +589,11 @@ def embedding_lookup_sparse(params,
       segment_ids = math_ops.cast(segment_ids, dtypes.int32)
 
     ids = sp_ids.values
-    ids, idx = array_ops.unique(ids)
+    if params[0]._filter_freq == 0:
+      ids, idx = array_ops.unique(ids)
+      counts = None
+    else:
+      ids, idx, counts = array_ops.unique_with_counts(ids)
 
     uniqued_blocknums = None
     if blocknums is not None:
@@ -593,10 +601,9 @@ def embedding_lookup_sparse(params,
         raise ValueError("blocknums now require unqiue index to be generagted")
       else:
         uniqued_blocknums = math_ops.unsorted_segment_max(blocknums, idx, array_ops.squeeze(array_ops.shape(ids), 0))
-
     embeddings = embedding_lookup(
         params, ids, partition_strategy=partition_strategy, max_norm=max_norm,
-        blocknums=uniqued_blocknums)
+        blocknums=uniqued_blocknums, counts = counts)
     if embeddings.dtype in (dtypes.float16, dtypes.bfloat16):
       embeddings = math_ops.cast(embeddings, dtypes.float32)
     if not ignore_weights:

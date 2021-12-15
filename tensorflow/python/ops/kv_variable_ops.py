@@ -635,7 +635,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     """
     raise NotImplementedError("EmbeddingVariable does not implement read_value()")
 
-  def sparse_read(self, indices, name=None, ev_init_value=None):
+  def sparse_read(self, indices, name=None, ev_init_value=None, counts=None):
     """Reads the value of this variable sparsely, using `gather`."""
     with ops.name_scope("Gather" if name is None else name) as name:
       if self._trainable:
@@ -645,8 +645,14 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       else:
         default_value = self._initializer(array_ops.concat([array_ops.shape(indices),
                                                             self._graph_shape.as_list()],
-                                                           axis=0), dtype=self._dtype)
-      value = gen_kv_variable_ops.kv_resource_gather(self._handle,
+                                                           axis=0), dtype=self._dtype)      
+      if counts != None:
+        value = gen_kv_variable_ops.kv_resource_gather_v1(self._handle,
+              indices,
+              default_value,
+              counts, name=name)
+      else:
+        value = gen_kv_variable_ops.kv_resource_gather(self._handle,
               indices,
               default_value, name=name)
     return array_ops.identity(value)
@@ -844,4 +850,23 @@ def _GatherGrad(op, grad):
   values = array_ops.reshape(grad, values_shape)
   indices = array_ops.reshape(indices, size)
   return [ops.IndexedSlices(values, indices, params_shape), None, None]
+
+@ops.RegisterGradient("KvResourceGatherV1")
+def _GatherV1Grad(op, grad):
+  """Gradient for gather op."""
+  # Build appropriately shaped IndexedSlices
+  # Walk graph back until the original handle is found.
+  # TODO(apassos): more robust way of getting the shape.
+  # TODO(apassos): implement this for EAGER mode.
+  handle = op.inputs[0]
+  while handle.op.type != "KvVarHandleOp":
+    handle = handle.op.inputs[0]
+  params_shape = ops.convert_to_tensor(
+      tensor_shape.TensorShape(handle.op.get_attr("shape")))
+  indices = op.inputs[1]
+  size = array_ops.expand_dims(array_ops.size(indices), 0)
+  values_shape = array_ops.concat([size, params_shape[0:]], 0)
+  values = array_ops.reshape(grad, values_shape)
+  indices = array_ops.reshape(indices, size)
+  return [ops.IndexedSlices(values, indices, params_shape), None, None, None]
 
