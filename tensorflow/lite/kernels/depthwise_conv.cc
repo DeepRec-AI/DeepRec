@@ -100,6 +100,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   TF_LITE_ENSURE_EQ(context, NumDimensions(input), 4);
   TF_LITE_ENSURE_EQ(context, NumDimensions(filter), 4);
+  TF_LITE_ENSURE(context, params->dilation_height_factor > 0);
+  TF_LITE_ENSURE(context, params->dilation_width_factor > 0);
 
   // The parameter 'depth_multiplier' is redundant, so we check here to make
   // sure it is consistent with the given dimensions.
