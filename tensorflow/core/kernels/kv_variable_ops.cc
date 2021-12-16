@@ -236,7 +236,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          block_num_, slotnum, opname,
                                          steps_to_live_, primary_variable->MinFreq(),
                                          max_freq_, primary_variable->GetL2WeightThreshold(),
-                                         layout_));
+                                         layout_, 0, -1.0, counter_type_, storage_type_));
              return (*ptr)->Init(default_values);
             }));
       primary_variable->SetSlotNum(slotnum);
