@@ -66,11 +66,16 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
                                            // if necessary
+    .Attr("fill_empty_row: bool = false")
+    .Attr("prune_invalid_id: bool = false")
+    .Attr("default_id: int64 = -1")
     .Input("partition_shapes: num_partitions * int64")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
+    .Input("sp_dense_shape: int64")
     .Output("partitioned_values: num_partitions * int64")
     .Output("partitioned_indices: num_partitions * int64")
+    .Output("row_empty_and_invalid_flags: int32")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
@@ -79,13 +84,16 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(int(num_partitions)), 1, &unused));
+          ctx->WithRank(ctx->input(num_partitions, 1, &unused));
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(int(num_partitions) + 1), 2, &unused));
+          ctx->WithRank(ctx->input(num_partitions + 1), 2, &unused));
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(num_partitions + 2), 1, &unused));
+
       DimensionHandle unused_dim;
       TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
 
-      for (int i = 0; i < int(num_partitions); i++) {
+      for (int i = 0; i < num_partitions; i++) {
         ShapeHandle partition_shape;
         TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 1, &partition_shape));
         TF_RETURN_IF_ERROR(
@@ -99,8 +107,10 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
           return errors::InvalidArgument("partition_axis > 0 not implemented!");
         }
         ctx->set_output(i, values_result_shape);
-        ctx->set_output(i + int(num_partitions), indices_result_shape);
+        ctx->set_output(i + num_partitions, indices_result_shape);
       }
+      ctx->set_output(2 * num_partitions, ctx->MakeShape({ctx->UnknownDim()});
+
       return Status::OK();
     })
     .Doc(R"doc(
@@ -128,6 +138,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
                                                        // actually directly port
                                                        // to python grad op
                                                        // output
+    .Input("row_empty_and_invalid_flags: int32")
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
     .SetShapeFn([](InferenceContext* ctx) {
@@ -147,6 +158,8 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
 
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(2 * num_partitions), 1, &unused));
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
 
       DimensionHandle emb_vec_size_dim = ctx->Dim(first_emb_shard_shape, 1);
       ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
@@ -173,6 +186,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Input("emb_shards: num_partitions * T")
     .Input("partitioned_indices: num_partitions * int64")
     .Input("feature_nums: int32")
+    .Input("row_empty_and_invalid_flags: int32")
     .Output("grad_shards: num_partitions * T")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_partitions;
@@ -187,6 +201,8 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
       }
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
+      TF_RETURN_IF_ERROR(
+          ctx->WithRank(ctx->input(2 * num_partitions + 2), 1, &unused));
 
       DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
 
