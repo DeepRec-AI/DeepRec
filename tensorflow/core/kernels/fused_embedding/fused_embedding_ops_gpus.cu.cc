@@ -41,9 +41,10 @@ _global__ void DetectInvalid(const int64_t* values, const int64_t nnz,
   }
 }
 
-__forceinline__ __device__ void DetectEmptyRow(
+__global void FusedMultiFunctionalKernel(
     const IndicePair* indices, const int64_t* values, const int64_t nnz,
-    const int64_t batch_size, const int64_t default_id, int* row_emptiness_flag,
+    const int64_t batch_size, const bool prune_invalid_id,
+    const int64_t default_id, int* row_emptiness_flag, int* invalid_id_flag,
     IndicePair* batch_indices_buffer, int64_t* values_extended) {
   // This kernel will do many things together
   // 1. The first part of threads will do job 1(DetectRowEmptiness), others will
@@ -55,6 +56,12 @@ __forceinline__ __device__ void DetectEmptyRow(
     // do DetectRowEmptiness
     const int64_t row_in_batch = indices[offset].row_in_batch;
     atomicAnd(row_emptiness_flag + row_in_batch, 0x0);
+    if (prune_invalid_id) {
+      const int64_t value = values[offset];
+      if (value < 0) {
+        atomicAnd(invalid_id_flag + offset, 0x0);
+      }
+    }
   } else {
     // do InitBatchRowsBuffer
     const int other_offset = offset - nnz;
@@ -63,38 +70,15 @@ __forceinline__ __device__ void DetectEmptyRow(
       // always set entry id to 0;
       batch_indices_buffer[other_offset].entry_in_column = 0;
     }
-
-    // set values extended to default id
-    if (offset + 2 < nnz + batch_size) {
-      longlong2 l2 = make_longlong2(default_id, default_id);
-      *((longlong2*)(values_extended + offset)) = l2;
-    } else if (offset < nnz + batch_size) {
-      values_extended[offset] = default_id;
-    }
   }
-}
 
-__global__ void DetectEmptyRowKernelNNZHost(
-    const IndicePair* indices, const int64_t* values, const int64_t nnz,
-    const int64_t batch_size, const int64_t default_id, int* row_emptiness_flag,
-    IndicePair* batch_indices_buffer, int64_t* values_extended) {
-  MultiFunctional(indices, values, nnz, batch_size, default_id,
-                  row_emptiness_flag, invalid_id_flag, batch_indices_buffer,
-                  values_extended);
-}
-
-__global__ void DetectEmptyRowNNZDevice(
-    const IndicePair* indices, const int64_t* values, const int64_t* nnz_p,
-    const int64_t batch_size, const int64_t default_id, int* row_emptiness_flag,
-    IndicePair* batch_indices_buffer, int64_t* values_extended) {
-  __share__ int64_t nnz_shared[1];
-  if (threadIdx.x == 0) {
-    nnz_shared[0] = *(nnz_p)
+  // set values extended to default id
+  if (offset + 2 < nnz) {
+    longlong2 l2 = make_longlong2(default_id, default_id);
+    *((longlong2*)(values_extended + offset)) = l2;
+  } else if (offset < nnz) {
+    values_extended[offset] = default_id;
   }
-  __syncthreads();
-  const int64_t nnz = nnz_shared[0];
-  DetectEmptyRow(indices, values, nnz, batch_size, default_id,
-                 row_emptiness_flag, batch_indices_buffer, values_extended);
 }
 
 __global__ void CalcElementsOffsetPerPartition(
@@ -283,12 +267,10 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                                                          : max_cub_bytes;
     }
 
-    OP_REQUIRES_OK(
-        ctx,
-        ctx->allocate_temp(
-            DT_INT8,
-            TensorShape({static_cast<int64>(max_cub_bytes / sizeof(size_t))}),
-            &max_cub_bytes));
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(
+        DT_INT8,
+        TensorShape({static_cast<int64>(max_cub_bytes / sizeof(size_t))}),
+        &max_cub_bytes));
 
     // 3. fill_empty_row, prune, if avaliable.
     Tensor values_extended;
@@ -298,97 +280,23 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     Tensor selected_num;
     int new_nnz = nnz;
 
-    OP_REQUIRES_OK(ctx,
-                   ctx->allocate_output(2 * num_partitions_,
-                                        TensorShape{batch_size + nnz}),
-                   &all_flags);
+
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+                            2 * num_partitions_,
+                            TensorShape{batch_size + nnz}),
+                            &all_flags);
 
     if (fill_empty_row_ || prune_invalid_id_) {
-      OP_REQUIRES_OK(ctx,
-                     ctx->allocate_temp(DT_INT64, TensorShape{nnz + batch_size},
-                                        &values_extended));
-      OP_REQUIRES_OK(
-          ctx, ctx->allocate_temp(DT_INT64, TensorShape{2 * (nnz + batch_size)},
-                                  &indices_extended));
-      OP_REQUIRES_OK(ctx,
-                     ctx->allocate_temp(DT_INT64, TensorShape{2 * batch_size},
-                                        &tmp_indices_buffer));
-      // pos 0 for prune_invalid, pos 1 for empty_row
-      OP_REQUIRES_OK(
-          ctx, ctx->allocate_temp(DT_INT32, TensorShape{2}, &selected_num));
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{nnz + batch_size},
+                         &values_extended));
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{2 * (nnz + batch_size)},
+                         &indices_extended));
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{2 * batch_size},
+                         &tmp_indices_buffer));
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT32, TensorShape{1}, &selected_num));
 
       cudaMemsetAsync(all_flags->flat<int>().data(), 0x1,
                       sizeof(int) * (batch_size + nnz), stream);
-
-      if (prune_invalid_id_) {
-        // 3.1 detect invalid id
-        {
-          const int threads = 1024;
-          const int blocks = CalcBlocksLinearMapping(nnz, threads);
-          DetectInvalid<<<blocks, threads, 0, stream>>>(
-              values_tensor->flat<int64>().data(), nnz,
-              all_flags->flat<int>().data() + batch_size);
-        }
-        // only copy valid values and indices
-        cub::DeviceSelect::Flagged(
-            cub_temp_storage.flat<int8>().data(), max_cub_bytes,
-            reinterpret_cast<const IndicePair*>(
-                indices_tensor->flat<int64>().data()),
-            all_flags->flat<int>().data() + batch_size,
-            reinterpret_cast<IndicePair*>(
-                indices_extended.flat<int64>().data()),
-            selected_num_d.flat<int>().data(), nnz, stream);
-
-        cub::DeviceSelect::Flagged(
-            cub_temp_storage.flat<int8>().data(), max_cub_bytes,
-            values_tensor->flat<int64>().data(),
-            all_flags->flat<int>().data() + batch_size,
-            values_extended.flat<int64>().data(),
-            selected_num_d.flat<int>().data(), nnz, stream);
-      }
-
-      if (fill_empty_row_) {
-        // 3.2 detect empty row and init other buffer which will be used later
-        if (prune_invalid_id_) {
-          // nnz may has changed, fetch it from device mem
-          {
-            const int threads = 1024;
-            const int blocks =
-                CalcBlocksLinearMapping(nnz + batch_size, threads);
-            DetectEmptyRowNNZDevice<<<blocks, threads, 0, stream>>>(
-                reinterpret_cast<IndicePair*>(
-                    indices_tensor->flat<int64>().data()),
-                values_tensor->flat<int64>().data(),
-                selected_num.flat<int>.data(), batch_size, default_id,
-                all_flags->flat<int>().data(),
-                reinterpret_cast<IndicePair*>(
-                    tmp_indices_buffer.flat<int>().data()),
-                values_extended.flat<int64>().data());
-          }
-        } else {
-          // can fetch nnz directly from host args
-          const int threads = 1024;
-          const int blocks = CalcBlocksLinearMapping(nnz + batch_size, threads);
-          DetectEmptyRowKernelNNZHost<<<blocks, threads, 0, stream>>>(
-              reinterpret_cast<IndicePair*>(
-                  indices_tensor->flat<int64>().data()),
-              values_tensor->flat<int64>().data(), nnz, batch_size, default_id,
-              all_flags->flat<int>().data(),
-              reinterpret_cast<IndicePair*>(
-                  tmp_indices_buffer.flat<int>().data()),
-              values_extended.flat<int64>().data());
-        }
-        // 3.3 copy emtpy row indiecs
-        cub::DeviceSelect::Flagged(
-            cub_temp_storage.flat<int8>().data(), max_cub_bytes,
-            reinterpret_cast<const IndicePair*>(
-                tmp_indices_buffer.flat<int64>().data()),
-            all_flags->flat<int>().data(),
-            reinterpret_cast<IndicePair*>(
-                indices_extended.flat<int64>().data()) +
-                new_nnz,
-            selected_num_d.flat<int>().data(), batch_size, stream);
-      }
 
       // 3.1 set flags, init tmp_indices_buffer etc.
       if (fill_empty_row_) {
@@ -458,11 +366,9 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
 
     // 3. sort the sp_values and indices
     Tensor values_sorted;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz},
-                                           &values_sorted));
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz}, &values_sorted));
     Tensor indices_sorted;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz, 2},
-                                           &indices_sorted));
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz, 2}, &indices_sorted));
 
     const int64_t* values_in = (fill_empty_row_ || prune_invalid_id_)
                                    ? values_extended.flat<int64>().data()
@@ -483,20 +389,18 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
 
     // 3. calculate how many elements for each partition
     Tensor partition_sizes_accumulate;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_temp(
-                 DT_INT64, TensorShape({static_cast<int64>(num_partitions_)}),
-                 &partition_sizes_accumulate));
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64,
+                       TensorShape({static_cast<int64>(num_partitions_)}),
+                       &partition_sizes_accumulate));
     cudaMemcpyAsync(partition_sizes_accumulate.flat<int64>().data(),
                     partition_sizes_accumulate_.data(),
                     num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
                     stream);
 
     Tensor elements_offset_per_partition;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_temp(
-                 DT_INT64, TensorShape({static_cast<int64>(num_partitions_)}),
-                 &elements_offset_per_partition));
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64,
+                       TensorShape({static_cast<int64>(num_partitions_)}),
+                       &elements_offset_per_partition));
 
     {
       const int blocks = num_partitions_;
