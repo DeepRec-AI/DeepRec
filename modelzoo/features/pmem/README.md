@@ -26,6 +26,7 @@ pandas                        1.1.5
   --num_mock_cols=30
   --batch_size=12800 \
   --dim_size=256 \
+  --ev_storage=pmem \
 
 ## use criteo data
 ./launch.sh \
@@ -33,6 +34,7 @@ pandas                        1.1.5
   --data_dir=${path_to_criteo} \
   --batch_size=12800 \
   --dim_size=256 \
+  --ev_storage=pmem \
 ```
 
 - Here `num_mock_cols` is the number of columns in mock training data, `mock_vocabulary_size` is 
@@ -42,4 +44,5 @@ would increase the `vocabulary_size` of each column (variable) by a factor of 2.
 - The log files are located at `./bench-ps.log` and `./bench-worker.log` for ps and worker process, respectively.
 - The default embedding variable type is hash table-based Embedding Variable, which does not require a specification on `mock_vocabulary_size` and `vocabulary_amplify_factor`
 - by specifying `--use_ev_var=False`, the benchmark would fallback to use TF's native variable for Embeddings, and users shall provide `mock_vocabulary_size` in mock data scenarios.
+- '--ev_storage=pmem/dram' to select EmbeddingVariable StorageType, Default is 'dram'.
 

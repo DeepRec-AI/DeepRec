@@ -6,6 +6,8 @@ import time
 import tensorflow as tf
 from tensorflow.python.client import timeline
 from criteo import CriteoClickLogs
+from tensorflow.core.framework.embedding import config_pb2
+from tensorflow.python.ops import variables
 
 FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_integer("batch_size", 1280, "")
@@ -26,6 +28,7 @@ tf.app.flags.DEFINE_integer("vocabulary_amplify_factor", 1, "")
 tf.app.flags.DEFINE_boolean("use_ev_var", True, "")
 tf.app.flags.DEFINE_boolean("use_xdl_var", False, "")
 tf.app.flags.DEFINE_boolean("trace_timeline", False, "")
+tf.app.flags.DEFINE_string("ev_storage", 'dram', "")
 
 def main(_):
   cluster_dict = {}
@@ -91,18 +94,24 @@ def main(_):
       if FLAGS.use_mock_data:
         for sidx in range(FLAGS.num_mock_cols):
           if FLAGS.use_ev_var:
+            if FLAGS.ev_storage == "dram":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM))
+            elif FLAGS.ev_storage == "pmem":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.PMEM))
             fm_w = tf.get_embedding_variable(
                name='fm_w{}'.format(sidx),
                embedding_dim=1,
                key_dtype=tf.int64,
-               initializer=tf.ones_initializer(tf.float32))
+               initializer=tf.ones_initializer(tf.float32),
+               ev_option = ev_option)
             features['fm_w'].append(
                 tf.nn.embedding_lookup(fm_w, batch['col{}'.format(sidx)]))
             fm_v = tf.get_embedding_variable(
                name='fm_v{}'.format(sidx),
                embedding_dim=FLAGS.dim_size,
                key_dtype=tf.int64,
-               initializer=tf.ones_initializer(tf.float32))
+               initializer=tf.ones_initializer(tf.float32),
+               ev_option = ev_option)
             features['fm_v'].append(
                 tf.nn.embedding_lookup(fm_v, batch['col{}'.format(sidx)]))
           elif FLAGS.use_xdl_var:
@@ -157,6 +166,9 @@ def main(_):
     opt = tf.train.AdagradOptimizer(learning_rate=FLAGS.lr)
     step = tf.train.create_global_step()
     train_op = opt.minimize(loss, global_step=step)
+  # calculate embedding variable size
+  ev_list = tf.get_collection(tf.GraphKeys.EMBEDDING_VARIABLES)
+  total_size=4*tf.add_n([tf.divide(tf.reduce_prod(ev.total_count()), 1024*1024) for ev in ev_list])
 
   hooks = []
   hooks.append(tf.train.LoggingTensorHook({'step': step}, every_n_iter=10))
@@ -179,11 +191,12 @@ def main(_):
       ts = time.time()
       durs.append(ts - prev_ts)
       prev_ts = ts
+    total_size=sess.run(total_size)
     durs = np.array(durs)
     tf.logging.info(
         '{} x {} samples with dim {} trained in {:.2f}ms, {:.2f} samples/sec, '
         '(avg={:.2f}ms, p10={:.2f}ms, p50={:.2f}ms, p90={:.2f}ms, '
-        'p95={:.2f}ms).'.format(
+        'p95={:.2f}ms), ev_mem_request={:.2f} MB.'.format(
             FLAGS.num_steps,
             FLAGS.batch_size,
             FLAGS.dim_size,
@@ -193,7 +206,8 @@ def main(_):
             1000 * np.percentile(durs, 10),
             1000 * np.percentile(durs, 50),
             1000 * np.percentile(durs, 90),
-            1000 * np.percentile(durs, 95)))
+            1000 * np.percentile(durs, 95),
+            total_size))
 
 if __name__ == '__main__':
   os.environ['CUDA_VISIBLE_DEVICES'] = ''
