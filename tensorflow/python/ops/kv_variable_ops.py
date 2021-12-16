@@ -278,6 +278,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._counter_type = dtypes.uint64
       
     self._l2_weight_threshold = evconfig.l2_weight_threshold
+    self._storage_type = evconfig.storage_type
     if self._steps_to_live is 0 and self._filter_freq is 0 and self._l2_weight_threshold == -1.0:
       self._layout = "light"
     else:
@@ -380,6 +381,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     counter_type = self._counter_type,
                     max_freq = 99999,
                     layout = self._layout,
+                    storage_type = self._storage_type,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None
@@ -546,6 +548,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
   def steps_to_live(self):
     return self._steps_to_live
   
+  @property
+  def storage_type(self):
+    return self._storage_type
+
   @property
   def block_num(self):
     if self._block_num is None:

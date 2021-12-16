@@ -52,25 +52,38 @@ class EmbeddingVar : public ResourceBase {
  public:
   EmbeddingVar(const string& name,
                KVInterface<K, V>* kv,
-               Allocator* alloc = ev_allocator(),
                EmbeddingConfig emb_cfg = EmbeddingConfig()):
       name_(name),
       kv_(kv),
       default_value_(nullptr),
       value_len_(0),
-      alloc_(alloc),
-      emb_config_(emb_cfg) {
-        if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
-          new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
-        } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
-          new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
-        } else {
-          LOG(FATAL) << name_ << ", Unsupport EmbeddingVariable LayoutType.";
-        }
-        filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_cfg, this);
-      }
+      alloc_(nullptr),
+      emb_config_(emb_cfg) {}
 
   Status Init(const Tensor& default_tensor) {
+    if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
+      new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
+    } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
+      new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
+    } else {
+      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
+    }
+    filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this);
+
+    if (embedding::StorageType::DRAM == emb_config_.get_storage_type()) {
+      alloc_ = ev_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::PMEM == emb_config_.get_storage_type()) {
+      alloc_ = pmem_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered PMEM AllocatorFactory.");
+      }
+    } else {
+      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
+    }
+
     if (default_tensor.dims() != 1) {
       return errors::InvalidArgument("EV's default_tensor shape must be 1-D");
     } else if (DataTypeToEnum<V>::v() != default_tensor.dtype()) {

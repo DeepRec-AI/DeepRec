@@ -2190,7 +2190,8 @@ def get_embedding_variable(name,
       evconfig=variables.EmbeddingVariableConfig(
         steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ev_option.ht_type,
         l2_weight_threshold=l2_weight_threshold,
-        filter_strategy=ev_option.filter_strategy),
+        filter_strategy=ev_option.filter_strategy,
+        storage_type = ev_option.storage_option.storage_type),
       ht_partition_num=ev_option.ht_partition_num)
 
 
@@ -2246,7 +2247,8 @@ def get_embedding_variable_internal(name,
         steps_to_live=steps_to_live, init_data_source=init_data_source,
         ht_type=ev_option.ht_type,
         l2_weight_threshold=l2_weight_threshold,
-        filter_strategy=ev_option.filter_strategy),
+        filter_strategy=ev_option.filter_strategy,
+        storage_type=ev_option.storage_option.storage_type),
       ht_partition_num=ev_option.ht_partition_num)
 
 
@@ -2360,7 +2362,8 @@ def get_dynamic_dimension_embedding_variable(name,
                           constraint=None,
                           steps_to_live=None,
                           init_data_source=None,
-                          ht_partition_num=1000):
+                          ht_partition_num=1000,
+                          storage_type=None):
   if key_dtype == dtypes.int64:
     invalid_key = 9223372036854775807
   elif key_dtype == dtypes.int32:
@@ -2381,7 +2384,8 @@ def get_dynamic_dimension_embedding_variable(name,
       use_resource=True, custom_getter=custom_getter,
       constraint=constraint, invalid_key=invalid_key,
       evconfig=variables.EmbeddingVariableConfig(
-        steps_to_live=steps_to_live, init_data_source=init_data_source),
+        steps_to_live=steps_to_live, init_data_source=init_data_source,
+        storage_type=storage_type),
       ht_partition_num=ht_partition_num)
 
 def _get_partitioned_variable(name,

@@ -257,6 +257,10 @@ tf_module {
     argspec: "args=[\'features\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "safe_adaptive_embedding_lookup_sparse"
+    argspec: "args=[\'hash_embedding_weights\', \'ev_embedding_weights\', \'sparse_ids\', \'hash_ev_ids\', \'sparse_weights\', \'combiner\', \'default_id\', \'name\', \'partition_strategy\', \'max_norm\', \'bucket_size\', \'adaptive_mask_tensor\', \'blocknums\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'div\', \'None\', \'None\', \'None\', \'None\'], "
+  }
+  member_method {
     name: "safe_embedding_lookup_multi_dim"
     argspec: "args=[\'embedding_weights\', \'sparse_ids\', \'sparse_weights\', \'combiners\', \'name\', \'partition_strategy\', \'max_norm\', \'weight_axis\', \'prune\'], varargs=None, keywords=None, defaults=[\'None\', \"[\'mean\']\", \'None\', \'div\', \'None\', \'1\', \'True\'], "
   }
