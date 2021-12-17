@@ -3953,7 +3953,7 @@ def gather(params,
     # TODO(apassos) find a less bad way of detecting resource variables
     # without introducing a circular dependency.
     from tensorflow.python.ops import kv_variable_ops
-    if isinstance(kv_variable_ops.EmbeddingVariable):
+    if isinstance(params, kv_variable_ops.EmbeddingVariable):
       return params.sparse_read(indices, name=name, ev_init_value=ev_init_value,
         counts=counts)
     else:

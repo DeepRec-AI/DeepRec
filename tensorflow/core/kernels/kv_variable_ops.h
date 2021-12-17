@@ -294,7 +294,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
       return st;
     }
 
-    st = reader->LookupTensorShape(tensor_version, &freq_shape);
+    st = reader->LookupTensorShape(tensor_freq, &freq_shape);
     if (!st.ok()) {
       if (st.code() == error::NOT_FOUND) {
         freq_shape = version_shape;
@@ -340,16 +340,22 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::st
       reader->LookupSegment(tensor_key, read_key_num * sizeof(K), restore_buff.key_buffer, key_bytes_read);
       reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
       reader->LookupSegment(tensor_version, read_key_num * sizeof(int64), restore_buff.version_buffer, version_bytes_read);
+      if (version_bytes_read == 0) {
+        memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+      }
       if (filter_flag) {
         reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+        if (freq_bytes_read == 0) {
+          int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+          for (int64 i = 0; i < read_key_num; i++) {
+            freq_tmp[i] = ev->MinFreq();
+          }
+        }
       } else {
-        int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
-        int64 len = version_bytes_read / sizeof(int64);
-        for (int64 i = 0; i < len; i++) {
+        int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+        for (int64 i = 0; i < read_key_num; i++) {
           freq_tmp[i] = ev->MinFreq();
         }
-        memcpy(restore_buff.freq_buffer, freq_tmp, version_bytes_read);
-        free(freq_tmp);
       }
 
       if (key_bytes_read > 0) {
@@ -374,7 +380,7 @@ Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string te
   reader->LookupTensorShape(tensor_key, &key_shape);
   reader->LookupTensorShape(tensor_value, &value_shape);
   reader->LookupTensorShape(tensor_version, &version_shape);
-  st = reader->LookupTensorShape(tensor_version, &freq_shape);
+  st = reader->LookupTensorShape(tensor_freq, &freq_shape);
   if (!st.ok()) {
     if (st.code() == error::NOT_FOUND) {
       freq_shape = version_shape;
@@ -419,16 +425,22 @@ Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader, std::string te
     reader->LookupSegment(tensor_key, read_key_num * sizeof(K), restore_buff.key_buffer, key_bytes_read);
     reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
     reader->LookupSegment(tensor_version, read_key_num * sizeof(int64), restore_buff.version_buffer, version_bytes_read);
+    if (version_bytes_read == 0) {
+        memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+    }
     if (filter_flag) {
       reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+      if (freq_bytes_read == 0) {
+        int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+        for (int64 i = 0; i < read_key_num; i++) {
+          freq_tmp[i] = ev->MinFreq();
+        }
+      }
     } else {
-      int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
-      int64 len = version_bytes_read / sizeof(int64);
-      for (int64 i = 0; i < len; i++) {
+      int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+      for (int64 i = 0; i < read_key_num; i++) {
         freq_tmp[i] = ev->MinFreq();
       }
-      memcpy(restore_buff.freq_buffer, freq_tmp, version_bytes_read);
-      free(freq_tmp);
     }
     if (key_bytes_read > 0) {
       read_key_num = key_bytes_read / sizeof(K);
@@ -451,6 +463,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
 
     // first check whether there is partition
     string part_str = "part_";
+
     if (name_string.find(part_str) == std::string::npos) {
       // no partition
       Status s = RestoreValue(ev, reader, name_string + key_suffix, name_string + value_suffix, name_string + version_suffix, name_string + freq_suffix);
@@ -622,17 +635,22 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev, std::string name_string, int
             reader->LookupSegmentOffset(tensor_value, value_part_offset + tot_value_bytes_read, read_key_num * value_unit_bytes, restore_buff.value_buffer, value_bytes_read);
 
             reader->LookupSegmentOffset(tensor_version, version_part_offset + tot_version_bytes_read, read_key_num * sizeof(int64) , restore_buff.version_buffer, version_bytes_read);
+            if (version_bytes_read == 0) {
+               memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+            }
             if (filter_flag) {
               reader->LookupSegmentOffset(tensor_freq, freq_part_offset + tot_freq_bytes_read,read_key_num * sizeof(int64), restore_buff.freq_buffer, freq_bytes_read);
+              if (freq_bytes_read == 0) {
+                int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+                for (int64 i = 0; i < read_key_num; i++) {
+                  freq_tmp[i] = ev->MinFreq();
+                }
+              }
             } else {
-              int64 *freq_tmp = (int64 *)malloc(version_bytes_read);
-              int64 len = version_bytes_read / sizeof(int64);
-              for (int64 i = 0; i < len; i++) {
+              int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+              for (int64 i = 0; i < read_key_num; i++) {
                 freq_tmp[i] = ev->MinFreq();
               }
-              memcpy(restore_buff.freq_buffer, freq_tmp, version_bytes_read);
-              freq_bytes_read = version_bytes_read;
-              free(freq_tmp);
             }
             if (key_bytes_read > 0) {
               read_key_num = key_bytes_read / sizeof(K);
