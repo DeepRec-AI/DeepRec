@@ -68,7 +68,7 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
                                            // if necessary
     .Attr("fill_empty_row: bool = false")
     .Attr("prune_invalid_id: bool = false")
-    .Attr("default_id: int64 = -1")
+    .Attr("default_id: int = -1")
     .Input("partition_shapes: num_partitions * int64")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
@@ -84,7 +84,7 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(num_partitions, 1, &unused));
+          ctx->WithRank(ctx->input(num_partitions), 1, &unused));
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(num_partitions + 1), 2, &unused));
       TF_RETURN_IF_ERROR(
@@ -109,7 +109,7 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
         ctx->set_output(i, values_result_shape);
         ctx->set_output(i + num_partitions, indices_result_shape);
       }
-      ctx->set_output(2 * num_partitions, ctx->MakeShape({ctx->UnknownDim()});
+      ctx->set_output(2 * num_partitions, ctx->MakeShape({ctx->UnknownDim()}));
 
       return Status::OK();
     })
@@ -125,6 +125,7 @@ variables. This op has no gradient function.
 REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
+    .Attr("default_id: int = -1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
                                            // if necessary
@@ -133,12 +134,12 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Input("emb_shards: num_partitions * T")
     .Input("partitioned_indices: num_partitions * int64")
     .Input("sp_dense_shape: int64")
+    .Input("row_empty_and_invalid_flags: int32")
     .Input(
         "partitioned_values: num_partitions * int64")  // only for backward use.
                                                        // actually directly port
                                                        // to python grad op
                                                        // output
-    .Input("row_empty_and_invalid_flags: int32")
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
     .SetShapeFn([](InferenceContext* ctx) {
@@ -176,6 +177,7 @@ embedding indices.
 
 REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("T : {float32}")
+    .Attr("default_id: int = -1")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1

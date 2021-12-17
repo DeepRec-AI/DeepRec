@@ -36,28 +36,33 @@ enum class Device { CPU, GPU };
 
 class FusedEmbeddingSparsePreLookUpOpTest : public OpsTestBase {
  protected:
-  void MakeOpAndSetDevice(Device device, int num_partitions) {
+  void MakeOpAndSetDevice(Device device, const int num_partitions,
+                          const bool fill_empty_row,
+                          const bool prune_invalid_id, const int default_id) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
                     "GPU", {}, "/job:a/replica:0/task:0")));
     }
 
-    TF_EXPECT_OK(
-        NodeDefBuilder("fused_embedding__sparse_pre_look_up",
-                       "FusedEmbeddingSparsePreLookUp")
-            .Attr("num_partitions", num_partitions)
-            .Attr("partition_axis", 0)
-            .Input(FakeInput(DT_INT64))
-            .Input(FakeInput(DT_INT64))
-            .Input(FakeInput(DT_INT64))
-            .Finalize(node_def()));
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_pre_look_up",
+                                "FusedEmbeddingSparsePreLookUp")
+                     .Attr("num_partitions", num_partitions)
+                     .Attr("partition_axis", 0)
+                     .Attr("fill_empty_row", fill_empty_row)
+                     .Attr("prune_invalid_id", prune_invalid_id)
+                     .Attr("default_id", default_id)
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
 };
 
 TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Parition3_Int64) {
-  MakeOpAndSetDevice(Device::GPU, 3);
+  MakeOpAndSetDevice(Device::GPU, 3, false, false, -1);
   AddInputFromArray<int64>(TensorShape({2}), {6, 16});
   AddInputFromArray<int64>(TensorShape({2}), {3, 16});
   AddInputFromArray<int64>(TensorShape({2}), {7, 16});
@@ -66,6 +71,7 @@ TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Parition3_Int64) {
   AddInputFromArray<int64>(TensorShape({24}),
                            {2,  3, 4,  6, 1, 6, 12, 12, 12, 12, 11, 5,
                             15, 0, 11, 6, 7, 9, 11, 8,  12, 13, 13, 0});
+  AddInputFromArray<int64>(TensorShape({24}), );
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
   {
@@ -102,26 +108,28 @@ TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Parition3_Int64) {
 class FusedEmbeddingSparsePostLookUpOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
-                          const std::string& combiner, float max_norm = -1.0) {
+                          const std::string& combiner, const float max_norm,
+                          const int default_id) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
                     "GPU", {}, "/job:a/replica:0/task:0")));
     }
 
-    TF_EXPECT_OK(
-        NodeDefBuilder("fused_embedding__sparse_post_look_up",
-                       "FusedEmbeddingSparsePostLookUp")
-            .Attr("T", dtype)
-            .Attr("num_partitions", num_partitions)
-            .Attr("partition_axis", 0)
-            .Attr("combiner", combiner)
-            .Attr("max_norm", max_norm)
-            .Input(FakeInput(dtype))
-            .Input(FakeInput(DT_INT64))
-            .Input(FakeInput(DT_INT64))
-            .Input(FakeInput(DT_INT64))
-            .Finalize(node_def()));
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_post_look_up",
+                                "FusedEmbeddingSparsePostLookUp")
+                     .Attr("T", dtype)
+                     .Attr("num_partitions", num_partitions)
+                     .Attr("partition_axis", 0)
+                     .Attr("combiner", combiner)
+                     .Attr("max_norm", max_norm)
+                     .Attr("default_id", default_id)
+                     .Input(FakeInput(dtype))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT32))
+                     .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
 };
@@ -133,7 +141,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
   const int emb_vector_dim = 8;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 3, DT_FLOAT, "sqrtn", 200.0);
+  MakeOpAndSetDevice(Device::GPU, 3, DT_FLOAT, "sqrtn", 200.0, -1);
 
   // emb_shards
   AddInputFromArray<float>(
@@ -161,6 +169,10 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
 
   // sp_dense_shape
   AddInputFromArray<int64>(TensorShape({2}), {batch_size, entries});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int64>(TensorShape({batch_size + nnz}),
+                           {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -190,26 +202,28 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
 class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
-                          const std::string& combiner, float max_norm = -1.0) {
+                          const std::string& combiner, const float max_norm,
+                          const bool default_id) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
                     "GPU", {}, "/job:a/replica:0/task:0")));
     }
 
-    TF_EXPECT_OK(
-        NodeDefBuilder("fused_embedding__sparse_post_look_up_grad",
-                       "FusedEmbeddingSparsePostLookUpGrad")
-            .Attr("T", dtype)
-            .Attr("num_partitions", num_partitions)
-            .Attr("partition_axis", 0)
-            .Attr("combiner", combiner)
-            .Attr("max_norm", max_norm)
-            .Input(FakeInput(dtype))
-            .Input(FakeInput(dtype))
-            .Input(FakeInput(DT_INT64))
-            .Input(FakeInput(DT_INT32))
-            .Finalize(node_def()));
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding__sparse_post_look_up_grad",
+                                "FusedEmbeddingSparsePostLookUpGrad")
+                     .Attr("T", dtype)
+                     .Attr("num_partitions", num_partitions)
+                     .Attr("partition_axis", 0)
+                     .Attr("combiner", combiner)
+                     .Attr("max_norm", max_norm)
+                     .Attr("default_id", default_id)
+                     .Input(FakeInput(dtype))
+                     .Input(FakeInput(dtype))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT32))
+                     .Input(FakeInput(DT_INT32))
+                     .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
 };
@@ -221,7 +235,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
   const int emb_vector_dim = 8;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "mean", 100.0);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "mean", 100.0, -1);
 
   // top_grad
   AddInputFromArray<float>(
@@ -253,6 +267,11 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
 
   // feature_nums
   AddInputFromArray<int>(TensorShape({batch_size}), {2, 3, 3, 2});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}),
+                         {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
 
