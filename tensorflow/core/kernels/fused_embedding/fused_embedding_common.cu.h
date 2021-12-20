@@ -3,6 +3,16 @@
 
 #if GOOGLE_CUDA
 
+#define CK_CUDA_THROW_(x)                                                      \
+  do {                                                                         \
+    cudaError_t retval = (x);                                                  \
+    if (retval != cudaSuccess) {                                               \
+      throw std::runtime_error(std::string("Runtime error: ") +                \
+                               (cudaGetErrorString(retval)) + " " + __FILE__ + \
+                               ":" + std::to_string(__LINE__) + " \n");        \
+    }                                                                          \
+  } while (0)
+
 namespace tensorflow {
 
 namespace {

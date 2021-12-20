@@ -52,11 +52,11 @@ class FusedEmbeddingSparsePostLookUpOpTest : public OpsTestBase {
                      .Attr("combiner", combiner)
                      .Attr("max_norm", max_norm)
                      .Attr("default_id", default_id)
-                     .Input(FakeInput(dtype))
-                     .Input(FakeInput(DT_INT64))
-                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(num_partitions, dtype))
+                     .Input(FakeInput(num_partitions, DT_INT64))
                      .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT32))
+                     .Input(FakeInput(DT_INT64))
                      .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
@@ -99,8 +99,8 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
   AddInputFromArray<int64>(TensorShape({2}), {batch_size, entries});
 
   // row_empty_and_invalid_flags
-  AddInputFromArray<int64>(TensorShape({batch_size + nnz}),
-                           {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}),
+                         {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -123,6 +123,92 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
     Tensor feature_nums_expected(allocator(), DT_INT32,
                                  TensorShape({batch_size}));
     test::FillValues<int>(&feature_nums_expected, {2, 3, 3, 2});
+    test::ExpectTensorEqual<int32>(feature_nums_expected, *GetOutput(1));
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePostLookUpOpTest, Partition2_Sum_No_Default) {
+  const int nnz = 3;
+  const int batch_size = 3;
+  const int emb_vector_dim = 4;
+  const int entries = 8;
+
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, -1);
+
+  // emb_shards
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0});
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {10.0, 10.0, 10.0, 10.0, 13.0, 13.0, 13.0, 13.0});
+
+  // partitioned_indices
+  AddInputFromArray<int64>(TensorShape({2, 2}), {0, 0, 0, 5});
+  AddInputFromArray<int64>(TensorShape({2, 2}), {1, 4, 2, 0});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {batch_size, entries});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}), {0, 0, 1, 1, 1, 1});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_emb_vectors(allocator(), DT_FLOAT,
+                                TensorShape({batch_size, emb_vector_dim}));
+    test::FillValues<float>(
+        &expected_emb_vectors,
+        {3.0, 3.0, 3.0, 3.0, 10.0, 10.0, 10.0, 10.0, 13.0, 13.0, 13.0, 13.0});
+    test::ExpectTensorNear<float>(expected_emb_vectors, *GetOutput(0), 1e-4);
+  }
+  {
+    Tensor feature_nums_expected(allocator(), DT_INT32,
+                                 TensorShape({batch_size}));
+    test::FillValues<int>(&feature_nums_expected, {2, 1, 1});
+    test::ExpectTensorEqual<int32>(feature_nums_expected, *GetOutput(1));
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePostLookUpOpTest, Partition2_Sum_Default_0) {
+  const int nnz = 3;
+  const int batch_size = 3;
+  const int emb_vector_dim = 4;
+  const int entries = 8;
+
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, 0);
+
+  // emb_shards
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0});
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {10.0, 10.0, 10.0, 10.0, 13.0, 13.0, 13.0, 13.0});
+
+  // partitioned_indices
+  AddInputFromArray<int64>(TensorShape({2, 2}), {0, 0, 0, 5});
+  AddInputFromArray<int64>(TensorShape({2, 2}), {1, 4, 2, 0});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {batch_size, entries});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}), {0, 0, 1, 1, 1, 1});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_emb_vectors(allocator(), DT_FLOAT,
+                                TensorShape({batch_size, emb_vector_dim}));
+    test::FillValues<float>(
+        &expected_emb_vectors,
+        {3.0, 3.0, 3.0, 3.0, 10.0, 10.0, 10.0, 10.0, 0.0, 0.0, 0.0, 0.0});
+    test::ExpectTensorNear<float>(expected_emb_vectors, *GetOutput(0), 1e-4);
+  }
+  {
+    Tensor feature_nums_expected(allocator(), DT_INT32,
+                                 TensorShape({batch_size}));
+    test::FillValues<int>(&feature_nums_expected, {2, 1, 1});
     test::ExpectTensorEqual<int32>(feature_nums_expected, *GetOutput(1));
   }
 }

@@ -83,8 +83,7 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
       TF_RETURN_IF_ERROR(ctx->GetAttr("partition_axis", &partition_axis));
 
       ShapeHandle unused;
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(num_partitions), 1, &unused));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(num_partitions), 1, &unused));
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(num_partitions + 1), 2, &unused));
       TF_RETURN_IF_ERROR(
@@ -177,11 +176,11 @@ embedding indices.
 
 REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("T : {float32}")
-    .Attr("default_id: int = -1")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
                                            // if necessary
+    .Attr("default_id: int = -1")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
     .Input("top_grad: T")

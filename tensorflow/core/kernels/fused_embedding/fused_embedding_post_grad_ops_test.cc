@@ -38,7 +38,7 @@ class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
                           const std::string& combiner, const float max_norm,
-                          const bool default_id) {
+                          const int default_id) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
@@ -139,6 +139,106 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
          2.13141513, 2.24982715, 2.36823893, 2.48665094, 2.60506320, 2.72347474,
          3.43474555, 3.57786012, 3.72097445, 3.86408877, 4.00720310, 4.15031767,
          4.29343224, 4.43654633});
+    test::ExpectTensorNear<float>(grad_shards_2, *GetOutput(1), 1e-4);
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
+       Partition2_SUM_Float_No_Default) {
+  const int nnz = 3;
+  const int batch_size = 3;
+  const int emb_vector_dim = 4;
+  const int entries = 8;
+
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, -1);
+
+  // top_grad
+  AddInputFromArray<float>(
+      TensorShape({batch_size, emb_vector_dim}),
+      {1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0});
+
+  // emb_shards
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0});
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0});
+
+  // partitioned_indices
+  AddInputFromArray<int64>(TensorShape({2, 2}), {0, 0, 0, 5});
+  AddInputFromArray<int64>(TensorShape({2, 2}), {1, 4, 2, 0});
+
+  // feature_nums
+  AddInputFromArray<int>(TensorShape({batch_size}), {2, 1, 1});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}), {0, 0, 1, 1, 1, 1});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor grad_shards_1(allocator(), DT_FLOAT,
+                         TensorShape({2, emb_vector_dim}));
+    test::FillValues<float>(&grad_shards_1,
+                            {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+    test::ExpectTensorNear<float>(grad_shards_1, *GetOutput(0), 1e-4);
+  }
+
+  {
+    Tensor grad_shards_2(allocator(), DT_FLOAT,
+                         TensorShape({2, emb_vector_dim}));
+    test::FillValues<float>(&grad_shards_2,
+                            {2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0});
+    test::ExpectTensorNear<float>(grad_shards_2, *GetOutput(1), 1e-4);
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
+       Partition2_SUM_Float_Default_0) {
+  const int nnz = 3;
+  const int batch_size = 3;
+  const int emb_vector_dim = 4;
+  const int entries = 8;
+
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, 0);
+
+  // top_grad
+  AddInputFromArray<float>(
+      TensorShape({batch_size, emb_vector_dim}),
+      {1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0});
+
+  // emb_shards
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0});
+  AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
+                           {56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0});
+
+  // partitioned_indices
+  AddInputFromArray<int64>(TensorShape({2, 2}), {0, 0, 0, 5});
+  AddInputFromArray<int64>(TensorShape({2, 2}), {1, 4, 2, 0});
+
+  // feature_nums
+  AddInputFromArray<int>(TensorShape({batch_size}), {2, 1, 1});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}), {0, 0, 1, 1, 1, 1});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor grad_shards_1(allocator(), DT_FLOAT,
+                         TensorShape({2, emb_vector_dim}));
+    test::FillValues<float>(&grad_shards_1,
+                            {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+    test::ExpectTensorNear<float>(grad_shards_1, *GetOutput(0), 1e-4);
+  }
+
+  {
+    Tensor grad_shards_2(allocator(), DT_FLOAT,
+                         TensorShape({2, emb_vector_dim}));
+    test::FillValues<float>(&grad_shards_2,
+                            {2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0, 0.0});
     test::ExpectTensorNear<float>(grad_shards_2, *GetOutput(1), 1e-4);
   }
 }

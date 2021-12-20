@@ -181,6 +181,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
                 partitioned_indices[i].flat<int64>().data()),
             emb_vectors_tensor->flat<float>().data(),
             feature_nums->flat<int>().data(), max_norm_, emb_vec_size);
+        CK_CUDA_THROW_(cudaGetLastError());
       }
     }
 
@@ -205,6 +206,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
             row_empty_and_invalid_flags->flat<int>().data(), set_empty_row_zero,
             feature_nums->flat<int>().data());
       }
+      CK_CUDA_THROW_(cudaGetLastError());
     }
   }
 
@@ -304,6 +306,7 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
               set_empty_row_zero, grad_shard->flat<float>().data(), sub_nnz,
               emb_vec_size, max_norm_);
         }
+        CK_CUDA_THROW_(cudaGetLastError());
       }
     }
   }

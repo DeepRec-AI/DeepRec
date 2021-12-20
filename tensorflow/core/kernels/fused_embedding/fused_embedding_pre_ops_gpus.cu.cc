@@ -19,11 +19,23 @@ namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
 namespace {
+
+__global__ void InitFlagsToOneInt4(int length, int* flags) {
+  int offset = blockIdx.x * blockDim.x + threadIdx.x;
+  if (4 * offset + 3 < length) {
+    *((int4*)(flags + 4 * offset)) = make_int4(1, 1, 1, 1);
+  } else if (4 * offset < length) {
+    for (int i = 0; i < length - 4 * offset; i++) {
+      flags[4 * offset + i] = 1;
+    }
+  }
+}
+
 __global__ void FusedMultiFunctionalKernel(
     const IndicePair* indices, const int64_t* values, const int64_t nnz,
     const int64_t batch_size, const bool prune_invalid_id,
     const int64_t default_id, int* row_emptiness_flag, int* invalid_id_flag,
-    IndicePair* batch_indices_buffer, int64_t* values_extended) {
+    IndicePair* tmp_indices_buffer, int64_t* values_extended) {
   // This kernel will do many things together
   // 1. The first part of threads will do job 1(DetectRowEmptiness), others will
   // do job2(InitBatchRowsBuffer)
@@ -36,34 +48,33 @@ __global__ void FusedMultiFunctionalKernel(
       const int64_t value = values[offset];
       if (value < 0) {
         // invalid, set invalid_id_flag
-        atomicAnd(invalid_id_flag + offset, 0x0);
+        atomicAnd(invalid_id_flag + offset, 0);
       } else {
         // valid, set row_emptiness_flag
         const int64_t row_in_batch = indices[offset].row_in_batch;
-        atomicAnd(row_emptiness_flag + row_in_batch, 0x0);
+        atomicAnd(row_emptiness_flag + row_in_batch, 0);
       }
     } else {
       // set row_emptiness_flag
       const int64_t row_in_batch = indices[offset].row_in_batch;
-      atomicAnd(row_emptiness_flag + row_in_batch, 0x0);
+      atomicAnd(row_emptiness_flag + row_in_batch, 0);
     }
-
   } else {
     // do InitBatchRowsBuffer
     const int other_offset = offset - nnz;
     if (other_offset < batch_size) {
-      batch_indices_buffer[other_offset].row_in_batch = other_offset;
+      tmp_indices_buffer[other_offset].row_in_batch = other_offset;
       // always set entry id to 0;
-      batch_indices_buffer[other_offset].entry_in_column = 0;
+      tmp_indices_buffer[other_offset].entry_in_column = 0;
     }
   }
 
   // set values extended to default id
-  if (offset + 2 < nnz + batch_size) {
+  if (2 * offset + 1 < nnz + batch_size) {
     longlong2 l2 = make_longlong2(default_id, default_id);
-    *((longlong2*)(values_extended + offset)) = l2;
-  } else if (offset < nnz + batch_size) {
-    values_extended[offset] = default_id;
+    *((longlong2*)(values_extended + 2 * offset)) = l2;
+  } else if (2 * offset < nnz + batch_size) {
+    values_extended[2 * offset] = default_id;
   }
 }
 
@@ -73,7 +84,7 @@ __global__ void DetectInvalid(const int64_t* values, const int64_t nnz,
   if (offset < nnz) {
     const int64_t value = values[offset];
     if (value < 0) {
-      atomicAnd(invalid_id_flag + offset, 0x0);
+      atomicAnd(invalid_id_flag + offset, 0);
     }
   }
 }
@@ -180,34 +191,35 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     max_cub_bytes =
         temp_storage_bytes > max_cub_bytes ? temp_storage_bytes : max_cub_bytes;
 
-    if (fill_empty_row_) {
-      cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
-                                 (IndicePair*)nullptr, (int*)nullptr,
-                                 (IndicePair*)nullptr, (int*)nullptr,
-                                 batch_size, stream);
+    if (fill_empty_row_ || prune_invalid_id_) {
+      cub::DeviceSelect::Flagged(nullptr, temp_storage_bytes, (int64_t*)nullptr,
+                                 (int*)nullptr, (int64_t*)nullptr,
+                                 (int*)nullptr, nnz, stream);
+
       max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
                                                          : max_cub_bytes;
-    }
 
-    if (prune_invalid_id_) {
       cub::DeviceSelect::Flagged(
           (void*)nullptr, temp_storage_bytes, (IndicePair*)nullptr,
           (int*)nullptr, (IndicePair*)nullptr, (int*)nullptr, nnz, stream);
+
       max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
                                                          : max_cub_bytes;
-      cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
-                                 (int64_t*)nullptr, (int*)nullptr,
-                                 (int64_t*)nullptr, (int*)nullptr, nnz, stream);
-      max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
-                                                         : max_cub_bytes;
+
+      if (fill_empty_row_) {
+        cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
+                                   (IndicePair*)nullptr, (int*)nullptr,
+                                   (IndicePair*)nullptr, (int*)nullptr,
+                                   batch_size, stream);
+        max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
+                                                           : max_cub_bytes;
+      }
     }
 
     OP_REQUIRES_OK(
-        ctx,
-        ctx->allocate_temp(
-            DT_INT8,
-            TensorShape({static_cast<int64_t>(max_cub_bytes / sizeof(size_t))}),
-            &cub_temp_storage));
+        ctx, ctx->allocate_temp(
+                 DT_INT8, TensorShape({static_cast<int64_t>(max_cub_bytes)}),
+                 &cub_temp_storage));
 
     // 3. fill_empty_row, prune, if avaliable.
     Tensor values_extended;
@@ -234,15 +246,20 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
       OP_REQUIRES_OK(
           ctx, ctx->allocate_temp(DT_INT32, TensorShape{1}, &selected_num_d));
 
-      cudaMemsetAsync(all_flags->flat<int>().data(), 0x1,
-                      sizeof(int) * (batch_size + nnz), stream);
+      {
+        const int threads = 128;
+        const int blocks =
+            CalcBlocksLinearMapping(batch_size + nnz, threads * 4);
+        InitFlagsToOneInt4<<<blocks, threads, 0, stream>>>(
+            batch_size + nnz, all_flags->flat<int>().data());
+        CK_CUDA_THROW_(cudaGetLastError());
+      }
 
       // 3.1 set flags, init tmp_indices_buffer etc.
       if (fill_empty_row_) {
         {
           const int threads = 128;
           const int blocks = CalcBlocksLinearMapping(nnz + batch_size, threads);
-
           FusedMultiFunctionalKernel<<<blocks, threads, 0, stream>>>(
               reinterpret_cast<const IndicePair*>(
                   indices_tensor->flat<int64>().data()),
@@ -252,36 +269,41 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
               all_flags->flat<int>().data(),
               all_flags->flat<int>().data() + batch_size,
               reinterpret_cast<IndicePair*>(
-                  tmp_indices_buffer.flat<int>().data()),
+                  tmp_indices_buffer.flat<int64>().data()),
               reinterpret_cast<int64_t*>(values_extended.flat<int64>().data()));
+          CK_CUDA_THROW_(cudaGetLastError());
         }
       } else if (prune_invalid_id_) {
-        const int threads = 128;
-        const int blocks = CalcBlocksLinearMapping(nnz, threads);
-        DetectInvalid<<<blocks, threads, 0, stream>>>(
-            reinterpret_cast<const int64_t*>(
-                values_tensor->flat<int64>().data()),
-            nnz, all_flags->flat<int>().data() + batch_size);
+        {
+          const int threads = 128;
+          const int blocks = CalcBlocksLinearMapping(nnz, threads);
+          DetectInvalid<<<blocks, threads, 0, stream>>>(
+              reinterpret_cast<const int64_t*>(
+                  values_tensor->flat<int64>().data()),
+              nnz, all_flags->flat<int>().data() + batch_size);
+          CK_CUDA_THROW_(cudaGetLastError());
+        }
       }
       // 3.2 select copy valid id, select copy empty row indices
+
+      cudaError_t cuda_ret = cudaSuccess;
+      cuda_ret = cub::DeviceSelect::Flagged(
+          cub_temp_storage.flat<int8>().data(), max_cub_bytes,
+          reinterpret_cast<const int64_t*>(values_tensor->flat<int64>().data()),
+          (const int*)(all_flags->flat<int>().data() + batch_size),
+          reinterpret_cast<int64_t*>(values_extended.flat<int64>().data()),
+          selected_num_d.flat<int>().data(), int(nnz), stream);
+      CK_CUDA_THROW_(cudaGetLastError());
+
+      cub::DeviceSelect::Flagged(
+          cub_temp_storage.flat<int8>().data(), max_cub_bytes,
+          reinterpret_cast<const IndicePair*>(
+              indices_tensor->flat<int64>().data()),
+          all_flags->flat<int>().data() + batch_size,
+          reinterpret_cast<IndicePair*>(indices_extended.flat<int64>().data()),
+          selected_num_d.flat<int>().data(), nnz, stream);
+
       if (prune_invalid_id_) {
-        cub::DeviceSelect::Flagged(
-            cub_temp_storage.flat<int8>().data(), max_cub_bytes,
-            reinterpret_cast<const IndicePair*>(
-                indices_tensor->flat<int64>().data()),
-            all_flags->flat<int>().data() + batch_size,
-            reinterpret_cast<IndicePair*>(
-                indices_extended.flat<int64>().data()),
-            selected_num_d.flat<int>().data(), nnz, stream);
-
-        cub::DeviceSelect::Flagged(
-            cub_temp_storage.flat<int8>().data(), max_cub_bytes,
-            reinterpret_cast<const int64_t*>(
-                values_tensor->flat<int64>().data()),
-            all_flags->flat<int>().data() + batch_size,
-            reinterpret_cast<int64_t*>(values_extended.flat<int64>().data()),
-            selected_num_d.flat<int>().data(), nnz, stream);
-
         int selected_num;
         cudaMemcpyAsync(&selected_num, selected_num_d.flat<int>().data(),
                         sizeof(int), cudaMemcpyDeviceToHost, stream);
@@ -299,6 +321,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                 indices_extended.flat<int64>().data()) +
                 new_nnz,
             selected_num_d.flat<int>().data(), batch_size, stream);
+        CK_CUDA_THROW_(cudaGetLastError());
         int selected_num;
         cudaMemcpyAsync(&selected_num, selected_num_d.flat<int>().data(),
                         sizeof(int), cudaMemcpyDeviceToHost, stream);
@@ -328,13 +351,14 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                   indices_tensor->flat<int64>().data());
 
     cub::DeviceRadixSort::SortPairs(
-        cub_temp_storage.flat<int8>().data(), temp_storage_bytes, values_in,
+        cub_temp_storage.flat<int8>().data(), max_cub_bytes, values_in,
         reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
         indices_in,
         reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
         int(new_nnz), 0, sizeof(int64_t) * 8, stream);
+    CK_CUDA_THROW_(cudaGetLastError());
 
-    // 3. calculate how many elements for each
+    // 4. calculate how many elements for each
     // partition
     Tensor partition_sizes_accumulate;
     OP_REQUIRES_OK(
@@ -362,6 +386,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
           reinterpret_cast<int64_t*>(
               elements_offset_per_partition.flat<int64>().data()),
           int(new_nnz));
+      CK_CUDA_THROW_(cudaGetLastError());
     }
 
     elements_offset_per_partition_.clear();
@@ -419,6 +444,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
             reinterpret_cast<int64_t*>(
                 sub_partitioned_values->flat<int64>().data()),
             partition_start_base, size);
+
+        CK_CUDA_THROW_(cudaGetLastError());
 
         // stream_executor::DeviceMemoryBase
         // sub_indices_sorted_wrapped(
