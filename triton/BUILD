@@ -1,8 +1,6 @@
 # Description:
 # TRITON API.
 
-exports_files(["tf_triton_version_script.lds"])
-
 cc_library(
     name = "triton_tf",
     visibility = ["//visibility:public"],

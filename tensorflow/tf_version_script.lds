@@ -1,6 +1,7 @@
 tensorflow {
   global:
     *tensorflow*;
+    *TRITONTF*;
     *perftools*gputools*;
     *TF_*;
     *TFE_*;
