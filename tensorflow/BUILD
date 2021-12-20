@@ -608,58 +608,6 @@ tf_cc_shared_object(
     ] + tf_additional_binary_deps(),
 )
 
-'''
-tf_cc_shared_object(
-    name = "tensorflow_triton",
-    framework_so = [],
-    linkopts = select({
-        "//tensorflow:macos": [],
-        "//tensorflow:windows": [],
-        "//tensorflow:freebsd": [
-            "-Wl,--version-script,$(location //triton:tf_triton_version_script.lds)",
-            "-lexecinfo",
-        ],
-        "//conditions:default": [
-            "-Wl,--version-script,$(location //triton:tf_triton_version_script.lds)",
-        ],
-    }),
-    linkstatic = 1,
-    per_os_targets = True,
-    soversion = VERSION,
-    visibility = ["//visibility:public"],
-    deps = [
-        # linker script
-        "//triton:tf_triton_version_script.lds",
-        # contrib operations
-        "//tensorflow/contrib:contrib_kernels",
-        "//tensorflow/contrib:contrib_ops_op_lib",
-        "//tensorflow/contrib/tensor_forest:stats_ops_lib",
-        "//tensorflow/contrib/tensor_forest:model_ops_lib",
-        "//tensorflow/contrib/tensor_forest:forest_proto_impl",
-        "//tensorflow/contrib/tensor_forest/kernels/v4:decision-tree-resource_impl",
-        # TRITON API
-        "//triton:triton_tf",
-        # tensorflow_cc objects
-        "//tensorflow/c:c_api",
-        "//tensorflow/c/eager:c_api",
-        "//tensorflow/cc:cc_ops",
-        "//tensorflow/cc:client_session",
-        "//tensorflow/cc:scope",
-        "//tensorflow/cc/profiler",
-        "//tensorflow/core:tensorflow",
-        # tensorflow_framework objects
-        "//tensorflow/cc/saved_model:loader_lite_impl",
-        "//tensorflow/core:core_cpu_impl",
-        "//tensorflow/core:framework_internal_impl",
-        "//tensorflow/core:gpu_runtime_impl",
-        "//tensorflow/core/grappler/optimizers:custom_graph_optimizer_registry_impl",
-        "//tensorflow/core:lib_internal_impl",
-        "//tensorflow/stream_executor:stream_executor_impl",
-    ] + if_ngraph(["@ngraph_tf//:ngraph_tf"])
-      + tf_additional_binary_deps(),
-)
-'''
-
 # -------------------------------------------
 # New rules should be added above this target.
 # -------------------------------------------
@@ -738,6 +686,14 @@ tf_cc_shared_object(
         "//tensorflow/cc:scope",
         "//tensorflow/cc/profiler",
         "//tensorflow/core:tensorflow",
+        # Triton dependencies
+        "//triton:triton_tf",
+        "//tensorflow/contrib:contrib_kernels",
+        "//tensorflow/contrib:contrib_ops_op_lib",
+        "//tensorflow/contrib/tensor_forest:stats_ops_lib",
+        "//tensorflow/contrib/tensor_forest:model_ops_lib",
+        "//tensorflow/contrib/tensor_forest:forest_proto_impl",
+        "//tensorflow/contrib/tensor_forest/kernels/v4:decision-tree-resource_impl",
     ] + if_ngraph(["@ngraph_tf//:ngraph_tf"]),
 )
 
