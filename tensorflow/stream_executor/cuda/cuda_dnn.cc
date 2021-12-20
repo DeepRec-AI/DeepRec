@@ -822,11 +822,13 @@ class CudnnConvolutionDescriptor {
   }
 
   void set_use_tensor_op_math(bool use_tensor_op_math) const {
-#if CUDNN_VERSION >= 7000
     cudnnMathType_t math_type =
+#if CUDNN_VERSION >= 8000
+        (use_tensor_op_math ? CUDNN_TENSOR_OP_MATH : CUDNN_FMA_MATH);
+#else
         (use_tensor_op_math ? CUDNN_TENSOR_OP_MATH : CUDNN_DEFAULT_MATH);
-    CHECK_CUDNN_OK(cudnnSetConvolutionMathType(handle_.get(), math_type));
 #endif
+    CHECK_CUDNN_OK(cudnnSetConvolutionMathType(handle_.get(), math_type));
   }
 
   cudnnConvolutionDescriptor_t handle() const { return handle_.get(); }
@@ -1221,7 +1223,6 @@ class CudnnRnnDescriptor : public dnn::RnnDescriptor {
                             cudnn, input_size, data_type, rnn_desc.get(),
                             rnn_mode, direction_mode, num_layers));
 
-#if CUDNN_VERSION >= 7000
     // Require explicit algorithm config to enable tensor cores. Some configs
     // return CUDNN_NOT_SUPPORTED when tensor ops are enabled (which is against
     // the idiom that enabling tensor ops is only a hint: see nvbugs/2172799).
@@ -1229,23 +1230,26 @@ class CudnnRnnDescriptor : public dnn::RnnDescriptor {
     // in profile mode, which is run with algorithms returned from
     // GetRnnAlgorithms() (which are non-default and explicitly set whether to
     // use tensor ops). CuDNN 7.2.1 fixed this issue
-    cudnnMathType_t math_type;
-    if (algorithm_config.algorithm().has_value()) {
-      math_type = algorithm_config.algorithm()->tensor_ops_enabled()
-                      ? CUDNN_TENSOR_OP_MATH
-                      : CUDNN_DEFAULT_MATH;
-    } else {
-#if CUDNN_VERSION >= 7201
-      math_type = tensorflow::tensor_float_32_execution_enabled()
-                      ? CUDNN_TENSOR_OP_MATH
-                      : CUDNN_DEFAULT_MATH;
-#else
-      math_type = CUDNN_DEFAULT_MATH;
-#endif  // CUDNN_VERSION >= 7201
+    bool allow_tensor_ops = data_type == CUDNN_DATA_HALF;
+    if (data_type == CUDNN_DATA_FLOAT)
+      allow_tensor_ops = tensorflow::tensor_float_32_execution_enabled();
+    bool use_tensor_ops =
+        algorithm_config.algorithm().has_value()
+            ? algorithm_config.algorithm()->tensor_ops_enabled()
+            : allow_tensor_ops;
+    if (use_tensor_ops && !allow_tensor_ops) {
+      return port::Status(port::error::INVALID_ARGUMENT,
+                          "Algo requests disallowed tensor op evaluation.");
     }
-    CHECK_CUDNN_OK(cudnnSetRNNMatrixMathType(rnn_desc.get(), math_type));
-#endif  // CUDNN_VERSION >= 7000
 
+#if CUDNN_VERSION >= 8000
+    cudnnMathType_t math_type =
+        use_tensor_ops ? CUDNN_TENSOR_OP_MATH : CUDNN_FMA_MATH;
+#else
+    cudnnMathType_t math_type =
+        use_tensor_ops ? CUDNN_TENSOR_OP_MATH : CUDNN_DEFAULT_MATH;
+#endif
+    CHECK_CUDNN_OK(cudnnSetRNNMatrixMathType(rnn_desc.get(), math_type));
     return CudnnRnnDescriptor(cudnn, std::move(rnn_desc), std::move(rnn_plan),
                               num_layers, hidden_size, input_size, cell_size,
                               batch_size, input_mode, direction_mode, rnn_mode,
@@ -2873,8 +2877,25 @@ AllocateCudnnConvolutionBackwardFilterWorkspace(
 }
 
 static bool TensorOpMathAvailable(int cc_major) {
-  return tensorflow::tensor_float_32_execution_enabled() && cc_major >= 7 &&
-         CUDNN_VERSION >= 7000;
+  return cc_major >= 7;
+}
+
+static bool IsTensorMathEnabled(Stream* stream, dnn::DataType input_type) {
+  int cc_major, cc_minor;
+  std::tie(cc_major, cc_minor) = GetCcMajorMinor(stream);
+  if (!TensorOpMathAvailable(cc_major)) {
+    return false;
+  }
+  if (input_type == dnn::DataType::kFloat) {
+#if CUDNN_VERSION < 8000
+    return false;
+#else
+    if (!tensorflow::tensor_float_32_execution_enabled()) {
+      return false;
+    }
+#endif
+  }
+  return true;
 }
 
 port::StatusOr<dnn::AlgorithmDesc> GetCudnnConvolutionForwardAlgorithm(
@@ -4023,7 +4044,11 @@ port::Status CudnnSupport::DoConvolve(
 static bool IsTensorMathOpSet(const CudnnConvolutionDescriptor& conv) {
   cudnnMathType_t math_type;
   CHECK_CUDNN_OK(cudnnGetConvolutionMathType(conv.handle(), &math_type));
+#if CUDNN_VERSION >= 8000
+  return math_type != CUDNN_FMA_MATH;
+#else
   return math_type == CUDNN_TENSOR_OP_MATH;
+#endif
 }
 
 port::Status CudnnSupport::DoConvolve(
