@@ -247,6 +247,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._initializer = initializer
     if trainable and ops.GraphKeys.TRAINABLE_VARIABLES not in collections:
       collections = list(collections) + [ops.GraphKeys.TRAINABLE_VARIABLES]
+    if ops.GraphKeys.EMBEDDING_VARIABLES not in collections:
+      collections = list(collections) + [ops.GraphKeys.EMBEDDING_VARIABLES]
     self._save_slice_info = None
     self._in_graph_mode = not context.executing_eagerly()
     self._steps_to_live = evconfig.steps_to_live
@@ -276,6 +278,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._counter_type = dtypes.uint64
       
     self._l2_weight_threshold = evconfig.l2_weight_threshold
+    self._storage_type = evconfig.storage_type
     if self._steps_to_live is 0 and self._filter_freq is 0 and self._l2_weight_threshold == -1.0:
       self._layout = "light"
     else:
@@ -347,9 +350,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
         if self._is_primary:
-          with ops.colocate_with(self._handle):
-            self._slotnum_op = variables.RefVariable(1, trainable=False, dtype=dtypes.int64, name="slotnum")
-            ops.add_to_collection(ops.GraphKeys.EV_INIT_VAR_OPS,  self._slotnum_op.assign(1))
+          self._slotnum_op = ops.convert_to_tensor(1, preferred_dtype=dtypes.int64)
         else:
           self._slotnum_op = evconfig.primary_slotnum_op
 
@@ -380,48 +381,17 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     counter_type = self._counter_type,
                     max_freq = 99999,
                     layout = self._layout,
+                    storage_type = self._storage_type,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None
         if not context.executing_eagerly():
           ops.add_to_collections(collections, self)
-          self.add_ev_to_collection(handle_name)
         elif ops.GraphKeys.GLOBAL_STEP in collections:
           ops.add_to_collections(ops.GraphKeys.GLOBAL_STEP, self)
 
   def export(self):
     return gen_kv_variable_ops.kv_resource_export(self._handle, Tkeys=self._invalid_key_type)
-
-  def add_ev_to_collection(self, handle_name):
-    '''
-    schema:
-    "EMBEDDING_VARIABLES": "{
-      "emb_name_1": {
-        "embedding_dim": 8,
-        "tensors": [
-          "emb_name_1/part_0",
-          "emb_name_1/part_1"
-        ]
-      },
-      ...
-    }"
-    '''
-    #ev info except ev's slots
-    if self._trainable:
-      var_name = handle_name
-      if "/part_" in var_name:
-        var_name = var_name[:var_name.index("/part_")]
-      if not ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLES):
-        ops.add_to_collections(ops.GraphKeys.EMBEDDING_VARIABLES, "{}")
-      emb_list = ops.get_collection_ref(ops.GraphKeys.EMBEDDING_VARIABLES)
-      emb_dict = json.loads(emb_list[0])
-      if var_name in emb_dict:
-        emb_dict[var_name]["tensors"].append(handle_name)
-      else:
-        emb_dict[var_name]={}
-        emb_dict[var_name]["tensors"]=[handle_name]
-        emb_dict[var_name]["embedding_dim"]=self.shape.dims[0].value
-      emb_list[0] = json.dumps(emb_dict)
 
   def _init_from_proto(self, variable_def, import_scope=None):
     """Initializes from `VariableDef` proto."""
@@ -579,6 +549,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     return self._steps_to_live
   
   @property
+  def storage_type(self):
+    return self._storage_type
+
+  @property
   def block_num(self):
     if self._block_num is None:
       return 1
@@ -667,16 +641,24 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     """
     raise NotImplementedError("EmbeddingVariable does not implement read_value()")
 
-  def sparse_read(self, indices, name=None):
+  def sparse_read(self, indices, name=None, ev_init_value=None, counts=None):
     """Reads the value of this variable sparsely, using `gather`."""
     with ops.name_scope("Gather" if name is None else name) as name:
       if self._trainable:
         tape.variable_accessed(self)
-      init = self._initializer(array_ops.concat([array_ops.shape(indices),
-                                                 self._graph_shape.as_list()],
-                                                axis=0), dtype=self._dtype)
-      default_value = init
-      value = gen_kv_variable_ops.kv_resource_gather(self._handle,
+      if ev_init_value is not None:
+        default_value = ev_init_value
+      else:
+        default_value = self._initializer(array_ops.concat([array_ops.shape(indices),
+                                                            self._graph_shape.as_list()],
+                                                           axis=0), dtype=self._dtype)      
+      if counts != None:
+        value = gen_kv_variable_ops.kv_resource_gather_v1(self._handle,
+              indices,
+              default_value,
+              counts, name=name)
+      else:
+        value = gen_kv_variable_ops.kv_resource_gather(self._handle,
               indices,
               default_value, name=name)
     return array_ops.identity(value)
@@ -874,4 +856,23 @@ def _GatherGrad(op, grad):
   values = array_ops.reshape(grad, values_shape)
   indices = array_ops.reshape(indices, size)
   return [ops.IndexedSlices(values, indices, params_shape), None, None]
+
+@ops.RegisterGradient("KvResourceGatherV1")
+def _GatherV1Grad(op, grad):
+  """Gradient for gather op."""
+  # Build appropriately shaped IndexedSlices
+  # Walk graph back until the original handle is found.
+  # TODO(apassos): more robust way of getting the shape.
+  # TODO(apassos): implement this for EAGER mode.
+  handle = op.inputs[0]
+  while handle.op.type != "KvVarHandleOp":
+    handle = handle.op.inputs[0]
+  params_shape = ops.convert_to_tensor(
+      tensor_shape.TensorShape(handle.op.get_attr("shape")))
+  indices = op.inputs[1]
+  size = array_ops.expand_dims(array_ops.size(indices), 0)
+  values_shape = array_ops.concat([size, params_shape[0:]], 0)
+  values = array_ops.reshape(grad, values_shape)
+  indices = array_ops.reshape(indices, size)
+  return [ops.IndexedSlices(values, indices, params_shape), None, None, None]
 

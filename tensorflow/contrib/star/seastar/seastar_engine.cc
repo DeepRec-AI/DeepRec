@@ -56,6 +56,10 @@ namespace {
     return strings::StrCat(ips[0], ":", vec[1]);
   }
 
+  bool IsWorker(const std::string& name) {
+    return name == "worker" || name == "chief";
+  }
+
   size_t GetCoreNumber(const std::string& job_name, size_t total_connections) {
     if (total_connections == 0) {
       // NOTE(rangeng.llb): allocate one core to make seastar work correctly.
@@ -67,7 +71,7 @@ namespace {
     if (job_name == "ps") {
       s = ReadInt64FromEnvVar("NETWORK_PS_CORE_NUMBER", PS_DEFAULT_CORE_NUM,
                               &max_core_number);
-    } else if (job_name == "worker") {
+    } else if (IsWorker(job_name)) {
       s = ReadInt64FromEnvVar("NETWORK_WORKER_CORE_NUMBER",
                               WORKER_DEFAULT_CORE_NUM, &max_core_number);
     } 
@@ -86,7 +90,7 @@ namespace {
 
   // By default, ps & worker disable pin core.
   bool DisablePinCores(const std::string& job_name) {
-    auto env_name = job_name == "worker" ?
+    auto env_name = IsWorker(job_name) ?
                     "WORKER_DISABLE_PIN_CORES" :
                     "PS_DISABLE_PIN_CORES";
     bool disable_pin_core = true;
@@ -100,7 +104,7 @@ namespace {
 
   // By default, ps & worker disable polling.
   bool EnablePolling(const std::string& job_name) {
-    auto env_name = job_name == "worker" ?
+    auto env_name = IsWorker(job_name) ?
                     "WORKER_ENABLE_POLLING" :
                     "PS_ENABLE_POLLING";
     bool enable_poll = false;

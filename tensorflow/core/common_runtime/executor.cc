@@ -689,7 +689,7 @@ void ExecutorState<PropagatorStateType>::ProcessConstTensor(
   nodestats::SetOpEnd(stats);
   Entry& output = (*outputs)[0];
   output.state = Entry::State::HAS_CONST_TENSOR;
-  output.const_tensor = item.kernel->const_tensor();
+  output.const_tensor = item.const_tensor;
   output.alloc_attr = item.output_attrs()[0];
 }
 
@@ -706,6 +706,7 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
 
   OpKernelContext::Params params;
   params.step_id = step_id_;
+  params.round_step_id = round_step_id_;
   // Override device's threadpool if user provides an intra_op_threadpool
   Device* device = immutable_state_.params().device;
   if (user_device_) {
@@ -800,7 +801,7 @@ void ExecutorState<PropagatorStateType>::Process(TaggedNode tagged_node,
       if (outputs.size() < item.num_outputs) outputs.resize(item.num_outputs);
     } else if (TF_PREDICT_FALSE(item.is_noop)) {
       ProcessNoop(stats);
-    } else if (item.kernel->const_tensor() != nullptr && !params.track_allocations) {
+    } else if (item.const_tensor != nullptr && !params.track_allocations) {
       ProcessConstTensor(item, &outputs, stats);
     } else {
       // Prepares inputs.

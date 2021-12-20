@@ -33,7 +33,8 @@ STANDARD_PS_OPS = ("Variable", "VariableV2", "AutoReloadVariable",
                    "MutableDenseHashTable", "MutableDenseHashTableV2",
                    "VarHandleOp", "BoostedTreesEnsembleResourceHandleOp",
                    "BoostedTreesQuantileStreamResourceHandleOp",
-                   "ResourceConditionalAccumulator", "KvVarHandleOp")
+                   "ResourceConditionalAccumulator", "KvVarHandleOp",
+                   "HashTableOp")
 
 
 class _RoundRobinStrategy(object):

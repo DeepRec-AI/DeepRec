@@ -273,6 +273,10 @@ tf_module {
     mtype: "<type \'type\'>"
   }
   member {
+    name: "StorageOption"
+    mtype: "<type \'type\'>"
+  }
+  member {
     name: "Summary"
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
   }
@@ -1466,7 +1470,7 @@ tf_module {
   }
   member_method {
     name: "gather"
-    argspec: "args=[\'params\', \'indices\', \'validate_indices\', \'name\', \'axis\', \'batch_dims\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'0\'], "
+    argspec: "args=[\'params\', \'indices\', \'validate_indices\', \'name\', \'axis\', \'batch_dims\', \'ev_init_value\', \'counts\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'0\', \'None\', \'None\'], "
   }
   member_method {
     name: "gather_nd"
@@ -1498,7 +1502,7 @@ tf_module {
   }
   member_method {
     name: "get_dynamic_dimension_embedding_variable"
-    argspec: "args=[\'name\', \'embedding_block_dimension\', \'embedding_block_num\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ht_partition_num\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'1000\'], "
+    argspec: "args=[\'name\', \'embedding_block_dimension\', \'embedding_block_num\', \'key_dtype\', \'value_dtype\', \'initializer\', \'regularizer\', \'trainable\', \'collections\', \'caching_device\', \'partitioner\', \'validate_shape\', \'custom_getter\', \'constraint\', \'steps_to_live\', \'init_data_source\', \'ht_partition_num\', \'storage_type\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'True\', \'None\', \'None\', \'None\', \'None\', \'1000\', \'None\'], "
   }
   member_method {
     name: "get_embedding_variable"
@@ -1698,7 +1702,7 @@ tf_module {
   }
   member_method {
     name: "initialize_kv_variable_op"
-    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'None\'], "
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'None\'], "
   }
   member_method {
     name: "initialize_local_variables"
@@ -1761,12 +1765,16 @@ tf_module {
     argspec: "args=[\'resource\', \'indices\', \'default_value\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
   }
   member_method {
+    name: "kv_resource_gather_v1"
+    argspec: "args=[\'resource\', \'indices\', \'default_value\', \'counts\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+  }
+  member_method {
     name: "kv_resource_import"
     argspec: "args=[\'resource_handle\', \'value\', \'empty_key\', \'keys\', \'values\', \'versions\', \'shape\', \'steps_to_live\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'\', \'1000\', \'None\'], "
   }
   member_method {
     name: "kv_resource_import_v2"
-    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'None\'], "
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'None\'], "
   }
   member_method {
     name: "kv_resource_incr_import"

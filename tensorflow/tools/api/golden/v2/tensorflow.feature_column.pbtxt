@@ -13,6 +13,10 @@ tf_module {
     argspec: "args=[\'source_column\', \'boundaries\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
+    name: "categorical_column_with_adaptive_embedding"
+    argspec: "args=[\'key\', \'hash_bucket_size\', \'dtype\', \'partition_num\', \'ev_option\'], varargs=None, keywords=None, defaults=[\"<dtype: \'string\'>\", \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableOption object instance>\'], "
+  }
+  member_method {
     name: "categorical_column_with_embedding"
     argspec: "args=[\'key\', \'dtype\', \'partition_num\', \'ev_option\'], varargs=None, keywords=None, defaults=[\"<dtype: \'string\'>\", \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableOption object instance>\'], "
   }

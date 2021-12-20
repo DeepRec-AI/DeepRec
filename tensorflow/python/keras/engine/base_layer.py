@@ -455,13 +455,14 @@ class Layer(module.Module):
       shape = ()
     # Validate optional keyword arguments.
     for kwarg in kwargs:
-      if kwarg not in ['getter', 'collections', 'experimental_autocast']:
+      if kwarg not in ['getter', 'collections', 'experimental_autocast', 'ev_option']:
         raise TypeError('Unknown keyword argument:', kwarg)
     getter = kwargs.pop('getter', base_layer_utils.make_variable)
     collections_arg = kwargs.pop('collections', None)
     # 'experimental_autocast' can be set to False by the caller to indicate an
     # AutoCastVariable should never be created.
     autocast = kwargs.pop('experimental_autocast', True)
+    ev_option = kwargs.pop('ev_option', None)
 
     if dtype is None:
       dtype = self.dtype or backend.floatx()
@@ -509,8 +510,24 @@ class Layer(module.Module):
           return autocast_variable.AutoCastDistributedVariable(variable)
         else:
           return autocast_variable.AutoCastVariable(variable)
-
-    variable = self._add_variable_with_custom_getter(
+    if ev_option != None:
+      variable = self._add_variable_with_custom_getter(
+        name=name,
+        shape=shape,
+        # TODO(allenl): a `make_variable` equivalent should be added as a
+        # `Trackable` method.
+        getter=getter,
+        # Manage errors in Layer rather than Trackable.
+        overwrite=True,
+        initializer=initializer,
+        dtype=dtype,
+        constraint=constraint,
+        trainable=trainable,
+        partitioner=partitioner,
+        collections=collections_arg,
+        ev_option = ev_option)
+    else:
+      variable = self._add_variable_with_custom_getter(
         name=name,
         shape=shape,
         # TODO(allenl): a `make_variable` equivalent should be added as a

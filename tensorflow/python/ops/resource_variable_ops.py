@@ -632,7 +632,7 @@ class BaseResourceVariable(variables.VariableV1):
     # specifies instead of the device where the variable is.
     return array_ops.identity(value)
 
-  def sparse_read(self, indices, name=None):
+  def sparse_read(self, indices, name=None, ev_init_value=None):
     """Reads the value of this variable sparsely, using `gather`."""
     with ops.name_scope("Gather" if name is None else name) as name:
       variable_accessed(self)

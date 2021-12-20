@@ -87,7 +87,7 @@ Allocator* pmem_allocator() {
   static Allocator* pmem_alloc =
       AllocatorFactoryRegistry::singleton()->GetPMEMAllocator();
       //This is the function when we use pmem as allocation destination
-  if (cpu_allocator_collect_full_stats && !pmem_alloc->TracksAllocationSizes()) {
+  if (pmem_alloc && cpu_allocator_collect_full_stats && !pmem_alloc->TracksAllocationSizes()) {
       pmem_alloc = new TrackingAllocator(pmem_alloc, true);
   }
   return pmem_alloc;
@@ -97,7 +97,7 @@ Allocator* ev_allocator() {
   static Allocator* ev_alloc =
       AllocatorFactoryRegistry::singleton()->GetEVAllocator();
       //This is the function when we use ev as allocation destination
-  if (cpu_allocator_collect_full_stats && !ev_alloc->TracksAllocationSizes()) {
+  if (ev_alloc && cpu_allocator_collect_full_stats && !ev_alloc->TracksAllocationSizes()) {
       ev_alloc = new TrackingAllocator(ev_alloc, true);
   }
   return ev_alloc;

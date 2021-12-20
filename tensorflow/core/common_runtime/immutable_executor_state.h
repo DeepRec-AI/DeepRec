@@ -154,6 +154,9 @@ class ImmutableExecutorState {
   // pending counts for the nodes in the graph, indexed by node ID.
   std::unique_ptr<std::atomic<int32>[]> atomic_pending_counts_;
 
+  // Shallow copies of the constant tensors used in the graph.
+  std::vector<Tensor> const_tensors_;
+
   TF_DISALLOW_COPY_AND_ASSIGN(ImmutableExecutorState);
 };
 

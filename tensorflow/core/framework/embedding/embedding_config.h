@@ -2,6 +2,7 @@
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_EMBEDDING_CONFIG_H_
 
 #include <cmath>
+#include "tensorflow/core/framework/embedding/config.pb.h"
 
 namespace tensorflow {
 struct EmbeddingConfig {
@@ -18,13 +19,15 @@ struct EmbeddingConfig {
   int64 kHashFunc;
   int64 num_counter;
   DataType counter_type;
+  embedding::StorageType storage_type;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                   int64 block_num = 1, int slot_num = 1,
                   const std::string& name = "", int64 steps_to_live = 0,
                   int64 filter_freq = 0, int64 max_freq = 999999,
                   float l2_weight_threshold = -1.0, const std::string& layout = "normal",
-                  int64 max_element_size = 0, float false_positive_probability = -1.0, DataType counter_type = DT_UINT64):
+                  int64 max_element_size = 0, float false_positive_probability = -1.0,
+                  DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
       block_num(block_num),
@@ -34,7 +37,8 @@ struct EmbeddingConfig {
       filter_freq(filter_freq),
       max_freq(max_freq),
       l2_weight_threshold(l2_weight_threshold),
-      counter_type(counter_type) {
+      counter_type(counter_type),
+      storage_type(storage_type) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
@@ -78,6 +82,10 @@ struct EmbeddingConfig {
     return layout_type;
   }
 
+  embedding::StorageType get_storage_type() {
+    return storage_type;
+  }
+
   std::string DebugString() const {
     return strings::StrCat("opname: ", name,
                            " emb_index: ", emb_index,
@@ -88,7 +96,8 @@ struct EmbeddingConfig {
                            " steps_to_live: ", steps_to_live,
                            " filter_freq: ", filter_freq,
                            " max_freq: ", max_freq,
-                           " l2_weight_threshold: ", l2_weight_threshold);
+                           " l2_weight_threshold: ", l2_weight_threshold,
+                           " storage_type: ", storage_type);
   }
 };
 

@@ -199,6 +199,7 @@ COMMON_PROTO_SRCS = [
     "framework/attr_value.proto",
     "framework/cost_graph.proto",
     "framework/device_attributes.proto",
+    "framework/embedding/config.proto",
     "framework/function.proto",
     "framework/graph.proto",
     "framework/graph_transfer_info.proto",

@@ -144,6 +144,14 @@ Status ImmutableExecutorState::Initialize() {
         break;
       }
     }
+    const Tensor* const_tensor = item->kernel->const_tensor();
+    if (const_tensor) {
+      // Hold onto a shallow copy of the constant tensor in `*this` so that the
+      // reference count does not drop to 1. This prevents the constant tensor
+      // from being forwarded, and its buffer reused.
+      const_tensors_.emplace_back(*const_tensor);
+    }
+    item->const_tensor = const_tensor;
     item->is_noop = (item->kernel->type_string() == "NoOp");
     item->is_enter = IsEnter(n);
     if (item->is_enter) {
