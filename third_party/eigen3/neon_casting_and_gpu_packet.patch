@@ -1,29 +1,3 @@
-From 3329a8244bc8f367cc08e79c8d482d92fabc6615 Mon Sep 17 00:00:00 2001
-From: "Yu, Weifei" <weifei.yu@intel.com>
-Date: Wed, 19 May 2021 18:02:15 +0800
-Subject: [PATCH] Apply bf16 feature.
-
----
- Eigen/Core                                    |   1 +
- Eigen/src/Core/GenericPacketMath.h            |  16 +
- Eigen/src/Core/arch/AVX/MathFunctions.h       |   9 +
- Eigen/src/Core/arch/AVX/PacketMath.h          | 342 ++++++++
- Eigen/src/Core/arch/AVX/TypeCasting.h         |  66 +-
- Eigen/src/Core/arch/AVX512/MathFunctions.h    |  20 +
- Eigen/src/Core/arch/AVX512/PacketMath.h       | 474 ++++++++++-
- Eigen/src/Core/arch/AVX512/TypeCasting.h      |  27 +
- Eigen/src/Core/arch/Default/BFloat16.h        | 749 ++++++++++++++++++
- Eigen/src/Core/arch/Default/TypeCasting.h     |  41 +
- Eigen/src/Core/arch/NEON/TypeCasting.h        |  66 ++
- Eigen/src/Core/util/ConfigureVectorization.h  |   3 +
- Eigen/src/Geometry/arch/Geometry_SSE.h        |  15 +-
- .../Eigen/CXX11/src/Tensor/TensorRandom.h     |  11 +
- unsupported/Eigen/SpecialFunctions            |   1 +
- .../SpecialFunctionsBFloat16.h                |  58 ++
- 16 files changed, 1867 insertions(+), 32 deletions(-)
- create mode 100644 Eigen/src/Core/arch/Default/BFloat16.h
- create mode 100644 unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
-
 diff --git a/Eigen/Core b/Eigen/Core
 index 688361d46..ee5a5f1dd 100644
 --- a/Eigen/Core
@@ -84,7 +58,7 @@ index c5394430f..b746ff43e 100644
  }  // end namespace internal
  
 diff --git a/Eigen/src/Core/arch/AVX/PacketMath.h b/Eigen/src/Core/arch/AVX/PacketMath.h
-index 5ab989ca9..d7cac56cb 100644
+index 5ab989ca9..fcd2d148c 100644
 --- a/Eigen/src/Core/arch/AVX/PacketMath.h
 +++ b/Eigen/src/Core/arch/AVX/PacketMath.h
 @@ -31,6 +31,7 @@ namespace internal {
@@ -155,7 +129,7 @@ index 5ab989ca9..d7cac56cb 100644
  
  template<> EIGEN_STRONG_INLINE Packet8f pset1<Packet8f>(const float&  from) { return _mm256_set1_ps(from); }
  template<> EIGEN_STRONG_INLINE Packet4d pset1<Packet4d>(const double& from) { return _mm256_set1_pd(from); }
-@@ -1244,6 +1284,308 @@ ptranspose(PacketBlock<Packet8h,4>& kernel) {
+@@ -1244,6 +1284,303 @@ ptranspose(PacketBlock<Packet8h,4>& kernel) {
    kernel.packet[3] = pload<Packet8h>(out[3]);
  }
  
@@ -176,12 +150,7 @@ index 5ab989ca9..d7cac56cb 100644
 +EIGEN_STRONG_INLINE Packet8bf F32ToBf16(const Packet8f& a) {
 +  Packet8bf r;
 +
-+  // Flush input denormals value to zero with hardware capability.
-+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-+  __m256 flush = _mm256_and_ps(a, a);
-+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_OFF);
-+
-+  __m256i input = _mm256_castps_si256(flush);
++  __m256i input = _mm256_castps_si256(a);
 +
 +#ifdef EIGEN_VECTORIZE_AVX2
 +  // uint32_t lsb = (input >> 16);
@@ -195,7 +164,7 @@ index 5ab989ca9..d7cac56cb 100644
 +  // input = input >> 16;
 +  t = _mm256_srli_epi32(t, 16);
 +  // Check NaN before converting back to bf16
-+  __m256 mask = _mm256_cmp_ps(flush, flush, _CMP_ORD_Q);
++  __m256 mask = _mm256_cmp_ps(a, a, _CMP_ORD_Q);
 +  __m256i nan = _mm256_set1_epi32(0x7fc0);
 +  t = _mm256_blendv_epi8(nan, t, _mm256_castps_si256(mask));
 +  // output.value = static_cast<uint16_t>(input);
@@ -218,7 +187,7 @@ index 5ab989ca9..d7cac56cb 100644
 +  lo = _mm_srli_epi32(lo, 16);
 +  hi = _mm_srli_epi32(hi, 16);
 +  // Check NaN before converting back to bf16
-+  __m256 mask = _mm256_cmp_ps(flush, flush, _CMP_ORD_Q);
++  __m256 mask = _mm256_cmp_ps(a, a, _CMP_ORD_Q);
 +  __m128i nan = _mm_set1_epi32(0x7fc0);
 +  lo = _mm_blendv_epi8(nan, lo, _mm_castps_si128(_mm256_castps256_ps128(mask)));
 +  hi = _mm_blendv_epi8(nan, hi, _mm_castps_si128(_mm256_extractf128_ps(mask, 1)));
@@ -639,7 +608,7 @@ index 67043d01b..db278909b 100644
  
  }  // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX512/PacketMath.h b/Eigen/src/Core/arch/AVX512/PacketMath.h
-index 99ccc038c..704351660 100644
+index 99ccc038c..5d0a56b93 100644
 --- a/Eigen/src/Core/arch/AVX512/PacketMath.h
 +++ b/Eigen/src/Core/arch/AVX512/PacketMath.h
 @@ -31,6 +31,7 @@ namespace internal {
@@ -698,7 +667,7 @@ index 99ccc038c..704351660 100644
  }
  
  template <>
-@@ -1932,6 +1950,452 @@ ptranspose(PacketBlock<Packet16h,4>& kernel) {
+@@ -1932,6 +1950,443 @@ ptranspose(PacketBlock<Packet16h,4>& kernel) {
    kernel.packet[3] = pload<Packet16h>(out[3]);
  }
  
@@ -806,23 +775,14 @@ index 99ccc038c..704351660 100644
 +EIGEN_STRONG_INLINE Packet16bf F32ToBf16(const Packet16f& a) {
 +  Packet16bf r;
 +
-+  // Flush input denormals value to zero with hardware capability.
-+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
-+#if defined(EIGEN_VECTORIZE_AVX512DQ)
-+  __m512 flush = _mm512_and_ps(a, a);
-+#else
-+  __m512 flush = _mm512_max_ps(a, a);
-+#endif // EIGEN_VECTORIZE_AVX512DQ
-+  _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_OFF);
-+
 +#if defined(EIGEN_VECTORIZE_AVX512BF16) && EIGEN_GNUC_AT_LEAST(10, 1)
 +  // Since GCC 10.1 supports avx512bf16 and C style explicit cast
 +  // (C++ static_cast is not supported yet), do converion via intrinsic
 +  // and register path for performance.
-+  r = (__m256i)(_mm512_cvtneps_pbh(flush));
++  r = (__m256i)(_mm512_cvtneps_pbh(a));
 +#else
 +  __m512i t;
-+  __m512i input = _mm512_castps_si512(flush);
++  __m512i input = _mm512_castps_si512(a);
 +  __m512i nan = _mm512_set1_epi32(0x7fc0);
 +
 +  // uint32_t lsb = (input >> 16) & 1;
@@ -835,7 +795,7 @@ index 99ccc038c..704351660 100644
 +  t = _mm512_srli_epi32(t, 16);
 +
 +  // Check NaN before converting back to bf16
-+  __mmask16 mask = _mm512_cmp_ps_mask(flush, flush, _CMP_ORD_Q);
++  __mmask16 mask = _mm512_cmp_ps_mask(a, a, _CMP_ORD_Q);
 +  t = _mm512_mask_blend_epi32(mask, nan, t);
 +
 +  // output.value = static_cast<uint16_t>(input);
@@ -2211,6 +2171,3 @@ index 000000000..2d94231f0
 +}  // end namespace Eigen
 +
 +#endif  // EIGEN_SPECIALFUNCTIONS_BFLOAT16_H
--- 
-2.21.0.windows.1
-

@@ -299,16 +299,14 @@ class BiasGradOp : public OpKernel {
   TensorFormat data_format_;
 };
 
-// Registration of the GPU implementations.
-/* ===== KERNEL registering COMMENTED, optimized Op kernels would be used. =====
+// Registration of the CPU implementations.
 #define REGISTER_KERNEL(type)                                           \
   REGISTER_KERNEL_BUILDER(                                              \
       Name("BiasAddGrad").Device(DEVICE_CPU).TypeConstraint<type>("T"), \
       BiasGradOp<CPUDevice, type>);
 
-TF_CALL_NUMBER_TYPES(REGISTER_KERNEL);
+TF_CALL_bfloat16(REGISTER_KERNEL);
 #undef REGISTER_KERNEL
-================= End of KERNEL registering COMMENTED block. ================ */
 
 #ifdef TENSORFLOW_USE_SYCL
 #define REGISTER_KERNEL(type)                                            \

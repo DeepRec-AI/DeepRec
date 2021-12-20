@@ -161,6 +161,7 @@ py_library(
         ":util",
         ":weights_broadcast_ops",
         ":while_v2",
+        ":work_queue",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/compat",
         "//tensorflow/python/compat:v2_compat",

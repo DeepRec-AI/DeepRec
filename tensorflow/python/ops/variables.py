@@ -26,6 +26,7 @@ import six
 
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.framework import variable_pb2
+from tensorflow.core.framework.embedding import config_pb2
 from tensorflow.python import pywrap_tensorflow
 from tensorflow.python.compat import compat as fwd_compat
 from tensorflow.python.eager import context
@@ -227,6 +228,12 @@ class CheckpointOption(object):
     self.always_load_from_specific_ckpt = always_load_from_specific_ckpt
     self.init_data_source = init_data_source
 
+@tf_export(v1=["StorageOption"])
+class StorageOption(object):
+  def __init__(self,
+               storage_type=None):
+    self.storage_type = storage_type
+
 @tf_export(v1=["EmbeddingVariableOption"])
 class EmbeddingVariableOption(object):
   def __init__(self,
@@ -234,12 +241,14 @@ class EmbeddingVariableOption(object):
                ht_partition_num = 1000,
                evict_option = None,
                ckpt = None,
-               filter_option = None):
+               filter_option = None,
+               storage_option = StorageOption()):
     self.ht_type = ht_type
     self.ht_partition_num = ht_partition_num
     self.evict = evict_option
     self.ckpt = ckpt
     self.filter_strategy = filter_option
+    self.storage_option = storage_option
     
 @tf_export(v1=["CounterFilter"])
 class CounterFilter(object):
@@ -283,7 +292,8 @@ class EmbeddingVariableConfig(object):
                slot_index=None,
                block_num=None,
                primary=None,
-               primary_slotnum_op=None):
+               primary_slotnum_op=None,
+               storage_type=config_pb2.StorageType.DRAM):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
@@ -301,6 +311,7 @@ class EmbeddingVariableConfig(object):
     self.ht_type = ht_type
     self.l2_weight_threshold = l2_weight_threshold
     self.filter_strategy = filter_strategy
+    self.storage_type = storage_type
 
   def reveal(self):
     if self.steps_to_live is None:
@@ -1089,7 +1100,7 @@ class Variable(six.with_metaclass(VariableMetaclass, trackable.Trackable)):
     """
     raise NotImplementedError
 
-  def sparse_read(self, indices, name=None):
+  def sparse_read(self, indices, name=None, ev_init_value=None):
     r"""Gather slices from params axis axis according to indices.
 
     This function supports a subset of tf.gather, see tf.gather for details on

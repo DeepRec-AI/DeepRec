@@ -92,9 +92,7 @@ Allocator* AllocatorFactoryRegistry::GetPMEMAllocator() {
   first_alloc_made_ = true;
   FactoryEntry* best_entry = nullptr;
   for (auto& entry : factories_) {
-    if (best_entry == nullptr) {
-      best_entry = &entry;
-    } else if (entry.name == "PMEMAllocator") {
+    if (entry.name == "PMEMAllocator") {
       best_entry = &entry;
       break;
     }
@@ -106,7 +104,6 @@ Allocator* AllocatorFactoryRegistry::GetPMEMAllocator() {
     }
     return best_entry->allocator.get();
   } else {
-    LOG(FATAL) << "No registered PMEM AllocatorFactory";
     return nullptr;
   }
 }

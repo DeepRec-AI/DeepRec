@@ -1,0 +1,100 @@
+apiVersion: "kubeflow.org/v1"
+kind: "TFJob"
+metadata:
+  name: "trainer"
+spec:
+  cleanPodPolicy: None
+  tfReplicaSpecs:
+    Chief:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          volumes:
+            - name: deeprec-storage
+              persistentVolumeClaim:
+                claimName: deeprec
+          containers:
+            - name: tensorflow
+              env:
+                - name: 'TF_WORKSPACE'
+                  value: 'WDL'
+                - name: 'TF_SCRIPT'
+                  value: 'train.py'
+              image: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec-dev-gpu-py36-cu110-ubuntu18.04
+              imagePullPolicy: Always
+              command: ["/bin/sh", "-c"]
+              args: ["cd work_queue_test/work_queue_test/WDL; sh copy_csv.sh; python distribute_k8s/launch.py --save_steps=5000 --output_dir=. --protocol=grpc --inter=8 --intra=8 --input_layer_partitioner=8 --dense_layer_partitioner=64"]
+              volumeMounts:
+                - mountPath: "/work_queue_test"
+                  name: "deeprec-storage"
+    Worker:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: replica-type
+                          operator: In
+                          values:
+                            - worker
+                    topologyKey: kubernetes.io/hostname
+          volumes:
+            - name: deeprec-storage
+              persistentVolumeClaim:
+                claimName: deeprec
+          containers:
+            - name: tensorflow
+              env:
+                - name: 'TF_WORKSPACE'
+                  value: 'work_queue_test/work_queue_test/WDL'
+                - name: 'TF_SCRIPT'
+                  value: 'train.py'
+              image: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec-dev-gpu-py36-cu110-ubuntu18.04
+              imagePullPolicy: Always
+              command: ["/bin/sh", "-c"]
+              args: ["cd work_queue_test/work_queue_test/WDL; sh copy_csv.sh; python distribute_k8s/launch.py --save_steps=5000 --output_dir=. --protocol=grpc --inter=8 --intra=8 --input_layer_partitioner=8 --dense_layer_partitioner=64"]
+              volumeMounts:
+                - mountPath: "/work_queue_test"
+                  name: "deeprec-storage"
+    PS:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: replica-type
+                          operator: In
+                          values:
+                            - ps
+                    topologyKey: kubernetes.io/hostname
+          volumes:
+            - name: deeprec-storage
+              persistentVolumeClaim:
+                claimName: deeprec
+          containers:
+            - name: tensorflow
+              env:
+                - name: 'TF_WORKSPACE'
+                  value: 'work_queue_test/work_queue_test/WDL'
+                - name: 'TF_SCRIPT'
+                  value: 'train.py'
+              image: registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec-dev-gpu-py36-cu110-ubuntu18.04
+              imagePullPolicy: Always
+              command: ["/bin/sh", "-c"]
+              args: ["cd work_queue_test/work_queue_test/WDL; sh copy_csv.sh; python distribute_k8s/launch.py --save_steps=5000 --output_dir=. --protocol=grpc --inter=8 --intra=8 --input_layer_partitioner=8 --dense_layer_partitioner=64"]
+              volumeMounts:
+                - mountPath: "/work_queue_test"
+                  name: "deeprec-storage"

@@ -405,7 +405,7 @@ _V2_OPS_THAT_ARE_DELEGATED_TO_FROM_V1_OPS = [
 
 
 def _ragged_gather_v1(params, indices, validate_indices=None, name=None,
-                      axis=0, batch_dims=0):
+                      axis=0, batch_dims=0, ev_init_value=None, counts=None):
   return ragged_gather_ops.gather(
       params=params,
       indices=indices,

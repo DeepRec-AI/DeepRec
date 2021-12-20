@@ -4,6 +4,6 @@ tf_class {
   is_instance: "<type \'object\'>"
   member_method {
     name: "__init__"
-    argspec: "args=[\'self\', \'ht_type\', \'ht_partition_num\', \'evict_option\', \'ckpt\', \'filter_option\'], varargs=None, keywords=None, defaults=[\'\', \'1000\', \'None\', \'None\', \'None\'], "
+    argspec: "args=[\'self\', \'ht_type\', \'ht_partition_num\', \'evict_option\', \'ckpt\', \'filter_option\', \'storage_option\'], varargs=None, keywords=None, defaults=[\'\', \'1000\', \'None\', \'None\', \'None\', \'<tensorflow.python.ops.variables.StorageOption object instance>\'], "
   }
 }

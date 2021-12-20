@@ -7584,6 +7584,54 @@ class EmbeddingColumnTest(test.TestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
+
+  @test_util.run_deprecated_v1
+  def testEmbeddingVariableForAdaptiveEmbedding(self):
+    print("testEmbeddingVariableForAdaptiveEmbedding")
+    columns = fc.categorical_column_with_adaptive_embedding("col_emb", hash_bucket_size=10, dtype=dtypes.int64)
+    W = fc.embedding_column(categorical_column=columns,
+                            dimension=3,
+                            initializer=init_ops.ones_initializer(dtypes.float32))
+    ids={}
+    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0],[6,0],[7,0],[8,0],[9,0]],
+                                                values=math_ops.cast([1,2,3,4,5,6,7,8,9,0], dtypes.int64),
+                                                dense_shape=[10, 1])
+    adaptive_mask_tensors={}
+    adaptive_mask_tensors["col_emb"] = math_ops.cast([1,0,0,0,1,0,0,1,0,1], dtypes.int32)
+    emb = fc_old.input_layer(ids, [W], adaptive_mask_tensors=adaptive_mask_tensors)
+    from tensorflow.python.ops import string_ops
+    id = string_ops.string_to_hash_bucket_fast(string_ops.as_string(ids["col_emb"].values), 10)
+    id_not_equal_1 = array_ops.unique(id)[0]
+
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+
+    graph=ops.get_default_graph()
+
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables_lib.global_variables_initializer()
+
+    hash_var=graph.get_tensor_by_name("input_layer/col_emb_embedding/hash_weights:0")
+    hash_embedding=array_ops.gather(hash_var, id_not_equal_1)
+    ev = ops.get_collection(ops.GraphKeys.EMBEDDING_VARIABLES)[0]
+    ev_shape=ev.total_count()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      for val in emb1.tolist()[0]:
+        self.assertNotEqual(val, 1.0)
+      hash_embedding1 = sess.run(hash_embedding)
+      for val in hash_embedding1.tolist()[0]:
+        self.assertNotEqual(val, 1.0)
+      ev_shape1=sess.run(ev_shape)
+      self.assertEqual(ev_shape1.tolist()[0], 4)
    
   @test_util.run_deprecated_v1
   def test_transform_feature(self):

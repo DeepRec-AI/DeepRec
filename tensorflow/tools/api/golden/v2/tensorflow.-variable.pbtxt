@@ -157,7 +157,7 @@ tf_class {
   }
   member_method {
     name: "sparse_read"
-    argspec: "args=[\'self\', \'indices\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'self\', \'indices\', \'name\', \'ev_init_value\'], varargs=None, keywords=None, defaults=[\'None\', \'None\'], "
   }
   member_method {
     name: "to_proto"

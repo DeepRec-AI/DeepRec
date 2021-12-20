@@ -437,13 +437,17 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       emb1, top, l = sess.run([emb, train_op, loss])
+      for val1 in emb1.tolist():
+        for val in val1:
+          self.assertEqual(val, 1.0)
       emb1, top, l = sess.run([emb, train_op, loss])
-      emb1, top, l = sess.run([emb, train_op, loss])
-      for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
-      emb1, top, l = sess.run([emb, train_op, loss])
-      for val in emb1.tolist()[0]:
-        self.assertNotEqual(val, 1.0)
+      for index, val1 in enumerate(emb1.tolist()):
+        if index < 7:
+          for val in val1:
+            self.assertNotEqual(val, 1.0)
+        else:
+          for val in val1:
+            self.assertEqual(val, 1.0)
 
   def testEmbeddingVariableForSparseColumnEmbeddingCol(self):
     columns = feature_column.sparse_column_with_embedding(column_name="col_emb", dtype=dtypes.int64)
@@ -1236,6 +1240,44 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], 1.0)
+
+  def testEmbeddingVariableForDRAM(self):
+    print("testEmbeddingVariableForDRAM")
+    def runTestAdagrad(self, var, g):
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        return r
+
+    from tensorflow.core.framework.embedding import config_pb2
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM)))
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb1 = runTestAdagrad(self, emb_var, g)
+      emb2 = runTestAdagrad(self, var, g)
+
+      for i in range(0, 6):
+        for j in range(0, 3):
+          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
 
 if __name__ == "__main__":

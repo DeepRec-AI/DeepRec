@@ -13,6 +13,10 @@ tf_module {
     argspec: "args=[\'source_column\', \'boundaries\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
+    name: "categorical_column_with_adaptive_embedding"
+    argspec: "args=[\'key\', \'hash_bucket_size\', \'dtype\', \'partition_num\', \'ev_option\'], varargs=None, keywords=None, defaults=[\"<dtype: \'string\'>\", \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableOption object instance>\'], "
+  }
+  member_method {
     name: "categorical_column_with_embedding"
     argspec: "args=[\'key\', \'dtype\', \'partition_num\', \'ev_option\'], varargs=None, keywords=None, defaults=[\"<dtype: \'string\'>\", \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableOption object instance>\'], "
   }
@@ -70,7 +74,7 @@ tf_module {
   }
   member_method {
     name: "input_layer"
-    argspec: "args=[\'features\', \'feature_columns\', \'weight_collections\', \'trainable\', \'cols_to_vars\', \'cols_to_output_tensors\'], varargs=None, keywords=None, defaults=[\'None\', \'True\', \'None\', \'None\'], "
+    argspec: "args=[\'features\', \'feature_columns\', \'weight_collections\', \'trainable\', \'cols_to_vars\', \'cols_to_output_tensors\', \'adaptive_mask_tensors\'], varargs=None, keywords=None, defaults=[\'None\', \'True\', \'None\', \'None\', \'None\'], "
   }
   member_method {
     name: "linear_model"

@@ -15,9 +15,9 @@
 
 """Standard functions for creating slots.
 
-A slot is a `Variable` created with the same shape as a primary variable or
-`Tensor`. A slot is always scoped in the namespace of the primary object and
-typically has the same device and type.
+A slot is a `Variable` created with the same first m-dimension as a primary
+variable or `Tensor`. A slot is always scoped in the namespace of the primary
+object and typically has the same device and type.
 
 Slots are typically used as accumulators to track values associated with
 the primary object:
@@ -44,6 +44,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import hash_table
+from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -90,8 +91,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         steps_to_live=primary._steps_to_live,
         ht_partition_num=primary._ht_partition_num)
     else:
-      ops.add_to_collection(ops.GraphKeys.EV_INIT_SLOT_OPS,  primary._slotnum_op.assign(slot_config.slot_num))
-      primary._slotnum_op._initializer_op = primary._slotnum_op.assign(slot_config.slot_num)
+      slotnum_op = ops.convert_to_tensor(slot_config.slot_num, preferred_dtype=dtypes.int64)
       slot = variable_scope.get_embedding_variable_v2_internal(
         scope, initializer=val, trainable=False,
         embedding_dim=shape, key_dtype=primary._invalid_key_type,
@@ -103,7 +103,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
           block_num=primary.block_num,
           slot_index=slot_config.slot_index,
           primary=primary._primary,
-          primary_slotnum_op=primary._slotnum_op))
+          primary_slotnum_op=slotnum_op,
+          storage_type=primary.storage_type))
   else:
     slot = variable_scope.get_variable(
         scope,
@@ -127,11 +128,19 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
     real_slot_name = slot.name[len(primary.op.name + "/"):-2]
     slice_info = primary._save_slice_info
     if isinstance(slice_info, variables.Variable.SaveSliceInfo):
-      slot._set_save_slice_info(variables.Variable.SaveSliceInfo(
+      # support slot's shape not same as primary's shape
+      # example: primary's shape = [10, 20, 30], slot's shape =
+      # None, [], [10], [10, 20] or [10, 20, 30] is allowed
+      # slot's shape = None or [10, 20, 30], set slot's slice_info same as primary
+      # slot's shape = [], don't set slot's slice_info
+      # slot's shape = [10] or [10, 20], set slot's slice_info according to ndims
+      n = slot.shape.ndims
+      if n is None or n > 0:
+        slot._set_save_slice_info(variables.Variable.SaveSliceInfo(
           slice_info.full_name + "/" + real_slot_name,
-          slice_info.full_shape[:],
-          slice_info.var_offset[:],
-          slice_info.var_shape[:],
+          slice_info.full_shape[:n],
+          slice_info.var_offset[:n],
+          slice_info.var_shape[:n],
           var_full_name=slice_info.var_full_name + "/" + real_slot_name))
     else:
       slot._set_save_slice_info(

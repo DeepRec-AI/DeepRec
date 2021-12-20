@@ -453,7 +453,7 @@ def mark_target_node(target_nodes_or_tensors):
                           'operation in list'%(value, type(value)))
     else:
       logging.warning("%s, %s is not tensor or operation"%(op, type(op)))
-  os.environ['TARGET_NDOES_NAME']=";".join(target_node)
+  os.environ['TARGET_NODES_NAME']=";".join(target_node)
 
 
 @tf_export(v1=['train.MonitoredTrainingSession'])
