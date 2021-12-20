@@ -1208,37 +1208,17 @@ def safe_fused_embedding_lookup_sparse(embedding_weights,
                                                   sparse_weights.values,
                                                   sparse_ids.dense_shape)
 
-    if prune:
-      # Prune invalid ids and weights.
-      sparse_ids, sparse_weights = _prune_invalid_ids(sparse_ids, sparse_weights)
-      if combiner != "sum":
-        sparse_ids, sparse_weights = _prune_invalid_weights(
-            sparse_ids, sparse_weights)
-
-    # Fill in dummy values for empty features, if necessary.
-    sparse_ids, is_row_empty = sparse_ops.sparse_fill_empty_rows(
-        sparse_ids, default_id or 0)
-    if sparse_weights is not None:
-      sparse_weights, _ = sparse_ops.sparse_fill_empty_rows(sparse_weights, 1.0)
-
     result = fused_embedding_ops.fused_embedding_lookup_sparse(
-        embedding_weights,
-        sparse_ids,
-        sparse_weights=sparse_weights,
-        combiner=combiner,
-        partition_strategy=partition_strategy,
-        name=None if default_id is None else scope,
-        max_norm=max_norm)
-
-    if default_id is None:
-      # Broadcast is_row_empty to the same shape as embedding_lookup_result,
-      # for use in Select.
-      is_row_empty = array_ops.tile(
-          array_ops.reshape(is_row_empty, [-1, 1]),
-          array_ops.stack([1, array_ops.shape(result)[1]]))
-
-      result = array_ops.where(
-          is_row_empty, array_ops.zeros_like(result), result, name=scope)
+      embedding_weights,
+      sparse_ids,
+      sparse_weights=sparse_weights,
+      combiner=combiner,
+      partition_strategy=partition_strategy,
+      name=None if default_id is None else scope,
+      max_norm=max_norm
+      default_id=default_id,
+      prune_invalid_ids=True
+    )
 
     # Reshape back from linear ids back into higher-dimensional dense result.
     final_result = array_ops.reshape(

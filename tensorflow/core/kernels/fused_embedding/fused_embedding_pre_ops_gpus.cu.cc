@@ -184,12 +184,14 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     size_t max_cub_bytes = 0;
     size_t temp_storage_bytes = 0;
 
-    cub::DeviceRadixSort::SortPairs(
-        (void*)nullptr, temp_storage_bytes, (int64_t*)nullptr,
-        (int64_t*)nullptr, (IndicePair*)nullptr, (IndicePair*)nullptr,
-        int(nnz + batch_size), 0, sizeof(int64_t) * 8, stream);
-    max_cub_bytes =
-        temp_storage_bytes > max_cub_bytes ? temp_storage_bytes : max_cub_bytes;
+    if (num_partitions_ > 1) {
+      cub::DeviceRadixSort::SortPairs(
+          (void*)nullptr, temp_storage_bytes, (int64_t*)nullptr,
+          (int64_t*)nullptr, (IndicePair*)nullptr, (IndicePair*)nullptr,
+          int(nnz + batch_size), 0, sizeof(int64_t) * 8, stream);
+      max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
+                                                         : max_cub_bytes;
+    }
 
     if (fill_empty_row_ || prune_invalid_id_) {
       cub::DeviceSelect::Flagged(nullptr, temp_storage_bytes, (int64_t*)nullptr,
@@ -330,14 +332,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
       }
     }
 
-    // 3. sort the sp_values and indices
-    Tensor values_sorted;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz},
-                                           &values_sorted));
-    Tensor indices_sorted;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz, 2},
-                                           &indices_sorted));
-
+    // 3.5 set the correct pointer
     const int64_t* values_in = (fill_empty_row_ || prune_invalid_id_)
                                    ? reinterpret_cast<const int64_t*>(
                                          values_extended.flat<int64>().data())
@@ -350,64 +345,6 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
             : reinterpret_cast<const IndicePair*>(
                   indices_tensor->flat<int64>().data());
 
-    cub::DeviceRadixSort::SortPairs(
-        cub_temp_storage.flat<int8>().data(), max_cub_bytes, values_in,
-        reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
-        indices_in,
-        reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
-        int(new_nnz), 0, sizeof(int64_t) * 8, stream);
-    CK_CUDA_THROW_(cudaGetLastError());
-
-    // 4. calculate how many elements for each
-    // partition
-    Tensor partition_sizes_accumulate;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_temp(
-                 DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
-                 &partition_sizes_accumulate));
-    cudaMemcpyAsync(partition_sizes_accumulate.flat<int64>().data(),
-                    partition_sizes_accumulate_.data(),
-                    num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
-                    stream);
-
-    Tensor elements_offset_per_partition;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_temp(
-                 DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
-                 &elements_offset_per_partition));
-
-    {
-      const int blocks = num_partitions_;
-      const int threads = 1;
-      CalcElementsOffsetPerPartition<<<blocks, threads, 0, stream>>>(
-          reinterpret_cast<const int64_t*>(values_sorted.flat<int64>().data()),
-          reinterpret_cast<int64_t*>(
-              partition_sizes_accumulate.flat<int64>().data()),
-          reinterpret_cast<int64_t*>(
-              elements_offset_per_partition.flat<int64>().data()),
-          int(new_nnz));
-      CK_CUDA_THROW_(cudaGetLastError());
-    }
-
-    elements_offset_per_partition_.clear();
-    elements_offset_per_partition_.resize(num_partitions_);
-    // stream_executor::DeviceMemoryBase
-    // elements_offset_per_partition_wrapped(
-    //     elements_offset_per_partition.flat<int64>().data(),
-    //     num_partitions_);
-    // stream->ThenMemcpy(elements_offset_per_partition_.data(),
-    //                    elements_offset_per_partition_wrapped,
-    //                    num_partitions_ *
-    //                    sizeof(int64_t));
-    // stream->BlockHostUntilDone();
-
-    cudaMemcpyAsync(elements_offset_per_partition_.data(),
-                    elements_offset_per_partition.flat<int64>().data(),
-                    num_partitions_ * sizeof(int64_t), cudaMemcpyDeviceToHost,
-                    stream);
-    cudaStreamSynchronize(stream);
-
-    // 4. set output
     OpOutputList partitioned_values;
     OP_REQUIRES_OK(ctx,
                    ctx->output_list("partitioned_values", &partitioned_values));
@@ -415,60 +352,152 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(
         ctx, ctx->output_list("partitioned_indices", &partitioned_indices));
 
-    int64_t sub_start_offset = 0;
-    for (int i = 0; i < num_partitions_; i++) {
-      int64_t size = elements_offset_per_partition_[i] - sub_start_offset;
+    // 4. set output
+    if (num_partitions_ == 1) {
+      // single partition case, just directly copy
+      Tensor* pv_out;
+      OP_REQUIRES_OK(
+          ctx, partitioned_values.allocate(
+                   0, TensorShape({static_cast<int64_t>(new_nnz)}), &pv_out));
+      Tensor* pi_out;
+      OP_REQUIRES_OK(
+          ctx,
+          partitioned_indices.allocate(
+              0, TensorShape({static_cast<int64_t>(new_nnz), 2}), &pi_out));
 
-      Tensor* sub_partitioned_values;
-      OP_REQUIRES_OK(ctx, partitioned_values.allocate(
-                              i, TensorShape({static_cast<int64_t>(size)}),
-                              &sub_partitioned_values));
+      cudaMemcpyAsync(pv_out->flat<int64>().data(), values_in,
+                      sizeof(int64_t) * new_nnz, cudaMemcpyDeviceToDevice,
+                      stream);
+      cudaMemcpyAsync(pi_out->flat<int64>().data(), indices_in,
+                      sizeof(IndicePair) * new_nnz, cudaMemcpyDeviceToDevice,
+                      stream);
 
-      Tensor* sub_partitioned_indices;
-      OP_REQUIRES_OK(ctx, partitioned_indices.allocate(
-                              i, TensorShape({static_cast<int64_t>(size), 2}),
-                              &sub_partitioned_indices));
+    } else {
+      // multi-partitions case, calcaulate indices and split them.
+      Tensor values_sorted;
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz},
+                                             &values_sorted));
+      Tensor indices_sorted;
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz, 2},
+                                             &indices_sorted));
 
-      if (size > 0) {
-        // some partition does not have any
-        // element that falls in it
-        const int threads = 128;
-        int blocks = CalcBlocksLinearMapping(size, threads);
+      cub::DeviceRadixSort::SortPairs(
+          cub_temp_storage.flat<int8>().data(), max_cub_bytes, values_in,
+          reinterpret_cast<int64_t*>(values_sorted.flat<int64>().data()),
+          indices_in,
+          reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data()),
+          int(new_nnz), 0, sizeof(int64_t) * 8, stream);
+      CK_CUDA_THROW_(cudaGetLastError());
 
-        const int partition_start_base =
-            i == 0 ? 0 : partition_sizes_accumulate_[i - 1];
-        GatherAndConvertToSubPartition<<<blocks, threads, 0, stream>>>(
+      // 4.1 calculate how many elements for each
+      // partition
+      Tensor partition_sizes_accumulate;
+      OP_REQUIRES_OK(
+          ctx,
+          ctx->allocate_temp(
+              DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
+              &partition_sizes_accumulate));
+      cudaMemcpyAsync(partition_sizes_accumulate.flat<int64>().data(),
+                      partition_sizes_accumulate_.data(),
+                      num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
+                      stream);
+
+      Tensor elements_offset_per_partition;
+      OP_REQUIRES_OK(
+          ctx,
+          ctx->allocate_temp(
+              DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
+              &elements_offset_per_partition));
+
+      {
+        const int blocks = num_partitions_;
+        const int threads = 1;
+        CalcElementsOffsetPerPartition<<<blocks, threads, 0, stream>>>(
             reinterpret_cast<const int64_t*>(
-                values_sorted.flat<int64>().data()) +
-                sub_start_offset,
+                values_sorted.flat<int64>().data()),
             reinterpret_cast<int64_t*>(
-                sub_partitioned_values->flat<int64>().data()),
-            partition_start_base, size);
-
+                partition_sizes_accumulate.flat<int64>().data()),
+            reinterpret_cast<int64_t*>(
+                elements_offset_per_partition.flat<int64>().data()),
+            int(new_nnz));
         CK_CUDA_THROW_(cudaGetLastError());
-
-        // stream_executor::DeviceMemoryBase
-        // sub_indices_sorted_wrapped(
-        //     reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data())
-        //     +
-        //         partition_start_base,
-        //     size * sizeof(IndicePair));
-        // stream_executor::DeviceMemoryBase
-        // sub_indices_out_wrapped(
-        //     reinterpret_cast<IndicePair*>(
-        //         sub_partitioned_indices.flat<int64>().data()),
-        //     size * sizeof(IndicePair));
-        // stream->ThenMemcpy(&sub_indices_out_wrapped,
-        //                    sub_indices_sorted_wrapped,
-        //                    size * 2 *
-        //                    sizeof(int64_t));
-        cudaMemcpyAsync(
-            sub_partitioned_indices->flat<int64>().data(),
-            indices_sorted.flat<int64>().data() + 2 * sub_start_offset,
-            size * 2 * sizeof(int64_t), cudaMemcpyDeviceToDevice, stream);
       }
-      sub_start_offset = elements_offset_per_partition_[i];
+
+      elements_offset_per_partition_.clear();
+      elements_offset_per_partition_.resize(num_partitions_);
+      // stream_executor::DeviceMemoryBase
+      // elements_offset_per_partition_wrapped(
+      //     elements_offset_per_partition.flat<int64>().data(),
+      //     num_partitions_);
+      // stream->ThenMemcpy(elements_offset_per_partition_.data(),
+      //                    elements_offset_per_partition_wrapped,
+      //                    num_partitions_ *
+      //                    sizeof(int64_t));
+      // stream->BlockHostUntilDone();
+
+      cudaMemcpyAsync(elements_offset_per_partition_.data(),
+                      elements_offset_per_partition.flat<int64>().data(),
+                      num_partitions_ * sizeof(int64_t), cudaMemcpyDeviceToHost,
+                      stream);
+      cudaStreamSynchronize(stream);
+
+      // 4.2 set output
+      int64_t sub_start_offset = 0;
+      for (int i = 0; i < num_partitions_; i++) {
+        int64_t size = elements_offset_per_partition_[i] - sub_start_offset;
+
+        Tensor* sub_partitioned_values;
+        OP_REQUIRES_OK(ctx, partitioned_values.allocate(
+                                i, TensorShape({static_cast<int64_t>(size)}),
+                                &sub_partitioned_values));
+
+        Tensor* sub_partitioned_indices;
+        OP_REQUIRES_OK(ctx, partitioned_indices.allocate(
+                                i, TensorShape({static_cast<int64_t>(size), 2}),
+                                &sub_partitioned_indices));
+
+        if (size > 0) {
+          // some partition does not have any
+          // element that falls in it
+          const int threads = 128;
+          int blocks = CalcBlocksLinearMapping(size, threads);
+
+          const int partition_start_base =
+              i == 0 ? 0 : partition_sizes_accumulate_[i - 1];
+          GatherAndConvertToSubPartition<<<blocks, threads, 0, stream>>>(
+              reinterpret_cast<const int64_t*>(
+                  values_sorted.flat<int64>().data()) +
+                  sub_start_offset,
+              reinterpret_cast<int64_t*>(
+                  sub_partitioned_values->flat<int64>().data()),
+              partition_start_base, size);
+
+          CK_CUDA_THROW_(cudaGetLastError());
+
+          // stream_executor::DeviceMemoryBase
+          // sub_indices_sorted_wrapped(
+          //     reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data())
+          //     +
+          //         partition_start_base,
+          //     size * sizeof(IndicePair));
+          // stream_executor::DeviceMemoryBase
+          // sub_indices_out_wrapped(
+          //     reinterpret_cast<IndicePair*>(
+          //         sub_partitioned_indices.flat<int64>().data()),
+          //     size * sizeof(IndicePair));
+          // stream->ThenMemcpy(&sub_indices_out_wrapped,
+          //                    sub_indices_sorted_wrapped,
+          //                    size * 2 *
+          //                    sizeof(int64_t));
+          cudaMemcpyAsync(
+              sub_partitioned_indices->flat<int64>().data(),
+              indices_sorted.flat<int64>().data() + 2 * sub_start_offset,
+              size * 2 * sizeof(int64_t), cudaMemcpyDeviceToDevice, stream);
+        }
+        sub_start_offset = elements_offset_per_partition_[i];
+      }
     }
+    // Op kernel execution done
   }
 
  private:

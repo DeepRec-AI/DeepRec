@@ -282,5 +282,71 @@ TEST_F(FusedEmbeddingSparsePreLookUpOpTest,
   }
 }
 
+TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Partition1) {
+  MakeOpAndSetDevice(Device::GPU, 1, false, false, -1);
+  // partition_shapes 0
+  AddInputFromArray<int64>(TensorShape({2}), {10, 8});
+
+  // sp_values
+  AddInputFromArray<int64>(TensorShape({10}),
+                           {0, 4, 3, -2, 5, -3, -4, 9, -6, 2});
+
+  // sp_indices
+  AddInputFromArray<int64>(
+      TensorShape({10, 2}),
+      {0, 0, 0, 4, 1, 2, 3, 0, 3, 4, 4, 0, 5, 2, 6, 0, 6, 1, 6, 7});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {7, 8});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_values(allocator(), DT_INT64, TensorShape({10}));
+    test::FillValues<int64>(&expected_values,
+                            {0, 4, 3, -2, 5, -3, -4, 9, -6, 2});
+    test::ExpectTensorEqual<int64>(expected_values, *GetOutput(0));
+
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({10, 2}));
+    test::FillValues<int64>(&expected_indices, {0, 0, 0, 4, 1, 2, 3, 0, 3, 4,
+                                                4, 0, 5, 2, 6, 0, 6, 1, 6, 7});
+    test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(1));
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePreLookUpOpTest,
+       Partition1_Fill_Empty_Prune_Invalid_Default_3) {
+  MakeOpAndSetDevice(Device::GPU, 1, true, true, 3);
+  // partition_shapes 0
+  AddInputFromArray<int64>(TensorShape({2}), {10, 8});
+
+  // sp_values
+  AddInputFromArray<int64>(TensorShape({10}),
+                           {0, 4, 3, -2, 5, -3, -4, 9, -6, 2});
+
+  // sp_indices
+  AddInputFromArray<int64>(
+      TensorShape({10, 2}),
+      {0, 0, 0, 4, 1, 2, 3, 0, 3, 4, 4, 0, 5, 2, 6, 0, 6, 1, 6, 7});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {7, 8});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_values(allocator(), DT_INT64, TensorShape({9}));
+    test::FillValues<int64>(&expected_values, {0, 4, 3, 5, 9, 2, 3, 3, 3});
+    test::ExpectTensorEqual<int64>(expected_values, *GetOutput(0));
+
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({9, 2}));
+    test::FillValues<int64>(&expected_indices, {0, 0, 0, 4, 1, 2, 3, 4, 6, 0, 6,
+                                                7, 2, 0, 4, 0, 5, 0});
+    test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(1));
+  }
+}
+
 }  // namespace
 }  // namespace tensorflow

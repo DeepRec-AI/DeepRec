@@ -239,13 +239,6 @@ def safe_fused_embedding_lookup_sparse(embedding_weights,
         array_ops.gather(original_shape, original_rank - 1)
     ])
 
-    # Prune invalid ids and weights.
-    sparse_ids, _ = _prune_invalid_ids(sparse_ids, None)
-
-    # Fill in dummy values for empty features, if necessary.
-    sparse_ids, is_row_empty = sparse_ops.sparse_fill_empty_rows(
-        sparse_ids, default_id or 0)
-
     result = fused_embedding_ops.fused_embedding_lookup_sparse(
       embedding_weights,
       sparse_ids,
@@ -254,18 +247,10 @@ def safe_fused_embedding_lookup_sparse(embedding_weights,
       name=name,
       combiner=combiner,
       max_norm=max_norm,
+      default_id=default_id,
+      prune_invalid_ids=True,
       blocknums=blocknums
     )
-
-    if default_id is None:
-      # Broadcast is_row_empty to the same shape as embedding_lookup_result,
-      # for use in Select.
-      is_row_empty = array_ops.tile(
-          array_ops.reshape(is_row_empty, [-1, 1]),
-          array_ops.stack([1, array_ops.shape(result)[1]]))
-
-      result = array_ops.where(
-          is_row_empty, array_ops.zeros_like(result), result, name=scope)
 
     # Reshape back from linear ids back into higher-dimensional dense result.
     final_result = array_ops.reshape(
