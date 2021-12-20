@@ -1403,7 +1403,7 @@ def safe_fused_embedding_lookup_sparse(embedding_weights,
       combiner=combiner,
       partition_strategy=partition_strategy,
       name=None if default_id is None else scope,
-      max_norm=max_norm
+      max_norm=max_norm,
       default_id=default_id,
       prune_invalid_ids=True
     )

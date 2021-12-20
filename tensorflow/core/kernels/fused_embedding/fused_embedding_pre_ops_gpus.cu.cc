@@ -512,7 +512,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
 
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePreLookUp")
                             .Device(DEVICE_GPU)
-                            .HostMemory("partition_shapes"),
+                            .HostMemory("partition_shapes")
+                            .HostMemory("sp_dense_shape"),
                         FusedEmbeddingSparsePreLookUpGPU);
 }  // namespace tensorflow
 

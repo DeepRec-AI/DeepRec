@@ -32,7 +32,6 @@ def fused_embedding_lookup_sparse(params,
     raise ValueError("{} is not supported yet. Currently only support {}".format(
       partition_strategy, valid_partition_strategy))
 
-  fill_empty_row = True if default_id is not None else False
   if default_id is not None and type(default_id) is not int:
     raise ValueError("default_id must be a integer!")
 
@@ -43,13 +42,13 @@ def fused_embedding_lookup_sparse(params,
   partition_shapes = [w.shape for w in params]
   with ops.name_scope(name, "fused_embedding_lookup_sparse",
                       params + [sp_ids]) as name:
-
     partitioned_values, partitioned_indices, \
       row_empty_and_invalid_flags = fused_embedding_sparse_pre_look_up(
           partition_shapes=partition_shapes,
           sp_values=sp_ids.values,
           sp_indices=sp_ids.indices,
-          fill_empty_row=fill_empty_row,
+          sp_dense_shape=sp_ids.dense_shape,
+          fill_empty_row=True,
           default_id=default_id,
           prune_invalid_id=bool(prune_invalid_ids)
       )
@@ -82,7 +81,6 @@ def fused_embedding_sparse_post_look_up_grad(op, top_grad_emb_vec, _):
     top_grad=top_grad_emb_vec, emb_shards=emb_shards,
     partitioned_indices=partitioned_indices,
     feature_nums=feature_nums, row_empty_and_invalid_flags=row_empty_and_invalid_flags,
-    num_partitions=num_partitions,
     combiner=op.get_attr("combiner"), max_norm=op.get_attr("max_norm"),
     default_id=op.get_attr("default_id")
   )

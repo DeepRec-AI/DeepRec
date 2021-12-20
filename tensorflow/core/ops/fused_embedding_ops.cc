@@ -83,15 +83,18 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
       TF_RETURN_IF_ERROR(ctx->GetAttr("partition_axis", &partition_axis));
 
       ShapeHandle unused;
+      // sp_values
       TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(num_partitions), 1, &unused));
+      // sp_indices
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(num_partitions + 1), 2, &unused));
+      DimensionHandle unused_dim;
+      TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
+      // sp_dense_shape
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(num_partitions + 2), 1, &unused));
 
-      DimensionHandle unused_dim;
-      TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
-
+      // partition_shapes
       for (int i = 0; i < num_partitions; i++) {
         ShapeHandle partition_shape;
         TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 1, &partition_shape));
@@ -151,13 +154,18 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
 
       ShapeHandle unused;
       for (int i = 0; i < num_partitions; i++) {
+        // emb_shards
         TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
+        // partitioned_indices
         TF_RETURN_IF_ERROR(
             ctx->WithRank(ctx->input(i + num_partitions), 2, &unused));
+        DimensionHandle unused_dim;
+        TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
       }
-
+      // sp_dense_shape
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(2 * num_partitions), 1, &unused));
+      // row_empty_and_invalid_flags
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
 
@@ -196,12 +204,22 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
       ShapeHandle unused;
       ShapeHandle top_grad_shape;
 
+      // top_grad
       TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
-      for (int i = 1; i < 2 * num_partitions + 1; i++) {
+      // emb_shards
+      for (int i = 1; i < num_partitions + 1; i++) {
         TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
       }
+      // partitioned_indices
+      for (int i = num_partitions + 1; i < 2 * num_partitions + 1; i++) {
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
+        DimensionHandle unused_dim;
+        TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
+      }
+      // feature_nums
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
+      // row_empty_and_invalid_flags
       TF_RETURN_IF_ERROR(
           ctx->WithRank(ctx->input(2 * num_partitions + 2), 1, &unused));
 
