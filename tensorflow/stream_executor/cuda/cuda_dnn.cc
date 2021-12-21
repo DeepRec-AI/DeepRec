@@ -2880,24 +2880,6 @@ static bool TensorOpMathAvailable(int cc_major) {
   return cc_major >= 7;
 }
 
-static bool IsTensorMathEnabled(Stream* stream, dnn::DataType input_type) {
-  int cc_major, cc_minor;
-  std::tie(cc_major, cc_minor) = GetCcMajorMinor(stream);
-  if (!TensorOpMathAvailable(cc_major)) {
-    return false;
-  }
-  if (input_type == dnn::DataType::kFloat) {
-#if CUDNN_VERSION < 8000
-    return false;
-#else
-    if (!tensorflow::tensor_float_32_execution_enabled()) {
-      return false;
-    }
-#endif
-  }
-  return true;
-}
-
 port::StatusOr<dnn::AlgorithmDesc> GetCudnnConvolutionForwardAlgorithm(
     Stream* stream, const CudnnHandle& cudnn,
     const dnn::AlgorithmConfig& algorithm_config,
