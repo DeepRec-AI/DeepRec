@@ -18,6 +18,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 
 #include "tensorflow/lite/c/c_api_internal.h"
+#include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow/lite/util.h"
 
 namespace tflite {
@@ -49,6 +50,13 @@ TEST(UtilTest, IsFlexOp) {
   EXPECT_FALSE(IsFlexOp("OpFlex"));
   EXPECT_FALSE(IsFlexOp(nullptr));
   EXPECT_FALSE(IsFlexOp(""));
+}
+
+TEST(MultiplyAndCheckOverflow, Validate) {
+  size_t res = 0;
+  EXPECT_TRUE(MultiplyAndCheckOverflow(1, 2, &res) == kTfLiteOk);
+  EXPECT_FALSE(MultiplyAndCheckOverflow(static_cast<size_t>(123456789023),
+                                        1223423425, &res) == kTfLiteOk);
 }
 
 }  // namespace

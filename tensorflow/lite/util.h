@@ -66,6 +66,11 @@ TfLiteStatus GetSizeOfType(TfLiteContext* context, const TfLiteType type,
 
 TfLiteStatus UnresolvedOpInvoke(TfLiteContext* context, TfLiteNode* node);
 
+// Multiply two sizes and return true if overflow occurred;
+// This is based off tensorflow/overflow.h but is simpler as we already
+// have unsigned numbers. It is also generalized to work where sizeof(size_t)
+// is not 8.
+TfLiteStatus MultiplyAndCheckOverflow(size_t a, size_t b, size_t* product);
 }  // namespace tflite
 
 #endif  // TENSORFLOW_LITE_UTIL_H_

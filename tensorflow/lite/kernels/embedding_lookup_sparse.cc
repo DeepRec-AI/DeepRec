@@ -70,6 +70,7 @@ limitations under the License.
 #include "tensorflow/lite/kernels/internal/tensor_utils.h"
 #include "tensorflow/lite/kernels/kernel_util.h"
 #include "tensorflow/lite/kernels/op_macros.h"
+#include "tensorflow/lite/util.h"
 
 namespace tflite {
 namespace ops {
@@ -144,6 +145,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   const TfLiteTensor* dense_shape = GetInput(context, node, 2);
   const TfLiteTensor* weights = GetInput(context, node, 3);
   const TfLiteTensor* value = GetInput(context, node, 4);
+  const size_t values_size = NumElements(value);
 
   const int lookup_rank = SizeOfDimension(indices, 1);
   const int embedding_rank = NumDimensions(value);
@@ -161,21 +163,29 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   TfLiteIntArray* output_shape = TfLiteIntArrayCreate(output_rank);
   TF_LITE_ENSURE(context, output_shape != nullptr);
   int k = 0;
-  int embedding_size = 1;
-  int lookup_size = 1;
+  size_t embedding_size = 1;
+  size_t lookup_size = 1;
   for (int i = 0; i < lookup_rank - 1; i++, k++) {
-    const int dim = dense_shape->data.i32[i];
-    lookup_size *= dim;
+    const size_t dim = dense_shape->data.i32[i];
+    TF_LITE_ENSURE_MSG(
+        context,
+        MultiplyAndCheckOverflow(lookup_size, dim, &lookup_size) == kTfLiteOk,
+        "Lookup size overflowed.");
     output_shape->data[k] = dim;
   }
   for (int i = 1; i < embedding_rank; i++, k++) {
-    const int dim = SizeOfDimension(value, i);
-    embedding_size *= dim;
+    const size_t dim = SizeOfDimension(value, i);
+    TF_LITE_ENSURE_MSG(context,
+                       MultiplyAndCheckOverflow(embedding_size, dim,
+                                                &embedding_size) == kTfLiteOk,
+                       "Embedding size overflowed.");
     output_shape->data[k] = dim;
   }
   TF_LITE_ENSURE_STATUS(context->ResizeTensor(context, output, output_shape));
-  const int output_size = lookup_size * embedding_size;
+  const size_t output_size = lookup_size * embedding_size;
   TfLiteTensorRealloc(output_size * sizeof(float), output);
+  // Makes sure reallocation was successful.
+  TF_LITE_ENSURE(context, output->data.f != nullptr);
 
   std::fill_n(output->data.f, output_size, 0.0f);
 
@@ -226,6 +236,11 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     current_squares_weight += w * w;
     current_total_weight += w;
     for (int k = 0; k < embedding_size; k++) {
+      // only index if indices are valid
+      if (current_output_offset + k < 0) continue;
+      if (current_output_offset + k >= output_size) continue;
+      if (example_embedding_offset + k < 0) continue;
+      if (example_embedding_offset + k >= values_size) continue;
       output->data.f[current_output_offset + k] +=
           (value->data.f[example_embedding_offset + k] * w);
     }
