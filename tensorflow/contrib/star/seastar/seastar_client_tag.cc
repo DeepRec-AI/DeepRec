@@ -4,8 +4,8 @@
 namespace tensorflow {
 namespace {
 
-// Default connection timeout is 10s.
-static const size_t kMaxConnectionTimeoutInMS = 10000;
+// Default connection timeout is 60s.
+static const size_t kMaxConnectionTimeoutInMS = 60000;
 static const size_t kUSleepInMS = 100;
 static const size_t kUSleepInUs = 1000 * kUSleepInMS;
 
