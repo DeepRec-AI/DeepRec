@@ -2,11 +2,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow
+from tensorflow.python.framework.constant_op import constant
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops import array_ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.ops import gen_fused_embedding_ops
+from tensorflow.python.ops.kv_variable_ops import EmbeddingVariable
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_pre_look_up
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_post_look_up
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_post_look_up_grad
@@ -39,7 +42,15 @@ def fused_embedding_lookup_sparse(params,
     raise ValueError("Using blocknums for DynamicEmbeddingVariable is not supported yet")
 
   partition_nums = len(params)
-  partition_shapes = [w.shape for w in params]
+
+  if type(params[0]) is EmbeddingVariable:
+    if partition_nums != 1:
+      raise ValueError("For EmbeddingVariable, do not support partition now")
+    # fake shape for now. TBD change in the future
+    partition_shapes = [constant([1, 1], dtype=tensorflow.int64)]
+  else:
+    partition_shapes = [w.shape for w in params]
+
   with ops.name_scope(name, "fused_embedding_lookup_sparse",
                       params + [sp_ids]) as name:
     partitioned_values, partitioned_indices, \

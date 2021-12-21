@@ -151,6 +151,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     auto stream = ctx->eigen_device<GPUDevice>().stream();
 
     const int64_t default_id = default_id_ >= 0 ? default_id_ : 0;
+    const int linear_mapping_threads = 128;
 
     // 1. bind inputs
     Tensor const* values_tensor = nullptr;
@@ -249,7 +250,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
           ctx, ctx->allocate_temp(DT_INT32, TensorShape{1}, &selected_num_d));
 
       {
-        const int threads = 128;
+        const int threads = linear_mapping_threads;
         const int blocks =
             CalcBlocksLinearMapping(batch_size + nnz, threads * 4);
         InitFlagsToOneInt4<<<blocks, threads, 0, stream>>>(
@@ -260,7 +261,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
       // 3.1 set flags, init tmp_indices_buffer etc.
       if (fill_empty_row_) {
         {
-          const int threads = 128;
+          const int threads = linear_mapping_threads;
           const int blocks = CalcBlocksLinearMapping(nnz + batch_size, threads);
           FusedMultiFunctionalKernel<<<blocks, threads, 0, stream>>>(
               reinterpret_cast<const IndicePair*>(
@@ -277,7 +278,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         }
       } else if (prune_invalid_id_) {
         {
-          const int threads = 128;
+          const int threads = linear_mapping_threads;
           const int blocks = CalcBlocksLinearMapping(nnz, threads);
           DetectInvalid<<<blocks, threads, 0, stream>>>(
               reinterpret_cast<const int64_t*>(
@@ -459,7 +460,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         if (size > 0) {
           // some partition does not have any
           // element that falls in it
-          const int threads = 128;
+          const int threads = linear_mapping_threads;
           int blocks = CalcBlocksLinearMapping(size, threads);
 
           const int partition_start_base =
