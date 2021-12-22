@@ -130,6 +130,7 @@ class DLRM():
         self.feature = inputs[0]
         self.label = inputs[1]
         self.bf16 = bf16
+        self._is_training=True
 
         self.interaction_op = interaction_op
         if self.interaction_op not in ['dot', 'cat']:
@@ -190,6 +191,10 @@ class DLRM():
                             units=num_hidden_units,
                             activation=tf.nn.relu,
                             name=mlp_bot_hidden_layer_scope)
+                        dense_inputs = tf.layers.batch_normalization(
+                            dense_inputs,
+                            training=self._is_training,
+                            trainable=True)
                         add_layer_summary(dense_inputs,
                                           mlp_bot_hidden_layer_scope.name)
             dense_inputs = tf.cast(dense_inputs, dtype=tf.float32)
@@ -206,6 +211,10 @@ class DLRM():
                             units=num_hidden_units,
                             activation=tf.nn.relu,
                             name=mlp_bot_hidden_layer_scope)
+                        dense_inputs = tf.layers.batch_normalization(
+                            dense_inputs,
+                            training=self._is_training,
+                            trainable=True)
                         add_layer_summary(dense_inputs,
                                           mlp_bot_hidden_layer_scope.name)
         #interaction_op
@@ -534,6 +543,7 @@ def main(tf_config=None, server=None):
 
             # eval model
             if not args.no_eval:
+                model._is_training=False
                 writer = tf.summary.FileWriter(
                     os.path.join(checkpoint_dir, 'eval'))
 
