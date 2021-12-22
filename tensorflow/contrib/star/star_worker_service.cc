@@ -419,7 +419,7 @@ void StarWorker::RecvTensorAsync(CallOptions* opts,
       s = PrepareRecvTensor(parsed, &src_dev);
     }
     if (!s.ok()) {
-      LOG(WARNING) << "PrepareRecvTensor failed, tensor:" << key;
+      LOG(ERROR) << "PrepareRecvTensor failed, tensor:" << key;
       done(s);
       return;
     }
@@ -435,8 +435,8 @@ void StarWorker::RecvTensorAsync(CallOptions* opts,
         //opts->ClearCancelCallback();
 
         if (!status.ok()) {
-          LOG(WARNING) << "env_->rendezvous_mgr->RecvLocalAsync failed, error msg is: "
-                       << status.error_message();
+          LOG(ERROR) << "env_->rendezvous_mgr->RecvLocalAsync failed, error msg is: "
+                     << status.error_message();
         }
 
         if (status.ok()) {
@@ -513,7 +513,7 @@ void StarWorker::FuseRecvTensorAsync(CallOptions* opts,
       }
 
       if (!s.ok()) {
-        LOG(WARNING) << "PrepareRecvTensor failed, tensor:" << key;
+        LOG(ERROR) << "PrepareRecvTensor failed, tensor:" << key;
         delete src_devs;
         done(s);
         return;
@@ -533,8 +533,8 @@ void StarWorker::FuseRecvTensorAsync(CallOptions* opts,
         // opts->ClearCancelCallback();
 
         if (!status.ok()) {
-          LOG(WARNING) << "env_->rendezvous_mgr->FuseRecvLocalAsync failed, error msg is: "
-                       << status.error_message();
+          LOG(ERROR) << "env_->rendezvous_mgr->FuseRecvLocalAsync failed, error msg is: "
+                     << status.error_message();
         }
 
         if (status.ok()) {

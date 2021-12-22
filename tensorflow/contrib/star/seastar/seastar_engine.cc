@@ -46,6 +46,9 @@ namespace {
     std::vector<std::string> ips;
     struct hostent* hent;
     hent = gethostbyname(vec[0].c_str());
+    if (hent == nullptr) {
+      LOG(FATAL) << "gethostbyname return nullptr, ip: " << vec[0].c_str();
+    }
     for (uint32_t i = 0; hent->h_addr_list[i]; ++i) {
       std::string ip = inet_ntoa(*(struct in_addr*)(hent->h_addr_list[i]));
       ips.push_back(ip);

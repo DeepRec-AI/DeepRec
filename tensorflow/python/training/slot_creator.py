@@ -92,6 +92,15 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         ht_partition_num=primary._ht_partition_num)
     else:
       slotnum_op = ops.convert_to_tensor(slot_config.slot_num, preferred_dtype=dtypes.int64)
+      filter_strategy = None
+      if primary._filter_freq != 0:
+        if primary._max_element_size != 0:
+          filter_strategy = variables.CBFFilter(filter_freq=primary._filter_freq,
+                                                max_element_size=primary._max_element_size,
+                                                false_positive_probability=primary._false_positive_probability,
+                                                counter_type=primary._counter_type)
+        else:
+          filter_strategy = variables.CounterFilter(filter_freq=primary._filter_freq)
       slot = variable_scope.get_embedding_variable_v2_internal(
         scope, initializer=val, trainable=False,
         embedding_dim=shape, key_dtype=primary._invalid_key_type,
@@ -104,7 +113,10 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
           slot_index=slot_config.slot_index,
           primary=primary._primary,
           primary_slotnum_op=slotnum_op,
-          storage_type=primary.storage_type))
+          storage_type=primary.storage_type,
+          l2_weight_threshold=primary._l2_weight_threshold,
+          filter_strategy=filter_strategy)
+          )
   else:
     slot = variable_scope.get_variable(
         scope,
