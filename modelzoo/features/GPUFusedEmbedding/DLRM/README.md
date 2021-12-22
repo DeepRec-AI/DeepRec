@@ -1,4 +1,4 @@
-# DeepFM with GPU Fused Embedding
+# DLRM with GPU Fused Embedding
 
 The model structure, hyper params, dataset, etc, are all same to [DLRM](../../../DLRM/README.md). Please follow the instruction there to prepare, setup and run the model.
 
