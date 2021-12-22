@@ -145,8 +145,9 @@ class EmbeddingVar : public ResourceBase {
         emb_config_.emb_index);
   }
 
-  V* LookupPrimaryEmb(ValuePtr<V>* value_ptr, const V* default_v) {
-    return value_ptr->GetOrAllocate(alloc_, value_len_, default_v, 0);
+  V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
+    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index);
+    return primary_val;
   }
 
   typename TTypes<V>::Flat flat(ValuePtr<V>* value_ptr) {
@@ -266,7 +267,7 @@ class EmbeddingVar : public ResourceBase {
       kv_->GetSnapshot(&key_list, &value_ptr_list);
       std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
       for (int64 i = 0; i < key_list.size(); ++i) {
-        V* val = LookupPrimaryEmb(value_ptr_list[i], default_value_);
+        V* val = LookupPrimaryEmb(value_ptr_list[i]);
         V l2_weight = 0.0;
         for (int64 j = 0; j < value_len_; j++) {
             l2_weight += val[j] * val[j];
@@ -293,8 +294,12 @@ class EmbeddingVar : public ResourceBase {
       std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
       for (int64 i = 0; i < key_list.size(); ++i) {
         int64 version = value_ptr_list[i]->GetStep();
-        if (gs - version > emb_config_.steps_to_live) {
-          to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+        if (version == -1) {
+          value_ptr_list[i]->SetStep(gs);
+        } else {
+          if (gs - version > emb_config_.steps_to_live) {
+            to_deleted.emplace_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+          }
         }
       }
       for (const auto it : to_deleted) {

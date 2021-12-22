@@ -590,7 +590,7 @@ def embedding_lookup_sparse(params,
       segment_ids = math_ops.cast(segment_ids, dtypes.int32)
 
     ids = sp_ids.values
-    if params[0]._filter_freq == 0:
+    if isinstance(params[0], kv_variable_ops.EmbeddingVariable) and params[0]._filter_freq == 0:
       ids, idx = array_ops.unique(ids)
       counts = None
     else:

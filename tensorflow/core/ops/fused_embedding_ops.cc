@@ -34,11 +34,7 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUp")
       ctx->set_output(0, output_shape);
 
       return Status::OK();
-    })
-    .Doc(R"doc(
-FusedEmbedding ops that performs a local embedding lookup. The process will perform embedding vector copying from emb_variable.
-The input is usually a SparseTensor. The output sp_values_offset is reserved for gradient calculation.
-    )doc");
+    });
 
 REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     .Attr("T: {float32}")

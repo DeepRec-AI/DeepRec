@@ -202,7 +202,6 @@ class InitializeKvVariableOp : public OpKernel {
 
     } else {
       EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
-
       OP_REQUIRES_OK(
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
@@ -223,7 +222,7 @@ class InitializeKvVariableOp : public OpKernel {
             return (*ptr)->Init(default_values);
            }));
 
-
+      
       OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
@@ -234,8 +233,8 @@ class InitializeKvVariableOp : public OpKernel {
                          primary_variable->kv(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum, opname,
-                                         steps_to_live_, primary_variable->MinFreq(),
-                                         max_freq_, primary_variable->GetL2WeightThreshold(),
+                                         steps_to_live_, 0,
+                                         max_freq_, l2_weight_threshold_,
                                          layout_, 0, -1.0, counter_type_, storage_type_));
              return (*ptr)->Init(default_values);
             }));
@@ -631,7 +630,6 @@ class KvResourceImportV2Op: public OpKernel {
             }));
     } else {
       EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
-
       OP_REQUIRES_OK(
        context,
        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
@@ -662,9 +660,8 @@ class KvResourceImportV2Op: public OpKernel {
                          primary_variable->kv(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum, opname,
-                                         steps_to_live_, filter_freq_,
-                                         999,  primary_variable->GetL2WeightThreshold(),
-                                         layout_));
+                                         steps_to_live_, 0, max_freq_, l2_weight_threshold_,
+                                         layout_, 0, -1.0, counter_type_, storage_type_));
              return (*ptr)->Init(default_values);
             }));
       primary_variable->SetSlotNum(slotnum);
