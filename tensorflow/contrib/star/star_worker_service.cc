@@ -7,6 +7,7 @@
 #include "tensorflow/core/framework/cancellation.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/common_runtime/device_factory.h"
+#include "tensorflow/core/common_runtime/memory_planner.h"
 #include "tensorflow/core/common_runtime/step_stats_collector.h"
 #if GOOGLE_CUDA
 #include "tensorflow/core/common_runtime/gpu/gpu_process_state.h"
@@ -300,6 +301,9 @@ void StarWorker::Cleanup(int64 step_id) {
 void StarWorker::StarRunGraphAsync(StarRunGraphRequest* request,
                                    StarRunGraphResponse* response,
                                    StatusCallback done) {
+  // Enable prmalloc optimization
+  ScopedMemoryCollector scoped_memory_collector;
+
   CallOptions* opts = &(request->opts_);
   const int64 step_id = request->step_id_;
   WorkerSession* session = env_->session_mgr->LegacySession().get();
