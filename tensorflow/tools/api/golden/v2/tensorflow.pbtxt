@@ -753,6 +753,26 @@ tf_module {
     argspec: "args=[\'func\', \'input_signature\', \'autograph\', \'experimental_autograph_options\', \'experimental_relax_shapes\', \'experimental_compile\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'True\', \'None\', \'False\', \'None\'], "
   }
   member_method {
+    name: "fused_embedding_local_sparse_look_up"
+    argspec: "args=[\'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'emb_variable\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
+  }
+  member_method {
+    name: "fused_embedding_local_sparse_look_up_grad"
+    argspec: "args=[\'top_grad\', \'emb_variable\', \'sp_values\', \'sp_values_offset\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
+  }
+  member_method {
+    name: "fused_embedding_sparse_post_look_up"
+    argspec: "args=[\'emb_shards\', \'partitioned_indices\', \'sp_dense_shape\', \'row_empty_and_invalid_flags\', \'partitioned_values\', \'combiner\', \'default_id\', \'partition_axis\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'0\', \'-1\', \'None\'], "
+  }
+  member_method {
+    name: "fused_embedding_sparse_post_look_up_grad"
+    argspec: "args=[\'top_grad\', \'emb_shards\', \'partitioned_indices\', \'feature_nums\', \'row_empty_and_invalid_flags\', \'combiner\', \'partition_axis\', \'default_id\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'-1\', \'-1\', \'None\'], "
+  }
+  member_method {
+    name: "fused_embedding_sparse_pre_look_up"
+    argspec: "args=[\'partition_shapes\', \'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'partition_axis\', \'fill_empty_row\', \'prune_invalid_id\', \'default_id\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'False\', \'False\', \'-1\', \'None\'], "
+  }
+  member_method {
     name: "gather"
     argspec: "args=[\'params\', \'indices\', \'validate_indices\', \'axis\', \'batch_dims\', \'name\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'0\', \'None\'], "
   }

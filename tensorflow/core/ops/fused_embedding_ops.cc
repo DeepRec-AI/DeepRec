@@ -35,6 +35,10 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUp")
 
       return Status::OK();
     });
+//     .Doc(R"doc(
+// FusedEmbedding ops that performs a local embedding lookup. The process will perform embedding vector copying from emb_variable.
+// The input is usually a SparseTensor. The output sp_values_offset is reserved for gradient calculation.
+//     )doc");
 
 REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     .Attr("T: {float32}")
@@ -51,11 +55,12 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
       DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
       ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
       return Status::OK();
-    })
-    .Doc(R"doc(
-The gradient ops for FusedEmbeddingLocalSparseLookUp. sp_values_offset from the forward op
-need to be passed to this grad op as input.
-    )doc");
+    });
+
+//     .Doc(R"doc(
+// The gradient ops for FusedEmbeddingLocalSparseLookUp. sp_values_offset from the forward op
+// need to be passed to this grad op as input.
+//     )doc");
 
 REGISTER_OP("FusedEmbeddingSparsePreLookUp")
     .Attr("num_partitions: int >= 1 = 1")
@@ -110,15 +115,15 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
       ctx->set_output(2 * num_partitions, ctx->MakeShape({ctx->UnknownDim()}));
 
       return Status::OK();
-    })
-    .Doc(R"doc(
-A fused embedding op, usually using for partitioned and distriuted embedding variables.
-FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
-This op will first read the partition pattern of embedding variables through partition_shapes,
-then sort, re-calculate and assign the embedding indices to the corresponding partition. Several Gather ops
-usually should be appended after this op to gather embedding shards from multiple partitioned embedding
-variables. This op has no gradient function.
-    )doc");
+    });
+//     .Doc(R"doc(
+// A fused embedding op, usually using for partitioned and distriuted embedding variables.
+// FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
+// This op will first read the partition pattern of embedding variables through partition_shapes,
+// then sort, re-calculate and assign the embedding indices to the corresponding partition. Several Gather ops
+// usually should be appended after this op to gather embedding shards from multiple partitioned embedding
+// variables. This op has no gradient function.
+//     )doc");
 
 REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("T : {float32}")
@@ -169,14 +174,15 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
       ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
       ctx->set_output(1, ctx->MakeShape({ctx->UnknownDim()}));
       return Status::OK();
-    })
-    .Doc(R"doc(
-A fused embedding op, usually using for partitioned and distriuted embedding variables.
-FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
-There should be several Gather ops before this op. The Gather ops gather embedding shards from
-embedding variable and this op glue them together, then apply combiner and max_morm according to
-embedding indices.
-    )doc");
+    });
+
+//     .Doc(R"doc(
+// A fused embedding op, usually using for partitioned and distriuted embedding variables.
+// FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
+// There should be several Gather ops before this op. The Gather ops gather embedding shards from
+// embedding variable and this op glue them together, then apply combiner and max_morm according to
+// embedding indices.
+//     )doc");
 
 REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("T : {float32}")
@@ -227,9 +233,10 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
         ctx->set_output(i, output_shape);
       }
       return Status::OK();
-    })
-    .Doc(R"doc(
-Calculate gradient of FusedEmbeddingSparsePostLookUp
-    )doc");
+    });
+
+//     .Doc(R"doc(
+// Calculate gradient of FusedEmbeddingSparsePostLookUp
+//     )doc");
 
 }  // namespace tensorflow

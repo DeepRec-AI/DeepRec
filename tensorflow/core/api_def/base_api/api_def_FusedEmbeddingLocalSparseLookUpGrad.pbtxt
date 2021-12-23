@@ -1,7 +1,3 @@
 op {
   graph_op_name: "FusedEmbeddingLocalSparseLookUpGrad"
-  summary: "The gradient ops for FusedEmbeddingLocalSparseLookUp. sp_values_offset from the forward op"
-  description: <<END
-need to be passed to this grad op as input.
-END
 }
