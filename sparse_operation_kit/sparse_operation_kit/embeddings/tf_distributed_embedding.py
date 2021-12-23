@@ -129,6 +129,7 @@ class TFDistributedEmbedding(tf.keras.layers.Layer):
 
     def _condition(self, gathered_inputs, replica_ctx):
         global_replica_id = replica_ctx.replica_id_in_sync_group
+        global_replica_id = tf.cast(global_replica_id, gathered_inputs.dtype)
         num_devices = replica_ctx.num_replicas_in_sync
 
         condition = (gathered_inputs % num_devices == global_replica_id)

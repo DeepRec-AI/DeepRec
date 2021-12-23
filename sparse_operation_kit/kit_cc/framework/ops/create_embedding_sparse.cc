@@ -35,6 +35,7 @@ REGISTER_OP("CreateEmbeddingSparse")
     .Attr("max_nnz: int >= 1 = 1")
     .Attr("max_feature_num: int >= 1 = 1")
     .Attr("combiner: {'mean', 'sum'} = 'sum'")
+    .Attr("layer_handle_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
         ShapeHandle output_shape = ctx->Scalar();
         ctx->set_output(0, output_shape);
@@ -59,6 +60,7 @@ REGISTER_OP("CreateEmbeddingSparse")
     .Attr("max_nnz: int >= 1 = 1")
     .Attr("max_feature_num: int >= 1 = 1")
     .Attr("combiner: {'mean', 'sum'} = 'sum'")
+    .Attr("layer_handle_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
         ShapeHandle output_shape = ctx->Scalar();
         ctx->set_output(0, output_shape);

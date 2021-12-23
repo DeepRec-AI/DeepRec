@@ -38,6 +38,7 @@ public:
         OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("input_dispatcher_subsequent_ops", &input_dispatcher_subsequent_ops_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("output_dispatcher_subsequent_ops", &output_dispatcher_subsequent_ops_));
+        OP_REQUIRES_OK(ctx, ctx->GetAttr("layer_handle_name", &layer_handle_name_));
     }
     void Compute(OpKernelContext* ctx) override {
         core::RefCountPtr<EmbeddingVariable> embedding_variable;
@@ -74,6 +75,7 @@ private:
     std::string combiner_;
     std::vector<std::string> input_dispatcher_subsequent_ops_;
     std::vector<std::string> output_dispatcher_subsequent_ops_;
+    std::string layer_handle_name_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("CreateEmbeddingSparse")
@@ -101,13 +103,14 @@ public:
         OP_REQUIRES_OK(ctx, ctx->GetAttr("input_dispatcher", &input_dispatcher_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("embedding_executor", &embedding_executor_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("output_dispatcher", &output_dispatcher_));
+        OP_REQUIRES_OK(ctx, ctx->GetAttr("layer_handle_name", &layer_handle_name_));
     }
 
     void Compute(OpKernelContext* ctx) override {
-        if (!created_.load()) {
+        if (!created_.load(std::memory_order_acquire)) {
             mutex_lock ml(mutex_);
             // check again to see if another thread has created the embedding layer handle.
-            if (!created_.load()) {
+            if (!created_.load(std::memory_order_acquire)) {
                 AllocatorAttributes attr;
                 attr.set_on_host(true);
 
@@ -130,7 +133,7 @@ public:
                     ctx->SetStatus(errors::Aborted(error.what()));
                     return;
                 }
-                created_.store(true);
+                created_.store(true, std::memory_order_release);
             }
         }
         ctx->set_output(0, emb_layer_handle_);
@@ -145,6 +148,7 @@ private:
     std::string input_dispatcher_;
     std::string embedding_executor_;
     std::string output_dispatcher_;
+    std::string layer_handle_name_;
     std::atomic<bool> created_{false};
     mutex mutex_;
     Tensor emb_layer_handle_;

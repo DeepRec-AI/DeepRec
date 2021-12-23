@@ -36,9 +36,14 @@ public:
     ~RawManager();
 
     void init(const size_t global_replica_id) override;
-    void create_variables(const std::string& initializer, const bool use_hashtable,
-                          const std::vector<size_t> shape, const std::string name,
-                          const bool trainable, std::shared_ptr<ParamInterface>& param) override;
+    void create_variables(const size_t local_replica_id, const std::string initializer, 
+                          const bool use_hashtable, const std::vector<size_t> shape, 
+                          const std::string name, const bool trainable, 
+                          std::shared_ptr<ParamInterface>& param) override;
+    void create_variables(const size_t local_replica_id, const std::shared_ptr<Tensor> initial_value, 
+                          const bool use_hashtable, const std::vector<size_t> shape, 
+                          const std::string name, const bool trainable, 
+                          std::shared_ptr<ParamInterface>& param) override;
     void allocate_memory(const size_t global_replica_id) override;
     void params_initialization(const size_t global_replica_id) const override;
     void dump_to_file(const std::shared_ptr<ParamInterface>& param,

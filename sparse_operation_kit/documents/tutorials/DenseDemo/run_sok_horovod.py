@@ -29,7 +29,8 @@ def main(args):
     # Initialize horovod
     hvd.init()
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(hvd.local_rank())
+    gpus = tf.config.list_physical_devices("GPU")
+    tf.config.set_visible_devices(gpus[hvd.local_rank()], "GPU")
 
     # Generate local filename
     # Assume the dataset has been splited in advance

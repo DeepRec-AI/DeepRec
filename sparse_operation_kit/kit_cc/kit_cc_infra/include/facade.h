@@ -31,6 +31,17 @@
 
 namespace SparseOperationKit {
 
+#define SOK_TF_SCHE_ASYNC(ctx, cmd, done)                    \
+    do {                                                     \
+        try {                                                \
+            (cmd);                                           \
+        } catch (std::exception const &error) {              \
+            (ctx)->SetStatus(errors::Aborted(error.what())); \
+            (done)();                                        \
+            return;                                          \
+        }                                                    \
+    } while (0)
+
 class Facade final {
 private:
     Facade();
@@ -60,21 +71,13 @@ public:
 
     void init(const size_t global_replica_id, const size_t num_replicas_in_sync, 
               const int32_t* nccl_unique_id, const uint64_t global_seed,
+              const int32_t* visible_devices, const int64_t visible_device_count,
               const size_t global_batch_size, const cudaStream_t& tf_stream);
 
     void generate_unique_name(const bool trainable, std::string &variable_name);
 
-    void create_variables(const size_t local_replica_id, const float* initial_value, const bool use_hashtable, 
-                          const std::vector<int64_t> shape, const std::string name,
-                          const bool trainable,
-                          tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
-                          tensorflow::Tensor* emb_tensor);
-    void create_variables(const size_t local_replica_id, const std::string& initializer, const bool use_hashtable,
-                          const std::vector<int64_t> shape, const std::string name,
-                          const bool trainable,
-                          tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
-                          tensorflow::Tensor* emb_tensor);
-    void create_variables(const size_t local_replica_id, float* variable, const bool use_hashtable,
+    template <typename InitializerType>
+    void create_variables(const size_t local_replica_id, const InitializerType initializer, const bool use_hashtable,
                           const std::vector<int64_t> shape, const std::string name,
                           const bool trainable,
                           tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
@@ -143,6 +146,9 @@ public:
 
     // backdoors for unit test
     const std::shared_ptr<ResourcesManager>& get_resource_mgr() const;
+
+    // backdoors for AsyncOpKernel
+    void Schedule(const size_t global_replica_id, std::function<void()> func);
 };
 
 // helper function

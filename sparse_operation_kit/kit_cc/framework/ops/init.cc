@@ -43,6 +43,7 @@ REGISTER_OP("PluginInit")
     .Input("num_replicas_in_sync: int32")
     .Input("nccl_unique_id: int32")
     .Input("global_seed: int64")
+    .Input("visible_devices: int32")
     .Attr("global_batch_size: int >= 1")
     .Output("status: string")
     .SetShapeFn([](InferenceContext* ctx) {
@@ -66,6 +67,9 @@ REGISTER_OP("PluginInit")
         DimensionHandle input_num_elem_3 = ctx->NumElements(input_shape_3);
         if (1 != ctx->Value(input_num_elem_3))
             return errors::InvalidArgument("global_seed must be a scalar.");
-        
+
+        ShapeHandle visible_devices_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(4), 1, &visible_devices_shape));
+
         return Status::OK();
     });

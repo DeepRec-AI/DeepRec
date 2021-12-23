@@ -24,4 +24,5 @@ using namespace tensorflow::shape_inference;
 REGISTER_OP("Test")
     .Input("x: T")
     .Output("y: T")
-    .Attr("T: numbertype");
+    .Attr("T: numbertype")
+    .Attr("unique_op_name: string = ''");

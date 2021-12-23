@@ -18,6 +18,8 @@
 #define CPU_RESOURCE_H
 
 #include "eigen3/unsupported/Eigen/CXX11/src/ThreadPool/SimpleThreadPool.h"
+#include "resources/mpi_context.h"
+#include "common.h"
 #include <memory>
 #include <mutex>
 #include <condition_variable>
@@ -81,7 +83,7 @@ public:
         } else {
             cond_.wait_for(lock, time_threshold_, [this, local_gen](){ return local_gen != generation_; });
             if (excp_ptr_) { std::rethrow_exception(excp_ptr_); }
-            if (local_gen == generation_) { throw std::runtime_error("Blocking threads time out."); }
+            if (local_gen == generation_) { throw std::runtime_error(ErrorBase + "BlockingCallOnce time out."); }
         }
     }
 
@@ -105,7 +107,8 @@ private:
 public:
     ~CpuResource() = default;
 
-    static std::shared_ptr<CpuResource> Create(const size_t thread_count);
+    static std::shared_ptr<CpuResource> Create(const size_t local_gpu_cnt, 
+                                               const size_t global_gpu_cnt);
 
     void sync_cpu_threads() const;
 
@@ -127,15 +130,32 @@ public:
         thread_pool_->Schedule(fn);
     }
 
+    template <typename Callable, typename ...Args>
+    void push_to_workers(const size_t local_replica_id, Callable&& func, Args&&... args) {
+        if (local_replica_id >= local_gpu_count_) 
+            throw std::runtime_error(ErrorBase + "Invalid local_replica_id");
+        std::function<void()> fn = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
+        workers_[local_replica_id]->Schedule(fn);
+    }
+
     void sync_threadpool() const;
 
+    void sync_all_workers_via_mpi() const;
+
 private:
-    CpuResource(const size_t thread_count);
+    CpuResource(const size_t local_gpu_cnt, 
+                const size_t global_gpu_cnt);
+
+    const size_t local_gpu_count_;
+    const size_t global_gpu_count_;
 
     std::shared_ptr<Barrier> barrier_;
     std::shared_ptr<BlockingCallOnce> blocking_call_oncer_;
     std::mutex mu_;
     std::unique_ptr<Eigen::SimpleThreadPool> thread_pool_;
+    // each GPU has a dedicated threadpool for launching kernels
+    std::vector<std::unique_ptr<Eigen::SimpleThreadPool>> workers_;
+    MPIContext_t mpi_context_;
 };
 
 } // namespace SparseOperationKit

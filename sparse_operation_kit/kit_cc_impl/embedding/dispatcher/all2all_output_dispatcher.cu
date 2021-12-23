@@ -19,57 +19,79 @@
 
 namespace SparseOperationKit {
 
+// template <typename EmbeddingType>
+// __global__ void reorderKernel(const size_t EmbeddingDimension,
+//                               EmbeddingType const *inputs, uint32_t const *indices, 
+//                               EmbeddingType *outputs, size_t chunks, 
+//                               size_t max_chunk_size, uint32_t const *chunk_sizes) {
+//   // set indices
+//   uint32_t gpu_idx = blockIdx.y;
+//   uint32_t thread_cnt = blockDim.x * blockDim.y;
+//   uint32_t thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
+//   uint32_t curr_chunk_size = chunk_sizes[gpu_idx];
+//   // set shared memory
+//   extern __shared__ uint32_t idx_smem[];
+//   EmbeddingType *emb_smem = (EmbeddingType *)(idx_smem + thread_cnt);
+//   bool using_smem = (EmbeddingDimension * sizeof(EmbeddingType) <= EMB_LEN_THRESHOLD);
+//   // set pointers and offsets
+//   uint32_t const *curr_input_idx = indices + gpu_idx * max_chunk_size;
+//   EmbeddingType const *curr_input_emb = inputs + gpu_idx * max_chunk_size * EmbeddingDimension;
+//   uint32_t size_per_block = (curr_chunk_size + gridDim.x * warpSize - 1) / (gridDim.x * warpSize) * warpSize;
+//   uint32_t lbound = blockIdx.x * size_per_block;
+//   uint32_t rbound = lbound + size_per_block;
+//   if (rbound > curr_chunk_size) {
+//     rbound = curr_chunk_size;
+//   }
+//   for (uint32_t offset = lbound; offset < rbound; offset += thread_cnt) {
+//     uint32_t curr_len = thread_cnt;
+//     if (offset + curr_len > rbound) {
+//       curr_len = rbound - offset;
+//     }
+//     if (thread_idx < curr_len) {
+//       idx_smem[thread_idx] = curr_input_idx[offset + thread_idx];
+//     }
+//     if (using_smem) {
+//       for (size_t idx = thread_idx; idx < curr_len * EmbeddingDimension; idx += thread_cnt) {
+//         emb_smem[idx] = curr_input_emb[offset * EmbeddingDimension + idx];
+//       }
+//     }
+//     __syncthreads();
+//     for (uint32_t warp_idx = threadIdx.y; warp_idx < curr_len; warp_idx += blockDim.y) {
+//       uint32_t orig_idx = idx_smem[warp_idx];
+//       uint32_t pos_idx = offset + warp_idx;
+//       for (uint32_t elem_idx = threadIdx.x; elem_idx < EmbeddingDimension; elem_idx += blockDim.x) {
+//         if (using_smem) {
+//           outputs[orig_idx * EmbeddingDimension + elem_idx] = emb_smem[warp_idx * EmbeddingDimension + elem_idx];
+//         } else {
+//           outputs[orig_idx * EmbeddingDimension + elem_idx] = curr_input_emb[pos_idx * EmbeddingDimension + elem_idx];
+//         }
+//       }
+//     }
+//     __syncthreads();
+//   }
+// }
+
 template <typename EmbeddingType>
-__global__ void reorderKernel(const size_t EmbeddingDimension,
-                              EmbeddingType const *inputs, uint32_t const *indices, 
-                              EmbeddingType *outputs, size_t chunks, 
-                              size_t max_chunk_size, uint32_t const *chunk_sizes) {
-  // set indices
-  uint32_t gpu_idx = blockIdx.y;
-  uint32_t thread_cnt = blockDim.x * blockDim.y;
-  uint32_t thread_idx = threadIdx.x + blockDim.x * threadIdx.y;
-  uint32_t curr_chunk_size = chunk_sizes[gpu_idx];
-  // set shared memory
-  extern __shared__ uint32_t idx_smem[];
-  EmbeddingType *emb_smem = (EmbeddingType *)(idx_smem + thread_cnt);
-  bool using_smem = (EmbeddingDimension * sizeof(EmbeddingType) <= EMB_LEN_THRESHOLD);
-  // set pointers and offsets
-  uint32_t const *curr_input_idx = indices + gpu_idx * max_chunk_size;
-  EmbeddingType const *curr_input_emb = inputs + gpu_idx * max_chunk_size * EmbeddingDimension;
-  uint32_t size_per_block = (curr_chunk_size + gridDim.x * warpSize - 1) / (gridDim.x * warpSize) * warpSize;
-  uint32_t lbound = blockIdx.x * size_per_block;
-  uint32_t rbound = lbound + size_per_block;
-  if (rbound > curr_chunk_size) {
-    rbound = curr_chunk_size;
-  }
-  for (uint32_t offset = lbound; offset < rbound; offset += thread_cnt) {
-    uint32_t curr_len = thread_cnt;
-    if (offset + curr_len > rbound) {
-      curr_len = rbound - offset;
+__global__ static void
+reorderKernel(const size_t EmbeddingDimension, EmbeddingType *inputs, uint32_t *indices, EmbeddingType *outputs,
+              size_t chunks, size_t max_chunk_size, uint32_t *chunk_sizes) {
+  for (size_t id = blockIdx.x * blockDim.x + threadIdx.x;
+       id < chunks * max_chunk_size * EmbeddingDimension;
+       id += blockDim.x * gridDim.x) {
+    size_t chunk_id = id / (max_chunk_size * EmbeddingDimension);
+    size_t row_id = (id - chunk_id * max_chunk_size * EmbeddingDimension) /
+                    EmbeddingDimension;
+    size_t item_id = id - chunk_id * (max_chunk_size * EmbeddingDimension) -
+                     row_id * EmbeddingDimension;
+
+    if (row_id < chunk_sizes[chunk_id]) {
+      size_t index =
+          static_cast<size_t>(indices[chunk_id * max_chunk_size + row_id]);
+      outputs[index * EmbeddingDimension + item_id] = inputs[id];
     }
-    if (thread_idx < curr_len) {
-      idx_smem[thread_idx] = curr_input_idx[offset + thread_idx];
-    }
-    if (using_smem) {
-      for (size_t idx = thread_idx; idx < curr_len * EmbeddingDimension; idx += thread_cnt) {
-        emb_smem[idx] = curr_input_emb[offset * EmbeddingDimension + idx];
-      }
-    }
-    __syncthreads();
-    for (uint32_t warp_idx = threadIdx.y; warp_idx < curr_len; warp_idx += blockDim.y) {
-      uint32_t orig_idx = idx_smem[warp_idx];
-      uint32_t pos_idx = offset + warp_idx;
-      for (uint32_t elem_idx = threadIdx.x; elem_idx < EmbeddingDimension; elem_idx += blockDim.x) {
-        if (using_smem) {
-          outputs[orig_idx * EmbeddingDimension + elem_idx] = emb_smem[warp_idx * EmbeddingDimension + elem_idx];
-        } else {
-          outputs[orig_idx * EmbeddingDimension + elem_idx] = curr_input_emb[pos_idx * EmbeddingDimension + elem_idx];
-        }
-      }
-    }
-    __syncthreads();
   }
 }
+
 
 
 template <typename EmbeddingType>
@@ -186,15 +208,20 @@ public:
         } // for dev_id in global_gpu_count
         CK_NCCL(ncclGroupEnd());
 
+
         // step 2: reorder embedding values
         {
-            const size_t smem_size = local_gpu->get_max_smem_size_per_sm();
-            CK_CUDA(cudaFuncSetAttribute(reorderKernel<float>, 
-                                         cudaFuncAttributeMaxDynamicSharedMemorySize, 
-                                         smem_size));
-            dim3 const grid_dim(2 * local_gpu->get_sm_count() / global_gpu_count, global_gpu_count);
-            dim3 const block_dim(local_gpu->get_warp_size(), EMB_WARPS_PER_BLOCK);
-            reorderKernel<float><<<grid_dim, block_dim, smem_size, local_gpu->get_stream()>>>(
+            CK_CUDA(cudaMemsetAsync(replica_output->GetPtrWithType<float>(),
+                                    0, replica_output->get_size_in_bytes(),
+                                    local_gpu->get_stream())); // TODO: merge it to reorderKernel
+            // const size_t smem_size = local_gpu->get_max_smem_size_per_sm();
+            // CK_CUDA(cudaFuncSetAttribute(reorderKernel<float>, 
+            //                              cudaFuncAttributeMaxDynamicSharedMemorySize, 
+            //                              smem_size));
+            long blockdim = local_gpu->get_warp_size() * EMB_WARPS_PER_BLOCK;
+            dim3 const grid_dim(2 * local_gpu->get_sm_count());
+            dim3 const block_dim(blockdim);
+            reorderKernel<float><<<grid_dim, block_dim, 0, local_gpu->get_stream()>>>(
                 /*EmbeddingDimension=*/embedding_vec_size,
                 /*inputs=*/exchanged_embeddings_buf_[local_replica_id].get_ptr(),
                 /*indices=*/replica_selected_indices_buf->GetPtrWithType<uint32_t>(),
@@ -202,6 +229,7 @@ public:
                 /*chunks=*/global_gpu_count,
                 /*max_chunk_size=*/num_keys_per_rank_,
                 /*chunk_sizes=*/replica_num_selected_keys->GetPtrWithType<uint32_t>());
+            CK_CUDA(cudaGetLastError());
         }
     }
 
@@ -237,6 +265,7 @@ public:
                 /*chunks=*/global_gpu_count,
                 /*max_chunk_size=*/num_keys_per_rank_,
                 /*chunk_sizes=*/replica_num_selected_keys->GetPtrWithType<uint32_t>());
+            CK_CUDA(cudaGetLastError());
         }
 
         // step 2: exchange gradients among all GPUs.

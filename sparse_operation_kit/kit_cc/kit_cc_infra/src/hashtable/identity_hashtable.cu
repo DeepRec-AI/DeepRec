@@ -38,6 +38,7 @@ size_t IdentityHashTable<KeyType, ValType>::get_and_add_value_head(size_t counte
 template <typename KeyType, typename ValType>
 void IdentityHashTable<KeyType, ValType>::get(const void *d_keys, void *d_vals, 
                                               size_t len, cudaStream_t stream) const {
+    if (0 == len) return;
     // only translate the type of key's to that of value's.
     const KeyType *_d_keys = reinterpret_cast<const KeyType*>(d_keys);
     ValType *_d_vals = reinterpret_cast<ValType*>(d_vals);
@@ -63,6 +64,11 @@ void IdentityHashTable<KeyType, ValType>::insert(const void *d_keys, const void 
 template <typename KeyType, typename ValType>
 size_t IdentityHashTable<KeyType, ValType>::get_size(cudaStream_t stream) const {
     // return its capacity
+    return capacity_;
+}
+
+template <typename KeyType, typename ValType>
+size_t IdentityHashTable<KeyType, ValType>::get_capacity(cudaStream_t stream) const {
     return capacity_;
 }
 

@@ -23,7 +23,7 @@
 namespace SparseOperationKit {
 
 EmbeddingManager::EmbeddingManager(const std::shared_ptr<ResourcesManager>& resource_mgr)
-: resource_mgr_(resource_mgr), resized_(false)
+: resource_mgr_(resource_mgr), resized_(false), mu_()
 {}
 
 std::shared_ptr<EmbeddingManager> EmbeddingManager::Create(const std::shared_ptr<ResourcesManager>& resource_mgr) {
@@ -105,14 +105,16 @@ void EmbeddingManager::create_embedding(const std::shared_ptr<ParamInterface>& p
     std::shared_ptr<EmbeddingLayer> embedding_temp = EmbeddingLayer::create(_input_dispatcher,
                                                 _embedding_lookuper, _output_dispatcher,
                                                 construction_context);
-    embedding_temp->allocate_forward_spaces();
-    if (param->trainable()) embedding_temp->allocate_backward_spaces();
-    param->set_user(embedding_temp);
-    embeddings_.emplace_back(embedding_temp);
-    embedding = embedding_temp;
-        
-    // create compute context for this embedding layer
-    create_contexts(embedding);
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        embedding_temp->allocate_forward_spaces();
+        if (param->trainable()) embedding_temp->allocate_backward_spaces();
+        param->set_user(embedding_temp);
+        embeddings_.emplace_back(embedding_temp);
+        embedding = embedding_temp;
+        // create compute context for this embedding layer
+        create_contexts(embedding);
+    }
 }
 
 void EmbeddingManager::create_embedding(const std::shared_ptr<ParamInterface>& param,
@@ -166,14 +168,16 @@ void EmbeddingManager::create_embedding(const std::shared_ptr<ParamInterface>& p
                                                                 _embedding_lookuper,
                                                                 _output_dispatcher,
                                                                 construction_context);
-    embedding_temp->allocate_forward_spaces();
-    if (param->trainable()) embedding_temp->allocate_backward_spaces();
-    param->set_user(embedding_temp);
-    embeddings_.emplace_back(embedding_temp);
-    embedding = embedding_temp;
-
-    // create context for this embedding layer
-    create_contexts(embedding);
+    {
+        std::lock_guard<std::mutex> lock(mu_);
+        embedding_temp->allocate_forward_spaces();
+        if (param->trainable()) embedding_temp->allocate_backward_spaces();
+        param->set_user(embedding_temp);
+        embeddings_.emplace_back(embedding_temp);
+        embedding = embedding_temp;
+        // create context for this embedding layer
+        create_contexts(embedding);
+    }
 }
 
 void EmbeddingManager::create_contexts(std::shared_ptr<EmbeddingLayer> embedding) {

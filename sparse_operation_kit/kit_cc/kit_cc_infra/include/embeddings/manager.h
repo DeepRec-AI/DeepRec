@@ -25,6 +25,7 @@
 #include "operation/op_context.h"
 #include "optimizer/update_preparer.h"
 #include <memory>
+#include <mutex>
 
 namespace SparseOperationKit {
 
@@ -106,6 +107,7 @@ private:
     std::vector<std::shared_ptr<EmbeddingLayer>> embeddings_; // store all embedding layers.
     std::unordered_map<std::shared_ptr<EmbeddingLayer>, std::vector<Context_t>> embedding_contexts_;
     
+    std::mutex mu_;
 };
 
 

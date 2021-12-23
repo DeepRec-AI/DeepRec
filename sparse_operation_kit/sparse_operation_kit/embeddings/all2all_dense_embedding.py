@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 from sparse_operation_kit.core import EmbeddingVariable
-from sparse_operation_kit import kit_lib
 from sparse_operation_kit.core import DenseEmbeddingLayerHandle
 from sparse_operation_kit.embeddings import embedding_ops
 from tensorflow.distribute import has_strategy
@@ -116,7 +115,8 @@ class All2AllDenseEmbedding(tf.keras.layers.Layer):
         ----------
         inputs: tf.Tensor
                 keys are stored in tf.Tensor. It must be stored in row-major.
-                The shape of tf.Tensor does not matter.
+                If `dynamic_input = True`, then inputs.shape must be [None,], 
+                otherwise, inputs.shape must be [batchsize, slot_num, nnz_per_slot]. 
         training: boolean
                 whether training or not.
 
@@ -128,11 +128,9 @@ class All2AllDenseEmbedding(tf.keras.layers.Layer):
                 Otherwise, its shape is *[None, embedding_vec_size]*, where *None* equals
                 to the size of inputs.
         """
-        emb_vector = kit_lib.plugin_dense_fprop(self.emb_layer.handle,
-                                        self.var,
-                                        values=inputs,
-                                        global_replica_id=embedding_ops.get_global_replica_id(self.comm_tool),
-                                        training=training, 
-                                        unique_op_name=self.var.name,
-                                        dynamic_input=self.dynamic_input)
+        emb_vector = embedding_ops.embedding_lookup(embedding_variable=self.var, 
+                                                    values=inputs,
+                                                    training=training,
+                                                    dynamic_input=self.dynamic_input,
+                                                    comm_tool=self.comm_tool)
         return emb_vector

@@ -19,21 +19,17 @@
 #include <iostream>
 #include <thread>
 #include <random>
+#include <cstdlib>
 
 namespace SparseOperationKit {
 
 ResourcesManager::ResourcesManager() 
-: set_nccl_id_once_flag_(), cpu_resource_once_flag_(),
-set_nccl_id_flag_(false), cpu_resource_flag_(false), 
+: set_nccl_id_once_flag_(), cpu_resource_once_flag_(), set_visible_devices_once_flag_(),
+set_nccl_id_flag_(false), cpu_resource_flag_(false), set_visible_devices_flag_(false),
 global_gpu_count_(0), seed_(0)
 {
-    int32_t local_gpu_count = 0;
-    CK_CUDA(cudaGetDeviceCount(&local_gpu_count));
-    local_gpu_count_ = static_cast<size_t>(local_gpu_count);
-    gpu_resources_.insert(gpu_resources_.begin(), local_gpu_count_, nullptr);
-    
-    for (size_t i = 0; i < local_gpu_count_; i++) 
-        p2p_matrix_.push_back(std::vector<bool>(local_gpu_count_, false));
+    // The initialization of local_gpu_count_, gpu_resources_, p2p_matrix_
+    // are moved to ResourcesManager::init().
 }
 
 std::shared_ptr<ResourcesManager> ResourcesManager::Create() {
@@ -61,10 +57,10 @@ void ResourcesManager::get_random_seed(uint64_t* seed) {
 
 void ResourcesManager::set_nccl_unique_id(const int32_t* nccl_unique_id) {
     auto helper = [this, &nccl_unique_id]() {
-        if (set_nccl_id_flag_) 
+        if (set_nccl_id_flag_.load(std::memory_order_acquire)) 
             throw std::runtime_error(ErrorBase + "ncclUniqueId is already set.");
         int_to_ncclUniqueId(nccl_unique_id, this->nid_);
-        set_nccl_id_flag_ = true;
+        set_nccl_id_flag_.store(true, std::memory_order_release);
     };
 
     std::call_once(set_nccl_id_once_flag_, helper);
@@ -72,20 +68,47 @@ void ResourcesManager::set_nccl_unique_id(const int32_t* nccl_unique_id) {
 
 void ResourcesManager::create_cpu_resource(const uint64_t global_seed, const size_t num_replicas_in_sync) {
     auto helper = [this, &global_seed, &num_replicas_in_sync]() {
-        if (cpu_resource_flag_)
+        if (cpu_resource_flag_.load(std::memory_order_acquire))
             throw std::runtime_error(ErrorBase + "cpu_resource is already created.");
         this->seed_ = global_seed;
-        cpu_resource_flag_ = true;
+        cpu_resource_flag_.store(true, std::memory_order_release);
         global_gpu_count_ = num_replicas_in_sync;
 
         MESSAGE("Global seed is " + std::to_string(this->seed_));
         MESSAGE("Local GPU Count: " + std::to_string(this->local_gpu_count_));
         MESSAGE("Global GPU Count: " + std::to_string(this->global_gpu_count_));
 
-        cpu_resource_ = CpuResource::Create(get_local_gpu_count());
+        cpu_resource_ = CpuResource::Create(get_local_gpu_count(), global_gpu_count_);
     };
 
     std::call_once(cpu_resource_once_flag_, helper);
+}
+
+void ResourcesManager::set_visible_devices(const int32_t* visible_devices, const int64_t visible_device_count) {
+    auto helper = [this, &visible_devices, &visible_device_count]() {
+        if (set_visible_devices_flag_)
+            throw std::runtime_error(ErrorBase + "visible_devices is already set");
+
+        this->local_gpu_count_ = static_cast<size_t>(visible_device_count);
+
+        for (size_t i = 0; i < this->local_gpu_count_; i++) {
+            this->visible_devices_.push_back(visible_devices[i]);
+            this->d2local_[visible_devices[i]] = i;
+        }
+
+        MESSAGE("Mapping from local_replica_id to device_id:");
+        for (size_t i = 0; i < this->local_gpu_count_; i++)
+            MESSAGE(std::to_string(i) + " -> " + std::to_string(this->visible_devices_[i]));
+
+        this->gpu_resources_.insert(this->gpu_resources_.begin(), this->local_gpu_count_, nullptr);
+
+        for (size_t i = 0; i < this->local_gpu_count_; i++)
+            this->p2p_matrix_.push_back(std::vector<bool>(this->local_gpu_count_, false));
+
+        set_visible_devices_flag_ = true;
+    };
+
+    std::call_once(set_visible_devices_once_flag_, helper);
 }
 
 void ResourcesManager::create_gpu_resource(const size_t global_replica_id, 
@@ -103,7 +126,7 @@ void ResourcesManager::create_gpu_resource(const size_t global_replica_id,
 
     ncclComm_t nccl_comm;
     CK_NCCL(ncclCommInitRank(&nccl_comm, num_replicas_in_sync, nid_, global_replica_id));
-    gpu_resources_[local_replica_id] = GpuResource::Create(local_replica_id,
+    gpu_resources_[local_replica_id] = GpuResource::Create(visible_devices_[local_replica_id],
                                                            global_replica_id,
                                                            replica_uniform_seed,
                                                            replica_variant_seed,
@@ -112,12 +135,18 @@ void ResourcesManager::create_gpu_resource(const size_t global_replica_id,
 
 void ResourcesManager::init(const size_t global_replica_id, const size_t num_replicas_in_sync, 
                             const int32_t* nccl_unique_id, const uint64_t global_seed,
+                            const int32_t* visible_devices, const int64_t visible_device_count,
                             const cudaStream_t& tf_stream) {
+    set_visible_devices(visible_devices, visible_device_count);
+
     set_nccl_unique_id(nccl_unique_id);
     
     create_cpu_resource(global_seed, num_replicas_in_sync);
 
-    while (!set_nccl_id_flag_ || !cpu_resource_flag_) { std::this_thread::yield(); }
+    while (!set_nccl_id_flag_.load(std::memory_order_acquire) 
+           || !cpu_resource_flag_.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+    // FIXME: should use sync_all_workers_via_cpu??
+    sync_cpu_threads();
 
     create_gpu_resource(global_replica_id, num_replicas_in_sync, tf_stream);
 
@@ -142,7 +171,7 @@ void ResourcesManager::enable_all_peer_access(const size_t global_replica_id) {
                                         get_local_gpu(dev_id)->get_local_device_id()));
 
         if (1 == can_access_peer) {
-            p2p_matrix_[local_replica_id][dev_id] = true;
+            p2p_matrix_[d2local_[local_replica_id]][d2local_[dev_id]] = true;
             cudaError_t ret = cudaDeviceEnablePeerAccess(get_local_gpu(dev_id)->get_local_device_id(), 0);
             if (ret != cudaSuccess && ret != cudaErrorPeerAccessAlreadyEnabled) {
                 CK_CUDA(ret);
@@ -163,7 +192,7 @@ void ResourcesManager::enable_all_peer_access(const size_t global_replica_id) {
 }
 
 bool ResourcesManager::p2p_enabled(const size_t src_dev, const size_t dst_dev) const {
-    return p2p_matrix_[src_dev][dst_dev];
+    return p2p_matrix_[d2local_.at(src_dev)][d2local_.at(dst_dev)];
 }
 
 bool ResourcesManager::all_p2p_enabled() const {
@@ -172,7 +201,7 @@ bool ResourcesManager::all_p2p_enabled() const {
         size_t src_dev_id = get_local_gpu(src_dev)->get_local_device_id();
         for (size_t dst_dev = 0; dst_dev < local_gpu_count_; dst_dev++) {
             size_t dst_dev_id = get_local_gpu(dst_dev)->get_local_device_id();
-            if (src_dev != dst_dev && !p2p_matrix_[src_dev_id][dst_dev_id]) return false;
+            if (src_dev != dst_dev && !p2p_matrix_[d2local_.at(src_dev_id)][d2local_.at(dst_dev_id)]) return false;
         }
     }
 
@@ -189,23 +218,8 @@ void ResourcesManager::sync_local_gpus() const {
     }
 }
 
-void ResourcesManager::sync_local_memcpys() const {
-    HugeCTR::CudaDeviceContext context;
-    for (size_t dev_id = 0; dev_id < local_gpu_count_; ++dev_id) {
-        const auto& local_gpu = get_local_gpu(dev_id);
-        context.set_device(local_gpu->get_local_device_id());
-        CK_CUDA(cudaStreamSynchronize(local_gpu->get_memcpy_stream()));
-    }
-}
-
 void ResourcesManager::sync_gpu(const size_t local_dev_id) const {
-    // CK_CUDA(cudaStreamSynchronize(get_local_gpu(local_dev_id)->get_stream()));
-    while (true) {
-        auto error = cudaStreamQuery(get_local_gpu(local_dev_id)->get_stream());
-        if (error == cudaErrorNotReady) std::this_thread::yield();
-        else if (error == cudaSuccess) break;
-        else CK_CUDA(error);
-    }
+    CK_CUDA(cudaStreamSynchronize(get_local_gpu(local_dev_id)->get_stream()));
 }
 
 void ResourcesManager::sync_all_workers() const {
@@ -219,6 +233,18 @@ void ResourcesManager::sync_all_workers() const {
     CK_NCCL(ncclGroupEnd());
 
     sync_local_gpus();
+}
+
+void ResourcesManager::sync_all_workers_via_cpu() const {
+    // synchronize local CPU threads
+    sync_cpu_threads();
+
+    // synchronize remote CPU threads
+    sync_all_workers_via_mpi();
+}
+
+void ResourcesManager::sync_all_workers_via_mpi() const {
+    cpu_resource_->sync_all_workers_via_mpi();
 }
 
 void ResourcesManager::sync_all_gpus(const size_t local_dev_id) const {
@@ -278,5 +304,13 @@ size_t ResourcesManager::cal_worker_id_from_global_id(const size_t global_replic
     return global_replica_id / get_local_gpu_count();
 }
 
+void ResourcesManager::event_record(const size_t global_replica_id,
+                                    EventRecordType event_record_type,
+                                    const std::string event_name) {
+    const size_t local_replica_id = cal_local_id_from_global_id(global_replica_id);
+    auto& local_gpu = get_local_gpu(local_replica_id);
+
+    local_gpu->event_record(event_record_type, std::move(event_name));
+}
 
 } // namespace SparseOperationKit

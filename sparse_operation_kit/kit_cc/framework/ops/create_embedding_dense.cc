@@ -33,6 +33,7 @@ REGISTER_OP("CreateEmbeddingDense")
     .Output("emb_handle: variant")
     .Attr("slot_num: int >= 1 = 1")
     .Attr("nnz_per_slot: int >= 1 = 1")
+    .Attr("layer_handle_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
         ShapeHandle output_shape = ctx->Scalar();
         ctx->set_output(0, output_shape);
@@ -56,6 +57,7 @@ REGISTER_OP("CreateEmbeddingDense")
     .Output("emb_layer_handle: variant")
     .Attr("slot_num: int >= 1 = 1")
     .Attr("nnz_per_slot: int >= 1 = 1")
+    .Attr("layer_handle_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
         ShapeHandle output_shape = ctx->Scalar();
         ctx->set_output(0, output_shape);

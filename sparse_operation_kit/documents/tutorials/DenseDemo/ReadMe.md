@@ -33,17 +33,19 @@ $ python3 split_data.py \
 ```
 
 ### Run this demo writen with TensorFlow ###
-It will only utilize 1 GPU.
+This is a model parallelism demo implemented by tf methods.
 ```shell
-$ python3 run_tf.py \
-    --data_filename="./data.file" \
-    --global_batch_size=8192 \
+$ mpiexec -n 8 --allow-run-as-root \
+    python3 run_tf.py \
+    --data_filename="./data_" \
+    --global_batch_size=65536 \
     --vocabulary_size=8192 \
     --slot_num=100 \
     --nnz_per_slot=10 \
     --num_dense_layers=6 \
     --embedding_vec_size=4 \
-    --stop_at_iter=30
+    --optimizer="adam" \
+    --data_splited=1
 ```
 
 ### Run this demo writen with SOK + MirroredStrategy ###

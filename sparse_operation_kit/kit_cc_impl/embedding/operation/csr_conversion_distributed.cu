@@ -136,7 +136,7 @@ public:
                                 cub_dev_num_selected_[local_replica_id].get_ptr(),
                                 cub_dev_num_selected_[local_replica_id].get_size_in_bytes(),
                                 cudaMemcpyDeviceToHost,
-                                stream)); // TODO: use memcpy stream??
+                                stream));
         CK_CUDA(cudaStreamSynchronize(stream));
 
         // choose row_indices based on binary vector

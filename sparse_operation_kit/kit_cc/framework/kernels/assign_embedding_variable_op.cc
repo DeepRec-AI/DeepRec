@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#if TF_VERSION_MAJOR == 1
-
 #include "facade.h"
 #include "tensor_buffer/embedding_buffer.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -27,6 +25,14 @@
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 using CPUDevice = Eigen::ThreadPoolDevice; 
+
+#define AlreadyInitializedError(ctx, name)                                                  \
+    do {                                                                                    \
+        (ctx)->SetStatus(errors::Aborted((name), " has already been initialized. ",         \
+                                         "This might be caused by that sess.run(init_op) ", \
+                                         "is called more than once."));                     \
+        return;                                                                             \
+    } while (0) 
 
 template <typename Device>
 class AssignEmbeddingVariableOp : public OpKernel {
@@ -47,20 +53,26 @@ public:
             return;
         }
         shape_convertor(ctx);
+        OP_REQUIRES_OK(ctx, ctx->GetAttr("var_name", &var_name_));
     }
 
     void Compute(OpKernelContext* ctx) override {
-        const Tensor* var_name_tensor = nullptr;
-        OP_REQUIRES_OK(ctx, ctx->input("var_name", &var_name_tensor));
+        if (initialized_.load(std::memory_order_acquire)) { AlreadyInitializedError(ctx, var_name_); }
+        mutex_lock ml(mu_);
+        // check again to see if another thread has initialized it.
+        if (initialized_.load(std::memory_order_acquire)) { AlreadyInitializedError(ctx, var_name_); }
+
         const Tensor* initial_value_tensor = nullptr;
         OP_REQUIRES_OK(ctx, ctx->input("initial_value", &initial_value_tensor));
-        OP_REQUIRES(ctx, initial_value_tensor->dtype() == DT_STRING, errors::Aborted(
-                    __FILE__, ":", __LINE__, " Currently, only string can be used to"
-                    " set initializer."));
+        OP_REQUIRES(ctx, initial_value_tensor->dtype() == DT_STRING ||
+                         initial_value_tensor->dtype() == DT_FLOAT, 
+                         errors::Aborted(__FILE__, ":", __LINE__, 
+                         " Only string or tensor can be used as"
+                         " initializer."));
         const Tensor* local_replica_id_tensor = nullptr;
         OP_REQUIRES_OK(ctx, ctx->input("local_replica_id", &local_replica_id_tensor));
 
-        std::string variable_name = var_name_tensor->flat<tstring>()(0);
+        std::string variable_name = var_name_;
         // generate unique variable name
         try {
             SparseOperationKit::Facade::instance()->generate_unique_name(trainable_, variable_name);
@@ -69,9 +81,9 @@ public:
                                            "due to ", error.what()));
             return;
         }
-        OP_REQUIRES(ctx, var_name_tensor->flat<tstring>()(0) == variable_name, 
+        OP_REQUIRES(ctx, var_name_ == variable_name, 
                     errors::Aborted(__FILE__, ":", __LINE__, " there already exist ", 
-                    var_name_tensor->flat<tstring>()(0)));
+                    var_name_));
 
         // Create resource for EmbeddingVariable
         core::RefCountPtr<EmbeddingVariable> emb_variable;
@@ -82,10 +94,18 @@ public:
                                     }));
         Tensor tensor; // used to hold the pointer to allocated GPU memory
         try {
-            SparseOperationKit::Facade::instance()->create_variables(local_replica_id_tensor->scalar<int32_t>()(),
-                                                                     initial_value_tensor->flat<tstring>()(0),
-                                                                     use_hashtable_, dims_, variable_name, 
-                                                                     trainable_, emb_variable, &tensor);
+            const size_t local_replica_id_value = local_replica_id_tensor->scalar<int32_t>()();
+            if (DT_STRING == initial_value_tensor->dtype()) {
+                SparseOperationKit::Facade::instance()->create_variables(local_replica_id_value,
+                                            std::string(initial_value_tensor->flat<tstring>()(0)),
+                                            use_hashtable_, dims_, variable_name, 
+                                            trainable_, emb_variable, &tensor);
+            } else {
+                SparseOperationKit::Facade::instance()->create_variables(local_replica_id_value,
+                                            initial_value_tensor,
+                                            use_hashtable_, dims_, variable_name, 
+                                            trainable_, emb_variable, &tensor);
+            }
         } catch (const std::exception& error) {
             ctx->SetStatus(errors::Aborted(__FILE__, ":", __LINE__, " errors happens due to ", error.what()));
             return;
@@ -100,12 +120,18 @@ public:
                                         (*ptr)->is_initialized = true;
                                         return Status::OK();
                                     }));
+
+        // set the flag
+        initialized_.store(true, std::memory_order_release);
     }
 private:
     bool trainable_;
     DtypeAndPartialTensorShape dtype_and_shape_;
     std::vector<int64_t> dims_;
     bool use_hashtable_;
+    std::string var_name_;
+    mutex mu_;
+    std::atomic<bool> initialized_{false};
 
     void shape_convertor(OpKernelConstruction* ctx) {
         dims_.clear();
@@ -126,11 +152,7 @@ REGISTER_KERNEL_BUILDER(Name("AssignEmbeddingVariable")
                         .Device(DEVICE_GPU)
                         .HostMemory("emb_var_handle")
                         .HostMemory("tf_var_handle")
-                        .HostMemory("var_name")
-                        .HostMemory("initial_value")
                         .HostMemory("local_replica_id"),
                         AssignEmbeddingVariableOp<GPUDevice>);
 
 } // namespace tensorflow
-
-#endif

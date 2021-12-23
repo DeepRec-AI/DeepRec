@@ -19,6 +19,21 @@ python3 test_dense_emb_demo.py \
     --save_params=1 \
     --use_hashtable=1
 
+# dense embedding + compat adam + save_param + hashtable
+python3 test_dense_emb_demo.py \
+    --gpu_num=1 \
+    --distributed_tool="onedevice" \
+    --iter_num=30 \
+    --max_vocabulary_size_per_gpu=8192 \
+    --slot_num=30 \
+    --nnz_per_slot=10 \
+    --embedding_vec_size=4 \
+    --global_batch_size=16384 \
+    --optimizer="compat_adam" \
+    --generate_new_datas=1 \
+    --save_params=1 \
+    --use_hashtable=1
+
 # dense embedding + plugin_adam + restore_param + hashtable
 python3 test_dense_emb_demo.py \
     --gpu_num=1 \
@@ -81,6 +96,22 @@ python3 test_dense_emb_demo.py \
     --optimizer="plugin_adam" \
     --generate_new_datas=1 \
     --save_params=1 \
+    --use_hashtable=1
+
+# sparse embedding + compat_adam + save_params + hashtable + combiner=mean
+python3 test_sparse_emb_demo.py \
+    --gpu_num=1 \
+    --distributed_tool="onedevice" \
+    --iter_num=30 \
+    --max_vocabulary_size_per_gpu=8192 \
+    --slot_num=30 \
+    --max_nnz=10 \
+    --embedding_vec_size=4 \
+    --global_batch_size=16384 \
+    --optimizer="compat_adam" \
+    --generate_new_datas=1 \
+    --save_params=1 \
+    --combiner="mean" \
     --use_hashtable=1
 
 # sparse embedding + plugin_adam + save_params + hashtable + combiner=mean
@@ -162,6 +193,21 @@ python3 test_sparse_emb_demo.py \
 
 ## ============================================= horovod ======================== #
 
+# dense embedding + compat_adam + save_params + hashtable
+mpiexec --allow-run-as-root -np 8 --oversubscribe \
+    python3 test_dense_emb_demo.py \
+    --distributed_tool="horovod" \
+    --iter_num=30 \
+    --max_vocabulary_size_per_gpu=8192 \
+    --slot_num=30 \
+    --nnz_per_slot=10 \
+    --embedding_vec_size=4 \
+    --global_batch_size=16384 \
+    --optimizer="compat_adam" \
+    --generate_new_datas=1 \
+    --save_params=1 \
+    --use_hashtable=1
+
 # dense embedding + adam + save_params + hashtable
 mpiexec --allow-run-as-root -np 8 --oversubscribe \
     python3 test_dense_emb_demo.py \
@@ -188,6 +234,21 @@ mpiexec --allow-run-as-root -np 8 --oversubscribe \
     --embedding_vec_size 4 8 \
     --global_batch_size=16384 \
     --optimizer="adam" \
+    --generate_new_datas=1 \
+    --save_params=1 \
+    --use_hashtable=1
+
+# sparse_embedding + compat_adam + save_params + hashtable
+mpiexec --allow-run-as-root -np 8 --oversubscribe \
+    python3 test_sparse_emb_demo.py \
+    --distributed_tool="horovod" \
+    --iter_num=30 \
+    --max_vocabulary_size_per_gpu=8192 \
+    --slot_num=30 \
+    --max_nnz=10 \
+    --embedding_vec_size=4 \
+    --global_batch_size=16384 \
+    --optimizer="compat_adam" \
     --generate_new_datas=1 \
     --save_params=1 \
     --use_hashtable=1

@@ -19,20 +19,6 @@ import sparse_operation_kit as sok
 from model.models import SOKEmbedding
 import os, glob
 
-class EarlyStopper:
-    def __init__(self):
-        self._stop = False
-
-    def set_stop(self, message):
-        self._stop = True
-        self._stop_reason = message
-
-    @property
-    def stop_reason(self):
-        return self._stop_reason
-
-    def should_stop(self):
-        return self._stop
 
 
 class WarmUpAndPolyDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -104,7 +90,7 @@ class WarmUpAndPolyDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 def get_optimizer(optimizer=None):
     if not optimizer:
-        return tf.keras.optimizers.Adam()
+        return sok.tf.keras.optimizers.Adam()
     else:
         return tf.keras.optimizers.get(optimizer)
 
@@ -122,40 +108,14 @@ def get_lr_callable(global_batch_size,
         decay_steps=decay_steps,
         decay_start_steps=decay_start_steps)
 
-class NullScope(object):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, exc_tb):
-        return False
-
-class NullStrategy(object):
-    def scope(self):
-        return NullScope()
-
-    def run(self, func, *args, **kwargs):
-        return func(*args, **kwargs)
-
-    def gather(self, tensor, axis):
-        import horovod.tensorflow as hvd
-        return hvd.allgather(tensor)
 
 def shard_filenames(file_pattern, num_pipelines, pipeline_id):
     matching_files = glob.glob(file_pattern)
     matching_files.sort()
 
     nums_per_shard = len(matching_files) // num_pipelines
-
     return matching_files[pipeline_id * nums_per_shard : (pipeline_id + 1) * nums_per_shard]
 
-def get_distribute_dataset(dataset, strategy, distribute_dataset=True):
-    if isinstance(strategy, NullStrategy) or not distribute_dataset:
-        return dataset()
-    else:
-        return strategy.distribute_datasets_from_function(
-            lambda input_context: dataset(input_context),
-            options=tf.distribute.InputOptions()
-        )
 
 def split_embedding_variables_from_others(model):
     if isinstance(model.embedding_layer, SOKEmbedding):
@@ -168,7 +128,7 @@ def split_embedding_variables_from_others(model):
         return model.embedding_layer.trainable_variables, dense_vars
 
 
-def apply_gradients(optimizer, variables, grads, using_sok, aggregate_gradients=False):
+def apply_gradients(optimizer, variables, grads, using_sok):
     if using_sok:
         with sok.OptimizerScope(variables):
             opt = optimizer.apply_gradients(zip(grads, variables))
@@ -176,44 +136,3 @@ def apply_gradients(optimizer, variables, grads, using_sok, aggregate_gradients=
         opt = optimizer.apply_gradients(zip(grads, variables))
     return opt
 
-
-def show_logs(logs, strategy, elapsed_time, steps_sec, metrics_threshold, stopper):
-    for key, value in logs.items():
-        if hasattr(value, "values"):
-            logs[key] = value.values[0]
-        if hasattr(value, "numpy"):
-            logs[key] = value
-
-    def no_print():
-        return
-
-    def print_logs():
-        print("-"*23, logs["global_step"], "-"*23)
-        del logs["global_step"]
-        for key, value in logs.items():
-            print(f"{key}: {logs[key]}")
-        print("elapsed_time:", elapsed_time)
-        print("steps/sec:", steps_sec)
-        print("-"*50)
-
-    if isinstance(strategy, NullStrategy):
-        import horovod.tensorflow as hvd
-        if hvd.local_rank() != 0:
-            no_print()
-        else:
-            print_logs()
-    elif os.getenv("OMPI_COMM_WORLD_RANK"):
-        rank = os.getenv("OMPI_COMM_WORLD_RANK")
-        if int(rank) != 0:
-            no_print()
-        else:
-            print_logs()
-    else:
-        print_logs()
-
-    # for key, value in metrics_threshold.items():
-    #     if logs[key] >= value:
-    #         stopper.set_stop(
-    #             f"Metric {key}: {logs[key]} meets its "
-    #             f"threshold {value}, stop training.")
-    #         break

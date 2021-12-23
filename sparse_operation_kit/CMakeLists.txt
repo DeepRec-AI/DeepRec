@@ -24,6 +24,7 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmakes)
 find_package(CUDA REQUIRED)
 find_package(NCCL REQUIRED)
 find_package(TensorFlow REQUIRED)
+find_package(MPI REQUIRED)
 find_package(Threads)
 
 set(CUDA_SEPARABLE_COMPILATION ON)
@@ -34,6 +35,13 @@ if (USE_NVTX)
     message(STATUS "Add nvtx for profiling")
     add_definitions(-DUSE_NVTX)
     find_package(NVTX REQUIRED)
+endif()
+
+# whether make ops to be asynchronous
+option(SOK_ASYNC "Make Ops to be asynchronous" ON)
+if (SOK_ASYNC)
+    message(STATUS "Make Ops to be asynchronous")
+    add_definitions(-DSOK_ASYNC)
 endif()
 
 # setting compiler flags
@@ -51,14 +59,14 @@ foreach(arch_name ${SM})
         list(APPEND cuda_arch_list ${arch_name})
         message(STATUS "Assign GPU architecture (sm=${arch_name})")
     else()
-        message(FATAL_ERROR "Unknown or unsupported GPU architecture (set sm=70)")
+        message(FATAL_ERROR "Unknown or unsupported GPU architecture (set sm=80)")
     endif()
 endforeach()
 
 list(LENGTH cuda_arch_list cuda_arch_list_length)
 if(${cuda_arch_list_length} EQUAL 0)
-    list(APPEND cuda_arch_list "70")
-    message(STATUS "Assign default GPU architecture sm=70")
+    list(APPEND cuda_arch_list "80")
+    message(STATUS "Assign default GPU architecture sm=80")
 endif()
 list(REMOVE_DUPLICATES cuda_arch_list)
 
@@ -66,27 +74,36 @@ foreach(arch_name ${cuda_arch_list})
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode arch=compute_${arch_name},code=sm_${arch_name}")
 endforeach()
 
-
-set(CMAKE_C_FLAGS    "${CMAKE_C_FLAGS} -Wall -Werror")
-set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Wno-unknown-pragmas")
-#set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Werror -Wno-unknown-pragmas")
-#if (${TF_VERSION_MAJOR} EQUAL 1)
-#    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wno-error=class-memaccess")
-#endif()
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true -Xcompiler -Wall,-Werror,-Wno-error=cpp")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --display_error_number")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=esa_on_defaulted_function_ignored")
-if (${CUDA_VERSION} GREATER_EQUAL 11.2) 
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=20014")
-else()
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=3126")
+if (${CMAKE_BUILD_TYPE} EQUAL "Release")
+    set(CMAKE_C_FLAGS    "${CMAKE_C_FLAGS} -Wall -Werror")
+    set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wall -Werror -Wno-unknown-pragmas")
+    if (${TF_VERSION_MAJOR} EQUAL 1)
+        set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -Wno-error=class-memaccess")
+    endif()
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true -Xcompiler -Wall,-Werror,-Wno-error=cpp")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --display_error_number")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=esa_on_defaulted_function_ignored")
+    if (${CUDA_VERSION} GREATER_EQUAL 11.2) 
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=20014")
+    else()
+        set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcudafe --diag_suppress=3126")
+    endif()
+else() 
+    # -------- set flags for DEBUG mode --- #
+    set(CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wno-unknown-pragmas")
+    if (${TF_VERSION_MAJOR} EQUAL 1)
+        set(CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wno-error=class-memaccess")
+    endif()
+    set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -rdc=true -Xcompiler -Wall,-Wno-error=cpp")
+    set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -Xcudafe --display_error_number")
+    set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -Xcudafe --diag_suppress=esa_on_defaulted_function_ignored")
+    if (${CUDA_VERSION} GREATER_EQUAL 11.2) 
+        set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -Xcudafe --diag_suppress=20014")
+    else()
+        set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -Xcudafe --diag_suppress=3126")
+    endif()
+    # ------------------------------------- #
 endif()
-
-# -------- set flags for DEBUG mode --- #
-set(CMAKE_C_FLAGS_DEBUG    "${CMAKE_C_FLAGS_DEBUG} -O0 -Wall -Werror")
-set(CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -O0 -Wall -Werror -Wno-unknown-pragmas")
-set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -O0 -G -Xcompiler -Wall,-Werror,-Wno-error=cpp")
-# ------------------------------------- #
 
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
 
@@ -109,6 +126,7 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/kit_cc_impl/embedding/
     ${CUDA_INCLUDE_DIRS}
     ${NCCL_INC_PATHS}
+    ${MPI_INCLUDE_PATH}
 )
 
 
@@ -169,7 +187,7 @@ file(GLOB test_op
 
 # build dynamic lib
 add_library(sparse_operation_kit SHARED ${framework} ${kit_infra} ${kit_impl})
-target_link_libraries(sparse_operation_kit PUBLIC ${TF_LINK_FLAGS} nccl cusparse)
+target_link_libraries(sparse_operation_kit PUBLIC ${TF_LINK_FLAGS} nccl cusparse ${MPI_CXX_LIBRARIES})
 
 if (USE_NVTX)
     target_link_libraries(sparse_operation_kit PUBLIC ${NVTX_LIB})
@@ -178,5 +196,12 @@ endif()
 set_target_properties(sparse_operation_kit PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 set_target_properties(sparse_operation_kit PROPERTIES CUDA_ARCHITECTURES OFF)
 
+# compile compat ops
+add_subdirectory(kit_cc_impl/operations)
+
 # compile ops for unit test
-add_subdirectory(unit_test)
+option(SOK_UNIT_TEST "Compile SOK unit test" ON)
+if (SOK_UNIT_TEST)
+    message(STATUS "Compile SOK unit test")
+    add_subdirectory(unit_test)
+endif()

@@ -15,7 +15,7 @@ Due to SOK is compatible with DP training provided by common synchronized traini
 ![WorkFlowOfEmbeddingLayer](documents/source/images/workflow_of_embeddinglayer.png)
 
 ## Installation ##
-Before building SOK, It is necessary to install NCCL and cmake additionally for docker image "registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec2106-gpu-py36-cu110-ubuntu18.04". The way to install NCCL could refer to [install guide](https://docs.nvidia.com/deeplearning/nccl/install-guide/index.html). <br>
+Before building SOK, It is necessary to install NCCL and cmake additionally for docker image "registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:1.15deeprec2110-gpu-py36-cu110-ubuntu18.04". The way to install NCCL could refer to [install guide](https://docs.nvidia.com/deeplearning/nccl/install-guide/index.html). <br>
     
 ### *Install this module from pypi* ###
 Install via `PYPI` will be supported in the near future.
@@ -29,9 +29,8 @@ $ git clone https://github.com/AlibabaPAI/DeepRec.git DeepRec
 + **install to system path**
 ```shell
 $ cd DeepRec/sparse_operation_kit/
-$ bash install.sh --SM=[Compute Capability] --USE_NVTX=[OFF/ON]
+$ mkdir -p build && cd build && cmake .. && make -j && make install
 ```
-Where `[Compute Capability]` is related to your GPU hardware. For example, for Ampere A100, the compute capability is `80`. If you want to profiling this module with `nvtx`, you can enable nvtx marks via setting `-DUSE_NVTX=ON`, by default, it is `OFF`.
 
 ## Documents ##
-Want to find more about SparseOperationKit, see our [SparseOperationKit documents](https://nvidia.github.io/HugeCTR/sparse_operation_kit/v1.0.1/index.html).
+Want to find more about SparseOperationKit, see our [SparseOperationKit documents](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/master/index.html).

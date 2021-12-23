@@ -50,6 +50,15 @@ namespace SparseOperationKit {
         }                                                                   \
     } while (0)
 
+#define CK_CUDA_MSG(cmd, msg)                                               \
+    do {                                                                    \
+        cudaError_t r = (cmd);                                              \
+        if (r != cudaSuccess) {                                             \
+            throw std::runtime_error(ErrorBase + std::string(msg) +         \
+                                     std::string(cudaGetErrorString(r)));   \
+        }                                                                   \
+    } while (0)
+
 #define CK_CURAND(cmd)                                   \
     do {                                                 \
         curandStatus_t r = (cmd);                        \
@@ -65,6 +74,18 @@ namespace SparseOperationKit {
         if (error != CUSPARSE_STATUS_SUCCESS) {                                     \
             throw std::runtime_error(ErrorBase +                                    \
                                      std::string(cusparseGetErrorString(error)));   \
+        }                                                                           \
+    } while (0)
+
+#define CK_MPI(cmd)                                                                 \
+    do {                                                                            \
+        auto retval = (cmd);                                                        \
+        if (MPI_SUCCESS != retval) {                                                \
+            char estring[MPI_MAX_ERROR_STRING];                                     \
+            int estring_len = 0;                                                    \
+            MPI_Error_string(retval, estring, &estring_len);                        \
+            throw std::runtime_error(ErrorBase + "MPI failed due to " +             \
+                std::string(estring));                                              \
         }                                                                           \
     } while (0)
 
@@ -144,6 +165,9 @@ int32_t string2num(const std::string& str);
 
 bool file_exist(const std::string filename);
 void delete_file(const std::string filename);
+
+template <typename T>
+void check_numerics(const T* data, uint32_t size, cudaStream_t& stream);
 
 } // namespace SparseOperationKit
 

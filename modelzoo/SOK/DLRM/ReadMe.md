@@ -7,12 +7,12 @@
     - [Train](#train)
   - [Benchmark](#benchmark)
     - [Test Environment](#test-environment)
-    - [Stand-alone Training](#stand-alone-training-1)
+    - [Stand-alone Training](#stand-alone-training)
   - [Dataset](#dataset)
     - [Prepare](#prepare)
     - [Field](#field)
     - [Processing](#processing)
-  - [TODO LIST](#todo-list)
+
 
 ## Model Structure
 [Deep Learning Recommendation Model for Personalization and Recommendation Systems](https://github.com/facebookresearch/dlrm)(DLRM) is proposed by Facebook.  
@@ -37,7 +37,7 @@ The triangles represent mlp network. The inputs consists of dense features and s
 ## Training
 ### Prepare dataset
 
-Please prepare the [data set](#prepare) first.
+Please prepare the [dataset](#prepare) first.
 
 ### Create environment
 
@@ -46,16 +46,17 @@ Run a docker container and install SOK as the [doc](../../sparse_operation_kit/R
 ### Train  
 #### Set common params ###
 ```shell
-$ export EMBEDDING_DIM=32
+$ export EMBEDDING_DIM=128
 ```
- 
-#### Run DLRM with TensorFlow
+
+#### Run DLRM with TensorFlow 
 
 ```shell
+$  export SLURM_TASKS_PER_NODE=1
 $  python3 train_stand.py \
-    --global_batch_size=16384 \
-    --train_file_pattern="./train/*.csv" \
-    --test_file_pattern="./test/*.csv" \
+    --global_batch_size=8192 \
+    --train_file_pattern="./train/" \
+    --test_file_pattern="./test/" \
     --embedding_layer="TF" \
     --embedding_vec_size=$EMBEDDING_DIM \
     --bottom_stack 512 256 $EMBEDDING_DIM \
@@ -65,15 +66,28 @@ $  python3 train_stand.py \
 #### Run DLRM with SOK
     
 ```shell
+$  export SLURM_TASKS_PER_NODE=1
 $  python3 train_stand.py \
-    --global_batch_size=16384 \
-    --train_file_pattern="./train/*.csv" \
-    --test_file_pattern="./test/*.csv" \
+    --global_batch_size=8192 \
+    --train_file_pattern="./train/" \
+    --test_file_pattern="./test/" \
     --embedding_layer="SOK" \
     --embedding_vec_size=$EMBEDDING_DIM \
     --bottom_stack 512 256 $EMBEDDING_DIM \
     --top_stack 1024 1024 512 256 1 \
-    --distributed_tool="onedevice"
+    --distributed_tool="onedevice" 
+```
+```shell
+$  export SLURM_TASKS_PER_NODE=8
+$  horovodrun -np 8 ./hvd_wrapper.sh python3 train_stand.py \
+    --global_batch_size=65536 \
+    --train_file_pattern="./train/" \
+    --test_file_pattern="./test/" \
+    --embedding_layer="SOK" \
+    --embedding_vec_size=$EMBEDDING_DIM \
+    --bottom_stack 512 256 $EMBEDDING_DIM \
+    --top_stack 1024 1024 512 256 1 \
+    --distributed_tool="horovod" 
 ```
     ```
     Use arguments to set up a custom configuation:
@@ -89,48 +103,22 @@ $  python3 train_stand.py \
 ## Benchmark
 ### Test Environment
 - Hardware 
-  - CPU:                    
-  - vCPU(s):               
-  - Socket(s):              
-  - Core(s) per socket:     
-  - Thread(s) per core:     
-  - Memory:                
-  - L1d cache:            
-  - L1i cache:             
-  - L2 cache:               
-  - L3 cache:               
+  - CPU: 2x 64-Core (4-Die) AMD EPYC 7742 (-MT MCP MCM SMP-)          
+  - GPU: 8x NVIDIA A100-SXM4-80GB
 
 - Software
-  - kernel:                 
-  - OS:                     
-  - GCC:                    
-  - Docker:                 
-  - Python:                 
+  - Driver:470.82.01      
 
 ### Stand-alone Training 
 Google tensorflow v1.15 is selected to compare with SOK.
 
-<table>
-    <tr>
-        <td colspan="2"></td>
-        <td>Accuracy</td>
-        <td>AUC</td>
-        <td>Globalsetp/Sec</td>
-    </tr>
-    <tr>
-        <td rowspan="2">DLRM</td>
-        <td>google TF FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-    <tr>
-        <td>SOK FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
-    </tr>
-</table>
+|GPU|method|Embedding vector size|Vocabulary size in bytes|Batch size (global)|dataloader|Data format|Dense optimizer|Embedding optimizer|time(ms) / iteration|
+|:----|:----|:----|:----|:----|:----|:----|:----|:----|:----|
+|A100 * 8|SOK|128|89.5 GB|65536|os.pread|bin|SGD|SGD|12.09|
+|A100 * 1|SOK|128|11.2 GB|8192|os.pread|bin|SGD|SGD|8.31|
+|A100 * 1|TF|128|11.2 GB|8192|os.pread|bin|SGD|SGD|10.16|
+
+NOTICE: If you want to reproduce the following performance, please ensure the effecitive dataloader.
 
 ## Dataset
 Train & eval dataset using Criteo TeraBytes Datasets.
@@ -138,7 +126,7 @@ Train & eval dataset using Criteo TeraBytes Datasets.
 Put data file **train.csv & eval.csv** into ./data/    
 For details of Data download, see [Data Preparation](data/ReadMe.md)
 
-### Fields
+### Field
 Total 40 columns:  
 **[0]:Label** - Target variable that indicates if an ad was clicked or not(1 or 0)  
 **[1-13]:I1-I13** - A total 13 columns of integer continuous features(mostly count features)  
@@ -153,12 +141,11 @@ Integer column's distribution is as follow:
 Categorical column's numbers of types is as follow:
 | column | C1   | C2  | C3      | C4     | C5  | C6  | C7    | C8  | C9  | C10   | C11  | C12     | C13  | C14 | C15   | C16     | C17 | C18  | C19  | C20 | C21     | C22 | C23 | C24    | C25 | C26   |
 | ------ | ---- | --- | ------- | ------ | --- | --- | ----- | --- | --- | ----- | ---- | ------- | ---- | --- | ----- | ------- | --- | ---- | ---- | --- | ------- | --- | --- | ------ | --- | ----- |
-| nums   | 39884407 | 39043 | 17289 | 7420 | 20263 | 3  | 7120 | 1543 | 63   | 38532952 | 2953546 | 403346 | 10 | 2208  | 11938 | 155 | 4  | 976 | 14 | 39979772   | 25641295 | 39664985  | 585935  | 12972 | 108  | 36 |
+| nums   | 39884406 | 39043 | 17289 | 7420 | 20263 | 3  | 7120 | 1543 | 63   | 38532951| 2953546 | 403346 | 10 | 2208  | 11938 | 155 | 4  | 976 | 14 | 39979771  | 25641295 | 39664984 | 585935  | 12972 | 108  | 36 |
 
 ### Processing
-- Interger columns **I[1-13]** is processed with `tf.feature_column.numeric_column()` function, and the data is normalized.  
+- Interger columns **I[1-13]** is processed with `tf.keras.layers.Dense()` function, and the data is normalized.  
     In order to save time, the data required for normalization has been calculated in advance.
 - Categorical columns **C[1-26]** is processed with `tf.keras.layers.Embedding()` function for TensorFlow, and processed with `sok.All2AllDenseEmbedding()` for SOK.
 
-## TODO LIST
-- Benchmark
+

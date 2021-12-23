@@ -2,7 +2,7 @@
 The detailed information about the features in SparseOperationKit.
 
 ## Model-Parallelism GPU Embedding Layer ##
-As described in [Introduction Section](https://nvidia.github.io/HugeCTR/sparse_operation_kit/v1.0.1/intro_link.html#features), SOK provides GPU Embedding Layers which works in model-parallelism manner. And it does not require any further data transformation from model-parallelism to data-parallism.
+As described in [Introduction Section](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/v1.0.1/intro_link.html#features), SOK provides GPU Embedding Layers which works in model-parallelism manner. And it does not require any further data transformation from model-parallelism to data-parallism.
 
 There are several different GPU Embedding Layers in SOK, which are implemented with different algorithms. These embedding layers can work in single machine or multiple machines.
 ![avatar](../images/workflow_of_embeddinglayer.png)

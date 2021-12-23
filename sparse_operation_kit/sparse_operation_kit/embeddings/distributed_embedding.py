@@ -18,7 +18,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from sparse_operation_kit import kit_lib
 from sparse_operation_kit.core import EmbeddingVariable
 from sparse_operation_kit.core import SparseEmbeddingLayerHandle
 from sparse_operation_kit.embeddings import embedding_ops
@@ -141,18 +140,10 @@ class DistributedEmbedding(tf.keras.layers.Layer):
                 the embedding vectors for the input keys. Its shape is
                 *[batchsize, slot_num, embedding_vec_size]*
         """
-        if not isinstance(inputs, tf.SparseTensor):
-            raise TypeError("inputs must be SparseTensor")
-
-        values = inputs.values
-        row_indices = tf.transpose(inputs.indices, perm=[1, 0])[0]
-
-        # option 2, return grad for self.emb
-        emb_vector = kit_lib.plugin_sparse_fprop(self.emb_layer.handle, 
-                                         self.var,
-                                         values, row_indices, 
-                                         embedding_ops.get_global_replica_id(self.comm_tool),
-                                         slot_num=self.slot_num,
-                                         training=training, 
-                                         unique_op_name=self.var.name)
+        emb_vector = embedding_ops.embedding_lookup_sparse(
+                                        embedding_variable=self.var, 
+                                        sp_ids=inputs, 
+                                        slot_num=self.slot_num,
+                                        training=training,
+                                        comm_tool=self.comm_tool)
         return emb_vector

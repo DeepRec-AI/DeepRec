@@ -73,6 +73,13 @@ public:
     virtual size_t get_size(cudaStream_t stream) const = 0;
 
     /**
+    * Get the capacity of the hash table. Size is also known as the number
+    * of <key,value> pairs.
+    * @param stream the cuda stream for this operation.
+    */
+    virtual size_t get_capacity(cudaStream_t stream) const = 0;
+
+    /**
     * Get the head of the value from the device counter. It's equal to the
     * number of the <key,value> pairs in the hash table.
     */

@@ -62,6 +62,11 @@ size_t NvHashTable<KeyType, ValType>::get_size(cudaStream_t stream) const {
 }
 
 template <typename KeyType, typename ValType>
+size_t NvHashTable<KeyType, ValType>::get_capacity(cudaStream_t stream) const {
+    return hashtable_.get_capacity();
+}
+
+template <typename KeyType, typename ValType>
 size_t NvHashTable<KeyType, ValType>::get_value_head(cudaStream_t stream) const {
     return hashtable_.get_value_head(stream);
 }

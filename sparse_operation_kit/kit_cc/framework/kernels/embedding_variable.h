@@ -24,12 +24,7 @@ namespace tensorflow {
 
 class EmbeddingVariable : public ResourceBase {
 public:
-#if TF_VERSION_MAJOR == 2
-    EmbeddingVariable(Tensor* handle_tensor);
-    void SetHandle(ResourceHandle& handle);
-#else 
     EmbeddingVariable();
-#endif
     ~EmbeddingVariable();
     std::string DebugString() const override;
     Tensor* tensor();
@@ -37,7 +32,6 @@ public:
     void get_param(std::shared_ptr<SparseOperationKit::ParamInterface>& param);
     mutex* mu();
 private:
-    Tensor* handle_tensor_ = nullptr;
     std::shared_ptr<SparseOperationKit::ParamInterface> param_;
     mutex mu_;
 };

@@ -35,6 +35,7 @@ public:
         OP_REQUIRES_OK(ctx, ctx->GetAttr("output_dispatcher_subsequent_ops", &output_dispatcher_subsequent_ops_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("slot_num", &slot_num_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("nnz_per_slot", &nnz_per_slot_));
+        OP_REQUIRES_OK(ctx, ctx->GetAttr("layer_handle_name", &layer_handle_name_));
     }
     void Compute(OpKernelContext* ctx) override {
         core::RefCountPtr<EmbeddingVariable> embedding_variable;
@@ -69,6 +70,7 @@ private:
     std::vector<std::string> output_dispatcher_subsequent_ops_;
     int32_t slot_num_;
     int32_t nnz_per_slot_;
+    std::string layer_handle_name_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("CreateEmbeddingDense")
@@ -94,13 +96,14 @@ public:
         OP_REQUIRES_OK(ctx, ctx->GetAttr("output_dispatcher_subsequent_ops", &output_dispatcher_subsequent_ops_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("slot_num", &slot_num_));
         OP_REQUIRES_OK(ctx, ctx->GetAttr("nnz_per_slot", &nnz_per_slot_));
+        OP_REQUIRES_OK(ctx, ctx->GetAttr("layer_handle_name", &layer_handle_name_));
     }
 
     void Compute(OpKernelContext* ctx) override {
-        if (!created_.load()) {
+        if (!created_.load(std::memory_order_acquire)) {
             mutex_lock ml(mutex_);
             // check again to see if another thread has created the embedding layer handle.
-            if (!created_.load()) {
+            if (!created_.load(std::memory_order_acquire)) {
                 AllocatorAttributes attr;
                 attr.set_on_host(true);
 
@@ -123,7 +126,7 @@ public:
                     return;
                 }            
 
-                created_.store(true);
+                created_.store(true, std::memory_order_release);
             }
         }
         ctx->set_output(0, emb_layer_handle_);
@@ -136,6 +139,7 @@ private:
     std::vector<std::string> output_dispatcher_subsequent_ops_;
     int32_t slot_num_;
     int32_t nnz_per_slot_;
+    std::string layer_handle_name_;
     Tensor emb_layer_handle_;
     std::atomic<bool> created_{false};
     mutex mutex_;

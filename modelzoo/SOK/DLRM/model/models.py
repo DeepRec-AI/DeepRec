@@ -16,98 +16,106 @@
 from typing import Dict, List, Optional, Callable, Union
 import tensorflow as tf
 import sparse_operation_kit as sok
-from sparse_operation_kit.embeddings.tf_distributed_embedding import TFDistributedEmbedding
-
-Activation = Union[Callable[[tf.Tensor], tf.Tensor], str]
+from tensorflow.python.ops import collective_ops
+from tensorflow.python.framework import ops
+import numpy as np
+import math
 
 class TFEmbedding(tf.keras.layers.Layer):
-    def __init__(self, 
-                 vocab_sizes: Dict[str, int],
-                 embedding_vec_size: int,
-                 comm_options=None,
-                 **kwargs):
+    def __init__(
+        self,
+        vocab_sizes: List[int],
+        embedding_vec_size: int,
+        comm_options=None,
+        **kwargs,
+    ):
         super(TFEmbedding, self).__init__(**kwargs)
         self._vocab_sizes = vocab_sizes
         self._embedding_vec_size = embedding_vec_size
-        self._comm_options=comm_options
+        self._comm_options = comm_options
 
-        self._keras_embedding_layers = {}
-        for name, size in self._vocab_sizes.items():
+        self._keras_embedding_layers = []
+        for size in self._vocab_sizes:
             embedding = tf.keras.layers.Embedding(
-                input_dim=size,
-                output_dim=self._embedding_vec_size)
+                input_dim=size, output_dim=self._embedding_vec_size
+            )
+            self._keras_embedding_layers.append(embedding)
 
-            self._keras_embedding_layers[name] = embedding
-
-    def call(self, inputs: Dict[str, tf.Tensor], training=True) -> Dict[str, tf.Tensor]:
+    def call(self, inputs, training=True):
         """
         compute the output of the embedding layer
         """
-        output = {}
-        for key, val in inputs.items():
-            if not isinstance(val, tf.Tensor):
-                raise ValueError("Only tf.Tensor is supported for keras Embedding"
-                                 f" layers, but got: {type(val)}")
+        output = []
+        for i in range(26):
+            val = inputs[:, i]
+            output.append(self._keras_embedding_layers[i](val))
+        stack_vectors = tf.stack(output, 1)
+        emb_vectors = tf.reshape(stack_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
+        return emb_vectors
 
-            val = val % self._vocab_sizes[key]
-            output[key] = self._keras_embedding_layers[key](val)
-        return output
+
 
 
 
 class SOKEmbedding(tf.keras.layers.Layer):
     def __init__(self, 
-                 vocab_sizes: Dict[str, int],
+                 vocab_sizes: List[int],
                  embedding_vec_size: int,
+                 num_gpus=1,
                  **kwargs):
         super(SOKEmbedding, self).__init__(**kwargs)
         self._vocab_sizes = vocab_sizes
         self._embedding_vec_size = embedding_vec_size
 
-        self._sorted_keys = self._vocab_sizes.keys()
-        self._vocab_prefix_sum = dict()
+        prefix_sum = []
         offset = 0
-        for key in self._sorted_keys:
-            self._vocab_prefix_sum[key] = offset
-            offset += self._vocab_sizes[key]
-        self._vocab_prefix_sum["total"] = offset
-        self._sok_embedding = sok.All2AllDenseEmbedding(
-                max_vocabulary_size_per_gpu=int(self._vocab_prefix_sum["total"] / 0.75),
-                embedding_vec_size=self._embedding_vec_size,
-                slot_num=len(self._vocab_sizes),
-                nnz_per_slot=1,
-                use_hashtable=False)
+        for i in range(len(vocab_sizes)):
+            prefix_sum.append(offset)
+            offset += self._vocab_sizes[i]
+        prefix_sum = np.array(prefix_sum).astype(np.int32).reshape(1, -1)
+        self._vocab_prefix_sum = tf.constant(prefix_sum)
 
-    def call(self, inputs: Dict[str, tf.Tensor], training=True) -> Dict[str, tf.Tensor]:
+
+        self._sok_embedding = sok.All2AllDenseEmbedding(
+            max_vocabulary_size_per_gpu=int((offset / num_gpus) + 1),
+            embedding_vec_size=self._embedding_vec_size,
+            slot_num=len(self._vocab_sizes),
+            nnz_per_slot=1,
+            dynamic_input=True,
+            use_hashtable=False,
+        )
+
+    def call(self, inputs, training=True):
         """
-        compute the output of the embedding layer
+        Compute the output of embedding layer.
+        Args:
+            inputs: [batch_size, 26] int32 tensor
         """
-        for key in self._sorted_keys:
-            val = inputs[key]
-            if not isinstance(val, tf.Tensor):
-                raise ValueError("Only tf.Tensor is supported for keras Embedding"
-                                f" layers, but got: {type(val)}")
-        all_values = tf.stack([tf.math.add(inputs[key], self._vocab_prefix_sum[key]) 
-                                for key in self._sorted_keys], axis=1)
-        all_emb_vectors = self._sok_embedding(tf.cast(all_values, dtype=tf.int64), 
-                                              training=training)
-        all_emb_vectors = tf.split(all_emb_vectors, 
-                                    num_or_size_splits=len(self._sorted_keys),
-                                    axis=1)
-        all_emb_vectors = [tf.squeeze(vector) for vector in all_emb_vectors]
-        output = dict(zip(self._sorted_keys, all_emb_vectors))
-        return output
+        # self._vocab_prefix_sum: [1, 26] int32 tensor
+        # fused_inputs: [batch_size, 26] int32 tensor
+        fused_inputs = tf.add(inputs, float(self._vocab_prefix_sum))
+        # fused_inputs: [batch_size*26] int32 tensor
+        fused_inputs = tf.reshape(fused_inputs, [-1])
+
+        # emb_vectors: [batch_size*26, embedding_vec_size]
+        emb_vectors = self._sok_embedding(tf.cast(fused_inputs, dtype=tf.int64), training=training)
+        # emb_vectors: [batch_size, 26, embedding_vec_size]
+        emb_vectors = tf.reshape(emb_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
+        return emb_vectors
+
 
 
 class MLP(tf.keras.layers.Layer):
     """Sequential multi-layer perceptron (MLP) block."""
 
-    def __init__(self,
-                units: List[int],
-                use_bias: bool = True,
-                activation: Optional[Activation] = "relu",
-                final_activation: Optional[Activation] = None,
-                **kwargs) -> None:
+    def __init__(
+        self,
+        units: List[int],
+        use_bias: bool = True,
+        activation = "relu",
+        final_activation = None,
+        **kwargs,
+    ) -> None:
         """Initializes the MLP layer.
         Args:
         units: Sequential list of layer sizes.
@@ -117,17 +125,17 @@ class MLP(tf.keras.layers.Layer):
         **kwargs: Extra args passed to the Keras Layer base class.
         """
 
+
         super().__init__(**kwargs)
 
         self._sublayers = []
+        for i, num_units in enumerate(units):
 
-        for num_units in units[:-1]:
             self._sublayers.append(
                 tf.keras.layers.Dense(
-                    num_units, activation=activation, use_bias=use_bias))
-        self._sublayers.append(
-            tf.keras.layers.Dense(
-                units[-1], activation=final_activation, use_bias=use_bias))
+                    num_units, use_bias=use_bias,
+                    activation=activation if i < (len(units) - 1) else final_activation))
+
 
     def call(self, x: tf.Tensor) -> tf.Tensor:
         """Performs the forward computation of the block."""
@@ -157,11 +165,13 @@ class DotInteraction(tf.keras.layers.Layer):
         name: String name of the layer.
     """
 
-    def __init__(self,
-                self_interaction: bool = False,
-                skip_gather: bool = False,
-                name: Optional[str] = None,
-                **kwargs) -> None:
+    def __init__(
+        self,
+        self_interaction: bool = False,
+        skip_gather: bool = False,
+        name: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         self._self_interaction = self_interaction
         self._skip_gather = skip_gather
         super().__init__(name=name, **kwargs)
@@ -185,11 +195,12 @@ class DotInteraction(tf.keras.layers.Layer):
         # concat_features shape: batch_size, num_features, feature_dim
         try:
             concat_features = tf.concat(inputs, axis=-1)
-            concat_features = tf.reshape(concat_features,
-                                        [batch_size, -1, feature_dim])
+            concat_features = tf.reshape(concat_features, [batch_size, -1, feature_dim])
         except (ValueError, tf.errors.InvalidArgumentError) as e:
-            raise ValueError(f"Input tensors` dimensions must be equal, original"
-                        f"error message: {e}")
+            raise ValueError(
+                f"Input tensors` dimensions must be equal, original"
+                f"error message: {e}"
+            )
 
         # Interact features, select lower-triangular portion, and re-shape.
         xactions = tf.matmul(concat_features, concat_features, transpose_b=True)
@@ -207,9 +218,11 @@ class DotInteraction(tf.keras.layers.Layer):
 
         if self._skip_gather:
             # Setting upper tiangle part of the interaction matrix to zeros.
-            activations = tf.where(condition=tf.cast(upper_tri_mask, tf.bool),
-                                    x=tf.zeros_like(xactions),
-                                    y=xactions)
+            activations = tf.where(
+                condition=tf.cast(upper_tri_mask, tf.bool),
+                x=tf.zeros_like(xactions),
+                y=xactions,
+            )
             out_dim = num_features * num_features
         else:
             activations = tf.boolean_mask(xactions, lower_tri_mask)
@@ -219,65 +232,74 @@ class DotInteraction(tf.keras.layers.Layer):
 
 
 class DLRM(tf.keras.models.Model):
-    def __init__(self,
-                 vocab_size: List[int],
-                 num_dense_features: int,
-                 embedding_layer: str,
-                 embedding_vec_size: int,
-                 bottom_stack_units: List[int],
-                 top_stack_units: List[int],
-                 comm_options=None,
-                 **kwargs):
+    def __init__(
+        self,
+        vocab_size: List[int],
+        num_dense_features: int,
+        embedding_layer: str,
+        embedding_vec_size: int,
+        bottom_stack_units: List[int],
+        top_stack_units: List[int],
+        num_gpus = 1,
+        comm_options=None,
+        **kwargs,
+    ):
         super(DLRM, self).__init__(**kwargs)
         self._vocab_size = vocab_size
         self._num_dense_features = num_dense_features
         self._embedding_layer_str = embedding_layer
-        self._vocab_size_dict = dict(zip([str(idx) for idx in range(len(self._vocab_size))],
-                                         self._vocab_size))
+        self._vocab_size_dict = dict(
+            zip([idx for idx in range(len(self._vocab_size))], self._vocab_size)
+        )
         self._embedding_vec_size = embedding_vec_size
         self._comm_options = comm_options
 
         if self._embedding_layer_str == "TF":
-            self._embedding_layer = TFEmbedding(self._vocab_size_dict, 
-                                                self._embedding_vec_size,
-                                                comm_options=self._comm_options)
+            self._embedding_layer = TFEmbedding(
+                self._vocab_size_dict,
+                self._embedding_vec_size,
+                comm_options=self._comm_options,
+            )
         elif self._embedding_layer_str == "SOK":
-            self._embedding_layer = SOKEmbedding(self._vocab_size_dict,
-                                                 self._embedding_vec_size)
+            self._embedding_layer = SOKEmbedding(
+                self._vocab_size_dict, self._embedding_vec_size, num_gpus
+            )
         else:
-            raise ValueError("Not supported embedding_layer. "
-                            f"Can only be one of ['TF', 'SOK'], "
-                            f"but got {self._embedding_layer_str}")
+            raise ValueError(
+                "Not supported embedding_layer. "
+                f"Can only be one of ['TF', 'SOK'], "
+                f"but got {self._embedding_layer_str}"
+            )
 
-        self._bottom_stack = MLP(units=bottom_stack_units,
-                                 final_activation='relu')
+        self._bottom_stack = MLP(units=bottom_stack_units, final_activation="relu")
 
         self._feature_interaction = DotInteraction(skip_gather=True)
 
-        self._top_stack = MLP(units=top_stack_units,
-                              final_activation=None)
-
-
+        self._top_stack = MLP(units=top_stack_units, final_activation=None)
+        
     @property
     def embedding_layer(self):
         return self._embedding_layer
 
-    def call(self, inputs: Dict[str, tf.Tensor], training=True):
-        dense_features = inputs["dense_features"]
-        sparse_features = inputs["sparse_features"]
-
-        sparse_embeddings = self._embedding_layer(sparse_features, training=training)
-        sparse_embeddings = tf.nest.flatten(sparse_embeddings)
-        sparse_embedding_vecs = [
-            tf.squeeze(sparse_embedding) for sparse_embedding in sparse_embeddings
-        ]
+    def call(self, dense, category, training=True):
+        dense_features = dense
+        sparse_features = category
 
         dense_embedding_vec = self._bottom_stack(dense_features)
-        
+        sparse_embeddings = self._embedding_layer(sparse_features, training=training)
+        sparse_embeddings = tf.split(sparse_embeddings,
+                                     num_or_size_splits=len(self._vocab_size),
+                                     axis=1)
+        sparse_embedding_vecs = [tf.squeeze(vec) for vec in sparse_embeddings]
+
+
         interaction_args = sparse_embedding_vecs + [dense_embedding_vec]
         interaction_output = self._feature_interaction(interaction_args)
         feature_interaction_output = tf.concat(
-            [dense_embedding_vec, interaction_output], axis=1)
+            [dense_embedding_vec, interaction_output], axis=1
+        )
 
         prediction = self._top_stack(feature_interaction_output)
+        if training == False:
+            prediction = tf.nn.sigmoid(prediction)
         return prediction

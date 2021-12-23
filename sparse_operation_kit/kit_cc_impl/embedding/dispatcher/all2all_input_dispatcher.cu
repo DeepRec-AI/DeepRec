@@ -140,8 +140,6 @@ public:
         h_num_exchanged_keys_.reserve(local_gpu_count);
         exchanged_keys_buf_.reserve(local_gpu_count);
         h_recv_chunk_offsets_.reserve(local_gpu_count);
-        h_send_chunk_offsets_.reserve(local_gpu_count);
-
 
         const size_t max_smem_size = resource_mgr_->get_local_gpu(0)->get_max_smem_size_per_sm();
         const size_t global_gpu_count = resource_mgr_->get_global_gpu_count();
@@ -201,11 +199,6 @@ public:
                 host_buffer->reserve({global_gpu_count + 1}, &tensor);
                 h_recv_chunk_offsets_.push_back(tensor);
             }
-            {
-                Tensor2<uint32_t> tensor;
-                host_buffer->reserve({global_gpu_count + 1}, &tensor);
-                h_send_chunk_offsets_.push_back(tensor);
-            }
         } // for dev_id in local_gpu_count
     }
 
@@ -221,18 +214,8 @@ public:
         CK_CUDA(cudaMemsetAsync(num_selected_keys_[local_replica_id].get_ptr(), 0, 
                                 num_selected_keys_[local_replica_id].get_size_in_bytes(), 
                                 local_gpu->get_stream()));
-
-        // FIXME: Un-necessary???
-        // CK_CUDA(cudaMemsetAsync(selected_indices_buf_[local_replica_id].get_ptr(), -1,
-        //                         selected_indices_buf_[local_replica_id].get_size_in_bytes(),
-        //                         local_gpu->get_stream()));
-
-        // FIXME: should use cudaMemcpyAsync??
-        // will std::memset be optimized away??
         std::memset(h_recv_chunk_offsets_[local_replica_id].get_ptr(), 0, 
                     h_recv_chunk_offsets_[local_replica_id].get_size_in_bytes());
-        std::memset(h_send_chunk_offsets_[local_replica_id].get_ptr(), 0,
-                    h_send_chunk_offsets_[local_replica_id].get_size_in_bytes());
 
         // step 2: select keys for each GPU (rank)
         const auto &input_keys = replica_context->input("replica_values");
@@ -277,15 +260,12 @@ public:
                                 num_exchanged_keys_[local_replica_id].get_ptr(),
                                 num_exchanged_keys_[local_replica_id].get_size_in_bytes(),
                                 cudaMemcpyDeviceToHost, local_gpu->get_stream()));
-        resource_mgr_->sync_gpu(local_replica_id);
+        CK_CUDA(cudaStreamSynchronize(local_gpu->get_stream()));
+        
         for (size_t dev_id = 0; dev_id < global_gpu_count; dev_id++) {
             h_recv_chunk_offsets_[local_replica_id].get_ptr()[dev_id + 1] =
                 h_recv_chunk_offsets_[local_replica_id].get_ptr()[dev_id] + 
                 h_num_exchanged_keys_[local_replica_id].get_ptr()[dev_id];
-
-            h_send_chunk_offsets_[local_replica_id].get_ptr()[dev_id + 1] = 
-                h_send_chunk_offsets_[local_replica_id].get_ptr()[dev_id] +
-                h_num_selected_keys_[local_replica_id].get_ptr()[dev_id];
         } // for dev_id in global_gpu_count
 
         // step 5: exchange selected keys among all GPUs
@@ -307,7 +287,6 @@ public:
         // set output of this dispatcher
         replica_context->set_output("replica_exchanged_keys", exchanged_keys_buf_[local_replica_id]);
         replica_context->set_output("replica_h_recv_chunk_offsets", h_recv_chunk_offsets_[local_replica_id]);
-        replica_context->set_output("replica_h_send_chunk_offsets", h_send_chunk_offsets_[local_replica_id]);
         replica_context->set_output("replica_h_num_exchanged_keys", h_num_exchanged_keys_[local_replica_id]);
         replica_context->set_output("replica_h_num_selected_keys", h_num_selected_keys_[local_replica_id]);
         replica_context->set_output("replica_num_selected_keys", num_selected_keys_[local_replica_id]);
@@ -330,7 +309,6 @@ private:
     Tensors2<uint32_t> h_num_exchanged_keys_;
     Tensors2<int64_t> exchanged_keys_buf_;
     Tensors2<uint32_t> h_recv_chunk_offsets_;
-    Tensors2<uint32_t> h_send_chunk_offsets_;
 };
 
 REGISTER_INPUT_DISPATCHER_BUILDER("All2AllInput", All2AllInputDispatcher);

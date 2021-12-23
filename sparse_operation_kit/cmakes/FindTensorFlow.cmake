@@ -1,4 +1,4 @@
-set(PYTHON "python3")
+set(PYTHON "python")
 
 execute_process(
     COMMAND

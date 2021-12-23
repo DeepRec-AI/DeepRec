@@ -18,6 +18,7 @@ import tensorflow as tf
 import sys
 sys.path.append("../../../")
 import sparse_operation_kit as sok
+from sparse_operation_kit.embeddings.tf_distributed_embedding import TFDistributedEmbedding
 
 from tensorflow.python.framework import ops
 
@@ -172,8 +173,8 @@ class TfDenseDemo(tf.keras.models.Model):
         self.num_dense_layers = num_dense_layers
         self.embedding_vec_size = embedding_vec_size
 
-        self.embedding_layer = HashtableEmbedding(max_vocabulary_size=self.vocabulary_size,
-                                                  embedding_vec_size=self.embedding_vec_size)
+        self.embedding_layer = TFDistributedEmbedding(vocabulary_size=self.vocabulary_size,
+                                                      embedding_vec_size=self.embedding_vec_size)
 
         self.dense_layers = []
         for _ in range(self.num_dense_layers):
@@ -186,11 +187,11 @@ class TfDenseDemo(tf.keras.models.Model):
 
     def call(self, inputs, training=True):
         # [batchsize * slot_num * nnz_per_slot, embedding_vec_size]
-        embedding_vector = self.embedding_layer(ids=inputs, training=training)
+        embedding_vector = self.embedding_layer(inputs=inputs, training=training)
 
         # [batchsize, slot_num * nnz_per_slot * embedding_vec_size]
         embedding_vector = tf.reshape(embedding_vector, 
-            shape=[self.global_batch_size, self.slot_num * self.nnz_per_slot * self.embedding_vec_size])
+            shape=[-1, self.slot_num * self.nnz_per_slot * self.embedding_vec_size])
         
         hidden = embedding_vector
         for layer in self.dense_layers:

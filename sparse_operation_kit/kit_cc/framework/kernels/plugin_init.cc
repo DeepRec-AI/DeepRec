@@ -16,7 +16,14 @@
 
 #include "facade.h"
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/stream_executor/stream.h"
 #include <exception>
+
+namespace stream_executor {
+namespace gpu {
+cudaStream_t AsGpuStreamValue(Stream* stream);
+} // namespace gpu
+} // namespace stream_executor
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
@@ -39,18 +46,26 @@ public:
         OP_REQUIRES_OK(ctx, ctx->input("nccl_unique_id", &nccl_unique_id_tensor));
         const Tensor* global_seed_tensor = nullptr;
         OP_REQUIRES_OK(ctx, ctx->input("global_seed", &global_seed_tensor));
+        const Tensor* visible_devices_tensor = nullptr;
+        OP_REQUIRES_OK(ctx, ctx->input("visible_devices", &visible_devices_tensor));
 
         try {
             int32_t global_replica_id = global_replica_id_tensor->scalar<int32_t>()(0);
             int32_t num_replicas_in_sync = num_replicas_in_sync_tensor->scalar<int32_t>()(0);
             const uint64_t global_seed = global_seed_tensor->scalar<int64_t>()(0);
 
-            const cudaStream_t& tf_stream = ctx->eigen_device<Device>().stream();
+            // const cudaStream_t& tf_stream = ctx->eigen_device<Device>().stream();
+            auto device_ctx = ctx->op_device_context();
+            OP_REQUIRES(ctx, device_ctx != nullptr, errors::Aborted("No valid device context."));
+            const cudaStream_t tf_stream = stream_executor::gpu::AsGpuStreamValue(device_ctx->stream());
 
             SparseOperationKit::Facade::instance()->init(global_replica_id, 
                                                       num_replicas_in_sync, 
                                                       nccl_unique_id_tensor->flat<int32_t>().data(),
-                                                      global_seed, global_batch_size_, tf_stream);
+                                                      global_seed,
+                                                      visible_devices_tensor->flat<int32_t>().data(),
+                                                      visible_devices_tensor->NumElements(),
+                                                      global_batch_size_, tf_stream);
         } catch (const std::exception& error) {
             ctx->SetStatus(errors::Aborted(error.what()));
             return;
@@ -70,6 +85,7 @@ REGISTER_KERNEL_BUILDER(Name("PluginInit")
                         .HostMemory("num_replicas_in_sync")
                         .HostMemory("nccl_unique_id")
                         .HostMemory("global_seed")
+                        .HostMemory("visible_devices")
                         .HostMemory("status"),
                         PluginInitOp<GPUDevice>);
 

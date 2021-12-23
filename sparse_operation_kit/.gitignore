@@ -10,3 +10,5 @@ Deprecated/
 *dummy*
 /**/*.file
 *nccl_tests/
+*.egg-info/
+dist/

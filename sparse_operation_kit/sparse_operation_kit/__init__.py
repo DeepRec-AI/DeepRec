@@ -23,18 +23,21 @@ os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["NCCL_LAUNCH_MODE"] = "PARALLEL"
 os.environ["TF_GPU_THREAD_MODE"] = "gpu_private"
-os.environ["TF_GPU_THREAD_COUNT"] = "16"
+# TODO: this env should be left to users
+# os.environ["TF_GPU_THREAD_COUNT"] = "16"
+del os
 
-# ---------- import submodule ----------- #
-import sparse_operation_kit.embeddings
-import sparse_operation_kit.optimizers
-import sparse_operation_kit.core
+# # ---------- import submodule ----------- #
+import sparse_operation_kit.tf
 
 # ------------ import items into root package -------- #
 from sparse_operation_kit.core.initialize import Init
 from sparse_operation_kit.core.context_scope import OptimizerScope
 from sparse_operation_kit.embeddings.distributed_embedding import DistributedEmbedding
 from sparse_operation_kit.embeddings.all2all_dense_embedding import All2AllDenseEmbedding
+from sparse_operation_kit.embeddings.get_embedding_op import get_embedding
 from sparse_operation_kit.saver.Saver import Saver
 from sparse_operation_kit.optimizers.utils import split_embedding_variable_from_others
 from sparse_operation_kit.core.embedding_layer_handle import GraphKeys
+
+__all__ = [item for item in dir() if not item.startswith("__")]

@@ -58,9 +58,13 @@ void Facade::get_random_seed(uint64_t* seed) {
 
 void Facade::init(const size_t global_replica_id, const size_t num_replicas_in_sync, 
                   const int32_t* nccl_unique_id, const uint64_t global_seed,
+                  const int32_t* visible_devices, const int64_t visible_device_count,
                   const size_t global_batch_size, const cudaStream_t& tf_stream) {
     // initialize resource manager
-    resources_mgr_->init(global_replica_id, num_replicas_in_sync, nccl_unique_id, global_seed, tf_stream);
+    resources_mgr_->init(global_replica_id, num_replicas_in_sync,
+                         nccl_unique_id, global_seed,
+                         visible_devices, visible_device_count,
+                         tf_stream);
     // initialize parameters manager
     params_mgr_->init(global_replica_id);
     // initialize embedding manager
@@ -82,25 +86,48 @@ void Facade::generate_unique_name(const bool trainable, std::string &variable_na
     params_mgr_->gen_unique_name(trainable, variable_name);
 }
 
-void Facade::create_variables(const size_t local_replica_id, const float* initial_value, const bool use_hashtable,
-                              const std::vector<int64_t> shape, const std::string name,
-                              const bool trainable, 
-                              tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
-                              tensorflow::Tensor* emb_tensor) {
-    throw std::runtime_error("Not implemented yet.");
+namespace {
+template <typename InitializerType>
+struct wrapper;
+
+template <>
+struct wrapper<std::string> {
+    wrapper(const std::string & initializer) : initializer_(initializer) {}
+    std::string get() {
+        return std::string(initializer_);
+    }
+    const std::string initializer_;
+};
+
+template <>
+struct wrapper<const tensorflow::Tensor*> {
+    wrapper(const tensorflow::Tensor* initializer) : initializer_(initializer) {}
+    std::shared_ptr<Tensor> get() {
+        return TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(initializer_));
+    }
+    const tensorflow::Tensor* initializer_;
+};
+
+template <typename InitializerType>
+auto translate_initializer(const InitializerType initializer) {
+    return wrapper<InitializerType>(initializer).get();
 }
+} // anonymous namespace
 
 /*This function will be called multiple times sequentially*/
-void Facade::create_variables(const size_t local_replica_id, const std::string& initializer, const bool use_hashtable,
-                              const std::vector<int64_t> shape, const std::string name,
-                              const bool trainable, 
+template <typename InitializerType>
+void Facade::create_variables(const size_t local_replica_id, const InitializerType initializer, 
+                              const bool use_hashtable, const std::vector<int64_t> shape, 
+                              const std::string name, const bool trainable, 
                               tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
                               tensorflow::Tensor* emb_tensor) {
     try {
         std::shared_ptr<ParamInterface> param;
         std::vector<size_t> _shape(shape.size());
         for (size_t i = 0; i < shape.size(); i++) _shape[i] = static_cast<size_t>(shape[i]);
-        params_mgr_->create_variables(initializer, use_hashtable, _shape, name, trainable, param);
+
+        params_mgr_->create_variables(local_replica_id, translate_initializer(initializer), 
+                                      use_hashtable, _shape, name, trainable, param);
 
         auto emb_buffer_builder = EmbeddingBufferBuilder::create(param->get_embedding_table_tensor(local_replica_id));
         auto buffer = emb_buffer_builder->get_init_buffer();
@@ -119,13 +146,16 @@ void Facade::create_variables(const size_t local_replica_id, const std::string& 
     }
 }
 
-void Facade::create_variables(const size_t local_replica_id, float* variable, const bool use_hashtable,
-                              const std::vector<int64_t> shape, const std::string name,
-                              const bool trainable, 
+template void Facade::create_variables(const size_t local_replica_id, const std::string initializer, 
+                              const bool use_hashtable, const std::vector<int64_t> shape, 
+                              const std::string name, const bool trainable, 
                               tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
-                              tensorflow::Tensor* emb_tensor) {
-    throw std::runtime_error("Not implemented yet.");
-}
+                              tensorflow::Tensor* emb_tensor);
+template void Facade::create_variables(const size_t local_replica_id, const tensorflow::Tensor* initializer, 
+                              const bool use_hashtable, const std::vector<int64_t> shape, 
+                              const std::string name, const bool trainable, 
+                              tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
+                              tensorflow::Tensor* emb_tensor);
 
 void Facade::create_embedding_sparse(const tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& variable,
                                      const std::string input_dispatcher,
@@ -248,11 +278,11 @@ void Facade::try_allocate_memory(const size_t global_replica_id) const {
 /*This function will only be called by one CPU threads.*/
 void Facade::try_allocate_memory() {
     static std::atomic<bool> allocated{false};
-    if (allocated.load()) return;
+    if (allocated.load(std::memory_order_acquire)) return;
 
     std::lock_guard<std::mutex> lock(mu_);
     // check again to see if another thread has allocated memory
-    if (allocated.load()) return;
+    if (allocated.load(std::memory_order_relaxed)) return;
 
     auto try_allocate_helper = [this](size_t local_device_id) {
         HugeCTR::CudaDeviceContext context;
@@ -263,7 +293,7 @@ void Facade::try_allocate_memory() {
     for (size_t id = 0; id < resources_mgr_->get_local_gpu_count(); id++) 
         resources_mgr_->push_to_threadpool(try_allocate_helper, id);
     resources_mgr_->sync_threadpool();
-    allocated.store(true);
+    allocated.store(true, std::memory_order_release);
 }
 
 void Facade::get_output_shape(const tensorflow::Tensor* emb_handle,
@@ -313,8 +343,20 @@ void Facade::forward(const tensorflow::Tensor* emb_handle,
     const std::shared_ptr<Tensor> indices = TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(indices_tensor));
     std::shared_ptr<Tensor> emb_vector = TFTensorWrapper::create(emb_vector_tensor);
 
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RDLFramework,
+                                 /*event_name=*/embedding->get_var_name() + "_forward_begin");
+#endif
+    // sync processes to avoid NCCL waiting
+    resources_mgr_->sync_all_workers_via_cpu();
+
     // delegate embedding forward to embedding manager
     embedding_mgr_->forward(embedding, values, indices, global_replica_id, training, emb_vector);
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RMyself,
+                                 /*event_name=*/embedding->get_var_name() + "_forward_end");
+#endif
+
 #ifdef USE_NVTX
     nvtxRangeEnd(forward_marker);
 #endif
@@ -337,8 +379,20 @@ void Facade::forward(const tensorflow::Tensor* emb_handle,
     const std::shared_ptr<Tensor> values = TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(values_tensor));
     std::shared_ptr<Tensor> emb_vector = TFTensorWrapper::create(emb_vector_tensor);
 
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RDLFramework,
+                                 /*event_name=*/embedding->get_var_name() + "_forward_begin");
+#endif
+    // sync processes to avoid NCCL waiting
+    resources_mgr_->sync_all_workers_via_cpu();
+
     // delegate embedding forward to embedding manager
     embedding_mgr_->forward(embedding, values, global_replica_id, training, emb_vector);
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RMyself,
+                                 /*event_name=*/embedding->get_var_name() + "_forward_end");
+#endif
+
 #ifdef USE_NVTX
     nvtxRangeEnd(forward_marker);
 #endif
@@ -359,8 +413,19 @@ void Facade::backward(const tensorflow::Tensor* emb_handle,
     std::shared_ptr<Tensor> gradient = TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(gradient_tensor));
     std::shared_ptr<Tensor> value_index = TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(value_index_tensor));
 
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RDLFramework,
+                                 /*event_name=*/embedding->get_var_name() + "_backward_begin");
+#endif
+    // sync processes to avoid NCCL waiting
+    resources_mgr_->sync_all_workers_via_cpu();
+
     // delegate embedding backward to embedding manager
     embedding_mgr_->backward(embedding, top_gradient, global_replica_id, gradient, value_index);
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RMyself,
+                                 /*event_name=*/embedding->get_var_name() + "_backward_end");
+#endif
 
 #ifdef USE_NVTX
     nvtxRangeEnd(backward_marker);
@@ -384,7 +449,16 @@ void Facade::apply_gradients(const tensorflow::core::RefCountPtr<tensorflow::Emb
     auto grad = TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(gradient_tensor));
     auto local_indices = TFTensorWrapper::create(const_cast<tensorflow::Tensor*>(local_indices_tensor));
 
+#ifdef SOK_ASYNC
+    const size_t global_replica_id = resources_mgr_->cal_global_id_from_local_id(local_replica_id);
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RDLFramework,
+                                 /*event_name=*/param->get_var_name() + "_apply_gradients_begin");
+#endif
     optimizer_->apply_gradients(param, grad, local_indices, local_replica_id, learning_rate, current_step);
+#ifdef SOK_ASYNC
+    resources_mgr_->event_record(global_replica_id, EventRecordType::RMyself,
+                                /*event_name=*/param->get_var_name() + "_apply_gradients_end");
+#endif
 
 #ifdef USE_NVTX
     nvtxRangeEnd(apply_grad_marker);
@@ -394,6 +468,18 @@ void Facade::apply_gradients(const tensorflow::core::RefCountPtr<tensorflow::Emb
 
 void Facade::dump_to_file(const tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
                           const std::string filepath) {
+#ifdef SOK_ASYNC
+    auto wait_framework = [this](const size_t local_replica_id) {
+        HugeCTR::CudaDeviceContext context;
+        auto& local_gpu = resources_mgr_->get_local_gpu(local_replica_id);
+        context.set_device(local_gpu->get_local_device_id());
+        CK_CUDA(cudaStreamSynchronize(local_gpu->get_framework_stream()));
+    };
+    for (size_t id = 0; id < resources_mgr_->get_local_gpu_count(); id++) 
+        resources_mgr_->push_to_threadpool(wait_framework, id);
+    resources_mgr_->sync_threadpool();
+#endif
+
     // get param handle
     std::shared_ptr<ParamInterface> param;
     emb_variable->get_param(param);
@@ -404,6 +490,18 @@ void Facade::dump_to_file(const tensorflow::core::RefCountPtr<tensorflow::Embedd
 
 void Facade::restore_from_file(tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
                                const std::string filepath) {
+#ifdef SOK_ASYNC
+    auto wait_framework = [this](const size_t local_replica_id) {
+        HugeCTR::CudaDeviceContext context;
+        auto& local_gpu = resources_mgr_->get_local_gpu(local_replica_id);
+        context.set_device(local_gpu->get_local_device_id());
+        CK_CUDA(cudaStreamSynchronize(local_gpu->get_framework_stream()));
+    };
+    for (size_t id = 0; id < resources_mgr_->get_local_gpu_count(); id++) 
+        resources_mgr_->push_to_threadpool(wait_framework, id);
+    resources_mgr_->sync_threadpool();
+#endif
+
     // try to allocate internal memory
     try_allocate_memory();
 
@@ -419,6 +517,18 @@ void Facade::restore_from_file(tensorflow::core::RefCountPtr<tensorflow::Embeddi
 void Facade::load_embedding_values(tensorflow::core::RefCountPtr<tensorflow::EmbeddingVariable>& emb_variable,
                                  const tensorflow::OpInputList* tensor_list) {
     if (tensor_list->size() < 1) throw std::runtime_error(ErrorBase + "There must be at least one tensor.");
+
+#ifdef SOK_ASYNC
+    auto wait_framework = [this](const size_t local_replica_id) {
+        HugeCTR::CudaDeviceContext context;
+        auto& local_gpu = resources_mgr_->get_local_gpu(local_replica_id);
+        context.set_device(local_gpu->get_local_device_id());
+        CK_CUDA(cudaStreamSynchronize(local_gpu->get_framework_stream()));
+    };
+    for (size_t id = 0; id < resources_mgr_->get_local_gpu_count(); id++) 
+        resources_mgr_->push_to_threadpool(wait_framework, id);
+    resources_mgr_->sync_threadpool();
+#endif
 
     // try to allocate internal memory
     try_allocate_memory();
@@ -450,6 +560,11 @@ const std::shared_ptr<ResourcesManager>& Facade::get_resource_mgr() const {
     return resources_mgr_;
 }
 
+void Facade::Schedule(const size_t global_replica_id, std::function<void()> func) {
+    // TODO: should use the same threadpool that is used for memory allocation??
+    const size_t local_replica_id = resources_mgr_->cal_local_id_from_global_id(global_replica_id);
+    resources_mgr_->push_to_workers(local_replica_id, std::move(func));
+}
 
 int32_t GetLocalReplicaIdFromDeviceName(const std::string device_name) {
     try {

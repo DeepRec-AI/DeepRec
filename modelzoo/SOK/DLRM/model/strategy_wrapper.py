@@ -15,6 +15,7 @@
 """
 
 from tensorflow.python.framework import ops
+import tensorflow as tf
 
 class HorovodStrategy(object):
     def __init__(self):
@@ -56,3 +57,6 @@ class OneDeviceStrategy(object):
 
     def broadcast_variables(self, variables):
         return variables
+
+
+

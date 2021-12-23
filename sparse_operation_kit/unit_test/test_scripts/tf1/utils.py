@@ -103,6 +103,8 @@ def get_embedding_optimizer(optimizer_type):
         return tf.keras.optimizers.Adam
     elif optimizer_type == 'sgd':
         return tf.keras.optimizers.SGD
+    elif optimizer_type == "compat_adam":
+        return sok.tf.keras.optimizers.Adam
     else:
         raise ValueError("Not supported optimizer_type: %s" %optimizer_type)
 
@@ -115,6 +117,8 @@ def get_dense_optimizer(optimizer_type):
         return tf.keras.optimizers.Adam
     elif optimizer_type == 'sgd':
         return tf.keras.optimizers.SGD
+    elif optimizer_type == "compat_adam":
+        return tf.keras.optimizers.Adam
     else:
         raise ValueError("Not supported optimizer_type: %s" %optimizer_type)
 
@@ -266,6 +270,9 @@ def sort_embedding_variables_by_key(keys, embedding_values, embedding_vec_size, 
     if not isinstance(embedding_values, np.ndarray):
         embedding_values = np.array(embedding_values, dtype=np.float32)
 
+    # currently, embedding will set a fast hashtable when user specified use_hashtable=False
+    # so that the following code snippet is not needed.
+    """
     if not use_hashtable:
         vocabulary_size = np.size(keys) // gpu_num
         embedding_values = np.reshape(embedding_values, newshape=(-1, embedding_vec_size))
@@ -277,6 +284,7 @@ def sort_embedding_variables_by_key(keys, embedding_values, embedding_vec_size, 
         return keys[:vocabulary_size], valid_embedding_values
     else:
         del gpu_num
+    """
 
     sorted_indexes = np.argsort(keys)
     sorted_keys = keys[sorted_indexes]

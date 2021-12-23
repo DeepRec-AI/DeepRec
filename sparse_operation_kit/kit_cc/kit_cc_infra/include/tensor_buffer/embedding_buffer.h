@@ -56,6 +56,7 @@ private:
 
     std::shared_ptr<Tensor> tensor_;
     std::shared_ptr<EmbeddingBuffer> buffer_;
+    const bool already_allocated_; // whether the tensor is already allocated when creating this builder
 };
 
 

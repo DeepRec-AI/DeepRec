@@ -32,6 +32,7 @@ public:
     virtual void get_insert(const void *d_keys, void *d_vals, size_t len, cudaStream_t stream) override;
     virtual void insert(const void *d_keys, const void *d_vals, size_t len, cudaStream_t stream) override;
     virtual size_t get_size(cudaStream_t stream) const override;
+    virtual size_t get_capacity(cudaStream_t stream) const override;
     virtual size_t get_value_head(cudaStream_t stream) const override;
     virtual void dump(void* d_key, void* d_val, size_t* d_dump_counter, cudaStream_t stream) const override;
     virtual bool identical_mapping() const override;

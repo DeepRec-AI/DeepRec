@@ -18,17 +18,7 @@
 
 namespace tensorflow {
 
-#if TF_VERSION_MAJOR == 2
-EmbeddingVariable::EmbeddingVariable(Tensor* handle_tensor)
-: handle_tensor_(handle_tensor) 
-{}
-
-void EmbeddingVariable::SetHandle(ResourceHandle& handle) {
-    handle_tensor_->scalar<ResourceHandle>()() = handle;
-}
-#else
 EmbeddingVariable::EmbeddingVariable() {}
-#endif
 
 EmbeddingVariable::~EmbeddingVariable() {}
 

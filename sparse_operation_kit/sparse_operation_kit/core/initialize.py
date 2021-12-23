@@ -30,7 +30,9 @@ from tensorflow.dtypes import int32, int64
 from tensorflow import print as tf_print
 from tensorflow.python.ops import array_ops
 from tensorflow.python.framework import ops
+from tensorflow.python.platform import tf_logging as logging
 import sys
+from tensorflow.python.framework import config
 
 def Init(**kwargs):
     """
@@ -72,18 +74,30 @@ def Init(**kwargs):
             a string will be returned if this function executed successfully.
             And its contents will be 'OK'.
     """
+
+    def _get_visible_devices():
+        gpus = config.get_visible_devices('GPU')
+        assert(len(gpus) > 0)
+        visible_devices = []
+        for i in range(len(gpus)):
+            visible_devices.append(int(gpus[i].name.split(':')[-1]))
+        return array_ops.constant(visible_devices, dtype=int32)
+    
+    @function
     def _single_worker_init(**kwargs):
         replica_ctx = get_replica_context()
         replica_ctx.merge_call(lambda strategy: 
             tf_print("You are using the plugin with MirroredStrategy."))
         nccl_unique_id = replica_ctx.merge_call(lambda strategy:
                     kit_lib.get_nccl_unique_id())
-        global_random_seed = replica_ctx.merge_call(lambda strategy:
-                    kit_lib.gen_random_seed())
+        global_random_seed = kwargs.get("seed", None) or replica_ctx.merge_call(lambda strategy:
+                                                                    kit_lib.gen_random_seed())
 
         global_id = replica_ctx.replica_id_in_sync_group
-        status = kit_lib.plugin_init(global_id, replica_ctx.num_replicas_in_sync, nccl_unique_id, global_random_seed,
-                             global_batch_size=kwargs['global_batch_size'])
+        visible_devices = _get_visible_devices()
+        status = kit_lib.plugin_init(global_id, replica_ctx.num_replicas_in_sync, 
+                                     nccl_unique_id, global_random_seed, visible_devices,
+                                     global_batch_size=kwargs['global_batch_size']) 
         return status
 
     def _multi_worker_init(**kwargs):
@@ -104,7 +118,7 @@ def Init(**kwargs):
                                                 group_key=1,
                                                 instance_key=2)
         if global_id == 0:
-            global_seed = kit_lib.gen_random_seed()
+            global_seed = kwargs.get("seed", None) or kit_lib.gen_random_seed()
             re_seed = collective_ops.broadcast_send(global_seed,
                                                 TensorShape([1,]),
                                                 int64,
@@ -112,16 +126,24 @@ def Init(**kwargs):
                                                 group_key=1,
                                                 instance_key=3)
         else:
+            global_seed = kwargs.get("seed", None)
             re_seed = collective_ops.broadcast_recv(TensorShape([1,]),
                                                 int64,
                                                 group_size=replica_ctx.num_replicas_in_sync,
                                                 group_key=1,
                                                 instance_key=3)
 
-        status = kit_lib.plugin_init(global_id, replica_ctx.num_replicas_in_sync, re, re_seed, 
-                             global_batch_size=kwargs['global_batch_size']) #TODO: input from kwargs
+            if (global_seed and global_seed != re_seed):
+                logging.warning("The seed: {} is not consistent with that from cheif-node: {}, "
+                                "and the seed from cheif-node will be used.".format(global_seed, re_seed))
+
+        visible_devices = _get_visible_devices()
+        status = kit_lib.plugin_init(global_id, replica_ctx.num_replicas_in_sync, 
+                                     re, re_seed, visible_devices,
+                                     global_batch_size=kwargs['global_batch_size'])
         return status
 
+    # @function
     def _horovod_init(**kwargs):
         r"""
         This function uses horovod to broadcast nccl-id and random-seed which is used by sparse_operation_kit.
@@ -135,11 +157,20 @@ def Init(**kwargs):
         unique_id = kit_lib.get_nccl_unique_id() if local_rank == 0 else array_ops.zeros([32,], dtype=int32)
         unique_id = hvd.broadcast(unique_id, root_rank=0, name="nccl_unique_id")
 
-        global_seed = kit_lib.gen_random_seed() if local_rank == 0 else array_ops.zeros([1,], dtype=int64)
-        global_seed = hvd.broadcast(global_seed, root_rank=0, name="random_seed")
+        seed = kwargs.get("seed", None)
+        if 0 == local_rank:
+            global_seed = seed or kit_lib.gen_random_seed()
+        else:
+            global_seed = array_ops.zeros([1,], dtype=int64)
+        re_seed = hvd.broadcast(global_seed, root_rank=0, name="random_seed")
+        if (seed and seed != re_seed):
+            logging.warning("The seed: {} is not consistent with that from cheif-node: {}, "
+                            "and the seed from cheif-node will be used.".format(global_seed, re_seed))
 
-        status = kit_lib.plugin_init(local_rank, hvd.size(), unique_id, global_seed,
-                             global_batch_size=kwargs["global_batch_size"]) #TODO: input from kwargs
+        visible_devices = _get_visible_devices()
+        status = kit_lib.plugin_init(local_rank, hvd.size(), unique_id, re_seed, 
+                                     visible_devices, 
+                                     global_batch_size=kwargs["global_batch_size"])
         return status
 
     def _one_device_init(**kwargs):
@@ -148,8 +179,9 @@ def Init(**kwargs):
         """
         local_rank = 0
         unique_id = kit_lib.get_nccl_unique_id()
-        global_seed = kit_lib.gen_random_seed()
-        status = kit_lib.plugin_init(local_rank, 1, unique_id, global_seed,
+        global_seed = kwargs.get("seed", None) or kit_lib.gen_random_seed()
+        visible_devices = _get_visible_devices()
+        status = kit_lib.plugin_init(local_rank, 1, unique_id, global_seed, visible_devices,
                                      global_batch_size=kwargs["global_batch_size"])
         return status
 

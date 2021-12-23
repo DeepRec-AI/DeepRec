@@ -79,8 +79,9 @@ class EmbeddingVariable(BaseResourceVariable):
         self.m_initial_value = initial_value
         self.m_trainable = trainable
         self.m_use_hashtable = use_hashtable
-        self.m_var_name = ops.get_default_graph().unique_name(name, mark_as_used=True)
-        self.m_unique_id = "%s_%d" %(self.m_var_name, ops.uid())
+        self.m_embedding_layer = None
+        # self.m_var_name = ops.get_default_graph().unique_name(name, mark_as_used=True)
+        # self.m_unique_id = "%s_%d" %(self.m_var_name, ops.uid())
 
         collections = [ops.GraphKeys.GLOBAL_VARIABLES]
         if trainable and ops.GraphKeys.TRAINABLE_VARIABLES not in collections:
@@ -88,7 +89,14 @@ class EmbeddingVariable(BaseResourceVariable):
 
         with ops.init_scope():
             self._in_graph_mode = not context.executing_eagerly()
-            with ops.name_scope(self.m_var_name) as name:
+            with ops.name_scope(name) as var_name_scope:
+                # TODO: use regulare expression 
+                while var_name_scope[-1] == r"/":
+                    var_name_scope = var_name_scope[:-1]
+                var_name = var_name_scope
+                self.m_var_name = var_name
+                self.m_unique_id = "%s_%d" %(var_name, ops.uid())
+
                 # attr = resource_variable_ops.attr_value_pb2.AttrValue(
                 #     list=resource_variable_ops.attr_value_pb2.AttrValue.ListValue(
                 #         s=[resource_variable_ops.compat.as_bytes("loc:@%s" % self.m_var_name)]))
@@ -96,16 +104,23 @@ class EmbeddingVariable(BaseResourceVariable):
                 # with ops.get_default_graph()._attr_scope({"_class": attr}):
                 with ops.NullContextmanager():
                     # m_handle is the handle to EmbeddingVariable, tf_handle is the handle to TF Var.
-                    self.m_handle, self.tf_handle = kit_lib.create_var(var_name=self.m_var_name,
+                    self.m_handle, self.tf_handle = kit_lib.create_var(var_name=var_name,
                                                                dtype=float32,
                                                                shape=self.m_shape_per_gpu)
 
                     if self._in_graph_mode:
                         with ops.name_scope("IsInitialized"):
                             self._is_initialized_op = ops.convert_to_tensor(True) # TODO: should not hard-writing???
+
+                            if (isinstance(self.m_initial_value, ops.Tensor) and 
+                                not self.m_initial_value.shape.is_compatible_with(self._m_shape_per_gpu)):
+                                raise ValueError("The initial value's shape (%s) is not compatible with "
+                                                 "the explicitly supplied `shape` argument (%s)." %
+                                                 (initial_value.shape, self._m_shape_per_gpu))
+
                             _init_op = kit_lib.assign_embedding_variable(emb_var_handle=self.m_handle,
                                                                  tf_var_handle=self.tf_handle,
-                                                                 var_name=self.m_var_name,
+                                                                 var_name=var_name,
                                                                  initial_value=self.m_initial_value,
                                                                  local_replica_id=self.m_local_replica_id,
                                                                  trainable=self.m_trainable,
@@ -123,7 +138,7 @@ class EmbeddingVariable(BaseResourceVariable):
                                                     shape=self.m_shape_per_gpu,
                                                     dtype=float32,
                                                     handle=self.m_handle,
-                                                    handle_name=self.m_var_name,
+                                                    handle_name=var_name,
                                                     distribute_strategy=get_strategy() if has_strategy() else None,
                                                     synchronization=VariableSynchronization.NONE,
                                                     aggregation=VariableAggregation.ONLY_FIRST_REPLICA,
@@ -135,6 +150,17 @@ class EmbeddingVariable(BaseResourceVariable):
     @property
     def emb_handle(self):
         return self.m_handle
+
+    def set_embedding_layer(self, embedding_layer):
+        if self.m_embedding_layer is not None:
+            raise ValueError("EmbeddingLayer for %s is already set." %(self.name))
+        self.m_embedding_layer = embedding_layer
+    
+    @property
+    def embedding_layer(self):
+        if self.m_embedding_layer is None:
+            raise ValueError("EmbeddingLayer for %s is not set." %(self.name))
+        return self.m_embedding_layer
 
     def _read_variable_op(self):
         variable_accessed(self)

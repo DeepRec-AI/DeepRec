@@ -27,4 +27,9 @@ REGISTER_OP("CustomOptimizerApplyGradients")
     .Input("local_indices: indices_dtype")
     .Input("learning_rate: float32")
     .Input("current_step: int64")
-    .Attr("indices_dtype: {int64}");
+    .Attr("indices_dtype: {int64}")
+    .SetShapeFn([](InferenceContext* ctx) {
+        ShapeHandle grad_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 2, &grad_shape));
+        return Status::OK();
+    });

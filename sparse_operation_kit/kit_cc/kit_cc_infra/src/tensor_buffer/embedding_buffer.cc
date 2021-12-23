@@ -66,23 +66,28 @@ std::shared_ptr<EmbeddingBufferBuilder> EmbeddingBufferBuilder::create(std::shar
 }
 
 EmbeddingBufferBuilder::EmbeddingBufferBuilder(std::shared_ptr<Tensor> tensor)
-: tensor_(tensor), buffer_(nullptr)
+: tensor_(tensor), buffer_(nullptr), already_allocated_(tensor->allocated())
 {
 }
 
 EmbeddingBufferBuilder::~EmbeddingBufferBuilder() {}
 
 void EmbeddingBufferBuilder::build_buffer() {
-    if (!tensor_->allocated()) throw std::runtime_error(ErrorBase + "Have not allocated memory for tensor.");
-    if (!buffer_) throw std::runtime_error(ErrorBase + "Have not allocate spaces for EmbeddingBuffer");
-    
-    // Release the old one and Construct a new EmbeddingBuffer in the existed space
-    buffer_->~EmbeddingBuffer();
-    new (buffer_.get()) EmbeddingBuffer(tensor_);
+    if (!already_allocated_) { // only need to create a new buffer when the buffer is not allocated in the beginning.
+        if (!tensor_->allocated()) throw std::runtime_error(ErrorBase + "Have not allocated memory for tensor.");
+        if (!buffer_) throw std::runtime_error(ErrorBase + "Have not allocate spaces for EmbeddingBuffer");
+        
+        // Release the old one and Construct a new EmbeddingBuffer in the existed space
+        buffer_->~EmbeddingBuffer();
+        new (buffer_.get()) EmbeddingBuffer(tensor_);
+    } else {
+        buffer_->Unref();
+    }
 }
 
 tensorflow::TensorBuffer* EmbeddingBufferBuilder::get_init_buffer() {
-    buffer_ = EmbeddingBuffer::create(nullptr);
+    buffer_ = already_allocated_ ? EmbeddingBuffer::create(tensor_) 
+                                 : EmbeddingBuffer::create(nullptr);
     return buffer_.get();
 }
 

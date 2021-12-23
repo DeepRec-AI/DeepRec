@@ -1,121 +1,203 @@
-"""
- Copyright (c) 2021, NVIDIA CORPORATION.
+import os
+import queue
+import concurrent
+import concurrent.futures
  
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-"""
-from typing import List
+import numpy as np
 import tensorflow as tf
+import horovod.tensorflow as hvd
 
-class CriteoTsvReader:
-    """
-    Input reader for pre-processed Criteo data.
 
-    Raw Criteo data is assumed to be preprocessed in the following way:
-    1. Missing values are replaced with zeros.
-    2. Negative values are replaced with zeros.
-    3. Integer features are transformed by log(x+1) and are hence tf.float32.
-    4. Categorical data is bucketized and are hence tf.int32
-    """
-    def __init__(self,
-                 file_pattern: str,
-                 num_dense_features: int,
-                 vocab_sizes: List[int],
-                 batch_size: int,
-                 sharding: bool = False):
-        self._file_pattern = file_pattern
-        self._num_dense_features = num_dense_features
-        self._vocab_sizes = vocab_sizes
+class BinaryDataset:
+    
+    def __init__(
+        self,
+        label_bin,
+        dense_bin,
+        category_bin,
+        batch_size=1,
+        drop_last=False,
+        prefetch=1,
+        global_rank=0,
+        global_size=1,
+    ):
+        file_size = os.path.getsize(label_bin)
+        if file_size % 4 != 0:
+            raise RuntimeError("The file size of {} should be an integer multiple of 4.".format(label_bin))
+        num_samples = file_size // 4
+        assert(os.path.getsize(dense_bin) // 52 == num_samples)
+        assert(os.path.getsize(category_bin) // 104 == num_samples)
+
+        if global_rank == (global_size - 1):
+            self._num_samples = num_samples - (num_samples // global_size) * global_rank
+        else:
+            self._num_samples = num_samples // global_size
+
+        self._bytes_offset_label = num_samples // global_size * 4 * global_rank
+        self._bytes_offset_dense = num_samples // global_size * 52 * global_rank
+        self._bytes_offset_category = num_samples // global_size * 104 * global_rank
+
+        self._num_entries = self._num_samples // batch_size
+        if not drop_last and (self._num_samples % batch_size != 0):
+            self._num_entries += 1
+
         self._batch_size = batch_size
-        self._sharding = sharding
+        self._drop_last = drop_last
 
-    def __call__(self, input_ctx: tf.distribute.InputContext = None) -> tf.data.Dataset:
-        batch_size = input_ctx.get_per_replica_batch_size(self._batch_size) if input_ctx else self._batch_size
+        self._prefetch = min(prefetch, self._num_entries)
+        self._prefetch_queue = queue.Queue()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-        def _parse_fn(example: tf.Tensor):
-            label_defaults = [[0]]
-            dense_defaults = [
-                [0.0] for _ in range(self._num_dense_features)]
-            num_sparse_features = len(self._vocab_sizes)
-            categorical_defaults = [
-                [0] for _ in range(num_sparse_features)]
-            record_defaults = label_defaults + dense_defaults + categorical_defaults
-            # fields = tf.io.decode_csv(example, record_defaults)
-            fields = tf.io.decode_csv(example, record_defaults, field_delim="\t", na_value="-1")
+        self._label_file = os.open(label_bin, os.O_RDONLY)
+        self._dense_file = os.open(dense_bin, os.O_RDONLY)
+        self._category_file = os.open(category_bin, os.O_RDONLY)
 
-            num_labels = 1
-            label = tf.reshape(fields[0], [batch_size, 1])
+    def __del__(self):
+        for file in [self._label_file, self._dense_file, self._category_file]:
+            if file is not None:
+                os.close(file)
 
-            features = {}
-            num_dense = len(dense_defaults)
+    def __len__(self):
+        return self._num_entries
 
-            dense_features = []
-            offset = num_labels
-            for idx in range(num_dense):
-                dense_features.append(fields[idx + offset])
-            features["dense_features"] = tf.stack(dense_features, axis=1)
+    def __getitem__(self, idx):
+        if idx >= self._num_entries:
+            raise IndexError()
 
-            offset += num_dense
-            features["sparse_features"] = {}
+        if self._prefetch <= 1:
+            return self._get(idx)
 
-            for idx in range(num_sparse_features):
-                features["sparse_features"][str(idx)] = fields[idx + offset]
+        if idx == 0:
+            for i in range(self._prefetch):
+                self._prefetch_queue.put(self._executor.submit(self._get, (i)))
 
-            return features, label
+        if idx < (self._num_entries - self._prefetch):
+            self._prefetch_queue.put(self._executor.submit(self._get, (idx + self._prefetch)))
+
+        return self._prefetch_queue.get().result()
+
+    def _get(self, idx):
+        batch = self._batch_size
+        if (idx == self._num_entries - 1) and not self._drop_last and (self._num_samples % self._batch_size != 0):
+            batch = self._num_samples % self._batch_size
+
+        label_raw_data = os.pread(self._label_file, 4 * batch, self._bytes_offset_label + idx * self._batch_size * 4)
+        label = np.frombuffer(label_raw_data, dtype=np.int32).reshape([batch, 1])
+
+        dense_raw_data = os.pread(self._dense_file, 52 * batch, self._bytes_offset_dense + idx * self._batch_size * 52)
+        dense = np.frombuffer(dense_raw_data, dtype=np.float32).reshape([batch, 13])
+        dense = np.log(dense + 3, dtype=np.float32)
         
-        filenames = tf.data.Dataset.list_files(self._file_pattern, shuffle=False)
-        if self._sharding and input_ctx and input_ctx.num_input_pipelines > 1:
-            filenames = filenames.shard(input_ctx.num_input_pipelines, 
-                                        input_ctx.input_pipeline_id)
+        category_raw_data = os.pread(self._category_file, 104 * batch, self._bytes_offset_category + idx * self._batch_size * 104)
+        category = np.frombuffer(category_raw_data, dtype=np.float32).reshape([batch, 26])
 
-        num_shards_per_host = 1
-        if self._sharding:
-            num_shards_per_host = 16
-        
-        def make_dataset(shard_index):
-            filenames_for_shard = filenames.shard(num_shards_per_host, shard_index)
-            dataset = tf.data.TextLineDataset(filenames_for_shard)
-            dataset = dataset.batch(batch_size, drop_remainder=True)
-            dataset = dataset.map(_parse_fn, 
-                                  num_parallel_calls=1)
-            return dataset
+        return dense, category, label
 
-        indices = tf.data.Dataset.range(num_shards_per_host)
-        dataset = indices.interleave(
-            map_func=make_dataset,
-            num_parallel_calls=28)
-        
-        dataset = dataset.prefetch(1)
-        return dataset
 
+class BinaryDataset2:
+    
+    def __init__(
+        self,
+        label_bin,
+        dense_bin,
+        category_bin,
+        batch_size=1,
+        drop_last=False,
+        prefetch=1,
+        global_rank=0,
+        global_size=1,
+    ):
+
+        file_size = os.path.getsize(label_bin)
+        if file_size % 4 != 0:
+            raise RuntimeError("The file size of {} should be an integer multiple of 4.".format(label_bin))
+        num_samples = file_size // 4
+        assert(os.path.getsize(dense_bin) // 52 == num_samples)
+        assert(os.path.getsize(category_bin) // 104 == num_samples)
+
+        self._num_entries = num_samples // (batch_size * global_size)
+        self._num_samples = self._num_entries * batch_size
+        assert((num_samples - self._num_samples * global_size) == (num_samples % (batch_size * global_size)))
+
+
+        self._batch_size = batch_size
+        self._drop_last = drop_last
+        self._global_rank = global_rank
+        self._global_size = global_size
+
+        self._prefetch = min(prefetch, self._num_entries)
+        self._prefetch_queue = queue.Queue()
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
+        self._label_file = os.open(label_bin, os.O_RDONLY)
+        self._dense_file = os.open(dense_bin, os.O_RDONLY)
+        self._category_file = os.open(category_bin, os.O_RDONLY)
+
+    def __del__(self):
+        for file in [self._label_file, self._dense_file, self._category_file]:
+            if file is not None:
+                os.close(file)
+
+    def __len__(self):
+        return self._num_entries
+
+    def __getitem__(self, idx):
+        if idx >= self._num_entries:
+            raise IndexError()
+
+        if self._prefetch <= 1:
+            return self._get(idx)
+
+        if idx == 0:
+            for i in range(self._prefetch):
+                self._prefetch_queue.put(self._executor.submit(self._get, (i)))
+
+        if idx < (self._num_entries - self._prefetch):
+            self._prefetch_queue.put(self._executor.submit(self._get, (idx + self._prefetch)))
+
+        return self._prefetch_queue.get().result()
+
+    def _get(self, idx):
+        sample_offset = idx * self._batch_size * self._global_size + self._global_rank * self._batch_size
+
+        label_raw_data = os.pread(self._label_file, 4 * self._batch_size, 4 * sample_offset)
+        label = np.frombuffer(label_raw_data, dtype=np.int32).reshape([self._batch_size, 1])
+
+        dense_raw_data = os.pread(self._dense_file, 52 * self._batch_size, 52 * sample_offset)
+        dense = np.frombuffer(dense_raw_data, dtype=np.float32).reshape([self._batch_size, 13])
+        dense = np.log(dense + 3, dtype=np.float32)
+
+        category_raw_data = os.pread(self._category_file, 104 * self._batch_size, 104 * sample_offset)
+        category = np.frombuffer(category_raw_data, dtype=np.float32).reshape([self._batch_size, 26])
+
+        return dense, category, label
+
+    
+import time
 
 if __name__ == "__main__":
-    dataset = CriteoTsvReader(file_pattern=r"/home/daweil/DeepRec_A100/modelzoo/WDL/data/train.csv",
-                              num_dense_features=13,
-                              vocab_sizes=[39884407, 39043, 17289, 7420, 20263, 
-                                            3, 7120, 1543, 63, 38532952, 2953546, 
-                                            403346, 10, 2208, 11938, 155, 4, 976, 
-                                            14, 39979772, 25641295, 39664985, 585935, 
-                                            12972, 108, 36],
-                              batch_size=16384,
-                              sharding=False)()
+    hvd.init()
 
-    # for step, (features, labels) in enumerate(dataset):
-    #     # print(features)
-    #     print(labels)
+    global_batch_size = 65536
+    dataset_dir = "./dataset/"
+    test_dataset = BinaryDataset(
+        dataset_dir + 'label.bin',
+        dataset_dir + 'dense.bin',
+        dataset_dir + 'category.bin',
+        batch_size=global_batch_size // hvd.size(),
+        drop_last=False,
+        prefetch=10,
+        global_rank=hvd.rank(),
+        global_size=hvd.size(),
+    )
 
-    train_iterator = dataset.make_initializable_iterator()
-    iterator_init = train_iterator.initializer
-    features, labels = train_iterator.get_next()
-    with tf.Session() as sess:
-        sess.run(iterator_init)
-        print(features,labels)
+    for step, ( dense, category, labels) in enumerate(test_dataset):
+        if(step % 100 == 0):
+            print(step, hvd.rank())
+        if step == 0:
+            print("warmup over!")
+            start_time = time.time()
+        if step == 1000:
+            print("1000 steps ==", time.time() - start_time, hvd.rank())
+
+        

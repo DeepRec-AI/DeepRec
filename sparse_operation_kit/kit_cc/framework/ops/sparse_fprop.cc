@@ -22,20 +22,25 @@ using namespace tensorflow;
 using namespace tensorflow::shape_inference;
 
 REGISTER_OP("PluginSparseFprop")
+    .Input("emb_var_handle: resource")
     .Input("emb_handle: variant")
-    .Input("emb_variable: T")
     .Input("values: value_dtype")
-    .Input("indices: int64")
+    .Input("indices: indice_dtype")
     .Input("global_replica_id: int32")
-    .Output("emb_vector: T")
+    .Output("emb_vector: dtype")
     .Attr("slot_num: int")
     .Attr("training: bool")
     .Attr("value_dtype: {int64}")
-    .Attr("T: {float32}")
+    .Attr("indice_dtype: {int64}")
+    .Attr("dtype: type")
     .Attr("unique_op_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
+        std::vector<ShapeAndType> handle_shape_and_type;
+        TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(
+                ctx, &handle_shape_and_type));
+
         ShapeHandle variable_shape;
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 2, &variable_shape));
+        TF_RETURN_IF_ERROR(ctx->WithRank(handle_shape_and_type[0].shape, 2, &variable_shape));
         DimensionHandle emb_vec_size_dim = ctx->Dim(variable_shape, 1);
 
         tensorflow::int64 slot_num = 0;

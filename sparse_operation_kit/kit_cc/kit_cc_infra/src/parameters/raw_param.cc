@@ -27,13 +27,13 @@ namespace SparseOperationKit {
 
 RawParam::RawParam(const std::string& initializer, const bool use_hashtable, const std::vector<size_t> shape,
                    const std::shared_ptr<ResourcesManager>& resource_mgr,
-                   const std::vector<std::shared_ptr<HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>>>& buffers,
                    const std::string var_name, const bool trainable)
 : resource_mgr_(resource_mgr), 
+buffers_(resource_mgr->get_local_gpu_count(), nullptr),
 hashtables_(resource_mgr->get_local_gpu_count(), nullptr),
 max_vocabulary_size_per_gpu_(shape[0]), embedding_vector_size_(shape[1]),
 var_name_(var_name), trainable_(trainable), initializer_(Initializer::Get(initializer)),
-use_hashtable_(use_hashtable)
+use_hashtable_(use_hashtable), initialized_(resource_mgr->get_local_gpu_count(), false)
 {
     emb_table_tensors_.reserve(resource_mgr_->get_local_gpu_count());
     emb_table_tensors_interface_.reserve(resource_mgr_->get_local_gpu_count());
@@ -41,10 +41,13 @@ use_hashtable_(use_hashtable)
     HugeCTR::CudaDeviceContext device_context;
     for (size_t dev_id = 0; dev_id < resource_mgr->get_local_gpu_count(); ++dev_id) {
         device_context.set_device(resource_mgr_->get_local_gpu(dev_id)->get_local_device_id());
+        // create memory buffer
+        buffers_[dev_id] = HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>::create();
+
         // reserve spaces for embedding table
         {
             Tensor2<float> tensor;
-            buffers[dev_id]->reserve(shape, &tensor);
+            buffers_[dev_id]->reserve(shape, &tensor);
             emb_table_tensors_.push_back(tensor);
             emb_table_tensors_interface_.push_back(Tensor2Wrapper<float>::create(tensor));
         }
@@ -62,6 +65,12 @@ use_hashtable_(use_hashtable)
 
     if (emb_table_tensors_.size() != emb_table_tensors_interface_.size())
         throw std::runtime_error(ErrorBase + "The size of embedding table tensors and its interface if not equal.");
+
+    // allocate memory
+    for (size_t dev_id = 0; dev_id < resource_mgr->get_local_gpu_count(); ++dev_id) {
+        device_context.set_device(resource_mgr_->get_local_gpu(dev_id)->get_local_device_id());
+        buffers_[dev_id]->allocate();
+    } // for dev_id    
 }
 
 RawParam::~RawParam() {}
@@ -69,10 +78,9 @@ RawParam::~RawParam() {}
 std::shared_ptr<RawParam> RawParam::create(const std::string& initializer, const bool use_hashtable,
                                             const std::vector<size_t> shape,
                                             const std::shared_ptr<ResourcesManager>& resource_mgr,
-            const std::vector<std::shared_ptr<HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>>>& buffers,
                                             const std::string var_name, const bool trainable) {
     return std::shared_ptr<RawParam>(new RawParam(initializer, use_hashtable, shape, 
-                                        resource_mgr, buffers, var_name, trainable));
+                                        resource_mgr, var_name, trainable));
 }
 
 size_t RawParam::get_max_vocabulary_size_per_gpu() const {
@@ -83,15 +91,24 @@ size_t RawParam::get_embedding_vec_size() const {
     return embedding_vector_size_;
 }
 
+bool RawParam::is_initialized(const size_t local_replica_id) const {
+    return initialized_[local_replica_id];
+}
+
 void RawParam::init(const size_t global_replica_id) {
     const size_t local_replica_id = resource_mgr_->cal_local_id_from_global_id(global_replica_id);
+    if (is_initialized(local_replica_id)) return;
+
     MESSAGE("Variable: " + var_name_ + " on global_replica_id: " + 
             std::to_string(global_replica_id) + " start initialization");
     if (local_replica_id >= emb_table_tensors_.size()) 
         throw std::runtime_error(ErrorBase + "local_replica_id is out of the range of emb_table_tensors.size().");
 
     const auto &local_gpu = resource_mgr_->get_local_gpu(local_replica_id);
-
+#ifdef SOK_ASYNC
+    // TODO: necessary?? the underlying buffer might be modified by framework??
+    CK_CUDA(cudaStreamSynchronize(local_gpu->get_framework_stream()));
+#endif
     initializer_->fill(emb_table_tensors_interface_[local_replica_id],
                        local_gpu->get_sm_count(),
                        local_gpu->get_variant_curand_gen(),
@@ -127,6 +144,30 @@ std::string RawParam::get_var_name() const {
     return var_name_;
 }
 
+void RawParam::set_initial_value(const size_t local_replica_id, 
+                                 const std::shared_ptr<Tensor>& initial_value) {
+    auto &embedding_table = get_embedding_table_tensor(local_replica_id);
+    if (embedding_table->get_num_elements() != initial_value->get_num_elements())
+        throw std::runtime_error(ErrorBase + "The number of elements in initial_value is different from that "
+                                 "of the embedding variable.");
+
+    auto &local_gpu = resource_mgr_->get_local_gpu(local_replica_id);
+#ifdef SOK_ASYNC
+    CK_CUDA(cudaStreamSynchronize(local_gpu->get_framework_stream()));
+#endif
+    CK_CUDA(cudaMemcpyAsync(embedding_table->GetPtrWithType<float>(),
+                            initial_value->GetPtrWithType<float>(),
+                            initial_value->get_size_in_bytes(),
+                            cudaMemcpyDefault,
+                            local_gpu->get_stream()));
+    CK_CUDA(cudaStreamSynchronize(local_gpu->get_stream()));
+    
+    initialized_[local_replica_id] = true;
+    const size_t global_replica_id = resource_mgr_->cal_global_id_from_local_id(local_replica_id);
+    MESSAGE("Variable: " + var_name_ + " on global_replica_id: " + 
+            std::to_string(global_replica_id) + " set initial_value.");
+}
+
 void RawParam::dump_to_file(const std::string filepath) {
     // step 1: allocate CPU spaces.
     auto host_buffer = HugeCTR::GeneralBuffer2<HugeCTR::CudaHostAllocator>::create();
@@ -154,6 +195,10 @@ void RawParam::dump_to_file(const std::string filepath) {
         const std::string values_filename = filepath + "/" + var_name_ + "_values.file";
         std::ofstream key_stream(key_filename, std::ios::binary | std::ios::out);
         std::ofstream values_stream(values_filename, std::ios::binary | std::ios::out);
+        if (!key_stream.is_open()) throw std::runtime_error(ErrorBase + "Cannot open " +
+            key_filename + " for writing.");
+        if (!values_stream.is_open()) throw std::runtime_error(ErrorBase + "Cannot open" +
+            values_filename + " for writing.");
         key_stream.write(reinterpret_cast<char*>(keys.get_ptr()), sizeof(int64_t) * num_total_keys);
         values_stream.write(reinterpret_cast<char*>(embedding_values.get_ptr()), 
                             sizeof(float) * num_total_keys * get_embedding_vec_size());
@@ -286,6 +331,14 @@ void RawParam::load_embedding_values(const std::vector<std::shared_ptr<Tensor>>&
 
 void RawParam::let_user_load_embedding_values(const std::vector<std::shared_ptr<Tensor>>& tensor_list) {
     user_->load_embedding_values(tensor_list);
+}
+
+void RawParam::set_hashtable(std::shared_ptr<BaseSimpleHashtable> hashtable) {
+    for (size_t local_replica_id = 0ul; local_replica_id < resource_mgr_->get_local_gpu_count(); ++local_replica_id) {
+        const size_t global_replica_id = resource_mgr_->cal_global_id_from_local_id(local_replica_id);
+        auto temp_hashtable = hashtable->clone(global_replica_id);
+        hashtables_[local_replica_id] = temp_hashtable;
+    }
 }
 
 } // namespace SparseOperationKit

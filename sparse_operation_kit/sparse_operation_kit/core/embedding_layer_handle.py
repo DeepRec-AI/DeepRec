@@ -35,9 +35,11 @@ class EmbeddingLayerHandle(trackable.Trackable):
 
         self._embedding_variable = embedding_variable
 
-        self._track_trackable(self._embedding_variable, 
-                              name=self._embedding_variable.name)
-
+        if hasattr(self._embedding_variable, "values"):
+            for variable in self._embedding_variable.values:
+                variable.set_embedding_layer(self)
+        else:
+            self._embedding_variable.set_embedding_layer(self)
     @property
     def initializer(self):
         return self._initializer_op
@@ -80,8 +82,10 @@ class DenseEmbeddingLayerHandle(EmbeddingLayerHandle):
 
             if hasattr(self._embedding_variable, "values"):
                 emb_var_handle = self._embedding_variable.values[0].emb_handle
+                emb_var_name = self._embedding_variable.values[0].m_var_name
             else:
                 emb_var_handle = self._embedding_variable.emb_handle
+                emb_var_name = self._embedding_variable.m_var_name
 
             self._handle = kit_lib.create_embedding_dense(emb_var_handle,
                                             input_dispatcher=self._input_dispatcher,
@@ -90,7 +94,8 @@ class DenseEmbeddingLayerHandle(EmbeddingLayerHandle):
                                             output_dispatcher=self._output_dispatcher,
                                             output_dispatcher_subsequent_ops=self._output_dispatcher_subsequent_ops,
                                             slot_num=self._slot_num,
-                                            nnz_per_slot=self._nnz_per_slot)
+                                            nnz_per_slot=self._nnz_per_slot,
+                                            layer_handle_name=emb_var_name)
 
             self._initializer_op = control_flow_ops.group((self._handle))
 
@@ -129,8 +134,10 @@ class SparseEmbeddingLayerHandle(EmbeddingLayerHandle):
         with ops.init_scope():
             if hasattr(self._embedding_variable, "values"):
                 emb_var_handle = self._embedding_variable.values[0].emb_handle
+                emb_var_name = self._embedding_variable.values[0].m_var_name
             else:
                 emb_var_handle = self._embedding_variable.emb_handle
+                emb_var_name = self._embedding_variable.m_var_name
 
             self._handle = kit_lib.create_embedding_sparse(emb_var_handle,
                                                 input_dispatcher=self._input_dispatcher,
@@ -141,7 +148,8 @@ class SparseEmbeddingLayerHandle(EmbeddingLayerHandle):
                                                 slot_num=self._slot_num,
                                                 max_nnz=self._max_nnz,
                                                 max_feature_num=self._max_feature_num,
-                                                combiner=self._combiner)
+                                                combiner=self._combiner,
+                                                layer_handle_name=emb_var_name)
 
             self._initializer_op = control_flow_ops.group((self._handle))
 

@@ -44,7 +44,9 @@ def check_saved_embedding_variables(args, embedding_variable_names, use_hashtabl
         atol, rtol = 1e-4, 1e-4
         if args.distributed_tool == "horovod":
             atol, rtol = atol * 100, rtol * 100
-        sorted_sok_values = np.reshape(sorted_sok_values, newshape=(sorted_sok_keys.size, args.embedding_vec_size[i]))
+        vec_size = args.embedding_vec_size[i]
+        newshape = tuple([sorted_sok_keys.size, vec_size])
+        sorted_sok_values = np.reshape(sorted_sok_values, newshape=newshape)
         allclose = np.allclose(sorted_sok_values, valid_tf_values, atol=atol, rtol=rtol)
         if not allclose:
             raise ValueError(f"\n{sorted_sok_values} \nis not near to \n{valid_tf_values} "
@@ -326,6 +328,10 @@ def compare_dense_emb_sok_with_tf(args):
         if not allclose:
             raise ValueError(f"\n{sok_vector} \nis not near to \n{tf_results[i]} \nat rtol={rtol}, atol={atol}")
 
+        print("--------------- step: {}---------------------".format(i))
+        print("sok_embedding_vector:\n{}".format(sok_vector))
+        print("tf_embedding_vector:\n{}".format(tf_results[i]))
+
     print(f"\n[INFO]: For {len(args.slot_num)} Dense Embedding layer, using {args.gpu_num} GPUs + {args.optimizer} optimizer, "
           f"using hashtable? {args.use_hashtable}, dynamic_input? {args.dynamic_input}, "
           "the embedding vectors"
@@ -357,7 +363,7 @@ if __name__ == "__main__":
                         required=False, default=1)
     parser.add_argument("--global_batch_size", type=int, required=False, default=16)
     parser.add_argument("--optimizer", type=str, required=False, default="adam", 
-                        choices=["plugin_adam", "adam", "sgd"])
+                        choices=["plugin_adam", "adam", "sgd", "compat_adam"])
     parser.add_argument("--generate_new_datas", type=int, choices=[0, 1],
                         required=False, default=1)
     parser.add_argument("--save_params", type=int, choices=[0, 1],

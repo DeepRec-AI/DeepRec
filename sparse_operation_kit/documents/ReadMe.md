@@ -1,5 +1,5 @@
 # Documents #
-Want to find more about SparseOperationKit, see our [SparseOperationKit documents](https://nvidia.github.io/HugeCTR/sparse_operation_kit/v1.0.1/index.html).
+Want to find more about SparseOperationKit, see our [SparseOperationKit documents](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/v1.0.1/index.html).
 
 ## Add documents for SparseOperationKit ##
 + Install the required tools and extensions

@@ -19,6 +19,7 @@
 
 #include "parameters/state_interface.h"
 #include "hashtable/hashtable.h"
+#include "hashtable/simple_hashtable.h"
 #include "tensorflow/core/framework/tensor.h"
 
 namespace SparseOperationKit {
@@ -38,6 +39,8 @@ public:
     virtual std::shared_ptr<Tensor>& get_embedding_table_tensor(const size_t local_replica_id) = 0;
     std::shared_ptr<Tensor>& get_tensor(const size_t local_replica_id) override;
     virtual std::string get_var_name() const = 0;
+    virtual void set_initial_value(const size_t local_replica_id, 
+                                   const std::shared_ptr<Tensor>& initial_value) = 0;
     virtual void dump_to_file(const std::string filepath) = 0;
     virtual void restore_from_file(const std::string filepath) = 0;
     virtual void load_embedding_values(const std::vector<std::shared_ptr<Tensor>>& tensors) = 0;
@@ -46,6 +49,7 @@ public:
     virtual void let_user_dump_to_file(const std::string filepath);
     virtual void let_user_restore_from_file(const std::string filepath);
     virtual void let_user_load_embedding_values(const std::vector<std::shared_ptr<Tensor>> &tensor_list);
+    virtual void set_hashtable(std::shared_ptr<BaseSimpleHashtable> hashtable);
 };
 
 } // namespace SparseOperationKit 

@@ -46,6 +46,11 @@ public:
         const Tensor* current_step_tensor = nullptr;
         OP_REQUIRES_OK(ctx, ctx->input("current_step", &current_step_tensor));
 
+        // check input shape
+        OP_REQUIRES(ctx, TensorShapeUtils::IsMatrix(grad_tensor->shape()), 
+                errors::Aborted("The shape of gradients must be 2-D matrix, "
+                                "which is [valid_nums, embedding_vec_size]."));
+
         try {
             const int local_replica_id = SparseOperationKit::GetLocalReplicaIdFromDeviceName(ctx->device()->name());
             SparseOperationKit::Facade::instance()->apply_gradients(variable, 

@@ -13,7 +13,11 @@
  See the License for the specific language governing permissions and
  limitations under the License.
 """
+
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "../../../")))
 import argparse
 import tensorflow as tf
 import sparse_operation_kit as sok
@@ -155,6 +159,7 @@ def main(args):
 
     @tf.function
     def _train_step(features, labels, first_batch=False):
+      #  return features
         with tf.GradientTape() as tape:
             logits = model(features, training=True)
             loss = _replica_loss(labels, logits)
@@ -196,8 +201,19 @@ def main(args):
 
     stopper = utils.EarlyStopper()
 
+   # begin_time = time.time()
+   # start_time = begin_time
+    for i, (features, labels) in enumerate(train_dataset):
+        if i < 1000:
+            total_loss = strategy.run(_train_step, args=(features, labels, i == 0))
+        else:
+            print("warmup over!")
+            break
+
+
     begin_time = time.time()
     start_time = begin_time
+
     for i, (features, labels) in enumerate(train_dataset):
         if i >= args.train_steps:
             break
@@ -255,7 +271,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps", type=int, required=False, default=8000)
     parser.add_argument("--decay_steps", type=int, required=False, default=30000)
     parser.add_argument("--decay_start_steps", type=int, required=False, default=70000)
-    parser.add_argument("--validation_interval", type=int, required=False, default=100)
+    parser.add_argument("--validation_interval", type=int, required=False, default=5000)
     parser.add_argument("--train_steps", type=int, required=False, default=-1)
 
     args = parser.parse_args()

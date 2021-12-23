@@ -17,107 +17,141 @@ import os
 import argparse
 import tensorflow as tf
 import sys, os
-sys.path.append(os.path.abspath(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "../../../")))
-import sparse_operation_kit.sparse_operation_kit as sok
+import numpy as np
+
+sys.path.append(
+    os.path.abspath(
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "../../../sparse_operation_kit/"
+        )
+    )
+)
+import sparse_operation_kit as sok
 import model.utils as utils
 from model.models import DLRM
 import model.strategy_wrapper as strategy_wrapper
-from model.dataset import CriteoTsvReader
+from model.dataset import BinaryDataset,BinaryDataset2
 import time
+import sys
 
 
 def main(args):
     comm_options = None
 
     if args.distributed_tool == "onedevice":
-        avaiable_cuda_devices = ",".join([str(gpu_id) for gpu_id in range(args.gpu_num)])
-        os.environ["CUDA_VISIBLE_DEVICES"] = avaiable_cuda_devices
         import horovod.tensorflow as hvd
+
         hvd.init()
+        avaiable_cuda_devices = ",".join(
+            [str(gpu_id) for gpu_id in range(args.gpu_num)]
+        )
+        os.environ["CUDA_VISIBLE_DEVICES"] = avaiable_cuda_devices
         strategy = strategy_wrapper.OneDeviceStrategy()
         args.task_id = 0
 
     elif args.distributed_tool == "horovod":
         import horovod.tensorflow as hvd
+
         hvd.init()
         strategy = strategy_wrapper.HorovodStrategy()
         args.task_id = hvd.local_rank()
         args.gpu_num = hvd.size()
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.task_id)
     else:
-        raise ValueError(f"{args.distributed_tool} is not supported.")
-
+        raise ValueError(
+            f"{args.distributed_tool} is not supported."
+            f"Can only be one of {'onedevice',  'horovod'}"
+        )
 
     with strategy.scope():
         if args.embedding_layer == "SOK":
             sok_init_op = sok.Init(global_batch_size=args.global_batch_size)
 
-        model = DLRM(vocab_size=args.vocab_size_list,
-                     num_dense_features=args.num_dense_features,
-                     embedding_layer=args.embedding_layer,
-                     embedding_vec_size=args.embedding_vec_size,
-                     bottom_stack_units=args.bottom_stack,
-                     top_stack_units=args.top_stack,
-                     comm_options=comm_options)
+        model = DLRM(
+            vocab_size=args.vocab_size_list,
+            num_dense_features=args.num_dense_features,
+            embedding_layer=args.embedding_layer,
+            embedding_vec_size=args.embedding_vec_size,
+            bottom_stack_units=args.bottom_stack,
+            top_stack_units=args.top_stack,
+            num_gpus = hvd.size(),
+            comm_options=comm_options,
+        )
 
-        lr_callable = utils.get_lr_callable(global_batch_size=args.global_batch_size,
-                                            decay_exp=args.decay_exp,
-                                            learning_rate=args.learning_rate,
-                                            warmup_steps=args.warmup_steps,
-                                            decay_steps=args.decay_steps,
-                                            decay_start_steps=args.decay_start_steps)
+        lr_callable = utils.get_lr_callable(
+            global_batch_size=args.global_batch_size,
+            decay_exp=args.decay_exp,
+            learning_rate=args.learning_rate,
+            warmup_steps=args.warmup_steps,
+            decay_steps=args.decay_steps,
+            decay_start_steps=args.decay_start_steps,
+        )
 
         embedding_optimizer = utils.get_optimizer(args.embedding_optimizer)
         embedding_optimizer.learning_rate = lr_callable
-        dense_optimizer = utils.get_optimizer("Adam")
+        dense_optimizer = utils.get_optimizer("SGD")
+        dense_optimizer.learning_rate = lr_callable
 
-    batch_size = args.global_batch_size if args.distributed_tool == "onedevice" \
-                                        else args.global_batch_size // args.gpu_num
+    batch_size = (
+        args.global_batch_size
+        if args.distributed_tool == "onedevice"
+        else args.global_batch_size // args.gpu_num
+    )
+
+    train_dataset = BinaryDataset2(
+         os.path.join(args.train_file_pattern, "label.bin"),
+         os.path.join(args.train_file_pattern, "dense.bin"),
+         os.path.join(args.train_file_pattern, "category.bin"),
+         batch_size= batch_size,
+         drop_last=True,
+         prefetch=10,
+         global_rank=hvd.rank(),
+         global_size=hvd.size(),
+     )
+
+    val_dataset = BinaryDataset(
+        os.path.join(args.test_file_pattern, "label.bin"),
+        os.path.join(args.test_file_pattern, "dense.bin"),
+        os.path.join(args.test_file_pattern, "category.bin"),
+        batch_size=batch_size,
+        drop_last=False,
+        prefetch=10,
+        global_rank=hvd.rank(),
+        global_size=hvd.size(),
+    )
+
+    
     if args.distributed_tool != "onedevice":
-        args.train_file_pattern = utils.shard_filenames(args.train_file_pattern, 
-                                                        args.gpu_num, args.task_id)
-        args.test_file_pattern = utils.shard_filenames(args.test_file_pattern,
-                                                        args.gpu_num, args.task_id)
+        args.train_file_pattern = utils.shard_filenames(
+            args.train_file_pattern, args.gpu_num, args.task_id
+        )
+        args.test_file_pattern = utils.shard_filenames(
+            args.test_file_pattern, args.gpu_num, args.task_id
+        )
 
-    train_dataset = CriteoTsvReader(file_pattern=args.train_file_pattern,
-                                    num_dense_features=args.num_dense_features,
-                                    vocab_sizes=args.vocab_size_list,
-                                    batch_size=batch_size)()
-    val_dataset = CriteoTsvReader(file_pattern=args.test_file_pattern,
-                                  num_dense_features=args.num_dense_features,
-                                  vocab_sizes=args.vocab_size_list,
-                                  batch_size=batch_size)()
-                                  
-    train_iterator = train_dataset.make_initializable_iterator()
-    iterator_init = train_iterator.initializer
-    val_iterator = val_dataset.make_initializable_iterator()
-    val_iterator_init = val_iterator.initializer
+    loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction="none")
 
-
-    loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction='none')
     def _replica_loss(labels, logits):
         loss = loss_fn(labels, logits)
-        return tf.nn.compute_average_loss(loss, global_batch_size=args.global_batch_size)
+        return tf.nn.compute_average_loss(
+            loss, global_batch_size=args.global_batch_size
+        )
 
-
-    def _train_step(features, labels, first_batch=False):
-        def _step_fn(features, labels):
-            logits = model(features, training=True)
-            loss = _replica_loss(labels, logits) 
+    def _train_step(dense, category, labels, first_batch=False):
+        def _step_fn(dense, category, labels):
+            logits = model(dense, category, training=True)
+            loss = _replica_loss(labels, logits)
             emb_vars, other_vars = utils.split_embedding_variables_from_others(model)
-            grads = tf.gradients(loss, emb_vars + other_vars, colocate_gradients_with_ops=True,
-                                unconnected_gradients=tf.UnconnectedGradients.NONE)
-            emb_grads, other_grads = grads[:len(emb_vars)], grads[len(emb_vars):]
-            emb_train_op = utils.apply_gradients(embedding_optimizer, emb_vars, emb_grads, 
-                            args.embedding_layer == "SOK", 
-                            aggregate_gradients = True)
+            grads = tf.gradients(loss, emb_vars + other_vars, colocate_gradients_with_ops=True, unconnected_gradients=tf.UnconnectedGradients.NONE)
+            emb_grads, other_grads = grads[: len(emb_vars)], grads[len(emb_vars) :]
+            emb_train_op = utils.apply_gradients(embedding_optimizer,emb_vars, emb_grads, args.embedding_layer == "SOK")
+            if args.embedding_layer != "SOK":
+                emb_grads = strategy.reduce("sum", emb_grads)
 
-            with tf.control_dependencies([*emb_grads]):
+            with tf.control_dependencies([*other_grads]):
                 other_grads = strategy.reduce("sum", other_grads)
-            other_train_op = utils.apply_gradients(dense_optimizer, other_vars, other_grads,
-                            False)
-                
+                other_train_op = utils.apply_gradients(dense_optimizer, other_vars, other_grads, False)
+
             if first_batch:
                 strategy.broadcast_variables(other_vars)
                 strategy.broadcast_variables(dense_optimizer.variables())
@@ -125,78 +159,64 @@ def main(args):
                 if args.embedding_layer == "TF":
                     strategy.broadcast_variables(emb_vars)
                     strategy.broadcast_variables(embedding_optimizer.variables())
+
             with tf.control_dependencies([emb_train_op, other_train_op]):
-                total_loss = strategy.reduce("sum", loss)
-                total_loss = tf.identity(total_loss)
-                return total_loss
-        return strategy.run(_step_fn, features, labels)
+                
+                loss = strategy.reduce("sum", loss)
+                loss = tf.identity(loss)
+                return loss
+        return strategy.run(_step_fn, dense, category, labels)
 
 
-    def _val_step(features, labels):
-        def _step_fn(features, labels):
-            val_logits = model(features, training=False)
-            val_loss = _replica_loss(labels, val_logits)
-            val_loss = strategy.reduce("sum", val_loss)
-
-            labels = tf.identity(labels)
-            val_logits = strategy.gather(val_logits)
-            labels = strategy.gather(labels)
-            return val_logits, labels, val_loss
-        return strategy.run(_step_fn, features, labels)
-
-
-    features, labels = train_iterator.get_next()
-    total_loss_first =  _train_step(features, labels, True)
-    total_loss =  _train_step(features, labels)
-    val_features, val_labels = val_iterator.get_next()
-    val_logits, val_labels, val_loss = _val_step(val_features, val_labels)
-    acc, _ = tf.compat.v1.metrics.accuracy(labels=val_labels, predictions=val_logits)
-    auc, _ = tf.compat.v1.metrics.auc(labels=val_labels, predictions=val_logits, num_thresholds=1000)
-
+    dense = tf.placeholder(tf.float32, shape = [batch_size, 13])
+    category = tf.placeholder(tf.float32, shape = [batch_size, 26])
+    labels = tf.placeholder(tf.int32, shape = [batch_size, 1])
+    total_loss_first = _train_step(dense, category, labels, True)
+    total_loss = _train_step(dense, category, labels, False)
+    
+    probs = model(dense, category, training=False)
+    auc,update_op = tf.metrics.auc(labels = labels, predictions = probs, num_thresholds=8000, curve='ROC')
+    
+    
     init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
     config = tf.ConfigProto()
     config.log_device_placement = False
-    start_time = time.time()
-    begin_time = start_time
     with tf.Session(config=config) as sess:
         if args.embedding_layer == "SOK":
             sess.run(sok_init_op)
-        sess.run([init_op, iterator_init])
-        sess.graph.finalize()
+        sess.run([init_op])
 
-        for step in range(args.train_steps):
-            try:
-                if step == 0:
-                    loss_v = sess.run([total_loss_first])
-                else:
-                    loss_v = sess.run([total_loss])
-                if (step % 10 == 0):
-                    print("Training complate:[{}/{}]".format(step, args.train_steps),f"Step: {step}, loss: {loss_v}")
-                if (step == args.train_steps):
-                    print("Training complate:[{}/{}]".format(step, args.train_steps))
-            except tf.errors.OutOfRangeError:
-                sess.run([iterator_init])
+        t = time.time()
+        run_time = 0
+        iteration_time, dataload_time = [], []
+        dataload_start = time.time()
 
-        end_time = time.time()
-        if args.task_id == 0:
-            print(f"With {args.distributed_tool} + {args.embedding_layer} embedding layer, "
-                f"on {args.gpu_num} GPUs, and global_batch_size is {args.global_batch_size}, "
-                f"it takes {end_time - start_time} seconds to "
-                f"finish {args.train_steps} steps training for DLRM.")
-
-        
-        sess.run([val_iterator_init])
-        for step in range(1, args.test_steps + 1):
-            try:
-                v_logits, v_labels, v_loss = sess.run([val_logits, val_labels, val_loss])
-                acc_v, auc_v = sess.run([acc, auc])
-                if (step % 10 == 0):
-                    print("Evaluation complate:[{}/{}]".format(step, args.test_steps))
-                if (step == args.test_steps):
-                    print("Evaluation complate:[{}/{}]".format(step, args.test_steps))
-                    print("ACC = {}\nAUC = {}".format(acc_v, auc_v))
-            except tf.errors.OutOfRangeError:
-                sess.run([val_iterator_init])
+        for step, (dense_, category_, labels_) in enumerate(train_dataset):
+            iteration_start = time.time()
+            dataload_time.append(time.time() - dataload_start)
+            if step == 0:
+                loss_v = sess.run([total_loss_first], feed_dict = {dense:dense_, category:category_, labels:labels_})
+            else:
+                loss_v = sess.run([total_loss], feed_dict = {dense:dense_, category:category_, labels:labels_})
+            iteration_time.append(time.time() - iteration_start)
+            
+            if step > 0 and step % 100 == 0:
+                print('Iteration:%d\tloss:%.6f\ttime:%.2fs\tAvg:%.2fms/iter\tdataload:%.2fms/iter'%(step, loss_v[0], time.time() - t, 
+                                                                                                    1000*sum(iteration_time)/len(iteration_time),
+                                                                                                    1000*sum(dataload_time)/len(dataload_time)))
+                run_time += time.time() - t
+                t = time.time()
+                iteration_time = []
+   
+            if (step > 0 and step % 10000 == 0) or step == (len(train_dataset) - 1):
+                eval_t = time.time()
+                for step, (dense_, category_, labels_) in enumerate(val_dataset):
+                    auc_value, _ = sess.run([auc,update_op], feed_dict = {dense:dense_, category:category_, labels:labels_})
+                print('Evaluate in %dth iteration, time:%.2fs, AUC: %.6f'%(step, time.time() - eval_t, auc_value))
+                t += (time.time() - eval_t)
+            dataload_start = time.time()
+            
+        print('Training time: %.2fs'%(run_time + time.time() - t))
 
 
 if __name__ == "__main__":
@@ -207,42 +227,28 @@ if __name__ == "__main__":
     parser.add_argument("--test_file_pattern", type=str, required=True)
     parser.add_argument("--embedding_layer", type=str, choices=["TF", "SOK"], required=True)
     parser.add_argument("--embedding_vec_size", type=int, required=True)
-    parser.add_argument("--embedding_optimizer", type=str, required=False, default='SGD')
+    parser.add_argument("--embedding_optimizer", type=str, required=False, default="SGD")
     parser.add_argument("--bottom_stack", type=int, nargs="+", required=True)
     parser.add_argument("--top_stack", type=int, nargs="+", required=True)
-    parser.add_argument("--distributed_tool", type=str, 
-                        choices=["onedevice", "horovod"],
-                        required=True)
+    parser.add_argument("--distributed_tool",type=str,choices=["onedevice", "horovod"],required=True,)
     parser.add_argument("--gpu_num", type=int, required=False, default=1)
     parser.add_argument("--decay_exp", type=int, required=False, default=2)
     parser.add_argument("--learning_rate", type=float, required=False, default=1.25)
-    parser.add_argument("--warmup_steps", type=int, required=False, default=8000)
+    parser.add_argument("--warmup_steps", type=int, required=False, default=-1)
     parser.add_argument("--decay_steps", type=int, required=False, default=30000)
     parser.add_argument("--decay_start_steps", type=int, required=False, default=70000)
-    parser.add_argument("--test_steps", type=int, required=False, default=100)
-    parser.add_argument("--train_steps", type=int, required=False, default=100)
-
     args = parser.parse_args()
 
-    args.vocab_size_list = [39884407, 39043, 17289, 7420, 20263, 
-                            3, 7120, 1543, 63, 38532952, 2953546, 
-                            403346, 10, 2208, 11938, 155, 4, 976, 
-                            14, 39979772, 25641295, 39664985, 585935, 
-                            12972, 108, 36]
+    args.vocab_size_list =     vocab_sizes = [
+        39884406,   39043,      17289,      7420,       20263,     3,
+        7120,       1543,       63,         38532951,   2953546,   403346,
+        10,         2208,       11938,      155,        4,         976,
+        14,         39979771,   25641295,   39664984,   585935,    12972,
+        108,        36
+    ]
+    if args.distributed_tool == "onedevice":
+        args.vocab_size_list = [int(num/8)+1 for num in args.vocab_size_list]
     args.num_dense_features = 13
-    args.train_steps = 4195155968 // args.global_batch_size if args.train_steps == -1 else args.train_steps
-
-
-    if (args.distributed_tool == "onedevice" and args.gpu_num != 1):
-        raise ValueError(f"When 'onedevice' is used as the distributed_tool, "
-                         f"gpu_num must be 1, which is {args.gpu_num}")
-    elif(args.distributed_tool == "horovod"):
-        # gpu_num will be ignored.
-        rank_size = os.getenv("OMPI_COMM_WORLD_SIZE")
-        if rank_size is None:
-            raise ValueError(f"When distributed_tool is set to {args.distributed_tool}, "
-                             "mpiexec / mpirun must be used to launch this program.")
 
 
     main(args)
-    
