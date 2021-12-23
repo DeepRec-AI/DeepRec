@@ -5,12 +5,10 @@ The model structure, hyper params, dataset, etc, are all same to [WDL](../../../
 The only difference is that this model use GPU Fused Embedding to acclerate the lookup process. Only change is:
 
 ```python
-emb_col = tf.feature_column.embedding_column(
+deep_columns.append(tf.feature_column.embedding_column(
     categorical_column,
     dimension=EMBEDDING_DIMENSIONS[column_name],
-    combiner='mean')
-emb_col.use_fused_lookup = True
-deep_columns.append(emb_col)
+    combiner='mean', do_fusion=True))
 ```
 
 ## Benchmark

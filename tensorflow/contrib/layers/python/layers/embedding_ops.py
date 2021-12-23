@@ -188,7 +188,7 @@ def safe_embedding_lookup_sparse(embedding_weights,
             (original_rank_dim - 1).value).concatenate(result.get_shape()[1:]))
     return final_result
 
-def safe_fused_embedding_lookup_sparse(embedding_weights,
+def fused_safe_embedding_lookup_sparse(embedding_weights,
                                        sparse_ids,
                                        sparse_weights=None,
                                        combiner=None,

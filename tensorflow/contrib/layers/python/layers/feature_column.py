@@ -203,7 +203,7 @@ class _DeepEmbeddingLookupArguments(
         "combiner", "dimension", "shared_embedding_name", "hash_key",
         "max_norm", "trainable",
         "use_embedding_var", "embedding_var_part_num", "steps_to_live",
-        "init_data_source", "ev_option", "use_fused_lookup"
+        "init_data_source", "ev_option", "do_fusion"
     ])):
   """Represents the information needed from a column for embedding lookup.
 
@@ -220,8 +220,8 @@ class _DeepEmbeddingLookupArguments(
       kwargs['init_data_source'] = None
     if 'ev_option' not in kwargs:
       kwargs['ev_option'] = variables.EmbeddingVariableOption()
-    if 'use_fused_lookup' not in kwargs:
-      kwargs['use_fused_lookup'] = False
+    if 'do_fusion' not in kwargs:
+      kwargs['do_fusion'] = False
     return super(_DeepEmbeddingLookupArguments, cls).__new__(
         cls, *args, **kwargs)
 
@@ -1139,7 +1139,7 @@ class _EmbeddingColumn(
     collections.namedtuple("_EmbeddingColumn", [
         "sparse_id_column", "dimension", "combiner", "initializer",
         "ckpt_to_load_from", "tensor_name_in_ckpt", "shared_embedding_name",
-        "shared_vocab_size", "max_norm", "trainable"
+        "shared_vocab_size", "max_norm", "trainable", "do_fusion"
     ])):
   """Represents an embedding column.
 
@@ -1188,7 +1188,8 @@ class _EmbeddingColumn(
               shared_embedding_name=None,
               shared_vocab_size=None,
               max_norm=None,
-              trainable=True):
+              trainable=True,
+              do_fusion=False):
     if initializer is not None and not callable(initializer):
       raise ValueError("initializer must be callable if specified. "
                        "Embedding of column_name: {}".format(
@@ -1208,17 +1209,7 @@ class _EmbeddingColumn(
                  cls).__new__(cls, sparse_id_column, dimension, combiner,
                               initializer, ckpt_to_load_from,
                               tensor_name_in_ckpt, shared_embedding_name,
-                              shared_vocab_size, max_norm, trainable)
-
-  @property
-  def use_fused_lookup(self):
-    if not hasattr(self, "_use_fused_lookup"):
-      self._use_fused_lookup = False
-    return self._use_fused_lookup
-
-  @use_fused_lookup.setter
-  def use_fused_lookup(self, value):
-      self._use_fused_lookup = value
+                              shared_vocab_size, max_norm, trainable, do_fusion)
 
   @property
   def name(self):
@@ -1276,7 +1267,7 @@ class _EmbeddingColumn(
         steps_to_live=steps_to_live,
         init_data_source=init_data_source,
         ev_option=ev_option,
-        use_fused_lookup=self.use_fused_lookup)
+        do_fusion=self.do_fusion)
 
   def _checkpoint_path(self):
     if self.ckpt_to_load_from is not None:
@@ -1341,8 +1332,8 @@ def _embeddings_from_arguments(column,
 
   # This option is only enabled for scattered_embedding_column.
   if args.hash_key:
-    if args.use_fused_lookup:
-      raise ValueError("Both use_fused_lookup and hash_key is set. Not support yet.")
+    if args.do_fusion:
+      raise ValueError("Both do_fusion and hash_key is set. Not support yet.")
 
     embeddings = contrib_variables.model_variable(
         name="weights",
@@ -1442,8 +1433,8 @@ def _embeddings_from_arguments(column,
   # pylint: disable=protected-access
   _maybe_restore_from_checkpoint(column._checkpoint_path(), embeddings)
 
-  if args.use_fused_lookup:
-    return embedding_ops.safe_fused_embedding_lookup_sparse(
+  if args.do_fusion:
+    return embedding_ops.fused_safe_embedding_lookup_sparse(
       embeddings,
       input_tensor,
       sparse_weights=weight_tensor,
@@ -1491,7 +1482,8 @@ def embedding_column(sparse_id_column,
                      ckpt_to_load_from=None,
                      tensor_name_in_ckpt=None,
                      max_norm=None,
-                     trainable=True):
+                     trainable=True,
+                     do_fusion=False):
   """Creates an `_EmbeddingColumn` for feeding sparse data into a DNN.
 
   Args:
@@ -1533,7 +1525,8 @@ def embedding_column(sparse_id_column,
       ckpt_to_load_from,
       tensor_name_in_ckpt,
       max_norm=max_norm,
-      trainable=trainable)
+      trainable=trainable,
+      do_fusion=do_fusion)
 
 
 def shared_embedding_columns(sparse_id_columns,

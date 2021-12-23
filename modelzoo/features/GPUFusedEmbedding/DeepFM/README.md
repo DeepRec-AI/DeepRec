@@ -5,7 +5,9 @@ The model structure, hyper params, dataset, etc, are all same to [DeepFM](../../
 The only difference is that this model use GPU Fused Embedding to acclerate the lookup process. Only change is:
 
 ```python
-categorical_embedding_column.use_fused_lookup = True
+categorical_embedding_column = tf.feature_column.embedding_column(
+    categorical_column, dimension=16, combiner='mean',
+    do_fusion=True)
 ```
 
 ## Benchmark

@@ -856,7 +856,8 @@ def embedding_column(categorical_column,
                      tensor_name_in_ckpt=None,
                      max_norm=None,
                      trainable=True,
-                     coalesced_scope=None):
+                     coalesced_scope=None,
+                     do_fusion=False):
   """`DenseColumn` that converts from sparse, categorical input.
 
   Use this when your inputs are sparse, but you want to convert them to a dense
@@ -952,7 +953,8 @@ def embedding_column(categorical_column,
       tensor_name_in_ckpt=tensor_name_in_ckpt,
       max_norm=max_norm,
       trainable=trainable,
-      coalesced_scope=coalesced_scope)
+      coalesced_scope=coalesced_scope,
+      do_fusion=do_fusion)
   if coalesced_scope:
     coalesced_scope.add_column(column)
     coalesced_utils.add_embedding_signature(
@@ -4162,18 +4164,8 @@ class EmbeddingColumn(
         'EmbeddingColumn',
         ('categorical_column', 'dimension', 'combiner', 'initializer',
          'ckpt_to_load_from', 'tensor_name_in_ckpt', 'max_norm', 'trainable',
-         'coalesced_scope'))):
+         'coalesced_scope', 'do_fusion'))):
   """See `embedding_column`."""
-
-  @property
-  def use_fused_lookup(self):
-    if not hasattr(self, "_use_fused_lookup"):
-      self._use_fused_lookup = False
-    return self._use_fused_lookup
-
-  @use_fused_lookup.setter
-  def use_fused_lookup(self, value):
-      self._use_fused_lookup = value
 
   @property
   def _is_v2_column(self):
@@ -4255,8 +4247,8 @@ class EmbeddingColumn(
       })
 
     # Return embedding lookup result.
-    if self.use_fused_lookup:
-      return embedding_ops.safe_fused_embedding_lookup_sparse(
+    if self.do_fusion:
+      return embedding_ops.fused_safe_embedding_lookup_sparse(
             embedding_weights,
             sparse_ids,
             sparse_weights=sparse_weights,

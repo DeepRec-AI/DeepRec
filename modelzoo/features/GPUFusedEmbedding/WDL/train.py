@@ -160,12 +160,10 @@ def build_feature_cols(train_file_path, test_file_path):
                 dtype=tf.string)
             wide_columns.append(categorical_column)
 
-            emb_col = tf.feature_column.embedding_column(
+            deep_columns.append(tf.feature_column.embedding_column(
                 categorical_column,
                 dimension=EMBEDDING_DIMENSIONS[column_name],
-                combiner='mean')
-            emb_col.use_fused_lookup = True
-            deep_columns.append(emb_col)
+                combiner='mean', do_fusion=True))
         else:
             normalizer_fn = None
             i = CONTINUOUS_COLUMNS.index(column_name)

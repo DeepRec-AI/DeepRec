@@ -94,8 +94,8 @@ def build_feature_cols():
                 dtype=tf.string)
 
             categorical_embedding_column = tf.feature_column.embedding_column(
-                categorical_column, dimension=16, combiner='mean')
-            categorical_embedding_column.use_fused_lookup = True
+                categorical_column, dimension=16, combiner='mean',
+                do_fusion=True)
 
             wide_column.append(categorical_embedding_column)
             deep_column.append(categorical_embedding_column)
