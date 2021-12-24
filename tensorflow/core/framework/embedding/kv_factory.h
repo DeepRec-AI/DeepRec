@@ -38,7 +38,7 @@ class KVFactory {
       VLOG(2) << "Use lockless_hash_map as EV data struct";
       return new LocklessHashMap<K, V>();
     } else {
-      LOG(WARNING) << "Not match any ht_type, use default 'lockless_hash_map'";
+      VLOG(2) << "Not match any hashtable_type, use default 'lockless_hash_map'";
       return new LocklessHashMap<K, V>();
     }
   }
