@@ -13,7 +13,7 @@ Sparse model is a type of deep learning model that accounts for a relatively hig
 DeepRec has been deeply cultivated since 2016, which supports core businesses such as Taobao Search, recommendation and advertising. It precipitates a list of features on basic frameworks and has excellent performance in sparse models training. Facing a wide variety of external needs and the environment of deep learning framework embracing open source, DeepeRec open source is conducive to establishing standardized interfaces, cultivating user habits, greatly reducing the cost of external customers working on cloud and establishing the brand value.
 
 ### **Key Features**
-DeepRec has super large-scale distributed training capability, supporting model training of trillion samples and 100 billion Embedding Processing. For sparse model scenarios, in-depth performance optimization has ben conducted across CPU and GPU platform. It contains 3 kinds of features to improve usability and performance for super-scale scenarios. 
+DeepRec has super large-scale distributed training capability, supporting model training of trillion samples and 100 billion Embedding Processing. For sparse model scenarios, in-depth performance optimization has been conducted across CPU and GPU platform. It contains 3 kinds of features to improve usability and performance for super-scale scenarios. 
 #### **Sparse Functions**
  - Embedding Variable.
  - Dynamic Dimension Embedding Variable.
@@ -41,14 +41,14 @@ DeepRec has super large-scale distributed training capability, supporting model 
 CPU Platform
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec2106-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-py36-ubuntu18.04
 ```
 
 GPU Platform
 
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-developer:1.15deeprec2106-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 ```
 ### **How to Build**
 
@@ -94,7 +94,7 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-gp
 registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-cpu-py36-ubuntu18.04
 ```
 
-### **Jave Compilation**
+### **Java Compilation**
 ```
 $ ./configure
 $ bazel build --config opt //tensorflow/java:tensorflow   //tensorflow/java:libtensorflow_jni
