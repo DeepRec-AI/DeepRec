@@ -3,37 +3,73 @@
 </h1>
 
 # Introduction
-DeepRec is a recommendation engine based on [TensorFlow 1.15](https://www.tensorflow.org/), [Intel-TensorFlow](https://github.com/Intel-tensorflow/tensorflow) and [NVIDIA-TensorFlow](https://github.com/NVIDIA/tensorflow).
+稀疏模型，是指在模型结构中离散特征计算逻辑占比较高的一类深度学习模型的统称。离散特征通常表现为id、tag、文字、词组等算法不能直接处理的非数值化特征，其广泛应用于搜索、广告、推荐等高价值业务中。当下主流开源深度学习框架，对稀疏模型的支持不足。在稀疏功能的支持、训练性能存在着问题，制约了稀疏模型的探索和发展。 
 
-
-Sparse model is a type of deep learning model that accounts for a relatively high proportion of discrete feature calculation logic in the model structure. Discrete features are usually expressed as non-numeric features that cannot be directly processed by algorithms such as id, tag, text, and phrases. They are widely used in high-value businesses such as search, advertising, and recommendation.
-
-
-DeepRec has been deeply cultivated since 2016, which supports core businesses such as Taobao Search, recommendation and advertising. It precipitates a list of features on basic frameworks and has excellent performance in sparse models training. Facing a wide variety of external needs and the environment of deep learning framework embracing open source, DeepeRec open source is conducive to establishing standardized interfaces, cultivating user habits, greatly reducing the cost of external customers working on cloud and establishing the brand value.
-
-
-DeepRec has super large-scale distributed training capability, supporting model training of trillion samples and 100 billion Embedding Processing. For sparse model scenarios, in-depth performance optimization has ben conducted across CPU and GPU platform. It contains 3 kinds of features to improve usability and performance for super-scale scenarios. 
+DeepRec(PAI-TF) 支持了淘宝搜索、猜你喜欢、定向、直通车等核心业务，支撑着千亿特征、万亿样本超大规模的稀疏训练。积累了核心的稀疏场景的功能及性能优化。针对稀疏模型在分布式、图优化、算子、Runtime等方面进行了深度的性能优化，同时提供了稀疏场景下特有的动态弹性特征，动态弹性维度，多Hash Embedding，自适应EmbeddingVariable、增量模型导出及加载等一系列功能。
 
 # Contents
 
 ```{toctree}
 :maxdepth: 2
+:caption: 稀疏功能
 
 Embedding-Variable
 Feature-Eviction
 Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 分布式训练
+
 GRPC++
 StarServer
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 图优化
+
 Auto-Micro-Batch
 Fused-Embedding
 Smart-Stage
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Runtime优化
+
 TensorPoolAllocator
-WorkQueue
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 模型导出
+
 Incremental-Checkpoint
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 优化器
+
 AdamAsync-Optimizer
 AdagradDecay-Optimizer
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 算子及硬件加速
+
 NVIDIA-TF32
 oneDNN
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 样本读取及Dataset
+
+WorkQueue
 ```
