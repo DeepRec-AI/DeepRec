@@ -2967,6 +2967,7 @@ py_library(
         ":tensor_shape",
         ":variables",
         ":kv_variable_ops",
+        ":fused_embedding_ops",
     ],
 )
 

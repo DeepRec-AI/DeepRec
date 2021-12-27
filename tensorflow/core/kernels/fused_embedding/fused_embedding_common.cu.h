@@ -3,14 +3,34 @@
 
 #if GOOGLE_CUDA
 
+#define CK_CUDA_THROW_(x)                                                      \
+  do {                                                                         \
+    cudaError_t retval = (x);                                                  \
+    if (retval != cudaSuccess) {                                               \
+      throw std::runtime_error(std::string("Runtime error: ") +                \
+                               (cudaGetErrorString(retval)) + " " + __FILE__ + \
+                               ":" + std::to_string(__LINE__) + " \n");        \
+    }                                                                          \
+  } while (0)
+
 namespace tensorflow {
 
 namespace {
+
+inline int CalcBlocksLinearMapping(const int problem_size, const int threads) {
+  return problem_size % threads == 0 ? (problem_size / threads)
+                                     : (problem_size / threads + 1);
+}
+
+struct IndicePair {
+  int64_t row_in_batch;
+  int64_t entry_in_column;
+};
+
 enum Combiner { Mean, Sum, Sqrtn };
 
 template <Combiner combiner>
-__forceinline__ __device__ float Combine(const float in,
-                                         const int feature_num);
+__forceinline__ __device__ float Combine(const float in, const int feature_num);
 
 template <>
 __forceinline__ __device__ float Combine<Sqrtn>(const float in,

@@ -856,7 +856,8 @@ def embedding_column(categorical_column,
                      tensor_name_in_ckpt=None,
                      max_norm=None,
                      trainable=True,
-                     coalesced_scope=None):
+                     coalesced_scope=None,
+                     do_fusion=False):
   """`DenseColumn` that converts from sparse, categorical input.
 
   Use this when your inputs are sparse, but you want to convert them to a dense
@@ -952,7 +953,8 @@ def embedding_column(categorical_column,
       tensor_name_in_ckpt=tensor_name_in_ckpt,
       max_norm=max_norm,
       trainable=trainable,
-      coalesced_scope=coalesced_scope)
+      coalesced_scope=coalesced_scope,
+      do_fusion=do_fusion)
   if coalesced_scope:
     coalesced_scope.add_column(column)
     coalesced_utils.add_embedding_signature(
@@ -4162,7 +4164,7 @@ class EmbeddingColumn(
         'EmbeddingColumn',
         ('categorical_column', 'dimension', 'combiner', 'initializer',
          'ckpt_to_load_from', 'tensor_name_in_ckpt', 'max_norm', 'trainable',
-         'coalesced_scope'))):
+         'coalesced_scope', 'do_fusion'))):
   """See `embedding_column`."""
 
   @property
@@ -4245,13 +4247,22 @@ class EmbeddingColumn(
       })
 
     # Return embedding lookup result.
-    return embedding_ops.safe_embedding_lookup_sparse(
-        embedding_weights=embedding_weights,
-        sparse_ids=sparse_ids,
-        sparse_weights=sparse_weights,
-        combiner=self.combiner,
-        name='%s_weights' % self.name,
-        max_norm=self.max_norm)
+    if self.do_fusion:
+      return embedding_ops.fused_safe_embedding_lookup_sparse(
+            embedding_weights,
+            sparse_ids,
+            sparse_weights=sparse_weights,
+            combiner=self.combiner,
+            name='%s_weights' % self.name,
+            max_norm=self.max_norm)
+    else:
+      return embedding_ops.safe_embedding_lookup_sparse(
+          embedding_weights=embedding_weights,
+          sparse_ids=sparse_ids,
+          sparse_weights=sparse_weights,
+          combiner=self.combiner,
+          name='%s_weights' % self.name,
+          max_norm=self.max_norm)
 
   def _get_dense_tensor_internal_adaptive_helper(self, sparse_tensors,
                                                  hash_embeddings, ev_embeddings):
