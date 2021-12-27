@@ -105,6 +105,10 @@ $ java -cp bazel-bin/tensorflow/java/libtensorflow.jar  -Djava.library.path=baze
 
 
 ***
+## **User Document**
+
+[https://deeprec.readthedocs.io/en/latest/](https://deeprec.readthedocs.io/en/latest/)
+
 ## **License**
 
 [Apache License 2.0](LICENSE)

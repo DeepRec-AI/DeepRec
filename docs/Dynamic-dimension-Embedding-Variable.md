@@ -79,7 +79,6 @@ def embedding_lookup(
 ```
 ## 使用示例
 ### 动态维度调整策略
-> 以下内容来自于阿里巴巴首页猜你喜欢团队同学的分享
 
 对于每一个特征有两个统计量，分别是累积特征频次freq_acc以及特征在当前时段的出现速度freq_current_speed，freq_acc和freq_current_speed都会被初始化为0，freq_acc平时不更新，会在特定的step根据一定的规则进行更新，而freq_current_speed则会随着特征被访问而更新，特征每被访问一次freq_current_speed就会+1，然后会在特定的step被置为0。
 目前使用的更新freq_acc的规则如下：
