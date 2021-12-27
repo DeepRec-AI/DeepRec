@@ -94,21 +94,13 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-gp
 registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-cpu-py36-ubuntu18.04
 ```
 
-### **Java Compilation**
-```
-$ ./configure
-$ bazel build --config opt //tensorflow/java:tensorflow   //tensorflow/java:libtensorflow_jni
-$ javac -cp bazel-bin/tensorflow/java/libtensorflow.jar ...
-$ java -cp bazel-bin/tensorflow/java/libtensorflow.jar  -Djava.library.path=bazel-bin/tensorflow/java  ...
-
-```
-
 
 ***
-## **User Document**
+## **User Document (Chinese)**
 
 [https://deeprec.readthedocs.io/en/latest/](https://deeprec.readthedocs.io/en/latest/)
 
 ## **License**
 
 [Apache License 2.0](LICENSE)
+
