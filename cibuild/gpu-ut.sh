@@ -165,5 +165,6 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/python/training/tracking:util_xla_test_gpu "\
+"-//tensorflow/core/kernels:fused_embedding_ops_test_gpu"
 
 bazel test -c opt --config=cuda --verbose_failures --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  --test_timeout="300,450,1200,3600" --local_test_jobs=2  -- $TF_BUILD_BAZEL_TARGET

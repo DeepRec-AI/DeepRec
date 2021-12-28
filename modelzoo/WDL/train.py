@@ -283,7 +283,7 @@ class WDL():
         self.linear_parent_scope = 'linear'
         with tf.variable_scope(
                 self.linear_parent_scope,
-                partitioner=self.input_layer_partitioner) as scope:
+                partitioner=self.dense_layer_partitioner) as scope:
             linear_logits = tf.feature_column.linear_model(
                 units=1,
                 features=self.feature,
@@ -324,7 +324,8 @@ class WDL():
                 dnn_optimizer.minimize(loss,
                                        var_list=tf.get_collection(
                                            tf.GraphKeys.TRAINABLE_VARIABLES,
-                                           scope=self.dnn_parent_scope)))
+                                           scope=self.dnn_parent_scope),
+                                       global_step=self.global_step))
             train_ops.append(
                 linear_optimizer.minimize(loss,
                                           var_list=tf.get_collection(

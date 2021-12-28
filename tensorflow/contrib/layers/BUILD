@@ -54,7 +54,6 @@ tf_custom_op_py_library(
         "python/layers/encoders.py",
         "python/layers/feature_column.py",
         "python/layers/feature_column_ops.py",
-        "python/layers/feature_column_fused_ops.py",
         "python/layers/initializers.py",
         "python/layers/layers.py",
         "python/layers/normalization.py",
