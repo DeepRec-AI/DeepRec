@@ -78,7 +78,7 @@ $ ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
 ```
 ### **Install whl package**
 ```
-$ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+deeprec2106-cp36-cp36m-linux_x86_64.whl
+$ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
 ```
 
 
@@ -87,18 +87,18 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+deeprec2106-cp36-cp36m-linu
 ### **Nightly Images**
 #### Image for GPU CUDA11.0
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-gpu-py36-cu110-ubuntu18.04
 ```
 #### Image for CPU
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-cpu-py36-ubuntu18.04
 ```
 
 
 ***
 ## **User Document (Chinese)**
 
-[https://deeprec.readthedocs.io/en/latest/](https://deeprec.readthedocs.io/en/latest/)
+[https://deeprec.rtfd.io](https://deeprec.rtfd.io)
 
 ## **License**
 
