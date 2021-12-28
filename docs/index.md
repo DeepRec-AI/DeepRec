@@ -23,6 +23,7 @@ Compile-And-Install
 
 Embedding-Variable
 Feature-Eviction
+Feature-Filter
 Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
