@@ -80,4 +80,5 @@ oneDNN
 :caption: 样本读取及Dataset
 
 WorkQueue
+KafkaDataset
 ```
