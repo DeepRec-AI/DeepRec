@@ -61,7 +61,12 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
       memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
     } else {
       AddFreq(key);
-      memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
+      int64 default_value_dim = ev_->GetDefaultValueDim();
+      V* default_value = ev_->GetDefaultValuePtr();
+      if (default_value == default_value_ptr)
+        memcpy(val, default_value_ptr + (key % default_value_dim) * ev_->ValueLen(), sizeof(V) * ev_->ValueLen());
+      else
+        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());  
     }
   }
 
@@ -300,7 +305,12 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
       memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
     } else {
       value_ptr->AddFreq();
-      memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
+      int64 default_value_dim= ev_->GetDefaultValueDim();
+      V* default_value = ev_->GetDefaultValuePtr();
+      if (default_value == default_value_ptr)
+        memcpy(val, default_value_ptr + (key % default_value_dim) * ev_->ValueLen(), sizeof(V) * ev_->ValueLen());
+      else
+        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen()); 
     }
   }
 
