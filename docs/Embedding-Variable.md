@@ -154,150 +154,8 @@ with tf.Session() as sess:
     print(sess.run([emb, train_op,loss]))
     print(sess.run([emb, train_op,loss]))
 ```
-## Embedding Variable进阶功能
-基于Embedding Variable，我们进一步开发了许多其他功能以减少内存占用、减少训练时间或推理延迟，或提高训练效果。这些功能的开关以及配置是通过`EmbeddingVariableOption`类控制的
-```python
-class EmbeddingVariableOption(object):
-  def __init__(self,
-               ht_type="",
-               ht_partition_num = 1000,
-               evict_option = None,
-               filter_opiton = None):
-```
-具体的参数含义如下：
 
-- `ht_type`: EmbeddingVariable底层使用的hash table的类型：目前支持的包括`dense_hash_map`以及`dense_hash_map_lockless`
-- `ht_partition_num`: EmbeddingVariable底层使用的dense hash table的分片数量，分片主要是为了减少多线程带来的读写锁的开销。对于lockless hash map，分片数固定为1
-- `evict_option`：用来配置特征淘汰功能的开关以及相关参数配置
-- `filter_option`: 用来配置特征淘汰功能的开关以及相关参数配置
-
-
-
-###  特征准入
-通过观察发现，当有些特征的频率过低时，对模型的训练效果不会有帮助，还会造成内存浪费以及过拟合的问题。因此需要特征准入功能来过滤掉频率过低的特征。
-目前我们支持了两种特征准入的方式：基于Counter的特征准入和基于Bloom Filter的特征准入：
-
-- **基于Counter的特征准入**：基于Counter的准入会记录每个特征在前向中被访问的次数，只有当统计的次出超过准入值的特征才会给分配embedding vector并且在后向中被更新。这种方法的好处子在于会精确的统计每个特征的次数，同时获取频次的查询可以跟查询embedding vector同时完成，因此相比不使用特征准入的时候几乎不会带来额外的时间开销。缺点则是为了减少查询的次数，即使对于不准入的特征，也需要记录对应特征所有的metadata，在准入比例较低的时候相比使用Bloom Filter的方法会有较多额外内存开销。
-- **基于Bloom Filter的准入**：基于Bloom Filter的准入是基于Counter Bloom Filter实现的，这种方法的优点是在准入比例较低的情况下，可以比较大地减少内存的使用量。缺点是由于需要多次hash与查询，会带来比较明显的时间开销，同时在准入比例较高的情况下，Blomm filter数据结构带来的内存开销也比较大。
-
-**使用方法**
-
-用户可以参考下面的方法使用特征准入功能
-
-```python
-#使用CBF-based feature filter
-filter_option = tf.CBFFilter(filter_freq=3,
-                                         max_element_size = 2**30,
-                                         false_positive_probability = 0.01,
-                                         counter_type=dtypes.int64)
-#使用Counter-based feature filter
-filter_option = tf.CounterFilter(filter_freq=3)
-
-ev_opt = tf.EmbeddingVariableOption(filter_option=filter_option)
-#通过get_embedding_variable接口使用
-emb_var = get_embedding_variable("var", embedding_dim = 16, ev_option=ev_opt)
-
-#通过sparse_column_with_embedding接口使用
-from tensorflow.contrib.layers.python.layers import feature_column
-emb_var = feature_column.sparse_column_wth_embedding("var", ev_option=ev_opt)
-
-emb_var = tf.feature_column.categorical_column_with_embedding("var", ev_option=ev_opt)
-```
-下面是特征准入接口的定义：
-```python
-@tf_export(v1=["CounterFilter"])
-class CounterFilter(object):
-  def __init__(self, filter_freq = 0):
-    self.filter_freq = filter_freq
-    
-@tf_export(v1=["CBFFilter"])
-class CBFFilter(object):
-  def __init__(self,
-               filter_freq = 0,
-               max_element_size = 0,
-               false_positive_probability = -1.0,
-               counter_type = dtypes.uint64)
-```
-**参数解释**：
-
-- `filter_freq`：这个参数两种filter都有，表示特征的准入值。
-- `max_element_size`：特征的数量
-- `false_positive_probability`：允许的错误率
-- `counter_type`：统计频次的数据类型
-
-BloomFilter的准入参数设置可以参考下面的表，其中m是`bloom filter`的长度，n是`max_element_size`, k是`hash function`的数量，表中的数值是`false_positive_probability`：
-
-![img_1.png](Embedding-Variable/img_1.png)
-
-**功能的开关**：如果构造`EmbeddingVariableOption`对象的时候，如果不传入`CounterFilterStrategy`或`BloomFIlterStrategy`或`filter_freq`设置为0则功能关闭。
-
-**ckpt相关**：对于checkpoint功能，当使用`tf.train.saver`时，对于已经准入的特征会将其counter一并写入checkpoint里，对于没有准入的特征，其counter也不会被记录，下次训练时counter从0开始计数。在load checkpoint的时候，无论ckpt中的特征的counter是否超过了filter阈值，都认为其是已经准入的特征。同时ckpt支持向前兼容，即可以读取没有conuter记录的ckpt。目前不支持incremental ckpt。
-
-**关于filter_freq的设置**：目前还需要用户自己根据数据配置。
-
-**TODO List**：
-
-1. restore ckpt的时候恢复未被准入的特征的频率
-2. 目前的统计频率是实现在GatherOp里面的，因此当调用embedding_lookup_sparse的时候由于unique Op会导致同一个batch内多次出现的同一个特征只会被记录一次，后续会修改这个问题。
-
-
-
-设计 & 测试文档：[https://deeprec.yuque.com/deeprec/wvzhaq/zfl3sm](https://deeprec.yuque.com/deeprec/wvzhaq/zfl3sm)
-
-
-### 特征淘汰
-对于一些对训练没有帮助的特征，我们需要将其淘汰以免影响训练效果，同时也能节约内存。在DeepRec中我们支持了特征淘汰功能，每次存ckpt的时候会触发特征淘汰，目前我们提供了两种特征淘汰的策略：
-
-- 基于global step的特征淘汰功能：第一种方式是根据global step来判断一个特征是否要被淘汰。我们会给每一个特征分配一个时间戳，每次前向该特征被访问时就会用当前的global step更新其时间戳。在保存ckpt的时候判断当前的global step和时间戳之间的差距是否超过一个阈值，如果超过了则将这个特征淘汰（即删除）。这种方法的好处在于查询和更新的开销是比较小的，缺点是需要一个int64的数据来记录metadata，有额外的内存开销。 用户通过配置**steps_to_live**参数来配置淘汰的阈值大小。
-- 基于l2 weight的特征淘汰： 在训练中如果一个特征的embedding值的L2范数越小，则代表这个特征在模型中的贡献越小，因此在存ckpt的时候淘汰淘汰L2范数小于某一阈值的特征。这种方法的好处在于不需要额外的metadata，缺点则是引入了额外的计算开销。用户通过配置**l2_weight_threshold**来配置淘汰的阈值大小。
-
-#### 使用方法
-用户可以通过以下的方法使用特征淘汰功能
-
-```python
-#使用global step特征淘汰
-evict_opt = tf.GlobalStepEvict(steps_to_live=4000)
-
-#使用l2 weight特征淘汰：
-evict_opt = tf.L2WeightEvict(l2_weight_threshold=1.0)
-
-ev_opt = tf.EmbeddingVariableOption(evict_option=evict_opt)
-
-#通过get_embedding_variable接口使用
-emb_var = tf.get_embedding_variable("var", embedding_dim = 16, ev_option=ev_opt)
-
-#通过sparse_column_with_embedding接口使用
-from tensorflow.contrib.layers.python.layers import feature_column
-emb_var = feature_column.sparse_column_wth_embedding("var", ev_option=ev_opt)
-
-emb_var = tf.feature_column.categorical_column_with_embedding("var", ev_option=ev_opt)
-```
-下面是特征淘汰接口的定义
-```python
-@tf_export(v1=["GlobalStepEvict"])
-class GlobalStepEvict(object):
-  def __init__(self,
-               steps_to_live = None):
-    self.steps_to_live = steps_to_live
-
-@tf_export(v1=["L2WeightEvict"])
-class L2WeightEvict(object):
-  def __init__(self,
-               l2_weight_threshold = -1.0):
-    self.l2_weight_threshold = l2_weight_threshold
-    if l2_weight_threshold <= 0 and l2_weight_threshold != -1.0:
-      print("l2_weight_threshold is invalid, l2_weight-based eviction is disabled")
-```
-参数解释：
-
-- `steps_to_live`：Global step特征淘汰的阈值，如果特征超过`steps_to_live`个global step没有被访问过，那么则淘汰
-- `l2_weight_threshold`: L2 weight特征淘汰的阈值，如果特征的L2-norm小于阈值，则淘汰
-
-功能开关：
-
-如果没有配置`GlobalStepEvict`以及`L2WeightEvict`、`steps_to_live`设置为`None`以及`l2_weight_threshold`设置小于0则功能关闭，否则功能打开。
-
-### EV Initiailizer 
+## EV Initializer 
 在尝试使用EV训练WDL模型、DIN模型和DIEN模型时发现如果不使用glorot uniform initializer就会比较明显的影响模型训练的效果（例如使用ones_initializer会导致训练AUC下降以及AUC增长速度变慢，使用truncated intializer会导致训练无法收敛）。但是由于EV的shape是动态的，因此无法支持glorot uniform initializer等需要配置静态shape的initializer。动态的Embedding在PS-Worker架构中广泛存在，在别的框架中有以下几种解决方法：
 
 - PAI-TF140 & 1120: 固定每次Gather的时候生成的default value的大小以支持静态的variable。这样的缺点是为了更大的default value matrix以获得更好的训练效果时会带来额外的generate default value的开销。
@@ -305,13 +163,13 @@ class L2WeightEvict(object):
 - Abacus：给每一个feature单独生成一个default value的方式来获得静态shape，这种方法性能会比较好，但是由于生成的shape太小，可能不符合分布。同时当用户固定seed的时候，每个特征的default value都会是固定的。
 
 综上所示，我们提供了EV initializer，EV Initializer会在Initialize的时候生成一个固定shape的default value matrix，之后所有特征会根据id mod default value dim来从matrix中获取一个default value。这样的方法首先避免了加锁以及多次生成对性能的影响，其次也可以使得default value符合用户想要的分布，最后还可以通过设置seed固定default value。
-#### 使用方法
+### 使用方法
 用户可以通过下面的方法配置EV Initializer
 
 ```python
 init_opt = tf.InitializerOption(initializer=tf.glorot_uniform_initializer,
                                 default_value_dim = 10000)
-ev_opt = tf.EmbeddingVariableOption(init=init)
+ev_opt = tf.EmbeddingVariableOption(init_option=init)
 
 #通过底层API设置
 emb_var = tf.get_embedding_variable("var", embedding_dim = 16, ev_option=ev_opt)

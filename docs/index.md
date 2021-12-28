@@ -15,6 +15,7 @@ DeepRec(PAI-TF) 支持了淘宝搜索、猜你喜欢、定向、直通车等核�
 
 Embedding-Variable
 Feature-Eviction
+Feature-Filter
 Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
