@@ -20,6 +20,7 @@ struct EmbeddingConfig {
   int64 num_counter;
   DataType counter_type;
   embedding::StorageType storage_type;
+  int64 default_value_dim;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                   int64 block_num = 1, int slot_num = 1,
@@ -27,7 +28,8 @@ struct EmbeddingConfig {
                   int64 filter_freq = 0, int64 max_freq = 999999,
                   float l2_weight_threshold = -1.0, const std::string& layout = "normal",
                   int64 max_element_size = 0, float false_positive_probability = -1.0,
-                  DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM):
+                  DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM,
+                  int64 default_value_dim = 4096):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
       block_num(block_num),
@@ -38,7 +40,8 @@ struct EmbeddingConfig {
       max_freq(max_freq),
       l2_weight_threshold(l2_weight_threshold),
       counter_type(counter_type),
-      storage_type(storage_type) {
+      storage_type(storage_type),
+      default_value_dim(default_value_dim) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
