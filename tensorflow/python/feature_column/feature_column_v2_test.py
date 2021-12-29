@@ -7577,13 +7577,17 @@ class EmbeddingColumnTest(test.TestCase):
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       sess.run([init])
       emb1, top, l = sess.run([emb, train_op, loss])
+      for val1 in emb1.tolist():
+        for val in val1:
+          self.assertEqual(val, 1.0)
       emb1, top, l = sess.run([emb, train_op, loss])
-      emb1, top, l = sess.run([emb, train_op, loss])
-      for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
-      emb1, top, l = sess.run([emb, train_op, loss])
-      for val in emb1.tolist()[0]:
-        self.assertNotEqual(val, 1.0)
+      for index, val1 in enumerate(emb1.tolist()):
+        if index < 7:
+          for val in val1:
+            self.assertNotEqual(val, 1.0)
+        else:
+          for val in val1:
+            self.assertEqual(val, 1.0)
 
   @test_util.run_deprecated_v1
   def testEmbeddingVariableForAdaptiveEmbedding(self):
