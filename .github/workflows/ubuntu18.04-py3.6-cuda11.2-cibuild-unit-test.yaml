@@ -1,11 +1,11 @@
-name: CPU Tests
+name: GPU Unit Tests
 
 on: workflow_dispatch
 
 env:
-  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-cibuild-py36-ubuntu18.04
-  JOBNAME: deeprec-ci-cpu-${{ github.run_id }}
-  PODNAME: deeprec-ci-cpu-${{ github.run_id }}-chief-0
+  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-cibuild-py36-cu110-ubuntu18.04
+  JOBNAME: deeprec-ci-gpu-${{ github.run_id }}
+  PODNAME: deeprec-ci-gpu-${{ github.run_id }}-chief-0
   BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}
 
 jobs:
@@ -23,17 +23,13 @@ jobs:
       uses: actions/checkout@v2
     - name: Install Pod
       run: |-
-        helm install ${JOBNAME} cibuild/ --set image=${IMAGE}
+        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --set gpu=1
     - name: Upload Source
       run: |-
         cibuild/upload.sh ${PODNAME} ../cibuild
-    - name: Build Wheel
-      run: |-
-        kubectl exec -it ${PODNAME} -- cibuild/build-cpu.sh
     - name: Unit Test
       run: |-
-        kubectl exec -it ${PODNAME} -- cibuild/cpu-ut.sh
+        kubectl exec -ti ${PODNAME} -- cibuild/gpu-ut.sh
     - name: Uninstall Pod
       run: |-
         helm uninstall ${JOBNAME}
-
