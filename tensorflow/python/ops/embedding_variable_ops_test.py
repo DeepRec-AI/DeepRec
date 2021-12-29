@@ -84,7 +84,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,-7], dtypes.int32))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
-    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    opt = adam.AdamOptimizer(0.01)
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     saver = saver_module.Saver()
@@ -979,13 +979,12 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           r, _, _ = sess.run([emb, train_op,loss])
           r, _, _ = sess.run([emb, train_op,loss])
           r, _, _ = sess.run([emb, train_op,loss])
-          r = sess.run(emb)
           return r
       emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      var = variable_scope.get_variable("var_2", shape=[8, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdam(self, emb_var)
       emb2 = runTestAdam(self, var)
 
@@ -1020,8 +1019,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-      var = variable_scope.get_variable("var_2", shape=[100, 3],
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
+      var = variable_scope.get_variable("var_2", shape=[8, 3],
             initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdamAsync(self, emb_var)
       emb2 = runTestAdamAsync(self, var)
@@ -1240,6 +1239,151 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], 1.0)
+  
+  def testEVInitializerWithKeyFetch(self):
+    print("testEVInitializerWithKeyFetch")
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var", shape=[8,3],
+                                        initializer=init_ops.glorot_uniform_initializer(seed = 1))
+      init_opt = variables.InitializerOption(initializer=init_ops.glorot_uniform_initializer(seed = 1),
+                                         default_value_dim=8)
+      ev_option = variables.EmbeddingVariableOption(init_option=init_opt)
+      emb_var = variable_scope.get_embedding_variable("emb_var", embedding_dim=3,
+                                                       ev_option=ev_option)
+      var_emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,3,4,5,6,7], dtypes.int64))
+      emb_emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([0,1,2,5,6,7,8,9,10], dtypes.int64))
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        emb1 = sess.run(var_emb)
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[0], emb2.tolist()[0])
+        self.assertListEqual(emb1.tolist()[1], emb2.tolist()[1])
+        self.assertListEqual(emb1.tolist()[2], emb2.tolist()[2])
+        self.assertListEqual(emb1.tolist()[5], emb2.tolist()[3])
+        self.assertListEqual(emb1.tolist()[6], emb2.tolist()[4])
+        self.assertListEqual(emb1.tolist()[7], emb2.tolist()[5])
+        self.assertListEqual(emb1.tolist()[0], emb2.tolist()[6])
+        self.assertListEqual(emb1.tolist()[1], emb2.tolist()[7])
+        self.assertListEqual(emb1.tolist()[2], emb2.tolist()[8])
+  
+  def testEVInitializerWithCounterFeatureFilter(self):
+    def testembedding(emb1, emb2):
+      is_match = 0
+      for i in range(8):
+        for j in range(3):
+          if emb1.tolist()[i][j] != emb2.tolist()[3][j]:
+            break
+        if j == 2:
+          is_match = 1
+      return is_match
+
+    print("testEVInitializerWithCounterFeatureFilter")
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var", shape=[8,3],
+                                        initializer=init_ops.glorot_uniform_initializer(seed = 1))
+      counter_filter_option=variables.CounterFilter(filter_freq=3) 
+      init_opt = variables.InitializerOption(initializer=init_ops.glorot_uniform_initializer(seed = 1),
+                                         default_value_dim=8)
+      ev_option = variables.EmbeddingVariableOption(init_option=init_opt, filter_option=counter_filter_option)
+      emb_var = variable_scope.get_embedding_variable("emb_var", embedding_dim=3,
+                                                       ev_option=ev_option)
+      var_emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,3,4,5,6,7], dtypes.int64))
+      emb_emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([3], dtypes.int64))
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        emb1 = sess.run(var_emb)
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        
+  def testEVInitializerWithBloomFeatureFilter(self):
+    def testembedding(emb1, emb2):
+      is_match = 0
+      for i in range(8):
+        for j in range(3):
+          if emb1.tolist()[i][j] != emb2.tolist()[0][j]:
+            break
+        if j == 2:
+          is_match = 1
+      return is_match
+
+    print("testEVInitializerWithBloomFeatureFilter")
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var", shape=[8,3],
+                                        initializer=init_ops.glorot_uniform_initializer(seed = 1))
+      bloom_filter_option=variables.CBFFilter(
+                                      filter_freq=3,
+                                      max_element_size = 10,
+                                      false_positive_probability = 0.01)
+      init_opt = variables.InitializerOption(initializer=init_ops.glorot_uniform_initializer(seed = 1),
+                                         default_value_dim=8)
+      ev_option = variables.EmbeddingVariableOption(init_option=init_opt, filter_option=bloom_filter_option)
+      emb_var = variable_scope.get_embedding_variable("emb_var", embedding_dim=3,
+                                                       ev_option=ev_option)
+      var_emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,3,4,5,6,7], dtypes.int64))
+      emb_emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([3], dtypes.int64))
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        emb1 = sess.run(var_emb)
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+
+  def testEVInitializer(self):
+    def runTest(self, var, g):
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op, loss])
+        r, _, _ = sess.run([emb, train_op, loss])
+        r, _, _ = sess.run([emb, train_op, loss])
+        r, _, _ = sess.run([emb, train_op, loss])
+        return r
+    print("testEVInitializer")
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      init = variables.InitializerOption(default_value_dim=8192)
+      ev_option = variables.EmbeddingVariableOption(init_option = init)
+      emb_var = variable_scope.get_embedding_variable("emb_var", embedding_dim = 6,
+                                        initializer=init_ops.glorot_uniform_initializer(seed = 3),
+                                        ev_option = ev_option)
+      
+      var = variable_scope.get_variable("var", shape=[8192, 6],
+                                   initializer=init_ops.glorot_uniform_initializer(seed = 3))
+      emb1 = runTest(self, emb_var, g)
+      emb2 = runTest(self, var, g)
+
+      for i in range(0, 6):
+        for j in range(0, 6):
+          self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
   def testEmbeddingVariableForDRAM(self):
     print("testEmbeddingVariableForDRAM")

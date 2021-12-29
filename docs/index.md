@@ -23,6 +23,7 @@ Compile-And-Install
 
 Embedding-Variable
 Feature-Eviction
+Feature-Filter
 Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
@@ -80,4 +81,5 @@ oneDNN
 :caption: 样本读取及Dataset
 
 WorkQueue
+KafkaDataset
 ```
