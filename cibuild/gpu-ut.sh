@@ -165,6 +165,16 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/python/training/tracking:util_xla_test_gpu "\
-"-//tensorflow/core/kernels:fused_embedding_ops_test_gpu"
+"-//tensorflow/core/kernels:fused_embedding_ops_test_gpu" \
+"-//tensorflow/core/distributed_runtime/eager:eager_service_impl_test "\
+"-//tensorflow/core/distributed_runtime:session_mgr_test "\
+"-//tensorflow/core/distributed_runtime/eager:remote_mgr_test "\
+"-//tensorflow/core/debug:grpc_session_debug_test "\
+"-//tensorflow/python/kernel_tests:sparse_conditional_accumulator_test "\
+"-//tensorflow/c:c_test "\
+"-//tensorflow/contrib/eager/python:saver_test "\
+"-//tensorflow/contrib/eager/python:saver_test_gpu "\
+"-//tensorflow/python/debug:session_debug_grpc_test_gpu "\
+"-//tensorflow/python/debug:grpc_large_data_test_gpu "\
 
 bazel test -c opt --config=cuda --verbose_failures --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  --test_timeout="300,450,1200,3600" --local_test_jobs=2  -- $TF_BUILD_BAZEL_TARGET

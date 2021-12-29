@@ -8480,7 +8480,8 @@ class EmbeddingColumnTest(test.TestCase):
         'max_norm': None,
         'tensor_name_in_ckpt': None,
         'trainable': True,
-        'coalesced_scope': None
+        'coalesced_scope': None,
+        'do_fusion': False,
     }, config)
 
     custom_objects = {'TruncatedNormal': init_ops.TruncatedNormal}
