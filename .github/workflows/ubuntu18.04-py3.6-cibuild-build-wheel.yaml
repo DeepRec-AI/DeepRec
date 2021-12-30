@@ -1,4 +1,4 @@
-name: CPU Build Wheel Tests
+name: CPU Build Wheel
 
 on: workflow_dispatch
 

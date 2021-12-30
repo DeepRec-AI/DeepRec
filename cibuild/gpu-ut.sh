@@ -165,7 +165,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/python/training/tracking:util_xla_test_gpu "\
-"-//tensorflow/core/kernels:fused_embedding_ops_test_gpu" \
+"-//tensorflow/core/kernels:fused_embedding_ops_test_gpu "\
 "-//tensorflow/core/distributed_runtime/eager:eager_service_impl_test "\
 "-//tensorflow/core/distributed_runtime:session_mgr_test "\
 "-//tensorflow/core/distributed_runtime/eager:remote_mgr_test "\
