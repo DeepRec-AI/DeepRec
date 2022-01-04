@@ -418,6 +418,7 @@ class BaseResourceVariable(variables.VariableV1):
             handle=self._handle, handle_device=self._handle.device)
     self._handle_deleter = handle_deleter
     self._cached_shape_as_list = None
+    self._is_sparse=False
 
   def __repr__(self):
     if context.executing_eagerly() and not self._in_graph_mode:
@@ -1693,6 +1694,7 @@ class ResourceVariable(BaseResourceVariable):
     self._caching_device = None
     self._dtype = dtypes.as_dtype(self._handle.op.get_attr("dtype"))
     self._constraint = None
+    self._is_sparse=False
 
 
 class UninitializedVariable(BaseResourceVariable):

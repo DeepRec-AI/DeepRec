@@ -2029,7 +2029,7 @@ class RefVariable(VariableV1):
           # initial_value has been converted to a Tensor with a known type.
           self._variable = state_ops.variable_op_v2(
               shape, self._initial_value.dtype.base_dtype, name=name)
-        self.op._is_sparse=False
+        self._is_sparse=False
 
         # Manually overrides the variable's shape with the initial value's.
         if validate_shape:
@@ -2105,6 +2105,7 @@ class RefVariable(VariableV1):
       self._save_slice_info = None
     self._caching_device = None
     self._constraint = None
+    self._is_sparse=False
 
   def _as_graph_element(self):
     """Conversion function for Graph.as_graph_element()."""
