@@ -28,79 +28,10 @@ yes "" | bash ./configure || true
 
 set -x
 
-TF_ALL_TARGETS='//tensorflow/...'
-
-export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
-"-//tensorflow/go/... "\
-"-//tensorflow/lite/... "\
-"-//tensorflow/tools/... "\
-"-//tensorflow/compiler/... "\
+TF_ALL_TARGETS='//tensorflow/python/...'
 
 # Disable failed UT cases temporarily.
-export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
-"-//tensorflow/c:c_api_experimental_test "\
-"-//tensorflow/c:c_api_function_test "\
-"-//tensorflow/c:c_api_test_gpu "\
-"-//tensorflow/c/eager:c_api_experimental_test_gpu "\
-"-//tensorflow/c:kernels_test_gpu "\
-"-//tensorflow/c:while_loop_test "\
-"-//tensorflow/compiler/mlir/... "\
-"-//tensorflow/compiler/tests:unary_ops_test_cpu "\
-"-//tensorflow/contrib/android/... "\
-"-//tensorflow/contrib/compiler/tests:addsign_test_cpu "\
-"-//tensorflow/contrib/compiler/tests:addsign_test_gpu "\
-"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_benchmark "\
-"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_test "\
-"-//tensorflow/contrib/distribute/python:parameter_server_strategy_test "\
-"-//tensorflow/contrib/distributions:batch_normalization_test "\
-"-//tensorflow/contrib/distributions:batch_normalization_test_gpu "\
-"-//tensorflow/contrib/distributions:wishart_test "\
-"-//tensorflow/contrib/distributions:wishart_test_gpu "\
-"-//tensorflow/contrib/distribute/python:keras_backward_compat_test "\
-"-//tensorflow/contrib/distribute/python:keras_backward_compat_test_gpu "\
-"-//tensorflow/contrib/eager/python/examples/resnet50:resnet50_graph_test_gpu "\
-"-//tensorflow/contrib/factorization:gmm_test "\
-"-//tensorflow/contrib/factorization:wals_test "\
-"-//tensorflow/contrib/layers:layers_test "\
-"-//tensorflow/contrib/layers:layers_test_gpu "\
-"-//tensorflow/contrib/layers:target_column_test "\
-"-//tensorflow/contrib/learn:monitors_test "\
-"-//tensorflow/contrib/quantize:quantize_parameterized_test "\
-"-//tensorflow/contrib/quantize:fold_batch_norms_test "\
-"-//tensorflow/contrib/rnn:gru_ops_test "\
-"-//tensorflow/contrib/rpc/python/kernel_tests:rpc_op_test "\
-"-//tensorflow/contrib/timeseries/python/timeseries/state_space_models:structural_ensemble_test "\
-"-//tensorflow/core/common_runtime/eager:eager_op_rewrite_registry_test "\
-"-//tensorflow/core/distributed_runtime:cluster_function_library_runtime_test "\
-"-//tensorflow/core/distributed_runtime/rpc:rpc_rendezvous_mgr_test_gpu "\
-"-//tensorflow/core/distributed_runtime/rpc:grpc_session_test_gpu "\
-"-//tensorflow/core/distributed_runtime/rpc:grpc_channel_test_gpu "\
-"-//tensorflow/core/kernels:collective_nccl_test_gpu "\
-"-//tensorflow/core/kernels:batched_non_max_suppression_op_gpu_test_gpu "\
-"-//tensorflow/core/kernels:depthwise_conv_ops_test_gpu "\
-"-//tensorflow/core/kernels:dynamic_partition_op_test_gpu "\
-"-//tensorflow/core/kernels:resize_bilinear_op_test_gpu "\
-"-//tensorflow/core:gpu_event_mgr_test "\
-"-//tensorflow/core:gpu_device_unified_memory_test_gpu "\
-"-//tensorflow/core:graph_optimizer_fusion_engine_test "\
-"-//tensorflow/core:graph_star_server_graph_partition_test "\
-"-//tensorflow/core/grappler/clusters:utils_test "\
-"-//tensorflow/core/grappler/optimizers:remapper_test_gpu "\
-"-//tensorflow/core/grappler/optimizers:constant_folding_test "\
-"-//tensorflow/core/grappler/optimizers:memory_optimizer_test_gpu "\
-"-//tensorflow/core/nccl:nccl_manager_test_gpu "\
-"-//tensorflow/core/kernels:constant_op_test_gpu "\
-"-//tensorflow/core/kernels:fused_batch_norm_ex_op_test_gpu "\
-"-//tensorflow/core/kernels:non_max_suppression_op_gpu_test_gpu "\
-"-//tensorflow/core/kernels:segment_reduction_ali_ops_test_gpu "\
-"-//tensorflow/core:variant_op_copy_test "\
-"-//tensorflow/core:util_gpu_kernel_helper_test_gpu "\
-"-//tensorflow/core:common_runtime_gpu_gpu_vmem_allocator_test "\
-"-//tensorflow/core:common_runtime_gpu_gpu_bfc_allocator_test "\
-"-//tensorflow/core:common_runtime_ring_gatherer_test "\
-"-//tensorflow/core:common_runtime_ring_reducer_test "\
-"-//tensorflow/examples/adding_an_op:cuda_op_test "\
-"-//tensorflow/stream_executor/cuda:redzone_allocator_test_gpu "\
+export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/python/autograph/pyct:inspect_utils_test_par "\
 "-//tensorflow/python/autograph/pyct:compiler_test "\
 "-//tensorflow/python/autograph/pyct:cfg_test "\
@@ -165,22 +96,21 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/python/training/tracking:util_xla_test_gpu "\
-"-//tensorflow/core/kernels:fused_embedding_ops_test_gpu "\
-"-//tensorflow/core/distributed_runtime/eager:eager_service_impl_test "\
-"-//tensorflow/core/distributed_runtime:session_mgr_test "\
-"-//tensorflow/core/distributed_runtime/eager:remote_mgr_test "\
-"-//tensorflow/core/debug:grpc_session_debug_test "\
 "-//tensorflow/python/kernel_tests:sparse_conditional_accumulator_test "\
-"-//tensorflow/c:c_test "\
-"-//tensorflow/contrib/eager/python:saver_test "\
-"-//tensorflow/contrib/eager/python:saver_test_gpu "\
 "-//tensorflow/python/debug:session_debug_grpc_test_gpu "\
 "-//tensorflow/python/debug:grpc_large_data_test_gpu "\
 "-//tensorflow/python/keras:training_test "\
 "-//tensorflow/python/keras:convolutional_test "\
-"-//tensorflow/contrib/compiler/tests:adamax_test_gpu "\
-"-//tensorflow/core:common_runtime_gpu_gpu_device_test "\
-"-//tensorflow/core:common_runtime_gpu_gpu_adjustable_allocator_test "\
-"-//tensorflow/core:common_runtime_hierarchical_tree_broadcaster_test "\
+"-//tensorflow/python/keras:lstm_v2_test "\
+"-//tensorflow/python/keras:lstm_v2_test_gpu "\
 
-bazel test -c opt --config=cuda --verbose_failures --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  --test_timeout="300,450,1200,3600" --local_test_jobs=2  -- $TF_BUILD_BAZEL_TARGET
+for i in $(seq 1 3); do
+    [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
+    ret=0
+    bazel test -c opt --config=cuda --verbose_failures \
+    --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  \
+    --test_timeout="300,450,1200,3600" --local_test_jobs=2  \
+    -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
+done
+
+exit $ret

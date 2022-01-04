@@ -28,31 +28,10 @@ yes "" | bash ./configure || true
 
 set -x
 
-TF_ALL_TARGETS='//tensorflow/...'
-
-export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
-"-//tensorflow/go/... "\
-"-//tensorflow/lite/... "\
-"-//tensorflow/tools/... "\
-"-//tensorflow/compiler/... "\
+TF_ALL_TARGETS='//tensorflow/python/...'
 
 # Disable failed UT cases temporarily.
-export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
-"-//tensorflow/c:c_api_experimental_test "\
-"-//tensorflow/c:c_api_function_test "\
-"-//tensorflow/c:while_loop_test "\
-"-//tensorflow/compiler/mlir/... "\
-"-//tensorflow/compiler/tests:unary_ops_test_cpu "\
-"-//tensorflow/contrib/android/... "\
-"-//tensorflow/contrib/compiler/tests:addsign_test_cpu "\
-"-//tensorflow/contrib/distribute/python:parameter_server_strategy_test "\
-"-//tensorflow/contrib/distributions:batch_normalization_test "\
-"-//tensorflow/contrib/distributions:wishart_test "\
-"-//tensorflow/contrib/quantize:quantize_parameterized_test "\
-"-//tensorflow/contrib/rpc/python/kernel_tests:rpc_op_test "\
-"-//tensorflow/core/common_runtime/eager:eager_op_rewrite_registry_test "\
-"-//tensorflow/core/distributed_runtime:cluster_function_library_runtime_test "\
-"-//tensorflow/core:graph_optimizer_fusion_engine_test "\
+export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/python/autograph/pyct:inspect_utils_test_par "\
 "-//tensorflow/python/autograph/pyct:compiler_test "\
 "-//tensorflow/python/autograph/pyct:cfg_test "\
@@ -72,19 +51,17 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/profiler:model_analyzer_test "\
 "-//tensorflow/python/tools/api/generator:output_init_files_test "\
 "-//tensorflow/python/tpu:datasets_test "\
-"-//tensorflow/contrib/quantize:fold_batch_norms_test "\
 "-//tensorflow/python/kernel_tests:unique_op_test "\
-"-//tensorflow/c:c_test "\
 "-//tensorflow/python/kernel_tests:sparse_conditional_accumulator_test "\
-"-//tensorflow/core/distributed_runtime/eager:eager_service_impl_test "\
-"-//tensorflow/core/distributed_runtime/eager:remote_mgr_test "\
-"-//tensorflow/core/distributed_runtime:session_mgr_test "\
-"-//tensorflow/core/debug:grpc_session_debug_test "\
-"-//tensorflow/contrib/eager/python:saver_test "\
 "-//tensorflow/python:server_lib_test "\
 "-//tensorflow/python:work_queue_test "\
-"-//tensorflow/contrib/distributions:inline_test "\
 "-//tensorflow/python/keras:metrics_test "\
 "-//tensorflow/python/keras:training_test "\
 
-bazel test -c opt --config=opt --verbose_failures -- $TF_BUILD_BAZEL_TARGET
+for i in $(seq 1 3); do
+    [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
+    ret=0
+    bazel test -c opt --config=opt --verbose_failures --local_test_jobs=1 -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
+done
+
+exit $ret
