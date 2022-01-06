@@ -50,7 +50,9 @@ Smart-Stage
 :maxdepth: 2
 :caption: Runtime优化
 
-TensorPoolAllocator
+CPU-Memory-Optimization
+GPU-Memory-Optimization
+GPU-Virtual-Memory
 ```
 
 ```{toctree}
