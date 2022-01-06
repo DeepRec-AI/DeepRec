@@ -126,6 +126,12 @@ class Allocator {
   // REQUIRES: "ptr" was previously returned by a call to AllocateRaw
   virtual void DeallocateRaw(void* ptr) = 0;
 
+  // Used in cudaStreamAddCallback, which must not make any CUDA API calls
+  // Use this to avoid global sync of cuMemFree before CUDA 11.2 
+  virtual void DeallocateRawAsync(void* ptr) {
+    DeallocateRaw(ptr);
+  }
+
   // Returns true if this allocator tracks the sizes of allocations.
   // RequestedSize and AllocatedSize must be overridden if
   // TracksAllocationSizes is overridden to return true.

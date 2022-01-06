@@ -252,6 +252,9 @@ class DirectSession : public Session {
       CallFrameInterface* call_frame, ExecutorsAndKeys* executors_and_keys,
       RunMetadata* run_metadata,
       const thread::ThreadPoolOptions& threadpool_options);
+  
+  // Returns whether enable tracking of tensorpool allocator
+  bool EnableTensorPoolTracking(ExecutorsAndKeys* executors_and_keys);
 
   // Returns whether inter-op execution uses a global pool or the input
   // `run_options` requests being run on inter_op_thread_pool = 0 in case

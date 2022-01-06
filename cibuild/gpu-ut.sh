@@ -82,6 +82,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/core/kernels:resize_bilinear_op_test_gpu "\
 "-//tensorflow/core:gpu_event_mgr_test "\
 "-//tensorflow/core:gpu_device_unified_memory_test_gpu "\
+"-//tensorflow/core:gpu_tensorpool_test "\
 "-//tensorflow/core:graph_optimizer_fusion_engine_test "\
 "-//tensorflow/core:graph_star_server_graph_partition_test "\
 "-//tensorflow/core/grappler/clusters:utils_test "\
