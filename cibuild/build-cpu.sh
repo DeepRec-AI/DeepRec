@@ -28,10 +28,14 @@ yes "" | bash ./configure || true
 
 set -x
 
-bazel build \
---verbose_failures \
-//tensorflow/tools/pip_package:build_pip_package
+for i in $(seq 1 3); do
+    [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
+    ret=0
+    (bazel build \
+    --verbose_failures \
+    //tensorflow/tools/pip_package:build_pip_package && \
+    bazel-bin/tensorflow/tools/pip_package/build_pip_package cibuild/) && break || ret=$?
+done
 
-bazel-bin/tensorflow/tools/pip_package/build_pip_package \
-cibuild/
+exit $ret
 
