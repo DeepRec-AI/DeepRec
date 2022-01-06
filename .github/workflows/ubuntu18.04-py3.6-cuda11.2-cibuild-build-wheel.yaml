@@ -1,6 +1,6 @@
 name: GPU Build Wheel
 
-on: workflow_dispatch
+on: [workflow_dispatch, push, pull_request]
 
 env:
   IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-cibuild-py36-cu110-ubuntu18.04
@@ -22,15 +22,19 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v2
     - name: Install Pod
+      timeout-minutes: 360
       run: |-
-        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --set gpu=1
+        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --set gpu=1 --timeout 1h
     - name: Upload Source
+      if: ${{ always() }}
       run: |-
         cibuild/upload.sh ${PODNAME} ../cibuild
     - name: Build Wheel
+      if: ${{ always() }}
       run: |-
         kubectl exec -it ${PODNAME} -- cibuild/build-gpu.sh
     - name: Uninstall Pod
+      if: ${{ always() }}
       run: |-
         helm uninstall ${JOBNAME}
 
