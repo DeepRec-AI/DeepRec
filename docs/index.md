@@ -44,6 +44,7 @@ StarServer
 Auto-Micro-Batch
 Fused-Embedding
 Smart-Stage
+Auto-Fusion
 ```
 
 ```{toctree}
