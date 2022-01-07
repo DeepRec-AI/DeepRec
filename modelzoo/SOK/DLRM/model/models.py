@@ -20,6 +20,7 @@ from tensorflow.python.ops import collective_ops
 from tensorflow.python.framework import ops
 import numpy as np
 import math
+import nvtx.plugins.tf as nvtx_tf
 
 class TFEmbedding(tf.keras.layers.Layer):
     def __init__(
@@ -38,9 +39,11 @@ class TFEmbedding(tf.keras.layers.Layer):
         for size in self._vocab_sizes:
             embedding = tf.keras.layers.Embedding(
                 input_dim=size, output_dim=self._embedding_vec_size
-            )
+                )
             self._keras_embedding_layers.append(embedding)
 
+    @nvtx_tf.ops.trace(message='TF embedding', domain_name='Forward',
+                   grad_domain_name='Gradient')
     def call(self, inputs, training=True):
         """
         compute the output of the embedding layer
@@ -49,12 +52,10 @@ class TFEmbedding(tf.keras.layers.Layer):
         for i in range(26):
             val = inputs[:, i]
             output.append(self._keras_embedding_layers[i](val))
+
         stack_vectors = tf.stack(output, 1)
         emb_vectors = tf.reshape(stack_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
         return emb_vectors
-
-
-
 
 
 class SOKEmbedding(tf.keras.layers.Layer):
@@ -84,22 +85,18 @@ class SOKEmbedding(tf.keras.layers.Layer):
             dynamic_input=True,
             use_hashtable=False,
         )
-
+    
+    @nvtx_tf.ops.trace(message='SOK embedding', domain_name='Forward',
+                   grad_domain_name='Gradient')
     def call(self, inputs, training=True):
         """
         Compute the output of embedding layer.
         Args:
             inputs: [batch_size, 26] int32 tensor
         """
-        # self._vocab_prefix_sum: [1, 26] int32 tensor
-        # fused_inputs: [batch_size, 26] int32 tensor
-        fused_inputs = tf.add(inputs, float(self._vocab_prefix_sum))
-        # fused_inputs: [batch_size*26] int32 tensor
+        fused_inputs = tf.add(inputs, tf.cast(self._vocab_prefix_sum, dtype = tf.float32))
         fused_inputs = tf.reshape(fused_inputs, [-1])
-
-        # emb_vectors: [batch_size*26, embedding_vec_size]
         emb_vectors = self._sok_embedding(tf.cast(fused_inputs, dtype=tf.int64), training=training)
-        # emb_vectors: [batch_size, 26, embedding_vec_size]
         emb_vectors = tf.reshape(emb_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
         return emb_vectors
 
@@ -131,9 +128,12 @@ class MLP(tf.keras.layers.Layer):
         self._sublayers = []
         for i, num_units in enumerate(units):
 
+            kernel_init = tf.keras.initializers.glorot_normal()
+            bias_init = tf.keras.initializers.RandomNormal(stddev=math.sqrt(1. / num_units))
             self._sublayers.append(
                 tf.keras.layers.Dense(
                     num_units, use_bias=use_bias,
+            #        kernel_initializer=kernel_init, bias_initializer=bias_init,
                     activation=activation if i < (len(units) - 1) else final_activation))
 
 
@@ -248,21 +248,18 @@ class DLRM(tf.keras.models.Model):
         self._vocab_size = vocab_size
         self._num_dense_features = num_dense_features
         self._embedding_layer_str = embedding_layer
-        self._vocab_size_dict = dict(
-            zip([idx for idx in range(len(self._vocab_size))], self._vocab_size)
-        )
         self._embedding_vec_size = embedding_vec_size
         self._comm_options = comm_options
 
         if self._embedding_layer_str == "TF":
             self._embedding_layer = TFEmbedding(
-                self._vocab_size_dict,
+                self._vocab_size,
                 self._embedding_vec_size,
                 comm_options=self._comm_options,
             )
         elif self._embedding_layer_str == "SOK":
             self._embedding_layer = SOKEmbedding(
-                self._vocab_size_dict, self._embedding_vec_size, num_gpus
+                self._vocab_size, self._embedding_vec_size, num_gpus
             )
         else:
             raise ValueError(
@@ -272,19 +269,14 @@ class DLRM(tf.keras.models.Model):
             )
 
         self._bottom_stack = MLP(units=bottom_stack_units, final_activation="relu")
-
         self._feature_interaction = DotInteraction(skip_gather=True)
-
         self._top_stack = MLP(units=top_stack_units, final_activation=None)
         
     @property
     def embedding_layer(self):
         return self._embedding_layer
 
-    def call(self, dense, category, training=True):
-        dense_features = dense
-        sparse_features = category
-
+    def call(self, dense_features, sparse_features, training=True):
         dense_embedding_vec = self._bottom_stack(dense_features)
         sparse_embeddings = self._embedding_layer(sparse_features, training=training)
         sparse_embeddings = tf.split(sparse_embeddings,
