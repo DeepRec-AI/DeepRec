@@ -1,6 +1,23 @@
 name: CPU JS Unit Tests
 
-on: [workflow_dispatch, push, pull_request]
+on: 
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - 'modelzoo/**'
+      - 'sparse_operation_kit/**'
+      - 'triton/**'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - 'modelzoo/**'
+      - 'sparse_operation_kit/**'
+      - 'triton/**'
 
 env:
   IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-cibuild-py36-ubuntu18.04
