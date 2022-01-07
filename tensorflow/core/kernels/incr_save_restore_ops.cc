@@ -183,6 +183,7 @@ class IncrSaveOp: public OpKernel {
       EmbeddingVar<T, float>* variable = nullptr;
       OP_REQUIRES_OK(context,
           LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
+      core::ScopedUnref unref_variable(variable);
       OP_REQUIRES_OK(context, 
           sparse_incr_res->DumpSparseEmbeddingTensor(tensor_name, variable, writer, context));
     } else {
