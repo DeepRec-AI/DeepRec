@@ -61,7 +61,7 @@ class StarServerFactory : public ServerFactory {
 public:
   bool AcceptsOptions(const ServerDef& server_def) override {
     return (server_def.protocol() == "star_server" ||
-            server_def.protocol() == "star_server_v2") &&
+            server_def.protocol() == "star_server_lite") &&
            (server_def.job_name() == "ps");
   }
 
