@@ -74,6 +74,7 @@ AdagradDecay-Optimizer
 :maxdepth: 2
 :caption: 算子及硬件加速
 
+Operator-Optimization
 NVIDIA-TF32
 oneDNN
 ```
