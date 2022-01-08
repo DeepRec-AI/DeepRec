@@ -10,7 +10,7 @@ on:
       - 'modelzoo/**'
       - 'sparse_operation_kit/**'
       - 'triton/**'
-  pull_request:
+  pull_request_target:
     branches:
       - main
     paths-ignore:
