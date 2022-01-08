@@ -302,7 +302,7 @@ class RunGraphRequestWrapper {
 
   // True if enable star_server(run_graph_mode)
   virtual bool is_run_graph_mode() const = 0;
-  virtual bool is_run_graph_mode_v2() const = 0;
+  virtual bool is_run_graph_mode_lite() const = 0;
 };
 
 // Abstract interface for a mutable RunGraphRequest message.
@@ -332,7 +332,7 @@ class MutableRunGraphRequestWrapper : public RunGraphRequestWrapper {
   virtual void set_request_id(int64 request_id) = 0;
   virtual void add_send(const string& key, const Tensor& tensor) {};
   virtual void set_run_graph_mode(bool run_graph_mode) = 0;
-  virtual void set_run_graph_mode_v2(bool run_graph_mode_v2) = 0;
+  virtual void set_run_graph_mode_lite(bool run_graph_mode_lite) = 0;
 };
 
 class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
@@ -372,12 +372,12 @@ class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
   void set_store_errors_in_response_body(bool store_errors) override;
   void set_request_id(int64 request_id) override;
   bool is_run_graph_mode() const override { return is_run_graph_mode_;}
-  bool is_run_graph_mode_v2() const override { return is_run_graph_mode_v2_;}
+  bool is_run_graph_mode_lite() const override { return is_run_graph_mode_lite_;}
   void set_run_graph_mode(bool run_graph_mode) override {
     is_run_graph_mode_ = run_graph_mode;
   }
-  void set_run_graph_mode_v2(bool run_graph_mode_v2) override {
-    is_run_graph_mode_v2_ = run_graph_mode_v2;
+  void set_run_graph_mode_lite(bool run_graph_mode_lite) override {
+    is_run_graph_mode_lite_ = run_graph_mode_lite;
   }
 
  private:
@@ -393,7 +393,7 @@ class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
   bool store_errors_in_response_body_ = false;
   int64 request_id_ = 0;
   bool is_run_graph_mode_ = false;
-  bool is_run_graph_mode_v2_ = false;
+  bool is_run_graph_mode_lite_ = false;
 
   // Holds a cached and owned representation of the proto
   // representation of this request, if needed, so that `ToProto()`
@@ -442,12 +442,12 @@ class MutableProtoRunGraphRequest : public MutableRunGraphRequestWrapper {
   void set_store_errors_in_response_body(bool store_errors) override;
   void set_request_id(int64 request_id) override;
   bool is_run_graph_mode() const { return request_.run_graph_mode();}
-  bool is_run_graph_mode_v2() const { return request_.run_graph_mode_v2();}
+  bool is_run_graph_mode_lite() const { return request_.run_graph_mode_lite();}
   void set_run_graph_mode(bool run_graph_mode) override {
     request_.set_run_graph_mode(run_graph_mode);
   }
-  void set_run_graph_mode_v2(bool run_graph_mode_v2) override {
-    request_.set_run_graph_mode_v2(run_graph_mode_v2);
+  void set_run_graph_mode_lite(bool run_graph_mode_lite) override {
+    request_.set_run_graph_mode_lite(run_graph_mode_lite);
   }
   void add_send(const string& key, const Tensor& tensor);
 
@@ -476,7 +476,7 @@ class ProtoRunGraphRequest : public RunGraphRequestWrapper {
   int64 request_id() const override;
   const RunGraphRequest& ToProto() const override;
   bool is_run_graph_mode() const { return request_->run_graph_mode();}
-  bool is_run_graph_mode_v2() const { return request_->run_graph_mode_v2();}
+  bool is_run_graph_mode_lite() const { return request_->run_graph_mode_lite();}
 
  private:
   const RunGraphRequest* const request_;  // Not owned.
