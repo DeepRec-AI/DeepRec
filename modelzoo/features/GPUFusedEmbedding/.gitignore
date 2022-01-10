@@ -1,3 +1,5 @@
 *.csv
 */result/model_*
 record.py
+*.sh
+*.nsys-rep
