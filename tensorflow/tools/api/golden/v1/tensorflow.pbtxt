@@ -1790,7 +1790,7 @@ tf_module {
   }
   member_method {
     name: "kv_resource_gather_v1"
-    argspec: "args=[\'resource\', \'indices\', \'default_value\', \'counts\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'None\'], "
+    argspec: "args=[\'resource\', \'indices\', \'default_value\', \'counts\', \'is_use_default_value_tensor\', \'validate_indices\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'True\', \'None\'], "
   }
   member_method {
     name: "kv_resource_import"

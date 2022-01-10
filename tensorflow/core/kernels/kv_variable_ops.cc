@@ -338,6 +338,15 @@ class KvResourceGatherOp : public OpKernel {
       auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
       TValue* out_base = &out_flat(0, 0);
 
+      const int32* counts = nullptr;
+      bool is_unique = false;
+      if (c->num_inputs() == 4) {
+        const Tensor& counts_tensor = c->input(3);
+        auto counts_flat = counts_tensor.flat<int32>();
+        counts = &counts_flat(0);
+        is_unique = true;
+      }
+
       auto indices_flat = indices.flat<TKey>();
       const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
       const int64 slice_elems = out_flat.dimension(1);
@@ -351,12 +360,13 @@ class KvResourceGatherOp : public OpKernel {
         auto default_values_matrix = default_values.shaped<TValue, 2>(
             {default_values.NumElements()/ev->ValueLen(), ev->ValueLen()});     
         auto do_work = [this, indices_flat,
-             out_base, slice_elems, c, ev, default_values_matrix] (int64 start, int64 limit) {
+             out_base, slice_elems, c, ev, default_values_matrix, counts] (int64 start, int64 limit) {
           for (int64 i = start; i < limit; ++i) {
             TValue* default_v;
+            int64 count = (counts == nullptr) ? 1 : counts[i];
             default_v = &default_values_matrix(i, 0);
             ev->LookupOrCreate(indices_flat(i),
-                out_base + i * slice_elems, default_v);          
+                out_base + i * slice_elems, default_v, count);          
           }
         };
 
@@ -365,13 +375,14 @@ class KvResourceGatherOp : public OpKernel {
             slice_bytes, do_work);
       } else {
         auto do_work = [this, indices_flat,
-             out_base, slice_elems, c, ev] (int64 start, int64 limit) {
+             out_base, slice_elems, c, ev, counts] (int64 start, int64 limit) {
           for (int64 i = start; i < limit; ++i) {
             TValue* default_v;
+            int64 count = (counts == nullptr) ? 1 : counts[i];
             default_v = ev->GetDefaultValuePtr() +
                           ((indices_flat(i)) % ev->GetDefaultValueDim()) * ev->ValueLen();
             ev->LookupOrCreate(indices_flat(i),
-                out_base + i * slice_elems, default_v);          
+                out_base + i * slice_elems, default_v, count);          
           }
         };
 
@@ -412,61 +423,6 @@ TF_CALL_double(REGISTER_GATHER_CPU);
 #undef REGISTER_GATHER_ALL_INDICES
 #undef REGISTER_GATHER_FULL
 
-
-template <typename TKey, typename TValue>
-class KvResourceGatherV1Op : public OpKernel {
- public:
-  explicit KvResourceGatherV1Op(OpKernelConstruction* c) : OpKernel(c) {}
-
-  void Compute(OpKernelContext* c) override {
-    EmbeddingVar<TKey, TValue>* ev = nullptr;
-    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
-    core::ScopedUnref unref_me(ev);
-
-    const Tensor& indices = c->input(1);
-    const int64 N = indices.NumElements();
-
-    TensorShape result_shape = indices.shape();
-    TensorShape value_shape({ev->ValueLen()});
-    result_shape.AppendShape(value_shape);
-
-    const Tensor& counts = c->input(3);
-
-    Tensor* out = nullptr;
-    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
-
-    if (N > 0) {
-      auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
-      TValue* out_base = &out_flat(0, 0);
-      auto counts_flat = counts.flat<int32>();
-      auto indices_flat = indices.flat<TKey>();
-      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
-      const int64 slice_elems = out_flat.dimension(1);
-      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
-          errors::InvalidArgument(
-              "ev's value_len should same with output's dimension(1)",
-              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
-      const size_t slice_bytes = slice_elems * sizeof(TValue);
-      auto do_work = [this, indices_flat,
-           out_base, slice_elems, c, ev, counts_flat] (int64 start, int64 limit) {
-        for (int64 i = start; i < limit; ++i) {
-          TValue* default_v;
-          default_v = ev->GetDefaultValuePtr() +
-                          ((indices_flat(i)) % ev->GetDefaultValueDim()) * ev->ValueLen();
-          //OP_REQUIRES_OK(c, ev->LookupOrCreate(indices_flat(i),
-          //    out_base + i * slice_elems, default_v));
-          ev->LookupOrCreate(indices_flat(i),
-              out_base + i * slice_elems, default_v, counts_flat(i));
-        }
-      };
-      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-      Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
-          slice_bytes, do_work);
-    }
-  }
-
-};
-
 #define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
   REGISTER_KERNEL_BUILDER(Name("KvResourceGatherV1")                \
                               .Device(DEVICE_##dev)               \
@@ -477,7 +433,7 @@ class KvResourceGatherV1Op : public OpKernel {
                               .HostMemory("output")               \
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceGatherV1Op<ktype, vtype>)
+                          KvResourceGatherOp<ktype, vtype>)
 
 #define REGISTER_GATHER_ALL_INDICES(dev, type) \
   REGISTER_GATHER_FULL(dev, int32, type);      \
