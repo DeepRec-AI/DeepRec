@@ -71,8 +71,10 @@ class KvSparseApplyAdagradOp : public OpKernel {
 
     EmbeddingVar<TKey, T>* var = NULL;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
+    core::ScopedUnref unref_var(var);
     EmbeddingVar<TKey, T>* accum = NULL;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum));
+    core::ScopedUnref unref_accum(accum);
 
     const Tensor& lr = ctx->input(2);
     OP_REQUIRES(ctx, IsLegacyScalar(lr.shape()),
@@ -176,10 +178,13 @@ class KvSparseApplyFtrlOp : public OpKernel {
 
     EmbeddingVar<TKey, T>* var_ = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var_));
+    core::ScopedUnref unref_var(var_);
     EmbeddingVar<TKey, T>* accum_ = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum_));
+    core::ScopedUnref unref_accum(accum_);
     EmbeddingVar<TKey, T>* linear_ = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &linear_));
+    core::ScopedUnref unref_linear(linear_);
 
     const Tensor& grad = ctx->input(3);
     const Tensor& indices = ctx->input(4);
@@ -712,12 +717,15 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
 
     EmbeddingVar<Tindex, T>* var = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
+    core::ScopedUnref unref_var(var);
 
     EmbeddingVar<Tindex, T>* accum = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum));
+    core::ScopedUnref unref_accum(accum);
 
     EmbeddingVar<Tindex, T>* accum_decay_power_var = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &accum_decay_power_var));
+    core::ScopedUnref unref_accum_decay_power_var(accum_decay_power_var);
 
     const Tensor& lr = ctx->input(3);
     OP_REQUIRES(
@@ -856,12 +864,15 @@ class KvSparseApplyAdamOp : public OpKernel {
                                                       {0, 1, 2});
     EmbeddingVar<Tindex, T>* var = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
+    core::ScopedUnref unref_var(var);
 
     EmbeddingVar<Tindex, T>* m = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &m));
+    core::ScopedUnref unref_m(m);
 
     EmbeddingVar<Tindex, T>* v = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &v));
+    core::ScopedUnref unref_v(v);
 
     const Tensor& beta1_power = ctx->input(3);
     const Tensor& beta2_power = ctx->input(4);
@@ -1413,18 +1424,23 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
       ctx, use_exclusive_lock_, {0, 1, 2, 3, 4});
     EmbeddingVar<Tindex, T>* var = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
+    core::ScopedUnref unref_var(var);
 
     EmbeddingVar<Tindex, T>* m = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &m));
+    core::ScopedUnref unref_m(m);
 
     EmbeddingVar<Tindex, T>* v = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &v));
+    core::ScopedUnref unref_v(v);
 
     EmbeddingVar<Tindex, T>* beta1_power = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 3, &beta1_power));
+    core::ScopedUnref unref_beta1_power(beta1_power);
 
     EmbeddingVar<Tindex, T>* beta2_power = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 4, &beta2_power));
+    core::ScopedUnref unref_beta2_power(beta2_power);
 
     const Tensor& lr = ctx->input(5);
     const Tensor& beta1 = ctx->input(6);
@@ -1607,6 +1623,7 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
 
     EmbeddingVar<Tindex, T>* var = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
+    core::ScopedUnref unref_var(var);
 
     const Tensor& lr = ctx->input(1);
     OP_REQUIRES(
