@@ -141,5 +141,34 @@ def fused_embedding_lookup_sparse(params,
 
 4. **FusedEmbeddingSparsePostLookUpGrad** 负责 FusedEmbeddingSparsePostLookUp 的反向梯度计算。
 
+## 性能对比
+在 modelzoo 中，对比了一些 model 在 unfused 以及 fused embedding 情况下性能提升（5000个 iteration 平均结果）
 
+Machine:
+8 cores AMD EPYC 7232P CPU @ 3.20GHz.
 
+A100-80GB-PCIE GPU
+
+DLRM Model:
+
+|         | Avg Time per Iteration |
+| ------- | ---------------------- |
+| Unfused | 20.78 ms               |
+| Fused   | 17.41 ms               |
+| SpeedUp | 1.19x                  |
+
+DeepFM Model:
+
+|         | Avg Time per Iteration |
+| ------- | ---------------------- |
+| Unfused | 37.24 ms               |
+| Fused   | 30.98 ms               |
+| SpeedUp | 1.20x                  |
+
+WDL Model:
+
+|         | Avg Time per Iteration |
+| ------- | ---------------------- |
+| Unfused | 36.38 ms               |
+| Fused   | 34.52 ms               |
+| SpeedUp | 1.05x                  |
