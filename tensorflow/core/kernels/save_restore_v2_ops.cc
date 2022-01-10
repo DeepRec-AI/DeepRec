@@ -165,6 +165,7 @@ class SaveV2 : public OpKernel {
           EmbeddingVar<int64, float>* variable = nullptr;
           OP_REQUIRES_OK(context,
               LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
+          core::ScopedUnref unref_variable(variable);
           const Tensor& global_step = context->input(3);
           Tensor part_offset_tensor;
           context->allocate_temp(DT_INT32,
