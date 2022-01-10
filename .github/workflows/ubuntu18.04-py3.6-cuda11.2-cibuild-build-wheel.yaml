@@ -39,15 +39,15 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v2
     - name: Install Pod
-      timeout-minutes: 360
       run: |-
-        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --set gpu=1 --timeout 1h
+        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --set gpu=1
     - name: Upload Source
       if: ${{ always() }}
       run: |-
         cibuild/upload.sh ${PODNAME} ../cibuild
     - name: Build Wheel
       if: ${{ always() }}
+      timeout-minutes: 240
       run: |-
         kubectl exec -it ${PODNAME} -- cibuild/build-gpu.sh
     - name: Uninstall Pod

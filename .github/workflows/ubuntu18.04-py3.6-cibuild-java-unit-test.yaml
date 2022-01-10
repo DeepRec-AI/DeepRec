@@ -39,15 +39,15 @@ jobs:
     - name: Checkout Code
       uses: actions/checkout@v2
     - name: Install Pod
-      timeout-minutes: 360
       run: |-
-        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --timeout 1h
+        helm install ${JOBNAME} cibuild/ --set image=${IMAGE}
     - name: Upload Source
       if: ${{ always() }}
       run: |-
         cibuild/upload.sh ${PODNAME} ../cibuild
     - name: Unit Test
       if: ${{ always() }}
+      timeout-minutes: 240
       run: |-
         kubectl exec -it ${PODNAME} -- cibuild/cpu-ut/cpu-java-ut.sh
     - name: Uninstall Pod
