@@ -82,9 +82,8 @@ def generate_input_data(filename, batch_size, num_epochs):
 
 
 def build_feature_cols():
-    wide_column = []
-    deep_column = []
-    fm_column = []
+    dense_column = []
+    sparse_column = []
     for column_name in FEATURE_COLUMNS:
         if column_name in CATEGORICAL_COLUMNS:
             categorical_column = tf.feature_column.categorical_column_with_hash_bucket(
@@ -93,46 +92,38 @@ def build_feature_cols():
                 hash_bucket_size=10000,
                 dtype=tf.string)
 
-            categorical_embedding_column = tf.feature_column.embedding_column(
-                categorical_column, dimension=16, combiner='mean',
-                do_fusion=True)
-
-            wide_column.append(categorical_embedding_column)
-            deep_column.append(categorical_embedding_column)
-            fm_column.append(categorical_embedding_column)
+            sparse_column.append(
+                tf.feature_column.embedding_column(categorical_column,
+                                                   dimension=16,
+                                                   combiner='mean',
+                                                   do_fusion=True))
         else:
             column = tf.feature_column.numeric_column(column_name, shape=(1, ))
-            wide_column.append(column)
-            deep_column.append(column)
+            dense_column.append(column)
 
-    return wide_column, fm_column, deep_column
+    return dense_column, sparse_column
 
 
-class DeepFM():
+class DLRM():
     def __init__(self,
-                 wide_column=None,
-                 fm_column=None,
-                 deep_column=None,
-                 dnn_hidden_units=[1024, 256, 32],
-                 final_hidden_units=[128, 64],
-                 optimizer_type='adam',
-                 learning_rate=0.001,
+                 dense_column=None,
+                 sparse_column=None,
+                 mlp_bot=[512, 256, 64, 16],
+                 mlp_top=[512, 256],
+                 learning_rate=0.1,
                  inputs=None,
-                 use_bn=True,
+                 interaction_op='dot',
                  bf16=False,
                  input_layer_partitioner=None,
                  dense_layer_partitioner=None):
         if not inputs:
             raise ValueError('Dataset is not defined.')
-        self.wide_column = wide_column
-        self.deep_column = deep_column
-        self.fm_column = fm_column
-        if not wide_column or not fm_column or not deep_column:
-            raise ValueError(
-                'Wide column, FM column or Deep column is not defined.')
-        self.dnn_hidden_units = dnn_hidden_units
-        self.final_hidden_units = final_hidden_units
-        self.optimizer_type = optimizer_type
+        self.dense_column = dense_column
+        self.sparse_column = sparse_column
+        if not dense_column or not sparse_column:
+            raise ValueError('Dense column or sparse column is not defined.')
+        self.mlp_bot = mlp_bot
+        self.mlp_top = mlp_top
         self.learning_rate = learning_rate
         self.input_layer_partitioner = input_layer_partitioner
         self.dense_layer_partitioner = dense_layer_partitioner
@@ -141,118 +132,166 @@ class DeepFM():
         self.label = inputs[1]
         self.bf16 = bf16
 
-        self._is_training = True
-        self.use_bn = use_bn
+        self.interaction_op = interaction_op
+        if self.interaction_op not in ['dot', 'cat']:
+            print("Invaild interaction op, must be 'dot' or 'cat'.")
+            sys.exit()
 
         self.predict = self.prediction()
         with tf.name_scope('head'):
             self.train_op, self.loss = self.optimizer()
-            self.acc, self.acc_op = tf.metrics.accuracy(labels=self.label,
-                                                        predictions=self.predict)
+            self.acc, self.acc_op = tf.metrics.accuracy(
+                labels=self.label, predictions=self.predict)
             self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
-                                                predictions=self.predict,
-                                                num_thresholds=1000)
+                                                   predictions=self.predict,
+                                                   num_thresholds=1000)
             tf.summary.scalar('eval_acc', self.acc)
             tf.summary.scalar('eval_auc', self.auc)
 
-    def dnn(self, dnn_input, dnn_hidden_units=None, layer_name=''):
-        for layer_id, num_hidden_units in enumerate(dnn_hidden_units):
-            with tf.variable_scope(layer_name + "_%d" % layer_id,
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE) as dnn_layer_scope:
-                dnn_input = tf.layers.dense(dnn_input,
-                                            units=num_hidden_units,
-                                            activation=tf.nn.relu,
-                                            name=dnn_layer_scope)
-                if self.use_bn:
-                    dnn_input = tf.layers.batch_normalization(
-                        dnn_input, training=self._is_training, trainable=True)
-                add_layer_summary(dnn_input, dnn_layer_scope.name)
+    def dot_op(self, features):
+        batch_size = tf.shape(features)[0]
+        matrixdot = tf.matmul(features, features, transpose_b=True)
+        feature_dim = matrixdot.shape[-1]
 
-        return dnn_input
+        ones_mat = tf.ones_like(matrixdot)
+        lower_tri_mat = ones_mat - tf.linalg.band_part(ones_mat, 0, -1)
+        lower_tri_mask = tf.cast(lower_tri_mat, tf.bool)
+        result = tf.boolean_mask(matrixdot, lower_tri_mask)
+        output_dim = feature_dim * (feature_dim - 1) // 2
+
+        return tf.reshape(result, (batch_size, output_dim))
 
     def prediction(self):
-        # input features
-        with tf.variable_scope('input_layer',
-                               partitioner=self.input_layer_partitioner,
-                               reuse=tf.AUTO_REUSE):
+        # input dense feature and embedding of sparse features
+        with tf.variable_scope('input_layer', reuse=tf.AUTO_REUSE):
+            with tf.variable_scope('dense_input_layer',
+                                   partitioner=self.input_layer_partitioner,
+                                   reuse=tf.AUTO_REUSE):
+                dense_inputs = tf.feature_column.input_layer(
+                    self.feature, self.dense_column)
+            with tf.variable_scope('sparse_input_layer', reuse=tf.AUTO_REUSE):
+                column_tensors = {}
+                sparse_inputs = tf.feature_column.input_layer(
+                    self.feature,
+                    self.sparse_column,
+                    cols_to_output_tensors=column_tensors)
 
-            fm_cols = {}
-            wide_input = tf.feature_column.input_layer(
-                self.feature, self.wide_column, cols_to_output_tensors=fm_cols)
-            fm_input = tf.stack([fm_cols[cols] for cols in self.fm_column], 1)
-            dnn_input = tf.feature_column.input_layer(self.feature,
-                                                      self.deep_column)
-
+        # MLP behind dense inputs
         if self.bf16:
-            wide_input = tf.cast(wide_input, dtype=tf.bfloat16)
-            fm_input = tf.cast(fm_input, dtype=tf.bfloat16)
-            dnn_input = tf.cast(dnn_input, dtype=tf.bfloat16)
-
-        # DNN part
-        if self.bf16:
-            with tf.variable_scope('dnn').keep_weights():
-                dnn_output = self.dnn(dnn_input, self.dnn_hidden_units,
-                                      'dnn_layer')
+            dense_inputs = tf.cast(dense_inputs, dtype=tf.bfloat16)
+            with tf.variable_scope('mlp_bot_layer',
+                                   partitioner=self.dense_layer_partitioner,
+                                   reuse=tf.AUTO_REUSE).keep_weights():
+                for layer_id, num_hidden_units in enumerate(self.mlp_bot):
+                    with tf.variable_scope(
+                            "mlp_bot_hiddenlayer_%d" % layer_id,
+                            reuse=tf.AUTO_REUSE) as mlp_bot_hidden_layer_scope:
+                        dense_inputs = tf.layers.dense(
+                            dense_inputs,
+                            units=num_hidden_units,
+                            activation=tf.nn.relu,
+                            name=mlp_bot_hidden_layer_scope)
+                        add_layer_summary(dense_inputs,
+                                          mlp_bot_hidden_layer_scope.name)
+            dense_inputs = tf.cast(dense_inputs, dtype=tf.float32)
         else:
-            with tf.variable_scope('dnn'):
-                dnn_output = self.dnn(dnn_input, self.dnn_hidden_units,
-                                      'dnn_layer')
+            with tf.variable_scope('mlp_bot_layer',
+                                   partitioner=self.dense_layer_partitioner,
+                                   reuse=tf.AUTO_REUSE):
+                for layer_id, num_hidden_units in enumerate(self.mlp_bot):
+                    with tf.variable_scope(
+                            "mlp_bot_hiddenlayer_%d" % layer_id,
+                            reuse=tf.AUTO_REUSE) as mlp_bot_hidden_layer_scope:
+                        dense_inputs = tf.layers.dense(
+                            dense_inputs,
+                            units=num_hidden_units,
+                            activation=tf.nn.relu,
+                            name=mlp_bot_hidden_layer_scope)
+                        add_layer_summary(dense_inputs,
+                                          mlp_bot_hidden_layer_scope.name)
+        #interaction_op
+        if self.interaction_op == 'dot':
+            # dot op
+            with tf.variable_scope('Op_dot_layer', reuse=tf.AUTO_REUSE):
+                net = [dense_inputs]
+                for cols in self.sparse_column:
+                    net.append(column_tensors[cols])
+                net = tf.stack(net, axis=1)
+                net = self.dot_op(net)
+                net = tf.concat([dense_inputs, net], 1)
+        elif self.interaction_op == 'cat':
+            net = tf.concat([dense_inputs, sparse_inputs], 1)
 
-        # linear / fisrt order part
-        with tf.variable_scope('linear', reuse=tf.AUTO_REUSE) as linear:
-            linear_output = tf.reduce_sum(wide_input, axis=1, keepdims=True)
-
-        # FM second order part
-        with tf.variable_scope('fm', reuse=tf.AUTO_REUSE) as fm:
-            sum_square = tf.square(tf.reduce_sum(fm_input, axis=1))
-            square_sum = tf.reduce_sum(tf.square(fm_input), axis=1)
-            fm_output = 0.5 * tf.subtract(sum_square, square_sum)
-
-        # Final dnn layer
-        all_input = tf.concat([dnn_output, linear_output, fm_output], 1)
+        # top MLP before output
         if self.bf16:
-            with tf.variable_scope('final_dnn').keep_weights():
-                net = self.dnn(all_input, self.final_hidden_units, 'final_dnn')
+            net = tf.cast(net, dtype=tf.bfloat16)
+            with tf.variable_scope('mlp_top_layer',
+                                   partitioner=self.dense_layer_partitioner,
+                                   reuse=tf.AUTO_REUSE).keep_weights():
+                for layer_id, num_hidden_units in enumerate(self.mlp_top):
+                    with tf.variable_scope(
+                            "mlp_top_hiddenlayer_%d" % layer_id,
+                            reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
+                        net = tf.layers.dense(net,
+                                              units=num_hidden_units,
+                                              activation=tf.nn.relu,
+                                              name=mlp_top_hidden_layer_scope)
+
+                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
+
+                with tf.variable_scope(
+                        "mlp_top_hiddenlayer_last",
+                        reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
+                    net = tf.layers.dense(net,
+                                          units=1,
+                                          activation=None,
+                                          name=mlp_top_hidden_layer_scope)
+
+                    # net = tf.cast(net, dtype=tf.float32)
+                    net = tf.math.sigmoid(net)
+
+                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
+
             net = tf.cast(net, dtype=tf.float32)
         else:
-            with tf.variable_scope('final_dnn'):
-                net = self.dnn(all_input, self.final_hidden_units, 'final_dnn')
+            with tf.variable_scope('mlp_top_layer',
+                                   partitioner=self.dense_layer_partitioner,
+                                   reuse=tf.AUTO_REUSE):
+                for layer_id, num_hidden_units in enumerate(self.mlp_top):
+                    with tf.variable_scope(
+                            "mlp_top_hiddenlayer_%d" % layer_id,
+                            reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
+                        net = tf.layers.dense(net,
+                                              units=num_hidden_units,
+                                              activation=tf.nn.relu,
+                                              name=mlp_top_hidden_layer_scope)
 
-        net = tf.layers.dense(net, units=1)
-        net = tf.math.sigmoid(net)
+                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
+
+                with tf.variable_scope(
+                        "mlp_top_hiddenlayer_last",
+                        reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
+                    net = tf.layers.dense(net,
+                                          units=1,
+                                          activation=None,
+                                          name=mlp_top_hidden_layer_scope)
+                    net = tf.math.sigmoid(net)
+
+                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
 
         return net
 
     def optimizer(self):
-        loss_func = tf.losses.mean_squared_error
+        bce_loss_func = tf.keras.losses.BinaryCrossentropy()
         self.predict = tf.squeeze(self.predict)
-        loss = tf.math.reduce_mean(loss_func(self.label, self.predict))
+        loss = tf.math.reduce_mean(bce_loss_func(self.label, self.predict))
         tf.summary.scalar('loss', loss)
 
         self.global_step = tf.train.get_or_create_global_step()
-        if self.optimizer_type == 'adam':
-            optimizer = tf.train.AdamOptimizer(
-                learning_rate=self.learning_rate,
-                beta1=0.9,
-                beta2=0.999,
-                epsilon=1e-8)
-        elif self.optimizer_type == 'adagrad':
-            optimizer = tf.train.AdagradOptimizer(
-                learning_rate=self.learning_rate,
-                initial_accumulator_value=1e-8)
-        elif self.optimizer_type == 'adamasync':
-            optimizer = tf.train.AdamAsyncOptimizer(
-                learning_rate=self.learning_rate,
-                beta1=0.9,
-                beta2=0.999,
-                epsilon=1e-8)
-        else:
-            raise ValueError('Optimzier type error.')
+        optimizer = tf.train.GradientDescentOptimizer(
+            learning_rate=self.learning_rate)
 
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        with tf.control_dependencies(update_ops):
-            train_op = optimizer.minimize(loss, global_step=self.global_step)
+        train_op = optimizer.minimize(loss, global_step=self.global_step)
 
         return train_op, loss
 
@@ -282,14 +321,10 @@ def get_arg_parser():
                         help='Dropout regularization for deep model',
                         type=float,
                         default=0.0)
-    parser.add_argument("--optimizer",
-                        type=str,
-                        choices=["adam", "adagrad", "adamasync"],
-                        default="adam")
     parser.add_argument('--learning_rate',
                         help='Learning rate for model',
                         type=float,
-                        default=0.001)
+                        default=0.1)
     parser.add_argument('--save_steps',
                         help='set the number of steps on saving checkpoints',
                         type=int,
@@ -308,6 +343,10 @@ def get_arg_parser():
                         help='number of steps on saving timeline. Default 0',
                         type=int,
                         default=0)
+    parser.add_argument("--interaction_op",
+                        type=str,
+                        choices=["dot", "cat"],
+                        default="cat")
     parser.add_argument("--protocol",
                         type=str,
                         choices=["grpc", "grpc++", "star_server"],
@@ -371,12 +410,12 @@ def main(tf_config=None, server=None):
 
     # set directory path
     model_dir = os.path.join(args.output_dir,
-                             'model_DeepFM_' + str(int(time.time())))
+                             'model_DLRM_' + str(int(time.time())))
     checkpoint_dir = args.checkpoint if args.checkpoint else model_dir
     print("Saving model checkpoints to " + checkpoint_dir)
 
     # create data pipline
-    wide_column, fm_column, deep_column = build_feature_cols()
+    dense_column, sparse_column = build_feature_cols()
     train_dataset = generate_input_data(train_file, batch_size, no_of_epochs)
     test_dataset = generate_input_data(test_file, batch_size, 1)
 
@@ -399,25 +438,23 @@ def main(tf_config=None, server=None):
         10) if args.dense_layer_partitioner else None
 
     # create model
-    model = DeepFM(wide_column=wide_column,
-                   fm_column=fm_column,
-                   deep_column=deep_column,
-                   optimizer_type=args.optimizer,
-                   learning_rate=args.learning_rate,
-                   bf16=args.bf16,
-                   inputs=next_element,
-                   input_layer_partitioner=input_layer_partitioner,
-                   dense_layer_partitioner=dense_layer_partitioner)
+    model = DLRM(dense_column=dense_column,
+                 sparse_column=sparse_column,
+                 learning_rate=args.learning_rate,
+                 bf16=args.bf16,
+                 interaction_op=args.interaction_op,
+                 inputs=next_element,
+                 input_layer_partitioner=input_layer_partitioner,
+                 dense_layer_partitioner=dense_layer_partitioner)
 
     sess_config = tf.ConfigProto()
     if args.inter:
         sess_config.inter_op_parallelism_threads = args.inter
     if args.intra:
         sess_config.intra_op_parallelism_threads = args.intra
-        hooks = []
+    hooks = []
 
     if tf_config:
-        print('train steps : %d' % train_steps)
         hooks.append(tf.train.StopAtStepHook(last_step=train_steps))
         hooks.append(
             tf.train.LoggingTensorHook(
@@ -455,7 +492,6 @@ def main(tf_config=None, server=None):
 
             # train model
             sess.run(train_init_op)
-            model._is_training = True
 
             start = time.perf_counter()
             for _in in range(0, train_steps):
@@ -467,7 +503,7 @@ def main(tf_config=None, server=None):
                     checkpoint_path = saver.save(sess,
                                                  save_path=os.path.join(
                                                      checkpoint_dir,
-                                                     'DeepFM-checkpoint'),
+                                                     'dlrm-checkpoint'),
                                                  global_step=_in)
                     print("Save checkpoint to %s" % checkpoint_path)
                 elif (args.timeline > 0 and _in % args.timeline == 0):
@@ -504,8 +540,6 @@ def main(tf_config=None, server=None):
 
                 sess.run(test_init_op)
                 sess.run(tf.local_variables_initializer())
-                model._is_training = False
-
                 for _in in range(1, test_steps + 1):
                     if (_in != test_steps):
                         sess.run(
