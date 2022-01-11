@@ -115,8 +115,8 @@ Google tensorflow v1.15 is selected to compare with SOK.
 |GPU|method|Embedding vector size|Vocabulary size in bytes|Batch size (global)|dataloader|Data format|Dense optimizer|Embedding optimizer|time(ms) / iteration|
 |:----|:----|:----|:----|:----|:----|:----|:----|:----|:----|
 |A100 * 8|SOK|128|89.5 GB|65536|os.pread|bin|SGD|SGD|12.09|
-|A100 * 1|SOK|128|11.2 GB|8192|os.pread|bin|SGD|SGD|8.31|
-|A100 * 1|TF|128|11.2 GB|8192|os.pread|bin|SGD|SGD|10.16|
+|A100 * 1|SOK|128|11.2 GB|8192|os.pread|bin|SGD|SGD|7.79|
+|A100 * 1|TF|128|11.2 GB|8192|os.pread|bin|SGD|SGD|10.13|
 
 NOTICE: If you want to reproduce the following performance, please ensure the effecitive dataloader.
 
