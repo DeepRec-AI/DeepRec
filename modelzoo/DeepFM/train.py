@@ -147,10 +147,11 @@ class DeepFM():
         with tf.name_scope('head'):
             self.train_op, self.loss = self.optimizer()
             self.acc, self.acc_op = tf.metrics.accuracy(labels=self.label,
-                                                        predictions=self.predict)
+                                                        predictions=tf.round(
+                                                            self.predict))
             self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
-                                                predictions=self.predict,
-                                                num_thresholds=1000)
+                                                   predictions=self.predict,
+                                                   num_thresholds=1000)
             tf.summary.scalar('eval_acc', self.acc)
             tf.summary.scalar('eval_auc', self.auc)
 
@@ -189,14 +190,11 @@ class DeepFM():
             dnn_input = tf.cast(dnn_input, dtype=tf.bfloat16)
 
         # DNN part
-        if self.bf16:
-            with tf.variable_scope('dnn').keep_weights():
-                dnn_output = self.dnn(dnn_input, self.dnn_hidden_units,
-                                      'dnn_layer')
-        else:
-            with tf.variable_scope('dnn'):
-                dnn_output = self.dnn(dnn_input, self.dnn_hidden_units,
-                                      'dnn_layer')
+        dnn_scope = tf.variable_scope('dnn')
+        with dnn_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+            else dnn_scope:
+            dnn_output = self.dnn(dnn_input, self.dnn_hidden_units,
+                                  'dnn_layer')
 
         # linear / fisrt order part
         with tf.variable_scope('linear', reuse=tf.AUTO_REUSE) as linear:
@@ -210,13 +208,13 @@ class DeepFM():
 
         # Final dnn layer
         all_input = tf.concat([dnn_output, linear_output, fm_output], 1)
+        final_dnn_scope = tf.variable_scope('final_dnn')
+        with final_dnn_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+            else final_dnn_scope:
+            net = self.dnn(all_input, self.final_hidden_units, 'final_dnn')
+
         if self.bf16:
-            with tf.variable_scope('final_dnn').keep_weights():
-                net = self.dnn(all_input, self.final_hidden_units, 'final_dnn')
             net = tf.cast(net, dtype=tf.float32)
-        else:
-            with tf.variable_scope('final_dnn'):
-                net = self.dnn(all_input, self.final_hidden_units, 'final_dnn')
 
         net = tf.layers.dense(net, units=1)
         net = tf.math.sigmoid(net)
@@ -413,7 +411,7 @@ def main(tf_config=None, server=None):
         sess_config.inter_op_parallelism_threads = args.inter
     if args.intra:
         sess_config.intra_op_parallelism_threads = args.intra
-        hooks = []
+    hooks = []
 
     if tf_config:
         print('train steps : %d' % train_steps)

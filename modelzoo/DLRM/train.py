@@ -1,5 +1,6 @@
 import time
 import argparse
+from numpy import dtype
 import tensorflow as tf
 import os
 import sys
@@ -130,7 +131,7 @@ class DLRM():
         self.feature = inputs[0]
         self.label = inputs[1]
         self.bf16 = bf16
-        self._is_training=True
+        self._is_training = True
 
         self.interaction_op = interaction_op
         if self.interaction_op not in ['dot', 'cat']:
@@ -140,8 +141,9 @@ class DLRM():
         self.predict = self.prediction()
         with tf.name_scope('head'):
             self.train_op, self.loss = self.optimizer()
-            self.acc, self.acc_op = tf.metrics.accuracy(
-                labels=self.label, predictions=self.predict)
+            self.acc, self.acc_op = tf.metrics.accuracy(labels=self.label,
+                                                        predictions=tf.round(
+                                                            self.predict))
             self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
                                                    predictions=self.predict,
                                                    num_thresholds=1000)
@@ -177,46 +179,33 @@ class DLRM():
                     cols_to_output_tensors=column_tensors)
 
         # MLP behind dense inputs
-        if self.bf16:
-            dense_inputs = tf.cast(dense_inputs, dtype=tf.bfloat16)
-            with tf.variable_scope('mlp_bot_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE).keep_weights():
-                for layer_id, num_hidden_units in enumerate(self.mlp_bot):
-                    with tf.variable_scope(
-                            "mlp_bot_hiddenlayer_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as mlp_bot_hidden_layer_scope:
-                        dense_inputs = tf.layers.dense(
-                            dense_inputs,
-                            units=num_hidden_units,
-                            activation=tf.nn.relu,
-                            name=mlp_bot_hidden_layer_scope)
-                        dense_inputs = tf.layers.batch_normalization(
-                            dense_inputs,
-                            training=self._is_training,
-                            trainable=True)
-                        add_layer_summary(dense_inputs,
-                                          mlp_bot_hidden_layer_scope.name)
-            dense_inputs = tf.cast(dense_inputs, dtype=tf.float32)
-        else:
-            with tf.variable_scope('mlp_bot_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE):
-                for layer_id, num_hidden_units in enumerate(self.mlp_bot):
-                    with tf.variable_scope(
-                            "mlp_bot_hiddenlayer_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as mlp_bot_hidden_layer_scope:
-                        dense_inputs = tf.layers.dense(
-                            dense_inputs,
-                            units=num_hidden_units,
-                            activation=tf.nn.relu,
-                            name=mlp_bot_hidden_layer_scope)
-                        dense_inputs = tf.layers.batch_normalization(
-                            dense_inputs,
-                            training=self._is_training,
-                            trainable=True)
-                        add_layer_summary(dense_inputs,
-                                          mlp_bot_hidden_layer_scope.name)
+        mlp_bot_scope = tf.variable_scope(
+            'mlp_bot_layer',
+            partitioner=self.dense_layer_partitioner,
+            reuse=tf.AUTO_REUSE)
+        with mlp_bot_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+            else mlp_bot_scope:
+            if self.bf16:
+                dense_inputs = tf.cast(dense_inputs, dtype=tf.bfloat16)
+
+            for layer_id, num_hidden_units in enumerate(self.mlp_bot):
+                with tf.variable_scope(
+                        "mlp_bot_hiddenlayer_%d" % layer_id,
+                        reuse=tf.AUTO_REUSE) as mlp_bot_hidden_layer_scope:
+                    dense_inputs = tf.layers.dense(
+                        dense_inputs,
+                        units=num_hidden_units,
+                        activation=tf.nn.relu,
+                        name=mlp_bot_hidden_layer_scope)
+                    dense_inputs = tf.layers.batch_normalization(
+                        dense_inputs,
+                        training=self._is_training,
+                        trainable=True)
+                    add_layer_summary(dense_inputs,
+                                      mlp_bot_hidden_layer_scope.name)
+            if self.bf16:
+                dense_inputs = tf.cast(dense_inputs, dtype=tf.float32)
+
         #interaction_op
         if self.interaction_op == 'dot':
             # dot op
@@ -233,59 +222,34 @@ class DLRM():
         # top MLP before output
         if self.bf16:
             net = tf.cast(net, dtype=tf.bfloat16)
-            with tf.variable_scope('mlp_top_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE).keep_weights():
-                for layer_id, num_hidden_units in enumerate(self.mlp_top):
-                    with tf.variable_scope(
-                            "mlp_top_hiddenlayer_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
-                        net = tf.layers.dense(net,
-                                              units=num_hidden_units,
-                                              activation=tf.nn.relu,
-                                              name=mlp_top_hidden_layer_scope)
-
-                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
-
+        mlp_top_scope = tf.variable_scope(
+            'mlp_top_layer',
+            partitioner=self.dense_layer_partitioner,
+            reuse=tf.AUTO_REUSE)
+        with mlp_top_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+            else mlp_top_scope:
+            for layer_id, num_hidden_units in enumerate(self.mlp_top):
                 with tf.variable_scope(
-                        "mlp_top_hiddenlayer_last",
+                        "mlp_top_hiddenlayer_%d" % layer_id,
                         reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
                     net = tf.layers.dense(net,
-                                          units=1,
-                                          activation=None,
+                                          units=num_hidden_units,
+                                          activation=tf.nn.relu,
                                           name=mlp_top_hidden_layer_scope)
 
-                    # net = tf.cast(net, dtype=tf.float32)
-                    net = tf.math.sigmoid(net)
+                add_layer_summary(net, mlp_top_hidden_layer_scope.name)
 
-                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
-
+        if self.bf16:
             net = tf.cast(net, dtype=tf.float32)
-        else:
-            with tf.variable_scope('mlp_top_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE):
-                for layer_id, num_hidden_units in enumerate(self.mlp_top):
-                    with tf.variable_scope(
-                            "mlp_top_hiddenlayer_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
-                        net = tf.layers.dense(net,
-                                              units=num_hidden_units,
-                                              activation=tf.nn.relu,
-                                              name=mlp_top_hidden_layer_scope)
 
-                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
+        with tf.variable_scope("logits", reuse=tf.AUTO_REUSE) as logits_scope:
+            net = tf.layers.dense(net,
+                                  units=1,
+                                  activation=None,
+                                  name=logits_scope)
+            net = tf.math.sigmoid(net)
 
-                with tf.variable_scope(
-                        "mlp_top_hiddenlayer_last",
-                        reuse=tf.AUTO_REUSE) as mlp_top_hidden_layer_scope:
-                    net = tf.layers.dense(net,
-                                          units=1,
-                                          activation=None,
-                                          name=mlp_top_hidden_layer_scope)
-                    net = tf.math.sigmoid(net)
-
-                    add_layer_summary(net, mlp_top_hidden_layer_scope.name)
+            add_layer_summary(net, logits_scope.name)
 
         return net
 
@@ -543,7 +507,7 @@ def main(tf_config=None, server=None):
 
             # eval model
             if not args.no_eval:
-                model._is_training=False
+                model._is_training = False
                 writer = tf.summary.FileWriter(
                     os.path.join(checkpoint_dir, 'eval'))
 
