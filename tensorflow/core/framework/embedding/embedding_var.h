@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
@@ -110,8 +111,13 @@ class EmbeddingVar : public ResourceBase {
       new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
     } else if (LayoutType::LEVELDB == emb_config_.get_layout_type()) {
      if (emb_config_.is_primary()) {
-      db_name_ = "./level_db_";
-      db_name_.append(std::to_string(Env::Default()->NowMicros()));
+      std::string path = emb_config_.get_storage_path();
+      Status s = Env::Default()->IsDirectory(path);
+      if (!s.ok()) {
+        LOG(WARNING) << "StoragePath=\"" << path << "\" is not Directory, message: " << s.ToString() << ". Try to create dir.";
+        TF_CHECK_OK(Env::Default()->RecursivelyCreateDir(path));
+      }
+      db_name_ = io::JoinPath(path, "level_db_" + std::to_string(Env::Default()->NowMicros()));
       leveldb::Status st;
       leveldb::Options options;
       options.create_if_missing = true;

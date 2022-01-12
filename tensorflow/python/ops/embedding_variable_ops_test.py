@@ -1443,6 +1443,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
+        while True:
+          r, _, _ = sess.run([emb, train_op,loss])
         return r
 
     with ops.device('/cpu:0'), ops.Graph().as_default() as g:
@@ -1451,7 +1453,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
-            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB)))
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
+                                                                                                 storage_path="1/2/3/")))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)

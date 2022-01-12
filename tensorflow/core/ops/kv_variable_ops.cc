@@ -146,6 +146,7 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("l2_weight_threshold: float =-1.0")
     .Attr("layout: string = 'normal'")
     .Attr("storage_type: int = 1")
+    .Attr("storage_path: string = '.'")
     .Attr("default_value_dim: int = 4096")
     .SetShapeFn([](InferenceContext* c) { 
       return Status::OK();
@@ -423,6 +424,7 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("layout: string = 'normal'")
     .Attr("max_freq: int = 999999")
     .Attr("storage_type: int = 1")
+    .Attr("storage_path: string = '.'")
     .Attr("default_value_dim: int = 4096")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
