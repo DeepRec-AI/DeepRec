@@ -1443,8 +1443,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
-        while True:
-          r, _, _ = sess.run([emb, train_op,loss])
         return r
 
     with ops.device('/cpu:0'), ops.Graph().as_default() as g:
