@@ -1,7 +1,7 @@
 # 同步训练-SOK
 ## 简介
 
-SparseOperationKit(SOK)是一个 封装了GPU加速操作从而用于稀疏训练/推理的Python包，它与常见的深度学习框架相兼容，例如TensorFlow。
+SparseOperationKit(SOK)是一个 封装了GPU加速操作从而用于稀疏训练/推理的Python包，它与常见的深度学习框架相兼容。
  	
 ## 背景
 ### GPU模型并行
@@ -16,7 +16,7 @@ DP训练通常是借助一些常见的同步训练框架，例如Horovod,Tenorfl
 
  	
 ## 接口介绍 
- 由于DeepRec(TF1.15)的一些限制，SOK目前只能使用Horovod作为通讯工具。首先通过SOK的初始化函数进行初始化，然后选择sok两种不同embedding层进行embedding，在反向传播的过程中可以选用SOK优化后的优化器。并且在Utilizers中额外提供了一些功能方便客户使用。
+ SOK底层支持Horovod作为通讯工具。首先通过SOK的初始化函数进行初始化，然后选择sok两种不同embedding层进行embedding，在反向传播的过程中可以选用SOK优化后的优化器。并且在Utilizers中额外提供了一些功能方便客户使用。
 ### Initialize
 ```python
 sparse_operation_kit.core.initialize.Init(**kwargs)
