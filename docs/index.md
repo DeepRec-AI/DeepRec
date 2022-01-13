@@ -35,6 +35,7 @@ Multi-Hash-Variable
 
 GRPC++
 StarServer
+同步训练-SOK
 ```
 
 ```{toctree}
