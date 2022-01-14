@@ -87,6 +87,32 @@ Allocator* AllocatorFactoryRegistry::GetAllocator() {
   }
 }
 
+Allocator* AllocatorFactoryRegistry::GetExperimentalPMEMAllocator() {
+  LOG(WARNING) << "!!!Get Experimental pmem allocator!!!";
+
+  mutex_lock l(mu_);
+  first_alloc_made_ = true;
+  FactoryEntry* best_entry = nullptr;
+  for (auto& entry : factories_) {
+    if (best_entry == nullptr) {
+      best_entry = &entry;
+    } else if (entry.name == "ExperimentalPMEMAllocator") {
+      best_entry = &entry;
+      break;
+    }
+  }
+
+  if (best_entry) {
+    if (!best_entry->allocator) {
+      best_entry->allocator.reset(best_entry->factory->CreateAllocator());
+    }
+    return best_entry->allocator.get();
+  } else {
+    LOG(FATAL) << "No registered Experimental PMEM AllocatorFactory";
+    return nullptr;
+  }
+}
+
 Allocator* AllocatorFactoryRegistry::GetPMEMAllocator() {
   mutex_lock l(mu_);
   first_alloc_made_ = true;

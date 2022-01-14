@@ -93,6 +93,17 @@ Allocator* pmem_allocator() {
   return pmem_alloc;
 }
 
+Allocator* experimental_pmem_allocator() {
+  static Allocator* experimental_pmem_allocator =
+      AllocatorFactoryRegistry::singleton()->GetExperimentalPMEMAllocator();
+  if (experimental_pmem_allocator && cpu_allocator_collect_full_stats &&
+      !experimental_pmem_allocator->TracksAllocationSizes()) {
+    experimental_pmem_allocator =
+        new TrackingAllocator(experimental_pmem_allocator, true);
+  }
+  return experimental_pmem_allocator;
+}
+
 Allocator* ev_allocator() {
   static Allocator* ev_alloc =
       AllocatorFactoryRegistry::singleton()->GetEVAllocator();

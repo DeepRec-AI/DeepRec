@@ -96,8 +96,10 @@ def main(_):
           if FLAGS.use_ev_var:
             if FLAGS.ev_storage == "dram":
               ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM))
-            elif FLAGS.ev_storage == "pmem":
-              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.PMEM))
+            elif FLAGS.ev_storage == "pmem_memkind":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.PMEM_MEMKIND))
+            elif FLAGS.ev_storage == "pmem_libpmem":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.PMEM_LIBPMEM))
             fm_w = tf.get_embedding_variable(
                name='fm_w{}'.format(sidx),
                embedding_dim=1,

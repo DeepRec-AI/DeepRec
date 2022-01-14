@@ -80,6 +80,8 @@ class AllocatorFactoryRegistry {
   //If use PMEMallocator, then factory pick this one
   Allocator* GetPMEMAllocator();
 
+  Allocator* GetExperimentalPMEMAllocator();
+
   Allocator* GetEVAllocator();
 
   // Returns 'best fit' SubAllocator.  First look for the highest priority
