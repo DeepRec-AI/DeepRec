@@ -436,5 +436,19 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
         for j in xrange(4):
           self.assertAlmostEqual(1.8211145, sess.run(emb, feed_dict={"ids:0": i})[j], delta=1e-05)
 
+  def testIncrementalSaverForResourceVariable(self):
+    variable_scope.get_variable('partitioned_res_var', shape=[100], use_resource=True, partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    variable_scope.get_variable('partitioned_var', shape=[100], use_resource=False, partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    variable_scope.get_embedding_variable('partitioned_ev', embedding_dim=100, partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    variable_scope.get_variable('res_var', shape=[100], use_resource=True)
+    variable_scope.get_variable('var', shape=[100], use_resource=False)
+    variable_scope.get_embedding_variable('ev', embedding_dim=100)
+    saver = saver_module.Saver(
+        save_relative_paths=True,
+        incremental_save_restore=True,
+    )
+    saver.build()
+    incr_saver = incr_saver_module._get_incremental_saver(True, saver)
+
 if __name__ == "__main__":
   googletest.main()

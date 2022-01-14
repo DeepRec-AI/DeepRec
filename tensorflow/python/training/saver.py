@@ -183,7 +183,7 @@ class BaseSaverBuilder(object):
     # save_incr_sparse     1           1             2              3
     # not save_incr_sparse -           -             2              2
 
-    save_incr_sparse = saveable.op.op._is_sparse and self._incremental_include_normal_var
+    save_incr_sparse = saveable.is_sparse and self._incremental_include_normal_var
     # EV
     if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
       return saveable.name, True

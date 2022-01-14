@@ -69,6 +69,7 @@ class SaveableObject(object):
     self.op = op
     self.specs = specs
     self.name = name
+    self.is_sparse = False
 
   @property
   def optional_restore(self):
