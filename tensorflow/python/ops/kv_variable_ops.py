@@ -260,6 +260,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
+    self._is_sparse=False
     if evconfig.filter_strategy != None:
       if isinstance(evconfig.filter_strategy, variables.CounterFilter):
         self._filter_freq = evconfig.filter_strategy.filter_freq
@@ -445,6 +446,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._invalid_key_type = dtypes.as_dtype(self._handle.op.get_attr("Tkeys"))
     self._graph_element = self._handle
     self._constraint = None
+    self._is_sparse=False
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
   def set_init_data_source_initializer(self, init_data_source):
