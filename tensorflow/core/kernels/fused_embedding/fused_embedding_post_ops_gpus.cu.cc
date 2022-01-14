@@ -9,6 +9,7 @@
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "third_party/cub/thread/thread_operators.cuh"
 
@@ -137,6 +138,8 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->input("row_empty_and_invalid_flags",
                                    &row_empty_and_invalid_flags));
 
+    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
+
     const int64_t emb_vec_size = emb_shards[0].shape().dim_size(1);
     const int64_t batch_size = dense_shape_tensor->flat<int64>().data()[0];
 
@@ -258,6 +261,8 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
 
     OpOutputList grad_shards;
     OP_REQUIRES_OK(ctx, ctx->output_list("grad_shards", &grad_shards));
+
+    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
     const int64_t batch_size = top_grad_tensor->shape().dim_size(0);
     const int64_t emb_vec_size = emb_shards[0].shape().dim_size(1);
