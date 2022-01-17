@@ -12,7 +12,7 @@ SOK提供了MP的embedding操作可以充分利用所有可用的GPU，包括单
 无论对于单机还是多机，通过将一些MP的embedding层整合到SOK中，都可以使这些embedding层充分利用所有可用的GPU显存来储存embedding参数，并且所有使用的GPU都是同步工作。
 
 DP训练通常是借助一些常见的同步训练框架，例如Horovod,Tenorflow Distribute strategy等。由于SOK与DP训练是相互兼容的，因此训练数据可以采用数据并行的模式输入SOK中，这和TF的embedding层的输入模式是相同的，这意味着当使用SOK将DNN模型从单个GPU扩展到多个GPU时，并不需要进行DP和MP之间的转换。
-![WorkFlowOfEmbeddingLayer](同步训练-SOK/workflow_of_embeddinglayer.png)
+![workflow_of_embeddinglayer.png](SOK/workflow_of_embeddinglayer.png)
 
  	
 ## 接口介绍 
@@ -62,7 +62,7 @@ optimizers优化了tensorflow中的两个optimizer,将其中的`unique`和`unsor
 #### Adam optimizer
 `classsparse_operation_kit.tf.keras.optimizers.adam.Adam(*args, **kwargs)`
 #### Local update Adam optimizer
-`classsparse_operation_kit.tf.keras.optimizers.lazy_adam.LazyAdamOptimizer(*args, **kwargs)[source]`
+`classsparse_operation_kit.tf.keras.optimizers.lazy_adam.LazyAdamOptimizer(*args, **kwargs)`
 ### Utilizers
 `sparse_operation_kit.optimizers.utils.split_embedding_variable_from_others(variables)`
 该API用于将embedding variable和其他的variable分割开。

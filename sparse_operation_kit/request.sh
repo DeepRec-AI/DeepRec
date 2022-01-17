@@ -10,6 +10,7 @@ fi
 #install nccl
 #For downloading NCCL you have to registered here https://developer.nvidia.com/developer-program/signup
 wget https://developer.nvidia.com/compute/machine-learning/nccl/secure/2.11.4/ubuntu1804/x86_64/nccl-local-repo-ubuntu1804-2.11.4-cuda11.0_1.0-1_amd64.deb
+dpkg -i nccl-local-repo-ubuntu1804-2.11.4-cuda11.0_1.0-1_amd64.deb
 apt-get update
 apt install libnccl2=2.11.4-1+cuda11.0 libnccl-dev=2.11.4-1+cuda11.0
 cp /usr/include/nccl.h /usr/local/cuda/include/nccl.h
@@ -32,8 +33,9 @@ mpirun --version
 rm openmpi-4.1.1.tar.gz && rm -rf openmpi-4.1.1
 
 #install horovod
-pip install horovod
-pip list|grep horovod
+HOROVOD_GPU_ALLREDUCE=NCCL HOROVOD_GPU_BROADCAST=NCCL pip install --no-cache-dir horovod
+horovodrun –check-build
+
 
 echo "Successfully installed."
 
