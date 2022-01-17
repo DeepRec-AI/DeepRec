@@ -53,6 +53,7 @@ from tensorflow.core.framework.graph_pb2 import *
 from tensorflow.core.framework.node_def_pb2 import *
 from tensorflow.core.framework.summary_pb2 import *
 from tensorflow.core.framework.attr_value_pb2 import *
+from tensorflow.core.framework.embedding.config_pb2 import StorageType
 from tensorflow.core.protobuf.meta_graph_pb2 import TensorInfo
 from tensorflow.core.protobuf.meta_graph_pb2 import MetaGraphDef
 from tensorflow.core.protobuf.config_pb2 import *
@@ -192,6 +193,7 @@ tf_export(v1=['summary.SummaryDescription'])(SummaryDescription)
 tf_export(v1=['SummaryMetadata'])(SummaryMetadata)
 tf_export(v1=['summary.TaggedRunMetadata'])(TaggedRunMetadata)
 tf_export(v1=['TensorInfo'])(TensorInfo)
+tf_export(v1=['StorageType'])(StorageType)
 # pylint: enable=undefined-variable
 
 # Special dunders that we choose to export:

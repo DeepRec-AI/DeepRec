@@ -10,6 +10,8 @@ enum StorageType {
   DRAM = 1;
   PMEM = 2;
   SSD = 3;
+
+  LEVELDB = 14;
 /*
   // two level
   DRAM_PMEM = 11;
