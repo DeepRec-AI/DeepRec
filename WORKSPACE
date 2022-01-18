@@ -181,14 +181,6 @@ http_archive(
 )
 
 http_archive(
-    name = "lz4",
-    build_file = "//third_party:lz4.BUILD",
-    sha256 = "658ba6191fa44c92280d4aa2c271b0f4fbc0e34d249578dd05e50e76d0e5efcc",
-    strip_prefix = "lz4-1.9.2/lib",
-    urls = ["https://github.com/lz4/lz4/archive/v1.9.2.tar.gz"],
-)
-
-http_archive(
     name = "sctp",
     build_file = "//third_party:sctp.BUILD",
     sha256 = "3e9ab5b3844a8b65fc8152633aafe85f406e6da463e53921583dfc4a443ff03a",
@@ -230,20 +222,3 @@ http_archive(
     ],
     urls = ["https://pagure.io/libaio/archive/libaio-0.3.112/libaio-libaio-0.3.112.tar.gz"],
 )
-
-http_archive(
-    name = "kafka150",
-    build_file = "//third_party:kafka.BUILD",
-    patch_cmds = [
-        "rm -f src/win32_config.h",
-        # TODO: Remove the fowllowing once librdkafka issue is resolved.
-        """sed -i.bak '\|rd_kafka_log(rk,|,/ exceeded);/ s/^/\/\//' src/rdkafka_cgrp.c""",
-    ],
-    sha256 = "f7fee59fdbf1286ec23ef0b35b2dfb41031c8727c90ced6435b8cf576f23a656",
-    strip_prefix = "librdkafka-1.5.0",
-    urls = [
-        "https://mirror.tensorflow.org/github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
-        "https://github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
-    ],
-)
-

@@ -6,7 +6,7 @@ licenses(["notice"])  # 2-clause BSD license
 exports_files(["LICENSE"])
 
 cc_library(
-    name = "kafka150",
+    name = "kafka",
     srcs = glob(
         [
             "src-cpp/*.h",

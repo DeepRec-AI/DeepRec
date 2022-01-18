@@ -1,6 +1,6 @@
 # TensorFlow external dependencies that can be loaded in WORKSPACE files.
 
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("//third_party/gpus:cuda_configure.bzl", "cuda_configure")
 load("//third_party/gpus:rocm_configure.bzl", "rocm_configure")
 load("//third_party/tensorrt:tensorrt_configure.bzl", "tensorrt_configure")
@@ -691,18 +691,6 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         ],
     )
 
-    tf_http_archive(
-        name = "kafka",
-        build_file = clean_dep("//third_party:kafka/BUILD"),
-        patch_file = clean_dep("//third_party/kafka:config.patch"),
-        sha256 = "cc6ebbcd0a826eec1b8ce1f625ffe71b53ef3290f8192b6cae38412a958f4fd3",
-        strip_prefix = "librdkafka-0.11.5",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/edenhill/librdkafka/archive/v0.11.5.tar.gz",
-            "https://github.com/edenhill/librdkafka/archive/v0.11.5.tar.gz",
-        ],
-    )
-
     java_import_external(
         name = "junit",
         jar_sha256 = "59721f0805e223d84b90677887d9ff567dc534d7c502ca903c0c2b17f05c116a",
@@ -1050,6 +1038,30 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         urls = [
             "https://github.com/AlibabaPAI/seastar/archive/b9357c525a552ad21b5609622c900e0649921712.tar.gz",
             "https://github.com/AlibabaPAI/seastar/archive/b9357c525a552ad21b5609622c900e0649921712.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "lz4",
+        build_file = str(Label("//third_party:lz4.BUILD")),
+        sha256 = "658ba6191fa44c92280d4aa2c271b0f4fbc0e34d249578dd05e50e76d0e5efcc",
+        strip_prefix = "lz4-1.9.2/lib",
+        urls = ["https://github.com/lz4/lz4/archive/v1.9.2.tar.gz"],
+    )
+
+    http_archive(
+        name = "kafka",
+        build_file = str(Label("//third_party:kafka.BUILD")),
+        patch_cmds = [
+            "rm -f src/win32_config.h",
+            # TODO: Remove the fowllowing once librdkafka issue is resolved.
+            """sed -i.bak '\\|rd_kafka_log(rk,|,/ exceeded);/ s/^/\\/\\//' src/rdkafka_cgrp.c""",
+        ],
+        sha256 = "f7fee59fdbf1286ec23ef0b35b2dfb41031c8727c90ced6435b8cf576f23a656",
+        strip_prefix = "librdkafka-1.5.0",
+        urls = [
+            "https://mirror.tensorflow.org/github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
+            "https://github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
         ],
     )
 

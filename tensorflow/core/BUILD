@@ -3011,7 +3011,6 @@ tf_cuda_library(
         "//tensorflow/core:framework/bfloat16",
         "//tensorflow/core:framework/numeric_types",
         "//tensorflow/core/kernels:bounds_check",
-        "//tensorflow/core/profiler:nvtx_utils",
         "//tensorflow/core/profiler/lib:traceme",
         "//third_party/eigen3",
     ] + if_static(
@@ -3055,7 +3054,7 @@ tf_cuda_library(
         "//tensorflow/core/kernels:bounds_check",
         "//tensorflow/core:gpu_id",
         "//third_party/eigen3",
-        "core_cpu_lib",
+        "@sparsehash_c11//:dense_hash_map",
     ] + if_static(
         extra_deps = ["@com_google_protobuf//:protobuf"],
         otherwise = ["@com_google_protobuf//:protobuf_headers"],
