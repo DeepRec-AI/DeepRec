@@ -838,6 +838,15 @@ Status Graph::AddWhileContext(StringPiece frame_name,
   return Status::OK();
 }
 
+bool Graph::IsTrainingGraph() const {
+  for (Node* node : op_nodes()) {
+    if (node->name().find("gradient") != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::unordered_map<string, Node*> Graph::BuildNodeNameIndex() const {
   std::unordered_map<string, Node*> result;
   for (Node* n : nodes()) {

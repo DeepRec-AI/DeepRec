@@ -109,6 +109,43 @@ void TrackingAllocator::DeallocateRaw(void* ptr) {
   }
 }
 
+void TrackingAllocator::DeallocateRawAsync(void* ptr) {
+  // freeing a null ptr is a no-op
+  if (nullptr == ptr) {
+    return;
+  }
+  bool should_delete;
+  // fetch the following outside the lock in case the call to
+  // AllocatedSize is slow
+  bool tracks_allocation_sizes = allocator_->TracksAllocationSizes();
+  size_t allocated_bytes = 0;
+  if (tracks_allocation_sizes) {
+    allocated_bytes = allocator_->AllocatedSize(ptr);
+  } else if (track_sizes_locally_) {
+    mutex_lock lock(mu_);
+    auto itr = in_use_.find(ptr);
+    if (itr != in_use_.end()) {
+      tracks_allocation_sizes = true;
+      allocated_bytes = (*itr).second.allocated_size;
+      in_use_.erase(itr);
+    }
+  }
+  Allocator* allocator = allocator_;
+  {
+    mutex_lock lock(mu_);
+    if (tracks_allocation_sizes) {
+      CHECK_GE(allocated_, allocated_bytes);
+      allocated_ -= allocated_bytes;
+      allocations_.emplace_back(-allocated_bytes, Env::Default()->NowMicros());
+    }
+    should_delete = UnRef();
+  }
+  allocator->DeallocateRawAsync(ptr);
+  if (should_delete) {
+    delete this;
+  }
+}
+
 bool TrackingAllocator::TracksAllocationSizes() const {
   return track_sizes_locally_ || allocator_->TracksAllocationSizes();
 }
