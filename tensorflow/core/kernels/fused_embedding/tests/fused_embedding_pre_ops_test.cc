@@ -13,8 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <stdio.h>
-
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/fake_input.h"
 #include "tensorflow/core/framework/node_def_builder.h"
@@ -59,6 +57,7 @@ class FusedEmbeddingSparsePreLookUpOpTest : public OpsTestBase {
 };
 
 TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Partition3_Int64) {
+  printf("hello?\n");
   MakeOpAndSetDevice(Device::GPU, 3, false, false, -1);
   // partition_shapes 0
   AddInputFromArray<int64>(TensorShape({2}), {6, 16});
@@ -97,7 +96,6 @@ TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Partition3_Int64) {
     test::FillValues<int64>(&expected_indices, {12, 12, 13, 0});
     test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(4));
   }
-
   {
     Tensor expected_values(allocator(), DT_INT64, TensorShape({4}));
     test::FillValues<int64>(&expected_values, {2, 3, 5, 6});

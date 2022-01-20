@@ -1948,10 +1948,10 @@ tf_cuda_cc_test(
 tf_cuda_cc_test(
     name = "fused_embedding_ops_test",
     size = "small",
-    srcs = ["fused_embedding/fused_embedding_local_ops_test.cc",
-            "fused_embedding/fused_embedding_pre_ops_test.cc",
-            "fused_embedding/fused_embedding_post_ops_test.cc",
-            "fused_embedding/fused_embedding_post_grad_ops_test.cc"],
+    srcs = ["fused_embedding/tests/fused_embedding_local_ops_test.cc",
+            "fused_embedding/tests/fused_embedding_pre_ops_test.cc",
+            "fused_embedding/tests/fused_embedding_post_ops_test.cc",
+            "fused_embedding/tests/fused_embedding_post_grad_ops_test.cc"],
     tags = tf_cuda_tests_tags(),
     deps = [
         ":fused_embedding_ops",
@@ -1960,10 +1960,8 @@ tf_cuda_cc_test(
         "//tensorflow/cc:cc_ops",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
-        "//tensorflow/core:framework_internal",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
-        "//tensorflow/core:tensorflow",
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
@@ -5285,8 +5283,8 @@ tf_kernel_library(
 )
 
 tf_cuda_library(
-    name = "fused_embedding_common_cuh",
-    hdrs = ["fused_embedding/fused_embedding_common.cu.h"],
+    name = "fused_embedding_cuh",
+    hdrs = ["fused_embedding/fused_embedding.cu.h"],
 )
 
 tf_kernel_library(
@@ -5294,10 +5292,11 @@ tf_kernel_library(
     gpu_srcs = [
         "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
         "fused_embedding/fused_embedding_pre_ops_gpus.cu.cc",
-        "fused_embedding/fused_embedding_post_ops_gpus.cu.cc"
+        "fused_embedding/fused_embedding_post_ops_gpus.cu.cc",
+        "fused_embedding/fused_embedding_gpu_kernels.cu.cc"
     ],
     deps = ["//third_party/eigen3", "//tensorflow/core/profiler:nvtx_utils"] +
-           DYNAMIC_DEPS + if_cuda(["@cub_archive//:cub", ":fused_embedding_common_cuh"]),
+           DYNAMIC_DEPS + if_cuda(["@cub_archive//:cub", "fused_embedding_cuh"]),
 )
 
 tf_kernel_library(

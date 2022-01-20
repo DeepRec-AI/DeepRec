@@ -7,13 +7,13 @@
 
 #define EIGEN_USE_GPU
 
-#include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
-namespace {
+namespace fused_embedding {
 
 __global__ void SetToIntMaxSTG128(int* values_offset, const int batch_size) {
   const int thread_offset = 4 * (blockIdx.x * blockDim.x + threadIdx.x);
@@ -121,7 +121,7 @@ __global__ void DoEmbeddingGrad(const float* top_grad,
   }
 }
 
-}  // namespace
+}  // namespace fused_embedding
 
 class FusedEmbeddingLocalSparseLookUpGPU : public OpKernel {
  public:
@@ -132,6 +132,8 @@ class FusedEmbeddingLocalSparseLookUpGPU : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
+    using namespace fused_embedding;
+
     auto stream = ctx->eigen_device<GPUDevice>().stream();
 
     Tensor const* values_tensor = nullptr;
@@ -235,6 +237,7 @@ class FusedEmbeddingLocalSparseLookUpGradGPU : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
+    using namespace fused_embedding;
     auto stream = ctx->eigen_device<GPUDevice>().stream();
 
     Tensor const* top_grad_tensor = nullptr;

@@ -8,105 +8,13 @@
 
 #define EIGEN_USE_GPU
 
-#include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
 #include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "third_party/cub/thread/thread_operators.cuh"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
-
-namespace {
-__global__ void SumUpEmbeddingShard(const float* emb_shard,
-                                    const int64_t* partitioned_indice,
-                                    float* emb_vectors, int* feature_nums,
-                                    const float max_norm,
-                                    const int emb_vec_size) {
-  __shared__ float l2_sum[1];
-
-  const int64_t row_in_batch = partitioned_indice[2 * blockIdx.x];
-  float emb_element = emb_shard[blockIdx.x * emb_vec_size + threadIdx.x];
-  if (max_norm >= 0.0f) {
-    if (threadIdx.x == 0) {
-      l2_sum[0] = 0.0f;
-    }
-    __syncthreads();
-    atomicAdd(l2_sum, emb_element * emb_element);
-    __syncthreads();
-    float l2_norm = sqrtf(l2_sum[0]);
-    if (l2_norm > max_norm) {
-      emb_element *= max_norm / l2_norm;
-    }
-  }
-
-  atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
-            emb_element);
-
-  if (threadIdx.x == 0) {
-    atomicAdd(feature_nums + row_in_batch, 1);
-  }
-}
-
-template <Combiner combiner>
-__global__ void ApplyCombiner(float* emb_vectors, const int* row_emptiness_flag,
-                              const bool set_empty_row_zero,
-                              const int* feature_nums) {
-  const int offset = blockIdx.x * blockDim.x + threadIdx.x;
-  if (set_empty_row_zero) {
-    if (row_emptiness_flag[blockIdx.x]) {
-      emb_vectors[offset] = 0.0f;
-      return;
-    }
-  }
-  const int feature_num = feature_nums[blockIdx.x];
-  const float emb_element = emb_vectors[offset];
-  emb_vectors[offset] = Combine<combiner>(emb_element, feature_num);
-}
-
-template <Combiner combiner>
-__global__ void DistributeGradToShard(
-    const float* top_grad, const float* emb_shard,
-    const int64_t* partitioned_indice, const int* feature_nums,
-    const int* row_emptiness_flag, const bool set_empty_row_zero,
-    float* grad_shard, const int64_t sub_nnz, const int64_t emb_vec_size,
-    const float max_norm) {
-  __shared__ int64_t row_in_batch_shared[1];
-  __shared__ int feature_num_shared[1];
-  __shared__ float l2_sum[1];
-  int64_t row_in_batch;
-  if (threadIdx.x == 0) {
-    row_in_batch = partitioned_indice[2 * blockIdx.x];
-    row_in_batch_shared[0] = row_in_batch;
-    feature_num_shared[0] = feature_nums[row_in_batch];
-  }
-  __syncthreads();
-  row_in_batch = row_in_batch_shared[0];
-  const int feature_num = feature_num_shared[0];
-  if (set_empty_row_zero) {
-    if (row_emptiness_flag[row_in_batch]) {
-      grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = 0.0f;
-      return;
-    }
-  }
-  float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
-  grad = CombineGrad<combiner>(grad, feature_num);
-  if (max_norm >= 0.0f) {
-    const float emb_element =
-        emb_shard[blockIdx.x * emb_vec_size + threadIdx.x];
-    if (threadIdx.x == 0) {
-      l2_sum[0] = 0.0f;
-    }
-    __syncthreads();
-    atomicAdd(l2_sum, emb_element * emb_element);
-    __syncthreads();
-    float l2_norm = sqrtf(l2_sum[0]);
-    if (l2_norm > max_norm) {
-      grad *= max_norm / l2_norm;
-    }
-  }
-  grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = grad;
-}
-}  // namespace
 
 class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
  public:
@@ -122,7 +30,8 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
-    auto stream = ctx->eigen_device<GPUDevice>().stream();
+    using namespace fused_embedding;
+    auto device = ctx->eigen_device<GPUDevice>();
 
     OpInputList emb_shards;
     OP_REQUIRES_OK(ctx, ctx->input_list("emb_shards", &emb_shards));
@@ -143,7 +52,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
     const int64_t emb_vec_size = emb_shards[0].shape().dim_size(1);
     const int64_t batch_size = dense_shape_tensor->flat<int64>().data()[0];
 
-    // 1. sum up emb values from different entries and dump into output
+    // = 1. sum up emb values from differententries and dump into output = //
     Tensor* emb_vectors_tensor = nullptr;
     OP_REQUIRES_OK(
         ctx, ctx->allocate_output(0, TensorShape({batch_size, emb_vec_size}),
@@ -155,7 +64,8 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
     //                    emb_vectors_tensor->NumElements() * sizeof(float));
 
     cudaMemsetAsync(emb_vectors_tensor->flat<float>().data(), 0x0,
-                    sizeof(float) * emb_vectors_tensor->NumElements(), stream);
+                    sizeof(float) * emb_vectors_tensor->NumElements(),
+                    device.stream());
 
     Tensor* feature_nums;
     OP_REQUIRES_OK(
@@ -166,7 +76,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
     // stream->ThenMemZero(&feature_nums_wrapper,
     //                    feature_nums.NumElements() * sizeof(int));
     cudaMemsetAsync(feature_nums->flat<int>().data(), 0x0,
-                    sizeof(int) * feature_nums->NumElements(), stream);
+                    sizeof(int) * feature_nums->NumElements(), device.stream());
 
     for (int i = 0; i < num_partitions_; i++) {
       const size_t sub_nnz = emb_shards[i].shape().dim_size(0);
@@ -174,43 +84,39 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
           ctx, sub_nnz == partitioned_indices[i].shape().dim_size(0),
           errors::InvalidArgument(
               "emb_shard and partitioned_indice dosn't have the same length"));
-
-      {
-        const int blocks = sub_nnz;
-        const int threads = emb_vec_size;
-        SumUpEmbeddingShard<<<blocks, threads, 0, stream>>>(
-            emb_shards[i].flat<float>().data(),
-            reinterpret_cast<const int64_t*>(
-                partitioned_indices[i].flat<int64>().data()),
-            emb_vectors_tensor->flat<float>().data(),
-            feature_nums->flat<int>().data(), max_norm_, emb_vec_size);
-        CK_CUDA_THROW_(cudaGetLastError());
-      }
+      SumUpEmbeddingShard(
+          device, sub_nnz, data_p_with_type<const float>(emb_shards[i]),
+          data_p_with_type<const int64_t>(partitioned_indices[i]),
+          data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<int>(feature_nums), max_norm_, emb_vec_size);
+      CK_CUDA_THROW_(cudaGetLastError());
     }
 
     const bool set_empty_row_zero = default_id_ >= 0;
-    // 2. combiner
-    {
-      const int blocks = batch_size;
-      const int threads = emb_vec_size;
-      if (combiner_ == "sqrtn") {
-        ApplyCombiner<Sqrtn><<<blocks, threads, 0, stream>>>(
-            emb_vectors_tensor->flat<float>().data(),
-            row_empty_and_invalid_flags->flat<int>().data(), set_empty_row_zero,
-            feature_nums->flat<int>().data());
-      } else if (combiner_ == "mean") {
-        ApplyCombiner<Mean><<<blocks, threads, 0, stream>>>(
-            emb_vectors_tensor->flat<float>().data(),
-            row_empty_and_invalid_flags->flat<int>().data(), set_empty_row_zero,
-            feature_nums->flat<int>().data());
-      } else {
-        ApplyCombiner<Sum><<<blocks, threads, 0, stream>>>(
-            emb_vectors_tensor->flat<float>().data(),
-            row_empty_and_invalid_flags->flat<int>().data(), set_empty_row_zero,
-            feature_nums->flat<int>().data());
-      }
-      CK_CUDA_THROW_(cudaGetLastError());
+    // ================================================================ //
+
+    // ========================= 2. combiner ========================== //
+    if (combiner_ == "sqrtn") {
+      ApplyCombiner<Sqrtn>(device, batch_size, emb_vec_size,
+                           data_p_with_type<float>(emb_vectors_tensor),
+                           data_p_with_type<const int>(row_empty_and_invalid_flags),
+                           set_empty_row_zero,
+                           data_p_with_type<int>(feature_nums));
+    } else if (combiner_ == "mean") {
+      ApplyCombiner<Mean>(device, batch_size, emb_vec_size,
+                          data_p_with_type<float>(emb_vectors_tensor),
+                          data_p_with_type<const int>(row_empty_and_invalid_flags),
+                          set_empty_row_zero,
+                          data_p_with_type<int>(feature_nums));
+    } else {
+      ApplyCombiner<Sum>(device, batch_size, emb_vec_size,
+                         data_p_with_type<float>(emb_vectors_tensor),
+                         data_p_with_type<const int>(row_empty_and_invalid_flags),
+                         set_empty_row_zero,
+                         data_p_with_type<int>(feature_nums));
     }
+    CK_CUDA_THROW_(cudaGetLastError());
+    // ================================================================ //
   }
 
  private:
@@ -240,7 +146,8 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
-    auto stream = ctx->eigen_device<GPUDevice>().stream();
+    using namespace fused_embedding;
+    auto device = ctx->eigen_device<GPUDevice>();
 
     Tensor const* top_grad_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("top_grad", &top_grad_tensor));
@@ -277,42 +184,35 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
           ctx, grad_shards.allocate(i, TensorShape({sub_nnz, emb_vec_size}),
                                     &grad_shard));
 
-      {
-        const int blocks = sub_nnz;
-        const int threads = emb_vec_size;
-        if (combiner_ == "sqrtn") {
-          DistributeGradToShard<Sqrtn><<<blocks, threads, 0, stream>>>(
-              top_grad_tensor->flat<float>().data(),
-              emb_shards[i].flat<float>().data(),
-              reinterpret_cast<const int64_t*>(
-                  partitioned_indices[i].flat<int64>().data()),
-              feature_nums->flat<int>().data(),
-              row_empty_and_invalid_flags->flat<int>().data(),
-              set_empty_row_zero, grad_shard->flat<float>().data(), sub_nnz,
-              emb_vec_size, max_norm_);
-        } else if (combiner_ == "mean") {
-          DistributeGradToShard<Mean><<<blocks, threads, 0, stream>>>(
-              top_grad_tensor->flat<float>().data(),
-              emb_shards[i].flat<float>().data(),
-              reinterpret_cast<const int64_t*>(
-                  partitioned_indices[i].flat<int64>().data()),
-              feature_nums->flat<int>().data(),
-              row_empty_and_invalid_flags->flat<int>().data(),
-              set_empty_row_zero, grad_shard->flat<float>().data(), sub_nnz,
-              emb_vec_size, max_norm_);
-        } else {
-          DistributeGradToShard<Sum><<<blocks, threads, 0, stream>>>(
-              top_grad_tensor->flat<float>().data(),
-              emb_shards[i].flat<float>().data(),
-              reinterpret_cast<const int64_t*>(
-                  partitioned_indices[i].flat<int64>().data()),
-              feature_nums->flat<int>().data(),
-              row_empty_and_invalid_flags->flat<int>().data(),
-              set_empty_row_zero, grad_shard->flat<float>().data(), sub_nnz,
-              emb_vec_size, max_norm_);
-        }
-        CK_CUDA_THROW_(cudaGetLastError());
+      if (combiner_ == "sqrtn") {
+        DistributeGradToShard<Sqrtn>(
+            device, data_p_with_type<const float>(top_grad_tensor),
+            data_p_with_type<const float>(emb_shards[i]),
+            data_p_with_type<const int64_t>(partitioned_indices[i]),
+            data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            set_empty_row_zero, data_p_with_type<float>(grad_shard), sub_nnz,
+            emb_vec_size, max_norm_);
+      } else if (combiner_ == "mean") {
+        DistributeGradToShard<Mean>(
+            device, data_p_with_type<const float>(top_grad_tensor),
+            data_p_with_type<const float>(emb_shards[i]),
+            data_p_with_type<const int64_t>(partitioned_indices[i]),
+            data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            set_empty_row_zero, data_p_with_type<float>(grad_shard), sub_nnz,
+            emb_vec_size, max_norm_);
+      } else {
+        DistributeGradToShard<Sum>(
+            device, data_p_with_type<const float>(top_grad_tensor),
+            data_p_with_type<const float>(emb_shards[i]),
+            data_p_with_type<const int64_t>(partitioned_indices[i]),
+            data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            set_empty_row_zero, data_p_with_type<float>(grad_shard), sub_nnz,
+            emb_vec_size, max_norm_);
       }
+      CK_CUDA_THROW_(cudaGetLastError());
     }
   }
 
