@@ -175,6 +175,17 @@ def validate_synchronization_aggregation_trainable(synchronization, aggregation,
     trainable = synchronization != VariableSynchronization.ON_READ
   return synchronization, aggregation, trainable
 
+@tf_export(v1=["InitializerOption"])
+class InitializerOption(object):
+  def __init__(self,
+               initializer = None,
+               default_value_dim = 4096):
+    self.initializer = initializer
+    self.default_value_dim  = default_value_dim
+    if default_value_dim <=0:
+      print("default value dim must larger than 1, the default value dim is set to default 4096.")
+      default_value_dim = 4096
+    
 class MultihashOption(object):
   def __init__(self,
                num_of_partitions = None,
@@ -231,8 +242,10 @@ class CheckpointOption(object):
 @tf_export(v1=["StorageOption"])
 class StorageOption(object):
   def __init__(self,
-               storage_type=None):
+               storage_type=None,
+               storage_path=None):
     self.storage_type = storage_type
+    self.storage_path = storage_path
 
 @tf_export(v1=["EmbeddingVariableOption"])
 class EmbeddingVariableOption(object):
@@ -242,13 +255,15 @@ class EmbeddingVariableOption(object):
                evict_option = None,
                ckpt = None,
                filter_option = None,
-               storage_option = StorageOption()):
+               storage_option = StorageOption(),
+               init_option = InitializerOption()):
     self.ht_type = ht_type
     self.ht_partition_num = ht_partition_num
     self.evict = evict_option
     self.ckpt = ckpt
     self.filter_strategy = filter_option
     self.storage_option = storage_option
+    self.init = init_option   
     
 @tf_export(v1=["CounterFilter"])
 class CounterFilter(object):
@@ -293,7 +308,9 @@ class EmbeddingVariableConfig(object):
                block_num=None,
                primary=None,
                primary_slotnum_op=None,
-               storage_type=config_pb2.StorageType.DRAM):
+               storage_type=config_pb2.StorageType.DRAM,
+               storage_path=None,
+               default_value_dim=4096):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
@@ -312,6 +329,8 @@ class EmbeddingVariableConfig(object):
     self.l2_weight_threshold = l2_weight_threshold
     self.filter_strategy = filter_strategy
     self.storage_type = storage_type
+    self.storage_path = storage_path
+    self.default_value_dim = default_value_dim
 
   def reveal(self):
     if self.steps_to_live is None:
@@ -2014,7 +2033,7 @@ class RefVariable(VariableV1):
           # initial_value has been converted to a Tensor with a known type.
           self._variable = state_ops.variable_op_v2(
               shape, self._initial_value.dtype.base_dtype, name=name)
-        self.op._is_sparse=False
+        self._is_sparse=False
 
         # Manually overrides the variable's shape with the initial value's.
         if validate_shape:
@@ -2090,6 +2109,7 @@ class RefVariable(VariableV1):
       self._save_slice_info = None
     self._caching_device = None
     self._constraint = None
+    self._is_sparse=False
 
   def _as_graph_element(self):
     """Conversion function for Graph.as_graph_element()."""

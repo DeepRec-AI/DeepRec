@@ -3990,6 +3990,15 @@ class Graph(object):
       if name in self._collections:
         del self._collections[name]
 
+  def get_variale_by_name(self, name):
+    """
+     Get Variable/ResourceVariable by name
+    """
+    for var in get_collection(GraphKeys.GLOBAL_VARIABLES):
+      if hasattr(var, '_shared_name'):
+        if var._shared_name == name:
+          return var
+
   @tf_contextlib.contextmanager
   def _original_op(self, op):
     """Python 'with' handler to help annotate ops with their originator.

@@ -30,6 +30,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/gpu/gpu_vmem_allocator.h"
 #include "tensorflow/core/common_runtime/pool_allocator.h"
 #include "tensorflow/core/common_runtime/shared_counter.h"
+#include "tensorflow/core/common_runtime/gpu_tensorpool_allocator.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/log_memory.h"
 #include "tensorflow/core/framework/tracking_allocator.h"
@@ -60,6 +61,12 @@ bool useCudaMallocAsyncAllocator() {
   const char* debug_allocator_str = std::getenv("TF_GPU_ALLOCATOR");
   return debug_allocator_str != nullptr &&
       std::strcmp(debug_allocator_str, "cuda_malloc_async") == 0;
+}
+
+bool useTensorPoolAllocator() {
+  const char* debug_allocator_str = std::getenv("TF_GPU_ALLOCATOR");
+  return debug_allocator_str != nullptr &&
+      std::strcmp(debug_allocator_str, "tensorpool") == 0;
 }
 
 }  // namespace
@@ -122,21 +129,35 @@ Allocator* GPUProcessState::GetGPUAllocator(const GPUOptions& options,
         (options.per_process_gpu_memory_fraction() > 1.0 ||
          options.experimental().use_unified_memory()),
         gpu_visitors_[bus_id], {});
-    GPUBFCAllocator* gpu_bfc_allocator =
-        new GPUBFCAllocator(sub_allocator, total_bytes, options,
+    Allocator* gpu_allocator = nullptr;
+    GPUBFCAllocator* gpu_bfc_allocator = nullptr;
+    if (useTensorPoolAllocator()) {
+      gpu_allocator =
+          new GPUTensorPoolAllocator(sub_allocator,
+                      strings::StrCat("GPU_", tf_gpu_id.value(), "_tensorpool"),
+                      total_bytes);
+    } else {
+      gpu_bfc_allocator =
+          new GPUBFCAllocator(sub_allocator, total_bytes, options,
                             strings::StrCat("GPU_", tf_gpu_id.value(), "_bfc"));
-    Allocator* gpu_allocator = gpu_bfc_allocator;
-    // GPUVMemAllocator will allocate host memory as backup after running out of
-    // gpu device memory to avoid OOM failures
-    gpu_allocator = maybe_create_gpu_vmem_allocator(gpu_allocator,
-                                                        bus_id,
-                                                        platform_gpu_id,
-                                                        tf_gpu_id.value(),
-                                                        stream_exec);
+      gpu_allocator = gpu_bfc_allocator;
+      // GPUVMemAllocator will allocate host memory as backup after running out of
+      // gpu device memory to avoid OOM failures
+      gpu_allocator = maybe_create_gpu_vmem_allocator(gpu_allocator,
+                                                      bus_id,
+                                                      platform_gpu_id,
+                                                      tf_gpu_id.value(),
+                                                      stream_exec);
+    }
+
     SharedCounter* timing_counter = nullptr;
     if (options.experimental().timestamped_allocator()) {
-      timing_counter = new SharedCounter;
-      gpu_bfc_allocator->SetTimingCounter(timing_counter);
+      if (useTensorPoolAllocator()) {
+        LOG(WARNING) << "TensorPoolAllocator " << "don't support timestamped_allocator";
+      } else {
+        timing_counter = new SharedCounter;
+        gpu_bfc_allocator->SetTimingCounter(timing_counter);
+      }
     }
 
     // If true, checks for memory overwrites by writing
@@ -197,7 +218,10 @@ SharedCounter* GPUProcessState::GPUAllocatorCounter(TfGpuId tf_gpu_id) {
                << " but only have " << gpu_allocators_.size();
     return nullptr;
   }
-
+  if (useTensorPoolAllocator()) {
+    LOG(WARNING) << "TensorPoolAllocator " << "don't support timestamped_allocator";
+    return nullptr;
+  }
   AllocatorParts& allocator_parts = gpu_allocators_[tf_gpu_id.value()];
   if (allocator_parts.counter.get() == nullptr) {
     SharedCounter* timing_counter = new SharedCounter;

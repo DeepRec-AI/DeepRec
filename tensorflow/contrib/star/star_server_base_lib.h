@@ -62,7 +62,7 @@ protected:
           WorkerCacheInterface**)> worker_cache_factory);
   virtual StarWorkerService* CreateWorkerService(StarWorker* worker);
   virtual bool GetRunGraphModeFlag(const ConfigProto& config);
-  virtual bool GetRunGraphModeFlagV2(const ConfigProto& config);
+  virtual bool GetRunGraphModeFlagLite(const ConfigProto& config);
 
 protected:
   const ServerDef server_def_;

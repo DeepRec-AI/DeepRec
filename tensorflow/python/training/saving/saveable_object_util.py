@@ -66,6 +66,9 @@ class ReferenceVariableSaveable(saveable_object.SaveableObject):
     spec = saveable_object.SaveSpec(var, slice_spec, name, dtype=var.dtype)
     super(ReferenceVariableSaveable, self).__init__(var, [spec], name)
     self._full_name = full_name
+    variable = ops.get_default_graph().get_variale_by_name(full_name or name)
+    if variable is not None:
+      self.is_sparse = variable._is_sparse
 
   def restore(self, restored_tensors, restored_shapes):
     restored_tensor = restored_tensors[0]
@@ -98,7 +101,7 @@ class CoalescedVariableSaveable(saveable_object.SaveableObject):
 class ResourceVariableSaveable(saveable_object.SaveableObject):
   """SaveableObject implementation that handles ResourceVariables."""
 
-  def __init__(self, var, slice_spec, name):
+  def __init__(self, var, slice_spec, name, full_name=None):
     self._var_device = var.device
     self._var_shape = var.shape
     if isinstance(var, ops.Tensor):
@@ -125,6 +128,10 @@ class ResourceVariableSaveable(saveable_object.SaveableObject):
     spec = saveable_object.SaveSpec(tensor, slice_spec, name,
                                     dtype=var.dtype, device=var.device)
     super(ResourceVariableSaveable, self).__init__(var, [spec], name)
+    self._full_name = full_name
+    variable = ops.get_default_graph().get_variale_by_name(full_name or name)
+    if variable is not None:
+      self.is_sparse = variable._is_sparse
 
   def restore(self, restored_tensors, restored_shapes):
     restored_tensor = restored_tensors[0]
@@ -172,6 +179,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
     specs.append(saveable_object.SaveSpec(unused_tensor, "", name + "-freqs", dtype=dtypes.int64, device=var.device))
     # pylint: disable=protected-access
     super(EmbeddingVariableSaveable, self).__init__(var, specs, name)
+    self.is_sparse = var._is_sparse
 
   def restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access
@@ -181,6 +189,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
       if self.var._init_data_source is not None:
         return self.var.recover_from_init_data_source(self.var._init_data_source, self.partition_id, self.partition_num)
       else:
+        rank = self.op.initial_value.get_shape().rank - 1
         with ops.control_dependencies(None if self.var._is_primary else [self.var._primary.initializer]):
           return gen_kv_variable_ops.kv_resource_import_v2(
               restored_tensors[0],
@@ -189,7 +198,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               self.name,
               ops.convert_to_tensor(self.invalid_key),
               self.var._slotnum_op,
-              shape=self.op.initial_value.get_shape(), steps_to_live=self.steps_to_live,
+              shape=self.op.initial_value.get_shape()[rank:], steps_to_live=self.steps_to_live,
               emb_index=self.var._emb_index, slot_index=self.var._slot_index,
               block_num=self.var.block_num,
               ht_type=self.ht_type,
@@ -200,7 +209,8 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               max_element_size = self.var._max_element_size,
               false_positive_probability = self.var._false_positive_probability,
               counter_type = self.var._counter_type,
-              partition_id=self.partition_id, partition_num=self.partition_num)
+              partition_id=self.partition_id, partition_num=self.partition_num,
+              default_value_dim=self.var._default_value_dim)
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access
@@ -268,7 +278,7 @@ def saveable_objects_for_op(op, name):
         yield EmbeddingVariableSaveable(variable, name)
       else:
         yield ResourceVariableSaveable(
-            variable, variable._save_slice_info.spec, name)
+            variable, variable._save_slice_info.spec, name, variable._save_slice_info.var_full_name)
     # pylint: enable=protected-access
   elif isinstance(op, trackable.Trackable) and not isinstance(
       op, variables.Variable):
@@ -307,7 +317,7 @@ def saveable_objects_for_op(op, name):
                         variable)
       if variable.op.type in ["Variable", "VariableV2",
                               "AutoReloadVariable"]:
-        yield ReferenceVariableSaveable(variable, "", name)
+        yield ReferenceVariableSaveable(variable, "", name, variable.op.name)
       else:
         yield ResourceVariableSaveable(
             variable, "", name)

@@ -1246,8 +1246,8 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
                              env_->run_graph_mode_with_zero_copy,
                              true); // use fuse recv
     Status s;
-    // enable star_server V2
-    if (env_->run_graph_mode_v2) {
+    // enable star_server (V2)
+    if (env_->run_graph_mode) {
       s = gp.SplitGraphV2(&worker_sub_graph, &ps_sub_graphs);
       RETURN_IF_NOT_OK(s);
 
@@ -1266,7 +1266,7 @@ Status MasterSession::ReffedClientGraphV2::RegisterPartitions(
       AddFunctionlibrary(popts, &(client_graph->graph),
                          worker_sub_graph);
     } else {
-      // enable star_server V1
+      // enable star_server lite (V1)
       s = gp.SplitGraph(&worker_sub_graph, &ps_sub_graphs);
       RETURN_IF_NOT_OK(s);
 
@@ -1737,7 +1737,7 @@ Status MasterSession::StartStep(const BuildGraphOptions& opts, bool is_partial,
           stats_publisher_factory_, is_partial, worker_cache,
           !should_delete_worker_sessions_);*/
       ReffedClientGraph *entry = nullptr;
-      if (env_->run_graph_mode || env_->run_graph_mode_v2) {
+      if (env_->run_graph_mode || env_->run_graph_mode_lite) {
         entry = new ReffedClientGraphV2(
             handle_, opts, std::move(client_graph), session_opts_,
             stats_publisher_factory_, execution_state_.get(), is_partial,

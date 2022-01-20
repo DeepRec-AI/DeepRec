@@ -169,9 +169,9 @@ Status StarServerBase::Init() {
   ConfigProto config = server_def_.default_session_config();
   sess_opts.config = config;
   master_env_.run_graph_mode = GetRunGraphModeFlag(config);
-  master_env_.run_graph_mode_v2 = GetRunGraphModeFlagV2(config);
+  master_env_.run_graph_mode_lite = GetRunGraphModeFlagLite(config);
   if (master_env_.run_graph_mode ||
-      master_env_.run_graph_mode_v2) {
+      master_env_.run_graph_mode_lite) {
     master_env_.run_graph_mode_with_zero_copy = true;
   }
 
@@ -448,8 +448,8 @@ bool StarServerBase::GetRunGraphModeFlag(const ConfigProto& config) {
   return false;
 }
 
-bool StarServerBase::GetRunGraphModeFlagV2(const ConfigProto& config) {
-  if (server_def_.protocol() == "star_server_v2") {
+bool StarServerBase::GetRunGraphModeFlagLite(const ConfigProto& config) {
+  if (server_def_.protocol() == "star_server_lite") {
     return true;
   }
 

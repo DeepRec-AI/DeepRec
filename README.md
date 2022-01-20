@@ -78,7 +78,7 @@ $ ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
 ```
 ### **Install whl package**
 ```
-$ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+deeprec2106-cp36-cp36m-linux_x86_64.whl
+$ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
 ```
 
 
@@ -87,18 +87,56 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+deeprec2106-cp36-cp36m-linu
 ### **Nightly Images**
 #### Image for GPU CUDA11.0
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-gpu-py36-cu110-ubuntu18.04
 ```
 #### Image for CPU
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:deeprec-nightly-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-cpu-py36-ubuntu18.04
 ```
 
 
 ***
+## Continuous Build Status
+
+### Official Build
+
+| Build Type    | Status                                                       |
+| ------------- | ------------------------------------------------------------ |
+| **Linux CPU** | ![CPU Build](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-build-wheel.yaml/badge.svg) |
+| **Linux GPU** | ![GPU Build](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-build-wheel.yaml/badge.svg) |
+
+### Official Unit Tests
+
+| Unit Test Type | Status |
+| -------------- | ------ |
+| **Linux CPU C** | ![CPU C Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-c-unit-test.yaml/badge.svg) |
+| **Linux CPU CC** | ![CPU CC Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-cc-unit-test.yaml/badge.svg) |
+| **Linux CPU Contrib** | ![CPU Contrib Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-contrib-unit-test.yaml/badge.svg) |
+| **Linux CPU Core** | ![CPU Core Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-core-unit-test.yaml/badge.svg) |
+| **Linux CPU Examples** | ![CPU Examples Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-examples-unit-test.yaml/badge.svg) |
+| **Linux CPU Java** | ![CPU Java Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-java-unit-test.yaml/badge.svg) |
+| **Linux CPU JS** | ![CPU JS Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-js-unit-test.yaml/badge.svg) |
+| **Linux CPU Python** | ![CPU Python Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-python-unit-test.yaml/badge.svg) |
+| **Linux CPU Stream Executor** | ![CPU Stream Executor Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-stream_executor-unit-test.yaml/badge.svg) |
+| **Linux GPU C** | ![GPU C Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-c-unit-test.yaml/badge.svg) |
+| **Linux GPU CC** | ![GPU CC Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-cc-unit-test.yaml/badge.svg) |
+| **Linux GPU Contrib** | ![GPU Contrib Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-contrib-unit-test.yaml/badge.svg) |
+| **Linux GPU Core** | ![GPU Core Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-core-unit-test.yaml/badge.svg) |
+| **Linux GPU Examples** | ![GPU Examples Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-examples-unit-test.yaml/badge.svg) |
+| **Linux GPU Java** | ![GPU Java Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-java-unit-test.yaml/badge.svg) |
+| **Linux GPU JS** | ![GPU JS Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-js-unit-test.yaml/badge.svg) |
+| **Linux GPU Python** | ![GPU Python Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-python-unit-test.yaml/badge.svg) |
+| **Linux GPU Stream Executor** | ![GPU Stream Executor Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-stream_executor-unit-test.yaml/badge.svg) |
+
 ## **User Document (Chinese)**
 
-[https://deeprec.readthedocs.io/en/latest/](https://deeprec.readthedocs.io/en/latest/)
+[https://deeprec.rtfd.io](https://deeprec.rtfd.io)
+
+## **Contact Us**
+
+Join the Official Discussion Group on DingTalk
+
+<img src="docs/README/deeprec_dingtalk.png" width="200">
 
 ## **License**
 

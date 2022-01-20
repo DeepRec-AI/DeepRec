@@ -600,10 +600,9 @@ void InsertAndLookup(EmbeddingVar<int64, int64>* variable, int64 *keys, long Rea
 }
 
 void MultiBloomFilter(EmbeddingVar<int64, float>* var, int value_size, int64 i) {
-  float *default_value = (float *)malloc((value_size+1)*sizeof(float));
   for (long j = 0; j < 1; j++) {
     float *val = (float *)malloc((value_size+1)*sizeof(float));
-    var->LookupOrCreate(i+1, val, default_value);
+    var->LookupOrCreate(i+1, val, nullptr);
   }
 }
 
@@ -976,7 +975,7 @@ TEST(EmbeddingVariableTest, TestFeatureFilter) {
         new LocklessHashMap<int64, float>(),
           EmbeddingConfig(0, 0, 1, 1, "", 5, 5));
 
-  var->Init(value);
+  var->Init(value, 1);
 
   float *val = (float *)malloc((value_size+1)*sizeof(float));
 
@@ -985,7 +984,7 @@ TEST(EmbeddingVariableTest, TestFeatureFilter) {
     ValuePtr<float>* value_ptr = nullptr;
     var->LookupOrCreateKey(20, &value_ptr);
     if (i < 4) {
-      ASSERT_EQ(value_ptr->GetValue(0), nullptr);
+      ASSERT_EQ(value_ptr->GetValue(0, value_size), nullptr);
     } else {
       ASSERT_EQ(val[0], 10.0);
     }

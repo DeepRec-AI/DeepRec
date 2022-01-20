@@ -21,7 +21,8 @@ DISTDIR=$2
 
 mkdir -p ${DISTDIR}
 tar --exclude=.git -czf ${DISTDIR}/archive.tar.gz .
-kubectl wait --for=condition=ready pod ${PODNAME}
+sleep 15
+kubectl wait --for=condition=ready --timeout=43200s pod ${PODNAME}
 kubectl cp ${DISTDIR}/archive.tar.gz ${PODNAME}:/workspace/archive.tar.gz
 kubectl exec -it ${PODNAME} -- tar -xzf /workspace/archive.tar.gz -C /workspace
 

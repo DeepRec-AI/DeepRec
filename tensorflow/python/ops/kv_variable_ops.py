@@ -260,6 +260,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._primary = evconfig.primary
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
+    self._is_sparse=False
     if evconfig.filter_strategy != None:
       if isinstance(evconfig.filter_strategy, variables.CounterFilter):
         self._filter_freq = evconfig.filter_strategy.filter_freq
@@ -279,6 +280,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       
     self._l2_weight_threshold = evconfig.l2_weight_threshold
     self._storage_type = evconfig.storage_type
+    self._storage_path = evconfig.storage_path
+    self._default_value_dim = evconfig.default_value_dim
     if self._steps_to_live is 0 and self._filter_freq is 0 and self._l2_weight_threshold == -1.0:
       self._layout = "light"
     else:
@@ -287,6 +290,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._is_primary = True
     else:
       self._is_primary = False
+
     with ops.control_dependencies(None):
       with ops.name_scope(name, "Variable", []
                           if init_from_fn else [initial_value]) as name:
@@ -305,8 +309,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
             with ops.name_scope("Initializer"), ops.device(None):
               initial_value = ops.convert_to_tensor(
                   initial_value(), name="initial_value", dtype=dtype)
+            rank = initial_value.get_shape().rank - 1
+
             self._handle = self._embedding_variable_handle(
-                shape=initial_value.get_shape(),
+                shape=initial_value.get_shape()[rank:],
                 dtype=initial_value.dtype.base_dtype,
                 shared_name=handle_name,
                 name=name,
@@ -316,7 +322,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
             self._handle_device = (
                 self._handle.device if self._in_graph_mode else
                 context.get_default_context().device_name)
-            self._graph_shape = initial_value.get_shape()
+            self._graph_shape = initial_value.get_shape()[rank:]
         # pylint: enable=protected-access
 
         # Or get the initial value from a Tensor or Python object.
@@ -324,6 +330,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           with ops.name_scope("Initializer"):
             initial_value = ops.convert_to_tensor(
                 initial_value, name="initial_value", dtype=dtype)
+          rank = 0
+          self._default_value_dim = 1
           # pylint: disable=protected-access
           if (self._in_graph_mode and initial_value is not None and
               initial_value.op._get_control_flow_context() is not None):
@@ -368,7 +376,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
                     ops.convert_to_tensor(invalid_key),
                     self._slotnum_op,
-                    shape=initial_value.get_shape(),
+                    shape=initial_value.get_shape()[rank:],
                     steps_to_live=self._steps_to_live,
                     emb_index=self._emb_index, block_num=self.block_num,
                     slot_index=self._slot_index,
@@ -382,6 +390,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     max_freq = 99999,
                     layout = self._layout,
                     storage_type = self._storage_type,
+                    storage_path = self._storage_path,
+                    default_value_dim = self._default_value_dim,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None
@@ -438,6 +448,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._invalid_key_type = dtypes.as_dtype(self._handle.op.get_attr("Tkeys"))
     self._graph_element = self._handle
     self._constraint = None
+    self._is_sparse=False
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
   def set_init_data_source_initializer(self, init_data_source):
@@ -454,11 +465,12 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     if not self._trainable:
       steps_to_live_hybrid = -214 
     with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
+      rank = initial_value.get_shape().rank -1
       kv_init_op = gen_kv_variable_ops.initialize_kv_variable_op(
           self._handle,
           variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
           ops.convert_to_tensor(self._invalid_key),
-          shape=self._initial_value.get_shape(),
+          shape=self._initial_value.get_shape()[rank:],
           steps_to_live=steps_to_live_hybrid,
           name=n)
       with ops.control_dependencies([kv_init_op]):
@@ -471,7 +483,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                self._handle, 
                variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
                ops.convert_to_tensor(self._invalid_key),
-               self._initial_value.get_shape(), 
+               self._initial_value.get_shape()[rank:], 
                self._steps_to_live, partition_id, partition_num)
         )
 
@@ -489,11 +501,12 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     if not self._trainable:
       steps_to_live_hybrid = -214 
     with ops.name_scope("RecoverAssign") as n, ops.colocate_with(self._handle):
+      rank = initial_value.get_shape().rank -1 
       kv_init_op = gen_kv_variable_ops.initialize_kv_variable_op(
           self._handle,
           variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
           ops.convert_to_tensor(self._invalid_key),
-          shape=self._initial_value.get_shape(),
+          shape=self._initial_value.get_shape()[rank:],
           steps_to_live=steps_to_live_hybrid,
           name=n)
       with ops.control_dependencies([kv_init_op]):
@@ -503,7 +516,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                self._handle, 
                variables._try_guard_against_uninitialized_dependencies(self.name, self._initial_value),
                ops.convert_to_tensor(self._invalid_key),
-               self._initial_value.get_shape(), 
+               self._initial_value.get_shape()[rank:], 
                self._steps_to_live, partition_id, partition_num)
         )
 
@@ -648,10 +661,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         tape.variable_accessed(self)
       if ev_init_value is not None:
         default_value = ev_init_value
+        is_use_default_value_tensor = True
       else:
-        default_value = self._initializer(array_ops.concat([array_ops.shape(indices),
-                                                            self._graph_shape.as_list()],
-                                                           axis=0), dtype=self._dtype)      
+        default_value = ops.convert_to_tensor(1.0)
+        is_use_default_value_tensor = False
       if counts != None:
         value = gen_kv_variable_ops.kv_resource_gather_v1(self._handle,
               indices,
@@ -660,7 +673,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       else:
         value = gen_kv_variable_ops.kv_resource_gather(self._handle,
               indices,
-              default_value, name=name)
+              default_value,
+              is_use_default_value_tensor,
+              name=name)
     return array_ops.identity(value)
 
   def to_proto(self, export_scope=None):

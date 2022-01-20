@@ -1171,8 +1171,13 @@ class _VariableStore(object):
         if tf_inspect.isclass(initializer):
           initializer = initializer()
         if shape is not None and shape.is_fully_defined():
+          if use_resource and invalid_key is not None:
+            s = [1 if isinstance(initializer, init_ops.Constant) else evconfig.default_value_dim] + shape.as_list()
+            evconfig.default_value_dim = 1 if isinstance(initializer, init_ops.Constant) else evconfig.default_value_dim
+          else:
+            s = shape.as_list()
           init_val = lambda: initializer(  # pylint: disable=g-long-lambda
-              shape.as_list(),
+              s,
               dtype=dtype,
               partition_info=partition_info)
           variable_dtype = dtype.base_dtype
@@ -2164,8 +2169,12 @@ def get_embedding_variable(name,
   else:
     raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
   l2_weight_threshold = -1.0
-  if initializer is None:
+  if initializer is None and ev_option.init.initializer is None:
     initializer = init_ops.truncated_normal_initializer()
+  elif ev_option.init.initializer is not None:
+    if initializer is not None:
+      print("use initializer give in InitializerOption.")
+    initializer = ev_option.init.initializer
   if steps_to_live != None:
     logging.warn("steps_to_live is deprecated,"
                " use tf.GlobaStepEvcit(steps_to_live)")
@@ -2191,7 +2200,9 @@ def get_embedding_variable(name,
         steps_to_live=steps_to_live,init_data_source=init_data_source,ht_type=ev_option.ht_type,
         l2_weight_threshold=l2_weight_threshold,
         filter_strategy=ev_option.filter_strategy,
-        storage_type = ev_option.storage_option.storage_type),
+        storage_type = ev_option.storage_option.storage_type,
+        storage_path = ev_option.storage_option.storage_path,
+        default_value_dim=ev_option.init.default_value_dim),
       ht_partition_num=ev_option.ht_partition_num)
 
 
@@ -2248,7 +2259,8 @@ def get_embedding_variable_internal(name,
         ht_type=ev_option.ht_type,
         l2_weight_threshold=l2_weight_threshold,
         filter_strategy=ev_option.filter_strategy,
-        storage_type=ev_option.storage_option.storage_type),
+        storage_type=ev_option.storage_option.storage_type,
+        storage_path=ev_option.storage_option.storage_path),
       ht_partition_num=ev_option.ht_partition_num)
 
 

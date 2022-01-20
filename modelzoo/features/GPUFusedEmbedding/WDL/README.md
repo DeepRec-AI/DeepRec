@@ -17,6 +17,6 @@ On A100-80GB-PCIE GPU, with 8 cores AMD EPYC 7232P CPU @ 3.20GHz. Average of 500
 
 |         | Avg Time per Iteration |
 | ------- | ---------------------- |
-| Unfused | 36.42 ms               |
-| Fused   | 34.57 ms               |
+| Unfused | 36.38 ms               |
+| Fused   | 34.52 ms               |
 | SpeedUp | 1.05x                  |

@@ -74,5 +74,17 @@ export TF_BUILD_BAZEL_TARGET="$TF_BUILD_BAZEL_TARGET "\
 "-//tensorflow/python/tpu:datasets_test "\
 "-//tensorflow/contrib/quantize:fold_batch_norms_test "\
 "-//tensorflow/python/kernel_tests:unique_op_test "\
+"-//tensorflow/c:c_test "\
+"-//tensorflow/python/kernel_tests:sparse_conditional_accumulator_test "\
+"-//tensorflow/core/distributed_runtime/eager:eager_service_impl_test "\
+"-//tensorflow/core/distributed_runtime/eager:remote_mgr_test "\
+"-//tensorflow/core/distributed_runtime:session_mgr_test "\
+"-//tensorflow/core/debug:grpc_session_debug_test "\
+"-//tensorflow/contrib/eager/python:saver_test "\
+"-//tensorflow/python:server_lib_test "\
+"-//tensorflow/python:work_queue_test "\
+"-//tensorflow/contrib/distributions:inline_test "\
+"-//tensorflow/python/keras:metrics_test "\
+"-//tensorflow/python/keras:training_test "\
 
 bazel test -c opt --config=opt --verbose_failures -- $TF_BUILD_BAZEL_TARGET

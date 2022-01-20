@@ -289,7 +289,8 @@ class _TPUEmbeddingColumnV2(_TPUBaseEmbeddingColumn, fc_lib.EmbeddingColumn):
         tensor_name_in_ckpt=None,
         max_norm=None,
         trainable=True,
-        coalesced_scope=None)
+        coalesced_scope=None,
+        do_fusion=False)
 
   def __init__(self,
                categorical_column,

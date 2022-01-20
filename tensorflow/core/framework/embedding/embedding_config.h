@@ -20,6 +20,8 @@ struct EmbeddingConfig {
   int64 num_counter;
   DataType counter_type;
   embedding::StorageType storage_type;
+  std::string storage_path;
+  int64 default_value_dim;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
                   int64 block_num = 1, int slot_num = 1,
@@ -27,7 +29,9 @@ struct EmbeddingConfig {
                   int64 filter_freq = 0, int64 max_freq = 999999,
                   float l2_weight_threshold = -1.0, const std::string& layout = "normal",
                   int64 max_element_size = 0, float false_positive_probability = -1.0,
-                  DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM):
+                  DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM,
+                  const std::string& storage_path = "",
+                  int64 default_value_dim = 4096):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
       block_num(block_num),
@@ -38,7 +42,9 @@ struct EmbeddingConfig {
       max_freq(max_freq),
       l2_weight_threshold(l2_weight_threshold),
       counter_type(counter_type),
-      storage_type(storage_type) {
+      storage_type(storage_type),
+      storage_path(storage_path),
+      default_value_dim(default_value_dim) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
@@ -53,6 +59,9 @@ struct EmbeddingConfig {
     } else {
       kHashFunc = 0;
       num_counter = 0;
+    }
+    if (embedding::LEVELDB == storage_type) {
+      layout_type = LayoutType::LEVELDB;
     }
   }
   
@@ -86,6 +95,10 @@ struct EmbeddingConfig {
     return storage_type;
   }
 
+  std::string get_storage_path() {
+    return storage_path;
+  }
+
   std::string DebugString() const {
     return strings::StrCat("opname: ", name,
                            " emb_index: ", emb_index,
@@ -97,7 +110,8 @@ struct EmbeddingConfig {
                            " filter_freq: ", filter_freq,
                            " max_freq: ", max_freq,
                            " l2_weight_threshold: ", l2_weight_threshold,
-                           " storage_type: ", storage_type);
+                           " storage_type: ", storage_type,
+                           " storage_path: ", storage_path);
   }
 };
 

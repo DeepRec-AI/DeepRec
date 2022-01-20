@@ -146,6 +146,8 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("l2_weight_threshold: float =-1.0")
     .Attr("layout: string = 'normal'")
     .Attr("storage_type: int = 1")
+    .Attr("storage_path: string = '.'")
+    .Attr("default_value_dim: int = 4096")
     .SetShapeFn([](InferenceContext* c) { 
       return Status::OK();
     })
@@ -270,6 +272,7 @@ REGISTER_OP("KvResourceGather")
     .Input("resource: resource")
     .Input("indices: Tkeys")
     .Input("default_value: dtype")
+    .Attr("is_use_default_value_tensor: bool = false")
     .Attr("validate_indices: bool = true")
     .Output("output: dtype")
     .Attr("dtype: type")
@@ -421,6 +424,8 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("layout: string = 'normal'")
     .Attr("max_freq: int = 999999")
     .Attr("storage_type: int = 1")
+    .Attr("storage_path: string = '.'")
+    .Attr("default_value_dim: int = 4096")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));
