@@ -799,7 +799,7 @@ Status DirectSession::Run(const RunOptions& run_options,
   direct_session_runs->GetCell()->IncrementBy(1);
 
   ScopedMemoryCollector scoped_memory_collector;
-  std::unique_ptr<ScopedMemoryCollectorGPU> scoped_memory_collector_gpu_ptr;
+  std::unique_ptr<GPUScopedMemoryCollector> scoped_memory_collector_gpu_ptr;
 
   // Extract the inputs names for this run of the session.
   std::vector<string> input_tensor_names;
@@ -824,7 +824,7 @@ Status DirectSession::Run(const RunOptions& run_options,
     mutex_lock l(collective_graph_key_lock_);
     collective_graph_key_ = executors_and_keys->collective_graph_key;
     if (EnableTensorPoolTracking(executors_and_keys)) {
-      scoped_memory_collector_gpu_ptr.reset(new ScopedMemoryCollectorGPU);
+      scoped_memory_collector_gpu_ptr.reset(new GPUScopedMemoryCollector);
     }
   }
 
