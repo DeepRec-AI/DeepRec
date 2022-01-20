@@ -73,6 +73,11 @@ class HashFilterBase(EmbeddingLookupHook):
     self._hash_table = None
     self._filter_set = set()
 
+  def get_config(self):
+    return {
+      'block_size': self._block_size,
+      }
+
   def on_embedding_lookup(self, ctx):
     update_ops_all = []
     filter_ops_all = []
@@ -167,6 +172,13 @@ class GlobalStepFilter(HashFilterBase):
     self._filter_interval_steps_tensor = ops.convert_to_tensor(filter_interval_steps, dtype=dtypes.int64)
     self._global_step = get_or_create_global_step()
 
+  def get_config(self):
+    attr_dict =  super(GlobalStepFilter, self).get_config()
+    attr_dict.update({
+      'filter_interval_steps': self._filter_interval_steps
+      })
+    return attr_dict
+
   def update(self, keys, ids):
     step_slot = self._hash_table.get_or_create_slot(
         [1], dtypes.int64, 'update_step', initializer=Zeros(dtypes.int64))
@@ -194,6 +206,13 @@ class L2WeightFilter(HashFilterBase):
   def __init__(self, threshold):
     super(L2WeightFilter, self).__init__()
     self._threshold = ops.convert_to_tensor(threshold, dtypes.float32)
+
+  def get_config(self):
+    attr_dict =  super(L2WeightFilter, self).get_config()
+    attr_dict.update({
+      'threshold': self._threshold
+      })
+    return attr_dict
 
   def update(self, keys, ids):
     return []
@@ -271,6 +290,9 @@ class BlackListAdmit(EmbeddingLookupHook):
     self.admit = {}
     self.token_name = None
     self.tokens = {}
+
+  def get_config(self):
+    return {}
 
   @tf_contextlib.contextmanager
   def token(self, name):

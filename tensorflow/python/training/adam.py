@@ -229,8 +229,7 @@ class AdamOptimizer(optimizer.Optimizer):
         math_ops.cast(self._beta1_t, grad.dtype.base_dtype),
         math_ops.cast(self._beta2_t, grad.dtype.base_dtype),
         math_ops.cast(self._epsilon_t, grad.dtype.base_dtype),
-        grad, indices, use_locking=self._use_locking,
-        use_nesterov=self._use_nesterov)
+        grad, indices, use_locking=self._use_locking)
 
   def _resource_scatter_add(self, x, i, v):
     with ops.control_dependencies(
