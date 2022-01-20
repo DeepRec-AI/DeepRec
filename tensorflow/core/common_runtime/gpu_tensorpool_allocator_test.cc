@@ -297,7 +297,7 @@ TEST(GPUTensorPoolAllocatorTest, HugeMemoryAllocation) {
   for (int i = 0; i < 2000; ++i) {
     GPUScopedMemoryCollector c;
     std::vector<int> alignments = {64};
-    std::vector<int> sizes = {512*1024*1024, 64*1024*1024};
+    std::vector<int> sizes = {16*1024*1024, 8*1024*1024};
     std::vector<void*> vec;
     for (int i = 0; i < 2; ++i) {
       for (auto alignment : alignments) {
