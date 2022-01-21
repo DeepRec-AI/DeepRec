@@ -896,4 +896,112 @@ REGISTER_OP("IOWriteKafka")
       return Status::OK();
     });
 
+REGISTER_OP("IOKafkaReadableInit")
+    .Input("topic: string")
+    .Input("partition: int32")
+    .Input("offset: int64")
+    .Input("metadata: string")
+    .Output("resource: resource")
+    .Attr("container: string = ''")
+    .Attr("shared_name: string = ''")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->Scalar());
+      return Status::OK();
+    });
+
+REGISTER_OP("IOKafkaReadableNext")
+    .Input("input: resource")
+    .Input("index: int64")
+    .Output("message: string")
+    .Output("key: string")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->MakeShape({c->UnknownDim()}));
+      c->set_output(1, c->MakeShape({c->UnknownDim()}));
+      return Status::OK();
+    });
+
+REGISTER_OP("IOKafkaReadableRead")
+    .Input("input: resource")
+    .Input("start: int64")
+    .Input("stop: int64")
+    .Output("message: string")
+    .Output("key: string")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->MakeShape({c->UnknownDim()}));
+      c->set_output(1, c->MakeShape({c->UnknownDim()}));
+      return Status::OK();
+    });
+
+REGISTER_OP("IOKafkaReadableSpec")
+    .Input("input: resource")
+    .Input("start: int64")
+    .Input("stop: int64")
+    .Output("start_offset: int64")
+    .Output("stop_offset: int64")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->Scalar());
+      c->set_output(1, c->Scalar());
+      return Status::OK();
+    });
+
+REGISTER_OP("IOKafkaIterableInit")
+    .Input("topic: string")
+    .Input("partition: int32")
+    .Input("offset: int64")
+    .Input("metadata: string")
+    .Output("resource: resource")
+    .Attr("container: string = ''")
+    .Attr("shared_name: string = ''")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->Scalar());
+      return Status::OK();
+    });
+
+REGISTER_OP("IOLayerKafkaCall")
+    .Input("input: T")
+    .Input("content: string")
+    .Input("resource: resource")
+    .Output("output: T")
+    .Attr("T: type")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
+REGISTER_OP("IOLayerKafkaInit")
+    .Input("topic: string")
+    .Input("partition: int32")
+    .Input("metadata: string")
+    .Output("resource: resource")
+    .Attr("container: string = ''")
+    .Attr("shared_name: string = ''")
+    .SetShapeFn(shape_inference::ScalarShape);
+
+REGISTER_OP("IOLayerKafkaSync")
+    .Input("resource: resource")
+    .SetShapeFn(shape_inference::ScalarShape);
+
+REGISTER_OP("IOKafkaGroupReadableInit")
+    .Input("topics: string")
+    .Input("metadata: string")
+    .Output("resource: resource")
+    .Attr("container: string = ''")
+    .Attr("shared_name: string = ''")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->Scalar());
+      return Status::OK();
+    });
+
+REGISTER_OP("IOKafkaGroupReadableNext")
+    .Input("input: resource")
+    .Input("index: int64")
+    .Input("message_poll_timeout: int64")
+    .Input("stream_timeout: int64")
+    .Output("message: string")
+    .Output("key: string")
+    .Output("continue_fetch: int64")
+    .SetShapeFn([](shape_inference::InferenceContext* c) {
+      c->set_output(0, c->MakeShape({c->UnknownDim()}));
+      c->set_output(1, c->MakeShape({c->UnknownDim()}));
+      c->set_output(2, c->Scalar());
+      return Status::OK();
+    });
+
 }  // namespace tensorflow

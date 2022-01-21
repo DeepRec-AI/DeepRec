@@ -87,4 +87,5 @@ oneDNN
 
 WorkQueue
 KafkaDataset
+KafkaGroupIODataset
 ```
