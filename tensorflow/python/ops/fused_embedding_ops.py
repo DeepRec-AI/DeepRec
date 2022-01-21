@@ -64,9 +64,9 @@ def fused_embedding_lookup_sparse(params,
           default_id=default_id,
           prune_invalid_id=bool(prune_invalid_ids)
       )
-    
-    # fixme(marvin): pls combine the logic of default_id
-    default_id = default_id is not None if default_id else 0
+
+    # fixme(marvin): ple align the meaning between pre & post op.
+    default_id = 0 if default_id is None else default_id
 
     emb_shards = []
     for i in range(partition_nums):

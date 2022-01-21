@@ -62,6 +62,10 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
       partition_total_sizes_ += shape.flat<int64>().data()[0];
     }
 
+    // fixme(marvin): show error info when got fake input.
+    OP_REQUIRES(ctx, partition_total_sizes_ != 1,
+        errors::InvalidArgument("Not support EV yet"));
+
     // 1.1 define output tensors
     OpOutputList partitioned_values;
     OP_REQUIRES_OK(ctx,
