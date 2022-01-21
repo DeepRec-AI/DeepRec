@@ -70,6 +70,7 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
     .Attr("fill_empty_row: bool = false")
     .Attr("prune_invalid_id: bool = false")
     .Attr("default_id: int = -1")
+    .Attr("partition_strategy: {'div','mod'} = 'div'")
     .Input("partition_shapes: num_partitions * int64")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
@@ -238,5 +239,66 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
 //     .Doc(R"doc(
 // Calculate gradient of FusedEmbeddingSparsePostLookUp
 //     )doc");
+
+REGISTER_OP("FusedSafeEmbeddingLookupSparseLocal")
+    .Input("weight: T_weight")
+    .Input("id_input: T_id")
+    .Input("dense_shape: T_shape")
+    .Input("indice: T_shape")
+    .Input("weight_input: T_id")
+    .Output("embedded: T")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'} = 'mean'")
+    .Attr("prune: bool = true")
+    .Attr("max_norm: float = -1.0")
+    .Attr("default_id: int = -1")
+    .Attr("partition_strategy: {'div','mod'} = 'div'")
+    .Attr("T_id: {int64, int32}")
+    .Attr("T_shape: {int64, int32}")
+    .Attr("T_weight: {float, resource}")
+    .Attr("T: {float} = DT_FLOAT")
+    .SetShapeFn([](InferenceContext* ctx) {
+      ShapeHandle temp;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 1, &temp));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(3), 2, &temp));
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2), 1, &temp));
+      ShapeHandle emb_var_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &emb_var_shape));
+
+      DimensionHandle emb_vec_size_dim = ctx->Dim(emb_var_shape, 1);
+      DimensionHandle batch_dim = ctx->UnknownDim();
+
+      ShapeHandle output_shape = ctx->MakeShape({batch_dim, emb_vec_size_dim});
+      ctx->set_output(0, output_shape);
+
+      return Status::OK();
+    });
+
+REGISTER_OP("FusedSafeEmbeddingLookupSparseLocalGrad")
+    .Input("gradients: T")
+    .Input("input: Tinput")
+    .Input("indices: Tindices")
+    .Input("dense_shape: Tdense_shape")
+    .Output("output: T")
+    .Output("unique_value: Tinput")
+    .Attr("T: {float}")
+    .Attr("Tinput: {int64}")
+    .Attr("Tindices: {int64, int32}")
+    .Attr("Tdense_shape: {int64, int32}")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'} = 'mean'")
+    .SetShapeFn([](InferenceContext* ctx) {
+      ShapeHandle emb_var_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &emb_var_shape));
+
+      DimensionHandle emb_vec_size_dim = ctx->Dim(emb_var_shape, 1);
+      DimensionHandle unique_dim = ctx->UnknownDim();
+
+      ShapeHandle output_shape = ctx->MakeShape({unique_dim, emb_vec_size_dim});
+      ctx->set_output(0, output_shape);
+
+      ShapeHandle unique_value_shape = ctx->MakeShape({unique_dim});
+      ctx->set_output(1, unique_value_shape);
+
+      return Status::OK();
+    });
 
 }  // namespace tensorflow
