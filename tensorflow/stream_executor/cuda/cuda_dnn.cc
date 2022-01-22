@@ -4680,7 +4680,7 @@ bool CudnnSupport::GetConvolveExecutionPlans(
   for (int i = 0; i < filtered_configs.size(); i++) {
     auto plan = cudnn_frontend::ExecutionPlanBuilder()
                     .setHandle(cudnn.handle())
-                    .setEngineConfig(filtered_configs[i])
+                    .setEngineConfig(filtered_configs[i], op_graph->getTag())
                     .build();
     if (plan.get_status() == CUDNN_STATUS_SUCCESS) {
       if (cudnn_frontend::check_errata(json_handle, plan.getTag(),
