@@ -39,6 +39,24 @@ struct KvSparseApplyAdagrad {
                   int64 gs,
                   cudaStream_t stream);
 };
+
+template <typename Device, typename TKey, typename T>
+struct KvSparseApplyFtrl {
+  void operator()(int32 num_items,
+                  Allocator* alloc,
+                  EmbeddingVarGPU<TKey, T>* var,
+                  EmbeddingVarGPU<TKey, T>* accum,
+                  EmbeddingVarGPU<TKey, T>* linear,
+                  const TKey* key_base,
+                  const T* grad,
+                  T lr,
+                  T l1,
+                  T l2,
+                  T lr_power,
+                  bool has_l2_shrinkage,
+                  T l2_shrinkage,
+                  cudaStream_t stream);
+};
 #endif  // GOOGLE_CUDA
 
 template <typename Device, typename T>

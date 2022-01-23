@@ -36,20 +36,21 @@ class DynamicHashTable;
 template <typename K, typename V>
 class GPUHashTable {
 public:
-  GPUHashTable(K empty_key_sentinel, OpKernelContext *context, size_t initial_capacity=50000);
+  GPUHashTable(K empty_key_sentinel, Allocator* alloc, size_t initial_capacity=50000);
 
   ~GPUHashTable();
 
+  int32 Size();
+
   DynamicHashTable<K, int32, gpu_hash_map_tf_allocator<uint8_t>>* hash_table;
 
-  const int32 initial_bank_size = 50000;
+  const int32 initial_bank_size;
   cuda::atomic<std::size_t, cuda::thread_scope_device>* start_idx;
   int32 mem_bank_num = 0;
-  std::vector<int32> remaining_sizes;
   std::vector<V*> bank_ptrs;
-  V** d_bank_ptrs;
+  V** d_bank_ptrs = nullptr;
   std::vector<bool*> existence_flag_ptrs;
-  bool** d_existence_flag_ptrs;
+  bool** d_existence_flag_ptrs = nullptr;
 };
 
 namespace functor {
@@ -60,7 +61,6 @@ struct KvLookupInsertKey {
                   int32 num_items,
                   GPUHashTable<Key, V>* hash_table,
                   cuda::atomic<std::size_t, cuda::thread_scope_device>* start_idx,
-                  int32 idx_offset,
                   cudaStream_t stream);
 };
 
@@ -75,11 +75,42 @@ struct KvLookupCreateEmb {
                   int32 default_v_num,
                   Value** d_banks,
                   bool** d_flags,
+                  int32 slot_num,
+                  int32 bank_size,
+                  cudaStream_t stream);
+};
+
+template <typename Device, typename Key, typename V>
+struct KvKeyGetSnapshot {
+  void operator()(Key* key_first,
+                  int32* value_first,
+                  int32 slot_idx,
+                  int32 primary_slot_idx,
+                  bool** d_flags,
+                  int32 bank_num,
+                  int32 slot_num,
+                  int32 bank_size,
+                  GPUHashTable<Key, V>* hash_table,
+                  int32 ev_size,
+                  cudaStream_t stream);
+};
+
+template <typename Device, typename Key, typename Value>
+struct KvEmbGetSnapshot {
+  void operator()(Key* key,
+                  Value* val,
+                  Key empty_key_sentinel,
+                  int64 dim,
+                  int32* item_idxs,
+                  int32 num_items,
+                  int32 slot_idx,
+                  Value** d_banks,
                   int32 bank_num,
                   int32 slot_num,
                   int32 bank_size,
                   cudaStream_t stream);
 };
+
 } // namespace functor
 
 template <class K, class V>
@@ -128,12 +159,9 @@ class EmbeddingVarGPU : public ResourceBase {
 
   void LookupOrCreateKey(const K* key, int32* item_idxs, size_t n, cudaStream_t stream, int64 update_version = -1) {
     mutex_lock lock(lock_);
-    int32 nth_bank = 0;
-    while (nth_bank < kv_->mem_bank_num) {
-      if (kv_->remaining_sizes[nth_bank] >= n) break;
-      ++nth_bank;
-    }
-    if (kv_->mem_bank_num == nth_bank) {
+    int remaining_size = n + *(kv_->start_idx) - kv_->mem_bank_num * kv_->initial_bank_size;
+    bool expand_cap = remaining_size > 0 ? true : false;
+    while (remaining_size > 0) {
       for (int i = 0; i < emb_config_.total_num(); ++i) {
         V* ptr = TypedAllocator::Allocate<V>(alloc_, value_len_ * kv_->initial_bank_size, AllocationAttributes());
         kv_->bank_ptrs.push_back(ptr);
@@ -141,28 +169,44 @@ class EmbeddingVarGPU : public ResourceBase {
         kv_->existence_flag_ptrs.push_back(ptr2);
         cudaMemset(ptr2, 0, sizeof(bool) * kv_->initial_bank_size);
       }
-      if (kv_->mem_bank_num != 0) {
+      remaining_size -= kv_->initial_bank_size;
+      ++kv_->mem_bank_num;
+    }
+    if (expand_cap) {
+      if (kv_->d_bank_ptrs) {
         TypedAllocator::Deallocate(alloc_, kv_->d_bank_ptrs, kv_->mem_bank_num * emb_config_.total_num());
         TypedAllocator::Deallocate(alloc_, kv_->d_existence_flag_ptrs, kv_->mem_bank_num * emb_config_.total_num());
       }
-      ++kv_->mem_bank_num;
       kv_->d_bank_ptrs = TypedAllocator::Allocate<V*>(alloc_, kv_->mem_bank_num * emb_config_.total_num(), AllocationAttributes());
       cudaMemcpy(kv_->d_bank_ptrs, kv_->bank_ptrs.data(), kv_->mem_bank_num * emb_config_.total_num() * sizeof(V*), cudaMemcpyHostToDevice);
       kv_->d_existence_flag_ptrs = TypedAllocator::Allocate<bool*>(alloc_, kv_->mem_bank_num * emb_config_.total_num(), AllocationAttributes());
       cudaMemcpy(kv_->d_existence_flag_ptrs, kv_->existence_flag_ptrs.data(), kv_->mem_bank_num * emb_config_.total_num() * sizeof(bool*), cudaMemcpyHostToDevice);
-      kv_->remaining_sizes.push_back(kv_->initial_bank_size);
     }
-    *(kv_->start_idx) = kv_->initial_bank_size - kv_->remaining_sizes[nth_bank];
-    functor::KvLookupInsertKey<Eigen::GpuDevice, K, V>()(key, item_idxs, n, kv_, kv_->start_idx, nth_bank * kv_->initial_bank_size, stream);
+    functor::KvLookupInsertKey<Eigen::GpuDevice, K, V>()(key, item_idxs, n, kv_, kv_->start_idx, stream);
   }
 
   void LookupOrCreate(const K* key, V* val, V* default_v, int32 default_v_num, size_t n, cudaStream_t stream) {
     int32* item_idxs = TypedAllocator::Allocate<int32>(alloc_, n, AllocationAttributes());
     LookupOrCreateKey(key, item_idxs, n, stream);
     functor::KvLookupCreateEmb<Eigen::GpuDevice, V>()(val, default_v, value_len_, item_idxs, n, emb_config_.emb_index, default_v_num,
-                                                      kv_->d_bank_ptrs, kv_->d_existence_flag_ptrs, kv_->mem_bank_num,
+                                                      kv_->d_bank_ptrs, kv_->d_existence_flag_ptrs,
                                                       emb_config_.total_num(), kv_->initial_bank_size, stream);
     TypedAllocator::Deallocate(alloc_, item_idxs, n);
+  }
+
+  void GetSnapshot(K* keys, V* values, cudaStream_t stream) {
+    int32* item_idxs = TypedAllocator::Allocate<int32>(alloc_, Size(), AllocationAttributes());
+    functor::KvKeyGetSnapshot<Eigen::GpuDevice, K, V>()(keys, item_idxs, emb_config_.emb_index, emb_config_.primary_emb_index,
+                                                         kv_->d_existence_flag_ptrs, kv_->mem_bank_num, emb_config_.total_num(),
+                                                         kv_->initial_bank_size, kv_, Size(), stream);
+    functor::KvEmbGetSnapshot<Eigen::GpuDevice, K, V>()(keys, values, -1, value_len_, item_idxs, Size(), emb_config_.emb_index,
+                                                        kv_->d_bank_ptrs, kv_->mem_bank_num, emb_config_.total_num(),
+                                                        kv_->initial_bank_size, stream);
+    TypedAllocator::Deallocate(alloc_, item_idxs, Size());
+  }
+
+  int64 Size() const {
+    return kv_->Size();
   }
 
   int64 ValueLen() const {
@@ -223,15 +267,15 @@ class EmbeddingVarGPU : public ResourceBase {
 
   ~EmbeddingVarGPU() override {
     if (emb_config_.is_primary()) {
-      delete kv_;
       for (int i = 0; i < kv_->bank_ptrs.size(); ++i) {
-        TypedAllocator::Deallocate(alloc_, kv_->bank_ptrs[i], kv_->initial_bank_size);
+        TypedAllocator::Deallocate(alloc_, kv_->bank_ptrs[i], value_len_ * kv_->initial_bank_size);
         TypedAllocator::Deallocate(alloc_, kv_->existence_flag_ptrs[i], kv_->initial_bank_size);
       }
       if (kv_->mem_bank_num != 0) {
         TypedAllocator::Deallocate(alloc_, kv_->d_bank_ptrs, kv_->mem_bank_num * emb_config_.total_num());
         TypedAllocator::Deallocate(alloc_, kv_->d_existence_flag_ptrs, kv_->mem_bank_num * emb_config_.total_num());
       }
+      delete kv_;
     }
     TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
   }

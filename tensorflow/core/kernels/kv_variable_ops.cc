@@ -979,6 +979,8 @@ class InitializeKvVariableOpGPU : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
 
+    OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
+
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
@@ -1023,7 +1025,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
             context, handle_self, &ev,
             [this, default_values, opname, slotnum, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context);
+              GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context->get_allocator(AllocatorAttributes()));
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
                          ht, context->get_allocator(AllocatorAttributes()),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
@@ -1031,7 +1033,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, default_value_dim_));
+                                         counter_type_, storage_type_, storage_path_, default_value_dim_));
             return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -1044,7 +1046,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
            [this, default_values, opname, slotnum, context,
             handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context);
+             GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context->get_allocator(AllocatorAttributes()));
              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
                         ht, context->get_allocator(AllocatorAttributes()),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
@@ -1052,7 +1054,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_));
+                                        counter_type_, storage_type_, storage_path_));
              return (*ptr)->Init(default_values, default_value_dim_);
            }));
 
@@ -1069,7 +1071,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0,
                                          max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);
@@ -1098,6 +1100,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
   int64 max_element_size_;
   float false_positive_probability_;
   embedding::StorageType storage_type_;
+  std::string storage_path_;
   int64 default_value_dim_;
 };
 
@@ -1195,6 +1198,57 @@ TF_CALL_double(REGISTER_GATHER_GPU);
 #undef REGISTER_GATHER_GPU
 #undef REGISTER_GATHER_ALL_INDICES
 #undef REGISTER_GATHER_FULL
+
+template<typename Device, typename TKey, typename TValue>
+class KvResourceExportOpGPU : public OpKernel {
+ public:
+  explicit KvResourceExportOpGPU(OpKernelConstruction *ctx) : OpKernel(ctx) {}
+
+  void Compute(OpKernelContext *ctx) override {
+    EmbeddingVarGPU<TKey, TValue> *ev = nullptr;
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    int64 total_size = ev->Size();
+
+    // Create an output tensor
+    Tensor *keys_output_tensor = NULL;
+    Tensor *values_output_tensor = NULL;
+    Tensor *versions_output_tensor = NULL;
+    Tensor *freq_output_tensor = NULL;
+
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({total_size}),
+                                             &keys_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(1, TensorShape({total_size, ev->ValueLen()}),
+                                             &values_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(2, TensorShape({0}),
+                                             &versions_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(3, TensorShape({0}),
+                                             &freq_output_tensor));
+
+    auto keys_flat = keys_output_tensor->flat<TKey>();
+    TKey* key_base = &keys_flat(0);
+    auto values_flat = values_output_tensor->flat<TValue>();
+    TValue* value_base = &values_flat(0);
+
+    const cudaStream_t& stream = ctx->eigen_device<Device>().stream();
+    ev->GetSnapshot(key_base, value_base, stream);
+  }
+};
+
+#define REGISTER_KERNELS(ktype, vtype)                         \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
+                            .Device(DEVICE_GPU)                \
+                            .TypeConstraint<ktype>("Tkeys")    \
+                            .TypeConstraint<vtype>("Tvalues"), \
+                          KvResourceExportOpGPU<GPUDevice, ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                       \
+  REGISTER_KERNELS(int32, type)                                \
+  REGISTER_KERNELS(int64, type)
+
+REGISTER_KERNELS_ALL_INDEX(float);
+
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
 
 #endif  // GOOGLE_CUDA
 

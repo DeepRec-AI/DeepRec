@@ -39,34 +39,35 @@ typedef Eigen::GpuDevice GPUDevice;
 
 template <typename T>
 class gpu_hash_map_tf_allocator {
-  mutable std::unordered_map<void*, Tensor> allocated_tensor_map;
-  void status_check(bool status) const {
-    OP_REQUIRES(context_, status,
-            errors::InvalidArgument("TF error: context->allocate_temp failed"));
-  }
-
 public:
-  OpKernelContext *context_;
+  Allocator* alloc_;
   using value_type = T;
 
-  gpu_hash_map_tf_allocator(OpKernelContext *context) : context_(context) {}
+  gpu_hash_map_tf_allocator(Allocator* alloc) : alloc_(alloc) {}
 
-  template <class U>
-  gpu_hash_map_tf_allocator(gpu_hash_map_tf_allocator<U> const& a) noexcept : context_(a.context_) {}
+  gpu_hash_map_tf_allocator(const gpu_hash_map_tf_allocator& a) noexcept : alloc_(a.alloc_) {}
+
+  template <typename U>
+  gpu_hash_map_tf_allocator(const gpu_hash_map_tf_allocator<U>& a) noexcept : alloc_(a.alloc_) {}
+
+  gpu_hash_map_tf_allocator& operator=(const gpu_hash_map_tf_allocator& a) noexcept {
+    return *this;
+  }
+
+  gpu_hash_map_tf_allocator& operator=(gpu_hash_map_tf_allocator&& a) {
+    alloc_ = a.alloc_;
+    return *this;
+  }
+
+  ~gpu_hash_map_tf_allocator() noexcept {}
 
   value_type* allocate(size_t size) const {
-    Tensor buf;
-    long long int buf_size = (long long int)size * sizeof(value_type);
-    tensorflow::Status status = context_->allocate_temp(DT_UINT8, TensorShape{buf_size}, &buf);
-    status_check(status == tensorflow::Status::OK());
-    auto flat = buf.flat<uint8>();
-    void *ptr = (void *)flat.data();
-    allocated_tensor_map.emplace(ptr, buf);
+    void* ptr = alloc_->AllocateRaw(Allocator::kAllocatorAlignment, size * sizeof(value_type), AllocationAttributes());
     return (value_type*)ptr;
   }
 
   void deallocate(value_type* ptr, size_t) const {
-    allocated_tensor_map.erase(ptr);
+    alloc_->DeallocateRaw(ptr);
   }
 };
 
@@ -80,27 +81,33 @@ bool operator!=(gpu_hash_map_tf_allocator<T> const& lhs, gpu_hash_map_tf_allocat
   return not(lhs == rhs);
 }
 
-template <typename KeyType, typename ValueType, typename Allocator = gpu_hash_map_tf_allocator<uint8_t>>
+template <typename KeyType, typename ValueType, typename CUCOAllocator = gpu_hash_map_tf_allocator<uint8_t>>
 class DynamicHashTable {
 public:
-  cuco::dynamic_map<KeyType, ValueType, cuda::thread_scope_device, Allocator> map_;
+  cuco::dynamic_map<KeyType, ValueType, cuda::thread_scope_device, CUCOAllocator> map_;
 
-  DynamicHashTable(size_t initial_capacity, KeyType empty_key_sentinel, ValueType empty_value_sentinel, Allocator alloc)
+  DynamicHashTable(size_t initial_capacity, KeyType empty_key_sentinel, ValueType empty_value_sentinel, CUCOAllocator alloc)
       : map_(initial_capacity, empty_key_sentinel, empty_value_sentinel, alloc) {
   }
   ~DynamicHashTable() {}
 };
 
 template <typename K, typename V>
-GPUHashTable<K, V>::GPUHashTable(K empty_key_sentinel, OpKernelContext *context, size_t initial_capacity) {
-  hash_table = new DynamicHashTable<K, int32>(initial_capacity, empty_key_sentinel, -1, gpu_hash_map_tf_allocator<uint8_t>(context));
+GPUHashTable<K, V>::GPUHashTable(K empty_key_sentinel, Allocator* alloc, size_t initial_capacity) : initial_bank_size(initial_capacity) {
+  hash_table = new DynamicHashTable<K, int32>(initial_capacity, empty_key_sentinel, -1, gpu_hash_map_tf_allocator<uint8_t>(alloc));
   cudaMallocManaged(&start_idx, sizeof(cuda::atomic<std::size_t, cuda::thread_scope_device>));
+  *start_idx = 0;
 }
 
 template <typename K, typename V>
 GPUHashTable<K, V>::~GPUHashTable() {
   delete hash_table;
   cudaFree(start_idx);
+}
+
+template <typename K, typename V>
+int32 GPUHashTable<K, V>::Size() {
+  return hash_table->map_.get_size();
 }
 
 template class GPUHashTable<int32, float>;
@@ -126,19 +133,17 @@ __global__ void kv_lookup_and_insert_key_kernel(const Key* key_first,
                                                 uint32_t num_submaps,
                                                 atomicT* num_successes,
                                                 atomicT* start_idx,
-                                                int32 idx_offset,
+                                                int32 submap_idx,
                                                 Hash hash = Hash{},
                                                 KeyEqual key_equal = KeyEqual{}) {
-  extern __shared__ size_t thread_num_successes[];
-  if (threadIdx.x < num_submaps)
-    thread_num_successes[threadIdx.x] = 0;
-  __syncthreads();
+  typedef cub::BlockReduce<std::size_t, block_size> BlockReduce;
+  __shared__ typename BlockReduce::TempStorage temp_storage;
+  std::size_t thread_num_successes = 0;
 
   auto tile = cg::tiled_partition<tile_size>(cg::this_thread_block());
   auto tid = blockDim.x * blockIdx.x + threadIdx.x;
   auto key_idx = tid / tile_size;
   auto empty_value_sentinel = submap_views[0].get_empty_value_sentinel();
-  __shared__ int32 writeBuffer[block_size / tile_size];
   int32 tmp;
 
   while(key_idx < num_items) {
@@ -158,30 +163,21 @@ __global__ void kv_lookup_and_insert_key_kernel(const Key* key_first,
         tmp = start_idx->fetch_add(1);
       }
       found_value = tile.shfl(tmp, 0);
-      auto insert_pair = cuco::pair_type<Key, int32>{key, (int32)(found_value + idx_offset)};
-      for(auto i = 0; i < num_submaps; ++i) {
-        if (submap_mutable_views[i].insert(tile, insert_pair, hash, key_equal) &&
-            tile.thread_rank() == 0) {
-          atomicAdd(reinterpret_cast<unsigned long long *>(thread_num_successes) + i, 1ull);
-          break;
-        }
+      auto insert_pair = cuco::pair_type<Key, int32>{key, found_value};
+      if (submap_mutable_views[submap_idx].insert(tile, insert_pair, hash, key_equal) &&
+          tile.thread_rank() == 0) {
+        thread_num_successes++;
       }
     }
 
-    // if (tile.thread_rank() == 0) { writeBuffer[threadIdx.x / tile_size] = found_value; }
-    // __syncthreads();
-    // if (tile.thread_rank() == 0) {
-    //   *(value_first + key_idx) = writeBuffer[threadIdx.x / tile_size];
-    // }
     if (tile.thread_rank() == 0) {
       *(value_first + key_idx) = found_value;
     }
     key_idx += (gridDim.x * blockDim.x) / tile_size;
   }
-  __syncthreads();
 
-  if (threadIdx.x < num_submaps)
-    num_successes[threadIdx.x] += thread_num_successes[threadIdx.x];
+  std::size_t block_num_successes = BlockReduce(temp_storage).Sum(thread_num_successes);
+  if (threadIdx.x == 0) { *num_successes += block_num_successes; }
 }
 
 template <typename Key, typename V>
@@ -191,30 +187,43 @@ struct KvLookupInsertKey<GPUDevice, Key, V> {
                   int32 num_items,
                   GPUHashTable<Key, V>* hash_table,
                   atomicT* start_idx,
-                  int32 idx_offset,
                   cudaStream_t stream) {
     using mutableViewT = typename cuco::dynamic_map<Key, int32, cuda::thread_scope_device, gpu_hash_map_tf_allocator<uint8_t>>::mutable_view_type;
     using ViewT = typename cuco::dynamic_map<Key, int32, cuda::thread_scope_device, gpu_hash_map_tf_allocator<uint8_t>>::view_type;
     auto& map = hash_table->hash_table->map_;
     map.reserve(map.get_size() + num_items);
-    for (size_t submap_idx = 0; submap_idx < map.get_submaps().size(); submap_idx++) {
-      map.get_num_successes()[submap_idx] = 0;
-    }
-    int device_id;
-    CUCO_CUDA_TRY(cudaGetDevice(&device_id));
-    CUCO_CUDA_TRY(cudaMemPrefetchAsync(map.get_num_successes(), sizeof(atomicT) * map.get_submaps().size(), device_id));
+    uint32_t submap_idx = 0;
+    std::size_t num_to_insert = num_items;
 
-    auto const block_size = 128;
-    auto const stride = 1;
-    auto const tile_size = 4;
-    auto const grid_size = (tile_size * num_items + stride * block_size - 1) / (stride * block_size);
-    TF_CHECK_OK(GpuLaunchKernel(kv_lookup_and_insert_key_kernel<block_size, tile_size, Key, mutableViewT, ViewT, cuco::detail::MurmurHash3_32<Key>, thrust::equal_to<Key>>,
-                                grid_size, block_size, sizeof(size_t) * map.get_submaps().size(), stream,
-                                key_first, value_first, num_items,
-                                map.get_submap_mutable_views().data().get(), map.get_submap_views().data().get(), map.get_submaps().size(),
-                                map.get_num_successes(), start_idx, idx_offset, cuco::detail::MurmurHash3_32<Key>{}, thrust::equal_to<Key>{}));
-    CUCO_CUDA_TRY(cudaDeviceSynchronize());
-    map.update_submap_sizes();
+    while (num_to_insert > 0) {
+      std::size_t capacity_remaining =
+          map.get_max_load_factor() * map.get_submaps()[submap_idx]->get_capacity() - map.get_submaps()[submap_idx]->get_size();
+      if (capacity_remaining >= map.get_min_insert_size()) {
+        *(map.get_num_successes()) = 0;
+        int device_id;
+        CUCO_CUDA_TRY(cudaGetDevice(&device_id));
+        CUCO_CUDA_TRY(cudaMemPrefetchAsync(map.get_num_successes(), sizeof(atomicT), device_id));
+
+        auto n = std::min(capacity_remaining, num_to_insert);
+        auto const block_size = 128;
+        auto const stride = 1;
+        auto const tile_size = 4;
+        auto const grid_size = (tile_size * n + stride * block_size - 1) / (stride * block_size);
+        TF_CHECK_OK(GpuLaunchKernel(kv_lookup_and_insert_key_kernel<block_size, tile_size, Key, mutableViewT, ViewT, cuco::detail::MurmurHash3_32<Key>, thrust::equal_to<Key>>,
+                                    grid_size, block_size, 0, stream,
+                                    key_first, value_first, n,
+                                    map.get_submap_mutable_views().data().get(), map.get_submap_views().data().get(), map.get_submaps().size(),
+                                    map.get_num_successes(), start_idx, submap_idx,
+                                    cuco::detail::MurmurHash3_32<Key>{}, thrust::equal_to<Key>{}));
+        CUCO_CUDA_TRY(cudaDeviceSynchronize());
+        std::size_t h_num_successes = map.get_num_successes()->load(cuda::std::memory_order_relaxed);
+        map.update_submap_sizes(submap_idx, h_num_successes);
+        key_first += n;
+        value_first += n;
+        num_to_insert -= n;
+      }
+      submap_idx++;
+    }
   }
 };
 
@@ -226,7 +235,6 @@ __global__ void kv_lookup_or_create_emb_kernel(Value* val,
                                                int32 slot_idx,
                                                Value** d_banks,
                                                bool** d_flags,
-                                               int32 bank_num,
                                                int32 slot_num,
                                                int32 default_v_num,
                                                int32 bank_size) {
@@ -235,16 +243,16 @@ __global__ void kv_lookup_or_create_emb_kernel(Value* val,
   auto bank_idx = item_pos / bank_size;
   auto offset_in_bank = item_pos % bank_size;
   auto slot_offset = bank_idx * slot_num + slot_idx;
-  if (bank_idx < bank_num && offset_in_bank < bank_size) {
-    if (d_flags[slot_offset][offset_in_bank] == false) {
-      d_flags[slot_offset][offset_in_bank] = true;
-      for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-        d_banks[slot_offset][offset_in_bank * dim + id] = default_v[(item_idx % default_v_num) * dim + id];
-      }
-    }
+  bool stored = d_flags[slot_offset][offset_in_bank];
+  __syncthreads();
+  if (stored == false) {
+    d_flags[slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      val[item_idx * dim + id]= d_banks[slot_offset][slot_idx * dim + id];
+      d_banks[slot_offset][offset_in_bank * dim + id] = default_v[(item_idx % default_v_num) * dim + id];
     }
+  }
+  for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
+    val[item_idx * dim + id] = d_banks[slot_offset][offset_in_bank * dim + id];
   }
 }
 
@@ -259,7 +267,6 @@ struct KvLookupCreateEmb<GPUDevice, Value> {
                   int32 default_v_num,
                   Value** d_banks,
                   bool** d_flags,
-                  int32 bank_num,
                   int32 slot_num,
                   int32 bank_size,
                   cudaStream_t stream) {
@@ -270,9 +277,126 @@ struct KvLookupCreateEmb<GPUDevice, Value> {
                               val, default_v, dim,
                               item_idxs, slot_idx,
                               d_banks, d_flags,
-                              bank_num, slot_num, default_v_num, bank_size));
+                              slot_num, default_v_num, bank_size));
 }
 };
+
+template <typename Key,
+          typename ViewT,
+          typename Hash     = cuco::detail::MurmurHash3_32<Key>,
+          typename KeyEqual = thrust::equal_to<Key>>
+__global__ void kv_get_key_snapshot_kernel(Key* key,
+                                           int32* item_idxs,
+                                           int32 slot_idx,
+                                           int32 primary_slot_idx,
+                                           bool** d_flags,
+                                           int32 bank_num,
+                                           int32 slot_num,
+                                           int32 bank_size,
+                                           ViewT* submap_views,
+                                           uint32_t num_submaps,
+                                           int32 ev_size,
+                                           Hash hash = Hash{},
+                                           KeyEqual key_equal = KeyEqual{}) {
+  int n = 0;
+  for(auto i = 0; i < num_submaps; ++i) {
+    auto submap_view_size = submap_views[i].get_capacity();
+    for(auto j = 0; j < submap_view_size; ++j) {
+      auto found = submap_views[i].get_slot(j, hash, key_equal);
+      if (found != submap_views[i].end()) {
+        int32 item_pos = found->second;
+        auto bank_idx = item_pos / bank_size;
+        auto offset_in_bank = item_pos % bank_size;
+        auto slot_offset = bank_idx * slot_num + slot_idx;
+        auto pri_slot_offset = bank_idx * slot_num + primary_slot_idx;
+        if (d_flags[slot_offset][offset_in_bank] && d_flags[pri_slot_offset][offset_in_bank]) {
+          *(key + n) = found->first;
+          *(item_idxs + n) = found->second;
+          ++n;
+        }
+      }
+    }
+  }
+  for (auto i = n; i < ev_size; ++i) {
+    *(key + n) = submap_views[0].get_empty_key_sentinel();
+  }
+}
+
+template <typename Key, typename V>
+struct KvKeyGetSnapshot<GPUDevice, Key, V> {
+  void operator()(Key* key_first,
+                  int32* value_first,
+                  int32 slot_idx,
+                  int32 primary_slot_idx,
+                  bool** d_flags,
+                  int32 bank_num,
+                  int32 slot_num,
+                  int32 bank_size,
+                  GPUHashTable<Key, V>* hash_table,
+                  int32 ev_size,
+                  cudaStream_t stream) {
+    using ViewT = typename cuco::dynamic_map<Key, int32, cuda::thread_scope_device, gpu_hash_map_tf_allocator<uint8_t>>::view_type;
+    auto& map = hash_table->hash_table->map_;
+
+    auto const block_size = 1;
+    auto const grid_size = 1;
+    TF_CHECK_OK(GpuLaunchKernel(kv_get_key_snapshot_kernel<Key, ViewT, cuco::detail::MurmurHash3_32<Key>, thrust::equal_to<Key>>,
+                                grid_size, block_size, 0, stream,
+                                key_first, value_first, slot_idx, primary_slot_idx,
+                                d_flags, bank_num, slot_num, bank_size,
+                                map.get_submap_views().data().get(), map.get_submaps().size(),
+                                ev_size, cuco::detail::MurmurHash3_32<Key>{}, thrust::equal_to<Key>{}));
+    CUCO_CUDA_TRY(cudaDeviceSynchronize());
+  }
+};
+
+template <typename Key, typename Value>
+__global__ void kv_emb_get_snapshot_kernel(Key* key,
+                                           Value* val,
+                                           Key empty_key_sentinel,
+                                           int64 dim,
+                                           int32* item_idxs,
+                                           int32 slot_idx,
+                                           Value** d_banks,
+                                           int32 bank_num,
+                                           int32 slot_num,
+                                           int32 bank_size) {
+  auto item_idx = blockIdx.x;
+  auto item_pos = item_idxs[item_idx];
+  auto bank_idx = item_pos / bank_size;
+  auto offset_in_bank = item_pos % bank_size;
+  auto slot_offset = bank_idx * slot_num + slot_idx;
+  if (key[item_idx] != empty_key_sentinel) {
+    for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
+      val[item_idx * dim + id] = d_banks[slot_offset][offset_in_bank * dim + id];
+    }
+  }
+}
+
+template <typename Key, typename Value>
+struct KvEmbGetSnapshot<GPUDevice, Key, Value> {
+  void operator()(Key* key,
+                  Value* val,
+                  Key empty_key_sentinel,
+                  int64 dim,
+                  int32* item_idxs,
+                  int32 num_items,
+                  int32 slot_idx,
+                  Value** d_banks,
+                  int32 bank_num,
+                  int32 slot_num,
+                  int32 bank_size,
+                  cudaStream_t stream) {
+  auto const block_size = 256;
+  auto const grid_size = num_items;
+  TF_CHECK_OK(GpuLaunchKernel(kv_emb_get_snapshot_kernel<Key, Value>,
+                              grid_size, block_size, 0, stream,
+                              key, val, empty_key_sentinel, dim,
+                              item_idxs, slot_idx, d_banks,
+                              bank_num, slot_num, bank_size));
+}
+};
+
 } // namespace functor
 
 template struct functor::KvLookupInsertKey<GPUDevice, int32, float>;
@@ -282,6 +406,16 @@ template struct functor::KvLookupInsertKey<GPUDevice, int64, double>;
 
 template struct functor::KvLookupCreateEmb<GPUDevice, float>;
 template struct functor::KvLookupCreateEmb<GPUDevice, double>;
+
+template struct functor::KvKeyGetSnapshot<GPUDevice, int32, float>;
+template struct functor::KvKeyGetSnapshot<GPUDevice, int32, double>;
+template struct functor::KvKeyGetSnapshot<GPUDevice, int64, float>;
+template struct functor::KvKeyGetSnapshot<GPUDevice, int64, double>;
+
+template struct functor::KvEmbGetSnapshot<GPUDevice, int32, float>;
+template struct functor::KvEmbGetSnapshot<GPUDevice, int32, double>;
+template struct functor::KvEmbGetSnapshot<GPUDevice, int64, float>;
+template struct functor::KvEmbGetSnapshot<GPUDevice, int64, double>;
 
 }  // namespace tensorflow
 
