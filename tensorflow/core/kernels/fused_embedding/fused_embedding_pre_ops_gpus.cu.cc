@@ -67,6 +67,9 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                                      partition_sizes_accumulate_.back();
       partition_sizes_accumulate_.push_back(accu);
     }
+
+    cudaEvent_t memcpy_event;
+    cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
     // =============================================== //
 
     // ========= 2. allocate cub tmp storage ========= //
@@ -149,8 +152,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         FusedMultiFunctional(
             device, data_p_with_type<const IndicePair>(indices_tensor),
             data_p_with_type<const int64_t>(values_tensor), nnz, batch_size,
-            prune_invalid_id_, default_id,
-            data_p_with_type<int>(all_flags),
+            prune_invalid_id_, default_id, data_p_with_type<int>(all_flags),
             data_p_with_type<int>(all_flags) + batch_size,
             data_p_with_type<IndicePair>(tmp_indices_buffer),
             data_p_with_type<int64_t>(values_extended));
@@ -182,7 +184,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         int selected_num;
         cudaMemcpyAsync(&selected_num, data_p_with_type<int>(selected_num_d),
                         sizeof(int), cudaMemcpyDeviceToHost, device.stream());
-        cudaStreamSynchronize(device.stream());
+        cudaEventRecord(memcpy_event, device.stream());
+        cudaEventSynchronize(memcpy_event);
         new_nnz = selected_num;
       }
 
@@ -197,7 +200,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         int selected_num;
         cudaMemcpyAsync(&selected_num, data_p_with_type<void>(selected_num_d),
                         sizeof(int), cudaMemcpyDeviceToHost, device.stream());
-        cudaStreamSynchronize(device.stream());
+        cudaEventRecord(memcpy_event, device.stream());
+        cudaEventSynchronize(memcpy_event);
         new_nnz += selected_num;
       }
     }
@@ -300,8 +304,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                       data_p_with_type<int64>(elements_offset_per_partition),
                       num_partitions_ * sizeof(int64_t), cudaMemcpyDeviceToHost,
                       device.stream());
-      cudaStreamSynchronize(device.stream());
-
+      cudaEventRecord(memcpy_event, device.stream());
+      cudaEventSynchronize(memcpy_event);
 
       // 4.2 set output
       int64_t sub_start_offset = 0;

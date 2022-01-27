@@ -5293,10 +5293,14 @@ tf_kernel_library(
         "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
         "fused_embedding/fused_embedding_pre_ops_gpus.cu.cc",
         "fused_embedding/fused_embedding_post_ops_gpus.cu.cc",
-        "fused_embedding/fused_embedding_gpu_kernels.cu.cc"
+        "fused_embedding/fused_embedding_gpu_kernels.cu.cc",
+        "fused_embedding/unique_gpu/unique.cu.cc"
     ],
-    deps = ["//third_party/eigen3", "//tensorflow/core/profiler:nvtx_utils"] +
-           DYNAMIC_DEPS + if_cuda(["@cub_archive//:cub", "fused_embedding_cuh"]),
+    deps = ["//third_party/eigen3",
+            "//tensorflow/core/profiler:nvtx_utils"] +
+            DYNAMIC_DEPS +
+            if_cuda(["@cub_archive//:cub",
+                     "fused_embedding_cuh"]),
 )
 
 tf_kernel_library(
