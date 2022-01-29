@@ -40,6 +40,8 @@ int ThreadManager::MaybeInitThread(AllocatorThread& t) {
 
 void ThreadManager::Release(const AllocatorThread& t) {
   std::lock_guard<SpinMutex> lg(spin_);
-  usable_id_.insert(t.id);
+  if (t.id >= 0) {
+    usable_id_.insert(t.id);
+  }
 }
 }  // namespace tensorflow
