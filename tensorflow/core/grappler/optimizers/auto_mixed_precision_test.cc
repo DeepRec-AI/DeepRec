@@ -34,6 +34,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/utils/grappler_test.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/random/random.h"
+#include "tensorflow/core/platform/tensor_float_32_utils.h"
 
 // TODO(benbarsdell): Improve the numerical checks in these tests. The tests
 // were originally written only to check the graph coloring, so the graphs do
@@ -116,9 +117,14 @@ class AutoMixedPrecisionTest : public GrapplerTest {
           new VirtualCluster({{"/GPU:1", device_properties}}));
     }
     TF_CHECK_OK(virtual_cluster_->Provision());
+    tf32_cache_ = tensorflow::tensor_float_32_execution_enabled();
+    tensorflow::enable_tensor_float_32_execution(false);
   }
 
-  void TearDown() override { TF_CHECK_OK(virtual_cluster_->Shutdown()); }
+  void TearDown() override {
+    TF_CHECK_OK(virtual_cluster_->Shutdown());
+    tensorflow::enable_tensor_float_32_execution(tf32_cache_);
+  }
 
   NodeDef* AddSimpleNode(const string& name, const string& op,
                          const std::vector<string>& inputs,
@@ -203,6 +209,7 @@ class AutoMixedPrecisionTest : public GrapplerTest {
 
   std::unique_ptr<Cluster> virtual_cluster_;
   bool gpu_available_;
+  bool tf32_cache_;
 };
 
 TEST_F(AutoMixedPrecisionTest, NoOp) {
