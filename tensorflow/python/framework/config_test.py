@@ -33,6 +33,7 @@ from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_ops
 from tensorflow.python.framework import test_util
+from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.platform import test
 from tensorflow.python.util import compat
@@ -675,19 +676,22 @@ class TensorFloat32Test(test.TestCase):
                     'capability of at least 8.0')
 
   def tearDown(self):
-    config.allow_tensor_float_32_execution(False)
+    config.enable_tensor_float_32_execution(False)
 
-  def test_tf32_enabled(self):
-    self.assertFalse(config.tensor_float_32_execution_allowed())
-    config.allow_tensor_float_32_execution(True)
-    self.assertTrue(config.tensor_float_32_execution_allowed())
-
-    x = array_ops.fill((8, 8), 1 + 2 ** -20)
-    y = array_ops.ones((8, 8))
-    out = math_ops.matmul(x, y)
-    # In tf32, each element of x is rounded to 1, so the output will be 8s.
-    expected = array_ops.fill((8, 8), 8)
-    self.assertAllEqual(out, expected)
+#  Disable test because, one, running with NVIDIA_TF32_OVERRIDE=0 causes it to
+#  fail and, two, enabling TF32 allows but does not strictly require TF32
+#  execution to be used.
+#  def test_tf32_enabled(self):
+#    self.assertFalse(config.tensor_float_32_execution_enabled())
+#    config.enable_tensor_float_32_execution(True)
+#    self.assertTrue(config.tensor_float_32_execution_enabled())
+#
+#    x = array_ops.fill((8, 8), 1 + 2 ** -20)
+#    y = array_ops.ones((8, 8))
+#    out = math_ops.matmul(x, y)
+#    # In tf32, each element of x is rounded to 1, so the output will be 8s.
+#    expected = array_ops.fill((8, 8), 8)
+#    self.assertAllEqual(out, expected)
 
   def test_tf32_disabled(self):
     x = array_ops.fill((8, 8), 1 + 2 ** -20)
@@ -697,9 +701,9 @@ class TensorFloat32Test(test.TestCase):
     self.assertAllEqual(out, expected)
 
     # Test disabling tf32 after enabling it works correctly
-    config.allow_tensor_float_32_execution(True)
-    config.allow_tensor_float_32_execution(False)
-    self.assertFalse(config.tensor_float_32_execution_allowed())
+    config.enable_tensor_float_32_execution(True)
+    config.enable_tensor_float_32_execution(False)
+    self.assertFalse(config.tensor_float_32_execution_enabled())
     out = math_ops.matmul(x, y)
     self.assertAllEqual(out, expected)
 

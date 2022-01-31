@@ -17,12 +17,13 @@ limitations under the License.
 
 #include <functional>
 #include <memory>
-#include <utility>
 #include <regex>
+#include <utility>
 
 #include "absl/strings/str_cat.h"
 #include "third_party/eigen3/Eigen/Core"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/platform/tensor_float_32_utils.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/stream_executor/cuda/cuda_activation.h"
 #include "tensorflow/stream_executor/cuda/cuda_diagnostics.h"
@@ -1235,7 +1236,9 @@ class CudnnRnnDescriptor : public dnn::RnnDescriptor {
                       : CUDNN_DEFAULT_MATH;
     } else {
 #if CUDNN_VERSION >= 7201
-      math_type = CUDNN_TENSOR_OP_MATH;
+      math_type = tensorflow::tensor_float_32_execution_enabled()
+                      ? CUDNN_TENSOR_OP_MATH
+                      : CUDNN_DEFAULT_MATH;
 #else
       math_type = CUDNN_DEFAULT_MATH;
 #endif  // CUDNN_VERSION >= 7201
@@ -2870,7 +2873,8 @@ AllocateCudnnConvolutionBackwardFilterWorkspace(
 }
 
 static bool TensorOpMathAvailable(int cc_major) {
-  return cc_major >= 7 && CUDNN_VERSION >= 7000;
+  return tensorflow::tensor_float_32_execution_enabled() && cc_major >= 7 &&
+         CUDNN_VERSION >= 7000;
 }
 
 port::StatusOr<dnn::AlgorithmDesc> GetCudnnConvolutionForwardAlgorithm(
@@ -3136,6 +3140,21 @@ bool isNonDeterministicOrIsDownConverting(
          isDownConvertingInputs(engine_config);
 }
 
+bool isTensorCore(cudnnBackendDescriptor_t engine_config) {
+  return cudnn_frontend::hasNumericalNote<CUDNN_NUMERICAL_NOTE_TENSOR_CORE>(
+      engine_config);
+}
+
+bool isDownConvertingInputsOrIsTensorCore(
+    cudnnBackendDescriptor_t engine_config) {
+  return isDownConvertingInputs(engine_config) || isTensorCore(engine_config);
+}
+
+bool isNonDeterministicOrIsDownConvertingOrIsTensorCore(
+    cudnnBackendDescriptor_t engine_config) {
+  return isNonDeterministicOrIsDownConverting(engine_config) ||
+         isTensorCore(engine_config);
+}
 #endif // CUDNN_VERSION >= 8100
 } // namespace
 
@@ -4055,16 +4074,32 @@ port::Status CudnnSupport::DoConvolve(
     auto &fallback_list = fallback.getFallbackList();
 
     cudnn_frontend::EngineConfigList filtered_configs;
-    if (stream_executor::cuda::RequireCuDNNDeterminism()) {
-      cudnn_frontend::filter(engine_config, filtered_configs,
-                             isNonDeterministicOrIsDownConverting);
-      cudnn_frontend::filter(fallback_list, filtered_configs,
-                             isNonDeterministicOrIsDownConverting);
+    if (tensorflow::tensor_float_32_execution_enabled()) {
+      if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+        cudnn_frontend::filter(engine_config, filtered_configs,
+                               isNonDeterministicOrIsDownConverting);
+        cudnn_frontend::filter(fallback_list, filtered_configs,
+                               isNonDeterministicOrIsDownConverting);
+      } else {
+        cudnn_frontend::filter(engine_config, filtered_configs,
+                               isDownConvertingInputs);
+        cudnn_frontend::filter(fallback_list, filtered_configs,
+                               isDownConvertingInputs);
+      }
     } else {
-      cudnn_frontend::filter(engine_config, filtered_configs,
-                             isDownConvertingInputs);
-      cudnn_frontend::filter(fallback_list, filtered_configs,
-                             isDownConvertingInputs);
+      if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+        cudnn_frontend::filter(
+            engine_config, filtered_configs,
+            isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+        cudnn_frontend::filter(
+            fallback_list, filtered_configs,
+            isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+      } else {
+        cudnn_frontend::filter(engine_config, filtered_configs,
+                               isDownConvertingInputsOrIsTensorCore);
+        cudnn_frontend::filter(fallback_list, filtered_configs,
+                               isDownConvertingInputsOrIsTensorCore);
+      }
     }
 
     auto fn = []() { return true; };
@@ -4247,16 +4282,32 @@ port::Status CudnnSupport::DoFusedConvolveImpl(
     auto &fallback_list = fallback.getFallbackList();
 
     cudnn_frontend::EngineConfigList filtered_configs;
-    if (stream_executor::cuda::RequireCuDNNDeterminism()) {
-      cudnn_frontend::filter(engine_config, filtered_configs,
-                             isNonDeterministicOrIsDownConverting);
-      cudnn_frontend::filter(fallback_list, filtered_configs,
-                             isNonDeterministicOrIsDownConverting);
+    if (tensorflow::tensor_float_32_execution_enabled()) {
+      if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+        cudnn_frontend::filter(engine_config, filtered_configs,
+                               isNonDeterministicOrIsDownConverting);
+        cudnn_frontend::filter(fallback_list, filtered_configs,
+                               isNonDeterministicOrIsDownConverting);
+      } else {
+        cudnn_frontend::filter(engine_config, filtered_configs,
+                               isDownConvertingInputs);
+        cudnn_frontend::filter(fallback_list, filtered_configs,
+                               isDownConvertingInputs);
+      }
     } else {
-      cudnn_frontend::filter(engine_config, filtered_configs,
-                             isDownConvertingInputs);
-      cudnn_frontend::filter(fallback_list, filtered_configs,
-                             isDownConvertingInputs);
+      if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+        cudnn_frontend::filter(
+            engine_config, filtered_configs,
+            isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+        cudnn_frontend::filter(
+            fallback_list, filtered_configs,
+            isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+      } else {
+        cudnn_frontend::filter(engine_config, filtered_configs,
+                               isDownConvertingInputsOrIsTensorCore);
+        cudnn_frontend::filter(fallback_list, filtered_configs,
+                               isDownConvertingInputsOrIsTensorCore);
+      }
     }
 
     auto fn = []() { return true; };
@@ -4561,20 +4612,37 @@ bool CudnnSupport::GetConvolveExecutionPlans(
   // We use the num_engines_heuristics to mark the border between the two
   // concatenated engine lists.
   int num_engines_heuristics;
-  if (stream_executor::cuda::RequireCuDNNDeterminism()) {
-    cudnn_frontend::filter(heur_configs, filtered_configs,
-                           isNonDeterministicOrIsDownConverting);
-    num_engines_heuristics = filtered_configs.size();
-    cudnn_frontend::filter(fallback_configs, filtered_configs,
-                           isNonDeterministicOrIsDownConverting);
+  if (tensorflow::tensor_float_32_execution_enabled()) {
+      if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+        cudnn_frontend::filter(heur_configs, filtered_configs,
+                               isNonDeterministicOrIsDownConverting);
+        num_engines_heuristics = filtered_configs.size();
+        cudnn_frontend::filter(fallback_configs, filtered_configs,
+                               isNonDeterministicOrIsDownConverting);
+      } else {
+        cudnn_frontend::filter(heur_configs, filtered_configs,
+                               isDownConvertingInputs);
+        num_engines_heuristics = filtered_configs.size();
+        cudnn_frontend::filter(fallback_configs, filtered_configs,
+                               isDownConvertingInputs);
+      }
   } else {
-    cudnn_frontend::filter(heur_configs, filtered_configs,
-                           isDownConvertingInputs);
-    num_engines_heuristics = filtered_configs.size();
-    cudnn_frontend::filter(fallback_configs, filtered_configs,
-                           isDownConvertingInputs);
+    if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+      cudnn_frontend::filter(
+          heur_configs, filtered_configs,
+          isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+      num_engines_heuristics = filtered_configs.size();
+      cudnn_frontend::filter(
+          fallback_configs, filtered_configs,
+          isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+    } else {
+      cudnn_frontend::filter(heur_configs, filtered_configs,
+                              isDownConvertingInputsOrIsTensorCore);
+      num_engines_heuristics = filtered_configs.size();
+      cudnn_frontend::filter(fallback_configs, filtered_configs,
+                              isDownConvertingInputsOrIsTensorCore);
+    }
   }
-
   VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size()
           << " (heuristics=" << num_engines_heuristics << ", fallback="
           << filtered_configs.size() - num_engines_heuristics << ").";
@@ -4689,18 +4757,36 @@ bool CudnnSupport::GetFusedConvolveExecutionPlans(
   // We use the num_engines_heuristics to mark the border between the two
   // concatenated engine lists.
   int num_engines_heuristics;
-  if (stream_executor::cuda::RequireCuDNNDeterminism()) {
-    cudnn_frontend::filter(heur_configs, filtered_configs,
-                           isNonDeterministicOrIsDownConverting);
-    num_engines_heuristics = filtered_configs.size();
-    cudnn_frontend::filter(fallback_configs, filtered_configs,
-                           isNonDeterministicOrIsDownConverting);
+  if (tensorflow::tensor_float_32_execution_enabled()) {
+    if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+      cudnn_frontend::filter(heur_configs, filtered_configs,
+                            isNonDeterministicOrIsDownConverting);
+      num_engines_heuristics = filtered_configs.size();
+      cudnn_frontend::filter(fallback_configs, filtered_configs,
+                            isNonDeterministicOrIsDownConverting);
+    } else {
+      cudnn_frontend::filter(heur_configs, filtered_configs,
+                            isDownConvertingInputs);
+      num_engines_heuristics = filtered_configs.size();
+      cudnn_frontend::filter(fallback_configs, filtered_configs,
+                            isDownConvertingInputs);
+    }
   } else {
-    cudnn_frontend::filter(heur_configs, filtered_configs,
-                           isDownConvertingInputs);
-    num_engines_heuristics = filtered_configs.size();
-    cudnn_frontend::filter(fallback_configs, filtered_configs,
-                           isDownConvertingInputs);
+    if (stream_executor::cuda::RequireCuDNNDeterminism()) {
+      cudnn_frontend::filter(
+          heur_configs, filtered_configs,
+          isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+      num_engines_heuristics = filtered_configs.size();
+      cudnn_frontend::filter(
+          fallback_configs, filtered_configs,
+          isNonDeterministicOrIsDownConvertingOrIsTensorCore);
+    } else {
+      cudnn_frontend::filter(heur_configs, filtered_configs,
+                              isDownConvertingInputsOrIsTensorCore);
+      num_engines_heuristics = filtered_configs.size();
+      cudnn_frontend::filter(fallback_configs, filtered_configs,
+                              isDownConvertingInputsOrIsTensorCore);
+    }
   }
 
   VLOG(4) << "\nFiltered engine configs size: " << filtered_configs.size()

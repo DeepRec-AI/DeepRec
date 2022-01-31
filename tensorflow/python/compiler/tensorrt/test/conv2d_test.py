@@ -116,8 +116,6 @@ class Conv2DNCHWTest(trt_test.TfTrtIntegrationTestBase):
     return super(Conv2DNCHWTest, self).ExpectedRelativeTolerance(run_params)
 
 
-@test_util.run_without_tensor_float_32("TF32 capable devices fail the test"
-                                          " due to reduced matmul precision")
 class Conv2DNHWCTest(trt_test.TfTrtIntegrationTestBase):
   """Testing conversion of Conv2D (data_format=NCHW) in TF-TRT conversion."""
 

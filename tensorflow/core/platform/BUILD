@@ -289,12 +289,14 @@ cc_library(
     srcs = ["tensor_float_32_utils.cc"],
     hdrs = ["tensor_float_32_utils.h"],
     copts = tf_copts(),
+    alwayslink = 1,
 )
 
 filegroup(
     name = "tensor_float_32_hdr",
     srcs = ["tensor_float_32_utils.h"],
 )
+
 
 
 # --------------------------------------------------------------------------
@@ -430,6 +432,7 @@ filegroup(
             "protobuf.cc",
             "stringprintf.cc",
             "str_util.cc",
+            "tensor_float_32_utils.cc"
         ],
     ),
     visibility = ["//tensorflow/core:__pkg__"],
