@@ -153,7 +153,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
           slice_info.full_shape[:n],
           slice_info.var_offset[:n],
           slice_info.var_shape[:n],
-          var_full_name=slice_info.var_full_name + "/" + real_slot_name))
+          var_full_name=slice_info.var_full_name + "/" +
+            real_slot_name if slice_info.var_full_name else None))
     else:
       slot._set_save_slice_info(
             slice_info.slot_save_slice_info(real_slot_name))
