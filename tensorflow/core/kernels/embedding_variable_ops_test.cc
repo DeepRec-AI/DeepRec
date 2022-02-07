@@ -1250,5 +1250,26 @@ TEST(EmbeddingVariableTest, TestEVStorageType_DRAM) {
   LOG(INFO) << "size:" << variable->Size();
 }
 
+void t1(KVInterface<int64, float>* hashmap) {
+  for (int i = 0; i< 100; ++i) {
+    hashmap->Insert(i, new NormalValuePtr<float>(100));
+  }
+}
+
+TEST(EmbeddingVariableTest, TestEVShrinkLockless) {
+
+  KVInterface<int64, float>* hashmap = new LocklessHashMap<int64, float>();
+  ASSERT_EQ(hashmap->Size(), 0);
+  LOG(INFO) << "hashmap size: " << hashmap->Size();
+  auto t = std::thread(t1, hashmap);
+  t.join();
+  LOG(INFO) << "hashmap size: " << hashmap->Size();
+  ASSERT_EQ(hashmap->Size(), 100);
+  TF_CHECK_OK(hashmap->Remove(1));
+  TF_CHECK_OK(hashmap->Remove(2));
+  ASSERT_EQ(hashmap->Size(), 98);
+  LOG(INFO) << "2 size:" << hashmap->Size();
+}
+
 } // namespace
 } // namespace tensorflow
