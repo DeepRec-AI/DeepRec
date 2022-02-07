@@ -23,31 +23,31 @@ namespace SparseOperationKit {
 
 template <typename InputDispatcher>
 class InputDispatcherBuilder : public Builder {
-public:
-    InputDispatcherBuilder() {}
-    std::shared_ptr<Operation> produce(ConstructionContext_t context) override {
-        return std::make_shared<InputDispatcher>(context);
-    }
+ public:
+  InputDispatcherBuilder() {}
+  std::shared_ptr<Operation> produce(ConstructionContext_t context) override {
+    return std::make_shared<InputDispatcher>(context);
+  }
 
-    std::shared_ptr<EmbeddingLookuper> produce(ConstructionContext_t context,
-                                               std::shared_ptr<ParamInterface> param) override {
-        throw std::runtime_error(ErrorBase + "Not implemented.");
-    }
+  std::shared_ptr<EmbeddingLookuper> produce(ConstructionContext_t context,
+                                             std::shared_ptr<ParamInterface> param) override {
+    throw std::runtime_error(ErrorBase + "Not implemented.");
+  }
 };
 
 template <typename OutputDispatcher>
 class OutputDispatcherBuilder : public Builder {
-public:
-    OutputDispatcherBuilder() {}
-    std::shared_ptr<Operation> produce(ConstructionContext_t context) override {
-        return std::make_shared<OutputDispatcher>(context);
-    }
-    std::shared_ptr<EmbeddingLookuper> produce(ConstructionContext_t context,
-                                               std::shared_ptr<ParamInterface> param) override {
-        throw std::runtime_error(ErrorBase + "Not implemented.");
-    }
+ public:
+  OutputDispatcherBuilder() {}
+  std::shared_ptr<Operation> produce(ConstructionContext_t context) override {
+    return std::make_shared<OutputDispatcher>(context);
+  }
+  std::shared_ptr<EmbeddingLookuper> produce(ConstructionContext_t context,
+                                             std::shared_ptr<ParamInterface> param) override {
+    throw std::runtime_error(ErrorBase + "Not implemented.");
+  }
 };
 
-} // namespace EmbeddingPlugin
+}  // namespace SparseOperationKit
 
-#endif // SparseOperationKit
+#endif  // SparseOperationKit

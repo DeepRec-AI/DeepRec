@@ -22,19 +22,18 @@
 namespace SparseOperationKit {
 
 class RandomUniformInit : public Initializer {
-public:
-    static std::shared_ptr<RandomUniformInit> create(const float a, const float b);
+ public:
+  static std::shared_ptr<RandomUniformInit> create(const float a, const float b);
 
-    void fill(std::shared_ptr<Tensor> tensor, 
-              const size_t sm_count,
-              const curandGenerator_t& generator, 
-              const cudaStream_t& stream) override;
-private:
-    RandomUniformInit(const float a, const float b);
+  void fill(std::shared_ptr<Tensor> tensor, const size_t sm_count,
+            const curandGenerator_t& generator, const cudaStream_t& stream) override;
 
-    const float a_, b_;
+ private:
+  RandomUniformInit(const float a, const float b);
+
+  const float a_, b_;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // RANDOM_UNIFORM_H
+#endif  // RANDOM_UNIFORM_H

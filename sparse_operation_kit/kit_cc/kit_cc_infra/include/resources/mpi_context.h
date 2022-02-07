@@ -18,40 +18,42 @@
 #define RESOURCES_MPI_CONTEXT_H
 
 #include <mpi.h>
-#include <memory>
+
 #include <cstdint>
+#include <memory>
 
 namespace SparseOperationKit {
 
 /*This class is used to manage MPI related things for SOK*/
 class MPIContext {
-public:
-    static std::unique_ptr<MPIContext> create(const uint32_t ranks);
-    ~MPIContext();
+ public:
+  static std::unique_ptr<MPIContext> create(const uint32_t ranks);
+  ~MPIContext();
 
-    MPIContext() = delete;
-    MPIContext(const MPIContext&) = delete;
-    MPIContext& operator=(const MPIContext&) = delete;
-    MPIContext(MPIContext&&) = delete;
-    MPIContext& operator=(MPIContext&&) = delete;
+  MPIContext() = delete;
+  MPIContext(const MPIContext&) = delete;
+  MPIContext& operator=(const MPIContext&) = delete;
+  MPIContext(MPIContext&&) = delete;
+  MPIContext& operator=(MPIContext&&) = delete;
 
-    bool sync_via_mpi() const;
-    int32_t rank_id() const;
-    int32_t rank_size() const;
-    void barrier() const;
-private:
-    explicit MPIContext(const uint32_t ranks);
+  bool sync_via_mpi() const;
+  int32_t rank_id() const;
+  int32_t rank_size() const;
+  void barrier() const;
 
-    const uint32_t ranks_;
-    int32_t rank_id_;
-    MPI_Comm my_comm_;
-    const bool sync_via_mpi_;
-    // whether MPI runtime is initialized by SOK.
-    bool should_free_mpi_rt_;
+ private:
+  explicit MPIContext(const uint32_t ranks);
+
+  const uint32_t ranks_;
+  int32_t rank_id_;
+  MPI_Comm my_comm_;
+  const bool sync_via_mpi_;
+  // whether MPI runtime is initialized by SOK.
+  bool should_free_mpi_rt_;
 };
 
 using MPIContext_t = std::unique_ptr<MPIContext>;
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // RESOURCES_MPI_CONTEXT_H
+#endif  // RESOURCES_MPI_CONTEXT_H

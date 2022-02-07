@@ -30,8 +30,6 @@ import numpy as np
 
 def get_sok_results(args, init_tensors, *random_samples):
     if args.distributed_tool == "onedevice":
-        import horovod.tensorflow as hvd
-        hvd.init()
         strategy = strategy_wrapper.OneDeviceStrategy()
     elif args.distributed_tool == "horovod":
         import horovod.tensorflow as hvd

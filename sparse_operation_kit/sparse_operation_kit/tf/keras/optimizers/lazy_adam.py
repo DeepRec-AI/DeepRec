@@ -19,6 +19,15 @@ from tensorflow.contrib import opt
 from tensorflow.python.framework import ops
 
 class LazyAdamOptimizer(opt.LazyAdamOptimizer):
+    """
+    Abbreviated as ``sok.tf.keras.optimizers.LazyAdamOptimizer``.
+
+    The ``unique`` and ``unsorted_segment_sum`` are replaced with GPU
+    implementations. 
+
+    It is only available in TensorFlow 1.15. Although the name is `LazyAdam`,
+    it actually updates variables locally.
+    """
     def __init__(self, *args, **kwargs):
         super(LazyAdamOptimizer, self).__init__(*args, **kwargs)
 

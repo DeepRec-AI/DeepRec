@@ -24,38 +24,36 @@
 namespace SparseOperationKit {
 
 class AdamOptimizer : public Optimizer {
-public:
-    static std::shared_ptr<AdamOptimizer> create(optimizer_hyper_params&& hyper_params,
-                                                 const std::shared_ptr<ParamsManager>& params_mgr,
-                                                 std::shared_ptr<ResourcesManager> resource_mgr);
+ public:
+  static std::shared_ptr<AdamOptimizer> create(optimizer_hyper_params&& hyper_params,
+                                               const std::shared_ptr<ParamsManager>& params_mgr,
+                                               std::shared_ptr<ResourcesManager> resource_mgr);
 
-    void apply_gradients(std::shared_ptr<ParamInterface> param,
-                        const std::shared_ptr<Tensor> grad_tensor,
-                        const std::shared_ptr<Tensor> local_indices,
-                        const size_t local_replica_id, 
-                        const float learning_rate,
-                        const size_t current_step) override;
+  void apply_gradients(std::shared_ptr<ParamInterface> param,
+                       const std::shared_ptr<Tensor> grad_tensor,
+                       const std::shared_ptr<Tensor> local_indices, const size_t local_replica_id,
+                       const float learning_rate, const size_t current_step) override;
 
-    void create_preparers(const std::shared_ptr<EmbeddingManager>& embedding_mgr) override;
-    void reserve_spaces() override;
-private:
-    AdamOptimizer(optimizer_hyper_params&& hyper_params,
-                  const std::shared_ptr<ParamsManager>& params_mgr,
-                  std::shared_ptr<ResourcesManager> resource_mgr);
+  void create_preparers(const std::shared_ptr<EmbeddingManager>& embedding_mgr) override;
+  void reserve_spaces() override;
 
-    std::shared_ptr<UpdatePreparer>& get_update_preparer(const std::string variable_name);
+ private:
+  AdamOptimizer(optimizer_hyper_params&& hyper_params,
+                const std::shared_ptr<ParamsManager>& params_mgr,
+                std::shared_ptr<ResourcesManager> resource_mgr);
 
-    std::shared_ptr<ResourcesManager> resource_mgr_;
+  std::shared_ptr<UpdatePreparer>& get_update_preparer(const std::string variable_name);
 
-    std::unordered_map<std::string, std::shared_ptr<UpdatePreparer>> preparers_;
+  std::shared_ptr<ResourcesManager> resource_mgr_;
 
-    OptimizerHyperParamsHandler_t hyper_params_handler_;
-    const float beta1_;
-    const float beta2_;
-    const float epsilon_;
+  std::unordered_map<std::string, std::shared_ptr<UpdatePreparer>> preparers_;
+
+  OptimizerHyperParamsHandler_t hyper_params_handler_;
+  const float beta1_;
+  const float beta2_;
+  const float epsilon_;
 };
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // ADAM_OPTIMIZER_H
+#endif  // ADAM_OPTIMIZER_H

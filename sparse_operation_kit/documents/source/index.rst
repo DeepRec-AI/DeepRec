@@ -16,4 +16,5 @@ Welcome to SparseOperationKit's documentation!
    Performance <performance/index>
    API Docs <api/index>
    Release Notes <release_notes/release_notes>
+   Environment Variables <env_vars/env_vars>
    Known Issues <known_issues/issues>

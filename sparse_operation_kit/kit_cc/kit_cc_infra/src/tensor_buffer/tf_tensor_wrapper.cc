@@ -19,60 +19,54 @@
 namespace SparseOperationKit {
 
 size_t size_of(tensorflow::DataType data_type) {
-    switch (data_type) {
-        case tensorflow::DataType::DT_UINT8:
-        case tensorflow::DataType::DT_INT8:
-        case tensorflow::DataType::DT_BOOL:
-            return 1;
-        case tensorflow::DataType::DT_HALF:
-        case tensorflow::DataType::DT_INT16:
-        case tensorflow::DataType::DT_UINT16:
-            return 2;
-        case tensorflow::DataType::DT_FLOAT:
-        case tensorflow::DataType::DT_INT32:
-        case tensorflow::DataType::DT_UINT32:
-            return 4;
-        case tensorflow::DataType::DT_DOUBLE:
-        case tensorflow::DataType::DT_INT64:
-        case tensorflow::DataType::DT_UINT64:
-            return 8;
-        default:
-            return 0;
-    } // switch data_type
-    return 0;
+  switch (data_type) {
+    case tensorflow::DataType::DT_UINT8:
+    case tensorflow::DataType::DT_INT8:
+    case tensorflow::DataType::DT_BOOL:
+      return 1;
+    case tensorflow::DataType::DT_HALF:
+    case tensorflow::DataType::DT_INT16:
+    case tensorflow::DataType::DT_UINT16:
+      return 2;
+    case tensorflow::DataType::DT_FLOAT:
+    case tensorflow::DataType::DT_INT32:
+    case tensorflow::DataType::DT_UINT32:
+      return 4;
+    case tensorflow::DataType::DT_DOUBLE:
+    case tensorflow::DataType::DT_INT64:
+    case tensorflow::DataType::DT_UINT64:
+      return 8;
+    default:
+      return 0;
+  }  // switch data_type
+  return 0;
 }
 
-TFTensorWrapper::TFTensorWrapper(tensorflow::Tensor* tf_tensor)
-: tf_tensor_(tf_tensor)
-{}
+TFTensorWrapper::TFTensorWrapper(tensorflow::Tensor* tf_tensor) : tf_tensor_(tf_tensor) {}
 
 std::shared_ptr<TFTensorWrapper> TFTensorWrapper::create(tensorflow::Tensor* tf_tensor) {
-    return std::shared_ptr<TFTensorWrapper>(new TFTensorWrapper(tf_tensor));
+  return std::shared_ptr<TFTensorWrapper>(new TFTensorWrapper(tf_tensor));
 }
 
 std::vector<std::shared_ptr<TFTensorWrapper>> TFTensorWrapper::create_many(
-            std::initializer_list<tensorflow::Tensor*> tf_tensors) {
-    std::vector<std::shared_ptr<TFTensorWrapper>> result;
-    for (auto iter = tf_tensors.begin(); iter != tf_tensors.end(); ++iter) {
-        result.push_back(create(*iter));
-    }
-    return result;
+    std::initializer_list<tensorflow::Tensor*> tf_tensors) {
+  std::vector<std::shared_ptr<TFTensorWrapper>> result;
+  for (auto iter = tf_tensors.begin(); iter != tf_tensors.end(); ++iter) {
+    result.push_back(create(*iter));
+  }
+  return result;
 }
 
-void* TFTensorWrapper::get_ptr() {
-    return tf_tensor_->data();
-}
+void* TFTensorWrapper::get_ptr() { return tf_tensor_->data(); }
 
 size_t TFTensorWrapper::get_size_in_bytes() {
-    return get_num_elements() * size_of(tf_tensor_->dtype());
+  return get_num_elements() * size_of(tf_tensor_->dtype());
 }
 
 size_t TFTensorWrapper::get_num_elements() {
-    return static_cast<size_t>(tf_tensor_->NumElements());
+  return static_cast<size_t>(tf_tensor_->NumElements());
 }
 
-bool TFTensorWrapper::allocated() const {
-    return tf_tensor_->IsInitialized();
-}
+bool TFTensorWrapper::allocated() const { return tf_tensor_->IsInitialized(); }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

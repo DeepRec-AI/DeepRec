@@ -16,9 +16,9 @@
 
 #if TF_VERSION_MAJOR == 1
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/types.h"
 
 using namespace tensorflow;
@@ -30,10 +30,11 @@ REGISTER_OP("EmbeddingVariableAssignSub")
     .Input("value: dtype")
     .Attr("dtype: type")
     .SetShapeFn([](InferenceContext* c) {
-        std::vector<ShapeAndType> handle_shape_and_type;
-        TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(c, &handle_shape_and_type));
+      std::vector<ShapeAndType> handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          shape_inference::ValidateVariableResourceHandle(c, &handle_shape_and_type));
 
-        return Status::OK();
+      return Status::OK();
     });
-    
+
 #endif

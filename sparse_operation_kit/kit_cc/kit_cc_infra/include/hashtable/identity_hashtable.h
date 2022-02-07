@@ -17,33 +17,37 @@
 #ifndef HASHTABLE_IDENTITY_HASHTABLE_H
 #define HASHTABLE_IDENTITY_HASHTABLE_H
 
-#include "hashtable/hashtable.h"
 #include <memory>
+
+#include "hashtable/hashtable.h"
 
 namespace SparseOperationKit {
 
 template <typename KeyType, typename ValType>
-class IdentityHashTable : public HashTable { 
-public:
-    static std::shared_ptr<IdentityHashTable<KeyType, ValType>> create(const size_t capacity);
+class IdentityHashTable : public HashTable {
+ public:
+  static std::shared_ptr<IdentityHashTable<KeyType, ValType>> create(const size_t capacity);
 
-    virtual size_t get_and_add_value_head(size_t counter_add, cudaStream_t stream) override;
-    virtual void get(const void *d_keys, void *d_vals, size_t len, cudaStream_t stream) const override;
-    virtual void get_insert(const void *d_keys, void *d_vals, size_t len, cudaStream_t stream) override;
-    virtual void insert(const void *d_keys, const void *d_vals, size_t len, cudaStream_t stream) override;
-    virtual size_t get_size(cudaStream_t stream) const override;
-    virtual size_t get_capacity(cudaStream_t stream) const override;
-    virtual size_t get_value_head(cudaStream_t stream) const override;
-    virtual void dump(void* d_key, void* d_val, size_t* d_dump_counter, cudaStream_t stream) const override;
-    virtual bool identical_mapping() const override;
+  virtual size_t get_and_add_value_head(size_t counter_add, cudaStream_t stream) override;
+  virtual void get(const void *d_keys, void *d_vals, size_t len,
+                   cudaStream_t stream) const override;
+  virtual void get_insert(const void *d_keys, void *d_vals, size_t len,
+                          cudaStream_t stream) override;
+  virtual void insert(const void *d_keys, const void *d_vals, size_t len,
+                      cudaStream_t stream) override;
+  virtual size_t get_size(cudaStream_t stream) const override;
+  virtual size_t get_capacity(cudaStream_t stream) const override;
+  virtual size_t get_value_head(cudaStream_t stream) const override;
+  virtual void dump(void *d_key, void *d_val, size_t *d_dump_counter,
+                    cudaStream_t stream) const override;
+  virtual bool identical_mapping() const override;
 
-private:
-    explicit IdentityHashTable(const size_t capacity);
+ private:
+  explicit IdentityHashTable(const size_t capacity);
 
-    const size_t capacity_;
+  const size_t capacity_;
 };
 
+}  // namespace SparseOperationKit
 
-} // SparseOperationKit
-
-#endif // HASHTABLE_IDENTITY_HASHTABLE_H
+#endif  // HASHTABLE_IDENTITY_HASHTABLE_H

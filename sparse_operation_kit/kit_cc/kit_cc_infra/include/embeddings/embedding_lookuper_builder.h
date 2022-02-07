@@ -24,18 +24,18 @@ namespace SparseOperationKit {
 
 template <typename Lookuper>
 class EmbeddingLookuperBuilder : public Builder {
-public:
-    EmbeddingLookuperBuilder() {}
-    std::shared_ptr<EmbeddingLookuper> produce(ConstructionContext_t context,
-                                               std::shared_ptr<ParamInterface> param) override {
-        return std::make_shared<Lookuper>(context, param);
-    }
+ public:
+  EmbeddingLookuperBuilder() {}
+  std::shared_ptr<EmbeddingLookuper> produce(ConstructionContext_t context,
+                                             std::shared_ptr<ParamInterface> param) override {
+    return std::make_shared<Lookuper>(context, param);
+  }
 
-    std::shared_ptr<Operation> produce(std::shared_ptr<ConstructionContext> context) override {
-        throw std::runtime_error(ErrorBase + "Not implemented.");
-    }
+  std::shared_ptr<Operation> produce(std::shared_ptr<ConstructionContext> context) override {
+    throw std::runtime_error(ErrorBase + "Not implemented.");
+  }
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // EMBEDDING_LOOKUPER_BUILDER_H
+#endif  // EMBEDDING_LOOKUPER_BUILDER_H

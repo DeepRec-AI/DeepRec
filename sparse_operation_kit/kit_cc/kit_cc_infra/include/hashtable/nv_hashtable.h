@@ -17,34 +17,39 @@
 #ifndef HASHTABLE_NV_HASHTABLE_H
 #define HASHTABLE_NV_HASHTABLE_H
 
+#include <memory>
+
 #include "hashtable/hashtable.h"
 #include "hashtable/nv_hashtable.hpp"
-#include <memory>
 
 namespace SparseOperationKit {
 
 /* Adaptor for the hashtable used in HugeCTR.*/
 template <typename KeyType, typename ValType>
 class NvHashTable : public HashTable {
-public:
-    static std::shared_ptr<NvHashTable<KeyType, ValType>> create(size_t capacity, size_t count = 0);
+ public:
+  static std::shared_ptr<NvHashTable<KeyType, ValType>> create(size_t capacity, size_t count = 0);
 
-    virtual size_t get_and_add_value_head(size_t counter_add, cudaStream_t stream) override;
-    virtual void get(const void *d_keys, void *d_vals, size_t len, cudaStream_t stream) const override;
-    virtual void get_insert(const void *d_keys, void *d_vals, size_t len, cudaStream_t stream) override;
-    virtual void insert(const void *d_keys, const void *d_vals, size_t len, cudaStream_t stream) override;
-    virtual size_t get_size(cudaStream_t stream) const override;
-    virtual size_t get_capacity(cudaStream_t stream) const override;
-    virtual size_t get_value_head(cudaStream_t stream) const override;
-    virtual void dump(void* d_key, void* d_val, size_t* d_dump_counter, cudaStream_t stream) const override;
-    virtual bool identical_mapping() const override;
+  virtual size_t get_and_add_value_head(size_t counter_add, cudaStream_t stream) override;
+  virtual void get(const void *d_keys, void *d_vals, size_t len,
+                   cudaStream_t stream) const override;
+  virtual void get_insert(const void *d_keys, void *d_vals, size_t len,
+                          cudaStream_t stream) override;
+  virtual void insert(const void *d_keys, const void *d_vals, size_t len,
+                      cudaStream_t stream) override;
+  virtual size_t get_size(cudaStream_t stream) const override;
+  virtual size_t get_capacity(cudaStream_t stream) const override;
+  virtual size_t get_value_head(cudaStream_t stream) const override;
+  virtual void dump(void *d_key, void *d_val, size_t *d_dump_counter,
+                    cudaStream_t stream) const override;
+  virtual bool identical_mapping() const override;
 
-private:
-    NvHashTable(size_t capacity, size_t count = 0);
+ private:
+  NvHashTable(size_t capacity, size_t count = 0);
 
-    HugeCTR::HashTable<KeyType, ValType> hashtable_;
+  HugeCTR::HashTable<KeyType, ValType> hashtable_;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // HASHTABLE_NV_HASHTABLE_H
+#endif  // HASHTABLE_NV_HASHTABLE_H

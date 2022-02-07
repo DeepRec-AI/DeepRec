@@ -14,58 +14,59 @@
  * limitations under the License.
  */
 
-#include "tensorflow/core/framework/op_kernel.h"
 #include "embedding_variable.h"
+#include "tensorflow/core/framework/op_kernel.h"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
-using CPUDevice = Eigen::ThreadPoolDevice; 
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 class ReadEmbeddingVariableOp : public OpKernel {
-public:
-    explicit ReadEmbeddingVariableOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
-        OP_REQUIRES_OK(ctx, ctx->GetAttr("dtype", &dtype_));
-    }
-    void Compute(OpKernelContext* ctx) override {
-        // TODO: no need to read the resource handle??
-        core::RefCountPtr<Var> variable;
-        const ResourceHandle& handle = HandleFromInput(ctx, 0);
-        auto status = LookupResource(ctx, handle, &variable);
+ public:
+  explicit ReadEmbeddingVariableOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("dtype", &dtype_));
+  }
+  void Compute(OpKernelContext* ctx) override {
+    // TODO: no need to read the resource handle??
+    core::RefCountPtr<Var> variable;
+    const ResourceHandle& handle = HandleFromInput(ctx, 0);
+    auto status = LookupResource(ctx, handle, &variable);
 
-        if (!status.ok()) { // the first resource handle is not ResourceVariable
-            const ResourceHandle& handle = HandleFromInput(ctx, 1);
-            auto status = LookupResource(ctx, handle, &variable);
-            OP_REQUIRES(ctx, status.ok(),
-                        errors::FailedPrecondition(
-                            "Error while reading resource variable: ", handle.name(),
-                            " from container: ", handle.container(),
-                            ", which means the resource handle is neither EmbeddingVariable",
-                            " nor ResourceVariable. If you are using TF1, that could also be",
-                            " you haven't initialize this Variable, ",
-                            "please call sess.run(global_variables_initializer()).",
-                            status.ToString()));   
-        }
+    if (!status.ok()) {  // the first resource handle is not ResourceVariable
+      const ResourceHandle& handle = HandleFromInput(ctx, 1);
+      auto status = LookupResource(ctx, handle, &variable);
+      OP_REQUIRES(ctx, status.ok(),
+                  errors::FailedPrecondition(
+                      "Error while reading resource variable: ", handle.name(),
+                      " from container: ", handle.container(),
+                      ", which means the resource handle is neither EmbeddingVariable",
+                      " nor ResourceVariable. If you are using TF1, that could also be",
+                      " you haven't initialize this Variable, ",
+                      "please call sess.run(global_variables_initializer()).", status.ToString()));
+    }
 
 #ifdef DEBUG
-        TensorShape tensor_shape = variable->tensor()->shape();
-        std::cout << "tensor shape is: [";
-        for (auto iter = tensor_shape.begin(); iter != tensor_shape.end(); ++iter) {
-            std::cout << (*iter).size << ",";
-        }
-        std::cout << "\b]" << std::endl;
-#endif
-        // FIXME: lock should be used here??
-        // FIXME: should copy values from variable to output??
-        Tensor* t = variable->tensor();
-        OP_REQUIRES_OK(ctx, ctx->set_output("value", *t));
+    TensorShape tensor_shape = variable->tensor()->shape();
+    std::cout << "tensor shape is: [";
+    for (auto iter = tensor_shape.begin(); iter != tensor_shape.end(); ++iter) {
+      std::cout << (*iter).size << ",";
     }
-private:
-    DataType dtype_;
+    std::cout << "\b]" << std::endl;
+#endif
+    // FIXME: lock should be used here??
+    // FIXME: should copy values from variable to output??
+    Tensor* t = variable->tensor();
+    OP_REQUIRES_OK(ctx, ctx->set_output("value", *t));
+  }
+
+ private:
+  DataType dtype_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("ReadEmbeddingVariableOp").Device(DEVICE_GPU)
-                        .HostMemory("resource")
-                        .HostMemory("tf_resource"),
+REGISTER_KERNEL_BUILDER(Name("ReadEmbeddingVariableOp")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("resource")
+                            .HostMemory("tf_resource"),
                         ReadEmbeddingVariableOp);
 
-} // namespace tensorflow
+}  // namespace tensorflow

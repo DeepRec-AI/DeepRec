@@ -18,20 +18,18 @@
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
-using CPUDevice = Eigen::ThreadPoolDevice; 
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 template <typename Device>
 class OptimizerInitOp : public OpKernel {
-public:
-    explicit OptimizerInitOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
-    void Compute(OpKernelContext* ctx) override {
-        // do nothing
-    }
+ public:
+  explicit OptimizerInitOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+  void Compute(OpKernelContext* ctx) override {
+    // do nothing
+  }
 };
 
-REGISTER_KERNEL_BUILDER(Name("OptimizerInit")
-                        .Device(DEVICE_GPU)
-                        .HostMemory("optimizer_handle"),
+REGISTER_KERNEL_BUILDER(Name("OptimizerInit").Device(DEVICE_GPU).HostMemory("optimizer_handle"),
                         OptimizerInitOp<GPUDevice>);
 
-} // namespace tensorflow
+}  // namespace tensorflow

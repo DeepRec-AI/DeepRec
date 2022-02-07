@@ -15,13 +15,14 @@
  */
 
 #include "parameters/manager_interface.h"
+
 #include "common.h"
 
 namespace SparseOperationKit {
 
-void ParamsManager::push_back_embedding_buffer_builder(const size_t local_replica_id,
-                                    std::shared_ptr<EmbeddingBufferBuilder>& builder) {
-    throw std::runtime_error(ErrorBase + "Not implemented.");
+void ParamsManager::push_back_embedding_buffer_builder(
+    const size_t local_replica_id, std::shared_ptr<EmbeddingBufferBuilder>& builder) {
+  throw std::runtime_error(ErrorBase + "Not implemented.");
 }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
