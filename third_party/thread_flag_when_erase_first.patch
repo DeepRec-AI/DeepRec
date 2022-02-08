@@ -1,17 +1,17 @@
-From a64cbfe6b618b4ab8a081c51d183ba36d3af2612 Mon Sep 17 00:00:00 2001
+From 08b7a48cd7ee347761b0e42698b886bb5ca7a8b4 Mon Sep 17 00:00:00 2001
 From: lxy268263 <lxy268263@alibaba-inc.com>
 Date: Tue, 13 Jul 2021 16:20:45 +0800
-Subject: [PATCH] partitioned atomic counter
+Subject: [PATCH] fix memory leak when rebucket
 
 ---
  Makefile                                      |   13 +-
  sparsehash/dense_hash_map_lockless            |  447 ++++++
- sparsehash/internal/densehashtable_lockless.h | 1948 +++++++++++++++++++++++++
+ sparsehash/internal/densehashtable_lockless.h | 1966 +++++++++++++++++++++++++
  sparsehash/traits                             |   10 +-
- tests/bench_lockless.cc                       | 1466 +++++++++++++++++++
+ tests/bench_lockless.cc                       | 1466 ++++++++++++++++++
  tests/dense_hash_map_unittests.cc             |  137 +-
  tests/rwlock.h                                |  224 +++
- 7 files changed, 4227 insertions(+), 18 deletions(-)
+ 7 files changed, 4245 insertions(+), 18 deletions(-)
  create mode 100644 sparsehash/dense_hash_map_lockless
  create mode 100644 sparsehash/internal/densehashtable_lockless.h
  create mode 100644 tests/bench_lockless.cc
@@ -515,10 +515,10 @@ index 0000000..e68891f
 +}  // namespace google
 diff --git a/sparsehash/internal/densehashtable_lockless.h b/sparsehash/internal/densehashtable_lockless.h
 new file mode 100644
-index 0000000..2f2169f
+index 0000000..661ab89
 --- /dev/null
 +++ b/sparsehash/internal/densehashtable_lockless.h
-@@ -0,0 +1,1948 @@
+@@ -0,0 +1,1966 @@
 +// Copyright (c) 2005, Google Inc.
 +// All rights reserved.
 +//
@@ -1891,7 +1891,9 @@ index 0000000..2f2169f
 +          for (unsigned long i = 0; i < pold->num_buckets_; ++i) {
 +            pold->table_[i].~value_type();
 +          }
-+          pold->table_ = pold->val_info_.allocate(bucket_count()*2);
++          pointer temp = pold->val_info_.allocate(bucket_count()*2);
++	  pold->val_info_.deallocate(pold->table_, old_bucket_count());
++          pold->table_ = temp;
 +          assert(pold->table_);
 +         // auto st_time = std::chrono::high_resolution_clock::now();
 +          fill_range_with_empty(pold->table_, bucket_count()*2, empty_value);
@@ -2086,6 +2088,22 @@ index 0000000..2f2169f
 +          "Erasing the deleted key");
 +    bool find_flag = 0;
 +    bool flag;
++    while (thread_flag == -1) {
++      long min_counter = counter_flag[0];
++      int min_index = 0;
++      for (size_type i = 0; i < num_counters; i++) {
++        if (counter_flag[i] <= min_counter) {
++          min_counter = counter_flag[i];
++          min_index = i;
++        }
++      }
++      bool flag = __sync_bool_compare_and_swap(&counter_flag[min_index], min_counter, min_counter+1);
++      if (flag) {
++        thread_flag = min_index;
++        break;
++      }
++    }
++    
 +    while(resizeflag){}
 +    while(1){
 +      TableInternalParameter* tmp_pointer = pnew;
