@@ -37,9 +37,16 @@ copyright = '2021, NVIDIA'
 author = 'NVIDIA'
 
 # version
-import sparse_operation_kit as sok
-version = sok.__version__
-del sok
+def _GetSOKVersion():
+    _version_path = os.path.join(os.getcwd(), "../../sparse_operation_kit/core/")
+    sys.path.append(_version_path)
+    from _version import __version__
+    version = __version__
+    del __version__
+    sys.path.pop(-1)
+    return version
+
+version = _GetSOKVersion()
 
 # -- General configuration ---------------------------------------------------
 

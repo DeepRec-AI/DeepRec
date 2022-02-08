@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 
 using namespace tensorflow;
 using namespace tensorflow::shape_inference;
@@ -35,24 +35,24 @@ REGISTER_OP("PluginSparseFprop")
     .Attr("dtype: type")
     .Attr("unique_op_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
-        std::vector<ShapeAndType> handle_shape_and_type;
-        TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(
-                ctx, &handle_shape_and_type));
+      std::vector<ShapeAndType> handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          shape_inference::ValidateVariableResourceHandle(ctx, &handle_shape_and_type));
 
-        ShapeHandle variable_shape;
-        TF_RETURN_IF_ERROR(ctx->WithRank(handle_shape_and_type[0].shape, 2, &variable_shape));
-        DimensionHandle emb_vec_size_dim = ctx->Dim(variable_shape, 1);
+      ShapeHandle variable_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(handle_shape_and_type[0].shape, 2, &variable_shape));
+      DimensionHandle emb_vec_size_dim = ctx->Dim(variable_shape, 1);
 
-        tensorflow::int64 slot_num = 0;
-        TF_RETURN_IF_ERROR(ctx->GetAttr("slot_num", &slot_num));
-        DimensionHandle slot_num_dim = ctx->MakeDim(slot_num);
-        
-        DimensionHandle batch_dim = ctx->UnknownDim();
+      tensorflow::int64 slot_num = 0;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("slot_num", &slot_num));
+      DimensionHandle slot_num_dim = ctx->MakeDim(slot_num);
 
-        ShapeHandle output_shape = ctx->MakeShape({batch_dim, slot_num_dim, emb_vec_size_dim});
-        ctx->set_output(0, output_shape);
+      DimensionHandle batch_dim = ctx->UnknownDim();
 
-        return Status::OK();
+      ShapeHandle output_shape = ctx->MakeShape({batch_dim, slot_num_dim, emb_vec_size_dim});
+      ctx->set_output(0, output_shape);
+
+      return Status::OK();
     })
     .Doc(R"doc(
         This op can be used for all kinds of embedding forward propagation,

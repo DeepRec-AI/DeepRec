@@ -1,6 +1,13 @@
 # SparseOperationKit Release Notes #
 The release notes for SparseOperationKit.
 
+## What's new in Version 1.1.0 ##
++ Supports TensorFlow 1.15.
++ Supports configuring visible devices via `tf.config.set_visible_devices`.
++ Added a dedicated CUDA stream for SOK's Ops.
++ Supports pip installation.
++ Fixed hanging issue in `tf.distribute.MirroredStrategy` when TensorFlow version greater than 2.4.
+
 ## What's new in Version 1.0.1 ##
 + Supports Horovod as the synchronized training communication tool.
 + Supports dynamic input in All2AllDenseEmbedding, which means `unique->lookup->gather` pattern can be used.

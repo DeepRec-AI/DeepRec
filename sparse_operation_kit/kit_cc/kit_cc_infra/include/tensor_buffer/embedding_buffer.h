@@ -23,43 +23,43 @@
 namespace SparseOperationKit {
 
 class EmbeddingBuffer : public tensorflow::TensorBuffer {
-public:
-    static std::shared_ptr<EmbeddingBuffer> create(std::shared_ptr<Tensor> tensor);
+ public:
+  static std::shared_ptr<EmbeddingBuffer> create(std::shared_ptr<Tensor> tensor);
 
-    ~EmbeddingBuffer() override;
-    size_t size() const override;
-    tensorflow::TensorBuffer* root_buffer() override;
-    void FillAllocationDescription(tensorflow::AllocationDescription* proto) const override;
+  ~EmbeddingBuffer() override;
+  size_t size() const override;
+  tensorflow::TensorBuffer* root_buffer() override;
+  void FillAllocationDescription(tensorflow::AllocationDescription* proto) const override;
 #if TF_VERSION_MAJOR == 2
-    bool GetAllocatedBytes(size_t* out_bytes) const override;
+  bool GetAllocatedBytes(size_t* out_bytes) const override;
 #endif
-    bool OwnsMemory() const override;
+  bool OwnsMemory() const override;
 
-    explicit EmbeddingBuffer(std::shared_ptr<Tensor> tensor);
-    EmbeddingBuffer();
-private:
-    std::shared_ptr<Tensor> tensor_;
+  explicit EmbeddingBuffer(std::shared_ptr<Tensor> tensor);
+  EmbeddingBuffer();
+
+ private:
+  std::shared_ptr<Tensor> tensor_;
 };
-
 
 class EmbeddingBufferBuilder {
-public:
-    static std::shared_ptr<EmbeddingBufferBuilder> create(std::shared_ptr<Tensor> tensor);
+ public:
+  static std::shared_ptr<EmbeddingBufferBuilder> create(std::shared_ptr<Tensor> tensor);
 
-    ~EmbeddingBufferBuilder();
+  ~EmbeddingBufferBuilder();
 
-    void build_buffer();
-    tensorflow::TensorBuffer* get_init_buffer();
+  void build_buffer();
+  tensorflow::TensorBuffer* get_init_buffer();
 
-private:
-    EmbeddingBufferBuilder(std::shared_ptr<Tensor> tensor);
+ private:
+  EmbeddingBufferBuilder(std::shared_ptr<Tensor> tensor);
 
-    std::shared_ptr<Tensor> tensor_;
-    std::shared_ptr<EmbeddingBuffer> buffer_;
-    const bool already_allocated_; // whether the tensor is already allocated when creating this builder
+  std::shared_ptr<Tensor> tensor_;
+  std::shared_ptr<EmbeddingBuffer> buffer_;
+  const bool
+      already_allocated_;  // whether the tensor is already allocated when creating this builder
 };
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // EMBEDDING_BUFFER_H
+#endif  // EMBEDDING_BUFFER_H

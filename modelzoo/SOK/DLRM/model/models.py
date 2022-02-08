@@ -20,7 +20,6 @@ from tensorflow.python.ops import collective_ops
 from tensorflow.python.framework import ops
 import numpy as np
 import math
-import nvtx.plugins.tf as nvtx_tf
 
 class TFEmbedding(tf.keras.layers.Layer):
     def __init__(
@@ -42,8 +41,6 @@ class TFEmbedding(tf.keras.layers.Layer):
                 )
             self._keras_embedding_layers.append(embedding)
 
-    @nvtx_tf.ops.trace(message='TF embedding', domain_name='Forward',
-                   grad_domain_name='Gradient')
     def call(self, inputs, training=True):
         """
         compute the output of the embedding layer
@@ -73,7 +70,7 @@ class SOKEmbedding(tf.keras.layers.Layer):
         for i in range(len(vocab_sizes)):
             prefix_sum.append(offset)
             offset += self._vocab_sizes[i]
-        prefix_sum = np.array(prefix_sum).astype(np.int32).reshape(1, -1)
+        prefix_sum = np.array(prefix_sum).astype(np.int64).reshape(1, -1)
         self._vocab_prefix_sum = tf.constant(prefix_sum)
 
 
@@ -86,20 +83,57 @@ class SOKEmbedding(tf.keras.layers.Layer):
             use_hashtable=False,
         )
     
-    @nvtx_tf.ops.trace(message='SOK embedding', domain_name='Forward',
-                   grad_domain_name='Gradient')
     def call(self, inputs, training=True):
         """
         Compute the output of embedding layer.
         Args:
             inputs: [batch_size, 26] int32 tensor
         """
-        fused_inputs = tf.add(inputs, tf.cast(self._vocab_prefix_sum, dtype = tf.float32))
+        fused_inputs = tf.add(tf.cast(inputs, dtype=tf.int64), self._vocab_prefix_sum)
         fused_inputs = tf.reshape(fused_inputs, [-1])
-        emb_vectors = self._sok_embedding(tf.cast(fused_inputs, dtype=tf.int64), training=training)
+        fused_inputs, idx = sok.tf.unique(fused_inputs)
+        emb_vectors = self._sok_embedding(fused_inputs, training=training)
+        emb_vectors = tf.gather(emb_vectors, idx)
         emb_vectors = tf.reshape(emb_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
         return emb_vectors
 
+class DeepRecEmbedding(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        vocab_sizes: List[int],
+        embedding_vec_size: int,
+        comm_options=None,
+        **kwargs,
+    ):
+        super(DeepRecEmbedding, self).__init__(**kwargs)
+        self._vocab_sizes = vocab_sizes
+        self._embedding_vec_size = embedding_vec_size
+        self._comm_options = comm_options
+
+        self._vars_name = []
+        self._vars = []
+        for i in range(26):
+            self._vars_name.append("var_{}".format(i)) 
+        for i in range(26):
+            var = tf.get_embedding_variable(self._vars_name[i],
+                            embedding_dim=128,
+                            initializer=tf.ones_initializer(tf.float32),
+                            partitioner=tf.fixed_size_partitioner(num_shards=1))
+            self._vars.append(var)
+
+    def call(self, inputs, training=True):
+        """
+        compute the output of the embedding layer
+        """
+        output = []
+        for i in range(26):
+            input = tf.cast(inputs[:, i], tf.int64)
+            output.append(tf.nn.embedding_lookup(self._vars[i], tf.cast(input, tf.int64)))
+
+        stack_vectors = tf.stack(output, 1)
+        emb_vectors = tf.reshape(stack_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
+        
+        return emb_vectors
 
 
 class MLP(tf.keras.layers.Layer):
@@ -260,6 +294,12 @@ class DLRM(tf.keras.models.Model):
         elif self._embedding_layer_str == "SOK":
             self._embedding_layer = SOKEmbedding(
                 self._vocab_size, self._embedding_vec_size, num_gpus
+            )
+        elif self._embedding_layer_str == "TF_EV":
+            self._embedding_layer = DeepRecEmbedding(
+                self._vocab_size,
+                self._embedding_vec_size,
+                comm_options=self._comm_options,
             )
         else:
             raise ValueError(

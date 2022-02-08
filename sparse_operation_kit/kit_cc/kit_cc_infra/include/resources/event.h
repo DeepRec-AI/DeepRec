@@ -18,6 +18,7 @@
 #define RESOURCES_EVENT_H
 
 #include <cuda_runtime_api.h>
+
 #include <memory>
 #include <string>
 
@@ -28,28 +29,29 @@ enum class EventRecordType { RDLFramework, RMyself };
 
 /*class used to handle cudaEvent*/
 class Event {
-public:
-    static std::shared_ptr<Event> create(const std::string name);
-    ~Event();
+ public:
+  static std::shared_ptr<Event> create(const std::string name);
+  ~Event();
 
-    Event(Event& event) = delete;
-    Event& operator=(Event& event) = delete;
-    Event(Event&& event) = delete;
-    Event& operator=(Event&& event) = delete;
+  Event(Event& event) = delete;
+  Event& operator=(Event& event) = delete;
+  Event(Event&& event) = delete;
+  Event& operator=(Event&& event) = delete;
 
-    void Record(cudaStream_t& stream);
-    bool IsReady() const;
-    void TillReady(cudaStream_t& stream);
-    void TillReady();
-    std::string name() const;
-    
-protected:
-    explicit Event(const std::string name);
-private:
-    cudaEvent_t cuda_event_{nullptr};
-    const std::string name_;
+  void Record(cudaStream_t& stream);
+  bool IsReady() const;
+  void TillReady(cudaStream_t& stream);
+  void TillReady();
+  std::string name() const;
+
+ protected:
+  explicit Event(const std::string name);
+
+ private:
+  cudaEvent_t cuda_event_{nullptr};
+  const std::string name_;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // RESOURCES_EVENT_H
+#endif  // RESOURCES_EVENT_H

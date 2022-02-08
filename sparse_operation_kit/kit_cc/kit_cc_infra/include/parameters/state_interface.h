@@ -17,23 +17,24 @@
 #ifndef STATE_INTERFACE_H
 #define STATE_INTERFACE_H
 
-#include "tensor_buffer/tensor_interface.h"
 #include <memory>
+
+#include "tensor_buffer/tensor_interface.h"
 
 namespace SparseOperationKit {
 
 /**
-* This class only contains serveral tensors for a Variable.
-* And the number of the tensors is equal to the number of 
-* GPU.
-*/
+ * This class only contains serveral tensors for a Variable.
+ * And the number of the tensors is equal to the number of
+ * GPU.
+ */
 class States {
-public:
-    virtual ~States() {}
-    virtual void init(const size_t global_replica_id) = 0;
-    virtual std::shared_ptr<Tensor>& get_tensor(const size_t local_replica_id) = 0;
+ public:
+  virtual ~States() {}
+  virtual void init(const size_t global_replica_id) = 0;
+  virtual std::shared_ptr<Tensor>& get_tensor(const size_t local_replica_id) = 0;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // STATE_INTERFACE_H
+#endif  // STATE_INTERFACE_H

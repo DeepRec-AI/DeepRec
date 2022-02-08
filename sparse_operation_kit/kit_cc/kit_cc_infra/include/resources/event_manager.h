@@ -17,38 +17,37 @@
 #ifndef RESOURCES_EVENT_MANAGER_H
 #define RESOURCES_EVENT_MANAGER_H
 
-#include "resources/event.h"
-#include <unordered_map>
 #include <shared_mutex>
+#include <unordered_map>
+
+#include "resources/event.h"
 
 namespace SparseOperationKit {
 
 class EventManager {
-public:
-    static std::unique_ptr<EventManager> create();
-    ~EventManager();
+ public:
+  static std::unique_ptr<EventManager> create();
+  ~EventManager();
 
-    EventManager(EventManager&) = delete;
-    EventManager& operator=(EventManager&) = delete;
-    EventManager(EventManager&&) = delete;
-    EventManager& operator=(EventManager&&) = delete;
+  EventManager(EventManager&) = delete;
+  EventManager& operator=(EventManager&) = delete;
+  EventManager(EventManager&&) = delete;
+  EventManager& operator=(EventManager&&) = delete;
 
-    std::shared_ptr<Event>& get_event(const std::string event_name);
-    void sync_two_streams(cudaStream_t& root_stream, 
-                          cudaStream_t& sub_stream,
-                          const std::string event_name,
-                          const bool event_sync = false);
+  std::shared_ptr<Event>& get_event(const std::string event_name);
+  void sync_two_streams(cudaStream_t& root_stream, cudaStream_t& sub_stream,
+                        const std::string event_name, const bool event_sync = false);
 
-protected:
-    EventManager();
+ protected:
+  EventManager();
 
-    std::shared_ptr<Event>& create_event(const std::string event_name);
+  std::shared_ptr<Event>& create_event(const std::string event_name);
 
-private:
-    std::unordered_map<std::string, std::shared_ptr<Event>> events_;
-    std::shared_timed_mutex shared_mu_;
+ private:
+  std::unordered_map<std::string, std::shared_ptr<Event>> events_;
+  std::shared_timed_mutex shared_mu_;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // RESOURCES_EVENT_MANAGER_H
+#endif  // RESOURCES_EVENT_MANAGER_H

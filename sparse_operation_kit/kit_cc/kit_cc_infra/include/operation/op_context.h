@@ -17,55 +17,60 @@
 #ifndef OP_CONTEXT_H
 #define OP_CONTEXT_H
 
-#include "tensor_buffer/tensor_interface.h"
-#include "tensor_buffer/tensor2.hpp"
 #include <memory>
-#include <unordered_map>
 #include <string>
+#include <unordered_map>
+
+#include "tensor_buffer/tensor2.hpp"
+#include "tensor_buffer/tensor_interface.h"
 
 namespace SparseOperationKit {
 /*
-* This class is used to provide context for operation
-* and used to exchange input / output between operations.
-*/
+ * This class is used to provide context for operation
+ * and used to exchange input / output between operations.
+ */
 class Context {
-public:
-    static std::shared_ptr<Context> create(const size_t global_replica_id);
+ public:
+  static std::shared_ptr<Context> create(const size_t global_replica_id);
 
-    std::shared_ptr<Tensor>& input(const std::string name);
-    std::shared_ptr<Tensor>& output(const std::string name);
+  std::shared_ptr<Tensor>& input(const std::string name);
+  std::shared_ptr<Tensor>& output(const std::string name);
 
-    void set_input(const std::string name, const std::shared_ptr<Tensor>& tensor, const bool overwrite = false);
+  void set_input(const std::string name, const std::shared_ptr<Tensor>& tensor,
+                 const bool overwrite = false);
 
-    void set_output(const std::string name, const std::shared_ptr<Tensor>& tensor, const bool overwrite = false);
-    template <typename T>
-    void set_output(const std::string name, const HugeCTR::Tensor2<T>& tensor, const bool overwrite = false);
+  void set_output(const std::string name, const std::shared_ptr<Tensor>& tensor,
+                  const bool overwrite = false);
+  template <typename T>
+  void set_output(const std::string name, const HugeCTR::Tensor2<T>& tensor,
+                  const bool overwrite = false);
 
-    size_t get_global_replica_id() const;
+  size_t get_global_replica_id() const;
 
-    void record_internal_tensor(const std::string name, std::shared_ptr<Tensor>& tensor,
-                                const bool overwrite = false);
-    template <typename T>
-    void record_internal_tensor(const std::string name, HugeCTR::Tensor2<T>& tensor, 
-                                const bool overwrite = false);
+  void record_internal_tensor(const std::string name, std::shared_ptr<Tensor>& tensor,
+                              const bool overwrite = false);
+  template <typename T>
+  void record_internal_tensor(const std::string name, HugeCTR::Tensor2<T>& tensor,
+                              const bool overwrite = false);
 
-    bool has_internal_tensor(const std::string name) const;
-    std::shared_ptr<Tensor>& get_internal_tensor(const std::string name);
-private:
-    explicit Context(const size_t global_replica_id);
+  bool has_internal_tensor(const std::string name) const;
+  std::shared_ptr<Tensor>& get_internal_tensor(const std::string name);
 
-    const size_t global_replica_id_;
+ private:
+  explicit Context(const size_t global_replica_id);
 
-    // because each EmbeddingLayer owns a Context object rather than each operation,
-    // so that a unified spaces is used to hold tensors.
-    std::unordered_map<std::string, std::shared_ptr<Tensor>> tensors_;
+  const size_t global_replica_id_;
 
-    // this container is used to hold internal / temp tensors
-    std::unordered_map<std::string, std::shared_ptr<Tensor>> temp_tensors_;
+  // because each EmbeddingLayer owns a Context object rather than each operation,
+  // so that a unified spaces is used to hold tensors.
+  std::unordered_map<std::string, std::shared_ptr<Tensor>> tensors_;
+
+  // this container is used to hold internal / temp tensors
+  std::unordered_map<std::string, std::shared_ptr<Tensor>> temp_tensors_;
 };
 
 using Context_t = std::shared_ptr<Context>;
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // OP_CONTEXT_H
+#endif  // OP_CONTEXT_H

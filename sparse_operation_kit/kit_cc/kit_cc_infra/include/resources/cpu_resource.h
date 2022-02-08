@@ -17,20 +17,20 @@
 #ifndef CPU_RESOURCE_H
 #define CPU_RESOURCE_H
 
-#include "eigen3/unsupported/Eigen/CXX11/src/ThreadPool/SimpleThreadPool.h"
-#include "resources/mpi_context.h"
-#include "common.h"
-#include <memory>
-#include <mutex>
 #include <condition_variable>
 #include <functional>
+#include <memory>
+#include <mutex>
+
+#include "common.h"
+#include "eigen3/unsupported/Eigen/CXX11/src/ThreadPool/SimpleThreadPool.h"
+#include "resources/mpi_context.h"
 
 namespace SparseOperationKit {
 
 class CpuResource {
-
-class Barrier {
-public:
+  class Barrier {
+   public:
     explicit Barrier(size_t thread_count);
 
     Barrier() = delete;
@@ -40,17 +40,18 @@ public:
     Barrier& operator=(Barrier&&) = delete;
 
     void wait();
-private:
+
+   private:
     std::mutex mu_;
     std::condition_variable cond_;
     const size_t thread_count_;
     volatile size_t count_;
     volatile size_t generation_;
     const std::chrono::seconds time_threshold_{10};
-};
+  };
 
-class BlockingCallOnce {
-public:
+  class BlockingCallOnce {
+   public:
     explicit BlockingCallOnce(const size_t thread_count);
 
     BlockingCallOnce() = delete;
@@ -61,33 +62,38 @@ public:
 
     template <typename Callable, typename... Args>
     void operator()(Callable&& func, Args&&... args) {
-        std::unique_lock<std::mutex> lock(mu_);
-        auto local_gen = generation_;
-        if (!--count_) {
-            generation_++;
-            count_ = thread_count_;
+      std::unique_lock<std::mutex> lock(mu_);
+      auto local_gen = generation_;
+      if (!--count_) {
+        generation_++;
+        count_ = thread_count_;
 
-            /*call once in this generation*/
-            auto bound_functor = std::bind(func, args...);
-            once_callable_ = &bound_functor;
-            once_call_ = &BlockingCallOnce::once_call_impl_<decltype(bound_functor)>;
-            
-            try {
-                (this->*once_call_)();
-                cond_.notify_all();
-            } catch (...) {
-                excp_ptr_ = std::current_exception();
-                cond_.notify_all(); // TODO: Need anthoer mutex??
-                std::rethrow_exception(excp_ptr_);
-            }
-        } else {
-            cond_.wait_for(lock, time_threshold_, [this, local_gen](){ return local_gen != generation_; });
-            if (excp_ptr_) { std::rethrow_exception(excp_ptr_); }
-            if (local_gen == generation_) { throw std::runtime_error(ErrorBase + "BlockingCallOnce time out."); }
+        /*call once in this generation*/
+        auto bound_functor = std::bind(func, args...);
+        once_callable_ = &bound_functor;
+        once_call_ = &BlockingCallOnce::once_call_impl_<decltype(bound_functor)>;
+
+        try {
+          (this->*once_call_)();
+          cond_.notify_all();
+        } catch (...) {
+          excp_ptr_ = std::current_exception();
+          cond_.notify_all();  // TODO: Need anthoer mutex??
+          std::rethrow_exception(excp_ptr_);
         }
+      } else {
+        cond_.wait_for(lock, time_threshold_,
+                       [this, local_gen]() { return local_gen != generation_; });
+        if (excp_ptr_) {
+          std::rethrow_exception(excp_ptr_);
+        }
+        if (local_gen == generation_) {
+          throw std::runtime_error(ErrorBase + "BlockingCallOnce time out.");
+        }
+      }
     }
 
-private:
+   private:
     std::mutex mu_;
     std::condition_variable cond_;
     const size_t thread_count_;
@@ -100,64 +106,63 @@ private:
     void (BlockingCallOnce::*once_call_)();
     template <typename Callable>
     void once_call_impl_() {
-        (*(Callable*)once_callable_)();
+      (*(Callable*)once_callable_)();
     }
+  };
+
+ public:
+  ~CpuResource() = default;
+
+  static std::shared_ptr<CpuResource> Create(const size_t local_gpu_cnt,
+                                             const size_t global_gpu_cnt);
+
+  void sync_cpu_threads() const;
+
+  template <typename Callable, typename... Args>
+  void blocking_call_once(Callable&& func, Args&&... args) {
+    (*blocking_call_oncer_)(std::forward<Callable>(func), std::forward<Args>(args)...);
+  }
+
+  template <typename Callable, typename... Args>
+  void one_at_a_time(Callable&& func, Args&&... args) {
+    std::lock_guard<std::mutex> lock(mu_);
+    auto function = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
+    function();
+  }
+
+  template <typename Callable, typename... Args>
+  void push_to_threadpool(Callable&& func, Args&&... args) {
+    std::function<void()> fn = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
+    thread_pool_->Schedule(fn);
+  }
+
+  template <typename Callable, typename... Args>
+  void push_to_workers(const size_t local_replica_id, Callable&& func, Args&&... args) {
+    if (local_replica_id >= local_gpu_count_)
+      throw std::runtime_error(ErrorBase + "Invalid local_replica_id");
+    std::function<void()> fn = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
+    workers_[local_replica_id]->Schedule(fn);
+  }
+
+  void sync_threadpool() const;
+
+  void sync_all_workers_via_mpi() const;
+
+ private:
+  CpuResource(const size_t local_gpu_cnt, const size_t global_gpu_cnt);
+
+  const size_t local_gpu_count_;
+  const size_t global_gpu_count_;
+
+  std::shared_ptr<Barrier> barrier_;
+  std::shared_ptr<BlockingCallOnce> blocking_call_oncer_;
+  std::mutex mu_;
+  std::unique_ptr<Eigen::SimpleThreadPool> thread_pool_;
+  // each GPU has a dedicated threadpool for launching kernels
+  std::vector<std::unique_ptr<Eigen::SimpleThreadPool>> workers_;
+  MPIContext_t mpi_context_;
 };
 
-public:
-    ~CpuResource() = default;
+}  // namespace SparseOperationKit
 
-    static std::shared_ptr<CpuResource> Create(const size_t local_gpu_cnt, 
-                                               const size_t global_gpu_cnt);
-
-    void sync_cpu_threads() const;
-
-    template <typename Callable, typename... Args>
-    void blocking_call_once(Callable&& func, Args&&... args) {
-        (*blocking_call_oncer_)(std::forward<Callable>(func), std::forward<Args>(args)...);
-    }
-
-    template <typename Callable, typename... Args>
-    void one_at_a_time(Callable&& func, Args&&... args) {
-        std::lock_guard<std::mutex> lock(mu_);
-        auto function = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
-        function();
-    }
-
-    template <typename Callable, typename ...Args>
-    void push_to_threadpool(Callable&& func, Args&&... args) {
-        std::function<void()> fn = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
-        thread_pool_->Schedule(fn);
-    }
-
-    template <typename Callable, typename ...Args>
-    void push_to_workers(const size_t local_replica_id, Callable&& func, Args&&... args) {
-        if (local_replica_id >= local_gpu_count_) 
-            throw std::runtime_error(ErrorBase + "Invalid local_replica_id");
-        std::function<void()> fn = std::bind(std::forward<Callable>(func), std::forward<Args>(args)...);
-        workers_[local_replica_id]->Schedule(fn);
-    }
-
-    void sync_threadpool() const;
-
-    void sync_all_workers_via_mpi() const;
-
-private:
-    CpuResource(const size_t local_gpu_cnt, 
-                const size_t global_gpu_cnt);
-
-    const size_t local_gpu_count_;
-    const size_t global_gpu_count_;
-
-    std::shared_ptr<Barrier> barrier_;
-    std::shared_ptr<BlockingCallOnce> blocking_call_oncer_;
-    std::mutex mu_;
-    std::unique_ptr<Eigen::SimpleThreadPool> thread_pool_;
-    // each GPU has a dedicated threadpool for launching kernels
-    std::vector<std::unique_ptr<Eigen::SimpleThreadPool>> workers_;
-    MPIContext_t mpi_context_;
-};
-
-} // namespace SparseOperationKit
-
-#endif // CPU_RESOURCE_H
+#endif  // CPU_RESOURCE_H

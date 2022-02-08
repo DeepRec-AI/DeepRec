@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 
 using namespace tensorflow;
 using namespace tensorflow::shape_inference;
@@ -29,7 +29,7 @@ REGISTER_OP("CustomOptimizerApplyGradients")
     .Input("current_step: int64")
     .Attr("indices_dtype: {int64}")
     .SetShapeFn([](InferenceContext* ctx) {
-        ShapeHandle grad_shape;
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 2, &grad_shape));
-        return Status::OK();
+      ShapeHandle grad_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(1), 2, &grad_shape));
+      return Status::OK();
     });

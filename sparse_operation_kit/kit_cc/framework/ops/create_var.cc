@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/types.h"
 
 using namespace tensorflow;
@@ -30,19 +30,19 @@ REGISTER_OP("CreateVar")
     .Output("tf_var_handle: resource")
     .SetIsStateful()
     .SetShapeFn([](InferenceContext* c) {
-        c->set_output(0, c->Scalar());
-        c->set_output(1, c->Scalar());
+      c->set_output(0, c->Scalar());
+      c->set_output(1, c->Scalar());
 
-        DataType t;
-        TF_RETURN_IF_ERROR(c->GetAttr("dtype", &t));
-        PartialTensorShape p;
-        TF_RETURN_IF_ERROR(c->GetAttr("shape", &p));
-        ShapeHandle s;
-        TF_RETURN_IF_ERROR(c->MakeShapeFromPartialTensorShape(p, &s));
-        c->set_output_handle_shapes_and_types(0, std::vector<ShapeAndType>{{s, t}});
-        c->set_output_handle_shapes_and_types(1, std::vector<ShapeAndType>{{s, t}});
+      DataType t;
+      TF_RETURN_IF_ERROR(c->GetAttr("dtype", &t));
+      PartialTensorShape p;
+      TF_RETURN_IF_ERROR(c->GetAttr("shape", &p));
+      ShapeHandle s;
+      TF_RETURN_IF_ERROR(c->MakeShapeFromPartialTensorShape(p, &s));
+      c->set_output_handle_shapes_and_types(0, std::vector<ShapeAndType>{{s, t}});
+      c->set_output_handle_shapes_and_types(1, std::vector<ShapeAndType>{{s, t}});
 
-        return Status::OK();
+      return Status::OK();
     })
     .Doc(R"doc(
         This op is used create variables used by a embedding layer on all GPUs in single worker.

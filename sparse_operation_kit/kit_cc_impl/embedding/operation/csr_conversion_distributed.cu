@@ -14,215 +14,216 @@
  * limitations under the License.
  */
 
-#include "operation/operation_interface.h"
-#include "common/include/conversion_kernels.cuh"
-#include "common.cuh"
 #include <cub/cub.cuh>
+
+#include "common.cuh"
+#include "common/include/conversion_kernels.cuh"
+#include "operation/operation_interface.h"
 
 namespace SparseOperationKit {
 
 class CsrConversionDistributed : public Operation {
-public:
-    explicit CsrConversionDistributed(ConstructionContext_t context) 
-    : Operation(context), resource_mgr_(context->get_resource_mgr()),
-    slot_num_(context->get_slot_num()), max_nnz_(context->get_max_nnz())
-    {
-        const size_t local_gpu_count = resource_mgr_->get_local_gpu_count();
-        binary_flags_.reserve(local_gpu_count);
-        cub_d_temp_storage_.reserve(local_gpu_count);
-        cub_coo_indices_output_.reserve(local_gpu_count);
-        cub_values_output_.reserve(local_gpu_count);
-        cub_host_num_selected_.reserve(local_gpu_count);
-        cub_dev_num_selected_.reserve(local_gpu_count);
-        cusparse_csr_row_offsets_output_.reserve(local_gpu_count);
-        csr_row_offsets_cast_.reserve(local_gpu_count);
-    }
+ public:
+  explicit CsrConversionDistributed(ConstructionContext_t context)
+      : Operation(context),
+        resource_mgr_(context->get_resource_mgr()),
+        slot_num_(context->get_slot_num()),
+        max_nnz_(context->get_max_nnz()) {
+    const size_t local_gpu_count = resource_mgr_->get_local_gpu_count();
+    binary_flags_.reserve(local_gpu_count);
+    cub_d_temp_storage_.reserve(local_gpu_count);
+    cub_coo_indices_output_.reserve(local_gpu_count);
+    cub_values_output_.reserve(local_gpu_count);
+    cub_host_num_selected_.reserve(local_gpu_count);
+    cub_dev_num_selected_.reserve(local_gpu_count);
+    cusparse_csr_row_offsets_output_.reserve(local_gpu_count);
+    csr_row_offsets_cast_.reserve(local_gpu_count);
+  }
 
-    void allocate_forward_spaces() override {
-        const size_t global_batch_size = base_context()->get_global_batch_size();
-        for (size_t dev_id = 0; dev_id < resource_mgr_->get_local_gpu_count(); ++dev_id) {
-            auto &buffer = base_context()->get_buffer(dev_id);
-            auto &host_buffer = base_context()->get_host_buffer(dev_id);
-            {
-                Tensor2<bool> binary_flag;
-                buffer->reserve({1, global_batch_size * slot_num_ * max_nnz_}, &binary_flag);
-                binary_flags_.push_back(binary_flag);
-            }
-            {
-                Tensor2<int32_t> cub_coo_indices_output;
-                buffer->reserve({1, global_batch_size * slot_num_ * max_nnz_}, &cub_coo_indices_output);
-                cub_coo_indices_output_.push_back(cub_coo_indices_output);
-            }
-            {
-                Tensor2<int64_t> cub_values_output;
-                buffer->reserve({1, global_batch_size * slot_num_ * max_nnz_}, &cub_values_output);
-                cub_values_output_.push_back(cub_values_output);
-            }
-            {
-                Tensor2<size_t> cub_host_num_selected;
-                host_buffer->reserve({1, 1}, &cub_host_num_selected);
-                cub_host_num_selected_.push_back(cub_host_num_selected);
-            }
-            {
-                Tensor2<size_t> cub_dev_num_selected;
-                buffer->reserve({1, 1}, &cub_dev_num_selected);
-                cub_dev_num_selected_.push_back(cub_dev_num_selected);
-            }
-            {
-                Tensor2<int32_t> cusparse_csr_row_offset_output;
-                buffer->reserve({1, global_batch_size * slot_num_ + 1}, &cusparse_csr_row_offset_output);
-                cusparse_csr_row_offsets_output_.push_back(cusparse_csr_row_offset_output);
-            }
-            {
-                Tensor2<int64_t> csr_row_offset_cast;
-                buffer->reserve({1, global_batch_size * slot_num_ + 1}, &csr_row_offset_cast);
-                csr_row_offsets_cast_.push_back(csr_row_offset_cast);
-            }
-            {
-                size_t size_0 = 0;
-                CK_CUDA(cub::DeviceSelect::Flagged((void *)nullptr, size_0, (int64_t*)nullptr, (bool *)nullptr, 
-                                                    (int64_t *)nullptr, (size_t*)nullptr, 
-                                                    static_cast<int32_t>(global_batch_size * slot_num_ * max_nnz_)));
-                size_t size_1 = 0;
-                CK_CUDA(cub::DeviceSelect::Flagged((void *)nullptr, size_1, (int64_t*)nullptr, (bool *)nullptr, 
-                                                    (int32_t *)nullptr, (size_t*)nullptr, 
-                                                    static_cast<int32_t>(global_batch_size * slot_num_ * max_nnz_)));
-                        
-                size_t size = (size_0 > size_1) ? size_0 : size_1;
-                Tensor2<void> cub_d_temp_storage;
-                buffer->reserve({size}, &cub_d_temp_storage);
-                cub_d_temp_storage_.push_back(cub_d_temp_storage);
-            }
-        } // for dev_id
-    }
+  void allocate_forward_spaces() override {
+    const size_t global_batch_size = base_context()->get_global_batch_size();
+    for (size_t dev_id = 0; dev_id < resource_mgr_->get_local_gpu_count(); ++dev_id) {
+      auto &buffer = base_context()->get_buffer(dev_id);
+      auto &host_buffer = base_context()->get_host_buffer(dev_id);
+      {
+        Tensor2<bool> binary_flag;
+        buffer->reserve({1, global_batch_size * slot_num_ * max_nnz_}, &binary_flag);
+        binary_flags_.push_back(binary_flag);
+      }
+      {
+        Tensor2<int32_t> cub_coo_indices_output;
+        buffer->reserve({1, global_batch_size * slot_num_ * max_nnz_}, &cub_coo_indices_output);
+        cub_coo_indices_output_.push_back(cub_coo_indices_output);
+      }
+      {
+        Tensor2<int64_t> cub_values_output;
+        buffer->reserve({1, global_batch_size * slot_num_ * max_nnz_}, &cub_values_output);
+        cub_values_output_.push_back(cub_values_output);
+      }
+      {
+        Tensor2<size_t> cub_host_num_selected;
+        host_buffer->reserve({1, 1}, &cub_host_num_selected);
+        cub_host_num_selected_.push_back(cub_host_num_selected);
+      }
+      {
+        Tensor2<size_t> cub_dev_num_selected;
+        buffer->reserve({1, 1}, &cub_dev_num_selected);
+        cub_dev_num_selected_.push_back(cub_dev_num_selected);
+      }
+      {
+        Tensor2<int32_t> cusparse_csr_row_offset_output;
+        buffer->reserve({1, global_batch_size * slot_num_ + 1}, &cusparse_csr_row_offset_output);
+        cusparse_csr_row_offsets_output_.push_back(cusparse_csr_row_offset_output);
+      }
+      {
+        Tensor2<int64_t> csr_row_offset_cast;
+        buffer->reserve({1, global_batch_size * slot_num_ + 1}, &csr_row_offset_cast);
+        csr_row_offsets_cast_.push_back(csr_row_offset_cast);
+      }
+      {
+        size_t size_0 = 0;
+        CK_CUDA(cub::DeviceSelect::Flagged(
+            (void *)nullptr, size_0, (int64_t *)nullptr, (bool *)nullptr, (int64_t *)nullptr,
+            (size_t *)nullptr, static_cast<int32_t>(global_batch_size * slot_num_ * max_nnz_)));
+        size_t size_1 = 0;
+        CK_CUDA(cub::DeviceSelect::Flagged(
+            (void *)nullptr, size_1, (int64_t *)nullptr, (bool *)nullptr, (int32_t *)nullptr,
+            (size_t *)nullptr, static_cast<int32_t>(global_batch_size * slot_num_ * max_nnz_)));
 
-    void allocate_backward_spaces() override {
-        // it does nothing
-    }
+        size_t size = (size_0 > size_1) ? size_0 : size_1;
+        Tensor2<void> cub_d_temp_storage;
+        buffer->reserve({size}, &cub_d_temp_storage);
+        cub_d_temp_storage_.push_back(cub_d_temp_storage);
+      }
+    }  // for dev_id
+  }
 
-    void forward(const Context_t &replica_context, const bool training) override {
-        const size_t global_replica_id = replica_context->get_global_replica_id();
-        const size_t local_replica_id = resource_mgr_->cal_local_id_from_global_id(global_replica_id);
-        const auto &local_gpu = resource_mgr_->get_local_gpu(local_replica_id);
-        const auto &stream = local_gpu->get_stream();
+  void allocate_backward_spaces() override {
+    // it does nothing
+  }
 
-        const auto &total_values = replica_context->input("total_values");
-        const auto &total_row_indices = replica_context->input("total_row_indices");
-        const auto &host_total_num_elements = replica_context->input("host_total_num_elements");
+  void forward(const Context_t &replica_context, const bool training) override {
+    const size_t global_replica_id = replica_context->get_global_replica_id();
+    const size_t local_replica_id = resource_mgr_->cal_local_id_from_global_id(global_replica_id);
+    const auto &local_gpu = resource_mgr_->get_local_gpu(local_replica_id);
+    const auto &stream = local_gpu->get_stream();
 
-        // reset internal buffers
-        reset(local_replica_id);
+    const auto &total_values = replica_context->input("total_values");
+    const auto &total_row_indices = replica_context->input("total_row_indices");
+    const auto &host_total_num_elements = replica_context->input("host_total_num_elements");
 
-        // generate binary vector
-        gen_binary_vector(global_replica_id, 
-                        /*values=*/total_values, 
-                        /*total_valid_num=*/host_total_num_elements,
-                        /*binary_flag=*/binary_flags_[local_replica_id]);
+    // reset internal buffers
+    reset(local_replica_id);
 
-        // choose valuse based on binary vector
-        size_t total_valid_num = host_total_num_elements->GetPtrWithType<size_t>()[0];
-        size_t size = cub_d_temp_storage_[local_replica_id].get_size_in_bytes();
-        CK_CUDA(cub::DeviceSelect::Flagged(/*d_temp_storage=*/cub_d_temp_storage_[local_replica_id].get_ptr(),
-                                        /*temp_storage_bytes=*/size,
-                                        /*d_in=*/total_values->GetPtrWithType<int64_t>(),
-                                        /*d_flags=*/binary_flags_[local_replica_id].get_ptr(),
-                                        /*d_out=*/cub_values_output_[local_replica_id].get_ptr(),
-                                        /*d_num_selected_out=*/cub_dev_num_selected_[local_replica_id].get_ptr(),
-                                        /*num_iterms=*/total_valid_num,
-                                        stream));
+    // generate binary vector
+    gen_binary_vector(global_replica_id,
+                      /*values=*/total_values,
+                      /*total_valid_num=*/host_total_num_elements,
+                      /*binary_flag=*/binary_flags_[local_replica_id]);
 
-        // copy num_selected (nnz) to host
-        CK_CUDA(cudaMemcpyAsync(cub_host_num_selected_[local_replica_id].get_ptr(),
-                                cub_dev_num_selected_[local_replica_id].get_ptr(),
-                                cub_dev_num_selected_[local_replica_id].get_size_in_bytes(),
-                                cudaMemcpyDeviceToHost,
-                                stream));
-        CK_CUDA(cudaStreamSynchronize(stream));
+    // choose valuse based on binary vector
+    size_t total_valid_num = host_total_num_elements->GetPtrWithType<size_t>()[0];
+    size_t size = cub_d_temp_storage_[local_replica_id].get_size_in_bytes();
+    CK_CUDA(cub::DeviceSelect::Flagged(
+        /*d_temp_storage=*/cub_d_temp_storage_[local_replica_id].get_ptr(),
+        /*temp_storage_bytes=*/size,
+        /*d_in=*/total_values->GetPtrWithType<int64_t>(),
+        /*d_flags=*/binary_flags_[local_replica_id].get_ptr(),
+        /*d_out=*/cub_values_output_[local_replica_id].get_ptr(),
+        /*d_num_selected_out=*/cub_dev_num_selected_[local_replica_id].get_ptr(),
+        /*num_iterms=*/total_valid_num, stream));
 
-        // choose row_indices based on binary vector
-        CK_CUDA(cub::DeviceSelect::Flagged(/*d_temp_storage=*/cub_d_temp_storage_[local_replica_id].get_ptr(),
-                                        /*temp_storage_bytes=*/size,
-                                        /*d_in=*/total_row_indices->GetPtrWithType<int64_t>(),
-                                        /*d_flags=*/binary_flags_[local_replica_id].get_ptr(),
-                                        /*d_out=*/cub_coo_indices_output_[local_replica_id].get_ptr(),
-                                        /*d_num_selected_out=*/cub_dev_num_selected_[local_replica_id].get_ptr(),
-                                        /*num_iterms=*/total_valid_num,
-                                        stream));
+    // copy num_selected (nnz) to host
+    CK_CUDA(cudaMemcpyAsync(cub_host_num_selected_[local_replica_id].get_ptr(),
+                            cub_dev_num_selected_[local_replica_id].get_ptr(),
+                            cub_dev_num_selected_[local_replica_id].get_size_in_bytes(),
+                            cudaMemcpyDeviceToHost, stream));
+    CK_CUDA(cudaStreamSynchronize(stream));
 
-        // convert COO row_indices to CSR row_offsets.
-        size_t rows_num = binary_flags_[local_replica_id].get_num_elements() / max_nnz_;
-        CK_CUSPARSE(cusparseXcoo2csr(/*handle=*/local_gpu->get_cusparse(), 
-                                    /*cooRowInd=*/cub_coo_indices_output_[local_replica_id].get_ptr(),
-                                    /*nnz=*/static_cast<int32_t>(cub_host_num_selected_[local_replica_id].get_ptr()[0]),
-                                    /*m=*/rows_num,
-                                    /*csrRowPtr=*/cusparse_csr_row_offsets_output_[local_replica_id].get_ptr(),
-                                    CUSPARSE_INDEX_BASE_ZERO));
-        
-        // cast row_offset dtype
-        auto op = [] __device__ (int value) { return static_cast<int64_t>(value); };
-        transform_array<<<local_gpu->get_sm_count()*2, 1024, 0, stream>>>(
-            cusparse_csr_row_offsets_output_[local_replica_id].get_ptr(),
-            csr_row_offsets_cast_[local_replica_id].get_ptr(),
-            rows_num + 1, op);
+    // choose row_indices based on binary vector
+    CK_CUDA(cub::DeviceSelect::Flagged(
+        /*d_temp_storage=*/cub_d_temp_storage_[local_replica_id].get_ptr(),
+        /*temp_storage_bytes=*/size,
+        /*d_in=*/total_row_indices->GetPtrWithType<int64_t>(),
+        /*d_flags=*/binary_flags_[local_replica_id].get_ptr(),
+        /*d_out=*/cub_coo_indices_output_[local_replica_id].get_ptr(),
+        /*d_num_selected_out=*/cub_dev_num_selected_[local_replica_id].get_ptr(),
+        /*num_iterms=*/total_valid_num, stream));
 
-        // set outputs
-        replica_context->set_output("replica_csr_values", cub_values_output_[local_replica_id]);
-        replica_context->set_output("replica_row_offset", csr_row_offsets_cast_[local_replica_id]);
-        replica_context->set_output("replica_host_nnz", cub_host_num_selected_[local_replica_id]);
-    }
+    // convert COO row_indices to CSR row_offsets.
+    size_t rows_num = binary_flags_[local_replica_id].get_num_elements() / max_nnz_;
+    CK_CUSPARSE(cusparseXcoo2csr(
+        /*handle=*/local_gpu->get_cusparse(),
+        /*cooRowInd=*/cub_coo_indices_output_[local_replica_id].get_ptr(),
+        /*nnz=*/static_cast<int32_t>(cub_host_num_selected_[local_replica_id].get_ptr()[0]),
+        /*m=*/rows_num,
+        /*csrRowPtr=*/cusparse_csr_row_offsets_output_[local_replica_id].get_ptr(),
+        CUSPARSE_INDEX_BASE_ZERO));
 
-    void backward(const Context_t &replica_context) override {
-        // it does nothing
-    }
-private:
-    std::shared_ptr<ResourcesManager> resource_mgr_;
-    const size_t slot_num_;
-    const size_t max_nnz_;
+    // cast row_offset dtype
+    auto op = [] __device__(int value) { return static_cast<int64_t>(value); };
+    transform_array<<<local_gpu->get_sm_count() * 2, 1024, 0, stream>>>(
+        cusparse_csr_row_offsets_output_[local_replica_id].get_ptr(),
+        csr_row_offsets_cast_[local_replica_id].get_ptr(), rows_num + 1, op);
 
-    Tensors2<bool> binary_flags_;
-    Tensors2<void> cub_d_temp_storage_;
-    Tensors2<int32_t> cub_coo_indices_output_;
-    Tensors2<int64_t> cub_values_output_; // TODO: make it template
-    Tensors2<size_t> cub_host_num_selected_;
-    Tensors2<size_t> cub_dev_num_selected_;
-    Tensors2<int32_t> cusparse_csr_row_offsets_output_;
-    Tensors2<int64_t> csr_row_offsets_cast_; // TODO: make it template
+    // set outputs
+    replica_context->set_output("replica_csr_values", cub_values_output_[local_replica_id]);
+    replica_context->set_output("replica_row_offset", csr_row_offsets_cast_[local_replica_id]);
+    replica_context->set_output("replica_host_nnz", cub_host_num_selected_[local_replica_id]);
+  }
 
-    void reset(const size_t local_replica_id) {
-        const auto &stream = resource_mgr_->get_local_gpu(local_replica_id)->get_stream();
+  void backward(const Context_t &replica_context) override {
+    // it does nothing
+  }
 
-        CK_CUDA(cudaMemsetAsync(binary_flags_[local_replica_id].get_ptr(), 0,
-                                binary_flags_[local_replica_id].get_size_in_bytes(), stream));
-        CK_CUDA(cudaMemsetAsync(cub_coo_indices_output_[local_replica_id].get_ptr(), 0,
-                                cub_coo_indices_output_[local_replica_id].get_size_in_bytes(), stream));
-        CK_CUDA(cudaMemsetAsync(cub_values_output_[local_replica_id].get_ptr(), 0,
-                                cub_values_output_[local_replica_id].get_size_in_bytes(), stream));
-        CK_CUDA(cudaMemsetAsync(cusparse_csr_row_offsets_output_[local_replica_id].get_ptr(), 0,
-                                cusparse_csr_row_offsets_output_[local_replica_id].get_size_in_bytes(), stream));
-        CK_CUDA(cudaMemsetAsync(csr_row_offsets_cast_[local_replica_id].get_ptr(), 0,
-                                csr_row_offsets_cast_[local_replica_id].get_size_in_bytes(), stream));
-    }
+ private:
+  std::shared_ptr<ResourcesManager> resource_mgr_;
+  const size_t slot_num_;
+  const size_t max_nnz_;
 
-public:
-    void gen_binary_vector(const size_t global_replica_id, 
-                            const std::shared_ptr<Tensor> values,
-                            const std::shared_ptr<Tensor> total_valid_num,
-                            Tensor2<bool>& binary_flag) {
+  Tensors2<bool> binary_flags_;
+  Tensors2<void> cub_d_temp_storage_;
+  Tensors2<int32_t> cub_coo_indices_output_;
+  Tensors2<int64_t> cub_values_output_;  // TODO: make it template
+  Tensors2<size_t> cub_host_num_selected_;
+  Tensors2<size_t> cub_dev_num_selected_;
+  Tensors2<int32_t> cusparse_csr_row_offsets_output_;
+  Tensors2<int64_t> csr_row_offsets_cast_;  // TODO: make it template
+
+  void reset(const size_t local_replica_id) {
+    const auto &stream = resource_mgr_->get_local_gpu(local_replica_id)->get_stream();
+
+    CK_CUDA(cudaMemsetAsync(binary_flags_[local_replica_id].get_ptr(), 0,
+                            binary_flags_[local_replica_id].get_size_in_bytes(), stream));
+    CK_CUDA(cudaMemsetAsync(cub_coo_indices_output_[local_replica_id].get_ptr(), 0,
+                            cub_coo_indices_output_[local_replica_id].get_size_in_bytes(), stream));
+    CK_CUDA(cudaMemsetAsync(cub_values_output_[local_replica_id].get_ptr(), 0,
+                            cub_values_output_[local_replica_id].get_size_in_bytes(), stream));
+    CK_CUDA(cudaMemsetAsync(cusparse_csr_row_offsets_output_[local_replica_id].get_ptr(), 0,
+                            cusparse_csr_row_offsets_output_[local_replica_id].get_size_in_bytes(),
+                            stream));
+    CK_CUDA(cudaMemsetAsync(csr_row_offsets_cast_[local_replica_id].get_ptr(), 0,
+                            csr_row_offsets_cast_[local_replica_id].get_size_in_bytes(), stream));
+  }
+
+ public:
+  void gen_binary_vector(const size_t global_replica_id, const std::shared_ptr<Tensor> values,
+                         const std::shared_ptr<Tensor> total_valid_num,
+                         Tensor2<bool> &binary_flag) {
     const size_t local_replica_id = resource_mgr_->cal_local_id_from_global_id(global_replica_id);
     const size_t global_gpu_count = resource_mgr_->get_global_gpu_count();
     const auto &local_gpu = resource_mgr_->get_local_gpu(local_replica_id);
 
-    auto fn = [global_replica_id, global_gpu_count] __device__ (int64_t value) -> bool
-            { return (global_replica_id == value % global_gpu_count) ? true : false; };
-    
-    boolean_vector<<<local_gpu->get_sm_count() * 2, 1024, 0, local_gpu->get_stream()>>>(
-                                values->GetPtrWithType<int64_t>(),
-                                total_valid_num->GetPtrWithType<size_t>()[0],
-                                fn, binary_flag.get_ptr());
-    }
+    auto fn = [global_replica_id, global_gpu_count] __device__(int64_t value) -> bool {
+      return (global_replica_id == value % global_gpu_count) ? true : false;
+    };
 
+    boolean_vector<<<local_gpu->get_sm_count() * 2, 1024, 0, local_gpu->get_stream()>>>(
+        values->GetPtrWithType<int64_t>(), total_valid_num->GetPtrWithType<size_t>()[0], fn,
+        binary_flag.get_ptr());
+  }
 };
 
 REGISTER_OPERATION_BUILDER("csr_conversion_distributed", CsrConversionDistributed);
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

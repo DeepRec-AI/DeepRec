@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 
 using namespace tensorflow;
 using ::tensorflow::shape_inference::InferenceContext;
@@ -25,8 +25,7 @@ using ::tensorflow::shape_inference::ShapeHandle;
 
 Status ReadEmbeddingVariableShapeFn(InferenceContext* c) {
   std::vector<ShapeAndType> shape_and_type;
-  TF_RETURN_IF_ERROR(
-      shape_inference::ValidateVariableResourceHandle(c, &shape_and_type));
+  TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(c, &shape_and_type));
   c->set_output(0, shape_and_type[0].shape);
   if (shape_and_type[0].dtype == DT_VARIANT && shape_and_type.size() > 1) {
     std::vector<ShapeAndType> variant_shape_and_type;

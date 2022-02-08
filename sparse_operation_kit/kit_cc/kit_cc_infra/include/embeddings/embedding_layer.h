@@ -17,85 +17,81 @@
 #ifndef EMBEDDING_LAYER_H
 #define EMBEDDING_LAYER_H
 
-#include "operation/operation.h"
 #include "embeddings/embedding_lookuper.h"
+#include "operation/operation.h"
 #include "tensorflow/core/framework/tensor.h"
 
 namespace SparseOperationKit {
 
 class EmbeddingLayer {
-public:
-    static std::shared_ptr<EmbeddingLayer> create(std::shared_ptr<Dispatcher> input_dispatcher,
-                                                  std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
-                                                  std::shared_ptr<Dispatcher> output_dispatcher,
-                                                  ConstructionContext_t context);
+ public:
+  static std::shared_ptr<EmbeddingLayer> create(
+      std::shared_ptr<Dispatcher> input_dispatcher,
+      std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
+      std::shared_ptr<Dispatcher> output_dispatcher, ConstructionContext_t context);
 
-    void allocate_forward_spaces();
-    void allocate_backward_spaces();
-    void forward(const Context_t &replica_context, const bool training);
-    void backward(const Context_t &replica_context);
+  void allocate_forward_spaces();
+  void allocate_backward_spaces();
+  void forward(const Context_t &replica_context, const bool training);
+  void backward(const Context_t &replica_context);
 
-    virtual void get_output_shape(std::vector<int64_t> &output_shape, const bool dynamic_input = false) const;
-    void get_grad_shape(const Context_t &replica_context, std::vector<int64_t> &grad_shape) const;
+  virtual void get_output_shape(std::vector<int64_t> &output_shape,
+                                const bool dynamic_input = false) const;
+  void get_grad_shape(const Context_t &replica_context, std::vector<int64_t> &grad_shape) const;
 
-    size_t get_global_batch_size() const;
-    virtual size_t get_max_feature_num() const;
-    std::string get_var_name() const;
-    size_t get_max_vocabulary_size_per_gpu() const;
+  size_t get_global_batch_size() const;
+  virtual size_t get_max_feature_num() const;
+  std::string get_var_name() const;
+  size_t get_max_vocabulary_size_per_gpu() const;
 
-    void dump_to_file(const std::string filepath) const;
-    // restore the operations' content from file, except trainable embedding variable's
-    void restore_from_file(const std::string filepath);
-    // help to restore params 
-    void restore_params(const std::shared_ptr<Tensor> &keys,
-                        const std::shared_ptr<Tensor> &embedding_values,
-                        const size_t num_total_keys);
-    // help to save params
-    void save_params(std::shared_ptr<Tensor> &keys,
-                     std::shared_ptr<Tensor> &embedding_values,
-                     size_t &num_total_keys) const;
-    void load_embedding_values(const std::vector<std::shared_ptr<Tensor>>& tensor_list);
+  void dump_to_file(const std::string filepath) const;
+  // restore the operations' content from file, except trainable embedding variable's
+  void restore_from_file(const std::string filepath);
+  // help to restore params
+  void restore_params(const std::shared_ptr<Tensor> &keys,
+                      const std::shared_ptr<Tensor> &embedding_values, const size_t num_total_keys);
+  // help to save params
+  void save_params(std::shared_ptr<Tensor> &keys, std::shared_ptr<Tensor> &embedding_values,
+                   size_t &num_total_keys) const;
+  void load_embedding_values(const std::vector<std::shared_ptr<Tensor>> &tensor_list);
 
-protected:
-    EmbeddingLayer(std::shared_ptr<Dispatcher> input_dispatcher,
-                   std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
-                   std::shared_ptr<Dispatcher> output_dispatcher,
-                   ConstructionContext_t context);
+ protected:
+  EmbeddingLayer(std::shared_ptr<Dispatcher> input_dispatcher,
+                 std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
+                 std::shared_ptr<Dispatcher> output_dispatcher, ConstructionContext_t context);
 
-    ConstructionContext_t base_context() const;
+  ConstructionContext_t base_context() const;
 
-private:
-    const std::shared_ptr<Dispatcher> input_dispatcher_;
-    const std::shared_ptr<EmbeddingLookuper> embedding_lookuper_;
-    const std::shared_ptr<Dispatcher> output_dispatcher_;
-    const ConstructionContext_t base_context_;
-    const size_t global_batch_size_;
+ private:
+  const std::shared_ptr<Dispatcher> input_dispatcher_;
+  const std::shared_ptr<EmbeddingLookuper> embedding_lookuper_;
+  const std::shared_ptr<Dispatcher> output_dispatcher_;
+  const ConstructionContext_t base_context_;
+  const size_t global_batch_size_;
 };
-
 
 class DenseEmbeddingLayer : public EmbeddingLayer {
-public:
-    static std::shared_ptr<DenseEmbeddingLayer> create(std::shared_ptr<Dispatcher> input_dispatcher,
-                                                       std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
-                                                       std::shared_ptr<Dispatcher> output_dispatcher,
-                                                       ConstructionContext_t context);
+ public:
+  static std::shared_ptr<DenseEmbeddingLayer> create(
+      std::shared_ptr<Dispatcher> input_dispatcher,
+      std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
+      std::shared_ptr<Dispatcher> output_dispatcher, ConstructionContext_t context);
 
-    void get_output_shape(std::vector<int64_t> &output_shape, const bool dynamic_input = false) const override;
-    size_t get_max_feature_num() const override;
+  void get_output_shape(std::vector<int64_t> &output_shape,
+                        const bool dynamic_input = false) const override;
+  size_t get_max_feature_num() const override;
 
-private:
-    DenseEmbeddingLayer(std::shared_ptr<Dispatcher> input_dispatcher,
-                        std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
-                        std::shared_ptr<Dispatcher> output_dispatcher,
-                        ConstructionContext_t context);
+ private:
+  DenseEmbeddingLayer(std::shared_ptr<Dispatcher> input_dispatcher,
+                      std::shared_ptr<EmbeddingLookuper> embedding_lookuper,
+                      std::shared_ptr<Dispatcher> output_dispatcher, ConstructionContext_t context);
 };
 
+void GetEmbeddingFromVariantTensor(const tensorflow::Tensor *tensor,
+                                   std::shared_ptr<EmbeddingLayer> &out_emb);
+void StoreEmbeddingInVariantTensor(const std::shared_ptr<EmbeddingLayer> &emb,
+                                   tensorflow::Tensor *tensor);
 
-void GetEmbeddingFromVariantTensor(const tensorflow::Tensor* tensor,
-                                   std::shared_ptr<EmbeddingLayer>& out_emb);
-void StoreEmbeddingInVariantTensor(const std::shared_ptr<EmbeddingLayer>& emb,
-                                   tensorflow::Tensor* tensor);
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // EMBEDDING_LAYER_H
+#endif  // EMBEDDING_LAYER_H

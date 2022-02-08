@@ -16,7 +16,6 @@
 
 #include "hashtable/cudf/concurrent_unordered_map.cuh"
 #include "hashtable/nv_hashtable.hpp"
-
 #include "thrust/pair.h"
 
 namespace HugeCTR {
@@ -230,7 +229,7 @@ size_t HashTable<KeyType, ValType>::get_size(cudaStream_t stream) const {
   size_kernel<<<grid_size, BLOCK_SIZE_, 0, stream>>>(container_, hash_capacity, d_container_size_,
                                                      empty_key);
   CK_CUDA(cudaMemcpyAsync(&container_size, d_container_size_, sizeof(size_t),
-                                 cudaMemcpyDeviceToHost, stream));
+                          cudaMemcpyDeviceToHost, stream));
   CK_CUDA(cudaStreamSynchronize(stream));
 
   return container_size;
@@ -239,8 +238,7 @@ size_t HashTable<KeyType, ValType>::get_size(cudaStream_t stream) const {
 template <typename KeyType, typename ValType>
 size_t HashTable<KeyType, ValType>::get_value_head(cudaStream_t stream) const {
   size_t counter;
-  CK_CUDA(
-      cudaMemcpyAsync(&counter, d_counter_, sizeof(size_t), cudaMemcpyDeviceToHost, stream));
+  CK_CUDA(cudaMemcpyAsync(&counter, d_counter_, sizeof(size_t), cudaMemcpyDeviceToHost, stream));
   CK_CUDA(cudaStreamSynchronize(stream));
   return counter;
 }

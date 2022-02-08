@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 
 using namespace tensorflow;
 using namespace tensorflow::shape_inference;
@@ -30,8 +30,8 @@ REGISTER_OP("PluginBprop")
     .Attr("dtype: {float}")
     .Attr("unique_op_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
-        ctx->set_output(0, ctx->UnknownShape());
-        return Status::OK();
+      ctx->set_output(0, ctx->UnknownShape());
+      return Status::OK();
     })
     .Doc(R"doc(
         the output value_index is the hash_value_index_tensor used internally.

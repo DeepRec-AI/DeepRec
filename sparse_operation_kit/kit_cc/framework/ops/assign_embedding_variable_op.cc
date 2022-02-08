@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/types.h"
 
 using namespace tensorflow;
@@ -34,10 +34,11 @@ REGISTER_OP("AssignEmbeddingVariable")
     .Attr("dtype: {float}")
     .Attr("init_dtype: {float, string}")
     .SetShapeFn([](InferenceContext* c) {
-        std::vector<ShapeAndType> handle_shape_and_type;
-        TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(c, &handle_shape_and_type));
+      std::vector<ShapeAndType> handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          shape_inference::ValidateVariableResourceHandle(c, &handle_shape_and_type));
 
-        return Status::OK();
+      return Status::OK();
     })
     .Doc(R"doc(
         This op is used as the initializer op of embedding variable.

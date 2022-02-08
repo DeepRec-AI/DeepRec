@@ -1,5 +1,5 @@
 # Documents #
-Want to find more about SparseOperationKit, see our [SparseOperationKit documents](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/v1.0.1/index.html).
+Want to find more about SparseOperationKit, see our [SparseOperationKit documents](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/master/index.html).
 
 ## Add documents for SparseOperationKit ##
 + Install the required tools and extensions
@@ -19,6 +19,12 @@ $ sphinx-quickstart
 ```shell
 $ cd documents/
 $ make html
+```
+
++ If you don't want to build docs with version control, use the following commands:
+```shell
+$ cd documents/
+$ sphinx-build source/ build/
 ```
 
 + Check HTML correctness

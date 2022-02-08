@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 
 using namespace tensorflow;
 using namespace tensorflow::shape_inference;
@@ -33,30 +33,31 @@ REGISTER_OP("PluginDenseFprop")
     .Attr("unique_op_name: string")
     .Attr("dynamic_input: bool = false")
     .SetShapeFn([](InferenceContext* ctx) {
-        std::vector<ShapeAndType> handle_shape_and_type;
-        TF_RETURN_IF_ERROR(shape_inference::ValidateVariableResourceHandle(
-            ctx, &handle_shape_and_type));
+      std::vector<ShapeAndType> handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          shape_inference::ValidateVariableResourceHandle(ctx, &handle_shape_and_type));
 
-        ShapeHandle variable_shape;
-        TF_RETURN_IF_ERROR(ctx->WithRank(handle_shape_and_type[0].shape, 2, &variable_shape));
+      ShapeHandle variable_shape;
+      TF_RETURN_IF_ERROR(ctx->WithRank(handle_shape_and_type[0].shape, 2, &variable_shape));
 
-        ShapeHandle emb_vec_size_shape;
-        TF_RETURN_IF_ERROR(ctx->Subshape(variable_shape, /*start=*/1, /*end=*/2, &emb_vec_size_shape));
+      ShapeHandle emb_vec_size_shape;
+      TF_RETURN_IF_ERROR(
+          ctx->Subshape(variable_shape, /*start=*/1, /*end=*/2, &emb_vec_size_shape));
 
-        bool dynamic_input = false;
-        TF_RETURN_IF_ERROR(ctx->GetAttr("dynamic_input", &dynamic_input));
-        if (dynamic_input) {
-            // when dynamic_input is true, then values must be 1-D tensor.
-            ShapeHandle values_shape;
-            TF_RETURN_IF_ERROR(ctx->WithRankAtMost(ctx->input(2), 1, &values_shape));
-        }
+      bool dynamic_input = false;
+      TF_RETURN_IF_ERROR(ctx->GetAttr("dynamic_input", &dynamic_input));
+      if (dynamic_input) {
+        // when dynamic_input is true, then values must be 1-D tensor.
+        ShapeHandle values_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRankAtMost(ctx->input(2), 1, &values_shape));
+      }
 
-        // output_shape = [input[2].shape, embedding_vec_size]
-        ShapeHandle output_shape;
-        TF_RETURN_IF_ERROR(ctx->Concatenate(ctx->input(2), emb_vec_size_shape, &output_shape));
-        ctx->set_output(0, output_shape);
+      // output_shape = [input[2].shape, embedding_vec_size]
+      ShapeHandle output_shape;
+      TF_RETURN_IF_ERROR(ctx->Concatenate(ctx->input(2), emb_vec_size_shape, &output_shape));
+      ctx->set_output(0, output_shape);
 
-        return Status::OK();
+      return Status::OK();
     })
     .Doc(R"doc(
         This op can be used for all kinds of embedding forward propagation,
