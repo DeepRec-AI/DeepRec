@@ -33,7 +33,6 @@ class LocklessHashMap : public KVInterface<K, V> {
     hash_map_.set_empty_key_and_value(LocklessHashMap<K, V>::EMPTY_KEY_, nullptr);
     hash_map_.set_counternum(16);
     hash_map_.set_deleted_key(LocklessHashMap<K, V>::DELETED_KEY_);
-    KVInterface<K, V>::total_dims_ = 0;
   }
 
   ~LocklessHashMap() {
