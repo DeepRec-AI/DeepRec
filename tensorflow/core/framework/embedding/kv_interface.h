@@ -55,7 +55,7 @@ class KVInterface {
   // KV Size
   virtual int64 Size() const = 0;
 
-  virtual void SetNewValuePtrFunc(std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn) {}
+  virtual void SetTotalDims(int total_dims) {}
 
   virtual void FreeValuePtr(ValuePtr<V>* value_ptr) {}
 
@@ -66,47 +66,6 @@ class KVInterface {
 
   virtual std::string DebugString() const = 0;
 
-  virtual void SetDim(int index, int dim, int slotnum) {
-    int i;
-    while (flag_.test_and_set(std::memory_order_acquire));
-    if (slotnum != slot_dims_.size()) {
-      for (i = slot_dims_.size(); i < slotnum; i++) {
-        slot_dims_.emplace_back(0);
-        slot_offset_.emplace_back(0);
-      }
-    }
-    dim +=  (16 - (sizeof(V) * dim) % 16) / sizeof(V); 
-    slot_dims_[index] = dim;
-    total_dims_ += dim;
-    for (i = 0; i < slotnum; i++) {
-      if (slot_dims_[i] == 0)
-        break;
-    }
-    if (i == slotnum) {
-      for (int j = 1; j < slotnum; j++) {
-        slot_offset_[j] += slot_dims_[j-1] + slot_offset_[j-1];
-      }
-    }
-    flag_.clear(std::memory_order_release);
-  }
-
-  virtual int GetOffset(int index) {
-    if (slot_offset_.size() == 0)
-      return 0;
-    else
-      return slot_offset_[index];
-  }
-
-  virtual int GetTotalDims() {
-    return total_dims_;
-  }
-  
-  public:
-    std::vector<int> slot_dims_;
-    std::vector<int> slot_offset_;
-    int total_dims_;
-  private:
-    std::atomic_flag flag_ = ATOMIC_FLAG_INIT; 
 };
 
 }  // namespace tensorflow

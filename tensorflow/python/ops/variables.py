@@ -258,8 +258,6 @@ class StorageOption(object):
     else:
       if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD]:
         raise ValueError("storage_path musnt'be None when storage_type is set")
-    
-    
 
 @tf_export(v1=["EmbeddingVariableOption"])
 class EmbeddingVariableOption(object):

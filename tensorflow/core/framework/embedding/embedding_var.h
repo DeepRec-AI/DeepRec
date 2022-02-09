@@ -27,10 +27,12 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
 
-#include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/framework/embedding/embedding_filter.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
+#include "tensorflow/core/framework/embedding/multilevel_embedding.h"
+#include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
 
@@ -52,121 +54,31 @@ template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:
   EmbeddingVar(const string& name,
-               KVInterface<K, V>* kv,
+               embedding::StorageManager<K, V>* storage_manager,
                EmbeddingConfig emb_cfg = EmbeddingConfig()):
       name_(name),
-      kv_(kv),
+      storage_manager_(storage_manager),
       default_value_(nullptr),
       value_len_(0),
       alloc_(nullptr),
       emb_config_(emb_cfg) {}
 
-  Status Init() {
-    if (kv_ == nullptr) {
-       return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
-    } else {
-      return Status::OK();
-    }
-  }
-
-  Status Init(const Tensor& default_tensor) {
-    if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
-      new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
-    } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
-      new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
-    } else if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()){
-      new_value_ptr_fn = [] (size_t size) { return new NormalContiguousValuePtr<V>(size); };
-    } else {
-      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
-    }
-    filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this);
-
-    if (embedding::StorageType::DRAM == emb_config_.get_storage_type()) {
-      alloc_ = ev_allocator();
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
-      }
-    } else if (embedding::StorageType::PMEM_MEMKIND == emb_config_.get_storage_type()) {
-      alloc_ = pmem_allocator();
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
-      }
-    } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
-      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
-      }
-    } else if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type()) {
-      alloc_ = ev_allocator();
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
-      }
-      kv_->SetNewValuePtrFunc(new_value_ptr_fn);
-    } else {
-      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
-    }
-
-    if (kv_ == nullptr) {
-       return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
-    } else {
-      value_len_ = default_tensor.NumElements();
-      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(), default_tensor.NumElements(), AllocationAttributes());
-      auto default_tensor_flat = default_tensor.flat<V>();
-      memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
-      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
-        kv_->SetDim(emb_config_.emb_index, value_len_, emb_config_.slot_num + 1);
-      }
-      return Status::OK();
-    }
-  }
-
   Status Init(const Tensor& default_tensor, int64 default_value_dim) {
-    if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
-      new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
-    } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
-      new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
-    } else if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()){
-      new_value_ptr_fn = [] (size_t size) { return new NormalContiguousValuePtr<V>(size); };
-    } else {
-      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
-    }
     filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this);
 
-    if (embedding::StorageType::DRAM == emb_config_.get_storage_type()) {
-      alloc_ = ev_allocator();
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
-      }
-    } else if (embedding::StorageType::PMEM_MEMKIND == emb_config_.get_storage_type()) {
-      alloc_ = pmem_allocator();
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
-      }
-    } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
-      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
-      }
-    } else if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type()) {
-      alloc_ = ev_allocator();
-      if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
-      }
-      kv_->SetNewValuePtrFunc(new_value_ptr_fn);
-    } else {
-      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
-    }
-    
-    if (kv_ == nullptr) {
-       return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
+    // for default value allocation
+    alloc_ = cpu_allocator();
+
+    if (storage_manager_ == nullptr) {
+      return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
     } else {
       emb_config_.default_value_dim = default_value_dim;
       value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
-      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(), default_tensor.NumElements(), AllocationAttributes());
+      default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
       if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
-        kv_->SetDim(emb_config_.emb_index, value_len_, emb_config_.slot_num + 1);
+        storage_manager_->SetDim(emb_config_.emb_index, value_len_, emb_config_.slot_num + 1);
       }
       return Status::OK();
     }
@@ -175,6 +87,7 @@ class EmbeddingVar : public ResourceBase {
   void SetInitialized() {
     is_initialized_ = true;
   }
+
   bool IsInitialized() const {
     return is_initialized_;
   }
@@ -185,7 +98,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, int64 update_version = -1) {
-    Status s = LookupOrCreateKeyInternal(key, value_ptr, emb_config_.total_num(kv_->GetTotalDims()));
+    Status s = storage_manager_->GetOrCreate(key, value_ptr, emb_config_.total_num(storage_manager_->GetTotalDims()));
     TF_CHECK_OK(s);
     if (emb_config_.is_primary() && emb_config_.steps_to_live != 0 && update_version != -1) {
       (*value_ptr)->SetStep(update_version);
@@ -194,8 +107,8 @@ class EmbeddingVar : public ResourceBase {
   }
 
   void BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
-    Status s = kv_->BatchCommit(keys, value_ptrs);
-  } 
+    TF_CHECK_OK(storage_manager_->BatchCommit(keys, value_ptrs));
+  }
 
   int64 GetVersion(K key) {
     ValuePtr<V>* value_ptr = nullptr;
@@ -212,6 +125,11 @@ class EmbeddingVar : public ResourceBase {
     filter_->LookupOrCreate(key, val, default_value_ptr);
   }
 
+  void LookupOrCreateWithFreq(K key, V* val, V* default_v)  {
+    const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
+    filter_->LookupOrCreateWithFreq(key, val, default_value_ptr);
+  }
+
   void LookupOrCreate(K key, V* val, V* default_v, int64 count)  {
     const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
     filter_->LookupOrCreate(key, val, default_value_ptr, count);
@@ -219,11 +137,11 @@ class EmbeddingVar : public ResourceBase {
 
   V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {
     return value_ptr->GetOrAllocate(alloc_, value_len_, default_v,
-        emb_config_.emb_index, kv_->GetOffset(emb_config_.emb_index));
+        emb_config_.emb_index, storage_manager_->GetOffset(emb_config_.emb_index));
   }
 
   V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
-    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, value_len_, kv_->GetOffset(emb_config_.primary_emb_index));
+    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, storage_manager_->GetOffset(emb_config_.primary_emb_index));
     return primary_val;
   }
 
@@ -234,7 +152,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   void Commit(const K id, ValuePtr<V>* value_ptr) {
-    kv_->Commit(id, value_ptr);
+    TF_CHECK_OK(storage_manager_->Commit(id, value_ptr));
   }
 
   int64 ValueLen() const {
@@ -242,7 +160,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   int64 Size() const {
-    return kv_->Size();
+    return storage_manager_->Size();
   }
 
   int64 MinFreq() {
@@ -255,6 +173,10 @@ class EmbeddingVar : public ResourceBase {
 
   float GetL2WeightThreshold() {
     return emb_config_.l2_weight_threshold;
+  }
+
+  bool IsMultiLevel() {
+    return emb_config_.is_multi_level;
   }
 
   std::string DebugString() const {
@@ -295,110 +217,39 @@ class EmbeddingVar : public ResourceBase {
         }
       }
       V* v = LookupOrCreateEmb(value_ptr, value_buff + i * value_len_);
-      kv_->Commit(key_buff[i], value_ptr);
+      TF_CHECK_OK(storage_manager_->Commit(key_buff[i], value_ptr));
     }
     return Status::OK();
   }
 
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list,
                     std::vector<int64>* version_list, std::vector<int64>* freq_list) {
-    std::vector<ValuePtr<V>* > value_ptr_list;
-    std::vector<K> key_list_tmp;
-    kv_->GetSnapshot(&key_list_tmp, &value_ptr_list);
-    for (int64 i = 0; i < key_list_tmp.size(); ++i) {
-      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index, value_len_, kv_->GetOffset(emb_config_.emb_index));
-      V* primary_val = value_ptr_list[i]->GetValue(emb_config_.primary_emb_index, value_len_, kv_->GetOffset(emb_config_.emb_index));
-      if (val != nullptr && primary_val != nullptr) {
-        value_list->push_back(val);
-        key_list->push_back(key_list_tmp[i]);
-        if (emb_config_.filter_freq != 0) {
-          int64 dump_freq = filter_->GetFreq(key_list_tmp[i], value_ptr_list[i]);
-          freq_list->push_back(dump_freq); 
-        }
-        if (emb_config_.steps_to_live != 0) {
-          int64 dump_version = value_ptr_list[i]->GetStep();
-          version_list->push_back(dump_version);
-        }
-      }
-      kv_->FreeValuePtr(value_ptr_list[i]);
-    }
-    return key_list->size();
+    return storage_manager_->GetSnapshot(key_list, value_list, version_list,
+                                         freq_list, emb_config_, filter_);
   }
 
-  Status Destroy(int64 value_len) {
-    if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type())
-     return Status::OK();
-    std::vector<K> key_list;
-    std::vector<ValuePtr<V>* > value_ptr_list;
-    kv_->GetSnapshot(&key_list, &value_ptr_list);
-    for (auto value_ptr : value_ptr_list) {
-      value_ptr->Destroy(alloc_, value_len);
-      delete value_ptr;
-    }
-    return Status::OK();
+  Status Destroy() {
+    return storage_manager_->Destroy();
   }
 
   mutex* mu() {
     return &mu_;
   }
 
-  KVInterface<K, V>* kv() {
-    return kv_;
+  embedding::StorageManager<K, V>* storage_manager() {
+    return storage_manager_;
   }
 
   Status Shrink() {
-      std::vector<K> key_list;
-      std::vector<ValuePtr<V>* > value_ptr_list;
-      kv_->GetSnapshot(&key_list, &value_ptr_list);
-      std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
-      for (int64 i = 0; i < key_list.size(); ++i) {
-        V* val = LookupPrimaryEmb(value_ptr_list[i]);
-        if (val != nullptr) {
-          V l2_weight = 0.0;
-          for (int64 j = 0; j < value_len_; j++) {
-              l2_weight += val[j] * val[j];
-          }
-          l2_weight *= 0.5;
-          if (l2_weight < emb_config_.l2_weight_threshold) {
-            to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
-          }
-        }
-      }
-      for (const auto it : to_deleted) {
-        // TODO memory recycle
-        (it.second)->Destroy(alloc_, value_len_);
-        delete it.second;
-        kv_->Remove(it.first);
-      }
-    return Status::OK();
+    return storage_manager_->Shrink(emb_config_, value_len_);
   }
 
   Status Shrink(int64 gs) {
     if (emb_config_.steps_to_live > 0) {
-      std::vector<K> key_list;
-      std::vector<ValuePtr<V>* > value_ptr_list;
-      kv_->GetSnapshot(&key_list, &value_ptr_list);
-      std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
-      for (int64 i = 0; i < key_list.size(); ++i) {
-        int64 version = value_ptr_list[i]->GetStep();
-        if (version == -1) {
-          value_ptr_list[i]->SetStep(gs);
-        } else {
-          if (gs - version > emb_config_.steps_to_live) {
-            to_deleted.emplace_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
-          }
-        }
-      }
-      for (const auto it : to_deleted) {
-        // TODO memory recycle
-        (it.second)->Destroy(alloc_, value_len_);
-        delete it.second;
-        kv_->Remove(it.first);
-      }
+      return storage_manager_->Shrink(gs, emb_config_.steps_to_live);
     }
-    return Status::OK();
   }
-  
+
   V* GetDefaultValuePtr() {
     return default_value_;
   }
@@ -411,56 +262,29 @@ class EmbeddingVar : public ResourceBase {
     emb_config_.slot_num = slot_num;
   }
 
- private:
-  Status LookupOrCreateKeyInternal(K key, ValuePtr<V>** value_ptr, size_t size) {
-    Status s = kv_->Lookup(key, value_ptr);
-    if (s.ok()) {
-      // Found
-      return s;
-    } else {
-      // Not found
-      *value_ptr = new_value_ptr_fn(size);
-      s = kv_->Insert(key, *value_ptr);
-      if (s.ok()) {
-        // Insert Success
-        return s;
-      } else {
-        // Insert Failed, key already exist
-        delete *value_ptr;
-        s = kv_->Lookup(key, value_ptr);
-        return s;
-      }
-    }
+  embedding::BatchCache<K>* Cache() {
+    return storage_manager_->Cache();
   }
 
  private:
   std::string name_;
-  KVInterface<K, V>* kv_;
   bool is_initialized_ = false;
-  std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn;
 
   mutex mu_;
 
   V* default_value_;
   int64 value_len_;
   Allocator* alloc_;
+  embedding::StorageManager<K, V>* storage_manager_;
   EmbeddingConfig emb_config_;
   EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
-  leveldb::DB* level_db_;
-  std::string db_name_;
 
   ~EmbeddingVar() override {
     if (emb_config_.is_primary()) {
-      if (LayoutType::LEVELDB == emb_config_.get_layout_type()) {
-        delete level_db_;
-        int64 undeleted_files = 0;
-        int64 undeleted_dirs = 0;
-        TF_CHECK_OK(Env::Default()->DeleteRecursively(db_name_, &undeleted_files, &undeleted_dirs));
-      }
-      Destroy(value_len_);
-      delete kv_;
+      Destroy();
+      delete storage_manager_;
     }
-    TypedAllocator::Deallocate(cpu_allocator(), default_value_, value_len_);
+    TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
   }
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);
 };

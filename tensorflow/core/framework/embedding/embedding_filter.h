@@ -8,7 +8,7 @@ namespace tensorflow {
 namespace {
 const static std::vector<int64> default_seeds = {
  2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,
- 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97 
+ 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
 };
 }
 
@@ -16,6 +16,7 @@ template<typename K, typename V, typename EV>
 class EmbeddingFilter {
  public:
   virtual void LookupOrCreate(K key, V* val, const V* default_value_ptr) = 0;
+  virtual void LookupOrCreateWithFreq(K key, V* val, const V* default_value_ptr) = 0;
   virtual void LookupOrCreate(K key, V* val, const V* default_value_ptr, int64 count) = 0;
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
       int update_version = -1) = 0;
@@ -67,8 +68,26 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
       if (default_value == default_value_ptr)
         memcpy(val, default_value_ptr + (key % default_value_dim) * ev_->ValueLen(), sizeof(V) * ev_->ValueLen());
       else
-        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());  
+        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
     }
+  }
+
+  void LookupOrCreateWithFreq(K key, V* val, const V* default_value_ptr) override {
+    ValuePtr<V>* value_ptr = nullptr;
+    if (GetBloomFreq(key) >= config_.filter_freq) {
+      TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
+      V* mem_val = ev_->LookupOrCreateEmb(value_ptr, default_value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
+      value_ptr->Free(mem_val);
+    } else {
+      int64 default_value_dim = ev_->GetDefaultValueDim();
+      V* default_value = ev_->GetDefaultValuePtr();
+      if (default_value == default_value_ptr)
+        memcpy(val, default_value_ptr + (key % default_value_dim) * ev_->ValueLen(), sizeof(V) * ev_->ValueLen());
+      else
+        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
+    }
+    AddFreq(key);
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr, int64 count) override {
@@ -83,7 +102,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
       memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
     }
   }
-  
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
         int update_version = -1) override {
     if (GetFreq(key, *val) >= config_.filter_freq) {
@@ -93,7 +112,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
     *is_filter = false;
     return Status::OK();
   }
-  
+
   int64 GetFreq(K key, ValuePtr<V>*) override {
     return GetBloomFreq(key);
   }
@@ -158,11 +177,11 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   int64 GetMinFreq(std::vector<int64> hash_val) {
     VBloom min_freq = *((VBloom*)bloom_counter_ + hash_val[0]);
     for (auto it : hash_val) {
-      min_freq = std::min(*((VBloom*)bloom_counter_ + it), min_freq); 
+      min_freq = std::min(*((VBloom*)bloom_counter_ + it), min_freq);
     }
     return min_freq;
   }
-  
+
   template<typename VBloom>
   void SetMinFreq(std::vector<int64> hash_val, int64 freq) {
     for (auto it : hash_val) {
@@ -204,7 +223,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
       switch (config_.counter_type){
         case DT_UINT64:
           if (*((uint64*)bloom_counter_ + it) < config_.filter_freq)
-            __sync_fetch_and_add((uint64*)bloom_counter_ + it, 1);         
+            __sync_fetch_and_add((uint64*)bloom_counter_ + it, 1);
           break;
         case DT_UINT32:
           if (*((uint32*)bloom_counter_ +it) < config_.filter_freq)
@@ -235,7 +254,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
       switch (config_.counter_type){
         case DT_UINT64:
           if (*((uint64*)bloom_counter_ + it) < config_.filter_freq)
-            __sync_fetch_and_add((uint64*)bloom_counter_ + it, count);         
+            __sync_fetch_and_add((uint64*)bloom_counter_ + it, count);
           break;
         case DT_UINT32:
           if (*((uint32*)bloom_counter_ +it) < config_.filter_freq)
@@ -279,7 +298,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
             seeds_.push_back(j);
             last_seed = j;
             break;
-          }          
+          }
         }
       }
     }
@@ -313,8 +332,26 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
       if (default_value == default_value_ptr)
         memcpy(val, default_value_ptr + (key % default_value_dim) * ev_->ValueLen(), sizeof(V) * ev_->ValueLen());
       else
-        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen()); 
+        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
     }
+  }
+
+  void LookupOrCreateWithFreq(K key, V* val, const V* default_value_ptr) override {
+    ValuePtr<V>* value_ptr = nullptr;
+    TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
+    if (GetFreq(key, value_ptr) >= config_.filter_freq) {
+      V* mem_val = ev_->LookupOrCreateEmb(value_ptr, default_value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
+      value_ptr->Free(mem_val);
+    } else {
+      int64 default_value_dim= ev_->GetDefaultValueDim();
+      V* default_value = ev_->GetDefaultValuePtr();
+      if (default_value == default_value_ptr)
+        memcpy(val, default_value_ptr + (key % default_value_dim) * ev_->ValueLen(), sizeof(V) * ev_->ValueLen());
+      else
+        memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
+    }
+    value_ptr->AddFreq();
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr, int64 count) override {
@@ -329,18 +366,18 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
       memcpy(val, default_value_ptr, sizeof(V) * ev_->ValueLen());
     }
   }
-  
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
       int update_version = -1) override {
     Status s = ev_->LookupOrCreateKey(key, val, update_version);
     *is_filter = GetFreq(key, *val) >= config_.filter_freq;
     return s;
   }
- 
+
   int64 GetFreq(K key, ValuePtr<V>* value_ptr) override {
     return value_ptr->GetFreq();
   }
-  
+
   int64 GetFreq(K key) override {
     ValuePtr<V>* value_ptr = nullptr;
     TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
@@ -367,6 +404,15 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     value_ptr->Free(mem_val);
   }
 
+  void LookupOrCreateWithFreq(K key, V* val, const V* default_value_ptr) override {
+    ValuePtr<V>* value_ptr = nullptr;
+    TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
+    V* mem_val = ev_->LookupOrCreateEmb(value_ptr, default_value_ptr);
+    memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
+    value_ptr->AddFreq();
+    value_ptr->Free(mem_val);
+  }
+
   void LookupOrCreate(K key, V* val, const V* default_value_ptr, int64 count) override {
     ValuePtr<V>* value_ptr = nullptr;
     TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
@@ -374,19 +420,29 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
     value_ptr->Free(mem_val);
   }
-  
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
       int update_version = -1) override {
     *is_filter = true;
     return ev_->LookupOrCreateKey(key, val, update_version);
   }
-  
+
   int64 GetFreq(K key, ValuePtr<V>* value_ptr) override {
-    return 0;
+    if (config_.get_layout_type() != LayoutType::LIGHT) {
+      return value_ptr->GetFreq();
+    }else {
+      return 0;
+    }
   }
-  
+
   int64 GetFreq(K key) override {
-    return 0;
+    if (config_.get_layout_type() != LayoutType::LIGHT) {
+      ValuePtr<V>* value_ptr = nullptr;
+      TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
+      return value_ptr->GetFreq();
+    }else {
+      return 0;
+    }
   }
 
  private:

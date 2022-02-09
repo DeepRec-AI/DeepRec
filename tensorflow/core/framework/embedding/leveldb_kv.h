@@ -4,6 +4,7 @@
 #include "tensorflow/core/lib/io/path.h"
 
 #include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/lib/core/status.h"
 
 #include "leveldb/db.h"
@@ -63,13 +64,14 @@ class LevelDBKV : public KVInterface<K, V> {
     path_ = io::JoinPath(path, "level_db_" + std::to_string(Env::Default()->NowMicros()));;
     options_.create_if_missing = true;
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
-    KVInterface<K, V>::total_dims_ = 0;
-    counter_ =  new SizeCounter<K>(8);
     CHECK(s.ok());
+    counter_ =  new SizeCounter<K>(8);
+    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(ev_allocator(), size); };
+    total_dims_ = 0;
   }
 
-  void SetNewValuePtrFunc(std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn) {
-    new_value_ptr_fn_ = new_value_ptr_fn;
+  void SetTotalDims(int total_dims) {
+    total_dims_ = total_dims;
   }
 
   ~LevelDBKV() {
@@ -79,14 +81,13 @@ class LevelDBKV : public KVInterface<K, V> {
   Status Lookup(K key, ValuePtr<V>** value_ptr) {
     std::string val_str;
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
-    ValuePtr<V>* val = new_value_ptr_fn_(KVInterface<K, V>::total_dims_);
     leveldb::ReadOptions options;
     leveldb::Status s = db_->Get(options, db_key, &val_str);
     if (s.IsNotFound()) {
-      delete val;
       return errors::NotFound(
           "Unable to find Key: ", key, " in LevelDB.");
     } else {
+      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
       memcpy((int64 *)(val->GetPtr()), &val_str[0], val_str.length());
       *value_ptr = val;
       return Status::OK();
@@ -105,7 +106,7 @@ class LevelDBKV : public KVInterface<K, V> {
   Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
     WriteBatch batch;
     for (int i = 0; i < keys.size(); i++) {
-      std::string value_res((char*)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader) +  KVInterface<K, V>::total_dims_ * sizeof(V));
+      std::string value_res((char*)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
       leveldb::Slice db_key((char*)(&keys[i]), sizeof(void*));
       batch.Put(db_key, value_res);
       delete value_ptrs[i];
@@ -115,7 +116,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
-    std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader) +  KVInterface<K, V>::total_dims_ * sizeof(V));
+    std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);
     delete value_ptr;
@@ -145,12 +146,12 @@ class LevelDBKV : public KVInterface<K, V> {
     Iterator* it = db_->NewIterator(options);
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       std::string key_str, value_str;
-      ValuePtr<V>* value_ptr = new_value_ptr_fn_(KVInterface<K, V>::total_dims_);
+      ValuePtr<V>* value_ptr = new_value_ptr_fn_(total_dims_);
       key_str = it->key().ToString();
       value_str = it->value().ToString();
       key_list->emplace_back(*((long*)&key_str[0]));
       void* ptr = value_ptr->GetPtr();
-      memcpy(ptr, &value_str[0], KVInterface<K, V>::total_dims_ * sizeof(V) + sizeof(FixedLengthHeader));
+      memcpy(ptr, &value_str[0], total_dims_ * sizeof(V) + sizeof(FixedLengthHeader));
       value_ptr_list->emplace_back(value_ptr);  
     }
     assert(it->status().ok());
@@ -176,6 +177,7 @@ class LevelDBKV : public KVInterface<K, V> {
   Options options_;
   std::string path_;
   std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn_;
+  int total_dims_;
 };
 
 } //namespace tensorflow

@@ -203,7 +203,7 @@ class ValuePtr {
         return ((V**)((int64*)ptr_ + (unsigned int)meta->header_size))[emb_index];
       embnum++ ;
       int64 alloc_value_len = value_len;
-      V* tensor_val = TypedAllocator::Allocate<V>(allocator, alloc_value_len, AllocationAttributes());
+      V* tensor_val = (V*)allocator->AllocateRaw(0/*alignemnt unused*/, sizeof(V) * alloc_value_len);
       memcpy(tensor_val, default_v, sizeof(V) * value_len);
       ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[emb_index]  = tensor_val;
 
@@ -220,7 +220,7 @@ class ValuePtr {
   }
 
   // simple getter for V* and version
-  virtual V* GetValue(int emb_index, int64 value_len, int offset) {
+  virtual V* GetValue(int emb_index, int offset) {
     MetaHeader* meta = (MetaHeader*)ptr_;
     auto metadata = meta->GetColumnBitset();
     if (metadata.test(emb_index)) {
@@ -232,7 +232,7 @@ class ValuePtr {
 
   virtual void Free(const V* v) {}
 
-  virtual void Destroy(Allocator* allocator, int64 value_len) {
+  virtual void Destroy(Allocator* allocator) {
     MetaHeader* meta = (MetaHeader*)ptr_;
     unsigned int embnum = (unsigned int)meta->embed_num;
     auto metadata = meta->GetColumnBitset();
@@ -240,7 +240,7 @@ class ValuePtr {
       if (metadata.test(i)) {
         V* val = ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[i];
         if (val != nullptr) {
-          TypedAllocator::Deallocate(allocator, val, value_len);
+          allocator->DeallocateRaw(val);
         }
       }
     }
@@ -342,14 +342,13 @@ class NormalValuePtr : public ValuePtr<V> {
 template <class V>
 class NormalContiguousValuePtr : public ValuePtr<V>{
   public:
-   NormalContiguousValuePtr(size_t size) {
-    this->ptr_ = (void*)malloc(sizeof(FixedLengthHeader) + sizeof(V) * size);
+   NormalContiguousValuePtr(Allocator* allocator, size_t size) {
+    this->ptr_ = allocator->AllocateRaw(0/*alignemnt unused*/, sizeof(FixedLengthHeader) + sizeof(V) * size);
     memset(this->ptr_ + sizeof(FixedLengthHeader), 0, sizeof(V) * size);
     new ((char*)this->ptr_) FixedLengthHeader();
    }
   
    ~NormalContiguousValuePtr(){
-    free(this->ptr_);
    }
 
   virtual V* GetOrAllocate(Allocator* allocator, int64 value_len, const V* default_v, int emb_index, int offset) override {
@@ -371,7 +370,7 @@ class NormalContiguousValuePtr : public ValuePtr<V>{
     }
   }
 
-  virtual V* GetValue(int emb_index, int64 value_len, int offset) {
+  virtual V* GetValue(int emb_index, int offset) {
     int8 meta = *((int8*)((char*)this->ptr_ + 6));
     std::bitset<8> bs(meta);
     if (bs.test(emb_index)) {
@@ -381,8 +380,8 @@ class NormalContiguousValuePtr : public ValuePtr<V>{
     }
   }
 
-  virtual void Destroy(Allocator* allocator, int64 value_len) {
-    return;
+  virtual void Destroy(Allocator* allocator) {
+    allocator->DeallocateRaw(this->ptr_);
   }
   
   int64 GetStep() {
