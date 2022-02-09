@@ -9,6 +9,7 @@
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu_functions/kernels.cu.h"
 #include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "third_party/cub/thread/thread_operators.cuh"
@@ -97,23 +98,23 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
 
     // ========================= 2. combiner ========================== //
     if (combiner_ == "sqrtn") {
-      ApplyCombiner<Sqrtn>(device, batch_size, emb_vec_size,
-                           data_p_with_type<float>(emb_vectors_tensor),
-                           data_p_with_type<const int>(row_empty_and_invalid_flags),
-                           set_empty_row_zero,
-                           data_p_with_type<int>(feature_nums));
+      ApplyCombiner<Sqrtn>(
+          device, batch_size, emb_vec_size,
+          data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<const int>(row_empty_and_invalid_flags),
+          set_empty_row_zero, data_p_with_type<int>(feature_nums));
     } else if (combiner_ == "mean") {
-      ApplyCombiner<Mean>(device, batch_size, emb_vec_size,
-                          data_p_with_type<float>(emb_vectors_tensor),
-                          data_p_with_type<const int>(row_empty_and_invalid_flags),
-                          set_empty_row_zero,
-                          data_p_with_type<int>(feature_nums));
+      ApplyCombiner<Mean>(
+          device, batch_size, emb_vec_size,
+          data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<const int>(row_empty_and_invalid_flags),
+          set_empty_row_zero, data_p_with_type<int>(feature_nums));
     } else {
-      ApplyCombiner<Sum>(device, batch_size, emb_vec_size,
-                         data_p_with_type<float>(emb_vectors_tensor),
-                         data_p_with_type<const int>(row_empty_and_invalid_flags),
-                         set_empty_row_zero,
-                         data_p_with_type<int>(feature_nums));
+      ApplyCombiner<Sum>(
+          device, batch_size, emb_vec_size,
+          data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<const int>(row_empty_and_invalid_flags),
+          set_empty_row_zero, data_p_with_type<int>(feature_nums));
     }
     CK_CUDA_THROW_(cudaGetLastError());
     // ================================================================ //

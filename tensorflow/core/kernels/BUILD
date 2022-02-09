@@ -5284,7 +5284,9 @@ tf_kernel_library(
 
 tf_cuda_library(
     name = "fused_embedding_cuh",
-    hdrs = ["fused_embedding/fused_embedding.cu.h"],
+    hdrs = ["fused_embedding/fused_embedding.cu.h",
+            "fused_embedding/gpu_functions/kernels.cu.h",
+            "fused_embedding/gpu_functions/unique.cu.h"],
 )
 
 tf_kernel_library(
@@ -5293,8 +5295,8 @@ tf_kernel_library(
         "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
         "fused_embedding/fused_embedding_pre_ops_gpus.cu.cc",
         "fused_embedding/fused_embedding_post_ops_gpus.cu.cc",
-        "fused_embedding/fused_embedding_gpu_kernels.cu.cc",
-        "fused_embedding/unique_gpu/unique.cu.cc"
+        "fused_embedding/gpu_functions/kernels.cu.cc",
+        "fused_embedding/gpu_functions/unique.cu.cc"
     ],
     deps = ["//third_party/eigen3",
             "//tensorflow/core/profiler:nvtx_utils"] +
