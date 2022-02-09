@@ -62,6 +62,14 @@ __global__ void DynamicStitchKernelV2(const int32 slice_size,
   }
 }
 
+__global__ void InitializeIndicesFlatWork(int32* indices_flat_work,
+                                          const int32 flat_work_size,
+                                          const int32 val) {
+  CUDA_1D_KERNEL_LOOP(output_index, flat_work_size) {
+    indices_flat_work[output_index] = val;
+  }
+}
+
 template <typename T>
 __global__ void DynamicStitchPrepKernel(const int32* indices_flat,
                                         int32* indices_flat_work,
@@ -74,7 +82,6 @@ __global__ void DynamicStitchPrepKernel(const int32* indices_flat,
 
   CUDA_1D_KERNEL_LOOP(output_index, output_size) {
     // for indices
-    indices_flat_work[output_index] = -1;
     indices_flat_work[indices_flat[output_index]] = output_index;
     // find the partition id
     int32 data_ptr_id = 0;
@@ -135,9 +142,17 @@ void DynamicStitchGPUPrep(const Eigen::GpuDevice& gpu_device,
                           T** data_ptr_all,
                           const int32 data_partition_num,
                           const int32 slice_size,
-                          const int32 data_elements_size) {
+                          const int32 data_elements_size,
+                          const int32 first_dim_size) {
 
-  auto config = GetCudaLaunchConfig(data_elements_size, gpu_device);
+  // initialize indices_flat_work by -1
+  auto config = GetCudaLaunchConfig(first_dim_size, gpu_device);
+  InitializeIndicesFlatWork
+    <<<config.block_count, config.thread_per_block, 0, gpu_device.stream()>>>(
+      indices_flat_work->flat<int32>().data(),
+      first_dim_size, -1);
+
+  config = GetCudaLaunchConfig(data_elements_size, gpu_device);
   DynamicStitchPrepKernel<T>
       <<<config.block_count, config.thread_per_block, 0, gpu_device.stream()>>>(
           indices_flat->flat<int32>().data(),
@@ -193,7 +208,8 @@ TF_CALL_int32(REGISTER_GPU)
       T** data_ptr_all,                                           \
       const int32 data_partition_num,                             \
       const int32 slice_size,                                     \
-      const int32 data_elements_size);
+      const int32 data_elements_size,                             \
+      const int32 first_dim_size);
 
 TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU);
 TF_CALL_complex64(REGISTER_GPU);

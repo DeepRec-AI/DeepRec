@@ -34,7 +34,7 @@ rm openmpi-4.1.1.tar.gz && rm -rf openmpi-4.1.1
 
 #install horovod
 HOROVOD_GPU_ALLREDUCE=NCCL HOROVOD_GPU_BROADCAST=NCCL pip install --no-cache-dir horovod
-horovodrun –check-build
+horovodrun --check-build
 
 
 echo "Successfully installed."

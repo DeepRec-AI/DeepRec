@@ -15,44 +15,43 @@
  */
 
 #include "initializer/initializer_interface.h"
-#include "initializer/random_uniform.h"
-#include "initializer/constant_initializer.h"
-#include "resources/manager.h"
-#include "common.h"
+
 #include <unordered_map>
+
+#include "common.h"
+#include "initializer/constant_initializer.h"
+#include "initializer/random_uniform.h"
+#include "resources/manager.h"
 
 namespace SparseOperationKit {
 
 const std::unordered_map<std::string, InitializerType> InitializerMap = {
     {"random_uniform", InitializerType::RandomUniform},
     {"ones", InitializerType::Ones},
-    {"zeros", InitializerType::Zeros}
-};
-
+    {"zeros", InitializerType::Zeros}};
 
 std::shared_ptr<Initializer> Initializer::Get(const std::string initializer) {
-    // Get initializer enum type
-    InitializerType initializer_type = InitializerType::Ones;
-    find_item_in_map(InitializerMap, initializer, initializer_type);
+  // Get initializer enum type
+  InitializerType initializer_type = InitializerType::Ones;
+  find_item_in_map(InitializerMap, initializer, initializer_type);
 
-    // generate corresponding initializer instance.
-    switch (initializer_type) {
-        case InitializerType::RandomUniform: {
-            return RandomUniformInit::create(/*a=*/-0.05f, /*b=*/0.05f);
-        }
-        case InitializerType::Ones: {
-            return ConstantInit::create(1.0f);
-        }
-        case InitializerType::Zeros: {
-            return ConstantInit::create(0.0f);
-        }
-        default: {
-            break;
-        }
-    } // switch initializer_type
+  // generate corresponding initializer instance.
+  switch (initializer_type) {
+    case InitializerType::RandomUniform: {
+      return RandomUniformInit::create(/*a=*/-0.05f, /*b=*/0.05f);
+    }
+    case InitializerType::Ones: {
+      return ConstantInit::create(1.0f);
+    }
+    case InitializerType::Zeros: {
+      return ConstantInit::create(0.0f);
+    }
+    default: {
+      break;
+    }
+  }  // switch initializer_type
 
-    throw std::runtime_error(ErrorBase + "Not supported initializer.");
-} 
+  throw std::runtime_error(ErrorBase + "Not supported initializer.");
+}
 
-
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

@@ -17,35 +17,35 @@
 #ifndef TF_TENSOR_WRAPPER_H
 #define TF_TENSOR_WRAPPER_H
 
+#include <initializer_list>
+
 #include "tensor_buffer/tensor_interface.h"
 #include "tensorflow/core/framework/tensor.h"
-#include <initializer_list>
 
 namespace SparseOperationKit {
 
 /*
-* This is the wrapper for TF tensor to Tensor.
-*/
+ * This is the wrapper for TF tensor to Tensor.
+ */
 class TFTensorWrapper : public Tensor {
-public:
-    static std::shared_ptr<TFTensorWrapper> create(tensorflow::Tensor* tf_tensor);
-    static std::vector<std::shared_ptr<TFTensorWrapper>> create_many(
-            std::initializer_list<tensorflow::Tensor*> tf_tensors);
-    
-    size_t get_size_in_bytes() override;
-    size_t get_num_elements() override;
-    bool allocated() const override;
+ public:
+  static std::shared_ptr<TFTensorWrapper> create(tensorflow::Tensor* tf_tensor);
+  static std::vector<std::shared_ptr<TFTensorWrapper>> create_many(
+      std::initializer_list<tensorflow::Tensor*> tf_tensors);
 
-protected:
-    void* get_ptr() override;
+  size_t get_size_in_bytes() override;
+  size_t get_num_elements() override;
+  bool allocated() const override;
 
-private:
-    TFTensorWrapper(tensorflow::Tensor* tf_tensor);
+ protected:
+  void* get_ptr() override;
 
-    tensorflow::Tensor* tf_tensor_;
+ private:
+  TFTensorWrapper(tensorflow::Tensor* tf_tensor);
+
+  tensorflow::Tensor* tf_tensor_;
 };
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // TF_TENSOR_WRAPPER_H
+#endif  // TF_TENSOR_WRAPPER_H

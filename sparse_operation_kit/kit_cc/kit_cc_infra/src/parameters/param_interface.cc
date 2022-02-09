@@ -15,6 +15,7 @@
  */
 
 #include "parameters/param_interface.h"
+
 #include "common.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/variant_op_registry.h"
@@ -22,28 +23,29 @@
 namespace SparseOperationKit {
 
 void ParamInterface::set_user(std::shared_ptr<EmbeddingLayer>& embedding) {
-    // It is not compulsory for the subclass to override this function.
-    throw std::runtime_error(ErrorBase + "Not implemented.");
+  // It is not compulsory for the subclass to override this function.
+  throw std::runtime_error(ErrorBase + "Not implemented.");
 }
 
 void ParamInterface::let_user_dump_to_file(const std::string filepath) {
-    // by default, it does nothing.
+  // by default, it does nothing.
 }
 
 void ParamInterface::let_user_restore_from_file(const std::string filepath) {
-    // by default, it does nothing.
+  // by default, it does nothing.
 }
 
-void ParamInterface::let_user_load_embedding_values(const std::vector<std::shared_ptr<Tensor>> &tensor_list) {
-    // by default, it does nothing
+void ParamInterface::let_user_load_embedding_values(
+    const std::vector<std::shared_ptr<Tensor>>& tensor_list) {
+  // by default, it does nothing
 }
 
 std::shared_ptr<Tensor>& ParamInterface::get_tensor(const size_t local_replica_id) {
-    return get_embedding_table_tensor(local_replica_id);
+  return get_embedding_table_tensor(local_replica_id);
 }
 
 void ParamInterface::set_hashtable(std::shared_ptr<BaseSimpleHashtable> hashtable) {
-    throw std::runtime_error(ErrorBase + "Not implemented.");
+  throw std::runtime_error(ErrorBase + "Not implemented.");
 }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

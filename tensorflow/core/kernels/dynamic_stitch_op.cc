@@ -226,7 +226,8 @@ void DynamicStitchGPUPrep(const Eigen::GpuDevice& gpu_device,
                           T** data_ptr_all,
                           const int32 data_partition_num,
                           const int32 slice_size,
-                          const int32 data_elements_size);
+                          const int32 data_elements_size,
+                          const int32 first_dim_size);
 
 void AggregateIndiceOnGpu(OpKernelContext* c,
                           OpInputList* indices_list,
@@ -435,7 +436,8 @@ class DynamicStitchOpGPUV2 : public DynamicStitchOpImplBase<T> {
                               data_ptr_all.flat<int8>().data()),
                               data_inputs.size(),
                               slice_size,
-                              data_elements_size);
+                              data_elements_size,
+                              first_dim_size);
       auto output = merged->template flat<T>().data();
       DynamicStitchGPUImplV2<T>(c->eigen_gpu_device(), slice_size,
                                 first_dim_size,

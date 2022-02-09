@@ -17,9 +17,10 @@
 #ifndef OPERATION_BUILDER_H
 #define OPERATION_BUILDER_H
 
-#include "operation/construction_context.h"
-#include "common.h"
 #include <memory>
+
+#include "common.h"
+#include "operation/construction_context.h"
 
 namespace SparseOperationKit {
 
@@ -28,27 +29,26 @@ class EmbeddingLookuper;
 class ParamInterface;
 
 class Builder {
-public:
-    virtual ~Builder() {}
-    virtual std::shared_ptr<Operation> produce(std::shared_ptr<ConstructionContext> context) = 0;
-    virtual std::shared_ptr<EmbeddingLookuper> produce(std::shared_ptr<ConstructionContext> context,
-                                                       std::shared_ptr<ParamInterface> param) = 0;
+ public:
+  virtual ~Builder() {}
+  virtual std::shared_ptr<Operation> produce(std::shared_ptr<ConstructionContext> context) = 0;
+  virtual std::shared_ptr<EmbeddingLookuper> produce(std::shared_ptr<ConstructionContext> context,
+                                                     std::shared_ptr<ParamInterface> param) = 0;
 };
 
 template <typename OperationClass>
 class OperationBuilder : public Builder {
-public:
-    OperationBuilder() {}
-    std::shared_ptr<EmbeddingLookuper> produce(std::shared_ptr<ConstructionContext> context,
-                                               std::shared_ptr<ParamInterface> param) override {
-        throw std::runtime_error(ErrorBase + "Not implemented.");
-    }
-    std::shared_ptr<Operation> produce(std::shared_ptr<ConstructionContext> context) override {
-        return std::make_shared<OperationClass>(context);
-    }
+ public:
+  OperationBuilder() {}
+  std::shared_ptr<EmbeddingLookuper> produce(std::shared_ptr<ConstructionContext> context,
+                                             std::shared_ptr<ParamInterface> param) override {
+    throw std::runtime_error(ErrorBase + "Not implemented.");
+  }
+  std::shared_ptr<Operation> produce(std::shared_ptr<ConstructionContext> context) override {
+    return std::make_shared<OperationClass>(context);
+  }
 };
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // OPERATION_BUILDER_H
+#endif  // OPERATION_BUILDER_H

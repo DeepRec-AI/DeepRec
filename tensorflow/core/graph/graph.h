@@ -723,6 +723,9 @@ class Graph {
   // Builds a node name to node pointer index for all nodes in the graph.
   std::unordered_map<string, Node*> BuildNodeNameIndex() const;
 
+  // Return true if this graph contain gradients node
+  bool IsTrainingGraph() const;
+
   // TODO(josh11b): uint64 hash() const;
 
  private:

@@ -17,49 +17,49 @@
 #ifndef OPTIMIZER_INTERFACE_H
 #define OPTIMIZER_INTERFACE_H
 
-#include "parameters/manager_interface.h"
-#include "embeddings/manager.h"
-#include "common.h"
 #include <memory>
+
+#include "common.h"
+#include "embeddings/manager.h"
+#include "parameters/manager_interface.h"
 
 namespace SparseOperationKit {
 
 class Optimizer {
-public:
-    static std::shared_ptr<Optimizer> Get(const OptimizerType optimizer_type,
-                                          optimizer_hyper_params&& hyper_params,
-                                          const std::shared_ptr<ParamsManager>& params_mgr,
-                                          std::shared_ptr<ResourcesManager>& resource_mgr);
+ public:
+  static std::shared_ptr<Optimizer> Get(const OptimizerType optimizer_type,
+                                        optimizer_hyper_params&& hyper_params,
+                                        const std::shared_ptr<ParamsManager>& params_mgr,
+                                        std::shared_ptr<ResourcesManager>& resource_mgr);
 
-    explicit Optimizer(const std::shared_ptr<ParamsManager>& params_mgr);
-    Optimizer() = delete;
+  explicit Optimizer(const std::shared_ptr<ParamsManager>& params_mgr);
+  Optimizer() = delete;
 
-    virtual ~Optimizer() {}
+  virtual ~Optimizer() {}
 
-    /*delegate this job to embedding manager, because it can 
-    * access to some embedding attributes
-    */
-    virtual void create_preparers(const std::shared_ptr<EmbeddingManager>& embedding_mgr) = 0;
+  /*delegate this job to embedding manager, because it can
+   * access to some embedding attributes
+   */
+  virtual void create_preparers(const std::shared_ptr<EmbeddingManager>& embedding_mgr) = 0;
 
-    /*delegate this job to params manager, this function must 
-    * call the right API of params manager to reserve_spaces
-    */
-    virtual void reserve_spaces() = 0;
+  /*delegate this job to params manager, this function must
+   * call the right API of params manager to reserve_spaces
+   */
+  virtual void reserve_spaces() = 0;
 
-    virtual void apply_gradients(std::shared_ptr<ParamInterface> param,
-                                 const std::shared_ptr<Tensor> grad_tensor,
-                                 const std::shared_ptr<Tensor> local_indices,
-                                 const size_t local_replica_id, 
-                                 const float learning_rate,
-                                 const size_t current_step) = 0;
+  virtual void apply_gradients(std::shared_ptr<ParamInterface> param,
+                               const std::shared_ptr<Tensor> grad_tensor,
+                               const std::shared_ptr<Tensor> local_indices,
+                               const size_t local_replica_id, const float learning_rate,
+                               const size_t current_step) = 0;
 
-protected:
-    std::shared_ptr<ParamsManager> params_mgr_;
+ protected:
+  std::shared_ptr<ParamsManager> params_mgr_;
 };
 
 void StoreOptimizerInVariantTensor(const std::shared_ptr<Optimizer>& optimizer,
                                    tensorflow::Tensor* tensor);
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // OPTIMIZER_INTERFACE_H
+#endif  // OPTIMIZER_INTERFACE_H

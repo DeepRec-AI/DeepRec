@@ -18,6 +18,20 @@ from .common import _deduplicate_indexed_slices
 import tensorflow.keras.optimizers as keras_optimizers
 
 class Adam(keras_optimizers.Adam):
+    """
+    Abbreviated as ``sok.tf.keras.optimizers.Adam``.
+
+    The ``unique`` and ``unsorted_segment_sum`` are replaced with GPU
+    implementations. 
+
+    When TF version <= 2.4, this optimizer can be used to obtain performance
+    gain, while TF version >= 2.5, its performance should be identical to 
+    ``tf.keras.optimizers.Adam``.
+
+    All the arguments are identical to ``tf.keras.optimizers.Adam``, please
+    refer to https://tensorflow.google.cn/api_docs/python/tf/keras/optimizers/Adam 
+    for documentation.
+    """
     def __init__(self, *args, **kwargs):
         super(Adam, self).__init__(*args, **kwargs)
 

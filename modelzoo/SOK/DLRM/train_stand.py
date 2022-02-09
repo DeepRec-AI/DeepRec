@@ -155,8 +155,6 @@ def main(args):
                     strategy.broadcast_variables(embedding_optimizer.variables())
 
             with tf.control_dependencies([emb_train_op, other_train_op]):
-                
-                loss = strategy.reduce("sum", loss)
                 loss = tf.identity(loss)
                 return loss
         return strategy.run(_step_fn, dense, category, labels)
@@ -176,6 +174,9 @@ def main(args):
     config = tf.ConfigProto()
     config.log_device_placement = False
     with tf.Session(config=config) as sess:
+        if args.embedding_layer == "TF_EV":
+            sess.run(tf.get_collection(tf.GraphKeys.EV_INIT_VAR_OPS))
+            sess.run(tf.get_collection(tf.GraphKeys.EV_INIT_SLOT_OPS))
         if args.embedding_layer == "SOK":
             sess.run(sok_init_op)
         sess.run([init_op])
@@ -219,7 +220,7 @@ if __name__ == "__main__":
     parser.add_argument("--global_batch_size", type=int, required=True)
     parser.add_argument("--train_file_pattern", type=str, required=True)
     parser.add_argument("--test_file_pattern", type=str, required=True)
-    parser.add_argument("--embedding_layer", type=str, choices=["TF", "SOK"], required=True)
+    parser.add_argument("--embedding_layer", type=str, choices=["TF", "SOK", "TF_EV"], required=True)
     parser.add_argument("--embedding_vec_size", type=int, required=True)
     parser.add_argument("--embedding_optimizer", type=str, required=False, default="SGD")
     parser.add_argument("--bottom_stack", type=int, nargs="+", required=True)

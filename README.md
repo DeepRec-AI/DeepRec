@@ -132,6 +132,12 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly
 
 [https://deeprec.rtfd.io](https://deeprec.rtfd.io)
 
+## **Contact Us**
+
+Join the Official Discussion Group on DingTalk
+
+<img src="docs/README/deeprec_dingtalk.png" width="200">
+
 ## **License**
 
 [Apache License 2.0](LICENSE)

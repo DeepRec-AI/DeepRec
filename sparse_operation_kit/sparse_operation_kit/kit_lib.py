@@ -97,13 +97,12 @@ def _PluginSparseBackProp(op, top_grad):
                                                     top_gradient=top_grad,
                                                     unique_op_name=op.get_attr("unique_op_name"))
     
-    
     params_shape = resource_variable_ops.variable_shape(handle=op.inputs[0])
 
     grads = ops.IndexedSlices(values=emb_var_grads_value,
                               indices=value_index,
                               dense_shape=params_shape)
-    print(grads.shape)
+
     return [grads] + [None for _ in op.inputs[1:]]
 
 

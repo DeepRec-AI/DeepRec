@@ -15,57 +15,51 @@
  */
 
 #include "resources/event.h"
+
 #include "common.h"
 
 namespace SparseOperationKit {
 
-Event::Event(const std::string name) 
-: name_(name)
-{
-    CK_CUDA(cudaEventCreateWithFlags(&cuda_event_, cudaEventDisableTiming));
+Event::Event(const std::string name) : name_(name) {
+  CK_CUDA(cudaEventCreateWithFlags(&cuda_event_, cudaEventDisableTiming));
 }
 
 Event::~Event() {
-    try {
-        CK_CUDA(cudaEventDestroy(cuda_event_));
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << std::endl;
-    }
+  try {
+    CK_CUDA(cudaEventDestroy(cuda_event_));
+  } catch (const std::exception& error) {
+    std::cerr << error.what() << std::endl;
+  }
 }
 
 std::shared_ptr<Event> Event::create(const std::string name) {
-    return std::shared_ptr<Event>(new Event(std::move(name)));
+  return std::shared_ptr<Event>(new Event(std::move(name)));
 }
 
 void Event::Record(cudaStream_t& stream) {
-    if (!IsReady()) 
-        throw std::runtime_error(ErrorBase + "cudaEvent: " + name()
-            + " is still in use.");
-    CK_CUDA(cudaEventRecord(cuda_event_, stream));
+  if (!IsReady())
+    throw std::runtime_error(ErrorBase + "cudaEvent: " + name() + " is still in use.");
+  CK_CUDA(cudaEventRecord(cuda_event_, stream));
 }
 
 bool Event::IsReady() const {
-    cudaError_t error = cudaEventQuery(cuda_event_);
-    if (cudaSuccess == error) {
-        return true;
-    } else if (cudaErrorNotReady == error) {
-        return false;
-    } else {
-        CK_CUDA(error);
-        return false;
-    }
+  cudaError_t error = cudaEventQuery(cuda_event_);
+  if (cudaSuccess == error) {
+    return true;
+  } else if (cudaErrorNotReady == error) {
+    return false;
+  } else {
+    CK_CUDA(error);
+    return false;
+  }
 }
 
 void Event::TillReady(cudaStream_t& stream) {
-    CK_CUDA(cudaStreamWaitEvent(stream, cuda_event_, 0));
+  CK_CUDA(cudaStreamWaitEvent(stream, cuda_event_, 0));
 }
 
-void Event::TillReady() {
-    CK_CUDA(cudaEventSynchronize(cuda_event_));
-}
+void Event::TillReady() { CK_CUDA(cudaEventSynchronize(cuda_event_)); }
 
-std::string Event::name() const {
-    return name_;
-}
+std::string Event::name() const { return name_; }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

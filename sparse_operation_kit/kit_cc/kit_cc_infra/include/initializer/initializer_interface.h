@@ -17,28 +17,27 @@
 #ifndef INITIALIZER_INTERFACE_H
 #define INITIALIZER_INTERFACE_H
 
-#include "tensor_buffer/tensor_interface.h"
 #include <cuda_runtime.h>
 #include <curand.h>
+
 #include <memory>
 #include <string>
 
+#include "tensor_buffer/tensor_interface.h"
+
 namespace SparseOperationKit {
 
-enum class InitializerType {RandomUniform, Ones, Zeros};
+enum class InitializerType { RandomUniform, Ones, Zeros };
 
 class Initializer {
-public:
-    virtual ~Initializer() {}
-    virtual void fill(std::shared_ptr<Tensor> tensor, 
-                      const size_t sm_count,
-                      const curandGenerator_t& generator, 
-                      const cudaStream_t& stream) = 0;
+ public:
+  virtual ~Initializer() {}
+  virtual void fill(std::shared_ptr<Tensor> tensor, const size_t sm_count,
+                    const curandGenerator_t& generator, const cudaStream_t& stream) = 0;
 
-    static std::shared_ptr<Initializer> Get(const std::string initializer);
+  static std::shared_ptr<Initializer> Get(const std::string initializer);
 };
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // INITIALIZER_INTERFACE_H
+#endif  // INITIALIZER_INTERFACE_H

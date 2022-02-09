@@ -15,47 +15,45 @@
  */
 
 #include "resources/event_manager.h"
+
 #include "common.h"
 
 namespace SparseOperationKit {
 
-EventManager::EventManager()
-: shared_mu_() {}
+EventManager::EventManager() : shared_mu_() {}
 
 EventManager::~EventManager() {}
 
 std::unique_ptr<EventManager> EventManager::create() {
-    return std::unique_ptr<EventManager>(new EventManager());
+  return std::unique_ptr<EventManager>(new EventManager());
 }
 
 std::shared_ptr<Event>& EventManager::create_event(const std::string event_name) {
-    std::unique_lock<std::shared_timed_mutex> unique(shared_mu_);
-    auto iter = events_.find(event_name);
-    if (events_.end() == iter) {
-        std::shared_ptr<Event> event = Event::create(event_name);
-        events_.emplace(std::make_pair(event_name, event));
-        iter = events_.find(event_name);
-    }
-    return iter->second;
+  std::unique_lock<std::shared_timed_mutex> unique(shared_mu_);
+  auto iter = events_.find(event_name);
+  if (events_.end() == iter) {
+    std::shared_ptr<Event> event = Event::create(event_name);
+    events_.emplace(std::make_pair(event_name, event));
+    iter = events_.find(event_name);
+  }
+  return iter->second;
 }
 
 std::shared_ptr<Event>& EventManager::get_event(const std::string event_name) {
-    {
-        std::shared_lock<std::shared_timed_mutex> shared(shared_mu_);
-        auto iter = events_.find(event_name);
-        if (events_.end() != iter) return iter->second;
-    }
-    return create_event(std::move(event_name)); // no such event
+  {
+    std::shared_lock<std::shared_timed_mutex> shared(shared_mu_);
+    auto iter = events_.find(event_name);
+    if (events_.end() != iter) return iter->second;
+  }
+  return create_event(std::move(event_name));  // no such event
 }
 
-void EventManager::sync_two_streams(cudaStream_t& root_stream, 
-                                    cudaStream_t& sub_stream,
-                                    const std::string event_name,
-                                    const bool event_sync) {
-    /*--root_stream->event->sub_stream--*/
-    std::shared_ptr<Event>& event = get_event(std::move(event_name));
-    event->Record(root_stream);
-    return event_sync ? event->TillReady() : event->TillReady(sub_stream);
+void EventManager::sync_two_streams(cudaStream_t& root_stream, cudaStream_t& sub_stream,
+                                    const std::string event_name, const bool event_sync) {
+  /*--root_stream->event->sub_stream--*/
+  std::shared_ptr<Event>& event = get_event(std::move(event_name));
+  event->Record(root_stream);
+  return event_sync ? event->TillReady() : event->TillReady(sub_stream);
 }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
