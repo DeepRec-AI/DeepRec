@@ -66,9 +66,6 @@ struct EmbeddingConfig {
       kHashFunc = 0;
       num_counter = 0;
     }
-    if (embedding::LEVELDB == storage_type) {
-      layout_type = LayoutType::LEVELDB;
-    }
     if (layout_type == LayoutType::NORMAL_FIX) {
       normal_fix_flag = 1;
     }

@@ -117,28 +117,6 @@ class EmbeddingVar : public ResourceBase {
       new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
     } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
       new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
-    } else if (LayoutType::LEVELDB == emb_config_.get_layout_type()) {
-     if (emb_config_.is_primary()) {
-      std::string path = emb_config_.get_storage_path();
-      Status s = Env::Default()->IsDirectory(path);
-      if (!s.ok()) {
-        LOG(WARNING) << "StoragePath=\"" << path << "\" is not Directory, message: " << s.ToString() << ". Try to create dir.";
-        TF_CHECK_OK(Env::Default()->RecursivelyCreateDir(path));
-      }
-      db_name_ = io::JoinPath(path, "level_db_" + std::to_string(Env::Default()->NowMicros()));
-      leveldb::Status st;
-      leveldb::Options options;
-      options.create_if_missing = true;
-      //options.write_buffer_size = 1024 * 1024 * 1024;
-      //options.error_if_exists = true;
-      st = leveldb::DB::Open(options, db_name_.c_str(), &level_db_);
-      if (!st.ok()) {
-        LOG(FATAL) << "Fail to open leveldb: " << st.ToString();
-      } else {
-        VLOG(1) << "Open DB Success, db_name: " << db_name_;
-      }
-      new_value_ptr_fn = [this] (size_t size) { return new DBValuePtr<V>(size, this->level_db_); };
-     }
     } else if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()){
       new_value_ptr_fn = [] (size_t size) { return new NormalContiguousValuePtr<V>(size); };
     } else {
@@ -166,6 +144,7 @@ class EmbeddingVar : public ResourceBase {
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
       }
+      kv_->SetNewValuePtrFunc(new_value_ptr_fn);
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
     }
@@ -242,8 +221,8 @@ class EmbeddingVar : public ResourceBase {
     return typename TTypes<V>::Flat(val, dims);
   }
 
-  void Commit(ValuePtr<V>* value_ptr, const V* v) {
-    value_ptr->Commit(value_len_, v, emb_config_.emb_index);
+  void Commit(const K id, ValuePtr<V>* value_ptr) {
+    kv_->Commit(id, value_ptr);
   }
 
   int64 ValueLen() const {
@@ -304,7 +283,7 @@ class EmbeddingVar : public ResourceBase {
         }
       }
       V* v = LookupOrCreateEmb(value_ptr, value_buff + i * value_len_);
-      value_ptr->Free(v);
+      kv_->Commit(key_buff[i], value_ptr);
     }
     return Status::OK();
   }
@@ -329,11 +308,14 @@ class EmbeddingVar : public ResourceBase {
           version_list->push_back(dump_version);
         }
       }
+      kv_->FreeValuePtr(value_ptr_list[i]);
     }
     return key_list->size();
   }
 
   Status Destroy(int64 value_len) {
+    if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type())
+     return Status::OK();
     std::vector<K> key_list;
     std::vector<ValuePtr<V>* > value_ptr_list;
     kv_->GetSnapshot(&key_list, &value_ptr_list);

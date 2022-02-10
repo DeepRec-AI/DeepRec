@@ -53,6 +53,12 @@ class KVInterface {
   // KV Size
   virtual int64 Size() const = 0;
 
+  virtual void SetNewValuePtrFunc(std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn) {}
+
+  virtual void FreeValuePtr(ValuePtr<V>* value_ptr) {}
+
+  virtual Status Commit(K key, const ValuePtr<V>* value_ptr) {return Status::OK();}
+
   virtual Status GetSnapshot(std::vector<K>* key_list,
                              std::vector<ValuePtr<V>* >* value_ptr_list) = 0;
 
@@ -97,7 +103,6 @@ class KVInterface {
     std::vector<int> slot_dims_;
     std::vector<int> slot_offset_;
     int total_dims_;
-
   private:
     std::atomic_flag flag_ = ATOMIC_FLAG_INIT; 
 };

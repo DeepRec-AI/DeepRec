@@ -1,0 +1,127 @@
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
+
+#include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/lib/core/status.h"
+
+#include "leveldb/db.h"
+#include "leveldb/comparator.h"
+
+#include <sstream>
+
+using leveldb::DB;
+using leveldb::Options;
+using leveldb::ReadOptions;
+using leveldb::WriteBatch;
+using leveldb::WriteOptions;
+using leveldb::Iterator;
+
+namespace tensorflow {
+template <class V>
+class ValuePtr;
+
+template <class K, class V>
+class LevelDBKV : public KVInterface<K, V> {
+ public:
+  LevelDBKV(std::string path) {
+    path_ = path;
+    options_.create_if_missing = true;
+    leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
+    KVInterface<K, V>::total_dims_ = 0;
+    assert(s.ok());
+  }
+
+  void SetNewValuePtrFunc(std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn) {
+    new_value_ptr_fn_ = new_value_ptr_fn;
+  }
+
+  ~LevelDBKV() {
+    delete db_;
+  }
+
+  Status Lookup(K key, ValuePtr<V>** value_ptr) {
+    std::string val_str;
+    leveldb::Slice db_key((char*)(&key), sizeof(void*));
+    ValuePtr<V>* val = new_value_ptr_fn_(KVInterface<K, V>::total_dims_);
+    leveldb::ReadOptions options;
+    leveldb::Status s = db_->Get(options, db_key, &val_str);
+    if (s.IsNotFound()) {
+      delete val;
+      return errors::NotFound(
+          "Unable to find Key: ", key, " in RocksDB.");
+    } else {
+      memcpy((int64 *)(val->GetPtr()), &val_str[0], val_str.length());
+      *value_ptr = val;
+      return Status::OK();
+    }
+  }
+
+  Status Insert(K key, const ValuePtr<V>* value_ptr) {
+    return Status::OK();
+  } 
+
+  Status Commit(K key, const ValuePtr<V>* value_ptr) {
+    std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixLengthHeader) +  KVInterface<K, V>::total_dims_ * sizeof(V));
+    leveldb::Slice db_key((char*)(&key), sizeof(void*));
+    leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);
+    delete value_ptr;
+    if (!s.ok()){
+      return errors::AlreadyExists(
+          "already exists Key: ", key, " in RocksDB.");
+    } else {
+      return Status::OK();
+    }
+  }
+
+  Status Remove(K key) {
+    leveldb::Slice db_key((char*)(&key), sizeof(void*));
+    leveldb::Status s = db_->Delete(WriteOptions(), db_key);
+    if (s.ok()) {
+      return Status::OK();
+    } else {
+      return errors::NotFound(
+          "Unable to find Key: ", key, " in RocksDB.");
+    }
+  }
+
+  Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
+    ReadOptions options;
+    options.snapshot = db_->GetSnapshot();
+    Iterator* it = db_->NewIterator(options);
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      std::string key_str, value_str;
+      ValuePtr<V>* value_ptr = new_value_ptr_fn_(KVInterface<K, V>::total_dims_);
+      key_str = it->key().ToString();
+      value_str = it->value().ToString();
+      key_list->emplace_back(*((long*)&key_str[0]));
+      void* ptr = value_ptr->GetPtr();
+      memcpy(ptr, &value_str[0] ,KVInterface<K, V>::total_dims_ * sizeof(V) + 2 * sizeof(int64));
+      value_ptr_list->emplace_back(value_ptr);  
+    }
+    assert(it->status().ok());
+    delete it;
+    db_->ReleaseSnapshot(options.snapshot);
+    return Status::OK();
+  }
+
+  int64 Size() const {
+    return 0;
+  }
+
+  void FreeValuePtr(ValuePtr<V>* value_ptr) {
+    delete value_ptr;
+  }
+
+  std::string DebugString() const {
+    return "";
+  }
+ private:
+  DB* db_;
+  Options options_;
+  std::string path_;
+  std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn_;
+};
+
+} //namespace tensorflow
+
+#endif  TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_

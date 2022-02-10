@@ -164,6 +164,12 @@ class InitializeKvVariableOp : public OpKernel {
                     "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
     }
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
+    if (embedding::StorageType::LEVELDB == storage_type_) {
+      ht_type_ = "leveldb_kv";
+      if (layout_ != "normal_fix") 
+        LOG(WARNING)<<"layout must be NORAML_FIX when storage type is LEVELDB";
+      layout_ = "normal_fix";
+    }
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
   }
 
@@ -183,6 +189,7 @@ class InitializeKvVariableOp : public OpKernel {
 
     const Tensor& slotnum_tensor = context->input(4);
     int64 slotnum = slotnum_tensor.scalar<int64>()();
+    CHECK(block_num_ == 1 || layout_ != "normal_fix");
 
     if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
@@ -194,7 +201,7 @@ class InitializeKvVariableOp : public OpKernel {
             [this, default_values, opname, slotnum,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
-                  ht_type_, ht_partition_num_);
+                  ht_type_, ht_partition_num_, storage_path_);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          ht,
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
@@ -215,7 +222,7 @@ class InitializeKvVariableOp : public OpKernel {
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              auto ht = KVFactory<TKey, TValue>::CreateKV(
-                 ht_type_, ht_partition_num_);
+                 ht_type_, ht_partition_num_, storage_path_);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         ht,
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
@@ -645,7 +652,7 @@ class KvResourceImportV2Op: public OpKernel {
             [this, default_values, opname, slotnum,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
-                  ht_type_, ht_partition_num_);
+                  ht_type_, ht_partition_num_, storage_path_);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          ht,
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
@@ -666,7 +673,7 @@ class KvResourceImportV2Op: public OpKernel {
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              auto ht = KVFactory<TKey, TValue>::CreateKV(
-                 ht_type_, ht_partition_num_);
+                 ht_type_, ht_partition_num_, storage_path_);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         ht,
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
