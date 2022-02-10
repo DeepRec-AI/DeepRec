@@ -9,11 +9,7 @@
 
 namespace tensorflow {
 
-namespace fused_embedding {
-
-enum PartitionStrategy { DIV };
-
-}  // namespace fused_embedding
+namespace fused_embedding {}  // namespace fused_embedding
 
 }  // namespace tensorflow
 

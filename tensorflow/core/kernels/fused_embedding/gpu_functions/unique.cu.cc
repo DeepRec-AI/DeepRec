@@ -381,8 +381,7 @@ void AllocateTemp(OpKernelContext* context, int64 size, Tensor* tensor,
 
 namespace fused_embedding {
 
-// Not really a TensorFlow Op and output "idx_of_input_to_unique" is
-// not the same as output "idx" in TensorFlow 2.x's UniqueWithCounts operator
+// Not the same for output "idx" compared to TensorFlow 2.x's UniqueWithCounts operator
 template <typename T, typename TIndex>
 void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
                          Tensor* unique_keys_out,
