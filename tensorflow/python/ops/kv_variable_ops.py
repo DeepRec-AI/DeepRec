@@ -286,6 +286,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._layout = "light"
     else:
       self._layout = "normal"
+    self._layout = "normal_fix"
     if self._primary is None:
       self._is_primary = True
     else:
@@ -358,7 +359,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
         if self._is_primary:
-          self._slotnum_op = ops.convert_to_tensor(1, preferred_dtype=dtypes.int64)
+          self._slotnum_op = ops.convert_to_tensor(0, preferred_dtype=dtypes.int64)
         else:
           self._slotnum_op = evconfig.primary_slotnum_op
 

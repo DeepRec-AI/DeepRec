@@ -651,7 +651,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
-
+  
   def testEmbeddingVariableForAdagradDecayFilter(self):
     print("testEmbeddingVariableForAdagradDecayFilter")
     var = variable_scope.get_embedding_variable("var_1",
@@ -679,8 +679,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
-  
-  
 
   def testEmbeddingVariableForFtrlFilter(self):
     print("testEmbeddingVariableForFtrlFilter")
@@ -766,7 +764,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
-
+  
   def testEmbeddingVariableForAdagradDecayV2Filter(self):
     print("testEmbeddingVariableForAdagradDecayV2Filter")
     var = variable_scope.get_embedding_variable("var_1",
@@ -794,7 +792,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
-
+  
   def testEmbeddingVariableForAdamFilter(self):
     print("testEmbeddingVariableForAdamFilter")
     var = variable_scope.get_embedding_variable("var_1",
@@ -890,7 +888,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
+  
   def testEmbeddingVariableForAdagradDecay(self):
     print("testEmbeddingVariableForAdagradDecay")
     with ops.device('/cpu:0'):
@@ -924,7 +922,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
+  
   def testEmbeddingVariableForAdagradDecayV2(self):
     print("testEmbeddingVariableForAdagradDecayV2")
     with ops.device('/cpu:0'):
@@ -958,7 +956,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
+  
   def testEmbeddingVariableForAdam(self):
     print("testEmbeddingVariableForAdam")
     with ops.device('/cpu:0'):
@@ -1030,7 +1028,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
-  '''
+  
   def testEmbeddingVariableForFtrl(self):
     print("testEmbeddingVariableForFtrl")
     with ops.device('/cpu:0'):
@@ -1063,7 +1061,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       #for i in range(0, 6):
       #  for j in range(0, 3):
       #    self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-  '''
+  
   def testEmbeddingVariableForAdagradDecayStep(self):
     print("testEmbeddingVariableForAdagradDecayStep")
     var = variable_scope.get_embedding_variable("var_1",
@@ -1087,7 +1085,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       self.assertAlmostEqual(29.847788, sess.run([emb, train_op, loss])[2], delta=1e-05)
       self.assertAlmostEqual(27.74195 , sess.run([emb, train_op, loss])[2], delta=1e-05)
       self.assertAlmostEqual(25.852505, sess.run([emb, train_op, loss])[2], delta=1e-05)
-
+  
   def testEmbeddingVariableRestoreSavedModel(self):
     checkpoint_directory = self.get_temp_dir() + "/save_model"
     print("testEmbeddingVariableRestoreSavedModel")
@@ -1422,7 +1420,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
+  '''
   def testEmbeddingVariableForLEVELDB(self):
     print("testEmbeddingVariableForLEVELDB")
     def runTestAdagrad(self, var, g):
@@ -1460,7 +1458,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
+  '''
 
 if __name__ == "__main__":
   googletest.main()

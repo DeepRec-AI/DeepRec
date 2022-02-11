@@ -38,6 +38,7 @@ class DenseHashMap : public KVInterface<K, V> {
       hash_map_[i].hash_map.set_empty_key(-1);
       hash_map_[i].hash_map.set_deleted_key(-2);
     }
+    KVInterface<K, V>::total_dims_ = 0;
   }
 
   ~DenseHashMap() {
