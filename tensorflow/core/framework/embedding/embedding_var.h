@@ -170,7 +170,7 @@ class EmbeddingVar : public ResourceBase {
     } else {
       emb_config_.default_value_dim = default_value_dim;
       value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
-      default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
+      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(), default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
       return Status::OK();
