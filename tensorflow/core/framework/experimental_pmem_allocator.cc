@@ -4,7 +4,6 @@
 #include <unistd.h>
 
 #include <mutex>
-#include <thread>
 
 #include "libpmem.h"
 
@@ -28,19 +27,21 @@ ExperimentalPMemAllocator::NewExperimentalPMemAllocator(
   if ((pmem =
            (char*)pmem_map_file(pmem_file.c_str(), pmem_size, PMEM_FILE_CREATE,
                                 0666, &mapped_size, &is_pmem)) == nullptr) {
-    LOG(FATAL) << "PMem map file " << pmem_file
+    LOG(FATAL) << "Experimental PMem Allocator: PMem map file " << pmem_file
                << " failed: " << strerror(errno);
     return nullptr;
   }
 
   if (!is_pmem) {
-    LOG(FATAL) << pmem_file << " is not a valid pmem path";
+    LOG(FATAL) << "Experimental PMem Allocator: " << pmem_file
+               << " is not a valid pmem path";
     return nullptr;
   }
 
   if (mapped_size != pmem_size) {
-    LOG(FATAL) << "PMem map file " << pmem_file << " size " << mapped_size
-               << " is not same as expected " << pmem_size;
+    LOG(FATAL) << "Experimental PMem Allocator: PMem map file " << pmem_file
+               << " size " << mapped_size << " is not same as expected "
+               << pmem_size;
     return nullptr;
   }
 
@@ -117,7 +118,8 @@ ExperimentalPMemAllocator::ExperimentalPMemAllocator(
       closing_(false),
       instance_id_(next_instance_.fetch_add(1, std::memory_order_relaxed)) {
   if (instance_id_ > next_instance_) {
-    LOG(FATAL) << "too many instance created (>" << kMaxInstance << "), abort";
+    LOG(FATAL) << "Experimental PMem Allocator: Too many instance created (>"
+               << kMaxInstance << "), abort";
   }
   init_data_size_2_block_size();
   if (bg_thread_interval_ > 0) {
@@ -133,7 +135,8 @@ void ExperimentalPMemAllocator::DeallocateRaw(void* addr) {
   int t_id = MaybeInitAccessThread();
 
   if (t_id < 0) {
-    LOG(FATAL) << "too many thread access allocator! max threads: "
+    LOG(FATAL) << "Experimental PMem Allocator: Too many thread access "
+                  "allocator! max threads: "
                << kMaxAccessThreads;
     std::abort();
   }
@@ -154,22 +157,14 @@ void ExperimentalPMemAllocator::DeallocateRaw(void* addr) {
 }
 
 void ExperimentalPMemAllocator::PopulateSpace() {
-  LOG(WARNING) << "Polulating PMem space ...";
-  std::vector<std::thread> ths;
-
-  int pu = 16;  // 16 is a moderate concurrent number for writing PMem.
-  for (int i = 0; i < pu; i++) {
-    ths.emplace_back([=]() {
-      uint64_t offset = pmem_size_ * i / pu;
-      // To cover the case that mapped_size_ is not divisible by pu.
-      uint64_t len = std::min(pmem_size_ / pu, pmem_size_ - offset);
-      // pmem_memset(pmem_ + offset, 0, len, PMEM_F_MEM_NONTEMPORAL);
-      memset(pmem_ + offset, 0, len);
-    });
+  LOG(WARNING) << "Experimental PMem Allocator: Polulating PMem space ...";
+  for (size_t i = 0; i < pmem_size_ / 32; i++) {
+    _mm256_stream_si256(reinterpret_cast<__m256i*>(pmem_) + i,
+                        _mm256_set1_epi32(0ULL));
   }
-  for (auto& t : ths) {
-    t.join();
-  }
+  memset(pmem_ + pmem_size_ - (pmem_size_ % 32), 0, pmem_size_ % 32);
+  _mm_mfence();
+  LOG(WARNING) << "Experimental PMem Allocator:  Populating done";
 }
 
 ExperimentalPMemAllocator::~ExperimentalPMemAllocator() {
@@ -201,17 +196,17 @@ void* ExperimentalPMemAllocator::AllocateRaw(size_t alignment, size_t size) {
   void* ret = nullptr;
   int t_id = MaybeInitAccessThread();
   if (t_id < 0) {
-    LOG(FATAL) << "too many thread access allocator! max threads: "
+    LOG(FATAL) << "Experimental PMem Allocator: Too many thread access "
+                  "allocator! max threads: "
                << kMaxAccessThreads;
     return nullptr;
   }
   uint32_t b_size = Size2BlockSize(size);
   uint32_t aligned_size = b_size * block_size_;
   if (aligned_size > max_allocation_size_ || aligned_size == 0) {
-    LOG(FATAL)
-        << "allocating size: " << size
-        << " size, size is 0 or larger than PMem allocator max allocation size "
-        << max_allocation_size_;
+    LOG(FATAL) << "Experimental PMem Allocator: Allocating size: " << size
+               << ", is 0 or larger than PMem allocator max allocation size "
+               << max_allocation_size_;
     return nullptr;
   }
   auto& thread_cache = thread_cache_[t_id];

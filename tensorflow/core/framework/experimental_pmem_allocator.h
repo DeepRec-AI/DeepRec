@@ -6,16 +6,13 @@
 #include <sys/mman.h>
 
 #include <atomic>
-#include <memory>
-#include <set>
 #include <thread>
-#include <unordered_map>
 #include <vector>
 
 #include "experimental_pmem_allocator_utils.h"
-#include "tensorflow/core/lib/core/spin_lock.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
+#include "tensorflow/core/lib/core/spin_lock.h"
 
 namespace tensorflow {
 
@@ -25,7 +22,6 @@ const string kPMemAllocatorPath = "/mnt/pmem0/pmem_allocator/";
 const uint64_t kPMemSize = 512ULL << 30;
 const uint64_t kMaxAccessThreads = 512;
 const uint64_t kAllocationUnit = 64;
-
 
 const uint64_t kPMemNull = UINT64_MAX;
 const uint64_t kMaxInstance = 1024;
@@ -108,10 +104,6 @@ class ExperimentalPMemAllocator : public Allocator {
     access_threads_[instance_id_].Release();
   }
 
-  // Populate PMem space on init a new instance, so the following access can be
-  // faster This will zero the entire PMem space
-  void PopulateSpace();
-
   // Regularly execute by background thread, move freelist of thread caches to
   // pool
   void BackgroundWork();
@@ -122,8 +114,9 @@ class ExperimentalPMemAllocator : public Allocator {
     // return 0;
     // TODO: return allocated size
     auto segment = Addr2Segment(ptr);
-    if(segment >= segment_record_size_.size()){
-      LOG(FATAL) << "ptr is not allocated by this allocator";
+    if (segment >= segment_record_size_.size()) {
+      LOG(FATAL) << "Experimental PMem Allocator: ptr is not allocated by this "
+                    "allocator";
       return 0;
     }
     return segment_record_size_[segment];
@@ -133,23 +126,27 @@ class ExperimentalPMemAllocator : public Allocator {
     auto is_2pown = [](uint64_t n) { return (n > 0) && (n & (n - 1)) == 0; };
 
     if (config.allocation_unit < 8) {
-      LOG(FATAL) << "allocation unit should > 8";
+      LOG(FATAL) << "Experimental PMem Allocator: Validate config error, "
+                    "allocation unit should > 8";
       return false;
     }
 
     if (!is_2pown(config.allocation_unit)) {
-      LOG(FATAL) << "allocation unit should be 2^n";
+      LOG(FATAL) << "Experimental PMem Allocator: Validate config error, "
+                    "allocation unit should be 2^n";
       return false;
     }
 
     if (config.max_allocation_size > config.allocation_unit * 1024) {
-      LOG(FATAL) << "max allocation size should <= allocation_unit * 1024";
+      LOG(FATAL) << "Experimental PMem Allocator: Validate config error, max "
+                    "allocation size should <= allocation_unit * 1024";
       return false;
     }
 
     if (config.segment_size < 1 << 20) {
       LOG(FATAL)
-          << "segment_size should larger than 1MB and max_allocation_size ( "
+          << "Experimental PMem Allocator: Validate config error, segment_size "
+             "should larger than 1MB and max_allocation_size ( "
              "recommand > 128 * max_allocation_size) for performance";
       return false;
     }
@@ -212,6 +209,10 @@ class ExperimentalPMemAllocator : public Allocator {
     // Entry lists of a same block size guarded by a spin lock
     FixVector<spin_lock> spins_;
   };
+
+  // Populate PMem space on init a new instance, so the following access can be
+  // faster This will zero the entire PMem space
+  void PopulateSpace();
 
   inline int MaybeInitAccessThread() {
     if (access_threads_.size() <= instance_id_) {
@@ -327,8 +328,8 @@ class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
   Allocator* CreateAllocator() override {
     int res = create_dir_if_missing(kPMemAllocatorPath);
     if (res != 0) {
-      LOG(FATAL) << "create pmem allocator path " << kPMemAllocatorPath
-                 << " error";
+      LOG(FATAL) << "Experimental PMem Allocator: Create pmem allocator path "
+                 << kPMemAllocatorPath << " error";
       return nullptr;
     }
     std::string allocator_file(kPMemAllocatorPath +
