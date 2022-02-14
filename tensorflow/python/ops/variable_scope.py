@@ -2203,7 +2203,6 @@ def get_embedding_variable(name,
         storage_type = ev_option.storage_option.storage_type,
         storage_path = ev_option.storage_option.storage_path,
         storage_size = ev_option.storage_option.storage_size,
-        storage_size=ev_option.storage_option.storage_size,
         default_value_dim=ev_option.init.default_value_dim),
       ht_partition_num=ev_option.ht_partition_num)
 

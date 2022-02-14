@@ -15,20 +15,18 @@
 #include "tensorflow/core/lib/core/spin_lock.h"
 
 namespace tensorflow {
-
-// These should be configurable, as this is a experimental edition, hardcode
-// them for fast development
-const string kPMemAllocatorPath = "/mnt/pmem0/pmem_allocator/";
-const uint64_t kPMemSize = 512ULL << 30;
-const uint64_t kMaxAccessThreads = 512;
-const uint64_t kAllocationUnit = 64;
-
 const uint64_t kPMemNull = UINT64_MAX;
 const uint64_t kMaxInstance = 1024;
-const uint64_t kMinMovableListSize = 8;
+const uint64_t kMinMovableListSize = 16;
+
+// These can be configurable, as this is a experimental edition, hardcode
+// them for fast development
+const uint64_t kMaxAccessThreads = 512;
+const uint64_t kAllocationUnit = 64;
 const uint64_t kMaxAllocationSize = 4096;
 const uint64_t kSegmentSize = 1 << 20;
 const float kBGThreadInterval = 1;
+
 
 // bg_thread_interval: interval to call bg thread to balance freed space among
 // access threads
@@ -205,9 +203,9 @@ class ExperimentalPMemAllocator : public Allocator {
     bool FetchEntryList(std::vector<void*>& dst, uint32_t b_size);
 
    private:
-    FixVector<std::vector<FreeList>> pool_;
+    NoCopyArray<std::vector<FreeList>> pool_;
     // Entry lists of a same block size guarded by a spin lock
-    FixVector<spin_lock> spins_;
+    NoCopyArray<spin_lock> spins_;
   };
 
   // Populate PMem space on init a new instance, so the following access can be
@@ -264,12 +262,12 @@ class ExperimentalPMemAllocator : public Allocator {
     // A array of array to store freed space, the space size is aligned to
     // block_size_, each array corresponding to a dedicated block size which is
     // equal to its index
-    FixVector<FreeList> freelists;
+    NoCopyArray<FreeList> freelists;
     // AllocatorThread own segments, each segment corresponding to a dedicated
     // block size which is equal to its index
-    FixVector<Segment> segments;
+    NoCopyArray<Segment> segments;
     // Protect freelists;
-    FixVector<spin_lock> locks;
+    NoCopyArray<spin_lock> locks;
 
     char padding[64 - sizeof(freelists) - sizeof(segments) - sizeof(locks)];
   };
@@ -310,7 +308,7 @@ class ExperimentalPMemAllocator : public Allocator {
   std::atomic<uint64_t> segment_head_;
   std::vector<uint32_t> segment_record_size_;
 
-  FixVector<ThreadCache> thread_cache_;
+  NoCopyArray<ThreadCache> thread_cache_;
   std::shared_ptr<ThreadManager> thread_manager_;
   std::vector<std::thread> bg_threads_;
   // For quickly get corresponding block size of a requested data size
@@ -326,16 +324,24 @@ class ExperimentalPMemAllocator : public Allocator {
 class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
  public:
   Allocator* CreateAllocator() override {
-    int res = create_dir_if_missing(kPMemAllocatorPath);
-    if (res != 0) {
-      LOG(FATAL) << "Experimental PMem Allocator: Create pmem allocator path "
-                 << kPMemAllocatorPath << " error";
+    if (pmem_path_.empty()) {
+      LOG(FATAL)
+          << "Experimental PMem Allocator: PMem path is not initialized, "
+             "please set pmem path and allocator size by calling Init()";
       return nullptr;
     }
-    std::string allocator_file(kPMemAllocatorPath +
+    int res = create_dir_if_missing(pmem_path_);
+
+    if (res != 0) {
+      LOG(FATAL) << "Experimental PMem Allocator: Create pmem allocator path "
+                 << pmem_path_ << " error";
+      return nullptr;
+    }
+
+    std::string allocator_file(pmem_path_ +
                                std::to_string(allocator_cnt_.fetch_add(1)));
     return ExperimentalPMemAllocator::NewExperimentalPMemAllocator(
-        allocator_file, kPMemSize, kMaxAccessThreads,
+        allocator_file, allocator_size_, kMaxAccessThreads,
         ExperimentalPMemAllocatorConfig());
   }
 
@@ -347,7 +353,17 @@ class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
     return nullptr;
   }
 
+  void Init(const std::string& path, size_t size) {
+    std::lock_guard<std::mutex> lg(mu_);
+    pmem_path_ = format_dir_path(path);
+    allocator_size_ = size;
+  }
+
  private:
+  inline std::string format_dir_path(const std::string& dir) {
+    return dir.back() == '/' ? dir : dir + "/";
+  }
+
   class ExperimentalPMEMSubAllocator : public SubAllocator {
    public:
     explicit ExperimentalPMEMSubAllocator(Allocator* pmem_allocator)
@@ -371,6 +387,9 @@ class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
     Allocator* pmem_allocator_;
   };
   std::atomic<uint64_t> allocator_cnt_{0};
+  std::string pmem_path_;
+  size_t allocator_size_;
+  std::mutex mu_;
 };
 }  // namespace tensorflow
 

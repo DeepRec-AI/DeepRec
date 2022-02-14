@@ -93,9 +93,9 @@ Allocator* pmem_allocator() {
   return pmem_alloc;
 }
 
-Allocator* experimental_pmem_allocator() {
+Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allocator_size) {
   static Allocator* experimental_pmem_allocator =
-      AllocatorFactoryRegistry::singleton()->GetExperimentalPMEMAllocator();
+      AllocatorFactoryRegistry::singleton()->GetExperimentalPMEMAllocator(pmem_path, allocator_size);
   if (experimental_pmem_allocator && cpu_allocator_collect_full_stats &&
       !experimental_pmem_allocator->TracksAllocationSizes()) {
     experimental_pmem_allocator =

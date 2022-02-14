@@ -343,7 +343,7 @@ Allocator* pmem_allocator();
 Allocator* ev_allocator();
 
 // If use experimental libpmem based PMEM allocator, please call this function
-Allocator* experimental_pmem_allocator();
+Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allocator_size);
 
 // If 'enable' is true, the default CPU allocator implementation will collect
 // AllocatorStats. By default, it's disabled.

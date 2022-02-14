@@ -13,23 +13,23 @@
 namespace tensorflow {
 
 template <typename T>
-class FixVector {
+class NoCopyArray {
  public:
   template <typename... A>
-  explicit FixVector(uint64_t size, A&&... args) : size_(size) {
+  explicit NoCopyArray(uint64_t size, A&&... args) : size_(size) {
     data_ = (T*)malloc(sizeof(T) * size);
     for (uint64_t i = 0; i < size; i++) {
       new (data_ + i) T(std::forward<A>(args)...);
     }
   }
 
-  FixVector(const FixVector<T>& v) = delete;
-  FixVector& operator=(const FixVector&) = delete;
-  FixVector(FixVector&&) = delete;
+  NoCopyArray(const NoCopyArray<T>& v) = delete;
+  NoCopyArray& operator=(const NoCopyArray&) = delete;
+  NoCopyArray(NoCopyArray&&) = delete;
 
-  FixVector() : size_(0), data_(nullptr){};
+  NoCopyArray() : size_(0), data_(nullptr){};
 
-  ~FixVector() {
+  ~NoCopyArray() {
     if (data_ != nullptr) {
       for (uint64_t i = 0; i < size_; i++) {
         data_[i].~T();

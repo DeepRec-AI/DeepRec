@@ -90,7 +90,7 @@ class EmbeddingVar : public ResourceBase {
         return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
       }
     } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
-      alloc_ = experimental_pmem_allocator();
+      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
       }
@@ -152,7 +152,7 @@ class EmbeddingVar : public ResourceBase {
         return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
       }
     } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
-      alloc_ = experimental_pmem_allocator();
+      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
       }
@@ -170,7 +170,7 @@ class EmbeddingVar : public ResourceBase {
     } else {
       emb_config_.default_value_dim = default_value_dim;
       value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
-      default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
+      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(), default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
       return Status::OK();

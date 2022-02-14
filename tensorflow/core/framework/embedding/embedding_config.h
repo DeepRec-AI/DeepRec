@@ -101,7 +101,7 @@ struct EmbeddingConfig {
     return storage_path;
   }
 
-  std::string get_storage_size() {
+  int64 get_storage_size() {
     return storage_size;
   }
 
