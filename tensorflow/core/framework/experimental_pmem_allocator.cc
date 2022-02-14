@@ -52,7 +52,7 @@ ExperimentalPMemAllocator::NewExperimentalPMemAllocator(
 
 void ExperimentalPMemAllocator::SpaceEntryPool::MoveEntryList(
     std::vector<void*>& src, uint32_t b_size) {
-  std::lock_guard<SpinMutex> lg(spins_[b_size]);
+  std::lock_guard<spin_lock> lg(spins_[b_size]);
   assert(b_size < pool_.size());
   pool_[b_size].emplace_back();
   pool_[b_size].back().swap(src);
@@ -61,7 +61,7 @@ void ExperimentalPMemAllocator::SpaceEntryPool::MoveEntryList(
 bool ExperimentalPMemAllocator::SpaceEntryPool::FetchEntryList(
     std::vector<void*>& dst, uint32_t b_size) {
   if (pool_[b_size].size() != 0) {
-    std::lock_guard<SpinMutex> lg(spins_[b_size]);
+    std::lock_guard<spin_lock> lg(spins_[b_size]);
     if (pool_[b_size].size() != 0) {
       dst.swap(pool_[b_size].back());
       pool_[b_size].pop_back();
@@ -82,7 +82,7 @@ void ExperimentalPMemAllocator::BackgroundWork() {
       moving_list.clear();
       for (size_t b_size = 1; b_size < tc.freelists.size(); b_size++) {
         moving_list.clear();
-        std::unique_lock<SpinMutex> ul(tc.locks[b_size]);
+        std::lock_guard<spin_lock> lg(tc.locks[b_size]);
 
         if (tc.freelists[b_size].size() >= kMinMovableListSize) {
           if (tc.freelists[b_size].size() >= kMinMovableListSize) {
@@ -147,7 +147,7 @@ void ExperimentalPMemAllocator::DeallocateRaw(void* addr) {
     auto& thread_cache = thread_cache_[t_id];
     // Conflict with bg thread happens only if free entries more than
     // kMinMovableListSize
-    std::unique_lock<SpinMutex> ul(thread_cache.locks[b_size]);
+    std::lock_guard<spin_lock> lg(thread_cache.locks[b_size]);
     assert(b_size < thread_cache.freelists.size());
     thread_cache.freelists[b_size].emplace_back(addr);
   }
@@ -219,7 +219,7 @@ void* ExperimentalPMemAllocator::AllocateRaw(size_t alignment, size_t size) {
     if (thread_cache.segments[i].size < aligned_size) {
       // Fetch free list from pool
       {
-        std::unique_lock<SpinMutex> ul(thread_cache.locks[i]);
+        std::lock_guard<spin_lock> lg(thread_cache.locks[i]);
         if (thread_cache.freelists[i].empty()) {
           pool_.FetchEntryList(thread_cache.freelists[i], i);
         }

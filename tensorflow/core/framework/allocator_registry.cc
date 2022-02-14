@@ -88,8 +88,6 @@ Allocator* AllocatorFactoryRegistry::GetAllocator() {
 }
 
 Allocator* AllocatorFactoryRegistry::GetExperimentalPMEMAllocator() {
-  LOG(WARNING) << "!!!Get Experimental pmem allocator!!!";
-
   mutex_lock l(mu_);
   first_alloc_made_ = true;
   FactoryEntry* best_entry = nullptr;

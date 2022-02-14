@@ -1,4 +1,5 @@
-#pragma once
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_H_
 
 #include <assert.h>
 #include <fcntl.h>
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include "experimental_pmem_allocator_utils.h"
+#include "tensorflow/core/lib/core/spin_lock.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
 
@@ -22,10 +24,15 @@ namespace tensorflow {
 const string kPMemAllocatorPath = "/mnt/pmem0/pmem_allocator/";
 const uint64_t kPMemSize = 512ULL << 30;
 const uint64_t kMaxAccessThreads = 512;
-const uint64_t kMaxInstance = 1024;
+const uint64_t kAllocationUnit = 64;
 
-constexpr uint64_t kPMemNull = UINT64_MAX;
-constexpr uint64_t kMinMovableListSize = 8;
+
+const uint64_t kPMemNull = UINT64_MAX;
+const uint64_t kMaxInstance = 1024;
+const uint64_t kMinMovableListSize = 8;
+const uint64_t kMaxAllocationSize = 4096;
+const uint64_t kSegmentSize = 1 << 20;
+const float kBGThreadInterval = 1;
 
 // bg_thread_interval: interval to call bg thread to balance freed space among
 // access threads
@@ -50,10 +57,10 @@ struct ExperimentalPMemAllocatorConfig {
         bg_thread_interval(_bg_thread_interval),
         max_allocation_size(_max_allocation_size) {}
 
-  uint64_t segment_size = 1 << 20;
-  uint32_t allocation_unit = 64;
-  float bg_thread_interval = 1.0;
-  uint64_t max_allocation_size = 4096;
+  uint64_t segment_size = kSegmentSize;
+  uint32_t allocation_unit = kAllocationUnit;
+  float bg_thread_interval = kBGThreadInterval;
+  uint64_t max_allocation_size = kMaxAllocationSize;
 };
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -203,7 +210,7 @@ class ExperimentalPMemAllocator : public Allocator {
    private:
     FixVector<std::vector<FreeList>> pool_;
     // Entry lists of a same block size guarded by a spin lock
-    FixVector<SpinMutex> spins_;
+    FixVector<spin_lock> spins_;
   };
 
   inline int MaybeInitAccessThread() {
@@ -261,7 +268,7 @@ class ExperimentalPMemAllocator : public Allocator {
     // block size which is equal to its index
     FixVector<Segment> segments;
     // Protect freelists;
-    FixVector<SpinMutex> locks;
+    FixVector<spin_lock> locks;
 
     char padding[64 - sizeof(freelists) - sizeof(segments) - sizeof(locks)];
   };
@@ -271,7 +278,7 @@ class ExperimentalPMemAllocator : public Allocator {
   bool AllocateSegmentSpace(Segment* segment, uint32_t record_size);
 
   void init_data_size_2_block_size() {
-    data_size_2_block_size_.resize(4096);
+    data_size_2_block_size_.resize(kMaxAllocationSize);
     for (size_t i = 0; i < data_size_2_block_size_.size(); i++) {
       data_size_2_block_size_[i] =
           (i / block_size_) + (i % block_size_ == 0 ? 0 : 1);
@@ -365,3 +372,5 @@ class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
   std::atomic<uint64_t> allocator_cnt_{0};
 };
 }  // namespace tensorflow
+
+#endif

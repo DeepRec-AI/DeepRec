@@ -1,10 +1,14 @@
-#pragma once
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_UTILS_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_UTILS_H_
+
 #include <string.h>
 #include <sys/stat.h>
 
 #include <atomic>
 #include <memory>
 #include <unordered_set>
+
+#include "tensorflow/core/lib/core/spin_lock.h"
 
 namespace tensorflow {
 
@@ -58,31 +62,6 @@ class FixVector {
   uint64_t size_;
 };
 
-class SpinMutex {
- private:
-  std::atomic_flag locked = ATOMIC_FLAG_INIT;
-
- public:
-  void lock() {
-    while (locked.test_and_set(std::memory_order_acquire)) {
-      asm volatile("pause");
-    }
-  }
-
-  void unlock() { locked.clear(std::memory_order_release); }
-
-  bool try_lock() {
-    if (locked.test_and_set(std::memory_order_acquire)) {
-      return false;
-    }
-    return true;
-  }
-
-  SpinMutex(const SpinMutex& s) = delete;
-
-  SpinMutex() = default;
-};
-
 class ThreadManager;
 
 struct AllocatorThread {
@@ -109,7 +88,7 @@ class ThreadManager : public std::enable_shared_from_this<ThreadManager> {
   std::atomic<uint32_t> ids_;
   std::unordered_set<uint32_t> usable_id_;
   uint32_t max_threads_;
-  SpinMutex spin_;
+  spin_lock spin_;
 };
 
 inline int create_dir_if_missing(const std::string& name) {
@@ -128,3 +107,5 @@ inline int create_dir_if_missing(const std::string& name) {
 }
 
 }  // namespace tensorflow
+
+#endif

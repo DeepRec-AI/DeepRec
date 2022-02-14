@@ -3,6 +3,7 @@
 #include <mutex>
 
 #include "experimental_pmem_allocator.h"
+#include "tensorflow/core/lib/core/spin_lock.h"
 namespace tensorflow {
 
 void AllocatorThread::Release() {
@@ -19,7 +20,7 @@ AllocatorThread::~AllocatorThread() { Release(); }
 int ThreadManager::MaybeInitThread(AllocatorThread& t) {
   if (t.id < 0) {
     if (!usable_id_.empty()) {
-      std::lock_guard<SpinMutex> lg(spin_);
+      std::lock_guard<spin_lock> lg(spin_);
       if (!usable_id_.empty()) {
         auto it = usable_id_.begin();
         t.id = *it;
@@ -39,7 +40,7 @@ int ThreadManager::MaybeInitThread(AllocatorThread& t) {
 }
 
 void ThreadManager::Release(const AllocatorThread& t) {
-  std::lock_guard<SpinMutex> lg(spin_);
+  std::lock_guard<spin_lock> lg(spin_);
   if (t.id >= 0) {
     usable_id_.insert(t.id);
   }
