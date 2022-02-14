@@ -66,10 +66,9 @@ namespace fused_embedding {
   __global__ void SelectKernelName(                                            \
       const T* keys, const TIndex* indices, SelectKernelArgs,                  \
       unsigned int* predicates, unsigned int* inclusive_sum_counters,          \
-      const void** output_ptrs, const int64_t num_partitions,                  \
-      const int64_t length, const int64_t predicates_length,                   \
-      const int64_t counters_length, T* selected_keys,                         \
-      TIndex* selected_indices) {                                              \
+      const int64_t num_partitions, const int64_t length,                      \
+      const int64_t predicates_length, const int64_t counters_length,          \
+      const void** output_ptrs) {                                              \
     const int g_tid = blockIdx.x * blockDim.x + threadIdx.x;                   \
     const int lnid = threadIdx.x % 32;                                         \
     const int g_warp_id = g_tid >> 5;                                          \
@@ -112,11 +111,11 @@ namespace fused_embedding {
 // macros before using this: SelectScanKernelName,
 // SelectArgs, SelectScanPassArgs
 #define DeclareSelect                                                          \
-  template <typename T>                                                        \
-  void SelectName(OpKernelContext* ctx, const Tensor& keys, SelectArgs,        \
-                  const int64 num_partitions,                                  \
-                  const OpOutputList& selected_keys,                           \
-                  const OpOutputList& selected_indices) {                      \
+  template <typename T, typename TIndex>                                       \
+  void SelectName(OpKernelContext* ctx, const Tensor& keys,                    \
+                  const Tensor& indices, SelectArgs,                           \
+                  const int64 num_partitions, OpOutputList& selected_keys,     \
+                  OpOutputList& selected_indices) {                            \
     OP_REQUIRES(ctx, keys.dims() == 1,                                         \
                 errors::InvalidArgument("Tensor keys must ranks 1"));          \
     const GPUDevice& device = ctx->eigen_gpu_device();                         \
@@ -190,40 +189,58 @@ namespace fused_embedding {
       OP_REQUIRES_OK(                                                          \
           ctx, selected_keys.allocate(                                         \
                    i, TensorShape({int64(selected_nums_host[i])}), &tmp_out)); \
-      selected_keys_ptrs_host[2 * i] = tmp_out;                                \
+      output_ptrs_host[2 * i] = data_p_with_type<void*>(tmp_out);              \
       OP_REQUIRES_OK(                                                          \
           ctx, selected_indices.allocate(                                      \
                    i, TensorShape({int64(selected_nums_host[i])}), &tmp_out)); \
-      selected_indices_ptrs_host[2 * i + 1] = tmp_out;                         \
+      output_ptrs_host[2 * i + 1] = data_p_with_type<void*>(tmp_out);          \
     }                                                                          \
     Tensor output_ptrs;                                                        \
     OP_REQUIRES_OK(ctx, ctx->allocate_temp(                                    \
-                            UINT64, TensorShape{int64(2 * num_partitions)},    \
+                            DT_UINT64, TensorShape{int64(2 * num_partitions)}, \
                             &output_ptrs));                                    \
     cudaMemcpyAsync(data_p_with_type<void**>(output_ptrs),                     \
                     output_ptrs_host.data(),                                   \
                     2 * num_partitions * sizeof(size_t),                       \
                     cudaMemcpyHostToDevice, device.stream());                  \
+    {                                                                          \
+      const int64 threads = 32;                                                \
+      const int64 blocks = select_scan_warps;                                  \
+      OP_REQUIRES_OK(                                                          \
+          ctx, GpuLaunchKernel(                                                \
+                   SelectKernelName<T, TIndex>, blocks, threads, 0,            \
+                   device.stream(), data_p_with_type<T*>(keys),                \
+                   data_p_with_type<TIndex*>(indices), SelectPassArgs,         \
+                   data_p_with_type<unsigned int*>(predicates),                \
+                   data_p_with_type<unsigned int*>(inclusive_sum_counters),    \
+                   num_partitions, length, predicates_length, counters_length, \
+                   data_p_with_type<void**>(output_ptrs)));                    \
+    }                                                                          \
   }
 
 #define SelectName PartitionSelectDiv
 #define SelectArgs const Tensor& accu_div
 #define SelectScanPassArgs data_p_with_type<int64_t*>(accu_div)
-#define SelectScanKernelName SelectScanDivKernel1024
+#define SelectPassArgs SelectScanPassArgs
+
+#define SelectScanKernelName SelectScanDivKernel
 #define SelectScanKernelArgs const int64_t* accu_div
 #define SelectScanKernelLoadCodeBlock                \
   int64_t lower_bound = j > 0 ? accu_div[j - 1] : 0; \
   int64_t upper_bound = accu_div[j];
 #define SelectScanKernelEvalCodeBlock \
   selected = int(key >= lower_bound && key < upper_bound);
+
+#define SelectKernelName SelectDivKernel
 #define SelectKernelArgs SelectScanKernelArgs
+
 #define SelectKernelLoadCodeBlock \
   int64_t lower_bound = j > 0 ? accu_div[j - 1] : 0;
 #define SelectKernelRecalcKeyCodeBlock T new_key = key - lower_bound;
 
 DeclareSelectScanKernel;
-DeclareSelectScan;
 DeclareSelectKernel;
+DeclareSelect;
 
 }  // namespace fused_embedding
 
