@@ -202,7 +202,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
             return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -223,7 +223,7 @@ class InitializeKvVariableOp : public OpKernel {
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_));
+                                        counter_type_, storage_type_, storage_path_, storage_size_));
             return (*ptr)->Init();
            }));
 
@@ -239,7 +239,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0,
                                          max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);
@@ -653,7 +653,7 @@ class KvResourceImportV2Op: public OpKernel {
                                          steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
                                          layout_,  max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -674,7 +674,7 @@ class KvResourceImportV2Op: public OpKernel {
                                         steps_to_live_, filter_freq_,
                                         max_freq_, l2_weight_threshold_,
                                         layout_,  max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_));
+                                        counter_type_, storage_type_, storage_path_, storage_size_));
             return (*ptr)->Init();
            }));
 
@@ -689,7 +689,7 @@ class KvResourceImportV2Op: public OpKernel {
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0, max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);

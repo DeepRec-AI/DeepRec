@@ -123,7 +123,9 @@ ExperimentalPMemAllocator::ExperimentalPMemAllocator(
   }
   init_data_size_2_block_size();
   if (bg_thread_interval_ > 0) {
-    bg_threads_.emplace_back(&ExperimentalPMemAllocator::BackgroundWork, this);
+    bg_threads_.emplace_back(Env::Default()->StartThread(
+        tensorflow::ThreadOptions(), "execute_thread",
+        [&] { this->BackgroundWork(); }));
   }
 }
 
@@ -169,8 +171,8 @@ void ExperimentalPMemAllocator::PopulateSpace() {
 
 ExperimentalPMemAllocator::~ExperimentalPMemAllocator() {
   closing_ = true;
-  for (auto& t : bg_threads_) {
-    t.join();
+  for (tensorflow::Thread* t : bg_threads_) {
+    delete t;
   }
   pmem_unmap(pmem_, pmem_size_);
   remove(pmem_file_.c_str());

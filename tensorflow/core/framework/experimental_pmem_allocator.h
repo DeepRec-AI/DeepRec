@@ -13,6 +13,7 @@
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
 #include "tensorflow/core/lib/core/spin_lock.h"
+#include "tensorflow/core/platform/env.h"
 
 namespace tensorflow {
 const uint64_t kPMemNull = UINT64_MAX;
@@ -26,7 +27,6 @@ const uint64_t kAllocationUnit = 64;
 const uint64_t kMaxAllocationSize = 4096;
 const uint64_t kSegmentSize = 1 << 20;
 const float kBGThreadInterval = 1;
-
 
 // bg_thread_interval: interval to call bg thread to balance freed space among
 // access threads
@@ -310,7 +310,7 @@ class ExperimentalPMemAllocator : public Allocator {
 
   NoCopyArray<ThreadCache> thread_cache_;
   std::shared_ptr<ThreadManager> thread_manager_;
-  std::vector<std::thread> bg_threads_;
+  std::vector<tensorflow::Thread*> bg_threads_;
   // For quickly get corresponding block size of a requested data size
   std::vector<uint16_t> data_size_2_block_size_;
 
