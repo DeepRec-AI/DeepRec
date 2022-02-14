@@ -243,9 +243,11 @@ class CheckpointOption(object):
 class StorageOption(object):
   def __init__(self,
                storage_type=None,
-               storage_path=None):
+               storage_path=None,
+               storage_size=None):
     self.storage_type = storage_type
     self.storage_path = storage_path
+    self.storage_size = storage_size
 
 @tf_export(v1=["EmbeddingVariableOption"])
 class EmbeddingVariableOption(object):
@@ -310,6 +312,7 @@ class EmbeddingVariableConfig(object):
                primary_slotnum_op=None,
                storage_type=config_pb2.StorageType.DRAM,
                storage_path=None,
+               storage_size=None,
                default_value_dim=4096):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
@@ -330,6 +333,7 @@ class EmbeddingVariableConfig(object):
     self.filter_strategy = filter_strategy
     self.storage_type = storage_type
     self.storage_path = storage_path
+    self.storage_size = storage_size
     self.default_value_dim = default_value_dim
 
   def reveal(self):

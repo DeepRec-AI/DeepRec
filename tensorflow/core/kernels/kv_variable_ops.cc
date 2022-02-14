@@ -147,6 +147,7 @@ class InitializeKvVariableOp : public OpKernel {
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
+    OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
 
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
@@ -611,6 +612,7 @@ class KvResourceImportV2Op: public OpKernel {
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
+    OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
   }
 
   void Compute(OpKernelContext* context) override {

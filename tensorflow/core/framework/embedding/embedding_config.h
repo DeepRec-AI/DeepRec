@@ -21,6 +21,7 @@ struct EmbeddingConfig {
   DataType counter_type;
   embedding::StorageType storage_type;
   std::string storage_path;
+  int64 storage_size;
   int64 default_value_dim;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
@@ -30,7 +31,7 @@ struct EmbeddingConfig {
                   float l2_weight_threshold = -1.0, const std::string& layout = "normal",
                   int64 max_element_size = 0, float false_positive_probability = -1.0,
                   DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM,
-                  const std::string& storage_path = "",
+                  const std::string& storage_path = "", int64 storage_size = 0,
                   int64 default_value_dim = 4096):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
@@ -44,6 +45,7 @@ struct EmbeddingConfig {
       counter_type(counter_type),
       storage_type(storage_type),
       storage_path(storage_path),
+      storage_size(storage_size),
       default_value_dim(default_value_dim) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
@@ -99,6 +101,10 @@ struct EmbeddingConfig {
     return storage_path;
   }
 
+  std::string get_storage_size() {
+    return storage_size;
+  }
+
   std::string DebugString() const {
     return strings::StrCat("opname: ", name,
                            " emb_index: ", emb_index,
@@ -111,7 +117,8 @@ struct EmbeddingConfig {
                            " max_freq: ", max_freq,
                            " l2_weight_threshold: ", l2_weight_threshold,
                            " storage_type: ", storage_type,
-                           " storage_path: ", storage_path);
+                           " storage_path: ", storage_path,
+                           " storage_size: ", storage_size);
   }
 };
 
