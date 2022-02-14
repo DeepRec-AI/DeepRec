@@ -984,7 +984,7 @@ TEST(EmbeddingVariableTest, TestFeatureFilter) {
     ValuePtr<float>* value_ptr = nullptr;
     var->LookupOrCreateKey(20, &value_ptr);
     if (i < 4) {
-      ASSERT_EQ(value_ptr->GetValue(0, value_size), nullptr);
+      ASSERT_EQ(value_ptr->GetValue(0, value_size, var->kv()->GetOffset(0)), nullptr);
     } else {
       ASSERT_EQ(val[0], 10.0);
     }
@@ -1256,7 +1256,7 @@ void t1(KVInterface<int64, float>* hashmap) {
   }
 }
 
-TEST(EmbeddingVariableTest, TestEVShrinkLockless) {
+TEST(EmbeddingVariableTest, TestRemoveLockless) {
 
   KVInterface<int64, float>* hashmap = new LocklessHashMap<int64, float>();
   ASSERT_EQ(hashmap->Size(), 0);

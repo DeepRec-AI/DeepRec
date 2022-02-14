@@ -105,6 +105,9 @@ class EmbeddingVar : public ResourceBase {
       default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
+      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
+        kv_->SetDim(emb_config_.emb_index, value_len_, emb_config_.slot_num + 1);
+      }
       return Status::OK();
     }
   }
@@ -136,6 +139,8 @@ class EmbeddingVar : public ResourceBase {
       }
       new_value_ptr_fn = [this] (size_t size) { return new DBValuePtr<V>(size, this->level_db_); };
      }
+    } else if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()){
+      new_value_ptr_fn = [] (size_t size) { return new NormalContiguousValuePtr<V>(size); };
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
     }
@@ -173,6 +178,9 @@ class EmbeddingVar : public ResourceBase {
       default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
+      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
+        kv_->SetDim(emb_config_.emb_index, value_len_, emb_config_.slot_num + 1);
+      }
       return Status::OK();
     }
   }
@@ -190,7 +198,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, int64 update_version = -1) {
-    Status s = LookupOrCreateKeyInternal(key, value_ptr, emb_config_.total_num());
+    Status s = LookupOrCreateKeyInternal(key, value_ptr, emb_config_.total_num(kv_->GetTotalDims()));
     TF_CHECK_OK(s);
     if (emb_config_.is_primary() && emb_config_.steps_to_live != 0 && update_version != -1) {
       (*value_ptr)->SetStep(update_version);
@@ -220,11 +228,11 @@ class EmbeddingVar : public ResourceBase {
 
   V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {
     return value_ptr->GetOrAllocate(alloc_, value_len_, default_v,
-        emb_config_.emb_index);
+        emb_config_.emb_index, kv_->GetOffset(emb_config_.emb_index));
   }
 
   V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
-    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, value_len_);
+    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, value_len_, kv_->GetOffset(emb_config_.emb_index));
     return primary_val;
   }
 
@@ -307,8 +315,8 @@ class EmbeddingVar : public ResourceBase {
     std::vector<K> key_list_tmp;
     kv_->GetSnapshot(&key_list_tmp, &value_ptr_list);
     for (int64 i = 0; i < key_list_tmp.size(); ++i) {
-      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index, value_len_);
-      V* primary_val = value_ptr_list[i]->GetValue(emb_config_.primary_emb_index, value_len_);
+      V* val = value_ptr_list[i]->GetValue(emb_config_.emb_index, value_len_, kv_->GetOffset(emb_config_.emb_index));
+      V* primary_val = value_ptr_list[i]->GetValue(emb_config_.primary_emb_index, value_len_, kv_->GetOffset(emb_config_.emb_index));
       if (val != nullptr && primary_val != nullptr) {
         value_list->push_back(val);
         key_list->push_back(key_list_tmp[i]);
@@ -359,12 +367,11 @@ class EmbeddingVar : public ResourceBase {
         if (l2_weight < emb_config_.l2_weight_threshold) {
           to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
         }
-        value_ptr_list[i]->Free(val);
       }
       for (const auto it : to_deleted) {
         // TODO memory recycle
-        //(it.second)->Destroy(value_len_);
-        //delete it.second;
+        (it.second)->Destroy(alloc_, value_len_);
+        delete it.second;
         kv_->Remove(it.first);
       }
     return Status::OK();

@@ -23,9 +23,10 @@ struct EmbeddingConfig {
   std::string storage_path;
   int64 storage_size;
   int64 default_value_dim;
+  int normal_fix_flag;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
-                  int64 block_num = 1, int slot_num = 1,
+                  int64 block_num = 1, int slot_num = 0,
                   const std::string& name = "", int64 steps_to_live = 0,
                   int64 filter_freq = 0, int64 max_freq = 999999,
                   float l2_weight_threshold = -1.0, const std::string& layout = "normal",
@@ -46,11 +47,14 @@ struct EmbeddingConfig {
       storage_type(storage_type),
       storage_path(storage_path),
       storage_size(storage_size),
-      default_value_dim(default_value_dim) {
+      default_value_dim(default_value_dim),
+      normal_fix_flag(0) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
       layout_type = LayoutType::LIGHT;
+    } else if ("normal_fix" == layout){
+      layout_type = LayoutType::NORMAL_FIX;
     } else {
       LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
       layout_type = LayoutType::NORMAL;
@@ -64,6 +68,9 @@ struct EmbeddingConfig {
     }
     if (embedding::LEVELDB == storage_type) {
       layout_type = LayoutType::LEVELDB;
+    }
+    if (layout_type == LayoutType::NORMAL_FIX) {
+      normal_fix_flag = 1;
     }
   }
   
@@ -81,8 +88,8 @@ struct EmbeddingConfig {
     return emb_index == primary_emb_index;
   }
 
-  int64 total_num() {
-    return block_num * (slot_num + 1);
+  int64 total_num(int total_dims) {
+    return block_num * (1 + (1 - normal_fix_flag) * (slot_num + 1)) * (1 + normal_fix_flag * (total_dims - 1));
   }
 
   int64 get_filter_freq() {
