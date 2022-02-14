@@ -166,6 +166,22 @@ void CalcElementsOffsetPerPartition(const GPUDevice& d, int num_partitions,
                               elements_offset_per_partition, nnz));
 }
 
+template <typename T>
+__global__ void RangeInitKernel(const int64_t length, T* out) {
+  int64_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < length) {
+    out[idx] = T(idx);
+  }
+}
+
+template <typename T>
+void RangeInit(const int64_t length, T* out) {
+  const int threads = LINER_MAPPING_THREADS;
+  const int blocks = CalcBlocksLinearMapping(length, threads);
+  TF_CHECK_OK(GpuLaunchKernel(RangeInitKernel<T>, blocks, threads, 0,
+                              d.stream(), length, out));
+}
+
 __global__ void GatherAndConvertToSubPartitionKernel(
     const int64_t* sub_values_sorted, int64_t* sub_partitioned_values,
     const int64_t partition_start_base, const int64_t partition_size) {

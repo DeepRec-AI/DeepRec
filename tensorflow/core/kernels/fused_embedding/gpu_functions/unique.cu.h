@@ -11,13 +11,13 @@ namespace tensorflow {
 
 namespace fused_embedding {
 
-// Not really a TensorFlow Op and output "idx_of_input_to_unique" is
-// not the same as output "idx" in TensorFlow 2.x's UniqueWithCounts operator
+// Extention to TensorFlow 2.x's UniqueWithCounts operator
 template <typename T, typename TIndex>
 void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
-                         Tensor* unique_keys_out,
-                         Tensor* idx_of_input_to_unique,
-                         Tensor* unique_counts_out);
+                         Tensor* unique_keys, Tensor* unique_idxs_out,
+                         Tensor* unique_counts_out,
+                         Tensor* idx_of_input_to_unique_out,
+                         Tensor* unique_offsets_out)
 
 }  // namespace fused_embedding
 

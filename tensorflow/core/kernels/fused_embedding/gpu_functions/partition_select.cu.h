@@ -9,7 +9,14 @@
 
 namespace tensorflow {
 
-namespace fused_embedding {}  // namespace fused_embedding
+namespace fused_embedding {
+template <typename T, typename TIndex>
+void PartitionSelectDiv(OpKernelContext* ctx, const Tensor& keys,
+                        const Tensor& indices, const Tensor& accu_div,
+                        const int64 num_partitions, OpOutputList& selected_keys,
+                        OpOutputList& selected_indices);
+
+}  // namespace fused_embedding
 
 }  // namespace tensorflow
 

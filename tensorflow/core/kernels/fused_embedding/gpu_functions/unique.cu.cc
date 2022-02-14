@@ -381,12 +381,13 @@ void AllocateTemp(OpKernelContext* context, int64 size, Tensor* tensor,
 
 namespace fused_embedding {
 
-// Not the same for output "idx" compared to TensorFlow 2.x's UniqueWithCounts operator
+// Extention to TensorFlow 2.x's UniqueWithCount operator
 template <typename T, typename TIndex>
 void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
-                         Tensor* unique_keys_out,
-                         Tensor* idx_of_input_to_unique,
-                         Tensor* unique_counts_out) {
+                         Tensor* unique_keys, Tensor* unique_idxs_out,
+                         Tensor* unique_counts_out,
+                         Tensor* idx_of_input_to_unique_out,
+                         Tensor* unique_offsets_out) {
   OP_REQUIRES(context, input.NumElements() <= std::numeric_limits<int32>::max(),
               errors::InvalidArgument(
                   "unique does not support input tensors larger than ",
@@ -405,9 +406,12 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   if (input_size == 0) {
     // Early exit for trivial case.
     Tensor** temp;
-    AllocateTemp(context, 0, unique_keys_out, temp);
-    AllocateTemp(context, 0, idx_of_input_to_unique, temp);
-    AllocateTemp(context, 0, unique_counts_out, temp);
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_output("unique_idxs", TensorShape({0}), &temp));
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_output("unique_counts", TensorShape({0}), &temp));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("idx_of_input_to_unique",
+                                             TensorShape({0}), &temp));
     return;
   }
 
@@ -573,9 +577,9 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   unique_input_inds = Tensor();
   unique_input_inds_ptr = nullptr;
 
-  // output 0 unique_keys_out
+  // output 0 unique_keys
   T* output_ptr = nullptr;
-  AllocateTemp(context, uniq_size, unique_keys_out, &output_ptr);
+  AllocateTemp(context, uniq_size, unique_keys, &output_ptr);
 
   Tensor inv_sorted_unique_perm;
   TIndex* inv_sorted_unique_perm_ptr = nullptr;
@@ -584,8 +588,10 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   if (!context->status().ok()) return;
 
   // output 2 unique_counts_out
-  TIndex* count_ptr = nullptr;
-  AllocateTemp(context, uniq_size, unique_counts_out, &count_ptr);
+  OP_REQUIRES_OK(ctx,
+                 ctx->allocate_output("unique_counts", TensorShape({uniq_size}),
+                                      &unique_counts_out));
+  TIndex* count_ptr = unique_counts_out->flat<TIndex>().data();
 
   // Compute output and counts (if necessary).
   OP_REQUIRES_OK(context,
@@ -595,43 +601,46 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
                      inv_sorted_unique_perm_ptr, count_ptr));
 
   // Free temporary tensors that are no longer needed.
-  sorted_unique_perm = Tensor();
-  sorted_unique_perm_ptr = nullptr;
   sorted_unique_input_inds = Tensor();
   sorted_unique_input_inds_ptr = nullptr;
-  segment_ends = Tensor();
-  segment_ends_ptr = nullptr;
 
   // Compute prefix sum of counts
-  TIndex* count_prefix_sum_ptr = nullptr;
-  Tensor count_prefix_sum;
-  AllocateTemp(context, uniq_size, &count_prefix_sum, &count_prefix_sum_ptr);
+  // also output 4 unique_offsets_out
+  OP_REQUIRES_OK(
+      ctx, ctx->allocate_output("unique_offsets", TensorShape({uniq_size}),
+                                &unique_offsets_out));
+  TIndex* count_prefix_sum_ptr = unique_offsets_out->flat<TIndex>.data();
 
   OP_REQUIRES_OK(context, GpuPrefixSum(context, uniq_size, exclusive, count_ptr,
                                        count_prefix_sum_ptr));
 
   // GetIdxOfInputToUnique kernel to calculate the mapping between output and
   // corresponding indices of the input
-  TIndex* idx_of_input_to_unique_ptr;
-  AllocateTemp(context, input_size, idx_of_input_to_unique,
-               &idx_of_input_to_unique_ptr);
+
+  // output 3 idx_of_input_to_unique_out
+  OP_REQUIRES_OK(ctx, ctx->allocate_output("idx_of_input_to_unique",
+                                           TensorShape({uniq_size}),
+                                           &idx_of_input_to_unique_out));
+  TIndex* idx_of_input_to_unique_ptr =
+      idx_of_input_to_unique_out->flat<TIndex>().data();
+
   OP_REQUIRES_OK(
       context,
       GetIdxOfInputToUnique(device, uniq_size, count_ptr, segment_ends_ptr,
                             sorted_unique_perm_ptr, count_prefix_sum_ptr,
                             sorted_input_inds_ptr, idx_of_input_to_unique_ptr));
 
-  /* REVISE: idx out is not needed for now
-  TIndex* idx_ptr = nullptr;
   // output 1 unique_idxs_out
-  AllocateTemp(context, input_size, unique_idxs_out, &idx_ptr);
+  OP_REQUIRES_OK(ctx,
+                 ctx->allocate_output("unique_idxs", TensorShape({input_size}),
+                                      &unique_idxs_out));
+  TIndex* idx_ptr = unique_idxs_out->flat<TIndex>().data();
 
   // Compute indices output.
   OP_REQUIRES_OK(context, LookupAndScatterUniqueIds(
                               device, input_size, sorted_input_inds_ptr,
                               sorted_input_unique_ids_ptr,
                               inv_sorted_unique_perm_ptr, idx_ptr));
-  */
 }
 
 }  // namespace fused_embedding

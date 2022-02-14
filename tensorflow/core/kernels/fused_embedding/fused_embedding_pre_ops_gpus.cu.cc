@@ -10,6 +10,8 @@
 
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
 #include "tensorflow/core/kernels/fused_embedding/gpu_functions/kernels.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu_functions/partition_select.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu_functions/unique.cu.h"
 #include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "third_party/cub/device/device_radix_sort.cuh"
@@ -104,15 +106,6 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
       }
     }
 
-    if (num_partitions_ > 1) {
-      cub::DeviceRadixSort::SortPairs(
-          (void*)nullptr, temp_storage_bytes, (int64_t*)nullptr,
-          (int64_t*)nullptr, (IndicePair*)nullptr, (IndicePair*)nullptr,
-          int(nnz + batch_size), 0, sizeof(int64_t) * 8, device.stream());
-      max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
-                                                         : max_cub_bytes;
-    }
-
     OP_REQUIRES_OK(
         ctx, ctx->allocate_temp(
                  DT_INT8, TensorShape({static_cast<int64_t>(max_cub_bytes)}),
@@ -128,7 +121,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     int new_nnz = nnz;
 
     OP_REQUIRES_OK(
-        ctx, ctx->allocate_output(2 * num_partitions_,
+        ctx, ctx->allocate_output("row_empty_and_invalid_flags",
                                   TensorShape{batch_size + nnz}, &all_flags));
 
     if (fill_empty_row_ || prune_invalid_id_) {
@@ -217,6 +210,52 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         (fill_empty_row_ || prune_invalid_id_)
             ? data_p_with_type<const IndicePair>(indices_extended)
             : data_p_with_type<const IndicePair>(indices_tensor);
+
+    // 4. unique
+    Tensor unique_keys_out;
+    // actually below 4 will be allocate_output inside UniqueWithCountsGPU.
+    // So it's even okay to pass nullptr for these 4 to UniqueWithCountsGPU
+    Tensor *unique_idxs_out, *unique_counts_out, *idx_of_input_to_unique_out,
+        *unique_offsets_out;
+    UniqueWithCountsGPU<int64_t, int64_t>(
+        ctx, values_in,
+        ((fill_empty_row_ || prune_invalid_id_) ? values_extended
+                                                : values_tensor),
+        &unique_keys_out, unique_idxs_out, unique_counts_out,
+        idx_of_input_to_unique, unique_offsets_out);
+
+    int64 uniq_size = unique_keys_out.dim_size(0);
+
+    // 5. partition select
+    OpOutputList partitioned_values;
+    OP_REQUIRES_OK(ctx,
+                   ctx->output_list("partitioned_values", &partitioned_values));
+    OpOutputList partition_permutations;
+    OP_REQUIRES_OK(ctx, ctx->output_list("partition_permutations",
+                                         &partition_permutations));
+
+    if (num_partitions_ == 1) {
+      // simply copy
+      // attention, need to allocate_output here
+      Tensor* partitioned_value;
+      partitioned_values.allocate(0,
+                                  TensorShape({uniq_size}, &partitioned_value));
+      cudaMemcpyAsync(data_p_with_type<void*>(partitioned_values[0]),
+                      data_p_with_type<void*>(unique_keys_out),
+                      sizeof(int64_t) * uniq_size, cudaMemcpyDeviceToDevice,
+                      device.stream());
+      Tensor* partitioned_permutation;
+      partition_permutations.allocate(
+          0, TensorShape({uniq_size}, &partitioned_permutation));
+      RangeInit(uniq_size, data_p_with_type<int64_t*>(partitioned_permutation));
+    } else {
+      Tensor partition_permute_init;
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape({uniq_size}),
+                                             &partition_permute_init));
+
+      RangeInit(uniq_size, data_p_with_type<int64_t*>(partition_permute_init));
+      if (parti) // TBD continue from here 2022.2.14
+    }
 
     OpOutputList partitioned_values;
     OP_REQUIRES_OK(ctx,

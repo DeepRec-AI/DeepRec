@@ -83,6 +83,9 @@ void GatherAndConvertToSubPartition(const GPUDevice& d,
                                     const int64_t partition_start_base,
                                     const int64_t partition_size);
 
+template <typename T>
+void RangeInit(const int64_t length, T* out);
+
 void SumUpEmbeddingShard(const GPUDevice& d, const size_t sub_nnz,
                          const float* emb_shard,
                          const int64_t* partitioned_indice, float* emb_vectors,
