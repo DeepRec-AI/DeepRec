@@ -383,17 +383,18 @@ namespace fused_embedding {
 
 // Extention to TensorFlow 2.x's UniqueWithCount operator
 template <typename T, typename TIndex>
-void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
+void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
                          Tensor* unique_keys, Tensor* unique_idxs_out,
                          Tensor* unique_counts_out,
                          Tensor* idx_of_input_to_unique_out,
                          Tensor* unique_offsets_out) {
-  OP_REQUIRES(context, input.NumElements() <= std::numeric_limits<int32>::max(),
+  OP_REQUIRES(context,
+              input->NumElements() <= std::numeric_limits<int32>::max(),
               errors::InvalidArgument(
                   "unique does not support input tensors larger than ",
                   std::numeric_limits<int32>::max(), " elements"));
 
-  OP_REQUIRES(context, TensorShapeUtils::IsVector(input.shape()),
+  OP_REQUIRES(context, TensorShapeUtils::IsVector(input->shape()),
               errors::InvalidArgument("unique expects a 1D vector."));
 
   se::Stream* stream = context->op_device_context()->stream();
@@ -402,16 +403,16 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   cudaEvent_t memcpy_event;
   cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
 
-  int64 input_size = input.NumElements();
+  int64 input_size = input->NumElements();
   if (input_size == 0) {
     // Early exit for trivial case.
-    Tensor** temp;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output("unique_idxs", TensorShape({0}), &temp));
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output("unique_counts", TensorShape({0}), &temp));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output("idx_of_input_to_unique",
-                                             TensorShape({0}), &temp));
+    Tensor* temp;
+    OP_REQUIRES_OK(context, context->allocate_output("unique_idxs",
+                                                     TensorShape({0}), &temp));
+    OP_REQUIRES_OK(context, context->allocate_output("unique_counts",
+                                                     TensorShape({0}), &temp));
+    OP_REQUIRES_OK(context, context->allocate_output("idx_of_input_to_unique",
+                                                     TensorShape({0}), &temp));
     return;
   }
 
@@ -492,7 +493,7 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   AllocateTemp(context, input_size, &sorted_input, &sorted_input_ptr);
   if (!context->status().ok()) return;
 
-  const T* input_ptr = input.flat<T>().data();
+  const T* input_ptr = input->flat<T>().data();
   OP_REQUIRES_OK(
       context, GpuRadixSort(context, input_size, /*keys_in=*/input_ptr,
                             /*keys_out=*/sorted_input_ptr,
@@ -517,8 +518,7 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   // Copy the last element of sorted_input_unique_ids back to the host to
   // obtain uniq_size.
   ScratchSpace<TIndex> last_idx_host(context, 1, /*on_host=*/true);
-  OP_REQUIRES_OK(
-      context,
+  auto status =
       stream
           ->ThenMemcpy(last_idx_host.mutable_data(),
                        se::DeviceMemoryBase(
@@ -526,7 +526,10 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
                                (input_size - 1),
                            sizeof(*last_idx_host.data())),
                        sizeof(*last_idx_host.data()))
-          .ok());
+          .ok();
+  if (!status) {
+    context->SetStatus(errors::Internal("Copying device-to-host failed."));
+  }
 
   const GPUDevice& device = context->eigen_gpu_device();
   cudaEventRecord(memcpy_event, device.stream());
@@ -588,9 +591,9 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   if (!context->status().ok()) return;
 
   // output 2 unique_counts_out
-  OP_REQUIRES_OK(ctx,
-                 ctx->allocate_output("unique_counts", TensorShape({uniq_size}),
-                                      &unique_counts_out));
+  OP_REQUIRES_OK(context, context->allocate_output("unique_counts",
+                                                   TensorShape({uniq_size}),
+                                                   &unique_counts_out));
   TIndex* count_ptr = unique_counts_out->flat<TIndex>().data();
 
   // Compute output and counts (if necessary).
@@ -606,10 +609,10 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
 
   // Compute prefix sum of counts
   // also output 4 unique_offsets_out
-  OP_REQUIRES_OK(
-      ctx, ctx->allocate_output("unique_offsets", TensorShape({uniq_size}),
-                                &unique_offsets_out));
-  TIndex* count_prefix_sum_ptr = unique_offsets_out->flat<TIndex>.data();
+  OP_REQUIRES_OK(context, context->allocate_output("unique_offsets",
+                                                   TensorShape({uniq_size}),
+                                                   &unique_offsets_out));
+  TIndex* count_prefix_sum_ptr = unique_offsets_out->flat<TIndex>().data();
 
   OP_REQUIRES_OK(context, GpuPrefixSum(context, uniq_size, exclusive, count_ptr,
                                        count_prefix_sum_ptr));
@@ -618,9 +621,10 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
   // corresponding indices of the input
 
   // output 3 idx_of_input_to_unique_out
-  OP_REQUIRES_OK(ctx, ctx->allocate_output("idx_of_input_to_unique",
-                                           TensorShape({uniq_size}),
-                                           &idx_of_input_to_unique_out));
+  OP_REQUIRES_OK(context,
+                 context->allocate_output("idx_of_input_to_unique",
+                                          TensorShape({uniq_size}),
+                                          &idx_of_input_to_unique_out));
   TIndex* idx_of_input_to_unique_ptr =
       idx_of_input_to_unique_out->flat<TIndex>().data();
 
@@ -631,9 +635,9 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
                             sorted_input_inds_ptr, idx_of_input_to_unique_ptr));
 
   // output 1 unique_idxs_out
-  OP_REQUIRES_OK(ctx,
-                 ctx->allocate_output("unique_idxs", TensorShape({input_size}),
-                                      &unique_idxs_out));
+  OP_REQUIRES_OK(
+      context, context->allocate_output(
+                   "unique_idxs", TensorShape({input_size}), &unique_idxs_out));
   TIndex* idx_ptr = unique_idxs_out->flat<TIndex>().data();
 
   // Compute indices output.
@@ -642,6 +646,11 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor& input,
                               sorted_input_unique_ids_ptr,
                               inv_sorted_unique_perm_ptr, idx_ptr));
 }
+
+template void UniqueWithCountsGPU<int64, int64>(
+    OpKernelContext* context, const Tensor* input, Tensor* unique_keys,
+    Tensor* unique_idxs_out, Tensor* unique_counts_out,
+    Tensor* idx_of_input_to_unique_out, Tensor* unique_offsets_out);
 
 }  // namespace fused_embedding
 

@@ -30,6 +30,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("fill_empty_row", &fill_empty_row_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("prune_invalid_id", &prune_invalid_id_));
+    OP_REQUIRES_OK(ctx,
+                   ctx->GetAttr("partition_strategy", &partition_strategy_));
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
@@ -40,7 +42,6 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     auto device = ctx->eigen_device<GPUDevice>();
 
     const int64_t default_id = default_id_ >= 0 ? default_id_ : 0;
-    const int linear_mapping_threads = 128;
 
     nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
@@ -55,21 +56,6 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     Tensor const* dense_shape = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape));
     const int64_t batch_size = dense_shape->flat<int64>().data()[0];
-
-    OpInputList partition_shapes;
-    OP_REQUIRES_OK(ctx, ctx->input_list("partition_shapes", &partition_shapes));
-
-    partition_sizes_accumulate_.clear();
-    for (const Tensor& shape : partition_shapes) {
-      OP_REQUIRES(ctx, shape.dims() <= 2,
-                  errors::InvalidArgument(
-                      "input partition_shapes must all less than rank 2"));
-      const int64_t accu = partition_sizes_accumulate_.empty()
-                               ? shape.flat<int64>().data()[0]
-                               : shape.flat<int64>().data()[0] +
-                                     partition_sizes_accumulate_.back();
-      partition_sizes_accumulate_.push_back(accu);
-    }
 
     cudaEvent_t memcpy_event;
     cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
@@ -217,12 +203,12 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     // So it's even okay to pass nullptr for these 4 to UniqueWithCountsGPU
     Tensor *unique_idxs_out, *unique_counts_out, *idx_of_input_to_unique_out,
         *unique_offsets_out;
-    UniqueWithCountsGPU<int64_t, int64_t>(
-        ctx, values_in,
-        ((fill_empty_row_ || prune_invalid_id_) ? values_extended
+    UniqueWithCountsGPU<int64, int64>(
+        ctx,
+        ((fill_empty_row_ || prune_invalid_id_) ? &values_extended
                                                 : values_tensor),
         &unique_keys_out, unique_idxs_out, unique_counts_out,
-        idx_of_input_to_unique, unique_offsets_out);
+        idx_of_input_to_unique_out, unique_offsets_out);
 
     int64 uniq_size = unique_keys_out.dim_size(0);
 
@@ -235,172 +221,57 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                                          &partition_permutations));
 
     if (num_partitions_ == 1) {
-      // simply copy
-      // attention, need to allocate_output here
+      // Simply copy
       Tensor* partitioned_value;
-      partitioned_values.allocate(0,
-                                  TensorShape({uniq_size}, &partitioned_value));
-      cudaMemcpyAsync(data_p_with_type<void*>(partitioned_values[0]),
-                      data_p_with_type<void*>(unique_keys_out),
+      partitioned_values.allocate(0, TensorShape({uniq_size}),
+                                  &partitioned_value);
+      cudaMemcpyAsync(data_p_with_type<int64_t>(partitioned_values[0]),
+                      data_p_with_type<int64_t>(unique_keys_out),
                       sizeof(int64_t) * uniq_size, cudaMemcpyDeviceToDevice,
                       device.stream());
+      // Need to allocate_output here
       Tensor* partitioned_permutation;
-      partition_permutations.allocate(
-          0, TensorShape({uniq_size}, &partitioned_permutation));
-      RangeInit(uniq_size, data_p_with_type<int64_t*>(partitioned_permutation));
+      partition_permutations.allocate(0, TensorShape({uniq_size}),
+                                      &partitioned_permutation);
+      RangeInit(device, uniq_size,
+                data_p_with_type<int64_t>(partitioned_permutation));
     } else {
       Tensor partition_permute_init;
       OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape({uniq_size}),
                                              &partition_permute_init));
 
-      RangeInit(uniq_size, data_p_with_type<int64_t*>(partition_permute_init));
-      if (parti) // TBD continue from here 2022.2.14
-    }
+      RangeInit(device, uniq_size,
+                data_p_with_type<int64_t>(partition_permute_init));
+      if (partition_strategy_ == "div") {
+        OpInputList partition_shapes;
+        OP_REQUIRES_OK(ctx,
+                       ctx->input_list("partition_shapes", &partition_shapes));
 
-    OpOutputList partitioned_values;
-    OP_REQUIRES_OK(ctx,
-                   ctx->output_list("partitioned_values", &partitioned_values));
-    OpOutputList partitioned_indices;
-    OP_REQUIRES_OK(
-        ctx, ctx->output_list("partitioned_indices", &partitioned_indices));
-
-    // 4. set output
-    if (num_partitions_ == 1) {
-      // single partition case, just directly copy
-      Tensor* pv_out;
-      OP_REQUIRES_OK(
-          ctx, partitioned_values.allocate(
-                   0, TensorShape({static_cast<int64_t>(new_nnz)}), &pv_out));
-      Tensor* pi_out;
-      OP_REQUIRES_OK(
-          ctx,
-          partitioned_indices.allocate(
-              0, TensorShape({static_cast<int64_t>(new_nnz), 2}), &pi_out));
-
-      cudaMemcpyAsync(data_p_with_type<int64>(pv_out), values_in,
-                      sizeof(int64_t) * new_nnz, cudaMemcpyDeviceToDevice,
-                      device.stream());
-      cudaMemcpyAsync(data_p_with_type<int64>(pi_out), indices_in,
-                      sizeof(IndicePair) * new_nnz, cudaMemcpyDeviceToDevice,
-                      device.stream());
-
-    } else {
-      // multi-partitions case, calcaulate indices and split them.
-      Tensor values_sorted;
-      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz},
-                                             &values_sorted));
-      Tensor indices_sorted;
-      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{new_nnz, 2},
-                                             &indices_sorted));
-
-      cub::DeviceRadixSort::SortPairs(
-          data_p_with_type<int8>(cub_temp_storage), max_cub_bytes, values_in,
-          data_p_with_type<int64_t>(values_sorted), indices_in,
-          data_p_with_type<IndicePair>(indices_sorted), int(new_nnz), 0,
-          sizeof(int64_t) * 8, device.stream());
-      CK_CUDA_THROW_(cudaGetLastError());
-
-      // 4.1 calculate how many elements for each
-      // partition
-      Tensor partition_sizes_accumulate;
-      OP_REQUIRES_OK(
-          ctx,
-          ctx->allocate_temp(
-              DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
-              &partition_sizes_accumulate));
-      cudaMemcpyAsync(data_p_with_type<int64>(partition_sizes_accumulate),
-                      partition_sizes_accumulate_.data(),
-                      num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
-                      device.stream());
-
-      Tensor elements_offset_per_partition;
-      OP_REQUIRES_OK(
-          ctx,
-          ctx->allocate_temp(
-              DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
-              &elements_offset_per_partition));
-
-      CalcElementsOffsetPerPartition(
-          device, num_partitions_,
-          data_p_with_type<const int64_t>(values_sorted),
-          data_p_with_type<int64_t>(partition_sizes_accumulate),
-          data_p_with_type<int64_t>(elements_offset_per_partition),
-          int(new_nnz));
-      CK_CUDA_THROW_(cudaGetLastError());
-
-      elements_offset_per_partition_.clear();
-      elements_offset_per_partition_.resize(num_partitions_);
-      // device.stream()_executor::DeviceMemoryBase
-      // elements_offset_per_partition_wrapped(
-      //     elements_offset_per_partition.flat<int64>().data(),
-      //     num_partitions_);
-      // device.stream()->ThenMemcpy(elements_offset_per_partition_.data(),
-      //                    elements_offset_per_partition_wrapped,
-      //                    num_partitions_ *
-      //                    sizeof(int64_t));
-      // device.stream()->BlockHostUntilDone();
-
-      cudaMemcpyAsync(elements_offset_per_partition_.data(),
-                      data_p_with_type<int64>(elements_offset_per_partition),
-                      num_partitions_ * sizeof(int64_t), cudaMemcpyDeviceToHost,
-                      device.stream());
-      cudaEventRecord(memcpy_event, device.stream());
-      cudaEventSynchronize(memcpy_event);
-
-      // 4.2 set output
-      int64_t sub_start_offset = 0;
-      for (int i = 0; i < num_partitions_; i++) {
-        int64_t size = elements_offset_per_partition_[i] - sub_start_offset;
-
-        Tensor* sub_partitioned_values;
-        OP_REQUIRES_OK(ctx, partitioned_values.allocate(
-                                i, TensorShape({static_cast<int64_t>(size)}),
-                                &sub_partitioned_values));
-
-        Tensor* sub_partitioned_indices;
-        OP_REQUIRES_OK(ctx, partitioned_indices.allocate(
-                                i, TensorShape({static_cast<int64_t>(size), 2}),
-                                &sub_partitioned_indices));
-
-        if (size > 0) {
-          // some partition does not have any
-          // element that falls in it
-          const int partition_start_base =
-              i == 0 ? 0 : partition_sizes_accumulate_[i - 1];
-
-          GatherAndConvertToSubPartition(
-              device,
-              data_p_with_type<const int64_t>(values_sorted) + sub_start_offset,
-              data_p_with_type<int64_t>(sub_partitioned_values),
-              partition_start_base, size);
-
-          CK_CUDA_THROW_(cudaGetLastError());
-
-          // device.stream()_executor::DeviceMemoryBase
-          // sub_indices_sorted_wrapped(
-          //     reinterpret_cast<IndicePair*>(indices_sorted.flat<int64>().data())
-          //     +
-          //         partition_start_base,
-          //     size * sizeof(IndicePair));
-          // device.stream()_executor::DeviceMemoryBase
-          // sub_indices_out_wrapped(
-          //     reinterpret_cast<IndicePair*>(
-          //         sub_partitioned_indices.flat<int64>().data()),
-          //     size * sizeof(IndicePair));
-          // device.stream()->ThenMemcpy(&sub_indices_out_wrapped,
-          //                    sub_indices_sorted_wrapped,
-          //                    size * 2 *
-          //                    sizeof(int64_t));
-          cudaMemcpyAsync(
-              sub_partitioned_indices->flat<int64>().data(),
-              indices_sorted.flat<int64>().data() + 2 * sub_start_offset,
-              size * 2 * sizeof(int64_t), cudaMemcpyDeviceToDevice,
-              device.stream());
+        std::vector<int64_t> accu_div_host;
+        accu_div_host.resize(num_partitions_);
+        for (int i = 0; i < partition_shapes.size(); i++) {
+          OP_REQUIRES(ctx, partition_shapes[i].dims() <= 2,
+                      errors::InvalidArgument(
+                          "input partition_shapes must all less than rank 2"));
+          const int64_t div = partition_shapes[i].flat<int64>().data()[0];
+          accu_div_host[i] = i > 0 ? div : accu_div_host[i - 1] + div;
         }
-        sub_start_offset = elements_offset_per_partition_[i];
+
+        Tensor accu_div;
+        OP_REQUIRES_OK(
+            ctx,
+            ctx->allocate_temp(
+                DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
+                &accu_div));
+        cudaMemcpyAsync(data_p_with_type<int64>(accu_div), accu_div_host.data(),
+                        num_partitions_ * sizeof(int64_t),
+                        cudaMemcpyHostToDevice, device.stream());
+
+        PartitionSelectDiv<int64, int64>(
+            ctx, unique_keys_out, partition_permute_init, accu_div,
+            num_partitions_, partitioned_values, partition_permutations);
       }
     }
-    // Op kernel execution done
   }
 
  private:
@@ -408,9 +279,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
   int partition_axis_;
   bool fill_empty_row_;
   bool prune_invalid_id_;
+  std::string partition_strategy_;
   int64_t default_id_;
-  std::vector<int64_t> partition_sizes_accumulate_;
-  std::vector<int64_t> elements_offset_per_partition_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePreLookUp")
