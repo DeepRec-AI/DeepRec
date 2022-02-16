@@ -4167,6 +4167,25 @@ class EmbeddingColumn(
          'coalesced_scope', 'do_fusion'))):
   """See `embedding_column`."""
 
+  def __new__(
+      cls,
+      categorical_column,
+      dimension,
+      combiner,
+      initializer,
+      ckpt_to_load_from,
+      tensor_name_in_ckpt,
+      max_norm,
+      trainable,
+      coalesced_scope=None,
+      do_fusion=False):
+    """Create feature column in compatible way."""
+    return super(EmbeddingColumn, cls).__new__(
+        cls, categorical_column, dimension, combiner, initializer,
+        ckpt_to_load_from, tensor_name_in_ckpt, max_norm, trainable,
+        coalesced_scope=coalesced_scope,
+        do_fusion=do_fusion)
+
   @property
   def _is_v2_column(self):
     return (isinstance(self.categorical_column, FeatureColumn) and
@@ -4493,6 +4512,24 @@ class SharedEmbeddingColumnV2(
          'initializer', 'ckpt_to_load_from', 'tensor_name_in_ckpt',
          'max_norm', 'trainable', 'coalesced_scope'))):
   """See `shared_embedding_column`."""
+
+  def __new__(
+      cls,
+      categorical_column,
+      dimension,
+      shared_name,
+      combiner,
+      initializer,
+      ckpt_to_load_from,
+      tensor_name_in_ckpt,
+      max_norm,
+      trainable,
+      coalesced_scope=None):
+    """Create feature column in compatible way."""
+    return super(SharedEmbeddingColumnV2, cls).__new__(
+        cls, categorical_column, dimension, shared_name, combiner, initializer,
+        ckpt_to_load_from, tensor_name_in_ckpt, max_norm, trainable,
+        coalesced_scope=coalesced_scope)
 
   @property
   def _is_v2_column(self):
@@ -5122,6 +5159,19 @@ class SharedEmbeddingColumn(
          'max_norm', 'coalesced_scope'))):
   """See `embedding_column`."""
 
+  def __new__(
+      cls,
+      categorical_column,
+      shared_embedding_column_creator,
+      combiner,
+      max_norm,
+      coalesced_scope=None):
+    """Create feature column in compatible way."""
+    return super(SharedEmbeddingColumn, cls).__new__(
+        cls, categorical_column, shared_embedding_column_creator,
+        combiner, max_norm,
+        coalesced_scope=coalesced_scope)
+
   @property
   def _is_v2_column(self):
     return True
@@ -5289,6 +5339,26 @@ class SharedMultiHashEmbeddingColumn(
          'combiner', 'initializer', 'ckpt_to_load_from', 'tensor_name_in_ckpt',
          'max_norm', 'trainable', 'coalesced_scope'))):
   """See `embedding_column`."""
+
+  def __new__(
+      cls,
+      categorical_column,
+      dimension,
+      shared_name,
+      hash_combiner,
+      combiner,
+      initializer,
+      ckpt_to_load_from,
+      tensor_name_in_ckpt,
+      max_norm,
+      trainable,
+      coalesced_scope=None):
+    """Create feature column in compatible way."""
+    return super(SharedMultiHashEmbeddingColumn, cls).__new__(
+        cls, categorical_column, dimension, shared_name, hash_combiner,
+        combiner, initializer, ckpt_to_load_from, tensor_name_in_ckpt,
+        max_norm, trainable,
+        coalesced_scope=coalesced_scope)
 
   @property
   def _is_v2_column(self):
