@@ -1,17 +1,17 @@
-From 08b7a48cd7ee347761b0e42698b886bb5ca7a8b4 Mon Sep 17 00:00:00 2001
+From 53d11308395423236fadd970e0e5b225eddf4036 Mon Sep 17 00:00:00 2001
 From: lxy268263 <lxy268263@alibaba-inc.com>
 Date: Tue, 13 Jul 2021 16:20:45 +0800
-Subject: [PATCH] fix memory leak when rebucket
+Subject: [PATCH] Avoid fetching nullptr when use featrue filter.
 
 ---
  Makefile                                      |   13 +-
  sparsehash/dense_hash_map_lockless            |  447 ++++++
- sparsehash/internal/densehashtable_lockless.h | 1966 +++++++++++++++++++++++++
+ sparsehash/internal/densehashtable_lockless.h | 1967 +++++++++++++++++++++++++
  sparsehash/traits                             |   10 +-
  tests/bench_lockless.cc                       | 1466 ++++++++++++++++++
  tests/dense_hash_map_unittests.cc             |  137 +-
  tests/rwlock.h                                |  224 +++
- 7 files changed, 4245 insertions(+), 18 deletions(-)
+ 7 files changed, 4246 insertions(+), 18 deletions(-)
  create mode 100644 sparsehash/dense_hash_map_lockless
  create mode 100644 sparsehash/internal/densehashtable_lockless.h
  create mode 100644 tests/bench_lockless.cc
@@ -515,10 +515,10 @@ index 0000000..e68891f
 +}  // namespace google
 diff --git a/sparsehash/internal/densehashtable_lockless.h b/sparsehash/internal/densehashtable_lockless.h
 new file mode 100644
-index 0000000..661ab89
+index 0000000..ac0ce49
 --- /dev/null
 +++ b/sparsehash/internal/densehashtable_lockless.h
-@@ -0,0 +1,1966 @@
+@@ -0,0 +1,1967 @@
 +// Copyright (c) 2005, Google Inc.
 +// All rights reserved.
 +//
@@ -1867,6 +1867,7 @@ index 0000000..661ab89
 +    } else {
 +      if (pos.second != ILLEGAL_BUCKET) {      
 +        auto it =  std::pair<iterator, bool>(insert_at_lockless(pos.second, tmp_pointer, std::forward<Args>(args)...), true);
++        while (resizeflag) {}
 +        auto pos = find_position(key, pnew);
 +        
 +        if (pos.first == ILLEGAL_BUCKET)
