@@ -222,7 +222,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
-    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, value_len_, kv_->GetOffset(emb_config_.emb_index));
+    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, value_len_, kv_->GetOffset(emb_config_.primary_emb_index));
     return primary_val;
   }
 
@@ -349,13 +349,15 @@ class EmbeddingVar : public ResourceBase {
       std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
       for (int64 i = 0; i < key_list.size(); ++i) {
         V* val = LookupPrimaryEmb(value_ptr_list[i]);
-        V l2_weight = 0.0;
-        for (int64 j = 0; j < value_len_; j++) {
-            l2_weight += val[j] * val[j];
-        }
-        l2_weight *= 0.5;
-        if (l2_weight < emb_config_.l2_weight_threshold) {
-          to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+        if (val != nullptr) {
+          V l2_weight = 0.0;
+          for (int64 j = 0; j < value_len_; j++) {
+              l2_weight += val[j] * val[j];
+          }
+          l2_weight *= 0.5;
+          if (l2_weight < emb_config_.l2_weight_threshold) {
+            to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+          }
         }
       }
       for (const auto it : to_deleted) {
