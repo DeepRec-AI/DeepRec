@@ -1303,7 +1303,28 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
     Status s = variable->kv()->Lookup(i, &tmp);
     ASSERT_EQ(s.ok(), true);
   }
+}
 
+void InsertAndCommit(KVInterface<int64, float>* hashmap) {
+  for (int64 i = 0; i< 100; ++i) {
+    const ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(100);
+    hashmap->Insert(i, tmp);
+    hashmap->Commit(i, tmp);
+  }
+}
+
+TEST(EmbeddingVariableTest, TestSizeDBKV) {
+  KVInterface<int64, float>* hashmap = new LevelDBKV<int64, float>("/tmp/db_ut1");
+  ASSERT_EQ(hashmap->Size(), 0);
+  LOG(INFO) << "hashmap size: " << hashmap->Size();
+  auto t = std::thread(InsertAndCommit, hashmap);
+  t.join();
+  LOG(INFO) << "hashmap size: " << hashmap->Size();
+  ASSERT_EQ(hashmap->Size(), 100);
+  TF_CHECK_OK(hashmap->Remove(1));
+  TF_CHECK_OK(hashmap->Remove(2));
+  ASSERT_EQ(hashmap->Size(), 98);
+  LOG(INFO) << "2 size:" << hashmap->Size();
 }
 
 } // namespace

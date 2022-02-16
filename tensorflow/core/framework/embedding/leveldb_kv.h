@@ -21,6 +21,39 @@ namespace tensorflow {
 template <class V>
 class ValuePtr;
 
+template <class K>
+class SizeCounter {
+ public:
+  SizeCounter(int num_parts) {
+    num_parts_ = num_parts;
+    for (int i = 0; i < num_parts_; i++) {
+      counter_.emplace_back(0);
+    }
+  }
+
+  void add(K key, int64 count) {
+    int part = key % num_parts_;
+     __sync_fetch_and_add(&counter_[part], count);
+  }
+
+  void sub(K key, int64 count) {
+    int part = key % num_parts_;
+     __sync_fetch_and_sub(&counter_[part], count);
+  }
+
+  int64 size() {
+    int64 total = 0;
+    for (int i = 0; i < num_parts_; i++) {
+      total += counter_[i];
+    }
+    return total;
+  }
+
+ private:
+  std::vector<int64> counter_;
+  int num_parts_;  
+};
+
 template <class K, class V>
 class LevelDBKV : public KVInterface<K, V> {
  public:
@@ -29,6 +62,7 @@ class LevelDBKV : public KVInterface<K, V> {
     options_.create_if_missing = true;
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
     KVInterface<K, V>::total_dims_ = 0;
+    counter_ =  new SizeCounter<K>(8);
     assert(s.ok());
   }
 
@@ -58,6 +92,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
+    counter_->add(key, 1);
     return Status::OK();
   }
 
@@ -91,6 +126,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status Remove(K key) {
+    counter_->sub(key, 1);
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Delete(WriteOptions(), db_key);
     if (s.ok()) {
@@ -122,7 +158,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   int64 Size() const {
-    return 0;
+    return counter_->size();
   }
 
   void FreeValuePtr(ValuePtr<V>* value_ptr) {
@@ -134,6 +170,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
  private:
   DB* db_;
+  SizeCounter<K>* counter_;
   Options options_;
   std::string path_;
   std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn_;
