@@ -6,6 +6,7 @@
 
 #include "leveldb/db.h"
 #include "leveldb/comparator.h"
+#include "leveldb/write_batch.h"
 
 #include <sstream>
 
@@ -48,7 +49,7 @@ class LevelDBKV : public KVInterface<K, V> {
     if (s.IsNotFound()) {
       delete val;
       return errors::NotFound(
-          "Unable to find Key: ", key, " in RocksDB.");
+          "Unable to find Key: ", key, " in LevelDB.");
     } else {
       memcpy((int64 *)(val->GetPtr()), &val_str[0], val_str.length());
       *value_ptr = val;
@@ -58,10 +59,26 @@ class LevelDBKV : public KVInterface<K, V> {
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     return Status::OK();
+  }
+
+  Status BatchInsert(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+    return BatchCommit(keys, value_ptrs);
   } 
 
+  Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+    WriteBatch batch;
+    for (int i = 0; i < keys.size(); i++) {
+      std::string value_res((char*)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader) +  KVInterface<K, V>::total_dims_ * sizeof(V));
+      leveldb::Slice db_key((char*)(&keys[i]), sizeof(void*));
+      batch.Put(db_key, value_res);
+      delete value_ptrs[i];
+    }
+    db_->Write(WriteOptions(),&batch);
+    return Status::OK();
+  }
+
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
-    std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixLengthHeader) +  KVInterface<K, V>::total_dims_ * sizeof(V));
+    std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader) +  KVInterface<K, V>::total_dims_ * sizeof(V));
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);
     delete value_ptr;

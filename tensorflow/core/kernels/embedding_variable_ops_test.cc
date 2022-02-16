@@ -1271,5 +1271,40 @@ TEST(EmbeddingVariableTest, TestRemoveLockless) {
   LOG(INFO) << "2 size:" << hashmap->Size();
 }
 
+TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
+  int64 value_size = 4;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float));
+
+  EmbeddingVar<int64, float>* variable
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        new LevelDBKV<int64, float>("/tmp/db_ut1"),
+          EmbeddingConfig(/*emb_index = */0, /*primary_emb_index = */0,
+                          /*block_num = */1, /*slot_num = */0,
+                          /*name = */"", /*steps_to_live = */0,
+                          /*filter_freq = */0, /*max_freq = */999999,
+                          /*l2_weight_threshold = */-1.0, /*layout = */"normal_fix",
+                          /*max_element_size = */0, /*false_positive_probability = */-1.0,
+                          /*counter_type = */DT_UINT64, /*storage_type = */embedding::LEVELDB));
+  variable->Init(value);
+  std::vector<ValuePtr<float>*> value_ptr_list;
+  std::vector<int64> key_list;
+
+  for(int64 i = 0; i < 6; i++) {
+    key_list.emplace_back(i);
+    ValuePtr<float>* tmp = new NormalContiguousValuePtr<float>(4);
+    value_ptr_list.emplace_back(tmp);
+  }
+
+  variable->BatchCommit(key_list, value_ptr_list);
+  for(int64 i = 0; i < 6; i++) {
+    ValuePtr<float>* tmp = nullptr;
+    Status s = variable->kv()->Lookup(i, &tmp);
+    ASSERT_EQ(s.ok(), true);
+  }
+
+}
+
 } // namespace
 } // namespace tensorflow

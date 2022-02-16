@@ -33,6 +33,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
+from tensorflow.lib.io import file_io
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_array_ops
@@ -248,6 +249,8 @@ class StorageOption(object):
     self.storage_type = storage_type
     self.storage_path = storage_path
     self.storage_size = storage_size
+    if not file_io.io.gfile.exists(storage_path):
+      file_io.io.gfile.makedirs(storage_path)
 
 @tf_export(v1=["EmbeddingVariableOption"])
 class EmbeddingVariableOption(object):

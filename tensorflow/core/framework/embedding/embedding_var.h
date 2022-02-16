@@ -74,6 +74,8 @@ class EmbeddingVar : public ResourceBase {
       new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
     } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
       new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
+    } else if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()){
+      new_value_ptr_fn = [] (size_t size) { return new NormalContiguousValuePtr<V>(size); };
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
     }
@@ -94,6 +96,12 @@ class EmbeddingVar : public ResourceBase {
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
       }
+    } else if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type()) {
+      alloc_ = ev_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
+      }
+      kv_->SetNewValuePtrFunc(new_value_ptr_fn);
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
     }
@@ -184,6 +192,10 @@ class EmbeddingVar : public ResourceBase {
     }
     return s;
   }
+
+  void BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+    Status s = kv_->BatchCommit(keys, value_ptrs);
+  } 
 
   int64 GetVersion(K key) {
     ValuePtr<V>* value_ptr = nullptr;
