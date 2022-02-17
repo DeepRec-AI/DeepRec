@@ -202,8 +202,6 @@ class SessionManager(object):
       return sess, False
 
     if checkpoint_filename_with_path:
-      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
-      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
       saver.restore(sess, checkpoint_filename_with_path)
       return sess, True
 
@@ -220,8 +218,6 @@ class SessionManager(object):
         return sess, False
 
     logging.info("run with loading checkpoint")
-    sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
-    sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
     
     # Loads the checkpoint.
     saver.restore(sess, ckpt.model_checkpoint_path)
@@ -307,8 +303,6 @@ class SessionManager(object):
                            "init_fn or local_init_op was given")
       if init_op is not None:
         logging.info("run without loading checkpoint")
-        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
-        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run(init_op, feed_dict=init_feed_dict)
       if init_fn:
         init_fn(sess)
