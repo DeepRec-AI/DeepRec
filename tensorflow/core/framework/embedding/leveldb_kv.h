@@ -1,6 +1,8 @@
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
 
+#include "tensorflow/core/lib/io/path.h"
+
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/lib/core/status.h"
 
@@ -58,12 +60,12 @@ template <class K, class V>
 class LevelDBKV : public KVInterface<K, V> {
  public:
   LevelDBKV(std::string path) {
-    path_ = path;
+    path_ = io::JoinPath(path, "level_db_" + std::to_string(Env::Default()->NowMicros()));;
     options_.create_if_missing = true;
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
     KVInterface<K, V>::total_dims_ = 0;
     counter_ =  new SizeCounter<K>(8);
-    assert(s.ok());
+    CHECK(s.ok());
   }
 
   void SetNewValuePtrFunc(std::function<ValuePtr<V>*(size_t)> new_value_ptr_fn) {
@@ -77,14 +79,13 @@ class LevelDBKV : public KVInterface<K, V> {
   Status Lookup(K key, ValuePtr<V>** value_ptr) {
     std::string val_str;
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
-    ValuePtr<V>* val = new_value_ptr_fn_(KVInterface<K, V>::total_dims_);
     leveldb::ReadOptions options;
     leveldb::Status s = db_->Get(options, db_key, &val_str);
     if (s.IsNotFound()) {
-      delete val;
       return errors::NotFound(
           "Unable to find Key: ", key, " in LevelDB.");
     } else {
+      ValuePtr<V>* val = new_value_ptr_fn_(KVInterface<K, V>::total_dims_);
       memcpy((int64 *)(val->GetPtr()), &val_str[0], val_str.length());
       *value_ptr = val;
       return Status::OK();

@@ -220,6 +220,7 @@ class InitializeKvVariableOp : public OpKernel {
            context, handle_primary, &primary_variable,
            [this, default_values, opname, slotnum,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
+              LOG(INFO)<<"******";
              int64 primary_slot_index(0), primary_emb_index(0);
              auto ht = KVFactory<TKey, TValue>::CreateKV(
                  ht_type_, ht_partition_num_, storage_path_);
