@@ -1730,6 +1730,11 @@ REGISTER_OP("Bincount")
         return Status::OK();
       }
 
+      if (size_tensor->dims() != 0) {
+        return errors::InvalidArgument("Shape must be rank 0 but is rank ",
+                                       size_tensor->dims());
+      }
+
       // Return `[size]` shape if size is known.
       int32 size_val = size_tensor->scalar<int32>()();
       if (size_val < 0) {
