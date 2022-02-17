@@ -1652,11 +1652,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
-
+      
       for i in range(0, 6):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
-
+      
   def testLevelDBCheckpoint(self):
     os.system("rm -rf /tmp/db_ut1")
     checkpoint_directory = self.get_temp_dir()
