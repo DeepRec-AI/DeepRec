@@ -10,11 +10,11 @@ def clean_dep(dep):
 def repo():
     third_party_http_archive(
         name = "icu",
-        strip_prefix = "icu-release-62-1",
-        sha256 = "e15ffd84606323cbad5515bf9ecdf8061cc3bf80fb883b9e6aa162e485aa9761",
+        strip_prefix = "icu-release-69-1",
+        sha256 = "3144e17a612dda145aa0e4acb3caa27a5dae4e26edced64bc351c43d5004af53",
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/unicode-org/icu/archive/release-62-1.tar.gz",
-            "https://github.com/unicode-org/icu/archive/release-62-1.tar.gz",
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/unicode-org/icu/archive/release-69-1.zip",
+            "https://github.com/unicode-org/icu/archive/release-69-1.zip",
         ],
         build_file = "//third_party/icu:BUILD.bazel",
         system_build_file = "//third_party/icu:BUILD.system",
