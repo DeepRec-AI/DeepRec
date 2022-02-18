@@ -92,6 +92,16 @@ class BinaryOp : public BinaryOpShared {
   void Compute(OpKernelContext* ctx) override {
     // 'state': Shared helper not dependent on T to reduce code size
     BinaryOpState state(ctx);
+    OP_REQUIRES(ctx, state.in0.dtype() == DataTypeToEnum<Tin>::v(),
+                errors::InvalidArgument(
+                    "Expected tensor of type ",
+                    DataTypeString(DataTypeToEnum<Tin>::v()), " but got type ",
+                    DataTypeString(state.in0.dtype())));
+    OP_REQUIRES(ctx, state.in1.dtype() == DataTypeToEnum<Tin>::v(),
+                errors::InvalidArgument(
+                    "Expected tensor of type ",
+                    DataTypeString(DataTypeToEnum<Tin>::v()), " but got type ",
+                    DataTypeString(state.in1.dtype())));
     auto& bcast = state.bcast;
     const Device& eigen_device = ctx->eigen_device<Device>();
     Tensor* out = state.out;
