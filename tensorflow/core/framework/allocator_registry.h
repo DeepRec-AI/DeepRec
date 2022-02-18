@@ -80,7 +80,9 @@ class AllocatorFactoryRegistry {
   //If use PMEMallocator, then factory pick this one
   Allocator* GetPMEMAllocator();
 
+#ifdef TF_ENABLE_PMEM
   Allocator* GetExperimentalPMEMAllocator(const std::string& pmem_path, size_t pmem_size);
+#endif
 
   Allocator* GetEVAllocator();
 

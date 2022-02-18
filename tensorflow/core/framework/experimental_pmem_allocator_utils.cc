@@ -1,8 +1,6 @@
 #include <assert.h>
 
-#include <mutex>
-
-#include "experimental_pmem_allocator.h"
+#include "tensorflow/core/framework/experimental_pmem_allocator.h"
 #include "tensorflow/core/lib/core/spin_lock.h"
 namespace tensorflow {
 
