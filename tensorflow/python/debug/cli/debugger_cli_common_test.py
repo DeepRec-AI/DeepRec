@@ -253,7 +253,8 @@ class RichTextLinesTest(test_util.TensorFlowTestCase):
         font_attr_segs={0: [(0, 5, "red")],
                         1: [(0, 7, "blue")]})
 
-    file_path = tempfile.mktemp()
+    fd, file_path = tempfile.mkstemp()
+    os.close(fd)
     screen_output.write_to_file(file_path)
 
     with gfile.Open(file_path, "r") as f:
@@ -930,7 +931,8 @@ class TabCompletionRegistryTest(test_util.TensorFlowTestCase):
 class CommandHistoryTest(test_util.TensorFlowTestCase):
 
   def setUp(self):
-    self._history_file_path = tempfile.mktemp()
+    fd, self._history_file_path = tempfile.mkstemp()
+    os.close(fd)
     self._cmd_hist = debugger_cli_common.CommandHistory(
         limit=3, history_file_path=self._history_file_path)
 

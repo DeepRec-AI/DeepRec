@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import os
 import sys
 import tempfile
 
@@ -44,8 +45,11 @@ def main(_):
   sess = tf.Session()
   if FLAGS.debug:
     # Use the command-line interface (CLI) of tfdbg.
-    config_file_path = (tempfile.mktemp(".tfdbg_config")
-                        if FLAGS.use_random_config_path else None)
+    if FLAGS.use_random_config_path:
+      fd, config_file_path = tempfile.mkstemp(".tfdbg_config")
+      os.close(fd)
+    else:
+      config_file_path = None
     sess = tf_debug.LocalCLIDebugWrapperSession(
         sess,
         ui_type=FLAGS.ui_type,

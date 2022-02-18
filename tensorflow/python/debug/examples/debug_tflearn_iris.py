@@ -18,6 +18,7 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
+import os
 import sys
 import tempfile
 
@@ -59,8 +60,11 @@ def main(_):
         "exclusive.")
   hooks = []
   if FLAGS.debug:
-    config_file_path = (tempfile.mktemp(".tfdbg_config")
-                        if FLAGS.use_random_config_path else None)
+    if FLAGS.use_random_config_path:
+      fd, config_file_path = tempfile.mkstemp(".tfdbg_config")
+      os.close(fd)
+    else:
+      config_file_path = None
     hooks.append(tf_debug.LocalCLIDebugHook(ui_type=FLAGS.ui_type,
                                             dump_root=FLAGS.dump_root,
                                             config_file_path=config_file_path))

@@ -90,8 +90,10 @@ class MockCursesUI(curses_ui.CursesUI):
 
     # Override the default path to the command history file to avoid test
     # concurrency issues.
+    fd, history_file_path = tempfile.mkstemp()
+    os.close(fd)
     self._command_history_store = debugger_cli_common.CommandHistory(
-        history_file_path=tempfile.mktemp())
+        history_file_path=history_file_path)
 
   # Below, override the _screen_ prefixed member methods that interact with the
   # actual terminal, so that the mock can run in a terminal-less environment.
@@ -1220,7 +1222,8 @@ class CursesTest(test_util.TensorFlowTestCase):
     self.assertEqual("ERROR: Empty indices.", ui.toasts[6])
 
   def testWriteScreenOutputToFileWorks(self):
-    output_path = tempfile.mktemp()
+    fd, output_path = tempfile.mkstemp()
+    os.close(fd)
 
     ui = MockCursesUI(
         40,
@@ -1257,7 +1260,8 @@ class CursesTest(test_util.TensorFlowTestCase):
     self.assertEqual(0, len(ui.unwrapped_outputs))
 
   def testAppendingRedirectErrors(self):
-    output_path = tempfile.mktemp()
+    fd, output_path = tempfile.mkstemp()
+    os.close(fd)
 
     ui = MockCursesUI(
         40,

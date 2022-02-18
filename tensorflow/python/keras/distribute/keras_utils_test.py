@@ -19,6 +19,7 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import os
 import tempfile
 from absl.testing import parameterized
 import numpy as np
@@ -557,7 +558,8 @@ class TestDistributionStrategySaveLoadWeights(test.TestCase,
             experimental_run_tf_function=experimental_run_tf_function)
         model.fit(dataset, epochs=1, steps_per_epoch=1)
 
-        weights_file = tempfile.mktemp('.h5')
+        fd, weights_file = tempfile.mkstemp('.h5')
+        os.close(fd)
         model.save_weights(weights_file)
 
         model_2 = keras_test_lib.get_model()
@@ -593,7 +595,8 @@ class TestDistributionStrategySaveLoadWeights(test.TestCase,
             experimental_run_tf_function=experimental_run_tf_function)
         model.fit(dataset, epochs=1, steps_per_epoch=1)
 
-        weights_file = tempfile.mktemp()
+        fd, weights_file = tempfile.mkstemp()
+        os.close(fd)
         model.save_weights(weights_file)
 
         model_2 = keras_test_lib.get_model()

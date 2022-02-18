@@ -76,7 +76,7 @@ def do_test(signature_def_map, show_debug_info=False):
     if FLAGS.save_model_path:
       save_model_path = FLAGS.save_model_path
     else:
-      save_model_path = tempfile.mktemp(suffix='.saved_model')
+      save_model_path = tempfile.mkdtemp(suffix='.saved_model')
 
     sess = tf.Session()
     sess.run(tf.initializers.global_variables())
