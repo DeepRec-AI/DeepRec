@@ -147,6 +147,7 @@ class InitializeKvVariableOp : public OpKernel {
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
+    OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
 
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
@@ -201,7 +202,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
             return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -222,7 +223,7 @@ class InitializeKvVariableOp : public OpKernel {
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_));
+                                        counter_type_, storage_type_, storage_path_, storage_size_));
             return (*ptr)->Init();
            }));
 
@@ -238,7 +239,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0,
                                          max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);
@@ -268,6 +269,7 @@ class InitializeKvVariableOp : public OpKernel {
   float false_positive_probability_;
   embedding::StorageType storage_type_;
   std::string storage_path_;
+  int64 storage_size_;
   int64 default_value_dim_;
 };
 
@@ -611,6 +613,7 @@ class KvResourceImportV2Op: public OpKernel {
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
+    OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -650,7 +653,7 @@ class KvResourceImportV2Op: public OpKernel {
                                          steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
                                          layout_,  max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -671,7 +674,7 @@ class KvResourceImportV2Op: public OpKernel {
                                         steps_to_live_, filter_freq_,
                                         max_freq_, l2_weight_threshold_,
                                         layout_,  max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_));
+                                        counter_type_, storage_type_, storage_path_, storage_size_));
             return (*ptr)->Init();
            }));
 
@@ -686,7 +689,7 @@ class KvResourceImportV2Op: public OpKernel {
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0, max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);
@@ -724,6 +727,7 @@ class KvResourceImportV2Op: public OpKernel {
   int64 max_freq_;
   embedding::StorageType storage_type_;
   std::string storage_path_;
+  int64 storage_size_;
   int64 default_value_dim_;
 };
 

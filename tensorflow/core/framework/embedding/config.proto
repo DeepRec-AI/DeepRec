@@ -8,8 +8,9 @@ enum StorageType {
 
   // one level
   DRAM = 1;
-  PMEM = 2;
-  SSD = 3;
+  PMEM_MEMKIND = 2;
+  PMEM_LIBPMEM = 3;
+  SSD = 4;
 
   LEVELDB = 14;
 /*

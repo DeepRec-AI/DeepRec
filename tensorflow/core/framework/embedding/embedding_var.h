@@ -84,10 +84,15 @@ class EmbeddingVar : public ResourceBase {
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
       }
-    } else if (embedding::StorageType::PMEM == emb_config_.get_storage_type()) {
+    } else if (embedding::StorageType::PMEM_MEMKIND == emb_config_.get_storage_type()) {
       alloc_ = pmem_allocator();
       if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered PMEM AllocatorFactory.");
+        return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
+      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
       }
     } else {
       return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
@@ -146,10 +151,15 @@ class EmbeddingVar : public ResourceBase {
       if (!alloc_) {
         return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
       }
-    } else if (embedding::StorageType::PMEM == emb_config_.get_storage_type()) {
+    } else if (embedding::StorageType::PMEM_MEMKIND == emb_config_.get_storage_type()) {
       alloc_ = pmem_allocator();
       if (!alloc_) {
-        return errors::InvalidArgument(name_, ", No registered PMEM AllocatorFactory.");
+        return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
+      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
       }
     } else if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type()) {
       alloc_ = ev_allocator();
