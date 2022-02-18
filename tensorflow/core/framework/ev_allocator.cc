@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <atomic>
-
+#include <list>
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
 #include "tensorflow/core/framework/tracking_allocator.h"
@@ -124,84 +124,54 @@ class PageMap {
   size_t bytes_used_;
 };
 
-// FreeList forms an in-place linked list with its void* elements.
 class FreeList {
  public:
-  FreeList() : list_(nullptr), length_(0) {
-  }
+  // Return current length of list
+  size_t length() const { return list_.size(); }
 
-  size_t Length() const { return length_; }
+  // Is list empty?
+  bool empty() const { return list_.empty(); }
 
-  bool Empty() const { return list_ == nullptr; }
-
-  void inline Push(void* ptr) {
-    SLL_Push(&list_, ptr);
-    length_++;
+  void Push(void* ptr) {
+    list_.push_front(ptr);
   }
 
   bool TryPop(void** ret) {
-    void* obj = list_;
-    if (obj == nullptr) {
+    if (list_.empty()) {
       return false;
     }
 
-    void* next = SLL_Next(obj);
-    list_ = next;
-    length_--;
-
-#if defined(__GNUC__)
-    if (next) {
-      __builtin_prefetch(next, 0, 0);
-    }
-#endif
-
-    *ret = obj;
+    *ret = list_.back();
+    list_.pop_back();
     return true;
   }
 
   // PushBatch and PopBatch do not guarantee an ordering.
-  void PushBatch(int N, void** batch) {
-    for (int i = 0; i < N - 1; ++i) {
-      SLL_SetNext(batch[i], batch[i + 1]);
-    }
-    SLL_SetNext(batch[N - 1], list_);
-    list_ = batch[0];
-    length_ += N;
-  }
-
-  size_t PopBatch(int N, void** batch) {
-    void* p = list_;
+  void PushBatch(int N, void** ptrs) {
     for (int i = 0; i < N; ++i) {
-      batch[i] = p;
-      p = SLL_Next(p);
-      if (p == nullptr) {
-        list_ = nullptr;
-        length_ = 0;
-        return N - i;
-      }
+      list_.push_front(ptrs[i]);
     }
-    list_ = p;
-    length_ -= N;
-    return 0;
+  }
+
+  int PopBatch(int N, void** ret) {
+    if (list_.size() >= N) {
+      for (int i = 0; i < N; ++i) {
+        ret[i] = list_.back();
+        list_.pop_back();
+      }
+      return N;
+    } else {
+      auto loop = list_.size();
+      for (int i = 0; i < loop; ++i) {
+        ret[i] = list_.back();
+        list_.pop_back();
+      }
+      return loop;
+    }
   }
 
  private:
-  inline void* SLL_Next(void* t) {
-    return *(reinterpret_cast<void**>(t));
-  }
-
-  inline void SLL_SetNext(void* t, void* n) {
-    *(reinterpret_cast<void**>(t)) = n;
-  }
-
-  inline void SLL_Push(void** list, void* element) {
-    SLL_SetNext(element, *list);
-    *list = element;
-  }
-
- private:
-  void* list_ = nullptr;       // Linked list.
-  uint32_t length_;            // Current length.
+  std::list<void*> list_;
 };
 
 class Chunk {
@@ -233,21 +203,22 @@ class Chunk {
   }
 
   size_t BatchAllocate(size_t num, void** ret) {
-    for (int i = num; i > 0; --i) {
-      if (current_ + slot_size_ <= end_) {
+    for (int i = 0; i < num; ++i) {
+      if (current_ + slot_size_ > end_) {
         return i;
       }
       ret[i] = current_;
       current_ += slot_size_;
     }
-    return 0;
+    return num;
   }
 
-  void FullAllocate(void** ret) {
+  size_t FullAllocate(void** ret) {
     for (int i = 0; i < slot_count_; ++i) {
       ret[i] = current_;
       current_ += slot_size_;
     }
+    return slot_count_;
   }
 
   size_t Count() {
@@ -290,34 +261,40 @@ class Bin {
   }
 
   size_t BatchAllocate(size_t num, void** ret) {
-    auto remains = free_list_.PopBatch(num, ret);
-    if (remains == 0) {
-      return num;
-    }
-    ret = (void**)((char**)ret + remains);
-    remains = current_chunk_->BatchAllocate(num, ret);
+    auto allocated = free_list_.PopBatch(num, ret);
+    auto remains = num - allocated;
     if (remains == 0) {
       return num;
     }
 
-    ret = (void**)((char**)ret + remains);
+    void** cur = ret + allocated;
+    allocated = current_chunk_->BatchAllocate(remains, cur);
+    remains -= allocated;
+    if (remains == 0) {
+      return num;
+    }
+
+    cur += allocated;
     if (remains < current_chunk_->Count()) {
       current_chunk_ = CreateChunk();
-      return current_chunk_->BatchAllocate(remains, ret);
+
+      allocated = current_chunk_->BatchAllocate(remains, cur);
+      return num - (remains - allocated);
     }
 
-    ret = (void**)((char**)ret + remains);
     // Allocate in multiple chunks.
-    auto chunk_num = remains / current_chunk_->Count() + 1;
+    auto chunk_num = remains / current_chunk_->Count();
     for (int i = 0; i < chunk_num; ++i) {
       current_chunk_ = CreateChunk();
-      current_chunk_->FullAllocate(ret);
+      allocated = current_chunk_->FullAllocate(cur);
+
+      cur += allocated;
+      remains -= allocated;
     }
 
-    ret = (void**)((char**)ret + remains);
-    remains = remains % current_chunk_->Count();
     current_chunk_ = CreateChunk();
-    return current_chunk_->BatchAllocate(remains, ret);
+    allocated = current_chunk_->BatchAllocate(remains, cur);
+    return num - (remains - allocated);
   }
 
   void Deallocate(void* ptr) {
@@ -366,7 +343,7 @@ class ThreadLocalArena {
     return b->Allocate();
   }
 
-  size_t BatchAllocate(size_t num_bytes, size_t num, void** ret) {
+  size_t BatchAllocate(size_t num, size_t num_bytes, void** ret) {
     auto it = bins_.find(num_bytes);
     if (it != bins_.end()) {
       return it->second->BatchAllocate(num, ret);
@@ -406,8 +383,8 @@ class EVAllocatorImpl {
     return GetArena()->Allocate(num_bytes);
   }
 
-  size_t BatchAllocate(size_t num_bytes, size_t num, void** ret) {
-    return GetArena()->BatchAllocate(num_bytes, num, ret);
+  size_t BatchAllocate(size_t num, size_t num_bytes, void** ret) {
+    return GetArena()->BatchAllocate(num, num_bytes, ret);
   }
 
   void Deallocate(void* ptr) {
@@ -479,6 +456,45 @@ class EVAllocator : public Allocator {
       }
     }
     return p;
+  }
+
+  size_t BatchAllocateRaw(size_t num, size_t alignment,
+      size_t num_bytes, void** ret) override {
+    if (num_bytes > LargeAllocationWarningBytes() &&
+        single_allocation_warning_count_ < kMaxSingleAllocationWarnings) {
+      ++single_allocation_warning_count_;
+      LOG(WARNING) << "Allocation of " << num_bytes << " exceeds "
+                   << 100 * kLargeAllocationWarningThreshold
+                   << "% of system memory.";
+    }
+
+    auto allocated_num = impl_.BatchAllocate(num, num_bytes, ret);
+    if (allocated_num == 0) {
+      LOG(WARNING) << "Can't allocate num:"
+                   << num << ", num_bytes:" << num_bytes;
+      return 0;
+    }
+
+    if (ev_allocator_collect_stats) {
+      auto p = ret[0];
+      const std::size_t alloc_size = impl_.AllocatedSize(p);
+      mutex_lock l(mu_);
+      stats_.num_allocs += allocated_num;
+      stats_.bytes_in_use += alloc_size * allocated_num;
+      stats_.peak_bytes_in_use =
+          std::max<int64>(stats_.peak_bytes_in_use, stats_.bytes_in_use);
+      stats_.largest_alloc_size =
+          std::max<int64>(stats_.largest_alloc_size, alloc_size);
+
+      if (stats_.bytes_in_use > TotalAllocationWarningBytes() &&
+          total_allocation_warning_count_ < kMaxTotalAllocationWarnings) {
+        ++total_allocation_warning_count_;
+        LOG(WARNING) << "Total allocated memory " << stats_.bytes_in_use
+                     << "exceeds " << 100 * kTotalAllocationWarningThreshold
+                     << "% of system memory";
+      }
+    }
+    return allocated_num;
   }
 
   void DeallocateRaw(void* ptr) override {

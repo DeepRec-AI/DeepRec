@@ -122,6 +122,18 @@ class Allocator {
     return AllocateRaw(alignment, num_bytes);
   }
 
+  virtual size_t BatchAllocateRaw(size_t num,
+      size_t alignment, size_t num_bytes, void** ret) {
+    for (size_t i = 0; i < num; ++i) {
+      auto ptr = AllocateRaw(alignment, num_bytes);
+      if (ptr == nullptr) {
+        return i;
+      }
+      ret[i] = ptr;
+    }
+    return num;
+  }
+
   // Deallocate a block of memory pointer to by "ptr"
   // REQUIRES: "ptr" was previously returned by a call to AllocateRaw
   virtual void DeallocateRaw(void* ptr) = 0;

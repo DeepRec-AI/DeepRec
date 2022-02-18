@@ -72,6 +72,53 @@ void* TrackingAllocator::AllocateRaw(
   return ptr;
 }
 
+size_t TrackingAllocator::BatchAllocateRaw(size_t num, size_t alignment,
+    size_t num_bytes, void** ret) {
+  size_t allocated_num = allocator_->BatchAllocateRaw(num, alignment,
+      num_bytes, ret);
+
+  if (allocator_->TracksAllocationSizes()) {
+    for (size_t i = 0; i < allocated_num; ++i) {
+      auto ptr = ret[i];
+      size_t allocated_bytes = allocator_->AllocatedSize(ptr);
+      {
+        mutex_lock lock(mu_);
+        allocated_ += allocated_bytes;
+        high_watermark_ = std::max(high_watermark_, allocated_);
+        total_bytes_ += allocated_bytes;
+        allocations_.emplace_back(allocated_bytes, Env::Default()->NowMicros());
+        ++ref_;
+      }
+    }
+  } else if (track_sizes_locally_) {
+    // Call the underlying allocator to try to get the allocated size
+    // whenever possible, even when it might be slow. If this fails,
+    // use the requested size as an approximation.
+    for (size_t i = 0; i < allocated_num; ++i) {
+      auto ptr = ret[i];
+      size_t allocated_bytes = allocator_->AllocatedSizeSlow(ptr);
+      allocated_bytes = std::max(num_bytes, allocated_bytes);
+      mutex_lock lock(mu_);
+      next_allocation_id_ += 1;
+      Chunk chunk = {num_bytes, allocated_bytes, next_allocation_id_};
+      in_use_.emplace(std::make_pair(ptr, chunk));
+      allocated_ += allocated_bytes;
+      high_watermark_ = std::max(high_watermark_, allocated_);
+      total_bytes_ += allocated_bytes;
+      allocations_.emplace_back(allocated_bytes, Env::Default()->NowMicros());
+      ++ref_;
+    }
+  } else {
+    mutex_lock lock(mu_);
+    total_bytes_ += num_bytes * allocated_num;
+    for (size_t i = 0; i < allocated_num; ++i) {
+      allocations_.emplace_back(num_bytes, Env::Default()->NowMicros());
+      ++ref_;
+    }
+  }
+  return allocated_num;
+}
+
 void TrackingAllocator::DeallocateRaw(void* ptr) {
   // freeing a null ptr is a no-op
   if (nullptr == ptr) {
