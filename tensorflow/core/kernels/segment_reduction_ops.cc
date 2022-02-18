@@ -284,7 +284,7 @@ class SegmentSumGPUOp : public AsyncOpKernel {
                         done);
 
       TensorShape output_shape = input.shape();
-      output_shape.set_dim(0, output_rows);
+      OP_REQUIRES_OK_ASYNC(context, output_shape.SetDimWithStatus(0, 0), done);
 
       Tensor* output = nullptr;
       OP_REQUIRES_OK_ASYNC(
