@@ -1,11 +1,10 @@
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_UTILS_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_UTILS_H_
 
-#include <string.h>
-#include <sys/stat.h>
-
 #include <atomic>
 #include <memory>
+#include <string.h>
+#include <sys/stat.h>
 #include <unordered_set>
 
 #include "tensorflow/core/lib/core/spin_lock.h"

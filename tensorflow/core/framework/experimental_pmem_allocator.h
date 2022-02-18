@@ -1,17 +1,14 @@
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_H_
 
-#include <assert.h>
+#include <atomic>
 #include <fcntl.h>
 #include <sys/mman.h>
-
-#include <atomic>
-#include <thread>
 #include <vector>
 
-#include "experimental_pmem_allocator_utils.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
+#include "tensorflow/core/framework/experimental_pmem_allocator_utils.h"
 #include "tensorflow/core/lib/core/spin_lock.h"
 #include "tensorflow/core/platform/env.h"
 

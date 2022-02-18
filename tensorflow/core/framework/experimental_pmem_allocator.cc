@@ -1,11 +1,7 @@
-#include "experimental_pmem_allocator.h"
-
+#include "libpmem.h"
 #include <string.h>
 #include <unistd.h>
-
-#include <mutex>
-
-#include "libpmem.h"
+#include "tensorflow/core/framework/experimental_pmem_allocator.h"
 
 namespace tensorflow {
 

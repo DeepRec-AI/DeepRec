@@ -94,6 +94,7 @@ Allocator* pmem_allocator() {
 }
 
 Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allocator_size) {
+#ifdef TF_ENABLE_PMEM
   static Allocator* experimental_pmem_allocator =
       AllocatorFactoryRegistry::singleton()->GetExperimentalPMEMAllocator(pmem_path, allocator_size);
   if (experimental_pmem_allocator && cpu_allocator_collect_full_stats &&
@@ -102,6 +103,9 @@ Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allo
         new TrackingAllocator(experimental_pmem_allocator, true);
   }
   return experimental_pmem_allocator;
+#else
+  return nullptr;
+#endif
 }
 
 Allocator* ev_allocator() {
