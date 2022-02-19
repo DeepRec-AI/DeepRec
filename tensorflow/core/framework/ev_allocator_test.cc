@@ -52,13 +52,26 @@ double getResident() {
 
 TEST(EVAllocator, TestSmallAllocation) {
   auto allocator = ev_allocator();
-  constexpr int size = 1000;
+  constexpr int size = 10;
   void** ptrs = new void*[size];
   for (int i = 0; i < size; ++i) {
-    ptrs[i] = allocator->AllocateRaw(8, 4);
+    ptrs[i] = allocator->AllocateRaw(4, 4);
   }
 
   for (int i = 0; i < size; ++i) {
+    allocator->DeallocateRaw(ptrs[i]);
+  }
+}
+
+TEST(EVAllocator, TestBatchSmallAllocation) {
+  auto allocator = ev_allocator();
+  constexpr int size = 100000000;
+  void** ptrs = new void*[size];
+
+  size_t allocated_size = allocator->BatchAllocateRaw(
+      size, 4, 4, ptrs);
+
+  for (int i = 0; i < allocated_size; ++i) {
     allocator->DeallocateRaw(ptrs[i]);
   }
 }
@@ -78,6 +91,20 @@ TEST(EVAllocator, TestUnAlignedAllocation) {
   }
 }
 
+TEST(EVAllocator, TestBatchUnAlignedAllocation) {
+  auto allocator = ev_allocator();
+  constexpr int size = 1000;
+  void** ptrs = new void*[size];
+  memset(ptrs, 0, size * sizeof(void*));
+
+  size_t allocated_size = allocator->BatchAllocateRaw(
+      size, 4, 8, ptrs);
+
+  for (int i = 0; i < allocated_size; ++i) {
+    allocator->DeallocateRaw(ptrs[i]);
+  }
+}
+
 TEST(EVAllocator, TestBigAllocation) {
   auto allocator = ev_allocator();
   constexpr int size = 1000;
@@ -92,6 +119,19 @@ TEST(EVAllocator, TestBigAllocation) {
   }
 }
 
+TEST(EVAllocator, TestBatchBigAllocation) {
+  auto allocator = ev_allocator();
+  constexpr int size = 1000;
+  void** ptrs = new void*[size];
+
+  size_t allocated_size = allocator->BatchAllocateRaw(
+      size, 4, 4096, ptrs);
+
+  for (int i = 0; i < size; ++i) {
+    allocator->DeallocateRaw(ptrs[i]);
+  }
+}
+
 TEST(EVAllocator, TestAllocateAndDeallocate) {
   auto allocator = ev_allocator();
   constexpr int size = 1000;
@@ -99,6 +139,17 @@ TEST(EVAllocator, TestAllocateAndDeallocate) {
   for (int i = 0; i < size; ++i) {
     auto ptr = allocator->AllocateRaw(4, 128);
     allocator->DeallocateRaw(ptr);
+  }
+}
+
+TEST(EVAllocator, TestBatchAllocateAndDeallocate) {
+  auto allocator = ev_allocator();
+  constexpr int size = 1000;
+
+  void** ptrs = new void*[size];
+  auto alloc_num = allocator->BatchAllocateRaw(size, 4, 128, ptrs);
+  for (int i = 0; i < alloc_num; ++i) {
+    allocator->DeallocateRaw(ptrs[i]);
   }
 }
 
@@ -137,6 +188,52 @@ TEST(EVAllocator, TestMultiThreadAllocate40B) {
   size_t real = t1 - t0;
   size_t compare =
     (size_t)THREAD_NUM * allocate_size * loop_size / 1024.0 / 1024.0;
+  LOG(INFO) << "memory real: " << real << "MB";
+  LOG(INFO) << "memory theoretic: " << compare << "MB";
+  LOG(INFO) << "fragment ratio:"
+            << (double) (real - compare) * 100.0 / compare << "%";
+}
+
+TEST(EVAllocator, TestMultiThreadBatchAllocate40B) {
+  auto allocator = ev_allocator();
+  double t0 = getResident() * getpagesize() / 1024.0 / 1024.0;
+
+  constexpr int loop_size = 1000;
+  constexpr int batch_size = 10000;
+  constexpr int allocate_size = 40;
+  auto func = [allocator, loop_size, allocate_size, batch_size]() {
+    constexpr int alignment = 4;
+    void** ptrs = new void*[batch_size];
+    size_t total = 0;
+    for (int i = 0; i < loop_size; ++i) {
+      auto alloc_num = allocator->BatchAllocateRaw(
+          batch_size, alignment, allocate_size, ptrs);
+      total += alloc_num;
+      for (int j = 0; j < alloc_num; ++j) {
+        memset(ptrs[j], 0, allocate_size);
+      }
+    }
+  };
+
+  constexpr int THREAD_NUM = 40;
+  std::vector<std::unique_ptr<Thread>> threads(THREAD_NUM);
+
+  size_t start = Env::Default()->NowMicros();
+  for (int i = 0 ; i < THREAD_NUM; i++) {
+    threads[i].reset(Env::Default()->StartThread(ThreadOptions(), "", func));
+  }
+
+  for (auto &t : threads) {
+    t.reset(nullptr);
+  }
+  size_t stop = Env::Default()->NowMicros();
+  size_t diff = stop - start;
+  LOG(INFO) << "timespan: " << diff / 1000 << "ms";
+
+  double t1 = getResident() * getpagesize() / 1024.0 / 1024.0;
+  size_t real = t1 - t0;
+  size_t compare =
+    (size_t)THREAD_NUM * allocate_size * loop_size * batch_size / 1024.0 / 1024.0;
   LOG(INFO) << "memory real: " << real << "MB";
   LOG(INFO) << "memory theoretic: " << compare << "MB";
   LOG(INFO) << "fragment ratio:"
