@@ -180,6 +180,7 @@ class AdamOptimizer(optimizer.Optimizer):
         grad,
         use_locking=self._use_locking)
 
+  '''
   def _apply_sparse_shared(self, grad, var, indices, scatter_add):
     beta1_power, beta2_power = self._get_beta_accumulators()
     beta1_power = math_ops.cast(beta1_power, var.dtype.base_dtype)
@@ -205,6 +206,21 @@ class AdamOptimizer(optimizer.Optimizer):
     var_update = state_ops.assign_sub(
         var, lr * m_t / (v_sqrt + epsilon_t), use_locking=self._use_locking)
     return control_flow_ops.group(*[var_update, m_t, v_t])
+  '''
+
+  def _apply_sparse_shared(self, grad, var, indices, scatter_add):
+    m = self.get_slot(var, 'm')
+    v = self.get_slot(var, 'v')
+    beta1_power, beta2_power = self._get_beta_accumulators()
+    return training_ops.sparse_apply_adam(
+        var, m, v,
+        math_ops.cast(beta1_power, var.dtype.base_dtype),
+        math_ops.cast(beta2_power, var.dtype.base_dtype),
+        math_ops.cast(self._lr_t, var.dtype.base_dtype),
+        math_ops.cast(self._beta1_t, var.dtype.base_dtype),
+        math_ops.cast(self._beta2_t, var.dtype.base_dtype),
+        math_ops.cast(self._epsilon_t, var.dtype.base_dtype),
+        grad.values, grad.indices, use_locking=self._use_locking)
 
   def _apply_sparse(self, grad, var):
     return self._apply_sparse_shared(

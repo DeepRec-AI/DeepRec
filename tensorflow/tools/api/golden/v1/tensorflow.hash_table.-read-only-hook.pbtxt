@@ -16,6 +16,10 @@ tf_class {
     argspec: "args=[\'self\', \'distributed_hash_table\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
+    name: "get_config"
+    argspec: "args=[\'self\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
     name: "on_embedding_lookup"
     argspec: "args=[\'self\', \'ctx\'], varargs=None, keywords=None, defaults=None"
   }

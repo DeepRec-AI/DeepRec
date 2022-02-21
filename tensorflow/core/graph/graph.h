@@ -161,6 +161,7 @@ class Node {
   }
   bool IsApplySparseAdamOps() const {
     return type_string() == "SparseAdam" ||
+           type_string() == "SparseApplyAdam" ||
            type_string() == "ResourceSparseApplyAdam" ||
            type_string() == "KvResourceSparseApplyAdam" ||
            type_string() == "ResourceSparseApplyAdamAsync" ||

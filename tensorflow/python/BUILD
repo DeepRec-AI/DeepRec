@@ -5915,6 +5915,22 @@ cuda_py_tests(
     xla_enable_strict_auto_jit = True,
 )
 
+cuda_py_test(
+    name = "adam_sparse_test",
+    size = "small",
+    srcs = ["training/adam_sparse_test.py"],
+    additional_deps = [
+        ":array_ops",
+        ":framework",
+        ":math_ops",
+        ":platform",
+        ":training",
+        ":platform_test",
+        ":client_testlib",
+        "//third_party/py/numpy",
+    ],
+)
+
 py_library(
     name = "saver_test_utils",
     srcs = ["training/saver_test_utils.py"],
