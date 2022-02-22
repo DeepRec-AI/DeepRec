@@ -7,6 +7,7 @@
 #include <cub/cub.cuh>
 
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
+#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
 #include "tensorflow/core/lib/core/bits.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/stream_executor/cuda/cuda_activation.h"
@@ -164,17 +165,17 @@ Status RangeInit(const Eigen::GpuDevice& d, const T start, const T delta,
 template <typename TIndex>
 __global__ void GetIdxOfInputToUniqueKernel(
     const TIndex* count_ptr, const TIndex* segment_ends_ptr,
-    const TIndex* sorted_unique_perm_ptr, const TIndex* count_prefix_sum_ptr,
-    const TIndex* sorted_input_inds_ptr, TIndex* idx_of_input_to_unique_ptr) {
+    const TIndex* sorted_unique_perm_ptr, const TIndex* sorted_input_inds_ptr,
+    const int64* count_prefix_sum_ptr, TIndex* idx_of_input_to_unique_ptr) {
   const int target_unique_key_idx = blockIdx.x;
   const TIndex unique_key_count = count_ptr[target_unique_key_idx];
-  int offset_of_sorted_input_inds =
-      segment_ends_ptr[sorted_unique_perm_ptr[target_unique_key_idx]] -
-      unique_key_count;
-  for (int j = threadIdx.x; j < unique_key_count; j += blockDim.x) {
-    int result_offset = count_prefix_sum_ptr[target_unique_key_idx] + j;
-    idx_of_input_to_unique_ptr[result_offset] =
-        sorted_input_inds_ptr[offset_of_sorted_input_inds + j];
+  const TIndex permute = sorted_unique_perm_ptr[target_unique_key_idx];
+  const TIndex offset_of_sorted_input_inds =
+      segment_ends_ptr[permute] - unique_key_count;
+  int64 offset_of_result = count_prefix_sum_ptr[target_unique_key_idx];
+  for (int i = threadIdx.x; i < unique_key_count; i += blockDim.x) {
+    idx_of_input_to_unique_ptr[offset_of_result + i] =
+        sorted_input_inds_ptr[offset_of_sorted_input_inds + i];
   }
 }
 
@@ -183,16 +184,16 @@ Status GetIdxOfInputToUnique(const Eigen::GpuDevice& d, const int64 uniq_size,
                              const TIndex* count_ptr,
                              const TIndex* segment_ends_ptr,
                              const TIndex* sorted_unique_perm_ptr,
-                             const TIndex* count_prefix_sum_ptr,
                              const TIndex* sorted_input_inds_ptr,
+                             const int64* count_prefix_sum_ptr,
                              TIndex* idx_of_input_to_unique_ptr) {
   if (uniq_size == 0) return Status::OK();
   const int64 blocks = uniq_size;
   const int64 threads = 32;
   return GpuLaunchKernel(GetIdxOfInputToUniqueKernel<TIndex>, blocks, threads,
                          0, d.stream(), count_ptr, segment_ends_ptr,
-                         sorted_unique_perm_ptr, sorted_unique_perm_ptr,
-                         sorted_input_inds_ptr, idx_of_input_to_unique_ptr);
+                         sorted_unique_perm_ptr, sorted_input_inds_ptr,
+                         count_prefix_sum_ptr, idx_of_input_to_unique_ptr);
 }
 
 // Computes keys_out = sorted(keys_in), and indices_out = argsort(keys_in).
@@ -384,12 +385,11 @@ namespace fused_embedding {
 // Extention to TensorFlow 2.x's UniqueWithCount operator
 template <typename T, typename TIndex>
 void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
-                         Tensor* unique_keys, Tensor* unique_idxs_out,
-                         Tensor* unique_counts_out,
+                         const int64 input_size, Tensor* unique_keys,
+                         Tensor* unique_idxs_out, Tensor* unique_counts_out,
                          Tensor* idx_of_input_to_unique_out,
                          Tensor* unique_offsets_out) {
-  OP_REQUIRES(context,
-              input->NumElements() <= std::numeric_limits<int32>::max(),
+  OP_REQUIRES(context, input_size <= std::numeric_limits<int32>::max(),
               errors::InvalidArgument(
                   "unique does not support input tensors larger than ",
                   std::numeric_limits<int32>::max(), " elements"));
@@ -403,7 +403,6 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
   cudaEvent_t memcpy_event;
   cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
 
-  int64 input_size = input->NumElements();
   if (input_size == 0) {
     // Early exit for trivial case.
     Tensor* temp;
@@ -412,6 +411,8 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
     OP_REQUIRES_OK(context, context->allocate_output("unique_counts",
                                                      TensorShape({0}), &temp));
     OP_REQUIRES_OK(context, context->allocate_output("idx_of_input_to_unique",
+                                                     TensorShape({0}), &temp));
+    OP_REQUIRES_OK(context, context->allocate_output("unique_offsets",
                                                      TensorShape({0}), &temp));
     return;
   }
@@ -456,32 +457,16 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
   // counts: [3, 3, 4, 1, 1, 3, 3, 1, 1]
   // 6) calculate prefix sum of counts
   // epsc = exclusive_prefix_sum_of_counts = [3, 6, 10, 11, 12, 15, 18, 19,
-  // 20] 7) Use custom kernel to calculate the mapping between output and
+  // 20]
+  // 7) Use custom kernel to calculate the mapping between output and
   // corresponding indices of the input.
-  // pseudo code of this kernel:
-  // suii = sorted_unique_input_inds;
-  // sup = sorted_unique_perm;
-  // epsc = exclusive_prefix_sum_of_counts;
-  // GetIdxOfInputToUnique kernel
-  //   blocks = len(suii)
-  //   threads = 32 or 64 or else
-  //   each block i:
-  //     target_count = counts[i]
-  //     offset = segment_ends[sup[i]] - target_count
-  //     for each thread j : (j <= target_count)
-  //       idx_of_input_to_unique_ptr[epsc[i] + j] = sorted_input_inds[offset
-  //       + j]
   // idx_of_input_to_unique_ptr: [0, 2, 9, 1, 10, 18, 3, 5, 14, 16, 4, 6, 7,
   //                              12, 13, 8, 15, 19, 11, 17]
-
-  /*  REVISE: below not necessary
-  // 6) Look up unique IDs via the inverse ID mapping and scatter them
-  using
-  //    the original sort permutation to produce the indices output.
+  // 8) Look up unique IDs via the inverse ID mapping and scatter them
+  //  using the original sort permutation to produce the indices output.
   //      idx[sorted_input_inds] =
   //          inv_sorted_unique_perm[sorted_input_unique_ids]
   // idx: [0, 1, 0, 2, 3, 2, 4, 5, 6, 0, 1, 7, 5, 5, 2, 6, 2, 8, 1, 6]
-  */
 
   Tensor sorted_input_inds;
   TIndex* sorted_input_inds_ptr = nullptr;
@@ -623,7 +608,7 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
   // output 3 idx_of_input_to_unique_out
   OP_REQUIRES_OK(context,
                  context->allocate_output("idx_of_input_to_unique",
-                                          TensorShape({uniq_size}),
+                                          TensorShape({input_size}),
                                           &idx_of_input_to_unique_out));
   TIndex* idx_of_input_to_unique_ptr =
       idx_of_input_to_unique_out->flat<TIndex>().data();
@@ -631,8 +616,8 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
   OP_REQUIRES_OK(
       context,
       GetIdxOfInputToUnique(device, uniq_size, count_ptr, segment_ends_ptr,
-                            sorted_unique_perm_ptr, count_prefix_sum_ptr,
-                            sorted_input_inds_ptr, idx_of_input_to_unique_ptr));
+                            sorted_unique_perm_ptr, sorted_input_inds_ptr,
+                            count_prefix_sum_ptr, idx_of_input_to_unique_ptr));
 
   // output 1 unique_idxs_out
   OP_REQUIRES_OK(
@@ -648,8 +633,8 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
 }
 
 template void UniqueWithCountsGPU<int64, int64>(
-    OpKernelContext* context, const Tensor* input, Tensor* unique_keys,
-    Tensor* unique_idxs_out, Tensor* unique_counts_out,
+    OpKernelContext* context, const Tensor* input, const int64 input_size,
+    Tensor* unique_keys, Tensor* unique_idxs_out, Tensor* unique_counts_out,
     Tensor* idx_of_input_to_unique_out, Tensor* unique_offsets_out);
 
 }  // namespace fused_embedding

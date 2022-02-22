@@ -118,7 +118,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
           ctx, ctx->allocate_temp(DT_INT64, TensorShape{2 * (nnz + batch_size)},
                                   &indices_extended));
       OP_REQUIRES_OK(ctx,
-                     ctx->allocate_temp(DT_INT64, TensorShape{2 * batch_size},
+                     ctx->allocate_temp(DT_INT64, TensorShape{batch_size, 2},
                                         &tmp_indices_buffer));
       OP_REQUIRES_OK(
           ctx, ctx->allocate_temp(DT_INT32, TensorShape{1}, &selected_num_d));
@@ -159,6 +159,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
           data_p_with_type<int>(all_flags) + batch_size,
           data_p_with_type<IndicePair>(indices_extended),
           data_p_with_type<int>(selected_num_d), nnz, device.stream());
+      CK_CUDA_THROW_(cudaGetLastError());
 
       if (prune_invalid_id_) {
         int selected_num;
@@ -197,6 +198,14 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
             ? data_p_with_type<const IndicePair>(indices_extended)
             : data_p_with_type<const IndicePair>(indices_tensor);
 
+    Tensor* indices_before_unique;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("indices_before_unique",
+                                             TensorShape{new_nnz, 2},
+                                             &indices_before_unique));
+    cudaMemcpyAsync(data_p_with_type<int64>(indices_before_unique), indices_in,
+                    sizeof(IndicePair) * new_nnz, cudaMemcpyDeviceToDevice,
+                    device.stream());
+
     // 4. unique
     Tensor unique_keys_out;
     // actually below 4 will be allocate_output inside UniqueWithCountsGPU.
@@ -207,7 +216,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         ctx,
         ((fill_empty_row_ || prune_invalid_id_) ? &values_extended
                                                 : values_tensor),
-        &unique_keys_out, unique_idxs_out, unique_counts_out,
+        new_nnz, &unique_keys_out, unique_idxs_out, unique_counts_out,
         idx_of_input_to_unique_out, unique_offsets_out);
 
     int64 uniq_size = unique_keys_out.dim_size(0);
@@ -254,7 +263,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
                       errors::InvalidArgument(
                           "input partition_shapes must all less than rank 2"));
           const int64_t div = partition_shapes[i].flat<int64>().data()[0];
-          accu_div_host[i] = i > 0 ? div : accu_div_host[i - 1] + div;
+          accu_div_host[i] = i == 0 ? div : accu_div_host[i - 1] + div;
         }
 
         Tensor accu_div;

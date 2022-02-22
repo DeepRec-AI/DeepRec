@@ -20,45 +20,43 @@ typedef Eigen::GpuDevice GPUDevice;
 namespace fused_embedding {
 
 // A macro helper to declare SelectScanKernels, because they just have only
-// a little bit differences. Need to define following macros before using this:
-// SelectScanKernelName, SelectScanKernelArgs, SelectScanKernelLoadCodeBlock,
-// SelectScanKernelEvalCodeBlock
-#define DeclareSelectScanKernel                                           \
-  template <typename T>                                                   \
-  __global__ void SelectScanKernelName(                                   \
-      const T* keys, SelectScanKernelArgs, const int64 num_partitions,    \
-      const int64 length, const int64 predicates_length,                  \
-      const int64 counters_length, unsigned int* predicates,              \
-      unsigned int* counters) {                                           \
-    int g_tid = blockIdx.x * blockDim.x + threadIdx.x;                    \
-    int lnid = threadIdx.x % 32;                                          \
-    int g_warp_id = g_tid >> 5;                                           \
-    unsigned int mask;                                                    \
-    unsigned int cnt;                                                     \
-                                                                          \
-    for (int j = 0; j < num_partitions; j++) {                            \
-      SelectScanKernelLoadCodeBlock;                                      \
-      _Pragma("unroll") for (int i = 0; i < 32; i++) {                    \
-        int selected;                                                     \
-        int load_offset = (g_warp_id << 10) + (i << 5) + lnid;            \
-        if (load_offset < length) {                                       \
-          T key = keys[load_offset];                                      \
-          SelectScanKernelEvalCodeBlock;                                  \
-        } else {                                                          \
-          selected = 0;                                                   \
-        }                                                                 \
-                                                                          \
-        mask = __ballot_sync(0xffffffff, selected);                       \
-        if (lnid == 0)                                                    \
-          predicates[j * predicates_length + (g_warp_id << 5)] = mask;    \
-        if (lnid == i) cnt = __popc(mask);                                \
-      }                                                                   \
-      _Pragma("unroll") for (int offset = 16; offset > 0; offset >>= 1) { \
-        cnt += __shfl_down_sync(0xffffffff, cnt, offset);                 \
-      }                                                                   \
-                                                                          \
-      if (lnid == 0) counters[j * counters_length + g_warp_id] = cnt;     \
-    }                                                                     \
+// a little bit differences. Need to define macros
+#define DeclareSelectScanKernel                                            \
+  template <typename T>                                                    \
+  __global__ void SelectScanKernelName(                                    \
+      const T* keys, SelectScanKernelArgs, const int64 num_partitions,     \
+      const int64 length, const int64 predicates_length,                   \
+      const int64 counters_length, unsigned int* predicates,               \
+      unsigned int* counters) {                                            \
+    int g_tid = blockIdx.x * blockDim.x + threadIdx.x;                     \
+    int lnid = threadIdx.x % 32;                                           \
+    int g_warp_id = g_tid >> 5;                                            \
+    unsigned int mask;                                                     \
+    unsigned int cnt;                                                      \
+                                                                           \
+    for (int j = 0; j < num_partitions; j++) {                             \
+      SelectScanKernelLoadCodeBlock;                                       \
+      _Pragma("unroll") for (int i = 0; i < 32; i++) {                     \
+        int selected;                                                      \
+        int load_offset = (g_warp_id << 10) + (i << 5) + lnid;             \
+        if (load_offset < length) {                                        \
+          T key = keys[load_offset];                                       \
+          SelectScanKernelEvalCodeBlock;                                   \
+        } else {                                                           \
+          selected = 0;                                                    \
+        }                                                                  \
+                                                                           \
+        mask = __ballot_sync(0xffffffff, selected);                        \
+        if (lnid == 0)                                                     \
+          predicates[j * predicates_length + (g_warp_id << 5) + i] = mask; \
+        if (lnid == i) cnt = __popc(mask);                                 \
+      }                                                                    \
+      _Pragma("unroll") for (int offset = 16; offset > 0; offset >>= 1) {  \
+        cnt += __shfl_down_sync(0xffffffff, cnt, offset);                  \
+      }                                                                    \
+                                                                           \
+      if (lnid == 0) counters[j * counters_length + g_warp_id] = cnt;      \
+    }                                                                      \
   }
 
 #define DeclareSelectKernel                                                    \
@@ -78,7 +76,7 @@ namespace fused_embedding {
       SelectKernelLoadCodeBlock;                                               \
       T* keys_output_ptr = (T*)(output_ptrs[2 * j]);                           \
       TIndex* indices_output_ptr = (TIndex*)(output_ptrs[2 * j + 1]);          \
-      predmask = predicates[j * predicates_length + g_warp_id << 5 + lnid];    \
+      predmask = predicates[j * predicates_length + (g_warp_id << 5) + lnid];  \
       cnt = __popc(predmask);                                                  \
       _Pragma("unroll") for (int offset = 1; offset < 32; offset <<= 1) {      \
         int n = __shfl_up_sync(0xffffffff, cnt, offset);                       \
@@ -97,9 +95,9 @@ namespace fused_embedding {
                                    because mask will be 0 for this thread*/    \
           TIndex indice = indices[load_offset];                                \
           SelectKernelRecalcKeyCodeBlock;                                      \
-          int output_offset =                                                  \
-              global_index + sub_group_index +                                 \
-              __popc(mask & ((unsigned int)(1) << lnid - (unsigned int)(1)));  \
+          int output_offset = global_index + sub_group_index +                 \
+                              __popc(mask & (((unsigned int)(1) << lnid) -     \
+                                             (unsigned int)(1)));              \
           keys_output_ptr[output_offset] = new_key;                            \
           indices_output_ptr[output_offset] = indice;                          \
         }                                                                      \
@@ -200,7 +198,7 @@ namespace fused_embedding {
     OP_REQUIRES_OK(ctx, ctx->allocate_temp(                                    \
                             DT_UINT64, TensorShape{int64(2 * num_partitions)}, \
                             &output_ptrs));                                    \
-    cudaMemcpyAsync(data_p_with_type<void*>(output_ptrs),                      \
+    cudaMemcpyAsync(data_p_with_type<void>(output_ptrs),                       \
                     output_ptrs_host.data(),                                   \
                     2 * num_partitions * sizeof(size_t),                       \
                     cudaMemcpyHostToDevice, device.stream());                  \

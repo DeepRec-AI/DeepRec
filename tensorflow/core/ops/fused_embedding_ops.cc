@@ -36,8 +36,10 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUp")
       return Status::OK();
     });
 //     .Doc(R"doc(
-// FusedEmbedding ops that performs a local embedding lookup. The process will perform embedding vector copying from emb_variable.
-// The input is usually a SparseTensor. The output sp_values_offset is reserved for gradient calculation.
+// FusedEmbedding ops that performs a local embedding lookup. The process will
+// perform embedding vector copying from emb_variable. The input is usually a
+// SparseTensor. The output sp_values_offset is reserved for gradient
+// calculation.
 //     )doc");
 
 REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
@@ -58,8 +60,8 @@ REGISTER_OP("FusedEmbeddingLocalSparseLookUpGrad")
     });
 
 //     .Doc(R"doc(
-// The gradient ops for FusedEmbeddingLocalSparseLookUp. sp_values_offset from the forward op
-// need to be passed to this grad op as input.
+// The gradient ops for FusedEmbeddingLocalSparseLookUp. sp_values_offset from
+// the forward op need to be passed to this grad op as input.
 //     )doc");
 
 REGISTER_OP("FusedEmbeddingSparsePreLookUp")
@@ -70,13 +72,19 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
     .Attr("fill_empty_row: bool = false")
     .Attr("prune_invalid_id: bool = false")
     .Attr("default_id: int = -1")
+    .Attr("partition_strategy : {'div'}")
     .Input("partition_shapes: num_partitions * int64")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
     .Input("sp_dense_shape: int64")
     .Output("partitioned_values: num_partitions * int64")
-    .Output("partitioned_indices: num_partitions * int64")
+    .Output("partition_permutations: num_partitions * int64")
     .Output("row_empty_and_invalid_flags: int32")
+    .Output("indices_before_unique: int64")
+    .Output("unique_idxs: int64")
+    .Output("unique_counts: int64")
+    .Output("idx_of_input_to_unique: int64")
+    .Output("unique_offsets: int64")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
@@ -84,45 +92,53 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
       TF_RETURN_IF_ERROR(ctx->GetAttr("partition_axis", &partition_axis));
 
       ShapeHandle unused;
-      // sp_values
-      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(num_partitions), 1, &unused));
-      // sp_indices
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(num_partitions + 1), 2, &unused));
+      std::vector<ShapeHandle> unused_list;
+
+      ctx->input("sp_values", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      ctx->input("sp_indices", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
       DimensionHandle unused_dim;
       TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
-      // sp_dense_shape
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(num_partitions + 2), 1, &unused));
 
-      // partition_shapes
+      ctx->input("sp_dense_shape", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      ctx->input("partition_shapes", &unused_list);
       for (int i = 0; i < num_partitions; i++) {
-        ShapeHandle partition_shape;
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 1, &partition_shape));
+        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 1, &unused));
         TF_RETURN_IF_ERROR(
-            ctx->WithValue(ctx->NumElements(partition_shape), 2, &unused_dim));
-
-        ShapeHandle values_result_shape, indices_result_shape;
-        if (int(partition_axis) == 0) {
-          values_result_shape = ctx->MakeShape({ctx->UnknownDim()});
-          indices_result_shape = ctx->MakeShape({ctx->UnknownDim(), 2});
-        } else {
-          return errors::InvalidArgument("partition_axis > 0 not implemented!");
-        }
-        ctx->set_output(i, values_result_shape);
-        ctx->set_output(i + num_partitions, indices_result_shape);
+            ctx->WithValue(ctx->NumElements(unused), 2, &unused_dim));
       }
-      ctx->set_output(2 * num_partitions, ctx->MakeShape({ctx->UnknownDim()}));
+
+      unused_list.clear();
+      unused_list.resize(num_partitions);
+      for (int i = 0; i < num_partitions; i++) {
+        unused_list[i] = ctx->MakeShape({ctx->UnknownDim()});
+      }
+      ctx->set_output("partitioned_values", unused_list);
+      ctx->set_output("partition_permutations", unused_list);
+
+      unused_list.clear();
+      unused_list.resize(1);
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim(), 2});
+      ctx->set_output("indices_before_unique", unused_list);
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
+      ctx->set_output("unique_idxs", unused_list);
+      ctx->set_output("unique_counts", unused_list);
+      ctx->set_output("unique_offsets", unused_list);
 
       return Status::OK();
     });
 //     .Doc(R"doc(
-// A fused embedding op, usually using for partitioned and distriuted embedding variables.
-// FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
-// This op will first read the partition pattern of embedding variables through partition_shapes,
-// then sort, re-calculate and assign the embedding indices to the corresponding partition. Several Gather ops
-// usually should be appended after this op to gather embedding shards from multiple partitioned embedding
-// variables. This op has no gradient function.
+// A fused embedding op, usually using for partitioned and distriuted embedding
+// variables. FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp
+// should be used together. This op will first read the partition pattern of
+// embedding variables through partition_shapes, then sort, re-calculate and
+// assign the embedding indices to the corresponding partition. Several Gather
+// ops usually should be appended after this op to gather embedding shards from
+// multiple partitioned embedding variables. This op has no gradient function.
 //     )doc");
 
 REGISTER_OP("FusedEmbeddingSparsePostLookUp")
@@ -177,11 +193,12 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     });
 
 //     .Doc(R"doc(
-// A fused embedding op, usually using for partitioned and distriuted embedding variables.
-// FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp should be used together.
-// There should be several Gather ops before this op. The Gather ops gather embedding shards from
-// embedding variable and this op glue them together, then apply combiner and max_morm according to
-// embedding indices.
+// A fused embedding op, usually using for partitioned and distriuted embedding
+// variables. FusedEmbeddingSparsePreLookUp, FusedEmbeddingSparsePostLookUp
+// should be used together. There should be several Gather ops before this op.
+// The Gather ops gather embedding shards from embedding variable and this op
+// glue them together, then apply combiner and max_morm according to embedding
+// indices.
 //     )doc");
 
 REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
