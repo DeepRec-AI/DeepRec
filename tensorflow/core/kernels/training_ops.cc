@@ -3389,6 +3389,35 @@ TF_CALL_float(REGISTER_SYCL_KERNELS);
 TF_CALL_double(REGISTER_SYCL_KERNELS);
 #endif
 
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+// Forward declarations of the functor specializations for GPU.
+namespace functor {
+#define DECLARE_GPU_SPEC(T)                                   \
+  template <>                                                 \
+  void ApplyAdam<GPUDevice, T>::operator()(                   \
+      const GPUDevice& d, typename TTypes<T>::Flat var,       \
+      typename TTypes<T>::Flat m, typename TTypes<T>::Flat v, \
+      typename TTypes<T>::ConstScalar beta1_power,            \
+      typename TTypes<T>::ConstScalar beta2_power,            \
+      typename TTypes<T>::ConstScalar lr,                     \
+      typename TTypes<T>::ConstScalar beta1,                  \
+      typename TTypes<T>::ConstScalar beta2,                  \
+      typename TTypes<T>::ConstScalar epsilon,                \
+      typename TTypes<T>::ConstFlat grad, bool use_nesterov); \
+  extern template struct ApplyAdam<GPUDevice, T>;
+DECLARE_GPU_SPEC(Eigen::half);
+DECLARE_GPU_SPEC(float);
+DECLARE_GPU_SPEC(double);
+#undef DECLARE_GPU_SPEC
+}  // namespace functor
+
+REGISTER_KERNELS(GPU, Eigen::half);
+REGISTER_KERNELS(GPU, float);
+REGISTER_KERNELS(GPU, double);
+#endif
+#undef REGISTER_CPU_KERNELS
+#undef REGISTER_KERNELS
+
 // Note, this op works on cpu only.
 template <typename Device, typename T, typename Tindex>
 class SparseApplyAdamOp : public OpKernel {
@@ -3583,35 +3612,6 @@ TF_CALL_half(REGISTER_CPU_KERNELS);
 TF_CALL_float(REGISTER_CPU_KERNELS);
 TF_CALL_double(REGISTER_CPU_KERNELS);
 
-#undef REGISTER_CPU_KERNELS
-#undef REGISTER_KERNELS
-
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-// Forward declarations of the functor specializations for GPU.
-namespace functor {
-#define DECLARE_GPU_SPEC(T)                                   \
-  template <>                                                 \
-  void ApplyAdam<GPUDevice, T>::operator()(                   \
-      const GPUDevice& d, typename TTypes<T>::Flat var,       \
-      typename TTypes<T>::Flat m, typename TTypes<T>::Flat v, \
-      typename TTypes<T>::ConstScalar beta1_power,            \
-      typename TTypes<T>::ConstScalar beta2_power,            \
-      typename TTypes<T>::ConstScalar lr,                     \
-      typename TTypes<T>::ConstScalar beta1,                  \
-      typename TTypes<T>::ConstScalar beta2,                  \
-      typename TTypes<T>::ConstScalar epsilon,                \
-      typename TTypes<T>::ConstFlat grad, bool use_nesterov); \
-  extern template struct ApplyAdam<GPUDevice, T>;
-DECLARE_GPU_SPEC(Eigen::half);
-DECLARE_GPU_SPEC(float);
-DECLARE_GPU_SPEC(double);
-#undef DECLARE_GPU_SPEC
-}  // namespace functor
-
-REGISTER_KERNELS(GPU, Eigen::half);
-REGISTER_KERNELS(GPU, float);
-REGISTER_KERNELS(GPU, double);
-#endif
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
 
