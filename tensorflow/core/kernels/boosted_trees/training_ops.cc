@@ -68,14 +68,26 @@ class BoostedTreesUpdateEnsembleOp : public OpKernel {
 
     const Tensor* feature_ids_t;
     OP_REQUIRES_OK(context, context->input("feature_ids", &feature_ids_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(feature_ids_t->shape()),
+        errors::InvalidArgument("feature_ids must be a vector, received shape ",
+                                feature_ids_t->shape().DebugString()));
     const auto feature_ids = feature_ids_t->vec<int32>();
 
     const Tensor* max_depth_t;
     OP_REQUIRES_OK(context, context->input("max_depth", &max_depth_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(max_depth_t->shape()),
+                errors::InvalidArgument(
+                    "max_depth must be a scalar, got a tensor of shape ",
+                    max_depth_t->shape().DebugString()));
     const auto max_depth = max_depth_t->scalar<int32>()();
 
     const Tensor* learning_rate_t;
     OP_REQUIRES_OK(context, context->input("learning_rate", &learning_rate_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(learning_rate_t->shape()),
+                errors::InvalidArgument(
+                    "learning_rate must be a scalar, got a tensor of shape ",
+                    learning_rate_t->shape().DebugString()));
     const auto learning_rate = learning_rate_t->scalar<float>()();
 
     // Find best splits for each active node.
@@ -175,11 +187,50 @@ class BoostedTreesUpdateEnsembleOp : public OpKernel {
       std::map<int32, boosted_trees::SplitCandidate>* best_split_per_node) {
     // Find best split per node going through every feature candidate.
     for (int64 feature_idx = 0; feature_idx < num_features_; ++feature_idx) {
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsVector(node_ids_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each node_id in node_ids_list must be a vector, received shape ",
+              node_ids_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& node_ids = node_ids_list[feature_idx].vec<int32>();
+      OP_REQUIRES(
+          context, TensorShapeUtils::IsVector(gains_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each gain in gains_list must be a vector, received shape ",
+              gains_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& gains = gains_list[feature_idx].vec<float>();
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsVector(thresholds_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each threshold in thresholds_list must be a vector, received "
+              "shape ",
+              thresholds_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& thresholds = thresholds_list[feature_idx].vec<int32>();
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsMatrix(
+              left_node_contribs_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each left_node_contribs in left_node_contribs_list must be a "
+              "matrix, received shape ",
+              left_node_contribs_list[feature_idx].shape().DebugString(),
+              " at index ", feature_idx));
       const auto& left_node_contribs =
           left_node_contribs_list[feature_idx].matrix<float>();
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsMatrix(
+              right_node_contribs_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each right_node_contribs in right_node_contribs_list must be a "
+              "matrix, received shape ",
+              right_node_contribs_list[feature_idx].shape().DebugString(),
+              " at index ", feature_idx));
       const auto& right_node_contribs =
           right_node_contribs_list[feature_idx].matrix<float>();
 
@@ -273,14 +324,26 @@ class BoostedTreesUpdateEnsembleV2Op : public OpKernel {
 
     const Tensor* max_depth_t;
     OP_REQUIRES_OK(context, context->input("max_depth", &max_depth_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(max_depth_t->shape()),
+                errors::InvalidArgument(
+                    "max_depth must be a scalar, got a tensor of shape ",
+                    max_depth_t->shape().DebugString()));
     const auto max_depth = max_depth_t->scalar<int32>()();
 
     const Tensor* learning_rate_t;
     OP_REQUIRES_OK(context, context->input("learning_rate", &learning_rate_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(learning_rate_t->shape()),
+                errors::InvalidArgument(
+                    "learning_rate must be a scalar, got a tensor of shape ",
+                    learning_rate_t->shape().DebugString()));
     const auto learning_rate = learning_rate_t->scalar<float>()();
 
     const Tensor* pruning_mode_t;
     OP_REQUIRES_OK(context, context->input("pruning_mode", &pruning_mode_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(pruning_mode_t->shape()),
+                errors::InvalidArgument(
+                    "pruning_mode must be a scalar, got a tensor of shape ",
+                    pruning_mode_t->shape().DebugString()));
     const auto pruning_mode =
         static_cast<PruningMode>(pruning_mode_t->scalar<int32>()());
 
@@ -327,7 +390,7 @@ class BoostedTreesUpdateEnsembleV2Op : public OpKernel {
       boosted_trees::SplitTypeWithDefault split_type_with_default;
       bool parsed = boosted_trees::SplitTypeWithDefault_Parse(
           split_type, &split_type_with_default);
-      DCHECK(parsed);
+      OP_REQUIRES(context, parsed, errors::Internal("Parse failed"));
       if (split_type_with_default == boosted_trees::EQUALITY_DEFAULT_RIGHT) {
         // Add equality split to the node.
         ensemble_resource->AddCategoricalSplitNode(
@@ -396,14 +459,67 @@ class BoostedTreesUpdateEnsembleV2Op : public OpKernel {
       std::map<int32, boosted_trees::SplitCandidate>* best_split_per_node) {
     // Find best split per node going through every feature candidate.
     for (int64 feature_idx = 0; feature_idx < num_features_; ++feature_idx) {
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsVector(node_ids_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each node_id in node_ids_list must be a vector, received shape ",
+              node_ids_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& node_ids = node_ids_list[feature_idx].vec<int32>();
+      OP_REQUIRES(
+          context, TensorShapeUtils::IsVector(gains_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each gain in gains_list must be a vector, received shape ",
+              gains_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& gains = gains_list[feature_idx].vec<float>();
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsVector(thresholds_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each threshold in thresholds_list must be a vector, received "
+              "shape ",
+              thresholds_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& thresholds = thresholds_list[feature_idx].vec<int32>();
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsVector(dimension_ids_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each dimension_id in dimension_ids_list must be a vector, "
+              "received shape ",
+              dimension_ids_list[feature_idx].shape().DebugString(),
+              " at index ", feature_idx));
       const auto& dimension_ids = dimension_ids_list[feature_idx].vec<int32>();
+      OP_REQUIRES(context,
+                  TensorShapeUtils::IsMatrix(
+                      left_node_contribs_list[feature_idx].shape()),
+                  errors::InvalidArgument(
+                      "Each left_node_contribs in right_node_contribs_list "
+                      "must be a matrix, received shape ",
+                      left_node_contribs_list[feature_idx].shape().DebugString(),
+                      " at index ", feature_idx));
       const auto& left_node_contribs =
           left_node_contribs_list[feature_idx].matrix<float>();
+      OP_REQUIRES(context,
+                  TensorShapeUtils::IsMatrix(
+                      right_node_contribs_list[feature_idx].shape()),
+                  errors::InvalidArgument(
+                      "Each right_node_contribs in right_node_contribs_list "
+                      "must be a matrix, received shape ",
+                      right_node_contribs_list[feature_idx].shape().DebugString(),
+                      " at index ", feature_idx));
       const auto& right_node_contribs =
           right_node_contribs_list[feature_idx].matrix<float>();
+      OP_REQUIRES(
+          context,
+          TensorShapeUtils::IsVector(split_types_list[feature_idx].shape()),
+          errors::InvalidArgument(
+              "Each split_type in split_types_list must be a vector, received "
+              "shape ",
+              split_types_list[feature_idx].shape().DebugString(), " at index ",
+              feature_idx));
       const auto& split_types = split_types_list[feature_idx].vec<string>();
 
       for (size_t candidate_idx = 0; candidate_idx < node_ids.size();
@@ -479,9 +595,17 @@ class BoostedTreesCenterBiasOp : public OpKernel {
     // Get the regularization options.
     const Tensor* l1_t;
     OP_REQUIRES_OK(context, context->input("l1", &l1_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(l1_t->shape()),
+        errors::InvalidArgument("l1 must be a scalar, got a tensor of shape ",
+                                l1_t->shape().DebugString()));
     const auto l1 = l1_t->scalar<float>()();
     const Tensor* l2_t;
     OP_REQUIRES_OK(context, context->input("l2", &l2_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(l2_t->shape()),
+        errors::InvalidArgument("l2 must be a scalar, got a tensor of shape ",
+                                l2_t->shape().DebugString()));
     const auto l2 = l2_t->scalar<float>()();
 
     // For now, assume 1-dimensional weight on leaves.
@@ -489,7 +613,8 @@ class BoostedTreesCenterBiasOp : public OpKernel {
     float unused_gain;
 
     // TODO(crawles): Support multiclass.
-    DCHECK_EQ(logits_dim, 1);
+    OP_REQUIRES(context, logits_dim == 1,
+                errors::Internal("Expected logits_dim == 1, got ", logits_dim));
     Eigen::VectorXf gradients_mean(1);
     Eigen::VectorXf hessians_mean(1);
     gradients_mean[0] = mean_gradients_t->flat<float>()(0);
@@ -505,7 +630,9 @@ class BoostedTreesCenterBiasOp : public OpKernel {
       current_bias = logits;
     } else {
       const auto& current_biases = ensemble_resource->node_value(0, 0);
-      DCHECK_EQ(current_biases.size(), 1);
+      OP_REQUIRES(context, current_biases.size() == 1,
+                  errors::Internal("Expected current_biases.size() == 1, got ",
+                                   current_biases.size()));
       current_bias = current_biases[0];
       continue_centering =
           std::abs(logits / current_bias) > kMinDeltaForCenterBias;
