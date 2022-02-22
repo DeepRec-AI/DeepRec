@@ -1337,7 +1337,7 @@ class SparseSegmentGradOpBase : public OpKernel {
     const auto segment_vec = segment_ids.vec<SegmentId>();
 
     TensorShape output_shape = input.shape();
-    output_shape.set_dim(0, M);
+    OP_REQUIRES_OK(context, output_shape.SetDimWithStatus(0, M));
     Tensor* output = nullptr;
     OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
     if (M == 0 || N == 0) return;
