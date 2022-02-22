@@ -42,12 +42,22 @@ class BoostedTreesCreateEnsembleOp : public OpKernel {
     // Get the stamp token.
     const Tensor* stamp_token_t;
     OP_REQUIRES_OK(context, context->input("stamp_token", &stamp_token_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(stamp_token_t->shape()),
+                errors::InvalidArgument(
+                    "stamp_token must be a scalar, got a tensor of shape ",
+                    stamp_token_t->shape().DebugString()));
     int64 stamp_token = stamp_token_t->scalar<int64>()();
 
     // Get the tree ensemble proto.
     const Tensor* tree_ensemble_serialized_t;
     OP_REQUIRES_OK(context, context->input("tree_ensemble_serialized",
                                            &tree_ensemble_serialized_t));
+    OP_REQUIRES(
+        context,
+        TensorShapeUtils::IsScalar(tree_ensemble_serialized_t->shape()),
+        errors::InvalidArgument(
+            "tree_ensemble_serialized must be a scalar, got a tensor of shape ",
+            tree_ensemble_serialized_t->shape().DebugString()));
     std::unique_ptr<BoostedTreesEnsembleResource> result(
         new BoostedTreesEnsembleResource());
     if (!result->InitFromSerialized(
@@ -177,12 +187,22 @@ class BoostedTreesDeserializeEnsembleOp : public OpKernel {
     // Get the stamp token.
     const Tensor* stamp_token_t;
     OP_REQUIRES_OK(context, context->input("stamp_token", &stamp_token_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(stamp_token_t->shape()),
+                errors::InvalidArgument(
+                    "stamp_token must be a scalar, got a tensor of shape ",
+                    stamp_token_t->shape().DebugString()));
     int64 stamp_token = stamp_token_t->scalar<int64>()();
 
     // Get the tree ensemble proto.
     const Tensor* tree_ensemble_serialized_t;
     OP_REQUIRES_OK(context, context->input("tree_ensemble_serialized",
                                            &tree_ensemble_serialized_t));
+    OP_REQUIRES(
+        context,
+        TensorShapeUtils::IsScalar(tree_ensemble_serialized_t->shape()),
+        errors::InvalidArgument(
+            "tree_ensemble_serialized must be a scalar, got a tensor of shape ",
+            tree_ensemble_serialized_t->shape().DebugString()));
     // Deallocate all the previous objects on the resource.
     tree_ensemble_resource->Reset();
     OP_REQUIRES(

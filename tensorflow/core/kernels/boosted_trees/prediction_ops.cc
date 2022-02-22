@@ -63,6 +63,10 @@ class BoostedTreesTrainingPredictOp : public OpKernel {
     std::vector<tensorflow::TTypes<int32>::ConstVec> batch_bucketized_features;
     batch_bucketized_features.reserve(bucketized_features_list.size());
     for (const Tensor& tensor : bucketized_features_list) {
+      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()),
+                  errors::Internal("Cannot use tensor as matrix, expected "
+                                   "vector or matrix, received shape ",
+                                   tensor.shape().DebugString()));
       batch_bucketized_features.emplace_back(tensor.vec<int32>());
     }
     const int batch_size = batch_bucketized_features[0].size();
@@ -70,11 +74,19 @@ class BoostedTreesTrainingPredictOp : public OpKernel {
     const Tensor* cached_tree_ids_t;
     OP_REQUIRES_OK(context,
                    context->input("cached_tree_ids", &cached_tree_ids_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(cached_tree_ids_t->shape()),
+                errors::InvalidArgument(
+                    "cached_tree_ids must be a vector, received shape ",
+                    cached_tree_ids_t->shape().DebugString()));
     const auto cached_tree_ids = cached_tree_ids_t->vec<int32>();
 
     const Tensor* cached_node_ids_t;
     OP_REQUIRES_OK(context,
                    context->input("cached_node_ids", &cached_node_ids_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(cached_node_ids_t->shape()),
+                errors::InvalidArgument(
+                    "cached_node_ids must be a vector, received shape ",
+                    cached_node_ids_t->shape().DebugString()));
     const auto cached_node_ids = cached_node_ids_t->vec<int32>();
 
     // Allocate outputs.
@@ -106,9 +118,9 @@ class BoostedTreesTrainingPredictOp : public OpKernel {
       output_partial_logits.setZero();
     } else {
       output_tree_ids.setConstant(latest_tree);
-      auto do_work = [&resource, &batch_bucketized_features, &cached_tree_ids,
-                      &cached_node_ids, &output_partial_logits,
-                      &output_node_ids, latest_tree,
+      auto do_work = [&context, &resource, &batch_bucketized_features,
+                      &cached_tree_ids, &cached_node_ids,
+                      &output_partial_logits, &output_node_ids, latest_tree,
                       this](int64 start, int64 end) {
         for (int32 i = start; i < end; ++i) {
           int32 tree_id = cached_tree_ids(i);
@@ -126,7 +138,11 @@ class BoostedTreesTrainingPredictOp : public OpKernel {
             // node's value. The following logic handles both of these cases.
             const auto& node_logits = resource->node_value(tree_id, node_id);
             if (!node_logits.empty()) {
-              DCHECK_EQ(node_logits.size(), logits_dimension_);
+              OP_REQUIRES(
+                  context, node_logits.size() == logits_dimension_,
+                  errors::Internal(
+                      "Expected node_logits.size() == logits_dimension_, got ",
+                      node_logits.size(), " vs ", logits_dimension_));
               for (int32 j = 0; j < logits_dimension_; ++j) {
                 partial_tree_logits[j] -= node_logits[j];
               }
@@ -139,7 +155,11 @@ class BoostedTreesTrainingPredictOp : public OpKernel {
           while (true) {
             if (resource->is_leaf(tree_id, node_id)) {
               const auto& leaf_logits = resource->node_value(tree_id, node_id);
-              DCHECK_EQ(leaf_logits.size(), logits_dimension_);
+              OP_REQUIRES(
+                  context, leaf_logits.size() == logits_dimension_,
+                  errors::Internal(
+                      "Expected leaf_logits.size() == logits_dimension_, got ",
+                      leaf_logits.size(), " vs ", logits_dimension_));
               // Tree is done
               const float tree_weight = resource->GetTreeWeight(tree_id);
               for (int32 j = 0; j < logits_dimension_; ++j) {
@@ -208,6 +228,10 @@ class BoostedTreesPredictOp : public OpKernel {
     std::vector<tensorflow::TTypes<int32>::ConstVec> batch_bucketized_features;
     batch_bucketized_features.reserve(bucketized_features_list.size());
     for (const Tensor& tensor : bucketized_features_list) {
+      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()),
+                  errors::Internal("Cannot use tensor as matrix, expected "
+                                   "vector or matrix, received shape ",
+                                   tensor.shape().DebugString()));
       batch_bucketized_features.emplace_back(tensor.vec<int32>());
     }
     const int batch_size = batch_bucketized_features[0].size();
@@ -226,8 +250,8 @@ class BoostedTreesPredictOp : public OpKernel {
     }
 
     const int32 last_tree = resource->num_trees() - 1;
-    auto do_work = [&resource, &batch_bucketized_features, &output_logits,
-                    last_tree, this](int64 start, int64 end) {
+    auto do_work = [&context, &resource, &batch_bucketized_features,
+                    &output_logits, last_tree, this](int64 start, int64 end) {
       for (int32 i = start; i < end; ++i) {
         std::vector<float> tree_logits(logits_dimension_, 0.0);
         int32 tree_id = 0;
@@ -236,7 +260,11 @@ class BoostedTreesPredictOp : public OpKernel {
           if (resource->is_leaf(tree_id, node_id)) {
             const float tree_weight = resource->GetTreeWeight(tree_id);
             const auto& leaf_logits = resource->node_value(tree_id, node_id);
-            DCHECK_EQ(leaf_logits.size(), logits_dimension_);
+            OP_REQUIRES(
+                context, leaf_logits.size() == logits_dimension_,
+                errors::Internal(
+                    "Expected leaf_logits.size() == logits_dimension_, got ",
+                    leaf_logits.size(), " vs ", logits_dimension_));
             for (int32 j = 0; j < logits_dimension_; ++j) {
               tree_logits[j] += tree_weight * leaf_logits[j];
             }
@@ -310,6 +338,10 @@ class BoostedTreesExampleDebugOutputsOp : public OpKernel {
     std::vector<tensorflow::TTypes<int32>::ConstVec> batch_bucketized_features;
     batch_bucketized_features.reserve(bucketized_features_list.size());
     for (const Tensor& tensor : bucketized_features_list) {
+      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()),
+                  errors::Internal("Cannot use tensor as matrix, expected "
+                                   "vector or matrix, received shape ",
+                                   tensor.shape().DebugString()));
       batch_bucketized_features.emplace_back(tensor.vec<int32>());
     }
     const int batch_size = batch_bucketized_features[0].size();
@@ -331,14 +363,16 @@ class BoostedTreesExampleDebugOutputsOp : public OpKernel {
     // features used to split and the associated logits at each point along the
     // path. Note: feature_ids has one less value than logits_path because the
     // first value of each logit path will be the bias.
-    auto do_work = [&resource, &batch_bucketized_features, &output_debug_info,
-                    last_tree](int64 start, int64 end) {
+    auto do_work = [&context, &resource, &batch_bucketized_features,
+                    &output_debug_info, last_tree](int64 start, int64 end) {
       for (int32 i = start; i < end; ++i) {
         // Proto to store debug outputs, per example.
         boosted_trees::DebugOutput example_debug_info;
         // Initial bias prediction. E.g., prediction based off training mean.
         const auto& tree_logits = resource->node_value(0, 0);
-        DCHECK_EQ(tree_logits.size(), 1);
+        OP_REQUIRES(context, tree_logits.size() == 1,
+                    errors::Internal("Expected tree_logits.size() == 1, got ",
+                                     tree_logits.size()));
         float tree_logit = resource->GetTreeWeight(0) * tree_logits[0];
         example_debug_info.add_logits_path(tree_logit);
         int32 node_id = 0;
@@ -363,7 +397,10 @@ class BoostedTreesExampleDebugOutputsOp : public OpKernel {
             node_id = resource->next_node(tree_id, node_id, i,
                                           batch_bucketized_features);
             const auto& tree_logits = resource->node_value(tree_id, node_id);
-            DCHECK_EQ(tree_logits.size(), 1);
+            OP_REQUIRES(
+                context, tree_logits.size() == 1,
+                errors::Internal("Expected tree_logits.size() == 1, got ",
+                                 tree_logits.size()));
             tree_logit = resource->GetTreeWeight(tree_id) * tree_logits[0];
             // Output logit incorporates sum of leaf logits from prior trees.
             example_debug_info.add_logits_path(tree_logit + past_trees_logit);
