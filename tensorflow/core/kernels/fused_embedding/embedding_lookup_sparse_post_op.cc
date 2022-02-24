@@ -260,25 +260,27 @@ namespace {
       delete[] row_values;
     }
 
-    int64 partitioned_indices(std::vector<std::tuple<size_t, const int64*>> indices, int indice_dim, int64 id) {
+    inline int64 partitioned_indices(std::vector<std::tuple<size_t, const int64*>> &indices, int indice_dim, int64 id) {
         int indices_num = indices.size();
         int64 rows = 0;
         for (int i = 0; i < indices_num; ++i) {
-            rows += std::get<0>(indices[i]);
+            size_t sub_nnz = std::get<0>(indices[i]);
+            rows += sub_nnz;
             if (rows > id) {
-                int idx = id - (rows - std::get<0>(indices[i]));
+                int idx = id - (rows - sub_nnz);
                 return std::get<1>(indices[i])[idx * indice_dim];
             }
         }
     }
 
-    const float* partitioned_embedding_tables(std::vector<std::tuple<size_t, const float*>> embedding_tables, int embedding_size, int64 id) {
+    inline const float* partitioned_embedding_tables(std::vector<std::tuple<size_t, const float*>> &embedding_tables, int embedding_size, int64 id) {
         int tables_num = embedding_tables.size();
         int64 rows = 0;
         for (int i = 0; i < tables_num; ++i) {
-            rows += std::get<0>(embedding_tables[i]);
+            size_t sub_nnz = std::get<0>(embedding_tables[i]);
+            rows += sub_nnz;
             if (rows > id) {
-                int idx = id - (rows - std::get<0>(embedding_tables[i]));
+                int idx = id - (rows - sub_nnz);
                 return &(std::get<1>(embedding_tables[i])[idx * embedding_size]);
             }
         }
@@ -290,45 +292,68 @@ namespace {
                             const int64_t embedding_size, SparseSegmentReductionOperation operation,
                             const bool set_empty_row_zero, const int *empty_row) {
       // Record how many values in each row
-      int *row_values = new int[rows];
-      memset(row_values, 0, rows * sizeof(int));
+      uint64_t *row_values = new uint64_t[rows];
+      memset(row_values, 0, rows * sizeof(uint64_t));
+      float *output_buffer = new float[rows*embedding_size];
+      memset(output_buffer, 0, rows*embedding_size * sizeof(float));
 
-      std::map<float *, std::vector<const float *>> mapSet;
-
-      // sum
-      for (int64 i = 0; i < input_size; ++i) {
-        int64 id = i;
+      #pragma unroll(4)
+      for (int64_t i = input_size-1; i >= 0; --i) {
+        // sub_indices to find output row
         auto row = partitioned_indices(indices, indice_dim, i);
         row_values[row] += 1;
-
-        auto index = row * embedding_size;
-        if (!mapSet.count(&output[index])){
-          std::vector<const float *> srcs;
-          mapSet[&output[index]] = srcs;
+        // sub_embedding_tables to find embedding_table row ptr
+        auto embedding_row = partitioned_embedding_tables(embedding_tables, embedding_size, i);
+        // add output_buffer to do block addition
+        uint64_t output_row = row * embedding_size;
+        #pragma omp simd
+        for (uint32_t j = 0; j < embedding_size; ++j) {
+          output_buffer[output_row + j] += embedding_row[j];
         }
-        mapSet[&output[index]].push_back(partitioned_embedding_tables(embedding_tables, embedding_size, id));
+
+        if (row_values[row] == 8) {
+          memcpy(&output[output_row], &output_buffer[output_row], embedding_size * sizeof(float));
+          memset(&output_buffer[output_row], 0, embedding_size * sizeof(float));
+        }
+        else if (row_values[row] % 8 == 0){
+          #pragma omp simd
+          for (uint32_t j = 0; j < embedding_size; ++j) {
+            output[output_row + j] += output_buffer[output_row + j];
+          }
+          memset(&output_buffer[output_row], 0, embedding_size * sizeof(float));
+        }
       }
 
-      row_add_mean(mapSet, embedding_size, operation == SparseSegmentReductionOperation::kMean);
+      #pragma unroll(4)
+      for (uint64_t i = 0; i < rows; ++i) {
+        uint64_t output_row = i * embedding_size;
+        // Fixme(Changqing): Will use AVX512 to replace div
+        #pragma omp simd
+        for (uint32_t j = 0; j < embedding_size; ++j) {
+          if (operation == SparseSegmentReductionOperation::kSum) {
+            output[output_row + j] += output_buffer[output_row + j];
+          }
+          else if (operation == SparseSegmentReductionOperation::kMean) {
+            output[output_row + j] += output_buffer[output_row + j];
+            output[output_row + j] /= row_values[i];
+          }
+          else if (operation == SparseSegmentReductionOperation::kSqrtN) {
+            output[output_row + j] += output_buffer[output_row + j];
+            output[output_row + j] /= std::sqrt(row_values[i]);
+          }
+        }
+      }
 
+      #pragma unroll(4)
       for (int i = 0; i < rows; ++i) {
         // zero emtpy rows
         if (set_empty_row_zero && empty_row[i] == 1) {
-            memset(&output[i * embedding_size], 0, embedding_size * sizeof(float));;
-        }
-
-        if (row_values[i] == 0) {
-          memset(&output[i * embedding_size], 0, embedding_size * sizeof(float));
-        } else if (operation == SparseSegmentReductionOperation::kMean && row_values[i] > 1) {
-          // float factor = 1.0f / row_values[i];
-          // myscale(&output[i * embedding_size], factor, embedding_size);
-        } else if (operation == SparseSegmentReductionOperation::kSqrtN && row_values[i] > 1) {
-          //fixme(marvin): shall we need care the data precision like "mean"? 
-          float factor = 1.0f / std::sqrt(row_values[i]);
-          myscale(&output[i * embedding_size], factor, embedding_size);
+            memset(&output[i * embedding_size], 0, embedding_size * sizeof(float));
         }
       }
+
       delete[] row_values;
+      delete[] output_buffer;
     }
 
     static void set_feature_nums(int32 *feature_nums, int64 input_size, std::vector<std::tuple<size_t, const int64*>> indices, int indice_dim) {
@@ -402,12 +427,13 @@ public:
         ctx, ctx->allocate_output(0, TensorShape({batch_size, embedding_size}),
                                   &emb_vectors_tensor));
     float *output = (float *)emb_vectors_tensor->tensor_data().data();
+    memset(output, 0, batch_size * embedding_size * sizeof(float));
 
     Tensor* feature_nums_tensor;
     OP_REQUIRES_OK(
         ctx, ctx->allocate_output(1, TensorShape({batch_size}), &feature_nums_tensor));
     int32 *feature_nums = (int32 *)feature_nums_tensor->tensor_data().data();
-    memset(feature_nums, 0, batch_size*sizeof(int32));
+    memset(feature_nums, 0, batch_size * sizeof(int32));
 
     int64 input_size = 0;
     for (int i = 0; i < num_partitions_; ++i) {
