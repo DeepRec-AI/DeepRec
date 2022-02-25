@@ -1,6 +1,7 @@
-<h1 align="center">
-    DeepRec
-</h1>
+
+![DeepRec Logo](https://github.com/alibaba/DeepRec/blob/main/docs/deeprec_logo.png)
+
+--------------------------------------------------------------------------------
 
 ## **Introduction**
 DeepRec is a recommendation engine based on [TensorFlow 1.15](https://www.tensorflow.org/), [Intel-TensorFlow](https://github.com/Intel-tensorflow/tensorflow) and [NVIDIA-TensorFlow](https://github.com/NVIDIA/tensorflow).
