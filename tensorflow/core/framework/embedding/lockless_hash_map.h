@@ -30,9 +30,9 @@ class LocklessHashMap : public KVInterface<K, V> {
  public:
   LocklessHashMap() {
     hash_map_.max_load_factor(0.8);
-    hash_map_.set_empty_key_and_value(EMPTY_KEY_, nullptr);
+    hash_map_.set_empty_key_and_value(LocklessHashMap<K, V>::EMPTY_KEY_, nullptr);
     hash_map_.set_counternum(16);
-    hash_map_.set_deleted_key(DELETED_KEY_);
+    hash_map_.set_deleted_key(LocklessHashMap<K, V>::DELETED_KEY_);
     KVInterface<K, V>::total_dims_ = 0;
   }
 
@@ -41,7 +41,7 @@ class LocklessHashMap : public KVInterface<K, V> {
 
   Status Lookup(K key, ValuePtr<V>** value_ptr) {
     auto iter = hash_map_.find_wait_free(key);
-    if (iter.first == EMPTY_KEY_) {
+    if (iter.first == LocklessHashMap<K, V>::EMPTY_KEY_) {
       return errors::NotFound(
           "Unable to find Key: ", key, " in LocklessHashMap.");
     } else {
@@ -84,7 +84,8 @@ class LocklessHashMap : public KVInterface<K, V> {
     hash_map_dump = it.first;
     bucket_count = it.second;
     for (int64 j = 0; j < bucket_count; j++) {
-      if (hash_map_dump[j].first != EMPTY_KEY_ && hash_map_dump[j].first != DELETED_KEY_) {
+      if (hash_map_dump[j].first != LocklessHashMap<K, V>::EMPTY_KEY_ 
+           && hash_map_dump[j].first != LocklessHashMap<K, V>::DELETED_KEY_) {
         key_list->push_back(hash_map_dump[j].first);
         value_ptr_list->push_back(hash_map_dump[j].second);
       }
@@ -104,10 +105,15 @@ class LocklessHashMap : public KVInterface<K, V> {
 
  private:
   typedef google::dense_hash_map_lockless<K, ValuePtr<V>* > LockLessHashMap;
-  static const int EMPTY_KEY_ = -1;
-  static const int DELETED_KEY_ = -2;
+  static const int EMPTY_KEY_;
+  static const int DELETED_KEY_;
   LockLessHashMap hash_map_;
 };
+template <class K, class V>
+const int LocklessHashMap<K, V>::EMPTY_KEY_ = -1;
+template <class K, class V>
+const int LocklessHashMap<K, V>::DELETED_KEY_ = -2;
+
 
 }  // namespace tensorflow
 
