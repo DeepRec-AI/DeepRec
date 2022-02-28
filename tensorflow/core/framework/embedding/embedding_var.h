@@ -102,7 +102,7 @@ class EmbeddingVar : public ResourceBase {
        return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
     } else {
       value_len_ = default_tensor.NumElements();
-      default_value_ = TypedAllocator::Allocate<V>(ev_allocator(), default_tensor.NumElements(), AllocationAttributes());
+      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(), default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
       if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
@@ -175,7 +175,7 @@ class EmbeddingVar : public ResourceBase {
     } else {
       emb_config_.default_value_dim = default_value_dim;
       value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
-      default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
+      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(), default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
       if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
@@ -466,7 +466,7 @@ class EmbeddingVar : public ResourceBase {
       Destroy(value_len_);
       delete kv_;
     }
-    TypedAllocator::Deallocate(ev_allocator(), default_value_, value_len_);
+    TypedAllocator::Deallocate(cpu_allocator(), default_value_, value_len_);
   }
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);
 };
