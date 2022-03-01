@@ -49,9 +49,13 @@ class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
                      .Attr("max_norm", max_norm)
                      .Attr("default_id", default_id)
                      .Input(FakeInput(dtype))
-                     .Input(FakeInput(dtype))
-                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(num_partitions, dtype))
+                     .Input(FakeInput(num_partitions, DT_INT64))
                      .Input(FakeInput(DT_INT32))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT32))
                      .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
@@ -59,7 +63,7 @@ class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
 };
 
 TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
-       Partition2_Mean_MaxNorm100_Float) {
+       Partition2MeanMaxNorm100Float) {
   const int nnz = 10;
   const int batch_size = 4;
   const int emb_vector_dim = 8;
@@ -74,13 +78,14 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
        11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0,
        22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0});
 
-  // emb_shards
+  // emb_shards 0
   AddInputFromArray<float>(
       TensorShape({6, emb_vector_dim}),
       {8.0,  9.0,  10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 24.0, 25.0, 26.0, 27.0,
        28.0, 29.0, 30.0, 31.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0,
        32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 32.0, 33.0, 34.0, 35.0,
        36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0});
+  // emb_shards 1
   AddInputFromArray<float>(
       TensorShape({4, emb_vector_dim}),
       {56.0,  57.0,  58.0,  59.0,  60.0,  61.0,  62.0,  63.0,
@@ -88,15 +93,28 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
        96.0,  97.0,  98.0,  99.0,  100.0, 101.0, 102.0, 103.0,
        120.0, 121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0});
 
-  // sp_values: 3, 1, 4, 5, 7, 3, 12, 12, 15, 4
-  // partitioned_values: 1, 3, 3, 4, 4, 5 and 7, 12, 12, 15
-  // partitioned_indices
-  AddInputFromArray<int64>(TensorShape({6, 2}),
-                           {0, 5, 0, 1, 2, 1, 1, 2, 3, 6, 1, 1});
-  AddInputFromArray<int64>(TensorShape({4, 2}), {1, 7, 2, 4, 2, 7, 3, 0});
+  // partition_permutations 0
+  AddInputFromArray<int64>(TensorShape({6}), {0, 2, 4, 6, 8, 9});
+
+  // partition_permutations 1
+  AddInputFromArray<int64>(TensorShape({4}), {1, 3, 5, 7});
 
   // feature_nums
   AddInputFromArray<int>(TensorShape({batch_size}), {2, 3, 3, 2});
+
+  // indices_before_unique
+  AddInputFromArray<int64>(
+      TensorShape({nnz, 2}),
+      {0, 5, 1, 7, 0, 1, 2, 4, 2, 1, 2, 7, 1, 2, 3, 0, 3, 6, 1, 1});
+
+  // unique_counts
+  AddInputFromArray<int64>(TensorShape({nnz}), {1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+
+  // idx_of_input_to_unique
+  AddInputFromArray<int64>(TensorShape({nnz}), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+  // unique_offsets
+  AddInputFromArray<int64>(TensorShape({nnz}), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
 
   // row_empty_and_invalid_flags
   AddInputFromArray<int>(TensorShape({batch_size + nnz}),
@@ -138,6 +156,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
   }
 }
 
+/*
 TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
        Partition2_SUM_Float_No_Default) {
   const int nnz = 3;
@@ -237,6 +256,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest,
     test::ExpectTensorNear<float>(grad_shards_2, *GetOutput(1), 1e-4);
   }
 }
+*/
 
 }  // namespace
 }  // namespace tensorflow

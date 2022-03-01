@@ -211,20 +211,20 @@ void GatherAndConvertToSubPartition(const GPUDevice& d,
                               partition_size));
 }
 
-__global__ void SumUpEmbeddingShardKernel(const float* emb_shard,
-                                          const int64_t* partitioned_indice,
-                                          float* emb_vectors, int* feature_nums,
-                                          const float max_norm,
-                                          const int emb_vec_size) {
+__global__ void SumUpEmbeddingShardKernel(
+    const float* emb_shard, const int64_t* partition_permutations,
+    const int64_t* indices_before_unique, const int64_t* unique_counts,
+    const int64_t* idx_of_input_to_unique, const int64_t* unique_offsets,
+    const float max_norm, const int emb_vec_size, float* emb_vectors,
+    int* feature_nums) {
   __shared__ float l2_sum[1];
+  const int64_t partition_permute = partition_permutations[blockIdx.x];
+  const int64_t ioitu_offset = unique_offsets[partition_permute];
+  const int64_t counts = unique_counts[partition_permute];
 
-  const int64_t row_in_batch = partitioned_indice[2 * blockIdx.x];
   float emb_element = emb_shard[blockIdx.x * emb_vec_size + threadIdx.x];
   if (max_norm >= 0.0f) {
-    if (threadIdx.x == 0) {
-      l2_sum[0] = 0.0f;
-    }
-    __syncthreads();
+    l2_sum[0] = 0.0f;
     atomicAdd(l2_sum, emb_element * emb_element);
     __syncthreads();
     float l2_norm = sqrtf(l2_sum[0]);
@@ -233,152 +233,163 @@ __global__ void SumUpEmbeddingShardKernel(const float* emb_shard,
     }
   }
 
-  atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
-            emb_element);
-
-  if (threadIdx.x == 0) {
-    atomicAdd(feature_nums + row_in_batch, 1);
+  for (int64_t i = 0; i < counts; i++) {
+    const int64_t ioitu = idx_of_input_to_unique[ioitu_offset + i];
+    const int64_t row_in_batch = indices_before_unique[2 * ioitu];
+    atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
+              emb_element);
+    if (threadIdx.x == 0) {
+      atomicAdd(feature_nums + row_in_batch, 1);
+    }
   }
 }
 
-void SumUpEmbeddingShard(const GPUDevice& d, const size_t sub_nnz,
-                         const float* emb_shard,
-                         const int64_t* partitioned_indice, float* emb_vectors,
-                         int* feature_nums, const float max_norm,
-                         const int emb_vec_size) {
-  const int blocks = sub_nnz;
+void SumUpEmbeddingShard(
+    const GPUDevice& d, const size_t shard_len, const float* emb_shard,
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const float max_norm, const int emb_vec_size,
+    float* emb_vectors, int* feature_nums) {
+  const int blocks = shard_len;
   const int threads = emb_vec_size;
-  TF_CHECK_OK(GpuLaunchKernel(
-      SumUpEmbeddingShardKernel, blocks, threads, 0, d.stream(), emb_shard,
-      partitioned_indice, emb_vectors, feature_nums, max_norm, emb_vec_size));
+  TF_CHECK_OK(GpuLaunchKernel(SumUpEmbeddingShardKernel, blocks, threads, 0,
+                              d.stream(), emb_shard, partition_permutations,
+                              indices_before_unique, unique_counts,
+                              idx_of_input_to_unique, unique_offsets, max_norm,
+                              emb_vec_size, emb_vectors, feature_nums));
 }
 
 template <Combiner combiner>
-__global__ void ApplyCombinerKernel(float* emb_vectors,
-                                    const int* row_emptiness_flag,
+__global__ void ApplyCombinerKernel(const int* row_emptiness_flag,
                                     const bool set_empty_row_zero,
-                                    const int* feature_nums) {
+                                    int* feature_nums, float* emb_vectors) {
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
+  const int feature_num = feature_nums[blockIdx.x];
   if (set_empty_row_zero) {
     if (row_emptiness_flag[blockIdx.x]) {
+      feature_nums[blockIdx.x] = 0;
       emb_vectors[offset] = 0.0f;
       return;
     }
   }
-  const int feature_num = feature_nums[blockIdx.x];
   const float emb_element = emb_vectors[offset];
   emb_vectors[offset] = Combine<combiner>(emb_element, feature_num);
 }
 
 template <Combiner combiner>
 void ApplyCombiner(const GPUDevice& d, const int batch_size,
-                   const int emb_vec_size, float* emb_vectors,
-                   const int* row_emptiness_flag, const bool set_empty_row_zero,
-                   const int* feature_nums) {
+                   const int emb_vec_size, const int* row_emptiness_flag,
+                   const bool set_empty_row_zero, int* feature_nums,
+                   float* emb_vectors) {
   const int blocks = batch_size;
   const int threads = emb_vec_size;
   TF_CHECK_OK(GpuLaunchKernel(ApplyCombinerKernel<combiner>, blocks, threads, 0,
-                              d.stream(), emb_vectors, row_emptiness_flag,
-                              set_empty_row_zero, feature_nums));
+                              d.stream(), row_emptiness_flag,
+                              set_empty_row_zero, feature_nums, emb_vectors));
 }
 
 template void ApplyCombiner<Sqrtn>(const GPUDevice& d, const int batch_size,
-                                   const int emb_vec_size, float* emb_vectors,
+                                   const int emb_vec_size,
                                    const int* row_emptiness_flag,
                                    const bool set_empty_row_zero,
-                                   const int* feature_nums);
+                                   int* feature_nums, float* emb_vectors);
 template void ApplyCombiner<Mean>(const GPUDevice& d, const int batch_size,
-                                  const int emb_vec_size, float* emb_vectors,
+                                  const int emb_vec_size,
                                   const int* row_emptiness_flag,
                                   const bool set_empty_row_zero,
-                                  const int* feature_nums);
+                                  int* feature_nums, float* emb_vectors);
 template void ApplyCombiner<Sum>(const GPUDevice& d, const int batch_size,
-                                 const int emb_vec_size, float* emb_vectors,
+                                 const int emb_vec_size,
                                  const int* row_emptiness_flag,
                                  const bool set_empty_row_zero,
-                                 const int* feature_nums);
+                                 int* feature_nums, float* emb_vectors);
 
 template <Combiner combiner>
 __global__ void DistributeGradToShardKernel(
     const float* top_grad, const float* emb_shard,
-    const int64_t* partitioned_indice, const int* feature_nums,
-    const int* row_emptiness_flag, const bool set_empty_row_zero,
-    float* grad_shard, const int64_t sub_nnz, const int64_t emb_vec_size,
-    const float max_norm) {
-  __shared__ int64_t row_in_batch_shared[1];
-  __shared__ int feature_num_shared[1];
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const int64_t shard_len,
+    const int64_t emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, float* grad_shard) {
   __shared__ float l2_sum[1];
-  int64_t row_in_batch;
-  if (threadIdx.x == 0) {
-    row_in_batch = partitioned_indice[2 * blockIdx.x];
-    row_in_batch_shared[0] = row_in_batch;
-    feature_num_shared[0] = feature_nums[row_in_batch];
-  }
-  __syncthreads();
-  row_in_batch = row_in_batch_shared[0];
-  const int feature_num = feature_num_shared[0];
-  if (set_empty_row_zero) {
-    if (row_emptiness_flag[row_in_batch]) {
-      grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = 0.0f;
-      return;
-    }
-  }
-  float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
-  grad = CombineGrad<combiner>(grad, feature_num);
+
+  const int64_t partition_permute = partition_permutations[blockIdx.x];
+  const int64_t ioitu_offset = unique_offsets[partition_permute];
+  const int64_t counts = unique_counts[partition_permute];
+  float l2_norm = -1.0f;
+
   if (max_norm >= 0.0f) {
     const float emb_element =
         emb_shard[blockIdx.x * emb_vec_size + threadIdx.x];
-    if (threadIdx.x == 0) {
-      l2_sum[0] = 0.0f;
-    }
-    __syncthreads();
+    l2_sum[0] = 0.0f;
     atomicAdd(l2_sum, emb_element * emb_element);
     __syncthreads();
-    float l2_norm = sqrtf(l2_sum[0]);
-    if (l2_norm > max_norm) {
+    l2_norm = sqrtf(l2_sum[0]);
+  }
+
+  float grad_accu = 0.0f;
+  for (int64_t i = 0; i < counts; i++) {
+    const int64_t ioitu = idx_of_input_to_unique[ioitu_offset + i];
+    const int64_t row_in_batch = indices_before_unique[2 * ioitu];
+    float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
+    const int feature_num = feature_nums[row_in_batch];
+    grad = CombineGrad<combiner>(grad, feature_num);
+    if (max_norm >= 0.0f && l2_norm > max_norm) {
       grad *= max_norm / l2_norm;
     }
+    grad_accu += grad;
   }
-  grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = grad;
+
+  grad_shard[blockIdx.x * emb_vec_size + threadIdx.x] = grad_accu;
 }
 
 template <Combiner combiner>
-void DistributeGradToShard(const GPUDevice& d, const float* top_grad,
-                           const float* emb_shard,
-                           const int64_t* partitioned_indice,
-                           const int* feature_nums,
-                           const int* row_emptiness_flag,
-                           const bool set_empty_row_zero, float* grad_shard,
-                           const int64_t sub_nnz, const int64_t emb_vec_size,
-                           const float max_norm) {
-  const int blocks = sub_nnz;
+void DistributeGradToShard(
+    const GPUDevice& d, const float* top_grad, const float* emb_shard,
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const int64_t shard_len,
+    const int64_t emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, float* grad_shard) {
+  const int blocks = shard_len;
   const int threads = emb_vec_size;
   TF_CHECK_OK(GpuLaunchKernel(
       DistributeGradToShardKernel<combiner>, blocks, threads, 0, d.stream(),
-      top_grad, emb_shard, partitioned_indice, feature_nums, row_emptiness_flag,
-      set_empty_row_zero, grad_shard, sub_nnz, emb_vec_size, max_norm));
+      top_grad, emb_shard, partition_permutations, indices_before_unique,
+      unique_counts, idx_of_input_to_unique, unique_offsets, shard_len,
+      emb_vec_size, max_norm, set_empty_row_zero, feature_nums,
+      row_emptiness_flag, grad_shard));
 }
 
 template void DistributeGradToShard<Sqrtn>(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* partitioned_indice, const int* feature_nums,
-    const int* row_emptiness_flag, const bool set_empty_row_zero,
-    float* grad_shard, const int64_t sub_nnz, const int64_t emb_vec_size,
-    const float max_norm);
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const int64_t shard_len,
+    const int64_t emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, float* grad_shard);
 
 template void DistributeGradToShard<Mean>(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* partitioned_indice, const int* feature_nums,
-    const int* row_emptiness_flag, const bool set_empty_row_zero,
-    float* grad_shard, const int64_t sub_nnz, const int64_t emb_vec_size,
-    const float max_norm);
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const int64_t shard_len,
+    const int64_t emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, float* grad_shard);
 
 template void DistributeGradToShard<Sum>(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* partitioned_indice, const int* feature_nums,
-    const int* row_emptiness_flag, const bool set_empty_row_zero,
-    float* grad_shard, const int64_t sub_nnz, const int64_t emb_vec_size,
-    const float max_norm);
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const int64_t shard_len,
+    const int64_t emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, float* grad_shard);
 
 }  // namespace fused_embedding
 

@@ -86,27 +86,28 @@ void GatherAndConvertToSubPartition(const GPUDevice& d,
 template <typename T>
 void RangeInit(const GPUDevice& d, const int64_t length, T* out);
 
-void SumUpEmbeddingShard(const GPUDevice& d, const size_t sub_nnz,
-                         const float* emb_shard,
-                         const int64_t* partitioned_indice, float* emb_vectors,
-                         int* feature_nums, const float max_norm,
-                         const int emb_vec_size);
+void SumUpEmbeddingShard(
+    const GPUDevice& d, const size_t shard_len, const float* emb_shard,
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const float max_norm, const int emb_vec_size,
+    float* emb_vectors, int* feature_nums);
 
 template <Combiner combiner>
 void ApplyCombiner(const GPUDevice& d, const int batch_size,
-                   const int emb_vec_size, float* emb_vectors,
-                   const int* row_emptiness_flag, const bool set_empty_row_zero,
-                   const int* feature_nums);
+                   const int emb_vec_size, const int* row_emptiness_flag,
+                   const bool set_empty_row_zero, int* feature_nums,
+                   float* emb_vectors);
 
 template <Combiner combiner>
-void DistributeGradToShard(const GPUDevice& d, const float* top_grad,
-                           const float* emb_shard,
-                           const int64_t* partitioned_indice,
-                           const int* feature_nums,
-                           const int* row_emptiness_flag,
-                           const bool set_empty_row_zero, float* grad_shard,
-                           const int64_t sub_nnz, const int64_t emb_vec_size,
-                           const float max_norm);
+void DistributeGradToShard(
+    const GPUDevice& d, const float* top_grad, const float* emb_shard,
+    const int64_t* partition_permutations, const int64_t* indices_before_unique,
+    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
+    const int64_t* unique_offsets, const int64_t shard_len,
+    const int64_t emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, float* grad_shard);
 
 }  // namespace fused_embedding
 

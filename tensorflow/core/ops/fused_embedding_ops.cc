@@ -151,9 +151,13 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
     .Input("emb_shards: num_partitions * T")
-    .Input("partitioned_indices: num_partitions * int64")
+    .Input("partition_permutations: num_partitions * int64")
     .Input("sp_dense_shape: int64")
+    .Input("indices_before_unique: int64")
     .Input("row_empty_and_invalid_flags: int32")
+    .Input("unique_counts: int64")
+    .Input("idx_of_input_to_unique: int64")
+    .Input("unique_offsets: int64")
     .Input(
         "partitioned_values: num_partitions * int64")  // only for backward use.
                                                        // actually directly port
@@ -165,30 +169,63 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
       int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
 
+      std::vector<ShapeHandle> unused_list;
+      ShapeHandle unused;
+      DimensionHandle unused_dim;
+
+      // emb_shards
+      ctx->input("emb_shards", &unused_list);
       ShapeHandle first_emb_shard_shape;
       TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(0), 2, &first_emb_shard_shape));
-
-      ShapeHandle unused;
-      for (int i = 0; i < num_partitions; i++) {
-        // emb_shards
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
-        // partitioned_indices
-        TF_RETURN_IF_ERROR(
-            ctx->WithRank(ctx->input(i + num_partitions), 2, &unused));
-        DimensionHandle unused_dim;
-        TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
-      }
-      // sp_dense_shape
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(2 * num_partitions), 1, &unused));
-      // row_empty_and_invalid_flags
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
-
+          ctx->WithRank(unused_list[0], 2, &first_emb_shard_shape));
       DimensionHandle emb_vec_size_dim = ctx->Dim(first_emb_shard_shape, 1);
-      ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
-      ctx->set_output(1, ctx->MakeShape({ctx->UnknownDim()}));
+      int64 emb_vec_size = ctx->Value(emb_vec_size_dim);
+
+      for (int i = 0; i < num_partitions; i++) {
+        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 2, &unused));
+        TF_RETURN_IF_ERROR(
+            ctx->WithValue(ctx->Dim(unused, 1), emb_vec_size, &unused_dim));
+      }
+
+      // partition_permutations
+      ctx->input("partition_permutations", &unused_list);
+      for (int i = 0; i < num_partitions; i++) {
+        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 1, &unused));
+      }
+
+      // sp_dense_shape
+      ctx->input("sp_dense_shape", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // indices_before_unique
+      ctx->input("indices_before_unique", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // row_empty_and_invalid_flags
+      ctx->input("row_empty_and_invalid_flags", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // unique_counts
+      ctx->input("unique_counts", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // idx_of_input_to_unique
+      ctx->input("idx_of_input_to_unique", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // unique_offsets
+      ctx->input("unique_offsets", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // emb_vectors
+      unused_list.clear();
+      unused_list.resize(1);
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim});
+      ctx->set_output("emb_vectors", unused_list);
+
+      // feature_nums
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
+      ctx->set_output("feature_nums", unused_list);
       return Status::OK();
     });
 
@@ -212,43 +249,68 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("max_norm: float = -1.0")
     .Input("top_grad: T")
     .Input("emb_shards: num_partitions * T")
-    .Input("partitioned_indices: num_partitions * int64")
+    .Input("partition_permutations: num_partitions * int64")
     .Input("feature_nums: int32")
+    .Input("indices_before_unique: int64")
+    .Input("unique_counts: int64")
+    .Input("idx_of_input_to_unique: int64")
+    .Input("unique_offsets: int64")
     .Input("row_empty_and_invalid_flags: int32")
     .Output("grad_shards: num_partitions * T")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
 
+      std::vector<ShapeHandle> unused_list;
       ShapeHandle unused;
-      ShapeHandle top_grad_shape;
+      DimensionHandle unused_dim;
 
+      ctx->input("top_grad", &unused_list);
       // top_grad
-      TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(0), 2, &top_grad_shape));
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
+      DimensionHandle emb_vec_size_dim = ctx->Dim(unused, 1);
+
       // emb_shards
-      for (int i = 1; i < num_partitions + 1; i++) {
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
-      }
-      // partitioned_indices
-      for (int i = num_partitions + 1; i < 2 * num_partitions + 1; i++) {
-        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &unused));
-        DimensionHandle unused_dim;
-        TF_RETURN_IF_ERROR(ctx->WithValue(ctx->Dim(unused, 1), 2, &unused_dim));
-      }
-      // feature_nums
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(2 * num_partitions + 1), 1, &unused));
-      // row_empty_and_invalid_flags
-      TF_RETURN_IF_ERROR(
-          ctx->WithRank(ctx->input(2 * num_partitions + 2), 1, &unused));
-
-      DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
-
-      ShapeHandle output_shape =
-          ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim});
+      ctx->input("emb_shards", &unused_list);
       for (int i = 0; i < num_partitions; i++) {
-        ctx->set_output(i, output_shape);
+        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 2, &unused));
       }
+      // partition_permutations
+      ctx->input("partition_permutations", &unused_list);
+      for (int i = 0; i < num_partitions; i++) {
+        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 1, &unused));
+      }
+
+      // feature_nums
+      ctx->input("feature_nums", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // indices_before_unique
+      ctx->input("indices_before_unique", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
+
+      // unique_counts
+      ctx->input("unique_counts", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // idx_of_input_to_unique
+      ctx->input("idx_of_input_to_unique", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // unique_offsets
+      ctx->input("unique_offsets", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // row_empty_and_invalid_flags
+      ctx->input("row_empty_and_invalid_flags", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      // grad_shards
+      unused_list.clear();
+      unused_list.resize(1);
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim});
+      ctx->set_output("grad_shards", unused_list);
+
       return Status::OK();
     });
 
