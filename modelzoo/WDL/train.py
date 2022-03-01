@@ -1,5 +1,6 @@
 import time
 import argparse
+from numpy import dtype
 import tensorflow as tf
 import os
 import sys
@@ -211,8 +212,9 @@ class WDL():
         self.predict = self.prediction()
         with tf.name_scope('head'):
             self.train_op, self.loss = self.optimizer()
-            self.acc, self.acc_op = tf.metrics.accuracy(
-                labels=self.label, predictions=self.predict)
+            self.acc, self.acc_op = tf.metrics.accuracy(labels=self.label,
+                                                        predictions=tf.round(
+                                                            self.predict))
             self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
                                                    predictions=self.predict,
                                                    num_thresholds=1000)
@@ -236,54 +238,44 @@ class WDL():
         return dnn_input
 
     def prediction(self):
-        # input features
-        self.dnn_parent_scope = 'dnn'
-        with tf.variable_scope(self.dnn_parent_scope):
+        # Dnn part
+        with tf.variable_scope('dnn'):
+            # input layer
             with tf.variable_scope("input_from_feature_columns",
                                    partitioner=self.input_layer_partitioner,
                                    reuse=tf.AUTO_REUSE) as dnn_inputs_scope:
                 net = tf.feature_column.input_layer(
                     features=self.feature, feature_columns=self.deep_column)
-
                 add_layer_summary(net, dnn_inputs_scope.name)
 
-            if self.bf16:
-                net = tf.cast(net, dtype=tf.bfloat16)
-                with tf.variable_scope(
-                        'dnn_layers',
-                        partitioner=self.dense_layer_partitioner,
-                        reuse=tf.AUTO_REUSE).keep_weights():
-                    net = self.dnn(net, self.dnn_hidden_units, "hiddenlayer")
+            # hidden layers
+            dnn_scope = tf.variable_scope(
+                'dnn_layers',
+                partitioner=self.dense_layer_partitioner,
+                reuse=tf.AUTO_REUSE)
+            with dnn_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+                else dnn_scope:
+                if self.bf16:
+                    net = tf.cast(net, dtype=tf.bfloat16)
 
-                    with tf.variable_scope(
-                            "logits",
-                            values=(net, )).keep_weights() as dnn_logits_scope:
-                        dnn_logits = tf.layers.dense(net,
-                                                     units=1,
-                                                     activation=None,
-                                                     name=dnn_logits_scope)
-                    add_layer_summary(dnn_logits, dnn_logits_scope.name)
-                dnn_logits = tf.cast(dnn_logits, dtype=tf.float32)
+                net = self.dnn(net, self.dnn_hidden_units, "hiddenlayer")
 
-            else:
-                with tf.variable_scope(
-                        'dnn_layers',
-                        partitioner=self.dense_layer_partitioner,
-                        reuse=tf.AUTO_REUSE):
-                    net = self.dnn(net, self.dnn_hidden_units, "hiddenlayer")
+                if self.bf16:
+                    net = tf.cast(net, dtype=tf.float32)
 
-                with tf.variable_scope("logits",
-                                       values=(net, )) as dnn_logits_scope:
+                # dnn logits
+                logits_scope = tf.variable_scope("logits", values=(net, ))
+                with logits_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+                    else logits_scope as dnn_logits_scope:
                     dnn_logits = tf.layers.dense(net,
                                                  units=1,
                                                  activation=None,
                                                  name=dnn_logits_scope)
-                add_layer_summary(dnn_logits, dnn_logits_scope.name)
+                    add_layer_summary(dnn_logits, dnn_logits_scope.name)
 
-        self.linear_parent_scope = 'linear'
+        # linear part
         with tf.variable_scope(
-                self.linear_parent_scope,
-                partitioner=self.dense_layer_partitioner) as scope:
+                'linear', partitioner=self.dense_layer_partitioner) as scope:
             linear_logits = tf.feature_column.linear_model(
                 units=1,
                 features=self.feature,
@@ -324,13 +316,13 @@ class WDL():
                 dnn_optimizer.minimize(loss,
                                        var_list=tf.get_collection(
                                            tf.GraphKeys.TRAINABLE_VARIABLES,
-                                           scope=self.dnn_parent_scope),
+                                           scope='dnn'),
                                        global_step=self.global_step))
             train_ops.append(
                 linear_optimizer.minimize(loss,
                                           var_list=tf.get_collection(
                                               tf.GraphKeys.TRAINABLE_VARIABLES,
-                                              scope=self.linear_parent_scope)))
+                                              scope='linear')))
             train_op = tf.group(*train_ops)
 
         return train_op, loss
