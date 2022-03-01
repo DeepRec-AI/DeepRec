@@ -67,7 +67,7 @@ class KVInterface {
         slot_offset_.emplace_back(0);
       }
     }
-    dim +=  (16 - (sizeof(V) * dim) % 16) / sizeof(V); 
+    dim +=  ((sizeof(V) * dim) % 16 != 0) ? (16 - (sizeof(V) * dim) % 16) / sizeof(V) : 0; 
     slot_dims_[index] = dim;
     total_dims_ += dim;
     for (i = 0; i < slotnum; i++) {
@@ -77,6 +77,25 @@ class KVInterface {
     if (i == slotnum) {
       for (int j = 1; j < slotnum; j++) {
         slot_offset_[j] += slot_dims_[j-1] + slot_offset_[j-1];
+      }
+    }
+    flag_.clear(std::memory_order_release);
+  }
+
+  virtual void SetOffsetByDims(const Tensor& slot_dims_tensor) {
+    while (flag_.test_and_set(std::memory_order_acquire));
+    int64* dims = (int64*)slot_dims_tensor.data();
+    int64 slotnum = slot_dims_tensor.NumElements();
+    if (slot_dims_.size() == 0){
+      for (int i = 0; i < slotnum; i++) {
+        dims[i] += ((sizeof(V) * dims[i]) % 16 != 0) ? (16 - (sizeof(V) * dims[i]) % 16) / sizeof(V) : 0; 
+        slot_dims_.emplace_back(dims[i]);
+        total_dims_ += dims[i];
+        if (i > 0){
+          slot_offset_.emplace_back(slot_offset_[i - 1] + slot_dims_[i -1]);
+        } else {
+          slot_offset_.emplace_back(0);
+        }
       }
     }
     flag_.clear(std::memory_order_release);

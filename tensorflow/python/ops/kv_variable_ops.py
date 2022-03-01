@@ -261,6 +261,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._ht_type = evconfig.ht_type
     self._ht_partition_num = ht_partition_num
     self._is_sparse=False
+    self.importer=None
     if evconfig.filter_strategy != None:
       if isinstance(evconfig.filter_strategy, variables.CounterFilter):
         self._filter_freq = evconfig.filter_strategy.filter_freq
@@ -359,8 +360,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._handle_name = handle_name + ":0"
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
+        self._slots_info = None
         if self._is_primary:
           self._slotnum_op = ops.convert_to_tensor(0, preferred_dtype=dtypes.int64)
+          self._slots_info = {}
+          self._slots_info[self._slot_index] = self.initial_value.get_shape().as_list()[1]
         else:
           self._slotnum_op = evconfig.primary_slotnum_op
 

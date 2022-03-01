@@ -185,6 +185,79 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
+  Status Init(const Tensor& default_tensor, int64 default_value_dim, const Tensor& slot_dims_tensor) {
+    if (LayoutType::LIGHT == emb_config_.get_layout_type()) {
+      new_value_ptr_fn = [] (size_t size) { return new LightValuePtr<V>(size); };
+    } else if (LayoutType::NORMAL == emb_config_.get_layout_type()) {
+      new_value_ptr_fn = [] (size_t size) { return new NormalValuePtr<V>(size); };
+    } else if (LayoutType::LEVELDB == emb_config_.get_layout_type()) {
+     if (emb_config_.is_primary()) {
+      std::string path = emb_config_.get_storage_path();
+      Status s = Env::Default()->IsDirectory(path);
+      if (!s.ok()) {
+        LOG(WARNING) << "StoragePath=\"" << path << "\" is not Directory, message: " << s.ToString() << ". Try to create dir.";
+        TF_CHECK_OK(Env::Default()->RecursivelyCreateDir(path));
+      }
+      db_name_ = io::JoinPath(path, "level_db_" + std::to_string(Env::Default()->NowMicros()));
+      leveldb::Status st;
+      leveldb::Options options;
+      options.create_if_missing = true;
+      //options.write_buffer_size = 1024 * 1024 * 1024;
+      //options.error_if_exists = true;
+      st = leveldb::DB::Open(options, db_name_.c_str(), &level_db_);
+      if (!st.ok()) {
+        LOG(FATAL) << "Fail to open leveldb: " << st.ToString();
+      } else {
+        VLOG(1) << "Open DB Success, db_name: " << db_name_;
+      }
+      new_value_ptr_fn = [this] (size_t size) { return new DBValuePtr<V>(size, this->level_db_); };
+     }
+    } else if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()){
+      new_value_ptr_fn = [] (size_t size) { return new NormalContiguousValuePtr<V>(size); };
+    } else {
+      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable LayoutType.");
+    }
+    filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this);
+
+    if (embedding::StorageType::DRAM == emb_config_.get_storage_type()) {
+      alloc_ = ev_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::PMEM_MEMKIND == emb_config_.get_storage_type()) {
+      alloc_ = pmem_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered PMEM_MEMKIND AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::PMEM_LIBPMEM == emb_config_.get_storage_type()){
+      alloc_ = experimental_pmem_allocator(emb_config_.get_storage_path(), emb_config_.get_storage_size());
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered PMEM_LIBPMEM AllocatorFactory.");
+      }
+    } else if (embedding::StorageType::LEVELDB == emb_config_.get_storage_type()) {
+      alloc_ = ev_allocator();
+      if (!alloc_) {
+        return errors::InvalidArgument(name_, ", No registered EV AllocatorFactory.");
+      }
+    } else {
+      return errors::InvalidArgument(name_, ", Unsupport EmbeddingVariable StorageType.");
+    }
+    
+    if (kv_ == nullptr) {
+       return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
+    } else {
+      emb_config_.default_value_dim = default_value_dim;
+      value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
+      default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
+      auto default_tensor_flat = default_tensor.flat<V>();
+      memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
+      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
+        kv_->SetOffsetByDims(slot_dims_tensor);
+      }
+      return Status::OK();
+    }
+  }
+
   void SetInitialized() {
     is_initialized_ = true;
   }

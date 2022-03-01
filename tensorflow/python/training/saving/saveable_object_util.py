@@ -190,14 +190,21 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
         return self.var.recover_from_init_data_source(self.var._init_data_source, self.partition_id, self.partition_num)
       else:
         rank = self.op.initial_value.get_shape().rank - 1
-        with ops.control_dependencies(None if self.var._is_primary else [self.var._primary.initializer]):
-          return gen_kv_variable_ops.kv_resource_import_v2(
+        slot_dims = []
+        for i in range(0, len(self.var._primary._slots_info)):
+          slot_dims.append(0)
+        for val in self.var._primary._slots_info.keys():
+          slot_dims[val] = self.var._primary._slots_info[val]
+        slot_dims_op = ops.convert_to_tensor(slot_dims, preferred_dtype=dtypes.int64)
+        with ops.control_dependencies(None if self.var._is_primary else [self.var._primary.importer]):
+          import_op = gen_kv_variable_ops.kv_resource_import_v2(
               restored_tensors[0],
               self.handle_op, self.var._primary._handle,
               variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
               self.name,
               ops.convert_to_tensor(self.invalid_key),
               self.var._slotnum_op,
+              slot_dims_op,
               shape=self.op.initial_value.get_shape()[rank:], steps_to_live=self.steps_to_live,
               emb_index=self.var._emb_index, slot_index=self.var._slot_index,
               block_num=self.var.block_num,
@@ -209,8 +216,11 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               max_element_size = self.var._max_element_size,
               false_positive_probability = self.var._false_positive_probability,
               counter_type = self.var._counter_type,
+              layout = self.var._layout,
               partition_id=self.partition_id, partition_num=self.partition_num,
               default_value_dim=self.var._default_value_dim)
+          self.var.importer = import_op
+          return import_op
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access

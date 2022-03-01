@@ -636,13 +636,15 @@ class KvResourceImportV2Op: public OpKernel {
     const Tensor& slotnum_tensor = context->input(6);
     int64 slotnum = slotnum_tensor.scalar<int64>()();
 
+    const Tensor& slot_dims_tensor = context->input(7);
+    
     if (handle_self.name() == handle_primary.name() &&
          handle_self.container() == handle_primary.container()) {
       OP_REQUIRES_OK(
         context,
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, slotnum,
+            [this, default_values, opname, slotnum, slot_dims_tensor,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               auto ht = KVFactory<TKey, TValue>::CreateKV(
                   ht_type_, ht_partition_num_);
@@ -654,7 +656,7 @@ class KvResourceImportV2Op: public OpKernel {
                                          max_freq_, l2_weight_threshold_,
                                          layout_,  max_element_size_, false_positive_probability_,
                                          counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
-             return (*ptr)->Init(default_values, default_value_dim_);
+             return (*ptr)->Init(default_values, default_value_dim_, slot_dims_tensor);
             }));
     } else {
       EmbeddingVar<TKey, TValue>* primary_variable = nullptr;
@@ -683,14 +685,14 @@ class KvResourceImportV2Op: public OpKernel {
         LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
             [this, default_values, opname, primary_variable, slotnum,
-             handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+             slot_dims_tensor, handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          primary_variable->kv(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0, max_freq_, l2_weight_threshold_,
                                          layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
-             return (*ptr)->Init(default_values, default_value_dim_);
+             return (*ptr)->Init(default_values, default_value_dim_, slot_dims_tensor);
             }));
       primary_variable->SetSlotNum(slotnum);
       core::ScopedUnref unref_me(primary_variable);
