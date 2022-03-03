@@ -34,8 +34,18 @@ using mkldnn::stream;
 
 namespace tensorflow {
 
+#define L1_SIZE 32 * 1024
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
+inline bool ExecuteSingleThreadedGemm(int m, int n, int k) {
+  // Ideally we would like to determine blocking and then come up with
+  // a heuristic but what we are targeting are very small models whose
+  // total size is < few L1's. So we will do this simple calculation
+  // to determine if the matrix multiplication should be run on a single thread.
+  constexpr int kHeuristicMultiplier = 8;
+  return ((sizeof(float) * (m * n + k * (m + n))) <
+          L1_SIZE * kHeuristicMultiplier);
+}
 // This structure aggregates multiple inputs to MklDnnMatMul* methods.
 struct MklDnnMatMulFwdParams {
   memory::dims src_dims;
@@ -552,7 +562,7 @@ class MklDnnMatMulOpBase : public OpKernel {
   PersistentTensor weight_oi_ GUARDED_BY(mu_);
   PersistentTensor weight_oi_md_ GUARDED_BY(mu_);
 
-  bool is_weight_const_;
+  bool is_weight_const_ = false;
 
   const int kInputIndexSrc = 0;
   const int kInputIndexWeight = 1;
@@ -805,16 +815,26 @@ void dnnl_gemm(char transa, char transb, int64_t m, int64_t n, int64_t k,
   DCHECK_EQ(alpha, 1.0f);
   DCHECK_EQ(beta, 0.f);
 
+  bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled();
   MklMatMulParams params(a_dims, b_dims, c_dims, a_strides, b_strides,
                          c_strides);
   MklMatMulPrimitive<T>* matmul_prim =
-      MklMatMulPrimitiveFactory<T>::Get(params, 0);
+      MklMatMulPrimitiveFactory<T>::Get(params, do_not_cache);
 
   // Execute matmul primitive.
   std::shared_ptr<stream> cpu_stream;
-  MklDnnThreadPool eigen_tp(ctx);
-  cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
-  matmul_prim->Execute(a, b, c, cpu_stream);
+  if (ExecuteSingleThreadedGemm(m, n, k)) {
+    MklDnnThreadPool eigen_tp(ctx, 1);
+    cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
+    matmul_prim->Execute(a, b, c, cpu_stream);
+  } else {
+    MklDnnThreadPool eigen_tp(ctx);
+    cpu_stream.reset(CreateStream(&eigen_tp, matmul_prim->GetEngine()));
+    matmul_prim->Execute(a, b, c, cpu_stream);
+  }
+
+  if (do_not_cache)
+    delete matmul_prim;
 }
 
 }  // anonymous namespace
