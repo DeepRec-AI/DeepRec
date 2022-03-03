@@ -192,6 +192,9 @@ class SavedModelOptimizer : public GraphOptimizer {
       Node* import_op, Node** insert_op);
   Status CreateIncrRestoreOp(
       Node* import_op, Node** restore_op);
+  Status GetIncrRestoreOpInputs(
+    const Node* restore_op,
+    std::vector<SrcInfo>& input_nodes);
 
   // Convert EV related ops to HashTable ops
   Status ConvertToHashTableOps();

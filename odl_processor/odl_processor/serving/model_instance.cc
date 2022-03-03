@@ -22,8 +22,12 @@ namespace {
 constexpr int _60_Seconds = 60;
 
 Tensor CreateTensor(const TensorInfo& tensor_info) {
-  Tensor tensor(tensor_info.dtype(),
-      TensorShape(tensor_info.tensor_shape())); 
+  auto real_ts = tensor_info.tensor_shape();
+  // set batch_size to 1 when the default value is -1
+  if (real_ts.dim(0).size() < 0) {
+    real_ts.mutable_dim(0)->set_size(1);
+  }
+  Tensor tensor(tensor_info.dtype(), TensorShape(real_ts));
 
   switch(tensor.dtype()) {
     case DT_FLOAT: {
@@ -67,11 +71,11 @@ Call CreateWarmupParams(SignatureDef& sig_def) {
   Call call;
   for (auto it : sig_def.inputs()) {
     const auto& tensor = CreateTensor(it.second);
-    call.request.inputs.emplace_back(it.first, tensor);
+    call.request.inputs.emplace_back(it.second.name(), tensor);
   }
 
   for (auto it : sig_def.outputs()) {
-    call.request.output_tensor_names.emplace_back(it.first);
+    call.request.output_tensor_names.emplace_back(it.second.name());
   }
 
   return call; 
@@ -154,7 +158,7 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   optimizer_ = new SavedModelOptimizer(config->signature_name,
       &meta_graph_def_, option);
   TF_RETURN_IF_ERROR(optimizer_->Optimize());
-  
+
   TF_RETURN_IF_ERROR(ReadModelSignature(config));
 
   session_mgr_ = new ModelSessionMgr(meta_graph_def_,

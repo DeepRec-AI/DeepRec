@@ -178,16 +178,6 @@ class FakeFileSystem : public FileSystem {
   void FlushCaches() override {
   } 
 
-  Status NewTransactionFile(const string& fname,
-      std::unique_ptr<WritableFile>* result) override {
-    return Status::OK();
-  }
-
-  Status TransactionRenameFile(const string& src,
-      const string& target) override {
-    return Status::OK();
-  }
-
   Status DeleteDir(const string& dirname) override {
     return Status::OK();
   }
