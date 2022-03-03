@@ -52,6 +52,13 @@ std::unordered_set<std::string> GetBlackOpsSet() {
   return s;
 }
 
+static const int gather_input_resource_slot = 0;
+static const int gather_input_indice_slot = 1;
+static const int gather_input_default_val_slot = 2;
+static const int import_input_prefix_slot = 0;
+static const int import_input_resource_slot = 1;
+static const int import_input_tname_slot = 4;
+
 } // namespace
 
 
@@ -1412,10 +1419,12 @@ Status SavedModelOptimizer::FindKvResourceImportNode(
         }
       }
     }
+    // NOTE: Why import_nodes num is twice to var?
+    // Please see the details in KvResourceImport defination.
     if (import_nodes.find(vp.first) == import_nodes.end() ||
-        import_nodes[vp.first].size() != var_parts[vp.first].size()) {
-      LOG(FATAL) << "KvVarHandle node count != KvResourceImportV2 node count "
-                 << ", " << vp.first; 
+        import_nodes[vp.first].size() != 2 * var_parts[vp.first].size()) {
+      LOG(FATAL) << "KvVarHandle node count should be twice to KvResourceImportV2 node count "
+                 << ", " << vp.first << ", " << import_nodes[vp.first].size() << " VS " << var_parts[vp.first].size();
     }
   }
 
@@ -1482,11 +1491,13 @@ Status SavedModelOptimizer::ConvertKVOps() {
 
       std::vector<SrcInfo> gather_input_info;
       // indices
-      gather_input_info.push_back(SrcInfo{input_info[1].src_node,
-                                          input_info[1].src_slot});
+      gather_input_info.push_back(
+          SrcInfo{input_info[gather_input_indice_slot].src_node,
+                  input_info[gather_input_indice_slot].src_slot});
       // default_value
-      gather_input_info.push_back(SrcInfo{input_info[2].src_node,
-                                          input_info[2].src_slot});
+      gather_input_info.push_back(
+          SrcInfo{input_info[gather_input_default_val_slot].src_node,
+                  input_info[gather_input_default_val_slot].src_slot});
       // storage pointer
       gather_input_info.push_back(SrcInfo{storage_pointer_node_, 0});
 
@@ -1499,17 +1510,19 @@ Status SavedModelOptimizer::ConvertKVOps() {
       }
 
       AttrValue feature_name_value;
-      SetAttrValue(input_info[0].src_node->name(), &feature_name_value);
+      SetAttrValue(
+          input_info[gather_input_resource_slot].src_node->name(), &feature_name_value);
 
       AttrValue feature_name_to_id_value;
       Status s_feature_to_id = GetFeature2IdAttr(
-          input_info[0].src_node->name(),
+          input_info[gather_input_resource_slot].src_node->name(),
           &feature_name_to_id_value);
       if (!s_feature_to_id.ok()) return s_feature_to_id;
 
       // get resource shape attr
       int dim_len_value = 0;
-      Status s_get_dim = GetShapeValue(input_info[0].src_node, &dim_len_value);
+      Status s_get_dim = GetShapeValue(
+          input_info[gather_input_resource_slot].src_node, &dim_len_value);
       if (!s_get_dim.ok()) return s_get_dim;
 
       AttrValue dim_len_value_int;
@@ -1543,14 +1556,15 @@ Status SavedModelOptimizer::ConvertKVOps() {
         return tensorflow::errors::Internal(
             "Not found a storage pointer or version node in the graph.");
       }
-
       std::vector<SrcInfo> import_input_info;
       // prefix
-      import_input_info.push_back(SrcInfo{input_info[0].src_node,
-                                          input_info[0].src_slot});
+      import_input_info.push_back(
+          SrcInfo{input_info[import_input_prefix_slot].src_node,
+                  input_info[import_input_prefix_slot].src_slot});
       // tensor_names
-      import_input_info.push_back(SrcInfo{input_info[3].src_node,
-                                          input_info[3].src_slot});
+      import_input_info.push_back(
+          SrcInfo{input_info[import_input_tname_slot].src_node,
+                  input_info[import_input_tname_slot].src_slot});
       // storage pointer
       import_input_info.push_back(SrcInfo{storage_pointer_node_, 0});
 
@@ -1570,16 +1584,18 @@ Status SavedModelOptimizer::ConvertKVOps() {
       }
 
       AttrValue feature_name_value;
-      SetAttrValue(input_info[1].src_node->name(), &feature_name_value);
+      SetAttrValue(
+          input_info[import_input_resource_slot].src_node->name(), &feature_name_value);
       AttrValue feature_name_to_id_value;
       Status s_feature_to_id = GetFeature2IdAttr(
-          input_info[1].src_node->name(),
+          input_info[import_input_resource_slot].src_node->name(),
           &feature_name_to_id_value);
       if (!s_feature_to_id.ok()) return s_feature_to_id;
 
       // get resource shape attr
       int dim_len_value = 0;
-      Status s_get_dim = GetShapeValue(input_info[1].src_node, &dim_len_value);
+      Status s_get_dim = GetShapeValue(
+          input_info[import_input_resource_slot].src_node, &dim_len_value);
       if (!s_get_dim.ok()) return s_get_dim;
 
       AttrValue dim_len_value_int;
@@ -1702,6 +1718,31 @@ Status SavedModelOptimizer::AddVariableInitSubGraph() {
   return status;
 }
 
+namespace {
+void GetResourceNodeFromRestoreOpInputs(
+    const Node* restore_op,
+    std::vector<SrcInfo>& kv_nodes,
+    std::vector<SrcInfo>& dense_nodes) {
+  for (const Edge* edge : restore_op->in_edges()) {
+    const Node* src = edge->src();
+    if (src->type_string() != "NoOp") {
+      LOG(FATAL) << "Restore op " << restore_op->name()
+                 << " has input node which type is not NoOp."
+                 << src->DebugString();
+    }
+
+    for (const Edge* inner_edge : src->in_edges()) {
+      Node* inner_src = inner_edge->src();
+      if (inner_src->op_def().name() == "KvResourceImportV2") {
+        kv_nodes.push_back({inner_src, inner_edge->src_output()});
+      } else {
+        dense_nodes.push_back({inner_src, inner_edge->src_output()});
+      }
+    }
+  }
+}
+}
+
 Status SavedModelOptimizer::CreateDenseAndSparseRestoreOp() {
   const std::string restore_op_name =
       meta_graph_def_->saver_def().restore_op_name();
@@ -1718,28 +1759,18 @@ Status SavedModelOptimizer::CreateDenseAndSparseRestoreOp() {
         "Can not find restore op: " + restore_op_name);
   }
 
-  if (restore_op->in_edges().size() != 1) {
-    LOG(FATAL) << "Restore all op only allow 1 input: "
-               << restore_op->DebugString();
-  }
-
   std::vector<SrcInfo> kv_nodes;
   std::vector<SrcInfo> dense_nodes;
-  for (const Edge* edge : restore_op->in_edges()) {
-    const Node* src = edge->src();
-    if (src->type_string() != "NoOp") {
-      LOG(FATAL) << "Restore op " << restore_op_name
-                 << " has input node which type is not NoOp."
-                 << src->DebugString();
-    }
-
-    for (const Edge* inner_edge : src->in_edges()) {
-      Node* inner_src = inner_edge->src();
-      if (inner_src->op_def().name() == "KvResourceImportV2") {
-        kv_nodes.push_back({inner_src, inner_edge->src_output()});
-      } else {
-        dense_nodes.push_back({inner_src, inner_edge->src_output()});
+  if (restore_op->in_edges().size() == 1) {
+    GetResourceNodeFromRestoreOpInputs(restore_op, kv_nodes, dense_nodes);
+  } else {
+    for (const Edge* edge : restore_op->in_edges()) {
+      const Node* sub_restore_op = edge->src();
+      if (sub_restore_op->in_edges().size() != 1) {
+        LOG(FATAL) << "Sub restore all op only allow 1 input: "
+                   << sub_restore_op->DebugString();
       }
+      GetResourceNodeFromRestoreOpInputs(sub_restore_op, kv_nodes, dense_nodes);
     }
   }
 
@@ -2056,7 +2087,8 @@ Status SavedModelOptimizer::CreateIncrRestoreOp(
   // Add input egdes
   std::vector<SrcInfo> input_info;
   // input: prefix
-  input_info.push_back({src_info[0].src_node, src_info[0].src_slot});
+  input_info.push_back({src_info[import_input_prefix_slot].src_node,
+                        src_info[import_input_prefix_slot].src_slot});
 
   // input: tensor_names
   // concat key/value/version strings to one tensor
@@ -2082,7 +2114,9 @@ Status SavedModelOptimizer::CreateIncrRestoreOp(
                           DataType::DT_STRING, &graph_, &suffix_node, &suffix));
 
     std::vector<SrcInfo> join_inputs;
-    join_inputs.push_back({src_info[3].src_node, src_info[3].src_slot});
+    // tensor name
+    join_inputs.push_back({src_info[import_input_tname_slot].src_node,
+                           src_info[import_input_tname_slot].src_slot});
     join_inputs.push_back({suffix_node, 0});
     Node* join_node = nullptr;
     TF_RETURN_IF_ERROR(
@@ -2221,29 +2255,73 @@ Node* SavedModelOptimizer::FindRestoreShardNode() {
   return restore_shard; 
 }
 
+Status SavedModelOptimizer::GetIncrRestoreOpInputs(
+    const Node* restore_op,
+    std::vector<SrcInfo>& input_nodes) {
+  for (const Edge* edge : restore_op->in_edges()) {
+    const Node* src = edge->src();
+    if (src->type_string() != "NoOp") {
+      LOG(FATAL) << "Restore op " << restore_op->name()
+                 << " has input node which type is not NoOp."
+                 << src->DebugString();
+    }    
+
+    for (const Edge* inner_edge : src->in_edges()) {
+      Node* inner_src = inner_edge->src();
+      // KvResourceImportV2 -> KvResourceInsert
+      if (inner_src->op_def().name() == "KvResourceImportV2") {
+        if (inner_edge->src_output() != -1) {
+          LOG(FATAL) << "Invalid tensorflow graph, restore_shard op is: "
+                     << src->DebugString() << ", KvResourceImportV2 op is: "
+                     << inner_src->DebugString();
+        }    
+
+        Node* insert_op = nullptr;
+        Status s = ConvertKvImportToKvInsert(inner_src, &insert_op);
+        TF_RETURN_IF_ERROR(s);
+
+        input_nodes.push_back({insert_op, inner_edge->src_output()});
+      } else {
+        input_nodes.push_back({inner_src, inner_edge->src_output()});
+      }    
+    }    
+  }
+
+  return Status::OK();
+}
+
 Status SavedModelOptimizer::AddIncrRestoreOps() {
-  Node* shard_node = FindRestoreShardNode();
-
-  std::vector<SrcInfo> input_nodes;
-  for (const Edge* inner_edge : shard_node->in_edges()) {
-    Node* inner_src = inner_edge->src();
-    // KvResourceImportV2 -> KvResourceInsert
-    if (inner_src->op_def().name() == "KvResourceImportV2") {
-      if (inner_edge->src_output() != -1) {
-        LOG(FATAL) << "Invalid tensorflow graph, restore_shard op is: "
-                   << shard_node->DebugString() << ", KvResourceImportV2 op is: "
-                   << inner_src->DebugString();
-      }
-
-      Node* insert_op = nullptr;
-      Status s = ConvertKvImportToKvInsert(inner_src, &insert_op);
-      TF_RETURN_IF_ERROR(s);
-
-      input_nodes.push_back({insert_op, inner_edge->src_output()});
-    } else {
-      input_nodes.push_back({inner_src, inner_edge->src_output()});
+  const std::string restore_op_name =
+      meta_graph_def_->saver_def().restore_op_name();
+  Node* restore_op = nullptr;
+  for (Node* node : graph_.nodes()) {
+    if (node->name() == restore_op_name) {
+      restore_op = node;
+      break;
     }
   }
+
+  if (!restore_op) {
+    return errors::Internal(
+        "Can not find restore op: " + restore_op_name);
+  }
+
+  std::vector<SrcInfo> input_nodes;
+  Status s;
+  if (restore_op->in_edges().size() == 1) {
+    s = GetIncrRestoreOpInputs(restore_op, input_nodes);
+  } else {
+    for (const Edge* edge : restore_op->in_edges()) {
+      const Node* sub_restore_op = edge->src();
+      if (sub_restore_op->in_edges().size() != 1) {
+        LOG(FATAL) << "Sub restore all op only allow 1 input: "
+                   << sub_restore_op->DebugString();
+      }
+      s = GetIncrRestoreOpInputs(sub_restore_op, input_nodes);
+    }
+  }
+
+  TF_RETURN_IF_ERROR(s);
 
   return CreateRestoreAllNode(
       meta_graph_def_->saver_def().restore_op_name() +

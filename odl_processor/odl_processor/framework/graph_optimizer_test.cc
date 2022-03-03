@@ -862,7 +862,12 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   n_ek_const_0->set_name("empty_key/Const");
   n_ek_const_0->set_op("Const");
   (*n_ek_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
- 
+
+  NodeDef* n_slot_const_0 = graph_def.add_node();
+  n_slot_const_0->set_name("slotnum/Const");
+  n_slot_const_0->set_op("Const");
+  (*n_slot_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+
   NodeDef* n_lookup_import_0 = graph_def.add_node();
   n_lookup_import_0->set_name("KvResourceImportV2_0");
   n_lookup_import_0->set_op("KvResourceImportV2");
@@ -875,9 +880,11 @@ TEST(GraphOptimizerTest, SavedModelOptimize0) {
   (*n_lookup_import_0->mutable_attr())["shape"] = value0;
   n_lookup_import_0->add_input("prefix/Const");
   n_lookup_import_0->add_input("var_0");
+  n_lookup_import_0->add_input("var_0");
   n_lookup_import_0->add_input("value/Const");
   n_lookup_import_0->add_input("tsname/Const");
   n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("slotnum/Const");
   
   NodeDef* n_restore_shard = graph_def.add_node();
   n_restore_shard->set_name("save/restore_shard");
@@ -1058,7 +1065,11 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   n_ek_const_0->set_op("Const");
   (*n_ek_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
  
-
+  NodeDef* n_slot_const_0 = graph_def.add_node();
+  n_slot_const_0->set_name("slotnum0/Const");
+  n_slot_const_0->set_op("Const");
+  (*n_slot_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+ 
   // KvVarHandle
   NodeDef* n_var_0 = graph_def.add_node();
   n_var_0->set_name("var_0");
@@ -1095,9 +1106,11 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
   (*n_lookup_import_0->mutable_attr())["shape"] = value0;
   n_lookup_import_0->add_input("prefix/Const");
   n_lookup_import_0->add_input("var_0");
+  n_lookup_import_0->add_input("var_0");
   n_lookup_import_0->add_input("value/Const");
   n_lookup_import_0->add_input("tsname/Const");
   n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("slotnum0/Const");
   n_lookup_import_0->add_input("^prefix/Const");
 
   REGISTER_OP("FakeAssign")
@@ -1167,7 +1180,7 @@ TEST(GraphOptimizerTest, NativeGraphOptimizerOptimize0) {
     ++node_count;
   }
 
-  EXPECT_TRUE(node_count == 29);
+  EXPECT_TRUE(node_count == 30);
   EXPECT_TRUE(nodes.find("save/restore_all/Kv_incr_all") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0_KvResourceInsert") != nodes.end());
   EXPECT_TRUE(nodes.find("KvResourceImportV2_0_IncrRestore/version_tensor") != nodes.end());
@@ -1268,6 +1281,11 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer1) {
   *var_value0.mutable_shape() = var_shape0;
   (*n_var_0->mutable_attr())["shape"] = var_value0;
 
+  NodeDef* n_slot_const_0 = graph_def.add_node();
+  n_slot_const_0->set_name("slotnum0/Const");
+  n_slot_const_0->set_op("Const");
+  (*n_slot_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+
   // KvResourceImportV2
   NodeDef* n_lookup_import_0 = graph_def.add_node();
   n_lookup_import_0->set_name("KvResourceImportV2_0");
@@ -1281,9 +1299,11 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer1) {
   (*n_lookup_import_0->mutable_attr())["shape"] = value0;
   n_lookup_import_0->add_input("prefix/Const");
   n_lookup_import_0->add_input("var_0");
+  n_lookup_import_0->add_input("var_0");
   n_lookup_import_0->add_input("value/Const");
   n_lookup_import_0->add_input("tsname/Const");
   n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("slotnum0/Const");
   n_lookup_import_0->add_input("^prefix/Const");
 
   REGISTER_OP("MyFakeAssign")
@@ -1363,7 +1383,7 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer1) {
     ++node_count;
   }
 
-  EXPECT_TRUE(node_count == 15);
+  EXPECT_TRUE(node_count == 16);
   EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_1/KvResourceImportV2") != nodes.end());
   EXPECT_TRUE(nodes.find("save/restore_all/Kv_incr_all") != nodes.end());
   EXPECT_TRUE(nodes.find("var_0/odl_var_part/part_1/tensor_names") != nodes.end());
@@ -1572,6 +1592,11 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer2) {
   *var_value0.mutable_shape() = var_shape0;
   (*n_var_0->mutable_attr())["shape"] = var_value0;
 
+  NodeDef* n_slot_const_0 = graph_def.add_node();
+  n_slot_const_0->set_name("slotnum0/Const");
+  n_slot_const_0->set_op("Const");
+  (*n_slot_const_0->mutable_attr())["dtype"].set_type(DT_INT64);
+
   // part_0/KvResourceImportV2
   NodeDef* n_lookup_import_0 = graph_def.add_node();
   n_lookup_import_0->set_name("part_0/KvResourceImportV2");
@@ -1585,9 +1610,11 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer2) {
   (*n_lookup_import_0->mutable_attr())["shape"] = value0;
   n_lookup_import_0->add_input("prefix/Const");
   n_lookup_import_0->add_input("var_0/part_0");
+  n_lookup_import_0->add_input("var_0/part_0");
   n_lookup_import_0->add_input("value/Const");
   n_lookup_import_0->add_input("tsname/Const");
   n_lookup_import_0->add_input("empty_key/Const");
+  n_lookup_import_0->add_input("slotnum0/Const");
   n_lookup_import_0->add_input("^prefix/Const");
 
   REGISTER_OP("MyFakeAssign2")
@@ -1663,6 +1690,11 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer2) {
   *var_value0_1.mutable_shape() = var_shape0_1;
   (*n_var_1->mutable_attr())["shape"] = var_value0_1;
 
+  NodeDef* n_slot_const_1 = graph_def.add_node();
+  n_slot_const_1->set_name("slotnum1/Const");
+  n_slot_const_1->set_op("Const");
+  (*n_slot_const_1->mutable_attr())["dtype"].set_type(DT_INT64);
+
   // part_1/KvResourceImportV2
   NodeDef* n_lookup_import_1 = graph_def.add_node();
   n_lookup_import_1->set_name("part_1/KvResourceImportV2");
@@ -1676,9 +1708,11 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer2) {
   (*n_lookup_import_1->mutable_attr())["shape"] = value0_1;
   n_lookup_import_1->add_input("prefix/Const");
   n_lookup_import_1->add_input("var_0/part_1");
+  n_lookup_import_1->add_input("var_0/part_1");
   n_lookup_import_1->add_input("value/Const_1");
   n_lookup_import_1->add_input("tsname/Const_1");
   n_lookup_import_1->add_input("empty_key/Const_1");
+  n_lookup_import_1->add_input("slotnum1/Const");
   n_lookup_import_1->add_input("^prefix/Const");
 
   // part_1/KvResourceGather
@@ -1774,7 +1808,7 @@ TEST(GraphOptimizerTest, ShardEmbeddingOptimizer2) {
       ++node_count;
     }
 
-    EXPECT_TRUE(node_count == 31);
+    EXPECT_TRUE(node_count == 33);
     EXPECT_TRUE(nodes.find("var_0/part_0") == nodes.end());
     EXPECT_TRUE(nodes.find("var_0/part_1") == nodes.end());
     EXPECT_TRUE(nodes.find("part_0/KvResourceImportV2") == nodes.end());

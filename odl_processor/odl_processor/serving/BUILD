@@ -6,7 +6,7 @@ load(
 )
 
 load(
-    "@org_tensorflow//tensorflow/core:platform/default/build_config.bzl",
+    "@org_tensorflow//tensorflow/core/platform:default/build_config.bzl",
     "tf_proto_library_cc"
 )
 

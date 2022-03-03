@@ -9,12 +9,18 @@ tf_configure(name = "local_config_tf")
 
 http_archive(
     name = "io_bazel_rules_closure",
-    sha256 = "a38539c5b5c358548e75b44141b4ab637bba7c4dc02b46b1f62a96d6433f56ae",
-    strip_prefix = "rules_closure-dbb96841cc0a5fb2664c37822803b06dab20c7d1",
+    sha256 = "5b00383d08dd71f28503736db0500b6fb4dda47489ff5fc6bed42557c07c6ba9",
+    strip_prefix = "rules_closure-308b05b2419edb5c8ee0471b67a40403df940149",
     urls = [
-        "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/mirror.bazel.build/github.com/bazelbuild/rules_closure/archive/dbb96841cc0a5fb2664c37822803b06dab20c7d1.tar.gz",
-        "http://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/github.com/bazelbuild/rules_closure/archive/dbb96841cc0a5fb2664c37822803b06dab20c7d1.tar.gz",  # 2018-04-13
+        "https://storage.googleapis.com/mirror.tensorflow.org/github.com/bazelbuild/rules_closure/archive/308b05b2419edb5c8ee0471b67a40403df940149.tar.gz",
+        "https://github.com/bazelbuild/rules_closure/archive/308b05b2419edb5c8ee0471b67a40403df940149.tar.gz",  # 2019-06-13
     ],
+)
+
+http_archive(
+    name = "bazel_skylib",
+    sha256 = "2ef429f5d7ce7111263289644d233707dba35e39696377ebab8b0bc701f7818e",
+    urls = ["https://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/github.com/bazelbuild/bazel-skylib/releases/download/0.8.0/bazel-skylib.0.8.0.tar.gz",],
 )
 
 http_archive(
@@ -89,6 +95,9 @@ http_archive(
     name = "libevent",
     build_file = "//third_party:libevent.BUILD",
     sha256 = "d5e8928f64c219f2dd9731b22ed6dbf471c6fda0e96ab8c3b571408a0e332da6",
+    patches = [
+        "//third_party:libevent.patch",
+    ],
     urls = [
         "https://gitlab.alibaba-inc.com/odps_tensorflow/other/raw/master/libevent/libevent-2.1.12-stable+configure.tar.gz",
     ],
@@ -96,7 +105,7 @@ http_archive(
 
 local_repository(
      name = "org_tensorflow",
-     path = "./pai-tensorflow",
+     path = "./DeepRec",
 )
 
 new_local_repository(
