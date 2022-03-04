@@ -1,5 +1,6 @@
 #define EIGEN_USE_THREADS
 
+#include <limits.h>
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/resource_mgr.h"
 #include "tensorflow/core/framework/shape_inference.h"
@@ -9,10 +10,75 @@
 
 namespace tensorflow {
 
+namespace{
+
 struct IndicePair {
   int64_t row;
   int64_t column;
 };
+
+enum Part_Strategy {
+  MOD,
+  DIV
+};
+
+typedef void (*PARTITIONALGO)(
+                        const int64_t* id_table, const int64_t numPartitions,
+                        const int64_t idsPerPartition, const int64_t extras,
+                        const int64_t originId, int64_t* segment, int64_t* newId);
+
+template <Part_Strategy PS>
+inline void GetPartitionIndex(
+                        const int64_t* id_table, const int64_t numPartitions,
+                        const int64_t idsPerPartition, const int64_t extras,
+                        const int64_t originId, int64_t* segment, int64_t* newId){
+  // OP_REQUIRES(ctx, false,
+  //   errors::InvalidArgument("GetPartitionIndex not support undefine type. ", T));
+  //todo(marvin): show the error info.
+}
+
+template <>
+inline void GetPartitionIndex<Part_Strategy::MOD>(
+                        const int64_t* id_table, const int64_t numPartitions,
+                        const int64_t idsPerPartition, const int64_t extras,
+                        const int64_t originId, int64_t* segment, int64_t* newId){
+  *segment = originId % numPartitions;
+  *newId = originId / numPartitions;
+}
+
+template <>
+inline void GetPartitionIndex<Part_Strategy::DIV>(
+                        const int64_t* id_table, const int64_t numPartitions,
+                        const int64_t idsPerPartition, const int64_t extras,
+                        const int64_t originId, int64_t* segment, int64_t* newId){
+#ifdef __AVX512F__
+  for (int j = numPartitions - 1; j > -1; --j){
+    if(originId >= id_table[j]){
+      *segment = j;
+      *newId = originId - id_table[j];
+      break;
+    }
+  }
+#else
+  *segment = originId < extras * (idsPerPartition + 1) ?
+            originId / (idsPerPartition + 1) :
+            (originId - extras) / idsPerPartition;
+  *newId = *segment < extras ?
+            originId % (idsPerPartition + 1) :
+            (originId - extras) % idsPerPartition;
+#endif
+}
+
+template <typename T>
+void ShowLog(std::chrono::time_point<T>& start, const std::string& msg = "") {
+  auto end = std::chrono::high_resolution_clock::now();
+  VLOG(1) << ">>>"
+          << " time= "
+          << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()
+          << " us; message=" << msg;
+  start = end;
+}
+}
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
@@ -21,16 +87,27 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
   explicit FusedEmbeddingSparsePreLookUpCPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_strategy", &partition_strategy_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("fill_empty_row", &fill_empty_row_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("prune_invalid_id", &prune_invalid_id_));
+
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_strategy", &partition_strategy_str_));
+    if(partition_strategy_str_ == "div"){
+      partition_strategy_ = GetPartitionIndex<Part_Strategy::DIV>;
+    } else if(partition_strategy_str_ == "mod"){
+      partition_strategy_ = GetPartitionIndex<Part_Strategy::MOD>;
+    } else {
+      OP_REQUIRES(ctx, false,
+        errors::InvalidArgument("Not support partition_strategy type. ", partition_strategy_));
+    }
   }
 
   void Compute(OpKernelContext* ctx) override {
+    auto start = std::chrono::high_resolution_clock::now();
+    ShowLog(start, "start Computing");
 
     const int64_t default_id = default_id_ >= 0 ? default_id_ : 0;
     // 1. get input tensor
@@ -44,7 +121,7 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
     Tensor const* indices_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_indices", &indices_tensor));
 
-    const IndicePair* indices = reinterpret_cast<const IndicePair*>(
+    const int64_t* indices = reinterpret_cast<const int64_t*>(
                                   indices_tensor->flat<int64>().data());
 
     Tensor const* dense_shape = nullptr;
@@ -81,85 +158,108 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
     int32_t* all_flags_list = all_flags->flat<int32_t>().data();
 
     memset(all_flags_list, 0, (batch_size + nnz) * sizeof(int32_t));
+    ShowLog(start, "// 1.1 define output tensors");
 
     // 2.1 get index
-    std::set<int64_t> indices_set;
-    std::vector<std::vector<IndicePair>> new_index_(num_partitions_, std::vector<IndicePair>(0));
-
-    std::vector<IndicePair> fill_empty_row_index_;
-    int64_t fill_empty_row_p_seg_ = 0;
-    int64_t fill_empty_row_p_val_ = 0;
-
-    int64_t p_seg = 0;
-    int64_t p_val = 0;
-    int64_t tmp_value = 0;
-    const int64_t ids_per_partition = partition_total_sizes_ / num_partitions_;
+    const int64_t idsPerPartition = partition_total_sizes_ / num_partitions_;
     const int64_t extras = partition_total_sizes_ % num_partitions_;
+    std::vector<int64_t> empty_index_;
+    // [p_seg_nums + list(p_seg, p_id)]
+    int64_t* const id_index_array = new int64_t[num_partitions_ + 1 + nnz * 2];
+    memset(id_index_array, 0, (num_partitions_ + 1) * sizeof(int64_t));
+    ShowLog(start, "// 1.2 memset output");
 
     // 2.2 get the map of the mutli-table index
-    for (int64_t origin_index = 0; origin_index < nnz; ++origin_index) {
-      tmp_value = values[origin_index];
-      if (tmp_value < 0){
-        all_flags_list[batch_size + origin_index] = 0;
-        if(prune_invalid_id_) continue;
-        p_seg = 0;
-        p_val = tmp_value;
-      } else {
-        all_flags_list[batch_size + origin_index] = 1;
-        if(partition_strategy_ == "mod"){
-          p_seg = tmp_value % num_partitions_;
-          p_val = tmp_value / num_partitions_;
-        } else if(partition_strategy_ == "div"){
-          p_seg = tmp_value < extras * (ids_per_partition + 1) ?
-                    tmp_value / (ids_per_partition + 1) :
-                    (tmp_value - extras) / ids_per_partition;
-          p_val = p_seg < extras ?
-                    tmp_value % (ids_per_partition + 1) :
-                    (tmp_value - extras) % ids_per_partition;
-        }
-      }
+    int64_t default_p_seg = 0;
+    int64_t default_p_val = 0;
+    int64_t p_seg = 0;
+    int64_t p_val = 0;
+    register int64_t tmp_id;
+    int64_t* const min_id_per_seg = new int64_t[num_partitions_];
+#ifdef __AVX512F__
+    int64_t* tmp_value_arr;
 
-      new_index_[p_seg].push_back({origin_index, p_val});
-      indices_set.insert(indices[origin_index].row);
+    // 2.1 build min_id_per_seg
+    memset(min_id_per_seg, 0, (num_partitions_) * sizeof(int64_t));
+    for(int i = 0; i < num_partitions_; ++i){
+      min_id_per_seg[i] = i < extras ?
+      i * (idsPerPartition + 1) :
+      i * idsPerPartition + extras;
     }
+    ShowLog(start, "// 2.1 build min_id_per_seg");
+
+    //2.2.1 get new seg & id in id_index_array
+    int64_t* new_p_seg;
+    int64_t* new_p_id;
+    int64_t* id_indices = id_index_array + num_partitions_ + 1;
+
+    for (int64_t index = 0; index < nnz; ++index) {
+      new_p_seg = id_indices + index * 2;
+      new_p_id = id_indices + index * 2 + 1;
+
+      // set default values;
+      *(new_p_seg) = prune_invalid_id_ ? num_partitions_ : 0;
+      *(new_p_seg + 1) = *(values + index);
+      
+      // set all_flags_list;
+      all_flags_list[batch_size + index] = (*new_p_id < 0) ? 0 : 1;
+      all_flags_list[*(indices + index * 2)] += !prune_invalid_id_ || !(*new_p_id < 0);
+
+      partition_strategy_(min_id_per_seg, num_partitions_, idsPerPartition,
+                          extras, *(new_p_seg + 1), new_p_seg, new_p_id);
+      ++id_index_array[*new_p_seg];
+    }
+    ShowLog(start, "// 2.2.1 get new seg & id in id_index_array");
+
+#else
+    for (int64_t index = 0; index < nnz; ++index) {
+      tmp_id = values[index];
+      if (tmp_id < 0){
+        p_seg = prune_invalid_id_ ? num_partitions_ : 0;
+        p_val = values[index];
+        all_flags_list[*(indices + 2 * index)] += !p_seg;
+      } else {
+        all_flags_list[batch_size + index] = 1;
+        ++all_flags_list[*(indices + 2 * index)];
+        partition_strategy_(nullptr, num_partitions_, idsPerPartition,
+                            extras, tmp_id, &p_seg, &p_val);
+      }
+      ++id_index_array[p_seg];
+      *(id_index_array + 2 * index + num_partitions_ + 1) = p_seg;
+      *(id_index_array + 2 * index + num_partitions_ + 2) = p_val;
+    }
+#endif
+    ShowLog(start, "// 2.2 get the map of the mutli-table index");
 
     // 2.3 fill_empty_row_index_
     if (fill_empty_row_){
       // get default id p_seg_ and p_val_
-      if(partition_strategy_ == "mod"){
-        fill_empty_row_p_seg_ = default_id % num_partitions_;
-        fill_empty_row_p_val_ = default_id / num_partitions_;
-      } else if(partition_strategy_ == "div"){
-        fill_empty_row_p_seg_ = default_id < extras * (ids_per_partition + 1) ?
-                  default_id / (ids_per_partition + 1) :
-                  (default_id - extras) / ids_per_partition;
-        fill_empty_row_p_val_ = fill_empty_row_p_seg_ < extras ?
-                  default_id % (ids_per_partition + 1) :
-                  (default_id - extras) % ids_per_partition;
-      }
-
+      partition_strategy_(min_id_per_seg, num_partitions_, idsPerPartition, extras,
+                          default_id, &default_p_seg, &default_p_val);
       for (int64_t origin_index = 0; origin_index < batch_size; ++origin_index){
-        if(indices_set.count(origin_index)){
+        if(all_flags_list[origin_index]){
           all_flags_list[origin_index] = 0;
           continue;
         }
         all_flags_list[origin_index] = 1;
-        fill_empty_row_index_.push_back({origin_index, 0});
+        empty_index_.push_back(origin_index);
+        empty_index_.push_back(0);
       }
     }
+    ShowLog(start, "// 2.3 fill_empty_row_index_");
 
     // 3 packaging the output tensor
     for (int i = 0; i < num_partitions_; ++i) {
-      int64_t size = new_index_[i].size();
-      if (fill_empty_row_ && i == fill_empty_row_p_seg_){
-        size += fill_empty_row_index_.size();
+      int64_t size = id_index_array[i];
+      if(fill_empty_row_ && i == default_p_seg){
+        size += empty_index_.size() >> 1;
       }
 
       Tensor* sub_partitioned_values;
       OP_REQUIRES_OK(ctx, partitioned_values.allocate(
                               i, TensorShape({static_cast<int64_t>(size)}),
                               &sub_partitioned_values));
-      int64_t* sub_partitioned_values_data = reinterpret_cast<int64_t*>(
+      int64_t* sub_p_values = reinterpret_cast<int64_t*>(
           sub_partitioned_values->flat<int64>().data());
 
       Tensor* sub_partitioned_indices;
@@ -167,23 +267,31 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
                               i, TensorShape({static_cast<int64_t>(size), 2}),
                               &sub_partitioned_indices));
 
-      IndicePair* sub_partitioned_indices_data = reinterpret_cast<IndicePair*>(
+      int64_t* sub_p_indces = reinterpret_cast<int64_t*>(
                                   sub_partitioned_indices->flat<int64>().data());
-
       if (!size) continue;
 
-      for (int j = 0; j < new_index_[i].size(); ++j){
-        sub_partitioned_values_data[j] = new_index_[i][j].column;
-        sub_partitioned_indices_data[j] = indices[new_index_[i][j].row];
-      }
-
-      if (fill_empty_row_ && i == fill_empty_row_p_seg_){
-        for (int j = 0, l = new_index_[i].size(); j < fill_empty_row_index_.size(); ++j, ++l){
-          sub_partitioned_values_data[l] = fill_empty_row_p_val_;
-          sub_partitioned_indices_data[l] = fill_empty_row_index_[j];
+      int sub_part_index = 0;
+      for (int index = 0; index < nnz; ++index){
+        if (id_index_array[(index) * 2 + num_partitions_ + 1] == i){
+          sub_p_values[sub_part_index] = id_index_array[(index) * 2 + num_partitions_ + 2];
+          sub_p_indces[sub_part_index * 2] = *(indices + (index) * 2);
+          sub_p_indces[sub_part_index * 2 + 1] = *(indices + (index) * 2 + 1);
+          ++sub_part_index;
         }
       }
+      if(fill_empty_row_ && default_p_seg == i){
+        memcpy(sub_p_indces + sub_part_index * 2,
+          empty_index_.data(), empty_index_.size() * sizeof(int64_t));
+
+        std::fill(sub_p_values + sub_part_index,
+          sub_p_values + size, default_p_val);
+      }
     }
+    ShowLog(start, "// 3 packaging the output tensor");
+    delete[] min_id_per_seg;
+    delete[] id_index_array;
+    ShowLog(start, "// 4 delete array");
   }
 
  private:
@@ -193,9 +301,9 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
   bool fill_empty_row_;
   bool prune_invalid_id_;
   int64_t default_id_;
-  std::string partition_strategy_;
+  PARTITIONALGO partition_strategy_;
+  std::string partition_strategy_str_;
 };
-
 
 REGISTER_KERNEL_BUILDER(                                         \
     Name("FusedEmbeddingSparsePreLookUp")                        \
