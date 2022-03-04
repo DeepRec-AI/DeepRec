@@ -16,7 +16,7 @@ limitations under the License.
 #include <string>
 
 #include "tensorflow/core/framework/allocator_registry.h"
-#ifdef TF_ENABLE_PMEM
+#ifdef TENSORFLOW_USE_PMEM
 #include "tensorflow/core/framework/experimental_pmem_allocator.h"
 #endif
 #include "tensorflow/core/platform/logging.h"
@@ -90,7 +90,7 @@ Allocator* AllocatorFactoryRegistry::GetAllocator() {
   }
 }
 
-#ifdef TF_ENABLE_PMEM
+#ifdef TENSORFLOW_USE_PMEM
 Allocator* AllocatorFactoryRegistry::GetExperimentalPMEMAllocator(
     const std::string& pmem_path, size_t pmem_size) {
   mutex_lock l(mu_);

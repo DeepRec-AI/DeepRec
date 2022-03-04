@@ -768,6 +768,12 @@ def tf_additional_star_lib_defines():
         "//conditions:default": [],
     })
 
+def tf_additional_pmem_lib_defines():
+    return select({
+        "//tensorflow:with_pmem_support": ["TENSORFLOW_USE_PMEM"],
+        "//conditions:default": [],
+    })
+
 def tf_py_clif_cc(name, visibility = None, **kwargs):
     pass
 
