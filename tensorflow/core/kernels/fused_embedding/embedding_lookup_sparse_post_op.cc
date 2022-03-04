@@ -273,7 +273,8 @@ namespace {
         }
     }
 
-    inline const float* partitioned_embedding_tables(std::vector<std::tuple<size_t, const float*>> &embedding_tables, int embedding_size, int64 id) {
+    inline const float* const partitioned_embedding_tables(std::vector<std::tuple<size_t, const float*>> &embedding_tables,
+                                                           int embedding_size, int64 id) {
         int tables_num = embedding_tables.size();
         int64 rows = 0;
         for (int i = 0; i < tables_num; ++i) {
@@ -286,66 +287,142 @@ namespace {
         }
     }
 
-    static void sparse_partitioned_gather(int64 input_size, std::vector<std::tuple<size_t, const int64*>> &indices,
-                            int indice_dim, int rows,
+    static void sparse_partitioned_gather(int64 input_size,
+                            std::vector<std::tuple<size_t, const int64*>> &indices, int indice_dim, int rows,
                             std::vector<std::tuple<size_t, const float*>> &embedding_tables, float *output,
                             const int64_t embedding_size, SparseSegmentReductionOperation operation,
                             const bool set_empty_row_zero, const int *empty_row) {
       // Record how many values in each row
-      uint64_t *row_values = new uint64_t[rows];
+      uint64_t* row_values = new uint64_t[rows];
       memset(row_values, 0, rows * sizeof(uint64_t));
-      float *output_buffer = new float[rows*embedding_size];
+      // output_buffer is output buffer
+      float* output_buffer = new float[rows*embedding_size];
       memset(output_buffer, 0, rows*embedding_size * sizeof(float));
 
-      #pragma unroll(4)
+#ifdef __AVX512F__
+      auto avx512_add = [](const float* input, uint64_t input_idx,
+                           float* output, uint64_t output_idx, const int64_t num) {
+        constexpr size_t float_displacement = 4;
+        constexpr size_t float_alignment = 16;
+        int64_t quotient = num >> float_displacement;
+        int64_t remainder = num & 0x000F;
+
+        for (int64_t j = 0; j < quotient; ++j) {
+          int64_t offset = j << float_displacement;
+          __m512 a = _mm512_loadu_ps(&input[input_idx + offset]);
+          __m512 b = _mm512_loadu_ps(&output[output_idx + offset]);
+          a = _mm512_add_ps(a, b);
+          _mm512_storeu_ps(&output[output_idx + offset], a);
+        }
+
+        if (remainder != 0) {
+          __mmask16 mask = 0xffff >> (float_alignment - remainder);
+          int64_t offset = quotient << float_displacement;
+          __m512 a = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &input[input_idx + offset]);
+          __m512 b = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &output[output_idx + offset]);
+          a = _mm512_mask_add_ps(_mm512_setzero_ps(), mask, a, b);
+          _mm512_mask_storeu_ps(&output[output_idx + offset], mask, a);
+        }
+      };
+
+      auto avx512_add_mean = [](const float* input, uint64_t input_idx, const float* sum,
+                                float* output, uint64_t output_idx, const int64_t num) {
+        constexpr size_t float_displacement = 4;
+        constexpr size_t float_alignment = 16;
+        int64_t quotient = num >> float_displacement;
+        int64_t remainder = num & 0x000F;
+        __m512 sum_ = _mm512_broadcastss_ps(_mm_load_ss(sum));
+
+        for (int64_t j = 0; j < quotient; ++j) {
+          int64_t offset = j << float_displacement;
+          __m512 a = _mm512_loadu_ps(&input[input_idx + offset]);
+          __m512 b = _mm512_loadu_ps(&output[output_idx + offset]);
+          a = _mm512_add_ps(a, b);
+          a = _mm512_div_ps(a, sum_);
+          _mm512_storeu_ps(&output[output_idx + offset], a);
+        }
+
+        if (remainder != 0) {
+          __mmask16 mask = 0xffff >> (float_alignment - remainder);
+          int64_t offset = quotient << float_displacement;
+          __m512 a = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &input[input_idx + offset]);
+          __m512 b = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &output[output_idx + offset]);
+          a = _mm512_mask_add_ps(_mm512_setzero_ps(), mask, a, b);
+          a = _mm512_mask_div_ps(_mm512_setzero_ps(), mask, a, sum_);
+          _mm512_mask_storeu_ps(&output[output_idx + offset], mask, a);
+        }
+      };
+#endif
+
       for (int64_t i = input_size-1; i >= 0; --i) {
-        // sub_indices to find output row
+        // From sub_indices to find output row
         auto row = partitioned_indices(indices, indice_dim, i);
         row_values[row] += 1;
-        // sub_embedding_tables to find embedding_table row ptr
+        // From sub_embedding_tables to find embedding_table row ptr
         auto embedding_row = partitioned_embedding_tables(embedding_tables, embedding_size, i);
         // add output_buffer to do block addition
         uint64_t output_row = row * embedding_size;
-        #pragma omp simd
-        for (uint32_t j = 0; j < embedding_size; ++j) {
+
+#ifdef __AVX512F__
+        avx512_add(embedding_row, 0, output_buffer, output_row, embedding_size);
+#else
+        for (int64_t j = 0; j < embedding_size; ++j) {
           output_buffer[output_row + j] += embedding_row[j];
         }
+#endif
 
         if (row_values[row] == 8) {
           memcpy(&output[output_row], &output_buffer[output_row], embedding_size * sizeof(float));
           memset(&output_buffer[output_row], 0, embedding_size * sizeof(float));
         }
-        else if (row_values[row] % 8 == 0){
-          #pragma omp simd
-          for (uint32_t j = 0; j < embedding_size; ++j) {
+        else if (row_values[row] % 8 == 0) {
+#ifdef __AVX512F__
+          avx512_add(output_buffer, output_row, output, output_row, embedding_size);
+#else
+          for (int64_t j = 0; j < embedding_size; ++j) {
             output[output_row + j] += output_buffer[output_row + j];
           }
+#endif
           memset(&output_buffer[output_row], 0, embedding_size * sizeof(float));
         }
       }
 
-      #pragma unroll(4)
       for (uint64_t i = 0; i < rows; ++i) {
         uint64_t output_row = i * embedding_size;
-        // Fixme(Changqing): Will use AVX512 to replace div
-        #pragma omp simd
-        for (uint32_t j = 0; j < embedding_size; ++j) {
-          if (operation == SparseSegmentReductionOperation::kSum) {
+#ifdef __AVX512F__
+        if (operation == SparseSegmentReductionOperation::kSum) {
+          avx512_add(output_buffer, output_row, output, output_row, embedding_size);
+        }
+        else if (operation == SparseSegmentReductionOperation::kMean) {
+          float sum = static_cast<float>(row_values[i]);
+          avx512_add_mean(output_buffer, output_row, &sum, output, output_row, embedding_size);
+        }
+        else if (operation == SparseSegmentReductionOperation::kSqrtN) {
+          float sqrt = std::sqrt(row_values[i]);
+          avx512_add_mean(output_buffer, output_row, &sqrt, output, output_row, embedding_size);
+        }
+#else
+        if (operation == SparseSegmentReductionOperation::kSum) {
+          for (int64_t j = 0; j < embedding_size; ++j) {
             output[output_row + j] += output_buffer[output_row + j];
           }
-          else if (operation == SparseSegmentReductionOperation::kMean) {
+        }
+        else if (operation == SparseSegmentReductionOperation::kMean) {
+          for (int64_t j = 0; j < embedding_size; ++j) {
             output[output_row + j] += output_buffer[output_row + j];
             output[output_row + j] /= row_values[i];
           }
-          else if (operation == SparseSegmentReductionOperation::kSqrtN) {
+        }
+        else if (operation == SparseSegmentReductionOperation::kSqrtN) {
+          for (int64_t j = 0; j < embedding_size; ++j) {
             output[output_row + j] += output_buffer[output_row + j];
             output[output_row + j] /= std::sqrt(row_values[i]);
           }
         }
+#endif
       }
 
-      #pragma unroll(4)
-      for (int i = 0; i < rows; ++i) {
+      for (int64_t i = 0; i < rows; ++i) {
         // zero emtpy rows
         if (set_empty_row_zero && empty_row[i] == 1) {
             memset(&output[i * embedding_size], 0, embedding_size * sizeof(float));
@@ -356,7 +433,8 @@ namespace {
       delete[] output_buffer;
     }
 
-    static void set_feature_nums(int32 *feature_nums, int64 input_size, std::vector<std::tuple<size_t, const int64*>> indices, int indice_dim) {
+    static void set_feature_nums(int32 *feature_nums, int64 input_size,
+                                 std::vector<std::tuple<size_t, const int64*>> indices, int indice_dim) {
         for (int64 i = 0; i < input_size; ++i) {
             feature_nums[partitioned_indices(indices, indice_dim, i)]++;
         }
