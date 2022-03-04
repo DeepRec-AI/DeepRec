@@ -879,39 +879,5 @@ REGISTER_KERNELS_ALL_INDEX(float);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
-/*
-// Op that outputs tensors of all keys and all values.
-template <typename T, typename TIndex>
-class KvResourceInsertOp : public OpKernel {
- public:
-  explicit KvResourceInsertOp(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
-  }
-  void Compute(OpKernelContext* ctx) override {
-    HashMap<TIndex, float>* hashmap = NULL;
-    OP_REQUIRES_OK(ctx, GetInputHashMap(ctx, 0, &hashmap));
-    const Tensor& keys = ctx->input(1);
-    const Tensor& values = ctx->input(2);
-    const Tensor& versions = ctx->input(3);
-    LOG(INFO) <<  "EV:" << HandleFromInput(ctx, 0).name() << ", Incr Import Size:" <<  keys.dim_size(0);
-    OP_REQUIRES_OK(ctx, hashmap->Import(keys, values, versions));
-  }
- private:
-  DataType dtype_;
-};
-#define REGISTER_KERNELS(ktype, type)                           \
-    REGISTER_KERNEL_BUILDER(Name("KvResourceInsert")             \
-                                    .Device(DEVICE_CPU)                \
-                                    .TypeConstraint<ktype>("Tkeys")    \
-                                    .TypeConstraint<type>("dtype"),    \
-                                  KvResourceInsertOp<type, ktype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-    REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-*/
 }  // namespace tensorflow
 
