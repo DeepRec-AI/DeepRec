@@ -482,19 +482,4 @@ versions: Vector of all versions present in the table.
 freqs: Vector of all freqs present in the table.
 )doc");
 
-REGISTER_OP("KvResourceInsert")
-    .Input("resource_handle: resource")
-    .Input("keys: Tkeys")
-    .Input("values: dtype")
-    .Input("versions: int64")
-    .Attr("Tkeys: {int64,int32,string}")
-    .Attr("dtype: type")
-    .SetShapeFn([](InferenceContext* c) {
-        ShapeHandle handle;
-        TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));
-        // TODO(dingchen): Validate keys and values shape.
-        return Status::OK();
-        })
-    .Doc(R"doc(
-)doc");
 }  // namespace tensorflow
