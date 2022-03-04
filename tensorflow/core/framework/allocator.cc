@@ -94,7 +94,7 @@ Allocator* pmem_allocator() {
 }
 
 Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allocator_size) {
-#ifdef TF_ENABLE_PMEM
+#ifdef TENSORFLOW_USE_PMEM
   static Allocator* experimental_pmem_allocator =
       AllocatorFactoryRegistry::singleton()->GetExperimentalPMEMAllocator(pmem_path, allocator_size);
   if (experimental_pmem_allocator && cpu_allocator_collect_full_stats &&

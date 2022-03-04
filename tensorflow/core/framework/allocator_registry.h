@@ -80,7 +80,7 @@ class AllocatorFactoryRegistry {
   //If use PMEMallocator, then factory pick this one
   Allocator* GetPMEMAllocator();
 
-#ifdef TF_ENABLE_PMEM
+#ifdef TENSORFLOW_USE_PMEM
   Allocator* GetExperimentalPMEMAllocator(const std::string& pmem_path, size_t pmem_size);
 #endif
 
