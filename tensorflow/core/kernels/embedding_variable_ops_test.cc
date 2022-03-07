@@ -1057,7 +1057,7 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
   auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, "/tmp/db_ut1", 1000));
+                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, testing::TmpDir(), 1000));
   TF_CHECK_OK(storage_manager->Init());
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
@@ -1096,7 +1096,7 @@ void InsertAndCommit(KVInterface<int64, float>* hashmap) {
 }
 
 TEST(EmbeddingVariableTest, TestSizeDBKV) {
-  KVInterface<int64, float>* hashmap = new LevelDBKV<int64, float>("/tmp/db_ut1");
+  KVInterface<int64, float>* hashmap = new LevelDBKV<int64, float>(testing::TmpDir());
   hashmap->SetTotalDims(100);
   ASSERT_EQ(hashmap->Size(), 0);
   LOG(INFO) << "hashmap size: " << hashmap->Size();
