@@ -57,6 +57,7 @@ from tensorflow.python.platform import gfile
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import training_util
 from tensorflow.python.training import checkpoint_management
+from tensorflow.python.training import saver as saver_module
 from tensorflow.python.training.saver import BaseSaverBuilder 
 from tensorflow.python.training.saver import Saver 
 from tensorflow.python.training.saver import get_checkpoint_mtimes
@@ -284,6 +285,15 @@ class IncrementalSaverBuilder(BaseSaverBuilder):
               self._incremental_filename_tensor, saveables,
               restore_sequentially, reshape)
 
+    return saver_pb2.SaverDef(
+        filename_tensor_name=self._incremental_filename_tensor.name,
+        save_tensor_name=self._incremental_save_tensor.name,
+        restore_op_name=self._incremental_restore_tensor.name,
+        max_to_keep=max_to_keep,
+        sharded=sharded,
+        keep_checkpoint_every_n_hours=keep_checkpoint_every_n_hours,
+        version=self._write_version)
+
 def _get_incremental_saver(incremental_save_restore, full_saver):
   if incremental_save_restore:
     incr_saver = IncrementalSaver(sharded=True, allow_empty=True, saver_def=full_saver.saver_def, defer_build=True,
@@ -299,6 +309,7 @@ class IncrementalSaver(Saver):
   def build(self, filename_tensor):
     if context.executing_eagerly():
       raise RuntimeError("Use save/restore instead of build in eager mode.")
+    self.incr_saver_def = None
     self.filename_tensor = filename_tensor
     self._build(self._filename, build_save=True, build_restore=True)
 
@@ -331,7 +342,7 @@ class IncrementalSaver(Saver):
         raise ValueError("No variables to save")
     self._is_empty = False
 
-    self._builder._build_internal(  # pylint: disable=protected-access
+    self.incr_saver_def = self._builder._build_internal(  # pylint: disable=protected-access
           self._var_list,
           reshape=self._reshape,
           sharded=self._sharded,
@@ -519,4 +530,25 @@ class IncrementalSaver(Saver):
     if need_recover_last_ckpt:
       self.recover_last_incr_checkpoints(incr_ckpt.all_model_checkpoint_paths)
 
+  def export_meta_graph(self,
+                        filename=None,
+                        collection_list=None,
+                        as_text=False,
+                        export_scope=None,
+                        clear_devices=False,
+                        clear_extraneous_savers=False,
+                        strip_default_attrs=False,
+                        save_debug_info=False):
+    return saver_module.export_meta_graph(
+        filename=filename,
+        graph_def=ops.get_default_graph().as_graph_def(add_shapes=True),
+        saver_def=self.saver_def,
+        collection_list=collection_list,
+        as_text=as_text,
+        export_scope=export_scope,
+        clear_devices=clear_devices,
+        clear_extraneous_savers=clear_extraneous_savers,
+        strip_default_attrs=strip_default_attrs,
+        save_debug_info=save_debug_info,
+        incr_saver_def=self.incr_saver_def)
 

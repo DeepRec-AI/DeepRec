@@ -89,6 +89,9 @@ message MetaGraphDef {
 
   // Extra information about the structure of functions and stateful objects.
   SavedObjectGraph object_graph_def = 7;
+
+  // Incremental SaverDef.
+  SaverDef incr_saver_def = 8;
 }
 
 // CollectionDef should cover most collections.
