@@ -119,7 +119,6 @@ class LevelDBKV : public KVInterface<K, V> {
     std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);
-    delete value_ptr;
     if (!s.ok()){
       return errors::AlreadyExists(
           "already exists Key: ", key, " in RocksDB.");

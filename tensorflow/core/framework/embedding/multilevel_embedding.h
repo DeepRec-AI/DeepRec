@@ -419,6 +419,8 @@ class StorageManager {
             TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
             TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
             // delete value_ptr is nessary;
+            value_ptr->Destroy(kvs_[0].second);
+            delete value_ptr;
           } else {
             // bypass
           }
