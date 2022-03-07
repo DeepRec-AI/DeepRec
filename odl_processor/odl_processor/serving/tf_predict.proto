@@ -96,3 +96,9 @@ message PredictResponse {
   // Output tensors.
   map<string, ArrayProto> outputs = 1;
 }
+
+// Response for current serving model info
+message ServingModelInfo {
+  string model_path = 1;
+  // Add other info here
+}

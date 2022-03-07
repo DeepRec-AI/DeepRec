@@ -10,6 +10,7 @@ class Request;
 class Response;
 class Call;
 class BatchCall;
+class ServingModelInfo;
 class IParser {
  public:
   virtual Status ParseRequestFromBuf(const void* input_data,
@@ -26,6 +27,12 @@ class IParser {
 
   virtual Status ParseBatchResponseToBuf(BatchCall& call,
       void* output_data[], int* output_size) {
+    // TO be implemented
+    return Status::OK();
+  }
+
+  virtual Status ParseServingModelInfoToBuf(
+      ServingModelInfo& model_info, void* output_data[], int* output_size) {
     // TO be implemented
     return Status::OK();
   }
@@ -46,6 +53,10 @@ class ProtoBufParser : public IParser {
 
   Status ParseBatchResponseToBuf(BatchCall& call,
       void* output_data[], int* output_size) override;
+
+  Status ParseServingModelInfoToBuf(
+      ServingModelInfo& model_info, void* output_data[],
+      int* output_size) override;
 
  private:
   std::unique_ptr<thread::ThreadPool> thread_pool_;
@@ -75,6 +86,13 @@ class FlatBufferParser : public IParser {
 
   Status ParseBatchResponseToBuf(BatchCall& call,
       void* output_data[], int* output_size) override {
+    // TO be implemented
+    return Status::OK();
+  }
+
+  Status ParseServingModelInfoToBuf(
+      ServingModelInfo& model_info, void* output_data[],
+      int* output_size) override {
     // TO be implemented
     return Status::OK();
   }

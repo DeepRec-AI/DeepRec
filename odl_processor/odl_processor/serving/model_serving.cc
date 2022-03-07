@@ -65,6 +65,17 @@ Status Model::Predict(Request& req, Response& resp) {
   return impl_->Predict(req, resp);
 }
 
+Status Model::GetServingModelInfo(void* output_data[],
+                                  int* output_size) {
+  ServingModelInfo model_info;
+  auto status = impl_->GetServingModelInfo(model_info);
+  if (!status.ok()) {
+    return status;
+  }
+  parser_->ParseServingModelInfoToBuf(model_info, output_data, output_size);
+  return Status::OK();
+}
+
 Status Model::Rollback() {
   return impl_->Rollback();
 }

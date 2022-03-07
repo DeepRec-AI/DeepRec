@@ -76,6 +76,17 @@ Status ProtoBufParser::ParseBatchResponseToBuf(
   return Status::OK();
 }
 
+Status ProtoBufParser::ParseServingModelInfoToBuf(
+    ServingModelInfo& model_info, void* output_data[],
+    int* output_size) {
+  eas::ServingModelInfo info;
+  *info.mutable_model_path() = model_info.model_path;
+  *output_size = info.ByteSize();
+  *output_data = new char[*output_size];
+  info.SerializeToArray(*output_data, *output_size);
+  return Status::OK();
+}
+
 FlatBufferParser::FlatBufferParser(int thread_num) {
   thread_pool_.reset(new thread::ThreadPool(Env::Default(), "",
       thread_num));

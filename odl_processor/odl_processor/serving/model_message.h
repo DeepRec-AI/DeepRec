@@ -34,6 +34,10 @@ struct BatchCall {
   Status SplitResponse();
 };
 
+struct ServingModelInfo {
+  std::string model_path;
+};
+
 } // processor
 } // tensorflow
 

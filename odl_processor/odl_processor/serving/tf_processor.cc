@@ -83,4 +83,20 @@ int batch_process(void* model_buf, const void* input_data[], int* input_size,
 //  // TODO
 //}
 
+int get_serving_model_info(
+    void* model_buf, void** output_data, int* output_size) {
+  auto model = static_cast<tensorflow::processor::Model*>(model_buf);
+  auto status = model->GetServingModelInfo(output_data, output_size);
+  if (!status.ok()) {
+    std::string errmsg = tensorflow::strings::StrCat(
+        "[TensorFlow] Processor get serving model info failed: ",
+        status.error_message());
+    *output_data = strndup(errmsg.c_str(), strlen(errmsg.c_str()));
+    *output_size = strlen(errmsg.c_str());
+    LOG(ERROR) << errmsg;
+    return 500;
+  }
+  return 200;
 }
+
+} // extern "C"

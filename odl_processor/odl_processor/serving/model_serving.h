@@ -26,6 +26,8 @@ class Model {
   Status BatchPredict(const void* input_data[], int* input_size,
       void* output_data[], int* output_size);
 
+  Status GetServingModelInfo(void* output_data[], int* output_size);
+
   Status Rollback();
 
   std::string DebugString();
