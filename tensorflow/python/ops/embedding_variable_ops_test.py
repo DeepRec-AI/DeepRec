@@ -1424,7 +1424,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLEVELDBWithAdagrad(self):
     print("testEmbeddingVariableForLEVELDBWithAdagrad")
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     def runTestAdagrad(self, var, g):
       emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1453,7 +1453,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
@@ -1464,7 +1464,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLEVELDBWithGradientDescent(self):
     print("testEmbeddingVariableForLEVELDBWithGradientDescent")
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     def runTestAdagrad(self, var, g):
       emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1492,7 +1492,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
@@ -1503,7 +1503,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLEVELDBWithAdam(self):
     print("testEmbeddingVariableForLEVELDBWithAdam")
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     def runTestAdagrad(self, var, g):
       emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1531,7 +1531,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
@@ -1542,7 +1542,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLEVELDBWithAdamAsync(self):
     print("testEmbeddingVariableForLEVELDBWithAdamAsync")
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     def runTestAdagrad(self, var, g):
       emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1570,7 +1570,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
@@ -1581,7 +1581,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLEVELDBWithAdagradDecay(self):
     print("testEmbeddingVariableForLEVELDBWithAdagradDecay")
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     def runTestAdagrad(self, var, g):
       emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1609,7 +1609,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
@@ -1620,7 +1620,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLEVELDBWithAdagradDecayV2(self):
     print("testEmbeddingVariableForLEVELDBWithAdagradDecayV2")
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     def runTestAdagrad(self, var, g):
       emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1648,7 +1648,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
       var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
@@ -1658,14 +1658,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
   def testLevelDBCheckpoint(self):
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     checkpoint_directory = self.get_temp_dir()
     emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
     emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -1697,14 +1697,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertEqual(r[i][j], r1.tolist()[i][j])
 
   def testEmbeddingVariableForSaveFreq(self):
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     checkpoint_directory = self.get_temp_dir()
     emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path="/tmp/db_ut1")))
+                                                                                                 storage_path=db_directory)))
     emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -1732,10 +1732,10 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableForL2FeatureEvictionLevelDB(self):
     print("testEmbeddingVariableForL2FeatureEvictionLevelDB")
     checkpoint_directory = self.get_temp_dir()
-    os.system("rm -rf /tmp/db_ut1")
+    db_directory = self.get_temp_dir()
     evict = variables.L2WeightEvict(l2_weight_threshold=0.9)
     storage_option = variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
-                                             storage_path="/tmp/db_ut1")
+                                             storage_path=db_directory)
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
@@ -1791,13 +1791,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         return r
 
     with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      db_directory = self.get_temp_dir()
       emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 30,
             initializer=init_ops.ones_initializer(dtypes.float32),
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path="1/2/3/")))
+                                                                                                 storage_path=db_directory)))
       emb1 = runTestAdagrad(self, emb_var, g)
 
     with ops.device('/cpu:0'), ops.Graph().as_default() as g:

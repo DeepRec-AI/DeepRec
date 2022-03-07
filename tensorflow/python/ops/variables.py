@@ -253,8 +253,8 @@ class StorageOption(object):
       if storage_type is None:
         raise ValueError("storage_type musnt'be None when storage_path is set")
       else:
-        if not file_io.file_exists_v2(storage_path):
-          file_io.create_dir_v2(storage_path)
+        if not file_io.file_exists(storage_path):
+          file_io.recursive_create_dir(storage_path)
     else:
       if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD]:
         raise ValueError("storage_path musnt'be None when storage_type is set")
