@@ -194,6 +194,12 @@ Status LocalSessionInstance::Predict(Request& req, Response& resp) {
   return session_mgr_->LocalPredict(req, resp);
 }
 
+Status LocalSessionInstance::GetServingModelInfo(
+    ServingModelInfo& model_info) {
+  model_info.model_path = version_.full_ckpt_name;
+  return Status::OK();
+}
+
 Status LocalSessionInstance::Warmup(
     ModelSession* warmup_session) {
   if (warmup_file_name_.empty() &&
@@ -357,6 +363,12 @@ Status RemoteSessionInstance::Predict(Request& req, Response& resp) {
   return session_mgr_->Predict(req, resp);
 }
 
+Status RemoteSessionInstance::GetServingModelInfo(
+    ServingModelInfo& model_info) {
+  model_info.model_path = version_.full_ckpt_name;
+  return Status::OK();
+}
+
 Status RemoteSessionInstance::Warmup(
     ModelSession* warmup_session) {
   if (warmup_file_name_.empty() &&
@@ -457,6 +469,11 @@ Status LocalSessionInstanceMgr::Predict(Request& req, Response& resp) {
   return instance_->Predict(req, resp);
 }
 
+Status LocalSessionInstanceMgr::GetServingModelInfo(
+    ServingModelInfo& model_info) {
+  return instance_->GetServingModelInfo(model_info);
+}
+
 Status LocalSessionInstanceMgr::Rollback() {
   return Status(error::Code::NOT_FOUND, "TF Processor can't support Rollback.");
 }
@@ -550,6 +567,11 @@ Status RemoteSessionInstanceMgr::CreateInstances() {
 
 Status RemoteSessionInstanceMgr::Predict(Request& req, Response& resp) {
   return cur_instance_->Predict(req, resp);
+}
+
+Status RemoteSessionInstanceMgr::GetServingModelInfo(
+    ServingModelInfo& model_info) {
+  return cur_instance_->GetServingModelInfo(model_info);
 }
 
 Status RemoteSessionInstanceMgr::Rollback() {

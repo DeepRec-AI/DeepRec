@@ -13,6 +13,7 @@
 3. build odl_processor library
   
    bazel build //odl_processor/serving:libtf_processor.so
+   bazel test -- //odl_processor/... -//odl_processor/framework:lookup_manual_test
 
 4. Required libs:
    libiomp5.so  libmklml_intel.so  libstdc++.so.6  libtf_processor.so

@@ -14,13 +14,14 @@ class ModelConfig;
 class IModelInstanceMgr;
 class Request;
 class Response;
+class ServingModelInfo;
 
 class ModelImpl {
  public:
   virtual ~ModelImpl() {}
   virtual Status Init() = 0;
   virtual Status Predict(Request& req, Response& resp) = 0;
-
+  virtual Status GetServingModelInfo(ServingModelInfo& model_info) = 0;
   virtual Status Rollback() = 0;
   virtual std::string DebugString() = 0;
 };
@@ -34,6 +35,10 @@ class FreezeSavedModelImpl : public ModelImpl {
   }
   
   Status Predict(Request& req, Response& resp) override {
+    return Status::OK();
+  }
+
+  Status GetServingModelInfo(ServingModelInfo& model_info) override {
     return Status::OK();
   }
 
@@ -52,8 +57,8 @@ class SavedModelImpl : public ModelImpl {
   ~SavedModelImpl() override;
 
   Status Init() override;
-  Status Predict(Request& req, Response& resp);
-
+  Status Predict(Request& req, Response& resp) override;
+  Status GetServingModelInfo(ServingModelInfo& model_info) override;
   Status Rollback() override;
   std::string DebugString() override;
  

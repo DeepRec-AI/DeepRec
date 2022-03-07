@@ -32,6 +32,7 @@ class LocalSessionInstance {
       ModelStore* model_store);
 
   Status Predict(Request& req, Response& resp);
+  Status GetServingModelInfo(ServingModelInfo& model_info);
   Status Warmup(ModelSession* warmup_session = nullptr);
   Version GetVersion() { return version_; }
   void UpdateVersion(const Version& v) { version_ = v; }
@@ -67,6 +68,8 @@ class RemoteSessionInstance {
       ModelStore* model_store, bool active);
 
   Status Predict(Request& req, Response& resp);
+
+  Status GetServingModelInfo(ServingModelInfo& model_info);
 
   Status FullModelUpdate(const Version& version,
                          ModelConfig* model_config);
@@ -108,6 +111,7 @@ class IModelInstanceMgr {
 
   virtual Status Init() = 0;
   virtual Status Predict(Request& req, Response& resp) = 0;
+  virtual Status GetServingModelInfo(ServingModelInfo& model_info) = 0;
   virtual Status Rollback() = 0;
 
   virtual std::string DebugString() = 0;
@@ -143,6 +147,7 @@ class LocalSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
 
   Status Init() override;
   Status Predict(Request& req, Response& resp) override;
+  Status GetServingModelInfo(ServingModelInfo& model_info) override;
   Status Rollback() override;
 
   std::string DebugString() override;
@@ -168,7 +173,7 @@ class RemoteSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
 
   Status Init() override;
   Status Predict(Request& req, Response& resp) override;
-
+  Status GetServingModelInfo(ServingModelInfo& model_info) override;
   Status Rollback() override;
   std::string DebugString() override;
 

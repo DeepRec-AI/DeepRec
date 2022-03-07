@@ -24,6 +24,10 @@ Status SavedModelImpl::Predict(Request& req, Response& resp) {
   return instance_mgr_->Predict(req, resp);
 }
 
+Status SavedModelImpl::GetServingModelInfo(ServingModelInfo& model_info) {
+  return instance_mgr_->GetServingModelInfo(model_info);
+}
+
 Status SavedModelImpl::Rollback() {
   return instance_mgr_->Rollback();
 }
