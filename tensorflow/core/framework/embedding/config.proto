@@ -24,3 +24,8 @@ enum StorageType {
   HBM_DRAM_SSD = 102;
 
 }
+
+enum SlotType {
+  EMBEDDING_VARIABLE = 0;
+  VARIABLE = 1;
+}
