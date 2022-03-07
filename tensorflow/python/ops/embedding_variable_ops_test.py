@@ -1019,7 +1019,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
       var = variable_scope.get_variable("var_2", shape=[8, 3],
             initializer=init_ops.ones_initializer(dtypes.float32))
       emb1 = runTestAdamAsync(self, emb_var)
