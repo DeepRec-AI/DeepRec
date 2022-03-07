@@ -15,6 +15,14 @@ const static std::vector<int64> default_seeds = {
  2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,
  43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
 };
+
+template<typename K, typename EV>
+void UpdateCache(K* key_buff, int64 key_num, EV* ev) {
+    embedding::BatchCache<K>* cache = ev->Cache();
+    if (cache) {
+      cache->add_to_rank(key_buff, key_num);
+    }
+}
 }
 
 struct RestoreBuffer;
@@ -267,6 +275,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }
     }
+    UpdateCache(key_buff, key_num, ev_);
     return Status::OK();
   }
 
@@ -483,6 +492,7 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }
     }
+    UpdateCache(key_buff, key_num, ev_);
     return Status::OK();
   }
 
@@ -581,6 +591,7 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }
     }
+    UpdateCache(key_buff, key_num, ev_);
     return Status::OK();
   }
 
