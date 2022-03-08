@@ -31,6 +31,8 @@ from tensorflow.python.framework import importer
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import embedding_ops
+from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn
 from tensorflow.python.ops import parsing_ops
@@ -44,7 +46,7 @@ from tensorflow.python.saved_model import signature_def_utils
 from tensorflow.python.saved_model import tag_constants
 from tensorflow.python.tools import freeze_graph
 from tensorflow.python.training import saver as saver_lib
-
+from tensorflow.python.training import training_util
 
 class FreezeGraphTest(test_util.TensorFlowTestCase):
 
@@ -124,6 +126,50 @@ class FreezeGraphTest(test_util.TensorFlowTestCase):
         feature_value])
     return example.SerializeToString()
 
+  def _writeDummySavedModelForEv(self, path, feature_name):
+    """Writes a classifier with two input features to the given path."""
+    with ops.Graph().as_default():
+      examples = array_ops.placeholder(dtypes.string, name="input_node")
+      feature_configs = {
+          feature_name: parsing_ops.FixedLenFeature(shape=[],
+                                                    dtype=dtypes.float32),
+      }
+      features = parsing_ops.parse_example(examples, feature_configs)
+      feature = features[feature_name]
+
+      training_util.get_or_create_global_step()
+      variable_node = variables.VariableV1(1.0, name="variable_node")
+      variable_ev = variable_scope.get_embedding_variable(
+          name="ev", embedding_dim=1,
+          initializer=init_ops.ones_initializer(dtypes.float32),)
+      emb = embedding_ops.embedding_lookup(variable_ev,
+          math_ops.cast([0,1,2,5,6,-7], dtypes.int64))
+      s1 = math_ops.multiply(variable_node, feature, name="output_node")
+      s2 = math_ops.multiply(emb, s1, name='multiply')
+      scores = math_ops.reduce_sum(s2, name='reduce_sum')
+      class_feature = array_ops.fill(array_ops.shape(feature),
+                                     "class_%s" % feature_name)
+      classes = array_ops.transpose(class_feature)
+
+      with session.Session() as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run(variables.global_variables_initializer())
+        signature = (
+            signature_def_utils.classification_signature_def(
+                examples=examples,
+                classes=classes,
+                scores=scores,))
+        builder = saved_model_builder.SavedModelBuilder(path, save_incr_model=True)
+        builder.add_meta_graph_and_variables(
+            sess,
+            [tag_constants.SERVING],
+            signature_def_map={
+                signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+                    signature,
+            },)
+        builder.save(as_text=True)
+
   def _writeDummySavedModel(self, path, feature_name):
     """Writes a classifier with two input features to the given path."""
     with ops.Graph().as_default():
@@ -148,7 +194,7 @@ class FreezeGraphTest(test_util.TensorFlowTestCase):
                 examples=examples,
                 classes=classes,
                 scores=scores,))
-        builder = saved_model_builder.SavedModelBuilder(path)
+        builder = saved_model_builder.SavedModelBuilder(path, save_incr_model=True)
         builder.add_meta_graph_and_variables(
             sess,
             [tag_constants.SERVING],
@@ -217,6 +263,12 @@ class FreezeGraphTest(test_util.TensorFlowTestCase):
         output_node = sess.graph.get_tensor_by_name("output_node:0")
         output = sess.run(output_node)
         self.assertNear(2.0, output, 0.00001)
+
+  def testFreezeSavedModelForEv(self):
+    tmp_dir = self.get_temp_dir()
+    saved_model_dir = os.path.join(tmp_dir, "saved_model_dir")
+    feature_name = "feature"
+    self._writeDummySavedModelForEv(saved_model_dir, feature_name)
 
   def testFreezeSavedModel(self):
     tmp_dir = self.get_temp_dir()

@@ -1762,6 +1762,7 @@ def export_meta_graph(filename=None,
                       clear_extraneous_savers=False,
                       strip_default_attrs=False,
                       save_debug_info=False,
+                      incr_saver_def=None,
                       **kwargs):
   # pylint: disable=line-too-long
   """Returns `MetaGraphDef` proto.
@@ -1830,6 +1831,7 @@ def export_meta_graph(filename=None,
       clear_extraneous_savers=clear_extraneous_savers,
       strip_default_attrs=strip_default_attrs,
       save_debug_info=save_debug_info,
+      incr_saver_def=incr_saver_def,
       **kwargs)
   return meta_graph_def
 
