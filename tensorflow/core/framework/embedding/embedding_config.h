@@ -92,8 +92,8 @@ struct EmbeddingConfig {
     return emb_index == primary_emb_index;
   }
 
-  int64 total_num(int total_dims) {
-    return block_num * (1 + (1 - normal_fix_flag) * (slot_num + 1)) * (1 + normal_fix_flag * (total_dims - 1));
+  int64 total_num(int alloc_len) {
+    return block_num * (1 + (1 - normal_fix_flag) * (slot_num + 1)) * (1 + normal_fix_flag * (alloc_len * (slot_num + 1)-1));
   }
 
   int64 get_filter_freq() {

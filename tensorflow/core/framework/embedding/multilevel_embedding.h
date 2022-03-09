@@ -40,7 +40,8 @@ class StorageManager {
   cache_(nullptr),
   cache_capacity_(cap),
   eviction_thread_(nullptr),
-  total_dims_(0) {}
+  total_dims_(0),
+  alloc_len_(0) {}
 
   ~StorageManager() {
     if (eviction_thread_) {
@@ -104,6 +105,39 @@ class StorageManager {
     CHECK(2 >= hash_table_count_) << "Not support multi-level(>2) embedding.";
 
     return Status::OK();
+  }
+
+  void SetAllocLen(int64 value_len, int slot_num){
+    while (flag_.test_and_set(std::memory_order_acquire));
+    //The start address of every slot should be aligned to 16 bytes, otherwise a coredump will happen in the ApplyOp.
+    alloc_len_ = (value_len * sizeof(V) % 16 == 0) ? value_len : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
+    int64 temp = alloc_len_ * slot_num;
+    if (total_dims_ == 0) {
+      total_dims_ = temp;
+      if (sc_.type == StorageType::LEVELDB) {
+        kvs_[0].first->SetTotalDims(total_dims_);
+      } else if (sc_.type == StorageType::DRAM_LEVELDB) {
+        kvs_[1].first->SetTotalDims(total_dims_);
+      }
+      if (hash_table_count_ > 1) {
+        cache_capacity_ = 1024 * 1024 * 1024 / total_dims_ * sizeof(V); 
+        done_ = true;
+        LOG(INFO) << "Cache cache_capacity: " << cache_capacity_;
+      }
+    }
+    flag_.clear(std::memory_order_release);
+  }
+
+  int64 GetAllocLen(){
+    return alloc_len_;
+  }
+
+  int64 GetOffset(int64 index) {
+    return alloc_len_ * index;
+  }
+
+  int64 GetTotalDims() {
+    return total_dims_;
   }
 
   void DebugString() {
@@ -279,47 +313,6 @@ class StorageManager {
     return cache_;
   }
 
-  void SetDim(int index, int dim, int slotnum) {
-    int i;
-    while (flag_.test_and_set(std::memory_order_acquire));
-    if (slotnum != slot_dims_.size()) {
-      for (i = slot_dims_.size(); i < slotnum; i++) {
-        slot_dims_.emplace_back(0);
-        slot_offset_.emplace_back(0);
-      }
-    }
-    dim +=  (16 - (sizeof(V) * dim) % 16) / sizeof(V);
-    slot_dims_[index] = dim;
-    total_dims_ += dim;
-    for (i = 0; i < slotnum; i++) {
-      if (slot_dims_[i] == 0)
-        break;
-    }
-    if (i == slotnum) {
-      for (int j = 1; j < slotnum; j++) {
-        slot_offset_[j] += slot_dims_[j-1] + slot_offset_[j-1];
-      }
-      // set slot_dims/slot_offset done
-      mutex_lock l(mu_);
-      done_ = true;
-      for (auto kv : kvs_) {
-        kv.first->SetTotalDims(total_dims_);
-      }
-    }
-    flag_.clear(std::memory_order_release);
-  }
-
-  int GetOffset(int index) {
-    if (slot_offset_.size() == 0)
-      return 0;
-    else
-      return slot_offset_[index];
-  }
-
-  int GetTotalDims() {
-    return total_dims_;
-  }
-
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
     TF_CHECK_OK(kvs_[0].first->Commit(key, value_ptr));
     return Status::OK();
@@ -342,10 +335,7 @@ class StorageManager {
           break;
         }
       }
-      // default 1GB cache size approximately
-      cache_capacity_ = 1024 * 1024 * 1024 / (GetTotalDims() * sizeof(V));
     }
-    LOG(INFO) << "Cache cache_capacity: " << cache_capacity_;
     K evic_ids[kSize];
     while (true) {
       mutex_lock l(mu_);
@@ -382,6 +372,9 @@ class StorageManager {
   std::function<ValuePtr<V>*(Allocator*, size_t)> new_value_ptr_fn_;
   StorageConfig sc_;
 
+  int64 alloc_len_;
+  int64 total_dims_;
+
   std::unique_ptr<thread::ThreadPool> thread_pool_;
   Thread* eviction_thread_;
   BatchCache<K>* cache_;
@@ -390,11 +383,7 @@ class StorageManager {
   condition_variable shutdown_cv_;
   bool shutdown_ GUARDED_BY(mu_) = false;
 
-  std::vector<int> slot_dims_;
-  std::vector<int> slot_offset_;
-  int total_dims_;
   bool done_ = false;
-
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 
 };

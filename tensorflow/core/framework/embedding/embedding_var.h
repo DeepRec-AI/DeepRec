@@ -77,8 +77,8 @@ class EmbeddingVar : public ResourceBase {
       default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
-      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
-        storage_manager_->SetDim(emb_config_.emb_index, value_len_, emb_config_.slot_num + 1);
+      if (emb_config_.get_layout_type() == LayoutType::NORMAL_FIX) {
+        storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
       }
       return Status::OK();
     }
@@ -88,7 +88,7 @@ class EmbeddingVar : public ResourceBase {
     is_initialized_ = true;
   }
 
-  bool IsInitialized() const {
+  bool IsInitialized() const { 
     return is_initialized_;
   }
 
@@ -98,7 +98,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, int64 update_version = -1) {
-    Status s = storage_manager_->GetOrCreate(key, value_ptr, emb_config_.total_num(storage_manager_->GetTotalDims()));
+    Status s = storage_manager_->GetOrCreate(key, value_ptr, emb_config_.total_num(storage_manager_->GetAllocLen()));
     TF_CHECK_OK(s);
     if (emb_config_.is_primary() && emb_config_.steps_to_live != 0 && update_version != -1) {
       (*value_ptr)->SetStep(update_version);
@@ -141,7 +141,8 @@ class EmbeddingVar : public ResourceBase {
   }
 
   V* LookupPrimaryEmb(ValuePtr<V>* value_ptr) {
-    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index, storage_manager_->GetOffset(emb_config_.primary_emb_index));
+    V* primary_val = value_ptr->GetValue(emb_config_.primary_emb_index,
+                                 storage_manager_->GetOffset(emb_config_.primary_emb_index));
     return primary_val;
   }
 
