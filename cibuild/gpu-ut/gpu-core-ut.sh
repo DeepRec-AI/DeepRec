@@ -71,6 +71,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/core:common_runtime_hierarchical_tree_broadcaster_test "\
 "-//tensorflow/core:gpu_debug_allocator_test "\
 "-//tensorflow/core:common_runtime_gpu_pool_allocator_test "\
+"-//tensorflow/core:ev_allocator_tests "\
 
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
