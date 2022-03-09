@@ -93,7 +93,7 @@ struct EmbeddingConfig {
   }
 
   int64 total_num(int alloc_len) {
-    return block_num * (1 + (1 - normal_fix_flag) * (slot_num + 1)) * (1 + normal_fix_flag * (alloc_len * (slot_num + 1)-1));
+    return block_num * (1 + (1 - normal_fix_flag) * (slot_num + 1)) * (1 + normal_fix_flag * (alloc_len * (slot_num + 1) - 1));
   }
 
   int64 get_filter_freq() {
