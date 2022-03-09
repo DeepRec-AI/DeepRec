@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #define EIGEN_USE_THREADS
+#define EIGEN_USE_GPU
 #include "tensorflow/core/lib/bfloat16/bfloat16.h"
 
 #include <algorithm>
@@ -164,6 +165,127 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
+
+#if GOOGLE_CUDA
+template <class K, class V>
+Status GetInputEmbeddingVarGPU(OpKernelContext* ctx, int input,
+                            EmbeddingVarGPU<K, V>** var) {
+  if (LookupResource(ctx, HandleFromInput(ctx, input), var).ok()) {
+    return Status::OK();
+  } else {
+    return errors::Internal("Invalid versioned variable reference.");
+  }
+}
+
+template <typename Device, typename TKey, typename T, typename Tstep>
+class KvSparseApplyAdagradOpGPU : public OpKernel {
+ public:
+  explicit KvSparseApplyAdagradOpGPU(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("use_locking", &use_exclusive_lock_));
+  }
+
+  void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
+    EmbeddingVarGPU<TKey, T>* var = NULL;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 0, &var));
+    EmbeddingVarGPU<TKey, T>* accum = NULL;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 1, &accum));
+
+    const Tensor& lr = ctx->input(2);
+    OP_REQUIRES(ctx, IsLegacyScalar(lr.shape()),
+                errors::InvalidArgument("lr is not a scalar: ",
+                                        lr.shape().DebugString()));
+    const Tensor& grad = ctx->input(3);
+    const Tensor& indices = ctx->input(4);
+    OP_REQUIRES(ctx, TensorShapeUtils::IsVector(indices.shape()),
+                errors::InvalidArgument("indices must be one-dimensional"));
+
+    const Tensor& global_step = ctx->input(5);
+    OP_REQUIRES(
+      ctx, IsLegacyScalar(global_step.shape()),
+      errors::InvalidArgument(
+        "global_step is not a scalar: ", global_step.shape().DebugString()));
+
+    int64 inner_dim = 1;
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
+                  errors::InvalidArgument(strings::StrCat(
+                      "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
+    }
+
+    const TKey N = indices.dim_size(0);
+    OP_REQUIRES(
+        ctx, grad.dim_size(0) == N,
+        errors::InvalidArgument(
+            "grad must be the same size as indices in the first dimension."));
+
+    OP_REQUIRES(ctx, inner_dim > 0,
+                errors::InvalidArgument(
+                    "Inner dimension should be greater than zero."));
+
+    if (N > 0) {
+      if (inner_dim > 0) {
+        auto indices_flat = indices.flat<TKey>();
+        auto grad_flat = grad.flat<T>();
+        Tstep gs = global_step.scalar<Tstep>()();
+        const TKey* key_base = &indices_flat(0);
+        const T* grad_base = &grad_flat(0);
+        T lr_scalar = lr.scalar<T>()();
+        const cudaStream_t& stream = ctx->eigen_device<Device>().stream();
+
+        functor::KvSparseApplyAdagrad<Device, TKey, T>()(
+            N, ctx->get_allocator(AllocatorAttributes()), var, accum,
+            key_base, grad_base, lr_scalar, gs, stream);
+      }
+    }
+  }
+
+ private:
+  bool use_exclusive_lock_;
+};
+
+namespace functor {
+#define DECLARE_GPU_SPEC(TKey, T)                             \
+  template <>                                           \
+  void KvSparseApplyAdagrad<GPUDevice, TKey, T>::operator()(  \
+      int32 num_items,  \
+      Allocator* alloc, \
+      EmbeddingVarGPU<TKey, T>* var,  \
+      EmbeddingVarGPU<TKey, T>* accum,  \
+      const TKey* key_base, \
+      const T* grad,  \
+      T lr, \
+      int64 gs, \
+      cudaStream_t stream);             \
+  extern template struct KvSparseApplyAdagrad<GPUDevice, TKey, T>;
+DECLARE_GPU_SPEC(int32, float);
+DECLARE_GPU_SPEC(int32, double);
+DECLARE_GPU_SPEC(int64, float);
+DECLARE_GPU_SPEC(int64, double);
+#undef DECLARE_GPU_SPEC
+}  // namespace functor
+
+#define REGISTER_KERNELS(Tindices, T, Tstep)                         \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagrad")       \
+                              .Device(DEVICE_GPU)                    \
+                              .TypeConstraint<T>("T")                \
+                              .HostMemory("lr")                      \
+                              .HostMemory("global_step")             \
+                              .TypeConstraint<Tindices>("Tindices")  \
+                              .TypeConstraint<Tstep>("Tstep"),       \
+                          KvSparseApplyAdagradOpGPU<GPUDevice, Tindices, T, Tstep>);
+#define REGISTER_GPU_KERNELS(T)        \
+  REGISTER_KERNELS(int32, T, int32);   \
+  REGISTER_KERNELS(int64, T, int32);   \
+  REGISTER_KERNELS(int32, T, int64);   \
+  REGISTER_KERNELS(int64, T, int64);
+
+TF_CALL_float(REGISTER_GPU_KERNELS);
+
+#undef REGISTER_GPU_KERNELS
+#undef REGISTER_KERNELS
+#endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
 template <typename Device, typename TKey, typename T, bool has_l2_shrinkage>
