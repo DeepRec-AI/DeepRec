@@ -77,7 +77,7 @@ class EmbeddingVar : public ResourceBase {
       default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
-      if (emb_config_.get_layout_type() == LayoutType::NORMAL_FIX) {
+      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
         storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
       }
       return Status::OK();
@@ -88,7 +88,7 @@ class EmbeddingVar : public ResourceBase {
     is_initialized_ = true;
   }
 
-  bool IsInitialized() const { 
+  bool IsInitialized() const {
     return is_initialized_;
   }
 
