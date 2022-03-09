@@ -434,11 +434,10 @@ class EVAllocator : public Allocator {
                    << "% of system memory.";
     }
 
-    // support 4B no fragment allocation.
-    alignment = (num_bytes <= 4) ? 4 : 8;
-    void* p = impl_.Allocate(num_bytes);
+    alignment = 8;
+    void* p = port::AlignedMalloc(num_bytes, alignment);
     if (ev_allocator_collect_stats) {
-      const std::size_t alloc_size = impl_.AllocatedSize(p);
+      const std::size_t alloc_size = port::MallocExtension_GetAllocatedSize(p);
       mutex_lock l(mu_);
       ++stats_.num_allocs;
       stats_.bytes_in_use += alloc_size;
@@ -458,6 +457,7 @@ class EVAllocator : public Allocator {
     return p;
   }
 
+  /*
   size_t BatchAllocateRaw(size_t num, size_t alignment,
       size_t num_bytes, void** ret) override {
     if (num_bytes > LargeAllocationWarningBytes() &&
@@ -495,17 +495,18 @@ class EVAllocator : public Allocator {
       }
     }
     return allocated_num;
-  }
+  }*/
 
   void DeallocateRaw(void* ptr) override {
     if (ev_allocator_collect_stats) {
-      const std::size_t alloc_size = impl_.AllocatedSize(ptr);
+      const std::size_t alloc_size =
+          port::MallocExtension_GetAllocatedSize(ptr);
       
       mutex_lock l(mu_);
       stats_.bytes_in_use -= alloc_size;
     }
 
-    impl_.Deallocate(ptr);
+    port::AlignedFree(ptr);
   }
 
   absl::optional<AllocatorStats> GetStats() override {
@@ -521,7 +522,7 @@ class EVAllocator : public Allocator {
   }
 
   size_t AllocatedSizeSlow(const void* ptr) const override {
-    return impl_.AllocatedSize(ptr);
+    return port::MallocExtension_GetAllocatedSize(ptr);
   }
 
  private:
@@ -532,8 +533,6 @@ class EVAllocator : public Allocator {
   // statistics are disabled.
   std::atomic<int> single_allocation_warning_count_;
   int total_allocation_warning_count_ GUARDED_BY(mu_);
-
-  EVAllocatorImpl impl_;
 
   TF_DISALLOW_COPY_AND_ASSIGN(EVAllocator);
 };
