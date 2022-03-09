@@ -190,6 +190,7 @@ class InitializeKvVariableOp : public OpKernel {
 
     const Tensor& slotnum_tensor = context->input(4);
     int64 slotnum = slotnum_tensor.scalar<int64>()();
+
     CHECK(block_num_ == 1 || layout_ != "normal_fix");
 
     if (handle_self.name() == handle_primary.name() &&

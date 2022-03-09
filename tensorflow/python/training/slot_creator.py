@@ -105,6 +105,8 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         else:
           filter_strategy = variables.CounterFilter(filter_freq=primary._filter_freq)
       if slot_config.slot_type is config_pb2.SlotType.EMBEDDING_VARIABLE:
+        primary.initializer._update_input(4, slotnum_op)
+        primary._slotnum_op = slotnum_op 
         slot = variable_scope.get_embedding_variable_v2_internal(
           scope, initializer=val, trainable=False,
           embedding_dim=shape, key_dtype=primary._invalid_key_type,

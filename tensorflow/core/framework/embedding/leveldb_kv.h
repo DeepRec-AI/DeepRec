@@ -182,4 +182,4 @@ class LevelDBKV : public KVInterface<K, V> {
 
 } //namespace tensorflow
 
-#endif  TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
+#endif  //TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_

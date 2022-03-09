@@ -209,6 +209,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
               max_element_size = self.var._max_element_size,
               false_positive_probability = self.var._false_positive_probability,
               counter_type = self.var._counter_type,
+              layout = self.var._layout,
               partition_id=self.partition_id, partition_num=self.partition_num,
               default_value_dim=self.var._default_value_dim)
 
