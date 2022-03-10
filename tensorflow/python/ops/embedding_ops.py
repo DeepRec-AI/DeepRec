@@ -271,7 +271,6 @@ def _embedding_lookup_and_transform(params,
           embs = []
           pids_nozero = array_ops.boolean_mask(pids, math_ops.greater_equal(pblocknums , 1))
           pblocknums_nozero = array_ops.boolean_mask(pblocknums, math_ops.greater_equal(pblocknums, 1))
-          import pdb;pdb.set_trace()
           for i in range(params[p].blocknum()):
             with ops.colocate_with(params[p]._ev_list[i]):
               evids = array_ops.boolean_mask(pids_nozero, math_ops.greater_equal(pblocknums_nozero, i + 1))

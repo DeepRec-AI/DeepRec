@@ -32,7 +32,7 @@ class FusedEmbeddingSparsePostLookUpOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
                           const std::string& combiner, const float max_norm,
-                          const int default_id) {
+                          const bool fill_empty_row, const int default_id) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
@@ -46,6 +46,7 @@ class FusedEmbeddingSparsePostLookUpOpTest : public OpsTestBase {
                      .Attr("partition_axis", 0)
                      .Attr("combiner", combiner)
                      .Attr("max_norm", max_norm)
+                     .Attr("fill_empty_row", fill_empty_row)
                      .Attr("default_id", default_id)
                      .Input(FakeInput(num_partitions, dtype))
                      .Input(FakeInput(num_partitions, DT_INT64))
@@ -68,7 +69,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
   const int emb_vector_dim = 8;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 3, DT_FLOAT, "sqrtn", 200.0, -1);
+  MakeOpAndSetDevice(Device::GPU, 3, DT_FLOAT, "sqrtn", 200.0, false, -1);
 
   // emb_shards 0
   AddInputFromArray<float>(
@@ -147,7 +148,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest, OnlyPartition2Sum) {
   const int emb_vector_dim = 4;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, -1);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, true, -1);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
@@ -203,7 +204,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest, OnlyPartition2SumDefault2) {
   const int emb_vector_dim = 4;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, 2);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, true, 2);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
@@ -259,7 +260,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest, OnlyPartition2MeanDefault2Unique) {
   const int emb_vector_dim = 2;
   const int entries = 4;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "mean", -1.0, 2);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "mean", -1.0, true, 2);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),

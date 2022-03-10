@@ -25,6 +25,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("fill_empty_row", &fill_empty_row_));
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
@@ -112,7 +113,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
       CK_CUDA_THROW_(cudaGetLastError());
     }
 
-    const bool set_empty_row_zero = default_id_ < 0;
+    const bool set_empty_row_zero = default_id_ < 0 && fill_empty_row_;
     // ================================================================ //
 
     // ========================= 2. combiner ========================== //
@@ -144,6 +145,7 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
   int partition_axis_;
   std::string combiner_;
   float max_norm_;
+  bool fill_empty_row_;
   int64_t default_id_;
 };
 
@@ -160,6 +162,7 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("combiner", &combiner_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("max_norm", &max_norm_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("fill_empty_row", &fill_empty_row_));
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
@@ -208,7 +211,7 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
     const int64_t batch_size = top_grad_tensor->shape().dim_size(0);
     const int64_t emb_vec_size = emb_shards[0].shape().dim_size(1);
 
-    const bool set_empty_row_zero = default_id_ < 0;
+    const bool set_empty_row_zero = default_id_ < 0 && fill_empty_row_;
 
     for (int i = 0; i < num_partitions_; i++) {
       const int64_t shard_len = partition_permutations[i].shape().dim_size(0);
@@ -267,6 +270,7 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
   int partition_axis_;
   std::string combiner_;
   float max_norm_;
+  bool fill_empty_row_;
   int64_t default_id_;
 };
 

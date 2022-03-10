@@ -144,6 +144,7 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
 REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
+    .Attr("fill_empty_row: bool = false")
     .Attr("default_id: int = -1")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
@@ -241,6 +242,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
 REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
+    .Attr("fill_empty_row: bool = false")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
                                            // if necessary

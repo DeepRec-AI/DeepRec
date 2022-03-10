@@ -333,6 +333,10 @@ __global__ void DistributeGradToShardKernel(
   for (int64_t i = 0; i < counts; i++) {
     const int64_t ioitu = idx_of_input_to_unique[ioitu_offset + i];
     const int64_t row_in_batch = indices_before_unique[2 * ioitu];
+    if (set_empty_row_zero && row_emptiness_flag[row_in_batch]) {
+      continue;
+    }
+
     float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
     const int feature_num = feature_nums[row_in_batch];
     grad = CombineGrad<combiner>(grad, feature_num);
