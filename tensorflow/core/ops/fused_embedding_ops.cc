@@ -125,8 +125,10 @@ REGISTER_OP("FusedEmbeddingSparsePreLookUp")
       unused_list[0] = ctx->MakeShape({ctx->UnknownDim(), 2});
       ctx->set_output("indices_before_unique", unused_list);
       unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
+      ctx->set_output("row_empty_and_invalid_flags", unused_list);
       ctx->set_output("unique_idxs", unused_list);
       ctx->set_output("unique_counts", unused_list);
+      ctx->set_output("idx_of_input_to_unique", unused_list);
       ctx->set_output("unique_offsets", unused_list);
 
       return Status::OK();
@@ -159,11 +161,6 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Input("unique_counts: int64")
     .Input("idx_of_input_to_unique: int64")
     .Input("unique_offsets: int64")
-    .Input(
-        "partitioned_values: num_partitions * int64")  // only for backward use.
-                                                       // actually directly port
-                                                       // to python grad op
-                                                       // output
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
     .SetShapeFn([](InferenceContext* ctx) {
@@ -200,7 +197,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
 
       // indices_before_unique
       ctx->input("indices_before_unique", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
 
       // row_empty_and_invalid_flags
       ctx->input("row_empty_and_invalid_flags", &unused_list);
