@@ -25,6 +25,9 @@ export TF_NEED_OPENCL_SYCL=0
 export TF_ENABLE_XLA=1
 export TF_NEED_MPI=0
 
+DESTDIR=$1
+
+cd $DESTDIR
 yes "" | bash ./configure || true
 
 set -x

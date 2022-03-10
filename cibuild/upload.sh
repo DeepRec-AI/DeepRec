@@ -16,13 +16,12 @@
 
 set -eo pipefail
 
-PODNAME=$1
+JOBNAME=$1
 DISTDIR=$2
+DOCKER_DISTDIR=$3
 
 mkdir -p ${DISTDIR}
 tar --exclude=.git -czf ${DISTDIR}/archive.tar.gz .
-sleep 15
-kubectl wait --for=condition=ready --timeout=43200s pod ${PODNAME}
-kubectl cp ${DISTDIR}/archive.tar.gz ${PODNAME}:/workspace/archive.tar.gz
-kubectl exec -it ${PODNAME} -- tar -xzf /workspace/archive.tar.gz -C /workspace
+docker cp ${DISTDIR}/archive.tar.gz ${JOBNAME}:/$DOCKER_DISTDIR/archive.tar.gz
+docker exec ${JOBNAME} tar -xzf /$DOCKER_DISTDIR/archive.tar.gz -C /$DOCKER_DISTDIR/
 
