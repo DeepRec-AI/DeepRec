@@ -248,7 +248,6 @@ class DecodeImageOp : public OpKernel {
     // `OP_REQUIRES` constraint is satisfied then the data would be freed
     // prematurely. Instead, let's use a `Cleanup` object.
     auto cleanup = gtl::MakeCleanup([&decode]() {
-      std::cerr << "Cleanup called...\n";
       png::CommonFreeDecode(&decode);
     });
 
