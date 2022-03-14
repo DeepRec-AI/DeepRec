@@ -453,7 +453,7 @@ TEST(EmbeddingVariableTest, TestBloomFilter) {
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_fix", 10, 0.01));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01));
 
   var->Init(value, 1);
 
@@ -487,7 +487,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_fix", 10, 0.01, DT_UINT64));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT64));
 
   var->Init(value, 1);
 
@@ -558,7 +558,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_fix", 10, 0.01, DT_UINT32));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT32));
 
   var->Init(value, 1);
 
@@ -629,7 +629,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_fix", 10, 0.01, DT_UINT16));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_contiguous", 10, 0.01, DT_UINT16));
 
   var->Init(value, 1);
 
@@ -701,7 +701,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
   EmbeddingVar<int64, float>* var 
     = new EmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_fix", 10, 0.01, DT_UINT8));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_contiguous", 10, 0.01, DT_UINT8));
 
   var->Init(value, 1);
 
@@ -1017,9 +1017,9 @@ TEST(EmbeddingVariableTest, TestEVStorageType_DRAM) {
                           /*block_num = */1, /*slot_num = */1,
                           /*name = */"", /*steps_to_live = */0,
                           /*filter_freq = */0, /*max_freq = */999999,
-                          /*l2_weight_threshold = */-1.0, /*layout = */"normal_fix",
+                          /*l2_weight_threshold = */-1.0, /*layout = */"normal",
                           /*max_element_size = */0, /*false_positive_probability = */-1.0,
-                          /*counter_type = */DT_UINT64, /*storage_type = */embedding::DRAM));
+                          /*counter_type = */DT_UINT64));
   variable->Init(value, 1);
 
   int64 ev_size = 100;
@@ -1032,7 +1032,7 @@ TEST(EmbeddingVariableTest, TestEVStorageType_DRAM) {
 
 void t1(KVInterface<int64, float>* hashmap) {
   for (int i = 0; i< 100; ++i) {
-    hashmap->Insert(i, new NormalValuePtr<float>(100));
+    hashmap->Insert(i, new NormalValuePtr<float>(ev_allocator(), 100));
   }
 }
 
@@ -1057,7 +1057,7 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
   auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, testing::TmpDir(), 1000));
+                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, testing::TmpDir(), 1000, "normal_contiguous"));
   TF_CHECK_OK(storage_manager->Init());
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
@@ -1066,9 +1066,9 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
                           /*block_num = */1, /*slot_num = */0,
                           /*name = */"", /*steps_to_live = */0,
                           /*filter_freq = */0, /*max_freq = */999999,
-                          /*l2_weight_threshold = */-1.0, /*layout = */"normal_fix",
+                          /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
                           /*max_element_size = */0, /*false_positive_probability = */-1.0,
-                          /*counter_type = */DT_UINT64, /*storage_type = */embedding::LEVELDB));
+                          /*counter_type = */DT_UINT64));
   variable->Init(value, 1);
   std::vector<ValuePtr<float>*> value_ptr_list;
   std::vector<int64> key_list;

@@ -5,6 +5,11 @@
 #include "tensorflow/core/framework/embedding/embedding_config.h"
 
 namespace tensorflow {
+namespace embedding{
+template <class K, class V>
+class StorageManager;
+}
+
 namespace {
 const static std::vector<int64> default_seeds = {
  2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,
@@ -28,8 +33,8 @@ class EmbeddingFilter {
 template<typename K, typename V, typename EV>
 class BloomFilter : public EmbeddingFilter<K, V, EV> {
  public:
-  BloomFilter(const EmbeddingConfig& config, EV* ev) :
-      config_(config), ev_(ev) {
+  BloomFilter(const EmbeddingConfig& config, EV* ev, embedding::StorageManager<K, V>* storage_manager) :
+      config_(config), ev_(ev), storage_manager_(storage_manager) {
     switch (config_.counter_type){
       case DT_UINT64:
         VLOG(2) << "The type of bloom counter is uint64";
@@ -309,13 +314,15 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   EmbeddingConfig config_;
   EV* ev_;
   std::vector<int64> seeds_;
+  embedding::StorageManager<K, V>* storage_manager_;
 };
 
 template<typename K, typename V, typename EV>
 class CounterFilter : public EmbeddingFilter<K, V, EV> {
  public:
   CounterFilter(const EmbeddingConfig& config,
-      EV* ev) : config_(config), ev_(ev) {
+      EV* ev, embedding::StorageManager<K, V>* storage_manager)
+       : config_(config), ev_(ev), storage_manager_(storage_manager) {
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr) override {
@@ -386,6 +393,7 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
 
  private:
   EmbeddingConfig config_;
+  embedding::StorageManager<K, V>* storage_manager_;
   EV* ev_;
 };
 
@@ -393,7 +401,8 @@ template<typename K, typename V, typename EV>
 class NullableFilter : public EmbeddingFilter<K, V, EV> {
  public:
   NullableFilter(const EmbeddingConfig& config,
-      EV* ev) : config_(config), ev_(ev) {
+      EV* ev, embedding::StorageManager<K, V>* storage_manager)
+       : config_(config), ev_(ev), storage_manager_(storage_manager) {
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr) override {
@@ -428,7 +437,7 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
   }
 
   int64 GetFreq(K key, ValuePtr<V>* value_ptr) override {
-    if (config_.get_layout_type() != LayoutType::LIGHT) {
+    if (storage_manager_->GetLayoutType() != LayoutType::LIGHT) {
       return value_ptr->GetFreq();
     }else {
       return 0;
@@ -436,7 +445,7 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
   }
 
   int64 GetFreq(K key) override {
-    if (config_.get_layout_type() != LayoutType::LIGHT) {
+    if (storage_manager_->GetLayoutType() != LayoutType::LIGHT) {
       ValuePtr<V>* value_ptr = nullptr;
       TF_CHECK_OK(ev_->LookupOrCreateKey(key, &value_ptr));
       return value_ptr->GetFreq();
@@ -447,6 +456,7 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
 
  private:
   EmbeddingConfig config_;
+  embedding::StorageManager<K, V>* storage_manager_;
   EV* ev_;
 };
 
@@ -454,15 +464,15 @@ class FilterFactory {
  public:
   template<typename K, typename V, typename EV>
   static EmbeddingFilter<K, V, EV>* CreateFilter(const EmbeddingConfig& config,
-      EV* ev) {
+      EV* ev, embedding::StorageManager<K, V>* storage_manager) {
     if (config.filter_freq > 0) {
       if (config.kHashFunc != 0) {
-        return new BloomFilter<K, V, EV>(config, ev);
+        return new BloomFilter<K, V, EV>(config, ev, storage_manager);
       } else {
-        return new CounterFilter<K, V, EV>(config, ev);
+        return new CounterFilter<K, V, EV>(config, ev, storage_manager);
       }
     } else {
-      return new NullableFilter<K, V, EV>(config, ev);
+      return new NullableFilter<K, V, EV>(config, ev, storage_manager);
     }
   }
 };

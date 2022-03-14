@@ -1462,6 +1462,32 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         for j in range(0, 3):
           self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
+  def testEmbeddingVariableForLEVELDBwithFilter(self):
+    print("testEmbeddingVariableForLEVELDBwithFilter")
+    db_directory = self.get_temp_dir()
+    var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3),
+                             storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.LEVELDB,
+                                                                    storage_path=db_directory)),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1))
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad_decay.AdagradDecayOptimizer(0.1, gs)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+      emb1, top, l = sess.run([emb, train_op, loss])
+
   def testEmbeddingVariableForLEVELDBWithGradientDescent(self):
     print("testEmbeddingVariableForLEVELDBWithGradientDescent")
     db_directory = self.get_temp_dir()
