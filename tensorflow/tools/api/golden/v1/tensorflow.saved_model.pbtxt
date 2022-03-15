@@ -190,6 +190,6 @@ tf_module {
   }
   member_method {
     name: "simple_save"
-    argspec: "args=[\'session\', \'export_dir\', \'inputs\', \'outputs\', \'legacy_init_op\'], varargs=None, keywords=None, defaults=[\'None\'], "
+    argspec: "args=[\'session\', \'export_dir\', \'inputs\', \'outputs\', \'legacy_init_op\', \'save_incr_model\'], varargs=None, keywords=None, defaults=[\'None\', \'False\'], "
   }
 }
