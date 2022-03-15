@@ -1948,9 +1948,7 @@ tf_cuda_cc_test(
 tf_cuda_cc_test(
     name = "fused_embedding_ops_test",
     size = "small",
-    srcs = ["fused_embedding/tests/fused_embedding_local_ops_test.cc",
-            "fused_embedding/tests/fused_embedding_pre_ops_test.cc",
-            "fused_embedding/tests/fused_embedding_post_ops_test.cc",
+    srcs = ["fused_embedding/tests/fused_embedding_post_ops_test.cc",
             "fused_embedding/tests/fused_embedding_post_grad_ops_test.cc"],
     tags = tf_cuda_tests_tags(),
     deps = [
@@ -5284,21 +5282,20 @@ tf_kernel_library(
 
 tf_cuda_library(
     name = "fused_embedding_cuh",
-    hdrs = ["fused_embedding/fused_embedding.cu.h",
-            "fused_embedding/gpu_functions/kernels.cu.h",
-            "fused_embedding/gpu_functions/unique.cu.h",
-            "fused_embedding/gpu_functions/partition_select.cu.h"],
+    hdrs = ["fused_embedding/gpu/common.cu.h",
+            "fused_embedding/gpu/functions/kernels.cu.h",
+            "fused_embedding/gpu/functions/partition_select.cu.h"],
 )
 
 tf_kernel_library(
     name = "fused_embedding_ops",
     gpu_srcs = [
-        "fused_embedding/fused_embedding_local_ops_gpu.cu.cc",
-        "fused_embedding/fused_embedding_pre_ops_gpus.cu.cc",
-        "fused_embedding/fused_embedding_post_ops_gpus.cu.cc",
-        "fused_embedding/gpu_functions/kernels.cu.cc",
-        "fused_embedding/gpu_functions/unique.cu.cc",
-        "fused_embedding/gpu_functions/partition_select.cu.cc",
+        "fused_embedding/gpu/fused_embedding_post_ops_gpus.cu.cc",
+        "fused_embedding/gpu/partition_with_permutation_ops.cu.cc",
+        "fused_embedding/gpu/prune_invalid_and_fill_empty_rows_ops.cu.cc",
+        "fused_embedding/gpu/unique_with_multi_output_ops.cu.cc",
+        "fused_embedding/gpu/functions/kernels.cu.cc",
+        "fused_embedding/gpu/functions/partition_select.cu.cc",
     ],
     deps = ["//third_party/eigen3",
             "//tensorflow/core/profiler:nvtx_utils"] +

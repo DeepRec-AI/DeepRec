@@ -1,14 +1,14 @@
 #if GOOGLE_CUDA
 
 #define EIGEN_USE_GPU
-#include "tensorflow/core/kernels/fused_embedding/gpu_functions/partition_select.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu/functions/partition_select.cu.h"
 
 #include <cub/cub.cuh>
 #include <string>
 #include <vector>
 
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
-#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
 #include "tensorflow/core/lib/core/bits.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/stream_executor/cuda/cuda_activation.h"
@@ -110,14 +110,14 @@ namespace fused_embedding {
 // SelectArgs, SelectScanPassArgs
 #define DeclareSelect                                                          \
   template <typename T, typename TIndex>                                       \
-  void SelectName(OpKernelContext* ctx, const Tensor& keys,                    \
+  void SelectName(OpKernelContext* ctx, const Tensor* keys,                    \
                   const Tensor& indices, SelectArgs,                           \
                   const int64 num_partitions, OpOutputList& selected_keys,     \
                   OpOutputList& selected_indices) {                            \
-    OP_REQUIRES(ctx, keys.dims() == 1,                                         \
+    OP_REQUIRES(ctx, keys->dims() == 1,                                        \
                 errors::InvalidArgument("Tensor keys must ranks 1"));          \
     const GPUDevice& device = ctx->eigen_gpu_device();                         \
-    const int64 length = keys.shape().dim_size(0);                             \
+    const int64 length = keys->shape().dim_size(0);                            \
     cudaEvent_t memcpy_event;                                                  \
     cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);           \
     Tensor predicates;                                                         \
@@ -241,7 +241,7 @@ DeclareSelectScanKernel;
 DeclareSelectKernel;
 DeclareSelect;
 template void PartitionSelectDiv<int64, int64>(
-    OpKernelContext* ctx, const Tensor& keys, const Tensor& indices,
+    OpKernelContext* ctx, const Tensor* keys, const Tensor& indices,
     const Tensor& accu_div, const int64 num_partitions,
     OpOutputList& selected_keys, OpOutputList& selected_indices);
 

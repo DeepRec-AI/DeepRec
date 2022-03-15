@@ -6,7 +6,6 @@
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
 
 namespace tensorflow {
 

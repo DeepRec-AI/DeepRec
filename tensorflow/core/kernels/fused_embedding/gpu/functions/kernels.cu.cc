@@ -4,9 +4,9 @@
 
 #define EIGEN_USE_GPU
 
-#include "tensorflow/core/kernels/fused_embedding/gpu_functions/kernels.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu/functions/kernels.cu.h"
 
-#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 

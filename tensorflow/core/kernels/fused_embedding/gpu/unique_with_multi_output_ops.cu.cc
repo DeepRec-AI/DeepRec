@@ -2,13 +2,12 @@
 
 #define EIGEN_USE_GPU
 
-#include "tensorflow/core/kernels/fused_embedding/gpu_functions/unique.cu.h"
-
 #include <cub/cub.cuh>
 
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
-#include "tensorflow/core/kernels/fused_embedding/fused_embedding.cu.h"
+#include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/lib/core/bits.h"
+#include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/stream_executor/cuda/cuda_activation.h"
 
@@ -166,13 +165,13 @@ template <typename TIndex>
 __global__ void GetIdxOfInputToUniqueKernel(
     const TIndex* count_ptr, const TIndex* segment_ends_ptr,
     const TIndex* sorted_unique_perm_ptr, const TIndex* sorted_input_inds_ptr,
-    const int64* count_prefix_sum_ptr, TIndex* idx_of_input_to_unique_ptr) {
+    const TIndex* count_prefix_sum_ptr, TIndex* idx_of_input_to_unique_ptr) {
   const int target_unique_key_idx = blockIdx.x;
   const TIndex unique_key_count = count_ptr[target_unique_key_idx];
   const TIndex permute = sorted_unique_perm_ptr[target_unique_key_idx];
   const TIndex offset_of_sorted_input_inds =
       segment_ends_ptr[permute] - unique_key_count;
-  int64 offset_of_result = count_prefix_sum_ptr[target_unique_key_idx];
+  TIndex offset_of_result = count_prefix_sum_ptr[target_unique_key_idx];
   for (int i = threadIdx.x; i < unique_key_count; i += blockDim.x) {
     idx_of_input_to_unique_ptr[offset_of_result + i] =
         sorted_input_inds_ptr[offset_of_sorted_input_inds + i];
@@ -185,7 +184,7 @@ Status GetIdxOfInputToUnique(const Eigen::GpuDevice& d, const int64 uniq_size,
                              const TIndex* segment_ends_ptr,
                              const TIndex* sorted_unique_perm_ptr,
                              const TIndex* sorted_input_inds_ptr,
-                             const int64* count_prefix_sum_ptr,
+                             const TIndex* count_prefix_sum_ptr,
                              TIndex* idx_of_input_to_unique_ptr) {
   if (uniq_size == 0) return Status::OK();
   const int64 blocks = uniq_size;
@@ -380,266 +379,292 @@ void AllocateTemp(OpKernelContext* context, int64 size, Tensor* tensor,
 
 }  // namespace
 
-namespace fused_embedding {
-
 // Extention to TensorFlow 2.x's UniqueWithCount operator
 template <typename T, typename TIndex>
-void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
-                         const int64 input_size, cudaEvent_t memcpy_event,
-                         Tensor* unique_keys, Tensor* unique_idxs_out,
-                         Tensor* unique_counts_out,
-                         Tensor* idx_of_input_to_unique_out,
-                         Tensor* unique_offsets_out) {
-  OP_REQUIRES(context, input_size <= std::numeric_limits<int32>::max(),
-              errors::InvalidArgument(
-                  "unique does not support input tensors larger than ",
-                  std::numeric_limits<int32>::max(), " elements"));
+class UniqueWithMultiOutputGPU : public OpKernel {
+ public:
+  explicit UniqueWithMultiOutputGPU(OpKernelConstruction* context)
+      : OpKernel(context) {
+    cudaEventCreateWithFlags(&memcpy_event_, cudaEventDisableTiming);
+  }
 
-  OP_REQUIRES(context, TensorShapeUtils::IsVector(input->shape()),
-              errors::InvalidArgument("unique expects a 1D vector."));
+  void Compute(OpKernelContext* context) override {
+    Tensor const* input = nullptr;
+    OP_REQUIRES_OK(context, context->input("input", &input));
 
-  se::Stream* stream = context->op_device_context()->stream();
-  OP_REQUIRES(context, stream, errors::Internal("No GPU stream available."));
+    const int64 input_size = input->NumElements();
 
-  // cudaEvent_t memcpy_event;
-  // cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
+    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
-  if (input_size == 0) {
-    // Early exit for trivial case.
-    Tensor* temp;
-    OP_REQUIRES_OK(context, context->allocate_output("unique_idxs",
-                                                     TensorShape({0}), &temp));
+    OP_REQUIRES(context, input_size <= std::numeric_limits<int32>::max(),
+                errors::InvalidArgument(
+                    "unique does not support input tensors larger than ",
+                    std::numeric_limits<int32>::max(), " elements"));
+
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(input->shape()),
+                errors::InvalidArgument("unique expects a 1D vector."));
+
+    se::Stream* stream = context->op_device_context()->stream();
+    OP_REQUIRES(context, stream, errors::Internal("No GPU stream available."));
+
+    if (input_size == 0) {
+      // Early exit for trivial case.
+      Tensor* temp;
+      OP_REQUIRES_OK(context, context->allocate_output(
+                                  "unique_keys", TensorShape({0}), &temp));
+      OP_REQUIRES_OK(context, context->allocate_output(
+                                  "unique_idxs", TensorShape({0}), &temp));
+      OP_REQUIRES_OK(context, context->allocate_output(
+                                  "unique_counts", TensorShape({0}), &temp));
+      OP_REQUIRES_OK(context,
+                     context->allocate_output("idx_of_input_to_unique",
+                                              TensorShape({0}), &temp));
+      OP_REQUIRES_OK(context, context->allocate_output(
+                                  "unique_offsets", TensorShape({0}), &temp));
+      return;
+    }
+
+    // The algorithm implemented here is as follows:
+    // input = [3, 5, 3, 4, 1, 4, 9, 8, 6, 3, 5, 7, 8, 8, 4, 6, 4, 2, 5, 6]
+    // 1) Sort the input to group equal values together in segments.
+    //      sorted_input, sorted_input_inds = sort(input)
+    // sorted_input:
+    //   [1, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 8, 8, 8, 9]
+    // sorted_input_inds:
+    //   [4, 17, 0, 2, 9, 3, 5, 14, 16, 1, 10, 18, 8, 15, 19, 11, 7, 12, 13, 6]
+    // 2) Identify the boundaries between segments and use prefix sum to
+    //    compute the unique ID for each sorted value.
+    //      sorted_input_unique_ids = prefix_sum(indicator(sorted_input))
+    // indicator(sorted_input):
+    //   [0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1]
+    // sorted_input_unique_ids:
+    //   [0, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 7, 7, 7, 8]
+    // 3) Extract the input index of the first occurrence of each unique value.
+    //    If counts are required, also extract the end index of each segment.
+    //      unique_input_inds[sorted_input_unique_ids] =
+    //          sorted_input_inds (@ indicator)
+    //      segment_ends[sorted_input_unique_ids[i] - 1] = i (@ indicator)
+    // unique_input_inds: [4, 17, 0, 3, 1, 8, 11, 7, 6]
+    // segment_ends: [1, 2, 5, 9, 12, 15, 16, 19, 20]
+    // 4) Sort the extracted unique input indices to put them in order of
+    //    first appearance.
+    //      sorted_unique_input_inds, sorted_unique_perm =
+    //          sort(unique_input_inds)
+    // sorted_unique_input_inds: [0, 1, 3, 4, 6, 7, 8, 11, 17]
+    // sorted_unique_perm: [2, 4, 3, 0, 8, 7, 5, 6, 1]
+    // 5) Gather the sorted unique input values to produce output, and invert
+    //    the second sort permutation to produce an inverse ID mapping. If
+    //    counts are required, also take the adjacent difference between
+    //    segment_ends indices to produce counts.
+    //      output = input[sorted_unique_input_inds]
+    //      inv_sorted_unique_perm[sorted_unique_perm[i]] = i
+    //      counts = adjacent_difference(segment_ends)
+    // output: [3, 5, 4, 1, 9, 8, 6, 7, 2]
+    // inv_sorted_unique_perm: [3, 8, 0, 2, 1, 6, 7, 5, 4]
+    // counts: [3, 3, 4, 1, 1, 3, 3, 1, 1]
+    // 6) calculate prefix sum of counts
+    // epsc = exclusive_prefix_sum_of_counts = [3, 6, 10, 11, 12, 15, 18, 19,
+    // 20]
+    // 7) Use custom kernel to calculate the mapping between output and
+    // corresponding indices of the input.
+    // idx_of_input_to_unique_ptr: [0, 2, 9, 1, 10, 18, 3, 5, 14, 16, 4, 6, 7,
+    //                              12, 13, 8, 15, 19, 11, 17]
+    // 8) Look up unique IDs via the inverse ID mapping and scatter them
+    //  using the original sort permutation to produce the indices output.
+    //      idx[sorted_input_inds] =
+    //          inv_sorted_unique_perm[sorted_input_unique_ids]
+    // idx: [0, 1, 0, 2, 3, 2, 4, 5, 6, 0, 1, 7, 5, 5, 2, 6, 2, 8, 1, 6]
+
+    Tensor sorted_input_inds;
+    TIndex* sorted_input_inds_ptr = nullptr;
+    AllocateTemp(context, input_size, &sorted_input_inds,
+                 &sorted_input_inds_ptr);
+    if (!context->status().ok()) return;
+
+    Tensor sorted_input;
+    T* sorted_input_ptr = nullptr;
+    AllocateTemp(context, input_size, &sorted_input, &sorted_input_ptr);
+    if (!context->status().ok()) return;
+
+    const T* input_ptr = input->flat<T>().data();
+    OP_REQUIRES_OK(
+        context,
+        GpuRadixSort(context, input_size, /*keys_in=*/input_ptr,
+                     /*keys_out=*/sorted_input_ptr,
+                     /*indices_in=*/static_cast<const TIndex*>(nullptr),
+                     /*indices_out=*/sorted_input_inds_ptr));
+
+    // Create a fancy input iterator to indicate segment boundaries.
+    cub::TransformInputIterator<TIndex, SegmentIndicatorFunctor<T, TIndex>,
+                                cub::CountingInputIterator<TIndex>>
+        segment_indicator_iter(0, {sorted_input_ptr});
+
+    Tensor sorted_input_unique_ids;
+    TIndex* sorted_input_unique_ids_ptr = nullptr;
+    AllocateTemp(context, input_size, &sorted_input_unique_ids,
+                 &sorted_input_unique_ids_ptr);
+    if (!context->status().ok()) return;
+
+    OP_REQUIRES_OK(context, GpuPrefixSum(context, input_size, inclusive,
+                                         segment_indicator_iter,
+                                         sorted_input_unique_ids_ptr));
+
+    // Copy the last element of sorted_input_unique_ids back to the host to
+    // obtain uniq_size.
+    ScratchSpace<TIndex> last_idx_host(context, 1, /*on_host=*/true);
+    auto status =
+        stream
+            ->ThenMemcpy(last_idx_host.mutable_data(),
+                         se::DeviceMemoryBase(
+                             const_cast<TIndex*>(sorted_input_unique_ids_ptr) +
+                                 (input_size - 1),
+                             sizeof(*last_idx_host.data())),
+                         sizeof(*last_idx_host.data()))
+            .ok();
+    if (!status) {
+      context->SetStatus(errors::Internal("Copying device-to-host failed."));
+    }
+
+    const GPUDevice& device = context->eigen_gpu_device();
+    cudaEventRecord(memcpy_event_, device.stream());
+    cudaEventSynchronize(memcpy_event_);
+    int64 uniq_size = (*last_idx_host.data()) + 1;
+
+    se::cuda::ScopedActivateExecutorContext scoped_activation{
+        context->op_device_context()->stream()->parent()};
+
+    Tensor unique_input_inds;
+    TIndex* unique_input_inds_ptr = nullptr;
+    AllocateTemp(context, uniq_size, &unique_input_inds,
+                 &unique_input_inds_ptr);
+    if (!context->status().ok()) return;
+
+    Tensor segment_ends;
+    TIndex* segment_ends_ptr = nullptr;
+    AllocateTemp(context, uniq_size, &segment_ends, &segment_ends_ptr);
+    if (!context->status().ok()) return;
+
+    OP_REQUIRES_OK(context,
+                   ExtractFirstOccurrenceIndices(
+                       device, input_size, uniq_size, sorted_input_inds_ptr,
+                       sorted_input_unique_ids_ptr, unique_input_inds_ptr,
+                       segment_ends_ptr));
+
+    Tensor sorted_unique_input_inds;
+    TIndex* sorted_unique_input_inds_ptr = nullptr;
+    AllocateTemp(context, uniq_size, &sorted_unique_input_inds,
+                 &sorted_unique_input_inds_ptr);
+    if (!context->status().ok()) return;
+
+    Tensor sorted_unique_perm;
+    TIndex* sorted_unique_perm_ptr = nullptr;
+    AllocateTemp(context, uniq_size, &sorted_unique_perm,
+                 &sorted_unique_perm_ptr);
+    if (!context->status().ok()) return;
+
+    // Sort by input index so that output is in order of appearance.
+    OP_REQUIRES_OK(
+        context,
+        GpuRadixSort(context, uniq_size,
+                     /*keys_in=*/unique_input_inds_ptr,
+                     /*keys_out=*/sorted_unique_input_inds_ptr,
+                     /*indices_in=*/static_cast<const TIndex*>(nullptr),
+                     /*indices_out=*/sorted_unique_perm_ptr,
+                     /*num_bits=*/Log2Ceiling(input_size)));
+
+    // Free temporary tensor that is no longer needed.
+    unique_input_inds = Tensor();
+    unique_input_inds_ptr = nullptr;
+
+    // output 0 unique_keys
+    Tensor* unique_keys;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output(
+                       "unique_keys", TensorShape({uniq_size}), &unique_keys));
+    T* output_ptr = unique_keys->flat<T>().data();
+
+    Tensor inv_sorted_unique_perm;
+    TIndex* inv_sorted_unique_perm_ptr = nullptr;
+    AllocateTemp(context, uniq_size, &inv_sorted_unique_perm,
+                 &inv_sorted_unique_perm_ptr);
+    if (!context->status().ok()) return;
+
+    // output 2 unique_counts
+    Tensor* unique_counts;
     OP_REQUIRES_OK(context, context->allocate_output("unique_counts",
-                                                     TensorShape({0}), &temp));
-    OP_REQUIRES_OK(context, context->allocate_output("idx_of_input_to_unique",
-                                                     TensorShape({0}), &temp));
-    OP_REQUIRES_OK(context, context->allocate_output("unique_offsets",
-                                                     TensorShape({0}), &temp));
-    return;
-  }
+                                                     TensorShape({uniq_size}),
+                                                     &unique_counts));
+    TIndex* count_ptr = unique_counts->flat<TIndex>().data();
 
-  // The algorithm implemented here is as follows:
-  // input = [3, 5, 3, 4, 1, 4, 9, 8, 6, 3, 5, 7, 8, 8, 4, 6, 4, 2, 5, 6]
-  // 1) Sort the input to group equal values together in segments.
-  //      sorted_input, sorted_input_inds = sort(input)
-  // sorted_input:
-  //   [1, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6, 6, 7, 8, 8, 8, 9]
-  // sorted_input_inds:
-  //   [4, 17, 0, 2, 9, 3, 5, 14, 16, 1, 10, 18, 8, 15, 19, 11, 7, 12, 13, 6]
-  // 2) Identify the boundaries between segments and use prefix sum to
-  //    compute the unique ID for each sorted value.
-  //      sorted_input_unique_ids = prefix_sum(indicator(sorted_input))
-  // indicator(sorted_input):
-  //   [0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1]
-  // sorted_input_unique_ids:
-  //   [0, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 6, 7, 7, 7, 8]
-  // 3) Extract the input index of the first occurrence of each unique value.
-  //    If counts are required, also extract the end index of each segment.
-  //      unique_input_inds[sorted_input_unique_ids] =
-  //          sorted_input_inds (@ indicator)
-  //      segment_ends[sorted_input_unique_ids[i] - 1] = i (@ indicator)
-  // unique_input_inds: [4, 17, 0, 3, 1, 8, 11, 7, 6]
-  // segment_ends: [1, 2, 5, 9, 12, 15, 16, 19, 20]
-  // 4) Sort the extracted unique input indices to put them in order of
-  //    first appearance.
-  //      sorted_unique_input_inds, sorted_unique_perm =
-  //          sort(unique_input_inds)
-  // sorted_unique_input_inds: [0, 1, 3, 4, 6, 7, 8, 11, 17]
-  // sorted_unique_perm: [2, 4, 3, 0, 8, 7, 5, 6, 1]
-  // 5) Gather the sorted unique input values to produce output, and invert
-  //    the second sort permutation to produce an inverse ID mapping. If
-  //    counts are required, also take the adjacent difference between
-  //    segment_ends indices to produce counts.
-  //      output = input[sorted_unique_input_inds]
-  //      inv_sorted_unique_perm[sorted_unique_perm[i]] = i
-  //      counts = adjacent_difference(segment_ends)
-  // output: [3, 5, 4, 1, 9, 8, 6, 7, 2]
-  // inv_sorted_unique_perm: [3, 8, 0, 2, 1, 6, 7, 5, 4]
-  // counts: [3, 3, 4, 1, 1, 3, 3, 1, 1]
-  // 6) calculate prefix sum of counts
-  // epsc = exclusive_prefix_sum_of_counts = [3, 6, 10, 11, 12, 15, 18, 19,
-  // 20]
-  // 7) Use custom kernel to calculate the mapping between output and
-  // corresponding indices of the input.
-  // idx_of_input_to_unique_ptr: [0, 2, 9, 1, 10, 18, 3, 5, 14, 16, 4, 6, 7,
-  //                              12, 13, 8, 15, 19, 11, 17]
-  // 8) Look up unique IDs via the inverse ID mapping and scatter them
-  //  using the original sort permutation to produce the indices output.
-  //      idx[sorted_input_inds] =
-  //          inv_sorted_unique_perm[sorted_input_unique_ids]
-  // idx: [0, 1, 0, 2, 3, 2, 4, 5, 6, 0, 1, 7, 5, 5, 2, 6, 2, 8, 1, 6]
-
-  Tensor sorted_input_inds;
-  TIndex* sorted_input_inds_ptr = nullptr;
-  AllocateTemp(context, input_size, &sorted_input_inds, &sorted_input_inds_ptr);
-  if (!context->status().ok()) return;
-
-  Tensor sorted_input;
-  T* sorted_input_ptr = nullptr;
-  AllocateTemp(context, input_size, &sorted_input, &sorted_input_ptr);
-  if (!context->status().ok()) return;
-
-  const T* input_ptr = input->flat<T>().data();
-  OP_REQUIRES_OK(
-      context, GpuRadixSort(context, input_size, /*keys_in=*/input_ptr,
-                            /*keys_out=*/sorted_input_ptr,
-                            /*indices_in=*/static_cast<const TIndex*>(nullptr),
-                            /*indices_out=*/sorted_input_inds_ptr));
-
-  // Create a fancy input iterator to indicate segment boundaries.
-  cub::TransformInputIterator<TIndex, SegmentIndicatorFunctor<T, TIndex>,
-                              cub::CountingInputIterator<TIndex>>
-      segment_indicator_iter(0, {sorted_input_ptr});
-
-  Tensor sorted_input_unique_ids;
-  TIndex* sorted_input_unique_ids_ptr = nullptr;
-  AllocateTemp(context, input_size, &sorted_input_unique_ids,
-               &sorted_input_unique_ids_ptr);
-  if (!context->status().ok()) return;
-
-  OP_REQUIRES_OK(context, GpuPrefixSum(context, input_size, inclusive,
-                                       segment_indicator_iter,
-                                       sorted_input_unique_ids_ptr));
-
-  // Copy the last element of sorted_input_unique_ids back to the host to
-  // obtain uniq_size.
-  ScratchSpace<TIndex> last_idx_host(context, 1, /*on_host=*/true);
-  auto status =
-      stream
-          ->ThenMemcpy(last_idx_host.mutable_data(),
-                       se::DeviceMemoryBase(
-                           const_cast<TIndex*>(sorted_input_unique_ids_ptr) +
-                               (input_size - 1),
-                           sizeof(*last_idx_host.data())),
-                       sizeof(*last_idx_host.data()))
-          .ok();
-  if (!status) {
-    context->SetStatus(errors::Internal("Copying device-to-host failed."));
-  }
-
-  const GPUDevice& device = context->eigen_gpu_device();
-  cudaEventRecord(memcpy_event, device.stream());
-  cudaEventSynchronize(memcpy_event);
-  int64 uniq_size = (*last_idx_host.data()) + 1;
-
-  se::cuda::ScopedActivateExecutorContext scoped_activation{
-      context->op_device_context()->stream()->parent()};
-
-  Tensor unique_input_inds;
-  TIndex* unique_input_inds_ptr = nullptr;
-  AllocateTemp(context, uniq_size, &unique_input_inds, &unique_input_inds_ptr);
-  if (!context->status().ok()) return;
-
-  Tensor segment_ends;
-  TIndex* segment_ends_ptr = nullptr;
-  AllocateTemp(context, uniq_size, &segment_ends, &segment_ends_ptr);
-  if (!context->status().ok()) return;
-
-  OP_REQUIRES_OK(context,
-                 ExtractFirstOccurrenceIndices(
-                     device, input_size, uniq_size, sorted_input_inds_ptr,
-                     sorted_input_unique_ids_ptr, unique_input_inds_ptr,
-                     segment_ends_ptr));
-
-  Tensor sorted_unique_input_inds;
-  TIndex* sorted_unique_input_inds_ptr = nullptr;
-  AllocateTemp(context, uniq_size, &sorted_unique_input_inds,
-               &sorted_unique_input_inds_ptr);
-  if (!context->status().ok()) return;
-
-  Tensor sorted_unique_perm;
-  TIndex* sorted_unique_perm_ptr = nullptr;
-  AllocateTemp(context, uniq_size, &sorted_unique_perm,
-               &sorted_unique_perm_ptr);
-  if (!context->status().ok()) return;
-
-  // Sort by input index so that output is in order of appearance.
-  OP_REQUIRES_OK(
-      context, GpuRadixSort(context, uniq_size,
-                            /*keys_in=*/unique_input_inds_ptr,
-                            /*keys_out=*/sorted_unique_input_inds_ptr,
-                            /*indices_in=*/static_cast<const TIndex*>(nullptr),
-                            /*indices_out=*/sorted_unique_perm_ptr,
-                            /*num_bits=*/Log2Ceiling(input_size)));
-
-  // Free temporary tensor that is no longer needed.
-  unique_input_inds = Tensor();
-  unique_input_inds_ptr = nullptr;
-
-  // output 0 unique_keys
-  T* output_ptr = nullptr;
-  AllocateTemp(context, uniq_size, unique_keys, &output_ptr);
-
-  Tensor inv_sorted_unique_perm;
-  TIndex* inv_sorted_unique_perm_ptr = nullptr;
-  AllocateTemp(context, uniq_size, &inv_sorted_unique_perm,
-               &inv_sorted_unique_perm_ptr);
-  if (!context->status().ok()) return;
-
-  // output 2 unique_counts_out
-  OP_REQUIRES_OK(context, context->allocate_output("unique_counts",
-                                                   TensorShape({uniq_size}),
-                                                   &unique_counts_out));
-  TIndex* count_ptr = unique_counts_out->flat<TIndex>().data();
-
-  // Compute output and counts (if necessary).
-  OP_REQUIRES_OK(context,
-                 GatherOutputsAndInvertPermutation(
+    // Compute output and counts (if necessary).
+    OP_REQUIRES_OK(
+        context, GatherOutputsAndInvertPermutation(
                      device, uniq_size, input_ptr, sorted_unique_input_inds_ptr,
                      sorted_unique_perm_ptr, segment_ends_ptr, output_ptr,
                      inv_sorted_unique_perm_ptr, count_ptr));
 
-  // Free temporary tensors that are no longer needed.
-  sorted_unique_input_inds = Tensor();
-  sorted_unique_input_inds_ptr = nullptr;
+    // Free temporary tensors that are no longer needed.
+    sorted_unique_input_inds = Tensor();
+    sorted_unique_input_inds_ptr = nullptr;
 
-  // Compute prefix sum of counts
-  // also output 4 unique_offsets_out
-  OP_REQUIRES_OK(context, context->allocate_output("unique_offsets",
-                                                   TensorShape({uniq_size}),
-                                                   &unique_offsets_out));
-  TIndex* count_prefix_sum_ptr = unique_offsets_out->flat<TIndex>().data();
+    // Compute prefix sum of counts
+    // also output 4 unique_offsets
+    Tensor* unique_offsets;
+    OP_REQUIRES_OK(context, context->allocate_output("unique_offsets",
+                                                     TensorShape({uniq_size}),
+                                                     &unique_offsets));
+    TIndex* count_prefix_sum_ptr = unique_offsets->flat<TIndex>().data();
 
-  OP_REQUIRES_OK(context, GpuPrefixSum(context, uniq_size, exclusive, count_ptr,
-                                       count_prefix_sum_ptr));
+    OP_REQUIRES_OK(context, GpuPrefixSum(context, uniq_size, exclusive,
+                                         count_ptr, count_prefix_sum_ptr));
 
-  // GetIdxOfInputToUnique kernel to calculate the mapping between output and
-  // corresponding indices of the input
+    // GetIdxOfInputToUnique kernel to calculate the mapping between output and
+    // corresponding indices of the input
 
-  // output 3 idx_of_input_to_unique_out
-  OP_REQUIRES_OK(context,
-                 context->allocate_output("idx_of_input_to_unique",
-                                          TensorShape({input_size}),
-                                          &idx_of_input_to_unique_out));
-  TIndex* idx_of_input_to_unique_ptr =
-      idx_of_input_to_unique_out->flat<TIndex>().data();
+    // output 3 idx_of_input_to_unique
+    Tensor* idx_of_input_to_unique;
+    OP_REQUIRES_OK(context, context->allocate_output("idx_of_input_to_unique",
+                                                     TensorShape({input_size}),
+                                                     &idx_of_input_to_unique));
+    TIndex* idx_of_input_to_unique_ptr =
+        idx_of_input_to_unique->flat<TIndex>().data();
 
-  OP_REQUIRES_OK(
-      context,
-      GetIdxOfInputToUnique(device, uniq_size, count_ptr, segment_ends_ptr,
-                            sorted_unique_perm_ptr, sorted_input_inds_ptr,
-                            count_prefix_sum_ptr, idx_of_input_to_unique_ptr));
+    OP_REQUIRES_OK(context,
+                   GetIdxOfInputToUnique(
+                       device, uniq_size, count_ptr, segment_ends_ptr,
+                       sorted_unique_perm_ptr, sorted_input_inds_ptr,
+                       count_prefix_sum_ptr, idx_of_input_to_unique_ptr));
 
-  // output 1 unique_idxs_out
-  OP_REQUIRES_OK(
-      context, context->allocate_output(
-                   "unique_idxs", TensorShape({input_size}), &unique_idxs_out));
-  TIndex* idx_ptr = unique_idxs_out->flat<TIndex>().data();
+    // output 1 unique_idxs_out
+    Tensor* unique_idxs;
+    OP_REQUIRES_OK(context,
+                   context->allocate_output(
+                       "unique_idxs", TensorShape({input_size}), &unique_idxs));
+    TIndex* idx_ptr = unique_idxs->flat<TIndex>().data();
 
-  // Compute indices output.
-  OP_REQUIRES_OK(context, LookupAndScatterUniqueIds(
-                              device, input_size, sorted_input_inds_ptr,
-                              sorted_input_unique_ids_ptr,
-                              inv_sorted_unique_perm_ptr, idx_ptr));
-}
+    // Compute indices output.
+    OP_REQUIRES_OK(context, LookupAndScatterUniqueIds(
+                                device, input_size, sorted_input_inds_ptr,
+                                sorted_input_unique_ids_ptr,
+                                inv_sorted_unique_perm_ptr, idx_ptr));
+  }
 
-template void UniqueWithCountsGPU<int64, int64>(
-    OpKernelContext* context, const Tensor* input, const int64 input_size,
-    cudaEvent_t memcpy_event, Tensor* unique_keys, Tensor* unique_idxs_out,
-    Tensor* unique_counts_out, Tensor* idx_of_input_to_unique_out,
-    Tensor* unique_offsets_out);
+private:
+  cudaEvent_t memcpy_event_;
 
-}  // namespace fused_embedding
+};
+
+#define REGISTER_GPU(T, Tindices)                                   \
+  REGISTER_KERNEL_BUILDER(Name("UniqueWithMultiOutput")             \
+                              .Device(DEVICE_GPU)                   \
+                              .TypeConstraint<T>("T")               \
+                              .TypeConstraint<Tindices>("out_idx"), \
+                          UniqueWithMultiOutputGPU<T, Tindices>);
+
+REGISTER_GPU(int32, int32);
+REGISTER_GPU(int64, int32);
+REGISTER_GPU(int32, int64);
+REGISTER_GPU(int64, int64);
 
 }  // namespace tensorflow
 
