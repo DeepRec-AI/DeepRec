@@ -23,9 +23,10 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 
 namespace tensorflow {
-
 template <class V>
 class ValuePtr;
+
+namespace embedding {
 
 template <class K, class V>
 class DenseHashMap : public KVInterface<K, V> {
@@ -122,6 +123,7 @@ class DenseHashMap : public KVInterface<K, V> {
   dense_hash_map* hash_map_;
 };
 
+}  // namespace embedding
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_H_

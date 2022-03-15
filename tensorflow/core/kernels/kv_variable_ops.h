@@ -174,8 +174,16 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   std::vector<K> tot_key_filter_list;
   std::vector<int64> tot_freq_filter_list;
   std::vector<int64> tot_version_filter_list;
-  int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list);
+  embedding::Iterator* it = nullptr;
+  mutex_lock l(*ev->storage_manager()->get_mutex());
+  int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list, &it);
   VLOG(1) << "EV:" << tensor_key << ", save size:" << total_size;
+  int64 iterator_size = 0;
+  if (it != nullptr) {
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      ++iterator_size;
+    }
+  }
 
   std::vector<std::vector<K> > key_list_parts;
   std::vector<std::vector<V* > > valueptr_list_parts;
@@ -287,42 +295,56 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
     part_offset_flat(partid + 1) = part_offset_flat(partid) + key_list.size();
     part_filter_offset[partid + 1] = part_filter_offset[partid] + key_filter_list.size();
   }
+  // TODO: DB iterator not support partition_offset
   writer->Add(tensor_key + "-partition_offset", *part_offset_tensor);
   for(int i = 0; i <  kSavedPartitionNum + 1; i++) {
     part_offset_flat(i) = part_filter_offset[i];
   }
   writer->Add(tensor_key + "-partition_filter_offset", *part_offset_tensor);
 
-  VLOG(1) << "EV before partition:" << tensor_key << ", keysize:" <<  tot_key_list.size() << ", valueptr size:" << tot_valueptr_list.size();
-  VLOG(1) << "EV after partition:" << tensor_key << ", ptsize:" << ptsize << ", keysize:" <<  partitioned_tot_key_list.size() << ", valueptr size:" << partitioned_tot_valueptr_list.size();
+  VLOG(1) << "EV before partition:" << tensor_key << ", keysize:" <<  tot_key_list.size()
+          << ", valueptr size:" << tot_valueptr_list.size();
+  VLOG(1) << "EV after partition:" << tensor_key << ", ptsize:" << ptsize
+          << ", keysize:"<<  partitioned_tot_key_list.size()
+          <<", valueptr size:" << partitioned_tot_valueptr_list.size();
 
   size_t bytes_limit = 8 << 20;
   char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
   Status st;
 
   EVKeyDumpIterator<K> ev_key_dump_iter(partitioned_tot_key_list);
-  st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer, bytes_limit, &ev_key_dump_iter, TensorShape({partitioned_tot_key_list.size()}));
+  st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer,
+                                 bytes_limit, &ev_key_dump_iter,
+                                 TensorShape({partitioned_tot_key_list.size() + iterator_size}),
+                                 it, true);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
   EVValueDumpIterator<K, V> ev_value_dump_iter(ev, partitioned_tot_valueptr_list);
-  st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer, bytes_limit, &ev_value_dump_iter, TensorShape({partitioned_tot_key_list.size(), ev->ValueLen()}));
+  st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer,
+                                 bytes_limit, &ev_value_dump_iter,
+                                 TensorShape({partitioned_tot_key_list.size() + iterator_size, ev->ValueLen()}),
+                                 it, false);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
   EVVersionDumpIterator<int64> ev_version_dump_iter(partitioned_tot_version_list);
-  st = SaveTensorWithFixedBuffer(tensor_key + "-versions", writer, dump_buffer, bytes_limit, &ev_version_dump_iter, TensorShape({partitioned_tot_version_list.size()}));
+  st = SaveTensorWithFixedBuffer(tensor_key + "-versions", writer, dump_buffer,
+                                 bytes_limit, &ev_version_dump_iter,
+                                 TensorShape({partitioned_tot_version_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
   }
 
   EVFreqDumpIterator<int64> ev_freq_dump_iter(partitioned_tot_freq_list);
-  st = SaveTensorWithFixedBuffer(tensor_key + "-freqs", writer, dump_buffer, bytes_limit, &ev_freq_dump_iter, TensorShape({partitioned_tot_freq_list.size()}));
+  st = SaveTensorWithFixedBuffer(tensor_key + "-freqs", writer, dump_buffer,
+                                 bytes_limit, &ev_freq_dump_iter,
+                                 TensorShape({partitioned_tot_freq_list.size()}));
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -351,6 +373,9 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
 
   free(dump_buffer);
 
+  if (it != nullptr) {
+    delete it;
+  }
   return Status::OK();
 }
 

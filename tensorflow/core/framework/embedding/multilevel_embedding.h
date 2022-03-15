@@ -13,6 +13,7 @@
 namespace tensorflow {
 template <class V>
 class ValuePtr;
+
 template <class K, class V>
 class EmbeddingVar;
 
@@ -260,12 +261,16 @@ class StorageManager {
 
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list,
                     std::vector<int64>* version_list, std::vector<int64>* freq_list,
-                    const EmbeddingConfig& emb_config, EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter) {
-    mutex_lock l(mu_);
+                    const EmbeddingConfig& emb_config, EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
+                    embedding::Iterator** it) {
     for (auto kv : kvs_) {
       std::vector<ValuePtr<V>* > value_ptr_list;
       std::vector<K> key_list_tmp;
       TF_CHECK_OK(kv.first->GetSnapshot(&key_list_tmp, &value_ptr_list));
+      if (key_list_tmp.empty()) {
+        *it = kv.first->GetIterator();
+        continue;
+      }
       for (int64 i = 0; i < key_list_tmp.size(); ++i) {
         V* val = value_ptr_list[i]->GetValue(emb_config.emb_index, GetOffset(emb_config.emb_index));
         V* primary_val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index, GetOffset(emb_config.primary_emb_index));
@@ -385,6 +390,8 @@ class StorageManager {
       kv.first->FreeValuePtr(value_ptr);
     }
   }
+
+  mutex* get_mutex() { return &mu_; }
 
  private:
   void BatchEviction() {
