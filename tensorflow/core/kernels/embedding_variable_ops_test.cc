@@ -36,6 +36,7 @@
 #endif
 
 namespace tensorflow {
+namespace embedding {
 namespace {
 const int THREADNUM = 16;
 const int64 max = 2147483647;
@@ -424,7 +425,8 @@ TEST(EmbeddingVariableTest, TestMultiInsertion) {
   std::vector<float* > tot_valueptr_list;
   std::vector<int64> tot_version_list;
   std::vector<int64> tot_freq_list;
-  int64 total_size = variable->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list);
+  embedding::Iterator* it = nullptr;
+  int64 total_size = variable->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list, &it);
 
   ASSERT_EQ(variable->Size(), 5);
   ASSERT_EQ(variable->Size(), total_size);
@@ -476,8 +478,8 @@ TEST(EmbeddingVariableTest, TestBloomFilter) {
   std::vector<int64> version_list;
   std::vector<int64> freq_list;
 
-   
-  var->GetSnapshot(&keylist, &valuelist, &version_list, &freq_list);
+  embedding::Iterator* it = nullptr;
+  var->GetSnapshot(&keylist, &valuelist, &version_list, &freq_list, &it);
   ASSERT_EQ(var->Size(), keylist.size());  
 
 }
@@ -1075,4 +1077,5 @@ TEST(EmbeddingVariableTest, TestSizeDBKV) {
 }
 
 } // namespace
+} // namespace embedding
 } // namespace tensorflow

@@ -21,9 +21,10 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
-
 template <class V>
 class ValuePtr;
+
+namespace embedding {
 
 template <class K, class V>
 class LocklessHashMap : public KVInterface<K, V> {
@@ -113,7 +114,7 @@ const int LocklessHashMap<K, V>::EMPTY_KEY_ = -1;
 template <class K, class V>
 const int LocklessHashMap<K, V>::DELETED_KEY_ = -2;
 
-
+}  // namespace embedding
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_H_
