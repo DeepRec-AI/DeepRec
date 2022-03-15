@@ -35,6 +35,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
+    cudaEventCreateWithFlags(&memcpy_event_, cudaEventDisableTiming);
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -57,8 +58,6 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape));
     const int64_t batch_size = dense_shape->flat<int64>().data()[0];
 
-    cudaEvent_t memcpy_event;
-    cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
     // =============================================== //
 
     // ========= 2. allocate cub tmp storage ========= //
@@ -165,8 +164,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         int selected_num;
         cudaMemcpyAsync(&selected_num, data_p_with_type<int>(selected_num_d),
                         sizeof(int), cudaMemcpyDeviceToHost, device.stream());
-        cudaEventRecord(memcpy_event, device.stream());
-        cudaEventSynchronize(memcpy_event);
+        cudaEventRecord(memcpy_event_, device.stream());
+        cudaEventSynchronize(memcpy_event_);
         new_nnz = selected_num;
       }
 
@@ -181,8 +180,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         int selected_num;
         cudaMemcpyAsync(&selected_num, data_p_with_type<void>(selected_num_d),
                         sizeof(int), cudaMemcpyDeviceToHost, device.stream());
-        cudaEventRecord(memcpy_event, device.stream());
-        cudaEventSynchronize(memcpy_event);
+        cudaEventRecord(memcpy_event_, device.stream());
+        cudaEventSynchronize(memcpy_event_);
         new_nnz += selected_num;
       }
     }
@@ -216,8 +215,8 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
         ctx,
         ((fill_empty_row_ || prune_invalid_id_) ? &values_extended
                                                 : values_tensor),
-        new_nnz, &unique_keys_out, unique_idxs_out, unique_counts_out,
-        idx_of_input_to_unique_out, unique_offsets_out);
+        new_nnz, memcpy_event_, &unique_keys_out, unique_idxs_out,
+        unique_counts_out, idx_of_input_to_unique_out, unique_offsets_out);
 
     int64 uniq_size = unique_keys_out.dim_size(0);
 
@@ -290,6 +289,7 @@ class FusedEmbeddingSparsePreLookUpGPU : public OpKernel {
   bool prune_invalid_id_;
   std::string partition_strategy_;
   int64_t default_id_;
+  cudaEvent_t memcpy_event_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePreLookUp")

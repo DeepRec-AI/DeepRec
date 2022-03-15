@@ -56,7 +56,6 @@ class FusedEmbeddingSparsePostLookUpOpTest : public OpsTestBase {
                      .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT64))
-                     .Input(FakeInput(DT_INT64))
                      .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }

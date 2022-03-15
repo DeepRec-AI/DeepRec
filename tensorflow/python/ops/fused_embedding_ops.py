@@ -27,6 +27,7 @@ def fused_embedding_lookup_sparse(params,
                                   prune_invalid_ids=False,
                                   fill_empty_row=True,
                                   blocknums=None):
+
   if sparse_weights is not None:
     raise ValueError("sparse_weights is not supported yet")
 

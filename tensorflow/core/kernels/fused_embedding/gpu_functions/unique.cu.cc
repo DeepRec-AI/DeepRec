@@ -385,8 +385,9 @@ namespace fused_embedding {
 // Extention to TensorFlow 2.x's UniqueWithCount operator
 template <typename T, typename TIndex>
 void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
-                         const int64 input_size, Tensor* unique_keys,
-                         Tensor* unique_idxs_out, Tensor* unique_counts_out,
+                         const int64 input_size, cudaEvent_t memcpy_event,
+                         Tensor* unique_keys, Tensor* unique_idxs_out,
+                         Tensor* unique_counts_out,
                          Tensor* idx_of_input_to_unique_out,
                          Tensor* unique_offsets_out) {
   OP_REQUIRES(context, input_size <= std::numeric_limits<int32>::max(),
@@ -400,8 +401,8 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
   se::Stream* stream = context->op_device_context()->stream();
   OP_REQUIRES(context, stream, errors::Internal("No GPU stream available."));
 
-  cudaEvent_t memcpy_event;
-  cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
+  // cudaEvent_t memcpy_event;
+  // cudaEventCreateWithFlags(&memcpy_event, cudaEventDisableTiming);
 
   if (input_size == 0) {
     // Early exit for trivial case.
@@ -634,8 +635,9 @@ void UniqueWithCountsGPU(OpKernelContext* context, const Tensor* input,
 
 template void UniqueWithCountsGPU<int64, int64>(
     OpKernelContext* context, const Tensor* input, const int64 input_size,
-    Tensor* unique_keys, Tensor* unique_idxs_out, Tensor* unique_counts_out,
-    Tensor* idx_of_input_to_unique_out, Tensor* unique_offsets_out);
+    cudaEvent_t memcpy_event, Tensor* unique_keys, Tensor* unique_idxs_out,
+    Tensor* unique_counts_out, Tensor* idx_of_input_to_unique_out,
+    Tensor* unique_offsets_out);
 
 }  // namespace fused_embedding
 
