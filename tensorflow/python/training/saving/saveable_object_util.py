@@ -30,7 +30,6 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.training.saving import saveable_object
-from tensorflow.python.training import saver
 from tensorflow.python.training.tracking import base as trackable
 from tensorflow.python.util import object_identity
 
@@ -468,6 +467,7 @@ def validate_and_slice_inputs(names_to_saveables):
                          key=lambda x: x[0]):
     from tensorflow.python.ops import hash_table
     if isinstance(name, hash_table.HashTable):
+      from tensorflow.python.training import saver
       _add_saveable(saveables, seen_ops, saver.HashTableSaveable(op[1], op[0]))
     else:
       for converted_saveable_object in saveable_objects_for_op(op, name):
