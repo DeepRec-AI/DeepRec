@@ -21,14 +21,14 @@
 
 namespace SparseOperationKit {
 
-// max_smem_size_per_sm >= (global_gpu_count * KEY_WARPS_PER_BLOCK * (sizeof(KeyType) + sizeof(uint32_t))) * ITEMS_PER_GPU_PER_WARP
+// max_smem_size_per_sm >= (global_gpu_count * KEY_WARPS_PER_BLOCK * (sizeof(KeyType) +
+// sizeof(uint32_t))) * ITEMS_PER_GPU_PER_WARP
 //                            + sizeof(uint32_t) * KEY_WARPS_PER_BLOCK * global_gpu_count
 
-// constexpr size_t ITEMS_PER_GPU_PER_WARP = 64; 
+// constexpr size_t ITEMS_PER_GPU_PER_WARP = 64;
 constexpr size_t KEY_WARPS_PER_BLOCK = 8;
 constexpr size_t EMB_LEN_THRESHOLD = 512;
 constexpr size_t EMB_WARPS_PER_BLOCK = 32;
-
 
 template <typename TypeHashKey, typename TypeEmbeddingComp>
 void forward_sum(size_t batch_size, size_t slot_num, size_t embedding_vec_size,
@@ -48,9 +48,8 @@ void do_forward_scale(size_t batchsize_per_gpu, size_t slot_num, size_t embeddin
                       cudaStream_t stream);
 
 template <typename Type>
-void memset_liner(Type *data, Type start_value, Type stride_value,
-                  size_t n, cudaStream_t stream);
+void memset_liner(Type *data, Type start_value, Type stride_value, size_t n, cudaStream_t stream);
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // EMBEDDING_FUNCTIONS_H_
+#endif  // EMBEDDING_FUNCTIONS_H_

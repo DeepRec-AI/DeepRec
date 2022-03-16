@@ -20,15 +20,20 @@ struct EmbeddingConfig {
   int64 num_counter;
   DataType counter_type;
   embedding::StorageType storage_type;
+  std::string storage_path;
+  int64 storage_size;
   int64 default_value_dim;
+  int normal_fix_flag;
+  bool is_multi_level;
 
   EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
-                  int64 block_num = 1, int slot_num = 1,
+                  int64 block_num = 1, int slot_num = 0,
                   const std::string& name = "", int64 steps_to_live = 0,
                   int64 filter_freq = 0, int64 max_freq = 999999,
-                  float l2_weight_threshold = -1.0, const std::string& layout = "normal",
+                  float l2_weight_threshold = -1.0, const std::string& layout = "normal_fix",
                   int64 max_element_size = 0, float false_positive_probability = -1.0,
                   DataType counter_type = DT_UINT64, embedding::StorageType storage_type = embedding::DRAM,
+                  const std::string& storage_path = "", int64 storage_size = 0,
                   int64 default_value_dim = 4096):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
@@ -41,24 +46,38 @@ struct EmbeddingConfig {
       l2_weight_threshold(l2_weight_threshold),
       counter_type(counter_type),
       storage_type(storage_type),
-      default_value_dim(default_value_dim) {
+      storage_path(storage_path),
+      storage_size(storage_size),
+      default_value_dim(default_value_dim),
+      normal_fix_flag(0),
+      is_multi_level(false) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
       layout_type = LayoutType::LIGHT;
+    } else if ("normal_fix" == layout){
+      layout_type = LayoutType::NORMAL_FIX;
     } else {
       LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
       layout_type = LayoutType::NORMAL;
     }
     if (max_element_size != 0 && false_positive_probability != -1.0){
       kHashFunc = calc_num_hash_func(false_positive_probability);
-      num_counter = calc_num_counter(max_element_size, false_positive_probability); 
+      num_counter = calc_num_counter(max_element_size, false_positive_probability);
     } else {
       kHashFunc = 0;
       num_counter = 0;
     }
+    if (layout_type == LayoutType::NORMAL_FIX) {
+      normal_fix_flag = 1;
+    }
+    if (storage_type == embedding::PMEM_MEMKIND || storage_type == embedding::PMEM_LIBPMEM ||
+        storage_type == embedding::DRAM_PMEM || storage_type == embedding::DRAM_SSD ||
+        storage_type == embedding::HBM_DRAM || storage_type == embedding::DRAM_LEVELDB) {
+      is_multi_level = true;
+    }
   }
-  
+
   int64 calc_num_counter(int64 max_element_size, float false_positive_probability) {
     float loghpp = fabs(log(false_positive_probability));
     float factor = log(2) * log(2);
@@ -73,8 +92,8 @@ struct EmbeddingConfig {
     return emb_index == primary_emb_index;
   }
 
-  int64 total_num() {
-    return block_num * (slot_num + 1);
+  int64 total_num(int alloc_len) {
+    return block_num * (1 + (1 - normal_fix_flag) * (slot_num + 1)) * (1 + normal_fix_flag * (alloc_len * (slot_num + 1) - 1));
   }
 
   int64 get_filter_freq() {
@@ -89,6 +108,14 @@ struct EmbeddingConfig {
     return storage_type;
   }
 
+  std::string get_storage_path() {
+    return storage_path;
+  }
+
+  int64 get_storage_size() {
+    return storage_size;
+  }
+
   std::string DebugString() const {
     return strings::StrCat("opname: ", name,
                            " emb_index: ", emb_index,
@@ -100,7 +127,9 @@ struct EmbeddingConfig {
                            " filter_freq: ", filter_freq,
                            " max_freq: ", max_freq,
                            " l2_weight_threshold: ", l2_weight_threshold,
-                           " storage_type: ", storage_type);
+                           " storage_type: ", storage_type,
+                           " storage_path: ", storage_path,
+                           " storage_size: ", storage_size);
   }
 };
 

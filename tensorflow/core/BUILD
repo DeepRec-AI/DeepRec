@@ -127,6 +127,7 @@ load(
     "tf_additional_numa_deps",
     "tf_additional_numa_lib_defines",
     "tf_additional_star_lib_defines",
+    "tf_additional_pmem_lib_defines",
     "tf_additional_test_deps",
     "tf_additional_verbs_lib_defines",
     "tf_grpc_service_all",
@@ -1014,7 +1015,11 @@ cc_library(
         "framework/type_traits.h",
     ] + select({
         "//tensorflow:with_pmem_support": [
-            "framework/pmem_allocator.cc"
+            "framework/pmem_allocator.cc",
+            "framework/experimental_pmem_allocator.cc",
+            "framework/experimental_pmem_allocator_utils.cc",
+            "framework/experimental_pmem_allocator.h",
+            "framework/experimental_pmem_allocator_utils.h",
         ],
         "//conditions:default": [],
     }),
@@ -1027,7 +1032,8 @@ cc_library(
     linkopts = select({
         "//tensorflow:with_pmem_support": [
             "-L/usr/local/lib",
-            "-lmemkind"
+            "-lmemkind",
+            "-lpmem",
         ],
         "//conditions:default": [],
     }),
@@ -2495,7 +2501,8 @@ LIB_INTERNAL_DEFINES = (
     tf_additional_mpi_lib_defines() +
     tf_additional_gdr_lib_defines() +
     tf_additional_numa_lib_defines() +
-    tf_additional_star_lib_defines()
+    tf_additional_star_lib_defines() +
+    tf_additional_pmem_lib_defines()
 )
 
 cc_library(
@@ -2958,6 +2965,8 @@ tf_cuda_library(
             "framework/allocator.cc",
             "framework/cpu_allocator_impl.cc",
             "framework/pmem_allocator.cc",
+            "framework/experimental_pmem_allocator.*",
+            "framework/experimental_pmem_allocator_utils.*",
             "framework/allocator_registry.cc",
             "framework/tracking_allocator.cc",
             "example/example_parser_configuration.*",
@@ -3011,7 +3020,6 @@ tf_cuda_library(
         "//tensorflow/core:framework/bfloat16",
         "//tensorflow/core:framework/numeric_types",
         "//tensorflow/core/kernels:bounds_check",
-        "//tensorflow/core/profiler:nvtx_utils",
         "//tensorflow/core/profiler/lib:traceme",
         "//third_party/eigen3",
     ] + if_static(
@@ -3055,7 +3063,7 @@ tf_cuda_library(
         "//tensorflow/core/kernels:bounds_check",
         "//tensorflow/core:gpu_id",
         "//third_party/eigen3",
-        "core_cpu_lib",
+        "@sparsehash_c11//:dense_hash_map",
     ] + if_static(
         extra_deps = ["@com_google_protobuf//:protobuf"],
         otherwise = ["@com_google_protobuf//:protobuf_headers"],
@@ -3305,6 +3313,7 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/lower_functional_ops.h",
     "common_runtime/lower_while_op.h",
     "common_runtime/memory_planner.h",
+    "common_runtime/gpu_memory_planner.h",
     "common_runtime/memory_types.h",
     "common_runtime/metrics.h",
     "common_runtime/mkl_cpu_allocator.h",
@@ -3326,9 +3335,11 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/session_factory.h",
     "common_runtime/simple_propagator_state.h",
     "common_runtime/single_threaded_cpu_device.h",
+    "common_runtime/size_class.h",
     "common_runtime/stats_publisher_interface.h",
     "common_runtime/step_stats_collector.h",
     "common_runtime/tensorpool_allocator.h",
+    "common_runtime/gpu_tensorpool_allocator.h",
     "common_runtime/threadpool_device.h",
     "common_runtime/process_state.h",
     "common_runtime/pool_allocator.h",
@@ -3375,6 +3386,7 @@ tf_cuda_library(
         "common_runtime/lower_if_op.cc",
         "common_runtime/lower_while_op.cc",
         "common_runtime/memory_planner.cc",
+        "common_runtime/gpu_memory_planner.cc",
         "common_runtime/memory_types.cc",
         "common_runtime/metrics.cc",
         "common_runtime/mkl_cpu_allocator.cc",
@@ -3405,6 +3417,7 @@ tf_cuda_library(
         "common_runtime/stats_publisher_interface.cc",
         "common_runtime/step_stats_collector.cc",
         "common_runtime/tensorpool_allocator.cc",
+        "common_runtime/gpu_tensorpool_allocator.cc",
         "common_runtime/threadpool_device.cc",
         "common_runtime/threadpool_device_factory.cc",
         "graph/gradients.cc",
@@ -4247,6 +4260,33 @@ tf_cc_test(
     ],
 )
 
+tf_cc_test(
+    name = "ev_allocator_tests",
+    srcs = [
+        "framework/ev_allocator_test.cc",
+    ],
+    deps = [
+        ":core",
+        ":core_cpu",
+        ":core_cpu_internal",
+        ":direct_session_internal",
+        ":framework",
+        ":framework_internal",
+        ":lib",
+        ":lib_internal",
+        ":ops",
+        ":protos_all_cc",
+        ":protos_test_cc",
+        ":test",
+        ":test_main",
+        ":testlib",
+        "//third_party/eigen3",
+        "@com_google_absl//absl/base",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
 tf_cc_tests(
     name = "higher_level_tests",
     size = "small",
@@ -4668,6 +4708,25 @@ tf_cc_test_gpu(
         ":test_main",
         ":testlib",
         "//tensorflow/core/kernels:cwise_op",
+    ],
+)
+
+tf_cc_test_gpu(
+    name = "gpu_tensorpool_allocator_test",
+    size = "medium",
+    srcs = ["common_runtime/gpu_tensorpool_allocator_test.cc"],
+    linkstatic = tf_kernel_tests_linkstatic(),
+    tags = tf_cuda_tests_tags(),
+    deps = [
+        ":core",
+        ":core_cpu",
+        ":framework",
+        ":framework_internal",
+        ":lib",
+        ":lib_internal",
+        ":test",
+        ":test_main",
+        ":testlib",
     ],
 )
 

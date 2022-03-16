@@ -24,9 +24,9 @@ namespace SparseOperationKit {
 // forward kernel funcion: No reduction
 template <typename TypeKey, typename TypeEmbeddingComp>
 __global__ void forward_kernel(size_t batch_size, size_t slot_num, size_t embedding_vec_size,
-                              const TypeKey *row_offset, const size_t *hash_value_index,
-                              const float *hash_table_value,
-                              TypeEmbeddingComp *embedding_feature) {
+                               const TypeKey *row_offset, const size_t *hash_value_index,
+                               const float *hash_table_value,
+                               TypeEmbeddingComp *embedding_feature) {
   size_t bid = blockIdx.x;   // each block corresponding to one sample
   size_t tid = threadIdx.x;  // each thread corresponding to one element in the embedding vector
 
@@ -39,31 +39,31 @@ __global__ void forward_kernel(size_t batch_size, size_t slot_num, size_t embedd
 
       for (size_t j = 0; j < feature_num; j++) {
         size_t value_index = hash_value_index[value_offset + j];
-        TypeEmbeddingComp embedding_value = hash_table_value[value_index * embedding_vec_size + tid];
-        embedding_feature[(value_offset + j) * embedding_vec_size + tid] = 
-                HugeCTR::TypeConvertFunc<TypeEmbeddingComp, float>(embedding_value);
-      } // for j in feature_num
+        TypeEmbeddingComp embedding_value =
+            hash_table_value[value_index * embedding_vec_size + tid];
+        embedding_feature[(value_offset + j) * embedding_vec_size + tid] =
+            HugeCTR::TypeConvertFunc<TypeEmbeddingComp, float>(embedding_value);
+      }  // for j in feature_num
 
-    } // for i in slot_num
+    }  // for i in slot_num
   }
 }
-
 
 // No reduction
 template <typename TypeHashKey, typename TypeEmbeddingComp>
 void forward(size_t batch_size, size_t slot_num, size_t embedding_vec_size,
-              const TypeHashKey *row_offset, const size_t *hash_value_index,
-              const float *hash_table_value, TypeEmbeddingComp *embedding_feature,
-              cudaStream_t stream) {
+             const TypeHashKey *row_offset, const size_t *hash_value_index,
+             const float *hash_table_value, TypeEmbeddingComp *embedding_feature,
+             cudaStream_t stream) {
   const size_t grid_size = batch_size;  // each block corresponds to a sample
   const size_t block_size =
       embedding_vec_size;  // each thread corresponds to one element in an embedding vector
   forward_kernel<<<grid_size, block_size, 0, stream>>>(batch_size, slot_num, embedding_vec_size,
-                                                      row_offset, hash_value_index,
-                                                      hash_table_value, embedding_feature);
+                                                       row_offset, hash_value_index,
+                                                       hash_table_value, embedding_feature);
 }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
 namespace HugeCTR {
 
@@ -97,7 +97,6 @@ __global__ void forward_sum_kernel(size_t batch_size, size_t slot_num, size_t em
     }
   }
 }
-
 
 // do sum reduction
 template <typename TypeHashKey, typename TypeEmbeddingComp>
@@ -149,7 +148,6 @@ void forward_sum(size_t batch_size, size_t slot_num, size_t embedding_vec_size,
 //   }
 // }
 
-
 // template <typename TypeHashKey, typename TypeEmbeddingComp>
 // void forward_mean(size_t batch_size, size_t slot_num, size_t embedding_vec_size,
 //                   const TypeHashKey *row_offset, const size_t *hash_value_index,
@@ -187,7 +185,6 @@ __global__ void forward_scale_kernel(size_t batch_size, size_t slot_num, size_t 
   }
 }
 
-
 template <typename TypeKey, typename TypeEmbeddingComp>
 void do_forward_scale(size_t batchsize_per_gpu, size_t slot_num, size_t embedding_vec_size,
                       const TypeKey *row_offset, TypeEmbeddingComp *embedding_feature,
@@ -197,7 +194,6 @@ void do_forward_scale(size_t batchsize_per_gpu, size_t slot_num, size_t embeddin
   forward_scale_kernel<<<grid_size, block_size, 0, stream>>>(
       batchsize_per_gpu, slot_num, embedding_vec_size, row_offset, embedding_feature);
 };
-
 
 // get hash_value by value_index from hash_table_value matrix
 template <typename TypeValueIndex>
@@ -226,14 +222,13 @@ __global__ void memset_liner_kernel(Type *data, const Type start_value, const Ty
 }
 
 template <typename Type>
-void memset_liner(Type *data, Type start_value, Type stride_value,
-                  size_t n, cudaStream_t stream) {
+void memset_liner(Type *data, Type start_value, Type stride_value, size_t n, cudaStream_t stream) {
   const size_t block_size = 256;
   const size_t grid_size = (n + block_size - 1) / block_size;
 
   memset_liner_kernel<<<grid_size, block_size, 0, stream>>>(data, start_value, stride_value, n);
 }
 
-} // namespace HugeCTR
+}  // namespace HugeCTR
 
-#endif // EMBEDDING_FUNCTIONS_CUH_
+#endif  // EMBEDDING_FUNCTIONS_CUH_

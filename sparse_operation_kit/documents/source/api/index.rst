@@ -6,4 +6,5 @@ SparseOperationKit API
 
    Initialize <init>
    Embeddings <embeddings/index>
+   Optimizers <optimizers/opts>
    Utilities <utils/index>

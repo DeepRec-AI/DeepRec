@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 
 using namespace tensorflow;
 using namespace tensorflow::shape_inference;
@@ -37,9 +37,9 @@ REGISTER_OP("CreateEmbeddingSparse")
     .Attr("combiner: {'mean', 'sum'} = 'sum'")
     .Attr("layer_handle_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
-        ShapeHandle output_shape = ctx->Scalar();
-        ctx->set_output(0, output_shape);
-        return Status::OK();
+      ShapeHandle output_shape = ctx->Scalar();
+      ctx->set_output(0, output_shape);
+      return Status::OK();
     })
     .Doc(R"doc(
         This operation is used to create embedding layer that will do reduction
@@ -62,9 +62,9 @@ REGISTER_OP("CreateEmbeddingSparse")
     .Attr("combiner: {'mean', 'sum'} = 'sum'")
     .Attr("layer_handle_name: string")
     .SetShapeFn([](InferenceContext* ctx) {
-        ShapeHandle output_shape = ctx->Scalar();
-        ctx->set_output(0, output_shape);
-        return Status::OK();
+      ShapeHandle output_shape = ctx->Scalar();
+      ctx->set_output(0, output_shape);
+      return Status::OK();
     })
     .Doc(R"doc(
         This operation is used to create embedding layer that will do reduction

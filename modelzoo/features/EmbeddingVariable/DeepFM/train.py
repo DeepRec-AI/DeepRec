@@ -89,7 +89,6 @@ def build_feature_cols():
         if column_name in CATEGORICAL_COLUMNS:
             categorical_column = tf.feature_column.categorical_column_with_embedding(
                 column_name,
-                hash_bucket_size=10000,
                 dtype=tf.string)
 
             categorical_embedding_column = tf.feature_column.embedding_column(

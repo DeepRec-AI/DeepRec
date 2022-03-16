@@ -29,6 +29,9 @@ tf.app.flags.DEFINE_boolean("use_ev_var", True, "")
 tf.app.flags.DEFINE_boolean("use_xdl_var", False, "")
 tf.app.flags.DEFINE_boolean("trace_timeline", False, "")
 tf.app.flags.DEFINE_string("ev_storage", 'dram', "")
+tf.app.flags.DEFINE_string("ev_storage_path",
+                           '/mnt/pmem0/pmem_allocator/', "")
+tf.app.flags.DEFINE_integer("ev_storage_size_gb", '512', "")
 
 def main(_):
   cluster_dict = {}
@@ -96,8 +99,18 @@ def main(_):
           if FLAGS.use_ev_var:
             if FLAGS.ev_storage == "dram":
               ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM))
-            elif FLAGS.ev_storage == "pmem":
-              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.PMEM))
+            elif FLAGS.ev_storage == "pmem_memkind":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.PMEM_MEMKIND))
+            elif FLAGS.ev_storage == "pmem_libpmem":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(
+                                                              storage_type=config_pb2.StorageType.PMEM_LIBPMEM, 
+                                                              storage_path=FLAGS.ev_storage_path, 
+                                                              storage_size=FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024))
+            elif FLAGS.ev_storage == "dram_pmem":
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(
+                                                              storage_type=config_pb2.StorageType.DRAM_PMEM, 
+                                                              storage_path=FLAGS.ev_storage_path, 
+                                                              storage_size=FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024))
             fm_w = tf.get_embedding_variable(
                name='fm_w{}'.format(sidx),
                embedding_dim=1,

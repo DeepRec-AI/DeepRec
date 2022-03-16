@@ -520,7 +520,8 @@ def create_meta_graph_def(meta_info_def=None,
                           export_scope=None,
                           exclude_nodes=None,
                           clear_extraneous_savers=False,
-                          strip_default_attrs=False):
+                          strip_default_attrs=False,
+                          incr_saver_def=None):
   # pylint: disable=line-too-long
   """Construct and returns a `MetaGraphDef` protocol buffer.
 
@@ -595,6 +596,9 @@ def create_meta_graph_def(meta_info_def=None,
   # Adds saver_def.
   if saver_def:
     meta_graph_def.saver_def.MergeFrom(saver_def)
+
+  if incr_saver_def:
+    meta_graph_def.incr_saver_def.MergeFrom(incr_saver_def)
 
   # Adds collection_list.
   if collection_list is not None:
@@ -921,6 +925,7 @@ def export_scoped_meta_graph(filename=None,
                              clear_extraneous_savers=False,
                              strip_default_attrs=False,
                              save_debug_info=False,
+                             incr_saver_def=None,
                              **kwargs):
   """Returns `MetaGraphDef` proto. Optionally writes it to filename.
 
@@ -1043,6 +1048,7 @@ def export_scoped_meta_graph(filename=None,
       clear_extraneous_savers=clear_extraneous_savers,
       saver_def=saver_def,
       strip_default_attrs=strip_default_attrs,
+      incr_saver_def=incr_saver_def,
       **kwargs)
 
   if filename:

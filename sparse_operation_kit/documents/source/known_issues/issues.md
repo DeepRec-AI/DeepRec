@@ -1,10 +1,10 @@
 # Known Issues #
 There are several issues in SparseOperationKit, and we are trying to fix shose issues in the near future.
 
-## Only TensorFlow 2.x is supported ##
-Currently, only TensorFlow 2.x is supported.
-
 ## NCCL conflicts ##
-In SparseOperationKit's Embedding Layers, NCCL is used to transfer data among different GPUs, while the synchronized training tool might also use NCCL to do the data transferring among GPUs, such as `allreduce` in `tf.distribute.Strategy` and `horovod`. In some cases, the synchronized training tool will call NCCL while SOK is also calling NCCL, which leads to multiple NCCL kernel racing and program hanging. 
-
-The solution for such problem is to make the program does not call multiple NCCL APIs at the same time. For example, in TensorFlow, you can add `tf.control_dependencies()` between different NCCL APIs to order those calling. 
+In SparseOperationKit's embedding layers, NCCL is used to transfer data among GPUs. When there exists multiple embedding layers and there is not data dependencies among those layers, the execution order must be deterministic otherwise program might be hanging.
+```text
+device-0: embedding-0 -> embedding-1
+device-1: embedding-1 -> embedding-0
+``` 
+The solution for such problem is to make the program launch those layers with the same order in different GPUs, you can add `tf.control_dependencies()` between different SOK embedding layers to force the deterministic launching order.

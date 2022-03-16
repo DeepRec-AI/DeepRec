@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_UTIL_GPU_DEVICE_FUNCTIONS_H_
 
 #include <assert.h>
+
 #include <type_traits>
 
 /**
@@ -35,43 +36,42 @@ namespace detail {
 // Usage: see GpuGridRange?() functions below.
 template <typename T>
 class GpuGridRange {
-    struct Iterator {
-        __device__ Iterator(T index, T delta) : index_(index), delta_(delta) {}
-        __device__ T operator*() const { return index_; }
-        __device__ Iterator &operator++() {
-            index_ += delta_;
-            return *this;
-        }
-        __device__ bool operator!=(const Iterator &other) const {
-            bool greater = index_ > other.index_;
-            bool less = index_ < other.index_;
-            // Anything past an end iterator (delta_ == 0) is equal.
-            // In range-based for loops, this optimizes to 'return less'.
-            if (!other.delta_) {
-                return less;
-            }
-            if (!delta_) {
-                return greater;
-            }
-            return less || greater;
-        }
+  struct Iterator {
+    __device__ Iterator(T index, T delta) : index_(index), delta_(delta) {}
+    __device__ T operator*() const { return index_; }
+    __device__ Iterator &operator++() {
+      index_ += delta_;
+      return *this;
+    }
+    __device__ bool operator!=(const Iterator &other) const {
+      bool greater = index_ > other.index_;
+      bool less = index_ < other.index_;
+      // Anything past an end iterator (delta_ == 0) is equal.
+      // In range-based for loops, this optimizes to 'return less'.
+      if (!other.delta_) {
+        return less;
+      }
+      if (!delta_) {
+        return greater;
+      }
+      return less || greater;
+    }
 
-    private:
-        T index_;
-        const T delta_;
-    };
+   private:
+    T index_;
+    const T delta_;
+  };
 
-public:
-    __device__ GpuGridRange(T begin, T delta, T end)
-        : begin_(begin), delta_(delta), end_(end) {}
+ public:
+  __device__ GpuGridRange(T begin, T delta, T end) : begin_(begin), delta_(delta), end_(end) {}
 
-    __device__ Iterator begin() const { return Iterator{begin_, delta_}; }
-    __device__ Iterator end() const { return Iterator{end_, 0}; }
+  __device__ Iterator begin() const { return Iterator{begin_, delta_}; }
+  __device__ Iterator end() const { return Iterator{end_, 0}; }
 
-private:
-    T begin_;
-    T delta_;
-    T end_;
+ private:
+  T begin_;
+  T delta_;
+  T end_;
 };
 
 template <typename From, typename To>
@@ -87,10 +87,10 @@ using CudaSupportedType = typename CudaSupportedTypeImpl<T>::type;
 
 template <typename T>
 __device__ CudaSupportedType<T> *ToCudaSupportedPtr(T *ptr) {
-    return reinterpret_cast<CudaSupportedType<T> *>(ptr);
+  return reinterpret_cast<CudaSupportedType<T> *>(ptr);
 }
 
-} // namespace detail
+}  // namespace detail
 
 // Helper to visit indices in the range 0 <= i < count, using the x-coordinate
 // of the global thread index. That is, each index i is visited by all threads
@@ -98,27 +98,27 @@ __device__ CudaSupportedType<T> *ToCudaSupportedPtr(T *ptr) {
 // Usage: for(int i : GpuGridRangeX(count)) { visit(i); }
 template <typename T>
 __device__ detail::GpuGridRange<T> GpuGridRangeX(T count) {
-    return detail::GpuGridRange<T>(blockIdx.x * blockDim.x + threadIdx.x,
-                                   gridDim.x * blockDim.x, count);
+  return detail::GpuGridRange<T>(blockIdx.x * blockDim.x + threadIdx.x, gridDim.x * blockDim.x,
+                                 count);
 }
 
 // Helper to set all tensor entries to a specific value.
 template <typename T>
 __global__ void SetToValue(const int count, T *ptr, T value) {
-    // Check that the grid is one dimensional and index doesn't overflow.
-    assert(blockDim.y == 1);
-    assert(blockDim.z == 1);
-    assert(blockDim.x * gridDim.x / blockDim.x == gridDim.x);
-    for (int i : GpuGridRangeX(count)) {
-        ptr[i] = value;
-    }
+  // Check that the grid is one dimensional and index doesn't overflow.
+  assert(blockDim.y == 1);
+  assert(blockDim.z == 1);
+  assert(blockDim.x * gridDim.x / blockDim.x == gridDim.x);
+  for (int i : GpuGridRangeX(count)) {
+    ptr[i] = value;
+  }
 }
 
 template <typename T, typename U>
 __device__ detail::ToTypeIfConvertible<U, T> GpuAtomicAdd(T *ptr, U value) {
-    return atomicAdd(detail::ToCudaSupportedPtr(ptr), value);
+  return atomicAdd(detail::ToCudaSupportedPtr(ptr), value);
 }
 
-} // namespace tensorflow
+}  // namespace tensorflow
 
-#endif // TENSORFLOW_CORE_UTIL_GPU_DEVICE_FUNCTIONS_H_
+#endif  // TENSORFLOW_CORE_UTIL_GPU_DEVICE_FUNCTIONS_H_

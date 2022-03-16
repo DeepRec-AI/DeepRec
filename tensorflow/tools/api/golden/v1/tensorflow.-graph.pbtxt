@@ -107,6 +107,10 @@ tf_class {
     argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
+    name: "get_variale_by_name"
+    argspec: "args=[\'self\', \'name\'], varargs=None, keywords=None, defaults=None"
+  }
+  member_method {
     name: "gradient_override_map"
     argspec: "args=[\'self\', \'op_type_map\'], varargs=None, keywords=None, defaults=None"
   }

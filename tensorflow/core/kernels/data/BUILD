@@ -1079,7 +1079,7 @@ tf_kernel_library(
     name = "kafka_dataset_op",
     srcs = ["kafka_dataset_op.cc"],
     deps = [
-        "@kafka150",
+        "@kafka",
         ":name_utils",
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:dataset_ops_op_lib",

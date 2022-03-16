@@ -14,24 +14,23 @@
  * limitations under the License.
  */
 
- #ifndef DUMPING_FUNCTIONS_H
- #define DUMPING_FUNCTIONS_H
+#ifndef DUMPING_FUNCTIONS_H
+#define DUMPING_FUNCTIONS_H
+
+#include <cuda_runtime_api.h>
 
 #include "parameters/param_interface.h"
 #include "resources/manager.h"
-#include <cuda_runtime_api.h>
 
 namespace SparseOperationKit {
 
 void get_hash_value(size_t count, size_t embedding_vec_size, const size_t *value_index,
-                const float *embedding_table, float *value_retrieved,
-                cudaStream_t stream);
+                    const float *embedding_table, float *value_retrieved, cudaStream_t stream);
 
 // distribute keys to GPU based on key % GPU_NUM
-void save_params_helper(const std::shared_ptr<ParamInterface> &param, 
+void save_params_helper(const std::shared_ptr<ParamInterface> &param,
                         const std::shared_ptr<ResourcesManager> &resource_mgr,
-                        std::shared_ptr<Tensor> &keys,
-                        std::shared_ptr<Tensor> &embedding_values,
+                        std::shared_ptr<Tensor> &keys, std::shared_ptr<Tensor> &embedding_values,
                         size_t &num_total_keys);
 void restore_params_helper(std::shared_ptr<ParamInterface> &param,
                            const std::shared_ptr<ResourcesManager> &resource_mgr,
@@ -39,11 +38,9 @@ void restore_params_helper(std::shared_ptr<ParamInterface> &param,
                            const std::shared_ptr<Tensor> &embedding_values,
                            const size_t num_total_keys);
 template <typename KeyType>
-void generate_dummy_keys(KeyType *d_keys, const size_t num_keys, 
-                         const size_t global_replica_id, 
-                         const size_t global_gpu_count,
-                         cudaStream_t stream);
+void generate_dummy_keys(KeyType *d_keys, const size_t num_keys, const size_t global_replica_id,
+                         const size_t global_gpu_count, cudaStream_t stream);
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // DUMPING_FUNCTIONS_H
+#endif  // DUMPING_FUNCTIONS_H

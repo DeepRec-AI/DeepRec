@@ -22,22 +22,19 @@
 namespace SparseOperationKit {
 
 template <typename TypeKey>
-void expand_input_grad(const size_t global_batch_size, const size_t slot_num, 
-                      const size_t embedding_vec_size, const TypeKey *replica_row_offset,
-                      const float *wgrad, float *replica_input_grad, 
-                      cudaStream_t stream);
-
+void expand_input_grad(const size_t global_batch_size, const size_t slot_num,
+                       const size_t embedding_vec_size, const TypeKey *replica_row_offset,
+                       const float *wgrad, float *replica_input_grad, cudaStream_t stream);
 
 template <typename TypeEmbeddingComp>
 void backward_sum(size_t batch_size, size_t slot_num, size_t embedding_vec_size,
-                  const TypeEmbeddingComp *top_grad, TypeEmbeddingComp *wgrad,
-                  cudaStream_t stream);
+                  const TypeEmbeddingComp *top_grad, TypeEmbeddingComp *wgrad, cudaStream_t stream);
 
 template <typename TypeKey, typename TypeEmbeddingComp>
 void backward_mean(size_t batch_size, size_t slot_size, size_t embedding_vec_size,
                    const TypeKey *row_offset, const TypeEmbeddingComp *top_grad,
                    TypeEmbeddingComp *wgrad, cudaStream_t stream);
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // BACKWARD_FUNCTIONS_H_
+#endif  // BACKWARD_FUNCTIONS_H_

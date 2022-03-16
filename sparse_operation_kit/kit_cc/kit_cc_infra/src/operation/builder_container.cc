@@ -15,70 +15,65 @@
  */
 
 #include "operation/builder_container.h"
+
 #include "common.h"
 
 namespace SparseOperationKit {
 
-BuilderContainer::BuilderContainer(const std::string name)
-: name_(name) 
-{}
+BuilderContainer::BuilderContainer(const std::string name) : name_(name) {}
 
-void BuilderContainer::push_back(const std::string builder_name, const std::shared_ptr<Builder> builder) {
-    auto iter = components_.find(builder_name);
-    if (components_.end() != iter) 
-        throw std::runtime_error(ErrorBase + "There exists a builder whose name is " + builder_name +
-            " in container: " + name_);
+void BuilderContainer::push_back(const std::string builder_name,
+                                 const std::shared_ptr<Builder> builder) {
+  auto iter = components_.find(builder_name);
+  if (components_.end() != iter)
+    throw std::runtime_error(ErrorBase + "There exists a builder whose name is " + builder_name +
+                             " in container: " + name_);
 
-    components_.emplace(std::make_pair(builder_name, builder));
+  components_.emplace(std::make_pair(builder_name, builder));
 }
 
 std::shared_ptr<Builder> BuilderContainer::get_builder(const std::string builder_name) {
-    auto iter = components_.find(builder_name);
-    if (components_.end() == iter) throw std::runtime_error(ErrorBase + "Cannot find " + builder_name +
-        " in container: " + name_);
+  auto iter = components_.find(builder_name);
+  if (components_.end() == iter)
+    throw std::runtime_error(ErrorBase + "Cannot find " + builder_name + " in container: " + name_);
 
-    return iter->second;
+  return iter->second;
 }
 
 std::vector<std::string> BuilderContainer::get_builder_names() const {
-    std::vector<std::string> builder_names;
-    for (auto iter : components_) {
-        builder_names.emplace_back(iter.first);
-    }
-    return builder_names;
+  std::vector<std::string> builder_names;
+  for (auto iter : components_) {
+    builder_names.emplace_back(iter.first);
+  }
+  return builder_names;
 }
 
-InputContainer::InputContainer(const std::string name)
-: BuilderContainer(name) {}
+InputContainer::InputContainer(const std::string name) : BuilderContainer(name) {}
 
 InputContainer* InputContainer::instance(const std::string name) {
-    static InputContainer instance(name);
-    return &instance;
+  static InputContainer instance(name);
+  return &instance;
 }
 
-OutputContainer::OutputContainer(const std::string name)
-: BuilderContainer(name) {}
+OutputContainer::OutputContainer(const std::string name) : BuilderContainer(name) {}
 
 OutputContainer* OutputContainer::instance(const std::string name) {
-    static OutputContainer instance(name);
-    return &instance;
+  static OutputContainer instance(name);
+  return &instance;
 }
 
-OperationContainer::OperationContainer(const std::string name)
-: BuilderContainer(name) {}
+OperationContainer::OperationContainer(const std::string name) : BuilderContainer(name) {}
 
 OperationContainer* OperationContainer::instance(const std::string name) {
-    static OperationContainer instance(name);
-    return &instance;
+  static OperationContainer instance(name);
+  return &instance;
 }
 
-LookuperContainer::LookuperContainer(const std::string name) 
-: BuilderContainer(name) {}
+LookuperContainer::LookuperContainer(const std::string name) : BuilderContainer(name) {}
 
 LookuperContainer* LookuperContainer::instance(const std::string name) {
-    static LookuperContainer instance(name);
-    return &instance;
+  static LookuperContainer instance(name);
+  return &instance;
 }
 
-
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

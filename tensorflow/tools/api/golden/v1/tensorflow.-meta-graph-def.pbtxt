@@ -51,6 +51,13 @@ tf_proto {
       type: TYPE_MESSAGE
       type_name: ".tensorflow.SavedObjectGraph"
     }
+    field {
+      name: "incr_saver_def"
+      number: 8
+      label: LABEL_OPTIONAL
+      type: TYPE_MESSAGE
+      type_name: ".tensorflow.SaverDef"
+    }
     nested_type {
       name: "MetaInfoDef"
       field {

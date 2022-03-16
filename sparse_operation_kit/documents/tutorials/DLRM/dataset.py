@@ -106,27 +106,11 @@ if __name__ == "__main__":
                                             403346, 10, 2208, 11938, 155, 4, 976, 
                                             14, 39979772, 25641295, 39664985, 585935, 
                                             12972, 108, 36],
-                              batch_size=4096,
+                              batch_size=16384,
                               sharding=False)()
+
     for step, (features, labels) in enumerate(dataset):
-        if(step == 1000):
-            print("warm up over!")
-            break
-
-    import time
-    start =time.time()
-    count = 1000
-
-    for i in range(1000):
-        for step, (features, labels) in enumerate(dataset):
-            count -= 1
-            if(count % 100 == 0):
-                print(count)
-            if(count == 0):
-                break
-        if(count == 0):
-            break
-    during_time = time.time() - start
-    print("1000 steps need:",(during_time))
+        # print(features)
+        print(labels)
 
     

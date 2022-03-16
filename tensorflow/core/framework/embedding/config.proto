@@ -8,16 +8,24 @@ enum StorageType {
 
   // one level
   DRAM = 1;
-  PMEM = 2;
-  SSD = 3;
-/*
+  PMEM_MEMKIND = 2;
+  PMEM_LIBPMEM = 3;
+  SSD = 4;
+  LEVELDB = 5;
+
   // two level
   DRAM_PMEM = 11;
   DRAM_SSD = 12;
   HBM_DRAM = 13;
+  DRAM_LEVELDB = 14;
 
   // three level
   DRAM_PMEM_SSD = 101;
   HBM_DRAM_SSD = 102;
-*/
+
+}
+
+enum SlotType {
+  EMBEDDING_VARIABLE = 0;
+  VARIABLE = 1;
 }

@@ -14,10 +14,10 @@
  limitations under the License.
 """
 
-import sys
-sys.path.append("../../../")
+import sys, os
 import sparse_operation_kit
-sys.path.append("../../../unit_test/test_scripts/")
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                             "../../unit_test/test_scripts/tf2/")))
 from utils import *
 
 def TFDataset(filename, batchsize, as_sparse_tensor, repeat=1):

@@ -33,6 +33,7 @@ from tensorflow.python.eager import context
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
+from tensorflow.python.lib.io import file_io
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_array_ops
@@ -242,8 +243,21 @@ class CheckpointOption(object):
 @tf_export(v1=["StorageOption"])
 class StorageOption(object):
   def __init__(self,
-               storage_type=None):
+               storage_type=None,
+               storage_path=None,
+               storage_size=None):
     self.storage_type = storage_type
+    self.storage_path = storage_path
+    self.storage_size = storage_size
+    if storage_path is not None:
+      if storage_type is None:
+        raise ValueError("storage_type musnt'be None when storage_path is set")
+      else:
+        if not file_io.file_exists(storage_path):
+          file_io.recursive_create_dir(storage_path)
+    else:
+      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD]:
+        raise ValueError("storage_path musnt'be None when storage_type is set")
 
 @tf_export(v1=["EmbeddingVariableOption"])
 class EmbeddingVariableOption(object):
@@ -307,6 +321,8 @@ class EmbeddingVariableConfig(object):
                primary=None,
                primary_slotnum_op=None,
                storage_type=config_pb2.StorageType.DRAM,
+               storage_path=None,
+               storage_size=None,
                default_value_dim=4096):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
@@ -326,6 +342,8 @@ class EmbeddingVariableConfig(object):
     self.l2_weight_threshold = l2_weight_threshold
     self.filter_strategy = filter_strategy
     self.storage_type = storage_type
+    self.storage_path = storage_path
+    self.storage_size = storage_size
     self.default_value_dim = default_value_dim
 
   def reveal(self):
@@ -2029,7 +2047,7 @@ class RefVariable(VariableV1):
           # initial_value has been converted to a Tensor with a known type.
           self._variable = state_ops.variable_op_v2(
               shape, self._initial_value.dtype.base_dtype, name=name)
-        self.op._is_sparse=False
+        self._is_sparse=False
 
         # Manually overrides the variable's shape with the initial value's.
         if validate_shape:
@@ -2105,6 +2123,7 @@ class RefVariable(VariableV1):
       self._save_slice_info = None
     self._caching_device = None
     self._constraint = None
+    self._is_sparse=False
 
   def _as_graph_element(self):
     """Conversion function for Graph.as_graph_element()."""

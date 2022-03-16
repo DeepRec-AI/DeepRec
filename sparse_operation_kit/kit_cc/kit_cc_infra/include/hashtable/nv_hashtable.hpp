@@ -16,6 +16,7 @@
 
 #pragma once
 #include <limits>
+
 #include "common.h"
 
 namespace HugeCTR {
@@ -134,8 +135,8 @@ class HashTable {
    * @param counter_value the new counter value to be set.
    */
   void set_value_head(size_t counter_value, cudaStream_t stream) {
-    CK_CUDA(cudaMemcpyAsync(d_counter_, &counter_value, sizeof(size_t),
-                                   cudaMemcpyHostToDevice, stream));
+    CK_CUDA(cudaMemcpyAsync(d_counter_, &counter_value, sizeof(size_t), cudaMemcpyHostToDevice,
+                            stream));
   }
 
   /**
@@ -158,7 +159,7 @@ class HashTable {
    * Clear the hash table
    */
   void clear(cudaStream_t stream);
-  
+
  private:
   static const int BLOCK_SIZE_ =
       256; /**< The block size of the CUDA kernels. The default value is 256. */

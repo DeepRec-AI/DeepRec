@@ -72,6 +72,53 @@ void* TrackingAllocator::AllocateRaw(
   return ptr;
 }
 
+size_t TrackingAllocator::BatchAllocateRaw(size_t num, size_t alignment,
+    size_t num_bytes, void** ret) {
+  size_t allocated_num = allocator_->BatchAllocateRaw(num, alignment,
+      num_bytes, ret);
+
+  if (allocator_->TracksAllocationSizes()) {
+    for (size_t i = 0; i < allocated_num; ++i) {
+      auto ptr = ret[i];
+      size_t allocated_bytes = allocator_->AllocatedSize(ptr);
+      {
+        mutex_lock lock(mu_);
+        allocated_ += allocated_bytes;
+        high_watermark_ = std::max(high_watermark_, allocated_);
+        total_bytes_ += allocated_bytes;
+        allocations_.emplace_back(allocated_bytes, Env::Default()->NowMicros());
+        ++ref_;
+      }
+    }
+  } else if (track_sizes_locally_) {
+    // Call the underlying allocator to try to get the allocated size
+    // whenever possible, even when it might be slow. If this fails,
+    // use the requested size as an approximation.
+    for (size_t i = 0; i < allocated_num; ++i) {
+      auto ptr = ret[i];
+      size_t allocated_bytes = allocator_->AllocatedSizeSlow(ptr);
+      allocated_bytes = std::max(num_bytes, allocated_bytes);
+      mutex_lock lock(mu_);
+      next_allocation_id_ += 1;
+      Chunk chunk = {num_bytes, allocated_bytes, next_allocation_id_};
+      in_use_.emplace(std::make_pair(ptr, chunk));
+      allocated_ += allocated_bytes;
+      high_watermark_ = std::max(high_watermark_, allocated_);
+      total_bytes_ += allocated_bytes;
+      allocations_.emplace_back(allocated_bytes, Env::Default()->NowMicros());
+      ++ref_;
+    }
+  } else {
+    mutex_lock lock(mu_);
+    total_bytes_ += num_bytes * allocated_num;
+    for (size_t i = 0; i < allocated_num; ++i) {
+      allocations_.emplace_back(num_bytes, Env::Default()->NowMicros());
+      ++ref_;
+    }
+  }
+  return allocated_num;
+}
+
 void TrackingAllocator::DeallocateRaw(void* ptr) {
   // freeing a null ptr is a no-op
   if (nullptr == ptr) {
@@ -104,6 +151,43 @@ void TrackingAllocator::DeallocateRaw(void* ptr) {
     should_delete = UnRef();
   }
   allocator->DeallocateRaw(ptr);
+  if (should_delete) {
+    delete this;
+  }
+}
+
+void TrackingAllocator::DeallocateRawAsync(void* ptr) {
+  // freeing a null ptr is a no-op
+  if (nullptr == ptr) {
+    return;
+  }
+  bool should_delete;
+  // fetch the following outside the lock in case the call to
+  // AllocatedSize is slow
+  bool tracks_allocation_sizes = allocator_->TracksAllocationSizes();
+  size_t allocated_bytes = 0;
+  if (tracks_allocation_sizes) {
+    allocated_bytes = allocator_->AllocatedSize(ptr);
+  } else if (track_sizes_locally_) {
+    mutex_lock lock(mu_);
+    auto itr = in_use_.find(ptr);
+    if (itr != in_use_.end()) {
+      tracks_allocation_sizes = true;
+      allocated_bytes = (*itr).second.allocated_size;
+      in_use_.erase(itr);
+    }
+  }
+  Allocator* allocator = allocator_;
+  {
+    mutex_lock lock(mu_);
+    if (tracks_allocation_sizes) {
+      CHECK_GE(allocated_, allocated_bytes);
+      allocated_ -= allocated_bytes;
+      allocations_.emplace_back(-allocated_bytes, Env::Default()->NowMicros());
+    }
+    should_delete = UnRef();
+  }
+  allocator->DeallocateRawAsync(ptr);
   if (should_delete) {
     delete this;
   }

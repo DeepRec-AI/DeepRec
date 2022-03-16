@@ -42,7 +42,7 @@ tf_module {
   }
   member_method {
     name: "embedding_lookup"
-    argspec: "args=[\'hash_table\', \'origin_keys\', \'default_value\', \'counts\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\', \'None\'], "
+    argspec: "args=[\'input_hash_table\', \'origin_keys\', \'default_value\', \'counts\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\', \'None\'], "
   }
   member_method {
     name: "embedding_lookup_sparse"

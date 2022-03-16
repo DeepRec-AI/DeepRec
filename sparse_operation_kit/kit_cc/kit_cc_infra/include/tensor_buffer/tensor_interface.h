@@ -21,24 +21,24 @@
 namespace SparseOperationKit {
 
 /*
-* This is the base class used to represent datas.
-*/
+ * This is the base class used to represent datas.
+ */
 class Tensor {
-public:
-    virtual ~Tensor() {}
-    virtual size_t get_size_in_bytes() = 0;
-    virtual size_t get_num_elements() = 0;
-    virtual bool allocated() const = 0;
+ public:
+  virtual ~Tensor() {}
+  virtual size_t get_size_in_bytes() = 0;
+  virtual size_t get_num_elements() = 0;
+  virtual bool allocated() const = 0;
 
-    template <typename TARGET_TYPE>
-    TARGET_TYPE* GetPtrWithType() {
-        return reinterpret_cast<TARGET_TYPE*>(get_ptr());
-    }
-protected:
-    virtual void* get_ptr() = 0;
+  template <typename TARGET_TYPE>
+  TARGET_TYPE* GetPtrWithType() {
+    return reinterpret_cast<TARGET_TYPE*>(get_ptr());
+  }
+
+ protected:
+  virtual void* get_ptr() = 0;
 };
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // TENSOR_INTERFACE_H
+#endif  // TENSOR_INTERFACE_H

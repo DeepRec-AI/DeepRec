@@ -1,5 +1,5 @@
 # Performance of demo model using Dense Embedding Layer #
-The performance of demo model introduced in [Examples/DenseDemo](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/v1.0.0/examples/dense_demo.html).
+The performance of demo model introduced in [Examples/DenseDemo](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/master/examples/dense_demo.html).
 
 ## Profiling commands ##
 Add `--trace-fork-before-exec=true` if MPI or multiple CPU processes is used to collect the timelines for all GPUs.

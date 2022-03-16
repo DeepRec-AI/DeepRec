@@ -15,7 +15,7 @@ Due to SOK is compatible with DP training provided by common synchronized traini
 ![WorkFlowOfEmbeddingLayer](documents/source/images/workflow_of_embeddinglayer.png)
 
 ## Installation ##
-Before building SOK, It is necessary to install NCCL and cmake additionally for docker image "registry.cn-shanghai.aliyuncs.com/pai-dlc/tensorflow-training:1.15deeprec2110-gpu-py36-cu110-ubuntu18.04". The way to install NCCL could refer to [install guide](https://docs.nvidia.com/deeplearning/nccl/install-guide/index.html). <br>
+Before building SOK, It is necessary to install NCCL and cmake additionally for docker image "registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-gpu-py36-cu110-ubuntu18.04". The way to install NCCL could refer to [install guide](https://docs.nvidia.com/deeplearning/nccl/install-guide/index.html). <br>
     
 ### *Install this module from pypi* ###
 Install via `PYPI` will be supported in the near future.
@@ -28,6 +28,7 @@ $ git clone https://github.com/AlibabaPAI/DeepRec.git DeepRec
 ```
 + **install to system path**
 ```shell
+$ bash request.sh
 $ cd DeepRec/sparse_operation_kit/
 $ mkdir -p build && cd build && cmake .. && make -j && make install
 ```

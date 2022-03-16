@@ -10,7 +10,8 @@ on:
       - 'modelzoo/**'
       - 'sparse_operation_kit/**'
       - 'triton/**'
-  pull_request_target:
+  pull_request_review:
+    types: [submitted]
     branches:
       - main
     paths-ignore:
@@ -22,35 +23,31 @@ on:
 env:
   IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-cibuild-py36-ubuntu18.04
   JOBNAME: deeprec-ci-cpu-${{ github.run_id }}
-  PODNAME: deeprec-ci-cpu-${{ github.run_id }}-chief-0
-  BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    environment: PAI DLC
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
+    runs-on: [self-hosted, cpu]
     steps:
-    - name: Setup Environment
-      uses: aliyun/ack-set-context@v1
-      with:
-        access-key-id: "${{ secrets.ACCESS_KEY_ID }}"
-        access-key-secret: "${{ secrets.ACCESS_KEY_SECRET }}"
-        cluster-id: "${{ secrets.ACK_CLUSTER_ID }}"
     - name: Checkout Code
       uses: actions/checkout@v2
-    - name: Install Pod
-      timeout-minutes: 360
-      run: |-
-        helm install ${JOBNAME} cibuild/ --set image=${IMAGE} --timeout 1h
+    
+    - name: Pull Image And Start Container
+      if: ${{ success() }}
+      run:
+        cibuild/pull_image_and_start_container.sh cpu ${IMAGE} ${JOBNAME}
+    
     - name: Upload Source
-      if: ${{ always() }}
-      run: |-
-        cibuild/upload.sh ${PODNAME} ../cibuild
+      if: ${{ success() }}
+      run:
+        cibuild/upload.sh ${JOBNAME} ../cibuild /mnt
+
     - name: Unit Test
-      if: ${{ always() }}
+      if: ${{ success() }}
       run: |-
-        kubectl exec -it ${PODNAME} -- cibuild/cpu-ut/cpu-cc-ut.sh
-    - name: Uninstall Pod
+        docker exec ${JOBNAME} /mnt/cibuild/cpu-ut/cpu-cc-ut.sh /mnt
+
+    - name:  Remove Container
       if: ${{ always() }}
-      run: |-
-        helm uninstall ${JOBNAME}
+      run: 
+        cibuild/remove_container.sh ${JOBNAME}

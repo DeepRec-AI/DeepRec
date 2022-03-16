@@ -29,7 +29,7 @@ class HorovodStrategy(object):
 
     def reduce(self, combiner, tensors):
         if isinstance(tensors, list) or isinstance(tensors, tuple):
-            return [self._hvd.allreduce(tensor) for tensor in tensors]
+            return [self._hvd.allreduce(tensor, op=self._hvd.Average, compression=self._hvd.compression.NoneCompressor) for tensor in tensors]
         else:
             return self._hvd.allreduce(tensors)
 

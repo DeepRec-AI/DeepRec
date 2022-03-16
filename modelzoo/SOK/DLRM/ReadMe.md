@@ -52,35 +52,23 @@ $ export EMBEDDING_DIM=128
 #### Run DLRM with TensorFlow 
 
 ```shell
-$  export SLURM_TASKS_PER_NODE=1
-$  python3 train_stand.py \
-    --global_batch_size=8192 \
+$  export SLURM_TASKS_PER_NODE=8
+$  horovodrun -np 8 ./wrapper.sh python3 train_stand.py \
+    --global_batch_size=65536 \
     --train_file_pattern="./train/" \
     --test_file_pattern="./test/" \
     --embedding_layer="TF" \
     --embedding_vec_size=$EMBEDDING_DIM \
     --bottom_stack 512 256 $EMBEDDING_DIM \
     --top_stack 1024 1024 512 256 1 \
-    --distributed_tool="onedevice" 
+    --distributed_tool="horovod" 
 ```
 #### Run DLRM with SOK
     
 ```shell
-$  export SLURM_TASKS_PER_NODE=1
-$  python3 train_stand.py \
-    --global_batch_size=8192 \
-    --train_file_pattern="./train/" \
-    --test_file_pattern="./test/" \
-    --embedding_layer="SOK" \
-    --embedding_vec_size=$EMBEDDING_DIM \
-    --bottom_stack 512 256 $EMBEDDING_DIM \
-    --top_stack 1024 1024 512 256 1 \
-    --distributed_tool="onedevice" 
-```
-```shell
 $  export SLURM_TASKS_PER_NODE=8
-$  horovodrun -np 8 ./hvd_wrapper.sh python3 train_stand.py \
-    --global_batch_size=65536 \
+$  horovodrun -np 8 ./wrapper.sh python3 train_stand.py \
+    --global_batch_size=8192 \
     --train_file_pattern="./train/" \
     --test_file_pattern="./test/" \
     --embedding_layer="SOK" \
@@ -112,13 +100,13 @@ $  horovodrun -np 8 ./hvd_wrapper.sh python3 train_stand.py \
 ### Stand-alone Training 
 Google tensorflow v1.15 is selected to compare with SOK.
 
-|GPU|method|Embedding vector size|Vocabulary size in bytes|Batch size (global)|dataloader|Data format|Dense optimizer|Embedding optimizer|time(ms) / iteration|
-|:----|:----|:----|:----|:----|:----|:----|:----|:----|:----|
-|A100 * 8|SOK|128|89.5 GB|65536|os.pread|bin|SGD|SGD|12.09|
-|A100 * 1|SOK|128|11.2 GB|8192|os.pread|bin|SGD|SGD|8.31|
-|A100 * 1|TF|128|11.2 GB|8192|os.pread|bin|SGD|SGD|10.16|
+| environment | Exit criteria | embedding  | Device   | embedding vector size  | vocabulary size in bytes | Batch size(global) | Dataloader    | Data format | Averge time of iteration(ms) | Total time(minutes) |     |
+|-------------|---------------|------------|----------|------------------------|--------------------------|--------------------|---------------|-------------|------------------------------|---------------------|-----|
+| DeepRec     | 1 epoch       | SOK(GPU)   | 8 * A100 | 128                    | 82GB                     | 65536              | BinaryDataset | bin         | 8.66                         | 9.35                | 1 x |
+| DeepRec     | 1 epoch       | TF(GPU)    | 8 * A100 | 128                    | 82GB                     | 65536              | BinaryDataset | bin         | OOM                          | OOM                 | -   |
+| DeepRec     | 1 epoch       | TF(CPU)    | 8 * A100 | 128                    | 82GB                     | 65536              | BinaryDataset | bin         | -                            | -                   | -   |
+| DeepRec     | 1 epoch       | TF_EV(CPU) | 8 * A100 | 128                    | -                        | 65536              | BinaryDataset | bin         | -                            | -                   | -   |
 
-NOTICE: If you want to reproduce the following performance, please ensure the effecitive dataloader.
 
 ## Dataset
 Train & eval dataset using Criteo TeraBytes Datasets.

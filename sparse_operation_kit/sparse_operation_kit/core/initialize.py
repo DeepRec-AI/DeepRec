@@ -41,11 +41,13 @@ def Init(**kwargs):
     This function is used to do the initialization of SparseOperationKit (SOK).
 
     SOK will leverage all available GPUs for current CPU process. Please set 
-    `CUDA_VISIBLE_DEVICES` to specify which GPU(s) are used in this process before
-    launching tensorflow runtime and launching this function.
+    `CUDA_VISIBLE_DEVICES` or `tf.config.set_visible_devices` to specify which 
+    GPU(s) are used in this process before launching tensorflow runtime 
+    and calling this function.
 
-    SOK can be used with **tf.distribute.Strategy** or **Horovod**. When it's used with 
-    tf.distribute.Strategy, it must be called under `strategy.scope()`. For example,
+    In **TensorFlow 2.x**, SOK can be used with **tf.distribute.Strategy** or **Horovod**. 
+    When it's used with tf.distribute.Strategy, it must be called under `strategy.scope()`. 
+    For example,
 
     .. code-block:: python
     
@@ -61,6 +63,17 @@ def Init(**kwargs):
         hvd.init()
 
         sok.Init(**kwargs)
+
+    In **TensorFlow 1.15**, SOK can only work with **Horovod**. The retured status
+    must be evaluated with `sess.run`, and it must be the first step before evaluate
+    any other SOK APIs.
+
+    .. code-block:: python
+
+        sok_init = sok.Init(global_batch_size=args.global_batch_size)
+        with tf.Session() as sess:
+            sess.run(sok_init)
+            ...
 
     Parameters
     ----------
