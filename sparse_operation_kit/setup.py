@@ -65,20 +65,26 @@ class SOKBuildExtension(build_ext):
 
         use_nvtx = "OFF"
         if os.getenv("SOK_COMPILE_USE_NVTX"):
-            use_nvtx = "ON" if "1" == os.getenv("SOK_COMPILE_USE_NVTX") else "OFF"
+            use_nvtx = "ON" if os.getenv("SOK_COMPILE_USE_NVTX") in ["1", "ON", "On", "on"] else "OFF"
 
         dedicated_cuda_stream = "ON"
         if os.getenv("SOK_COMPILE_ASYNC"):
-            dedicated_cuda_stream = "ON" if os.getenv("SOK_COMPILE_ASYNC") in ["1", "ON", "On", "on"] else "OFF"
+            dedicated_cuda_stream = "OFF" if os.getenv("SOK_COMPILE_ASYNC") in ["0", "OFF", "Off", "off"] else "ON"
 
         unit_test = "OFF"
         if os.getenv("SOK_COMPILE_UNIT_TEST"):
             unit_test = "ON" if os.getenv("SOK_COMPILE_UNIT_TEST") in ["1", "ON", "On", "on"] else "OFF"
 
+        cmake_build_type = "Release"
+        if os.getenv("SOK_COMPILE_BUILD_TYPE"):
+            cmake_build_type = "Debug" if os.getenv("SOK_COMPILE_BUILD_TYPE") in ["DEBUG", "debug", "Debug"] else "Release"
+
+
         cmake_args = ["-DSM='{}'".format(";".join(gpu_capabilities)),
                       "-DUSE_NVTX={}".format(use_nvtx),
                       "-DSOK_ASYNC={}".format(dedicated_cuda_stream),
-                      "-DSOK_UNIT_TEST={}".format(unit_test)]
+                      "-DSOK_UNIT_TEST={}".format(unit_test),
+                      "-DCMAKE_BUILD_TYPE={}".format(cmake_build_type)]
         cmake_args = " ".join(cmake_args)
 
         build_dir = self.get_ext_fullpath(self.extensions[0].name).replace(

@@ -18,6 +18,7 @@
 #define CONCURRENT_UNORDERED_MAP_CUH
 
 #include <thrust/pair.h>
+
 #include <cassert>
 #include <iostream>
 #include <iterator>

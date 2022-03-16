@@ -209,7 +209,7 @@ class EigenGpuStreamDevice : public ::Eigen::StreamInterface {
       LogMemory::RecordRawDeallocation(data->operation_, data->step_id_,
                                        data->address_, data->allocator_, false);
     }
-    data->allocator_->DeallocateRaw(data->address_);
+    data->allocator_->DeallocateRawAsync(data->address_);
     delete data;
   }
 

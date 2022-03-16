@@ -20,6 +20,7 @@ from __future__ import print_function
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import state_ops
 from tensorflow.python.training import adam
@@ -95,3 +96,33 @@ class NadamOptimizer(adam.AdamOptimizer):
     v_sqrt = math_ops.sqrt(v_t_slice)
     var_update = scatter_add(var, indices, -lr * m_bar / (v_sqrt + epsilon_t))
     return control_flow_ops.group(*[var_update, m_bar, v_t])
+
+  def _apply_sparse(self, grad, var):
+    return self._apply_sparse_shared(
+            grad.values,
+            var,
+            grad.indices,
+            lambda x, i, v: state_ops.scatter_add(
+                x,
+                i,
+                v,
+                use_locking=self._use_locking))
+
+  def _resource_apply_sparse(self, grad, var, indices):
+    m = self.get_slot(var, "m")
+    v = self.get_slot(var, "v")
+    beta1_power, beta2_power = self._get_beta_accumulators()
+    if isinstance(var, kv_variable_ops.EmbeddingVariable):
+      global_step = training_util.get_or_create_global_step()
+      return training_ops.kv_resource_sparse_apply_adam(
+        var.handle, m.handle, v.handle,
+        math_ops.cast(beta1_power, grad.dtype),
+        math_ops.cast(beta2_power, grad.dtype),
+        math_ops.cast(self._lr_t, grad.dtype),
+        math_ops.cast(self._beta1_t, grad.dtype),
+        math_ops.cast(self._beta2_t, grad.dtype),
+        math_ops.cast(self._epsilon_t, grad.dtype),
+        grad, indices, global_step, use_locking=self._use_locking)
+    else:
+      return self._apply_sparse_shared(grad, var, indices,
+          self._resource_scatter_add)

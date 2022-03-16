@@ -215,8 +215,9 @@ class DSSM():
         self.predict = self.prediction()
         with tf.name_scope('head'):
             self.train_op, self.loss = self.optimizer()
-            self.acc, self.acc_op = tf.metrics.accuracy(
-                labels=self.label, predictions=self.predict)
+            self.acc, self.acc_op = tf.metrics.accuracy(labels=self.label,
+                                                        predictions=tf.round(
+                                                            self.predict))
             self.auc, self.auc_op = tf.metrics.auc(labels=self.label,
                                                    predictions=self.predict,
                                                    num_thresholds=1000)
@@ -225,6 +226,32 @@ class DSSM():
 
     def evalmodel(self):
         self._is_training = False
+
+    def dnn_tower(self, net, name):
+        with tf.variable_scope(name + '_layer',
+                               partitioner=self.dense_layer_partitioner,
+                               reuse=tf.AUTO_REUSE):
+            for layer_id, num_hidden_units in enumerate(self.dnn_hidden_units):
+                with tf.variable_scope(name + "_%d" % layer_id,
+                                       reuse=tf.AUTO_REUSE) as dnn_layer_scope:
+                    net = tf.layers.dense(net,
+                                          units=num_hidden_units,
+                                          activation=None)
+                    # BN
+                    if self.use_bn:
+                        net = tf.layers.batch_normalization(
+                            net, training=self._is_training, trainable=True)
+                    # activate func
+                    net = tf.nn.relu(net)
+                    add_layer_summary(net, dnn_layer_scope.name)
+
+            # last dnn layer
+            with tf.variable_scope(name + "_%d" % len(self.dnn_hidden_units),
+                                   reuse=tf.AUTO_REUSE) as dnn_layer_scope:
+                net = tf.layers.dense(net, units=self.dnn_last_hidden_units)
+                add_layer_summary(net, dnn_layer_scope.name)
+
+        return net
 
     def prediction(self):
         # input embeddings of user & item features
@@ -240,131 +267,31 @@ class DSSM():
             item_emb = tf.feature_column.input_layer(self.feature,
                                                      self.item_column)
 
-        # user dnn network
         if self.bf16:
             user_emb = tf.cast(user_emb, dtype=tf.bfloat16)
-            with tf.variable_scope('user_dnn_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE).keep_weights():
-                for layer_id, num_hidden_units in enumerate(
-                        self.dnn_hidden_units):
-                    with tf.variable_scope(
-                            "user_dnn_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as user_dnn_layer_scope:
-                        user_emb = tf.layers.dense(user_emb,
-                                                   units=num_hidden_units,
-                                                   activation=None)
-                        # BN
-                        if self.use_bn:
-                            user_emb = tf.layers.batch_normalization(
-                                user_emb,
-                                training=self._is_training,
-                                trainable=True)
-                        # activate func
-                        user_emb = tf.nn.relu(user_emb)
-                        add_layer_summary(user_emb, user_dnn_layer_scope.name)
+            item_emb = tf.cast(item_emb, dtype=tf.bfloat16)
 
-                # last dnn layer
-                with tf.variable_scope(
-                        "user_dnn_%d" % len(self.dnn_hidden_units),
-                        reuse=tf.AUTO_REUSE) as user_dnn_layer_scope:
-                    user_emb = tf.layers.dense(
-                        user_emb, units=self.dnn_last_hidden_units)
-                    add_layer_summary(user_emb, user_dnn_layer_scope.name)
-
-            user_emb = tf.cast(user_emb, dtype=tf.float32)
-        else:
-            with tf.variable_scope('user_dnn_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE):
-                for layer_id, num_hidden_units in enumerate(
-                        self.dnn_hidden_units):
-                    with tf.variable_scope(
-                            "user_dnn_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as user_dnn_layer_scope:
-                        user_emb = tf.layers.dense(user_emb,
-                                                   units=num_hidden_units,
-                                                   activation=None)
-                        # BN
-                        if self.use_bn:
-                            user_emb = tf.layers.batch_normalization(
-                                user_emb,
-                                training=self._is_training,
-                                trainable=True)
-                        # activate func
-                        user_emb = tf.nn.relu(user_emb)
-                        add_layer_summary(user_emb, user_dnn_layer_scope.name)
-
-                # last dnn layer
-                with tf.variable_scope(
-                        "user_dnn_%d" % len(self.dnn_hidden_units),
-                        reuse=tf.AUTO_REUSE) as user_dnn_layer_scope:
-                    user_emb = tf.layers.dense(
-                        user_emb, units=self.dnn_last_hidden_units)
-                    add_layer_summary(user_emb, user_dnn_layer_scope.name)
+        # user dnn network
+        user_scope = tf.variable_scope(
+            'user_dnn_layer',
+            partitioner=self.dense_layer_partitioner,
+            reuse=tf.AUTO_REUSE)
+        with user_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+            else user_scope:
+            user_emb = self.dnn_tower(user_emb, 'user_dnn')
 
         # item dnn network
+        item_scope = tf.variable_scope(
+            'item_dnn_layer',
+            partitioner=self.dense_layer_partitioner,
+            reuse=tf.AUTO_REUSE)
+        with item_scope.keep_weights(dtype=tf.float32) if self.bf16 \
+            else item_scope:
+            item_emb = self.dnn_tower(item_emb, 'item_dnn')
+
         if self.bf16:
-            item_emb = tf.cast(item_emb, dtype=tf.bfloat16)
-            with tf.variable_scope('item_dnn_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE).keep_weights():
-                for layer_id, num_hidden_units in enumerate(
-                        self.dnn_hidden_units):
-                    with tf.variable_scope(
-                            "item_dnn_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as item_dnn_layer_scope:
-                        item_emb = tf.layers.dense(item_emb,
-                                                   units=num_hidden_units,
-                                                   activation=None)
-                        # BN
-                        if self.use_bn:
-                            item_emb = tf.layers.batch_normalization(
-                                item_emb,
-                                training=self._is_training,
-                                trainable=True)
-                        # activate func
-                        item_emb = tf.nn.relu(item_emb)
-                        add_layer_summary(item_emb, item_dnn_layer_scope.name)
-
-                # last dnn layer
-                with tf.variable_scope(
-                        "item_dnn_%d" % len(self.dnn_hidden_units),
-                        reuse=tf.AUTO_REUSE) as item_dnn_layer_scope:
-                    item_emb = tf.layers.dense(
-                        item_emb, units=self.dnn_last_hidden_units)
-                    add_layer_summary(item_emb, item_dnn_layer_scope.name)
-
+            user_emb = tf.cast(user_emb, dtype=tf.float32)
             item_emb = tf.cast(item_emb, dtype=tf.float32)
-        else:
-            with tf.variable_scope('item_dnn_layer',
-                                   partitioner=self.dense_layer_partitioner,
-                                   reuse=tf.AUTO_REUSE):
-                for layer_id, num_hidden_units in enumerate(
-                        self.dnn_hidden_units):
-                    with tf.variable_scope(
-                            "item_dnn_%d" % layer_id,
-                            reuse=tf.AUTO_REUSE) as item_dnn_layer_scope:
-                        item_emb = tf.layers.dense(item_emb,
-                                                   units=num_hidden_units,
-                                                   activation=None)
-                        # BN
-                        if self.use_bn:
-                            item_emb = tf.layers.batch_normalization(
-                                item_emb,
-                                training=self._is_training,
-                                trainable=True)
-                        # activate func
-                        item_emb = tf.nn.relu(item_emb)
-                        add_layer_summary(item_emb, item_dnn_layer_scope.name)
-
-                # last dnn layer
-                with tf.variable_scope(
-                        "item_dnn_%d" % len(self.dnn_hidden_units),
-                        reuse=tf.AUTO_REUSE) as item_dnn_layer_scope:
-                    item_emb = tf.layers.dense(
-                        item_emb, units=self.dnn_last_hidden_units)
-                    add_layer_summary(item_emb, item_dnn_layer_scope.name)
 
         # norm
         user_emb = tf.math.l2_normalize(user_emb, axis=1)
@@ -391,7 +318,7 @@ class DSSM():
 
     def optimizer(self):
         loss_func = tf.keras.losses.CategoricalCrossentropy()
-        self.predict = tf.squeeze(self.predict)
+        # self.predict = tf.squeeze(self.predict)
         loss = tf.math.reduce_mean(loss_func(self.label, self.predict))
         tf.summary.scalar('loss', loss)
 
@@ -568,7 +495,7 @@ def main(tf_config=None, server=None):
         sess_config.inter_op_parallelism_threads = args.inter
     if args.intra:
         sess_config.intra_op_parallelism_threads = args.intra
-        hooks = []
+    hooks = []
 
     if tf_config:
         hooks.append(tf.train.StopAtStepHook(last_step=train_steps))

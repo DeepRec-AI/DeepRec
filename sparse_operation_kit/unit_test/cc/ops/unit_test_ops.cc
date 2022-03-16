@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
+#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/types.h"
 
 using namespace tensorflow;
@@ -36,7 +36,6 @@ REGISTER_OP("AllGatherDispatcher")
     .Attr("global_batch_size: int")
     .Attr("rows_num_per_sample: int")
     .Attr("max_nnz: int");
-
 
 REGISTER_OP("CsrConversionDistributed")
     .Input("global_replica_id: int32")

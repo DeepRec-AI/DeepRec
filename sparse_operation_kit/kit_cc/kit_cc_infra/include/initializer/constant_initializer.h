@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 #ifndef CONSTANT_INITIALIZER_H
 #define CONSTANT_INITIALIZER_H
 
@@ -23,19 +22,18 @@
 namespace SparseOperationKit {
 
 class ConstantInit : public Initializer {
-public:
-    static std::shared_ptr<ConstantInit> create(const float value);
+ public:
+  static std::shared_ptr<ConstantInit> create(const float value);
 
-    void fill(std::shared_ptr<Tensor> tensor,
-              const size_t sm_count,
-              const curandGenerator_t& generator,
-              const cudaStream_t& stream) override;
-private:
-    ConstantInit(const float value);
+  void fill(std::shared_ptr<Tensor> tensor, const size_t sm_count,
+            const curandGenerator_t& generator, const cudaStream_t& stream) override;
 
-    const float value_;
+ private:
+  ConstantInit(const float value);
+
+  const float value_;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // CONSTANT_INITIALIZER_H
+#endif  // CONSTANT_INITIALIZER_H

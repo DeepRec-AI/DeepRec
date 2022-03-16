@@ -16,8 +16,9 @@
 
 #pragma once
 #include <memory>
-#include <vector>
 #include <stdexcept>
+#include <vector>
+
 #include "common.h"
 
 namespace HugeCTR {
@@ -99,7 +100,7 @@ class TensorBag2 {
 
  public:
   TensorBag2() : scalar_type_(TensorScalarType::None) {}
-  void* get_ptr() { return buffer_->get_ptr(); }
+  void *get_ptr() { return buffer_->get_ptr(); }
 };
 
 template <typename T>
@@ -138,7 +139,7 @@ class Tensor2 {
     return num_elements_ * TensorScalarSizeFunc<T>::get_element_size();
   }
 
-  void set_buffer(const std::shared_ptr<TensorBuffer2>& buffer) { buffer_ = buffer; }
+  void set_buffer(const std::shared_ptr<TensorBuffer2> &buffer) { buffer_ = buffer; }
 
   const T *get_ptr() const { return reinterpret_cast<const T *>(buffer_->get_ptr()); }
 

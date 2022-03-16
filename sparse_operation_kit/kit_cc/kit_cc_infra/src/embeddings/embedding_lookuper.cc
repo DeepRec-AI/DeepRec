@@ -18,9 +18,8 @@
 
 namespace SparseOperationKit {
 
-EmbeddingLookuper::EmbeddingLookuper(ConstructionContext_t construction_context, 
+EmbeddingLookuper::EmbeddingLookuper(ConstructionContext_t construction_context,
                                      std::shared_ptr<ParamInterface> param)
-: Operation(construction_context), param_(param) 
-{}
+    : Operation(construction_context), param_(param) {}
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

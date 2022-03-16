@@ -50,8 +50,16 @@ class KVInterface {
                       "Unimplemented for BatchRemove in KVInterface.");
   }
 
+  virtual Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {return Status::OK();}
+
   // KV Size
   virtual int64 Size() const = 0;
+
+  virtual void SetTotalDims(int total_dims) {}
+
+  virtual void FreeValuePtr(ValuePtr<V>* value_ptr) {}
+
+  virtual Status Commit(K key, const ValuePtr<V>* value_ptr) {return Status::OK();}
 
   virtual Status GetSnapshot(std::vector<K>* key_list,
                              std::vector<ValuePtr<V>* >* value_ptr_list) = 0;

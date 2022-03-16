@@ -17,44 +17,44 @@
 #ifndef RAW_STATE_H
 #define RAW_STATE_H
 
-#include "parameters/state_interface.h"
 #include "initializer/initializer_interface.h"
+#include "parameters/state_interface.h"
 #include "resources/manager.h"
-#include "tensor_buffer/tensor2.hpp"
 #include "tensor_buffer/general_buffer2.hpp"
+#include "tensor_buffer/tensor2.hpp"
 
 namespace SparseOperationKit {
 
 class RawStates : public States {
-    template <typename T>
-    using Tensor2 = HugeCTR::Tensor2<T>; 
-    template <typename T>
-    using Tensors2 = HugeCTR::Tensors2<T>;
+  template <typename T>
+  using Tensor2 = HugeCTR::Tensor2<T>;
+  template <typename T>
+  using Tensors2 = HugeCTR::Tensors2<T>;
 
-    RawStates(const std::vector<size_t> shape, 
-              const std::shared_ptr<ResourcesManager>& resource_mgr,
-              const std::vector<std::shared_ptr<HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>>>& buffers,
-              const std::string initializer);
+  RawStates(
+      const std::vector<size_t> shape, const std::shared_ptr<ResourcesManager>& resource_mgr,
+      const std::vector<std::shared_ptr<HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>>>& buffers,
+      const std::string initializer);
 
-    std::shared_ptr<ResourcesManager> resource_mgr_;
+  std::shared_ptr<ResourcesManager> resource_mgr_;
 
-    const std::vector<size_t> shape_;
-    std::shared_ptr<Initializer> initializer_;
+  const std::vector<size_t> shape_;
+  std::shared_ptr<Initializer> initializer_;
 
-    // currently, this class only store float states.
-    Tensors2<float> state_tensors_;
-    std::vector<std::shared_ptr<Tensor>> state_tensors_interface_;
+  // currently, this class only store float states.
+  Tensors2<float> state_tensors_;
+  std::vector<std::shared_ptr<Tensor>> state_tensors_interface_;
 
-public:
-    static std::shared_ptr<RawStates> create(const std::vector<size_t> shape, 
-                                             const std::shared_ptr<ResourcesManager>& resource_mgr,
-        const std::vector<std::shared_ptr<HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>>>& buffers,
-                                             const std::string initializer = "zeros");
+ public:
+  static std::shared_ptr<RawStates> create(
+      const std::vector<size_t> shape, const std::shared_ptr<ResourcesManager>& resource_mgr,
+      const std::vector<std::shared_ptr<HugeCTR::GeneralBuffer2<HugeCTR::CudaAllocator>>>& buffers,
+      const std::string initializer = "zeros");
 
-    void init(const size_t global_replica_id) override;
-    std::shared_ptr<Tensor>& get_tensor(const size_t local_replica_id) override;
+  void init(const size_t global_replica_id) override;
+  std::shared_ptr<Tensor>& get_tensor(const size_t local_replica_id) override;
 };
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit
 
-#endif // RAW_STATE_H
+#endif  // RAW_STATE_H

@@ -35,6 +35,7 @@ Multi-Hash-Variable
 
 GRPC++
 StarServer
+SOK
 ```
 
 ```{toctree}
@@ -86,4 +87,5 @@ oneDNN
 
 WorkQueue
 KafkaDataset
+KafkaGroupIODataset
 ```

@@ -18,14 +18,14 @@
 #include "tensorflow/core/framework/op_kernel.h"
 // #if defined(SOK_ASYNC) && defined(ASYNC_OP)
 #ifdef SOK_ASYNC
-    #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
-    #include "tensorflow/stream_executor/cuda/cuda_activation.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
+#include "tensorflow/stream_executor/cuda/cuda_activation.h"
 #endif
 #include <exception>
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
-using CPUDevice = Eigen::ThreadPoolDevice; 
+using CPUDevice = Eigen::ThreadPoolDevice;
 
 // #if defined(SOK_ASYNC) && defined(ASYNC_OP)
 #ifdef SOK_ASYNC
@@ -33,104 +33,99 @@ using ScopedActivateExecutorContext = stream_executor::cuda::ScopedActivateExecu
 
 template <typename Device>
 class PluginBpropOp : public AsyncOpKernel {
-public:
-    explicit PluginBpropOp(OpKernelConstruction* ctx): AsyncOpKernel(ctx) {}
-    void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
-        Tensor const *global_replica_id_tensor = nullptr;
-        OP_REQUIRES_OK_ASYNC(ctx, ctx->input("global_replica_id", &global_replica_id_tensor), done);
-        const int32_t global_replica_id_value = global_replica_id_tensor->scalar<int32_t>()();
+ public:
+  explicit PluginBpropOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {}
+  void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
+    Tensor const* global_replica_id_tensor = nullptr;
+    OP_REQUIRES_OK_ASYNC(ctx, ctx->input("global_replica_id", &global_replica_id_tensor), done);
+    const int32_t global_replica_id_value = global_replica_id_tensor->scalar<int32_t>()();
 
-        auto work_func = [ctx, global_replica_id_value, done]() {
-            // Ensure that within the callback, the proper GPU settings are
-            // configured.
-            auto stream = ctx->op_device_context()->stream();
-            ScopedActivateExecutorContext scoped_activation{stream->parent()};
+    auto work_func = [ctx, global_replica_id_value, done]() {
+      // Ensure that within the callback, the proper GPU settings are
+      // configured.
+      auto stream = ctx->op_device_context()->stream();
+      ScopedActivateExecutorContext scoped_activation{stream->parent()};
 
-            Tensor const *emb_handle_tensor = nullptr;
-            OP_REQUIRES_OK_ASYNC(ctx, ctx->input("emb_handle", &emb_handle_tensor), done);
-            Tensor const *top_gradient_tensor = nullptr;
-            OP_REQUIRES_OK_ASYNC(ctx, ctx->input("top_gradient", &top_gradient_tensor), done);
+      Tensor const* emb_handle_tensor = nullptr;
+      OP_REQUIRES_OK_ASYNC(ctx, ctx->input("emb_handle", &emb_handle_tensor), done);
+      Tensor const* top_gradient_tensor = nullptr;
+      OP_REQUIRES_OK_ASYNC(ctx, ctx->input("top_gradient", &top_gradient_tensor), done);
 
-            try {
-                // get grad shape
-                TensorShape grad_shape;
-                SparseOperationKit::Facade::instance()->get_grad_shape(global_replica_id_value,
-                                                                    emb_handle_tensor, 
-                                                                    grad_shape);
-                Tensor* gradient_tensor = nullptr;
-                OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_output(0, grad_shape, &gradient_tensor), done);
-                Tensor* value_index_tensor = nullptr;
-                OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_output(1, {gradient_tensor->dim_size(0)}, &value_index_tensor), done);
-
-                // do backward propagation
-                SparseOperationKit::Facade::instance()->backward(emb_handle_tensor,
-                                                            global_replica_id_value,
-                                                            top_gradient_tensor,
-                                                            gradient_tensor,
-                                                            value_index_tensor);
-            } catch (std::exception const &error) {
-                ctx->SetStatus(errors::Aborted(error.what()));
-                done(); // if errors happens, let parent thread know.
-                return;
-            }
-            done(); // no error happens
-        };
-
-        SOK_TF_SCHE_ASYNC(ctx, 
-            SparseOperationKit::Facade::instance()->Schedule(global_replica_id_value, std::move(work_func)), 
+      try {
+        // get grad shape
+        TensorShape grad_shape;
+        SparseOperationKit::Facade::instance()->get_grad_shape(global_replica_id_value,
+                                                               emb_handle_tensor, grad_shape);
+        Tensor* gradient_tensor = nullptr;
+        OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_output(0, grad_shape, &gradient_tensor), done);
+        Tensor* value_index_tensor = nullptr;
+        OP_REQUIRES_OK_ASYNC(
+            ctx, ctx->allocate_output(1, {gradient_tensor->dim_size(0)}, &value_index_tensor),
             done);
-    }
+
+        // do backward propagation
+        SparseOperationKit::Facade::instance()->backward(emb_handle_tensor, global_replica_id_value,
+                                                         top_gradient_tensor, gradient_tensor,
+                                                         value_index_tensor);
+      } catch (std::exception const& error) {
+        ctx->SetStatus(errors::Aborted(error.what()));
+        done();  // if errors happens, let parent thread know.
+        return;
+      }
+      done();  // no error happens
+    };
+
+    SOK_TF_SCHE_ASYNC(ctx,
+                      SparseOperationKit::Facade::instance()->Schedule(global_replica_id_value,
+                                                                       std::move(work_func)),
+                      done);
+  }
 };
 #else
 template <typename Device>
 class PluginBpropOp : public OpKernel {
-public:
-    explicit PluginBpropOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
-    void Compute(OpKernelContext* ctx) override {
-        Tensor const *emb_handle_tensor = nullptr;
-        OP_REQUIRES_OK(ctx, ctx->input("emb_handle", &emb_handle_tensor));
-        Tensor const *global_replica_id_tensor = nullptr;
-        OP_REQUIRES_OK(ctx, ctx->input("global_replica_id", &global_replica_id_tensor));
-        Tensor const *top_gradient_tensor = nullptr;
-        OP_REQUIRES_OK(ctx, ctx->input("top_gradient", &top_gradient_tensor));
+ public:
+  explicit PluginBpropOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+  void Compute(OpKernelContext* ctx) override {
+    Tensor const* emb_handle_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("emb_handle", &emb_handle_tensor));
+    Tensor const* global_replica_id_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("global_replica_id", &global_replica_id_tensor));
+    Tensor const* top_gradient_tensor = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("top_gradient", &top_gradient_tensor));
 
-        // In TensorFlow, the gradient for GatherOp is IndexedSlices tensor.
-        // So we would better return such tensor to tensorflow.
-        // For IndexedSlices, it contains: 
-        // values: A tensor of any dtype with [D0, D1, ..., Dn]
-        // indices: A 1-D integer tensor with shape [D0]
-        // dense_shape: A 1-D integer tensor containing the shape of the corresponding dense tensor.
-        
-        try {
-            // get grad shape
-            TensorShape grad_shape;
-            SparseOperationKit::Facade::instance()->get_grad_shape(global_replica_id_tensor->scalar<int32_t>()(),
-                                                                emb_handle_tensor, 
-                                                                grad_shape);
-            Tensor* gradient_tensor = nullptr;
-            OP_REQUIRES_OK(ctx, ctx->allocate_output(0, grad_shape, &gradient_tensor));
-            Tensor* value_index_tensor = nullptr;
-            OP_REQUIRES_OK(ctx, ctx->allocate_output(1, {gradient_tensor->dim_size(0)}, &value_index_tensor));
+    // In TensorFlow, the gradient for GatherOp is IndexedSlices tensor.
+    // So we would better return such tensor to tensorflow.
+    // For IndexedSlices, it contains:
+    // values: A tensor of any dtype with [D0, D1, ..., Dn]
+    // indices: A 1-D integer tensor with shape [D0]
+    // dense_shape: A 1-D integer tensor containing the shape of the corresponding dense tensor.
 
-            // do backward propagation
-            SparseOperationKit::Facade::instance()->backward(emb_handle_tensor,
-                                                          global_replica_id_tensor->scalar<int32_t>()(),
-                                                          top_gradient_tensor,
-                                                          gradient_tensor,
-                                                          value_index_tensor);
-        } catch (std::exception const &error) {
-            ctx->SetStatus(errors::Aborted(error.what()));
-            return;
-        }
+    try {
+      // get grad shape
+      TensorShape grad_shape;
+      SparseOperationKit::Facade::instance()->get_grad_shape(
+          global_replica_id_tensor->scalar<int32_t>()(), emb_handle_tensor, grad_shape);
+      Tensor* gradient_tensor = nullptr;
+      OP_REQUIRES_OK(ctx, ctx->allocate_output(0, grad_shape, &gradient_tensor));
+      Tensor* value_index_tensor = nullptr;
+      OP_REQUIRES_OK(ctx,
+                     ctx->allocate_output(1, {gradient_tensor->dim_size(0)}, &value_index_tensor));
+
+      // do backward propagation
+      SparseOperationKit::Facade::instance()->backward(
+          emb_handle_tensor, global_replica_id_tensor->scalar<int32_t>()(), top_gradient_tensor,
+          gradient_tensor, value_index_tensor);
+    } catch (std::exception const& error) {
+      ctx->SetStatus(errors::Aborted(error.what()));
+      return;
     }
+  }
 };
 #endif
 
-REGISTER_KERNEL_BUILDER(Name("PluginBprop")
-                        .Device(DEVICE_GPU)
-                        .HostMemory("emb_handle")
-                        .HostMemory("global_replica_id"),
-                        PluginBpropOp<GPUDevice>);
+REGISTER_KERNEL_BUILDER(
+    Name("PluginBprop").Device(DEVICE_GPU).HostMemory("emb_handle").HostMemory("global_replica_id"),
+    PluginBpropOp<GPUDevice>);
 
-
-} // namespace tensorflow
+}  // namespace tensorflow

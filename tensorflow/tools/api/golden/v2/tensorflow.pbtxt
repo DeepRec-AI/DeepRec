@@ -906,11 +906,51 @@ tf_module {
   }
   member_method {
     name: "initialize_kv_variable_op"
-    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'4096\', \'None\'], "
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
   }
   member_method {
     name: "io_kafka_dataset"
     argspec: "args=[\'topics\', \'servers\', \'group\', \'eof\', \'timeout\', \'config_global\', \'config_topic\', \'message_key\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_kafka_group_readable_init"
+    argspec: "args=[\'topics\', \'metadata\', \'container\', \'shared_name\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "io_kafka_group_readable_next"
+    argspec: "args=[\'input\', \'index\', \'message_poll_timeout\', \'stream_timeout\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_kafka_iterable_init"
+    argspec: "args=[\'topic\', \'partition\', \'offset\', \'metadata\', \'container\', \'shared_name\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "io_kafka_readable_init"
+    argspec: "args=[\'topic\', \'partition\', \'offset\', \'metadata\', \'container\', \'shared_name\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "io_kafka_readable_next"
+    argspec: "args=[\'input\', \'index\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_kafka_readable_read"
+    argspec: "args=[\'input\', \'start\', \'stop\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_kafka_readable_spec"
+    argspec: "args=[\'input\', \'start\', \'stop\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_layer_kafka_call"
+    argspec: "args=[\'input\', \'content\', \'resource\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
+    name: "io_layer_kafka_init"
+    argspec: "args=[\'topic\', \'partition\', \'metadata\', \'container\', \'shared_name\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'None\'], "
+  }
+  member_method {
+    name: "io_layer_kafka_sync"
+    argspec: "args=[\'resource\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "io_write_kafka"
@@ -938,15 +978,11 @@ tf_module {
   }
   member_method {
     name: "kv_resource_import_v2"
-    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'4096\', \'None\'], "
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
   }
   member_method {
     name: "kv_resource_incr_import"
     argspec: "args=[\'prefix\', \'resource_handle\', \'tensor_names\', \'empty_key\', \'value\', \'partition_id\', \'partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'1\', \'None\'], "
-  }
-  member_method {
-    name: "kv_resource_insert"
-    argspec: "args=[\'resource_handle\', \'keys\', \'values\', \'versions\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "kv_resource_scatter_add"
@@ -1213,6 +1249,10 @@ tf_module {
     argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
+    name: "resource_sparse_apply_adam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
     name: "resource_sparse_apply_adam_async"
     argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'apply_sparse_rmsprop\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
   }
@@ -1311,6 +1351,10 @@ tf_module {
   member_method {
     name: "sparse_apply_adagrad_decay"
     argspec: "args=[\'var\', \'accum\', \'accum_decay_power\', \'lr\', \'accum_decay_step\', \'accum_decay_rate\', \'accum_baseline\', \'global_step\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "sparse_apply_adam"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "sparse_apply_adam_async"

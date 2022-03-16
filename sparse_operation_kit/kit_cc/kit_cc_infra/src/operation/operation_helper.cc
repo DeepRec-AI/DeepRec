@@ -18,11 +18,11 @@
 
 namespace SparseOperationKit {
 
-Registry::Registry(): mu_() {}
+Registry::Registry() : mu_() {}
 
 Registry* Registry::instance() {
-    static Registry instance;
-    return &instance;
+  static Registry instance;
+  return &instance;
 }
 
-} // namespace SparseOperationKit
+}  // namespace SparseOperationKit

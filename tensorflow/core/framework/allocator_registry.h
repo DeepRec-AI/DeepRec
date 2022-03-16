@@ -80,6 +80,10 @@ class AllocatorFactoryRegistry {
   //If use PMEMallocator, then factory pick this one
   Allocator* GetPMEMAllocator();
 
+#ifdef TENSORFLOW_USE_PMEM
+  Allocator* GetExperimentalPMEMAllocator(const std::string& pmem_path, size_t pmem_size);
+#endif
+
   Allocator* GetEVAllocator();
 
   // Returns 'best fit' SubAllocator.  First look for the highest priority

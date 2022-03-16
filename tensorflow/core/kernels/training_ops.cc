@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/training_op_helpers.h"
 #include "tensorflow/core/kernels/training_ops.h"
 #include "tensorflow/core/kernels/variable_ops.h"
+#include "tensorflow/core/util/work_sharder.h"
 
 #ifdef TENSORFLOW_USE_SYCL
 #include "tensorflow/core/common_runtime/sycl/sycl_util.h"
@@ -3414,6 +3415,203 @@ REGISTER_KERNELS(GPU, Eigen::half);
 REGISTER_KERNELS(GPU, float);
 REGISTER_KERNELS(GPU, double);
 #endif
+#undef REGISTER_CPU_KERNELS
+#undef REGISTER_KERNELS
+
+// Note, this op works on cpu only.
+template <typename Device, typename T, typename Tindex>
+class SparseApplyAdamOp : public OpKernel {
+ public:
+  explicit SparseApplyAdamOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("use_locking", &use_exclusive_lock_));
+  }
+
+  void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
+    const bool sparse = true;
+    auto locks = MaybeLockVariableInputMutexesInOrder<Device, T>(
+        ctx, use_exclusive_lock_, sparse, {0, 1, 2});
+    Tensor var;
+    OP_REQUIRES_OK(ctx, GetInputTensorFromVariable<Device, T>(
+                            ctx, 0, use_exclusive_lock_, true, &var));
+    Tensor m;
+    OP_REQUIRES_OK(ctx, GetInputTensorFromVariable<Device, T>(
+                            ctx, 1, use_exclusive_lock_, true, &m));
+    Tensor v;
+    OP_REQUIRES_OK(ctx, GetInputTensorFromVariable<Device, T>(
+                            ctx, 2, use_exclusive_lock_, true, &v));
+
+    OP_REQUIRES(
+        ctx, var.IsInitialized(),
+        errors::FailedPrecondition(
+            "Attempting to use uninitialized variables: ", requested_input(0)));
+    OP_REQUIRES(
+        ctx, m.IsInitialized(),
+        errors::FailedPrecondition(
+            "Attempting to use uninitialized variables: ", requested_input(1)));
+    OP_REQUIRES(
+        ctx, v.IsInitialized(),
+        errors::FailedPrecondition(
+            "Attempting to use uninitialized variables: ", requested_input(2)));
+    OP_REQUIRES(
+        ctx, var.shape().IsSameSize(m.shape()),
+        errors::InvalidArgument("var and m do not have the same shape",
+                                var.shape().DebugString(), " ",
+                                m.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, var.shape().IsSameSize(v.shape()),
+        errors::InvalidArgument("var and v do not have the same shape",
+                                var.shape().DebugString(), " ",
+                                v.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsVectorOrHigher(var.shape()),
+        errors::InvalidArgument("var must be at least 1 dimensional"));
+
+    const Tensor& beta1_power = ctx->input(3);
+    const Tensor& beta2_power = ctx->input(4);
+    const Tensor& lr = ctx->input(5);
+    const Tensor& beta1 = ctx->input(6);
+    const Tensor& beta2 = ctx->input(7);
+    const Tensor& epsilon = ctx->input(8);
+    const Tensor& grad = ctx->input(9);
+    const Tensor& indices = ctx->input(10);
+
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(beta1_power.shape()),
+        errors::InvalidArgument("beta1_power is not a scalar: ",
+                                beta1_power.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(beta2_power.shape()),
+        errors::InvalidArgument("beta2_power is not a scalar: ",
+                                beta2_power.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(lr.shape()),
+        errors::InvalidArgument("lr is not a scalar: ",
+                                lr.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(beta1.shape()),
+        errors::InvalidArgument("beta1 is not a scalar: ",
+                                beta1.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(beta2.shape()),
+        errors::InvalidArgument("beta2 is not a scalar: ",
+                                beta2.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(epsilon.shape()),
+        errors::InvalidArgument("epsilon is not a scalar: ",
+                                epsilon.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsVector(indices.shape()),
+        errors::InvalidArgument("indices must be one-dimensional"));
+
+    int64 inner_dim = 1;
+    for (int d = 1; d < var.dims(); d++) {
+      OP_REQUIRES(
+          ctx, var.dim_size(d) == grad.dim_size(d),
+          errors::InvalidArgument(strings::StrCat(
+                "var and grad must match in dimension ", d)));
+      inner_dim *= grad.dim_size(d);
+    }
+    OP_REQUIRES(
+        ctx, inner_dim > 0,
+        errors::InvalidArgument(
+            "Inner dimension should be greater than zero."));
+
+    const Tindex N = indices.dim_size(0);
+    OP_REQUIRES(
+        ctx, grad.dim_size(0) == N,
+        errors::InvalidArgument(
+            "grad must be the same size as indices in the first dimension."));
+
+    if (N > 0) {
+      T beta1_power_scalar = beta1_power.scalar<T>()();
+      T beta2_power_scalar = beta2_power.scalar<T>()();
+      T lr_scalar = lr.scalar<T>()();
+      T beta1_scalar = beta1.scalar<T>()();
+      T beta2_scalar = beta2.scalar<T>()();
+      T epsilon_scalar = epsilon.scalar<T>()();
+      const T alpha = lr_scalar *
+          Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_scalar) /
+          (static_cast<T>(1) - beta1_power_scalar);
+
+      auto DoWork = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
+           &beta1_power_scalar, &beta2_power_scalar, &lr_scalar, &beta1_scalar,
+           &beta2_scalar, &epsilon_scalar, &alpha] (int64 start_i, int64 limit_i) {
+        if (inner_dim > 1) {
+          auto var_flat = var.flat_outer_dims<T>();
+          auto m_flat = m.flat_outer_dims<T>();
+          auto v_flat = v.flat_outer_dims<T>();
+          auto grad_flat = grad.flat_outer_dims<T>();
+          auto indices_vec = indices.vec<Tindex>();
+          const Tindex first_dim_size = var.dim_size(0);
+
+          for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            const Tindex index = internal::SubtleMustCopy(indices_vec(i));
+            OP_REQUIRES(
+              ctx, FastBoundsCheck(index, first_dim_size),
+              errors::InvalidArgument(strings::StrCat("Index ", index,
+                      " at offset ", i, " in indices is out of range")));
+            auto m_a = m_flat.template chip<0>(index);
+            auto v_a = v_flat.template chip<0>(index);
+            auto g = grad_flat.template chip<0>(i);
+            auto var_i = var_flat.template chip<0>(index);
+            m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
+            v_a += (g.square() - v_a) * (static_cast<T>(1) - beta2_scalar);
+            var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar);
+          }
+        } else {
+          auto var_flat = var.flat<T>();
+          auto m_flat = m.flat<T>();
+          auto v_flat = v.flat<T>();
+          auto grad_flat = grad.flat<T>();
+          auto indices_vec = indices.vec<Tindex>();
+          const Tindex first_dim_size = m_flat.size();
+          for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            const Tindex index = internal::SubtleMustCopy(indices_vec(i));
+            OP_REQUIRES(
+              ctx, FastBoundsCheck(index, first_dim_size),
+              errors::InvalidArgument(strings::StrCat("Index ", index,
+                      " at offset ", i, " in indices is out of range")));
+            const T& g = grad_flat(i);
+            T& m_a = m_flat(index);
+            T& v_a = v_flat(index);
+            m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
+            v_a += (g * g - v_a) * (static_cast<T>(1) - beta2_scalar);
+            var_flat(index) -= (m_a * alpha) / (Eigen::numext::sqrt(v_a) + epsilon_scalar);
+          }
+        }
+      };
+
+      const int64 cost = 1000;
+      auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
+      Shard(worker_threads.num_threads, worker_threads.workers, N, cost, DoWork);
+    }
+
+    MaybeForwardRefInputToRefOutput(ctx, 0, 0);
+  }
+
+ private:
+  bool use_exclusive_lock_;
+};
+
+#define REGISTER_KERNELS(T, Tindices)                                 \
+  REGISTER_KERNEL_BUILDER(Name("SparseApplyAdam")                     \
+                              .Device(DEVICE_CPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          SparseApplyAdamOp<CPUDevice, T, Tindices>); \
+  REGISTER_KERNEL_BUILDER(Name("ResourceSparseApplyAdam")             \
+                              .Device(DEVICE_CPU)                     \
+                              .TypeConstraint<T>("T")                 \
+                              .TypeConstraint<Tindices>("Tindices"),  \
+                          SparseApplyAdamOp<CPUDevice, T, Tindices>);
+#define REGISTER_CPU_KERNELS(T) \
+  REGISTER_KERNELS(T, int32);   \
+  REGISTER_KERNELS(T, int64);
+
+TF_CALL_half(REGISTER_CPU_KERNELS);
+TF_CALL_float(REGISTER_CPU_KERNELS);
+TF_CALL_double(REGISTER_CPU_KERNELS);
+
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
 

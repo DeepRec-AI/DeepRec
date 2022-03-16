@@ -1,6 +1,7 @@
-<h1 align="center">
-    DeepRec
-</h1>
+
+![DeepRec Logo](https://github.com/alibaba/DeepRec/blob/main/docs/deeprec_logo.png)
+
+--------------------------------------------------------------------------------
 
 ## **Introduction**
 DeepRec is a recommendation engine based on [TensorFlow 1.15](https://www.tensorflow.org/), [Intel-TensorFlow](https://github.com/Intel-tensorflow/tensorflow) and [NVIDIA-TensorFlow](https://github.com/NVIDIA/tensorflow).
@@ -131,6 +132,12 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly
 ## **User Document (Chinese)**
 
 [https://deeprec.rtfd.io](https://deeprec.rtfd.io)
+
+## **Contact Us**
+
+Join the Official Discussion Group on DingTalk
+
+<img src="docs/README/deeprec_dingtalk.png" width="200">
 
 ## **License**
 

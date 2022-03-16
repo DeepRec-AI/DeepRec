@@ -20,15 +20,15 @@
 namespace SparseOperationKit {
 
 template <typename Func, typename TIN>
-__global__ void boolean_vector(const TIN* input, const size_t elem_size, Func fn, bool* boolean_out) {
-    size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
-    size_t grid = blockDim.x * gridDim.x;
-    for (size_t i = gid; i < elem_size; i += grid) {
-        boolean_out[i] = fn(input[i]);
-    }
+__global__ void boolean_vector(const TIN* input, const size_t elem_size, Func fn,
+                               bool* boolean_out) {
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t grid = blockDim.x * gridDim.x;
+  for (size_t i = gid; i < elem_size; i += grid) {
+    boolean_out[i] = fn(input[i]);
+  }
 }
 
+}  // namespace SparseOperationKit
 
-} // namespace SparseOperationKit
-
-#endif // CONVERSION_KERNELS_CUH_
+#endif  // CONVERSION_KERNELS_CUH_

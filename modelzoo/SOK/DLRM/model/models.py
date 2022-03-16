@@ -38,7 +38,7 @@ class TFEmbedding(tf.keras.layers.Layer):
         for size in self._vocab_sizes:
             embedding = tf.keras.layers.Embedding(
                 input_dim=size, output_dim=self._embedding_vec_size
-            )
+                )
             self._keras_embedding_layers.append(embedding)
 
     def call(self, inputs, training=True):
@@ -49,12 +49,10 @@ class TFEmbedding(tf.keras.layers.Layer):
         for i in range(26):
             val = inputs[:, i]
             output.append(self._keras_embedding_layers[i](val))
+
         stack_vectors = tf.stack(output, 1)
         emb_vectors = tf.reshape(stack_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
         return emb_vectors
-
-
-
 
 
 class SOKEmbedding(tf.keras.layers.Layer):
@@ -72,7 +70,7 @@ class SOKEmbedding(tf.keras.layers.Layer):
         for i in range(len(vocab_sizes)):
             prefix_sum.append(offset)
             offset += self._vocab_sizes[i]
-        prefix_sum = np.array(prefix_sum).astype(np.int32).reshape(1, -1)
+        prefix_sum = np.array(prefix_sum).astype(np.int64).reshape(1, -1)
         self._vocab_prefix_sum = tf.constant(prefix_sum)
 
 
@@ -84,25 +82,58 @@ class SOKEmbedding(tf.keras.layers.Layer):
             dynamic_input=True,
             use_hashtable=False,
         )
-
+    
     def call(self, inputs, training=True):
         """
         Compute the output of embedding layer.
         Args:
             inputs: [batch_size, 26] int32 tensor
         """
-        # self._vocab_prefix_sum: [1, 26] int32 tensor
-        # fused_inputs: [batch_size, 26] int32 tensor
-        fused_inputs = tf.add(inputs, float(self._vocab_prefix_sum))
-        # fused_inputs: [batch_size*26] int32 tensor
+        fused_inputs = tf.add(tf.cast(inputs, dtype=tf.int64), self._vocab_prefix_sum)
         fused_inputs = tf.reshape(fused_inputs, [-1])
-
-        # emb_vectors: [batch_size*26, embedding_vec_size]
-        emb_vectors = self._sok_embedding(tf.cast(fused_inputs, dtype=tf.int64), training=training)
-        # emb_vectors: [batch_size, 26, embedding_vec_size]
+        fused_inputs, idx = sok.tf.unique(fused_inputs)
+        emb_vectors = self._sok_embedding(fused_inputs, training=training)
+        emb_vectors = tf.gather(emb_vectors, idx)
         emb_vectors = tf.reshape(emb_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
         return emb_vectors
 
+class DeepRecEmbedding(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        vocab_sizes: List[int],
+        embedding_vec_size: int,
+        comm_options=None,
+        **kwargs,
+    ):
+        super(DeepRecEmbedding, self).__init__(**kwargs)
+        self._vocab_sizes = vocab_sizes
+        self._embedding_vec_size = embedding_vec_size
+        self._comm_options = comm_options
+
+        self._vars_name = []
+        self._vars = []
+        for i in range(26):
+            self._vars_name.append("var_{}".format(i)) 
+        for i in range(26):
+            var = tf.get_embedding_variable(self._vars_name[i],
+                            embedding_dim=128,
+                            initializer=tf.ones_initializer(tf.float32),
+                            partitioner=tf.fixed_size_partitioner(num_shards=1))
+            self._vars.append(var)
+
+    def call(self, inputs, training=True):
+        """
+        compute the output of the embedding layer
+        """
+        output = []
+        for i in range(26):
+            input = tf.cast(inputs[:, i], tf.int64)
+            output.append(tf.nn.embedding_lookup(self._vars[i], tf.cast(input, tf.int64)))
+
+        stack_vectors = tf.stack(output, 1)
+        emb_vectors = tf.reshape(stack_vectors, [-1, len(self._vocab_sizes), self._embedding_vec_size])
+        
+        return emb_vectors
 
 
 class MLP(tf.keras.layers.Layer):
@@ -131,9 +162,12 @@ class MLP(tf.keras.layers.Layer):
         self._sublayers = []
         for i, num_units in enumerate(units):
 
+            kernel_init = tf.keras.initializers.glorot_normal()
+            bias_init = tf.keras.initializers.RandomNormal(stddev=math.sqrt(1. / num_units))
             self._sublayers.append(
                 tf.keras.layers.Dense(
                     num_units, use_bias=use_bias,
+            #        kernel_initializer=kernel_init, bias_initializer=bias_init,
                     activation=activation if i < (len(units) - 1) else final_activation))
 
 
@@ -248,21 +282,24 @@ class DLRM(tf.keras.models.Model):
         self._vocab_size = vocab_size
         self._num_dense_features = num_dense_features
         self._embedding_layer_str = embedding_layer
-        self._vocab_size_dict = dict(
-            zip([idx for idx in range(len(self._vocab_size))], self._vocab_size)
-        )
         self._embedding_vec_size = embedding_vec_size
         self._comm_options = comm_options
 
         if self._embedding_layer_str == "TF":
             self._embedding_layer = TFEmbedding(
-                self._vocab_size_dict,
+                self._vocab_size,
                 self._embedding_vec_size,
                 comm_options=self._comm_options,
             )
         elif self._embedding_layer_str == "SOK":
             self._embedding_layer = SOKEmbedding(
-                self._vocab_size_dict, self._embedding_vec_size, num_gpus
+                self._vocab_size, self._embedding_vec_size, num_gpus
+            )
+        elif self._embedding_layer_str == "TF_EV":
+            self._embedding_layer = DeepRecEmbedding(
+                self._vocab_size,
+                self._embedding_vec_size,
+                comm_options=self._comm_options,
             )
         else:
             raise ValueError(
@@ -272,19 +309,14 @@ class DLRM(tf.keras.models.Model):
             )
 
         self._bottom_stack = MLP(units=bottom_stack_units, final_activation="relu")
-
         self._feature_interaction = DotInteraction(skip_gather=True)
-
         self._top_stack = MLP(units=top_stack_units, final_activation=None)
         
     @property
     def embedding_layer(self):
         return self._embedding_layer
 
-    def call(self, dense, category, training=True):
-        dense_features = dense
-        sparse_features = category
-
+    def call(self, dense_features, sparse_features, training=True):
         dense_embedding_vec = self._bottom_stack(dense_features)
         sparse_embeddings = self._embedding_layer(sparse_features, training=training)
         sparse_embeddings = tf.split(sparse_embeddings,

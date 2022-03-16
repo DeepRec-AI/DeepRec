@@ -16,7 +16,9 @@
 
 #pragma once
 #include <cuda_runtime_api.h>
+
 #include <memory>
+
 #include "tensor2.hpp"
 
 namespace HugeCTR {

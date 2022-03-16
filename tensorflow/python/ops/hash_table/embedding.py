@@ -23,6 +23,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import abc
+
 from tensorflow.python.ops.hash_table import hash_table, admit_strategy
 from tensorflow.python.framework import ops
 from tensorflow.python.util.tf_export import tf_export
@@ -44,14 +46,17 @@ from tensorflow.python.util.tf_export import tf_export
 
 class EmbeddingLookupContext(object):
   def __init__(
-      self, distributed_hash_table, origin_key, partitioned_keys,
+      self, input_hash_table, origin_key, partitioned_keys,
       filtered_keys, ids):
-    self._distributed_hash_table = distributed_hash_table
+    self._hash_table = input_hash_table
     self._origin_key = origin_key
     self._partitioned_keys = partitioned_keys
     self._filtered_keys = filtered_keys
     self._ids = ids
-    self._partitions = distributed_hash_table.partitions
+    if isinstance(input_hash_table, hash_table.DistributedHashTable):
+      self._partitions = input_hash_table.partitions
+    else:
+      self._partitions = [input_hash_table]
 
     self._device_dict = {}
     for i in range(len(self._partitions)):
@@ -63,8 +68,8 @@ class EmbeddingLookupContext(object):
 
     self._result = {}
 
-  def distributed_hash_table(self):
-    return self._distributed_hash_table
+  def hash_table(self):
+    return self._hash_table
 
   def devices(self):
     return self._device_dict.keys()
@@ -122,6 +127,10 @@ class EmbeddingLookupHook(object):
   def __exit__(self, exc_type, exc_val, exc_tb):
     get_embedding_lookup_scope().remove_hook(self)
 
+  @abc.abstractmethod
+  def get_config(self):
+    raise NotImplementedError('Embedding lookup hook get config function not implemented.')
+
 @tf_export("hash_table.BloomFilterLookupHook")
 class BloomFilterLookupHook(EmbeddingLookupHook):
   def __init__(self, minimum_frequency, max_element_size=None,
@@ -131,6 +140,14 @@ class BloomFilterLookupHook(EmbeddingLookupHook):
     self._max_element_size = max_element_size
     self._false_positive_probability = false_positive_probability
     self._name = name
+
+  def get_config(self):
+    return {
+      'minimum_frequency': self._minimum_frequency,
+      'max_element_size': self._max_element_size,
+      'false_positive_probability': self._false_positive_probability,
+      'name': self._name
+      }
 
   def get_admit_strategy_factory(self, distributed_hash_table):
     def wrapper(hash_table):
@@ -159,7 +176,7 @@ class EmbeddingLookupScope(object):
   def hooks(self):
     return list(self._hooks)
 
-  def embedding_lookup(self, hash_table, origin_keys, default_value=0, counts=None, name=None):
+  def embedding_lookup_distribute_hash(self, hash_table, origin_keys, default_value=0, counts=None, name=None):
     with ops.name_scope(name, "EmbeddingLookupScope_EmbeddingLookup") as name:
       admit_strategy_factory = None
       for hook in self._hooks:
@@ -180,6 +197,31 @@ class EmbeddingLookupScope(object):
         hook.on_embedding_lookup(ctx)
       return result, ctx.result()
 
+  def embedding_lookup_hash(self, hash_table, origin_keys, default_value=0, counts=None, name=None):
+    with ops.name_scope(name, "EmbeddingLookupScope_EmbeddingLookup") as name:
+      admit_strategy_factory = None
+      for hook in self._hooks:
+        admit_strategy_factory_x = hook.get_admit_strategy_factory(hash_table)
+        if admit_strategy_factory_x is not None:
+          if admit_strategy_factory is not None:
+            raise RuntimeError("Only one embedding hook should set admit strategy")
+          admit_strategy_factory = admit_strategy_factory_x
+      if admit_strategy_factory is None:
+        admit_strategy = lambda ht: None
+      else:
+        admit_strategy = admit_strategy_factory
+      ids = hash_table.gen_ids(origin_keys,
+          admit_strategy(hash_table), counts)
+      result = hash_table.lookup_by_id(ids, default_value)
+      filtered_key = None
+      if admit_strategy_factory is not None:
+        mask = math_ops.not_equal(ids, -1)
+        filtered_key = array_ops.boolean_mask(origin_keys, mask)
+      ctx = EmbeddingLookupContext(hash_table, origin_keys, [origin_keys], [filtered_key], [ids])
+      for hook in self._hooks:
+        hook.on_embedding_lookup(ctx)
+      return result, ctx.result()
+
 _EMBEDDINGSCOPE_KEY = "embedding_lookup_scope_key"
 
 def get_embedding_lookup_scope():
@@ -192,8 +234,16 @@ def get_embedding_lookup_scope():
   return scope
 
 @tf_export("hash_table.embedding_lookup")
-def embedding_lookup(hash_table, origin_keys, default_value=0, counts=None, name=None):
-  return get_embedding_lookup_scope().embedding_lookup(hash_table, origin_keys, default_value, counts, name)
+def embedding_lookup(input_hash_table, origin_keys, default_value=0, counts=None, name=None):
+  if isinstance(input_hash_table, hash_table.DistributedHashTable):
+    lookup_func = get_embedding_lookup_scope().embedding_lookup_distribute_hash
+  elif isinstance(input_hash_table, hash_table.HashTable):
+    lookup_func = get_embedding_lookup_scope().embedding_lookup_hash
+  else:
+    raise NotImplementedError(
+      "Hash table embedding lookup only support"
+      " `DistributedHashTable` or `HashTable`")
+  return lookup_func(input_hash_table, origin_keys, default_value, counts, name)
 
 #TODO: add a api to return embedding result 2
 @tf_export("hash_table.embedding_lookup_sparse")
@@ -328,3 +378,6 @@ class ReadOnlyHook(EmbeddingLookupHook):
       with ops.device(ht.device):
         self.admit[ht.device] = gen_hash_ops.read_only_hash_table_admit_strategy_op()
     return self.admit[ht.device]
+
+  def get_config(self):
+    return {}

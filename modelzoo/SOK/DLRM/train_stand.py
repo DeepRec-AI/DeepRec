@@ -30,7 +30,7 @@ import sparse_operation_kit as sok
 import model.utils as utils
 from model.models import DLRM
 import model.strategy_wrapper as strategy_wrapper
-from model.dataset import BinaryDataset,BinaryDataset2
+from model.dataset import BinaryDataset, BinaryDataset2
 import time
 import sys
 
@@ -114,20 +114,13 @@ def main(args):
         os.path.join(args.test_file_pattern, "dense.bin"),
         os.path.join(args.test_file_pattern, "category.bin"),
         batch_size=batch_size,
-        drop_last=False,
+        drop_last=True,
         prefetch=10,
         global_rank=hvd.rank(),
         global_size=hvd.size(),
     )
 
     
-    if args.distributed_tool != "onedevice":
-        args.train_file_pattern = utils.shard_filenames(
-            args.train_file_pattern, args.gpu_num, args.task_id
-        )
-        args.test_file_pattern = utils.shard_filenames(
-            args.test_file_pattern, args.gpu_num, args.task_id
-        )
 
     loss_fn = tf.keras.losses.BinaryCrossentropy(from_logits=True, reduction="none")
 
@@ -144,14 +137,15 @@ def main(args):
             emb_vars, other_vars = utils.split_embedding_variables_from_others(model)
             grads = tf.gradients(loss, emb_vars + other_vars, colocate_gradients_with_ops=True, unconnected_gradients=tf.UnconnectedGradients.NONE)
             emb_grads, other_grads = grads[: len(emb_vars)], grads[len(emb_vars) :]
-            emb_train_op = utils.apply_gradients(embedding_optimizer,emb_vars, emb_grads, args.embedding_layer == "SOK")
-            if args.embedding_layer != "SOK":
-                emb_grads = strategy.reduce("sum", emb_grads)
+            
+            with tf.control_dependencies([*emb_grads]):
+                emb_train_op = utils.apply_gradients(embedding_optimizer,emb_vars, emb_grads, args.embedding_layer == "SOK")
+                if args.embedding_layer != "SOK":
+                    emb_grads = strategy.reduce("sum", emb_grads)
 
             with tf.control_dependencies([*other_grads]):
                 other_grads = strategy.reduce("sum", other_grads)
                 other_train_op = utils.apply_gradients(dense_optimizer, other_vars, other_grads, False)
-
             if first_batch:
                 strategy.broadcast_variables(other_vars)
                 strategy.broadcast_variables(dense_optimizer.variables())
@@ -161,8 +155,6 @@ def main(args):
                     strategy.broadcast_variables(embedding_optimizer.variables())
 
             with tf.control_dependencies([emb_train_op, other_train_op]):
-                
-                loss = strategy.reduce("sum", loss)
                 loss = tf.identity(loss)
                 return loss
         return strategy.run(_step_fn, dense, category, labels)
@@ -182,6 +174,9 @@ def main(args):
     config = tf.ConfigProto()
     config.log_device_placement = False
     with tf.Session(config=config) as sess:
+        if args.embedding_layer == "TF_EV":
+            sess.run(tf.get_collection(tf.GraphKeys.EV_INIT_VAR_OPS))
+            sess.run(tf.get_collection(tf.GraphKeys.EV_INIT_SLOT_OPS))
         if args.embedding_layer == "SOK":
             sess.run(sok_init_op)
         sess.run([init_op])
@@ -225,7 +220,7 @@ if __name__ == "__main__":
     parser.add_argument("--global_batch_size", type=int, required=True)
     parser.add_argument("--train_file_pattern", type=str, required=True)
     parser.add_argument("--test_file_pattern", type=str, required=True)
-    parser.add_argument("--embedding_layer", type=str, choices=["TF", "SOK"], required=True)
+    parser.add_argument("--embedding_layer", type=str, choices=["TF", "SOK", "TF_EV"], required=True)
     parser.add_argument("--embedding_vec_size", type=int, required=True)
     parser.add_argument("--embedding_optimizer", type=str, required=False, default="SGD")
     parser.add_argument("--bottom_stack", type=int, nargs="+", required=True)
@@ -239,7 +234,7 @@ if __name__ == "__main__":
     parser.add_argument("--decay_start_steps", type=int, required=False, default=70000)
     args = parser.parse_args()
 
-    args.vocab_size_list =     vocab_sizes = [
+    args.vocab_size_list  = [
         39884406,   39043,      17289,      7420,       20263,     3,
         7120,       1543,       63,         38532951,   2953546,   403346,
         10,         2208,       11938,      155,        4,         976,
