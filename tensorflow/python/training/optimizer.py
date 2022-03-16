@@ -688,6 +688,8 @@ class Optimizer(
               update_ops.append(gen_io_ops.record_sparse_indices(grad.indices, var_name=scope_name))
               for slot_name in self.get_slot_names():
                 slot = self.get_slot(var, slot_name)
+                if not slot:
+                  continue
                 slot._is_sparse = True
                 update_ops.append(gen_io_ops.record_sparse_indices(grad.indices, var_name=slot.op.name))
         if global_step is None:
