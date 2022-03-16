@@ -263,6 +263,10 @@ class EmbeddingVar : public ResourceBase {
     emb_config_.slot_num = slot_num;
   }
 
+  int64 GetSlotNum() {
+    return emb_config_.slot_num;
+  }
+
   embedding::BatchCache<K>* Cache() {
     return storage_manager_->Cache();
   }

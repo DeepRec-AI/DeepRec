@@ -39,6 +39,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.framework.embedding import config_pb2
 from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
@@ -94,7 +95,6 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         steps_to_live=primary._steps_to_live,
         ht_partition_num=primary._ht_partition_num)
     else:
-      slotnum_op = ops.convert_to_tensor(slot_config.slot_num, preferred_dtype=dtypes.int64)
       filter_strategy = None
       if primary._filter_freq != 0:
         if primary._max_element_size != 0:
@@ -105,8 +105,11 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         else:
           filter_strategy = variables.CounterFilter(filter_freq=primary._filter_freq)
       if slot_config.slot_type is config_pb2.SlotType.EMBEDDING_VARIABLE:
-        primary.initializer._update_input(4, slotnum_op)
-        primary._slotnum_op = slotnum_op 
+        primary.initializer._set_attr("slot_num", attr_value_pb2.AttrValue(i=slot_config.slot_num))
+        primary._slot_num = slot_config.slot_num
+        emb_index = primary._emb_index
+        if primary.block_num > 1:
+          primary = primary._primary
         slot = variable_scope.get_embedding_variable_v2_internal(
           scope, initializer=val, trainable=False,
           embedding_dim=shape, key_dtype=primary._invalid_key_type,
@@ -114,11 +117,11 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
           evconfig=variables.EmbeddingVariableConfig(
             steps_to_live=primary._steps_to_live,
             handle_name=primary._block_handle_name,
-            emb_index=primary._emb_index,
+            emb_index=emb_index,
             block_num=primary.block_num,
             slot_index=slot_config.slot_index,
             primary=primary._primary,
-            primary_slotnum_op=slotnum_op,
+            slot_num=slot_config.slot_num,
             storage_type=primary.storage_type,
             l2_weight_threshold=primary._l2_weight_threshold,
             filter_strategy=filter_strategy)
