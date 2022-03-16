@@ -97,8 +97,8 @@ class PartitionWithPermutationGPU : public OpKernel {
                         cudaMemcpyHostToDevice, device.stream());
 
         PartitionSelectDiv<int64, int64>(
-            ctx, input, partition_permute_init, accu_div,
-            num_partitions_, partitioned_values, partition_permutations);
+            ctx, input, partition_permute_init, accu_div, num_partitions_,
+            partitioned_values, partition_permutations);
       }
     }
   }
@@ -110,9 +110,7 @@ class PartitionWithPermutationGPU : public OpKernel {
   cudaEvent_t memcpy_event_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("PruneInvalidAndFillEmptyRows")
-                            .Device(DEVICE_GPU)
-                            .HostMemory("sp_dense_shape"),
+REGISTER_KERNEL_BUILDER(Name("PartitionWithPermutation").Device(DEVICE_GPU),
                         PartitionWithPermutationGPU);
 }  // namespace tensorflow
 

@@ -84,8 +84,6 @@ REGISTER_OP("PartitionWithPermutation")
     .Input("partition_shapes: num_partitions * int64")
     .Output("partitioned_values: num_partitions * int64")
     .Output("partition_permutations: num_partitions * int64")
-    .Attr("T: type")
-    .Attr("out_idx: {int32, int64} = DT_INT32")
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle unused;
       std::vector<ShapeHandle> unused_list;
@@ -111,7 +109,7 @@ REGISTER_OP("PartitionWithPermutation")
       for (int i = 0; i < num_partitions; i++) {
         unused_list[i] = ctx->MakeShape({ctx->UnknownDim()});
       }
-      ctx->set_output("partitioned", unused_list);
+      ctx->set_output("partitioned_values", unused_list);
       ctx->set_output("partition_permutations", unused_list);
 
       return Status::OK();

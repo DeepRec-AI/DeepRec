@@ -2,14 +2,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow
+import tensorflow as tf
 from tensorflow.python.framework.constant_op import constant
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops import array_ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.ops.kv_variable_ops import EmbeddingVariable
-from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_pre_look_up
+from tensorflow.python.ops.gen_fused_embedding_ops import prune_invalid_and_fill_empty_rows
+from tensorflow.python.ops.gen_fused_embedding_ops import unique_with_multi_output
+from tensorflow.python.ops.gen_fused_embedding_ops import partition_with_permutation
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_post_look_up
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_post_look_up_grad
 from tensorflow.python.util.tf_export import tf_export
@@ -48,30 +50,38 @@ def fused_embedding_lookup_sparse(params,
     if partition_nums != 1:
       raise ValueError("For EmbeddingVariable, do not support partition now")
     # fake shape for now. TBD change in the future
-    partition_shapes = [constant([1, 1], dtype=tensorflow.int64)]
+    partition_shapes = [constant([1, 1], dtype=tf.int64)]
   else:
     partition_shapes = [w.shape for w in params]
 
   with ops.name_scope(name, "fused_embedding_lookup_sparse",
                       params + [sp_ids]) as name:
-    prelookup_out = fused_embedding_sparse_pre_look_up(
-      partition_shapes=partition_shapes,
-        sp_values=sp_ids.values,
-        sp_indices=sp_ids.indices,
-        sp_dense_shape=sp_ids.dense_shape,
-        fill_empty_row=fill_empty_row,
-        default_id=default_id,
-        prune_invalid_id=bool(prune_invalid_ids),
-        partition_strategy=partition_strategy)
 
-    partitioned_values = prelookup_out[0]
-    partition_permutations = prelookup_out[1]
-    row_empty_and_invalid_flags = prelookup_out[2]
-    indices_before_unique = prelookup_out[3]
-    unique_idxs = prelookup_out[4]
-    unique_counts = prelookup_out[5]
-    idx_of_input_to_unique = prelookup_out[6]
-    unique_offsets = prelookup_out[7]
+    sp_values = sp_ids.values
+    sp_indices = sp_ids.indices
+    sp_dense_shape = sp_ids.dense_shape
+    prune_invalid_id = bool(prune_invalid_ids)
+
+    if prune_invalid_ids or fill_empty_row:
+      sp_values, sp_indices, row_empty_and_invalid_flags = prune_invalid_and_fill_empty_rows(
+        fill_empty_row=fill_empty_row,
+        prune_invalid_id=prune_invalid_id,
+        default_id=default_id,
+        sp_values=sp_values,
+        sp_indices=sp_indices,
+        sp_dense_shape=sp_dense_shape,
+      )
+
+    unique_keys, unique_idxs, unique_counts, idx_of_input_to_unique, unique_offsets = unique_with_multi_output(
+      input=sp_values,
+      out_idx=tf.int64,
+    )
+
+    partitioned_values, partition_permutations = partition_with_permutation(
+      partition_strategy=partition_strategy,
+      input=unique_keys,
+      partition_shapes=partition_shapes
+    )
 
     emb_shards = []
     for i in range(partition_nums):
@@ -81,8 +91,8 @@ def fused_embedding_lookup_sparse(params,
 
     emb_vectors, _ = fused_embedding_sparse_post_look_up(
       emb_shards=emb_shards, partition_permutations=partition_permutations,
-      sp_dense_shape=sp_ids.dense_shape,
-      indices_before_unique=indices_before_unique,
+      sp_dense_shape=sp_dense_shape,
+      indices_before_unique=sp_indices,
       row_empty_and_invalid_flags=row_empty_and_invalid_flags,
       unique_counts=unique_counts,
       idx_of_input_to_unique=idx_of_input_to_unique,
