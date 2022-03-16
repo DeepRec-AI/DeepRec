@@ -227,10 +227,12 @@ struct KvLookupInsertKey<GPUDevice, Key, V> {
   }
 };
 
-template <typename Value>
-__global__ void kv_lookup_or_create_emb_kernel(Value* val,
+template <typename Key, typename Value>
+__global__ void kv_lookup_or_create_emb_kernel(const Key* key_first,
+                                               Value* val,
                                                Value* default_v,
                                                int64 dim,
+                                               bool is_use_default_value_tensor,
                                                int32* item_idxs,
                                                int32 slot_idx,
                                                Value** d_banks,
@@ -248,7 +250,13 @@ __global__ void kv_lookup_or_create_emb_kernel(Value* val,
   if (stored == false) {
     d_flags[slot_offset][offset_in_bank] = true;
     for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
-      d_banks[slot_offset][offset_in_bank * dim + id] = default_v[(item_idx % default_v_num) * dim + id];
+      int32 default_v_idx;
+      if (is_use_default_value_tensor) {
+        default_v_idx = item_idx % default_v_num;
+      } else {
+        default_v_idx = *(key_first + item_idx) % default_v_num;
+      }
+      d_banks[slot_offset][offset_in_bank * dim + id] = default_v[default_v_idx * dim + id];
     }
   }
   for (auto id = threadIdx.x; id < dim; id += blockDim.x) {
@@ -256,15 +264,17 @@ __global__ void kv_lookup_or_create_emb_kernel(Value* val,
   }
 }
 
-template <typename Value>
-struct KvLookupCreateEmb<GPUDevice, Value> {
-  void operator()(Value* val,
+template <typename Key, typename Value>
+struct KvLookupCreateEmb<GPUDevice, Key, Value> {
+  void operator()(const Key* key_first,
+                  Value* val,
                   Value* default_v,
                   int64 dim,
                   int32* item_idxs,
                   int32 num_items,
                   int32 slot_idx,
                   int32 default_v_num,
+                  bool is_use_default_value_tensor,
                   Value** d_banks,
                   bool** d_flags,
                   int32 slot_num,
@@ -272,9 +282,9 @@ struct KvLookupCreateEmb<GPUDevice, Value> {
                   cudaStream_t stream) {
   auto const block_size = 256;
   auto const grid_size = num_items;
-  TF_CHECK_OK(GpuLaunchKernel(kv_lookup_or_create_emb_kernel<Value>,
+  TF_CHECK_OK(GpuLaunchKernel(kv_lookup_or_create_emb_kernel<Key, Value>,
                               grid_size, block_size, 0, stream,
-                              val, default_v, dim,
+                              key_first, val, default_v, dim, is_use_default_value_tensor,
                               item_idxs, slot_idx,
                               d_banks, d_flags,
                               slot_num, default_v_num, bank_size));
@@ -404,8 +414,10 @@ template struct functor::KvLookupInsertKey<GPUDevice, int32, double>;
 template struct functor::KvLookupInsertKey<GPUDevice, int64, float>;
 template struct functor::KvLookupInsertKey<GPUDevice, int64, double>;
 
-template struct functor::KvLookupCreateEmb<GPUDevice, float>;
-template struct functor::KvLookupCreateEmb<GPUDevice, double>;
+template struct functor::KvLookupCreateEmb<GPUDevice, int32, float>;
+template struct functor::KvLookupCreateEmb<GPUDevice, int32, double>;
+template struct functor::KvLookupCreateEmb<GPUDevice, int64, float>;
+template struct functor::KvLookupCreateEmb<GPUDevice, int64, double>;
 
 template struct functor::KvKeyGetSnapshot<GPUDevice, int32, float>;
 template struct functor::KvKeyGetSnapshot<GPUDevice, int32, double>;

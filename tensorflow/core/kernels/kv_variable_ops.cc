@@ -939,6 +939,38 @@ REGISTER_KV_VAR_HANDLE(int32, float)
 REGISTER_KV_VAR_HANDLE(int64, float)
 #undef REGISTER_KV_VAR_HANDLE
 
+template <typename T, typename TKey, typename TValue>
+class KvVariableShapeOpGPU : public OpKernel {
+ public:
+  explicit KvVariableShapeOpGPU(OpKernelConstruction* c) : OpKernel(c) {}
+
+  void Compute(OpKernelContext* ctx) override {
+    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    TensorShape shape({ev->Size(), ev->ValueLen()});
+    Tensor* output;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {shape.dims()}, &output));
+    for (int i = 0; i < shape.dims(); ++i) {
+      output->flat<T>()(i) = shape.dim_size(i);
+    }
+  }
+};
+
+#define REGISTER_KV_VARIABLE_SHAPE(type, ktype, vtype)                \
+  REGISTER_KERNEL_BUILDER(                                            \
+      Name("KvVariableShape").Device(DEVICE_GPU)                      \
+                             .TypeConstraint<type>("out_type")        \
+                             .TypeConstraint<ktype>("Tkeys")          \
+                             .HostMemory("output"),                   \
+                             KvVariableShapeOpGPU<type, ktype, vtype>);
+REGISTER_KV_VARIABLE_SHAPE(int32, int32, float)
+REGISTER_KV_VARIABLE_SHAPE(int32, int64, float)
+REGISTER_KV_VARIABLE_SHAPE(int64, int32, float)
+REGISTER_KV_VARIABLE_SHAPE(int64, int64, float)
+#undef REGISTER_KV_VARIABLE_SHAPE
+
 REGISTER_KERNEL_BUILDER(Name("DestroyKvResourceOp").Device(DEVICE_GPU),
                         DestroyKvResourceOp);
 
@@ -1171,9 +1203,9 @@ class KvResourceGatherOpGPU : public OpKernel {
         auto default_values_matrix = default_values.shaped<TValue, 2>(
             {default_value_num, ev->ValueLen()});     
         TValue* default_v_base = &default_values_matrix(0, 0);
-        ev->LookupOrCreate(key_base, out_base, default_v_base, default_value_num, indices_size, stream);
+        ev->LookupOrCreate(key_base, out_base, default_v_base, default_value_num, is_use_default_value_tensor_, indices_size, stream);
       } else {
-        ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(), ev->GetDefaultValueDim(), indices_size, stream);
+        ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(), ev->GetDefaultValueDim(), is_use_default_value_tensor_, indices_size, stream);
       }
     }
   }
