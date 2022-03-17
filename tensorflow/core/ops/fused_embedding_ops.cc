@@ -75,7 +75,7 @@ REGISTER_OP("UniqueWithMultiOutput")
     });
 
 REGISTER_OP("PartitionWithPermutation")
-    .Attr("num_partitions: int >= 1 = 1")
+    .Attr("num_partitions: int > 1 = 2")
     .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
                                            // will consider support = 1
                                            // if necessary
@@ -83,7 +83,7 @@ REGISTER_OP("PartitionWithPermutation")
     .Input("input: int64")
     .Input("partition_shapes: num_partitions * int64")
     .Output("partitioned_values: num_partitions * int64")
-    .Output("partition_permutations: num_partitions * int64")
+    .Output("partition_permutation: int64")
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle unused;
       std::vector<ShapeHandle> unused_list;
@@ -110,7 +110,11 @@ REGISTER_OP("PartitionWithPermutation")
         unused_list[i] = ctx->MakeShape({ctx->UnknownDim()});
       }
       ctx->set_output("partitioned_values", unused_list);
-      ctx->set_output("partition_permutations", unused_list);
+
+      unused_list.clear();
+      unused_list.resize(1);
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim()}
+      ctx->set_output("partition_permutation", unused_list);
 
       return Status::OK();
     });
@@ -126,7 +130,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
     .Input("emb_shards: num_partitions * T")
-    .Input("partition_permutations: num_partitions * int64")
+    .Input("partition_permutation: int64")
     .Input("sp_dense_shape: int64")
     .Input("indices_before_unique: int64")
     .Input("row_empty_and_invalid_flags: int32")
@@ -157,11 +161,9 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
             ctx->WithValue(ctx->Dim(unused, 1), emb_vec_size, &unused_dim));
       }
 
-      // partition_permutations
-      ctx->input("partition_permutations", &unused_list);
-      for (int i = 0; i < num_partitions; i++) {
-        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 1, &unused));
-      }
+      // partition_permutation
+      ctx->input("partition_permutation", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // sp_dense_shape
       ctx->input("sp_dense_shape", &unused_list);
@@ -220,7 +222,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("max_norm: float = -1.0")
     .Input("top_grad: T")
     .Input("emb_shards: num_partitions * T")
-    .Input("partition_permutations: num_partitions * int64")
+    .Input("partition_permutation: int64")
     .Input("feature_nums: int32")
     .Input("indices_before_unique: int64")
     .Input("unique_counts: int64")
@@ -246,11 +248,9 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
       for (int i = 0; i < num_partitions; i++) {
         TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 2, &unused));
       }
-      // partition_permutations
-      ctx->input("partition_permutations", &unused_list);
-      for (int i = 0; i < num_partitions; i++) {
-        TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 1, &unused));
-      }
+      // partition_permutation
+      ctx->input("partition_permutation", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // feature_nums
       ctx->input("feature_nums", &unused_list);

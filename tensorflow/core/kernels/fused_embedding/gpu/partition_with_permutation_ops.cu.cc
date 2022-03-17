@@ -29,6 +29,7 @@ class PartitionWithPermutationGPU : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
     OP_REQUIRES_OK(ctx,
                    ctx->GetAttr("partition_strategy", &partition_strategy_));
+    cudaEventCreateWithFlags(&memcpy_event_, cudaEventDisableTiming);
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -40,66 +41,44 @@ class PartitionWithPermutationGPU : public OpKernel {
     OpOutputList partitioned_values;
     OP_REQUIRES_OK(ctx,
                    ctx->output_list("partitioned_values", &partitioned_values));
-    OpOutputList partition_permutations;
-    OP_REQUIRES_OK(ctx, ctx->output_list("partition_permutations",
-                                         &partition_permutations));
 
     Tensor const* input = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("input", &input));
     const int64 input_size = input->NumElements();
 
-    if (num_partitions_ == 1) {
-      // Simply copy
-      Tensor* partitioned_value;
-      partitioned_values.allocate(0, TensorShape({input_size}),
-                                  &partitioned_value);
-      cudaMemcpyAsync(data_p_with_type<int64_t>(partitioned_values[0]),
-                      data_p_with_type<int64_t>(input),
-                      sizeof(int64_t) * input_size, cudaMemcpyDeviceToDevice,
-                      device.stream());
-      // Need to allocate_output here
-      Tensor* partitioned_permutation;
-      partition_permutations.allocate(0, TensorShape({input_size}),
-                                      &partitioned_permutation);
-      RangeInit(device, input_size,
-                data_p_with_type<int64_t>(partitioned_permutation));
-    } else {
-      Tensor partition_permute_init;
+    Tensor* partition_permutation;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("partition_permutation",
+                                             TensorShape{input_size, 2},
+                                             &partition_permutation));
+
+    if (partition_strategy_ == "div") {
+      OpInputList partition_shapes;
       OP_REQUIRES_OK(ctx,
-                     ctx->allocate_temp(DT_INT64, TensorShape({input_size}),
-                                        &partition_permute_init));
+                     ctx->input_list("partition_shapes", &partition_shapes));
 
-      RangeInit(device, input_size,
-                data_p_with_type<int64_t>(partition_permute_init));
-      if (partition_strategy_ == "div") {
-        OpInputList partition_shapes;
-        OP_REQUIRES_OK(ctx,
-                       ctx->input_list("partition_shapes", &partition_shapes));
-
-        std::vector<int64_t> accu_div_host;
-        accu_div_host.resize(num_partitions_);
-        for (int i = 0; i < partition_shapes.size(); i++) {
-          OP_REQUIRES(ctx, partition_shapes[i].dims() <= 2,
-                      errors::InvalidArgument(
-                          "input partition_shapes must all less than rank 2"));
-          const int64_t div = partition_shapes[i].flat<int64>().data()[0];
-          accu_div_host[i] = i == 0 ? div : accu_div_host[i - 1] + div;
-        }
-
-        Tensor accu_div;
-        OP_REQUIRES_OK(
-            ctx,
-            ctx->allocate_temp(
-                DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
-                &accu_div));
-        cudaMemcpyAsync(data_p_with_type<int64>(accu_div), accu_div_host.data(),
-                        num_partitions_ * sizeof(int64_t),
-                        cudaMemcpyHostToDevice, device.stream());
-
-        PartitionSelectDiv<int64, int64>(
-            ctx, input, partition_permute_init, accu_div, num_partitions_,
-            partitioned_values, partition_permutations);
+      std::vector<int64_t> accu_div_host;
+      accu_div_host.resize(num_partitions_);
+      for (int i = 0; i < partition_shapes.size(); i++) {
+        OP_REQUIRES(ctx, partition_shapes[i].dims() == 2,
+                    errors::InvalidArgument(
+                        "input partition_shapes must all equal to rank 2"));
+        const int64_t div = partition_shapes[i].flat<int64>().data()[0];
+        accu_div_host[i] = i == 0 ? div : accu_div_host[i - 1] + div;
       }
+
+      Tensor accu_div;
+      OP_REQUIRES_OK(
+          ctx,
+          ctx->allocate_temp(
+              DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
+              &accu_div));
+      cudaMemcpyAsync(data_p_with_type<int64>(accu_div), accu_div_host.data(),
+                      num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
+                      device.stream());
+
+      PartitionSelectDiv<int64, int64>(
+          ctx, input, partition_permute_init, accu_div, num_partitions_,
+          partitioned_values, partition_permutations);
     }
   }
 
