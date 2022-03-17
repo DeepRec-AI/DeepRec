@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/platform/test_benchmark.h"
 #include "tensorflow/core/public/session.h"
+#include "tensorflow/cc/ops/standard_ops.h"
 
 namespace tensorflow {
 namespace {
@@ -238,6 +239,151 @@ TEST_F(FusedSafeEmbeddingPostLookupGradOpTest,
     test::ExpectTensorNear<float>(grad_shards_2, *GetOutput(1), 1e-4);
   }
 }
+
+
+
+//----------------------------------------------------------------------------//
+// Performance benchmarks                                                     //
+//----------------------------------------------------------------------------//
+
+template <typename T>
+void FillValues(Tensor* tensor, gtl::ArraySlice<T> vals) {
+  auto flat = tensor->flat<T>();
+  CHECK_EQ(flat.size(), vals.size());
+  if (flat.size() > 0) {
+    std::copy_n(vals.data(), vals.size(), flat.data());
+  }
+}
+
+template <typename T>
+void FillValues(Tensor* tensor, int val) {
+  auto flat = tensor->flat<T>();
+  for (int i = 0; i < flat.size(); ++i) {
+    flat.data()[i] = val;
+  }
+}
+
+template <typename T>
+void FillZerosValues(Tensor* tensor) {
+  auto flat = tensor->flat<T>();
+  for (int i = 0; i < flat.size(); ++i) {
+    flat.data()[i] = 0.0;
+  }
+}
+
+template <typename T>
+void FillOnesValues(Tensor* tensor) {
+  auto flat = tensor->flat<T>();
+  float scale = std::rand()/((RAND_MAX + 1u)/6);
+  for (int i = 0; i < flat.size(); ++i) {
+    flat.data()[i] = 1.1 * scale;
+  }
+}
+
+template <typename T>
+void FillIndiceValues(Tensor* tensor, const int partitions, const int batch_size, const int entries) {
+  auto flat = tensor->flat<T>();
+  int k = 0;
+  for (int i = 0; i < batch_size; ++i) {
+    for (int j = 0; j < entries; ++j) {
+      flat.data()[k] = i + partitions;
+      flat.data()[k+1] = j;
+      k += 2;
+    }
+  }
+}
+
+template <typename T>
+void PrintValues(Tensor* tensor) {
+  auto flat = tensor->flat<T>();
+  for (int i = 0; i < flat.size(); ++i) {
+    std::cout << flat.data()[i] << ", ";
+  }
+  std::cout << std::endl;
+}
+
+template <typename T>
+static Graph* EmbPostGradOp(const string& kind, int num_partitions, const std::string& combiner,
+                      const float max_norm, const int default_id) {
+  const int nnz = 3;
+  const int batch_size = 512;
+  const int emb_vector_dim = 32;
+  const int entries = 8;
+  const float sparsity = 0.5;
+  const int total_inputs = batch_size*entries*sparsity;
+
+  Graph* g = new Graph(OpRegistry::Global());
+  DataType type = DataTypeToEnum<T>::v();
+
+  string op_name = "FusedEmbeddingSparsePostLookUpGrad";
+
+  // top_grad
+  Tensor top_grad(type, TensorShape({batch_size, emb_vector_dim}));
+  FillOnesValues<T>(&top_grad);
+
+  // emb_shards
+  std::vector<NodeBuilder::NodeOut> input_emb_shards;
+  input_emb_shards.reserve(num_partitions);
+  for (int i = 0; i < num_partitions; ++i) {
+    Tensor emb_shards(type, TensorShape({total_inputs/num_partitions, emb_vector_dim}));
+    FillOnesValues<T>(&emb_shards);
+    input_emb_shards.push_back(test::graph::Constant(g, emb_shards));
+    // PrintValues<T>(&emb_shards);
+  }
+
+  // partitioned_indices
+  std::vector<NodeBuilder::NodeOut> partitioned_indices;
+  partitioned_indices.reserve(num_partitions);
+  for (int i = 0; i < num_partitions; ++i) {
+    Tensor sub_partitioned_indice(DT_INT64, TensorShape({total_inputs/num_partitions, 2}));
+    FillIndiceValues<int64>(&sub_partitioned_indice, i, batch_size/num_partitions, entries*sparsity);
+    partitioned_indices.push_back(test::graph::Constant(g, sub_partitioned_indice));
+    // PrintValues<int64>(&sub_partitioned_indice);
+  }
+
+  // sp_dense_shape
+  Tensor feature_nums(DT_INT32, TensorShape({batch_size}));
+  FillValues<int32>(&feature_nums, entries*sparsity);
+
+  // row_empty_and_invalid_flags
+  Tensor row_empty_and_invalid_flags(DT_INT32, TensorShape({batch_size + nnz}));
+  FillZerosValues<int>(&row_empty_and_invalid_flags);
+
+  auto nodeBuilder = NodeBuilder(g->NewName("n"), op_name)
+                    .Attr("T", type)
+                    .Attr("num_partitions", num_partitions)
+                    .Attr("partition_axis", 0)
+                    .Attr("combiner", combiner)
+                    .Attr("max_norm", max_norm)
+                    .Attr("default_id", default_id)
+                    .Input(test::graph::Constant(g, top_grad))
+                    .Input(input_emb_shards)
+                    .Input(partitioned_indices)
+                    .Input(test::graph::Constant(g, feature_nums))
+                    .Input(test::graph::Constant(g, row_empty_and_invalid_flags));
+  TF_CHECK_OK(nodeBuilder.Finalize(g, nullptr));
+  return g;
+}
+
+#define BM_EMB_POST_OP(kind, NP, C, T, DEVICE, NTH)                                        \
+  static void BM_EMB_POST_OP##_##kind##_##NP##_##C##_##T##_##DEVICE##_##NTH(               \
+      int iters) {                                                                         \
+    testing::UseRealTime();                                                                \
+    SessionOptions opts;                                                                   \
+    opts.config.set_intra_op_parallelism_threads(NTH);                                     \
+    test::Benchmark(#DEVICE, EmbPostGradOp<T>(#kind, NP, #C, -1.0, -1), &opts).Run(iters); \
+  }                                                                                        \
+  BENCHMARK(BM_EMB_POST_OP##_##kind##_##NP##_##C##_##T##_##DEVICE##_##NTH);                \
+
+#define BM_EMB_POST_OP_kind(NP, C, NTH)            \
+  BM_EMB_POST_OP(OPT, NP, C, float, CPU, NTH);     \
+
+#define BM_EMB_POST_OP_NTH(NP, C) \
+  BM_EMB_POST_OP_kind(NP, C, 1);  \
+  BM_EMB_POST_OP_kind(NP, C, 4);  \
+  BM_EMB_POST_OP_kind(NP, C, 8);  \
+
+BM_EMB_POST_OP_NTH(2, sum);
 
 }  // namespace
 }  // namespace tensorflow
