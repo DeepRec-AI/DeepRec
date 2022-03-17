@@ -191,8 +191,10 @@ TEST(EmbeddingVariableTest, TestEmptyEV) {
       TF_ASSERT_OK(reader.status());
       EXPECT_EQ(
           AllTensorKeys(&reader),
-          std::vector<string>({"var/part_0-freqs", "var/part_0-keys", "var/part_0-partition_offset",
-                               "var/part_0-values", "var/part_0-versions"}));
+          std::vector<string>({"var/part_0-freqs", "var/part_0-freqs_filtered", "var/part_0-keys",
+                               "var/part_0-keys_filtered", "var/part_0-partition_filter_offset",
+                               "var/part_0-partition_offset", "var/part_0-values",
+                               "var/part_0-versions", "var/part_0-versions_filtered"}));
       {
         string key = "var/part_0-keys";
         EXPECT_TRUE(reader.Contains(key));
@@ -267,8 +269,10 @@ TEST(EmbeddingVariableTest, TestEVExportSmallLockless) {
     TF_ASSERT_OK(reader.status());
     EXPECT_EQ(
         AllTensorKeys(&reader),
-        std::vector<string>({"var/part_0-freqs", "var/part_0-keys", "var/part_0-partition_offset",
-                             "var/part_0-values", "var/part_0-versions"}));
+        std::vector<string>({"var/part_0-freqs", "var/part_0-freqs_filtered", "var/part_0-keys",
+                               "var/part_0-keys_filtered", "var/part_0-partition_filter_offset",
+                               "var/part_0-partition_offset", "var/part_0-values",
+                               "var/part_0-versions", "var/part_0-versions_filtered"}));
     {
       string key = "var/part_0-keys";
       EXPECT_TRUE(reader.Contains(key));
@@ -342,8 +346,10 @@ TEST(EmbeddingVariableTest, TestEVExportLargeLockless) {
     TF_ASSERT_OK(reader.status());
     EXPECT_EQ(
         AllTensorKeys(&reader),
-        std::vector<string>({"var/part_0-freqs", "var/part_0-keys", "var/part_0-partition_offset",
-                             "var/part_0-values", "var/part_0-versions" }));
+        std::vector<string>({"var/part_0-freqs", "var/part_0-freqs_filtered", "var/part_0-keys",
+                               "var/part_0-keys_filtered", "var/part_0-partition_filter_offset",
+                               "var/part_0-partition_offset", "var/part_0-values",
+                               "var/part_0-versions", "var/part_0-versions_filtered"}));
     {
       string key = "var/part_0-keys";
       EXPECT_TRUE(reader.Contains(key));
@@ -808,48 +814,6 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
     t.join();
   }
 
-}
-
-TEST(EmbeddingVariableTest, TestFeatureFilter) {
-  int value_size = 10;
-  Tensor value(DT_FLOAT, TensorShape({value_size}));
-  test::FillValues<float>(&value, std::vector<float>(value_size, 10.0));
-  float* fill_v = (float*)malloc(value_size * sizeof(float)); 
-
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "EmbeddingVar", embedding::StorageConfig());
-  TF_CHECK_OK(storage_manager->Init());
-  EmbeddingVar<int64, float>* var 
-    = new EmbeddingVar<int64, float>("EmbeddingVar",
-        storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 5));
-
-  var->Init(value, 1);
-
-  float *val = (float *)malloc((value_size+1)*sizeof(float));
-
-  for (int i = 0; i < 7; i++) {
-    var->LookupOrCreate(20, val, nullptr);
-    ValuePtr<float>* value_ptr = nullptr;
-    var->LookupOrCreateKey(20, &value_ptr);
-    if (i < 4) {
-      ASSERT_EQ(value_ptr->GetValue(0, var->storage_manager()->GetOffset(0)), nullptr);
-    } else {
-      ASSERT_EQ(val[0], 10.0);
-    }
-  }
-   
-  std::vector<int64> keylist;
-  std::vector<float *> valuelist;
-  std::vector<int64> version_list;
-  std::vector<int64> freq_list;
-
-   
-  var->LookupOrCreate(30, val, nullptr);
-  var->GetSnapshot(&keylist, &valuelist, &version_list, &freq_list);
-  ASSERT_EQ(var->Size(), 2);  
-  ASSERT_EQ(keylist.size(), 1);
-   
 }
 
 void MultiFilter(EmbeddingVar<int64, float>* variable, int value_size) {
