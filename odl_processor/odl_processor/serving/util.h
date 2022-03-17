@@ -32,13 +32,15 @@ Status RunOnce(const RunOptions& run_options,
                const std::vector<string>& target_node_names,
                std::vector<Tensor>* outputs, RunMetadata* run_metadata,
                Session* session);
-
 Status RunRestoreCheckpoint(
+    bool restore_incr_checkpoint,
     const RunOptions& run_options,
-    const std::string& ckpt_name,
+    const std::string& full_ckpt_name,
+    const std::string& incr_ckpt_name,
     const std::string& savedmodel_dir,
     const StringPiece restore_op_name,
     const StringPiece variable_filename_const_op_name,
+    const StringPiece incr_variable_filename_const_op_name,
     const std::vector<AssetFileDef>& asset_file_defs,
     Session* session);
 

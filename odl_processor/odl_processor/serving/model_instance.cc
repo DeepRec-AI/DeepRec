@@ -167,6 +167,7 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   // Load full model
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version_,
         version_.full_ckpt_name.c_str(),
+        version_.delta_ckpt_name.c_str(),
         /*is_incr_ckpt*/false, config));
 
   // Load delta model if existed
@@ -174,6 +175,7 @@ Status LocalSessionInstance::Init(ModelConfig* config,
     return Status::OK();
   }
   return session_mgr_->CreateModelSession(version_,
+      version_.full_ckpt_name.c_str(),
       version_.delta_ckpt_name.c_str(),
       /*is_incr_ckpt*/true, config);
 }
@@ -235,6 +237,7 @@ Status LocalSessionInstance::FullModelUpdate(
   TF_RETURN_IF_ERROR(
       session_mgr_->CreateModelSession(version,
           version.full_ckpt_name.c_str(),
+          version.delta_ckpt_name.c_str(),
           /*is_incr_ckpt*/false, model_config,
           &new_model_session));
 
@@ -251,6 +254,7 @@ Status LocalSessionInstance::DeltaModelUpdate(
     const Version& version, ModelConfig* model_config) {
   TF_RETURN_IF_ERROR(
       session_mgr_->CreateModelSession(version,
+          version.full_ckpt_name.c_str(),
           version.delta_ckpt_name.c_str(),
           /*is_incr_ckpt*/true, model_config));
 
@@ -441,8 +445,8 @@ LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
     : ModelUpdater(config) {
   session_options_ = new SessionOptions();
   //session_options_->target = target;
-  session_options_->config.set_intra_op_parallelism_threads(config->inter_threads);
-  session_options_->config.set_inter_op_parallelism_threads(config->intra_threads);
+  session_options_->config.set_inter_op_parallelism_threads(config->inter_threads);
+  session_options_->config.set_intra_op_parallelism_threads(config->intra_threads);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
   run_options_ = new RunOptions();
 }
@@ -503,8 +507,8 @@ RemoteSessionInstanceMgr::RemoteSessionInstanceMgr(ModelConfig* config)
     : ModelUpdater(config) {
   session_options_ = new SessionOptions();
   //session_options_->target = target;
-  session_options_->config.set_intra_op_parallelism_threads(config->inter_threads);
-  session_options_->config.set_inter_op_parallelism_threads(config->intra_threads);
+  session_options_->config.set_inter_op_parallelism_threads(config->inter_threads);
+  session_options_->config.set_intra_op_parallelism_threads(config->intra_threads);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
   run_options_ = new RunOptions();
 

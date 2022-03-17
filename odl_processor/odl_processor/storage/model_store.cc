@@ -138,7 +138,7 @@ Status ModelStore::DetectLatestCheckpointDir() {
   TF_RETURN_IF_ERROR(file_system_->IsDirectory(checkpoint_parent_dir_));
   std::vector<string> file_names;
   TF_RETURN_IF_ERROR(file_system_->GetMatchingPaths(
-    io::JoinPath(checkpoint_parent_dir_ + "*/checkpoint"), &file_names));
+    io::JoinPath(checkpoint_parent_dir_, "*/checkpoint"), &file_names));
   int64 latest_mtime_nsec = -1;
   for (auto fname : file_names) {
     FileStatistics stat;
