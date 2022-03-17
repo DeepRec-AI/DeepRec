@@ -65,14 +65,15 @@ class ModelSessionMgr {
       ModelSession** new_model_session);
 
   Status CreateModelSession(
-      const Version& version, const char* ckpt_name,
-      bool is_incr_ckpt, ModelConfig* config);
+      const Version& version, const char* full_ckpt_name,
+      const char* incr_ckpt_name, bool is_incr_ckpt,
+      ModelConfig* config);
  
   Status CreateModelSession(
-      const Version& version, const char* ckpt_name,
-      bool is_incr_ckpt, ModelConfig* config,
-      ModelSession** new_model_session);
- 
+      const Version& version, const char* full_ckpt_name,
+      const char* incr_ckpt_name, bool is_incr_ckpt,
+      ModelConfig* config, ModelSession** new_model_session);
+
   Status CleanupModelSession();
 
   void ResetServingSession(ModelSession* model_session);

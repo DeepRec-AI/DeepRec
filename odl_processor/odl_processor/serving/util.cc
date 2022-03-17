@@ -85,21 +85,31 @@ bool HasMainOp(const MetaGraphDef& meta_graph_def) {
 }
 
 Status RunRestoreCheckpoint(
+    bool restore_incr_checkpoint,
     const RunOptions& run_options,
-    const std::string& ckpt_name,
+    const std::string& full_ckpt_name,
+    const std::string& incr_ckpt_name,
     const std::string& savedmodel_dir,
     const StringPiece restore_op_name,
     const StringPiece variable_filename_const_op_name,
+    const StringPiece incr_variable_filename_const_op_name,
     const std::vector<AssetFileDef>& asset_file_defs,
     Session* session) {
   LOG(INFO) << "Restoring checkpoint.";
   // Find path to variables to be restored in export directory.
   // Add variables to the graph.
   Tensor variables_path_tensor(DT_STRING, TensorShape({}));
-  variables_path_tensor.scalar<string>()() = ckpt_name;
+  variables_path_tensor.scalar<string>()() = full_ckpt_name;
 
-  std::vector<std::pair<string, Tensor>> inputs = { 
+  std::vector<std::pair<string, Tensor>> inputs = {
       {string(variable_filename_const_op_name), variables_path_tensor}};
+
+  if (restore_incr_checkpoint) {
+    Tensor incr_variables_path_tensor(DT_STRING, TensorShape({}));
+    incr_variables_path_tensor.scalar<string>()() = incr_ckpt_name;
+    inputs.push_back(
+        {string(incr_variable_filename_const_op_name), incr_variables_path_tensor});
+  }
 
   util::AddAssetsTensorsToInputs(savedmodel_dir, asset_file_defs, &inputs);
 

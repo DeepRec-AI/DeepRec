@@ -604,11 +604,7 @@ Status SavedModelOptimizer::RunNativeTFGraphPass() {
 
     // Rewrite subgraph
     TF_RETURN_IF_ERROR(RewriteEmbeddingLookupGraph(var_parts, import_nodes));
-
-  } else {
-    // Add incr_restore_op for load delta model
-    TF_RETURN_IF_ERROR(AddIncrRestoreOps());
- }
+  }
 
   // Add other passes here
 

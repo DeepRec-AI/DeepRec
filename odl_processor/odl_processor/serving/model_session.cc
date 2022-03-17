@@ -370,12 +370,13 @@ Status ModelSessionMgr::CreateModelSession(
 }
 
 Status ModelSessionMgr::CreateModelSession(
-    const Version& version, const char* ckpt_name,
-    bool is_incr_ckpt, ModelConfig* config) {
+    const Version& version, const char* full_ckpt_name,
+    const char* incr_ckpt_name, bool is_incr_ckpt,
+    ModelConfig* config) {
   ModelSession* new_model_session = nullptr;
   TF_RETURN_IF_ERROR(
-      CreateModelSession(version, ckpt_name, is_incr_ckpt,
-                         config, &new_model_session));
+      CreateModelSession(version, full_ckpt_name, incr_ckpt_name,
+                         is_incr_ckpt, config, &new_model_session));
   if (!is_incr_ckpt) {
     ResetServingSession(new_model_session);
   }
@@ -384,25 +385,30 @@ Status ModelSessionMgr::CreateModelSession(
 }
  
 Status ModelSessionMgr::CreateModelSession(
-    const Version& version, const char* ckpt_name,
-    bool is_incr_ckpt, ModelConfig* config,
-    ModelSession** new_model_session) {
+    const Version& version, const char* full_ckpt_name,
+    const char* incr_ckpt_name, bool is_incr_ckpt,
+    ModelConfig* config, ModelSession** new_model_session) {
   std::string restore_op_name =
       meta_graph_def_.saver_def().restore_op_name();
+  std::string filename_tensor_name =
+      meta_graph_def_.saver_def().filename_tensor_name();
+  std::string incr_filename_tensor_name = 
+      meta_graph_def_.incr_saver_def().filename_tensor_name();
   Session* session = nullptr;
   if (is_incr_ckpt) {
     // Use serving session to update delta model
     session = serving_session_->session_;
-    restore_op_name += GetKvIncrRestoreAllNameSuffix();
+    restore_op_name =
+        meta_graph_def_.incr_saver_def().restore_op_name();
   } else {
     TF_RETURN_IF_ERROR(CreateSession(&session));
   }
 
   TF_RETURN_IF_ERROR(util::RunRestoreCheckpoint(
-      *run_options_, ckpt_name,
-      version.savedmodel_dir.c_str(), restore_op_name,
-      meta_graph_def_.saver_def().filename_tensor_name(),
-      asset_file_defs_, session));
+      is_incr_ckpt, *run_options_, full_ckpt_name,
+      incr_ckpt_name, version.savedmodel_dir.c_str(),
+      restore_op_name, filename_tensor_name,
+      incr_filename_tensor_name, asset_file_defs_, session));
 
   if (util::HasMainOp(meta_graph_def_)) {
     TF_RETURN_IF_ERROR(util::RunMainOp(*run_options_,
