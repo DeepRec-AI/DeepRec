@@ -24,9 +24,11 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/framework/types.h"
-#include "tensorflow/core/platform/status_matchers.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/protobuf/device_properties.pb.h"
+#include "tensorflow/stream_executor/lib/statusor.h"
+
+using stream_executor::port::StatusOr;
 
 namespace tensorflow {
 namespace grappler {
@@ -1117,16 +1119,12 @@ TEST_F(OpLevelCostEstimatorTest, OpDimensionsFromInputsError) {
   for (const auto& p : paddings) {
     for (const auto& f : formats) {
       // n, h, w, c, kx, ky, sx, sy, data_format, padding.
-      ASSERT_THAT(
-          CallOpDimensionsFromInputs(10, 14, 14, 3840, 3, 3, 0, 2, f, p),
-          testing::StatusIs(
-              error::INVALID_ARGUMENT,
-              "Stride must be > 0 for Height and Width, but got (2, 0)"));
-      ASSERT_THAT(
-          CallOpDimensionsFromInputs(10, 14, 14, 3840, 3, 3, 2, 0, f, p),
-          testing::StatusIs(
-              error::INVALID_ARGUMENT,
-              "Stride must be > 0 for Height and Width, but got (0, 2)"));
+      ASSERT_EQ(error::INVALID_ARGUMENT,
+                CallOpDimensionsFromInputs(
+                    10, 14, 14, 3840, 3, 3, 0, 2, f, p).status().code());
+      ASSERT_EQ(error::INVALID_ARGUMENT,
+                CallOpDimensionsFromInputs(
+                    10, 14, 14, 3840, 3, 3, 2, 0, f, p).status().code());
     }
   }
 }
