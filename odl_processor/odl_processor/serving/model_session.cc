@@ -461,5 +461,12 @@ void ModelSessionMgr::ResetServingSession(ModelSession* model_session) {
   }
 }
 
+Status ModelSessionMgr::GetServingModelInfo(
+    tensorflow::processor::ServingModelInfo& model_info) {
+  model_info.model_path =
+      serving_session_->GetVersion().full_ckpt_name;
+  return Status::OK();
+}
+
 } // processor
 } // tensorflow

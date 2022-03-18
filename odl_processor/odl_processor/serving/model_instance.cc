@@ -198,8 +198,7 @@ Status LocalSessionInstance::Predict(Request& req, Response& resp) {
 
 Status LocalSessionInstance::GetServingModelInfo(
     ServingModelInfo& model_info) {
-  model_info.model_path = version_.full_ckpt_name;
-  return Status::OK();
+  return session_mgr_->GetServingModelInfo(model_info);
 }
 
 Status LocalSessionInstance::Warmup(
@@ -369,8 +368,7 @@ Status RemoteSessionInstance::Predict(Request& req, Response& resp) {
 
 Status RemoteSessionInstance::GetServingModelInfo(
     ServingModelInfo& model_info) {
-  model_info.model_path = version_.full_ckpt_name;
-  return Status::OK();
+  return session_mgr_->GetServingModelInfo(model_info);
 }
 
 Status RemoteSessionInstance::Warmup(

@@ -5,6 +5,7 @@
 #include "odl_processor/framework/model_version.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
+#include "odl_processor/serving/model_message.h"
 #include "tensorflow/core/framework/tensor.h"
 #include <thread>
 #include <atomic>
@@ -77,6 +78,9 @@ class ModelSessionMgr {
   Status CleanupModelSession();
 
   void ResetServingSession(ModelSession* model_session);
+
+  Status GetServingModelInfo(
+      tensorflow::processor::ServingModelInfo& model_info);
 
  private:
   virtual Status CreateSession(Session** sess);
