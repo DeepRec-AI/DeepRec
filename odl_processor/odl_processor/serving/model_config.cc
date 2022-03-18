@@ -54,6 +54,17 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
 
   *config = new ModelConfig;
 
+  bool enable_inline_execute = false;
+  if (!json_config["enable_inline_execute"].isNull()) {
+    enable_inline_execute = json_config["enable_inline_execute"].asBool();
+  }
+  if (enable_inline_execute) {
+    if (setenv("RUN_ALL_KERNELS_INLINE", "1", 1) != 0) {
+      LOG(WARNING) << "Set RUN_ALL_KERNELS_INLINE env error: "
+                   << json_config["enable_inline_execute"].asBool();
+    }
+  }
+ 
   if (!json_config["omp_num_threads"].isNull()) {
     if (setenv("OMP_NUM_THREADS",
                json_config["omp_num_threads"].asString().c_str(), 1) != 0) {
@@ -308,19 +319,29 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
       !json_config["timeline_interval_step"].isNull() &&
       !json_config["timeline_trace_count"].isNull() &&
       !json_config["timeline_path"].isNull()) {
-    if ((*config)->oss_endpoint == "" ||
-        (*config)->oss_access_id == "" ||
-        (*config)->oss_access_key == "") {
-      return Status(error::Code::INVALID_ARGUMENT,
-          "Timeline require oss_endpoint, oss_access_id, and oss_access_key.");
-    }
+    auto path = json_config["timeline_path"].asString();
     auto start_step = json_config["timeline_start_step"].asInt();
     auto interval_step = json_config["timeline_interval_step"].asInt();
     auto trace_count = json_config["timeline_trace_count"].asInt();
-    auto path = json_config["timeline_path"].asString();
-    Tracer::GetTracer()->SetParams(start_step, interval_step, trace_count,
-        (*config)->oss_endpoint, (*config)->oss_access_id,
-        (*config)->oss_access_key, path);
+ 
+    // save timeline to local
+    if (path[0] == '/') {
+      Tracer::GetTracer()->SetParams(start_step, interval_step, trace_count, path);
+    } else if (path.find("oss://") != std::string::npos) {
+      // save timeline to oss
+      if ((*config)->oss_endpoint == "" ||
+          (*config)->oss_access_id == "" ||
+          (*config)->oss_access_key == "") {
+        return Status(error::Code::INVALID_ARGUMENT,
+            "Timeline require oss_endpoint, oss_access_id, and oss_access_key.");
+      }
+      Tracer::GetTracer()->SetParams(start_step,
+          interval_step, trace_count, (*config)->oss_endpoint,
+          (*config)->oss_access_id, (*config)->oss_access_key, path);
+    } else {
+      return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] Only support save timeline to local or oss now.");
+    }
   }
 
   return Status::OK();
