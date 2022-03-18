@@ -18,15 +18,6 @@
 #include "third_party/cub/iterator/constant_input_iterator.cuh"
 #include "third_party/cub/thread/thread_operators.cuh"
 
-namespace tensorflow {
-using GPUDevice = Eigen::GpuDevice;
-
-namespace gpu_unique_with_counts {
-
-using MurmurHash3_32 = fused_embedding::MurmurHash3_32
-
-const static block_size = 64;
-
 // Overload CUDA atomic for other 64bit unsinged/signed integer type
 __forceinline__ __device__ long atomicAdd(long* address, long val) {
   return (long)atomicAdd((unsigned long long*)address, (unsigned long long)val);
@@ -66,6 +57,13 @@ __forceinline__ __device__ unsigned long atomicCAS(unsigned long* address,
                                   (unsigned long long)val);
 }
 
+namespace tensorflow {
+using GPUDevice = Eigen::GpuDevice;
+
+namespace gpu_unique_with_counts {
+
+const static int block_size = 64;
+
 template <typename KeyType, typename CounterType>
 __global__ void InitKernel(KeyType* keys, CounterType* vals,
                            CounterType* counts, CounterType* counter,
@@ -92,10 +90,10 @@ void Init(const GPUDevice& d, KeyType* keys, CounterType* vals,
           const CounterType empty_counts, const CounterType init_counter_val) {
   const int threads = block_size;
   const int blocks = (capacity - 1) / block_size + 1;
-  TF_CHECK_OK(GpuLaunchKernel(
-      InitKernel<KeyType, CounterType>, blocks, threads, 0, d.stream(), keys,
-      vals, counts, counter, capacity, KeyType empty_key, CounterType empty_val,
-      CounterType empty_counts, CounterType init_counter_val));
+  TF_CHECK_OK(GpuLaunchKernel(InitKernel<KeyType, CounterType>, blocks, threads,
+                              0, d.stream(), keys, vals, counts, counter,
+                              capacity, empty_key, empty_val, empty_counts,
+                              init_counter_val));
 }
 
 template <typename KeyType>
@@ -143,7 +141,7 @@ __global__ void GetInsertKernel(const KeyType* d_key, CounterType* d_val,
                                 CounterType* vals, CounterType* counts,
                                 const size_t capacity,
                                 CounterType* d_global_counter,
-                                const KeyType empty_key,
+                                KeyType empty_key,
                                 const CounterType empty_val) {
   const size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < len) {
@@ -185,14 +183,14 @@ template <typename KeyType, typename CounterType,
 void GetInsert(const GPUDevice& d, const KeyType* d_key, CounterType* d_val,
                const size_t input_size, KeyType* keys, CounterType* vals,
                CounterType* counts, const size_t capacity,
-               CounterType* d_global_counter, const KeyType empty_key,
+               CounterType* d_global_counter, KeyType empty_key,
                const CounterType empty_val) {
   const int threads = block_size;
   const int blocks = (input_size - 1) / block_size + 1;
-  TF_CHECK_OK(GpuLaunchKernel(
-      GetInsertGetInsertKernel<KeyType, CounterType, hasher>, blocks, threads,
-      0, d.stream(), d_key, d_val, input_size, keys, vals, counts, capacity,
-      d_global_counter, empty_key, empty_val));
+  TF_CHECK_OK(GpuLaunchKernel(GetInsertKernel<KeyType, CounterType, hasher>,
+                              blocks, threads, 0, d.stream(), d_key, d_val,
+                              input_size, keys, vals, counts, capacity,
+                              d_global_counter, empty_key, empty_val));
 }
 
 template <typename KeyType, typename CounterType>
@@ -264,7 +262,9 @@ class UniqueWithCountsGPU : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
-    using namespace fused_embedding;
+    using namespace gpu_unique_with_counts;
+    using fused_embedding::data_p_with_type;
+
     auto device = ctx->eigen_device<GPUDevice>();
 
     nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
@@ -304,14 +304,14 @@ class UniqueWithCountsGPU : public OpKernel {
                                            &dump_counter));
 
     Tensor* unique_idxs;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output("unique_idxs", TensorShape({input_size}),
-                                  &unique_idxs));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("unique_idxs",
+                                             TensorShape({int64(input_size)}),
+                                             &unique_idxs));
 
     Init(device, data_p_with_type<KeyType>(keys_storage),
-         data_p_with_type<KeyType>(vals_storage),
-         data_p_with_type<KeyType>(counts_storage),
-         data_p_with_type<KeyType>(counter), capacity, empty_key, empty_val,
+         data_p_with_type<CounterType>(vals_storage),
+         data_p_with_type<CounterType>(counts_storage),
+         data_p_with_type<CounterType>(counter), capacity, empty_key, empty_val,
          empty_counts, init_counter_val);
 
     GetInsert(device, data_p_with_type<const KeyType>(input),
@@ -349,17 +349,30 @@ class UniqueWithCountsGPU : public OpKernel {
   cudaEvent_t memcpy_event_;
 };
 
-#define REGISTER_GPU(KeyType, CounterType)                                 \
-  REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")                      \
-                              .Device(DEVICE_GPU)                          \
-                              .TypeConstraint<KeyType>("KeyType")          \
-                              .TypeConstraint<CounterType>("CounterType"), \
-                          UniqueWithCountsGPU<KeyType, CounterType>);
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+                            .Device(DEVICE_GPU)
+                            .TypeConstraint<int32>("KeyType")
+                            .TypeConstraint<int32>("CounterType"),
+                        UniqueWithCountsGPU<int, int>);
 
-REGISTER_GPU(int32, int32);
-REGISTER_GPU(int64, int32);
-REGISTER_GPU(int32, int64);
-REGISTER_GPU(int64, int64);
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+                            .Device(DEVICE_GPU)
+                            .TypeConstraint<int32>("KeyType")
+                            .TypeConstraint<int64>("CounterType"),
+                        UniqueWithCountsGPU<int, long long>);
+
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+                            .Device(DEVICE_GPU)
+                            .TypeConstraint<int64>("KeyType")
+                            .TypeConstraint<int32>("CounterType"),
+                        UniqueWithCountsGPU<long long, int>);
+
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+                            .Device(DEVICE_GPU)
+                            .TypeConstraint<int64>("KeyType")
+                            .TypeConstraint<int64>("CounterType"),
+                        UniqueWithCountsGPU<long long, long long>);
+
 }  // namespace tensorflow
 
 #endif  // GOOGLE_CUDA

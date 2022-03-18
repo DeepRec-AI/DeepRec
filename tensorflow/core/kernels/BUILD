@@ -5283,6 +5283,7 @@ tf_kernel_library(
 tf_cuda_library(
     name = "fused_embedding_cuh",
     hdrs = ["fused_embedding/gpu/common.cu.h",
+            "fused_embedding/gpu/functions/hash_functions.cu.h",
             "fused_embedding/gpu/functions/kernels.cu.h",
             "fused_embedding/gpu/functions/partition_select.cu.h"],
 )
@@ -5293,7 +5294,7 @@ tf_kernel_library(
         "fused_embedding/gpu/fused_embedding_post_ops_gpus.cu.cc",
         "fused_embedding/gpu/partition_with_permutation_ops.cu.cc",
         "fused_embedding/gpu/prune_invalid_and_fill_empty_rows_ops.cu.cc",
-        "fused_embedding/gpu/unique_with_multi_output_ops.cu.cc",
+        "fused_embedding/gpu/unique_with_count_gpu.ops.cu.cc",
         "fused_embedding/gpu/functions/kernels.cu.cc",
         "fused_embedding/gpu/functions/partition_select.cu.cc",
     ],

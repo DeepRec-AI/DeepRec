@@ -29,7 +29,7 @@
 
 namespace tensorflow {
 
-namespace fused_embedding {
+namespace gpu_unique_with_counts {
 
 template <typename Key, uint32_t m_seed = 0>
 struct MurmurHash3_32 {
@@ -138,7 +138,7 @@ struct Mod_Hash {
   }
 };
 
-}  // namespace fused_embedding
+}  // namespace gpu_unique_with_counts
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_KERNELS_FUSED_EMBEDDING_GPU_FUNCTIONS_HASH_FUNCTIONS_CU_H_

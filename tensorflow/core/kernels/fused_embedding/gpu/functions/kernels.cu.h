@@ -6,6 +6,7 @@
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/framework/op_kernel.h"
+#include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
 
 namespace tensorflow {
 
@@ -96,7 +97,7 @@ void ApplyCombiner(const GPUDevice& d, const int batch_size,
 template <Combiner combiner>
 void DistributeGradToShardSinglePartition(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int64_t* unique_idxs,
+    const int64_t* indices_before_unique, const int* unique_idxs,
     const int nnz, const int emb_vec_size, const float max_norm,
     const bool set_empty_row_zero, const int* feature_nums,
     const int* row_emptiness_flag, float* grad_shard);
@@ -105,7 +106,7 @@ template <Combiner combiner>
 void DistributeGradToShardMultiPartition(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int64_t* unique_idxs,
+    const int64_t* indices_before_unique, const int* unique_idxs,
     const int nnz, const int emb_vec_size, const float max_norm,
     const bool set_empty_row_zero, const int* feature_nums,
     const int* row_emptiness_flag, void** grad_shard_ptrs);

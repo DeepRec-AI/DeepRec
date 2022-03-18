@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from numpy import dtype
+
 import tensorflow as tf
 from tensorflow.python.framework.constant_op import constant
 from tensorflow.python.framework import ops
@@ -10,7 +12,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.ops.kv_variable_ops import EmbeddingVariable
 from tensorflow.python.ops.gen_fused_embedding_ops import prune_invalid_and_fill_empty_rows
-from tensorflow.python.ops.gen_fused_embedding_ops import unique_with_multi_output
+from tensorflow.python.ops.gen_fused_embedding_ops import unique_with_counts_gpu
 from tensorflow.python.ops.gen_fused_embedding_ops import partition_with_permutation
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_post_look_up
 from tensorflow.python.ops.gen_fused_embedding_ops import fused_embedding_sparse_post_look_up_grad
@@ -71,17 +73,23 @@ def fused_embedding_lookup_sparse(params,
         sp_indices=sp_indices,
         sp_dense_shape=sp_dense_shape,
       )
+    else:
+      row_empty_and_invalid_flags = tf.constant([0, ], dtype=tf.int32)  # dummy
 
-    unique_keys, unique_idxs, unique_counts, idx_of_input_to_unique, unique_offsets = unique_with_multi_output(
+    unique_keys, unique_idxs, unique_counts = unique_with_counts_gpu(
       input=sp_values,
       out_idx=tf.int64,
     )
 
-    partitioned_values, partition_permutations = partition_with_permutation(
-      partition_strategy=partition_strategy,
-      input=unique_keys,
-      partition_shapes=partition_shapes
-    )
+    if partition_nums > 1:
+      partitioned_values, partition_permutation = partition_with_permutation(
+        partition_strategy=partition_strategy,
+        input=unique_keys,
+        partition_shapes=partition_shapes
+      )
+    else:
+      partitioned_values = [unique_keys]
+      partition_permutation = [tf.constant([0, ], dtype=tf.int32)]  # dummy
 
     emb_shards = []
     for i in range(partition_nums):
@@ -89,23 +97,22 @@ def fused_embedding_lookup_sparse(params,
         shard = array_ops.gather(params[i], partitioned_values[i])
         emb_shards.append(shard)
 
-    emb_vectors, _ = fused_embedding_sparse_post_look_up(
-      emb_shards=emb_shards, partition_permutations=partition_permutations,
+    emb_vectors, _, _ = fused_embedding_sparse_post_look_up(
+      fill_empty_row=fill_empty_row, default_id=default_id,
+      combiner=combiner, max_norm=max_norm,
+      emb_shards=emb_shards, partition_permutations=partition_permutation,
       sp_dense_shape=sp_dense_shape,
       indices_before_unique=sp_indices,
       row_empty_and_invalid_flags=row_empty_and_invalid_flags,
-      unique_counts=unique_counts,
-      idx_of_input_to_unique=idx_of_input_to_unique,
-      unique_offsets=unique_offsets,
-      combiner=combiner, max_norm=max_norm, fill_empty_row=fill_empty_row,
-      default_id=default_id
+      unique_idxs=unique_idxs,
     )
 
   return emb_vectors
 
 
 @ops.RegisterGradient("FusedEmbeddingSparsePostLookUp")
-def fused_embedding_sparse_post_look_up_gradient(op, top_grad_emb_vec, _):
+def fused_embedding_sparse_post_look_up_gradient(op, top_grad,
+                                                 uesless_grad_1, uesless_grad_2):
   num_partitions = op.get_attr("num_partitions")
   combiner = op.get_attr("combiner")
   max_norm = op.get_attr("max_norm")
@@ -113,23 +120,22 @@ def fused_embedding_sparse_post_look_up_gradient(op, top_grad_emb_vec, _):
   default_id = op.get_attr("default_id")
 
   emb_shards = [op.inputs[i] for i in range(0, num_partitions)]
-  partition_permutations = [op.inputs[i] for i in range(num_partitions, 2 * num_partitions)]
-  indices_before_unique = op.inputs[2 * num_partitions + 1]
-  row_empty_and_invalid_flags = op.inputs[2 * num_partitions + 2]
-  unique_counts = op.inputs[2 * num_partitions + 3]
-  idx_of_input_to_unique = op.inputs[2 * num_partitions + 4]
-  unique_offsets = op.inputs[2 * num_partitions + 5]
+  partition_permutation = op.inputs[num_partitions]
+  # sp_dense_shape = op.inputs[num_partitions + 1]
+  indices_before_unique = op.inputs[num_partitions + 2]
+  row_empty_and_invalid_flags = op.inputs[num_partitions + 3]
+  unique_idxs = op.inputs[num_partitions + 4]
 
   feature_nums = op.outputs[1]
+  emb_shard_ptrs = op.outputs[2]
 
   grad_shards = fused_embedding_sparse_post_look_up_grad(
-    top_grad=top_grad_emb_vec, emb_shards=emb_shards,
-    partition_permutations=partition_permutations,
-    feature_nums=feature_nums, indices_before_unique=indices_before_unique,
-    unique_counts=unique_counts, idx_of_input_to_unique=idx_of_input_to_unique,
-    unique_offsets=unique_offsets, row_empty_and_invalid_flags=row_empty_and_invalid_flags,
+    fill_empty_row=fill_empty_row, default_id=default_id,
     combiner=combiner, max_norm=max_norm,
-    fill_empty_row=fill_empty_row,
-    default_id=default_id
-  )
+    top_grad=top_grad, emb_shards=emb_shards,
+    emb_shard_ptrs=emb_shard_ptrs,
+    partition_permutation=partition_permutation,
+    feature_nums=feature_nums, indices_before_unique=indices_before_unique,
+    unique_idxs=unique_idxs, row_empty_and_invalid_flags=row_empty_and_invalid_flags)
+
   return grad_shards + [None for _ in range(len(op.inputs) - num_partitions)]

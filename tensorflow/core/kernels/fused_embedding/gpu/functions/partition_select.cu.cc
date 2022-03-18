@@ -178,7 +178,7 @@ namespace fused_embedding {
     selected_nums_host.resize(num_partitions);                                 \
     /* copy the last element(which is the sum of previous) with stride */      \
     cudaMemcpy2DAsync(selected_nums_host.data(), 1 * sizeof(unsigned int),     \
-                      data_p_with_type<unsigned int>(inclusive_sum_counters) + \
+                      data_p_with_type<unsigned int>(accumulate_counters) +    \
                           counters_length - 1,                                 \
                       counters_length * sizeof(unsigned int),                  \
                       1 * sizeof(unsigned int), num_partitions,                \
@@ -234,47 +234,37 @@ namespace fused_embedding {
 #define SelectKernelArgs SelectScanKernelArgs
 
 #define SelectKernelLoadCodeBlock \
-  int64 lower_bound = j > 0 ? accu_div[j - 1] : 0;
+  int64 lower_bound = partition_id > 0 ? accu_div[partition_id - 1] : 0;
 #define SelectKernelRecalcKeyCodeBlock T new_key = key - lower_bound;
 
 DeclareSelectScanKernel;
 DeclareSelectKernel;
 DeclareSelect;
 
-template void PartitionSelectDiv<int64, int, 64>(OpKernelContext* ctx,
-                                                 const Tensor* keys,
-                                                 const Tensor& accu_div,
-                                                 const int64 num_partitions,
-                                                 OpOutputList& selected_keys,
-                                                 Tensor* permutation);
+template void PartitionSelectDiv<int64, int, 64>(
+    OpKernelContext* ctx, const Tensor* keys, const Tensor& accu_div,
+    const int64 num_partitions, cudaEvent_t memcpy_event,
+    OpOutputList& selected_keys, Tensor* permutation);
 
-template void PartitionSelectDiv<int64, int, 128>(OpKernelContext* ctx,
-                                                  const Tensor* keys,
-                                                  const Tensor& accu_div,
-                                                  const int64 num_partitions,
-                                                  OpOutputList& selected_keys,
-                                                  Tensor* permutation);
+template void PartitionSelectDiv<int64, int, 128>(
+    OpKernelContext* ctx, const Tensor* keys, const Tensor& accu_div,
+    const int64 num_partitions, cudaEvent_t memcpy_event,
+    OpOutputList& selected_keys, Tensor* permutation);
 
-template void PartitionSelectDiv<int64, int, 256>(OpKernelContext* ctx,
-                                                  const Tensor* keys,
-                                                  const Tensor& accu_div,
-                                                  const int64 num_partitions,
-                                                  OpOutputList& selected_keys,
-                                                  Tensor* permutation);
+template void PartitionSelectDiv<int64, int, 256>(
+    OpKernelContext* ctx, const Tensor* keys, const Tensor& accu_div,
+    const int64 num_partitions, cudaEvent_t memcpy_event,
+    OpOutputList& selected_keys, Tensor* permutation);
 
-template void PartitionSelectDiv<int64, int, 512>(OpKernelContext* ctx,
-                                                  const Tensor* keys,
-                                                  const Tensor& accu_div,
-                                                  const int64 num_partitions,
-                                                  OpOutputList& selected_keys,
-                                                  Tensor* permutation);
+template void PartitionSelectDiv<int64, int, 512>(
+    OpKernelContext* ctx, const Tensor* keys, const Tensor& accu_div,
+    const int64 num_partitions, cudaEvent_t memcpy_event,
+    OpOutputList& selected_keys, Tensor* permutation);
 
-template void PartitionSelectDiv<int64, int, 1024>(OpKernelContext* ctx,
-                                                   const Tensor* keys,
-                                                   const Tensor& accu_div,
-                                                   const int64 num_partitions,
-                                                   OpOutputList& selected_keys,
-                                                   Tensor* permutation);
+template void PartitionSelectDiv<int64, int, 1024>(
+    OpKernelContext* ctx, const Tensor* keys, const Tensor& accu_div,
+    const int64 num_partitions, cudaEvent_t memcpy_event,
+    OpOutputList& selected_keys, Tensor* permutation);
 
 }  // namespace fused_embedding
 

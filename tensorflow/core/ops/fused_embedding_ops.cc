@@ -72,7 +72,7 @@ REGISTER_OP("UniqueWithCountsGPU")
     });
 
 REGISTER_OP("PartitionWithPermutation")
-    .Attr("num_partitions: int > 1 = 2")
+    .Attr("num_partitions: int >= 2 = 2")
     .Attr("partition_axis: int >= 0 = 0")
     .Attr("partition_strategy : {'div'}")
     .Input("input: int64")
@@ -108,7 +108,7 @@ REGISTER_OP("PartitionWithPermutation")
 
       unused_list.clear();
       unused_list.resize(1);
-      unused_list[0] = ctx->MakeShape({ctx->UnknownDim()}
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
       ctx->set_output("partition_permutation", unused_list);
 
       return Status::OK();
