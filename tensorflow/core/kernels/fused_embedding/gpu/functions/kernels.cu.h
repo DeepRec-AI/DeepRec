@@ -11,6 +11,8 @@ namespace tensorflow {
 
 namespace fused_embedding {
 
+using GPUDevice = Eigen::GpuDevice;
+
 enum Combiner { Mean, Sum, Sqrtn };
 
 template <Combiner combiner>
@@ -56,8 +58,6 @@ __forceinline__ __device__ float CombineGrad<Sum>(const float grad,
   return grad;
 }
 
-using GPUDevice = Eigen::GpuDevice;
-
 void InitFlagsToOneInt4(const GPUDevice& d, int length, int* flags);
 
 void DetectInvalid(const GPUDevice& d, const int64_t* values, const int64_t nnz,
@@ -70,27 +70,22 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
                           int* invalid_id_flag, IndicePair* tmp_indices_buffer,
                           int64_t* values_extended);
 
-void CalcElementsOffsetPerPartition(const GPUDevice& d, int num_partitions,
-                                    const int64_t* values_sorted,
-                                    int64_t* partition_sizes_accumulate,
-                                    int64_t* elements_offset_per_partition,
-                                    int nnz);
-
-void GatherAndConvertToSubPartition(const GPUDevice& d,
-                                    const int64_t* sub_values_sorted,
-                                    int64_t* sub_partitioned_values,
-                                    const int64_t partition_start_base,
-                                    const int64_t partition_size);
-
 template <typename T>
 void RangeInit(const GPUDevice& d, const int64_t length, T* out);
 
-void SumUpEmbeddingShard(
-    const GPUDevice& d, const size_t shard_len, const float* emb_shard,
-    const int64_t* partition_permutations, const int64_t* indices_before_unique,
-    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
-    const int64_t* unique_offsets, const float max_norm, const int emb_vec_size,
-    float* emb_vectors, int* feature_nums);
+void SumUpEmbeddingShardSinglePartition(const GPUDevice& d,
+                                        const float* emb_shard,
+                                        const int64_t* indices_before_unique,
+                                        const int* unique_idxs, const int nnz,
+                                        const float max_norm,
+                                        const int emb_vec_size,
+                                        float* emb_vectors, int* feature_nums);
+
+void SumUpEmbeddingShardMultiPartition(
+    const GPUDevice& d, const void* const* emb_shard_ptrs,
+    const int* partition_permutation, const int64_t* indices_before_unique,
+    const int* unique_idxs, const int nnz, const float max_norm,
+    const int emb_vec_size, float* emb_vectors, int* feature_nums);
 
 template <Combiner combiner>
 void ApplyCombiner(const GPUDevice& d, const int batch_size,
@@ -99,14 +94,21 @@ void ApplyCombiner(const GPUDevice& d, const int batch_size,
                    float* emb_vectors);
 
 template <Combiner combiner>
-void DistributeGradToShard(
+void DistributeGradToShardSinglePartition(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* partition_permutations, const int64_t* indices_before_unique,
-    const int64_t* unique_counts, const int64_t* idx_of_input_to_unique,
-    const int64_t* unique_offsets, const int64_t shard_len,
-    const int64_t emb_vec_size, const float max_norm,
+    const int64_t* indices_before_unique, const int64_t* unique_idxs,
+    const int nnz, const int emb_vec_size, const float max_norm,
     const bool set_empty_row_zero, const int* feature_nums,
     const int* row_emptiness_flag, float* grad_shard);
+
+template <Combiner combiner>
+void DistributeGradToShardMultiPartition(
+    const GPUDevice& d, const float* top_grad,
+    const void* const* emb_shard_ptrs, const int* partition_permutation,
+    const int64_t* indices_before_unique, const int64_t* unique_idxs,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const int* row_emptiness_flag, void** grad_shard_ptrs);
 
 }  // namespace fused_embedding
 

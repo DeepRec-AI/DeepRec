@@ -1,13 +1,14 @@
 #if GOOGLE_CUDA
 
 #define EIGEN_USE_GPU
+#include "tensorflow/core/kernels/fused_embedding/gpu/functions/partition_select.cu.h"
+
 #include <cub/cub.cuh>
 #include <string>
 #include <vector>
 
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
 #include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
-#include "tensorflow/core/kernels/fused_embedding/gpu/functions/partition_select.cu.h"
 #include "tensorflow/core/lib/core/bits.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/stream_executor/cuda/cuda_activation.h"
@@ -132,12 +133,13 @@ namespace fused_embedding {
                   OpOutputList& selected_keys, Tensor* permutation) {          \
     OP_REQUIRES(ctx, keys->dims() == 1,                                        \
                 errors::InvalidArgument("Tensor keys must ranks 1"));          \
-    OP_REQUIRES(ctx,                                                           \
-                WarpWorkload >= 32 &&                                          \
-                    (WarpWorkload && !(WarpWorkload & (WarpWorkload - 1))),    \
-                errors::InvalidArgument(                                       \
-                    "WarpWorkload must be larger than warp size "              \
-                    "32 and is exponential of 2, 32, 64, 128, i.e."));         \
+    OP_REQUIRES(                                                               \
+        ctx,                                                                   \
+        WarpWorkload >= 32 && WarpWorkload <= 1024 &&                          \
+            (WarpWorkload && !(WarpWorkload & (WarpWorkload - 1))),            \
+        errors::InvalidArgument(                                               \
+            "WarpWorkload must be larger than warp size and less than 1024 "   \
+            "32 and is exponential of 2, 32, 64, 128, i.e."));                 \
     const GPUDevice& device = ctx->eigen_gpu_device();                         \
     const int64 length = keys->NumElements();                                  \
     const int64 warp_iteration = WarpWorkload / 32;                            \
@@ -238,6 +240,14 @@ namespace fused_embedding {
 DeclareSelectScanKernel;
 DeclareSelectKernel;
 DeclareSelect;
+
+template void PartitionSelectDiv<int64, int, 64>(OpKernelContext* ctx,
+                                                 const Tensor* keys,
+                                                 const Tensor& accu_div,
+                                                 const int64 num_partitions,
+                                                 OpOutputList& selected_keys,
+                                                 Tensor* permutation);
+
 template void PartitionSelectDiv<int64, int, 128>(OpKernelContext* ctx,
                                                   const Tensor* keys,
                                                   const Tensor& accu_div,

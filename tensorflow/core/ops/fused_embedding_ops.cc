@@ -45,15 +45,14 @@ REGISTER_OP("PruneInvalidAndFillEmptyRows")
       return Status::OK();
     });
 
-REGISTER_OP("UniqueWithMultiOutput")
-    .Input("input: T")
-    .Output("unique_keys: T")
-    .Output("unique_idxs: out_idx")
-    .Output("unique_counts: out_idx")
-    .Output("idx_of_input_to_unique: out_idx")
-    .Output("unique_offsets: out_idx")
-    .Attr("T: type")
-    .Attr("out_idx: {int32, int64} = DT_INT32")
+REGISTER_OP("UniqueWithCountsGPU")
+    .Attr("KeyType: {int32, int64} = DT_INT64")
+    .Attr("CounterType: {int32, int64} = DT_INT32")
+    .Input("input: KeyType")
+    .Output("unique_keys: KeyType")
+    .Output("unique_idxs: CounterType")
+    .Output("unique_counts: CounterType")
+
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle unused;
       std::vector<ShapeHandle> unused_list;
@@ -68,22 +67,18 @@ REGISTER_OP("UniqueWithMultiOutput")
       ctx->set_output("unique_keys", unused_list);
       ctx->set_output("unique_idxs", unused_list);
       ctx->set_output("unique_counts", unused_list);
-      ctx->set_output("idx_of_input_to_unique", unused_list);
-      ctx->set_output("unique_offsets", unused_list);
 
       return Status::OK();
     });
 
 REGISTER_OP("PartitionWithPermutation")
     .Attr("num_partitions: int > 1 = 2")
-    .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
-                                           // will consider support = 1
-                                           // if necessary
+    .Attr("partition_axis: int >= 0 = 0")
     .Attr("partition_strategy : {'div'}")
     .Input("input: int64")
     .Input("partition_shapes: num_partitions * int64")
     .Output("partitioned_values: num_partitions * int64")
-    .Output("partition_permutation: int64")
+    .Output("partition_permutation: int32")
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle unused;
       std::vector<ShapeHandle> unused_list;
@@ -124,21 +119,18 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("fill_empty_row: bool = false")
     .Attr("default_id: int = -1")
-    .Attr("partition_axis: int >= 0 = 0")  // for now only support = 0,
-                                           // will consider support = 1
-                                           // if necessary
+    .Attr("partition_axis: int >= 0 = 0")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
     .Input("emb_shards: num_partitions * T")
-    .Input("partition_permutation: int64")
+    .Input("partition_permutation: int32")
     .Input("sp_dense_shape: int64")
     .Input("indices_before_unique: int64")
     .Input("row_empty_and_invalid_flags: int32")
-    .Input("unique_counts: int64")
-    .Input("idx_of_input_to_unique: int64")
-    .Input("unique_offsets: int64")
+    .Input("unique_idxs: int32")
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
+    .Output("emb_shard_ptrs: uint64")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_partitions;
       TF_RETURN_IF_ERROR(ctx->GetAttr("num_partitions", &num_partitions));
@@ -178,15 +170,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // unique_counts
-      ctx->input("unique_counts", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
-
-      // idx_of_input_to_unique
-      ctx->input("idx_of_input_to_unique", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
-
-      // unique_offsets
-      ctx->input("unique_offsets", &unused_list);
+      ctx->input("unique_idxs", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // emb_vectors
@@ -198,6 +182,10 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
       // feature_nums
       unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
       ctx->set_output("feature_nums", unused_list);
+
+      // emb_shard_ptrs
+      unused_list[0] = ctx->MakeShape({num_partitions});
+      ctx->set_output("emb_shard_ptrs", unused_list);
       return Status::OK();
     });
 
@@ -222,12 +210,11 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
     .Attr("max_norm: float = -1.0")
     .Input("top_grad: T")
     .Input("emb_shards: num_partitions * T")
-    .Input("partition_permutation: int64")
+    .Input("emb_shard_ptrs: uint64")
+    .Input("partition_permutation: int32")
     .Input("feature_nums: int32")
     .Input("indices_before_unique: int64")
-    .Input("unique_counts: int64")
-    .Input("idx_of_input_to_unique: int64")
-    .Input("unique_offsets: int64")
+    .Input("unique_idxs: int32")
     .Input("row_empty_and_invalid_flags: int32")
     .Output("grad_shards: num_partitions * T")
     .SetShapeFn([](InferenceContext* ctx) {
@@ -248,6 +235,13 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
       for (int i = 0; i < num_partitions; i++) {
         TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[i], 2, &unused));
       }
+
+      // emb_shard_ptrs
+      ctx->input("emb_shard_ptrs", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+      TF_RETURN_IF_ERROR(
+          ctx->WithValue(ctx->Dim(unused, 0), num_partitions, &unused_dim));
+
       // partition_permutation
       ctx->input("partition_permutation", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
@@ -260,16 +254,8 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
       ctx->input("indices_before_unique", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
 
-      // unique_counts
-      ctx->input("unique_counts", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
-
-      // idx_of_input_to_unique
-      ctx->input("idx_of_input_to_unique", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
-
-      // unique_offsets
-      ctx->input("unique_offsets", &unused_list);
+      // unique_idxs
+      ctx->input("unique_idxs", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // row_empty_and_invalid_flags

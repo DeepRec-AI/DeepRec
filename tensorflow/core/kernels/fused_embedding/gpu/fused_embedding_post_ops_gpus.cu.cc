@@ -38,9 +38,9 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
     OpInputList emb_shards;
     OP_REQUIRES_OK(ctx, ctx->input_list("emb_shards", &emb_shards));
 
-    OpInputList partition_permutations;
-    OP_REQUIRES_OK(ctx, ctx->input_list("partition_permutations",
-                                        &partition_permutations));
+    Tensor const* partition_permutation = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   ctx->input("partition_permutation", &partition_permutation));
 
     Tensor const* dense_shape_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape_tensor));
@@ -54,66 +54,66 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
                    ctx->input("indices_before_unique", &indices_before_unique));
 
     Tensor const* unique_counts = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("unique_counts", &unique_counts));
-
-    Tensor const* idx_of_input_to_unique = nullptr;
-    OP_REQUIRES_OK(
-        ctx, ctx->input("idx_of_input_to_unique", &idx_of_input_to_unique));
-
-    Tensor const* unique_offsets = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("unique_offsets", &unique_offsets));
+    OP_REQUIRES_OK(ctx, ctx->input("unique_idxs", &unique_counts));
 
     nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
-    const int64_t emb_vec_size = emb_shards[0].shape().dim_size(1);
-    const int64_t batch_size = dense_shape_tensor->flat<int64>().data()[0];
+    const int emb_vec_size = emb_shards[0].shape().dim_size(1);
+    const int batch_size = dense_shape_tensor->flat<int64>().data()[0];
+    const int nnz = indices_before_unique->shape().dim_size(0);
+    const bool set_empty_row_zero = default_id_ < 0 && fill_empty_row_;
 
-    // = 1. sum up emb values from differententries and dump into output = //
+    // = 1. sum up emb values from emb_shards and dump into output = //
     Tensor* emb_vectors_tensor = nullptr;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output(0, TensorShape({batch_size, emb_vec_size}),
-                                  &emb_vectors_tensor));
-    // stream_executor::DeviceMemoryBase emb_vectors_wrapper(
-    //    emb_vectors_tensor.flat<float>().data(),
-    //    emb_vectors_tensor->NumElements() * sizeof(float));
-    // stream->ThenMemZero(&emb_vectors_wrapper,
-    //                    emb_vectors_tensor->NumElements() * sizeof(float));
-
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("emb_vectors",
+                                             TensorShape({int64(batch_size),
+                                                          int64(emb_vec_size)}),
+                                             &emb_vectors_tensor));
     cudaMemsetAsync(emb_vectors_tensor->flat<float>().data(), 0x0,
                     sizeof(float) * emb_vectors_tensor->NumElements(),
                     device.stream());
 
     Tensor* feature_nums;
-    OP_REQUIRES_OK(
-        ctx, ctx->allocate_output(1, TensorShape({batch_size}), &feature_nums));
-    // stream_executor::DeviceMemoryBase feature_nums_wrapper(
-    //    feature_nums.flat<int>().data(),
-    //    feature_nums.NumElements() * sizeof(int));
-    // stream->ThenMemZero(&feature_nums_wrapper,
-    //                    feature_nums.NumElements() * sizeof(int));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("feature_nums",
+                                             TensorShape({int64(batch_size)}),
+                                             &feature_nums));
     cudaMemsetAsync(feature_nums->flat<int>().data(), 0x0,
                     sizeof(int) * feature_nums->NumElements(), device.stream());
 
-    for (int i = 0; i < num_partitions_; i++) {
-      const size_t shard_len = emb_shards[i].shape().dim_size(0);
-      OP_REQUIRES(ctx,
-                  shard_len == partition_permutations[i].shape().dim_size(0),
-                  errors::InvalidArgument(
-                      "emb_shard and partition_permutations doesn't "
-                      "have the same length"));
-      SumUpEmbeddingShard(
-          device, shard_len, data_p_with_type<const float>(emb_shards[i]),
-          data_p_with_type<const int64_t>(partition_permutations[i]),
+    Tensor* emb_shard_ptrs;
+    OP_REQUIRES_OK(ctx,
+                   ctx->allocate_output("emb_shard_ptrs",
+                                        TensorShape({int64(num_partitions_)}),
+                                        &emb_shard_ptrs));
+
+    if (num_partitions_ == 1) {
+      SumUpEmbeddingShardSinglePartition(
+          device, data_p_with_type<const float>(emb_shards[0]),
           data_p_with_type<const int64_t>(indices_before_unique),
-          data_p_with_type<const int64_t>(unique_counts),
-          data_p_with_type<const int64_t>(idx_of_input_to_unique),
-          data_p_with_type<const int64_t>(unique_offsets), max_norm_,
+          data_p_with_type<const int>(unique_idxs), nnz, max_norm_,
           emb_vec_size, data_p_with_type<float>(emb_vectors_tensor),
           data_p_with_type<int>(feature_nums));
-      CK_CUDA_THROW_(cudaGetLastError());
+    } else {
+      std::vector<void*> emb_shard_ptrs_host;
+      emb_shard_ptrs_host.resize(num_partitions_);
+      for (int i = 0; i < num_partitions_; i++) {
+        emb_shard_ptrs_host[i] = data_p_with_type<void>(emb_shards[i]);
+      }
+
+      cudaMemcpyAsync(data_p_with_type<void>(emb_shard_ptrs),
+                      emb_shard_ptrs_host.data(),
+                      num_partitions * sizeof(size_t), cudaMemcpyHostToDevice,
+                      device.stream());
+
+      SumUpEmbeddingShardMultiPartition(
+          device, data_p_with_type<void*>(emb_shard_ptrs),
+          data_p_with_type<int>(partition_permutation),
+          data_p_with_type<const int64_t>(indices_before_unique),
+          data_p_with_type<const int>(unique_idxs), nnz, max_norm_,
+          emb_vec_size, data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<int>(feature_nums));
     }
 
-    const bool set_empty_row_zero = default_id_ < 0 && fill_empty_row_;
     // ================================================================ //
 
     // ========================= 2. combiner ========================== //
@@ -136,7 +136,6 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
           set_empty_row_zero, data_p_with_type<int>(feature_nums),
           data_p_with_type<float>(emb_vectors_tensor));
     }
-    CK_CUDA_THROW_(cudaGetLastError());
     // ================================================================ //
   }
 
@@ -178,9 +177,12 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
     OpInputList emb_shards;
     OP_REQUIRES_OK(ctx, ctx->input_list("emb_shards", &emb_shards));
 
-    OpInputList partition_permutations;
-    OP_REQUIRES_OK(ctx, ctx->input_list("partition_permutations",
-                                        &partition_permutations));
+    Tensor const* emb_shard_ptrs = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("emb_shard_ptrs", &emb_shard_ptrs));
+
+    Tensor const* partition_permutation = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   ctx->input("partition_permutation", &partition_permutation));
 
     Tensor const* feature_nums = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("feature_nums", &feature_nums));
@@ -189,15 +191,8 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
     OP_REQUIRES_OK(ctx,
                    ctx->input("indices_before_unique", &indices_before_unique));
 
-    Tensor const* unique_counts = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("unique_counts", &unique_counts));
-
-    Tensor const* idx_of_input_to_unique = nullptr;
-    OP_REQUIRES_OK(
-        ctx, ctx->input("idx_of_input_to_unique", &idx_of_input_to_unique));
-
-    Tensor const* unique_offsets = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("unique_offsets", &unique_offsets));
+    Tensor const* unique_idxs = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("unique_idxs", &unique_idxs));
 
     Tensor const* row_empty_and_invalid_flags = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("row_empty_and_invalid_flags",
@@ -208,60 +203,98 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
 
     nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
-    const int64_t batch_size = top_grad_tensor->shape().dim_size(0);
-    const int64_t emb_vec_size = emb_shards[0].shape().dim_size(1);
-
+    const int batch_size = top_grad_tensor->shape().dim_size(0);
+    const int emb_vec_size = emb_shards[0].shape().dim_size(1);
+    const int nnz = indices_before_unique->shape().dim_size(0);
     const bool set_empty_row_zero = default_id_ < 0 && fill_empty_row_;
 
+    std::vector<void**> grad_shard_ptrs_host;
+    grad_shard_ptrs_host.resize(num_partitions_);
     for (int i = 0; i < num_partitions_; i++) {
-      const int64_t shard_len = partition_permutations[i].shape().dim_size(0);
+      Tensor* grad_out;
+      grad_shards.allocate(i, emb_shards[i].shape(), &grad_out);
+      grad_shard_ptrs_host[i] = data_p_with_type<void>(grad_out);
+      cudaMemsetAsync(data_p_with_type<void>(grad_out), 0x0,
+                      sizeof(float) * grad_out->NumElements(), device.stream());
+    }
 
-      Tensor* grad_shard;
-      OP_REQUIRES_OK(
-          ctx, grad_shards.allocate(i, TensorShape({shard_len, emb_vec_size}),
-                                    &grad_shard));
-
-      if (combiner_ == "sqrtn") {
-        DistributeGradToShard<Sqrtn>(
+    if (num_partitions_ == 1) {
+      if (combiner_ == 'mean') {
+        DistributeGradToShardSinglePartition<Mean>(
             device, data_p_with_type<const float>(top_grad_tensor),
-            data_p_with_type<const float>(emb_shards[i]),
-            data_p_with_type<const int64_t>(partition_permutations[i]),
+            data_p_with_type<const float>(emb_shards[0]),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int64_t>(unique_counts),
-            data_p_with_type<const int64_t>(idx_of_input_to_unique),
-            data_p_with_type<const int64_t>(unique_offsets), shard_len,
-            emb_vec_size, max_norm_, set_empty_row_zero,
+            data_p_with_type<const int>(unique_idx), nnz, emb_vec_size,
+            max_norm_, set_empty_row_zero,
             data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
-            data_p_with_type<float>(grad_shard));
-      } else if (combiner_ == "mean") {
-        DistributeGradToShard<Mean>(
+            data_p_with_type<const int>(row_emptiness_flag),
+            data_p_with_type<float>(grad_shards[0]));
+      } else if (combiner_ == 'sqrt') {
+        DistributeGradToShardSinglePartition<Sqrt>(
             device, data_p_with_type<const float>(top_grad_tensor),
-            data_p_with_type<const float>(emb_shards[i]),
-            data_p_with_type<const int64_t>(partition_permutations[i]),
+            data_p_with_type<const float>(emb_shards[0]),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int64_t>(unique_counts),
-            data_p_with_type<const int64_t>(idx_of_input_to_unique),
-            data_p_with_type<const int64_t>(unique_offsets), shard_len,
-            emb_vec_size, max_norm_, set_empty_row_zero,
+            data_p_with_type<const int>(unique_idx), nnz, emb_vec_size,
+            max_norm_, set_empty_row_zero,
             data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
-            data_p_with_type<float>(grad_shard));
+            data_p_with_type<const int>(row_emptiness_flag),
+            data_p_with_type<float>(grad_shards[0]));
       } else {
-        DistributeGradToShard<Sum>(
+        DistributeGradToShardSinglePartition<Sum>(
             device, data_p_with_type<const float>(top_grad_tensor),
-            data_p_with_type<const float>(emb_shards[i]),
-            data_p_with_type<const int64_t>(partition_permutations[i]),
+            data_p_with_type<const float>(emb_shards[0]),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int64_t>(unique_counts),
-            data_p_with_type<const int64_t>(idx_of_input_to_unique),
-            data_p_with_type<const int64_t>(unique_offsets), shard_len,
-            emb_vec_size, max_norm_, set_empty_row_zero,
+            data_p_with_type<const int>(unique_idx), nnz, emb_vec_size,
+            max_norm_, set_empty_row_zero,
             data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
-            data_p_with_type<float>(grad_shard));
+            data_p_with_type<const int>(row_emptiness_flag),
+            data_p_with_type<float>(grad_shards[0]));
       }
-      CK_CUDA_THROW_(cudaGetLastError());
+
+    } else {
+      Tensor grad_shard_ptrs;
+      OP_REQUIRES_OK(ctx, ctx->allocate_temp(
+                              DT_UINT64, TensorShape({int64(num_partitions_)}),
+                              &grad_shard_ptrs));
+      cudaMemcpyAsync(data_p_with_type<void>(grad_shard_ptrs),
+                      data_p_with_type<void>(grad_shard_ptrs_host.data()),
+                      num_partitions_ * sizeof(size_t), cudaMemcpyHostToDevice,
+                      device.stream());
+
+      if (combiner_ == 'mean') {
+        DistributeGradToShardMultiPartition<Mean>(
+            device, data_p_with_type<const float>(top_grad_tensor),
+            data_p_with_type<void*>(emb_shard_ptrs),
+            data_p_with_type<const int>(partition_permutation)
+                data_p_with_type<const int64_t>(indices_before_unique),
+            data_p_with_type<const int>(unique_idx), nnz, emb_vec_size,
+            max_norm_, set_empty_row_zero,
+            data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const int>(row_emptiness_flag),
+            data_p_with_type<void*>(grad_shard_ptrs));
+      } else if (combiner_ == 'sqrt') {
+        DistributeGradToShardMultiPartition<Sqrt>(
+            device, data_p_with_type<const float>(top_grad_tensor),
+            data_p_with_type<void*>(emb_shard_ptrs),
+            data_p_with_type<const int>(partition_permutation)
+                data_p_with_type<const int64_t>(indices_before_unique),
+            data_p_with_type<const int>(unique_idx), nnz, emb_vec_size,
+            max_norm_, set_empty_row_zero,
+            data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const int>(row_emptiness_flag),
+            data_p_with_type<void*>(grad_shard_ptrs));
+      } else {
+        DistributeGradToShardMultiPartition<Sum>(
+            device, data_p_with_type<const float>(top_grad_tensor),
+            data_p_with_type<void*>(emb_shard_ptrs),
+            data_p_with_type<const int>(partition_permutation)
+                data_p_with_type<const int64_t>(indices_before_unique),
+            data_p_with_type<const int>(unique_idx), nnz, emb_vec_size,
+            max_norm_, set_empty_row_zero,
+            data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const int>(row_emptiness_flag),
+            data_p_with_type<void*>(grad_shard_ptrs));
+      }
     }
   }
 

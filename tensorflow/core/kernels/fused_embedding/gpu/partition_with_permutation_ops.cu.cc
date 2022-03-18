@@ -76,9 +76,27 @@ class PartitionWithPermutationGPU : public OpKernel {
                       num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
                       device.stream());
 
-      PartitionSelectDiv<int64, int64>(
-          ctx, input, partition_permute_init, accu_div, num_partitions_,
-          partitioned_values, partition_permutations);
+      if (input_size < 512) {
+        PartitionSelectDiv<int64, int, 64>(ctx, input, accu_div,
+                                           num_partitions_, partitioned_values,
+                                           partition_permutation);
+      } else if (input_size < 1024) {
+        PartitionSelectDiv<int64, int, 128>(ctx, input, accu_div,
+                                            num_partitions_, partitioned_values,
+                                            partition_permutation);
+      } else if (input_size < 2048) {
+        PartitionSelectDiv<int64, int, 256>(ctx, input, accu_div,
+                                            num_partitions_, partitioned_values,
+                                            partition_permutation);
+      } else if (input_size < 4096) {
+        PartitionSelectDiv<int64, int, 512>(ctx, input, accu_div,
+                                            num_partitions_, partitioned_values,
+                                            partition_permutation);
+      } else {
+        PartitionSelectDiv<int64, int, 1024>(
+            ctx, input, accu_div, num_partitions_, partitioned_values,
+            partition_permutation);
+      }
     }
   }
 
