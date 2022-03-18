@@ -13,6 +13,11 @@
 namespace tensorflow {
 namespace processor {
 
+enum class TimelineLocation {
+  LOCAL,
+  OSS
+};
+
 class Tracer {
  public:
   static Tracer* GetTracer() {
@@ -21,7 +26,7 @@ class Tracer {
   }
 
   ~Tracer() {
-    if (tracing_) {
+    if (tracing_ && location_type_ == TimelineLocation::OSS) {
       aos_pool_destroy(pool_);
       aos_http_io_deinitialize();
     }
@@ -43,6 +48,7 @@ class Tracer {
       oss_endpoint_(oss_endpoint),
       access_key_id_(oss_access_id),
       access_key_secret_(oss_access_secret) {
+    location_type_ = TimelineLocation::OSS;
     limit_step_ = start_step +
         interval_step * tracing_count;
     ParseFilePath(path);
@@ -58,6 +64,7 @@ class Tracer {
                  const std::string& oss_access_id,
                  const std::string& oss_access_secret, 
                  const std::string& path) {
+    location_type_ = TimelineLocation::OSS;
     tracing_ = true;
     next_tracing_step_ = start_step;
     interval_step_ = interval_step;
@@ -73,8 +80,26 @@ class Tracer {
     InitOss();
   }
 
+  void SetParams(const int64_t start_step,
+                 const int64_t interval_step,
+                 const int64_t tracing_count,
+                 const std::string& path) {
+    location_type_ = TimelineLocation::LOCAL;
+    tracing_ = true;
+    next_tracing_step_ = start_step;
+    interval_step_ = interval_step;
+    tracing_count_ = tracing_count;
+    limit_step_ = start_step +
+        interval_step * tracing_count;
+    ParseFilePath(path);
+    PrintDebugString();
+  }
+
+
   bool NeedTracing() {
-    if (tracing_ && curr_step_ < limit_step_) {
+    if (!tracing_) return false;
+
+    if (curr_step_ < limit_step_) {
       int64_t s = curr_step_.fetch_add(1, std::memory_order_relaxed);
       if (s == next_tracing_step_) {
         mutex_lock lock(mu_);
@@ -93,41 +118,54 @@ class Tracer {
     run_metadata.step_stats().SerializeToString(&outfile);
     string file_name = file_path_dir_ + "timeline-" +
         std::to_string(index);
-    aos_string_t object;
-    aos_str_set(&object, file_name.c_str());
-    aos_table_t* headers = aos_table_make(pool_, 0);
-    aos_list_t buffer;
-    aos_list_init(&buffer);
-    aos_buf_t* content = aos_buf_pack(pool_, outfile.c_str(), outfile.length());
-    aos_list_add_tail(&content->node, &buffer);
-    aos_table_t *resp_headers;
-    aos_status_t* resp_status =
-        oss_put_object_from_buffer(oss_client_options_, &aos_bucket_name_,
-                                   &object, &buffer, headers,
-                                   &resp_headers);
-    if (!aos_status_is_ok(resp_status)) {
-      LOG(ERROR) << "Push timeline file fail: " << file_name;
+ 
+    if (location_type_ == TimelineLocation::LOCAL) {
+      std::ofstream ofs;
+      ofs.open(file_name);
+      ofs << outfile;
+      ofs.close();
+    } else if (location_type_ == TimelineLocation::OSS) {
+      aos_string_t object;
+      aos_str_set(&object, file_name.c_str());
+      aos_table_t* headers = aos_table_make(pool_, 0);
+      aos_list_t buffer;
+      aos_list_init(&buffer);
+      aos_buf_t* content = aos_buf_pack(pool_, outfile.c_str(), outfile.length());
+      aos_list_add_tail(&content->node, &buffer);
+      aos_table_t *resp_headers;
+      aos_status_t* resp_status =
+          oss_put_object_from_buffer(oss_client_options_, &aos_bucket_name_,
+                                     &object, &buffer, headers,
+                                     &resp_headers);
+      if (!aos_status_is_ok(resp_status)) {
+        LOG(ERROR) << "Push timeline file fail: " << file_name;
+      }
     }
   }
 
  private:
   void ParseFilePath(const std::string& path) {
-    if (path.find("oss://") == std::string::npos) {
-      LOG(FATAL) << "Valid oss path must be start with oss://";
-    }
-    bucket_name_ = path.substr(6);
-    auto pos = bucket_name_.find("/");
-    if (pos == std::string::npos) {
-      LOG(FATAL) << "Valid oss path must be start with oss://bucket/xxx/";
-    }
-    file_path_dir_ = bucket_name_.substr(pos+1);
-    if (file_path_dir_[file_path_dir_.size()-1] != '/') {
+    // Local
+    if (path[0] == '/') {
+      file_path_dir_ = path;
       file_path_dir_ += "/";
-    }
-    bucket_name_ = bucket_name_.substr(0, pos);
+    } else if (path.find("oss://") != std::string::npos) {
+      bucket_name_ = path.substr(6);
+      auto pos = bucket_name_.find("/");
+      if (pos == std::string::npos) {
+        LOG(FATAL) << "Valid oss path must be start with oss://bucket/xxx/";
+      }
+      file_path_dir_ = bucket_name_.substr(pos+1);
+      if (file_path_dir_[file_path_dir_.size()-1] != '/') {
+        file_path_dir_ += "/";
+      }
+      bucket_name_ = bucket_name_.substr(0, pos);
 
-    aos_str_set(&aos_bucket_name_, bucket_name_.c_str());
-    aos_str_set(&aos_file_path_dir_, file_path_dir_.c_str());
+      aos_str_set(&aos_bucket_name_, bucket_name_.c_str());
+      aos_str_set(&aos_file_path_dir_, file_path_dir_.c_str());
+    } else {
+      LOG(FATAL) << "Valid path must be start with oss or local path.";
+    }
   }
 
   void InitOptions(oss_request_options_t *options) {
@@ -166,6 +204,7 @@ class Tracer {
   int64_t tracing_count_ = 0;
   int64_t limit_step_ = 0;
   std::atomic<int64_t> curr_step_;
+  TimelineLocation location_type_ = TimelineLocation::LOCAL;
 
   // oss info
   std::string oss_endpoint_ = "";
