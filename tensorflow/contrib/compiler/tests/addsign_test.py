@@ -126,7 +126,8 @@ class AddSignTest(xla_test.XLATestCase):
           # Validate updated params
           self.assertAllCloseAccordingToType(
               var0_np, self.evaluate(var0), half_rtol=1e-2)
-          self.assertAllCloseAccordingToType(var1_np, self.evaluate(var1))
+          self.assertAllCloseAccordingToType(var1_np, self.evaluate(var1),
+                                             half_rtol=1e-2)
 
   def testDense(self):
     decay_steps = 10
