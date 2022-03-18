@@ -16,12 +16,12 @@ enum class LayoutType {
   LIGHT,
   NORMAL,
   LEVELDB,
-  NORMAL_FIX
+  NORMAL_CONTIGUOUS
 };
 
 namespace {
 constexpr int COLUMN_BITSET_BYTES = 5;
-constexpr int COLUMN_BITSET_SIZE = COLUMN_BITSET_BYTES * sizeof(char);
+constexpr int COLUMN_BITSET_SIZE = COLUMN_BITSET_BYTES * 8;
 
 struct MetaHeader {
   unsigned char embed_num;
@@ -284,7 +284,7 @@ class ValuePtr {
 template <class V>
 class LightValuePtr : public ValuePtr<V> {
  public:
-  LightValuePtr(size_t size) {
+  LightValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(LightHeader) + sizeof(int64) * size);
     memset(this->ptr_ + sizeof(LightHeader), 0, sizeof(int64) * size);
     new ((char*)this->ptr_) LightHeader();
@@ -298,7 +298,7 @@ class LightValuePtr : public ValuePtr<V> {
 template <class V>
 class NormalValuePtr : public ValuePtr<V> {
  public:
-  NormalValuePtr(size_t size) {
+  NormalValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(NormalHeader) + sizeof(int64) * size);
     memset(this->ptr_ + sizeof(NormalHeader), 0, sizeof(int64) * size);
     new ((char*)this->ptr_) NormalHeader();

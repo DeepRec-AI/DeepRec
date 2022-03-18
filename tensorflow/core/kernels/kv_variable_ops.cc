@@ -167,9 +167,9 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     if (embedding::StorageType::LEVELDB == storage_type_) {
       ht_type_ = "leveldb_kv";
-      if (layout_ != "normal_fix")
-        LOG(WARNING)<<"layout must be NORAML_FIX when storage type is LEVELDB";
-      layout_ = "normal_fix";
+      if (layout_ != "normal_contiguous")
+        LOG(WARNING)<<"layout must be NORAML_CONTIGUOUS when storage type is LEVELDB";
+      layout_ = "normal_contiguous";
     }
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
   }
@@ -190,7 +190,7 @@ class InitializeKvVariableOp : public OpKernel {
 
     const Tensor& slotnum_tensor = context->input(4);
     int64 slotnum = slotnum_tensor.scalar<int64>()();
-    CHECK(block_num_ == 1 || layout_ != "normal_fix");
+    CHECK(block_num_ == 1 || layout_ != "normal_contiguous");
 
     if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
@@ -204,7 +204,8 @@ class InitializeKvVariableOp : public OpKernel {
               auto storage_manager = new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(storage_type_,
                                                                storage_path_,
-                                                               storage_size_));
+                                                               storage_size_,
+                                                               layout_));
               TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
@@ -213,7 +214,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
+                                         counter_type_, default_value_dim_));
             return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -228,7 +229,8 @@ class InitializeKvVariableOp : public OpKernel {
              auto storage_manager = new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
                                                                  storage_path_,
-                                                                 storage_size_));
+                                                                 storage_size_,
+                                                                 layout_));
              TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         storage_manager,
@@ -237,7 +239,7 @@ class InitializeKvVariableOp : public OpKernel {
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_, storage_size_));
+                                        counter_type_));
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -254,7 +256,7 @@ class InitializeKvVariableOp : public OpKernel {
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0,
                                          max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);
@@ -682,7 +684,8 @@ class KvResourceImportV2Op: public OpKernel {
               auto storage_manager = new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(storage_type_,
                                                                storage_path_,
-                                                               storage_size_));
+                                                               storage_size_,
+                                                               layout_));
               TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
@@ -691,7 +694,7 @@ class KvResourceImportV2Op: public OpKernel {
                                          steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
                                          layout_,  max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
+                                         counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -706,7 +709,8 @@ class KvResourceImportV2Op: public OpKernel {
              auto storage_manager = new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
                                                                  storage_path_,
-                                                                 storage_size_));
+                                                                 storage_size_,
+                                                                 layout_));
              TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         storage_manager,
@@ -715,7 +719,7 @@ class KvResourceImportV2Op: public OpKernel {
                                         steps_to_live_, filter_freq_,
                                         max_freq_, l2_weight_threshold_,
                                         layout_,  max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_, storage_size_));
+                                        counter_type_));
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -731,7 +735,7 @@ class KvResourceImportV2Op: public OpKernel {
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slotnum, opname,
                                          steps_to_live_, 0, max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, storage_size_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       primary_variable->SetSlotNum(slotnum);

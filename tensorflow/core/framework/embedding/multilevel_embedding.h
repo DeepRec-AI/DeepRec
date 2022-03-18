@@ -19,11 +19,24 @@ class EmbeddingVar;
 namespace embedding {
 
 struct StorageConfig {
-  StorageConfig() : type(StorageType::INVALID), path(""), size(0) {}
+  StorageConfig() : type(StorageType::INVALID), path(""), size(0), layout_type(LayoutType::NORMAL) {}
   StorageConfig(StorageType t,
                 const std::string& p,
-                int64 s) : type(t), path(p), size(s) {}
+                int64 s,
+                const std::string layout) : type(t), path(p), size(s) {
+    if ("normal" == layout) {
+      layout_type = LayoutType::NORMAL;
+    } else if ("light" == layout) {
+      layout_type = LayoutType::LIGHT;
+    } else if ("normal_contiguous" == layout){
+      layout_type = LayoutType::NORMAL_CONTIGUOUS;
+    } else {
+      LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
+      layout_type = LayoutType::NORMAL;
+    }
+  }
   StorageType type;
+  LayoutType layout_type;
   std::string path;
   int64 size;
 };
@@ -41,7 +54,8 @@ class StorageManager {
   cache_capacity_(cap),
   eviction_thread_(nullptr),
   total_dims_(0),
-  alloc_len_(0) {}
+  alloc_len_(0),
+  is_multi_level_(false) {}
 
   ~StorageManager() {
     if (eviction_thread_) {
@@ -57,7 +71,21 @@ class StorageManager {
   }
 
   Status Init() {
-    new_value_ptr_fn_ = [] (Allocator* alloc, size_t size) { return new NormalContiguousValuePtr<V>(alloc, size); };
+    switch (sc_.layout_type) {
+      case LayoutType::NORMAL:
+        new_value_ptr_fn_ = [] (Allocator* alloc, size_t size) { return new NormalValuePtr<V>(alloc, size); };
+        break;
+      case LayoutType::LIGHT:
+        new_value_ptr_fn_ = [] (Allocator* alloc, size_t size) { return new LightValuePtr<V>(alloc, size); };
+        break;
+      case LayoutType::NORMAL_CONTIGUOUS:
+        new_value_ptr_fn_ = [] (Allocator* alloc, size_t size) { return new NormalContiguousValuePtr<V>(alloc, size); };
+        break;
+      default:
+        new_value_ptr_fn_ = [] (Allocator* alloc, size_t size) { return new NormalValuePtr<V>(alloc, size); };
+        break;
+    }
+    
     switch (sc_.type) {
       case StorageType::DRAM:
         VLOG(1) << "StorageManager::DRAM: " << name_;
@@ -92,6 +120,13 @@ class StorageManager {
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
         break;
     }
+
+    if (sc_.type == embedding::PMEM_MEMKIND || sc_.type == embedding::PMEM_LIBPMEM ||
+        sc_.type == embedding::DRAM_PMEM || sc_.type == embedding::DRAM_SSD ||
+        sc_.type == embedding::HBM_DRAM || sc_.type == embedding::DRAM_LEVELDB) {
+      is_multi_level_ = true;
+    }
+
     hash_table_count_ = kvs_.size();
     if (hash_table_count_ > 1) {
       cache_ = new LRUCache<K>();
@@ -140,11 +175,36 @@ class StorageManager {
     return total_dims_;
   }
 
-  void DebugString() {
-    LOG(INFO) << "Level Number: " << hash_table_count_;
-    LOG(INFO) << "Storage Type: " << sc_.type;
-    LOG(INFO) << "Storage Path: " << sc_.path;
+  LayoutType GetLayoutType() {
+    return sc_.layout_type;
   }
+
+  embedding::StorageType GetStorageType() {
+    return sc_.type;
+  }
+
+  std::string GetStoragePath() {
+    return sc_.path;
+  }
+
+  int64 GertStorageSize() {
+    return sc_.size;
+  }
+
+  bool IsMultiLevel() {
+    return is_multi_level_;
+  }
+
+  std::string DebugString() const{
+    return strings::StrCat("Level Number: ", hash_table_count_,
+                          " alloc_len: ", alloc_len_,
+                          " total_dims: ", total_dims_,
+                          " Storage Type: ", sc_.type,
+                          " Storage Path: ", sc_.path,
+                          " Storage Capacity: ", sc_.size);
+  }
+
+
 
   void Schedule(std::function<void()> fn) {
     if (hash_table_count_ > 1) {
@@ -218,7 +278,7 @@ class StorageManager {
         if (val != nullptr && primary_val != nullptr) {
           value_list->push_back(val);
           key_list->push_back(key_list_tmp[i]);
-          if (emb_config.filter_freq != 0 || emb_config.is_multi_level) {
+          if (emb_config.filter_freq != 0 || is_multi_level_) {
             int64 dump_freq = filter->GetFreq(key_list_tmp[i], value_ptr_list[i]);
             freq_list->push_back(dump_freq);
           }
@@ -371,6 +431,7 @@ class StorageManager {
   std::vector<std::pair<KVInterface<K, V>*, Allocator*>> kvs_;
   std::function<ValuePtr<V>*(Allocator*, size_t)> new_value_ptr_fn_;
   StorageConfig sc_;
+  bool is_multi_level_;
 
   int64 alloc_len_;
   int64 total_dims_;
