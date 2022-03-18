@@ -10,11 +10,10 @@
 namespace tensorflow {
 
 namespace fused_embedding {
-template <typename T, typename TIndex>
+template <typename T, typename TIndex, int WarpWorkload>
 void PartitionSelectDiv(OpKernelContext* ctx, const Tensor* keys,
-                        const Tensor& indices, const Tensor& accu_div,
-                        const int64 num_partitions, OpOutputList& selected_keys,
-                        OpOutputList& selected_indices);
+                        const Tensor& accu_div, const int64 num_partitions,
+                        OpOutputList& selected_keys, Tensor* permutation);
 
 }  // namespace fused_embedding
 
