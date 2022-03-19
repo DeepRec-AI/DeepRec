@@ -240,7 +240,7 @@ class StorageOption(object):
         if not file_io.file_exists(storage_path):
           file_io.recursive_create_dir(storage_path)
     else:
-      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD]:
+      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSDHASH]:
         raise ValueError("storage_path musnt'be None when storage_type is set")
 
 @tf_export(v1=["EmbeddingVariableOption"])

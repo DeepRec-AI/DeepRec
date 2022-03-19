@@ -8,6 +8,7 @@
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/lib/strings/strcat.h"
 
 namespace tensorflow {
 namespace embedding {
@@ -15,10 +16,30 @@ namespace embedding {
 template <class K>
 class BatchCache {
 public:
-  BatchCache() {}
+  BatchCache():visit_count(0), hit_count(0) {}
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
   virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
   virtual size_t size() = 0;
+
+  void Hit() {
+    ++hit_count;
+  }
+  void Visit() {
+    ++visit_count;
+  }
+  std::string DebugString() {
+    int hit_rate = 0;
+    if (visit_count > 0) {
+      hit_rate = hit_count * 10000 / visit_count;
+    }
+    return strings::StrCat("HitRate = " , hit_rate,
+                          " %%, visit_count = ", visit_count,
+                          ", hit_count = ", hit_count);
+  }
+
+private:
+  size_t visit_count;
+  size_t hit_count;
 };
 
 template <class K>

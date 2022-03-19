@@ -277,6 +277,10 @@ class ValuePtr {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
   }
 
+  virtual void SetValue(V val, size_t size){
+    LOG(FATAL) << "Unsupport SetValue in subclass of ValuePtrBase";
+  }
+
  protected:
   void* ptr_;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
@@ -407,6 +411,12 @@ class NormalContiguousValuePtr : public ValuePtr<V>{
 
   void AddFreq(int64 count) {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
+  }
+
+  void SetValue(V val, size_t size){
+    for(int i = 0; i < size; ++i) {
+      *((V*)this->ptr_ + sizeof(FixedLengthHeader) / sizeof(V) + i) = val;
+    }
   }
 };
 

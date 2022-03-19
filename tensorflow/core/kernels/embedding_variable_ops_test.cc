@@ -30,6 +30,7 @@
 
 #include <sys/resource.h>
 #include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/kernels/kv_variable_ops.h"
 #ifdef TENSORFLOW_USE_JEMALLOC
 #include "jemalloc/jemalloc.h"
@@ -1074,6 +1075,36 @@ TEST(EmbeddingVariableTest, TestSizeDBKV) {
   TF_CHECK_OK(hashmap->Remove(2));
   ASSERT_EQ(hashmap->Size(), 98);
   LOG(INFO) << "2 size:" << hashmap->Size();
+}
+
+TEST(EmbeddingVariableTest, TestSSDIterator) {
+  KVInterface<int64, float>* hashmap = new SSDKV<int64, float>(testing::TmpDir(), ev_allocator());
+  hashmap->SetTotalDims(126);
+  ASSERT_EQ(hashmap->Size(), 0);
+  std::vector<ValuePtr<float>*> value_ptrs;
+  std::vector<int64> keys;
+  for (int64 i = 0; i < 10; ++i) {
+    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(ev_allocator(), 126);
+    tmp->SetValue((float)i, 126);
+    value_ptrs.push_back(tmp);
+  }
+  for (int64 i = 0; i < 10; i++) {
+    hashmap->Commit(i, value_ptrs[i]);
+  }
+  embedding::Iterator* it = hashmap->GetIterator();
+  int64 index = 0;
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    std::string value_str, key_str;
+    key_str = it->Key();
+    int64 key = *((int64*)&key_str[0]);
+    value_str = it->Value();
+    float* val = (float*)&value_str[0] + 4;
+    ASSERT_EQ(key, index);
+    for (int i = 0; i < 126; i++)
+      ASSERT_EQ(val[i], key);
+    index++;
+    //LOG(INFO)<<*((int64*)&value_str[0]);
+  }
 }
 
 } // namespace

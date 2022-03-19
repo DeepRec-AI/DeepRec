@@ -29,11 +29,11 @@ class Iterator {
  public:
   Iterator() {};
   virtual ~Iterator() {};
-  virtual bool Valid() const = 0;
-  virtual void SeekToFirst() = 0;
-  virtual void Next() = 0;
-  virtual std::string Key() const = 0;
-  virtual std::string Value() const = 0;
+  virtual bool Valid() {return true;};
+  virtual void SeekToFirst() {};
+  virtual void Next() {};
+  virtual std::string Key() {return "";};
+  virtual std::string Value() {return "";};
 };
 
 template <class K, class V>

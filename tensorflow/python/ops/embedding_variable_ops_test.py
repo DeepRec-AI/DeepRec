@@ -1924,5 +1924,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         for j in range(0, 30):
           self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
+  
 if __name__ == "__main__":
   googletest.main()
