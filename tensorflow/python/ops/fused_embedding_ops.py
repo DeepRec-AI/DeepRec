@@ -46,6 +46,10 @@ def fused_embedding_lookup_sparse(params,
   if default_id is not None and type(default_id) is not int:
     raise ValueError("default_id must be a integer!")
 
+  params_white_list = [EmbeddingVariable, tf.Variable]
+  if any([type(param) not in params_white_list for param in params]):
+    raise ValueError("Currently fused embedding only support: {}".format(params_white_list))
+
   partition_nums = len(params)
 
   if type(params[0]) is EmbeddingVariable:
