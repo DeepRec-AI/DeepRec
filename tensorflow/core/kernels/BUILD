@@ -1950,7 +1950,8 @@ tf_cuda_cc_test(
     size = "small",
     srcs = ["fused_embedding/tests/prune_invalid_and_fill_empty_rows_ops_test.cc",
             "fused_embedding/tests/unique_with_count_gpu_ops_test.cc",
-            "fused_embedding/tests/partition_with_permutation_ops_test.cu.cc"],
+            "fused_embedding/tests/partition_with_permutation_ops_test.cu.cc",
+            "fused_embedding/tests/fused_embedding_post_ops_test.cc"],
     tags = tf_cuda_tests_tags(),
     deps = [
         ":fused_embedding_ops",
