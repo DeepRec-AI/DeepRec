@@ -1948,8 +1948,7 @@ tf_cuda_cc_test(
 tf_cuda_cc_test(
     name = "fused_embedding_ops_test",
     size = "small",
-    srcs = ["fused_embedding/tests/fused_embedding_post_ops_test.cc",
-            "fused_embedding/tests/fused_embedding_post_grad_ops_test.cc"],
+    srcs = ["fused_embedding/tests/prune_invalid_and_fill_empty_rows_ops_test.cc"],
     tags = tf_cuda_tests_tags(),
     deps = [
         ":fused_embedding_ops",
