@@ -65,6 +65,8 @@ void printGPUTensorHelper(const T* src, const std::vector<int>& dims,
   int element_num = 1;
   int dim_num = (int)dims.size();
 
+  cudaDeviceSynchronize();
+
   printf("Tensor size: (");
   for (int i = 0; i < dim_num; i++) {
     element_num *= dims[i];

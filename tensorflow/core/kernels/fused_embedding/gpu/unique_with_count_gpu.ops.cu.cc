@@ -322,10 +322,11 @@ class UniqueWithCountsGPU : public OpKernel {
               data_p_with_type<CounterType>(counter), empty_key, empty_val);
 
     CounterType uniq_size;
-    cudaMemcpyAsync(&uniq_size, data_p_with_type<CounterType>(counter),
-                    sizeof(counter), cudaMemcpyDeviceToHost, device.stream());
-    cudaEventRecord(memcpy_event_, device.stream());
-    cudaEventSynchronize(memcpy_event_);
+    CK_CUDA_THROW_(cudaMemcpyAsync(
+        &uniq_size, data_p_with_type<CounterType>(counter), sizeof(CounterType),
+        cudaMemcpyDeviceToHost, device.stream()));
+    CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
+    CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
 
     Tensor* unique_keys;
     OP_REQUIRES_OK(
@@ -341,7 +342,7 @@ class UniqueWithCountsGPU : public OpKernel {
          data_p_with_type<CounterType>(unique_counts),
          data_p_with_type<const KeyType>(keys_storage),
          data_p_with_type<const CounterType>(vals_storage),
-         data_p_with_type<const CounterType>(counter), 0, capacity,
+         data_p_with_type<const CounterType>(counts_storage), 0, capacity,
          data_p_with_type<size_t>(dump_counter), empty_key);
   }
 

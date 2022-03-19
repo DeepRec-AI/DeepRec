@@ -69,16 +69,17 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
                                              TensorShape({int64(batch_size),
                                                           int64(emb_vec_size)}),
                                              &emb_vectors_tensor));
-    cudaMemsetAsync(emb_vectors_tensor->flat<float>().data(), 0x0,
-                    sizeof(float) * emb_vectors_tensor->NumElements(),
-                    device.stream());
+    CK_CUDA_THROW_(cudaMemsetAsync(
+        emb_vectors_tensor->flat<float>().data(), 0x0,
+        sizeof(float) * emb_vectors_tensor->NumElements(), device.stream()));
 
     Tensor* feature_nums;
     OP_REQUIRES_OK(ctx, ctx->allocate_output("feature_nums",
                                              TensorShape({int64(batch_size)}),
                                              &feature_nums));
-    cudaMemsetAsync(feature_nums->flat<int>().data(), 0x0,
-                    sizeof(int) * feature_nums->NumElements(), device.stream());
+    CK_CUDA_THROW_(cudaMemsetAsync(feature_nums->flat<int>().data(), 0x0,
+                                   sizeof(int) * feature_nums->NumElements(),
+                                   device.stream()));
 
     Tensor* emb_shard_ptrs;
     OP_REQUIRES_OK(ctx,
@@ -100,10 +101,10 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
         emb_shard_ptrs_host[i] = data_p_with_type<void>(emb_shards[i]);
       }
 
-      cudaMemcpyAsync(data_p_with_type<void>(emb_shard_ptrs),
-                      emb_shard_ptrs_host.data(),
-                      num_partitions_ * sizeof(size_t), cudaMemcpyHostToDevice,
-                      device.stream());
+      CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<void>(emb_shard_ptrs),
+                                     emb_shard_ptrs_host.data(),
+                                     num_partitions_ * sizeof(size_t),
+                                     cudaMemcpyHostToDevice, device.stream()));
 
       SumUpEmbeddingShardMultiPartition(
           device, data_p_with_type<void*>(emb_shard_ptrs),
@@ -214,8 +215,9 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
       Tensor* grad_out;
       grad_shards.allocate(i, emb_shards[i].shape(), &grad_out);
       grad_shard_ptrs_host[i] = data_p_with_type<void>(grad_out);
-      cudaMemsetAsync(data_p_with_type<void>(grad_out), 0x0,
-                      sizeof(float) * grad_out->NumElements(), device.stream());
+      CK_CUDA_THROW_(cudaMemsetAsync(data_p_with_type<void>(grad_out), 0x0,
+                                     sizeof(float) * grad_out->NumElements(),
+                                     device.stream()));
     }
 
     if (num_partitions_ == 1) {
@@ -256,10 +258,10 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
       OP_REQUIRES_OK(ctx, ctx->allocate_temp(
                               DT_UINT64, TensorShape({int64(num_partitions_)}),
                               &grad_shard_ptrs));
-      cudaMemcpyAsync(data_p_with_type<void>(grad_shard_ptrs),
-                      grad_shard_ptrs_host.data(),
-                      num_partitions_ * sizeof(size_t), cudaMemcpyHostToDevice,
-                      device.stream());
+      CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<void>(grad_shard_ptrs),
+                                     grad_shard_ptrs_host.data(),
+                                     num_partitions_ * sizeof(size_t),
+                                     cudaMemcpyHostToDevice, device.stream()));
 
       if (combiner_ == "mean") {
         DistributeGradToShardMultiPartition<Mean>(

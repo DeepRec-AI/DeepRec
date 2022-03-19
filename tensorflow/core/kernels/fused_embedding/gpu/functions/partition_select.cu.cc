@@ -156,9 +156,10 @@ namespace fused_embedding {
         ctx, ctx->allocate_temp(DT_UINT32,                                     \
                                 TensorShape{counters_length * num_partitions}, \
                                 &accumulate_counters));                        \
-    cudaMemsetAsync(data_p_with_type<void>(accumulate_counters), 0,            \
-                    accumulate_counters.NumElements() * sizeof(unsigned int),  \
-                    device.stream());                                          \
+    CK_CUDA_THROW_(cudaMemsetAsync(                                            \
+        data_p_with_type<void>(accumulate_counters), 0,                        \
+        accumulate_counters.NumElements() * sizeof(unsigned int),              \
+        device.stream()));                                                     \
     OP_REQUIRES_OK(                                                            \
         ctx, ctx->allocate_temp(                                               \
                  DT_UINT32, TensorShape{predicates_length * num_partitions},   \
@@ -179,14 +180,14 @@ namespace fused_embedding {
     std::vector<unsigned int> selected_nums_host;                              \
     selected_nums_host.resize(num_partitions);                                 \
     /* copy the last element(which is the sum of previous) with stride */      \
-    cudaMemcpy2DAsync(selected_nums_host.data(), 1 * sizeof(unsigned int),     \
-                      data_p_with_type<unsigned int>(accumulate_counters) +    \
-                          counters_length - 1,                                 \
-                      counters_length * sizeof(unsigned int),                  \
-                      1 * sizeof(unsigned int), num_partitions,                \
-                      cudaMemcpyDeviceToHost, device.stream());                \
-    cudaEventRecord(memcpy_event, device.stream());                            \
-    cudaEventSynchronize(memcpy_event);                                        \
+    CK_CUDA_THROW_(cudaMemcpy2DAsync(                                          \
+        selected_nums_host.data(), 1 * sizeof(unsigned int),                   \
+        data_p_with_type<unsigned int>(accumulate_counters) +                  \
+            counters_length - 1,                                               \
+        counters_length * sizeof(unsigned int), 1 * sizeof(unsigned int),      \
+        num_partitions, cudaMemcpyDeviceToHost, device.stream()));             \
+    CK_CUDA_THROW_(cudaEventRecord(memcpy_event, device.stream()));            \
+    CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event));                        \
                                                                                \
     std::vector<void*> output_ptrs_host;                                       \
     output_ptrs_host.resize(num_partitions);                                   \
@@ -201,9 +202,10 @@ namespace fused_embedding {
     OP_REQUIRES_OK(                                                            \
         ctx, ctx->allocate_temp(DT_UINT64, TensorShape{int64(num_partitions)}, \
                                 &output_ptrs));                                \
-    cudaMemcpyAsync(data_p_with_type<void>(output_ptrs),                       \
-                    output_ptrs_host.data(), num_partitions * sizeof(size_t),  \
-                    cudaMemcpyHostToDevice, device.stream());                  \
+    CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<void>(output_ptrs),        \
+                                   output_ptrs_host.data(),                    \
+                                   num_partitions * sizeof(size_t),            \
+                                   cudaMemcpyHostToDevice, device.stream()));  \
     {                                                                          \
       const int64 threads = 32;                                                \
       const int64 blocks = select_scan_warps * num_partitions;                 \

@@ -59,9 +59,9 @@ class PartitionWithPermutationGPU : public OpKernel {
       std::vector<int64_t> accu_div_host;
       accu_div_host.resize(num_partitions_);
       for (int i = 0; i < partition_shapes.size(); i++) {
-        OP_REQUIRES(ctx, partition_shapes[i].dims() == 2,
+        OP_REQUIRES(ctx, partition_shapes[i].NumElements() == 2,
                     errors::InvalidArgument(
-                        "input partition_shapes must all equal to rank 2"));
+                        "input partition_shapes must all have 2 elements"));
         const int64_t div = partition_shapes[i].flat<int64>().data()[0];
         accu_div_host[i] = i == 0 ? div : accu_div_host[i - 1] + div;
       }
@@ -72,9 +72,9 @@ class PartitionWithPermutationGPU : public OpKernel {
           ctx->allocate_temp(
               DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
               &accu_div));
-      cudaMemcpyAsync(data_p_with_type<int64>(accu_div), accu_div_host.data(),
+      CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(accu_div), accu_div_host.data(),
                       num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
-                      device.stream());
+                      device.stream()));
 
       if (input_size < 512) {
         PartitionSelectDiv<int64, int, 64>(

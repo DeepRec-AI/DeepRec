@@ -118,7 +118,6 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
 
       InitFlagsToOneInt4(device, batch_size + nnz,
                          row_empty_and_invalid_flags->flat<int>().data());
-      CK_CUDA_THROW_(cudaGetLastError());
 
       // 3.1 set flags, init tmp_indices_buffer etc.
       if (fill_empty_row_) {
@@ -130,13 +129,11 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
             data_p_with_type<int>(row_empty_and_invalid_flags) + batch_size,
             data_p_with_type<IndicePair>(tmp_indices_buffer),
             data_p_with_type<int64_t>(values_extended));
-        CK_CUDA_THROW_(cudaGetLastError());
 
       } else if (prune_invalid_id_) {
         DetectInvalid(
             device, data_p_with_type<const int64_t>(values_tensor), nnz,
             data_p_with_type<int>(row_empty_and_invalid_flags) + batch_size);
-        CK_CUDA_THROW_(cudaGetLastError());
       }
       // 3.2 select copy valid id, select copy empty row indices
 
@@ -146,7 +143,6 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
           data_p_with_type<const int>(row_empty_and_invalid_flags) + batch_size,
           data_p_with_type<int64_t>(values_extended),
           data_p_with_type<int>(selected_num_d), int(nnz), device.stream());
-      CK_CUDA_THROW_(cudaGetLastError());
 
       cub::DeviceSelect::Flagged(
           data_p_with_type<int8>(cub_temp_storage), max_cub_bytes,
@@ -154,14 +150,13 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
           data_p_with_type<int>(row_empty_and_invalid_flags) + batch_size,
           data_p_with_type<IndicePair>(indices_extended),
           data_p_with_type<int>(selected_num_d), nnz, device.stream());
-      CK_CUDA_THROW_(cudaGetLastError());
 
       if (prune_invalid_id_) {
         int selected_num;
-        cudaMemcpyAsync(&selected_num, data_p_with_type<int>(selected_num_d),
-                        sizeof(int), cudaMemcpyDeviceToHost, device.stream());
-        cudaEventRecord(memcpy_event_, device.stream());
-        cudaEventSynchronize(memcpy_event_);
+        CK_CUDA_THROW_(cudaMemcpyAsync(&selected_num, data_p_with_type<int>(selected_num_d),
+                        sizeof(int), cudaMemcpyDeviceToHost, device.stream()));
+        CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
+        CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
         new_nnz = selected_num;
       }
 
@@ -172,12 +167,11 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
             data_p_with_type<int>(row_empty_and_invalid_flags),
             data_p_with_type<IndicePair>(indices_extended) + new_nnz,
             data_p_with_type<int>(selected_num_d), batch_size, device.stream());
-        CK_CUDA_THROW_(cudaGetLastError());
         int selected_num;
-        cudaMemcpyAsync(&selected_num, data_p_with_type<void>(selected_num_d),
-                        sizeof(int), cudaMemcpyDeviceToHost, device.stream());
-        cudaEventRecord(memcpy_event_, device.stream());
-        cudaEventSynchronize(memcpy_event_);
+        CK_CUDA_THROW_(cudaMemcpyAsync(&selected_num, data_p_with_type<void>(selected_num_d),
+                        sizeof(int), cudaMemcpyDeviceToHost, device.stream()));
+        CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
+        CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
         new_nnz += selected_num;
       }
     }
@@ -203,13 +197,13 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
         ctx, ctx->allocate_output("sp_indices_out", TensorShape{new_nnz, 2},
                                   &sp_indices_out));
 
-    cudaMemcpyAsync(data_p_with_type<int64>(sp_values_out), values_in,
+    CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(sp_values_out), values_in,
                     sizeof(int64) * new_nnz, cudaMemcpyDeviceToDevice,
-                    device.stream());
+                    device.stream()));
 
-    cudaMemcpyAsync(data_p_with_type<int64>(sp_indices_out), indices_in,
+    CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(sp_indices_out), indices_in,
                     sizeof(IndicePair) * new_nnz, cudaMemcpyDeviceToDevice,
-                    device.stream());
+                    device.stream()));
   }
 
  private:
