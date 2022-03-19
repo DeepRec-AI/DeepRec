@@ -19,12 +19,12 @@ typedef Eigen::GpuDevice GPUDevice;
 
 namespace fused_embedding {
 
-// A macro helper to declare SelectScanKernels, because they just have only
-// a little bit differences. Need to define macros
+// A macro helper to declare SelectScanKernel, because they just have only
+// a little bit differences. Need to define macros before using this
 #define DeclareSelectScanKernel                                              \
   template <typename T, int WarpWorkload>                                    \
   __global__ void SelectScanKernelName(                                      \
-      const T* keys, SelectScanKernelArgs, const int64 num_partitions,       \
+      const T* keys, SelectScanKernelArgs const int64 num_partitions,        \
       const int64 length, const int64 predicates_length,                     \
       const int64 counters_length, unsigned int* predicates,                 \
       unsigned int* accumulate_counters) {                                   \
@@ -70,10 +70,12 @@ namespace fused_embedding {
     }                                                                        \
   }
 
+// A macro helper to declare SelectKernel, because they just have only
+// a little bit differences. Need to define macros before using this
 #define DeclareSelectKernel                                                    \
   template <typename T, typename TIndex, int WarpWorkload>                     \
   __global__ void SelectKernelName(                                            \
-      const T* keys, SelectKernelArgs, unsigned int* predicates,               \
+      const T* keys, SelectKernelArgs unsigned int* predicates,                \
       unsigned int* accumulate_counters, const int64 num_partitions,           \
       const int64 length, const int64 predicates_length,                       \
       const int64 counters_length, void** output_ptrs, TIndex* permutation) {  \
@@ -123,14 +125,14 @@ namespace fused_embedding {
     }                                                                          \
   }
 
-// A macro helper to declare DefinePartitionSelect. Need to define following
-// macros before using this: SelectScanKernelName,
-// SelectArgs, SelectScanPassArgs
+// A macro helper to declare DefinePartitionSelect. Need to define
+// macros before using this
 #define DeclareSelect                                                          \
   template <typename T, typename TIndex, int WarpWorkload>                     \
-  void SelectName(OpKernelContext* ctx, const Tensor* keys, SelectArgs,        \
-                  const int64 num_partitions, cudaEvent_t memcpy_event,        \
-                  OpOutputList& selected_keys, Tensor* permutation) {          \
+  void SelectName(OpKernelContext* ctx, const Tensor* keys,                    \
+                  SelectArgs const int64 num_partitions,                       \
+                  cudaEvent_t memcpy_event, OpOutputList& selected_keys,       \
+                  Tensor* permutation) {                                       \
     OP_REQUIRES(ctx, keys->dims() == 1,                                        \
                 errors::InvalidArgument("Tensor keys must ranks 1"));          \
     OP_REQUIRES(                                                               \
@@ -169,9 +171,9 @@ namespace fused_embedding {
           ctx,                                                                 \
           GpuLaunchKernel(                                                     \
               SelectScanKernelName<T, WarpWorkload>, blocks, threads, 0,       \
-              device.stream(), data_p_with_type<T>(keys), SelectScanPassArgs,  \
-              num_partitions, length, predicates_length, counters_length,      \
-              data_p_with_type<unsigned int>(predicates),                      \
+              device.stream(), data_p_with_type<T>(keys),                      \
+              SelectScanPassArgs num_partitions, length, predicates_length,    \
+              counters_length, data_p_with_type<unsigned int>(predicates),     \
               data_p_with_type<unsigned int>(accumulate_counters)));           \
     }                                                                          \
     std::vector<unsigned int> selected_nums_host;                              \
@@ -209,7 +211,7 @@ namespace fused_embedding {
           ctx, GpuLaunchKernel(                                                \
                    SelectKernelName<T, TIndex, WarpWorkload>, blocks, threads, \
                    0, device.stream(), data_p_with_type<T>(keys),              \
-                   SelectPassArgs, data_p_with_type<unsigned int>(predicates), \
+                   SelectPassArgs data_p_with_type<unsigned int>(predicates),  \
                    data_p_with_type<unsigned int>(accumulate_counters),        \
                    num_partitions, length, predicates_length, counters_length, \
                    data_p_with_type<void*>(output_ptrs),                       \
@@ -217,13 +219,14 @@ namespace fused_embedding {
     }                                                                          \
   }
 
+// =============== Div Selection =============== //
 #define SelectName PartitionSelectDiv
-#define SelectArgs const Tensor& accu_div
-#define SelectScanPassArgs data_p_with_type<int64>(accu_div)
+#define SelectArgs const Tensor &accu_div,
+#define SelectScanPassArgs data_p_with_type<int64>(accu_div),
 #define SelectPassArgs SelectScanPassArgs
 
 #define SelectScanKernelName SelectScanDivKernel
-#define SelectScanKernelArgs const int64* accu_div
+#define SelectScanKernelArgs const int64 *accu_div,
 #define SelectScanKernelLoadCodeBlock                                    \
   int64 lower_bound = partition_id > 0 ? accu_div[partition_id - 1] : 0; \
   int64 upper_bound = accu_div[partition_id];
@@ -265,6 +268,92 @@ template void PartitionSelectDiv<int64, int, 1024>(
     OpKernelContext* ctx, const Tensor* keys, const Tensor& accu_div,
     const int64 num_partitions, cudaEvent_t memcpy_event,
     OpOutputList& selected_keys, Tensor* permutation);
+
+// =============== Mod Selection =============== //
+
+#define SelectName PartitionSelectMod
+#define SelectArgs
+#define SelectScanPassArgs
+#define SelectPassArgs SelectScanPassArgs
+
+#define SelectScanKernelName SelectScanModKernel
+#define SelectScanKernelArgs
+#define SelectScanKernelLoadCodeBlock
+#define SelectScanKernelEvalCodeBlock \
+  selected = int(key % num_partitions == partition_id);
+
+#define SelectKernelName SelectModKernel
+#define SelectKernelArgs SelectScanKernelArgs
+
+#define SelectKernelLoadCodeBlock
+#define SelectKernelRecalcKeyCodeBlock T new_key = key / num_partitions;
+
+DeclareSelectScanKernel;
+DeclareSelectKernel;
+DeclareSelect;
+
+template void PartitionSelectMod<int64, int, 64>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectMod<int64, int, 128>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectMod<int64, int, 256>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectMod<int64, int, 512>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectMod<int64, int, 1024>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+// =============== Mod EV Selection =============== //
+
+#define SelectName PartitionSelectModEV
+#define SelectArgs
+#define SelectScanPassArgs
+#define SelectPassArgs SelectScanPassArgs
+
+#define SelectScanKernelName SelectScanModEVKernel
+#define SelectScanKernelArgs
+#define SelectScanKernelLoadCodeBlock
+#define SelectScanKernelEvalCodeBlock \
+  selected = int(key % 1000 % num_partitions == partition_id);
+
+#define SelectKernelName SelectModEVKernel
+#define SelectKernelArgs SelectScanKernelArgs
+
+#define SelectKernelLoadCodeBlock
+#define SelectKernelRecalcKeyCodeBlock T new_key = key;
+
+DeclareSelectScanKernel;
+DeclareSelectKernel;
+DeclareSelect;
+
+template void PartitionSelectModEV<int64, int, 64>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectModEV<int64, int, 128>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectModEV<int64, int, 256>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectModEV<int64, int, 512>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
+
+template void PartitionSelectModEV<int64, int, 1024>(
+    OpKernelContext* ctx, const Tensor* keys, const int64 num_partitions,
+    cudaEvent_t memcpy_event, OpOutputList& selected_keys, Tensor* permutation);
 
 }  // namespace fused_embedding
 

@@ -97,6 +97,50 @@ class PartitionWithPermutationGPU : public OpKernel {
             ctx, input, accu_div, num_partitions_, memcpy_event_,
             partitioned_values, partition_permutation);
       }
+    } else if (partition_strategy_ == "mod") {
+      if (input_size < 512) {
+        PartitionSelectMod<int64, int, 64>(ctx, input, num_partitions_,
+                                           memcpy_event_, partitioned_values,
+                                           partition_permutation);
+      } else if (input_size < 1024) {
+        PartitionSelectMod<int64, int, 128>(ctx, input, num_partitions_,
+                                            memcpy_event_, partitioned_values,
+                                            partition_permutation);
+      } else if (input_size < 2048) {
+        PartitionSelectMod<int64, int, 256>(ctx, input, num_partitions_,
+                                            memcpy_event_, partitioned_values,
+                                            partition_permutation);
+      } else if (input_size < 4096) {
+        PartitionSelectMod<int64, int, 512>(ctx, input, num_partitions_,
+                                            memcpy_event_, partitioned_values,
+                                            partition_permutation);
+      } else {
+        PartitionSelectMod<int64, int, 1024>(ctx, input, num_partitions_,
+                                             memcpy_event_, partitioned_values,
+                                             partition_permutation);
+      }
+    } else if (partition_strategy_ == "mod_ev") {
+      if (input_size < 512) {
+        PartitionSelectModEV<int64, int, 64>(ctx, input, num_partitions_,
+                                             memcpy_event_, partitioned_values,
+                                             partition_permutation);
+      } else if (input_size < 1024) {
+        PartitionSelectModEV<int64, int, 128>(ctx, input, num_partitions_,
+                                              memcpy_event_, partitioned_values,
+                                              partition_permutation);
+      } else if (input_size < 2048) {
+        PartitionSelectModEV<int64, int, 256>(ctx, input, num_partitions_,
+                                              memcpy_event_, partitioned_values,
+                                              partition_permutation);
+      } else if (input_size < 4096) {
+        PartitionSelectModEV<int64, int, 512>(ctx, input, num_partitions_,
+                                              memcpy_event_, partitioned_values,
+                                              partition_permutation);
+      } else {
+        PartitionSelectModEV<int64, int, 1024>(
+            ctx, input, num_partitions_, memcpy_event_, partitioned_values,
+            partition_permutation);
+      }
     }
   }
 

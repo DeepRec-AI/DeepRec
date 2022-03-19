@@ -16,6 +16,16 @@ void PartitionSelectDiv(OpKernelContext* ctx, const Tensor* keys,
                         cudaEvent_t memcpy_event, OpOutputList& selected_keys,
                         Tensor* permutation);
 
+template <typename T, typename TIndex, int WarpWorkload>
+void PartitionSelectMod(OpKernelContext* ctx, const Tensor* keys,
+                        const int64 num_partitions, cudaEvent_t memcpy_event,
+                        OpOutputList& selected_keys, Tensor* permutation);
+
+template <typename T, typename TIndex, int WarpWorkload>
+void PartitionSelectModEV(OpKernelContext* ctx, const Tensor* keys,
+                          const int64 num_partitions, cudaEvent_t memcpy_event,
+                          OpOutputList& selected_keys, Tensor* permutation);
+
 }  // namespace fused_embedding
 
 }  // namespace tensorflow

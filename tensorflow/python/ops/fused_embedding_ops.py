@@ -35,7 +35,7 @@ def fused_embedding_lookup_sparse(params,
   if sparse_weights is not None:
     raise ValueError("sparse_weights is not supported yet")
 
-  valid_partition_strategy = ['div']
+  valid_partition_strategy = ['div', 'mod', 'mod_ev']
   if partition_strategy not in valid_partition_strategy:
     raise ValueError("{} is not supported yet. Currently only support {}".format(
       partition_strategy, valid_partition_strategy))
@@ -49,10 +49,8 @@ def fused_embedding_lookup_sparse(params,
   partition_nums = len(params)
 
   if type(params[0]) is EmbeddingVariable:
-    if partition_nums != 1:
-      raise ValueError("For EmbeddingVariable, do not support partition now")
-    # fake shape for now. TBD change in the future
-    partition_shapes = [constant([1, 1], dtype=tf.int64)]
+    partition_strategy = 'mod_ev'
+    partition_shapes = [constant([1, 1], dtype=tf.int64) for _ in params]  # dummy
   else:
     partition_shapes = [w.shape for w in params]
 
@@ -94,7 +92,7 @@ def fused_embedding_lookup_sparse(params,
     emb_shards = []
     for i in range(partition_nums):
       with ops.colocate_with(params[i]):
-        shard = array_ops.gather(params[i], partitioned_values[i])
+        shard = array_ops.gather(params[i], partitioned_values[i], counts=unique_counts)
         emb_shards.append(shard)
 
     emb_vectors, _, _ = fused_embedding_sparse_post_look_up(
