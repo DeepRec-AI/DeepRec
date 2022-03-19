@@ -323,15 +323,6 @@ TEST_F(FusedEmbeddingSparsePostLookUpOpTest,
   // unique_idxs
   AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 1, 1, 0, 2, 3, 3, 3});
 
-  // unique_counts
-  // AddInputFromArray<int64>(TensorShape({4}), {2, 2, 1, 3});
-
-  // idx_of_input_to_unique
-  // AddInputFromArray<int64>(TensorShape({nnz + 1}), {0, 3, 1, 2, 4, 5, 7, 6});
-
-  // unique_offsets
-  // AddInputFromArray<int64>(TensorShape({4}), {0, 2, 4, 5});
-
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
 

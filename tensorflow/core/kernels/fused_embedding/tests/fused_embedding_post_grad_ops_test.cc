@@ -27,7 +27,7 @@ limitations under the License.
 namespace tensorflow {
 namespace {
 
-enum class Device { CPU, GPU };
+enum class Device { GPU };
 
 class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
  protected:
@@ -51,12 +51,11 @@ class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
                      .Attr("default_id", default_id)
                      .Input(FakeInput(dtype))
                      .Input(FakeInput(num_partitions, dtype))
-                     .Input(FakeInput(num_partitions, DT_INT64))
+                     .Input(FakeInput(DT_UINT64))
+                     .Input(FakeInput(DT_INT32))
                      .Input(FakeInput(DT_INT32))
                      .Input(FakeInput(DT_INT64))
-                     .Input(FakeInput(DT_INT64))
-                     .Input(FakeInput(DT_INT64))
-                     .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_INT32))
                      .Input(FakeInput(DT_INT32))
                      .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
@@ -85,6 +84,16 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2MeanMaxNorm100) {
        28.0, 29.0, 30.0, 31.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0,
        32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 32.0, 33.0, 34.0, 35.0,
        36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0});
+
+  // make same input to dump to emb_shard_ptrs
+  Tensor emb_shards_0(allocator(), DT_FLOAT, TensorShape({6, emb_vector_dim}));
+  test::FillValues<float>(
+      &emb_shards_0,
+      {8.0,  9.0,  10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 24.0, 25.0, 26.0, 27.0,
+       28.0, 29.0, 30.0, 31.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0,
+       32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 32.0, 33.0, 34.0, 35.0,
+       36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0});
+
   // emb_shards 1
   AddInputFromArray<float>(
       TensorShape({4, emb_vector_dim}),
@@ -93,11 +102,22 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2MeanMaxNorm100) {
        96.0,  97.0,  98.0,  99.0,  100.0, 101.0, 102.0, 103.0,
        120.0, 121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0});
 
-  // partition_permutations 0
-  AddInputFromArray<int64>(TensorShape({6}), {0, 2, 4, 6, 8, 9});
+  // make same input to dump to emb_shard_ptrs
+  Tensor emb_shards_1(allocator(), DT_FLOAT, TensorShape({4, emb_vector_dim}));
+  test::FillValues<float>(
+      &emb_shards_1, {56.0,  57.0,  58.0,  59.0,  60.0,  61.0,  62.0,  63.0,
+                      96.0,  97.0,  98.0,  99.0,  100.0, 101.0, 102.0, 103.0,
+                      96.0,  97.0,  98.0,  99.0,  100.0, 101.0, 102.0, 103.0,
+                      120.0, 121.0, 122.0, 123.0, 124.0, 125.0, 126.0, 127.0});
 
-  // partition_permutations 1
-  AddInputFromArray<int64>(TensorShape({4}), {1, 3, 5, 7});
+  // emb_shard_ptrs
+  AddInputFromArray<uint64>(TensorShape({2}),
+                            {reinterpret_cast<uint64>(emb_shards_0.data()),
+                             reinterpret_cast<uint64>(emb_shards_1.data())});
+
+  // partition_permutation
+  AddInputFromArray<int>(TensorShape({10, 2}), {0, 0, 1, 0, 0, 1, 1, 1, 0, 2,
+                                                1, 2, 0, 3, 1, 3, 0, 4, 0, 5});
 
   // feature_nums
   AddInputFromArray<int>(TensorShape({batch_size}), {2, 3, 3, 2});
@@ -107,14 +127,8 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2MeanMaxNorm100) {
       TensorShape({nnz, 2}),
       {0, 5, 1, 7, 0, 1, 2, 4, 2, 1, 2, 7, 1, 2, 3, 0, 3, 6, 1, 1});
 
-  // unique_counts
-  AddInputFromArray<int64>(TensorShape({nnz}), {1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
-
-  // idx_of_input_to_unique
-  AddInputFromArray<int64>(TensorShape({nnz}), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-
-  // unique_offsets
-  AddInputFromArray<int64>(TensorShape({nnz}), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+  // unique_idxs
+  AddInputFromArray<int>(TensorShape({nnz}), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
 
   // row_empty_and_invalid_flags
   AddInputFromArray<int>(TensorShape({batch_size + nnz}),
@@ -170,14 +184,22 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUnique) {
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({3, emb_vector_dim}), {4.0, 5.0, 6.0});
+  // make same input to dump to emb_shard_ptrs
+  Tensor emb_shards_0(allocator(), DT_FLOAT, TensorShape({3, emb_vector_dim}));
+  test::FillValues<float>(&emb_shards_0, {4.0, 5.0, 6.0});
+
   // emb_shards 1
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}), {6.0, 7.0});
+  Tensor emb_shards_1(allocator(), DT_FLOAT, TensorShape({2, emb_vector_dim}));
+  test::FillValues<float>(&emb_shards_1, {6.0, 7.0});
 
-  // partition_permutations 0
-  AddInputFromArray<int64>(TensorShape({3}), {2, 4, 1});
+  // emb_shard_ptrs
+  AddInputFromArray<uint64>(TensorShape({2}),
+                            {reinterpret_cast<uint64>(emb_shards_0.data()),
+                             reinterpret_cast<uint64>(emb_shards_1.data())});
 
-  // partition_permutations 1
-  AddInputFromArray<int64>(TensorShape({2}), {3, 0});
+  // partition_permutation
+  AddInputFromArray<int>(TensorShape({5, 2}), {1, 1, 0, 2, 0, 0, 1, 0, 0, 1});
 
   // feature_nums
   AddInputFromArray<int>(TensorShape({batch_size}), {2, 2, 1, 2});
@@ -189,14 +211,8 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUnique) {
   AddInputFromArray<int64>(TensorShape({nnz + 1, 2}),
                            {0, 1, 0, 3, 1, 2, 1, 3, 3, 2, 3, 6, 2, 0});
 
-  // unique_counts
-  AddInputFromArray<int64>(TensorShape({5}), {2, 2, 1, 1, 1});
-
-  // idx_of_input_to_unique
-  AddInputFromArray<int64>(TensorShape({nnz + 1}), {0, 1, 2, 5, 3, 4, 6});
-
-  // unique_offsets
-  AddInputFromArray<int64>(TensorShape({5}), {0, 2, 4, 5, 6});
+  // unique_idxs
+  AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 0, 1, 2, 3, 1, 4});
 
   // row_empty_and_invalid_flags
   AddInputFromArray<int>(TensorShape({batch_size + nnz}),
@@ -211,7 +227,8 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUnique) {
       idx_of_input_to_unique: 3 -> batch: 1, grad: 2.0
 
       permute 4 -> unique_counts: 1, unique_offsets: 6 ->
-      idx_of_input_to_unique: 6 -> batch: 2: grad: 0.0, because fill_empty row
+      idx_of_input_to_unique: 6 -> batch: 2: grad: 0.0, because fill_empty
+      row
 
       permute 1 -> unique_counts: 2, unique_offsets: 2
         -> idx_of_input_to_unique: 2 -> batch: 1 -> grad : 2.0
@@ -255,14 +272,22 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUniqueDefault4) {
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({3, emb_vector_dim}), {4.0, 5.0, 6.0});
+  // make same input to dump to emb_shard_ptrs
+  Tensor emb_shards_0(allocator(), DT_FLOAT, TensorShape({3, emb_vector_dim}));
+  test::FillValues<float>(&emb_shards_0, {4.0, 5.0, 6.0});
+
   // emb_shards 1
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}), {6.0, 7.0});
+  Tensor emb_shards_1(allocator(), DT_FLOAT, TensorShape({2, emb_vector_dim}));
+  test::FillValues<float>(&emb_shards_1, {6.0, 7.0});
 
-  // partition_permutations 0
-  AddInputFromArray<int64>(TensorShape({3}), {2, 4, 1});
+  // emb_shard_ptrs
+  AddInputFromArray<uint64>(TensorShape({2}),
+                            {reinterpret_cast<uint64>(emb_shards_0.data()),
+                             reinterpret_cast<uint64>(emb_shards_1.data())});
 
-  // partition_permutations 1
-  AddInputFromArray<int64>(TensorShape({2}), {3, 0});
+  // partition_permutation
+  AddInputFromArray<int>(TensorShape({5, 2}), {1, 1, 0, 2, 0, 0, 1, 0, 0, 1});
 
   // feature_nums
   AddInputFromArray<int>(TensorShape({batch_size}), {2, 2, 1, 2});
@@ -274,14 +299,8 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUniqueDefault4) {
   AddInputFromArray<int64>(TensorShape({nnz + 1, 2}),
                            {0, 1, 0, 3, 1, 2, 1, 3, 3, 2, 3, 6, 2, 0});
 
-  // unique_counts
-  AddInputFromArray<int64>(TensorShape({5}), {2, 2, 1, 1, 1});
-
-  // idx_of_input_to_unique
-  AddInputFromArray<int64>(TensorShape({nnz + 1}), {0, 1, 2, 5, 3, 4, 6});
-
-  // unique_offsets
-  AddInputFromArray<int64>(TensorShape({5}), {0, 2, 4, 5, 6});
+  // unique_idxs
+  AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 0, 1, 2, 3, 1, 4});
 
   // row_empty_and_invalid_flags
   AddInputFromArray<int>(TensorShape({batch_size + nnz}),
@@ -324,6 +343,53 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUniqueDefault4) {
     test::FillValues<float>(&grad_shards_2, {4.0, 2.0});
     test::ExpectTensorNear<float>(grad_shards_2, *GetOutput(1), 1e-4);
   }
+}
+
+TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, SinglePartitionSUMUnique) {
+  const int nnz = 6;
+  const int batch_size = 4;
+  const int emb_vector_dim = 1;
+  const int entries = 8;
+
+  MakeOpAndSetDevice(Device::GPU, 1, DT_FLOAT, "sum", -1.0, true, -1);
+
+  // top_grad
+  AddInputFromArray<float>(TensorShape({batch_size, emb_vector_dim}),
+                           {1.0, 2.0, 3.0, 4.0});
+
+  // emb_shards 0
+  AddInputFromArray<float>(TensorShape({5, emb_vector_dim}),
+                           {7.0, 6.0, 4.0, 6.0, 5.0});
+
+  // emb_shard_ptrs, whatever, will not be used
+  AddInputFromArray<uint64>(TensorShape({1}), {0});
+
+  // partition_permutation
+  AddInputFromArray<int>(TensorShape({5, 2}), {1, 1, 0, 2, 0, 0, 1, 0, 0, 1});
+
+  // feature_nums
+  AddInputFromArray<int>(TensorShape({batch_size}), {2, 2, 1, 2});
+
+  // values after fill empty: 1, 1, 2, 3, 4, 2, 0
+  // after unique 1, 2, 3, 4, 0
+
+  // indices_before_unique
+  AddInputFromArray<int64>(TensorShape({nnz + 1, 2}),
+                           {0, 1, 0, 3, 1, 2, 1, 3, 3, 2, 3, 6, 2, 0});
+
+  // unique_idxs
+  AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 0, 1, 2, 3, 1, 4});
+
+  // row_empty_and_invalid_flags
+  AddInputFromArray<int>(TensorShape({batch_size + nnz}),
+                         {0, 0, 1, 0, 1, 1, 1, 1, 1, 1});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  Tensor grad_shards_0(allocator(), DT_FLOAT, TensorShape({5, emb_vector_dim}));
+  test::FillValues<float>(&grad_shards_0, {2.0, 6.0, 2.0, 4.0, 0.0});
+  test::ExpectTensorNear<float>(grad_shards_0, *GetOutput(0), 1e-4);
 }
 
 }  // namespace
