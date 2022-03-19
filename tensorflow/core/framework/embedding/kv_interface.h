@@ -74,6 +74,8 @@ class KVInterface {
 
   virtual Status Commit(K key, const ValuePtr<V>* value_ptr) {return Status::OK();}
 
+  virtual Status CommitForRestore(K key, ValuePtr<V>* value_ptr) {return Status::OK();}
+
   virtual Status GetSnapshot(std::vector<K>* key_list,
                              std::vector<ValuePtr<V>* >* value_ptr_list) = 0;
 

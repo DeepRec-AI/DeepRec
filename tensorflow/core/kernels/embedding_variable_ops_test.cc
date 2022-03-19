@@ -30,6 +30,7 @@
 
 #include <sys/resource.h>
 #include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/kernels/kv_variable_ops.h"
 #ifdef TENSORFLOW_USE_JEMALLOC
 #include "jemalloc/jemalloc.h"

@@ -272,7 +272,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
         } else {
           V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
         }
-        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+        TF_CHECK_OK(ev_->storage_manager()->CommitForRestore(key_buff[i], value_ptr));
       }
     }
     UpdateCache(key_buff, key_num, ev_);
@@ -489,7 +489,7 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
         } else {
            V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
         }
-        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+        TF_CHECK_OK(ev_->storage_manager()->CommitForRestore(key_buff[i], value_ptr));
       }
     }
     UpdateCache(key_buff, key_num, ev_);
@@ -585,10 +585,10 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
       }
       if (!is_filter) {
         V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
-        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+        TF_CHECK_OK(ev_->storage_manager()->CommitForRestore(key_buff[i], value_ptr));
       }else {
         V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
-        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+        TF_CHECK_OK(ev_->storage_manager()->CommitForRestore(key_buff[i], value_ptr));
       }
     }
     UpdateCache(key_buff, key_num, ev_);

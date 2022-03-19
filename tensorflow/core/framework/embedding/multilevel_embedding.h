@@ -5,6 +5,7 @@
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/dense_hash_map.h"
 #include "tensorflow/core/framework/embedding/leveldb_kv.h"
+#include "tensorflow/core/framework/embedding/ssd_kv.h"
 #include "tensorflow/core/framework/embedding/lockless_hash_map.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/lib/core/threadpool.h"
@@ -110,6 +111,15 @@ class StorageManager {
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
         kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), ev_allocator()));
         break;
+      case StorageType::SSD:
+        VLOG(1) << "StorageManager::SSD: " << name_;
+        kvs_.emplace_back(std::make_pair(new SSDKV<K, V>(sc_.path), ev_allocator()));
+        break;
+      case StorageType::DRAM_SSD:
+        VLOG(1) << "StorageManager::DRAM_SSD: " << name_;
+        kvs_.emplace_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(new SSDKV<K, V>(sc_.path), ev_allocator()));
+        break;
       default:
         VLOG(1) << "StorageManager::default" << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
@@ -144,13 +154,13 @@ class StorageManager {
     int64 temp = alloc_len_ * slot_num;
     if (total_dims_ == 0) {
       total_dims_ = temp;
-      if (sc_.type == StorageType::LEVELDB) {
+      if (sc_.type == StorageType::LEVELDB || sc_.type == StorageType::SSD) {
         kvs_[0].first->SetTotalDims(total_dims_);
-      } else if (sc_.type == StorageType::DRAM_LEVELDB) {
+      } else if (sc_.type == StorageType::DRAM_LEVELDB || sc_.type == StorageType::DRAM_SSD) {
         kvs_[1].first->SetTotalDims(total_dims_);
       }
       if (hash_table_count_ > 1) {
-        cache_capacity_ = 1024 * 1024 * 1024 / total_dims_ * sizeof(V); 
+        cache_capacity_ = 1024 * 1024 * 1024 / (total_dims_ * sizeof(V));
         done_ = true;
         LOG(INFO) << "Cache cache_capacity: " << cache_capacity_;
       }
@@ -389,6 +399,11 @@ class StorageManager {
     return Status::OK();
   }
 
+  Status CommitForRestore(K key, ValuePtr<V>* value_ptr) {
+    TF_CHECK_OK(kvs_[0].first->CommitForRestore(key, value_ptr));
+    return Status::OK();
+  }
+
   void FreeValuePtr(ValuePtr<V>* value_ptr) {
     for (auto kv : kvs_) {
       kv.first->FreeValuePtr(value_ptr);
@@ -427,8 +442,8 @@ class StorageManager {
         ValuePtr<V>* value_ptr;
         for (int64 i = 0; i < true_size; ++i) {
           if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
-            TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
             TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
+            TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
             // delete value_ptr is nessary;
             value_ptr->Destroy(kvs_[0].second);
             delete value_ptr;

@@ -121,7 +121,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
-    counter_->add(key, 1);
+    // counter_->add(key, 1);
     return Status::OK();
   }
 
@@ -132,6 +132,7 @@ class LevelDBKV : public KVInterface<K, V> {
   Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
     WriteBatch batch;
     for (int i = 0; i < keys.size(); i++) {
+      counter_->add(keys[i], 1);
       std::string value_res((char*)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
       leveldb::Slice db_key((char*)(&keys[i]), sizeof(void*));
       batch.Put(db_key, value_res);
@@ -142,6 +143,7 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
+    counter_->add(key, 1);
     std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);

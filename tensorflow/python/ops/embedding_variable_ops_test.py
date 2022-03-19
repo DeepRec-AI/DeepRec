@@ -1917,5 +1917,200 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         for j in range(0, 30):
           self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
+  def testEmbeddingVariableForSSDWithAdagrad(self):
+    print("testEmbeddingVariableForSSDWithAdagrad")
+    ssd_directory = "/tmp/ssd_utpy"
+    os.system("rm -rf /tmp/ssd_utpy")
+    def runTestAdagrad(self, var, g):
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        return r
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.SSD,
+                                                                                                 storage_path=ssd_directory)))
+      emb1 = runTestAdagrad(self, emb_var, g)
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb2 = runTestAdagrad(self, var, g)
+
+    for i in range(0, 6):
+      for j in range(0, 3):
+        self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForSSDWithAdam(self):
+    print("testEmbeddingVariableForSSDWithAdam")
+    os.system("rm -rf /tmp/ssd_utpy")
+    def runTestAdagrad(self, var, g):
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adam.AdamOptimizer(0.01)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        print(r)
+        return r
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.SSD,
+                                                                                                 storage_path="/tmp/ssd_utpy")))
+      emb1 = runTestAdagrad(self, emb_var, g)
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb2 = runTestAdagrad(self, var, g)
+
+    for i in range(0, 6):
+      for j in range(0, 3):
+        self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForSSDWithAdamAsync(self):
+    print("testEmbeddingVariableForSSDWithAdamAsync")
+    os.system("rm -rf /tmp/ssd_ut2")
+    def runTestAdagrad(self, var, g):
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adam_async.AdamAsyncOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        return r
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.SSD,
+                                                                                                 storage_path="/tmp/ssd_utpy")))
+      emb1 = runTestAdagrad(self, emb_var, g)
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb2 = runTestAdagrad(self, var, g)
+
+    for i in range(0, 6):
+      for j in range(0, 3):
+        self.assertEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForDRAMAndSSD(self):
+    print("testEmbeddingVariableForDRAMAndSSD")
+    def runTestAdagrad(self, var, g):
+      #ids = array_ops.placeholder(dtypes.int64, name="ids")
+      #emb = embedding_ops.embedding_lookup(var, ids)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        for i in xrange(60):
+          r, _, _ = sess.run([emb, train_op, loss])
+        return r
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      db_directory = self.get_temp_dir()
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 30,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_SSD,
+                                                                                                 storage_path="/tmp/ssd_utpy")))
+      emb1 = runTestAdagrad(self, emb_var, g)
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var_2", shape=[100, 30], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb2 = runTestAdagrad(self, var, g)
+
+    for i in range(0, 6):
+      for j in range(0, 30):
+        self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForSSDSaveFreq(self):
+    ssd_directory = "/tmp/ssd_utpy"
+    checkpoint_directory = self.get_temp_dir()
+    emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_SSD,
+                                                                                                 storage_path=ssd_directory)))
+    emb = embedding_ops.embedding_lookup(emb_var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad_decay_v2.AdagradDecayOptimizerV2(0.1, gs)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables.global_variables_initializer()
+    saver = saver_module.Saver()
+    model_path = os.path.join(checkpoint_directory, "model.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      r, _, _ = sess.run([emb, train_op,loss])
+      r, _, _ = sess.run([emb, train_op,loss])
+      saver.save(sess, model_path)
+      r, _ = sess.run([emb, loss])
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-freqs":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 6)
+          self.assertEqual(ckpt_value.tolist()[1], 4)
+          self.assertEqual(ckpt_value.tolist()[2], 2)
+
 if __name__ == "__main__":
   googletest.main()
