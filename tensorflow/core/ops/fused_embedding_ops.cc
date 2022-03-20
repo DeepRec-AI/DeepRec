@@ -155,7 +155,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
 
       // partition_permutation
       ctx->input("partition_permutation", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
 
       // sp_dense_shape
       ctx->input("sp_dense_shape", &unused_list);
@@ -244,7 +244,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
 
       // partition_permutation
       ctx->input("partition_permutation", &unused_list);
-      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
 
       // feature_nums
       ctx->input("feature_nums", &unused_list);

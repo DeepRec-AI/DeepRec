@@ -46,7 +46,7 @@ def fused_embedding_lookup_sparse(params,
   if default_id is not None and type(default_id) is not int:
     raise ValueError("default_id must be a integer!")
 
-  params_white_list = [EmbeddingVariable, tf.Variable]
+  params_white_list = [EmbeddingVariable, tf.Tensor]
   if any([type(param) not in params_white_list for param in params]):
     raise ValueError("Currently fused embedding only support: {}".format(params_white_list))
 
@@ -76,11 +76,11 @@ def fused_embedding_lookup_sparse(params,
         sp_dense_shape=sp_dense_shape,
       )
     else:
-      row_empty_and_invalid_flags = tf.constant([0, ], dtype=tf.int32)  # dummy
+      row_empty_and_invalid_flags = tf.constant(0, shape=(1, ), dtype=tf.int32)  # dummy
 
     unique_keys, unique_idxs, unique_counts = unique_with_counts_gpu(
       input=sp_values,
-      out_idx=tf.int64,
+      CounterType=tf.int32,
     )
 
     if partition_nums > 1:
@@ -91,7 +91,7 @@ def fused_embedding_lookup_sparse(params,
       )
     else:
       partitioned_values = [unique_keys]
-      partition_permutation = [tf.constant([0, ], dtype=tf.int32)]  # dummy
+      partition_permutation = tf.constant(0, shape=(1, 1), dtype=tf.int32)  # dummy
 
     emb_shards = []
     for i in range(partition_nums):
@@ -102,11 +102,11 @@ def fused_embedding_lookup_sparse(params,
     emb_vectors, _, _ = fused_embedding_sparse_post_look_up(
       fill_empty_row=fill_empty_row, default_id=default_id,
       combiner=combiner, max_norm=max_norm,
-      emb_shards=emb_shards, partition_permutations=partition_permutation,
+      emb_shards=emb_shards, partition_permutation=partition_permutation,
       sp_dense_shape=sp_dense_shape,
       indices_before_unique=sp_indices,
       row_empty_and_invalid_flags=row_empty_and_invalid_flags,
-      unique_idxs=unique_idxs,
+      unique_idxs=unique_idxs
     )
 
   return emb_vectors
