@@ -1,6 +1,7 @@
 #include "odl_processor/serving/model_impl.h"
 #include "odl_processor/serving/model_serving.h"
 #include "odl_processor/serving/model_config.h"
+#include "odl_processor/serving/model_message.h"
 
 #include "tensorflow/core/framework/tensor.h"
 
@@ -22,11 +23,8 @@ Status Model::Init(const char* model_config, const char* model_dir) {
   return impl_->Init(model_dir);
 }
 
-Status Model::Predict(
-    const std::vector<std::pair<std::string, Tensor>>& inputs,
-    const std::vector<std::string>& output_tensor_names,
-    std::vector<Tensor>* outputs) {
-  return impl_->Predict(inputs, output_tensor_names, outputs);
+Status Model::Predict(const Request& req, Response& resp) {
+  return impl_->Predict(req, resp);
 }
 
 Status Model::Rollback() {

@@ -1,7 +1,10 @@
 #include "tf_processor.h"
 #include "model_serving.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/framework/tensor.h"
 #include "odl_processor/serving/tf_predict.pb.h"
+#include "odl_processor/serving/model_message.h"
+#include "odl_processor/serving/message_coding.h"
 
 extern "C" {
 void* initialize(const char* model_entry, const char* model_config,
@@ -31,19 +34,18 @@ int process(void* model_buf, const void* input_data, int input_size,
     return 200;
   }
 
-  tensorflow::eas::PredictRequest request;
-  tensorflow::eas::PredictResponse response;
-  request.ParseFromArray(input_data, input_size);
-  //tensorflow::Status s = model->Predict(request, &response);
-  tensorflow::Status s;
-  if (!s.ok()) {
+  tensorflow::processor::Call call;
+  tensorflow::processor::Parser parser;
+  parser.ParseRequestFromProto(input_data, input_size, call.request);
+  auto status = model->Predict(call.request, call.response);
+  if (!status.ok()) {
     const char *errmsg = "[TensorFlow] Processor predict failed";
     *output_data = strndup(errmsg, strlen(errmsg));
     *output_size = strlen(errmsg);
     return 500;
   }
-  *output_size = response.ByteSize();
-  response.SerializeToArray(*output_data, *output_size);
+  parser.ParseResponseToProto(call.request, call.response,
+      output_data, output_size);
   return 200;
 }
 

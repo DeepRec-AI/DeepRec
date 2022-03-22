@@ -1,5 +1,6 @@
 #include "odl_processor/serving/model_session.h"
 #include "odl_processor/serving/model_storage.h"
+#include "odl_processor/serving/model_message.h"
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/cc/saved_model/reader.h"
@@ -179,12 +180,9 @@ Status ModelSessionMgr::RunRestoreOps(const char* model_dir,
   }
 }
 
-Status ModelSessionMgr::Predict(
-    const std::vector<std::pair<std::string, Tensor>>& inputs,
-    const std::vector<std::string>& output_tensor_names,
-    std::vector<Tensor>* outputs) {
-  return serving_session_->session_->Run(inputs, output_tensor_names,
-      {}, outputs);
+Status ModelSessionMgr::Predict(const Request& req, Response& resp) {
+  return serving_session_->session_->Run(req.inputs, req.output_tensor_names,
+      {}, &resp.outputs);
 }
 
 Status ModelSessionMgr::CreateModelSession(

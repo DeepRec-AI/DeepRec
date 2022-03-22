@@ -16,7 +16,8 @@ class Tensor;
 
 namespace processor {
 class SparseStorage;
-
+class Request;
+class Response;
 struct ModelSession {
   ModelSession(Session* s, const Version& version,
       SparseStorage* sparse_storage) : session_(s), counter_(0),
@@ -34,10 +35,7 @@ class ModelSessionMgr {
   ModelSessionMgr(const MetaGraphDef& meta_graph_def,
       SessionOptions* session_options, RunOptions* run_options);
   
-  Status Predict(
-      const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs);
+  Status Predict(const Request& req, Response& resp);
 
   Status CreateModelSession(const Version& version,
       const char* model_dir, SparseStorage* sparse_storage);
