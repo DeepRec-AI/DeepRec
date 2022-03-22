@@ -14,8 +14,7 @@ categorical_embedding_column = tf.feature_column.embedding_column(
 
 On A100-80GB-PCIE GPU, with 8 cores AMD EPYC 7232P CPU @ 3.20GHz. Average of 5000 iterations. The perf boost:
 
-|         | Avg Time per Iteration |
-| ------- | ---------------------- |
-| Unfused | 20.78 ms               |
-| Fused   | 17.41 ms               |
-| SpeedUp | 1.19x                  |
+|                              | Unfused | Fused   | Speedup |
+| ---------------------------- | ------- |
+| Step Time, Batch Size = 512  | 19.98ms | 14.81ms | 1.34x   |
+| Step Time, Batch Size = 4096 | 37.82ms | 28.82ms | 1.31x   |

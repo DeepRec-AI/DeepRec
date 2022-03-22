@@ -72,9 +72,10 @@ class PartitionWithPermutationGPU : public OpKernel {
           ctx->allocate_temp(
               DT_INT64, TensorShape({static_cast<int64_t>(num_partitions_)}),
               &accu_div));
-      CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(accu_div), accu_div_host.data(),
-                      num_partitions_ * sizeof(int64_t), cudaMemcpyHostToDevice,
-                      device.stream()));
+      CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(accu_div),
+                                     accu_div_host.data(),
+                                     num_partitions_ * sizeof(int64_t),
+                                     cudaMemcpyHostToDevice, device.stream()));
 
       if (input_size < 512) {
         PartitionSelectDiv<int64, int, 64>(
@@ -151,7 +152,9 @@ class PartitionWithPermutationGPU : public OpKernel {
   cudaEvent_t memcpy_event_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("PartitionWithPermutation").Device(DEVICE_GPU),
+REGISTER_KERNEL_BUILDER(Name("PartitionWithPermutation")
+                            .Device(DEVICE_GPU)
+                            .HostMemory("partition_shapes"),
                         PartitionWithPermutationGPU);
 }  // namespace tensorflow
 

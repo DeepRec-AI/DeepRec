@@ -108,7 +108,7 @@ REGISTER_OP("PartitionWithPermutation")
 
       unused_list.clear();
       unused_list.resize(1);
-      unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
+      unused_list[0] = ctx->MakeShape({ctx->UnknownDim(), 2});
       ctx->set_output("partition_permutation", unused_list);
 
       return Status::OK();
