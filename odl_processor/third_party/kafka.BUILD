@@ -32,8 +32,6 @@ cc_library(
             "src/rdxxhash.c",
             "src/rdxxhash.h",
             "src/win32_config.h",
-            "src/rdkafka_zstd.c",
-            "src/rdkafka_zstd.h",
         ],
     ) + [
         "config/config.h",
@@ -66,8 +64,9 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@boringssl//:ssl",
-        "@zlib_archive//:zlib",
-        "@lz4"
+        "@lz4",
+        "@zlib",
+        "@zstd",
     ],
 )
 
@@ -118,7 +117,7 @@ genrule(
         "#define WITH_SSL 1",
         "#define WITH_ZLIB 1",
         "#define WITH_SNAPPY 1",
-        "#define WITH_ZSTD 0",
+        "#define WITH_ZSTD 1",
         "#define WITH_ZSTD_STATIC 1",
         "#define WITH_LZ4_EXT 1",
         "#define WITH_SASL 1",
@@ -127,7 +126,7 @@ genrule(
         "#define WITH_HDRHISTOGRAM 1",
         "#define WITH_PLUGINS 0",
         "#define ENABLE_DEVEL 0",
-        "#define BUILT_WITH \"SSL ZLIB SNAPPY LZ4 SASL SASL_SCRAM SASL_OAUTHBEARER HDRHISTOGRAM\"",
+        "#define BUILT_WITH \"SSL ZLIB SNAPPY ZSTD LZ4 SASL SASL_SCRAM SASL_OAUTHBEARER HDRHISTOGRAM\"",
         "EOF",
     ]),
 )
