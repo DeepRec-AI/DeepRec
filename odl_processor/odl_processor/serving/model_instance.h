@@ -63,7 +63,7 @@ class ModelInstance {
 
 class ModelInstanceMgr {
  public:
-  ModelInstanceMgr(const char* root_dir, ModelConfig* config);
+  ModelInstanceMgr(ModelConfig* config);
   ~ModelInstanceMgr();
 
   Status Init();

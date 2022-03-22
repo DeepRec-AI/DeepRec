@@ -8,6 +8,8 @@ namespace tensorflow {
 namespace processor {
 struct ModelConfig {
   // Model Info
+  std::string checkpoint_dir;
+  std::string savedmodel_dir;
   std::string signature_name;
 
   // Run Info

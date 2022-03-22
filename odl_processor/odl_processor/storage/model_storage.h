@@ -13,8 +13,9 @@ class ModelStorage {
  public:
   ModelStorage(ModelConfig* config);
 
-  Status Init(const char* root_dir);
+  Status Init();
   Status GetLatestVersion(Version& version);
+  std::string GetMetaGraphDir();
 
   SparseStorage* CreateSparseStorage(const Version& version);
 
@@ -23,7 +24,8 @@ class ModelStorage {
   Status GetDeltaModelVersion(Version& version);
 
  private:
-  std::string model_dir_;
+  std::string savedmodel_dir_;
+  std::string checkpoint_dir_;
   std::string delta_model_dir_;
   FileSystem* file_system_;   // not owned
   ModelConfig* model_config_; // not owned
