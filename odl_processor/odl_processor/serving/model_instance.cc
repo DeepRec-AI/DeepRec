@@ -62,11 +62,8 @@ Status ModelInstance::Init(const Version& version,
   return RecursionCreateSession(version, serving_storage_);
 }
 
-Status ModelInstance::Predict(
-    const std::vector<std::pair<std::string, Tensor>>& inputs,
-    const std::vector<std::string>& output_tensor_names,
-    std::vector<Tensor>* outputs) {
-  return session_mgr_->Predict(inputs, output_tensor_names, outputs);
+Status ModelInstance::Predict(const Request& req, Response& resp) {
+  return session_mgr_->Predict(req, resp);
 }
 
 Tensor ModelInstance::CreateTensor(const TensorInfo& tensor_info) {
@@ -111,29 +108,22 @@ Tensor ModelInstance::CreateTensor(const TensorInfo& tensor_info) {
   return tensor;
 }
 
-Status ModelInstance::CreateWarmupParams(
-    std::vector<std::pair<std::string, Tensor>>& inputs,
-    std::vector<std::string>& output_tensor_names) {
+Call ModelInstance::CreateWarmupParams() {
+  Call call;
   for (auto it : model_signature_.second.inputs()) {
     const auto& tensor = CreateTensor(it.second);
-    inputs.emplace_back(it.first, tensor);
+    call.request.inputs.emplace_back(it.first, tensor);
   }
 
   for (auto it : model_signature_.second.outputs()) {
-    output_tensor_names.emplace_back(it.first);
+    call.request.output_tensor_names.emplace_back(it.first);
   }
-  return Status::OK();
+  return call;
 }
 
 Status ModelInstance::Warmup() {
-  std::vector<std::pair<std::string, Tensor>> inputs;
-  std::vector<std::string> output_tensor_names;
-  TF_RETURN_IF_ERROR(CreateWarmupParams(inputs,
-        output_tensor_names));
-
-  // Ignore output results, only care about return status.
-  std::vector<Tensor> outputs;
-  return Predict(inputs, output_tensor_names, &outputs);
+  Call call = CreateWarmupParams();
+  return Predict(call.request, call.response);
 }
 
 Status ModelInstance::FullModelUpdate(const Version& version) {
@@ -194,11 +184,8 @@ Status ModelInstanceMgr::CreateInstances(const Version& version) {
   return base_instance_->Warmup();
 }
 
-Status ModelInstanceMgr::Predict(
-    const std::vector<std::pair<std::string, Tensor>>& inputs,
-    const std::vector<std::string>& output_tensor_names,
-    std::vector<Tensor>* outputs) {
-  return cur_instance_->Predict(inputs, output_tensor_names, outputs);
+Status ModelInstanceMgr::Predict(const Request& req, Response& resp) {
+  return cur_instance_->Predict(req, resp);
 }
 
 Status ModelInstanceMgr::Rollback() {

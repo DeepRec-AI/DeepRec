@@ -4,6 +4,7 @@
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 #include "odl_processor/serving/model_version.h"
+#include "odl_processor/serving/model_message.h"
 
 #include <thread>
 #include <atomic>
@@ -27,10 +28,7 @@ class ModelInstance {
   Status Init(const Version& version, ModelConfig* config,
       ModelStorage* model_storage);
 
-  Status Predict(
-      const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs);
+  Status Predict(const Request& req, Response& resp);
 
   Status FullModelUpdate(const Version& version);
   Status DeltaModelUpdate(const Version& version);
@@ -46,9 +44,7 @@ class ModelInstance {
       SparseStorage* sparse_storge);
 
   Tensor CreateTensor(const TensorInfo& tensor_info);
-  Status CreateWarmupParams(
-      std::vector<std::pair<std::string, Tensor>>& inputs,
-      std::vector<std::string>& output_tensor_names);
+  Call CreateWarmupParams();
 
  private:
   MetaGraphDef meta_graph_def_;
@@ -71,10 +67,7 @@ class ModelInstanceMgr {
   ~ModelInstanceMgr();
 
   Status Init(SessionOptions* sess_options, RunOptions* run_options);
-  Status Predict(
-      const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs);
+  Status Predict(const Request& req, Response& resp);
 
   Status Rollback();
   std::string DebugString();

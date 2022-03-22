@@ -19,8 +19,10 @@ tf_proto_library_cc(
 
 cc_library(
     name = "tf_processor",
-    srcs = ["tf_processor.cc"],
-    hdrs = ["tf_processor.h"],
+    srcs = ["tf_processor.cc",
+            "message_coding.cc"],
+    hdrs = ["tf_processor.h",
+            "message_coding.h"],
     deps = [
             "tf_predict_proto_cc",
             "model_serving"],
@@ -38,7 +40,7 @@ cc_library(
             "model_config.h",
             "model_instance.h",
             "model_storage.h",
-            "tensor_coding.h",
+            "model_message.h",
             "model_session.h",
             "model_version.h"],
     deps = [

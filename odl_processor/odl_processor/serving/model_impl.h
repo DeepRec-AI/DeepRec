@@ -14,15 +14,14 @@ namespace processor {
 class SavedModelOptimizer;
 class ModelConfig;
 class ModelInstanceMgr;
+class Request;
+class Response;
 
 class ModelImpl {
  public:
   virtual ~ModelImpl() {}
   virtual Status Init(const char* root_dir) = 0;
-  virtual Status Predict(
-      const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs) = 0;
+  virtual Status Predict(const Request& req, Response& resp) = 0;
 
   virtual Status Rollback() = 0;
   virtual std::string DebugString() = 0;
@@ -36,10 +35,7 @@ class FreezeSavedModelImpl : public ModelImpl {
     return Status::OK();
   }
   
-  Status Predict(
-      const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs) override {
+  Status Predict(const Request& req, Response& resp) override {
     return Status::OK();
   }
 
@@ -58,10 +54,7 @@ class SavedModelImpl : public ModelImpl {
   ~SavedModelImpl() override;
 
   Status Init(const char* root_dir) override;
-  Status Predict(
-      const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs);
+  Status Predict(const Request& req, Response& resp);
 
   Status Rollback() override;
   std::string DebugString() override;

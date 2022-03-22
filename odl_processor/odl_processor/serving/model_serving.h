@@ -7,6 +7,8 @@ namespace tensorflow {
 class Tensor;
 namespace processor {
 class ModelImpl;
+class Request;
+class Response;
 class Model {
  public:
   Model() = default;
@@ -16,9 +18,7 @@ class Model {
   Model& operator=(const Model&) = delete;
 
   Status Init(const char* model_config, const char* model_dir);
-  Status Predict(const std::vector<std::pair<std::string, Tensor>>& inputs,
-      const std::vector<std::string>& output_tensor_names,
-      std::vector<Tensor>* outputs);
+  Status Predict(const Request& req, Response& resp);
   Status Rollback();
 
   std::string DebugString();

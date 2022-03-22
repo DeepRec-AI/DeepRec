@@ -1,7 +1,7 @@
 #include "odl_processor/serving/model_impl.h"
 #include "odl_processor/serving/model_config.h"
 #include "odl_processor/serving/model_instance.h"
-
+#include "odl_processor/serving/model_message.h"
 #include "tensorflow/core/framework/tensor.h"
 
 namespace tensorflow {
@@ -20,11 +20,8 @@ Status SavedModelImpl::Init(const char* root_dir) {
   return instance_mgr_->Init(session_options_, run_options_);
 }
 
-Status SavedModelImpl::Predict(
-    const std::vector<std::pair<std::string, Tensor>>& inputs,
-    const std::vector<std::string>& output_tensor_names,
-    std::vector<Tensor>* outputs) {
-  return instance_mgr_->Predict(inputs, output_tensor_names, outputs);
+Status SavedModelImpl::Predict(const Request& req, Response& resp) {
+  return instance_mgr_->Predict(req, resp);
 }
 
 Status SavedModelImpl::Rollback() {
