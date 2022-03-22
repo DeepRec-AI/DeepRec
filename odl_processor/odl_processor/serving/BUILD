@@ -31,6 +31,15 @@ tf_cc_shared_object(
 )
 
 cc_library(
+    name = "tf_processor_internal",
+    srcs = ["tf_processor.cc",
+            "tf_processor.h",],
+    copts = ["-g"],
+    deps = [
+            "model_serving"],
+)
+
+cc_library(
     name = "utils",
     srcs = ["util.cc"],
     hdrs = ["util.h"],

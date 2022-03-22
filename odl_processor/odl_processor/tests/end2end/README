@@ -1,0 +1,23 @@
+1.Generate demo checkpoint and savedmodel
+```
+python simple_model.py --saved_model_dir=xxx --checkpoint_dir=xxx
+```
+if not set saved_model_dir, the default dir is '/tmp/saved_model',
+if not set checkpoint_dir, the default dir is '/tmp/checkpoint/1'.
+```
+python simple_model.py
+```
+
+2.Set `saved_model_dir` and `checkpoint_dir` to model_config which defined in demo.cc.
+static const char* model_config = "{
+    ...
+    "checkpoint_dir": "/tmp/ckpt/", 
+    "savedmodel_dir": "/tmp/saved_model/" 
+  } ";
+Attention: checkpoint_dir here should be the parent checkpoint dir, 
+for example '/tmp/checkpoint/1', set checkpoint_dir as '/tmp/checkpoint'.
+
+3.Build demo and run
+bazel build //odl_processor/tests:demo
+bazel-bin/odl_processor/tests/demo
+

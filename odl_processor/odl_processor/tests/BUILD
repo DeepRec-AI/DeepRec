@@ -41,3 +41,11 @@ cc_binary(
   ],
 )
 
+cc_binary(
+  name = "demo",
+  srcs = ["end2end/demo.cc",],
+  deps = [
+          "//odl_processor/serving:tf_processor_internal"],
+  includes = ["odl_processor/serving"],
+)
+
