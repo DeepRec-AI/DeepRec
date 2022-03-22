@@ -147,10 +147,9 @@ http_archive(
     ],
 )
 
-git_repository(
-    name = "org_tensorflow",
-    remote = "git@gitlab.alibaba-inc.com:algo/tensorflow.git",
-    commit = "c41dca5d7efe2c77bb7c80ef75ae2548998a6541",
+local_repository(
+     name = "org_tensorflow",
+     path = "./pai-tensorflow",
 )
 
 load("//third_party:tensorflow_workspace.bzl", "tf_repositories")
