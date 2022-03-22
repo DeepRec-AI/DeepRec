@@ -5,11 +5,13 @@
 namespace tensorflow {
 namespace processor {
 struct Version {
-  int64 full_model_version = 0;
-  std::string full_model_name;
+  int64 full_ckpt_version = 0;
+  std::string full_ckpt_name;
 
-  int64 delta_model_version = 0;
-  std::string delta_model_name;
+  int64 delta_ckpt_version = 0;
+  std::string delta_ckpt_name;
+
+  std::string savedmodel_dir;
 
   Version() = default;
   ~Version() = default;
@@ -17,16 +19,16 @@ struct Version {
   Version& operator=(const Version&) = default;
 
   bool IsFullModel() const {
-    return delta_model_name.empty();
+    return delta_ckpt_name.empty();
   }
 
   bool Empty() const {
-    return full_model_name.empty();
+    return full_ckpt_name.empty();
   }
 
   friend bool operator ==(const Version& lhs, const Version& rhs) {
-    return lhs.full_model_version == rhs.full_model_version
-        && lhs.delta_model_version == rhs.delta_model_version;
+    return lhs.full_ckpt_version == rhs.full_ckpt_version
+        && lhs.delta_ckpt_version == rhs.delta_ckpt_version;
   }
 
   friend bool operator !=(const Version& lhs, const Version& rhs) {
@@ -34,7 +36,7 @@ struct Version {
   }
 
   bool IsSameFullModel(const Version& other) const {
-    return full_model_version == other.full_model_version;
+    return full_ckpt_version == other.full_ckpt_version;
   }
 };
 

@@ -113,7 +113,9 @@ Status RunMainOp(const RunOptions& run_options, const string& export_dir,
   return Status::OK();
 }
 
-Status RunRestore(const RunOptions& run_options, const string& export_dir,
+Status RunRestore(const RunOptions& run_options,
+                  const std::string& ckpt_name,
+                  const std::string& savedmodel_dir,
                   const StringPiece restore_op_name,
                   const StringPiece variable_filename_const_op_name,
                   const std::vector<AssetFileDef>& asset_file_defs,
@@ -121,31 +123,16 @@ Status RunRestore(const RunOptions& run_options, const string& export_dir,
                   std::pair<std::string, Tensor> sparse_storage_tensor) {
   LOG(INFO) << "Restoring SavedModel bundle.";
   // Find path to variables to be restored in export directory.
-  const string variables_directory =
-      io::JoinPath(export_dir, kSavedModelVariablesDirectory);
-  // Check for saver checkpoints in v2 format. Models exported in the checkpoint
-  // v2 format will have a variables.index file. The corresponding
-  // variables are stored in the variables.data-?????-of-????? files.
-  const string variables_index_path = io::JoinPath(
-      variables_directory, MetaFilename(kSavedModelVariablesFilename));
-  if (!Env::Default()->FileExists(variables_index_path).ok()) {
-    LOG(INFO) << "The specified SavedModel has no variables; no checkpoints "
-                 "were restored. File does not exist: "
-              << variables_index_path;
-    return Status::OK();
-  }
-  const string variables_path =
-      io::JoinPath(variables_directory, kSavedModelVariablesFilename);
 
   // Add variables to the graph.
   Tensor variables_path_tensor(DT_STRING, TensorShape({}));
-  variables_path_tensor.scalar<string>()() = variables_path;
+  variables_path_tensor.scalar<string>()() = ckpt_name;
 
   std::vector<std::pair<string, Tensor>> inputs = {
       {string(variable_filename_const_op_name), variables_path_tensor}};
   inputs.emplace_back(sparse_storage_tensor);
 
-  AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
+  AddAssetsTensorsToInputs(savedmodel_dir, asset_file_defs, &inputs);
 
   RunMetadata run_metadata;
   return RunOnce(run_options, inputs, {}, {string(restore_op_name)},
@@ -166,26 +153,27 @@ Status ModelSessionMgr::CreateSession(Session** session) {
   return GetAssetFileDefs(meta_graph_def_, &asset_file_defs_);
 }
 
-Status ModelSessionMgr::RunRestoreOps(const char* model_dir,
-    Session* session, SparseStorage* sparse_storage) {
+Status ModelSessionMgr::RunRestoreOps(const char* ckpt_name,
+    const char* savedmodel_dir, Session* session,
+    SparseStorage* sparse_storage) {
   Tensor t(DT_UINT64, TensorShape({}));
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
   auto sparse_storage_tensor = std::make_pair(
       GetStoragePointerNodeName(), t);
 
   TF_RETURN_IF_ERROR(
-      RunRestore(*run_options_, model_dir,
+      RunRestore(*run_options_, ckpt_name, savedmodel_dir,
           meta_graph_def_.saver_def().restore_op_name(),
           meta_graph_def_.saver_def().filename_tensor_name(),
           asset_file_defs_, session, sparse_storage_tensor));
 
   if (HasMainOp(meta_graph_def_)) {
-    return RunMainOp(*run_options_, model_dir,
+    return RunMainOp(*run_options_, savedmodel_dir,
         meta_graph_def_, asset_file_defs_, session, kSavedModelMainOpKey,
         sparse_storage_tensor);
   } else {
     return RunMainOp(
-        *run_options_, model_dir, meta_graph_def_,
+        *run_options_, savedmodel_dir, meta_graph_def_,
         asset_file_defs_, session, kSavedModelLegacyInitOpKey,
         sparse_storage_tensor);
   }
@@ -211,12 +199,13 @@ Status ModelSessionMgr::Predict(Request& req, Response& resp) {
 }
 
 Status ModelSessionMgr::CreateModelSession(
-    const Version& version, const char* model_dir,
+    const Version& version, const char* ckpt_name,
     SparseStorage* sparse_storage) {
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSession(&session));
-  TF_RETURN_IF_ERROR(RunRestoreOps(model_dir, session,
-        sparse_storage));
+  TF_RETURN_IF_ERROR(RunRestoreOps(ckpt_name,
+        version.savedmodel_dir.c_str(),
+        session, sparse_storage));
   ResetServingSession(session, version, sparse_storage);
   return Status::OK();
 }

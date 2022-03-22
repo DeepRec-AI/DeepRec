@@ -24,7 +24,7 @@ std::pair<StringPiece, StringPiece> SplitBasename(StringPiece path) {
       StringPiece(path.data() + pos + 1, path.size() - (pos + 1)));
 }
 
-std::string ParseFullName(const std::string& fname) {
+std::string ParseCkptFileName(const std::string& fname) {
   auto base_name = io::Basename(fname);
   auto prefix = SplitBasename(fname).first;
 
@@ -101,7 +101,7 @@ Status ModelStorage::Init() {
 
 std::string ModelStorage::GetMetaGraphDir() {
   std::vector<string> file_names;
-  auto status = file_system_->GetChildren(checkpoint_dir_, &file_names);
+  auto status = file_system_->GetChildren(savedmodel_dir_, &file_names);
   if (!status.ok()) {
     return std::string();
   }
@@ -115,6 +115,8 @@ std::string ModelStorage::GetMetaGraphDir() {
 }
 
 Status ModelStorage::GetLatestVersion(Version& version) {
+  version.savedmodel_dir = savedmodel_dir_;
+
   TF_RETURN_IF_ERROR(GetFullModelVersion(version));
   return GetDeltaModelVersion(version);
 }
@@ -128,9 +130,9 @@ Status ModelStorage::GetFullModelVersion(Version& version) {
       continue;
     }
     auto v = ParseMetaFileName(fname);
-    if (v > version.full_model_version) {
-      version.full_model_name = ParseFullName(fname);
-      version.full_model_version = v;
+    if (v > version.full_ckpt_version) {
+      version.full_ckpt_name = ParseCkptFileName(fname);
+      version.full_ckpt_version = v;
     }
   }
   return Status::OK();
@@ -146,10 +148,10 @@ Status ModelStorage::GetDeltaModelVersion(Version& version) {
       continue;
     }
     auto v = ParseMetaFileName(fname);
-    if (v > version.delta_model_version &&
-        v > version.full_model_version) {
-      version.delta_model_name = ParseFullName(fname);
-      version.delta_model_version = v;
+    if (v > version.delta_ckpt_version &&
+        v > version.full_ckpt_version) {
+      version.delta_ckpt_name = ParseCkptFileName(fname);
+      version.delta_ckpt_version = v;
     }
   }
   return Status::OK();
