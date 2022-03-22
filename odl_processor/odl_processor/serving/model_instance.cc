@@ -32,13 +32,13 @@ Status ModelInstance::ReadModelSignature(ModelConfig* model_config) {
 Status ModelInstance::RecursionCreateSession(const Version& version,
     SparseStorage* sparse_storage) {
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
-        version.full_model_name.c_str(), sparse_storage));
+        version.full_ckpt_name.c_str(), sparse_storage));
 
-  if (version.delta_model_name.empty()) {
+  if (version.delta_ckpt_name.empty()) {
     return Status::OK();
   } else {
     return session_mgr_->CreateModelSession(version,
-        version.delta_model_name.c_str(), sparse_storage);
+        version.delta_ckpt_name.c_str(), sparse_storage);
   }
 }
 
@@ -158,7 +158,7 @@ Status ModelInstance::FullModelUpdate(const Version& version) {
   // Logically backup_storage_ shouldn't serving now.
   backup_storage_->Reset();
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version,
-      version.full_model_name.c_str(), backup_storage_));
+      version.full_ckpt_name.c_str(), backup_storage_));
  
   std::swap(backup_storage_, serving_storage_);
   return Status::OK();
@@ -166,7 +166,7 @@ Status ModelInstance::FullModelUpdate(const Version& version) {
 
 Status ModelInstance::DeltaModelUpdate(const Version& version) {
   return session_mgr_->CreateModelSession(version,
-      version.delta_model_name.c_str(), serving_storage_);
+      version.delta_ckpt_name.c_str(), serving_storage_);
 }
 
 std::string ModelInstance::DebugString() {

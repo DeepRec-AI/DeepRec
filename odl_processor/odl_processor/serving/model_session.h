@@ -41,12 +41,12 @@ class ModelSessionMgr {
   Status Predict(Request& req, Response& resp);
 
   Status CreateModelSession(const Version& version,
-      const char* model_dir, SparseStorage* sparse_storage);
+      const char* ckpt_name, SparseStorage* sparse_storage);
 
  private:
   Status CreateSession(Session** sess);
-  Status RunRestoreOps(const char* model_dir, Session* session,
-      SparseStorage* sparse_storage);
+  Status RunRestoreOps(const char* ckpt_name, const char* savedmodel_dir,
+      Session* session, SparseStorage* sparse_storage);
   void ResetServingSession(Session* session, const Version& version,
       SparseStorage* sparse_storage);
 
