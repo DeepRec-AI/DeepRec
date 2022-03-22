@@ -1,5 +1,5 @@
 import sys
-import config_pb2_112 as config_pb2
+import config_pb2
 import timeline
 
 def gen_timeline(src_name, dest_name):
