@@ -18,7 +18,7 @@ class Response;
 class ModelImpl {
  public:
   virtual ~ModelImpl() {}
-  virtual Status Init(const char* root_dir) = 0;
+  virtual Status Init() = 0;
   virtual Status Predict(Request& req, Response& resp) = 0;
 
   virtual Status Rollback() = 0;
@@ -29,7 +29,7 @@ class FreezeSavedModelImpl : public ModelImpl {
  public:
   ~FreezeSavedModelImpl() override {}
   
-  Status Init(const char* root_dir) override {
+  Status Init() override {
     return Status::OK();
   }
   
@@ -51,7 +51,7 @@ class SavedModelImpl : public ModelImpl {
   explicit SavedModelImpl(ModelConfig* config);
   ~SavedModelImpl() override;
 
-  Status Init(const char* root_dir) override;
+  Status Init() override;
   Status Predict(Request& req, Response& resp);
 
   Status Rollback() override;

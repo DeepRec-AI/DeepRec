@@ -17,7 +17,7 @@ class Model {
   Model(const Model&) = delete;
   Model& operator=(const Model&) = delete;
 
-  Status Init(const char* model_config, const char* model_dir);
+  Status Init(const char* model_config);
   Status Predict(Request& req, Response& resp);
   Status Rollback();
 

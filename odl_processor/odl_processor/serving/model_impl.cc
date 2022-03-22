@@ -15,8 +15,8 @@ SavedModelImpl::~SavedModelImpl() {
   delete model_config_;
 }
 
-Status SavedModelImpl::Init(const char* root_dir) {
-  instance_mgr_ = new ModelInstanceMgr(root_dir, model_config_);
+Status SavedModelImpl::Init() {
+  instance_mgr_ = new ModelInstanceMgr(model_config_);
   return instance_mgr_->Init();
 }
 

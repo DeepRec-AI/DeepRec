@@ -12,7 +12,7 @@ Model::~Model() {
   delete impl_;
 }
 
-Status Model::Init(const char* model_config, const char* model_dir) {
+Status Model::Init(const char* model_config) {
   ModelConfig* config = nullptr;
   auto status = ModelConfigFactory::Create(model_config, &config);
   if (!status.ok()) {
@@ -20,7 +20,7 @@ Status Model::Init(const char* model_config, const char* model_dir) {
   }
 
   impl_ = ModelImplFactory::Create(config);
-  return impl_->Init(model_dir);
+  return impl_->Init();
 }
 
 Status Model::Predict(Request& req, Response& resp) {

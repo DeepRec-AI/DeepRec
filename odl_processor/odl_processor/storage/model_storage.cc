@@ -32,13 +32,18 @@ int64 ParseMetaFileName(const std::string& fname) {
 }
 namespace processor {
 ModelStorage::ModelStorage(ModelConfig* config) :
-  model_config_(config) {
+    model_config_(config) {
+  savedmodel_dir_ = config->savedmodel_dir; 
+  checkpoint_dir_ = config->checkpoint_dir;
+  delta_model_dir_ = io::JoinPath(checkpoint_dir_, ".incremental_checkpoint");
 }
 
-Status ModelStorage::Init(const char* root_dir) {
-  model_dir_ = root_dir;
-  delta_model_dir_ = io::JoinPath(model_dir_, ".incremental_checkpoint");
-  return Env::Default()->GetFileSystemForFile(model_dir_, &file_system_);
+Status ModelStorage::Init() {
+  return Env::Default()->GetFileSystemForFile(savedmodel_dir_, &file_system_);
+}
+
+std::string ModelStorage::GetMetaGraphDir() {
+  return savedmodel_dir_;
 }
 
 Status ModelStorage::GetLatestVersion(Version& version) {
@@ -48,7 +53,7 @@ Status ModelStorage::GetLatestVersion(Version& version) {
 
 Status ModelStorage::GetFullModelVersion(Version& version) {
   std::vector<string> file_names;
-  TF_RETURN_IF_ERROR(file_system_->GetChildren(model_dir_, &file_names));
+  TF_RETURN_IF_ERROR(file_system_->GetChildren(checkpoint_dir_, &file_names));
   
   for (auto fname : file_names) {
     if (!IsMetaFileName(fname)) {

@@ -48,6 +48,22 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
         "[TensorFlow] No signature_name in ModelConfig.");
   }
   
+  if (!json_config["checkpoint_dir"].isNull()) {
+    (*config)->checkpoint_dir =
+      json_config["checkpoint_dir"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No checkpoint_dir in ModelConfig.");
+  }
+
+  if (!json_config["savedmodel_dir"].isNull()) {
+    (*config)->savedmodel_dir =
+      json_config["savedmodel_dir"].asString();
+  } else {
+    return Status(error::Code::NOT_FOUND,
+        "[TensorFlow] No savedmodel_dir in ModelConfig.");
+  }
+
   if (!json_config["storage_type"].isNull()) {
     (*config)->storage_type =
       json_config["storage_type"].asString();

@@ -44,8 +44,9 @@ Status ModelInstance::RecursionCreateSession(const Version& version,
 
 Status ModelInstance::Init(const Version& version,
     ModelConfig* model_config, ModelStorage* model_storage) {
+  const auto& saved_model_dir = model_storage->GetMetaGraphDir();
   TF_RETURN_IF_ERROR(ReadMetaGraphDefFromSavedModel(
-        version.full_model_name.c_str(),
+        saved_model_dir.c_str(),
         {kSavedModelTagServe}, &meta_graph_def_));
 
   session_mgr_ = new ModelSessionMgr(meta_graph_def_,
@@ -146,9 +147,9 @@ std::string ModelInstance::DebugString() {
   return model_signature_.second.DebugString();
 }
 
-ModelInstanceMgr::ModelInstanceMgr(const char* root_dir, ModelConfig* config)
+ModelInstanceMgr::ModelInstanceMgr(ModelConfig* config)
   : model_storage_(new ModelStorage(config)), model_config_(config) {
-  model_storage_->Init(root_dir);
+  model_storage_->Init();
   session_options_ = new SessionOptions();
   //session_options_->target = target;
   session_options_->config.set_intra_op_parallelism_threads(config->inter_threads);
