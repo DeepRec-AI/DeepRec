@@ -588,6 +588,24 @@ REGISTER_OP("ConcatOffset")
       return Status::OK();
     });
 
+REGISTER_OP("_FusedConcatCast")
+    .Input("values: N * T")
+    .Input("axis: Tidx")
+    .Output("output: T")
+    .Attr("N: int >= 2")
+    .Attr("T: type")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    // Attributes for the Cast ------------------------------------ //
+    .Attr("SrcT: type")
+    .Attr("DstT: type")
+    .Attr("Truncate: bool = false")
+    // ---------------------------------------------------------------------- //
+    .SetShapeFn(shape_inference::ConcatV2Shape)
+    .Doc(R"doc(
+*NOTE*: Do not invoke this operator directly in Python. Grappler is
+expected to create these operators.
+)doc");
+
 // --------------------------------------------------------------------------
 REGISTER_OP("Split")
     .Input("split_dim: int32")

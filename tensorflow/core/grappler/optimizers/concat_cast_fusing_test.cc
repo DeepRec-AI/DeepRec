@@ -38,7 +38,7 @@ TEST_F(ConcatCastFusingTest, SimpleFusing) {
     Output b = ops::Const(s.WithOpName("b"), 2.0f, {1});
     auto ax = ops::Const(s.WithOpName("axis"), 0);
     Output c = ops::Concat(s.WithOpName("c").WithDevice("/CPU:0"), {a, b}, ax);
-    Output d = ops::Cast(s.WithOpName("d"), c, DataType::DT_FLOAT);
+    Output d = ops::Cast(s.WithOpName("d"), c, DataType::DT_INT32);
 
     GrapplerItem item;
     item.fetch.push_back("d");

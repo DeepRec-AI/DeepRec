@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/evaluation_utils.h"
 #include "tensorflow/core/grappler/utils/graph_view.h"
 #include "tensorflow/core/grappler/utils/topological_sort.h"
+#include "tensorflow/core/util/dump_graph.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -39,7 +40,16 @@ struct Context {
   bool inferred_graph_properties;
 };
 
-bool FindConcatWithCast(const Context& ctx, int node_index) {
+struct ConcatWithCast {
+  ConcatWithCast() = default;
+  ConcatWithCast(int concat_id, int cast_id)
+      : concat_id(concat_id), cast_id(cast_id) {}
+
+  int concat_id = -1;
+  int cast_id = -1;
+};
+
+bool FindConcatWithCast(const Context& ctx, int node_index, ConcatWithCast* matched) {
     const auto* concat_node_view = ctx.graph_view.GetNode(node_index);
 
     if (concat_node_view->NumControllingFanins() > 0 || concat_node_view->NumControlledFanouts() > 0) return false;
@@ -56,6 +66,10 @@ bool FindConcatWithCast(const Context& ctx, int node_index) {
     const auto* cast_node_view = concat_fanouts[0].node_view();
     const auto* cast_node_def = cast_node_view->node();
     if (!IsCast(*cast_node_def)) return false;
+
+    const ConcatWithCast pattern{node_index,
+                                 cast_node_view->node_index()};
+    *matched = pattern;
 
     return true;
 }
@@ -86,19 +100,75 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
     TF_RETURN_IF_ERROR(status);
     TF_RETURN_IF_ERROR(ctx.graph_view.SortTopologically(/*ignore_cycles=*/false, {}));
     const int num_nodes = item.graph.node_size();
+    // invalidated_nodes - nodes that have been changed into a fused op
+    // nodes_to_delete -  nodes that were fused into a fused op and are not needed anymore
+    std::vector<bool> invalidated_nodes(num_nodes);
+    std::vector<bool> nodes_to_delete(num_nodes);
+    const GraphDef* graph = ctx.graph_view.graph();
+
+    VLOG(3) << "Before concat cast graph rewrites: " << graph->DebugString();
 
     for (int i = 0; i < num_nodes; ++i) {
-        if (FindConcatWithCast(ctx, i)) {
+        if (invalidated_nodes[i] || nodes_to_delete[i]) {
+            continue;
+        }
+
+        ConcatWithCast base;
+        if (FindConcatWithCast(ctx, i, &base)) {
             const auto* node_view = ctx.graph_view.GetNode(i);
-            const auto* node_def = node_view->node();
-            string op_name = node_def->op();
+            const auto& fused_node = graph->node(i);
+            VLOG(2) << "Optimizing fused concat cast node " << SummarizeNodeDef(fused_node);
+            string op_name = fused_node.op();
             std::cout << op_name << std::endl;
             std::cout << "\t Fanins: " << node_view->NumRegularFanins() << std::endl;
             std::cout << "\t Fanouts: " << node_view->NumRegularFanouts() << std::endl;
+            std::cout << "\t Concat id: " << base.concat_id << " Cast id: " << base.cast_id << std::endl;
+
+            // Adding fused concat+cast
+            const NodeDef& concat = graph->node(base.concat_id);
+            const NodeDef& cast = graph->node(base.cast_id);
+            const std::size_t concat_num_inputs = node_view->NumRegularFanins();
+            VLOG(2) << "Fuse " << concat.op() << " with Cast: "
+                    << " cast_name=" << cast.name();
+
+            NodeDef fused_op;
+            fused_op.set_name(concat.name());
+            fused_op.set_op("_FusedConcatCast");
+            fused_op.set_device(concat.device());
+            for (int j = 0; j < concat_num_inputs - 1; ++j)
+                fused_op.add_input(concat.input(j));  // inputs
+            fused_op.add_input(concat.input(concat_num_inputs - 1));  // axis
+
+            auto* attr = fused_op.mutable_attr();
+            auto& concat_attr = concat.attr();
+            auto& cast_attr = cast.attr();
+            (*attr)["T"] = concat_attr.at("T");
+            (*attr)["N"] = concat_attr.at("N");
+
+            (*attr)["SrcT"] = cast_attr.at("SrcT");
+            (*attr)["DstT"] = cast_attr.at("DstT");
+
+            utils::Mutation* mutation = ctx.graph_view.GetMutationBuilder();
+            Status status;
+            mutation->AddNode(std::move(fused_op), &status);
+            TF_RETURN_IF_ERROR(status);
+            TF_RETURN_IF_ERROR(mutation->Apply());
+            invalidated_nodes[i] = true;
+            nodes_to_delete[i+1] = true;
         }
     }
 
+    // Remove not needed nodes
+    utils::Mutation* mutation = ctx.graph_view.GetMutationBuilder();
+    for (int i = 0; i < num_nodes; ++i) {
+        if (nodes_to_delete[i]) {
+            mutation->RemoveNode(ctx.graph_view.GetNode(i));
+        }
+    }
+    TF_RETURN_IF_ERROR(mutation->Apply());
     *optimized_graph = mutable_item.graph;
+
+    VLOG(3) << "After concat cast graph rewrites: " << optimized_graph->DebugString();
 
     return Status::OK();
 }
