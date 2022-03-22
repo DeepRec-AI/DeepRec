@@ -633,10 +633,15 @@ ModelUpdater::~ModelUpdater() {
 }
 
 Status ModelUpdater::ModelUpdate(const Version& version,
-                             ModelConfig* model_config) {
+    ModelConfig* model_config, bool new_full_ckpt_generated) {
+  // Load new full model vesion
   if (version.IsFullModel()) {
     return FullModelUpdate(version, model_config);
   } else {
+    // Load new full model vesion before incremental model be loaded.
+    if (new_full_ckpt_generated) {
+      TF_RETURN_IF_ERROR(FullModelUpdate(version, model_config));
+    }
     return DeltaModelUpdate(version, model_config);
   }
 }
@@ -648,12 +653,19 @@ void ModelUpdater::WorkLoop() {
     LOG(INFO) << "[Processor] ModelUpdater::WorkLoop get latest version: "
               << version.DebugString();
     if (!status.ok()) {
-      LOG(WARNING) << "[Processor] Can't get latest model, will try 60 seconds later. "
+      LOG(WARNING) << "[Processor] Not found full model or incremental model directory. "
+                   << "Please ignore this warning if you confirm it. "
+                   << "And we will try 60 seconds later. Warning message: "
                    << status.error_message() << std::endl;
     }
 
-    if (GetVersion() < version) {
-      auto status = ModelUpdate(version, model_config_);
+    // New model directory is generated or the version step is greater than the pre.
+    Version pre_version = GetVersion();
+    bool new_full_ckpt_generated =
+        pre_version.full_ckpt_name != version.full_ckpt_name;
+    if (new_full_ckpt_generated || pre_version < version) {
+      auto status = ModelUpdate(version, model_config_,
+                                new_full_ckpt_generated);
       if (!status.ok()) {
         LOG(ERROR) << status.error_message() << std::endl;
       }
