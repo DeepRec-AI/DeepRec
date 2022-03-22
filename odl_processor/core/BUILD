@@ -38,8 +38,12 @@ cc_library(
         "util/utils.h",
     ],
     deps = [
-        "@local_config_tf//:libtensorflow_framework",
-        "@local_config_tf//:tf_header_lib",
+        "@org_tensorflow//tensorflow/core:framework",
+        #"@org_tensorflow//tensorflow/core:graph",
+        #"@org_tensorflow//tensorflow/core:platform_base",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+        #"@local_config_tf//:libtensorflow_framework",
+        #"@local_config_tf//:tf_header_lib",
     ],
 )
 
