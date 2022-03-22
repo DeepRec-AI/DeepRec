@@ -392,7 +392,7 @@ Status ModelSessionMgr::CreateModelSession(
       meta_graph_def_.saver_def().restore_op_name();
   std::string filename_tensor_name =
       meta_graph_def_.saver_def().filename_tensor_name();
-  std::string incr_filename_tensor_name = 
+  std::string incr_filename_tensor_name =
       meta_graph_def_.incr_saver_def().filename_tensor_name();
   Session* session = nullptr;
   if (is_incr_ckpt) {
@@ -425,6 +425,8 @@ Status ModelSessionMgr::CreateModelSession(
   if (!is_incr_ckpt) {
     // ResetServingSession(session, version);
     *new_model_session = new ModelSession(session, version);
+  } else {
+    serving_session_->UpdateVersion(version);
   }
 
   return Status::OK();

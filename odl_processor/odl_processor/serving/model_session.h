@@ -29,6 +29,7 @@ struct ModelSession {
   Status Predict(Request& req, Response& resp);
   Status LocalPredict(Request& req, Response& resp);
   Version GetVersion() {return version_;}
+  void UpdateVersion(const Version& v) { version_ = v; }
 
   Session* session_ = nullptr;
   //IFeatureStoreMgr* sparse_storage_ = nullptr;

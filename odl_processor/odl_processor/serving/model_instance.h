@@ -131,7 +131,8 @@ class ModelUpdater {
   virtual Version GetVersion() = 0;
 
   Status ModelUpdate(const Version& version,
-                     ModelConfig* model_config);
+                     ModelConfig* model_config,
+                     bool new_full_model_generated);
 
  protected:
   ModelStore* model_store_ = nullptr;
