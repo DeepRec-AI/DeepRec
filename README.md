@@ -82,7 +82,30 @@ $ ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
 $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
 ```
 
+### **How to Build serving library**
 
+configure will modify .bazelrc file, please revert the change when you build DeepRec whl.
+```
+./configure serving
+```
+Or configure with some flags,
+```
+./configure serving --mkl
+./configure serving --mkl_open_source_v1_only
+./configure serving --mkl_threadpool
+./configure serving --mkl --cuda ...
+```
+More details see: serving/tools/build/configure.py
+
+build odl_processor library, this will generate libtf_processor.so. User should load the library, then call serving API to predict.
+```
+bazel build //serving/odl_processor/serving:libtf_processor.so
+```
+
+UT test
+```
+bazel test -- //serving/odl_processor/... -//serving/odl_processor/framework:lookup_manual_test
+```
 
 
 ### **Nightly Images**
