@@ -17,7 +17,7 @@ namespace processor {
 //  Local   Cluster  RocksDB
 //  Redis    Redis    ...
 
-typedef std::function<void(const Status&)> BatchGetCallback;
+typedef std::function<void(const Status&, std::vector<int64_t> not_found_ids_offset)> BatchGetCallback;
 typedef std::function<void(const Status&)> BatchSetCallback;
 
 class AbstractModelStore {

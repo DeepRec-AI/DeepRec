@@ -12,7 +12,8 @@ cc_library(
           "read.c",
           "sds.c",
           "sockcompat.c",
-          "ssl.c",
+          # for linking error
+          # "ssl.c",
   ],
   hdrs = [
           "alloc.h",

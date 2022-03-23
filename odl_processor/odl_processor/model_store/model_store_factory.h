@@ -13,10 +13,11 @@ class ModelStoreFactory {
   ~ModelStoreFactory() {}
   static AbstractModelStore* CreateModelStore(const std::string& type) {
     if ("local_redis" == type) {
-      typename LocalRedis::Config config;
+      LocalRedis::Config config;
       config.ip = "127.0.0.1";
       config.port = 6379;
-      return new LocalRedis(config);
+      static LocalRedis r(config);
+      return &r;
     } else {
       LOG(WARNING) << "Not match any type";
     }

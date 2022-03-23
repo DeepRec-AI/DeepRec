@@ -3,6 +3,7 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
   name = "redis_modelstore",
   srcs = [
+    'redis_model_store.cc',
   ],
   linkopts = ["-levent", "-L/usr/local/lib"],
   linkstatic = 1,

@@ -11,12 +11,11 @@ cc_library(
         "kernels/lookup_kernels.cc",
         "ops/lookup_ops.cc",
     ],
-    linkstatic = True,
     deps = [
+        "//odl_processor/model_store:redis_modelstore",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core/util/tensor_bundle",
     ],
-    alwayslink = 1,
 )
 
 cc_test(
@@ -100,3 +99,12 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "lookup_manual_test",
+    srcs = ["kernels/lookup_kernels_manual_test.cc"],
+    deps = [
+        ":lookup_ops",
+        ":graph_optimizer",
+        "//odl_processor/storage/oss:oss_ops",
+    ],
+)
