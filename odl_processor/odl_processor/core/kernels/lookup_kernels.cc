@@ -19,41 +19,26 @@ limitations under the License.
 #include "tensorflow/core/framework/resource_op_kernel.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
+#include "odl_processor/model_store/redis_model_store.h"
+#include "odl_processor/model_store/model_store_factory.h"
 
 namespace tensorflow {
 namespace processor {
 
 namespace {
 
-// TODO: FIXME
-typedef std::function<void(const Status&, // const Tensor& val,
-                           std::vector<int> not_found_ids_offset)>
-    LookupCallback;
 
-void FakeLookup(OpKernelContext* ctx,
-                int64 N, // indices count
-                int64 dim_len, // len of dim 1
-                Tensor allocated_out_tensor,
-                const std::string& var_name,
-                const std::string& version_str,
-                Tensor indices, // indices
-                LookupCallback callback) {
-}
-
-// TODO: FIXME
 template <typename TValue>
-LookupCallback make_lookup_callback(
+BatchGetCallback make_lookup_callback(
     OpKernelContext* ctx,
     int64 N, // indices count
     int64 dim_len, // len of dim 1
-    Tensor& default_values,
-    Tensor& allocated_out_tensor,
+    Tensor default_values_const,
+    Tensor allocated_out_tensor_const,
     AsyncOpKernel::DoneCallback done) {
-  return [ctx, N, dim_len, default_values_const = std::move(default_values),
-          allocated_out_tensor_const = std::move(allocated_out_tensor),
+  return [ctx, N, dim_len, default_values_const, allocated_out_tensor_const,
           done = std::move(done)](const Status& s,
-                                  //const Tensor& val,
-                                  std::vector<int> not_found_ids_offset) {
+                                  std::vector<int64_t> not_found_ids_offset) {
     Tensor default_values = default_values_const;
     Tensor allocated_out_tensor = allocated_out_tensor_const;
     auto default_values_matrix = default_values.shaped<TValue, 2>(
@@ -94,6 +79,7 @@ class KvLookupOp : public AsyncOpKernel {
     const std::string version_str = version.scalar<string>()();
 
     const Tensor& indices = ctx->input(1);
+
     const int64 N = indices.NumElements();
 
     Tensor default_values(ctx->input(2));
@@ -121,14 +107,25 @@ class KvLookupOp : public AsyncOpKernel {
             "hashmap's value_len should same with output's dimension(1)",
             std::to_string(dim_len_), std::to_string(out->NumElements() / N)));
 
-    // TODO: FIXME call embedding service
-    // Discuss the API args
-    //
-    FakeLookup(
-        ctx, N, dim_len_, *out, var_name_, version_str, indices,
+/*
+ * for manual test
+    std::vector<char*> keys;
+    std::vector<char*> values;
+    auto a = indices.flat<int64>();
+    for (int64 i = 0; i < N; ++i) {
+      keys.push_back((char*)&a(i));
+      values.push_back((char*)((TValue*)out->data()+i));
+    }
+    auto r = ModelStoreFactory::CreateModelStore("local_redis");
+    Status s = r->BatchGetAsync(var_name_,
+        version_str,
+        keys,
+        sizeof(TKey),
+        values,
         make_lookup_callback<TValue>(ctx, N, dim_len_,
-                                     default_values, *out,
-                                     std::move(done)));
+            default_values, *out,
+            std::move(done)));
+*/
   }
 
  private:
@@ -195,28 +192,13 @@ size_t LookupSegmentInternal(size_t key_size, size_t value_size,
   return read_key_num;
 }
 
-// TODO: FIXME for testing
-typedef std::function<void(const Status&)> ImportCallback;
-
-void FakeImport(char* key_buffer, char* value_buffer,
-                size_t read_key_num, const std::string& var_name,
-                const std::string& version_str, ImportCallback callback) {
-  static int64 cur_done_num = 0;
-  cur_done_num += read_key_num;
-  LOG(INFO) << "KvImport: read key num = " << read_key_num << ", cur done num = " << cur_done_num;
-  for (size_t i = 0; i < read_key_num; ++i) {
-    LOG(INFO) << *((int64*)key_buffer+i) << " : " << *((float*)value_buffer+i);
-  }
-
-  Status s;
-  callback(s);
-}
-
-ImportCallback make_import_callback(
+template <typename TKey, typename TValue>
+BatchSetCallback make_import_callback(
     OpKernelContext* ctx,
     char* key_buffer,
     char* value_buffer,
     int64 total_keys_num,
+    size_t dim_len,
     size_t key_size,
     size_t value_size,
     const std::string& tensor_key,
@@ -226,7 +208,7 @@ ImportCallback make_import_callback(
     BundleReader* reader,
     AsyncOpKernel::DoneCallback done) {
   return [ctx, key_buffer, value_buffer, key_size, value_size,
-          left_keys_num = total_keys_num, tensor_key, tensor_value, var_name,
+          left_keys_num = total_keys_num, dim_len, tensor_key, tensor_value, var_name,
           version_str, reader, done = std::move(done)](const Status& s) {
 
     int64 total_keys_num = left_keys_num;
@@ -252,16 +234,25 @@ ImportCallback make_import_callback(
     }
     total_keys_num -= read_key_num;
 
-    // TODO: FIXME call embedding service here
-    FakeImport(key_buffer, value_buffer,
-               read_key_num, var_name,
-               version_str, make_import_callback(
-                   ctx, key_buffer, value_buffer,
-                   total_keys_num, key_size,
-                   value_size, tensor_key,
-                   tensor_value, var_name, version_str,
-                   reader, std::move(done)));
-
+/*
+ * for manual test
+    std::vector<char*> keys;
+    std::vector<char*> values;
+    for (size_t i = 0; i < read_key_num; ++i) {
+      keys.push_back((char*)((TKey*)key_buffer+i));
+      values.push_back((char*)((TValue*)value_buffer+i));
+    }
+    auto r = ModelStoreFactory::CreateModelStore("local_redis");
+    Status status = r->BatchSetAsync(var_name, version_str,
+        keys, sizeof(TKey),
+        values, sizeof(TValue) * dim_len,
+        make_import_callback<TKey, TValue>(
+            ctx, key_buffer, value_buffer,
+            total_keys_num, dim_len, key_size,
+            value_size, tensor_key,
+            tensor_value, var_name, version_str,
+            reader, std::move(done)));
+*/
   };
 }
 
@@ -333,17 +324,25 @@ class KvImportOp : public AsyncOpKernel {
 
     total_keys_num -= read_key_num;
 
-    // TODO: FIXME call embedding service here
-    //  Discuss the API args
-    //
-    FakeImport(key_buffer, value_buffer,
-               read_key_num, var_name_,
-               version_str, make_import_callback(
-                   ctx, key_buffer, value_buffer,
-                   total_keys_num, key_size,
-                   value_size, tensor_key,
-                   tensor_value, var_name_, version_str,
-                   reader, std::move(done)));
+/*
+ * for manual test
+    std::vector<char*> keys;
+    std::vector<char*> values;
+    for (size_t i = 0; i < read_key_num; ++i) {
+      keys.push_back((char*)((TKey*)key_buffer+i));
+      values.push_back((char*)((TValue*)value_buffer+i * value_shape.dim_size(1)));
+    }
+    auto r = ModelStoreFactory::CreateModelStore("local_redis");
+    s = r->BatchSetAsync(var_name_, version_str,
+        keys, sizeof(TKey),
+        values, sizeof(TValue) * dim_len_,
+        make_import_callback<TKey, TValue>(
+            ctx, key_buffer, value_buffer,
+            total_keys_num, dim_len_, key_size,
+            value_size, tensor_key,
+            tensor_value, var_name_, version_str,
+            reader, std::move(done)));
+*/
   }
 
  private:

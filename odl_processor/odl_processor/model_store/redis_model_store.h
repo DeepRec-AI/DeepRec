@@ -4,10 +4,6 @@
 #include <string>
 #include <thread>
 
-#include "adapters/libevent.h"
-#include "async.h"
-#include "hiredis.h"
-
 #include "odl_processor/model_store/abs_model_store.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -25,20 +21,10 @@ class LocalRedis : public AbstractModelStore {
       int32_t port = 0;
     };
 
-    LocalRedis(Config config)
-      : ip_(config.ip),
-        port_(config.port),
-        ac_(nullptr),
-        base_(nullptr) {
-    }
+    LocalRedis(Config config);
+    ~LocalRedis();
 
-    ~LocalRedis() {
-    }
-
-    Status RegisterFeatures(const std::vector<std::string>& features) {
-      // TODO
-      return Status::OK();
-    }
+    Status RegisterFeatures(const std::vector<std::string>& features);
 
     Status BatchGet(const std::string& feature,
                     const std::string& version,
@@ -64,9 +50,7 @@ class LocalRedis : public AbstractModelStore {
                          const std::vector<char*>& keys,
                          size_t keys_byte_lens,
                          const std::vector<char*>& values,
-                         BatchGetCallback cb) {
-      return Status::OK();
-    }
+                         BatchGetCallback cb);
 
     Status BatchSetAsync(const std::string& feature,
                          const std::string& version,
@@ -74,10 +58,7 @@ class LocalRedis : public AbstractModelStore {
                          size_t keys_byte_lens,
                          const std::vector<char*>& values,
                          size_t values_byte_lens,
-                         BatchSetCallback cb) {
-      return Status::OK();
-    }
-
+                         BatchSetCallback cb);
 
   private:
     std::string ip_;
