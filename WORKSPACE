@@ -222,3 +222,97 @@ http_archive(
     ],
     urls = ["https://pagure.io/libaio/archive/libaio-0.3.112/libaio-libaio-0.3.112.tar.gz"],
 )
+
+http_archive(
+    name = "aliyun_oss_c_sdk",
+    build_file = "//serving/third_party:oss_c_sdk.BUILD",
+    sha256 = "6450d3970578c794b23e9e1645440c6f42f63be3f82383097660db5cf2fba685",
+    strip_prefix = "aliyun-oss-c-sdk-3.7.0",
+    urls = [
+        "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/aliyun/aliyun-oss-c-sdk/archive/3.7.0.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "concurrent_queue",
+    build_file = "//serving/third_party:concurrent_queue.BUILD",
+    sha256 = "c3aeb97c97169f743a53ca33812ea2ab61dd06dfd28319ca3f0a0771372fc7fc",
+    strip_prefix = "concurrentqueue-1.0.2",
+    urls = [
+        "https://github.com/cameron314/concurrentqueue/archive/v1.0.2.tar.gz",
+    ],
+)
+
+
+http_archive(
+    name = "libevent",
+    build_file = "//serving/third_party:libevent.BUILD",
+    sha256 = "7180a979aaa7000e1264da484f712d403fcf7679b1e9212c4e3d09f5c93efc24",
+    patches = [
+        "//serving/third_party:libevent1.patch",
+        "//serving/third_party:libevent.patch",
+    ],
+    urls = [
+        "https://github.com/libevent/libevent/archive/release-2.1.12-stable.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "hiredis",
+    build_file = "//serving/third_party:hiredis.BUILD",
+    sha256 = "e0ab696e2f07deb4252dda45b703d09854e53b9703c7d52182ce5a22616c3819",
+    strip_prefix = "hiredis-1.0.2",
+    urls = [
+        "https://github.com/redis/hiredis/archive/v1.0.2.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "libexpat",
+    build_file = "//serving/third_party:libexpat.BUILD",
+    sha256 = "574499cba22a599393e28d99ecfa1e7fc85be7d6651d543045244d5b561cb7ff",
+    strip_prefix = "libexpat-R_2_2_6/expat",
+    urls = [
+        "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/libexpat/libexpat/archive/R_2_2_6.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "libapr1",
+    build_file = "//serving/third_party:libapr1.BUILD",
+    sha256 = "1a0909a1146a214a6ab9de28902045461901baab4e0ee43797539ec05b6dbae0",
+    strip_prefix = "apr-1.6.5",
+    patches = [
+        "//serving/third_party:libapr1.patch",
+    ],
+    urls = [
+        "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/apache/apr/archive/1.6.5.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "libaprutil1",
+    build_file = "//serving/third_party:libaprutil1.BUILD",
+    sha256 = "4c9ae319cedc16890fc2776920e7d529672dda9c3a9a9abd53bd80c2071b39af",
+    strip_prefix = "apr-util-1.6.1",
+    patches = [
+        "//serving/third_party:libaprutil1.patch",
+    ],
+    urls = [
+        "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/apache/apr-util/archive/1.6.1.tar.gz",
+    ],
+)
+
+http_archive(
+    name = "mxml",
+    build_file = "//serving/third_party:mxml.BUILD",
+    sha256 = "4d850d15cdd4fdb9e82817eb069050d7575059a9a2729c82b23440e4445da199",
+    strip_prefix = "mxml-2.12",
+    patches = [
+        "//serving/third_party:mxml.patch",
+    ],
+    urls = [
+        "http://pythonrun.oss-cn-zhangjiakou.aliyuncs.com/tensorflow_io/github.com/michaelrsweet/mxml/archive/v2.12.tar.gz",
+    ],
+)
+

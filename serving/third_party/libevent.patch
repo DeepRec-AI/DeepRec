@@ -1,0 +1,48 @@
+diff -rc libevent-release-2.1.12-stable/arc4random.c libevent-release-2.1.12-stable-fixed/arc4random.c
+*** libevent-release-2.1.12-stable/arc4random.c	2020-07-05 20:01:34.000000000 +0800
+--- libevent-release-2.1.12-stable-fixed/arc4random.c	2022-02-24 15:04:00.592974230 +0800
+***************
+*** 45,50 ****
+--- 45,54 ----
+  #define ARC4RANDOM_EXPORT
+  #endif
+  
++ #include <stdint.h>
++ #include "util-internal.h"
++ #include "evthread-internal.h"
++ 
+  #ifndef ARC4RANDOM_UINT32
+  #define ARC4RANDOM_UINT32 uint32_t
+  #endif
+***************
+*** 78,83 ****
+--- 82,93 ----
+  /* Re-seed from the platform RNG after generating this many bytes. */
+  #define BYTES_BEFORE_RESEED 1600000
+  
++ #define ARC4_LOCK_() EVLOCK_LOCK(arc4rand_lock, 0)
++ #define ARC4_UNLOCK_() EVLOCK_UNLOCK(arc4rand_lock, 0)
++ #ifndef EVENT__DISABLE_THREAD_SUPPORT
++ static void *arc4rand_lock;
++ #endif
++ 
+  struct arc4_stream {
+  	unsigned char i;
+  	unsigned char j;
+diff -rc libevent-release-2.1.12-stable/evutil_rand.c libevent-release-2.1.12-stable-fixed/evutil_rand.c
+*** libevent-release-2.1.12-stable/evutil_rand.c	2019-07-26 19:40:44.000000000 +0800
+--- libevent-release-2.1.12-stable-fixed/evutil_rand.c	2022-02-24 15:04:12.440451931 +0800
+***************
+*** 120,130 ****
+  #define ssize_t EVENT__ssize_t
+  #endif
+  #define ARC4RANDOM_EXPORT static
+- #define ARC4_LOCK_() EVLOCK_LOCK(arc4rand_lock, 0)
+- #define ARC4_UNLOCK_() EVLOCK_UNLOCK(arc4rand_lock, 0)
+- #ifndef EVENT__DISABLE_THREAD_SUPPORT
+- static void *arc4rand_lock;
+- #endif
+  
+  #define ARC4RANDOM_UINT32 ev_uint32_t
+  #define ARC4RANDOM_NOSTIR
+--- 120,125 ----
