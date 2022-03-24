@@ -165,7 +165,7 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   }
 
   // @feature_store_type: 
-  // 'redis/cluster_redis' or 'memory'
+  // 'redis/cluster_redis' or 'local'
   if ((*config)->feature_store_type == "cluster_redis" ||
       (*config)->feature_store_type == "redis") {
     if (!json_config["redis_url"].isNull()) {
@@ -284,10 +284,10 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   }
 
   if (shard_embedding) {
-    if ((*config)->feature_store_type != "memory") {
+    if ((*config)->feature_store_type != "local") {
       return Status(error::Code::INVALID_ARGUMENT,
-          "[TensorFlow] Sharded embedding must be load in memory,"
-          "this require feature_store_type must be 'memory' mode.");
+          "[TensorFlow] Sharded embedding must be load in local,"
+          "this require feature_store_type must be 'local' mode.");
     }
 
     (*config)->shard_embedding = true;
