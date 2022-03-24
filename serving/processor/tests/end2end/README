@@ -18,6 +18,6 @@ Attention: checkpoint_dir here should be the parent checkpoint dir,
 for example '/tmp/checkpoint/1', set checkpoint_dir as '/tmp/checkpoint'.
 
 3.Build demo and run
-bazel build //processor/tests:demo
-bazel-bin/processor/tests/demo
+bazel build //serving/processor/tests:demo
+bazel-bin/serving/processor/tests/demo
 

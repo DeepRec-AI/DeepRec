@@ -107,6 +107,10 @@ UT test
 bazel test -- //serving/processor/... -//serving/processor/framework:lookup_manual_test
 ```
 
+End2End test
+```
+Details please see: serving/processor/tests/end2end/README
+```
 
 ### **Nightly Images**
 #### Image for GPU CUDA11.0
