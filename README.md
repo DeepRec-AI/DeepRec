@@ -97,14 +97,14 @@ Or configure with some flags,
 ```
 More details see: serving/tools/build/configure.py
 
-build odl_processor library, this will generate libtf_processor.so. User should load the library, then call serving API to predict.
+build processor library, this will generate libserving_processor.so. User should load the library, then call serving API to predict.
 ```
-bazel build //serving/odl_processor/serving:libtf_processor.so
+bazel build //serving/processor/serving:libserving_processor.so
 ```
 
 UT test
 ```
-bazel test -- //serving/odl_processor/... -//serving/odl_processor/framework:lookup_manual_test
+bazel test -- //serving/processor/... -//serving/processor/framework:lookup_manual_test
 ```
 
 

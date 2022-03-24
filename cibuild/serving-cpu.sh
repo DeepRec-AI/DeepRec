@@ -26,7 +26,7 @@ set -x
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
     ret=0
-    bazel build //serving/odl_processor/serving:libtf_processor.so && break || ret=$?
+    bazel build //serving/processor/serving:libserving_processor.so && break || ret=$?
 done
 
 exit $ret
