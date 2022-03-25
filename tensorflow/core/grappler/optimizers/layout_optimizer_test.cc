@@ -82,8 +82,9 @@ class LayoutOptimizerTest : public GrapplerTest {
         ops::Const(s->WithOpName("Filter"), Input::Initializer(filter_data));
 
     ops::Conv2D::Attrs attrs;
+    auto padding_values = gtl::ArraySlice<int>({0, 0, 1, 2, 3, 4, 0, 0});
     if (padding == "EXPLICIT") {
-      attrs = attrs.ExplicitPaddings({0, 0, 1, 2, 3, 4, 0, 0});
+      attrs = attrs.ExplicitPaddings(padding_values);
     }
 
     Output conv = ops::Conv2D(s->WithOpName("Conv2D").WithDevice(device), input,
