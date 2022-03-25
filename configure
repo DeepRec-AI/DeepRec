@@ -8,7 +8,7 @@ if [ -z "$PYTHON_BIN_PATH" ]; then
 fi
 
 if [[ "$1" = "serving" ]]; then
-  "$PYTHON_BIN_PATH" "serving/tools/build/configure.py" "$@"
+  "$PYTHON_BIN_PATH" "serving/configure.py" "$@"
 else
   # Set all env variables
   CONFIGURE_DIR=$(dirname "$0")

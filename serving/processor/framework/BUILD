@@ -1,7 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
 load(
-    "//serving:tools/build/odl.bzl",
+    "//serving/processor:configure/processor.bzl",
     "tf_io_copts",
 )
 
