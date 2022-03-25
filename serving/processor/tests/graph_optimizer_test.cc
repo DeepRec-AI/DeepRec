@@ -49,8 +49,7 @@ std::string ReadFileIntoString(
 
 extern "C" int main(int argc, char** argv) {
   // TODO: For testing
-  // Please download saved_model.pbtxt from
-  //   http://tfsmoke1.cn-hangzhou.oss.aliyun-inc.com/jktest%2Fmm%2Fsaved_model.pbtxt
+  // Please download saved_model.pbtxt from oss.
   // then copy the saved_model.pbtxt to /tmp/saved_model.pbtxt
   // at last, compile and run it!
   std::string saved_model_dir(

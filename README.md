@@ -95,7 +95,7 @@ Or configure with some flags,
 ./configure serving --mkl_threadpool
 ./configure serving --mkl --cuda ...
 ```
-More details see: serving/tools/build/configure.py
+More details see: serving/configure.py
 
 build processor library, this will generate libserving_processor.so. User should load the library, then call serving API to predict.
 ```
