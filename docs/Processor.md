@@ -30,6 +30,8 @@ Processor的产出是一个独立的so，用户可以很方便的对接到自己
 **需要注意**：如果不是使用DeepRec docker，那么可能需要一些额外的so依赖，包括：libiomp5.so，libmklml_intel.so，libstdc++.so.6，用户可以[直接下载](http://tfsmoke1.cn-hangzhou.oss.aliyun-inc.com/deeprec/serving_processor_so.tar.gz)，然后在执行时候Preload这些so。
 ## API接口
 Processor提供以下几组C API接口，用户在自己的Serving框架中需要调用下列接口。
+
+**1) initialize**
 ```c
 void* initialize(const char* model_entry, const char* model_config, int* state);
 ```
@@ -47,6 +49,15 @@ state：返回给用户Serving框架的状态，0为正常，-1为异常。
 **使用方式：**
 在Serving RPC框架启动时候调用一次initialize函数，将返回的指针保存起来，并且在后续调用process需要将此参数传入。
 
+**用户使用：**
+```c
+const char* entry = "xxx";
+const char* config = "json configs";
+int state = -1;
+void* model = initialize(entry, config, &state);
+```
+
+**2) process**
 ```c
 int process(void* model_buf, const void* input_data, int input_size, void** output_data, int* output_size);
 ```
@@ -68,6 +79,18 @@ output_size：输出response的大小。
 **使用方式：**
 用户Serving框架接收到Client发送的请求，如果请求的数据格式是Processor需要的格式(见下面“数据格式”)，直接调用Process函数执行预测即可。如果数据格式不一致，那么需要转成Processor需要的格式(见下面“数据格式”)之后调用Process函数。
 
+**用户使用：**
+```c
+void* model = initialize(xx, xx, xx);
+...
+char* input_data = "xxx";
+int input_size = 3;
+void* output_data = nullptr;
+int output_size = 0;
+int state = process(model, (void*)input_data, input_size, &output_data, &output_size);
+```
+
+**3) get_serving_model_info**
 ```c
 int get_serving_model_info(void* model_buf, void** output_data, int* output_size);
 ```
@@ -84,6 +107,16 @@ output_size：输出output_data的大小。
 
 **使用方式：**
 用户在需要确认当前正在服务的模型信息时可以调用此API查询。
+
+**用户使用：**
+```c
+void* model = initialize(xx, xx, xx);
+...
+void* output_data = nullptr;
+int output_size = 0;
+int state = get_serving_model_info(model, &output_data, &output_size);
+```
+
 ## 数据格式
 Processor需要的Request，Response等数据格式如下所示，这里我们使用Protobuf作为数据存储格式。同DeepRec下“**serving/processor/serving/predict.proto**”一致。
 Protobuf是Protocol Buffers的简称，它是一种数据描述语言，用于描述一种轻便高效的结构化数据存储格式。 Protobuf可以用于结构化数据串行化，或者说序列化。简单来说，在不同的语言之间，数据可以相互解析。Java的protobuf数据被序列化之后在c++中可以原样解析出来，这样方便支持各种场景下的数据互通。
