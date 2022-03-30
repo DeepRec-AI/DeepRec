@@ -753,24 +753,12 @@ tf_module {
     argspec: "args=[\'func\', \'input_signature\', \'autograph\', \'experimental_autograph_options\', \'experimental_relax_shapes\', \'experimental_compile\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'True\', \'None\', \'False\', \'None\'], "
   }
   member_method {
-    name: "fused_embedding_local_sparse_look_up"
-    argspec: "args=[\'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'emb_variable\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
-  }
-  member_method {
-    name: "fused_embedding_local_sparse_look_up_grad"
-    argspec: "args=[\'top_grad\', \'emb_variable\', \'sp_values\', \'sp_values_offset\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
-  }
-  member_method {
     name: "fused_embedding_sparse_post_look_up"
-    argspec: "args=[\'emb_shards\', \'partitioned_indices\', \'sp_dense_shape\', \'row_empty_and_invalid_flags\', \'partitioned_values\', \'combiner\', \'default_id\', \'partition_axis\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'0\', \'-1\', \'None\'], "
+    argspec: "args=[\'emb_shards\', \'partition_permutation\', \'sp_dense_shape\', \'indices_before_unique\', \'row_empty_and_invalid_flags\', \'unique_idxs\', \'combiner\', \'fill_empty_row\', \'default_id\', \'partition_axis\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'-1\', \'0\', \'-1\', \'None\'], "
   }
   member_method {
     name: "fused_embedding_sparse_post_look_up_grad"
-    argspec: "args=[\'top_grad\', \'emb_shards\', \'partitioned_indices\', \'feature_nums\', \'row_empty_and_invalid_flags\', \'combiner\', \'partition_axis\', \'default_id\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'-1\', \'-1\', \'None\'], "
-  }
-  member_method {
-    name: "fused_embedding_sparse_pre_look_up"
-    argspec: "args=[\'partition_shapes\', \'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'partition_axis\', \'fill_empty_row\', \'prune_invalid_id\', \'default_id\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'False\', \'False\', \'-1\', \'None\'], "
+    argspec: "args=[\'top_grad\', \'emb_shards\', \'emb_shard_ptrs\', \'partition_permutation\', \'feature_nums\', \'indices_before_unique\', \'unique_idxs\', \'row_empty_and_invalid_flags\', \'combiner\', \'fill_empty_row\', \'partition_axis\', \'default_id\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'0\', \'-1\', \'-1\', \'None\'], "
   }
   member_method {
     name: "gather"
@@ -906,7 +894,7 @@ tf_module {
   }
   member_method {
     name: "initialize_kv_variable_op"
-    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'shape\', \'counter_type\', \'slot_num\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
   }
   member_method {
     name: "io_kafka_dataset"
@@ -978,7 +966,7 @@ tf_module {
   }
   member_method {
     name: "kv_resource_import_v2"
-    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'shape\', \'counter_type\', \'slot_num\', \'emb_index\', \'slot_index\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
   }
   member_method {
     name: "kv_resource_incr_import"
@@ -1149,12 +1137,20 @@ tf_module {
     argspec: "args=[\'values\', \'name\'], varargs=None, keywords=None, defaults=[\'parallel_stack\'], "
   }
   member_method {
+    name: "partition_with_permutation"
+    argspec: "args=[\'input\', \'partition_shapes\', \'partition_strategy\', \'partition_axis\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\'], "
+  }
+  member_method {
     name: "pow"
     argspec: "args=[\'x\', \'y\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
     name: "print"
     argspec: "args=[], varargs=inputs, keywords=kwargs, defaults=None"
+  }
+  member_method {
+    name: "prune_invalid_and_fill_empty_rows"
+    argspec: "args=[\'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'fill_empty_row\', \'prune_invalid_id\', \'default_id\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'-1\', \'None\'], "
   }
   member_method {
     name: "py_function"
@@ -1591,6 +1587,10 @@ tf_module {
   member_method {
     name: "unique_with_counts"
     argspec: "args=[\'x\', \'out_idx\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int32\'>\", \'None\'], "
+  }
+  member_method {
+    name: "unique_with_counts_gpu"
+    argspec: "args=[\'input\', \'CounterType\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int32\'>\", \'None\'], "
   }
   member_method {
     name: "unravel_index"

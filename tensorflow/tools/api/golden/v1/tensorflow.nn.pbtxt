@@ -222,7 +222,7 @@ tf_module {
   }
   member_method {
     name: "fused_embedding_lookup_sparse"
-    argspec: "args=[\'params\', \'sp_ids\', \'sparse_weights\', \'partition_strategy\', \'name\', \'combiner\', \'max_norm\', \'default_id\', \'prune_invalid_ids\', \'blocknums\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'None\', \'None\', \'False\', \'None\'], "
+    argspec: "args=[\'params\', \'sp_ids\', \'sparse_weights\', \'partition_strategy\', \'name\', \'combiner\', \'max_norm\', \'default_id\', \'prune_invalid_ids\', \'fill_empty_row\', \'blocknums\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\', \'None\', \'None\', \'None\', \'False\', \'True\', \'None\'], "
   }
   member_method {
     name: "gelu"

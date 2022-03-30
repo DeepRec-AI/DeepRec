@@ -1613,24 +1613,12 @@ tf_module {
     argspec: "args=[\'x\', \'scale\', \'offset\', \'mean\', \'variance\', \'epsilon\', \'exponential_avg_factor\', \'data_format\', \'is_training\', \'name\'], varargs=None, keywords=None, defaults=[\'0.0001\', \'1\', \'NHWC\', \'True\', \'None\'], "
   }
   member_method {
-    name: "FusedEmbeddingLocalSparseLookUp"
-    argspec: "args=[\'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'emb_variable\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
-  }
-  member_method {
-    name: "FusedEmbeddingLocalSparseLookUpGrad"
-    argspec: "args=[\'top_grad\', \'emb_variable\', \'sp_values\', \'sp_values_offset\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
-  }
-  member_method {
     name: "FusedEmbeddingSparsePostLookUp"
-    argspec: "args=[\'emb_shards\', \'partitioned_indices\', \'sp_dense_shape\', \'row_empty_and_invalid_flags\', \'partitioned_values\', \'combiner\', \'default_id\', \'partition_axis\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'0\', \'-1\', \'None\'], "
+    argspec: "args=[\'emb_shards\', \'partition_permutation\', \'sp_dense_shape\', \'indices_before_unique\', \'row_empty_and_invalid_flags\', \'unique_idxs\', \'combiner\', \'fill_empty_row\', \'default_id\', \'partition_axis\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'-1\', \'0\', \'-1\', \'None\'], "
   }
   member_method {
     name: "FusedEmbeddingSparsePostLookUpGrad"
-    argspec: "args=[\'top_grad\', \'emb_shards\', \'partitioned_indices\', \'feature_nums\', \'row_empty_and_invalid_flags\', \'combiner\', \'partition_axis\', \'default_id\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'-1\', \'-1\', \'None\'], "
-  }
-  member_method {
-    name: "FusedEmbeddingSparsePreLookUp"
-    argspec: "args=[\'partition_shapes\', \'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'partition_axis\', \'fill_empty_row\', \'prune_invalid_id\', \'default_id\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'False\', \'False\', \'-1\', \'None\'], "
+    argspec: "args=[\'top_grad\', \'emb_shards\', \'emb_shard_ptrs\', \'partition_permutation\', \'feature_nums\', \'indices_before_unique\', \'unique_idxs\', \'row_empty_and_invalid_flags\', \'combiner\', \'fill_empty_row\', \'partition_axis\', \'default_id\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'0\', \'-1\', \'-1\', \'None\'], "
   }
   member_method {
     name: "FusedPadConv2D"
@@ -1942,7 +1930,7 @@ tf_module {
   }
   member_method {
     name: "InitializeKvVariableOp"
-    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
+    argspec: "args=[\'resource_self\', \'resource_primary\', \'value\', \'empty_key\', \'shape\', \'counter_type\', \'slot_num\', \'initial_num_buckets\', \'max_load_factor\', \'steps_to_live\', \'ht_type\', \'emb_index\', \'block_num\', \'slot_index\', \'ht_partition_num\', \'filter_freq\', \'max_freq\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'131072\', \'0.8\', \'0\', \'\', \'0\', \'1\', \'0\', \'1000\', \'0\', \'999999\', \'0\', \'-1\', \'-1\', \'normal\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
   }
   member_method {
     name: "InitializeTable"
@@ -2078,7 +2066,7 @@ tf_module {
   }
   member_method {
     name: "KvResourceImportV2"
-    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'slotnum\', \'shape\', \'counter_type\', \'emb_index\', \'slot_index\', \'slot_num\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
+    argspec: "args=[\'prefix\', \'resource_self\', \'resource_primary\', \'value\', \'tensor_names\', \'empty_key\', \'shape\', \'counter_type\', \'slot_num\', \'emb_index\', \'slot_index\', \'block_num\', \'steps_to_live\', \'partition_id\', \'partition_num\', \'ht_type\', \'filter_freq\', \'ht_partition_num\', \'max_element_size\', \'false_positive_probability\', \'l2_weight_threshold\', \'layout\', \'max_freq\', \'storage_type\', \'storage_path\', \'storage_size\', \'default_value_dim\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'0\', \'0\', \'1\', \'0\', \'0\', \'1\', \'\', \'0\', \'1000\', \'0\', \'-1\', \'-1\', \'normal\', \'999999\', \'1\', \'.\', \'0\', \'4096\', \'None\'], "
   }
   member_method {
     name: "KvResourceIncrImport"
@@ -2865,6 +2853,10 @@ tf_module {
     argspec: "args=[\'serialized\', \'out_type\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }
   member_method {
+    name: "PartitionWithPermutation"
+    argspec: "args=[\'input\', \'partition_shapes\', \'partition_strategy\', \'partition_axis\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'None\'], "
+  }
+  member_method {
     name: "PartitionedCall"
     argspec: "args=[\'args\', \'Tout\', \'f\', \'config\', \'config_proto\', \'executor_type\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'\', \'None\'], "
   }
@@ -2931,6 +2923,10 @@ tf_module {
   member_method {
     name: "Prod"
     argspec: "args=[\'input\', \'axis\', \'keep_dims\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
+    name: "PruneInvalidAndFillEmptyRows"
+    argspec: "args=[\'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'fill_empty_row\', \'prune_invalid_id\', \'default_id\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'-1\', \'None\'], "
   }
   member_method {
     name: "PyFunc"
@@ -5167,6 +5163,10 @@ tf_module {
   member_method {
     name: "UniqueWithCounts"
     argspec: "args=[\'x\', \'out_idx\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int32\'>\", \'None\'], "
+  }
+  member_method {
+    name: "UniqueWithCountsGPU"
+    argspec: "args=[\'input\', \'CounterType\', \'name\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int32\'>\", \'None\'], "
   }
   member_method {
     name: "UniqueWithCountsV2"
