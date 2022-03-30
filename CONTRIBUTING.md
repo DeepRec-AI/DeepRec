@@ -6,10 +6,10 @@ Before sending your pull requests, make sure you followed this list.
 
 - Read [contributing guidelines](CONTRIBUTING.md).
 - Read [Code of Conduct](CODE_OF_CONDUCT.md).
-- Ensure you have signed the [Contributor License Agreement (CLA)](https://cla.developers.google.com/).
-- Check if my changes are consistent with the [guidelines](https://github.com/tensorflow/tensorflow/blob/master/CONTRIBUTING.md#general-guidelines-and-philosophy-for-contribution).
-- Changes are consistent with the [Coding Style](https://github.com/tensorflow/tensorflow/blob/master/CONTRIBUTING.md#c-coding-style).
-- Run [Unit Tests](https://github.com/tensorflow/tensorflow/blob/master/CONTRIBUTING.md#running-unit-tests).
+- Ensure you have signed the [Contributor License Agreement (CLA)](https://cla-assistant.io/alibaba/DeepRec).
+- Check if my changes are consistent with the [guidelines](https://github.com/alibaba/DeepRec/blob/main/CONTRIBUTING.md#general-guidelines-and-philosophy-for-contribution).
+- Changes are consistent with the [Coding Style](https://github.com/alibaba/DeepRec/blob/main/CONTRIBUTING.md#c-coding-style).
+- Run [Unit Tests](https://github.com/alibaba/DeepRec/blob/main/CONTRIBUTING.md#running-unit-tests).
 
 ## How to become a contributor and submit your own code
 
@@ -19,8 +19,8 @@ We'd love to accept your patches! Before we can take them, we have to jump a cou
 
 Please fill out either the individual or corporate Contributor License Agreement (CLA).
 
-  * If you are an individual writing original source code and you're sure you own the intellectual property, then you'll need to sign an [individual CLA](https://code.google.com/legal/individual-cla-v1.0.html).
-  * If you work for a company that wants to allow you to contribute your work, then you'll need to sign a [corporate CLA](https://code.google.com/legal/corporate-cla-v1.0.html).
+  * If you are an individual writing original source code and you're sure you own the intellectual property, then you'll need to sign an [individual CLA](https://cla-assistant.io/alibaba/DeepRec).
+  * If you work for a company that wants to allow you to contribute your work, then you'll need to sign a [corporate CLA](https://cla-assistant.io/alibaba/DeepRec).
 
 Follow either of the two links above to access the appropriate CLA and instructions for how to sign and return it. Once we receive it, we'll be able to accept your pull requests.
 
@@ -28,25 +28,25 @@ Follow either of the two links above to access the appropriate CLA and instructi
 
 ### Contributing code
 
-If you have improvements to TensorFlow, send us your pull requests! For those
+If you have improvements to DeepRec, send us your pull requests! For those
 just getting started, Github has a
 [how to](https://help.github.com/articles/using-pull-requests/).
 
-TensorFlow team members will be assigned to review your pull requests. Once the
-pull requests are approved and pass continuous integration checks, a TensorFlow
+DeepRec team members will be assigned to review your pull requests. Once the
+pull requests are approved and pass continuous integration checks, a DeepRec
 team member will apply `ready to pull` label to your change. This means we are
 working on getting your pull request submitted to our internal repository. After
 the change has been submitted internally, your pull request will be merged
 automatically on GitHub.
 
-If you want to contribute, start working through the TensorFlow codebase,
+If you want to contribute, start working through the DeepRec codebase,
 navigate to the
-[Github "issues" tab](https://github.com/tensorflow/tensorflow/issues) and start
+[Github "issues" tab](https://github.com/alibaba/DeepRec/issues) and start
 looking through interesting issues. If you are not sure of where to start, then
 start by trying one of the smaller/easier issues here i.e.
-[issues with the "good first issue" label](https://github.com/tensorflow/tensorflow/labels/good%20first%20issue)
+[issues with the "good first issue" label](https://github.com/alibaba/DeepRec/labels/good%20first%20issue)
 and then take a look at the
-[issues with the "contributions welcome" label](https://github.com/tensorflow/tensorflow/labels/stat%3Acontributions%20welcome).
+[issues with the "contributions welcome" label](https://github.com/alibaba/DeepRec/labels/stat%3Acontributions%20welcome).
 These are issues that we believe are particularly well suited for outside
 contributions, often because we probably won't get to them right now. If you
 decide to start on an issue, leave a comment so that other people know that
@@ -56,9 +56,9 @@ comment thread to coordinate.
 ### Contribution guidelines and standards
 
 Before sending your pull request for
-[review](https://github.com/tensorflow/tensorflow/pulls),
+[review](https://github.com/alibaba/DeepRec/pulls),
 make sure your changes are consistent with the guidelines and follow the
-TensorFlow coding style.
+DeepRec coding style.
 
 #### General guidelines and philosophy for contribution
 
@@ -67,16 +67,16 @@ TensorFlow coding style.
     changes to lower the maintenance cost.
 *   Bug fixes also generally require unit tests, because the presence of bugs
     usually indicates insufficient test coverage.
-*   Keep API compatibility in mind when you change code in core TensorFlow,
+*   Keep API compatibility in mind when you change code in core DeepRec,
     e.g., code in
-    [tensorflow/core](https://github.com/tensorflow/tensorflow/tree/master/tensorflow/core)
+    [core](https://github.com/alibaba/DeepRec/tree/main/tensorflow/core)
     and
-    [tensorflow/python](https://github.com/tensorflow/tensorflow/tree/master/tensorflow/python).
-    TensorFlow has reached version 1 and hence cannot make
+    [python](https://github.com/alibaba/DeepRec/tree/main/tensorflow/python).
+    DeepRec has reached version 1 and hence cannot make
     non-backward-compatible API changes without a major release. Reviewers of
     your pull request will comment on any API compatibility issues.
-*   When you contribute a new feature to TensorFlow, the maintenance burden is
-    (by default) transferred to the TensorFlow team. This means that the benefit
+*   When you contribute a new feature to DeepRec, the maintenance burden is
+    (by default) transferred to the DeepRec team. This means that the benefit
     of the contribution must be compared against the cost of maintaining the
     feature.
 *   Full new features (e.g., a new op implementing a cutting-edge algorithm)
@@ -89,23 +89,23 @@ TensorFlow coding style.
 
 Include a license at the top of new files.
 
-* [C/C++ license example](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/framework/op.cc#L1)
-* [Python license example](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/ops/nn.py#L1)
-* [Java license example](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/java/src/main/java/org/tensorflow/Graph.java#L1)
-* [Go license example](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/go/operation.go#L1)
-* [Bash license example](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/ci_build/ci_sanity.sh#L2)
+* [C/C++ license example](https://github.com/alibaba/DeepRec/blob/main/tensorflow/core/framework/op.cc#L1)
+* [Python license example](https://github.com/alibaba/DeepRec/blob/main/tensorflow/python/ops/nn.py#L1)
+* [Java license example](https://github.com/alibaba/DeepRec/blob/main/tensorflow/java/src/main/java/org/tensorflow/Graph.java#L1)
+* [Go license example](https://github.com/alibaba/DeepRec/blob/main/tensorflow/go/operation.go#L1)
+* [Bash license example](https://github.com/alibaba/DeepRec/blob/main/tensorflow/tools/ci_build/ci_sanity.sh#L2)
 * [HTML license example](https://github.com/tensorflow/tensorboard/blob/master/tensorboard/components/tf_backend/tf-backend.html#L2)
 * [JavaScript/TypeScript license example](https://github.com/tensorflow/tensorboard/blob/master/tensorboard/components/tf_backend/backend.ts#L1)
 
 Bazel BUILD files also need to include a license section, e.g.,
-[BUILD example](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/BUILD#L61).
+[BUILD example](https://github.com/alibaba/DeepRec/blob/main/tensorflow/core/BUILD#L61).
 
 #### C++ coding style
 
-Changes to TensorFlow C++ code should conform to
+Changes to DeepRec C++ code should conform to
 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html).
 
-Use `clang-tidy` to check your C/C++ changes. To install `clang-tidy` on ubuntu:16.04, do:
+Use `clang-tidy` to check your C/C++ changes. To install `clang-tidy` on ubuntu:18.04, do:
 
 ```bash
 apt-get install -y clang-tidy
@@ -121,15 +121,15 @@ diff <my_cc_file> /tmp/my_cc_file.cc
 
 #### Python coding style
 
-Changes to TensorFlow Python code should conform to
+Changes to DeepRec Python code should conform to
 [Google Python Style Guide](https://github.com/google/styleguide/blob/gh-pages/pyguide.md)
 
 Use `pylint` to check your Python changes. To install `pylint` and
-retrieve TensorFlow's custom style definition:
+retrieve DeepRec's custom style definition:
 
 ```bash
 pip install pylint
-wget -O /tmp/pylintrc https://raw.githubusercontent.com/tensorflow/tensorflow/master/tensorflow/tools/ci_build/pylintrc
+wget -O /tmp/pylintrc https://raw.githubusercontent.com/alibaba/DeepRec/main/tensorflow/tools/ci_build/pylintrc
 ```
 
 To check a file with `pylint`:
@@ -159,20 +159,20 @@ may exist in your changes.
 
 #### Running unit tests
 
-There are two ways to run TensorFlow unit tests.
+There are two ways to run DeepRec unit tests.
 
 1.  Using tools and libraries installed directly on your system.
 
     Refer to the
-    [CPU-only developer Dockerfile](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/dockerfiles/dockerfiles/devel-cpu.Dockerfile)
+    [CPU-only developer Dockerfile](https://github.com/alibaba/DeepRec/blob/main/tensorflow/tools/dockerfiles/dockerfiles/devel-cpu.Dockerfile)
     and
-    [GPU developer Dockerfile](https://github.com/tensorflow/tensorflow/blob/master/tensorflow/tools/dockerfiles/dockerfiles/devel-gpu.Dockerfile)
+    [GPU developer Dockerfile](https://github.com/alibaba/DeepRec/blob/main/tensorflow/tools/dockerfiles/dockerfiles/devel-gpu.Dockerfile)
     for the required packages. Alternatively, use the said
-    [Docker images](https://hub.docker.com/r/tensorflow/tensorflow/tags/), e.g.,
-    `tensorflow/tensorflow:devel` and `tensorflow/tensorflow:devel-gpu` for
+    Docker images e.g.,
+    [devel](registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-py36-ubuntu18.04) and [devel-gpu](registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04) for
     development to avoid installing the packages directly on your system (in
-    which case remember to change directory from `/root` to `/tensorflow` once
-    you get into the running container so `bazel` can find the `tensorflow`
+    which case remember to change directory from `/root` to `/DeepRec` once
+    you get into the running container so `bazel` can find the `DeepRec`
     workspace).
 
     Once you have the packages installed, you can run a specific unit test in
@@ -193,7 +193,7 @@ There are two ways to run TensorFlow unit tests.
     bazel test ${flags} //tensorflow/python/...
     ```
 
-2.  Using [Docker](https://www.docker.com) and TensorFlow's CI scripts.
+2.  Using Docker and DeepRec's CI scripts.
 
     ```bash
     # Install Docker first, then this will build and run cpu tests
@@ -201,5 +201,5 @@ There are two ways to run TensorFlow unit tests.
     ```
 
     See
-    [TensorFlow Builds](https://github.com/tensorflow/tensorflow/tree/master/tensorflow/tools/ci_build)
+    [DeepRec Builds](https://github.com/alibaba/DeepRec/tree/main/cibuild)
     for details.

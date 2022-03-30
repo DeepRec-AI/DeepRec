@@ -1,0 +1,56 @@
+namespace eas;
+// tensorflow.eas.test;
+
+table ShapeType {
+  dim: [long];
+}
+
+table ContentType {
+  content: [byte];
+}
+
+table FloatContentType {
+  content: [float];
+}
+
+table Int64ContentType {
+  content: [long];
+}
+
+table DoubleContentType {
+  content: [double];
+}
+
+table IntContentType {
+  content: [int];
+}
+
+table StringContentType {
+  content: [string];
+}
+
+table StringContentType2 {
+  content: [ContentType];
+}
+
+table PredictRequest2 {
+  signature_name: string;
+  feed_names: [string];
+  types: [int];
+  shapes: [ShapeType];
+  content: [ContentType];
+  // float input
+  float_content: [FloatContentType];
+  // i64 input
+  i64_content: [Int64ContentType];
+  // double input
+  d_content: [DoubleContentType];
+  // int input
+  i_content: [IntContentType];
+  string_content_len: [int];
+  // string input
+  string_content: [string];
+  fetch_names: [string];
+}
+
+root_type PredictRequest2;

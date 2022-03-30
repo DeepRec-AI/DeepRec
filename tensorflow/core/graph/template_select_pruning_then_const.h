@@ -43,8 +43,11 @@ class TemplateSelectPruningThenConst : public TemplateSelectPruningBase {
     return "select_pruning_then_const";
   }
 
-  const string node_to_remove() {
-    return "select_0";
+  const std::vector<std::string> node_to_remove() {
+    std::vector<std::string> to_del_node;
+    to_del_node.push_back("select_0");
+    to_del_node.push_back("control_dependency_0");
+    return to_del_node;
   }
 
 };

@@ -64,10 +64,10 @@ class EmbeddingVar : public ResourceBase {
       emb_config_(emb_cfg) {}
 
   Status Init(const Tensor& default_tensor, int64 default_value_dim) {
-    filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this);
+    filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this, storage_manager_);
 
     // for default value allocation
-    alloc_ = cpu_allocator();
+    alloc_ = ev_allocator();
 
     if (storage_manager_ == nullptr) {
       return errors::InvalidArgument("Invalid ht_type to construct EmbeddingVar");
@@ -77,7 +77,7 @@ class EmbeddingVar : public ResourceBase {
       default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
-      if (LayoutType::NORMAL_FIX == emb_config_.get_layout_type()) {
+      if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType()) {
         storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
       }
       return Status::OK();
@@ -177,7 +177,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   bool IsMultiLevel() {
-    return emb_config_.is_multi_level;
+    return storage_manager_->IsMultiLevel();
   }
 
   std::string DebugString() const {
@@ -263,6 +263,10 @@ class EmbeddingVar : public ResourceBase {
     emb_config_.slot_num = slot_num;
   }
 
+  int64 GetSlotNum() {
+    return emb_config_.slot_num;
+  }
+
   embedding::BatchCache<K>* Cache() {
     return storage_manager_->Cache();
   }
@@ -281,7 +285,8 @@ class EmbeddingVar : public ResourceBase {
   EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
 
   ~EmbeddingVar() override {
-    if (emb_config_.is_primary()) {
+    // When dynamic dimension embedding is used, there will be more than one primary slot
+    if (emb_config_.is_primary() && emb_config_.primary_emb_index == 0) {
       Destroy();
       delete storage_manager_;
     }

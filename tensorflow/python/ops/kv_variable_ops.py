@@ -23,6 +23,7 @@ import json
 
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.framework import variable_pb2
+from tensorflow.core.framework.embedding import config_pb2
 from tensorflow.python.eager import context
 from tensorflow.python.eager import tape
 from tensorflow.python.framework import dtypes
@@ -278,22 +279,35 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._max_element_size = 0
       self._false_positive_probability = -1.0
       self._counter_type = dtypes.uint64
+
+    multi_level_list = [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD,
+                        config_pb2.StorageType.DRAM_PMEM, config_pb2.StorageType.DRAM_LEVELDB,
+                        config_pb2.StorageType.DRAM_SSD, config_pb2.StorageType.HBM_DRAM,
+                        config_pb2.StorageType.DRAM_PMEM_SSD, config_pb2.StorageType.HBM_DRAM_SSD]
       
     self._l2_weight_threshold = evconfig.l2_weight_threshold
     self._storage_type = evconfig.storage_type
     self._storage_path = evconfig.storage_path
     self._storage_size = evconfig.storage_size
     self._default_value_dim = evconfig.default_value_dim
-    if self._steps_to_live is 0 and self._filter_freq is 0 and self._l2_weight_threshold == -1.0:
-      self._layout = "light"
+    if (isinstance(evconfig.filter_strategy, variables.CounterFilter)  and self._filter_freq != 0) or \
+       self._steps_to_live not in [0, None] or \
+       self._storage_type in multi_level_list:
+      if self._block_num not in [1, None] and self._storage_type in multi_level_list:
+        raise ValueError("Dynamic-dimension Embedding and Multi-level EV can't be enabled together") 
+      if self._block_num not in [1, None] or \
+          (self._filter_freq != 0 and self._storage_type not in multi_level_list):
+        self._layout = "normal"
+      else:
+        self._layout = "normal_contiguous"
     else:
-      self._layout = "normal"
-    self._layout = "normal_fix"
+      self._layout = "light"
+
     if self._primary is None:
       self._is_primary = True
     else:
       self._is_primary = False
-
+    
     with ops.control_dependencies(None):
       with ops.name_scope(name, "Variable", []
                           if init_from_fn else [initial_value]) as name:
@@ -322,6 +336,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                 graph_mode=self._in_graph_mode)
             if self._primary is None:
               self._primary = self
+            self._primary_handle = self._primary._handle
             self._handle_device = (
                 self._handle.device if self._in_graph_mode else
                 context.get_default_context().device_name)
@@ -352,6 +367,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
               graph_mode=self._in_graph_mode)
           if self._primary is None:
             self._primary = self
+          self._primary_handle = self._primary._handle
           self._handle_device = (self._handle.device if self._in_graph_mode else
                                  context.get_default_context().device_name)
           self._graph_shape = initial_value.get_shape()
@@ -361,9 +377,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         self._dtype = initial_value.dtype.base_dtype
         self._constraint = constraint
         if self._is_primary:
-          self._slotnum_op = ops.convert_to_tensor(0, preferred_dtype=dtypes.int64)
+          self._slot_num = 0 
         else:
-          self._slotnum_op = evconfig.primary_slotnum_op
+          self._slot_num = evconfig.slot_num
 
         with ops.name_scope("IsInitialized"):
           self._is_initialized_op = (
@@ -378,7 +394,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     self._primary._handle,
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
                     ops.convert_to_tensor(invalid_key),
-                    self._slotnum_op,
+                    slot_num = self._slot_num,
                     shape=initial_value.get_shape()[rank:],
                     steps_to_live=self._steps_to_live,
                     emb_index=self._emb_index, block_num=self.block_num,
@@ -441,6 +457,38 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     else:
       self._save_slice_info = None
     self._caching_device = None
+    self._slot_index = self._initializer_op.get_attr("slot_index")
+    self._block_num = self._initializer_op.get_attr("block_num")
+    primary_name = ""
+    primary_name_list = variable_def.variable_name.split("/")
+    if self._block_num > 1:
+      if self._slot_index == 0:
+        if primary_name_list[-1] != "block0":
+          for val in primary_name_list[:-1]:
+            primary_name += val + "/"
+          primary_name = primary_name + "block0:0"
+          self._primary_handle = g.as_graph_element(
+            ops.prepend_name_scope(
+                primary_name, import_scope=import_scope))
+        else:
+          self._primary_handle = self._handle
+      else:
+        for val in primary_name_list[:-2]:
+          primary_name += val + "/"
+        primary_name = primary_name + "block0:0"
+        self._primary_handle = g.as_graph_element(
+            ops.prepend_name_scope(
+                primary_name, import_scope=import_scope))
+    else:
+      if self._slot_index is 0:
+        self._primary_handle = self._handle
+      else:
+        for val in primary_name_list[:-1]:
+          primary_name += val + "/"
+        primary_name = primary_name[:-1] + ":0"
+        self._primary_handle = g.as_graph_element(
+            ops.prepend_name_scope(
+                primary_name, import_scope=import_scope))
     self._dtype = dtypes.as_dtype(self._handle.op.get_attr("dtype"))
     self._invalid_key = -1
     self._steps_to_live = self._initializer_op.get_attr("steps_to_live")
@@ -454,6 +502,18 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._constraint = None
     self._is_sparse=False
     self._layout = self._initializer_op.get_attr("layout")
+    self._slot_num = self._initializer_op.get_attr("slot_num")
+    self._emb_index = self._initializer_op.get_attr("emb_index")
+    self._filter_freq = self._initializer_op.get_attr("filter_freq")
+    self._l2_weight_threshold = self._initializer_op.get_attr("l2_weight_threshold")
+    self._max_element_size = self._initializer_op.get_attr("max_element_size")
+    self._false_positive_probability = self._initializer_op.get_attr("false_positive_probability")
+    self._counter_type = self._initializer_op.get_attr("counter_type")
+    self._storage_type = self._initializer_op.get_attr("storage_type")
+    self._storage_path = self._initializer_op.get_attr("storage_path")
+    self._storage_size = self._initializer_op.get_attr("storage_size")
+    self._default_value_dim = self._initializer_op.get_attr("default_value_dim")
+
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
   def set_init_data_source_initializer(self, init_data_source):

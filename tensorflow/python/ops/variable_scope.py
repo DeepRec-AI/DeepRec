@@ -3361,7 +3361,7 @@ def default_variable_creator(next_creator=None, **kwargs):
         for i in range(emb_blocknum - 1):
           slave_evconfig = copy.copy(block_evconfig)
           slave_evconfig.emb_index = i + 1
-          slave_evconfig.primary_slotnum_op = primary_ev._slotnum_op
+          slave_evconfig._slot_num = primary_ev._slot_num
           slave_ev = kv_variable_ops.EmbeddingVariable(
             initial_value=initial_value, trainable=trainable,
             collections=collections, validate_shape=validate_shape,

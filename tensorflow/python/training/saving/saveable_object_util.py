@@ -30,7 +30,6 @@ from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.training.saving import saveable_object
-from tensorflow.python.training import saver
 from tensorflow.python.training.tracking import base as trackable
 from tensorflow.python.util import object_identity
 
@@ -190,33 +189,31 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
         return self.var.recover_from_init_data_source(self.var._init_data_source, self.partition_id, self.partition_num)
       else:
         rank = self.op.initial_value.get_shape().rank - 1
-        with ops.control_dependencies(None if self.var._is_primary else [self.var._primary.importer]):
-          import_op = gen_kv_variable_ops.kv_resource_import_v2(
-              restored_tensors[0],
-              self.handle_op, self.var._primary._handle,
-              variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
-              self.name,
-              ops.convert_to_tensor(self.invalid_key),
-              self.var._slotnum_op,
-              shape=self.op.initial_value.get_shape()[rank:], steps_to_live=self.steps_to_live,
-              emb_index=self.var._emb_index, slot_index=self.var._slot_index,
-              block_num=self.var.block_num,
-              ht_type=self.ht_type,
-              ht_partition_num=self.ht_partition_num,
-              filter_freq = self.var._filter_freq,
-              max_freq = 99999,
-              l2_weight_threshold = self.var._l2_weight_threshold,
-              max_element_size = self.var._max_element_size,
-              false_positive_probability = self.var._false_positive_probability,
-              counter_type = self.var._counter_type,
-              layout = self.var._layout,
-              storage_type=self.var._storage_type,
-              storage_path=self.var._storage_path,
-              storage_size=self.var._storage_size,
-              partition_id=self.partition_id, partition_num=self.partition_num,
-              default_value_dim=self.var._default_value_dim)
-          self.var.importer = import_op
-          return import_op
+        return gen_kv_variable_ops.kv_resource_import_v2(
+            restored_tensors[0],
+            self.handle_op, self.var._primary_handle,
+            variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
+            self.name,
+            ops.convert_to_tensor(self.invalid_key),
+            slot_num=self.var._slot_num,
+            shape=self.op.initial_value.get_shape()[rank:], steps_to_live=self.steps_to_live,
+            emb_index=self.var._emb_index, slot_index=self.var._slot_index,
+            block_num=self.var.block_num,
+            ht_type=self.ht_type,
+            ht_partition_num=self.ht_partition_num,
+            filter_freq = self.var._filter_freq,
+            max_freq = 99999,
+            l2_weight_threshold = self.var._l2_weight_threshold,
+            max_element_size = self.var._max_element_size,
+            false_positive_probability = self.var._false_positive_probability,
+            counter_type = self.var._counter_type,
+            layout = self.var._layout,
+            storage_type=self.var._storage_type,
+            storage_path=self.var._storage_path,
+            storage_size=self.var._storage_size,
+            partition_id=self.partition_id, partition_num=self.partition_num,
+            default_value_dim=self.var._default_value_dim)
+        
           
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
@@ -468,6 +465,7 @@ def validate_and_slice_inputs(names_to_saveables):
                          key=lambda x: x[0]):
     from tensorflow.python.ops import hash_table
     if isinstance(name, hash_table.HashTable):
+      from tensorflow.python.training import saver
       _add_saveable(saveables, seen_ops, saver.HashTableSaveable(op[1], op[0]))
     else:
       for converted_saveable_object in saveable_objects_for_op(op, name):
