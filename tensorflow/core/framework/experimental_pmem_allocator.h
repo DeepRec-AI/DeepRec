@@ -1,9 +1,10 @@
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EXPERIMENTAL_PMEM_ALLOCATOR_H_
 
-#include <atomic>
 #include <fcntl.h>
 #include <sys/mman.h>
+
+#include <atomic>
 #include <vector>
 
 #include "tensorflow/core/framework/allocator.h"
@@ -11,17 +12,21 @@
 #include "tensorflow/core/framework/experimental_pmem_allocator_utils.h"
 #include "tensorflow/core/lib/core/spin_lock.h"
 #include "tensorflow/core/platform/env.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 const uint64_t kPMemNull = UINT64_MAX;
 const uint64_t kMaxInstance = 1024;
 const uint64_t kMinMovableListSize = 16;
 
+// Following configs can be configured by linux env variable
+// ENV: LIBPMEM_MAX_ALLOCATION_SIZE
+const uint64_t DEFAULT_LIBPMEM_MAX_ALLOCATION_SIZE = 16384;
+
 // These can be configurable, as this is a experimental edition, hardcode
 // them for fast development
 const uint64_t kMaxAccessThreads = 512;
 const uint64_t kAllocationUnit = 64;
-const uint64_t kMaxAllocationSize = 4096;
 const uint64_t kSegmentSize = 1 << 20;
 const float kBGThreadInterval = 1;
 
@@ -51,7 +56,7 @@ struct ExperimentalPMemAllocatorConfig {
   uint64_t segment_size = kSegmentSize;
   uint32_t allocation_unit = kAllocationUnit;
   float bg_thread_interval = kBGThreadInterval;
-  uint64_t max_allocation_size = kMaxAllocationSize;
+  uint64_t max_allocation_size = DEFAULT_LIBPMEM_MAX_ALLOCATION_SIZE;
 };
 
 // Manage allocation/de-allocation of PMem space at block unit
@@ -274,7 +279,7 @@ class ExperimentalPMemAllocator : public Allocator {
   bool AllocateSegmentSpace(Segment* segment, uint32_t record_size);
 
   void init_data_size_2_block_size() {
-    data_size_2_block_size_.resize(kMaxAllocationSize);
+    data_size_2_block_size_.resize(max_allocation_size_);
     for (size_t i = 0; i < data_size_2_block_size_.size(); i++) {
       data_size_2_block_size_[i] =
           (i / block_size_) + (i % block_size_ == 0 ? 0 : 1);
@@ -335,11 +340,23 @@ class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
       return nullptr;
     }
 
+    int64 max_allocation_size;
+    Status s = ReadInt64FromEnvVar("LIBPMEM_MAX_ALLOCATION_SIZE",
+                                   DEFAULT_LIBPMEM_MAX_ALLOCATION_SIZE,
+                                   &max_allocation_size);
+    if (!s.ok()) {
+      LOG(FATAL) << "Experimental PMem Allocator: Read max allocation size "
+                    "from env variable LIBPMEM_MAX_ALLOCATION_SIZE error";
+      return nullptr;
+    }
+
     std::string allocator_file(pmem_path_ +
                                std::to_string(allocator_cnt_.fetch_add(1)));
     return ExperimentalPMemAllocator::NewExperimentalPMemAllocator(
         allocator_file, allocator_size_, kMaxAccessThreads,
-        ExperimentalPMemAllocatorConfig());
+        ExperimentalPMemAllocatorConfig(kSegmentSize, kAllocationUnit,
+                                        kBGThreadInterval,
+                                        max_allocation_size));
   }
 
   SubAllocator* CreateSubAllocator(int numa_node) override {
