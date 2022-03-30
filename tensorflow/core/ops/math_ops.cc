@@ -938,6 +938,8 @@ REGISTER_OP("Select")
           TF_RETURN_IF_ERROR(c->Merge(data, cond, &data));
           c->set_output(0, data);
         }
+
+        return Status::OK();
       }
 
       if (data_rank == 0 && other_rank == 0) {

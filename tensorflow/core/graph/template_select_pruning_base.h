@@ -58,8 +58,9 @@ class TemplateSelectPruningBase : public TemplateBase {
     return "select_pruning_base";
   }
 
-  virtual const string node_to_remove() {
-    return "";
+  virtual const std::vector<std::string> node_to_remove() {
+    std::vector<std::string> to_del_node;
+    return to_del_node;
   }
 
   bool add_subgraph(std::map<std::string, MatchedNode>& nodes,
@@ -68,13 +69,15 @@ class TemplateSelectPruningBase : public TemplateBase {
                     std::vector<std::vector<const Edge*>>& outputs) override {
     LOG(INFO) << "Found match op by " << name() << " " << nodes[first_key_].node->name();
 
-    const string name = node_to_remove();
-    const Node* select_node = nodes[name].node;
-    for (Node* node : g->nodes()) {
-      if (node->name() == select_node->name()) {
-        LOG(INFO) << "remove node: " << node->name();
-        g->RemoveNode(node);
-        return true;
+    const std::vector<std::string> to_del_node = node_to_remove();
+    for (auto name : to_del_node) {
+      const Node* select_node = nodes[name].node;
+      for (Node* node : g->nodes()) {
+        if (node->name() == select_node->name()) {
+          LOG(INFO) << "remove node: " << node->name();
+          g->RemoveNode(node);
+          break;
+        }
       }
     }
 
