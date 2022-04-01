@@ -58,12 +58,6 @@ class StorageManager {
   is_multi_level_(false) {}
 
   ~StorageManager() {
-    if (eviction_thread_) {
-      mutex_lock l(mu_);
-      shutdown_cv_.notify_all();
-      shutdown_ = true;
-    }
-    delete eviction_thread_;
     for (auto kv: kvs_) {
       delete kv.first;
     }
@@ -353,6 +347,12 @@ class StorageManager {
   }
 
   Status Destroy() {
+    if (eviction_thread_) {
+      mutex_lock l(mu_);
+      shutdown_cv_.notify_all();
+      shutdown_ = true;
+    }
+    delete eviction_thread_;
     mutex_lock l(mu_);
     std::vector<K> key_list;
     std::vector<ValuePtr<V>* > value_ptr_list;
