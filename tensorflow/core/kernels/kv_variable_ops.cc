@@ -254,9 +254,10 @@ class InitializeKvVariableOp : public OpKernel {
                          primary_variable->storage_manager(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slot_num_, opname,
-                                         steps_to_live_, 0,
+                                         steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, default_value_dim_));
+                                         layout_, max_element_size_, false_positive_probability_,
+                                         counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -734,8 +735,9 @@ class KvResourceImportV2Op: public OpKernel {
                          primary_variable->storage_manager(),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
                                          block_num_, slot_num_, opname,
-                                         steps_to_live_, 0, max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, default_value_dim_));
+                                         steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_,
+                                         layout_, max_element_size_, false_positive_probability_,
+                                         counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);

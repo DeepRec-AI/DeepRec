@@ -275,20 +275,22 @@ class StorageManager {
       for (int64 i = 0; i < key_list_tmp.size(); ++i) {
         V* val = value_ptr_list[i]->GetValue(emb_config.emb_index, GetOffset(emb_config.emb_index));
         V* primary_val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index, GetOffset(emb_config.primary_emb_index));
-        if (val != nullptr && primary_val != nullptr) {
-          value_list->push_back(val);
-          key_list->push_back(key_list_tmp[i]);
-          if (emb_config.filter_freq != 0 || is_multi_level_) {
+        key_list->push_back(key_list_tmp[i]);
+        if (emb_config.filter_freq != 0 || is_multi_level_) {
             int64 dump_freq = filter->GetFreq(key_list_tmp[i], value_ptr_list[i]);
             freq_list->push_back(dump_freq);
-          }
-          if (emb_config.steps_to_live != 0) {
+        }
+        if (emb_config.steps_to_live != 0) {
             int64 dump_version = value_ptr_list[i]->GetStep();
             version_list->push_back(dump_version);
-          }
+        }
+        if (val != nullptr && primary_val != nullptr) {
+          value_list->push_back(val);  
+        } else {
+          value_list->push_back(nullptr);
         }
         // storage_manager_->FreeValuePtr(value_ptr_list[i]);
-      }
+      } 
     }
     return key_list->size();
   }
