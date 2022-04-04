@@ -589,11 +589,10 @@ REGISTER_OP("ConcatOffset")
     });
 
 REGISTER_OP("_FusedConcatCast")
-    .Input("values: N * T")
+    .Input("values: N * SrcT")
     .Input("axis: Tidx")
-    .Output("output: T")
+    .Output("output: DstT")
     .Attr("N: int >= 2")
-    .Attr("T: type")
     .Attr("Tidx: {int32, int64} = DT_INT32")
     // Attributes for the Cast ------------------------------------ //
     .Attr("SrcT: type")

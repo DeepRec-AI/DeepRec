@@ -118,12 +118,8 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             const auto* node_view = ctx.graph_view.GetNode(i);
             const auto& fused_node = graph->node(i);
             VLOG(2) << "Optimizing fused concat cast node " << SummarizeNodeDef(fused_node);
-            string op_name = fused_node.op();
-            std::cout << op_name << std::endl;
-            std::cout << "\t Fanins: " << node_view->NumRegularFanins() << std::endl;
-            std::cout << "\t Fanouts: " << node_view->NumRegularFanouts() << std::endl;
-            std::cout << "\t Concat id: " << base.concat_id << " Cast id: " << base.cast_id << std::endl;
 
+            // TODO: add if for cases when src dtype == dst dtype
             // Adding fused concat+cast
             const NodeDef& concat = graph->node(base.concat_id);
             const NodeDef& cast = graph->node(base.cast_id);
@@ -132,7 +128,7 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
                     << " cast_name=" << cast.name();
 
             NodeDef fused_op;
-            fused_op.set_name(concat.name());
+            fused_op.set_name(cast.name());
             fused_op.set_op("_FusedConcatCast");
             fused_op.set_device(concat.device());
             for (int j = 0; j < concat_num_inputs - 1; ++j)
@@ -142,7 +138,7 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             auto* attr = fused_op.mutable_attr();
             auto& concat_attr = concat.attr();
             auto& cast_attr = cast.attr();
-            (*attr)["T"] = concat_attr.at("T");
+            //(*attr)["T"] = concat_attr.at("T");
             (*attr)["N"] = concat_attr.at("N");
 
             (*attr)["SrcT"] = cast_attr.at("SrcT");
@@ -153,8 +149,8 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             mutation->AddNode(std::move(fused_op), &status);
             TF_RETURN_IF_ERROR(status);
             TF_RETURN_IF_ERROR(mutation->Apply());
-            invalidated_nodes[i] = true;
-            nodes_to_delete[i+1] = true;
+            invalidated_nodes[i+1] = true;
+            nodes_to_delete[i] = true;
         }
     }
 
