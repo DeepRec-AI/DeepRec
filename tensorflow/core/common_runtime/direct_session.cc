@@ -669,16 +669,26 @@ Status DirectSession::RunInternal(
   auto* handler_ptr = handler.get();
 
   Executor::Args::Runner default_runner = nullptr;
+  // CostRunner will schedule ops according cost model.
+  Executor::Args::CostRunner default_cost_runner = nullptr;
 
   if (pool == nullptr) {
     default_runner = [](Executor::Args::Closure c) { c(); };
+    default_cost_runner = [](Executor::Args::Closure c, int64 cost) { c(); };
   } else if (handler_ptr != nullptr) {
     default_runner = [handler_ptr](Executor::Args::Closure c) {
+      handler_ptr->ScheduleInterOpClosure(std::move(c));
+    };
+    // TODO: Consider RunHandlePool cost schedule.
+    default_cost_runner = [handler_ptr](Executor::Args::Closure c, int64 cost) {
       handler_ptr->ScheduleInterOpClosure(std::move(c));
     };
   } else {
     default_runner = [this, pool](Executor::Args::Closure c) {
       pool->Schedule(std::move(c));
+    };
+    default_cost_runner = [this, pool](Executor::Args::Closure c, int64 cost) {
+      pool->CostSchedule(std::move(c), cost);
     };
   }
 
@@ -692,8 +702,12 @@ Status DirectSession::RunInternal(
     // thread pool(s).
     if (!device_thread_pool) {
       args.runner = default_runner;
+      args.cost_runner = default_cost_runner;
     } else {
-      args.runner = [this, device_thread_pool](Executor::Args::Closure c) {
+      args.runner = [this, device_thread_pool](Executor::Args::Closure c) { 
+        device_thread_pool->Schedule(std::move(c));
+      };
+      args.cost_runner = [this, device_thread_pool](Executor::Args::Closure c, int64 cost) { 
         device_thread_pool->Schedule(std::move(c));
       };
     }
@@ -965,6 +979,9 @@ Status DirectSession::PRunSetup(const std::vector<string>& input_names,
   args.collective_executor = nullptr;
   args.runner = [this, pool](Executor::Args::Closure c) {
     pool->Schedule(std::move(c));
+  };
+  args.cost_runner = [this, pool](Executor::Args::Closure c, int64 cost) {
+    pool->CostSchedule(std::move(c), cost);
   };
   args.session_state = &session_state_;
   args.session_handle = session_handle_;

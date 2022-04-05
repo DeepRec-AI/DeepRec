@@ -1,5 +1,5 @@
 diff --git a/Eigen/Core b/Eigen/Core
-index 688361d46..ee5a5f1dd 100644
+index 688361d..ee5a5f1 100644
 --- a/Eigen/Core
 +++ b/Eigen/Core
 @@ -163,6 +163,7 @@ using std::ptrdiff_t;
@@ -11,7 +11,7 @@ index 688361d46..ee5a5f1dd 100644
  #include "src/Core/arch/Default/GenericPacketMathFunctionsFwd.h"
  
 diff --git a/Eigen/src/Core/GenericPacketMath.h b/Eigen/src/Core/GenericPacketMath.h
-index fb530e6a4..637aac9f9 100644
+index fb530e6..637aac9 100644
 --- a/Eigen/src/Core/GenericPacketMath.h
 +++ b/Eigen/src/Core/GenericPacketMath.h
 @@ -137,6 +137,22 @@ template <typename Src, typename Tgt> struct type_casting_traits {
@@ -38,7 +38,7 @@ index fb530e6a4..637aac9f9 100644
  /** \internal \returns static_cast<TgtType>(a) (coeff-wise) */
  template <typename SrcPacket, typename TgtPacket>
 diff --git a/Eigen/src/Core/arch/AVX/MathFunctions.h b/Eigen/src/Core/arch/AVX/MathFunctions.h
-index c5394430f..b746ff43e 100644
+index c539443..b746ff4 100644
 --- a/Eigen/src/Core/arch/AVX/MathFunctions.h
 +++ b/Eigen/src/Core/arch/AVX/MathFunctions.h
 @@ -152,6 +152,15 @@ Packet4d prsqrt<Packet4d>(const Packet4d& x) {
@@ -58,7 +58,7 @@ index c5394430f..b746ff43e 100644
  }  // end namespace internal
  
 diff --git a/Eigen/src/Core/arch/AVX/PacketMath.h b/Eigen/src/Core/arch/AVX/PacketMath.h
-index 5ab989ca9..fcd2d148c 100644
+index 5ab989c..fcd2d14 100644
 --- a/Eigen/src/Core/arch/AVX/PacketMath.h
 +++ b/Eigen/src/Core/arch/AVX/PacketMath.h
 @@ -31,6 +31,7 @@ namespace internal {
@@ -434,7 +434,7 @@ index 5ab989ca9..fcd2d148c 100644
  
  } // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX/TypeCasting.h b/Eigen/src/Core/arch/AVX/TypeCasting.h
-index 181043588..d507fb67b 100644
+index 1810435..d507fb6 100644
 --- a/Eigen/src/Core/arch/AVX/TypeCasting.h
 +++ b/Eigen/src/Core/arch/AVX/TypeCasting.h
 @@ -35,23 +35,6 @@ struct type_casting_traits<int, float> {
@@ -531,7 +531,7 @@ index 181043588..d507fb67b 100644
  
  } // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX512/MathFunctions.h b/Eigen/src/Core/arch/AVX512/MathFunctions.h
-index 67043d01b..db278909b 100644
+index 67043d0..db27890 100644
 --- a/Eigen/src/Core/arch/AVX512/MathFunctions.h
 +++ b/Eigen/src/Core/arch/AVX512/MathFunctions.h
 @@ -29,6 +29,12 @@ namespace internal {
@@ -608,7 +608,7 @@ index 67043d01b..db278909b 100644
  
  }  // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX512/PacketMath.h b/Eigen/src/Core/arch/AVX512/PacketMath.h
-index 99ccc038c..5d0a56b93 100644
+index 99ccc03..5d0a56b 100644
 --- a/Eigen/src/Core/arch/AVX512/PacketMath.h
 +++ b/Eigen/src/Core/arch/AVX512/PacketMath.h
 @@ -31,6 +31,7 @@ namespace internal {
@@ -1112,7 +1112,7 @@ index 99ccc038c..5d0a56b93 100644
  } // end namespace internal
  
 diff --git a/Eigen/src/Core/arch/AVX512/TypeCasting.h b/Eigen/src/Core/arch/AVX512/TypeCasting.h
-index a82176941..08aa52ff4 100644
+index a821769..08aa52f 100644
 --- a/Eigen/src/Core/arch/AVX512/TypeCasting.h
 +++ b/Eigen/src/Core/arch/AVX512/TypeCasting.h
 @@ -40,6 +40,33 @@ template<> EIGEN_STRONG_INLINE Packet16h pcast<Packet16f, Packet16h>(const Packe
@@ -1151,7 +1151,7 @@ index a82176941..08aa52ff4 100644
  } // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/Default/BFloat16.h b/Eigen/src/Core/arch/Default/BFloat16.h
 new file mode 100644
-index 000000000..aec73817f
+index 0000000..aec7381
 --- /dev/null
 +++ b/Eigen/src/Core/arch/Default/BFloat16.h
 @@ -0,0 +1,749 @@
@@ -1905,7 +1905,7 @@ index 000000000..aec73817f
 +
 +#endif // EIGEN_BFLOAT16_H
 diff --git a/Eigen/src/Core/arch/Default/TypeCasting.h b/Eigen/src/Core/arch/Default/TypeCasting.h
-index b6df98468..c94b09fe8 100644
+index b6df984..c94b09f 100644
 --- a/Eigen/src/Core/arch/Default/TypeCasting.h
 +++ b/Eigen/src/Core/arch/Default/TypeCasting.h
 @@ -71,6 +71,47 @@ template<>
@@ -1957,7 +1957,7 @@ index b6df98468..c94b09fe8 100644
  }
  
 diff --git a/Eigen/src/Core/arch/NEON/TypeCasting.h b/Eigen/src/Core/arch/NEON/TypeCasting.h
-index 4aa98e370..2734eacff 100644
+index 4aa98e3..2734eac 100644
 --- a/Eigen/src/Core/arch/NEON/TypeCasting.h
 +++ b/Eigen/src/Core/arch/NEON/TypeCasting.h
 @@ -347,6 +347,72 @@ template<> EIGEN_STRONG_INLINE Packet2l preinterpret<Packet2l,Packet2ul>(const P
@@ -2034,7 +2034,7 @@ index 4aa98e370..2734eacff 100644
  
  template<> EIGEN_STRONG_INLINE Packet2f pcast<Packet2d,Packet2f>(const Packet2d& a) { return vcvt_f32_f64(a); }
 diff --git a/Eigen/src/Core/util/ConfigureVectorization.h b/Eigen/src/Core/util/ConfigureVectorization.h
-index 952abc306..92d9da7b8 100644
+index 952abc3..92d9da7 100644
 --- a/Eigen/src/Core/util/ConfigureVectorization.h
 +++ b/Eigen/src/Core/util/ConfigureVectorization.h
 @@ -289,6 +289,9 @@
@@ -2048,7 +2048,7 @@ index 952abc306..92d9da7b8 100644
  
      // Disable AVX support on broken xcode versions
 diff --git a/Eigen/src/Geometry/arch/Geometry_SSE.h b/Eigen/src/Geometry/arch/Geometry_SSE.h
-index 108cc9f8e..43677f478 100644
+index 108cc9f..43677f4 100644
 --- a/Eigen/src/Geometry/arch/Geometry_SSE.h
 +++ b/Eigen/src/Geometry/arch/Geometry_SSE.h
 @@ -33,13 +33,14 @@ struct quat_product<Architecture::SSE, Derived, OtherDerived, float>
@@ -2074,7 +2074,7 @@ index 108cc9f8e..43677f478 100644
    }
  };
 diff --git a/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h b/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
-index 445248163..ea286fee1 100644
+index 4452481..ea286fe 100644
 --- a/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
 +++ b/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
 @@ -101,6 +101,17 @@ Eigen::half RandomToTypeUniform<Eigen::half>(uint64_t* state, uint64_t stream) {
@@ -2095,8 +2095,384 @@ index 445248163..ea286fee1 100644
  
  template <> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
  float RandomToTypeUniform<float>(uint64_t* state, uint64_t stream) {
+diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
+index 43a2746..6b62ba8 100644
+--- a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
++++ b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
+@@ -10,6 +10,13 @@
+ #ifndef EIGEN_CXX11_THREADPOOL_NONBLOCKING_THREAD_POOL_H
+ #define EIGEN_CXX11_THREADPOOL_NONBLOCKING_THREAD_POOL_H
+ 
++#include <atomic>
++#include <iostream>
++#include <memory>
++#include <cstdlib>
++#include <stdlib.h> 
++#include <string>
++
+ namespace Eigen {
+ 
+ template <typename Environment>
+@@ -19,7 +26,8 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+   typedef RunQueue<Task, 1024> Queue;
+ 
+   ThreadPoolTempl(int num_threads, Environment env = Environment())
+-      : ThreadPoolTempl(num_threads, true, env) {}
++      : ThreadPoolTempl(num_threads, true, env) {
++}
+ 
+   ThreadPoolTempl(int num_threads, bool allow_spinning,
+                   Environment env = Environment())
+@@ -27,6 +35,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+         num_threads_(num_threads),
+         allow_spinning_(allow_spinning),
+         thread_data_(num_threads),
++        pending_cost_(num_threads),
+         all_coprimes_(num_threads),
+         waiters_(num_threads),
+         global_steal_partition_(EncodePartition(0, num_threads_)),
+@@ -51,7 +60,13 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+ #ifndef EIGEN_THREAD_LOCAL
+     init_barrier_.reset(new Barrier(num_threads_));
+ #endif
++    for (int i = 0; i < num_threads_; ++i) {
++      pending_cost_.emplace_back(0);
++      next_idx_.push_back(i);
++    }
++ 
+     thread_data_.resize(num_threads_);
++
+     for (int i = 0; i < num_threads_; i++) {
+       SetStealPartition(i, EncodePartition(0, num_threads_));
+       thread_data_[i].thread.reset(
+@@ -102,6 +117,74 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+     ScheduleWithHint(std::move(fn), 0, num_threads_);
+   }
+ 
++  void Schedule(std::function<void()> fn, int64_t cost) EIGEN_OVERRIDE {
++    // normal schedule
++    ScheduleWithHint(std::move(fn), 0, num_threads_);
++
++    // schedule according operations' cost
++    // ScheduleWithHint(std::move(fn), 0, num_threads_, cost);
++
++    // schedule according Round-Robin policy
++    // ScheduleWithRoundRobin(std::move(fn), 0, num_threads_, cost);
++  }
++
++  void ScheduleWithRoundRobin(std::function<void()> fn, int start,
++                              int limit, int64_t cost) override {
++    if (cost < 0) {
++      cost = 0;
++    }
++
++    Task t = env_.CreateTask(std::move(fn), cost);
++    PerThread* pt = GetPerThread();
++    int tid = pt->thread_id;
++    // RR + Random
++    int target_idx = -1;
++    if (pt->pool == this) {
++      // 100us = 100,000ns
++      if (pending_cost_[tid] < 100000) { // magic num
++        target_idx = tid;
++      } else {
++        // RR
++        ++next_idx_[tid];
++        next_idx_[tid] %= num_threads_;
++        target_idx = next_idx_[tid];
++      }
++      pending_cost_[target_idx] += cost;
++
++      Queue& q = thread_data_[target_idx].queue;
++      if (target_idx == tid) {
++        t = q.PushFront(std::move(t));
++      } else {
++        t = q.PushBack(std::move(t));
++      }
++    } else {
++#if 0
++      // Random
++      eigen_plain_assert(start < limit);
++      eigen_plain_assert(limit <= num_threads_);
++      int num_queues = limit - start;
++      int rnd = Rand(&pt->rand) % num_queues;
++      eigen_plain_assert(start + rnd < limit);
++      target_idx = start + rnd;
++#else
++      // RR
++      target_idx = alien_next_idx_.fetch_add(1);
++      target_idx %= num_threads_;
++#endif
++      pending_cost_[target_idx] += cost;
++      Queue& q = thread_data_[target_idx].queue;
++      t = q.PushBack(std::move(t));
++    }
++
++    if (!t.f) {
++      ec_.Notify(false);
++    } else {
++      // If push failed, need to execute on current thread
++      pending_cost_[target_idx] -= cost;
++      env_.ExecuteTask(t);  // Push failed, execute directly.
++    }
++  }
++
+   void ScheduleWithHint(std::function<void()> fn, int start,
+                         int limit) override {
+     Task t = env_.CreateTask(std::move(fn));
+@@ -135,6 +218,64 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+     }
+   }
+ 
++  void ScheduleWithHint(std::function<void()> fn, int start,
++                        int limit, int64_t cost) override {
++    if (cost <= 0) {
++      cost = 0;
++    }
++
++    PerThread* pt = GetPerThread();
++
++    // find minimal pending cost thread queue
++    // TODO: why not use a priority queue here?
++    int count = 0;
++    int idx = pt->pool == this ? pt->thread_id : 0;   
++    int target_idx = idx;
++    int64_t target_cost = pending_cost_[idx];
++    while (count++ < num_threads_) {
++      int64_t curr_cost = pending_cost_[idx];
++      if (curr_cost < target_cost) {
++        target_cost = curr_cost;
++        target_idx = idx;
++      }
++      ++idx;
++      idx %= num_threads_;
++    }
++    // TODO: why not add the cost after push successfully?
++    pending_cost_[target_idx] += cost;
++
++    Task t = env_.CreateTask(std::move(fn), cost);
++
++    // scheduler thread is current worker thread
++    if (pt->pool == this) {
++      // get minimal pending op cost thread
++      Queue& q = thread_data_[target_idx].queue;
++      if (target_idx == pt->thread_id) {
++        t = q.PushFront(std::move(t));
++      } else {
++        t = q.PushBack(std::move(t));
++      }
++    } else {
++      Queue& q = thread_data_[target_idx].queue;
++      t = q.PushBack(std::move(t));
++    }
++
++    // Note: below we touch this after making w available to worker threads.
++    // Strictly speaking, this can lead to a racy-use-after-free. Consider that
++    // Schedule is called from a thread that is neither main thread nor a worker
++    // thread of this pool. Then, execution of w directly or indirectly
++    // completes overall computations, which in turn leads to destruction of
++    // this. We expect that such scenario is prevented by program, that is,
++    // this is kept alive while any threads can potentially be in Schedule.
++    if (!t.f) {
++      ec_.Notify(false);
++    } else {
++      // If push failed, need to execute on current thread
++      pending_cost_[target_idx] -= t.cost;
++      env_.ExecuteTask(t);  // Push failed, execute directly.
++    }
++  }
++
+   void Cancel() EIGEN_OVERRIDE {
+     cancelled_ = true;
+     done_ = true;
+@@ -235,6 +376,9 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+   Environment env_;
+   const int num_threads_;
+   const bool allow_spinning_;
++  std::atomic<int64_t> alien_next_idx_{0};
++  std::vector<int> next_idx_;
++  MaxSizeVector<std::atomic_int64_t> pending_cost_;
+   MaxSizeVector<ThreadData> thread_data_;
+   MaxSizeVector<MaxSizeVector<unsigned>> all_coprimes_;
+   MaxSizeVector<EventCount::Waiter> waiters_;
+@@ -244,6 +388,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+   std::atomic<bool> done_;
+   std::atomic<bool> cancelled_;
+   EventCount ec_;
++
+ #ifndef EIGEN_THREAD_LOCAL
+   std::unique_ptr<Barrier> init_barrier_;
+   std::mutex per_thread_map_mutex_;  // Protects per_thread_map_.
+@@ -299,8 +444,10 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+       while (!cancelled_) {
+         Task t = q.PopFront();
+         if (!t.f) {
++          // local steal
+           t = LocalSteal();
+           if (!t.f) {
++            // global steal
+             t = GlobalSteal();
+             if (!t.f) {
+               // Leave one thread spinning. This reduces latency.
+@@ -322,8 +469,13 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+             }
+           }
+         }
++
+         if (t.f) {
+           env_.ExecuteTask(t);
++
++          if (t.cost > 0) {
++            pending_cost_[thread_id] -= t.cost;
++          }
+         }
+       }
+     }
+@@ -333,6 +485,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+   // limit) in best-effort manner.
+   Task Steal(unsigned start, unsigned limit) {
+     PerThread* pt = GetPerThread();
++    int thread_id = pt->thread_id;
+     const size_t size = limit - start;
+     unsigned r = Rand(&pt->rand);
+     // Reduce r into [0, size) range, this utilizes trick from
+@@ -343,9 +496,14 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+     unsigned inc = all_coprimes_[size - 1][index];
+ 
+     for (unsigned i = 0; i < size; i++) {
+-      eigen_plain_assert(start + victim < limit);
+-      Task t = thread_data_[start + victim].queue.PopBack();
++      int idx = start + victim;
++      eigen_plain_assert(idx < limit);
++      Task t = thread_data_[idx].queue.PopBack();
+       if (t.f) {
++        if (t.cost > 0) {
++          pending_cost_[idx] -= t.cost;
++          pending_cost_[thread_id] += t.cost;
++        }
+         return t;
+       }
+       victim += inc;
+@@ -392,6 +550,11 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+         return false;
+       } else {
+         *t = thread_data_[victim].queue.PopBack();
++        if (t->cost > 0) {
++          pending_cost_[victim] -= t->cost;
++          PerThread* pt = GetPerThread();
++          pending_cost_[pt->thread_id] += t->cost;
++        }
+         return true;
+       }
+     }
+diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h b/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h
+index b572ebc..e98a0ff 100644
+--- a/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h
++++ b/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h
+@@ -96,6 +96,20 @@ class RunQueue {
+     return Work();
+   }
+ 
++  Work FastPushBack(Work w) {
++    unsigned back = back_.load(std::memory_order_relaxed);
++    Elem* e = &array_[(back - 1) & kMask];
++    uint8_t s = e->state.load(std::memory_order_relaxed);
++    if (s != kEmpty ||
++        !e->state.compare_exchange_strong(s, kBusy, std::memory_order_acquire))
++      return w;
++    back = ((back - 1) & kMask2) | (back & ~kMask2);
++    back_.store(back, std::memory_order_relaxed);
++    e->w = std::move(w);
++    e->state.store(kReady, std::memory_order_release);
++    return Work();
++  }
++
+   // PopBack removes and returns the last elements in the queue.
+   Work PopBack() {
+     if (Empty()) return Work();
+@@ -112,6 +126,20 @@ class RunQueue {
+     return w;
+   }
+ 
++  Work FastPopBack() {
++    if (Empty()) return Work();
++    unsigned back = back_.load(std::memory_order_relaxed);
++    Elem* e = &array_[back & kMask];
++    uint8_t s = e->state.load(std::memory_order_relaxed);
++    if (s != kReady ||
++        !e->state.compare_exchange_strong(s, kBusy, std::memory_order_acquire))
++      return Work();
++    Work w = std::move(e->w);
++    e->state.store(kEmpty, std::memory_order_release);
++    back_.store(back + 1 + (kSize << 1), std::memory_order_relaxed);
++    return w;
++  }
++
+   // PopBackHalf removes and returns half last elements in the queue.
+   // Returns number of elements removed.
+   unsigned PopBackHalf(std::vector<Work>* result) {
+diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
+index d94a064..a92e7de 100644
+--- a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
++++ b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
+@@ -14,7 +14,12 @@ namespace Eigen {
+ 
+ struct StlThreadEnvironment {
+   struct Task {
++    Task() {}
++    Task(std::function<void()> fn) : f(std::move(fn)) {}
++    Task(std::function<void()> fn, int64_t c)
++        : f(std::move(fn)), cost(c) {}
+     std::function<void()> f;
++    int64_t cost = 0;
+   };
+ 
+   // EnvThread constructor must start the thread,
+@@ -31,7 +36,7 @@ struct StlThreadEnvironment {
+   };
+ 
+   EnvThread* CreateThread(std::function<void()> f) { return new EnvThread(std::move(f)); }
+-  Task CreateTask(std::function<void()> f) { return Task{std::move(f)}; }
++  Task CreateTask(std::function<void()> f, int64_t cost = 0) { return Task{std::move(f), cost}; }
+   void ExecuteTask(const Task& t) { t.f(); }
+ };
+ 
+diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h
+index 25030dc..8156930 100644
+--- a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h
++++ b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h
+@@ -19,6 +19,10 @@ class ThreadPoolInterface {
+   // Submits a closure to be run by a thread in the pool.
+   virtual void Schedule(std::function<void()> fn) = 0;
+ 
++  virtual void Schedule(std::function<void()> fn, int64_t cost) {
++    Schedule(fn);
++  }
++
+   // Submits a closure to be run by threads in the range [start, end) in the
+   // pool.
+   virtual void ScheduleWithHint(std::function<void()> fn, int /*start*/,
+@@ -28,6 +32,18 @@ class ThreadPoolInterface {
+     Schedule(fn);
+   }
+ 
++  virtual void ScheduleWithHint(std::function<void()> fn, int /*start*/,
++                                int /*end*/, int64_t cost) {
++    // Just defer to Schedule in case sub-classes aren't interested in
++    // overriding this functionality.
++    Schedule(fn);
++  }
++
++  virtual void ScheduleWithRoundRobin(std::function<void()> fn, int /*start*/,
++                                      int /*end*/, int64_t cost) {
++    Schedule(fn);
++  }
++
+   // If implemented, stop processing the closures that have been enqueued.
+   // Currently running closures may still be processed.
+   // If not implemented, does nothing.
 diff --git a/unsupported/Eigen/SpecialFunctions b/unsupported/Eigen/SpecialFunctions
-index a098ce871..89ee368fc 100644
+index a098ce8..89ee368 100644
 --- a/unsupported/Eigen/SpecialFunctions
 +++ b/unsupported/Eigen/SpecialFunctions
 @@ -70,6 +70,7 @@ namespace Eigen {
@@ -2109,7 +2485,7 @@ index a098ce871..89ee368fc 100644
  #include "src/SpecialFunctions/SpecialFunctionsArrayAPI.h"
 diff --git a/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h b/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
 new file mode 100644
-index 000000000..2d94231f0
+index 0000000..2d94231
 --- /dev/null
 +++ b/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
 @@ -0,0 +1,58 @@

@@ -431,9 +431,13 @@ Status DatasetOpsTestBase::InitFunctionLibraryRuntime(
   flr_ = pflr_->GetFLR("/job:localhost/replica:0/task:0/cpu:0");
   if (thread_pool_ == nullptr) {
     runner_ = [](std::function<void()> fn) { fn(); };
+    cost_runner_ = [](std::function<void()> fn, int64 cost) { fn(); };
   } else {
     runner_ = [this](std::function<void()> fn) {
       thread_pool_->Schedule(std::move(fn));
+    };
+    cost_runner_ = [this](std::function<void()> fn, int64 cost) {
+      thread_pool_->CostSchedule(std::move(fn), cost);
     };
   }
   return Status::OK();
@@ -489,6 +493,7 @@ Status DatasetOpsTestBase::RunFunction(
   Executor::Args exec_args;
   exec_args.call_frame = &frame;
   exec_args.runner = runner_;
+  exec_args.cost_runner = cost_runner_;
   TF_RETURN_IF_ERROR(exec->Run(exec_args));
   std::vector<Tensor> computed;
   TF_RETURN_IF_ERROR(frame.GetRetvals(&computed));

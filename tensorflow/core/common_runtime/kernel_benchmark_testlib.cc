@@ -65,6 +65,9 @@ Benchmark::Benchmark(const string& device, Graph* g,
   auto runner = [this](std::function<void()> closure) {
     pool_->Schedule(closure);
   };
+  auto cost_runner = [this](std::function<void()> closure, int64 cost) {
+    pool_->CostSchedule(closure, cost);
+  };
 
   if (rendez == nullptr) {
     rendez_ = NewLocalRendezvous();
@@ -93,6 +96,7 @@ Benchmark::Benchmark(const string& device, Graph* g,
     Executor::Args args;
     args.rendezvous = rendez_;
     args.runner = runner;
+    args.cost_runner = cost_runner;
     TF_CHECK_OK(init_exec->Run(args));
   }
 
@@ -153,6 +157,9 @@ void Benchmark::RunWithArgs(
   args.rendezvous = rendez_;
   args.runner = [this](std::function<void()> closure) {
     pool_->Schedule(closure);
+  };
+  args.cost_runner = [this](std::function<void()> closure, int64 cost) {
+    pool_->CostSchedule(closure, cost);
   };
   static const int kWarmupRuns = 3;
   for (int i = 0; i < kWarmupRuns; ++i) {
