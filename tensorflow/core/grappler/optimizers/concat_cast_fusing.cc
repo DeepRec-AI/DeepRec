@@ -138,7 +138,6 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             auto* attr = fused_op.mutable_attr();
             auto& concat_attr = concat.attr();
             auto& cast_attr = cast.attr();
-            //(*attr)["T"] = concat_attr.at("T");
             (*attr)["N"] = concat_attr.at("N");
 
             (*attr)["SrcT"] = cast_attr.at("SrcT");

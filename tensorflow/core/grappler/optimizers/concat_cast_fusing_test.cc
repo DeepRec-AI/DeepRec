@@ -35,14 +35,16 @@ namespace ConcatCastFusingTestDefs {
         long long int                   // axis
     > ConcatCastFusingTestParams;
     std::vector<std::vector<DataType>> dataTypes {
-        {DataType::DT_FLOAT, DataType::DT_INT32}//,
-        //{DataType::DT_BFLOAT16}
+        {DataType::DT_FLOAT, DataType::DT_INT32},
+        //{DataType::DT_INT32, DataType::DT_FLOAT},
+        {DataType::DT_BFLOAT16, DataType::DT_FLOAT},
+        {DataType::DT_FLOAT, DataType::DT_BFLOAT16}
     };
-    std::vector<long long int> numInputs = {2};//, 4};
-    std::vector<long long int> AXIS_2D = {0};//, 1};
+    std::vector<long long int> numInputs = {2, 4};
+    std::vector<long long int> AXIS_2D = {0, 1};
     std::vector<long long int> AXIS_3D = {0, 1, 2};
     std::vector<long long int> AXIS_4D = {0, 1, 2, 3};
-    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}};//, {32, 21}, {64, 64}};
+    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}, {32, 21}, {64, 64}};
     std::vector<std::vector<long long int>> SIZES_3D = {{32, 16, 1}, {128, 128, 128}, {1, 1, 1}};
     std::vector<std::vector<long long int>> SIZES_4D = {{32, 32, 32, 32}, {16, 1, 1, 1}, {31, 63, 15, 7}};
 } // namespace ConcatCastFusingTestDefs
@@ -121,6 +123,9 @@ class ConcatCastFusingTest :
 		            input.flat<Eigen::bfloat16>() = input.flat<Eigen::bfloat16>() - input.flat<Eigen::bfloat16>().constant((Eigen::bfloat16)0.5);
 		            input.flat<Eigen::bfloat16>() = input.flat<Eigen::bfloat16>() * input.flat<Eigen::bfloat16>().constant((Eigen::bfloat16)200.0);
                     break;
+                case DT_INT32:
+                    input.flat<int32_t>() = input.flat<int32_t>().template setRandom<Eigen::internal::NormalRandomGenerator<int32_t>>(); // input
+                    break;
                 default:
                     GTEST_FAIL() << "Unexpected DataType";
             }
@@ -151,7 +156,7 @@ class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
 
         std::vector<Input> in_values;
         for (int i = 0; i < num_inputs; ++i) {
-            std::cout << "Shape " << i << ": " << inputs[i].shape() << std::endl;
+            //std::cout << "Shape " << i << ": " << inputs[i].shape() << std::endl;
             const string input_name = absl::StrCat("input_", i);
             auto tmp = ops::Const(s.WithOpName(input_name), Input::Initializer(inputs[i]));
             in_values.push_back(tmp);
@@ -189,7 +194,19 @@ class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
         auto tensors = EvaluateNodes(output, fetch);
         EXPECT_EQ(1, tensors_expected.size());
         EXPECT_EQ(1, tensors.size());
-        test::ExpectTensorEqual<int>(tensors_expected[0], tensors[0]);
+        switch(dst_type) {
+                case DT_FLOAT:
+                    test::ExpectTensorEqual<float>(tensors_expected[0], tensors[0]);
+                    break;
+                case DT_BFLOAT16:
+                    test::ExpectTensorEqual<Eigen::bfloat16>(tensors_expected[0], tensors[0]);
+                    break;
+                case DT_INT32:
+                    test::ExpectTensorEqual<int32_t>(tensors_expected[0], tensors[0]);
+                    break;
+                default:
+                    GTEST_FAIL() << "Unexpected DataType";
+            }
     }
 };
 
@@ -236,6 +253,14 @@ INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestSimpleFusing,
         ::testing::ValuesIn(numInputs),
         ::testing::ValuesIn(SIZES_2D),
         ::testing::ValuesIn(AXIS_2D)),
+    ConcatCastFusingTestSimpleFusing::getTestCaseName);
+
+INSTANTIATE_TEST_CASE_P(Concat3D, ConcatCastFusingTestSimpleFusing,
+    ::testing::Combine(
+        ::testing::ValuesIn(dataTypes),
+        ::testing::ValuesIn(numInputs),
+        ::testing::ValuesIn(SIZES_3D),
+        ::testing::ValuesIn(AXIS_3D)),
     ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
 }  // namespace
