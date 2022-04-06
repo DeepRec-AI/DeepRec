@@ -33,7 +33,14 @@ class TemplateSelectBase: public TemplateBase {
       std::string name_prefix, Graph* g,
       std::vector<const Edge*>& inputs,
       std::vector<std::vector<const Edge*>>& outputs) override {
-    LOG(INFO) << "Fusion template[" << name() << "] match op[" << nodes[first_key_].node->name() << "]";
+    DataType datatype = get_data_type(nodes[first_key_].node);
+    if (datatype != DT_FLOAT && datatype != DT_INT32 && datatype != DT_INT64) {
+      LOG(INFO) << "Drop fusion template[" << name() << "] match op[" << nodes[first_key_].node->DebugString() << "]";
+      return false;
+    } else {
+      LOG(INFO) << "Fusion template[" << name() << "] match op[" << nodes[first_key_].node->name() <<
+          "][new_name:" << name_prefix << "_" << name() << "]";
+    }
 
     Node* node_const_zero = add_zero_like_node(nodes, name_prefix, g, inputs, outputs);
     if (!node_const_zero) {
@@ -66,6 +73,14 @@ class TemplateSelectBase: public TemplateBase {
     return false;
   }
 
+  DataType get_data_type(const Node* node) {
+    DataType datatype;
+    if (GetNodeAttr(node->def(), "T", &datatype) != Status::OK()) {
+      return DT_INVALID;
+    }
+    return datatype;
+  }
+
  protected:
   virtual Node* add_zero_like_node(
       std::map<std::string, MatchedNode>& nodes,
@@ -76,11 +91,21 @@ class TemplateSelectBase: public TemplateBase {
     NodeDef const_zero;
     const_zero.set_op("Const");
     const_zero.set_name(name_prefix + "_const_zero_" + name());
+
+    DataType datatype = get_data_type(nodes[first_key_].node);
     AttrValue attr_type;
-    attr_type.set_type(DT_FLOAT);
+    attr_type.set_type(datatype);
     const_zero.mutable_attr()->insert({"dtype", attr_type});
-    Tensor tensor_zero(DT_FLOAT, {});
-    tensor_zero.scalar<float>()() = 0.0;
+
+    Tensor tensor_zero(datatype, {});
+    if (datatype == DT_FLOAT) {
+      tensor_zero.scalar<float>()() = 0;
+    } else if (datatype == DT_INT32) {
+      tensor_zero.scalar<int32>()() = 0;
+    } else if (datatype == DT_INT64) {
+      tensor_zero.scalar<int64>()() = 0;
+    }
+
     AttrValue value_zero;
     tensor_zero.AsProtoTensorContent(value_zero.mutable_tensor());
     const_zero.mutable_attr()->insert({"value", value_zero});
