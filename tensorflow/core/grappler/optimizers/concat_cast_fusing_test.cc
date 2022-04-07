@@ -170,7 +170,7 @@ class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
         item.fetch.push_back("cast");
         TF_CHECK_OK(s.ToGraphDef(&item.graph));
 
-        ConcatCastFusing optimizer(/*cpu_device=*/nullptr);
+        ConcatCastFusing optimizer;
         GraphDef output;
         Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
         TF_EXPECT_OK(status);
@@ -262,6 +262,14 @@ INSTANTIATE_TEST_CASE_P(Concat3D, ConcatCastFusingTestSimpleFusing,
         ::testing::ValuesIn(SIZES_3D),
         ::testing::ValuesIn(AXIS_3D)),
     ConcatCastFusingTestSimpleFusing::getTestCaseName);
+
+// INSTANTIATE_TEST_CASE_P(Concat4D, ConcatCastFusingTestSimpleFusing,
+//     ::testing::Combine(
+//         ::testing::ValuesIn(dataTypes),
+//         ::testing::ValuesIn(numInputs),
+//         ::testing::ValuesIn(SIZES_4D),
+//         ::testing::ValuesIn(AXIS_4D)),
+//     ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
 }  // namespace
 }  // namespace grappler

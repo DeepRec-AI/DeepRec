@@ -27,10 +27,8 @@ namespace grappler {
 class ConcatCastFusing : public GraphOptimizer {
     public:
 
-    explicit ConcatCastFusing(DeviceBase* cpu_device);
-    ConcatCastFusing(RewriterConfig::Toggle opt_level, DeviceBase* cpu_device);
-
-    ~ConcatCastFusing() override {}
+    ConcatCastFusing() = default;
+    ~ConcatCastFusing() override {};
 
     string name() const override { return "concat_cast_fusing"; };
 
@@ -41,14 +39,6 @@ class ConcatCastFusing : public GraphOptimizer {
 
     void Feedback(Cluster* cluster, const GrapplerItem& item,
                   const GraphDef& optimize_output, double result) override;
-
-    RewriterConfig::Toggle opt_level_;
-    DeviceBase* cpu_device_;
-    std::unique_ptr<DeviceBase> owned_device_;
-
-    std::unique_ptr<ResourceMgr> resource_mgr_;
-    GraphDef* graph_;
-    std::unique_ptr<NodeMap> node_map_;
 };
 
 }  // end namespace grappler

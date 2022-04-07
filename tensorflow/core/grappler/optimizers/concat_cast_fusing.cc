@@ -24,19 +24,6 @@ limitations under the License.
 namespace tensorflow {
 namespace grappler {
 namespace {
-struct Context {
-  explicit Context(GrapplerItem* item, Status* status)
-      : nodes_to_preserve(item->NodesToPreserve()),
-        graph_view(&item->graph, status),
-        graph_properties(*item),
-        inferred_graph_properties(false) {}
-
-  std::unordered_set<string> nodes_to_preserve;
-  utils::MutableGraphView graph_view;
-  GraphProperties graph_properties;
-  bool inferred_graph_properties;
-};
-
 struct ConcatWithCast {
   ConcatWithCast() = default;
   ConcatWithCast(int concat_id, int cast_id)
@@ -46,8 +33,10 @@ struct ConcatWithCast {
   int cast_id = -1;
 };
 
-bool FindConcatWithCast(const Context& ctx, int node_index, ConcatWithCast* matched) {
-    const auto* concat_node_view = ctx.graph_view.GetNode(node_index);
+DataType supported_types[] = {DataType::DT_INT32, DataType::DT_FLOAT, DataType::DT_BFLOAT16};
+
+bool FindConcatWithCast(const utils::MutableGraphView& graph_view, int node_index, ConcatWithCast* matched) {
+    const auto* concat_node_view = graph_view.GetNode(node_index);
 
     if (concat_node_view->NumControllingFanins() > 0 || concat_node_view->NumControlledFanouts() > 0) return false;
 
@@ -64,6 +53,21 @@ bool FindConcatWithCast(const Context& ctx, int node_index, ConcatWithCast* matc
     const auto* cast_node_def = cast_node_view->node();
     if (!IsCast(*cast_node_def)) return false;
 
+    auto& cast_attr = cast_node_def->attr();
+    DataType srcT = cast_attr.at("SrcT").type();
+    DataType dstT = cast_attr.at("DstT").type();
+    bool src_exists = std::find(std::begin(supported_types), std::end(supported_types), srcT) != std::end(supported_types);
+    bool dst_exists = std::find(std::begin(supported_types), std::end(supported_types), dstT) != std::end(supported_types);
+    if (!src_exists || !dst_exists) {
+        VLOG(2) << "ConcatCastFusion does not support following conversion: " << srcT << " -> " << dstT;
+        return false;
+    }
+    if (srcT == dstT) {
+        VLOG(2) << "ConcatCastFusion does not support conversion: " << srcT << " -> " << dstT
+                << " when SrcT equals DstT";
+        return false;
+    }
+
     const ConcatWithCast pattern{node_index,
                                  cast_node_view->node_index()};
     *matched = pattern;
@@ -71,37 +75,20 @@ bool FindConcatWithCast(const Context& ctx, int node_index, ConcatWithCast* matc
     return true;
 }
 }
-//TODO: work on constructors
-ConcatCastFusing::ConcatCastFusing(RewriterConfig::Toggle opt_level,
-                                 DeviceBase* cpu_device)
-    : opt_level_(opt_level), cpu_device_(cpu_device) {
-  resource_mgr_.reset(new ResourceMgr());
-}
-
-ConcatCastFusing::ConcatCastFusing(DeviceBase* cpu_device)
-    : ConcatCastFusing(RewriterConfig::ON, cpu_device) {}
-
 Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
                                  GraphDef* optimized_graph) {
-    if (cpu_device_ == nullptr) {
-        owned_device_.reset(new DeviceSimple());
-        cpu_device_ = owned_device_.get();
-    }
-
-    GrapplerItem mutable_item = item;
     Status status;
+    *optimized_graph = item.graph;
     TF_RETURN_IF_ERROR(status);
-    //TODO: change context to just graph_view
-    //utils::MutableGraphView graph_view = MutableGraphView(mutable_item.graph, &status);
-    Context ctx(&mutable_item, &status);
+    utils::MutableGraphView graph_view(optimized_graph, &status);
     TF_RETURN_IF_ERROR(status);
-    TF_RETURN_IF_ERROR(ctx.graph_view.SortTopologically(/*ignore_cycles=*/false, {}));
+    TF_RETURN_IF_ERROR(graph_view.SortTopologically(/*ignore_cycles=*/false, {}));
     const int num_nodes = item.graph.node_size();
     // invalidated_nodes - nodes that have been changed into a fused op
     // nodes_to_delete -  nodes that were fused into a fused op and are not needed anymore
     std::vector<bool> invalidated_nodes(num_nodes);
     std::vector<bool> nodes_to_delete(num_nodes);
-    const GraphDef* graph = ctx.graph_view.graph();
+    const GraphDef* graph = graph_view.graph();
 
     VLOG(3) << "Before concat cast graph rewrites: " << graph->DebugString();
 
@@ -111,12 +98,11 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
         }
 
         ConcatWithCast base;
-        if (FindConcatWithCast(ctx, i, &base)) {
-            const auto* node_view = ctx.graph_view.GetNode(i);
+        if (FindConcatWithCast(graph_view, i, &base)) {
+            const auto* node_view = graph_view.GetNode(i);
             const auto& fused_node = graph->node(i);
             VLOG(2) << "Optimizing fused concat cast node " << SummarizeNodeDef(fused_node);
 
-            // TODO: add if for cases when src dtype == dst dtype
             // Adding fused concat+cast
             const NodeDef& concat = graph->node(base.concat_id);
             const NodeDef& cast = graph->node(base.cast_id);
@@ -140,7 +126,7 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             (*attr)["SrcT"] = cast_attr.at("SrcT");
             (*attr)["DstT"] = cast_attr.at("DstT");
 
-            utils::Mutation* mutation = ctx.graph_view.GetMutationBuilder();
+            utils::Mutation* mutation = graph_view.GetMutationBuilder();
             Status status;
             mutation->AddNode(std::move(fused_op), &status);
             TF_RETURN_IF_ERROR(status);
@@ -151,14 +137,14 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
     }
 
     // Remove not needed nodes
-    utils::Mutation* mutation = ctx.graph_view.GetMutationBuilder();
+    utils::Mutation* mutation = graph_view.GetMutationBuilder();
     for (int i = 0; i < num_nodes; ++i) {
         if (nodes_to_delete[i]) {
-            mutation->RemoveNode(ctx.graph_view.GetNode(i));
+            mutation->RemoveNode(graph_view.GetNode(i));
         }
     }
     TF_RETURN_IF_ERROR(mutation->Apply());
-    *optimized_graph = mutable_item.graph;
+    *optimized_graph = *graph_view.graph();
 
     VLOG(3) << "After concat cast graph rewrites: " << optimized_graph->DebugString();
 
