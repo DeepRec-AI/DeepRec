@@ -72,9 +72,10 @@ namespace {
       if (remainder != 0) {
         __mmask16 mask = 0xffff >> (float_alignment - remainder);
         int64_t offset = quotient << float_displacement;
-        __m512 a = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &input[input_idx + offset]);
-        __m512 b = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &output[output_idx + offset]);
-        a = _mm512_mask_add_ps(_mm512_setzero_ps(), mask, a, b);
+        __m512 zero = _mm512_setzero_ps();
+        __m512 a = _mm512_mask_loadu_ps(zero, mask, &input[input_idx + offset]);
+        __m512 b = _mm512_mask_loadu_ps(zero, mask, &output[output_idx + offset]);
+        a = _mm512_mask_add_ps(zero, mask, a, b);
         _mm512_mask_storeu_ps(&output[output_idx + offset], mask, a);
       }
     };
@@ -92,17 +93,18 @@ namespace {
         __m512 a = _mm512_loadu_ps(&input[input_idx + offset]);
         __m512 b = _mm512_loadu_ps(&output[output_idx + offset]);
         a = _mm512_add_ps(a, b);
-        a = _mm512_div_ps(a, sum_);
+        a = _mm512_mul_ps(a, sum_);
         _mm512_storeu_ps(&output[output_idx + offset], a);
       }
 
       if (remainder != 0) {
         __mmask16 mask = 0xffff >> (float_alignment - remainder);
         int64_t offset = quotient << float_displacement;
-        __m512 a = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &input[input_idx + offset]);
-        __m512 b = _mm512_mask_loadu_ps(_mm512_setzero_ps(), mask, &output[output_idx + offset]);
-        a = _mm512_mask_add_ps(_mm512_setzero_ps(), mask, a, b);
-        a = _mm512_mask_div_ps(_mm512_setzero_ps(), mask, a, sum_);
+        __m512 zero = _mm512_setzero_ps();
+        __m512 a = _mm512_mask_loadu_ps(zero, mask, &input[input_idx + offset]);
+        __m512 b = _mm512_mask_loadu_ps(zero, mask, &output[output_idx + offset]);
+        a = _mm512_mask_add_ps(zero, mask, a, b);
+        a = _mm512_mask_mul_ps(zero, mask, a, sum_);
         _mm512_mask_storeu_ps(&output[output_idx + offset], mask, a);
       }
     };
@@ -158,11 +160,11 @@ namespace {
           }
         }
         else if (operation == SparseSegmentReductionOperation::kMean) {
-          float sum = static_cast<float>(row_values[i]);
+          float sum = 1.0 / static_cast<float>(row_values[i]);
           avx512_mean(output_buffer, output_row, &sum, output, output_row, embedding_size);
         }
         else if (operation == SparseSegmentReductionOperation::kSqrtN) {
-          float sqrt = std::sqrt(row_values[i]);
+          float sqrt = 1.0 / std::sqrt(row_values[i]);
           avx512_mean(output_buffer, output_row, &sqrt, output, output_row, embedding_size);
         }
 #else
