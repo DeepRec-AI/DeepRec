@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,12 +17,9 @@ limitations under the License.
 
 #include "tensorflow/core/grappler/optimizers/concat_cast_fusing.h"
 
-#include "tensorflow/core/grappler/graph_view.h"
 #include "tensorflow/core/grappler/op_types.h"
 #include "tensorflow/core/grappler/optimizers/evaluation_utils.h"
 #include "tensorflow/core/grappler/utils/graph_view.h"
-#include "tensorflow/core/grappler/utils/topological_sort.h"
-#include "tensorflow/core/util/dump_graph.h"
 
 namespace tensorflow {
 namespace grappler {
