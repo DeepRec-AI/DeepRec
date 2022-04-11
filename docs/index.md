@@ -80,6 +80,8 @@ AdagradDecay-Optimizer
 Operator-Optimization
 NVIDIA-TF32
 oneDNN
+PMEM
+Embedding-on-PMEM
 ```
 
 ```{toctree}
@@ -89,4 +91,11 @@ oneDNN
 WorkQueue
 KafkaDataset
 KafkaGroupIODataset
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 线上Serving
+
+Processor
 ```

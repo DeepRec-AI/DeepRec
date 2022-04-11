@@ -113,7 +113,8 @@ class TemplateLogicSumBase: public TemplateBase {
       LOG(WARNING) << "Input check failed";
       return false;
     }
-    LOG(INFO) << "Fusion template[" << name() << "] match op[" << nodes[first_key_].node->name() << "]";
+    LOG(INFO) << "Fusion template[" << name() << "] match op[" << nodes[first_key_].node->name() <<
+          "][new_name:" << name_prefix << "_" << name() << "]";
 
     Node* node_fused_logicsum = add_fused_logicsum_node(nodes, name_prefix, g, inputs, outputs);
     if (!node_fused_logicsum) {

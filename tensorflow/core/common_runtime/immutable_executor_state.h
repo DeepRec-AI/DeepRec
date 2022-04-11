@@ -88,6 +88,7 @@ class ImmutableExecutorState {
 
   const LocalExecutorParams& params() const { return params_; }
   const GraphView& graph_view() const { return gview_; }
+  const Graph* graph() const { return graph_.get(); }
   const std::vector<PendingCounts::Handle>& pending_ids() const {
     return pending_ids_;
   }

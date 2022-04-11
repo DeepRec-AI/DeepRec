@@ -677,6 +677,7 @@ class FunctionLibraryRuntime {
     StepStatsCollectorInterface* stats_collector = nullptr;
 
     std::function<void(std::function<void()>)>* runner = nullptr;
+    std::function<void(std::function<void()>, int64)>* cost_runner = nullptr;
 
     // Parameters for remote function execution.
     bool remote_execution = false;

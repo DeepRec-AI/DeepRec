@@ -78,6 +78,7 @@ class ThreadPool {
 
   // Schedules fn() for execution in the pool of threads.
   void Schedule(std::function<void()> fn);
+  void CostSchedule(std::function<void()> fn, int64 cost);
 
   void SetStealPartitions(
       const std::vector<std::pair<unsigned, unsigned>>& partitions);

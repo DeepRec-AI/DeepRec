@@ -1,0 +1,31 @@
+namespace tensorflow.eas.test;
+
+table ShapeType {
+  dim: [long];
+}
+
+table ContentType {
+  content: [byte];
+}
+
+table StringContentType {
+  content: [string];
+}
+
+table StringContentType2 {
+  content: [ContentType];
+}
+
+table PredictRequest {
+  signature_name: string;
+  feed_names: [string];
+  types: [int];
+  shapes: [ShapeType];
+  content: [ContentType];
+  string_content_len: [int];
+  // string per input
+  string_content: [string];
+  fetch_names: [string];
+}
+
+root_type PredictRequest;

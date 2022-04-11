@@ -462,6 +462,7 @@ class DatasetOpsTestBase : public ::testing::Test {
   FunctionLibraryRuntime* flr_;  // Owned by `pflr_`.
   std::unique_ptr<FunctionHandleCache> function_handle_cache_;
   std::function<void(std::function<void()>)> runner_;
+  std::function<void(std::function<void()>, int64)> cost_runner_;
   std::unique_ptr<FunctionLibraryDefinition> lib_def_;
   std::unique_ptr<ResourceMgr> resource_mgr_;
   std::unique_ptr<OpKernelContext::Params> params_;

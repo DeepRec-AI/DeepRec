@@ -1,0 +1,15 @@
+## generate flatbuffer files
+
+flatc -p ./request.fbs 
+
+## generate protobuf files
+
+cd pb
+
+protoc --python_out=./ ./tf_request.proto
+
+## perf
+
+cd ..
+
+python ./perf.py

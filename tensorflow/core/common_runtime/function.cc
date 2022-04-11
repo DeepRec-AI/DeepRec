@@ -382,6 +382,7 @@ class FunctionLibraryRuntimeImpl : public FunctionLibraryRuntime {
   const CustomKernelCreator* custom_kernel_creator_;
   const SessionMetadata* const session_metadata_;
   Executor::Args::Runner default_runner_;
+  Executor::Args::CostRunner default_cost_runner_;
   const string device_name_;
 
   std::function<Status(const string&, const OpDef**)> get_func_sig_;
@@ -458,6 +459,7 @@ FunctionLibraryRuntimeImpl::FunctionLibraryRuntimeImpl(
       custom_kernel_creator_(custom_kernel_creator),
       session_metadata_(session_metadata),
       default_runner_(nullptr),
+      default_cost_runner_(nullptr),
       device_name_(device_ == nullptr
                        ? ProcessFunctionLibraryRuntime::kDefaultFLRDevice
                        : device_->name()),
@@ -480,6 +482,13 @@ FunctionLibraryRuntimeImpl::FunctionLibraryRuntimeImpl(
   if (pool != nullptr) {
     default_runner_ = [pool](Executor::Args::Closure c) {
       pool->Schedule(std::move(c));
+    };
+    default_cost_runner_ = [pool](Executor::Args::Closure c, int64 cost) {
+      if (cost < 1) {
+        pool->Schedule(std::move(c));
+      } else {
+        pool->CostSchedule(std::move(c), cost);
+      }
     };
   }
 }
@@ -1001,6 +1010,12 @@ void FunctionLibraryRuntimeImpl::ExecutorArgsFromOptions(
   } else {
     exec_args->runner = default_runner_;
   }
+  if (run_opts.cost_runner) {
+    exec_args->cost_runner = *run_opts.cost_runner;
+  } else {
+    exec_args->cost_runner = default_cost_runner_;
+  }
+
   exec_args->collective_executor = run_opts.collective_executor;
   exec_args->call_frame = frame;
 }
@@ -1134,6 +1149,11 @@ void FunctionLibraryRuntimeImpl::Run(const Options& opts, Handle handle,
   }
   DCHECK(run_opts.runner != nullptr);
 
+  if (run_opts.cost_runner == nullptr) {
+    run_opts.cost_runner = &default_cost_runner_;
+  }
+  DCHECK(run_opts.cost_runner != nullptr);
+
   Item* item = nullptr;
   Status s = GetOrCreateItem(local_handle, &item);
   if (!s.ok()) {
@@ -1223,6 +1243,11 @@ void FunctionLibraryRuntimeImpl::Run(const Options& opts, Handle handle,
     run_opts.runner = &default_runner_;
   }
   DCHECK(run_opts.runner != nullptr);
+
+  if (run_opts.cost_runner == nullptr) {
+    run_opts.cost_runner = &default_cost_runner_;
+  }
+  DCHECK(run_opts.cost_runner != nullptr);
 
   Executor::Args exec_args;
   ExecutorArgsFromOptions(run_opts, frame, &exec_args);

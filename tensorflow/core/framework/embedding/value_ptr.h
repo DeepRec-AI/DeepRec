@@ -7,8 +7,6 @@
 #include <memory>
 
 #include "tensorflow/core/framework/typed_allocator.h"
-#include "leveldb/db.h"
-#include "leveldb/comparator.h"
 
 namespace tensorflow {
 
@@ -16,12 +14,12 @@ enum class LayoutType {
   LIGHT,
   NORMAL,
   LEVELDB,
-  NORMAL_FIX
+  NORMAL_CONTIGUOUS
 };
 
 namespace {
 constexpr int COLUMN_BITSET_BYTES = 5;
-constexpr int COLUMN_BITSET_SIZE = COLUMN_BITSET_BYTES * sizeof(char);
+constexpr int COLUMN_BITSET_SIZE = COLUMN_BITSET_BYTES * 8;
 
 struct MetaHeader {
   unsigned char embed_num;
@@ -199,8 +197,11 @@ class ValuePtr {
 
     if (!metadata.test(emb_index)) {
       while(flag_.test_and_set(std::memory_order_acquire));
-      if (metadata.test(emb_index))
+      metadata = meta->GetColumnBitset();
+      if (metadata.test(emb_index)){
+        flag_.clear(std::memory_order_release);
         return ((V**)((int64*)ptr_ + (unsigned int)meta->header_size))[emb_index];
+      }
       embnum++ ;
       int64 alloc_value_len = value_len;
       V* tensor_val = (V*)allocator->AllocateRaw(0/*alignemnt unused*/, sizeof(V) * alloc_value_len);
@@ -284,7 +285,7 @@ class ValuePtr {
 template <class V>
 class LightValuePtr : public ValuePtr<V> {
  public:
-  LightValuePtr(size_t size) {
+  LightValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(LightHeader) + sizeof(int64) * size);
     memset(this->ptr_ + sizeof(LightHeader), 0, sizeof(int64) * size);
     new ((char*)this->ptr_) LightHeader();
@@ -298,7 +299,7 @@ class LightValuePtr : public ValuePtr<V> {
 template <class V>
 class NormalValuePtr : public ValuePtr<V> {
  public:
-  NormalValuePtr(size_t size) {
+  NormalValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(NormalHeader) + sizeof(int64) * size);
     memset(this->ptr_ + sizeof(NormalHeader), 0, sizeof(int64) * size);
     new ((char*)this->ptr_) NormalHeader();

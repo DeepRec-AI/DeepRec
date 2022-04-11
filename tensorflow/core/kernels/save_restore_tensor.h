@@ -22,6 +22,8 @@ limitations under the License.
 #include "tensorflow/core/framework/hash_table/tensible_variable.h"
 #include "tensorflow/core/framework/hash_table/hash_table.h"
 #include "tensorflow/core/framework/hash_table/bloom_filter_strategy.h"
+#include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/value_ptr.h"
 
 namespace tensorflow {
 
@@ -112,8 +114,15 @@ class DumpIterator {
 };
 
 template<typename T>
-Status SaveTensorWithFixedBuffer(const string& tensor_name, BundleWriter* writer, char* dump_buffer, size_t bytes_limit,
-    DumpIterator<T>* dump_iter, const TensorShape& dump_tensor_shape, bool use_shape = true) {
+Status SaveTensorWithFixedBuffer(const string& tensor_name,
+    BundleWriter* writer,
+    char* dump_buffer,
+    size_t bytes_limit,
+    DumpIterator<T>* dump_iter,
+    const TensorShape& dump_tensor_shape,
+    embedding::Iterator* it = nullptr,
+    bool is_key = true,
+    bool use_shape = true) {
   bool dump_happened = false;
   size_t bytes_written = 0;
   int buffer_idx = 0;
@@ -137,6 +146,45 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name, BundleWriter* writer
     buffer_idx++;
     bytes_written += sizeof(T);
     total_bytes_written += sizeof(T);
+  }
+  if (it != nullptr) {
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      std::string value_str;
+      int64 dim = 0;
+      void* start = nullptr;
+      if (is_key) {
+        value_str = it->Key();
+
+        if (bytes_written + sizeof(T) > bytes_limit) {
+          dump_happened = true;
+          writer->AppendSegmentData(dump_buffer, bytes_written);
+          bytes_written = 0;
+          buffer_idx = 0;
+        }
+        key_dump_buffer[buffer_idx] = *((T*)&value_str[0]);
+        buffer_idx++;
+        bytes_written += sizeof(T);
+        total_bytes_written += sizeof(T);
+
+      } else {
+        value_str = it->Value();
+        dim = dump_tensor_shape.dim_size(1);
+        start = &value_str[0] + sizeof(FixedLengthHeader);
+
+        for (int j = 0; j < dim; ++j) {
+          if (bytes_written + sizeof(T) > bytes_limit) {
+            dump_happened = true;
+            writer->AppendSegmentData(dump_buffer, bytes_written);
+            bytes_written = 0;
+            buffer_idx = 0;
+          }
+          key_dump_buffer[buffer_idx] = *((T*)start + j);
+          buffer_idx++;
+          bytes_written += sizeof(T);
+          total_bytes_written += sizeof(T);
+        }
+      }
+    }
   }
   if (!dump_happened) {
     VLOG(1) << tensor_name << " only one buffer written, size:" << bytes_written;

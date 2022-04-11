@@ -693,6 +693,7 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/util/tensor_bundle",
+        "@com_github_google_leveldb//:leveldb",
     ],
 )
 
@@ -3488,7 +3489,9 @@ tf_kernel_library(
 tf_kernel_library(
     name = "save_restore_v2_ops",
     prefix = "save_restore_v2_ops",
-    deps = SAVE_RESTORE_DEPS + [":incr_save_restore_ops"],
+    copts = ["-g"],
+    deps = SAVE_RESTORE_DEPS + [":incr_save_restore_ops",
+        "@com_github_google_leveldb//:leveldb",]
 )
 
 tf_kernel_library(
