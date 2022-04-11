@@ -8,10 +8,20 @@
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-base-cpu-py36-ubuntu18.04
 ```
 
+Docker Hub repository
+```
+alideeprec/deeprec-base:deeprec-base-cpu-py36-ubuntu18.04
+```
+
 **GPU(cuda11.0) Base Docker Image**
 
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-base-gpu-py36-cu110-ubuntu18.04
+```
+
+Docker Hub repository
+```
+alideeprec/deeprec-base:deeprec-base-gpu-py36-cu110-ubuntu18.04
 ```
 
 **CPU Dev Docker (with bazel cache)**
@@ -20,10 +30,20 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-base-g
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-py36-ubuntu18.04
 ```
 
+Docker Hub repository
+```
+alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
+```
+
 **GPU(cuda11.0) Dev Docker (with bazel cache)**
 
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04
+```
+
+Docker Hub repository
+```
+alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 ```
 
 ## 代码编译
@@ -76,10 +96,20 @@ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-gpu-py36-cu110-ubuntu18.04
 ```
 
+Docker Hub repository
+```
+alideeprec/deeprec-release:deeprec2204-gpu-py36-cu110-ubuntu18.04
+```
+
 **CPU镜像**
 
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-cpu-py36-ubuntu18.04
+```
+
+Docker Hub repository
+```
+alideeprec/deeprec-release:deeprec2204-cpu-py36-ubuntu18.04
 ```
 
 ## Estimator编译&打包
