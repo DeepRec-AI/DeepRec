@@ -26,10 +26,10 @@ limitations under the License.
 #include "tensorflow/core/graph/template_select_pruning_else_const.h"
 #include "tensorflow/core/graph/template_select_pruning_then_const.h"
 #include "tensorflow/core/graph/template_sparse_inner_flatten.h"
-
 namespace tensorflow {
 
 bool OptimizeFusion(Graph* g) {
+
   bool changed = false;
   std::vector<std::unique_ptr<TemplateBase>> templates;
   templates.emplace_back(new TemplateSparseInnerFlatten());
@@ -46,6 +46,7 @@ bool OptimizeFusion(Graph* g) {
 		    new OptimizerFusionImpl(g, t.get()));
     changed |= opt->Optimize();
   }
+
   return changed;
 }
 
