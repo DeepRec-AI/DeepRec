@@ -20,7 +20,9 @@ private:
                     const TempNode* temp_node);
   bool CheckInputs(const Node* node,
                    const TempNode* temp_node);
- private:
+  bool CheckMatchedNodeInSameFrame();
+
+private:
   Graph* g_;
   TemplateBase* t_;
   std::map<const std::string, TempNode> temp_node_map_;
@@ -36,6 +38,7 @@ private:
   int dynamic_input_port_cur_;
   std::vector<std::vector<const Edge*>> fused_op_outputs_dynamic_;
   std::vector<const Edge*> fused_op_input_dynamic_;
+  std::map<const Node *, std::string> node_frame_map_;
 };
 
 }
