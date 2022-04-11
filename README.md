@@ -47,10 +47,10 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cp
 
 GPU Platform
 
-
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 ```
+
 ### **How to Build**
 
 configure
