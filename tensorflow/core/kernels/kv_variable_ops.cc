@@ -935,6 +935,7 @@ REGISTER_KERNELS_ALL_INDEX(float);
 
 
 #if GOOGLE_CUDA
+#if CUDA_ATOMIC
 
 #define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
   REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
@@ -1011,7 +1012,9 @@ class InitializeKvVariableOpGPU : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
 
     OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
-    
+
+    OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
+
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim", &default_value_dim_));
 
     int64 storage_type = 0;
@@ -1052,9 +1055,6 @@ class InitializeKvVariableOpGPU : public OpKernel {
 
     EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
 
-    const Tensor& slotnum_tensor = context->input(4);
-    int64 slotnum = slotnum_tensor.scalar<int64>()();
-
     if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
 
@@ -1062,17 +1062,17 @@ class InitializeKvVariableOpGPU : public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, slotnum, context,
+            [this, default_values, opname, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
               GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context->get_allocator(AllocatorAttributes()));
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
                          ht, context->get_allocator(AllocatorAttributes()),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum, opname + "-primary",
+                                         block_num_, slot_num_, opname + "-primary",
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_,
-                                         counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         counter_type_, default_value_dim_));
             return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -1082,18 +1082,18 @@ class InitializeKvVariableOpGPU : public OpKernel {
        context,
        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
            context, handle_primary, &primary_variable,
-           [this, default_values, opname, slotnum, context,
+           [this, default_values, opname, context,
             handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context->get_allocator(AllocatorAttributes()));
              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
                         ht, context->get_allocator(AllocatorAttributes()),
                         EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slotnum, opname + "-primary",
+                                        block_num_, slot_num_, opname + "-primary",
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_,
-                                        counter_type_, storage_type_, storage_path_));
+                                        counter_type_));
              return (*ptr)->Init(default_values, default_value_dim_);
            }));
 
@@ -1102,18 +1102,17 @@ class InitializeKvVariableOpGPU : public OpKernel {
         context,
         LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
             context, handle_self, &ev,
-            [this, default_values, opname, primary_variable, slotnum, context,
+            [this, default_values, opname, primary_variable, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
                          primary_variable->kv(), context->get_allocator(AllocatorAttributes()),
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slotnum, opname,
+                                         block_num_, slot_num_, opname,
                                          steps_to_live_, 0,
                                          max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, storage_type_, storage_path_, default_value_dim_));
+                                         layout_, 0, -1.0, counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
-      primary_variable->SetSlotNum(slotnum);
       core::ScopedUnref unref_me(primary_variable);
     }
     core::ScopedUnref unref_me(ev);
@@ -1130,6 +1129,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
   int64 emb_index_;
   int64 block_num_;
   int64 slot_index_;
+  int64 slot_num_;
   std::string ht_type_;
   int64 ht_partition_num_;
   int64 filter_freq_;
@@ -1147,8 +1147,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
   REGISTER_KERNEL_BUILDER(Name("InitializeKvVariableOp")             \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<ktype>("Tkeys")        \
-                              .TypeConstraint<vtype>("dtype")        \
-                              .HostMemory("slotnum"),                \
+                              .TypeConstraint<vtype>("dtype"),       \
                           InitializeKvVariableOpGPU<ktype, vtype>);
 #define REGISTER_GPU_KERNELS(T)        \
   REGISTER_KERNELS(int32, T);     \
@@ -1289,6 +1288,7 @@ REGISTER_KERNELS_ALL_INDEX(float);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
+#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow

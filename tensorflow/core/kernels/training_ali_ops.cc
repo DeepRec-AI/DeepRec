@@ -169,6 +169,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+#if CUDA_ATOMIC
 template <class K, class V>
 Status GetInputEmbeddingVarGPU(OpKernelContext* ctx, int input,
                             EmbeddingVarGPU<K, V>** var) {
@@ -287,6 +288,7 @@ TF_CALL_float(REGISTER_GPU_KERNELS);
 
 #undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
+#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
@@ -494,6 +496,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+#if CUDA_ATOMIC
 template <typename Device, typename TKey, typename T, bool has_l2_shrinkage>
 class KvSparseApplyFtrlOpGPU : public OpKernel {
  public:
@@ -669,6 +672,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
+#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.

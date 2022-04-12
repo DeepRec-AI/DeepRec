@@ -20,13 +20,16 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/platform/types.h"
 #if GOOGLE_CUDA
+#if CUDA_ATOMIC
 #include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
+#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
 namespace functor {
 
 #if GOOGLE_CUDA
+#if CUDA_ATOMIC
 template <typename Device, typename TKey, typename T>
 struct KvSparseApplyAdagrad {
   void operator()(int32 num_items,
@@ -57,6 +60,7 @@ struct KvSparseApplyFtrl {
                   T l2_shrinkage,
                   cudaStream_t stream);
 };
+#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA
 
 template <typename Device, typename T>

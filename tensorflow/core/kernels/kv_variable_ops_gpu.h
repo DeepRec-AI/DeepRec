@@ -16,6 +16,9 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_
 #define TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_
 
+#if GOOGLE_CUDA
+#if CUDA_ATOMIC
+
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/typed_allocator.h"
@@ -246,6 +249,10 @@ class EmbeddingVarGPU : public ResourceBase {
     emb_config_.slot_num = slot_num;
   }
 
+  int64 GetSlotNum() {
+    return emb_config_.slot_num;
+  }
+
   V* GetDefaultValuePtr() {
     return default_value_;
   }
@@ -284,5 +291,8 @@ class EmbeddingVarGPU : public ResourceBase {
 };
 
 }  // namespace tensorflow
+
+#endif  // CUDA_ATOMIC
+#endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_

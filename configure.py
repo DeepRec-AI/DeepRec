@@ -1050,6 +1050,17 @@ def set_other_cuda_vars(environ_cp):
     write_to_bazelrc('build --config=cuda_clang')
   else:
     write_to_bazelrc('build --config=cuda')
+  # CUDA atomic for GPU EV
+  is_cuda_atomic = False
+  capabilities_str = environ_cp['TF_CUDA_COMPUTE_CAPABILITIES']
+  capabilities = capabilities_str.split(",")
+  for capability in capabilities:
+    parts = capability.split(".")
+    if int(parts[0]) >= 7 or (int(parts[0]) >= 6 and is_linux()):
+      is_cuda_atomic = True
+      break
+  if is_cuda_atomic:
+    write_to_bazelrc('build --copt="-DCUDA_ATOMIC=1"')
 
 
 def set_host_cxx_compiler(environ_cp):
