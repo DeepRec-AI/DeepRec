@@ -14,7 +14,9 @@ limitations under the License.
 ==============================================================================*/
 
 #define EIGEN_USE_THREADS
+#if GOOGLE_CUDA
 #define EIGEN_USE_GPU
+#endif  // GOOGLE_CUDA
 #include "tensorflow/core/lib/bfloat16/bfloat16.h"
 
 #include <algorithm>
