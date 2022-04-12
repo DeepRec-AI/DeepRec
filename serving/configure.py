@@ -43,22 +43,20 @@ def write_config():
                 if argv == "--mkl":
                     print("Bazel will build with --mkl")
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
-                    bazel_rc.write("build -c opt\n")
                 elif argv == "--mkl_open_source_only":
                     print("Bazel will build with --mkl_open_source_only\n")
                     bazel_rc.write("build --define=build_with_mkl_dnn_only=true\n")
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
-                    bazel_rc.write("build -c opt\n")
                 elif argv == "--mkl_open_source_v1_only":
                     print("Bazel will build with --mkl_open_source_v1_only\n")
                     bazel_rc.write("build --define=build_with_mkl_dnn_v1_only=true\n")
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
-                    bazel_rc.write("build -c opt\n")
                 elif argv == "--mkl_threadpool":
                     print("Bazel will build with --mkl_threadpool\n")
                     bazel_rc.write("build --define=build_with_mkldnn_threadpool=true\n")
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
-                    bazel_rc.write("build -c opt\n")
+
+            bazel_rc.write("build -c opt\n")
 
             # Enable platform specific config
             # bazel_rc.write('build --enable_platform_specific_config\n')
