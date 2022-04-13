@@ -15,7 +15,6 @@
  */
 
 #if GOOGLE_CUDA
-#if CUDA_ATOMIC
 
 #define EIGEN_USE_GPU
 
@@ -432,5 +431,4 @@ template struct functor::KvEmbGetSnapshot<GPUDevice, int64, double>;
 
 }  // namespace tensorflow
 
-#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA

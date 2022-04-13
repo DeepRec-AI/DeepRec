@@ -14,12 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #if GOOGLE_CUDA
-#if CUDA_ATOMIC
 
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/framework/register_types.h"
-#include "tensorflow/core/kernels/training_ali_ops.h"
+#include "tensorflow/core/kernels/training_ali_ops_gpu.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace tensorflow {
@@ -281,5 +280,4 @@ template struct functor::KvSparseApplyFtrl<GPUDevice, int64, double>;
 
 }  // end namespace tensorflow
 
-#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA

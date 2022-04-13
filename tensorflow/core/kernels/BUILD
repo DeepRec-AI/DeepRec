@@ -6124,8 +6124,15 @@ tf_cc_test(
 
 tf_kernel_library(
     name = "training_ali_ops",
-    prefix = "training_ali_ops",
-    hdrs = ["training_ali_op_helpers.h"],
+    hdrs = [
+        "training_ali_ops.h",
+        "training_ali_op_helpers.h"
+    ],
+    srcs = ["training_ali_ops.cc"],
+    gpu_srcs = [
+        "training_ali_ops_gpu.cu.cc",
+        "training_ali_ops_gpu.h",
+    ],
     deps = [
         ":bounds_check",
         ":training_op_helpers",

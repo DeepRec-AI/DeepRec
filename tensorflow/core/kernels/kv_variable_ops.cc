@@ -935,7 +935,6 @@ REGISTER_KERNELS_ALL_INDEX(float);
 
 
 #if GOOGLE_CUDA
-#if CUDA_ATOMIC
 
 #define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
   REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
@@ -1288,7 +1287,6 @@ REGISTER_KERNELS_ALL_INDEX(float);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
-#endif  // CUDA_ATOMIC
 #endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow

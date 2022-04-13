@@ -19,49 +19,9 @@ limitations under the License.
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/platform/types.h"
-#if GOOGLE_CUDA
-#if CUDA_ATOMIC
-#include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
-#endif  // CUDA_ATOMIC
-#endif  // GOOGLE_CUDA
 
 namespace tensorflow {
 namespace functor {
-
-#if GOOGLE_CUDA
-#if CUDA_ATOMIC
-template <typename Device, typename TKey, typename T>
-struct KvSparseApplyAdagrad {
-  void operator()(int32 num_items,
-                  Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
-                  const TKey* key_base,
-                  const T* grad,
-                  T lr,
-                  int64 gs,
-                  cudaStream_t stream);
-};
-
-template <typename Device, typename TKey, typename T>
-struct KvSparseApplyFtrl {
-  void operator()(int32 num_items,
-                  Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
-                  EmbeddingVarGPU<TKey, T>* linear,
-                  const TKey* key_base,
-                  const T* grad,
-                  T lr,
-                  T l1,
-                  T l2,
-                  T lr_power,
-                  bool has_l2_shrinkage,
-                  T l2_shrinkage,
-                  cudaStream_t stream);
-};
-#endif  // CUDA_ATOMIC
-#endif  // GOOGLE_CUDA
 
 template <typename Device, typename T>
 struct ApplyAdagradDecay {
