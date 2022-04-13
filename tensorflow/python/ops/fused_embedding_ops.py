@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import tensorflow
 from tensorflow.python.framework.constant_op import constant
+from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops import array_ops
@@ -47,7 +48,7 @@ def fused_embedding_lookup_sparse(params,
     if partition_nums != 1:
       raise ValueError("For EmbeddingVariable, do not support partition now")
     # fake shape for now. TBD change in the future
-    partition_shapes = [constant([1, 1], dtype=tensorflow.int64)]
+    partition_shapes = [constant([1, 1], dtype=dtypes.int64)]
   else:
     partition_shapes = [w.shape for w in params]
 
@@ -63,6 +64,10 @@ def fused_embedding_lookup_sparse(params,
           default_id=default_id,
           prune_invalid_id=bool(prune_invalid_ids)
       )
+
+    # fixme(marvin): ple align the meaning between pre & post op.
+    default_id = 0 if default_id is None else default_id
+
     emb_shards = []
     for i in range(partition_nums):
       param = params[i]
