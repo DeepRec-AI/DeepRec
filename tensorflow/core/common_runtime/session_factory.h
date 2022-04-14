@@ -26,6 +26,7 @@ limitations under the License.
 namespace tensorflow {
 
 class Session;
+class SessionGroup;
 struct SessionOptions;
 
 class SessionFactory {
@@ -35,6 +36,10 @@ class SessionFactory {
   // *out_session if this returns Status::OK().
   virtual Status NewSession(const SessionOptions& options,
                             Session** out_session) = 0;
+
+  virtual Status NewSessionGroup(const SessionOptions& options,
+                                 SessionGroup** out_session_group,
+                                 int session_num) = 0;
 
   virtual bool AcceptsOptions(const SessionOptions& options) = 0;
 

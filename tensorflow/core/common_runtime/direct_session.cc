@@ -194,12 +194,70 @@ class DirectSessionFactory : public SessionFactory {
         options, "/job:localhost/replica:0/task:0", &devices));
 
     DirectSession* session =
-        new DirectSession(options, new DeviceMgr(std::move(devices)), this);
+        new DirectSession(options, new DeviceMgr(std::move(devices)), true, this);
     {
       mutex_lock l(sessions_lock_);
       sessions_.push_back(session);
     }
     *out_session = session;
+    return Status::OK();
+  }
+
+  Status NewSessionGroup(const SessionOptions& options,
+                         SessionGroup** out_session_group,
+                         int session_num = 1) {
+    if (session_num < 1) {
+      return errors::InvalidArgument(
+          "Must specify session_num of NewSessionGroup");
+    }
+
+    const auto& experimental_config = options.config.experimental();
+    if (experimental_config.has_session_metadata()) {
+      if (experimental_config.session_metadata().version() < 0) {
+        return errors::InvalidArgument(
+            "Session version shouldn't be negative: ",
+            experimental_config.session_metadata().DebugString());
+      }
+      const string key = GetMetadataKey(experimental_config.session_metadata());
+      mutex_lock l(sessions_lock_);
+      if (!session_metadata_keys_.insert(key).second) {
+        return errors::InvalidArgument(
+            "A session with the same name and version has already been "
+            "created: ",
+            experimental_config.session_metadata().DebugString());
+      }
+    }
+
+    // Must do this before the CPU allocator is created.
+    if (options.config.graph_options().build_cost_model() > 0) {
+      EnableCPUAllocatorFullStats(true);
+    }
+    std::vector<std::unique_ptr<Device>> devices;
+    TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
+        options, "/job:localhost/replica:0/task:0", &devices));
+
+    DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
+
+    SessionGroup* session_group = new SessionGroup();
+    DirectSession* leader_session =
+        new DirectSession(options, device_mgr, true, this);
+    session_group->CreateLeaderSession(leader_session);
+    for (int i = 1; i < session_num; ++i) {
+      DirectSession* follower_session =
+          new DirectSession(options, device_mgr, false, this);
+      session_group->CreateFollowerSession(follower_session);
+      {
+        mutex_lock l(sessions_lock_);
+        sessions_.push_back(follower_session);
+      }
+    }
+
+    {
+      mutex_lock l(sessions_lock_);
+      sessions_.push_back(leader_session);
+    }
+    *out_session_group = session_group;
+
     return Status::OK();
   }
 
@@ -310,8 +368,10 @@ bool DirectSession::ShouldUseRunHandlerPool(
 
 DirectSession::DirectSession(const SessionOptions& options,
                              const DeviceMgr* device_mgr,
+                             bool owd_device_mgr,
                              DirectSessionFactory* const factory)
     : options_(options),
+      own_device_mgr_(owd_device_mgr),
       device_mgr_(device_mgr),
       factory_(factory),
       cancellation_manager_(new CancellationManager()),
@@ -398,6 +458,10 @@ DirectSession::~DirectSession() {
 
   execution_state_.reset(nullptr);
   flib_def_.reset(nullptr);
+
+  if (own_device_mgr_) {
+    delete device_mgr_;
+  }
 }
 
 Status DirectSession::Create(const GraphDef& graph) {
@@ -523,7 +587,7 @@ Status DirectSession::RunInternal(
                             executor_step_count, &debugger_state));
   }
 
-  run_state.rendez = new IntraProcessRendezvous(device_mgr_.get());
+  run_state.rendez = new IntraProcessRendezvous(device_mgr_);
 #ifndef __ANDROID__
   // Set up for collectives if ExecutorsAndKeys declares a key.
   if (executors_and_keys->collective_graph_key !=
@@ -543,13 +607,13 @@ Status DirectSession::RunInternal(
     }
     if (!collective_executor_mgr_) {
       std::unique_ptr<DeviceResolverInterface> drl(
-          new DeviceResolverLocal(device_mgr_.get()));
+          new DeviceResolverLocal(device_mgr_));
       std::unique_ptr<ParamResolverInterface> cprl(
-          new CollectiveParamResolverLocal(options_.config, device_mgr_.get(),
+          new CollectiveParamResolverLocal(options_.config, device_mgr_,
                                            drl.get(),
                                            "/job:localhost/replica:0/task:0"));
       collective_executor_mgr_.reset(new CollectiveExecutorMgr(
-          options_.config, device_mgr_.get(), std::move(drl), std::move(cprl)));
+          options_.config, device_mgr_, std::move(drl), std::move(cprl)));
     }
     run_state.collective_executor.reset(new CollectiveExecutor::Handle(
         collective_executor_mgr_->FindOrCreate(step_id), true /*inherit_ref*/));
@@ -947,7 +1011,7 @@ Status DirectSession::PRunSetup(const std::vector<string>& input_names,
   args.step_id = step_id_counter_.fetch_add(1);
   RunState* run_state =
       new RunState(input_names, output_names, args.step_id, &devices_);
-  run_state->rendez = new IntraProcessRendezvous(device_mgr_.get());
+  run_state->rendez = new IntraProcessRendezvous(device_mgr_);
   {
     mutex_lock l(executor_lock_);
     if (!partial_runs_
@@ -1332,7 +1396,7 @@ Status DirectSession::CreateExecutors(
           ? &options_.config.experimental().session_metadata()
           : nullptr;
   func_info->proc_flr.reset(new ProcessFunctionLibraryRuntime(
-      device_mgr_.get(), options_.env, graph_def_version,
+      device_mgr_, options_.env, graph_def_version,
       func_info->flib_def.get(), optimizer_opts, thread_pools_[0].first,
       nullptr, nullptr, session_metadata));
 

@@ -42,6 +42,10 @@ struct ModelConfig {
   int shard_instance_count = 0;
   bool shard_embedding = false;
   std::vector<std::string> shard_embedding_names;
+
+  // session num of session group,
+  // default num is 1
+  int session_num = 1;
 };
 
 class ModelConfigFactory {

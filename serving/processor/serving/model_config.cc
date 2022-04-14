@@ -54,6 +54,13 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
 
   *config = new ModelConfig;
 
+  if (!json_config["session_num"].isNull()) {
+    (*config)->session_num =
+      json_config["session_num"].asInt();
+  } else {
+    (*config)->session_num = 1;
+  }
+
   bool enable_inline_execute = false;
   if (!json_config["enable_inline_execute"].isNull()) {
     enable_inline_execute = json_config["enable_inline_execute"].asBool();
