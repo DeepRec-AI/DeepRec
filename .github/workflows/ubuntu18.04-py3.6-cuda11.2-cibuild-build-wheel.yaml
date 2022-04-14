@@ -44,7 +44,7 @@ jobs:
 
     - name: Build Wheel
       run:
-        docker exec ${JOBNAME} /mnt/cibuild/build-cpu.sh /mnt
+        docker exec ${JOBNAME} /mnt/cibuild/build-gpu.sh /mnt
 
     - name:  Remove Container
       if: ${{ always() }}
