@@ -13,6 +13,7 @@
 namespace tensorflow {
 class SessionOptions;
 class RunOptions;
+class SessionGroup;
 class Session;
 class Tensor;
 
@@ -21,17 +22,18 @@ class IFeatureStoreMgr;
 class Request;
 class Response;
 struct ModelSession {
-  ModelSession(Session* s, const Version& version,
+  ModelSession(SessionGroup* s, const Version& version,
       IFeatureStoreMgr* sparse_storage);
-  ModelSession(Session* s, const Version& version);
+  ModelSession(SessionGroup* s, const Version& version);
   virtual ~ModelSession();
 
   Status Predict(Request& req, Response& resp);
   Status LocalPredict(Request& req, Response& resp);
   Version GetVersion() {return version_;}
   void UpdateVersion(const Version& v) { version_ = v; }
+  Session* GetSession();
 
-  Session* session_ = nullptr;
+  SessionGroup* session_group_ = nullptr;
   //IFeatureStoreMgr* sparse_storage_ = nullptr;
   
   std::string sparse_storage_name_;
@@ -85,6 +87,9 @@ class ModelSessionMgr {
 
  private:
   virtual Status CreateSession(Session** sess);
+  virtual Status CreateSessionGroup(
+      SessionGroup** session_group, ModelConfig* config);
+ 
   virtual Status RunRestoreOps(
       const char* ckpt_name, int64 full_ckpt_version,
       const char* savedmodel_dir, Session* session,

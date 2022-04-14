@@ -484,6 +484,13 @@ class GrpcSessionFactory : public SessionFactory {
     return Status::OK();
   }
 
+  Status NewSessionGroup(const SessionOptions& options,
+                         SessionGroup** out_session_group,
+                         int session_num = 1) {
+    return errors::Internal(
+        "NewSessionGroup method not implemented in GrpcSessionFactory.");
+  }
+
   // Invokes the session specific static method to reset containers.
   Status Reset(const SessionOptions& options,
                const std::vector<string>& containers) override {

@@ -27,6 +27,9 @@ ModelConfig CreateValidModelConfig() {
   config.oss_endpoint = "";
   config.oss_access_id = "";
   config.oss_access_key = "";
+
+  config.session_num = 1;
+
   return config;
 }
 }
@@ -180,8 +183,16 @@ class TestableModelSessionMgr : public ModelSessionMgr {
       SessionOptions* sess_options, RunOptions* run_options) :
     ModelSessionMgr(meta_graph_def, sess_options, run_options) {}
 
-  Status CreateSession(Session** sess) override {
-    *sess = new FakeSession();
+  Status CreateSessionGroup(SessionGroup** sess_group, 
+      ModelConfig* config) override {
+    int session_num = config->session_num;
+    *sess_group = new SessionGroup();
+    if (session_num > 0) {
+      (*sess_group)->CreateLeaderSession(new FakeSession());
+      for (int i = 1; i < session_num; ++i) {
+        (*sess_group)->CreateFollowerSession(new FakeSession());
+      }
+    }
     return Status::OK();
   }
 
@@ -194,13 +205,14 @@ class TestableModelSessionMgr : public ModelSessionMgr {
   }
 
   void AddModelSession(IFeatureStoreMgr* sparse_storage) {
-    Session* sess = nullptr;
-    CreateSession(&sess);
-    sessions_.emplace_back(new ModelSession(sess, Version(), sparse_storage));
+    SessionGroup* sess_group = nullptr;
+    ModelConfig config;
+    CreateSessionGroup(&sess_group, &config);
+    sessions_.emplace_back(new ModelSession(sess_group, Version(), sparse_storage));
   }
 
   void* GetServingSession() {
-    return serving_session_;
+    return serving_session_->GetSession();
   }
 
   Status RunRestoreOps(

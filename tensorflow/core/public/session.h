@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_PUBLIC_SESSION_H_
 #define TENSORFLOW_CORE_PUBLIC_SESSION_H_
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -267,6 +268,104 @@ class Session {
   }
 };
 
+class SessionGroup {
+ public:
+  ~SessionGroup() {
+    for (int32_t i = 1; i < session_num_; ++i) {
+      if (sessions_[i]) delete sessions_[i];
+    }
+    if (sessions_[0]) delete sessions_[0];
+  }
+
+  int32_t GetSessionNum() const {
+    return session_num_;
+  }
+
+  Status CreateLeaderSession(Session* leader_session) {
+    if (session_num_ > 0) {
+      return errors::AlreadyExists("Leader session is already existed.");
+    }
+    sessions_.emplace_back(leader_session);
+    ++session_num_;
+    return Status::OK();
+  }
+
+  Status CreateFollowerSession(Session* follower_session) {
+    if (session_num_ < 1) {
+      return errors::NotFound(
+          "Leader session is not created, please create it firstly.");
+    }
+    sessions_.emplace_back(follower_session);
+    ++session_num_;
+    return Status::OK();
+  }
+
+  Session* GetLeaderSession() {
+    return sessions_[0];
+  }
+
+  Status Create(const GraphDef& graph) {
+    for (auto sess : sessions_) {
+      Status s = sess->Create(graph);
+      if (!s.ok()) return s;
+    }
+    return Status::OK();
+  }
+
+  Status Run(const std::vector<std::pair<string, Tensor> >& inputs,
+             const std::vector<string>& output_tensor_names,
+             const std::vector<string>& target_node_names,
+             std::vector<Tensor>* outputs, int32_t session_id = -1) {
+    int32_t id = 0;
+    if (session_num_ > 1) {
+      Status s = GetServingSessionId(&id, session_id);
+      if (!s.ok()) return s;
+    }
+    return sessions_[id]->Run(inputs, output_tensor_names,
+                              target_node_names, outputs);
+  }
+
+  Status Run(const RunOptions& run_options,
+             const std::vector<std::pair<string, Tensor> >& inputs,
+             const std::vector<string>& output_tensor_names,
+             const std::vector<string>& target_node_names,
+             std::vector<Tensor>* outputs, RunMetadata* run_metadata,
+             int32_t session_id = -1) {
+    int32_t id = 0;
+    if (session_num_ > 1) {
+      Status s = GetServingSessionId(&id, session_id);
+      if (!s.ok()) return s;
+    }
+    return sessions_[id]->Run(run_options, inputs, output_tensor_names,
+                              target_node_names, outputs, run_metadata);
+  }
+
+ private:
+  // sessions_[0] is leader session which own resource,
+  // and others are follower sessions who
+  // will reuse leader's resource.
+  std::vector<Session*> sessions_;
+  int32_t session_num_ = 0;
+  std::atomic<int64_t> serving_index_{0};
+
+  Status GetServingSessionId(int32_t* serving_id, int32_t hint_id = -1) {
+    *serving_id = 0;
+    if (hint_id > 0) {
+      if (hint_id >= session_num_) {
+        return errors::InvalidArgument(
+            "Specified session in session group not existed, user specified session_id is ",
+            hint_id, ", total session_num is ", session_num_);
+      }
+      *serving_id = hint_id;
+    } else {
+      *serving_id = serving_index_.fetch_add(1);
+      *serving_id %= session_num_;
+    }
+
+    return Status::OK();
+  }
+};
+
 /// \brief Create a new session with the given options.
 ///
 /// If session creation succeeds, the new `Session` will be stored in
@@ -274,6 +373,10 @@ class Session {
 /// `*out_session`, and this function will return `OK()`. Otherwise, this
 /// function will return an error status and set *out_session to nullptr.
 Status NewSession(const SessionOptions& options, Session** out_session);
+
+Status NewSessionGroup(const SessionOptions& options,
+                       SessionGroup** out_session_group,
+                       int session_num = 1);
 
 /// \brief Resets resource containers associated with a target.
 ///
