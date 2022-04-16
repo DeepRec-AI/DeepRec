@@ -2824,6 +2824,10 @@ tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc"],
+    gpu_srcs = [
+        "kv_variable_ops_gpu.cu.cc",
+        "kv_variable_ops_gpu.h",
+    ],
     copts = ["-g"],
     nocopts = "-fno-exceptions",
     deps = [
@@ -2843,6 +2847,7 @@ tf_kernel_library(
         "@sparsehash_c11//:dense_hash_map",
         "@libcuckoo//:libcuckoo",
         "@com_github_google_leveldb//:leveldb",
+        "@cuCollections//:cuco_hash_table",
     ],
 )
 
@@ -6188,8 +6193,15 @@ tf_cc_test(
 
 tf_kernel_library(
     name = "training_ali_ops",
-    prefix = "training_ali_ops",
-    hdrs = ["training_ali_op_helpers.h"],
+    hdrs = [
+        "training_ali_ops.h",
+        "training_ali_op_helpers.h"
+    ],
+    srcs = ["training_ali_ops.cc"],
+    gpu_srcs = [
+        "training_ali_ops_gpu.cu.cc",
+        "training_ali_ops_gpu.h",
+    ],
     deps = [
         ":bounds_check",
         ":training_op_helpers",

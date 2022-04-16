@@ -16,6 +16,7 @@
 
 set -eo pipefail
 
+export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
 export TF_NEED_TENSORRT=0
 export TF_NEED_ROCM=0
 export TF_NEED_COMPUTECPP=0
