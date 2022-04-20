@@ -317,10 +317,8 @@ class SessionGroup {
              const std::vector<string>& target_node_names,
              std::vector<Tensor>* outputs, int32_t session_id = -1) {
     int32_t id = 0;
-    if (session_num_ > 1) {
-      Status s = GetServingSessionId(&id, session_id);
-      if (!s.ok()) return s;
-    }
+    Status s = GetServingSessionId(&id, session_id);
+    if (!s.ok()) return s;
     return sessions_[id]->Run(inputs, output_tensor_names,
                               target_node_names, outputs);
   }
@@ -332,10 +330,8 @@ class SessionGroup {
              std::vector<Tensor>* outputs, RunMetadata* run_metadata,
              int32_t session_id = -1) {
     int32_t id = 0;
-    if (session_num_ > 1) {
-      Status s = GetServingSessionId(&id, session_id);
-      if (!s.ok()) return s;
-    }
+    Status s = GetServingSessionId(&id, session_id);
+    if (!s.ok()) return s;
     return sessions_[id]->Run(run_options, inputs, output_tensor_names,
                               target_node_names, outputs, run_metadata);
   }
@@ -349,19 +345,18 @@ class SessionGroup {
   std::atomic<int64_t> serving_index_{0};
 
   Status GetServingSessionId(int32_t* serving_id, int32_t hint_id = -1) {
-    *serving_id = 0;
-    if (hint_id > 0) {
-      if (hint_id >= session_num_) {
-        return errors::InvalidArgument(
-            "Specified session in session group not existed, user specified session_id is ",
-            hint_id, ", total session_num is ", session_num_);
-      }
-      *serving_id = hint_id;
+    if (session_num_ < 1) {
+      return errors::InvalidArgument("Not existed a session object in SessionGroup.");
+    } else if (session_num_ == 1) {
+      *serving_id = 0;
     } else {
-      *serving_id = serving_index_.fetch_add(1);
-      *serving_id %= session_num_;
+      if (hint_id >= 0) {
+        *serving_id = hint_id % session_num_;
+      } else {
+        *serving_id = serving_index_.fetch_add(1);
+        *serving_id %= session_num_;
+      }
     }
-
     return Status::OK();
   }
 };

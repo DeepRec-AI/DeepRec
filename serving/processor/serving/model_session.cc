@@ -193,10 +193,20 @@ Status ModelSessionMgr::RunRestoreOps(
   }
 }
 
-ModelSession::ModelSession(SessionGroup* s, const Version& version,
-    IFeatureStoreMgr* sparse_storage)
+ModelSession::ModelSession(SessionGroup* s,
+    const std::string& select_session_policy,
+    const Version& version, IFeatureStoreMgr* sparse_storage)
     : session_group_(s), counter_(0), is_local_(false),
       version_(version) {
+  if (select_session_policy == "MOD") {
+    select_session_policy_ = SelectSessionPolicy::MOD;
+  } else if (select_session_policy == "RR") {
+    select_session_policy_ = SelectSessionPolicy::RR;
+  } else {
+    LOG(FATAL) << "[ModelSession] select_session_policy must be RR or MOD, current get "
+               << select_session_policy;
+  }
+
   Tensor t(DT_UINT64, TensorShape({}));
   t.scalar<uint64>()() = reinterpret_cast<uint64>(sparse_storage);
   sparse_storage_tensor_ = t;
@@ -208,9 +218,19 @@ ModelSession::ModelSession(SessionGroup* s, const Version& version,
   model_version_name_ = GetModelVersionNodeName();
 }
 
-ModelSession::ModelSession(SessionGroup* s, const Version& version)
+ModelSession::ModelSession(SessionGroup* s,
+    const std::string& select_session_policy, const Version& version)
     : session_group_(s), counter_(0), is_local_(true),
       version_(version) {
+  if (select_session_policy == "MOD") {
+    select_session_policy_ = SelectSessionPolicy::MOD;
+  } else if (select_session_policy == "RR") {
+    select_session_policy_ = SelectSessionPolicy::RR;
+  } else {
+    LOG(FATAL) << "[ModelSession] select_session_policy must be RR or MOD, current get "
+               << select_session_policy;
+  }
+
   Tensor t_version(DT_UINT64, TensorShape({}));
   t_version.scalar<uint64>()() = version.full_ckpt_version;
   model_version_tensor_ = t_version;
@@ -226,6 +246,19 @@ ModelSession::~ModelSession() {
 
 Session* ModelSession::GetSession() {
   return session_group_->GetLeaderSession();
+}
+
+int ModelSession::GetServingSessionId() {
+  if (select_session_policy_ ==
+      SelectSessionPolicy::RR) {
+    return -1;
+  }
+  static std::atomic<int> counter{0};
+  static thread_local int tid = -1;
+  if (tid == -1) {
+    tid = counter.fetch_add(1);
+  }
+  return tid;
 }
 
 Status ModelSession::Predict(Request& req, Response& resp) {
@@ -244,11 +277,12 @@ Status ModelSession::Predict(Request& req, Response& resp) {
     tensorflow::RunMetadata run_metadata;
     // TODO: which session selected to run on, add some policy here
     status = session_group_->Run(run_options, req.inputs,
-        req.output_tensor_names, {}, &resp.outputs, &run_metadata);
+        req.output_tensor_names, {}, &resp.outputs,
+        &run_metadata, GetServingSessionId());
     Tracer::GetTracer()->GenTimeline(run_metadata);
   } else {
     status = session_group_->Run(req.inputs, req.output_tensor_names,
-        {}, &resp.outputs);
+        {}, &resp.outputs, GetServingSessionId());
   }
   --counter_;
   return status;
@@ -267,11 +301,12 @@ Status ModelSession::LocalPredict(Request& req, Response& resp) {
     tensorflow::RunMetadata run_metadata;
     // TODO: which session selected to run on, add some policy here
     status = session_group_->Run(run_options, req.inputs,
-        req.output_tensor_names, {}, &resp.outputs, &run_metadata);
+        req.output_tensor_names, {}, &resp.outputs,
+        &run_metadata, GetServingSessionId());
     Tracer::GetTracer()->GenTimeline(run_metadata); 
   } else {
     status = session_group_->Run(req.inputs, req.output_tensor_names,
-        {}, &resp.outputs);
+        {}, &resp.outputs, GetServingSessionId());
   }
   --counter_;
   return status;
@@ -380,7 +415,8 @@ Status ModelSessionMgr::CreateModelSession(
   // the version returned by remote storage.
   // ResetServingSession(session, real_version, sparse_storage);
   *new_model_session = new ModelSession(
-      session_group, version, sparse_storage);
+      session_group, config->select_session_policy,
+      version, sparse_storage);
 
   return Status::OK();
 }
@@ -442,7 +478,8 @@ Status ModelSessionMgr::CreateModelSession(
 
   if (!is_incr_ckpt) {
     // ResetServingSession(session, version);
-    *new_model_session = new ModelSession(session_group, version);
+    *new_model_session = new ModelSession(
+      session_group, config->select_session_policy, version);
   } else {
     serving_session_->UpdateVersion(version);
   }

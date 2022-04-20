@@ -21,10 +21,15 @@ namespace processor {
 class IFeatureStoreMgr;
 class Request;
 class Response;
+enum SelectSessionPolicy {
+  MOD = 1,
+  RR = 2
+};
 struct ModelSession {
-  ModelSession(SessionGroup* s, const Version& version,
-      IFeatureStoreMgr* sparse_storage);
-  ModelSession(SessionGroup* s, const Version& version);
+  ModelSession(SessionGroup* s, const std::string& select_session_policy,
+      const Version& version, IFeatureStoreMgr* sparse_storage);
+  ModelSession(SessionGroup* s, const std::string& select_session_policy,
+      const Version& version);
   virtual ~ModelSession();
 
   Status Predict(Request& req, Response& resp);
@@ -34,6 +39,8 @@ struct ModelSession {
   Session* GetSession();
 
   SessionGroup* session_group_ = nullptr;
+  SelectSessionPolicy select_session_policy_ =
+      SelectSessionPolicy::MOD;
   //IFeatureStoreMgr* sparse_storage_ = nullptr;
   
   std::string sparse_storage_name_;
@@ -44,6 +51,9 @@ struct ModelSession {
   // Local storage or remote storage for sparse variable.
   bool is_local_ = true;
   Version version_;
+
+ private:
+  int GetServingSessionId();
 };
 
 class ModelSessionMgr {

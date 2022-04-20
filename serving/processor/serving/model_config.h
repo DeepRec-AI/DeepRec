@@ -46,6 +46,14 @@ struct ModelConfig {
   // session num of session group,
   // default num is 1
   int session_num = 1;
+  // In multi-session mode, we have two policy for
+  // select session for each thread.
+  // "RR": Round-Robin policy, threads will use all sessions in Round-Robin way
+  // "MOD": Thread select session according unique id, uid % session_num
+  std::string select_session_policy = "MOD";
+
+  // session use self-owned thread pool
+  bool use_per_session_threads = false;
 };
 
 class ModelConfigFactory {
