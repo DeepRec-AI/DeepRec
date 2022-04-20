@@ -208,7 +208,7 @@ class TestableModelSessionMgr : public ModelSessionMgr {
     SessionGroup* sess_group = nullptr;
     ModelConfig config;
     CreateSessionGroup(&sess_group, &config);
-    sessions_.emplace_back(new ModelSession(sess_group, Version(), sparse_storage));
+    sessions_.emplace_back(new ModelSession(sess_group, "MOD", Version(), sparse_storage));
   }
 
   void* GetServingSession() {
