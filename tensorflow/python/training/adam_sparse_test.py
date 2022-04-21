@@ -31,9 +31,9 @@ class AdamSparseApplyTest(TensorFlowTestCase):
     else:
       assert False, (dtype)
 
-  def _testTypesForSparseAdam(self, x, m, v, t, lr, beta1, beta2, epsilon, grad, indices):
+  def _testTypesForSparseAdam(self, x, m, v, t, lr, beta1, beta2, epsilon, grad, indices, use_gpu):
     self.setUp()
-    with self.test_session(use_gpu=False):
+    with self.test_session(use_gpu=use_gpu):
       var = variables.VariableV1(x)
       m_a = variables.VariableV1(m)
       v_a = variables.VariableV1(v)
@@ -55,8 +55,8 @@ class AdamSparseApplyTest(TensorFlowTestCase):
         self.assertAllCloseAccordingToType(new_v, v_a.eval()[index])
 
   def testSparseApplyAdam(self):
-    for (dtype, index_type) in itertools.product(
-        [np.float16, np.float32, np.float64], [np.int32, np.int64]):
+    for (dtype, index_type, use_gpu) in itertools.product(
+        [np.float16, np.float32, np.float64], [np.int32, np.int64], [False, True]):
       x_val = [np.arange(10), np.arange(10, 20), np.arange(20, 30)]
       m_val = [np.arange(1, 11), np.arange(11, 21), np.arange(21, 31)]
       v_val = [np.arange(2, 12), np.arange(12, 22), np.arange(22, 32)]
@@ -71,11 +71,11 @@ class AdamSparseApplyTest(TensorFlowTestCase):
       grad_val = [np.arange(10), np.arange(10)]
       grad = np.array(grad_val).astype(dtype)
       indices = np.array([0, 2]).astype(index_type)
-      self._testTypesForSparseAdam(x, m, v, t, lr, beta1, beta2, epsilon, grad, indices)
+      self._testTypesForSparseAdam(x, m, v, t, lr, beta1, beta2, epsilon, grad, indices, use_gpu)
 
   def testSparseApplyAdamDim1(self):
-    for (dtype, index_type) in itertools.product(
-        [np.float16, np.float32, np.float64], [np.int32, np.int64]):
+    for (dtype, index_type, use_gpu) in itertools.product(
+        [np.float16, np.float32, np.float64], [np.int32, np.int64], [False, True]):
       x_val = [[1.0], [2.0], [3.0]]
       m_val = [[4.0], [5.0], [6.0]]
       v_val = [[7.0], [8.0], [9.0]]
@@ -90,7 +90,7 @@ class AdamSparseApplyTest(TensorFlowTestCase):
       grad_val = [[1.5], [2.5]]
       grad = np.array(grad_val).astype(dtype)
       indices = np.array([0, 2]).astype(index_type)
-      self._testTypesForSparseAdam(x, m, v, t, lr, beta1, beta2, epsilon, grad, indices)
+      self._testTypesForSparseAdam(x, m, v, t, lr, beta1, beta2, epsilon, grad, indices, use_gpu)
 
   def testApplyAdam(self):
     for dtype, use_gpu in itertools.product(

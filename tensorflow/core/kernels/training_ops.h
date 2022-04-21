@@ -19,6 +19,8 @@ limitations under the License.
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/framework/op_kernel.h"
 
 namespace tensorflow {
 namespace functor {
@@ -226,6 +228,22 @@ struct ApplyPowerSign {
                   typename TTypes<T>::ConstScalar sign_decay,
                   typename TTypes<T>::ConstScalar beta,
                   typename TTypes<T>::ConstFlat grad);
+};
+
+template <typename Device, typename T, typename Tindex> 
+struct SparseApplyAdam {
+  Status operator()(const Device& d, typename TTypes<T>::Matrix var, 
+                  typename TTypes<T>::Matrix m, 
+                  typename TTypes<T>::Matrix v, 
+                  typename TTypes<T>::ConstMatrix grad,
+                  typename TTypes<T>::ConstScalar beta1_power, 
+                  typename TTypes<T>::ConstScalar beta2_power, 
+                  typename TTypes<T>::ConstScalar lr,
+                  typename TTypes<T>::ConstScalar beta1,
+                  typename TTypes<T>::ConstScalar beta2,
+                  typename TTypes<T>::ConstScalar epsilon, 
+                  typename TTypes<Tindex>::ConstVec indices, 
+                  const int64 inner_dim);
 };
 
 }  // end namespace functor
