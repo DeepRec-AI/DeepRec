@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/costs/graph_properties.h"
 #include "tensorflow/core/grappler/optimizers/graph_optimizer.h"
 #include "tensorflow/core/grappler/utils.h"
+#include "tensorflow/core/protobuf/rewriter_config.pb.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -28,6 +29,7 @@ class ConcatCastFusing : public GraphOptimizer {
     public:
 
     ConcatCastFusing() = default;
+    explicit ConcatCastFusing(RewriterConfig::Toggle opt_level) {}
     ~ConcatCastFusing() override {};
 
     string name() const override { return "concat_cast_fusing"; };

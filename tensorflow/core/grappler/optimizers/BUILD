@@ -591,6 +591,7 @@ cc_library(
         ":arithmetic_optimizer",
         ":auto_mixed_precision",
         ":auto_parallel",
+        ":concat_cast_fusing",
         ":constant_folding",
         ":custom_graph_optimizer_registry",
         ":debug_stripper",

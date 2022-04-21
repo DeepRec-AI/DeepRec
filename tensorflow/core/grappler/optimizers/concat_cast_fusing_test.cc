@@ -20,9 +20,11 @@ limitations under the License.
 #include "tensorflow/cc/ops/standard_ops.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/grappler/grappler_item.h"
+#include "tensorflow/core/grappler/optimizers/model_pruner.h"
 #include "tensorflow/core/grappler/utils.h"
 #include "tensorflow/core/grappler/utils/grappler_test.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
+#include "tensorflow/core/public/session.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -37,14 +39,16 @@ namespace ConcatCastFusingTestDefs {
     std::vector<std::vector<DataType>> dataTypes {
         {DataType::DT_FLOAT, DataType::DT_INT32},
         //{DataType::DT_INT32, DataType::DT_FLOAT},
-        {DataType::DT_BFLOAT16, DataType::DT_FLOAT},
-        {DataType::DT_FLOAT, DataType::DT_BFLOAT16}
+        //{DataType::DT_BFLOAT16, DataType::DT_FLOAT},
+        //{DataType::DT_FLOAT, DataType::DT_BFLOAT16},
+        //{DataType::DT_BFLOAT16, DataType::DT_INT32},
+        //{DataType::DT_INT32, DataType::DT_BFLOAT16}
     };
-    std::vector<long long int> numInputs = {2, 4};
-    std::vector<long long int> AXIS_2D = {0, 1};
+    std::vector<long long int> numInputs = {2};//, 4};
+    std::vector<long long int> AXIS_2D = {0};//, 1};
     std::vector<long long int> AXIS_3D = {0, 1, 2};
     std::vector<long long int> AXIS_4D = {0, 1, 2, 3};
-    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}, {32, 21}, {64, 64}};
+    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}};//, {32, 21}, {64, 64}};
     std::vector<std::vector<long long int>> SIZES_3D = {{32, 16, 1}, {128, 128, 128}, {1, 1, 1}};
     std::vector<std::vector<long long int>> SIZES_4D = {{32, 32, 32, 32}, {16, 1, 1, 1}, {31, 63, 15, 7}};
 } // namespace ConcatCastFusingTestDefs
@@ -65,7 +69,7 @@ class ConcatCastFusingTest :
         src_type = dt[0];
         dst_type = dt[1];
         std::ostringstream result;
-        result << "ConcatCastFusing_" << "_SrcType_";
+        result << "ConcatCastFusing_SrcType_";
         switch(src_type) {
             case DataType::DT_FLOAT:
                 result << "FLOAT";
@@ -111,6 +115,8 @@ class ConcatCastFusingTest :
         src_type = dt[0];
         dst_type = dt[1];
 
+        std::vector<string> input_names;
+        GraphDef ref_graph;
         inputs = {};
         for (uint i = 0; i < num_inputs; ++i){
             Tensor input = Tensor(src_type, TensorShape(tensorflow::gtl::ArraySlice<long long int>(input_size.data(), input_size.size())));
@@ -130,11 +136,38 @@ class ConcatCastFusingTest :
                     GTEST_FAIL() << "Unexpected DataType";
             }
             inputs.push_back(input);
+            const string input_name = absl::StrCat("input_", i);
+            input_names.push_back(input_name);
+            AddNode(input_name, "Const", {}, {}, &ref_graph);
         }
         axis = Tensor((int32)ax);
+        AddNode("axis", "Const", {}, {}, &ref_graph);
+        input_names.push_back("axis");
+        AddNode("cast", "_FusedConcatCast", input_names, {}, &ref_graph);
+        want = ref_graph;
     }
 
     protected:
+    void Validate(std::vector<Tensor> tensors, std::vector<Tensor> tensors_expected) {
+        EXPECT_EQ(1, tensors_expected.size());
+        EXPECT_EQ(1, tensors.size());
+        EXPECT_EQ(dst_type, tensors_expected[0].dtype());
+        EXPECT_EQ(dst_type, tensors[0].dtype());
+        switch(dst_type) {
+            case DT_FLOAT:
+                test::ExpectTensorEqual<float>(tensors_expected[0], tensors[0]);
+                break;
+            case DT_BFLOAT16:
+                test::ExpectTensorEqual<Eigen::bfloat16>(tensors_expected[0], tensors[0]);
+                break;
+            case DT_INT32:
+                test::ExpectTensorEqual<int32_t>(tensors_expected[0], tensors[0]);
+                break;
+            default:
+                GTEST_FAIL() << "Unexpected DataType";
+        }
+    }
+
     // Test definition (straight from Params, filled in SetUp)
     DataType src_type;
     DataType dst_type;
@@ -147,6 +180,8 @@ class ConcatCastFusingTest :
     // Test output Tensors (filled in Run method)
     Tensor values;
     Tensor default_values;
+
+    GraphDef want;
 };
 
 class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
@@ -156,14 +191,13 @@ class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
 
         std::vector<Input> in_values;
         for (int i = 0; i < num_inputs; ++i) {
-            //std::cout << "Shape " << i << ": " << inputs[i].shape() << std::endl;
             const string input_name = absl::StrCat("input_", i);
             auto tmp = ops::Const(s.WithOpName(input_name), Input::Initializer(inputs[i]));
             in_values.push_back(tmp);
         }
         auto a = ops::Const(s.WithOpName("axis"), axis);
 
-        Output c = ops::Concat(s.WithOpName("concat").WithDevice("/CPU:0"), absl::Span<const Input>(in_values), a);
+        Output c = ops::Concat(s.WithOpName("concat"), absl::Span<const Input>(in_values), a);
         Output d = ops::Cast(s.WithOpName("cast"), c, dst_type);
 
         GrapplerItem item;
@@ -175,38 +209,57 @@ class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
         Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
         TF_EXPECT_OK(status);
 
-        auto expected_graph_size = num_inputs + 1 /* axis */ + 1 /* FusedConcatCast */;
-        EXPECT_EQ(expected_graph_size, output.node_size());
-        for (int i = 0; i < output.node_size(); ++i) {
-            const NodeDef& node = output.node(i);
-            const string& name = node.name();
-            if (name == "cast") {
-                EXPECT_EQ("_FusedConcatCast", node.op());
-                for (int i = 0; i < num_inputs; ++i) {
-                    EXPECT_EQ(absl::StrCat("input_", i), node.input(i));
-                }
-                EXPECT_EQ("axis", node.input(num_inputs));
-            }
-        }
+        CompareGraphs(want, output);
 
         std::vector<string> fetch = {"cast"};
         auto tensors_expected = EvaluateNodes(item.graph, fetch);
         auto tensors = EvaluateNodes(output, fetch);
-        EXPECT_EQ(1, tensors_expected.size());
-        EXPECT_EQ(1, tensors.size());
-        switch(dst_type) {
-                case DT_FLOAT:
-                    test::ExpectTensorEqual<float>(tensors_expected[0], tensors[0]);
-                    break;
-                case DT_BFLOAT16:
-                    test::ExpectTensorEqual<Eigen::bfloat16>(tensors_expected[0], tensors[0]);
-                    break;
-                case DT_INT32:
-                    test::ExpectTensorEqual<int32_t>(tensors_expected[0], tensors[0]);
-                    break;
-                default:
-                    GTEST_FAIL() << "Unexpected DataType";
-            }
+        Validate(tensors, tensors_expected);
+    }
+};
+
+class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
+    public:
+    void RunAndValidate() {
+        tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+
+        std::vector<Input> in_values;
+        for (int i = 0; i < num_inputs; ++i) {
+            const string input_name = absl::StrCat("input_", i);
+            auto tmp = ops::Const(s.WithOpName(input_name), Input::Initializer(inputs[i]));
+            in_values.push_back(tmp);
+        }
+        auto a = ops::Const(s.WithOpName("axis"), axis);
+
+        Output c = ops::Concat(s.WithOpName("concat"), absl::Span<const Input>(in_values), a);
+        Output d = ops::Cast(s.WithOpName("cast"), c, dst_type);
+
+        GrapplerItem item;
+        item.fetch.push_back("cast");
+        TF_CHECK_OK(s.ToGraphDef(&item.graph));
+
+        ConcatCastFusing optimizer;
+        GraphDef output;
+        std::vector<string> fetch = {"cast"};
+        Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
+        TF_EXPECT_OK(status);
+
+        CompareGraphs(want, output);
+
+        tensorflow::SessionOptions session_options_;
+        session_options_.config.set_intra_op_parallelism_threads(8);
+
+        tensorflow::RewriterConfig* cfg = session_options_.config.mutable_graph_options()->mutable_rewrite_options();
+        cfg->set_constant_folding(tensorflow::RewriterConfig::OFF);
+        cfg->set_layout_optimizer(tensorflow::RewriterConfig::OFF);
+        cfg->set_remapping(tensorflow::RewriterConfig::OFF);
+        std::unique_ptr<tensorflow::Session> session(tensorflow::NewSession(session_options_));
+        TF_ASSERT_OK(session->Create(output));
+        std::vector<Tensor> tensors;
+        TF_ASSERT_OK(session->Run({}, {fetch}, {}, &tensors));
+
+        //auto tensors_expected = EvaluateNodes(item.graph, fetch);
+        //Validate(tensors, tensors_expected);
     }
 };
 
@@ -215,39 +268,20 @@ TEST_P(ConcatCastFusingTestSimpleFusing, CompareWithRefs) {
     RunAndValidate();
 };
 
-// TEST_F(ConcatCastFusingTest, SimpleFusingNotLast) {
-//     tensorflow::Scope s = tensorflow::Scope::NewRootScope();
+TEST_P(ConcatCastFusingTestMultithreaded, CompareWithRefs) {
+    SetUp();
+    RunAndValidate();
+};
 
-//     Output a = ops::Const(s.WithOpName("a"), 1.0f, {1});
-//     Output b = ops::Const(s.WithOpName("b"), 2.0f, {1});
-//     auto ax = ops::Const(s.WithOpName("axis"), 0);
-//     Output c = ops::Concat(s.WithOpName("c").WithDevice("/CPU:0"), {a, b}, ax);
-//     Output d = ops::Cast(s.WithOpName("d"), c, DataType::DT_INT32);
-//     Output e = ops::Const(s.WithOpName("e"), {2, 2}, {1});
-//     Output f = ops::Add(s.WithOpName("f"), d, e);
+// INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestSimpleFusing,
+//     ::testing::Combine(
+//         ::testing::ValuesIn(dataTypes),
+//         ::testing::ValuesIn(numInputs),
+//         ::testing::ValuesIn(SIZES_2D),
+//         ::testing::ValuesIn(AXIS_2D)),
+//     ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
-//     GrapplerItem item;
-//     item.fetch.push_back("f");
-//     TF_CHECK_OK(s.ToGraphDef(&item.graph));
-
-//     ConcatCastFusing optimizer(/*cpu_device=*/nullptr);
-//     GraphDef output;
-//     Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
-//     TF_EXPECT_OK(status);
-
-//     const NodeDef& node_d = output.node(0);
-//     EXPECT_EQ("f", node_d.name());
-//     EXPECT_EQ("Add", node_d.op());
-
-//     std::vector<string> fetch = {"f"};
-//     auto tensors_expected = EvaluateNodes(item.graph, fetch);
-//     auto tensors = EvaluateNodes(output, fetch);
-//     EXPECT_EQ(1, tensors_expected.size());
-//     EXPECT_EQ(1, tensors.size());
-//     test::ExpectTensorEqual<int>(tensors_expected[0], tensors[0]);
-// }
-
-INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestSimpleFusing,
+INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestMultithreaded,
     ::testing::Combine(
         ::testing::ValuesIn(dataTypes),
         ::testing::ValuesIn(numInputs),
@@ -255,13 +289,13 @@ INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestSimpleFusing,
         ::testing::ValuesIn(AXIS_2D)),
     ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
-INSTANTIATE_TEST_CASE_P(Concat3D, ConcatCastFusingTestSimpleFusing,
-    ::testing::Combine(
-        ::testing::ValuesIn(dataTypes),
-        ::testing::ValuesIn(numInputs),
-        ::testing::ValuesIn(SIZES_3D),
-        ::testing::ValuesIn(AXIS_3D)),
-    ConcatCastFusingTestSimpleFusing::getTestCaseName);
+// INSTANTIATE_TEST_CASE_P(Concat3D, ConcatCastFusingTestSimpleFusing,
+//     ::testing::Combine(
+//         ::testing::ValuesIn(dataTypes),
+//         ::testing::ValuesIn(numInputs),
+//         ::testing::ValuesIn(SIZES_3D),
+//         ::testing::ValuesIn(AXIS_3D)),
+//     ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
 // INSTANTIATE_TEST_CASE_P(Concat4D, ConcatCastFusingTestSimpleFusing,
 //     ::testing::Combine(

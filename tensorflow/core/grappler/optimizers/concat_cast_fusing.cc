@@ -114,7 +114,7 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             fused_op.set_name(cast.name());
             fused_op.set_op("_FusedConcatCast");
             fused_op.set_device(concat.device());
-            for (int j = 0; j < concat_num_inputs - 1; ++j)
+            for (size_t j = 0; j < concat_num_inputs - 1; ++j)
                 fused_op.add_input(concat.input(j));  // inputs
             fused_op.add_input(concat.input(concat_num_inputs - 1));  // axis
 
@@ -122,9 +122,11 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
             auto& concat_attr = concat.attr();
             auto& cast_attr = cast.attr();
             (*attr)["N"] = concat_attr.at("N");
+            (*attr)["Tidx"] = concat_attr.at("Tidx");
 
             (*attr)["SrcT"] = cast_attr.at("SrcT");
             (*attr)["DstT"] = cast_attr.at("DstT");
+            (*attr)["Truncate"] = cast_attr.at("Truncate");
 
             utils::Mutation* mutation = graph_view.GetMutationBuilder();
             Status status;
