@@ -120,7 +120,7 @@ def fused_embedding_lookup_sparse(params,
 ```
 - `params`: List，可以含有单个的 embedding tensor 或是被 partition 过的 embedding tensors。embedding tensors 的 rank 须都为 2。
 - `sp_ids`: SparseTenor，其 values 为需要查找的 id。indices 的 rank 须为 2。dense_shape 的 rank 须为 1，元素个数为 2。
-- `sparse_weights`: sparse_ids 的 values 的权重。
+- `sparse_weights`: sparse_ids 的 values 的权重。目前还暂不支持。
 - `partition_strategy`: embedding tensor 的 partition 策略。
 - `name`: 此 operation 的名称。
 - `combiner`: entry 维度进行 combine 的策略。
@@ -133,26 +133,24 @@ def fused_embedding_lookup_sparse(params,
 
 ## 注意事项
 
-1. 目前 Embedding子图Fusion当前支持 Nvidia GPU 上执行。相应的 `tf.Variable` 和 `EmbeddingVariable` 及其他算子可以在 CPU 上。其中CPU版本的Embedding Fusion子图功能正在代码开发中。
-2. 目前不支持设置权重 `sparse_weights`。
-3. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
+1. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
 
 
 ## Op 介绍及计算图
-新增了 Fused Embedding 相关算子:
+新增了 Fused Embedding V2 相关算子:
 
 1. PruneInvalidAndFillEmptyRows
-2. UniqueWithCountsGPU
+2. UniqueWithCountsV3
 3. PartitionWithPermutation
-4. FusedEmbeddingSparsePostLookUp
-5. FusedEmbeddingSparsePostLookUpGrad
+4. FusedEmbeddingSparsePostLookUpV2
+5. FusedEmbeddingSparsePostLookUpV3Grad
 
 
 
-以底层级接口 `fused_embedding_lookup_sparse` 为例，调用之后会依照下列顺序创建计算图:
+以底层级接口 `fused_embedding_lookup_sparse_v2` 为例，调用之后会依照下列顺序创建计算图:
 
 1. PruneInvalidAndFillEmptyRows 负责去除非法值及填充空行
-2. UniqueWithCountsGPU 负责对 sparse_ids 进行 unique 操作，在多机多卡的情况下可以减少通信量
+2. UniqueWithCountsV2 负责对 sparse_ids 进行 unique 操作，在多机多卡的情况下可以减少通信量
 3. PartitionWithPermutation 在需要对 sparse_ids 进行 partition 时候，会创建此算子，按照不同的策略进行 partition
 4. **tf.Gather** 与 **EmbeddingVariable** 或 **tf.Variable** 在同一个 device 上，在 partition 的情况下可能有多份，在不同的 device 上(分布式)。它进行实际的 embedding vector 查找。
 5. **FusedEmbeddingSparsePostLookUp** 则负责将 embedding vector 从各个 parition 上收集回来，然后进行 combiner 及 max_norm 等相关操作。

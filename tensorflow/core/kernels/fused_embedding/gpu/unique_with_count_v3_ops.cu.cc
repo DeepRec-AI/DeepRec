@@ -255,9 +255,9 @@ void Dump(const GPUDevice& d, KeyType* d_key, CounterType* d_counts,
 }  // namespace gpu_unique_with_counts
 
 template <typename KeyType, typename CounterType>
-class UniqueWithCountsGPU : public OpKernel {
+class UniqueWithCountsV3 : public OpKernel {
  public:
-  explicit UniqueWithCountsGPU(OpKernelConstruction* ctx) : OpKernel(ctx) {
+  explicit UniqueWithCountsV3(OpKernelConstruction* ctx) : OpKernel(ctx) {
     cudaEventCreateWithFlags(&memcpy_event_, cudaEventDisableTiming);
   }
 
@@ -350,29 +350,29 @@ class UniqueWithCountsGPU : public OpKernel {
   cudaEvent_t memcpy_event_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsV3")
                             .Device(DEVICE_GPU)
                             .TypeConstraint<int32>("KeyType")
                             .TypeConstraint<int32>("CounterType"),
-                        UniqueWithCountsGPU<int, int>);
+                        UniqueWithCountsV3<int, int>);
 
-REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsV3")
                             .Device(DEVICE_GPU)
                             .TypeConstraint<int32>("KeyType")
                             .TypeConstraint<int64>("CounterType"),
-                        UniqueWithCountsGPU<int, long long>);
+                        UniqueWithCountsV3<int, long long>);
 
-REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsV3")
                             .Device(DEVICE_GPU)
                             .TypeConstraint<int64>("KeyType")
                             .TypeConstraint<int32>("CounterType"),
-                        UniqueWithCountsGPU<long long, int>);
+                        UniqueWithCountsV3<long long, int>);
 
-REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsGPU")
+REGISTER_KERNEL_BUILDER(Name("UniqueWithCountsV3")
                             .Device(DEVICE_GPU)
                             .TypeConstraint<int64>("KeyType")
                             .TypeConstraint<int64>("CounterType"),
-                        UniqueWithCountsGPU<long long, long long>);
+                        UniqueWithCountsV3<long long, long long>);
 
 }  // namespace tensorflow
 

@@ -39,6 +39,7 @@ from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.ops import fused_embedding_ops
+from tensorflow.python.ops import fused_embedding_ops_v2
 
 __all__ = [
     "safe_embedding_lookup_sparse", "scattered_embedding_lookup",

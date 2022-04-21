@@ -29,7 +29,7 @@ namespace {
 
 enum class Device { GPU };
 
-class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
+class FusedEmbeddingSparsePostLookUpV2GradOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
                           const std::string& combiner, const float max_norm,
@@ -40,8 +40,8 @@ class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
                     "GPU", {}, "/job:a/replica:0/task:0")));
     }
 
-    TF_EXPECT_OK(NodeDefBuilder("fused_embedding__sparse_post_look_up_grad",
-                                "FusedEmbeddingSparsePostLookUpGrad")
+    TF_EXPECT_OK(NodeDefBuilder("fused_embedding_sparse_post_look_up_v2_grad",
+                                "FusedEmbeddingSparsePostLookUpV2Grad")
                      .Attr("T", dtype)
                      .Attr("num_partitions", num_partitions)
                      .Attr("partition_axis", 0)
@@ -62,7 +62,7 @@ class FusedEmbeddingSparsePostLookUpGradOpTest : public OpsTestBase {
   }
 };
 
-TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2MeanMaxNorm100) {
+TEST_F(FusedEmbeddingSparsePostLookUpV2GradOpTest, Partition2MeanMaxNorm100) {
   const int nnz = 10;
   const int batch_size = 4;
   const int emb_vector_dim = 8;
@@ -170,7 +170,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2MeanMaxNorm100) {
   }
 }
 
-TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUnique) {
+TEST_F(FusedEmbeddingSparsePostLookUpV2GradOpTest, Partition2SUMUnique) {
   const int nnz = 6;
   const int batch_size = 4;
   const int emb_vector_dim = 1;
@@ -258,7 +258,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUnique) {
   }
 }
 
-TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUniqueDefault4) {
+TEST_F(FusedEmbeddingSparsePostLookUpV2GradOpTest, Partition2SUMUniqueDefault4) {
   const int nnz = 6;
   const int batch_size = 4;
   const int emb_vector_dim = 1;
@@ -345,7 +345,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, Partition2SUMUniqueDefault4) {
   }
 }
 
-TEST_F(FusedEmbeddingSparsePostLookUpGradOpTest, SinglePartitionSUMUnique) {
+TEST_F(FusedEmbeddingSparsePostLookUpV2GradOpTest, SinglePartitionSUMUnique) {
   const int nnz = 6;
   const int batch_size = 4;
   const int emb_vector_dim = 1;

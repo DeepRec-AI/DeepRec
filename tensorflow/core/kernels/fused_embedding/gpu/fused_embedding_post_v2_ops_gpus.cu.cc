@@ -17,9 +17,9 @@
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
-class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
+class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
  public:
-  explicit FusedEmbeddingSparsePostLookUpGPU(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingSparsePostLookUpV2GPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
@@ -149,14 +149,14 @@ class FusedEmbeddingSparsePostLookUpGPU : public OpKernel {
   int64_t default_id_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePostLookUp")
+REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePostLookUpV2")
                             .Device(DEVICE_GPU)
                             .HostMemory("sp_dense_shape"),
-                        FusedEmbeddingSparsePostLookUpGPU);
+                        FusedEmbeddingSparsePostLookUpV2GPU);
 
-class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
+class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
  public:
-  explicit FusedEmbeddingSparsePostLookUpGradGPU(OpKernelConstruction* ctx)
+  explicit FusedEmbeddingSparsePostLookUpV2GradGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("num_partitions", &num_partitions_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("partition_axis", &partition_axis_));
@@ -310,8 +310,8 @@ class FusedEmbeddingSparsePostLookUpGradGPU : public OpKernel {
 };
 
 REGISTER_KERNEL_BUILDER(
-    Name("FusedEmbeddingSparsePostLookUpGrad").Device(DEVICE_GPU),
-    FusedEmbeddingSparsePostLookUpGradGPU);
+    Name("FusedEmbeddingSparsePostLookUpV2Grad").Device(DEVICE_GPU),
+    FusedEmbeddingSparsePostLookUpV2GradGPU);
 
 }  // namespace tensorflow
 

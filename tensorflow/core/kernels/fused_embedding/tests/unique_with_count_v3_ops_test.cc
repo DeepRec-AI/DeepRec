@@ -16,7 +16,7 @@ namespace {
 
 enum class Device { GPU };
 
-class UniqueWithCountsGPUOpTest : public OpsTestBase {
+class UniqueWithCountsV3OpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device) {
     if (device == Device::GPU) {
@@ -25,7 +25,7 @@ class UniqueWithCountsGPUOpTest : public OpsTestBase {
                     "GPU", {}, "/job:a/replica:0/task:0")));
     }
 
-    TF_EXPECT_OK(NodeDefBuilder("unique_with_counts_gpu", "UniqueWithCountsGPU")
+    TF_EXPECT_OK(NodeDefBuilder("unique_with_counts_v3", "UniqueWithCountsV3")
                      .Attr("CounterType", DT_INT32)
                      .Input(FakeInput(DT_INT64))
                      .Finalize(node_def()));
@@ -33,7 +33,7 @@ class UniqueWithCountsGPUOpTest : public OpsTestBase {
   }
 };
 
-TEST_F(UniqueWithCountsGPUOpTest, UniqueWithCount) {
+TEST_F(UniqueWithCountsV3OpTest, UniqueWithCount) {
   MakeOpAndSetDevice(Device::GPU);
   const int input_size = 20;
   const int uniq_size = 14;

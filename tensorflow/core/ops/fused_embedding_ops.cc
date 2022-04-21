@@ -45,7 +45,7 @@ REGISTER_OP("PruneInvalidAndFillEmptyRows")
       return Status::OK();
     });
 
-REGISTER_OP("UniqueWithCountsGPU")
+REGISTER_OP("UniqueWithCountsV3")
     .Attr("KeyType: {int32, int64} = DT_INT64")
     .Attr("CounterType: {int32, int64} = DT_INT32")
     .Input("input: KeyType")
@@ -114,7 +114,7 @@ REGISTER_OP("PartitionWithPermutation")
       return Status::OK();
     });
 
-REGISTER_OP("FusedEmbeddingSparsePostLookUp")
+REGISTER_OP("FusedEmbeddingSparsePostLookUpV2")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("fill_empty_row: bool = false")
@@ -198,7 +198,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUp")
 // indices.
 //     )doc");
 
-REGISTER_OP("FusedEmbeddingSparsePostLookUpGrad")
+REGISTER_OP("FusedEmbeddingSparsePostLookUpV2Grad")
     .Attr("T : {float32}")
     .Attr("num_partitions: int >= 1 = 1")
     .Attr("fill_empty_row: bool = false")
