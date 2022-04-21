@@ -194,6 +194,7 @@ tf_export(v1=['SummaryMetadata'])(SummaryMetadata)
 tf_export(v1=['summary.TaggedRunMetadata'])(TaggedRunMetadata)
 tf_export(v1=['TensorInfo'])(TensorInfo)
 tf_export(v1=['StorageType'])(StorageType)
+tf_export(v1=['ExecutorPolicy'])(ExecutorPolicy)
 # pylint: enable=undefined-variable
 
 # Special dunders that we choose to export:

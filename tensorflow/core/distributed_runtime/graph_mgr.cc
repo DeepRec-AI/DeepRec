@@ -527,7 +527,7 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
   global_rendezvous->Initialize(session);
 
   StartParallelExecutors(handle, step_id, item, rendezvous, global_rendezvous, ce_handle,
-                         collector, cost_graph, cancellation_manager, session,
+                         collector, cost_graph, cancellation_manager, session, opts,
                          [item, rendezvous, global_rendezvous, ce_handle, done, start_time_usecs,
                           input_size, activity](const Status& s) {
                            done(s);
@@ -545,7 +545,7 @@ void GraphMgr::StartParallelExecutors(
     Rendezvous* global_rendezvous,
     CollectiveExecutor::Handle* ce_handle, StepStatsCollector* collector,
     CostGraphDef* cost_graph, CancellationManager* cancellation_manager,
-    WorkerSession* session, StatusCallback done) {
+    WorkerSession* session, const ExecutorOpts& opts, StatusCallback done) {
   const int num_units = item->units.size();
   CHECK_GE(num_units, 1);
   ScopedStepContainer* step_container = new ScopedStepContainer(
@@ -592,6 +592,7 @@ void GraphMgr::StartParallelExecutors(
   if (LogMemory::IsEnabled()) {
     LogMemory::RecordStep(args.step_id, handle);
   }
+  args.executor_policy = opts.executor_policy();
   thread::ThreadPool* pool = worker_env_->compute_pool;
   using std::placeholders::_1;
   using std::placeholders::_2;

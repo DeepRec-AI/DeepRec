@@ -402,6 +402,16 @@ DirectSession::DirectSession(const SessionOptions& options,
     }
     MemoryPlannerFactory::GetMemoryPlanner()->SetThreadPool(GlobalThreadPool(options));
   }
+
+  // Select which executor to use
+  if (options_.config.executor_policy() ==
+      ExecutorPolicy::USE_COST_MODEL_EXECUTOR) {
+    run_cost_model_executor_ = true;
+  } else if (options_.config.executor_policy() ==
+             ExecutorPolicy::USE_INLINE_EXECUTOR) {
+    run_in_caller_thread_ = true;
+  }
+
   // The default value of sync_on_finish will be flipped soon and this
   // environment variable will be removed as well.
   const Status status =
@@ -647,6 +657,13 @@ Status DirectSession::RunInternal(
   args.step_container = &run_state.step_container;
   args.sync_on_finish = sync_on_finish_;
   args.user_intra_op_threadpool = threadpool_options.intra_op_threadpool;
+  if (run_in_caller_thread_) {
+    args.executor_policy = ExecutorPolicy::USE_INLINE_EXECUTOR;
+  } else if (run_cost_model_executor_) {
+    args.executor_policy = ExecutorPolicy::USE_COST_MODEL_EXECUTOR;
+  } else {
+    args.executor_policy = ExecutorPolicy::USE_NORMAL_EXECUTOR;
+  }
 
   const bool do_trace = (run_options.trace_level() > RunOptions::NO_TRACE);
 
@@ -1008,6 +1025,13 @@ Status DirectSession::PRunSetup(const std::vector<string>& input_names,
 
   // Create the run state and save it for future PRun calls.
   Executor::Args args;
+  if (run_in_caller_thread_) {
+    args.executor_policy = ExecutorPolicy::USE_INLINE_EXECUTOR;
+  } else if (run_cost_model_executor_) {
+    args.executor_policy = ExecutorPolicy::USE_COST_MODEL_EXECUTOR;
+  } else {
+    args.executor_policy = ExecutorPolicy::USE_NORMAL_EXECUTOR;
+  }
   args.step_id = step_id_counter_.fetch_add(1);
   RunState* run_state =
       new RunState(input_names, output_names, args.step_id, &devices_);
