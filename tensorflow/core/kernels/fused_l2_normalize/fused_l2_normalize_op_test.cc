@@ -14,11 +14,12 @@
 namespace tensorflow {
 namespace {
 
+enum class Device { CPU, GPU };
+
 class FusedL2NormalizeOpTest : public OpsTestBase {
  protected:
-  void MakeOpAndSetDevice(Device device, DataType dtype, int axis, int epsilon) {
-    TF_EXPECT_OK(NodeDefBuilder("fused_l2_normalize",
-                                "FusedL2Normalize")
+  void MakeOpAndSetDevice(Device device, DataType dtype, int axis, float epsilon) {
+    TF_EXPECT_OK(NodeDefBuilder("fused_l2_normalize", "FusedL2Normalize")
                      .Attr("T", dtype)
                      .Attr("axis", axis)
                      .Attr("epsilon", epsilon)
@@ -32,7 +33,7 @@ TEST_F(FusedL2NormalizeOpTest, 2Dims_Float) {
   const int rows = 4;
   const int cols = 16;
 
-  MakeOpAndSetDevice(Device::CPU, DT_FLOAT, 1, 1e-12);
+  MakeOpAndSetDevice(Device::CPU, DT_FLOAT, 0, 1e-12);
 
   // emb_shards
   AddInputFromArray<float>(TensorShape({rows, cols}), {
@@ -67,4 +68,5 @@ TEST_F(FusedL2NormalizeOpTest, 2Dims_Float) {
 //----------------------------------------------------------------------------//
 // Performance benchmarks                                                     //
 //----------------------------------------------------------------------------//
-
+}
+}

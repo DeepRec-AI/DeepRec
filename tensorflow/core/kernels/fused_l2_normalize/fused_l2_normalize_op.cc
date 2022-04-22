@@ -8,7 +8,7 @@
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/lib/core/threadpool.h"
 
-#include "ln_util.h"
+#include "compile_util.h"
 
 #include <cmath>
 
@@ -16,7 +16,7 @@ namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
-template <typename Device, typename T>
+template <typename T>
 class FusedL2NormalizeOp : public OpKernel {
 public:
   explicit FusedL2NormalizeOp(OpKernelConstruction* context)
@@ -155,7 +155,7 @@ REGISTER_KERNEL_BUILDER(Name("FusedL2Normalize")            \
                         FusedL2NormalizeOp<float>);
 
 
-template <typename Device, typename T>
+template <typename T>
 class FusedL2NormalizeGradOp : public OpKernel {
 public:
   explicit FusedL2NormalizeGradOp(OpKernelConstruction* context)
