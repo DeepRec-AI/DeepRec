@@ -1202,6 +1202,7 @@ tf_cc_test(
         ":concat_cast_fusing",
         "//tensorflow/cc:array_ops_internal",
         "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:client_session",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
         "//tensorflow/core/grappler/utils:grappler_test",

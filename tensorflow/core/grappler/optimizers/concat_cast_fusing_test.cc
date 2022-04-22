@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensorflow/core/grappler/optimizers/concat_cast_fusing.h"
 
+#include "tensorflow/cc/client/client_session.h"
 #include "tensorflow/cc/ops/array_ops.h"
 #include "tensorflow/cc/ops/array_ops_internal.h"
 #include "tensorflow/cc/ops/standard_ops.h"
@@ -109,7 +110,7 @@ class ConcatCastFusingTest :
         return result.str();
     }
 
-    void SetUp() {
+    void SetUp(string input_type) {
         std::vector<DataType> dt;
         std::tie(dt, num_inputs, input_size, ax) = this->GetParam();
         src_type = dt[0];
@@ -138,7 +139,7 @@ class ConcatCastFusingTest :
             inputs.push_back(input);
             const string input_name = absl::StrCat("input_", i);
             input_names.push_back(input_name);
-            AddNode(input_name, "Const", {}, {}, &ref_graph);
+            AddNode(input_name, input_type, {}, {}, &ref_graph);
         }
         axis = Tensor((int32)ax);
         AddNode("axis", "Const", {}, {}, &ref_graph);
@@ -223,24 +224,28 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
     void RunAndValidate() {
         tensorflow::Scope s = tensorflow::Scope::NewRootScope();
 
-        std::vector<Input> in_values;
+        std::vector<Output> in_values;
+        TensorShape shape(input_size);
         for (int i = 0; i < num_inputs; ++i) {
             const string input_name = absl::StrCat("input_", i);
-            auto tmp = ops::Const(s.WithOpName(input_name), Input::Initializer(inputs[i]));
+            auto tmp = ops::Placeholder(s.WithOpName(input_name), src_type, ops::Placeholder::Shape(shape));
             in_values.push_back(tmp);
         }
         auto a = ops::Const(s.WithOpName("axis"), axis);
 
-        Output c = ops::Concat(s.WithOpName("concat"), absl::Span<const Input>(in_values), a);
+        Output c = ops::Concat(s.WithOpName("concat"), in_values, a);
         Output d = ops::Cast(s.WithOpName("cast"), c, dst_type);
+
+        ClientSession::FeedType feed_list;
+        for (int i = 0; i < num_inputs; i++) {
+            feed_list.insert({in_values[i], inputs[i]});
+        }
 
         GrapplerItem item;
         item.fetch.push_back("cast");
         TF_CHECK_OK(s.ToGraphDef(&item.graph));
-
         ConcatCastFusing optimizer;
         GraphDef output;
-        std::vector<string> fetch = {"cast"};
         Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
         TF_EXPECT_OK(status);
 
@@ -248,28 +253,46 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
 
         tensorflow::SessionOptions session_options_;
         session_options_.config.set_intra_op_parallelism_threads(8);
+        session_options_.config.set_inter_op_parallelism_threads(1);
 
         tensorflow::RewriterConfig* cfg = session_options_.config.mutable_graph_options()->mutable_rewrite_options();
         cfg->set_constant_folding(tensorflow::RewriterConfig::OFF);
         cfg->set_layout_optimizer(tensorflow::RewriterConfig::OFF);
         cfg->set_remapping(tensorflow::RewriterConfig::OFF);
-        std::unique_ptr<tensorflow::Session> session(tensorflow::NewSession(session_options_));
-        TF_ASSERT_OK(session->Create(output));
+        tensorflow::ClientSession session(s, session_options_);
         std::vector<Tensor> tensors;
-        TF_ASSERT_OK(session->Run({}, {fetch}, {}, &tensors));
+        RunOptions run_options;
+        TF_ASSERT_OK(session.Run(feed_list, {d}, &tensors));
 
-        //auto tensors_expected = EvaluateNodes(item.graph, fetch);
-        //Validate(tensors, tensors_expected);
+        // Create expected graph
+        std::vector<Input> in_values_expected;
+        for (int i = 0; i < num_inputs; ++i) {
+            const string input_name = absl::StrCat("expected_input_", i);
+            auto tmp = ops::Const(s.WithOpName(input_name), Input::Initializer(inputs[i]));
+            in_values_expected.push_back(tmp);
+        }
+        auto a_expected = ops::Const(s.WithOpName("expected_axis"), axis);
+
+        Output c_expected = ops::Concat(s.WithOpName("expected_concat"), absl::Span<const Input>(in_values_expected), a_expected);
+        Output d_expected = ops::Cast(s.WithOpName("expected_cast"), c_expected, dst_type);
+
+        GrapplerItem item_expected;
+        item_expected.fetch.push_back("expected_cast");
+        TF_CHECK_OK(s.ToGraphDef(&item_expected.graph));
+        std::vector<string> fetch = {"expected_cast"};
+        auto tensors_expected = EvaluateNodes(item_expected.graph, fetch);
+
+        Validate(tensors, tensors_expected);
     }
 };
 
 TEST_P(ConcatCastFusingTestSimpleFusing, CompareWithRefs) {
-    SetUp();
+    SetUp("Const");
     RunAndValidate();
 };
 
 TEST_P(ConcatCastFusingTestMultithreaded, CompareWithRefs) {
-    SetUp();
+    SetUp("Placeholder");
     RunAndValidate();
 };
 
