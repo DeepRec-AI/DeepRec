@@ -18,6 +18,7 @@ limitations under the License.
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/tensor_types.h"
+#include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -93,6 +94,18 @@ struct ApplyAdagradDA {
                   typename TTypes<T>::ConstFlat grad);
 };
 
+template <typename Device, typename T, typename Tindex, bool has_epsilon>
+struct SparseApplyAdagrad {
+  // Note that epsilon is ignored if has_epsilon is false.
+  Status operator()(const Device& d, typename TTypes<T>::Matrix var,
+                    typename TTypes<T>::Matrix accum,
+                    typename TTypes<T>::ConstScalar lr,
+                    typename TTypes<T>::ConstScalar epsilon,
+                    typename TTypes<T>::ConstMatrix grad,
+                    typename TTypes<Tindex>::ConstVec indices, int64 inner_dim,
+                    bool update_slots);
+};
+
 template <typename Device, typename T>
 struct ApplyProximalAdagrad {
   void operator()(const Device& d, typename TTypes<T>::Flat var,
@@ -101,6 +114,17 @@ struct ApplyProximalAdagrad {
                   typename TTypes<T>::ConstScalar l1,
                   typename TTypes<T>::ConstScalar l2,
                   typename TTypes<T>::ConstFlat grad);
+};
+
+template <typename Device, typename T, typename Tindex>
+struct SparseApplyProximalAdagrad {
+  Status operator()(const Device& d, typename TTypes<T>::Matrix var,
+                    typename TTypes<T>::Matrix accum,
+                    typename TTypes<T>::ConstScalar lr,
+                    typename TTypes<T>::ConstScalar l1,
+                    typename TTypes<T>::ConstScalar l2,
+                    typename TTypes<T>::ConstMatrix grad,
+                    typename TTypes<Tindex>::ConstVec indices, int64 inner_dim);
 };
 
 template <typename Device, typename T>
@@ -126,6 +150,21 @@ struct ApplyFtrlV2 {
                   typename TTypes<T>::ConstScalar l2,
                   typename TTypes<T>::ConstScalar l2_shrinkage,
                   typename TTypes<T>::ConstScalar lr_power);
+};
+
+template <typename Device, typename T, typename Tindex, bool has_l2_shrinkage>
+struct SparseApplyFtrl {
+  Status operator()(const Device& d, typename TTypes<T>::Matrix var_flat,
+                    typename TTypes<T>::Matrix accum_flat,
+                    typename TTypes<T>::Matrix linear_flat,
+                    typename TTypes<T>::ConstScalar lr,
+                    typename TTypes<T>::ConstScalar l1,
+                    typename TTypes<T>::ConstScalar l2,
+                    typename TTypes<T>::ConstScalar l2_shrinkage,
+                    typename TTypes<T>::ConstScalar lr_power,
+                    typename TTypes<T>::ConstMatrix grad_flat,
+                    typename TTypes<Tindex>::ConstVec indices_vec,
+                    int64 inner_dim, bool multiply_linear_by_lr);
 };
 
 template <typename Device, typename T>
