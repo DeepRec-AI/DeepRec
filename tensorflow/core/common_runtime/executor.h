@@ -29,6 +29,7 @@ limitations under the License.
 #include "tensorflow/core/lib/core/threadpool_interface.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/macros.h"
+#include "tensorflow/core/protobuf/config.pb.h"
 
 namespace tensorflow {
 
@@ -119,12 +120,7 @@ class Executor {
     Runner runner = nullptr;
     CostRunner cost_runner = nullptr;
 
-    // If true, all kernels will be treated as "inexpensive", and hence executed
-    // on the scheduling thread.
-    bool run_all_kernels_inline = false;
-
-    // If true, use cost model schedule policy
-    bool run_cost_model_schedule = false; 
+    ExecutorPolicy executor_policy = ExecutorPolicy::USE_NORMAL_EXECUTOR;
   };
   typedef std::function<void(const Status&)> DoneCallback;
   virtual void RunAsync(const Args& args, DoneCallback done) = 0;

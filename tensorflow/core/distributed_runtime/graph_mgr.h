@@ -182,7 +182,8 @@ class GraphMgr {
                               StepStatsCollector* collector,
                               CostGraphDef* cost_graph,
                               CancellationManager* cancellation_manager,
-                              WorkerSession* session, StatusCallback done);
+                              WorkerSession* session, const ExecutorOpts& opts,
+                              StatusCallback done);
 
   // Don't attempt to process cost models unless explicitly requested for at
   // least one of the items.

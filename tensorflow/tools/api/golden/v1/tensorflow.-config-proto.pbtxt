@@ -123,6 +123,13 @@ tf_proto {
       label: LABEL_OPTIONAL
       type: TYPE_BOOL
     }
+    field {
+      name: "executor_policy"
+      number: 205
+      label: LABEL_OPTIONAL
+      type: TYPE_ENUM
+      type_name: ".tensorflow.ExecutorPolicy"
+    }
     nested_type {
       name: "DeviceCountEntry"
       field {

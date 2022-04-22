@@ -423,6 +423,9 @@ class DirectSession : public Session {
   // pool according to other specifications of RunOptions and ConfigProto.
   bool run_in_caller_thread_ = false;
 
+  // If true, will use cost_model_executor to run the graph.
+  bool run_cost_model_executor_ = false;
+
   TF_DISALLOW_COPY_AND_ASSIGN(DirectSession);
 
   // EXPERIMENTAL: debugger (tfdbg) related
