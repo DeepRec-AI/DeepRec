@@ -74,7 +74,8 @@ class EmbeddingVar : public ResourceBase {
     } else {
       emb_config_.default_value_dim = default_value_dim;
       value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
-      default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
+      default_value_ = TypedAllocator::Allocate<V>(cpu_allocator(),
+          default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
       memcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes());
       if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType()) {
@@ -269,7 +270,7 @@ class EmbeddingVar : public ResourceBase {
       Destroy();
       delete storage_manager_;
     }
-    TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
+    TypedAllocator::Deallocate(cpu_allocator(), default_value_, value_len_);
   }
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);
 };
