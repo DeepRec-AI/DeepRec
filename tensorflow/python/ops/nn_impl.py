@@ -35,6 +35,7 @@ from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import linalg_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
+from tensorflow.python.ops import gen_fused_l2_normalize_ops
 from tensorflow.python.ops import gen_sparse_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops.losses import util as losses_util
@@ -643,6 +644,34 @@ def l2_normalize_v2(x, axis=None, epsilon=1e-12, name=None):
     square_sum = math_ops.reduce_sum(math_ops.square(x), axis, keepdims=True)
     x_inv_norm = math_ops.rsqrt(math_ops.maximum(square_sum, epsilon))
     return math_ops.multiply(x, x_inv_norm, name=name)
+
+
+@tf_export(v1=["math.fused_l2_normalize", "linalg.fused_l2_normalize", "nn.fused_l2_normalize"])
+def fused_l2_normalize(x, axis=None, epsilon=1e-12, name=None):
+  """Normalizes along dimension `axis` using an L2 norm.
+
+  For a 1-D tensor with `axis = 0`, computes
+
+      output = x / sqrt(max(sum(x**2), epsilon))
+
+  For `x` with more dimensions, independently normalizes each 1-D slice along
+  dimension `axis`.
+
+  Args:
+    x: A `Tensor`.
+    axis: Dimension along which to normalize.  A scalar or a vector of
+      integers.
+    epsilon: A lower bound value for the norm. Will use `sqrt(epsilon)` as the
+      divisor if `norm < sqrt(epsilon)`.
+    name: A name for this operation (optional).
+
+  Returns:
+    A `Tensor` with the same shape as `x`.
+  """
+  with ops.name_scope(name, "fused_l2_normalize", [x]) as name:
+    x = ops.convert_to_tensor(x, name="x")
+    return gen_fused_l2_normalize_ops.fused_l2_normalize(
+      x, axis=axis, epsilon=epsilon, name=name)
 
 
 def _count_nonzero(input_tensor, dtype=dtypes.int64):
