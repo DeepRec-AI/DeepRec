@@ -1,4 +1,6 @@
-# 1.介绍
+# Processor
+
+## 介绍
 DeepRec Serving Processor是用于线上高性能服务的Library，它以DeepRec为基石，实现多种实用功能：
 
 ● 支持自动发现并导入全量模型；
@@ -18,9 +20,10 @@ DeepRec Serving Processor是用于线上高性能服务的Library，它以DeepRe
 ● 简易的API接口，让用户对接更方便。
 
 Processor的产出是一个独立的so，用户可以很方便的对接到自己的Serving RPC框架中。
-# 2.编译
+
+## 编译
 编译详见[https://github.com/alibaba/DeepRec](https://github.com/alibaba/DeepRec)项目首页“**How to Build serving library**”部分，编译的产出是“**libserving_processor.so**”。
-# 3.使用
+## 使用
 用户有两种使用方式：
 
 第一，在用户框架代码中直接[dlopen](https://linux.die.net/man/3/dlopen)从而加载so中的符号。
@@ -28,7 +31,8 @@ Processor的产出是一个独立的so，用户可以很方便的对接到自己
 第二，可以结合头文件“**serving/processor/serving/processor.h**”使用，头文件中将Processor相关的API暴露了，通过头文件和“**libserving_processor.so**”来调用serving API也比较方便。
 
 **需要注意**：如果不是使用DeepRec docker，那么可能需要一些额外的so依赖，包括：libiomp5.so，libmklml_intel.so，libstdc++.so.6，用户可以[直接下载](http://tfsmoke1.cn-hangzhou.oss.aliyun-inc.com/deeprec/serving_processor_so.tar.gz)，然后在执行时候Preload这些so。
-## API接口
+
+#### API接口
 Processor提供以下几组C API接口，用户在自己的Serving框架中需要调用下列接口。
 
 **1) initialize**
@@ -117,7 +121,7 @@ int output_size = 0;
 int state = get_serving_model_info(model, &output_data, &output_size);
 ```
 
-## 数据格式
+#### 数据格式
 Processor需要的Request，Response等数据格式如下所示，这里我们使用Protobuf作为数据存储格式。同DeepRec下“**serving/processor/serving/predict.proto**”一致。
 Protobuf是Protocol Buffers的简称，它是一种数据描述语言，用于描述一种轻便高效的结构化数据存储格式。 Protobuf可以用于结构化数据串行化，或者说序列化。简单来说，在不同的语言之间，数据可以相互解析。Java的protobuf数据被序列化之后在c++中可以原样解析出来，这样方便支持各种场景下的数据互通。
 用户在客户端需要将数据封装成下面格式，或者在Process之前转成此格式。
@@ -280,7 +284,7 @@ message ServingModelInfo {
 **对于 PredictResponse**：
 
 map<string, ArrayProto> outputs：是map结构，key是 PredictRequest中output_filter中指定的names，value是返回的tensor。
-## 配置文件
+#### 配置文件
 上面提到，在初始化时候需要调用函数：
 ```c
 void* initialize(const char* model_entry, const char* model_config, int* state);
@@ -368,7 +372,7 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 "timeline_path": "oss://mybucket/timeline/"
 }
 ```
-## 模型路径配置
+#### 模型路径配置
 在Processor中，用户需要提供checkpoint以及saved_model，processor从saved_model中读取meta graph 信息，包括signature，input，output等信息。模型参数需要从checkpoint中读取，原因是现在的增量更新依赖checkpoint，而不是saved model。在serving过程中，当checkpoint更新了，processor在指定的模型目录下发现有新的版本的模型，会自动加载最新的模型。saved model一般不会更新，除非graph变化，当真的变化了，需要重启新的processor instance。
 
 用户提供文件如下：
@@ -395,8 +399,9 @@ saved_model:
       | _ _ variables
 ```
 以上述为例，在配置文件中"checkpoint_dir"设置为“/a/b/c/checkpoint_parent_dir/”，"savedmodel_dir"设置为“/a/b/c/saved_model/”
-# 4.示例
+## 示例
 End2End的示例详见：serving/processor/tests/end2end/README
 这里提供了一个完整的端到端的示例。
-# 5.Timeline收集
+
+## Timeline收集
 通过在config中配置timeline相关参数，能够获取对应的timeline文件，这些文件是二进制格式，不能直接在`chrome://tracing`中进行展示，用户需要在编译DeepRec完成后目录(一般是/root/.cache/bazel/_bazel_root/)下find这个config_pb2.py文件，并放在serving/tools/timeline目录下，在此目录下执行生成`chrome://tracing`能展示的timeline。

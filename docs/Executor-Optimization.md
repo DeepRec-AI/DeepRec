@@ -1,12 +1,13 @@
 # Executor优化
 ## 功能介绍
 Runtime在调度上，做了相应的优化，目前主要优化CPU端执行效率，后续会继续推出GPU runtime优化。
+
 ## 用户接口
-目前支持几种Executor策略，分别是
+目前支持三种Executor策略
 
 #### 原生tensorflow executor
 
-是默认executor，无需开关控制。
+默认executor策略。
 
 #### Inline executor
 
@@ -26,7 +27,7 @@ with tf.train.MonitoredTrainingSession(
 
 #### 基于CostModel的Executor
 
-通过动态Trace指定的Session Run情况，统计与计算多组指标，通过CostModel计算出一个较优的调度策略。
+通过动态Trace指定的Session Run情况，统计与计算多组指标，通过CostModel计算出一个较优的调度策略。该功能中包含了基于关键路径的调度策略和根据CostModel批量执行耗时短的算子的调度策略。
 
 **使用方式**
 首先用户可以指定Trace哪些Step的Sesison Run来收集执行指标，默认是收集100～200 Step的指标，通过设置下列环境变量，用户可以自定义此参数。
