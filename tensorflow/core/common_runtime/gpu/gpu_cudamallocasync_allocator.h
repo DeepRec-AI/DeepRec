@@ -68,7 +68,7 @@ class GpuCudaMallocAsyncAllocator : public Allocator {
   explicit GpuCudaMallocAsyncAllocator(PlatformGpuId platform_device_id,
                                        size_t pool_size,
                                        bool reserve_memory = false,
-                                       bool compute_stats = false);
+                                       bool compute_stats = true);
   ~GpuCudaMallocAsyncAllocator() override;
   string Name() override { return name_; }
   void* AllocateRaw(size_t alignment, size_t num_bytes) override;
@@ -86,8 +86,12 @@ class GpuCudaMallocAsyncAllocator : public Allocator {
 
   void SetStream(void* stream) override {
 #if TF_CUDA_MALLOC_ASYNC_SUPPORTED
-    cuda_stream_ = reinterpret_cast<CUstream>(stream);
-#endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
+    cuda_stream_ = *(static_cast<CUstream*>(stream));
+#endif
+  }
+
+  static int GetInstantiatedCountTestOnly() {
+    return number_instantiated_;
   }
 
  private:
@@ -106,6 +110,10 @@ class GpuCudaMallocAsyncAllocator : public Allocator {
   // will return an error.
   CUmemoryPool pool_;
 #endif  // TF_CUDA_MALLOC_ASYNC_SUPPORTED
+
+  // Just a counter for the number of time this class is instantiated.
+  // Only useful for tests.
+  static std::atomic<int> number_instantiated_;
 
   string name_;
 
