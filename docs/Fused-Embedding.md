@@ -2,7 +2,7 @@
 
 ## 介绍
 
-DeepRec 及 TensorFlow 原生的 embedding lookup 相关 API，如 safe_embedding_lookup_sparse，会创建比较多的 op，因此在 GPU 上执行时容易出现 kernel launch bound 的问题，且部分 op 只有 CPU 实现，速度相对较慢。因此，Embedding子图Fusion功能提供了一组接口，并提供了一组fusion ops，通过Fusion的Op，减少需要 launch 的 kernel 数量，并提供高性能的实现，达到在 GPU 上加速执行的目的。
+DeepRec 及 TensorFlow 原生的 embedding lookup 相关 API，如 safe_embedding_lookup_sparse，会创建比较多的 op，因此在 GPU 上执行时容易出现 kernel launch bound 的问题，且部分 op 只有 CPU 实现，速度相对较慢。因此，Embedding子图Fusion功能提供了一组接口，并提供了一组fusion ops，通过Fusion的Op，减少需要 launch 的 kernel 数量，并提供高性能的实现，达到加速执行的目的。
 
 
 ## FeatureColumn接口
@@ -13,7 +13,7 @@ DeepRec 及 TensorFlow 原生的 embedding lookup 相关 API，如 safe_embeddin
 2. `tensorflow/contrib/layers/python/layers/feature_column.py` 的 `_EmbeddingColumn`
 
 然后一般会通过 `tf.feature_column.input_layer` 或 `tf.feature_column_ops.input_from_feature_columns` 等高级接口，将此实例传入，建立 lookup 相关计算图。
-因此，Embedding子图Fusion功能给上述的 `EmbeddingColumn` 类都添加了 `do_fusion` 属性，默认为 `False`，用户在使用时，可以显示的设置为 `True`，让 embedding lookup 过程使用 fused ops。
+因此，Embedding子图Fusion功能给上述的 `EmbeddingColumn` 类都添加了 `do_fusion` 属性，默认为 None，用户在使用时，可以显示的设置为 `'v1', 'v2'` 这样的 fusion 版本，让 embedding lookup 过程使用 fused ops。
 如下：
 
 
@@ -29,7 +29,7 @@ W = tf.feature_column.embedding_column(
             categorical_column=column,
             dimension=3,
             initializer=tf.ones_initializer(tf.dtypes.float32),
-            do_fusion=True)
+            do_fusion='v2')
 
 ids={}
 ids["col_emb"] = tf.SparseTensor(indices=[[0,0],[1,1],[2,2],[3,3],[4,4]], values=tf.cast([1,2,3,4,5], tf.dtypes.int64), dense_shape=[5, 4])
@@ -64,7 +64,7 @@ columns = feature_column.sparse_column_with_embedding(column_name="col_emb", dty
 W = feature_column.embedding_column(sparse_id_column=columns,
             dimension=3,
             initializer=tf.ones_initializer(tf.dtypes.float32),
-            do_fusion=True)
+            do_fusion='v2')
 
 
 ids={}
@@ -97,12 +97,17 @@ def fused_safe_embedding_lookup_sparse(embedding_weights,
                                        name=None,
                                        partition_strategy="div",
                                        max_norm=None,
-                                       prune=True):
+                                       prune=True,
+                                       blocknums=None,
+                                       fusion_version='v2'):
 ```
 此接口与 DeepRec 的 `safe_embedding_lookup_sparse` 接口功能是一致的。因此参数不再赘述，可查看相关文档
 
 
 ## fused_embedding_lookup_sparse接口
+
+### 使用 v1 版本
+
 通过 `nn.fused_embedding_lookup_sparse`
 ```python
 @tf_export(v1=["nn.fused_embedding_lookup_sparse"])
@@ -118,6 +123,27 @@ def fused_embedding_lookup_sparse(params,
                                   fill_empty_row=True,
                                   blocknums=None):
 ```
+
+### 使用 v2 版本
+
+通过 `nn.fused_embedding_lookup_sparse_v2`
+```python
+@tf_export(v1=["nn.fused_embedding_lookup_sparse_v2"])
+def fused_embedding_lookup_sparse_v2(params,
+                                     sp_ids,
+                                     sparse_weights=None,
+                                     partition_strategy=None,
+                                     name=None,
+                                     combiner=None,
+                                     max_norm=None,
+                                     default_id=None,
+                                     prune_invalid_ids=False,
+                                     fill_empty_row=True,
+                                     blocknums=None):
+```
+
+### 参数说明
+
 - `params`: List，可以含有单个的 embedding tensor 或是被 partition 过的 embedding tensors。embedding tensors 的 rank 须都为 2。
 - `sp_ids`: SparseTenor，其 values 为需要查找的 id。indices 的 rank 须为 2。dense_shape 的 rank 须为 1，元素个数为 2。
 - `sparse_weights`: sparse_ids 的 values 的权重。目前还暂不支持。
@@ -131,13 +157,28 @@ def fused_embedding_lookup_sparse(params,
 - `blocknums`: DynamicEmbeddingVariable 使用的参数。
 
 
+`'v1'` 目前为 CPU fusion 实现，`'v2'` 目前为 GPU fusion 实现。请根据需要相应选择。
+
 ## 注意事项
 
 1. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
+2. 使用 v2 GPU fusion 时，可以考虑 `tf.ConfigProto(inter_op_parallelism_threads=1)`，测试发现在 embedding 数量较多的情况下，`inter_op_parallelism_threads=1` 可以避免一些 Schedule 的 overhead，更高的提速。
 
 
-## Op 介绍及计算图
-新增了 Fused Embedding V2 相关算子:
+## Op 介绍
+
+### Fused Embedding V1 相关算子:
+
+1. FusedEmbeddingSparsePreLookUp
+2. FusedEmbeddingSparsePostLookUp
+3. FusedEmbeddingSparsePostLookUpGrad
+
+FusedEmbeddingSparsePreLookUp 主要负责 fill empty row, prune invalid id, 以及根据 partition_strategy 对 sp_ids 的 values 和 indices 进行划分。
+tf.Gather 与 EmbeddingVariable 或 tf.Variable 在同一个 device 上，在 partition 的情况下可能有多份，在不同的 device 上(分布式)。它负责接受 PreEmbedding 划分过的 values 和 indices，进行实际的 embedding vector 查找。
+FusedEmbeddingSparsePostLookUp 则负责将 embedding vector 从各个 parition 上收集回来，然后进行 combiner 及 max_norm 等相关操作。
+FusedEmbeddingSparsePostLookUpGrad 负责 FusedEmbeddingSparsePostLookUp 的反向梯度计算。
+
+### Fused Embedding V2 相关算子:
 
 1. PruneInvalidAndFillEmptyRows
 2. UniqueWithCountsV3
@@ -145,9 +186,7 @@ def fused_embedding_lookup_sparse(params,
 4. FusedEmbeddingSparsePostLookUpV2
 5. FusedEmbeddingSparsePostLookUpV3Grad
 
-
-
-以底层级接口 `fused_embedding_lookup_sparse_v2` 为例，调用之后会依照下列顺序创建计算图:
+调用 `fused_embedding_lookup_sparse_v2` 之后会依照下列顺序创建计算图:
 
 1. PruneInvalidAndFillEmptyRows 负责去除非法值及填充空行
 2. UniqueWithCountsV2 负责对 sparse_ids 进行 unique 操作，在多机多卡的情况下可以减少通信量
@@ -157,4 +196,4 @@ def fused_embedding_lookup_sparse(params,
 6. **FusedEmbeddingSparsePostLookUpGrad** 负责 FusedEmbeddingSparsePostLookUp 的反向梯度计算。
 
 ## 性能对比
-见 `modelzoo/features/GPUFusedEmbedding` 下的测试数据
+v2 算子 GPU 相关，见 `modelzoo/features/GPUFusedEmbedding` 下的测试数据

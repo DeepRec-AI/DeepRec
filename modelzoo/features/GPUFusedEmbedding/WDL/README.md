@@ -8,7 +8,7 @@ The only difference is that this model use GPU Fused Embedding to acclerate the 
 deep_columns.append(tf.feature_column.embedding_column(
     categorical_column,
     dimension=EMBEDDING_DIMENSIONS[column_name],
-    combiner='mean', do_fusion=True))
+    combiner='mean', do_fusion='v2'))
 ```
 
 ## Benchmark
