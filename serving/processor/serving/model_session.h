@@ -13,6 +13,7 @@
 namespace tensorflow {
 class SessionOptions;
 class RunOptions;
+class SessionGroup;
 class Session;
 class Tensor;
 
@@ -20,18 +21,26 @@ namespace processor {
 class IFeatureStoreMgr;
 class Request;
 class Response;
+enum SelectSessionPolicy {
+  MOD = 1,
+  RR = 2
+};
 struct ModelSession {
-  ModelSession(Session* s, const Version& version,
-      IFeatureStoreMgr* sparse_storage);
-  ModelSession(Session* s, const Version& version);
+  ModelSession(SessionGroup* s, const std::string& select_session_policy,
+      const Version& version, IFeatureStoreMgr* sparse_storage);
+  ModelSession(SessionGroup* s, const std::string& select_session_policy,
+      const Version& version);
   virtual ~ModelSession();
 
   Status Predict(Request& req, Response& resp);
   Status LocalPredict(Request& req, Response& resp);
   Version GetVersion() {return version_;}
   void UpdateVersion(const Version& v) { version_ = v; }
+  Session* GetSession();
 
-  Session* session_ = nullptr;
+  SessionGroup* session_group_ = nullptr;
+  SelectSessionPolicy select_session_policy_ =
+      SelectSessionPolicy::MOD;
   //IFeatureStoreMgr* sparse_storage_ = nullptr;
   
   std::string sparse_storage_name_;
@@ -42,6 +51,9 @@ struct ModelSession {
   // Local storage or remote storage for sparse variable.
   bool is_local_ = true;
   Version version_;
+
+ private:
+  int GetServingSessionId();
 };
 
 class ModelSessionMgr {
@@ -85,6 +97,9 @@ class ModelSessionMgr {
 
  private:
   virtual Status CreateSession(Session** sess);
+  virtual Status CreateSessionGroup(
+      SessionGroup** session_group, ModelConfig* config);
+ 
   virtual Status RunRestoreOps(
       const char* ckpt_name, int64 full_ckpt_version,
       const char* savedmodel_dir, Session* session,

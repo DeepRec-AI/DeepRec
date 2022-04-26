@@ -10,6 +10,7 @@ on:
       - 'modelzoo/**'
       - 'sparse_operation_kit/**'
       - 'triton/**'
+      - '*.md'
   pull_request_review:
     types: [submitted]
     branches:
@@ -19,6 +20,7 @@ on:
       - 'modelzoo/**'
       - 'sparse_operation_kit/**'
       - 'triton/**'
+      - '*.md'
 
 env:
   IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-cibuild-py36-cu110-ubuntu18.04
@@ -42,7 +44,7 @@ jobs:
 
     - name: Build Wheel
       run:
-        docker exec ${JOBNAME} /mnt/cibuild/build-cpu.sh /mnt
+        docker exec ${JOBNAME} /mnt/cibuild/build-gpu.sh /mnt
 
     - name:  Remove Container
       if: ${{ always() }}

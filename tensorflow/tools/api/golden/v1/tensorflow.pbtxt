@@ -73,6 +73,10 @@ tf_module {
     mtype: "<type \'type\'>"
   }
   member {
+    name: "ExecutorPolicy"
+    mtype: "<class \'google.protobuf.internal.enum_type_wrapper.EnumTypeWrapper\'>"
+  }
+  member {
     name: "FIFOQueue"
     mtype: "<type \'type\'>"
   }

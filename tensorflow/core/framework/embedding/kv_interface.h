@@ -23,6 +23,19 @@ namespace tensorflow {
 template <class V>
 class ValuePtr;
 
+namespace embedding {
+
+class Iterator {
+ public:
+  Iterator() {};
+  virtual ~Iterator() {};
+  virtual bool Valid() const = 0;
+  virtual void SeekToFirst() = 0;
+  virtual void Next() = 0;
+  virtual std::string Key() const = 0;
+  virtual std::string Value() const = 0;
+};
+
 template <class K, class V>
 class KVInterface {
  public:
@@ -66,8 +79,11 @@ class KVInterface {
 
   virtual std::string DebugString() const = 0;
 
+  virtual Iterator* GetIterator() { return nullptr; }
+
 };
 
+}  // namespace embedding
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_KV_INTERFACE_H_

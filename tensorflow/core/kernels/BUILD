@@ -693,6 +693,7 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core/util/tensor_bundle",
+        "@com_github_google_leveldb//:leveldb",
     ],
 )
 
@@ -2822,6 +2823,10 @@ tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc"],
+    gpu_srcs = [
+        "kv_variable_ops_gpu.cu.cc",
+        "kv_variable_ops_gpu.h",
+    ],
     copts = ["-g"],
     nocopts = "-fno-exceptions",
     deps = [
@@ -2841,6 +2846,7 @@ tf_kernel_library(
         "@sparsehash_c11//:dense_hash_map",
         "@libcuckoo//:libcuckoo",
         "@com_github_google_leveldb//:leveldb",
+        "@cuCollections//:cuco_hash_table",
     ],
 )
 
@@ -3482,7 +3488,9 @@ tf_kernel_library(
 tf_kernel_library(
     name = "save_restore_v2_ops",
     prefix = "save_restore_v2_ops",
-    deps = SAVE_RESTORE_DEPS + [":incr_save_restore_ops"],
+    copts = ["-g"],
+    deps = SAVE_RESTORE_DEPS + [":incr_save_restore_ops",
+        "@com_github_google_leveldb//:leveldb",]
 )
 
 tf_kernel_library(
@@ -5293,6 +5301,12 @@ tf_cuda_library(
 
 tf_kernel_library(
     name = "fused_embedding_ops",
+    srcs = [
+        "fused_embedding/embedding_lookup_sparse_local_op.cc",
+        "fused_embedding/embedding_lookup_sparse_pre_op.cc",
+        "fused_embedding/embedding_lookup_sparse_post_op.cc",
+    ],
+    hdrs = ["fused_embedding/embedding_lookup_sparse_op.h"],
     gpu_srcs = [
         "fused_embedding/gpu/fused_embedding_post_v2_ops_gpus.cu.cc",
         "fused_embedding/gpu/partition_with_permutation_ops.cu.cc",
@@ -5303,9 +5317,72 @@ tf_kernel_library(
     ],
     deps = ["//third_party/eigen3",
             "//tensorflow/core/profiler:nvtx_utils"] +
-            DYNAMIC_DEPS +
+            DYNAMIC_DEPS + mkl_deps() +
             if_cuda(["@cub_archive//:cub",
                      "fused_embedding_cuh"]),
+)
+
+tf_cc_test(
+    name = "embedding_lookup_sparse_pre_op_test",
+    size = "small",
+    srcs = ["fused_embedding/embedding_lookup_sparse_pre_op_test.cc"],
+    deps = [
+        ":fused_embedding_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "embedding_lookup_sparse_post_op_test",
+    size = "small",
+    srcs = ["fused_embedding/embedding_lookup_sparse_post_op_test.cc"],
+    deps = [
+        ":fused_embedding_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "embedding_lookup_sparse_post_grad_op_test",
+    size = "small",
+    srcs = ["fused_embedding/embedding_lookup_sparse_post_grad_op_test.cc"],
+    deps = [
+        ":fused_embedding_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_kernel_library(
@@ -6124,8 +6201,15 @@ tf_cc_test(
 
 tf_kernel_library(
     name = "training_ali_ops",
-    prefix = "training_ali_ops",
-    hdrs = ["training_ali_op_helpers.h"],
+    hdrs = [
+        "training_ali_ops.h",
+        "training_ali_op_helpers.h"
+    ],
+    srcs = ["training_ali_ops.cc"],
+    gpu_srcs = [
+        "training_ali_ops_gpu.cu.cc",
+        "training_ali_ops_gpu.h",
+    ],
     deps = [
         ":bounds_check",
         ":training_op_helpers",

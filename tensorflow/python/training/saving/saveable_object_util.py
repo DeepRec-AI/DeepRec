@@ -213,8 +213,6 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
             storage_size=self.var._storage_size,
             partition_id=self.partition_id, partition_num=self.partition_num,
             default_value_dim=self.var._default_value_dim)
-        
-          
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access

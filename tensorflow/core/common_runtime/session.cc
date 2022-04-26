@@ -101,6 +101,28 @@ Status NewSession(const SessionOptions& options, Session** out_session) {
   return s;
 }
 
+Status NewSessionGroup(const SessionOptions& options,
+                       SessionGroup** out_session_group,
+                       int session_num) {
+  SessionFactory* factory;
+  Status s = SessionFactory::GetFactory(options, &factory);
+  if (!s.ok()) {
+    *out_session_group = nullptr;
+    LOG(ERROR) << s;
+    return s;
+  }
+  // Starts exporting metrics through a platform-specific monitoring API (if
+  // provided). For builds using "tensorflow/core/platform/default", this is
+  // currently a no-op.
+  session_created->GetCell()->Set(true);
+  monitoring::StartExporter();
+  s = factory->NewSessionGroup(options, out_session_group, session_num);
+  if (!s.ok()) {
+    *out_session_group = nullptr;
+  }
+  return s;
+}
+
 Status Reset(const SessionOptions& options,
              const std::vector<string>& containers) {
   SessionFactory* factory;

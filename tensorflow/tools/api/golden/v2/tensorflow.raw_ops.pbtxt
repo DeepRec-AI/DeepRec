@@ -1629,6 +1629,14 @@ tf_module {
     argspec: "args=[\'input\', \'size\', \'paddings\', \'filter\', \'mode\', \'strides\', \'padding\', \'resize_align_corners\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
+    name: "FusedSafeEmbeddingLookupSparseLocal"
+    argspec: "args=[\'weight\', \'id_input\', \'dense_shape\', \'indice\', \'weight_input\', \'combiner\', \'prune\', \'max_norm\', \'default_id\', \'partition_strategy\', \'T\', \'name\'], varargs=None, keywords=None, defaults=[\'mean\', \'True\', \'-1\', \'-1\', \'div\', \"<dtype: \'float32\'>\", \'None\'], "
+  }
+  member_method {
+    name: "FusedSafeEmbeddingLookupSparseLocalGrad"
+    argspec: "args=[\'gradients\', \'input\', \'indices\', \'dense_shape\', \'combiner\', \'name\'], varargs=None, keywords=None, defaults=[\'mean\', \'None\'], "
+  }
+  member_method {
     name: "GRUBlockCell"
     argspec: "args=[\'x\', \'h_prev\', \'w_ru\', \'w_c\', \'b_ru\', \'b_c\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
   }

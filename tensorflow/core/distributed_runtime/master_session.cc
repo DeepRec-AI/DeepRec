@@ -100,6 +100,8 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
                       strings::StrCat(
                           "(", absl::StrJoin(n->requested_inputs(), ", "))));
     }
+
+    executor_policy_ = session_opts_.config.executor_policy();
   }
 
   ~ReffedClientGraph() override {
@@ -332,6 +334,8 @@ class MasterSession::ReffedClientGraph : public core::RefCounted {
   // Deregisters the partitions on the workers.  Called in the
   // destructor and does not wait for the rpc completion.
   void DeregisterPartitions();
+
+  ExecutorPolicy executor_policy_ = ExecutorPolicy::USE_NORMAL_EXECUTOR;
 
   TF_DISALLOW_COPY_AND_ASSIGN(ReffedClientGraph);
 };
@@ -619,6 +623,7 @@ Status MasterSession::ReffedClientGraph::RunPartitionsHelper(
     CancellationManager* cm, bool is_last_partial_run) {
   // Collect execution cost stats on a smoothly decreasing frequency.
   ExecutorOpts exec_opts;
+  exec_opts.set_executor_policy(executor_policy_);
   if (pss->report_tensor_allocations_upon_oom) {
     exec_opts.set_report_tensor_allocations_upon_oom(true);
   }

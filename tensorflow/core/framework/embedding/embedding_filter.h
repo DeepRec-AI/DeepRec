@@ -15,7 +15,17 @@ const static std::vector<int64> default_seeds = {
  2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41,
  43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97
 };
+
+template<typename K, typename EV>
+void UpdateCache(K* key_buff, int64 key_num, EV* ev) {
+    embedding::BatchCache<K>* cache = ev->Cache();
+    if (cache) {
+      cache->add_to_rank(key_buff, key_num);
+    }
 }
+}
+
+struct RestoreBuffer;
 
 template<typename K, typename V, typename EV>
 class EmbeddingFilter {
@@ -28,6 +38,12 @@ class EmbeddingFilter {
 
   virtual int64 GetFreq(K key, ValuePtr<V>* value_ptr) = 0;
   virtual int64 GetFreq(K key) = 0;
+  virtual Status Import(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter) = 0;
 };
 
 template<typename K, typename V, typename EV>
@@ -218,6 +234,51 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
     }
   }
 
+  Status Import(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter) override {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    int64* version_buff = (int64*)restore_buff.version_buffer;
+    int64* freq_buff = (int64*)restore_buff.freq_buffer;
+    for (auto i = 0; i < key_num; ++i) {
+      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      ValuePtr<V>* value_ptr = nullptr;
+      int64 new_freq = freq_buff[i];
+      if (!is_filter) {
+        if (freq_buff[i] >= config_.filter_freq) {
+          SetBloomFreq(key_buff[i], freq_buff[i]);
+        } else {
+          SetBloomFreq(key_buff[i], config_.filter_freq);
+          new_freq = config_.filter_freq;
+        }
+      } else {
+        SetBloomFreq(key_buff[i], freq_buff[i]); 
+      }
+      if (new_freq >= config_.filter_freq){
+        TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
+        if (config_.is_primary() && config_.steps_to_live != 0) {
+          value_ptr->SetStep(version_buff[i]);
+        }
+        if (!is_filter){
+          V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
+        } else {
+          V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
+        }
+        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+      }
+    }
+    UpdateCache(key_buff, key_num, ev_);
+    return Status::OK();
+  }
+
   void AddFreq(K key) {
     std::vector<int64> hash_val;
     for (int64 i = 0; i < config_.kHashFunc; i++) {
@@ -391,6 +452,50 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
     return value_ptr->GetFreq();
   }
 
+  Status Import(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter) override {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    int64* version_buff = (int64*)restore_buff.version_buffer;
+    int64* freq_buff = (int64*)restore_buff.freq_buffer;
+    for (auto i = 0; i < key_num; ++i) {
+      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      ValuePtr<V>* value_ptr = nullptr;
+      TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
+      if (!is_filter) {
+        if (freq_buff[i] >= config_.filter_freq) {
+          value_ptr->SetFreq(freq_buff[i]);
+        }else {
+          value_ptr->SetFreq(config_.filter_freq);
+        }
+      }else {
+        value_ptr->SetFreq(freq_buff[i]); 
+      }
+        
+      if (config_.steps_to_live != 0) {
+        value_ptr->SetStep(version_buff[i]);
+      }
+      if (value_ptr->GetFreq() >= config_.filter_freq){
+        if(!is_filter){
+           V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
+        } else {
+           V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
+        }
+        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+      }
+    }
+    UpdateCache(key_buff, key_num, ev_);
+    return Status::OK();
+  }
+
  private:
   EmbeddingConfig config_;
   embedding::StorageManager<K, V>* storage_manager_;
@@ -452,6 +557,42 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     }else {
       return 0;
     }
+  }
+
+  Status Import(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter) override {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    int64* version_buff = (int64*)restore_buff.version_buffer;
+    int64* freq_buff = (int64*)restore_buff.freq_buffer;
+    for (auto i = 0; i < key_num; ++i) {
+      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      ValuePtr<V>* value_ptr = nullptr;
+      TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
+      if (config_.filter_freq !=0 || ev_->IsMultiLevel()) {
+        value_ptr->SetFreq(freq_buff[i]);
+      }
+      if (config_.steps_to_live != 0) {
+        value_ptr->SetStep(version_buff[i]);
+      }
+      if (!is_filter) {
+        V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
+        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+      }else {
+        V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
+        TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
+      }
+    }
+    UpdateCache(key_buff, key_num, ev_);
+    return Status::OK();
   }
 
  private:

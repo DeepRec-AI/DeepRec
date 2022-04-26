@@ -434,7 +434,9 @@ def get_arg_parser():
     parser.add_argument('--saved_model_path',
                         type=str,
                         default="")
-
+    parser.add_argument('--no_saver',
+                        help='not add saver to the model.',
+                        action='store_true')
     return parser
 
 
@@ -581,10 +583,11 @@ def main(tf_config=None, server=None):
                 sess.run(tf.local_variables_initializer())
                 merged = tf.summary.merge_all()
                 writer = tf.summary.FileWriter(checkpoint_dir, sess.graph)
-                saver = tf.train.Saver(tf.global_variables(),
-                                       max_to_keep=args.keep_checkpoint_max,
-                                       incremental_save_restore=True)
-                incr_saver = tf_incr_saver._get_incremental_saver(True, saver)
+                if not args.no_saver:
+                    saver = tf.train.Saver(tf.global_variables(),
+                                        max_to_keep=args.keep_checkpoint_max,
+                                        incremental_save_restore=True)
+                    incr_saver = tf_incr_saver._get_incremental_saver(True, saver)
                 options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                 run_metadata = tf.RunMetadata()
 
@@ -599,20 +602,22 @@ def main(tf_config=None, server=None):
                         _, train_loss, events = sess.run(
                             [model.train_op, model.loss, merged])
                         writer.add_summary(events, _in)
-                        checkpoint_path = saver.save(
-                            sess,
-                            save_path=os.path.join(checkpoint_dir,
-                                                   'WIDE_AND_DEEP-checkpoint'),
-                            global_step=_in)
-                        print("Save checkpoint to %s" % checkpoint_path)
+                        if not args.no_saver:
+                            checkpoint_path = saver.save(
+                                sess,
+                                save_path=os.path.join(checkpoint_dir,
+                                                    'WIDE_AND_DEEP-checkpoint'),
+                                global_step=_in)
+                            print("Save checkpoint to %s" % checkpoint_path)
                     elif args.incr_save_steps > 0 and _in % args.incr_save_steps == 0:
                         _, train_loss = sess.run(
                             [model.train_op, model.loss])
-                        incr_checkpoint_path = incr_saver.incremental_save(
-                            sess,
-                            os.path.join(checkpoint_dir, '.incremental_checkpoint/incr-WIDE_AND_DEEP-checkpoint'),
-                            global_step=_in)
-                        print("Save incremental checkpoint to %s" % incr_checkpoint_path)
+                        if not args.no_saver:
+                            incr_checkpoint_path = incr_saver.incremental_save(
+                                sess,
+                                os.path.join(checkpoint_dir, '.incremental_checkpoint/incr-WIDE_AND_DEEP-checkpoint'),
+                                global_step=_in)
+                            print("Save incremental checkpoint to %s" % incr_checkpoint_path)
                     elif (args.timeline > 0 and _in % args.timeline == 0):
                         _, train_loss = sess.run([model.train_op, model.loss],
                                                  options=options,

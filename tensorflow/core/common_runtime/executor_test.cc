@@ -79,6 +79,8 @@ class ExecutorTest : public ::testing::Test {
     delete exec_;
     TF_CHECK_OK(NewLocalExecutor(params, std::move(graph), &exec_));
     runner_ = [this](std::function<void()> fn) { thread_pool_->Schedule(fn); };
+    cost_runner_ = [this](std::function<void()> fn, int64 cost)
+        { thread_pool_->CostSchedule(fn, cost); };
   }
 
   Status Run(Rendezvous* rendez) {
@@ -86,6 +88,7 @@ class ExecutorTest : public ::testing::Test {
     args.rendezvous = rendez;
     args.stats_collector = &step_stats_collector_;
     args.runner = runner_;
+    args.cost_runner = cost_runner_;
     return exec_->Run(args);
   }
 
@@ -95,6 +98,7 @@ class ExecutorTest : public ::testing::Test {
   StepStatsCollector step_stats_collector_;
   StepStats step_stats_;
   Executor::Args::Runner runner_;
+  Executor::Args::CostRunner cost_runner_;
   Rendezvous* rendez_ = nullptr;
 };
 

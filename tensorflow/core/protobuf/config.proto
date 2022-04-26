@@ -15,6 +15,15 @@ import "tensorflow/core/protobuf/cluster.proto";
 import "tensorflow/core/protobuf/debug.proto";
 import "tensorflow/core/protobuf/rewriter_config.proto";
 
+enum ExecutorPolicy {
+  // Tensorflow executor
+  USE_NORMAL_EXECUTOR = 0;
+  // Cost model executor
+  USE_COST_MODEL_EXECUTOR = 1;
+  // Inline executor
+  USE_INLINE_EXECUTOR = 2;
+}
+
 message GPUOptions {
   // Fraction of the available GPU memory to allocate for each process.
   // 1 means to allocate all of the GPU memory, 0.5 means the process
@@ -555,7 +564,10 @@ message ConfigProto {
 
   bool run_graph_mode = 203;
   bool run_graph_mode_lite = 204;
-  // Next: 205
+
+  ExecutorPolicy executor_policy = 205;
+
+  // Next: 206
 }
 
 // Options for a single Run() call.

@@ -61,7 +61,7 @@ class DirectSession : public Session {
   // closed. This ensures that Reset requests from the 'factory' don't get sent
   // to sessions that are already closed.
   DirectSession(const SessionOptions& options, const DeviceMgr* device_mgr,
-                DirectSessionFactory* factory);
+                bool own_device_mgr, DirectSessionFactory* factory);
   ~DirectSession() override;
 
   typedef std::vector<std::pair<string, Tensor>> NamedTensorList;
@@ -102,7 +102,7 @@ class DirectSession : public Session {
       std::vector<DeviceAttributes>* response) override;
   ::tensorflow::Status Close() override;
   ::tensorflow::Status LocalDeviceManager(const DeviceMgr** output) override {
-    *output = device_mgr_.get();
+    *output = device_mgr_;
     return ::tensorflow::Status::OK();
   }
 
@@ -322,7 +322,8 @@ class DirectSession : public Session {
   const SessionOptions options_;
 
   // Device structures.
-  const std::unique_ptr<const DeviceMgr> device_mgr_;
+  bool own_device_mgr_;
+  const DeviceMgr* device_mgr_;
   std::vector<Device*> devices_;  // not owned
   DeviceSet device_set_;
 
@@ -421,6 +422,9 @@ class DirectSession : public Session {
   // Otherwise run in global thread pool, session owned thread pool or handler
   // pool according to other specifications of RunOptions and ConfigProto.
   bool run_in_caller_thread_ = false;
+
+  // If true, will use cost_model_executor to run the graph.
+  bool run_cost_model_executor_ = false;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DirectSession);
 

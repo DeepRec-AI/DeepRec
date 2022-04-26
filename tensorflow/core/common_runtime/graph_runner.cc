@@ -152,6 +152,7 @@ Status GraphRunner::Run(Graph* graph, FunctionLibraryRuntime* function_library,
   // Run operators on the local thread. We should not need concurrency here; we
   // should not be running expensive operators.
   auto runner = [](Executor::Args::Closure c) { c(); };
+  auto cost_runner = [](Executor::Args::Closure c, int64 cost) { c(); };
 
   LocalExecutorParams params;
   // The ownership of the output tensors are bound to this device's lifetime.
@@ -181,6 +182,7 @@ Status GraphRunner::Run(Graph* graph, FunctionLibraryRuntime* function_library,
   // called via this method.
   args.step_id = LogMemory::CONSTANT_FOLDING_STEP_ID;
   args.runner = runner;
+  args.cost_runner = cost_runner;
   args.rendezvous = rendez;
   args.global_rendezvous = rendez;
   // NOTE: Use of graph runner is limited to single-device executions

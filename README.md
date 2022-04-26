@@ -47,10 +47,10 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cp
 
 GPU Platform
 
-
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 ```
+
 ### **How to Build**
 
 configure
@@ -112,14 +112,14 @@ End2End test
 Details please see: serving/processor/tests/end2end/README
 ```
 
-### **Nightly Images**
+### **Latest Release Images**
 #### Image for GPU CUDA11.0
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-gpu-py36-cu110-ubuntu18.04
 ```
 #### Image for CPU
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec-nightly-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-cpu-py36-ubuntu18.04
 ```
 
 

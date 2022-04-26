@@ -527,7 +527,7 @@ void GraphMgr::ExecuteAsync(const string& handle, const int64 step_id,
   global_rendezvous->Initialize(session);
 
   StartParallelExecutors(handle, step_id, item, rendezvous, global_rendezvous, ce_handle,
-                         collector, cost_graph, cancellation_manager, session,
+                         collector, cost_graph, cancellation_manager, session, opts,
                          [item, rendezvous, global_rendezvous, ce_handle, done, start_time_usecs,
                           input_size, activity](const Status& s) {
                            done(s);
@@ -545,7 +545,7 @@ void GraphMgr::StartParallelExecutors(
     Rendezvous* global_rendezvous,
     CollectiveExecutor::Handle* ce_handle, StepStatsCollector* collector,
     CostGraphDef* cost_graph, CancellationManager* cancellation_manager,
-    WorkerSession* session, StatusCallback done) {
+    WorkerSession* session, const ExecutorOpts& opts, StatusCallback done) {
   const int num_units = item->units.size();
   CHECK_GE(num_units, 1);
   ScopedStepContainer* step_container = new ScopedStepContainer(
@@ -592,11 +592,15 @@ void GraphMgr::StartParallelExecutors(
   if (LogMemory::IsEnabled()) {
     LogMemory::RecordStep(args.step_id, handle);
   }
+  args.executor_policy = opts.executor_policy();
   thread::ThreadPool* pool = worker_env_->compute_pool;
   using std::placeholders::_1;
+  using std::placeholders::_2;
   // Line below is equivalent to this code, but does one less indirect call:
   //  args.runner = [pool](std::function<void()> fn) { pool->Schedule(fn); };
   auto default_runner = std::bind(&thread::ThreadPool::Schedule, pool, _1);
+  auto default_cost_runner = std::bind(&thread::ThreadPool::CostSchedule, pool, _1, _2);
+
   for (const auto& unit : item->units) {
     // TODO(zhengxq): if the device picks its own threadpool, we need to assign
     //     less threads to the main compute pool by default.
@@ -604,9 +608,12 @@ void GraphMgr::StartParallelExecutors(
         unit.device->tensorflow_device_thread_pool();
     if (!device_thread_pool) {
       args.runner = default_runner;
+      args.cost_runner = default_cost_runner;
     } else {
       args.runner =
           std::bind(&thread::ThreadPool::Schedule, device_thread_pool, _1);
+      args.cost_runner =
+          std::bind(&thread::ThreadPool::CostSchedule, device_thread_pool, _1, _2);
     }
     unit.root->RunAsync(args, barrier->Get());
   }

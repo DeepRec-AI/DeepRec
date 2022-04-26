@@ -194,7 +194,8 @@ extern void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
 
 extern void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
                        const std::vector<std::string>& target_nodes);
-extern void GetStagingEdges(const Graph& dest, const EdgeSet& source_edge_set,
+extern void GetStagingEdges(const Graph& dest,
+                            const std::unordered_set<Node *>& source_node_set,
                             const std::vector<std::string>& target_nodes,
                             std::vector<const Edge*>& edge_vec);
 }  // namespace tensorflow

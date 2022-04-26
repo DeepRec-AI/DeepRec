@@ -13,6 +13,7 @@
 namespace tensorflow {
 template <class V>
 class ValuePtr;
+
 template <class K, class V>
 class EmbeddingVar;
 
@@ -58,12 +59,6 @@ class StorageManager {
   is_multi_level_(false) {}
 
   ~StorageManager() {
-    if (eviction_thread_) {
-      mutex_lock l(mu_);
-      shutdown_cv_.notify_all();
-      shutdown_ = true;
-    }
-    delete eviction_thread_;
     for (auto kv: kvs_) {
       delete kv.first;
     }
@@ -266,29 +261,35 @@ class StorageManager {
 
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list,
                     std::vector<int64>* version_list, std::vector<int64>* freq_list,
-                    const EmbeddingConfig& emb_config, EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter) {
-    mutex_lock l(mu_);
+                    const EmbeddingConfig& emb_config, EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
+                    embedding::Iterator** it) {
     for (auto kv : kvs_) {
       std::vector<ValuePtr<V>* > value_ptr_list;
       std::vector<K> key_list_tmp;
       TF_CHECK_OK(kv.first->GetSnapshot(&key_list_tmp, &value_ptr_list));
+      if (key_list_tmp.empty()) {
+        *it = kv.first->GetIterator();
+        continue;
+      }
       for (int64 i = 0; i < key_list_tmp.size(); ++i) {
         V* val = value_ptr_list[i]->GetValue(emb_config.emb_index, GetOffset(emb_config.emb_index));
         V* primary_val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index, GetOffset(emb_config.primary_emb_index));
-        if (val != nullptr && primary_val != nullptr) {
-          value_list->push_back(val);
-          key_list->push_back(key_list_tmp[i]);
-          if (emb_config.filter_freq != 0 || is_multi_level_) {
+        key_list->push_back(key_list_tmp[i]);
+        if (emb_config.filter_freq != 0 || is_multi_level_) {
             int64 dump_freq = filter->GetFreq(key_list_tmp[i], value_ptr_list[i]);
             freq_list->push_back(dump_freq);
-          }
-          if (emb_config.steps_to_live != 0) {
+        }
+        if (emb_config.steps_to_live != 0) {
             int64 dump_version = value_ptr_list[i]->GetStep();
             version_list->push_back(dump_version);
-          }
+        }
+        if (val != nullptr && primary_val != nullptr) {
+          value_list->push_back(val);  
+        } else {
+          value_list->push_back(nullptr);
         }
         // storage_manager_->FreeValuePtr(value_ptr_list[i]);
-      }
+      } 
     }
     return key_list->size();
   }
@@ -351,6 +352,12 @@ class StorageManager {
   }
 
   Status Destroy() {
+    if (eviction_thread_) {
+      mutex_lock l(mu_);
+      shutdown_cv_.notify_all();
+      shutdown_ = true;
+    }
+    delete eviction_thread_;
     mutex_lock l(mu_);
     std::vector<K> key_list;
     std::vector<ValuePtr<V>* > value_ptr_list;
@@ -383,6 +390,8 @@ class StorageManager {
       kv.first->FreeValuePtr(value_ptr);
     }
   }
+
+  mutex* get_mutex() { return &mu_; }
 
  private:
   void BatchEviction() {
@@ -417,6 +426,8 @@ class StorageManager {
             TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
             TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
             // delete value_ptr is nessary;
+            value_ptr->Destroy(kvs_[0].second);
+            delete value_ptr;
           } else {
             // bypass
           }

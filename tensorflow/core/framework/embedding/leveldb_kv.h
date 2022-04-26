@@ -18,11 +18,12 @@ using leveldb::Options;
 using leveldb::ReadOptions;
 using leveldb::WriteBatch;
 using leveldb::WriteOptions;
-using leveldb::Iterator;
 
 namespace tensorflow {
 template <class V>
 class ValuePtr;
+
+namespace embedding {
 
 template <class K>
 class SizeCounter {
@@ -55,6 +56,31 @@ class SizeCounter {
  private:
   std::vector<int64> counter_;
   int num_parts_;  
+};
+
+class DBIterator : public Iterator {
+ public:
+  DBIterator(leveldb::Iterator* it):it_(it) {}
+  virtual ~DBIterator() {
+    delete it_;
+  };
+  virtual bool Valid() const {
+    return it_->Valid();
+  }
+  virtual void SeekToFirst() {
+    return it_->SeekToFirst();
+  }
+  virtual void Next() {
+    return it_->Next();
+  }
+  virtual std::string Key() const {
+    return it_->key().ToString();
+  }
+  virtual std::string Value() const {
+    return it_->value().ToString();
+  }
+ private:
+  leveldb::Iterator* it_;
 };
 
 template <class K, class V>
@@ -119,7 +145,6 @@ class LevelDBKV : public KVInterface<K, V> {
     std::string value_res((char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Put(WriteOptions(), db_key, value_res);
-    delete value_ptr;
     if (!s.ok()){
       return errors::AlreadyExists(
           "already exists Key: ", key, " in RocksDB.");
@@ -141,23 +166,14 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
+    return Status::OK();
+  }
+
+  Iterator* GetIterator() {
     ReadOptions options;
     options.snapshot = db_->GetSnapshot();
-    Iterator* it = db_->NewIterator(options);
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-      std::string key_str, value_str;
-      ValuePtr<V>* value_ptr = new_value_ptr_fn_(total_dims_);
-      key_str = it->key().ToString();
-      value_str = it->value().ToString();
-      key_list->emplace_back(*((long*)&key_str[0]));
-      void* ptr = value_ptr->GetPtr();
-      memcpy(ptr, &value_str[0], total_dims_ * sizeof(V) + sizeof(FixedLengthHeader));
-      value_ptr_list->emplace_back(value_ptr);  
-    }
-    assert(it->status().ok());
-    delete it;
-    db_->ReleaseSnapshot(options.snapshot);
-    return Status::OK();
+    leveldb::Iterator* it = db_->NewIterator(options);
+    return new DBIterator(it);
   }
 
   int64 Size() const {
@@ -180,6 +196,7 @@ class LevelDBKV : public KVInterface<K, V> {
   int total_dims_;
 };
 
+} //namespace embedding
 } //namespace tensorflow
 
 #endif  //TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_

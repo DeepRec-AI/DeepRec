@@ -1,0 +1,519 @@
+From 874376f7e6b597bc288d3b945e706fd83a7033bf Mon Sep 17 00:00:00 2001
+From: Hongxiao Bai <hongxiaob@nvidia.com>
+Date: Thu, 20 Jan 2022 21:33:03 +0800
+Subject: [PATCH] cuco_modification_for_deeprec
+
+---
+ include/cuco/detail/dynamic_map.inl         |  47 +++++++-
+ include/cuco/detail/dynamic_map_kernels.cuh |  71 +++++++++++-
+ include/cuco/detail/pair.cuh                |  14 +++
+ include/cuco/detail/static_map.inl          | 115 ++++++++++++++++----
+ include/cuco/dynamic_map.cuh                |  49 ++++++++-
+ include/cuco/static_map.cuh                 |  51 ++++++++-
+ include/cuco/traits.hpp                     |   1 +
+ 7 files changed, 317 insertions(+), 31 deletions(-)
+
+diff --git a/include/cuco/detail/dynamic_map.inl b/include/cuco/detail/dynamic_map.inl
+index 57950ea..78543c5 100644
+--- a/include/cuco/detail/dynamic_map.inl
++++ b/include/cuco/detail/dynamic_map.inl
+@@ -34,7 +34,7 @@ dynamic_map<Key, Value, Scope, Allocator>::dynamic_map(std::size_t initial_capac
+   submap_views_.push_back(submaps_[0]->get_device_view());
+   submap_mutable_views_.push_back(submaps_[0]->get_device_mutable_view());
+ 
+-  CUCO_CUDA_TRY(cudaMallocManaged(&num_successes_, sizeof(atomic_ctr_type)));
++  CUCO_CUDA_TRY(cudaMallocManaged(&num_successes_, sizeof(atomic_ctr_type) * max_num_submaps));
+ }  // namespace cuco
+ 
+ template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
+@@ -49,6 +49,10 @@ void dynamic_map<Key, Value, Scope, Allocator>::reserve(std::size_t n)
+   int64_t num_elements_remaining = n;
+   auto submap_idx                = 0;
+   while (num_elements_remaining > 0) {
++    if (submap_idx >= max_num_submaps) {
++      throw std::runtime_error("The number of submaps has reached its maximum.");
++    }
++
+     std::size_t submap_capacity;
+ 
+     // if the submap already exists
+@@ -153,4 +157,45 @@ void dynamic_map<Key, Value, Scope, Allocator>::contains(
+   CUCO_CUDA_TRY(cudaDeviceSynchronize());
+ }
+ 
++template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
++template <typename InputIt, typename Hash, typename KeyEqual>
++void dynamic_map<Key, Value, Scope, Allocator>::erase(
++  InputIt first, InputIt last, Hash hash, KeyEqual key_equal)
++{
++  auto num_keys         = std::distance(first, last);
++  auto const block_size = 128;
++  auto const stride     = 1;
++  auto const tile_size  = 4;
++  auto const grid_size  = (tile_size * num_keys + stride * block_size - 1) / (stride * block_size);
++
++  for (size_t submap_idx = 0; submap_idx < submaps_.size(); submap_idx++) {
++    num_successes_[submap_idx] = 0;
++  }
++  int device_id;
++  CUCO_CUDA_TRY(cudaGetDevice(&device_id));
++  CUCO_CUDA_TRY(cudaMemPrefetchAsync(num_successes_, sizeof(atomic_ctr_type) * submaps_.size(), device_id));
++
++  detail::erase<block_size, tile_size><<<grid_size, block_size, sizeof(size_t) * submaps_.size()>>>(
++    first, last, submap_mutable_views_.data().get(), num_successes_, submaps_.size(), hash, key_equal);
++  CUCO_CUDA_TRY(cudaDeviceSynchronize());
++
++  for (size_t submap_idx = 0; submap_idx < submaps_.size(); submap_idx++) {
++    std::size_t h_num_successes = num_successes_[submap_idx].load(cuda::std::memory_order_relaxed);
++    submaps_[submap_idx]->size_ -= h_num_successes;
++    size_ -= h_num_successes;
++  }
++}
++
++template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
++template <typename OutputKeyIt, typename OutputValueIt, typename Hash, typename KeyEqual>
++void dynamic_map<Key, Value, Scope, Allocator>::get_snapshot(
++  OutputKeyIt k_first, OutputValueIt v_first, Hash hash, KeyEqual key_equal)
++{
++  auto const block_size = 1;
++  auto const grid_size  = 1;
++  detail::get_snapshot<<<grid_size, block_size>>>(
++    k_first, v_first, submap_views_.data().get(), submaps_.size(), hash, key_equal);
++  CUCO_CUDA_TRY(cudaDeviceSynchronize());
++}
++
+ }  // namespace cuco
+\ No newline at end of file
+diff --git a/include/cuco/detail/dynamic_map_kernels.cuh b/include/cuco/detail/dynamic_map_kernels.cuh
+index c1e21e8..13b252e 100644
+--- a/include/cuco/detail/dynamic_map_kernels.cuh
++++ b/include/cuco/detail/dynamic_map_kernels.cuh
+@@ -456,5 +456,72 @@ __global__ void contains(InputIt first,
+     key_idx += (gridDim.x * blockDim.x) / tile_size;
+   }
+ }
+-}  // namespace detail
+-}  // namespace cuco
+\ No newline at end of file
++
++template<uint32_t block_size, uint32_t tile_size,
++         typename InputIt,
++         typename mutableViewT,
++         typename atomicT,
++         typename Hash, 
++         typename KeyEqual>
++__global__ void erase(InputIt first,
++                      InputIt last,
++                      mutableViewT* submap_mutable_views,
++                      atomicT* num_successes,
++                      uint32_t num_submaps,
++                      Hash hash,
++                      KeyEqual key_equal) {
++  extern __shared__ size_t thread_num_successes[];
++  if (threadIdx.x < num_submaps)
++    thread_num_successes[threadIdx.x] = 0;
++  __syncthreads();
++
++  auto tile = cg::tiled_partition<tile_size>(cg::this_thread_block());
++  auto tid = blockDim.x * blockIdx.x + threadIdx.x;
++  auto key_idx = tid / tile_size;
++
++  while(first + key_idx < last) {
++    auto key = *(first + key_idx);
++
++    for(auto i = 0; i < num_submaps; ++i) {
++      if (submap_mutable_views[i].erase(tile, key, hash, key_equal)) {
++        if (tile.thread_rank() == 0)
++          atomicAdd(reinterpret_cast<unsigned long long *>(thread_num_successes) + i, 1ull);
++        break;
++      }
++    }
++
++    key_idx += (gridDim.x * blockDim.x) / tile_size;
++  }
++  __syncthreads();
++
++  if (threadIdx.x < num_submaps)
++    num_successes[threadIdx.x] += thread_num_successes[threadIdx.x];
++}
++
++template<typename OutputKeyIt,
++         typename OutputValueIt,
++         typename viewT,
++         typename Hash, 
++         typename KeyEqual>
++__global__ void get_snapshot(OutputKeyIt k_first,
++                             OutputValueIt v_first,
++                             viewT* submap_views,
++                             uint32_t num_submaps,
++                             Hash hash,
++                             KeyEqual key_equal) {
++  int n = 0;
++  for(auto i = 0; i < num_submaps; ++i) {
++    auto submap_view_size = submap_views[i].get_capacity();
++    for(auto j = 0; j < submap_view_size; ++j) {
++      auto found = submap_views[i].get_slot(j, hash, key_equal);
++      if (found != submap_views[i].end()) {
++        *(k_first + n) = found->first;
++        *(v_first + n) = found->second;
++        ++n;
++      }
++    }
++  }
++}
++
++} // namespace detail
++} // namespace cuco
+diff --git a/include/cuco/detail/pair.cuh b/include/cuco/detail/pair.cuh
+index 0d8a85e..4aa8481 100644
+--- a/include/cuco/detail/pair.cuh
++++ b/include/cuco/detail/pair.cuh
+@@ -22,6 +22,20 @@
+ #include <tuple>
+ #include <type_traits>
+ 
++namespace std {
++template <class...>
++using void_t = void;
++
++template <bool B>
++using bool_constant = std::integral_constant<bool, B>;
++
++template <typename _Tp>
++struct has_unique_object_representations : bool_constant<__has_unique_object_representations(std::remove_cv_t<std::remove_all_extents_t<_Tp>>)> {};
++
++template <class T>
++constexpr bool has_unique_object_representations_v = has_unique_object_representations<T>::value;
++} // namespace std
++
+ namespace cuco {
+ namespace detail {
+ 
+diff --git a/include/cuco/detail/static_map.inl b/include/cuco/detail/static_map.inl
+index 1719970..febc1fb 100644
+--- a/include/cuco/detail/static_map.inl
++++ b/include/cuco/detail/static_map.inl
+@@ -271,18 +271,18 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
+ 
+     if (slot_is_empty) {
+       auto const status = [&]() {
+-        // One single CAS operation if `value_type` is packable
+-        if constexpr (cuco::detail::is_packable<value_type>()) {
+-          return packed_cas(current_slot, insert_pair, key_equal);
+-        }
++//         // One single CAS operation if `value_type` is packable
++//         if constexpr (cuco::detail::is_packable<value_type>()) {
++//           return packed_cas(current_slot, insert_pair, key_equal);
++//         }
+ 
+-        if constexpr (not cuco::detail::is_packable<value_type>()) {
+-#if __CUDA_ARCH__ < 700
++//         if constexpr (not cuco::detail::is_packable<value_type>()) {
++// #if __CUDA_ARCH__ < 700
+           return cas_dependent_write(current_slot, insert_pair, key_equal);
+-#else
+-          return back_to_back_cas(current_slot, insert_pair, key_equal);
+-#endif
+-        }
++// #else
++//           return back_to_back_cas(current_slot, insert_pair, key_equal);
++// #endif
++//         }
+       }();
+ 
+       // successful insert
+@@ -325,18 +325,18 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
+       uint32_t src_lane = __ffs(window_contains_empty) - 1;
+ 
+       if (g.thread_rank() == src_lane) {
+-        // One single CAS operation if `value_type` is packable
+-        if constexpr (cuco::detail::is_packable<value_type>()) {
+-          status = packed_cas(current_slot, insert_pair, key_equal);
+-        }
+-        // Otherwise, two back-to-back CAS operations
+-        else {
+-#if __CUDA_ARCH__ < 700
++//         // One single CAS operation if `value_type` is packable
++//         if constexpr (cuco::detail::is_packable<value_type>()) {
++//           status = packed_cas(current_slot, insert_pair, key_equal);
++//         }
++//         // Otherwise, two back-to-back CAS operations
++//         else {
++// #if __CUDA_ARCH__ < 700
+           status = cas_dependent_write(current_slot, insert_pair, key_equal);
+-#else
+-          status = back_to_back_cas(current_slot, insert_pair, key_equal);
+-#endif
+-        }
++// #else
++//           status = back_to_back_cas(current_slot, insert_pair, key_equal);
++// #endif
++//         }
+       }
+ 
+       uint32_t res_status = g.shfl(static_cast<uint32_t>(status), src_lane);
+@@ -358,6 +358,43 @@ __device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::i
+   }
+ }
+ 
++template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
++template <typename CG, typename Hash, typename KeyEqual>
++__device__ bool static_map<Key, Value, Scope, Allocator>::device_mutable_view::erase(
++  CG const& g, key_type const& key, Hash hash, KeyEqual key_equal) noexcept
++{
++  auto current_slot = initial_slot(g, key, hash);
++
++  while (true) {
++    key_type const existing_key = current_slot->first.load(cuda::std::memory_order_relaxed);
++
++    auto const slot_is_empty =
++      detail::bitwise_compare(existing_key, this->get_empty_key_sentinel());
++
++    auto const window_matches = g.ballot(not slot_is_empty and key_equal(existing_key, key));
++
++    if (window_matches) {
++      uint32_t src_lane = __ffs(window_matches) - 1;
++      if (g.thread_rank() == src_lane) {
++        auto expected_key = current_slot->first.load(cuda::std::memory_order_relaxed);
++        auto& slot_key = current_slot->first;
++        auto const key_success =
++          slot_key.compare_exchange_strong(expected_key, this->get_empty_key_sentinel(), cuda::std::memory_order_relaxed);
++        if (key_success) {
++          auto& slot_value = current_slot->second;
++          slot_value.store(this->get_empty_value_sentinel(), cuda::std::memory_order_relaxed);
++          return true;
++        }
++      }
++      return false;
++    }
++
++    if (g.ballot(slot_is_empty)) { return false; }
++
++    current_slot = next_slot(g, current_slot);
++  }
++}
++
+ template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
+ template <typename Hash, typename KeyEqual>
+ __device__ typename static_map<Key, Value, Scope, Allocator>::device_view::iterator
+@@ -482,6 +519,42 @@ static_map<Key, Value, Scope, Allocator>::device_view::find(CG g,
+   }
+ }
+ 
++template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
++template <typename Hash, typename KeyEqual>
++__device__ typename static_map<Key, Value, Scope, Allocator>::device_view::iterator
++static_map<Key, Value, Scope, Allocator>::device_view::get_slot(std::size_t idx,
++                                                                Hash hash,
++                                                                KeyEqual key_equal) noexcept
++{
++  auto current_slot = ith_slot(idx, hash);
++
++  auto const existing_key = current_slot->first.load(cuda::std::memory_order_relaxed);
++  // Key doesn't exist, return end()
++  if (detail::bitwise_compare(existing_key, this->get_empty_key_sentinel())) {
++    return this->end();
++  }
++
++  return current_slot;
++}
++
++template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
++template <typename Hash, typename KeyEqual>
++__device__ typename static_map<Key, Value, Scope, Allocator>::device_view::const_iterator
++static_map<Key, Value, Scope, Allocator>::device_view::get_slot(std::size_t idx,
++                                                                Hash hash,
++                                                                KeyEqual key_equal) const noexcept
++{
++  auto current_slot = ith_slot(idx, hash);
++
++  auto const existing_key = current_slot->first.load(cuda::std::memory_order_relaxed);
++  // Key doesn't exist, return end()
++  if (detail::bitwise_compare(existing_key, this->get_empty_key_sentinel())) {
++    return this->end();
++  }
++
++  return current_slot;
++}
++
+ template <typename Key, typename Value, cuda::thread_scope Scope, typename Allocator>
+ template <typename Hash, typename KeyEqual>
+ __device__ bool static_map<Key, Value, Scope, Allocator>::device_view::contains(
+diff --git a/include/cuco/dynamic_map.cuh b/include/cuco/dynamic_map.cuh
+index 2e57ac6..64f4d3f 100644
+--- a/include/cuco/dynamic_map.cuh
++++ b/include/cuco/dynamic_map.cuh
+@@ -96,8 +96,8 @@ class dynamic_map {
+   using key_type                  = Key;
+   using mapped_type               = Value;
+   using atomic_ctr_type           = cuda::atomic<std::size_t, Scope>;
+-  using view_type                 = typename static_map<Key, Value, Scope>::device_view;
+-  using mutable_view_type         = typename static_map<Key, Value, Scope>::device_mutable_view;
++  using view_type                 = typename static_map<Key, Value, Scope, Allocator>::device_view;
++  using mutable_view_type         = typename static_map<Key, Value, Scope, Allocator>::device_mutable_view;
+   dynamic_map(dynamic_map const&) = delete;
+   dynamic_map(dynamic_map&&)      = delete;
+   dynamic_map& operator=(dynamic_map const&) = delete;
+@@ -219,6 +219,48 @@ class dynamic_map {
+                 Hash hash          = Hash{},
+                 KeyEqual key_equal = KeyEqual{});
+ 
++  /**
++   * @brief Erase the items corresponding to the keys in the range `[first, last)`.
++   *
++   * @tparam InputIt Device accessible input iterator whose `value_type` is
++   * convertible to the map's `key_type`
++   * @tparam Hash Unary callable type
++   * @tparam KeyEqual Binary callable type
++   * @param first Beginning of the sequence of keys
++   * @param last End of the sequence of keys
++   * @param hash The unary function to apply to hash each key
++   * @param key_equal The binary function to compare two keys for equality
++   */
++  template <typename InputIt,
++            typename Hash     = cuco::detail::MurmurHash3_32<key_type>,
++            typename KeyEqual = thrust::equal_to<key_type>>
++  void erase(InputIt first,
++             InputIt last,
++             Hash hash          = Hash{},
++             KeyEqual key_equal = KeyEqual{});
++
++  template <typename OutputKeyIt,
++            typename OutputValueIt,
++            typename Hash     = cuco::detail::MurmurHash3_32<key_type>,
++            typename KeyEqual = thrust::equal_to<key_type>>
++  void get_snapshot(OutputKeyIt k_first,
++                    OutputValueIt v_first,
++                    Hash hash          = Hash{},
++                    KeyEqual key_equal = KeyEqual{});
++
++  atomic_ctr_type* get_num_successes() noexcept { return num_successes_; }
++  std::vector<std::unique_ptr<static_map<key_type, mapped_type, Scope, Allocator>>>& get_submaps() noexcept { return submaps_; }
++  thrust::device_vector<view_type>& get_submap_views() noexcept { return submap_views_; }
++  thrust::device_vector<mutable_view_type>& get_submap_mutable_views() noexcept { return submap_mutable_views_; }
++  float get_max_load_factor() const noexcept { return max_load_factor_; }
++  std::size_t get_min_insert_size() const noexcept { return min_insert_size_; }
++
++  void update_submap_sizes(std::size_t submap_idx, std::size_t n) {
++    // std::size_t h_num_successes = num_successes_[idx].load(cuda::std::memory_order_relaxed);
++    submaps_[submap_idx]->size_ += n;
++    size_ += n;
++  }
++
+   /**
+    * @brief Gets the current number of elements in the map
+    *
+@@ -241,13 +283,14 @@ class dynamic_map {
+   float get_load_factor() const noexcept { return static_cast<float>(size_) / capacity_; }
+ 
+  private:
++  static constexpr size_t max_num_submaps = 128;
+   key_type empty_key_sentinel_{};       ///< Key value that represents an empty slot
+   mapped_type empty_value_sentinel_{};  ///< Initial value of empty slot
+   std::size_t size_{};                  ///< Number of keys in the map
+   std::size_t capacity_{};              ///< Maximum number of keys that can be inserted
+   float max_load_factor_{};             ///< Max load factor before capacity growth
+ 
+-  std::vector<std::unique_ptr<static_map<key_type, mapped_type, Scope>>>
++  std::vector<std::unique_ptr<static_map<key_type, mapped_type, Scope, Allocator>>>
+     submaps_;                                      ///< vector of pointers to each submap
+   thrust::device_vector<view_type> submap_views_;  ///< vector of device views for each submap
+   thrust::device_vector<mutable_view_type>
+diff --git a/include/cuco/static_map.cuh b/include/cuco/static_map.cuh
+index 321b1f3..cc7601b 100644
+--- a/include/cuco/static_map.cuh
++++ b/include/cuco/static_map.cuh
+@@ -123,10 +123,10 @@ class static_map {
+     "Key type must have unique object representations or have been explicitly declared as safe for "
+     "bitwise comparison via specialization of cuco::is_bitwise_comparable_v<Key>.");
+ 
+-  static_assert(cuco::is_bitwise_comparable_v<Value>,
+-                "Value type must have unique object representations or have been explicitly "
+-                "declared as safe for bitwise comparison via specialization of "
+-                "cuco::is_bitwise_comparable_v<Value>.");
++  // static_assert(cuco::is_bitwise_comparable_v<Value>,
++  //               "Value type must have unique object representations or have been explicitly "
++  //               "declared as safe for bitwise comparison via specialization of "
++  //               "cuco::is_bitwise_comparable_v<Value>.");
+ 
+   friend class dynamic_map<Key, Value, Scope, Allocator>;
+ 
+@@ -417,6 +417,18 @@ class static_map {
+       return &slots_[(hash(k) + g.thread_rank()) % capacity_];
+     }
+ 
++    template <typename Hash>
++    __device__ iterator ith_slot(std::size_t idx, Hash hash) noexcept
++    {
++      return &slots_[idx];
++    }
++
++    template <typename Hash>
++    __device__ const_iterator ith_slot(std::size_t idx, Hash hash) const noexcept
++    {
++      return &slots_[idx];
++    }
++
+     /**
+      * @brief Given a slot `s`, returns the next slot.
+      *
+@@ -775,6 +787,27 @@ class static_map {
+                            value_type const& insert_pair,
+                            Hash hash          = Hash{},
+                            KeyEqual key_equal = KeyEqual{}) noexcept;
++
++    /**
++     * @brief Erases the pairs related to the specified keys in the map.
++     * @tparam CG Cooperative Group type
++     * @tparam Hash Unary callable type
++     * @tparam KeyEqual Binary callable type
++     *
++     * @param g The Cooperative Group that performs the insert
++     * @param key The keys to be erased
++     * @param hash The unary callable used to hash the key
++     * @param key_equal The binary callable used to compare two keys for
++     * equality
++     * @return `true` if the insert was successful, `false` otherwise.
++     */
++    template <typename CG,
++              typename Hash     = cuco::detail::MurmurHash3_32<key_type>,
++              typename KeyEqual = thrust::equal_to<key_type>>
++    __device__ bool erase(CG const& g,
++                          key_type const& key,
++                          Hash hash          = Hash{},
++                          KeyEqual key_equal = KeyEqual{}) noexcept;
+   };  // class device mutable view
+ 
+   /**
+@@ -990,6 +1023,16 @@ class static_map {
+     __device__ const_iterator
+     find(CG g, Key const& k, Hash hash = Hash{}, KeyEqual key_equal = KeyEqual{}) const noexcept;
+ 
++    template <typename Hash     = cuco::detail::MurmurHash3_32<key_type>,
++              typename KeyEqual = thrust::equal_to<key_type>>
++    __device__ iterator
++    get_slot(std::size_t idx, Hash hash = Hash{}, KeyEqual key_equal = KeyEqual{}) noexcept;
++
++    template <typename Hash     = cuco::detail::MurmurHash3_32<key_type>,
++              typename KeyEqual = thrust::equal_to<key_type>>
++    __device__ const_iterator
++    get_slot(std::size_t idx, Hash hash = Hash{}, KeyEqual key_equal = KeyEqual{}) const noexcept;
++
+     /**
+      * @brief Indicates whether the key `k` was inserted into the map.
+      *
+diff --git a/include/cuco/traits.hpp b/include/cuco/traits.hpp
+index 445a40d..07fe954 100644
+--- a/include/cuco/traits.hpp
++++ b/include/cuco/traits.hpp
+@@ -17,6 +17,7 @@
+ #pragma once
+ 
+ #include <type_traits>
++#include <cuco/detail/pair.cuh>
+ 
+ namespace cuco {
+ 
+-- 
+2.33.0
+

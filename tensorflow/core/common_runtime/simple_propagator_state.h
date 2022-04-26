@@ -55,7 +55,8 @@ class SimplePropagatorState {
   struct TaggedNode {
     const NodeItem* node_item;
 
-    explicit TaggedNode(const NodeItem* node_item) : node_item(node_item) {}
+    TaggedNode() = default;
+    TaggedNode(const NodeItem* node_item) : node_item(node_item) {}
 
     const NodeItem& get_node_item() const { return *node_item; }
 

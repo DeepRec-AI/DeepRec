@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <tuple>
+#include <queue>
 #include "tensorflow/core/graph/optimizer_fusion_engine_impl.h"
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/graph/graph.h"
@@ -25,6 +26,34 @@ OptimizerFusionImpl::OptimizerFusionImpl(Graph* g, TemplateBase* t)
   fused_op_outputs_.resize(t_->num_outputs_);
   use_dynamic_output_keys_ = false;
   use_dynamic_input_keys_ = false;
+
+  std::unordered_set<Node *> enter_nodes;
+  for (Node *node : g->nodes()) {
+    node_frame_map_[node] = "";
+    if (node->IsEnter()) {
+      enter_nodes.insert(node);
+    }
+  }
+
+  std::unordered_set<Node *> has_visited;
+  for (Node *node : enter_nodes) {
+    const std::string frame_name = node->def().attr().at("frame_name").s();
+    std::queue<Node *> q;
+    q.push(node);
+    while (!q.empty()) {
+      Node *n = q.front();
+      q.pop();
+      has_visited.insert(n);
+      node_frame_map_[n] = frame_name;
+      for (auto e : n->out_edges()) {
+        Node *dst = e->dst();
+        if (has_visited.find(dst) == has_visited.end() && 
+            (!dst->IsExit() || !dst->IsNextIteration())) {
+          q.push(dst);
+        }
+      }
+    }
+  }
 }
 
 bool OptimizerFusionImpl::VisitMatchedNodes() {
@@ -265,6 +294,21 @@ bool OptimizerFusionImpl::CheckInputs(const Node* node,
   return true;
 }
 
+bool OptimizerFusionImpl::CheckMatchedNodeInSameFrame() {
+  // TODO: only op in default frame can be fused
+  const Node *first_key_node = matched_node_map_[t_->first_key_].node;
+  std::string frame_name = node_frame_map_[first_key_node];
+  if (frame_name != "")
+    return false;
+  for (auto matched_node_it : matched_node_map_) {
+    const Node * node = std::get<1>(matched_node_it).node;
+    if (node_frame_map_[node] != frame_name)
+      return false;
+  }
+
+  return true;
+}
+
 bool OptimizerFusionImpl::Optimize() {
   bool changed = false;
   // TODO(minmin) check Template consistency before really optimizing
@@ -329,6 +373,12 @@ bool OptimizerFusionImpl::Optimize() {
                 << temp_node_map_.size();
         continue;
       }
+
+      // double check the matched nodes are in same frame
+      if (!CheckMatchedNodeInSameFrame()) {
+        VLOG(2) << "Failed double check the matched nodes, they are not in same frame";
+        continue;
+      }
       // double check the matched inputs
       bool passed = true;
       for (int i = 0; i < t_->num_inputs_; ++i) {
@@ -363,6 +413,7 @@ bool OptimizerFusionImpl::Optimize() {
         VLOG(2) << "Failed double check the matched outputs";
         continue;
       }
+
       ++num_matched_;
       VLOG(2) << "Matched: " << num_matched_;
       for (auto iter = matched_node_map_.begin();

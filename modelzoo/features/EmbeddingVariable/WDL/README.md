@@ -109,6 +109,14 @@ input:                                          |
 - `image`: where nodes can pull the docker image.
 - `claimName`: PVC name.
 
+### Use GPU
+  In an environment with NVIDIA GPUs, the EmbeddingVaribles along with other Ops that have GPU support will automatically placed on GPU.
+  Since the current implementation of GPU EmbeddingVariable cannot work with TensorFlow Saver, we need run with:
+  ```
+  python train.py --no_saver
+  ```
+  (Note: Since there are some Ops without GPU supporting in this model, the performance is not good with GPUs.)
+
 ## Benchmark
 ### Stand-alone Training
 #### Test Environment

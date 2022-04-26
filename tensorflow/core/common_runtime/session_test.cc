@@ -52,6 +52,13 @@ class FakeSessionFactory : public SessionFactory {
     *out_session = nullptr;
     return Status::OK();
   }
+
+  Status NewSessionGroup(const SessionOptions& options,
+                         SessionGroup** out_session_group,
+                         int session_num = 1) {
+    return errors::Internal(
+        "NewSessionGroup method not implemented in GrpcSessionFactory.");
+  }
 };
 class FakeSessionRegistrar {
  public:
