@@ -1980,7 +1980,7 @@ void GetStagingEdges(const Graph& dest, const std::unordered_set<Node *>& source
     }
   }
 
-  std::vector<bool> is_var_relate(dest.num_nodes(), false);
+  std::vector<bool> is_var_relate(dest.num_node_ids(), false);
   while (!q.empty()) {
     const Node* node = q.front();
     q.pop();
