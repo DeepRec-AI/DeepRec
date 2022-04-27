@@ -28,7 +28,7 @@ DeepRec has super large-scale distributed training capability, supporting model 
 #### **Deploy and Serving**
  - Incremental model loading and exporting
  - Super-scale sparse model distributed serving
- - Multilevel hybrid storage and multi backend supported ..
+ - Multilevel hybrid storage and multi backend supported
  - Online deep learning with low latency
 
 
@@ -56,6 +56,10 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gp
 configure
 ```
 $ ./configure
+```
+Setup Environment Variable (Compile for GPU)
+```
+$ export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
 ```
 Compile for CPU and GPU defaultly
 ```
