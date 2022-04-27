@@ -285,7 +285,11 @@ class StorageManager {
         }
         if (val != nullptr && primary_val != nullptr) {
           value_list->push_back(val);  
+        } else if (val == nullptr && primary_val != nullptr) {
+          // only forward, no backward
+          value_list->push_back(reinterpret_cast<V*>(-1));
         } else {
+          // feature filtered
           value_list->push_back(nullptr);
         }
         // storage_manager_->FreeValuePtr(value_ptr_list[i]);
