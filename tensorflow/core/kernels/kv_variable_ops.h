@@ -316,7 +316,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer,
                                  bytes_limit, &ev_key_dump_iter,
                                  TensorShape({partitioned_tot_key_list.size() + iterator_size}),
-                                 it, true);
+                                 it);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -326,7 +326,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer,
                                  bytes_limit, &ev_value_dump_iter,
                                  TensorShape({partitioned_tot_key_list.size() + iterator_size, ev->ValueLen()}),
-                                 it, false);
+                                 it, ev->storage_manager()->GetOffset(ev->GetEmbeddingIndex()));
   if (!st.ok()) {
     free(dump_buffer);
     return st;

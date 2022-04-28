@@ -251,6 +251,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->Cache();
   }
 
+  int64 GetEmbeddingIndex() {
+    return emb_config_.emb_index;
+  }
+
  private:
   std::string name_;
   bool is_initialized_ = false;
