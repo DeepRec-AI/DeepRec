@@ -64,6 +64,7 @@ Executor-Optimization
 :caption: 模型导出
 
 Incremental-Checkpoint
+Embedding-Variable-Export-Format
 ```
 
 ```{toctree}
