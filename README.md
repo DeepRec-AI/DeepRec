@@ -67,11 +67,11 @@ $ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_US
 ```
 Compile for CPU optimization: oneDNN + Unified Eigen Thread pool
 ```
-$ bazel build  -c opt --config=opt  --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true //tensorflow/tools/pip_package:build_pip_package
+$ bazel build -c opt --config=opt --config=mkl_threadpool //tensorflow/tools/pip_package:build_pip_package
 ```
 Compile for CPU optimization and ABI=0
 ```
-$ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt --config=opt --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true //tensorflow/tools/pip_package:build_pip_package
+$ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt --config=opt --config=mkl_threadpool //tensorflow/tools/pip_package:build_pip_package
 ```
 ### **Create whl package** 
 ```
