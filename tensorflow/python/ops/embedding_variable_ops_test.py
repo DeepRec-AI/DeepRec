@@ -1798,6 +1798,13 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             self.assertEqual(ckpt_value.tolist()[0][j], r[0][j])
             self.assertEqual(ckpt_value.tolist()[1][j], r[3][j])
             self.assertEqual(ckpt_value.tolist()[2][j], r[5][j])
+        if name == "var_1/AdagradDecay-values":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          slot = [[72.1, 72.1, 72.1], [32.1, 32.1, 32.1], [8.1, 8.1, 8.1]]
+          for j in range(0, 3):
+            self.assertAlmostEqual(ckpt_value.tolist()[0][j], slot[0][j], delta=1e-5)
+            self.assertAlmostEqual(ckpt_value.tolist()[1][j], slot[1][j], delta=1e-5)
+            self.assertAlmostEqual(ckpt_value.tolist()[2][j], slot[2][j], delta=1e-5)
     with self.test_session() as sess:
       saver.restore(sess, model_path)
       r1, _, _ = sess.run([emb, train_op,loss])

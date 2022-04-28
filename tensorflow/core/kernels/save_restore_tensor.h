@@ -121,7 +121,7 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
     DumpIterator<T>* dump_iter,
     const TensorShape& dump_tensor_shape,
     embedding::Iterator* it = nullptr,
-    bool is_key = true,
+    int64 value_offset = -1, // -1: save key, x_offset: save embedding(primary or slot offset)
     bool use_shape = true) {
   bool dump_happened = false;
   size_t bytes_written = 0;
@@ -152,7 +152,7 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
       std::string value_str;
       int64 dim = 0;
       void* start = nullptr;
-      if (is_key) {
+      if (value_offset == -1) {
         value_str = it->Key();
 
         if (bytes_written + sizeof(T) > bytes_limit) {
@@ -178,7 +178,7 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
             bytes_written = 0;
             buffer_idx = 0;
           }
-          key_dump_buffer[buffer_idx] = *((T*)start + j);
+          key_dump_buffer[buffer_idx] = *((T*)start + j + value_offset);
           buffer_idx++;
           bytes_written += sizeof(T);
           total_bytes_written += sizeof(T);
