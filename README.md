@@ -87,44 +87,14 @@ $ ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
 $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
 ```
 
-### **How to Build serving library**
-
-configure will modify .bazelrc file, please revert the change when you build DeepRec whl.
-```
-./configure serving
-```
-Or configure with some flags,
-```
-./configure serving --mkl
-./configure serving --mkl_open_source_v1_only
-./configure serving --mkl_threadpool
-./configure serving --mkl --cuda ...
-```
-More details see: serving/configure.py
-
-build processor library, this will generate libserving_processor.so. User should load the library, then call serving API to predict.
-```
-bazel build //serving/processor/serving:libserving_processor.so
-```
-
-UT test
-```
-bazel test -- //serving/processor/... -//serving/processor/framework:lookup_manual_test
-```
-
-End2End test
-```
-Details please see: serving/processor/tests/end2end/README
-```
-
 ### **Latest Release Images**
 #### Image for GPU CUDA11.0
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
 ```
 #### Image for CPU
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-cpu-py36-ubuntu18.04
 ```
 
 

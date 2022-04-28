@@ -11,8 +11,11 @@ DeepRec(PAI-TF) 支持了淘宝搜索、猜你喜欢、定向、直通车等核�
 
 ```{toctree}
 :maxdepth: 2
+:caption: 编译安装
 
-Compile-And-Install
+DeepRec-Compile-And-Install
+Estimator-Compile-And-Install
+TFServing-Compile-And-Install
 ```
 
 # 功能
