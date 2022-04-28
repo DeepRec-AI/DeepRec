@@ -25,6 +25,7 @@ DeepRec has super large-scale distributed training capability, supporting model 
  - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator etc.
  - Operator level optimization, such as BF16 mixed precision  optimization, sparse operator optimization and EmbeddingVariable on PMEM and GPU, new hardware feature enabling, etc.
  - Graph level optimization, such as AutoGraphFusion, SmartStage, AutoPipeline, StrutureFeature, MicroBatch etc.
+ - Compilation optimization, support BladeDISC, XLA etc.
 #### **Deploy and Serving**
  - Incremental model loading and exporting
  - Super-scale sparse model distributed serving
@@ -53,13 +54,13 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gp
 
 ### **How to Build**
 
-configure
-```
-$ ./configure
-```
 Setup Environment Variable (Compile for GPU)
 ```
 $ export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
+```
+configure
+```
+$ ./configure
 ```
 Compile for CPU and GPU defaultly
 ```

@@ -96,6 +96,14 @@ KafkaGroupIODataset
 
 ```{toctree}
 :maxdepth: 2
+:caption: 编译优化
+
+BladeDISC
+XLA
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: 线上Serving
 
 Processor
