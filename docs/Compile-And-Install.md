@@ -52,6 +52,11 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 ./configure
 ```
 
+**配置环境变量-编译GPU**
+```
+export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
+```
+
 **GPU/CPU版本编译**
 
 ```bash
