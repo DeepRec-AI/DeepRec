@@ -185,6 +185,12 @@ class EditDistanceOp : public OpKernel {
       if (g_truth == g_hypothesis) {
         auto loc = std::inner_product(g_truth.begin(), g_truth.end(),
                                       output_strides.begin(), int64{0});
+        OP_REQUIRES(
+            ctx, 0 <= loc && loc < output_elements,
+            errors::Internal("Got an inner product ", loc,
+                             " which would require writing to outside of "
+                             "the buffer for the output tensor (max elements ",
+                             output_elements, ")"));
         output_t(loc) =
             gtl::LevenshteinDistance<T>(truth_seq, hypothesis_seq, cmp);
         if (normalize_) output_t(loc) /= truth_seq.size();
@@ -194,6 +200,12 @@ class EditDistanceOp : public OpKernel {
       } else if (g_truth > g_hypothesis) {  // zero-length truth
         auto loc = std::inner_product(g_hypothesis.begin(), g_hypothesis.end(),
                                       output_strides.begin(), int64{0});
+        OP_REQUIRES(
+            ctx, 0 <= loc && loc < output_elements,
+            errors::Internal("Got an inner product ", loc,
+                             " which would require writing to outside of "
+                             "the buffer for the output tensor (max elements ",
+                             output_elements, ")"));
         output_t(loc) = hypothesis_seq.size();
         if (normalize_ && output_t(loc) != 0.0f) {
           output_t(loc) = std::numeric_limits<float>::infinity();
@@ -202,6 +214,12 @@ class EditDistanceOp : public OpKernel {
       } else {  // zero-length hypothesis
         auto loc = std::inner_product(g_truth.begin(), g_truth.end(),
                                       output_strides.begin(), int64{0});
+        OP_REQUIRES(
+            ctx, 0 <= loc && loc < output_elements,
+            errors::Internal("Got an inner product ", loc,
+                             " which would require writing to outside of "
+                             "the buffer for the output tensor (max elements ",
+                             output_elements, ")"));
         output_t(loc) = (normalize_) ? 1.0 : truth_seq.size();
         ++truth_iter;
       }
@@ -212,6 +230,12 @@ class EditDistanceOp : public OpKernel {
       auto hypothesis_seq = hypothesis_j.values<T>();
       auto loc = std::inner_product(g_hypothesis.begin(), g_hypothesis.end(),
                                     output_strides.begin(), int64{0});
+      OP_REQUIRES(
+          ctx, 0 <= loc && loc < output_elements,
+          errors::Internal("Got an inner product ", loc,
+                           " which would require writing to outside of the "
+                           "buffer for the output tensor (max elements ",
+                           output_elements, ")"));
       output_t(loc) = hypothesis_seq.size();
       if (normalize_ && output_t(loc) != 0.0f) {
         output_t(loc) = std::numeric_limits<float>::infinity();
@@ -224,6 +248,12 @@ class EditDistanceOp : public OpKernel {
       auto truth_seq = truth_i.values<T>();
       auto loc = std::inner_product(g_truth.begin(), g_truth.end(),
                                     output_strides.begin(), int64{0});
+      OP_REQUIRES(
+          ctx, 0 <= loc && loc < output_elements,
+          errors::Internal("Got an inner product ", loc,
+                           " which would require writing to outside of the "
+                           "buffer for the output tensor (max elements ",
+                           output_elements, ")"));
       output_t(loc) = (normalize_) ? 1.0 : truth_seq.size();
       ++truth_iter;
     }
