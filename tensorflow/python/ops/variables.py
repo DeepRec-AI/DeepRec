@@ -198,22 +198,6 @@ class MultihashOption(object):
     self.operation = operation
     self.size = size
 
-@tf_export(v1=["EvictOption"])
-class EvictOption(object):
-  def __init__(self,
-               steps_to_live = None,
-               l2_weight_threshold = -1.0,
-               steps_to_live_l2reg=None,
-               l2reg_theta=None,
-               l2reg_lambda=None):
-    self.steps_to_live = steps_to_live
-    self.l2_weight_threshold = l2_weight_threshold
-    self.steps_to_live_l2reg = steps_to_live_l2reg
-    self.l2reg_theta = l2reg_theta
-    self.l2reg_lambda = l2reg_lambda
-    if self.steps_to_live != None and self.l2_weight_threshold != -1.0:
-      raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
-
 @tf_export(v1=["GlobalStepEvict"])
 class GlobalStepEvict(object):
   def __init__(self,

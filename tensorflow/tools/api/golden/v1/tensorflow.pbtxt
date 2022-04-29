@@ -69,10 +69,6 @@ tf_module {
     mtype: "<class \'google.protobuf.pyext.cpp_message.GeneratedProtocolMessageType\'>"
   }
   member {
-    name: "EvictOption"
-    mtype: "<type \'type\'>"
-  }
-  member {
     name: "ExecutorPolicy"
     mtype: "<class \'google.protobuf.internal.enum_type_wrapper.EnumTypeWrapper\'>"
   }
