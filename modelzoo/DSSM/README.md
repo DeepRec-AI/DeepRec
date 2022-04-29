@@ -172,29 +172,29 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
         <td>DType</td>
         <td>Accuracy</td>
         <td>AUC</td>
-        <td>Globalsetp/Sec</td>
+        <td>Throughput</td>
     </tr>
     <tr>
         <td rowspan="3">DSSM</td>
         <td>Community TensorFlow</td>
         <td>FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>0.8938</td>
+        <td>0.497571</td>
+        <td>74699.90(baseline)</td>
     </tr>
     <tr>
         <td>DeepRec w/ oneDNN</td>
         <td>FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>0.904799</td>
+        <td>0.504635</td>
+        <td>114436.87(1.53x)</td>
     </tr>
     <tr>
         <td>DeepRec w/ oneDNN</td>
         <td>FP32+BF16</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>0.901099</td>
+        <td>0.505794</td>
+        <td>125995.83(1.69x)</td>
     </tr>
 </table>
 
@@ -221,7 +221,7 @@ The benchmark is performed on the [Alibaba Cloud ACK Service(Alibaba Cloud Conta
         <td>Framework</td>
         <td>Protocol</td>
         <td>DType</td>
-        <td>Globalsetp/Sec</td>
+        <td>Throughput</td>
     </tr>
     <tr>
         <td rowspan="3">DSSM</td>

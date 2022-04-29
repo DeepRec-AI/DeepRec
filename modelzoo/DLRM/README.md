@@ -168,29 +168,29 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
         <td>DType</td>
         <td>Accuracy</td>
         <td>AUC</td>
-        <td>Globalsetp/Sec</td>
+        <td>Throughput</td>
     </tr>
     <tr>
         <td rowspan="3">DLRM</td>
         <td>Community TensorFlow</td>
         <td>FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>0.778858</td>
+        <td>0.77024</td>
+        <td>34383.52(baseline)</td>
     </tr>
     <tr>
         <td>DeepRec w/ oneDNN</td>
         <td>FP32</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>0.780382</td>
+        <td>0.770818</td>
+        <td>58637.40(1.71x)</td>
     </tr>
     <tr>
         <td>DeepRec w/ oneDNN</td>
         <td>FP32+BF16</td>
-        <td></td>
-        <td></td>
-        <td></td>
+        <td>0.78029</td>
+        <td>0.773521</td>
+        <td> </td>
     </tr>
 </table>
 
@@ -217,7 +217,7 @@ The benchmark is performed on the [Alibaba Cloud ACK Service(Alibaba Cloud Conta
         <td>Framework</td>
         <td>Protocol</td>
         <td>DType</td>
-        <td>Globalsetp/Sec</td>
+        <td>Throughput</td>
     </tr>
     <tr>
         <td rowspan="3">DLRM</td>
