@@ -28,12 +28,12 @@ from tensorflow.python.util import nest
 from tensorflow.python.util.tf_export import tf_export
 
 
-from tensorflow.python.ops import gen_data_buffer_ops
+from tensorflow.python.ops import gen_tensor_buffer_ops
 from tensorflow.python.ops.prefetch_runner import PrefetchRunner
 
-ops.NotDifferentiable('DataBufferPut')
-ops.NotDifferentiable('DataBufferTake')
-ops.NotDifferentiable('DataBufferCancel')
+ops.NotDifferentiable('TensorBufferPut')
+ops.NotDifferentiable('TensorBufferTake')
+ops.NotDifferentiable('TensorBufferCancel')
 
 PREFETCH = "prefetch"
 
@@ -118,22 +118,22 @@ def staged(
 
   with ops.name_scope(name):
     with ops.device(local_device):
-      fetch_tensors = gen_data_buffer_ops.data_buffer_put(
+      fetch_tensors = gen_tensor_buffer_ops.tensor_buffer_put(
           tensors,
           timeout_millis=timeout_millis,
           shared_name=name,
           shared_capacity=capacity)
-      cancel_fetching = gen_data_buffer_ops.data_buffer_cancel(
+      cancel_fetching = gen_tensor_buffer_ops.tensor_buffer_cancel(
           shared_name=name,
           shared_capacity=capacity)
-      resume_fetching = gen_data_buffer_ops.data_buffer_cancel(
+      resume_fetching = gen_tensor_buffer_ops.tensor_buffer_cancel(
           is_cancelled=False,
           shared_name=name,
           shared_capacity=capacity)
-      close_fetching = gen_data_buffer_ops.data_buffer_close(
+      close_fetching = gen_tensor_buffer_ops.tensor_buffer_close(
           shared_name=name,
           shared_capacity=capacity)
-      next_tensors = gen_data_buffer_ops.data_buffer_take(
+      next_tensors = gen_tensor_buffer_ops.tensor_buffer_take(
           dtypes=tensor_dtypes,
           shared_name=name,
           shared_capacity=capacity,
@@ -220,14 +220,14 @@ def prefetch_join(
   with ops.name_scope(name):
     local_device = control_flow_ops.no_op().device
     with ops.device(local_device):
-      cancel_fetching = gen_data_buffer_ops.data_buffer_cancel(
+      cancel_fetching = gen_tensor_buffer_ops.tensor_buffer_cancel(
           shared_name=name,
           shared_capacity=capacity)
-      resume_fetching = gen_data_buffer_ops.data_buffer_cancel(
+      resume_fetching = gen_tensor_buffer_ops.tensor_buffer_cancel(
           is_cancelled=False,
           shared_name=name,
           shared_capacity=capacity)
-      close_fetching = gen_data_buffer_ops.data_buffer_close(
+      close_fetching = gen_tensor_buffer_ops.tensor_buffer_close(
           shared_name=name,
           shared_capacity=capacity)
 
@@ -265,7 +265,7 @@ def prefetch_join(
 
     with ops.name_scope(name):
       with ops.device(local_device):
-        fetch_tensors = gen_data_buffer_ops.data_buffer_put(
+        fetch_tensors = gen_tensor_buffer_ops.tensor_buffer_put(
             tensors,
             timeout_millis=timeout_millis,
             shared_name=name,
@@ -274,7 +274,7 @@ def prefetch_join(
 
   with ops.name_scope(name):
     with ops.device(local_device):
-      next_tensors = gen_data_buffer_ops.data_buffer_take(
+      next_tensors = gen_tensor_buffer_ops.tensor_buffer_take(
           dtypes=thread_to_tensor_dtypes[0],
           shared_name=name,
           shared_capacity=capacity,

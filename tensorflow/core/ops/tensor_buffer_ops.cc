@@ -25,7 +25,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-REGISTER_OP("DataBufferPut")
+REGISTER_OP("TensorBufferPut")
     .Input("record: dtypes")
     .Attr("container: string = ''")
     .Attr("dtypes: list(type)")
@@ -35,7 +35,7 @@ REGISTER_OP("DataBufferPut")
     .SetShapeFn(shape_inference::UnknownShape)
     .SetIsStateful();
 
-REGISTER_OP("DataBufferTake")
+REGISTER_OP("TensorBufferTake")
     .Output("record: dtypes")
     .Attr("container: string = ''")
     .Attr("dtypes: list(type)")
@@ -45,7 +45,7 @@ REGISTER_OP("DataBufferTake")
     .SetShapeFn(shape_inference::UnknownShape)
     .SetIsStateful();
 
-REGISTER_OP("DataBufferCancel")
+REGISTER_OP("TensorBufferCancel")
     .Attr("container: string = ''")
     .Attr("is_cancelled: bool = true")
     .Attr("shared_name: string = ''")
@@ -53,14 +53,14 @@ REGISTER_OP("DataBufferCancel")
     .SetShapeFn(shape_inference::UnknownShape)
     .SetIsStateful();
 
-REGISTER_OP("DataBufferClose")
+REGISTER_OP("TensorBufferClose")
     .Attr("container: string = ''")
     .Attr("shared_name: string = ''")
     .Attr("shared_capacity: int >= 1 = 1")
     .SetShapeFn(shape_inference::UnknownShape)
     .SetIsStateful();
 
-REGISTER_OP("DataBufferSize")
+REGISTER_OP("TensorBufferSize")
     .Output("size: int32")
     .Attr("container: string = ''")
     .Attr("shared_name: string = ''")
