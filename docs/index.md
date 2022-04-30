@@ -48,6 +48,7 @@ SOK
 
 Auto-Micro-Batch
 Fused-Embedding
+Stage
 Smart-Stage
 Auto-Fusion
 ```
