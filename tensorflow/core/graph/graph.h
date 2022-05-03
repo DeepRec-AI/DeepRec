@@ -200,8 +200,8 @@ class Node {
   bool IsFuseRecv() const { return class_ == NC_FUSE_RECV ||
                                    class_ == NC_HOST_FUSE_RECV; }
   bool IsConstant() const { return class_ == NC_CONSTANT; }
-  bool IsStage() const { return class_ == NC_DATA_BUFFER_PUT; }
-  bool IsUnstage() const { return class_ == NC_DATA_BUFFER_TAKE; }
+  bool IsStage() const { return class_ == NC_TENSOR_BUFFER_PUT; }
+  bool IsUnstage() const { return class_ == NC_TENSOR_BUFFER_TAKE; }
   bool IsVariable() const { return class_ == NC_VARIABLE; }
   bool IsKvVarHandle() const { return class_ == NC_KV_VAR_HANDLE; }
   bool IsIdentity() const { return class_ == NC_IDENTITY; }
@@ -331,8 +331,8 @@ class Node {
     NC_RETVAL,
     NC_STAR_RUN_GRAPH,
     NC_RUN_GRAPH,
-    NC_DATA_BUFFER_PUT,
-    NC_DATA_BUFFER_TAKE,
+    NC_TENSOR_BUFFER_PUT,
+    NC_TENSOR_BUFFER_TAKE,
     NC_OTHER  // Not a special kind of node
   };
 

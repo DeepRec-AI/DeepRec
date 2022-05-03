@@ -1165,23 +1165,23 @@ tf_module {
     argspec: "args=[\'f\'], varargs=None, keywords=None, defaults=None"
   }
   member_method {
-    name: "data_buffer_cancel"
+    name: "tensor_buffer_cancel"
     argspec: "args=[\'container\', \'is_cancelled\', \'shared_name\', \'shared_capacity\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'True\', \'\', \'1\', \'None\'], "
   }
   member_method {
-    name: "data_buffer_close"
+    name: "tensor_buffer_close"
     argspec: "args=[\'container\', \'shared_name\', \'shared_capacity\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'None\'], "
   }
   member_method {
-    name: "data_buffer_put"
+    name: "tensor_buffer_put"
     argspec: "args=[\'record\', \'container\', \'shared_name\', \'shared_capacity\', \'timeout_millis\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'1000\', \'None\'], "
   }
   member_method {
-    name: "data_buffer_size"
+    name: "tensor_buffer_size"
     argspec: "args=[\'container\', \'shared_name\', \'shared_capacity\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'None\'], "
   }
   member_method {
-    name: "data_buffer_take"
+    name: "tensor_buffer_take"
     argspec: "args=[\'dtypes\', \'container\', \'shared_name\', \'shared_capacity\', \'shared_threads\', \'name\'], varargs=None, keywords=None, defaults=[\'\', \'\', \'1\', \'1\', \'None\'], "
   }
   member_method {
