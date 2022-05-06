@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
 
+#define MEMKIND_DAX_KMEM 0
 namespace tensorflow {
 
 // If true, pmem allocator collects more stats.
