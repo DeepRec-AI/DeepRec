@@ -7,7 +7,7 @@
 
 namespace tensorflow {
 // If true, pmem allocator collects more stats.
-static bool pmem_allocator_collect_stats = true;
+static bool pmem_allocator_collect_stats = false;
 static const int kMaxTotalAllocationWarnings = 1;
 // If ev_allocator_collect_stats is true, warn when the total allocated memory
 // exceeds this threshold.
