@@ -505,7 +505,7 @@ def main(tf_config=None, server=None):
     ) if args.micro_batch and not args.tf else args.batch_size
 
     if args.steps == 0:
-        no_of_epochs = 3
+        no_of_epochs = 1
         train_steps = math.ceil(
             (float(no_of_epochs) * no_of_training_examples) / batch_size)
     else:

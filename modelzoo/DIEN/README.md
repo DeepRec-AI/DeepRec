@@ -103,7 +103,7 @@ The following is a brief directory structure and description for this example:
       - `--protocol`: Set the protocol ['grpc', 'grpc++', 'star_server'] used when starting server in distributed training. Default to grpc. 
     - Basic Settings:
       - `--data_location`: Full path of train & eval data, default to `./data`.
-      - `--steps`: Set the number of steps on train dataset. Default will be set to 10 epoch.
+      - `--steps`: Set the number of steps on train dataset. Default will be set to 1 epoch.
       - `--no_eval`: Do not evaluate trained model by eval dataset.
       - `--batch_size`: Batch size to train. Default to 512.
       - `--output_dir`: Full path to output directory for logs and saved model, default to `./result`.
