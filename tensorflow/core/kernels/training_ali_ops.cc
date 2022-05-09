@@ -1868,8 +1868,6 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
              &lr_scalar, &beta1_scalar,
              &beta1_power, &beta2_power,
              &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
-          ValuePtr<T>* beta1_ptr = nullptr;
-          OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(0, &beta1_ptr));
           auto beta1_power_flat = beta1_power.flat<T>();
           auto beta2_power_flat = beta2_power.flat<T>();
 
