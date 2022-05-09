@@ -201,7 +201,7 @@ class SSDKV : public KVInterface<K, V> {
       EmbPosition* old_posi = (*(iter.first)).second;
       __sync_bool_compare_and_swap(&((*(iter.first)).second),
                                    (*(iter.first)).second, ep);
-      delete old_posi;
+      //delete old_posi;
     }
   }
 
