@@ -95,6 +95,15 @@ class ExperimentalPMemAllocator : public Allocator {
   // Free a PMem space entry. The entry should be allocated by this allocator
   void DeallocateRaw(void* addr) override;
 
+  // Return allocated buffer size at ptr
+  size_t AllocatedSize(const void* ptr) const {
+    auto segment = Addr2Segment(ptr);
+    if (segment < segment_record_size_.size()) {
+      return segment_record_size_[segment];
+    }
+    return 0;
+  }
+
   // Release this access thread from the allocator, this will be auto-called
   // while the thread exit
   void Release() {
@@ -108,18 +117,20 @@ class ExperimentalPMemAllocator : public Allocator {
   // pool
   void BackgroundWork();
 
-  void ClearStats() override {}
+  absl::optional<AllocatorStats> GetStats() override {
+    mutex_lock l(mu_);
+    return stats_;
+  }
+
+  void ClearStats() override {
+    mutex_lock l(mu_);
+    stats_.num_allocs = 0;
+    stats_.peak_bytes_in_use = stats_.bytes_in_use;
+    stats_.largest_alloc_size = 0;
+  }
 
   size_t AllocatedSizeSlow(const void* ptr) const override {
-    // return 0;
-    // TODO: return allocated size
-    auto segment = Addr2Segment(ptr);
-    if (segment >= segment_record_size_.size()) {
-      LOG(FATAL) << "Experimental PMem Allocator: ptr is not allocated by this "
-                    "allocator";
-      return 0;
-    }
-    return segment_record_size_[segment];
+    return AllocatedSize(ptr);
   }
 
   static bool ValidateConfig(const ExperimentalPMemAllocatorConfig& config) {
@@ -297,6 +308,8 @@ class ExperimentalPMemAllocator : public Allocator {
     return data_size / block_size_ + (data_size % block_size_ == 0 ? 0 : 1);
   }
 
+  inline int64 TotalAllocationWarningBytes();
+
   char* pmem_;
   const std::string pmem_file_;
   const uint64_t pmem_size_;
@@ -321,6 +334,11 @@ class ExperimentalPMemAllocator : public Allocator {
   uint64_t instance_id_;
   static std::atomic<uint64_t> next_instance_;
   static thread_local std::vector<AllocatorThread> access_threads_;
+
+  // Stats
+  mutex mu_;
+  int total_allocation_warning_count_{0} GUARDED_BY(mu_);
+  AllocatorStats stats_ GUARDED_BY(mu_);
 };
 
 class ExperimentalPMEMAllocatorFactory : public AllocatorFactory {
