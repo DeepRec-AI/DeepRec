@@ -73,11 +73,13 @@ class DBIterator : public Iterator {
   virtual void Next() {
     return it_->Next();
   }
-  virtual std::string Key() {
-    return it_->key().ToString();
+  virtual void Key(char* val, int64 dim) {
+    memcpy(val, it_->key().ToString().data(), dim);
   }
-  virtual std::string Value() {
-    return it_->value().ToString();
+  virtual void Value(char* val, int64 dim, int64 value_offset) {
+    memcpy(val,
+           it_->value().ToString().data() + value_offset + sizeof(FixedLengthHeader),
+           dim);
   }
  private:
   leveldb::Iterator* it_;

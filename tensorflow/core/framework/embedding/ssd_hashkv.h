@@ -1,5 +1,5 @@
-#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_KV_H_
-#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_KV_H_
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASHKV_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASHKV_H_
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -50,9 +50,12 @@ class EmbPosition {
 
 class EmbFile {
  public:
-  EmbFile(std::string path_, size_t ver, int64 buffer_size) {
-    version = ver;
-    file_size = buffer_size;
+  EmbFile(const std::string& path_, size_t ver, int64 buffer_size)
+  : version(ver),
+    file_size(buffer_size),
+    app_count(0),
+    app_invalid_count(0),
+    is_deleted(false) {
     std::stringstream ss;
     ss << std::setw(4) << std::setfill('0') << ver << ".emb";
     filepath = path_ + ss.str();
@@ -60,9 +63,6 @@ class EmbFile {
             std::ios::app | std::ios::in | std::ios::out | std::ios::binary);
     fd = open(filepath.data(), O_RDONLY);
     CHECK(fs.good());
-    app_count = 0;
-    app_invalid_count = 0;
-    is_deleted = false;
   }
 
   void DeleteFile() {
@@ -121,7 +121,7 @@ template <class K>
 class SSDIterator : public Iterator {
  public:
   SSDIterator(google::dense_hash_map_lockless<K, EmbPosition*>* hash_map,
-              std::vector<EmbFile*> emb_files, int64 value_len,
+              const std::vector<EmbFile*>& emb_files, int64 value_len,
               char* write_buffer)
       : emb_files_(emb_files),
         curr_file_(0),
@@ -161,26 +161,23 @@ class SSDIterator : public Iterator {
         emb_files_[file_id_vec_[curr_file_]]->Map();
     }
   }
-  virtual std::string Key() {
+  virtual void Key(char* val, int64 dim) {
     int64 f_id = file_id_vec_[curr_file_];
-    std::string val(sizeof(K), 'a');
-    memcpy(const_cast<char*>(val.data()), &((file_map_[f_id])[curr_vec_].first),
-           sizeof(K));
-    return val;
+    memcpy((char*)val, &((file_map_[f_id])[curr_vec_].first), dim);
   }
-  virtual std::string Value() {
+  virtual void Value(char* val, int64 dim, int64 value_offset) {
     int64 f_id = file_id_vec_[curr_file_];
     EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
-    char* buffer = (char*)malloc(value_len_);
     if (posi->flushed) {
-      emb_files_[posi->version]->ReadWithoutMap(buffer, value_len_,
-                                                posi->offset);
+      emb_files_[posi->version]->
+          ReadWithoutMap(val, dim,
+                           posi->offset + value_offset + sizeof(FixedLengthHeader));
     } else {
-      memcpy(buffer, write_buffer_ + posi->buffer_offset, value_len_);
+      memcpy(val,
+            write_buffer_ + posi->buffer_offset +
+              value_offset + + sizeof(FixedLengthHeader),
+            dim);
     }
-    std::string val(buffer, value_len_);
-    free(buffer);
-    return val;
   }
 
  private:
@@ -196,21 +193,20 @@ class SSDIterator : public Iterator {
 template <class K, class V>
 class SSDHashKV : public KVInterface<K, V> {
  public:
-  explicit SSDHashKV(std::string path, Allocator* alloc_) {
+  explicit SSDHashKV(const std::string& path, Allocator* alloc_)
+  : current_version(0),
+    current_offset(0),
+    buffer_cur(0),
+    alloc(alloc_),
+    total_app_count(0) {
     path_ = io::JoinPath(
         path, "ssd_kv_" + std::to_string(Env::Default()->NowMicros()) + "_");
     hash_map.max_load_factor(0.8);
     hash_map.set_empty_key_and_value(-1, nullptr);
     hash_map.set_counternum(1);
     hash_map.set_deleted_key(-2);
-    current_version = 0;
-    current_offset = 0;
-    buffer_size = 1 << 27;  // Write 128MB at once.
-    buffer_cur = 0;
-    alloc = alloc_;
     EmbFile* ef = new EmbFile(path_, current_version, buffer_size);
     emb_files.emplace_back(ef);
-    total_app_count = 0;
     new_value_ptr_fn_ = [this](size_t size) {
       return new NormalContiguousValuePtr<V>(alloc, size);
     };
@@ -239,6 +235,7 @@ class SSDHashKV : public KVInterface<K, V> {
       if (!it->is_deleted) {
         it->DeleteFile();
       }
+      delete it;
     }
     delete[] write_buffer;
     delete[] key_buffer;
@@ -279,13 +276,13 @@ class SSDHashKV : public KVInterface<K, V> {
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) { return Status::OK(); }
 
-  Status BatchInsert(std::vector<K> keys,
-                     std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchInsert(std::vector<K>& keys,
+                     std::vector<ValuePtr<V>*>& value_ptrs) {
     return BatchCommit(keys, value_ptrs);
   }
 
-  Status BatchCommit(std::vector<K> keys,
-                     std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchCommit(std::vector<K>& keys,
+                     std::vector<ValuePtr<V>*>& value_ptrs) {
     SingleThreadDynamicCompaction();
     total_app_count += keys.size();
     for (int i = 0; i < keys.size(); i++) {
@@ -323,8 +320,9 @@ class SSDHashKV : public KVInterface<K, V> {
 
  private:
   void CheckBuffer() {
-    if (buffer_cur * val_len + val_len > buffer_size) {
-      emb_files[current_version]->Write(write_buffer, buffer_cur * val_len);
+    size_t curr_buffer_offset = buffer_cur * val_len;
+    if (curr_buffer_offset + val_len > buffer_size) {
+      emb_files[current_version]->Write(write_buffer, curr_buffer_offset);
       emb_files[current_version]->app_count += buffer_cur;
       emb_files[current_version]->Flush();
       if (emb_files[current_version]->app_count >= max_app_count) {
@@ -339,11 +337,12 @@ class SSDHashKV : public KVInterface<K, V> {
   }
 
   void SaveKV(K key, const ValuePtr<V>* value_ptr, bool is_compaction = false) {
+    size_t curr_buffer_offset = buffer_cur * val_len;
     EmbPosition* ep = new EmbPosition(current_offset, current_version,
-                                      buffer_cur * val_len, false);
+                                      curr_buffer_offset, false);
 
     current_offset += val_len;
-    memcpy(write_buffer + buffer_cur * val_len, (char*)value_ptr->GetPtr(),
+    memcpy(write_buffer + curr_buffer_offset, (char*)value_ptr->GetPtr(),
            val_len);
     key_buffer[buffer_cur] = key;
     ++buffer_cur;
@@ -355,7 +354,7 @@ class SSDHashKV : public KVInterface<K, V> {
       if (!is_compaction) {
         emb_files[version]->app_invalid_count++;
         //A parameter that can be adjusted in the future
-        if (emb_files[version]->app_count >=
+        if (version != current_version && emb_files[version]->app_count >=
                 emb_files[version]->app_invalid_count &&
             emb_files[version]->app_count / 3 <
                 emb_files[version]->app_invalid_count)
@@ -365,7 +364,7 @@ class SSDHashKV : public KVInterface<K, V> {
       __sync_bool_compare_and_swap(&((*(iter.first)).second),
                                    (*(iter.first)).second, ep);
       //A parameter that can be adjusted in the future
-      if (pos_out_of_date.size() > 100000) {
+      if (pos_out_of_date.size() > cap_invalid_pos) {
         EmbPosition* posi = pos_out_of_date.front();
         delete posi;
         pos_out_of_date.pop_front();
@@ -379,23 +378,13 @@ class SSDHashKV : public KVInterface<K, V> {
     int64 hash_size = hash_map.size_lockless();
     //These parameter that can be adjusted in the future
     if (hash_size * 3 / 2 < total_app_count ||
-        total_app_count - hash_size > 10000000) {
+        total_app_count - hash_size > cap_invalid_id) {
       // delete the evict_files
       for (auto it : evict_file_map) {
         emb_files[it.first]->DeleteFile();
       }
-
       // flush the data in buffer
       evict_file_map.clear();
-      emb_files[current_version]->Write(write_buffer, buffer_cur * val_len);
-      emb_files[current_version]->app_count += buffer_cur;
-      emb_files[current_version]->Flush();
-      TF_CHECK_OK(UpdateFlushStatus());
-      size_t save_version = current_version;
-      ++current_version;
-      current_offset = 0;
-      emb_files.emplace_back(new EmbFile(path_, current_version, buffer_size));
-      buffer_cur = 0;
       // Initialize evict_file_map
       for (auto it : evict_file_set) {
         std::vector<std::pair<K, EmbPosition*>> tmp;
@@ -427,19 +416,21 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
   std::string DebugString() const {
-    LOG(INFO) << "map info size:" << Size();
-    LOG(INFO) << "map info bucket_count:" << hash_map.bucket_count();
-    LOG(INFO) << "map info load_factor:" << hash_map.load_factor();
-    LOG(INFO) << "map info max_load_factor:" << hash_map.max_load_factor();
-    LOG(INFO) << "map info min_load_factor:" << hash_map.min_load_factor();
-    return "";
+    return strings::StrCat("map info size:", Size(),
+                          ", map info bucket_count:",
+                           hash_map.load_factor(),
+                           ",map info load_factor:",
+                           hash_map.load_factor(),
+                           ", map info max_load_factor:",
+                           hash_map.max_load_factor(),
+                           ", map info min_load_factor: ",
+                           hash_map.min_load_factor());
   }
 
  private:
   size_t val_len;
   size_t current_version;
   size_t current_offset;
-  size_t buffer_size;
   size_t buffer_cur;
   size_t total_app_count;
   size_t max_app_count;
@@ -457,6 +448,10 @@ class SSDHashKV : public KVInterface<K, V> {
   LockLessHashMap hash_map;
   static const int EMPTY_KEY_;
   static const int DELETED_KEY_;
+  static const int cap_invalid_pos;
+  static const int cap_invalid_id;
+  static const size_t buffer_size;
+
 
   std::vector<EmbFile*> emb_files;
   std::vector<EmbFile*> files_out_of_date;
@@ -468,8 +463,14 @@ template <class K, class V>
 const int SSDHashKV<K, V>::EMPTY_KEY_ = -1;
 template <class K, class V>
 const int SSDHashKV<K, V>::DELETED_KEY_ = -2;
+template <class K, class V>
+const int SSDHashKV<K, V>::cap_invalid_pos = 100000;
+template <class K, class V>
+const int SSDHashKV<K, V>::cap_invalid_id = 10000000;
+template <class K, class V>
+const size_t SSDHashKV<K, V>::buffer_size = 1<<27;
 
 }  // namespace embedding
 }  // namespace tensorflow
 
-#endif //TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_KV_H_
+#endif //TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASHKV_H_

@@ -292,7 +292,7 @@ class InitializeKvVariableOp : public OpKernel {
   float false_positive_probability_;
   embedding::StorageType storage_type_;
   std::string storage_path_;
-  int64 storage_size_;
+  std::vector<int64> storage_size_;
   int64 default_value_dim_;
 };
 
@@ -780,7 +780,7 @@ class KvResourceImportV2Op: public OpKernel {
   int64 max_freq_;
   embedding::StorageType storage_type_;
   std::string storage_path_;
-  int64 storage_size_;
+  std::vector<int64> storage_size_;
   int64 default_value_dim_;
 };
 

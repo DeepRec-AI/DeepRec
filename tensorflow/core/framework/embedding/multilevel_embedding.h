@@ -21,11 +21,13 @@ class EmbeddingVar;
 namespace embedding {
 
 struct StorageConfig {
-  StorageConfig() : type(StorageType::INVALID), path(""), size(0), layout_type(LayoutType::NORMAL) {}
+  StorageConfig() : type(StorageType::INVALID), path(""), layout_type(LayoutType::NORMAL) {
+    size = {1<<30,1<<30,1<<30,1<<30};
+  }
   StorageConfig(StorageType t,
                 const std::string& p,
-                int64 s,
-                const std::string layout) : type(t), path(p), size(s) {
+                const std::vector<int64>& s,
+                const std::string& layout) : type(t), path(p) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
@@ -36,11 +38,12 @@ struct StorageConfig {
       LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
       layout_type = LayoutType::NORMAL;
     }
+    size = s;
   }
   StorageType type;
   LayoutType layout_type;
   std::string path;
-  int64 size;
+  std::vector<int64> size;
 };
 
 template <class K, class V>
@@ -95,7 +98,7 @@ class StorageManager {
       case StorageType::PMEM_LIBPMEM:
         VLOG(1) << "StorageManager::PMEM_LIBPMEM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(),
-                                      experimental_pmem_allocator(sc_.path, sc_.size)));
+                                      experimental_pmem_allocator(sc_.path, sc_.size[0])));
         break;
       case StorageType::LEVELDB:
         VLOG(1) << "StorageManager::LEVELDB: " << name_;
@@ -105,7 +108,7 @@ class StorageManager {
         VLOG(1) << "StorageManager::DRAM_PMEM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(),
-                                      experimental_pmem_allocator(sc_.path, sc_.size)));
+                                      experimental_pmem_allocator(sc_.path, sc_.size[1])));
         break;
       case StorageType::DRAM_LEVELDB:
         VLOG(1) << "StorageManager::DRAM_LEVELDB: " << name_;
@@ -155,7 +158,7 @@ class StorageManager {
     //The start address of every slot should be aligned to 16 bytes, otherwise a coredump will happen in the ApplyOp.
     alloc_len_ = (value_len * sizeof(V) % 16 == 0) ? value_len : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
     int64 temp = alloc_len_ * slot_num;
-    if (total_dims_ == 0) {
+    if (temp > total_dims_) {
       total_dims_ = temp;
       if (sc_.type == StorageType::LEVELDB || sc_.type == StorageType::SSDHASH) {
         kvs_[0].first->SetTotalDims(total_dims_);
@@ -163,8 +166,7 @@ class StorageManager {
         kvs_[1].first->SetTotalDims(total_dims_);
       }
       if (hash_table_count_ > 1) {
-        cache_capacity_ = 1024 * 1024 * 1024 / (total_dims_ * sizeof(V));
-        cache_capacity_ *= 2;
+        cache_capacity_ = sc_.size[0] / (total_dims_ * sizeof(V));
         done_ = true;
         LOG(INFO) << "Cache cache_capacity: " << cache_capacity_;
       }
@@ -414,7 +416,7 @@ class StorageManager {
  private:
   void BatchEviction() {
     Env* env = Env::Default();
-    const int kSize = 10000;
+    const int EvictionSize = 10000;
     if (cache_capacity_ == -1) {
       while (true) {
         mutex_lock l(mu_);
@@ -423,7 +425,7 @@ class StorageManager {
         }
       }
     }
-    K evic_ids[kSize];
+    K evic_ids[EvictionSize];
     while (true) {
       mutex_lock l(mu_);
       if (shutdown_) {
@@ -442,7 +444,7 @@ class StorageManager {
       if (cache_count > cache_capacity_) {
         // eviction
         int k_size = cache_count - cache_capacity_;
-        k_size = std::min(k_size, kSize);
+        k_size = std::min(k_size, EvictionSize);
         size_t true_size = cache_->get_evic_ids(evic_ids, k_size);
         ValuePtr<V>* value_ptr;
         for (int64 i = 0; i < true_size; ++i) {

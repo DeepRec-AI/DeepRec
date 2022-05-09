@@ -1023,8 +1023,10 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   Tensor value(DT_FLOAT, TensorShape({value_size}));
   test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
   float* fill_v = (float*)malloc(value_size * sizeof(float));
+  std::vector<int64> size;
+  size.emplace_back(1000);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, testing::TmpDir(), 1000, "normal_contiguous"));
+                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, testing::TmpDir(), size, "normal_contiguous"));
   TF_CHECK_OK(storage_manager->Init());
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
@@ -1078,35 +1080,60 @@ TEST(EmbeddingVariableTest, TestSizeDBKV) {
 }
 
 TEST(EmbeddingVariableTest, TestSSDIterator) {
-  KVInterface<int64, float>* hashmap = new SSDKV<int64, float>(testing::TmpDir(), ev_allocator());
+  std::string temp_dir = testing::TmpDir();
+  Allocator* alloc = ev_allocator();
+  KVInterface<int64, float>* hashmap = new SSDHashKV<int64, float>(temp_dir, alloc);
   hashmap->SetTotalDims(126);
   ASSERT_EQ(hashmap->Size(), 0);
   std::vector<ValuePtr<float>*> value_ptrs;
-  std::vector<int64> keys;
   for (int64 i = 0; i < 10; ++i) {
-    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(ev_allocator(), 126);
+    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(alloc, 126);
     tmp->SetValue((float)i, 126);
-    value_ptrs.push_back(tmp);
+    value_ptrs.emplace_back(tmp);
   }
   for (int64 i = 0; i < 10; i++) {
     hashmap->Commit(i, value_ptrs[i]);
   }
   embedding::Iterator* it = hashmap->GetIterator();
   int64 index = 0;
+  float val_p[126] = {0.0};
   for (it->SeekToFirst(); it->Valid(); it->Next()) {
-    std::string value_str, key_str;
-    key_str = it->Key();
-    int64 key = *((int64*)&key_str[0]);
-    value_str = it->Value();
-    float* val = (float*)&value_str[0] + 4;
+    int64 key = -1;
+    it->Key((char*)&key, sizeof(int64));
+    it->Value((char*)val_p, 126 * sizeof(float), 0);
     ASSERT_EQ(key, index);
     for (int i = 0; i < 126; i++)
-      ASSERT_EQ(val[i], key);
+      ASSERT_EQ(val_p[i], key);
     index++;
-    //LOG(INFO)<<*((int64*)&value_str[0]);
   }
 }
 
+TEST(EmbeddingVariableTest, TestLevelDBIterator) {
+  KVInterface<int64, float>* hashmap = new LevelDBKV<int64, float>(testing::TmpDir());
+  hashmap->SetTotalDims(126);
+  ASSERT_EQ(hashmap->Size(), 0);
+  std::vector<ValuePtr<float>*> value_ptrs;
+  for (int64 i = 0; i < 10; ++i) {
+    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(ev_allocator(), 126);
+    tmp->SetValue((float)i, 126);
+    value_ptrs.emplace_back(tmp);
+  }
+  for (int64 i = 0; i < 10; i++) {
+    hashmap->Commit(i, value_ptrs[i]);
+  }
+  embedding::Iterator* it = hashmap->GetIterator();
+  int64 index = 0;
+  float val_p[126] = {0.0};
+  for (it->SeekToFirst(); it->Valid(); it->Next()) {
+    int64 key = -1;
+    it->Key((char*)&key, sizeof(int64));
+    it->Value((char*)val_p, 126 * sizeof(float), 0);
+    ASSERT_EQ(key, index);
+    for (int i = 0; i < 126; i++)
+      ASSERT_EQ(val_p[i], key);
+    index++;
+  }
+}
 } // namespace
 } // namespace embedding
 } // namespace tensorflow

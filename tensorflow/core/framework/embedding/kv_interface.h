@@ -24,7 +24,6 @@ template <class V>
 class ValuePtr;
 
 namespace embedding {
-
 class Iterator {
  public:
   Iterator() {};
@@ -32,8 +31,8 @@ class Iterator {
   virtual bool Valid() {return true;};
   virtual void SeekToFirst() {};
   virtual void Next() {};
-  virtual std::string Key() {return "";};
-  virtual std::string Value() {return "";};
+  virtual void Key(char* val, int64 dim) {};
+  virtual void Value(char* val, int64 dim, int64 value_offset) {};
 };
 
 template <class K, class V>

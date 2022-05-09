@@ -229,10 +229,15 @@ class StorageOption(object):
   def __init__(self,
                storage_type=None,
                storage_path=None,
-               storage_size=None):
+               storage_size=[1024*1024*1024]):
     self.storage_type = storage_type
     self.storage_path = storage_path
     self.storage_size = storage_size
+    if not isinstance(storage_size, list):
+        raise ValueError("storage_size should be list type")
+    if len(storage_size) < 4:
+      for i in range(len(storage_size), 4):
+        storage_size.append(1024*1024*1024)
     if storage_path is not None:
       if storage_type is None:
         raise ValueError("storage_type musnt'be None when storage_path is set")
@@ -240,7 +245,10 @@ class StorageOption(object):
         if not file_io.file_exists(storage_path):
           file_io.recursive_create_dir(storage_path)
     else:
-      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSDHASH]:
+      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB,
+                                                       config_pb2.StorageType.SSDHASH,
+                                                       config_pb2.StorageType.DRAM_SSDHASH,
+                                                       config_pb2.StorageType.DRAM_LEVELDB]:
         raise ValueError("storage_path musnt'be None when storage_type is set")
 
 @tf_export(v1=["EmbeddingVariableOption"])

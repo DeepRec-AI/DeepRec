@@ -307,7 +307,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._is_primary = True
     else:
       self._is_primary = False
-    
     with ops.control_dependencies(None):
       with ops.name_scope(name, "Variable", []
                           if init_from_fn else [initial_value]) as name:
