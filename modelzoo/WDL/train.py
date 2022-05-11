@@ -318,10 +318,9 @@ def build_model_input(filename, batch_size, num_epochs):
     dataset = dataset.shuffle(buffer_size=20000,
                               seed=args.seed)  # fix seed for reproducing
     dataset = dataset.repeat(num_epochs)
-    dataset = dataset.prefetch(batch_size)
     dataset = dataset.batch(batch_size)
     dataset = dataset.map(parse_csv, num_parallel_calls=28)
-    dataset = dataset.prefetch(1)
+    dataset = dataset.prefetch(2)
     return dataset
 
 
