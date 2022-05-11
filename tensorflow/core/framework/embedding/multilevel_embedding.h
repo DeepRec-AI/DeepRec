@@ -432,7 +432,13 @@ class StorageManager {
       }
       const int kTimeoutMilliseconds = 10 * 1;
       WaitForMilliseconds(&l, &shutdown_cv_, kTimeoutMilliseconds);
-
+     
+      for (int i = 0; i < value_ptr_out_of_date_.size(); i++) {
+        value_ptr_out_of_date_[i]->Destroy(kvs_[0].second);
+        delete value_ptr_out_of_date_[i];
+      }
+      value_ptr_out_of_date_.clear();
+      
       int cache_count = cache_->size();
       if (cache_count > cache_capacity_) {
         // eviction
@@ -444,9 +450,10 @@ class StorageManager {
           if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
             TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
             TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
+            value_ptr_out_of_date_.emplace_back(value_ptr);
             // delete value_ptr is nessary;
-            value_ptr->Destroy(kvs_[0].second);
-            delete value_ptr;
+            //value_ptr->Destroy(kvs_[0].second);
+            //delete value_ptr;
           } else {
             // bypass
           }
@@ -459,6 +466,7 @@ class StorageManager {
   int32 hash_table_count_;
   std::string name_;
   std::vector<std::pair<KVInterface<K, V>*, Allocator*>> kvs_;
+  std::vector<ValuePtr<V>*> value_ptr_out_of_date_;
   std::function<ValuePtr<V>*(Allocator*, size_t)> new_value_ptr_fn_;
   StorageConfig sc_;
   bool is_multi_level_;

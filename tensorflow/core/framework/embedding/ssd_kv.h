@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <queue>
 #include <vector>
 
 #include "sparsehash/dense_hash_map_lockless"
@@ -173,6 +174,7 @@ class SSDKV : public KVInterface<K, V> {
     if (buffer_cur * val_len + val_len > buffer_size) {
       emb_files[current_version]->Write(write_buffer, buffer_cur * val_len);
       emb_files[current_version]->app_count += buffer_cur;
+      emb_files[current_version]->Flush();
       if (emb_files[current_version]->app_count >= max_app_count) {
         ++current_version;
         current_offset = 0;
@@ -201,7 +203,12 @@ class SSDKV : public KVInterface<K, V> {
       EmbPosition* old_posi = (*(iter.first)).second;
       __sync_bool_compare_and_swap(&((*(iter.first)).second),
                                    (*(iter.first)).second, ep);
-      //delete old_posi;
+      if(pos_out_of_date.size() > 0){
+        EmbPosition* posi = pos_out_of_date.front();
+        delete posi;
+        pos_out_of_date.erase(pos_out_of_date.begin());
+      }
+      pos_out_of_date.emplace_back(old_posi);
     }
   }
 
@@ -393,6 +400,7 @@ class SSDKV : public KVInterface<K, V> {
   std::vector<EmbFile*> emb_files;
   EmbFile* active_file;
   std::vector<EmbFile*> files_out_of_date;
+  std::vector<EmbPosition*> pos_out_of_date;
   std::set<int64> evict_file_set;
   std::map<int64, std::vector<std::pair<K, EmbPosition*>>> evict_file_map;
   size_t current_version;
