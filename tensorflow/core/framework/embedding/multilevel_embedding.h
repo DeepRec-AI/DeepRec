@@ -134,7 +134,7 @@ class StorageManager {
 
     hash_table_count_ = kvs_.size();
     if (hash_table_count_ > 1) {
-      cache_ = new LRUCache<K>();
+      cache_ = new LFUCache<K>();
       eviction_thread_ = Env::Default()->StartThread(ThreadOptions(), "EV_Eviction",
                                                      [this]() { BatchEviction(); });
       thread_pool_.reset(new thread::ThreadPool(Env::Default(), ThreadOptions(),
@@ -160,7 +160,7 @@ class StorageManager {
         kvs_[1].first->SetTotalDims(total_dims_);
       }
       if (hash_table_count_ > 1) {
-        cache_capacity_ = 1024 * 1024 * 1024 / (total_dims_ * sizeof(V));
+        cache_capacity_ = 1 * 1024 * 1024 / (total_dims_ * sizeof(V));
         done_ = true;
         LOG(INFO) << "Cache cache_capacity: " << cache_capacity_;
       }

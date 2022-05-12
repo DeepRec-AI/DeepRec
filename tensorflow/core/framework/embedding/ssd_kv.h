@@ -203,7 +203,7 @@ class SSDKV : public KVInterface<K, V> {
       EmbPosition* old_posi = (*(iter.first)).second;
       __sync_bool_compare_and_swap(&((*(iter.first)).second),
                                    (*(iter.first)).second, ep);
-      if(pos_out_of_date.size() > 0){
+      if(pos_out_of_date.size() > 100000){
         EmbPosition* posi = pos_out_of_date.front();
         delete posi;
         pos_out_of_date.erase(pos_out_of_date.begin());
