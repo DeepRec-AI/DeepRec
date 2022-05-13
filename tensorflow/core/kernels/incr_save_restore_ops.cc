@@ -64,16 +64,6 @@ REGISTER_KERNEL_BUILDER(Name("RecordSparseIndices")
     .TypeConstraint<int64>("TIndex"),
     RecordSparseIndicesOp<int64>);
 
-REGISTER_KERNEL_BUILDER(Name("RecordSparseIndices")
-    .Device(DEVICE_GPU)
-    .TypeConstraint<int32>("TIndex"),
-    RecordSparseIndicesOp<int32>);
-
-REGISTER_KERNEL_BUILDER(Name("RecordSparseIndices")
-    .Device(DEVICE_GPU)
-    .TypeConstraint<int64>("TIndex"),
-    RecordSparseIndicesOp<int64>);
-
 class ActivateSparseRecorderOp : public OpKernel {
  public:
   explicit ActivateSparseRecorderOp(OpKernelConstruction* context)
