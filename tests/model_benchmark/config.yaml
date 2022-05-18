@@ -1,0 +1,37 @@
+#test image
+deeprec_test_image: alideeprec/deeprec-release-modelzoo:latest
+tf_test_image: alideeprec/deeprec-weekly-modelzoo:tf
+
+#test model default: [WDL, DLRM ,DeepFM, DSSM, DIEN, DIN]
+test_model: 
+  - DLRM
+  - WDL
+  - DeepFM
+  - DSSM
+  - DIEN
+  - DIN
+  
+#batchsize map<model,batchsize>
+model_batchsize:
+  WDL: 512
+  DLRM: 512
+  DeepFM: 512
+  DSSM: 4096
+  DIEN: 512
+  DIN: 512
+  
+#args for deeprec
+#like --emb_fusion true
+modelArgs:
+
+#tf on/off
+stocktf: on
+
+# set cpu
+cpu_sets: 
+
+# env config 
+env_var:
+  - export START_STATISTIC_STEP=100
+  - export STOP_STATISTIC_STEP=110
+
