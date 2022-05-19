@@ -63,7 +63,8 @@ class BoostedTreesTrainingPredictOp : public OpKernel {
     std::vector<tensorflow::TTypes<int32>::ConstVec> batch_bucketized_features;
     batch_bucketized_features.reserve(bucketized_features_list.size());
     for (const Tensor& tensor : bucketized_features_list) {
-      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()),
+      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()) ||
+                           TensorShapeUtils::IsVector(tensor.shape()),
                   errors::Internal("Cannot use tensor as matrix, expected "
                                    "vector or matrix, received shape ",
                                    tensor.shape().DebugString()));
@@ -228,7 +229,8 @@ class BoostedTreesPredictOp : public OpKernel {
     std::vector<tensorflow::TTypes<int32>::ConstVec> batch_bucketized_features;
     batch_bucketized_features.reserve(bucketized_features_list.size());
     for (const Tensor& tensor : bucketized_features_list) {
-      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()),
+      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()) ||
+                           TensorShapeUtils::IsVector(tensor.shape()),
                   errors::Internal("Cannot use tensor as matrix, expected "
                                    "vector or matrix, received shape ",
                                    tensor.shape().DebugString()));
@@ -338,7 +340,8 @@ class BoostedTreesExampleDebugOutputsOp : public OpKernel {
     std::vector<tensorflow::TTypes<int32>::ConstVec> batch_bucketized_features;
     batch_bucketized_features.reserve(bucketized_features_list.size());
     for (const Tensor& tensor : bucketized_features_list) {
-      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()),
+      OP_REQUIRES(context, TensorShapeUtils::IsMatrix(tensor.shape()) ||
+                           TensorShapeUtils::IsVector(tensor.shape()),
                   errors::Internal("Cannot use tensor as matrix, expected "
                                    "vector or matrix, received shape ",
                                    tensor.shape().DebugString()));
