@@ -31,20 +31,19 @@ class FusedL2NormalizeOpTest : public OpsTestBase {
 
 TEST_F(FusedL2NormalizeOpTest, 2Dims_Float) {
   const int rows = 4;
-  const int cols = 16;
+  const int cols = 252; //128+64+32+16+8=252 1008
 
   MakeOpAndSetDevice(Device::CPU, DT_FLOAT, 0, 1e-12);
 
   // emb_shards
-  AddInputFromArray<float>(TensorShape({rows, cols}), {
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-      1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+  // AddInputFromArray<float>(TensorShape({rows, cols}), {
+  //     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+  //     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+    float input_array[1008];
+    for (int i = 0; i < sizeof(input_array) / sizeof(float); i++) {
+      input_array[i] = 1.0;
+    }
+  AddInputFromArray<float>(TensorShape({rows, cols}), input_array);
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -52,15 +51,15 @@ TEST_F(FusedL2NormalizeOpTest, 2Dims_Float) {
   {
     Tensor expected_output(allocator(), DT_FLOAT,
                                 TensorShape({rows, cols}));
-    test::FillValues<float>(&expected_output, {
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+    // test::FillValues<float>(&expected_output, {
+    //   0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+    //   0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5});
+    float output_array[1008];
+    float output_value = 1.0 / std::sqrt(cols);
+    for (int i = 0; i < sizeof(output_array) / sizeof(float); i++) {
+      output_array[i] = output_value;
+    }
+    test::FillValues<float>(&expected_output, output_array);
     test::ExpectTensorNear<float>(expected_output, *GetOutput(0), 1e-6);
   }
 }

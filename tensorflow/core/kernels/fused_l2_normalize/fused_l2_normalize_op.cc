@@ -103,8 +103,11 @@ private:
     template <int SUM_BLOCK_SIZE>
     void forward(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
         int64 avx3_block_num = cols >> 7; // cols / 128
-        // printf("cols: %d, avx3_block_num: %d\n", cols, avx3_block_num);
+        // handle remainder of 128
+        int64 remainder = cols - (avx3_block_num << 7);
+        // printf("cols: %d, avx3_block_num: %d, remainder %d\n", cols, avx3_block_num, remainder);
         for (int64 i = begin_row; i < end_row; ++i) {
+            int64 tmp_remainder = remainder;
             float row_sum = 0.0;
             for (int64 j = 0; j < avx3_block_num; ++j) {
                 __m512 inputs[SUM_BLOCK_SIZE];
@@ -116,6 +119,43 @@ private:
                 __m512 block_sum = reduce_sum_block8_ps(inputs);
                 row_sum += _mm512_reduce_add_ps(block_sum);
             }
+            if (tmp_remainder > 0) {
+                if (tmp_remainder >= 64) {
+                    __m256 inputs[8];
+                    auto load_256 = [&](auto idx) {
+                        inputs[idx] = _mm256_loadu_ps(input + cols * i + cols - tmp_remainder + 8 * idx);
+                        inputs[idx] = _mm256_mul_ps(inputs[idx], inputs[idx]);
+                    };
+                    functor::compile_time_for<8>::op(load_256);
+                    __m256 block_sum_remainder = reduce_sum_block8_mm256_ps(inputs);
+                    row_sum += _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
+                    tmp_remainder -= 64;
+                }
+                if (tmp_remainder > 32) {
+                    __m256 inputs[4];
+                    auto load_256 = [&](auto idx) {
+                        inputs[idx] = _mm256_loadu_ps(input + cols * i + cols - tmp_remainder + 8 * idx);
+                        inputs[idx] = _mm256_mul_ps(inputs[idx], inputs[idx]);
+                    };
+                    functor::compile_time_for<4>::op(load_256);
+                    __m256 block_sum_remainder = reduce_sum_block4_mm256_ps(inputs);
+                    row_sum += _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
+                    tmp_remainder -= 32;
+                }
+                if (tmp_remainder >= 16) {
+                    __m512 inputs = _mm512_loadu_ps(input + cols * i + cols - tmp_remainder);
+                    inputs = _mm512_mul_ps(inputs, inputs);
+                    row_sum += _mm512_reduce_add_ps(inputs);
+                    tmp_remainder -= 16;
+                }
+                if (tmp_remainder > 0) {
+                    __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
+                    __m512 inputs = _mm512_maskz_loadu_ps(mask, input + cols * i + cols - tmp_remainder);
+                    inputs = _mm512_mul_ps(inputs, inputs);
+                    row_sum += _mm512_reduce_add_ps(inputs);
+                }
+            }
+
             row_sum += epsilon;
             row_sum = 1.0 / std::sqrt(row_sum);
             __m512 row_sums = _mm512_set1_ps(row_sum);
@@ -123,6 +163,12 @@ private:
                 __m512 inputs = _mm512_loadu_ps(input + cols * i + j);
                 inputs = _mm512_mul_ps(inputs, row_sums);
                 _mm512_storeu_ps(output + cols * i + j, inputs);
+            }
+            if (remainder > 0){
+                __mmask16 mask = 0xFFFF >> (16 - remainder);
+                __m512 inputs = _mm512_maskz_loadu_ps(mask, input + cols * i + cols - remainder);
+                inputs = _mm512_mul_ps(inputs, row_sums);
+                _mm512_mask_storeu_ps(output + cols * i + cols - remainder, mask, inputs);
             }
         }
     }
@@ -141,6 +187,22 @@ private:
         block_sum = _mm512_add_ps(block_sum, v[5]);
         block_sum = _mm512_add_ps(block_sum, v[6]);
         block_sum = _mm512_add_ps(block_sum, v[7]);
+        return block_sum;
+    }
+    inline __m256 reduce_sum_block8_mm256_ps(const __m256 (&v)[8]) {
+        __m256 block_sum = _mm256_add_ps(v[0], v[1]);
+        block_sum = _mm256_add_ps(block_sum, v[2]);
+        block_sum = _mm256_add_ps(block_sum, v[3]);
+        block_sum = _mm256_add_ps(block_sum, v[4]);
+        block_sum = _mm256_add_ps(block_sum, v[5]);
+        block_sum = _mm256_add_ps(block_sum, v[6]);
+        block_sum = _mm256_add_ps(block_sum, v[7]);
+        return block_sum;
+    }
+    inline __m256 reduce_sum_block4_mm256_ps(const __m256 (&v)[4]) {
+        __m256 block_sum = _mm256_add_ps(v[0], v[1]);
+        block_sum = _mm256_add_ps(block_sum, v[2]);
+        block_sum = _mm256_add_ps(block_sum, v[3]);
         return block_sum;
     }
 
@@ -255,10 +317,13 @@ private:
     template <int SUM_BLOCK_SIZE>
     void backward(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
         int64 avx3_block_num = cols >> 7; // cols / 128
-        // printf("backward cols: %d, avx3_block_num: %d\n", cols, avx3_block_num);
+        // handle remainder of 128
+        int64 remainder = cols - (avx3_block_num << 7);
+        // printf("cols: %d, avx3_block_num: %d, remainder %d\n", cols, avx3_block_num, remainder);
         for (int64 i = begin_row; i < end_row; ++i) {
             T x_row_sum = 0.0;
             T y_grad_row_sum = 0.0;
+            int64 tmp_remainder = remainder;
             for (int64 j = 0; j < avx3_block_num; ++j) {
                 __m512 xs[SUM_BLOCK_SIZE];
                 auto x_load = [&](auto idx) {
@@ -279,6 +344,65 @@ private:
                 __m512 y_grad_block_sum = reduce_sum_block8_ps(y_grads);
                 y_grad_row_sum += _mm512_reduce_add_ps(y_grad_block_sum);
             }
+            if (tmp_remainder > 0) {
+                if (tmp_remainder >= 64) {
+                    __m256 xs[8];
+                    auto x_load_256 = [&](auto idx) {
+                        xs[idx] = _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
+                        xs[idx] = _mm256_mul_ps(xs[idx], xs[idx]);
+                    };
+                    functor::compile_time_for<8>::op(x_load_256);
+                    __m256 block_sum_remainder = reduce_sum_block8_mm256_ps(xs);
+                    x_row_sum += _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
+
+                    __m256 y_grads[8];
+                    auto y_grad_load_256 = [&](auto idx) {
+                        y_grads[idx] = _mm256_loadu_ps(y_grad + cols * i + cols - tmp_remainder + 8 * idx);
+                        xs[idx] = _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
+                        y_grads[idx] = _mm256_mul_ps(y_grads[idx], xs[idx]);
+                    };
+                    functor::compile_time_for<8>::op(y_grad_load_256);
+                    __m256 y_grad_block_sum_remainder = reduce_sum_block8_mm256_ps(y_grads);
+                    y_grad_row_sum += _mm512_reduce_add_ps(_mm512_castps256_ps512(y_grad_block_sum_remainder));
+                    tmp_remainder -= 64;
+                }
+                if (tmp_remainder > 32) {
+                    __m256 xs[4];
+                    auto x_load_256 = [&](auto idx) {
+                        xs[idx] = _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
+                        xs[idx] = _mm256_mul_ps(xs[idx], xs[idx]);
+                    };
+                    functor::compile_time_for<4>::op(x_load_256);
+                    __m256 block_sum_remainder = reduce_sum_block4_mm256_ps(xs);
+                    x_row_sum += _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
+                    
+                    __m256 y_grads[4];
+                    auto y_grad_load_256 = [&](auto idx) {
+                        y_grads[idx] = _mm256_loadu_ps(y_grad + cols * i + cols - tmp_remainder + 8 * idx);
+                        xs[idx] = _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
+                        y_grads[idx] = _mm256_mul_ps(y_grads[idx], xs[idx]);
+                    };
+                    functor::compile_time_for<4>::op(y_grad_load_256);
+                    __m256 y_grad_block_sum_remainder = reduce_sum_block4_mm256_ps(y_grads);
+                    y_grad_row_sum += _mm512_reduce_add_ps(_mm512_castps256_ps512(y_grad_block_sum_remainder));
+                    tmp_remainder -= 32;
+                }
+                if (tmp_remainder >= 16) {
+                    __m512 xs = _mm512_loadu_ps(x + cols * i + cols - tmp_remainder);
+                    __m512 y_grads = _mm512_loadu_ps(y_grad + cols * i + cols - tmp_remainder);
+                    x_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(xs, xs));
+                    y_grad_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(y_grads, xs));
+                    tmp_remainder -= 16;
+                }
+                if (tmp_remainder > 0) {
+                    __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
+                    __m512 xs = _mm512_maskz_loadu_ps(mask, x + cols * i + cols - tmp_remainder);
+                    __m512 y_grads = _mm512_maskz_loadu_ps(mask, y_grad + cols * i + cols - tmp_remainder);
+                    x_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(xs, xs));
+                    y_grad_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(y_grads, xs));
+                }
+            }
+
             x_row_sum += epsilon;
             x_row_sum = 1.0 / std::sqrt(x_row_sum);
             y_grad_row_sum = (y_grad_row_sum * x_row_sum) * (x_row_sum * x_row_sum);
@@ -292,6 +416,15 @@ private:
                 y_grads = _mm512_sub_ps(y_grads, xs);
                 _mm512_storeu_ps(x_grad + cols * i + j, y_grads);
             }
+            if (remainder > 0){
+                __mmask16 mask = 0xFFFF >> (16 - remainder);
+                __m512 y_grads = _mm512_maskz_loadu_ps(mask, y_grad + cols * i + cols - remainder);
+                __m512 xs = _mm512_maskz_loadu_ps(mask, x + cols * i +  cols - remainder);
+                y_grads = _mm512_mul_ps(y_grads, x_row_sums);
+                xs = _mm512_mul_ps(xs, y_grad_row_sums);
+                y_grads = _mm512_sub_ps(y_grads, xs);
+                _mm512_mask_storeu_ps(x_grad + cols * i + cols - remainder, mask, y_grads);
+            }
         }
     }
 
@@ -303,6 +436,22 @@ private:
         block_sum = _mm512_add_ps(block_sum, v[5]);
         block_sum = _mm512_add_ps(block_sum, v[6]);
         block_sum = _mm512_add_ps(block_sum, v[7]);
+        return block_sum;
+    }
+    inline __m256 reduce_sum_block8_mm256_ps(const __m256 (&v)[8]) {
+        __m256 block_sum = _mm256_add_ps(v[0], v[1]);
+        block_sum = _mm256_add_ps(block_sum, v[2]);
+        block_sum = _mm256_add_ps(block_sum, v[3]);
+        block_sum = _mm256_add_ps(block_sum, v[4]);
+        block_sum = _mm256_add_ps(block_sum, v[5]);
+        block_sum = _mm256_add_ps(block_sum, v[6]);
+        block_sum = _mm256_add_ps(block_sum, v[7]);
+        return block_sum;
+    }
+    inline __m256 reduce_sum_block4_mm256_ps(const __m256 (&v)[4]) {
+        __m256 block_sum = _mm256_add_ps(v[0], v[1]);
+        block_sum = _mm256_add_ps(block_sum, v[2]);
+        block_sum = _mm256_add_ps(block_sum, v[3]);
         return block_sum;
     }
 
