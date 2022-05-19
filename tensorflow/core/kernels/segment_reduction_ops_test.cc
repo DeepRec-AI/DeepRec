@@ -40,6 +40,63 @@ limitations under the License.
 
 namespace tensorflow {
 
+static Graph* BM_UnsortedSegmentReduction(const string& reduction,
+                                        int num_rows, int num_cols,
+                                        int segment_size) {
+  Graph* g = new Graph(OpRegistry::Global());
+  // Create inputs
+  gtl::InlinedVector<TensorValue, 4> reduction_inputs;
+  TensorShape shape1({num_rows, num_cols});
+  Tensor input(DT_FLOAT, shape1);
+  // input.flat<float>().setRandom();
+  reduction_inputs.push_back({nullptr, &input});
+
+  TensorShape shape2({num_rows});
+  Tensor indices(DT_INT32, shape2);
+  test::FillFn<int>(&indices,
+                    [&segment_size](int i) -> int { return i % segment_size; });
+  reduction_inputs.push_back({nullptr, &indices});
+
+  Tensor num_segments(DT_INT32, TensorShape({}));
+  num_segments.scalar<int>()() = segment_size;
+  reduction_inputs.push_back({nullptr, &num_segments});
+
+  Node* input_in0 = test::graph::Constant(g, input);
+  Node* input_in1 = test::graph::Constant(g, indices);
+  Node* input_in3 = test::graph::Constant(g, num_segments);
+
+  TF_CHECK_OK(NodeBuilder(g->NewName(reduction), reduction)
+                  .Input(input_in0)
+                  .Input(input_in1)
+                  .Input(input_in3)
+                  .Finalize(g, nullptr));
+  return g;
+}
+
+#define BM_UnsortedReduce(O, NTH, R, C, S)                                              \
+  static void BM_##O##_##R##_##C##_##S##_##NTH(int iters) {                             \
+    testing::UseRealTime();                                                             \
+    testing::BytesProcessed(static_cast<int64>(iters) * R * C * sizeof(float));         \
+    SessionOptions opts;                                                                \
+    opts.config.set_intra_op_parallelism_threads(NTH);                                  \
+    test::Benchmark("cpu", BM_UnsortedSegmentReduction(#O, R, C, S), &opts).Run(iters); \
+  }                                                                                     \
+  BENCHMARK(BM_##O##_##R##_##C##_##S##_##NTH);
+
+#define BM_UnsortedReduce_NTH(O, R, C, S) \
+  BM_UnsortedReduce(O,  1, R, C, S);      \
+  BM_UnsortedReduce(O,  2, R, C, S);      \
+  BM_UnsortedReduce(O,  4, R, C, S);      \
+  BM_UnsortedReduce(O,  8, R, C, S);      \
+  BM_UnsortedReduce(O, 16, R, C, S);      \
+
+#define BM_UnsortedReduce_Arg(R, C, S) \
+  BM_UnsortedReduce_NTH(UnsortedSegmentSum, R, C, S);
+
+BM_UnsortedReduce_Arg(4096, 1024, 1);
+BM_UnsortedReduce_Arg(4096, 1024, 128);
+BM_UnsortedReduce_Arg(351, 1, 729);
+
 template <typename Index>
 static void BM_SegmentReduction(int iters, const string& reduction,
                                 Index num_rows, Index num_cols,
