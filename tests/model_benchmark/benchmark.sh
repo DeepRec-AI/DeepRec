@@ -112,7 +112,7 @@ function runSingleContainer()
 
     container_name=$(echo $2 | awk -F "." '{print $1}')
     host_path=$(cd benchmark_result && pwd)
-    sudo docker run -it $optional \
+    sudo docker run -it $cpu_optional $gpu_optional \
                 --rm \
                 --name $container_name-$short_time \
                 -v $host_path:/benchmark_result/\
@@ -156,6 +156,9 @@ stocktf=$(cat $config_file | shyaml get-value stocktf)
 # cpus
 cpus=$(cat $config_file | shyaml get-value cpu_sets)
 
+# gpus
+gpus=$(cat $config_file | shyaml get-value gpu_sets)
+
 # image name
 deeprec_test_image=$(cat $config_file | shyaml get-value deeprec_test_image)
 tf_test_image=$(cat $config_file | shyaml get-value tf_test_image)
@@ -170,7 +173,8 @@ if [[ ! -f $config_file ]];then
 fi
 
 [[ $modelArgs == None ]] && modelArgs=
-[[ $cpus != None ]] && optional="--cpuset-cpus $cpus"
+[[ $cpus != None ]] && cpu_optional="--cpuset-cpus $cpus"
+[[ $gpus != None ]] && gpu_optional="--gpus $gpus"
 [ ! -d $log_dir/$currentTime ] && mkdir -p "$log_dir/$currentTime"
 [ ! -d $checkpoint_dir/$currentTime ] && mkdir -p "$checkpoint_dir/$currentTime"
 

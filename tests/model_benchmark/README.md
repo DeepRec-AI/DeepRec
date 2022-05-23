@@ -34,7 +34,7 @@ The following test environment should be installed:
 
 ## Usage
 1. `cd` to the directory `./benchmark`  
-2. modify the config files `config.yaml` to specify the parameters you want, including the test image, test model list, benchmark stock tf or not and parameters of deeprec benchmark
+2. modify the config files `config.yaml` to specify the parameters you want, including the test image, test model list, cpu or gpu resource, benchmark stock tf or not and parameters of deeprec benchmark
 3. run the script `bash benchmark.sh`  
 4. check log files in the directory `benchmark/benchmark_result/log/$CurrentTime`
 
@@ -53,6 +53,8 @@ The following test environment should be installed:
 - `stocktf` : benchmark Stock tf or not, the value can be chosen in `on` and `off`. The default value is `on`, which means benchmark Stock tf. If there is no need to benchmark Stock tf, this value should be changed to `off`
 
 - `cpu_sets` : which cpu you want to set, like `52-55,164-167`, the default is null
+
+- `gpu_sets` : which gpu you want to set, like `all` or `device=0`, the default is null 
 
 - `env_var` : environment config for DeepRec feature, like `export START_STATISTIC_STEP` and `export STOP_STATISTIC_STEP`
 

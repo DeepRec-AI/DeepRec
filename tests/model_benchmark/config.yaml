@@ -30,6 +30,9 @@ stocktf: on
 # set cpu
 cpu_sets: 
 
+# set gpu
+gpu_sets: 
+
 # env config 
 env_var:
   - export START_STATISTIC_STEP=100
