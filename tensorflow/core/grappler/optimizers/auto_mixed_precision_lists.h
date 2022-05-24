@@ -350,7 +350,7 @@ class AutoMixedPrecisionListsMkl : public AutoMixedPrecisionLists {
  public:
   AutoMixedPrecisionListsMkl() {}
 
-  // Only ops which are supported by MKL in bfloat16 should be added to the
+  // Only ops which are supported by OneDNN in bfloat16 should be added to the
   // allow list, infer list, or clear list.
   gtl::FlatSet<string> AllowList() override {
     auto list = gtl::FlatSet<string>{"Conv2D",

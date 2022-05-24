@@ -752,7 +752,7 @@ bool FindContractionWithBiasAddAndAdd(const RemapperContext& ctx,
   const auto* node_def = node_view.node();
   if (!IsAddN(*node_def) && !IsAddWithNoBroadcast(ctx, *node_def)) return false;
 
-  // MKL AddN ops only support float and bfloat16 data types.
+  // OneDNN AddN ops only support float and bfloat16 data types.
   if (!HasDataType(node_def, DT_FLOAT) && !HasDataType(node_def, DT_BFLOAT16))
     return false;
 
@@ -799,7 +799,7 @@ bool FindContractionWithBiasAndAddActivation(
   // Currently, Contraction + Bias + Add + Tanh pattern is not supported
   if (IsTanh(*node_def)) return false;
 
-  // MKL activation op only supports float and bfloat16 data types.
+  // OneDNN activation op only supports float and bfloat16 data types.
   if (!HasDataType(node_def, DT_FLOAT) && !HasDataType(node_def, DT_BFLOAT16))
     return false;
 
@@ -1549,7 +1549,7 @@ Status AddFusedContractionNode(RemapperContext* ctx,
   const NodeDef& contraction = graph->node(matched.contraction);
   const NodeDef& bias_add = graph->node(matched.bias_add);
 
-  // MKL version only support fusion for Conv2D and MatMul
+  // OneDNN version only support fusion for Conv2D and MatMul
   DCHECK(IsConv2D(contraction) || IsMatMul(contraction));
 
   NodeDef contraction_node;
@@ -1591,7 +1591,7 @@ Status AddFusedContractionNode(
     RemapperContext* ctx, const ContractionWithBiasAndAddActivation& matched,
     std::vector<bool>* invalidated_nodes, std::vector<bool>* nodes_to_delete) {
   const GraphDef* graph = ctx->graph_view.graph();
-  // MKL version only support fusion for Conv2D
+  // OneDNN version only support fusion for Conv2D
   const NodeDef& contraction = graph->node(matched.contraction);
   DCHECK(IsConv2D(contraction));
   const NodeDef& activation = graph->node(matched.activation);
@@ -2158,7 +2158,7 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
     // real Tensorflow graphs.
 
     // TODO(penporn):
-    // Remove this once TF-MKL supports _FusedConv2D with these operations.
+    // Remove this once TF-OneDNN supports _FusedConv2D with these operations.
     if (DisableMKL()) {
       // Remap Conv2D+Squeeze+BiasAdd into the _FusedConv2D+Squeeze.
       ContractionWithSqueezeAndBiasAdd contract_with_squeeze_and_bias;

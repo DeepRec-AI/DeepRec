@@ -57,7 +57,7 @@ gtl::InlinedVector<int64, 4> IntTensorToInt64Vec(const Tensor& tensor) {
 typedef Eigen::ThreadPoolDevice CPUDevice;
 
 // A version of SharedValidation (slice_op.h) written for input that is in
-// either Mkl layout or Tensorflow layout. A shared code to validate input
+// either OneDNN layout or Tensorflow layout. A shared code to validate input
 // shapes and check for identity, which is not dependent on the type of T.
 // We do this to reduce code size by not duplicating all this for all T
 // (float, double, int32, etc.)
@@ -76,7 +76,7 @@ static void ValidateMklInputs(OpKernelContext* context, bool* is_identity,
   GetMklShape(context, kInputBeginIndex, &begin_mkl_shape);
   GetMklShape(context, kInputSizeIndex, &size_mkl_shape);
 
-  // Begin and size tensors cannot be in MklDnn layout.
+  // Begin and size tensors cannot be in OneDNN layout.
   DCHECK_EQ(begin_mkl_shape.IsMklTensor(), false);
   DCHECK_EQ(size_mkl_shape.IsMklTensor(), false);
 
@@ -131,7 +131,7 @@ static void ValidateMklInputs(OpKernelContext* context, bool* is_identity,
 }
 
 // A version of SharedSliceCommonCases function written for input tensor
-// that may be in MklDnn layout or in Tensorflow layout.
+// that may be in OneDNN layout or in Tensorflow layout.
 template <typename T>
 static void CheckCommonCasesForMklInputs(OpKernelContext* context,
                                          gtl::InlinedVector<int64, 4>* begin,
@@ -150,7 +150,7 @@ static void CheckCommonCasesForMklInputs(OpKernelContext* context,
   if (is_identity) {
     VLOG(1) << "Slice identity";
     context->set_output(0, input);
-    // Mkl metadata tensor in this case can just be forwarded from input to
+    // OneDNN metadata tensor in this case can just be forwarded from input to
     // output.
     AllocateOutputSetMklShape(context, 0, input_mkl_shape);
     *done = true;
@@ -280,7 +280,7 @@ class MklSlicePrimitiveFactory : public MklPrimitiveFactory<T> {
     memory::dims from_dims(from_desc.dims, &from_desc.dims[from_desc.ndims]);
     memory::dims to_dims(to_desc.dims, &to_desc.dims[to_desc.ndims]);
 
-    // MKL-DNN removes "struct view". Submemory has similar capability.
+    // OneDNN removes "struct view". Submemory has similar capability.
     auto from_strides = from_desc.MEMORY_FORMAT_DESC.blocking.strides;
     auto to_strides = to_desc.MEMORY_FORMAT_DESC.blocking.strides;
     memory::dims from_strides_outer_blocks(
@@ -313,7 +313,7 @@ class MklSlicePrimitiveFactory : public MklPrimitiveFactory<T> {
   }
 };
 
-// MKL-DNN implementation of Slice
+// OneDNN implementation of Slice
 template <typename Device, typename T>
 class MklSliceOp : public OpKernel {
  public:
@@ -330,7 +330,7 @@ class MklSliceOp : public OpKernel {
 
     if (!context->status().ok() || done == true) return;
 
-    // Though MKL-DNN supports more than 8 dimension and
+    // Though OneDNN supports more than 8 dimension and
     // less than 12 dimension tensor.
     // But we are mimicking functionality of Eigen Slice op for CPU.
     if (begin.size() >= 8) {
@@ -348,7 +348,7 @@ class MklSliceOp : public OpKernel {
                        const gtl::InlinedVector<int64, 4>& begin,
                        const gtl::InlinedVector<int64, 4>& size) {
     try {
-      // MKL-DNN API usage below is guided by description at:
+      // OneDNN API usage below is guided by description at:
       //  https://github.com/01org/mkl-dnn/issues/69
       //
       // Relevant part of the description is copied below:
@@ -391,7 +391,7 @@ class MklSliceOp : public OpKernel {
       MklDnnShape output_mkl_shape;
 
       // If no dimension is selected in slice, the result should be empty.
-      // Just return an empty output tensor, and a dummy Mkl-shape tensor.
+      // Just return an empty output tensor, and a dummy OneDNN-shape tensor.
       if (empty) {  // for empty dims
         auto shape_to = MklDnnDimsToTFShape(size_dims);
         AllocateOutputSetMklShape(context, 0, &output_tensor, shape_to,
@@ -425,7 +425,7 @@ class MklSliceOp : public OpKernel {
         input_strides = CalculateTFStrides(input_dims);
       } else {
         // Initialize input dimensions and strides to be used when input is not
-        // in MklDnn layout.
+        // in OneDNN layout.
         input_dims = TFShapeToMklDnnDims(input_tensor.shape());
         input_strides = CalculateTFStrides(input_dims);
         // Create input memory descriptor.
@@ -484,10 +484,10 @@ class MklSliceOp : public OpKernel {
     TensorShape output_tf_shape;
 
     if (input_mkl_shape.IsMklTensor()) {
-      // Since input tensor is in Mkl layout, output tensor will be in Mkl
+      // Since input tensor is in OneDNN layout, output tensor will be in OneDNN
       // layout.
 
-      // Allocate shape of Mkl tensor.
+      // Allocate shape of OneDNN tensor.
       output_mkl_shape->SetMklTensor(true);
       output_mkl_shape->SetMklLayout(output_pd);
       output_mkl_shape->SetElemType(MklDnnType<T>());
@@ -496,7 +496,7 @@ class MklSliceOp : public OpKernel {
 
       output_tf_shape.AddDim(output_pd->get_size() / sizeof(T));
     } else {
-      // If input is not in Mkl layout, then output won't be in Mkl layout.
+      // If input is not in OneDNN layout, then output won't be in OneDNN layout.
       output_mkl_shape->SetMklTensor(false);
       output_tf_shape = MklDnnDimsToTFShape(output_dims);
     }
@@ -506,7 +506,7 @@ class MklSliceOp : public OpKernel {
   }
 };
 
-// MKL-DNN Slice registration
+// OneDNN Slice registration
 #define REGISTER_MKL_SLICE(type)                               \
   REGISTER_KERNEL_BUILDER(                                     \
       Name("_MklSlice")                                        \

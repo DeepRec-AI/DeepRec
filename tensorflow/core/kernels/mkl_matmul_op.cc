@@ -15,11 +15,11 @@ limitations under the License.
 
 // See docs in ../ops/math_ops.cc.
 
-// This file uses MKL CBLAS xGEMM for acceleration of TF Matrix-Matrix
+// This file uses OneDNN CBLAS xGEMM for acceleration of TF Matrix-Matrix
 // Multiplication (MatMul) operations.
-// We currently register this kernel only for MKL supported data
+// We currently register this kernel only for OneDNN supported data
 // types (float, double, complex64, complex128). The macro INTEL_MKL is defined
-// by the build system only when MKL is chosen as an option at configure stage
+// by the build system only when OneDNN is chosen as an option at configure stage
 // and when it is undefined at build time, this file becomes an empty
 // compilation unit
 

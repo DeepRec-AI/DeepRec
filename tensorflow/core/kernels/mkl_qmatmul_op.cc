@@ -202,9 +202,9 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       auto input_output_fmt = MEMORY_FORMAT::nc;
       auto input_output_fmt_dnnl = MKL_TENSOR_FORMAT_NC;
 
-      // If input is in MKL layout, then simply take input layout; otherwise,
+      // If input is in OneDNN layout, then simply take input layout; otherwise,
       // construct input TF layout. For TF layout, although input shape
-      // (src_dims) required is in MKL-DNN order, the layout is Tensorflow's
+      // (src_dims) required is in OneDNN order, the layout is Tensorflow's
       // layout depending on data format.
       auto src_md =
           src_mkl_shape.IsMklTensor()
@@ -212,7 +212,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
               : memory::desc(src_dims, MklDnnType<Tinput>(), input_output_fmt);
       src.SetUsrMem(src_md, &src_tensor);
 
-      // Although weight shape (weight_dims) required is in MKL-DNN order,
+      // Although weight shape (weight_dims) required is in OneDNN order,
       // the layout is TensorFlow's layout.
       auto weight_md = weight_mkl_shape.IsMklTensor()
                            ? weight_mkl_shape.GetMklLayout()
@@ -261,7 +261,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       Tweight* weight_data = nullptr;
       if (IS_WEIGHTS_REORDER_NEEDED(weight_md, matmul_fwd_pd, matmul_fwd)) {
         bool is_weight_cached = false;
-        // For batch size 1, MKL-DNN expects that weight format is OI whereas
+        // For batch size 1, OneDNN expects that weight format is OI whereas
         // TF default format is IO. So in that case convert weight from IO
         // to OI for the first iteration and cache it to reuse in the
         // subsequent iterations, if the weight is constant.
@@ -566,7 +566,7 @@ REGISTER_KERNEL_BUILDER(
     MklDnnQuantizedMatMulOp<CPUDevice, quint8, qint8, qint32, qint32>);
 
 // Register NoOp kernel for QuantizedMatMulWithBiasAndRelu to get a python
-// interface. This kernel will be replaced by an MKL kernel during
+// interface. This kernel will be replaced by an OneDNN kernel during
 // graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndRelu")
                             .Device(DEVICE_CPU)
@@ -575,7 +575,7 @@ REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndRelu")
                             .TypeConstraint<qint32>("Toutput"),
                         NoOp);
 // Register NoOp kernel for QuantizedIPWithBiasAndReluAndRequantize
-// to get a python interface. This kernel will be replaced by an MKL kernel
+// to get a python interface. This kernel will be replaced by an OneDNN kernel
 // during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndReluAndRequantize")
                             .Device(DEVICE_CPU)
@@ -586,7 +586,7 @@ REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndReluAndRequantize")
                         NoOp);
 
 // Register NoOp kernel for QuantizedMatMulWithBiasAndRequantize
-// to get a python interface. This kernel will be replaced by an MKL kernel
+// to get a python interface. This kernel will be replaced by an OneDNN kernel
 // during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndRequantize")
                             .Device(DEVICE_CPU)
@@ -597,7 +597,7 @@ REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndRequantize")
                         NoOp);
 
 // Register NoOp kernel for QuantizedMatMulWithBiasAndDequantize
-// to get a python interface. This kernel will be replaced by an MKL kernel
+// to get a python interface. This kernel will be replaced by an OneDNN kernel
 // during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedMatMulWithBiasAndDequantize")
                             .Device(DEVICE_CPU)

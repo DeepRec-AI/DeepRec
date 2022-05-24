@@ -1,13 +1,13 @@
 # -*- Python -*-
-"""Skylark macros for MKL.
+"""Skylark macros for OneDNN.
 
-if_mkl is a conditional to check if we are building with MKL.
+if_mkl is a conditional to check if we are building with OneDNN.
 if_mkl_ml is a conditional to check if we are building with MKL-ML.
-if_mkl_ml_only is a conditional to check for MKL-ML-only (no MKL-DNN) mode.
-if_mkl_lnx_x64 is a conditional to check for MKL
-if_enable_mkl is a conditional to check if building with MKL and MKL is enabled.
+if_mkl_ml_only is a conditional to check for MKL-ML-only (no OneDNN) mode.
+if_mkl_lnx_x64 is a conditional to check for OneDNN
+if_enable_mkl is a conditional to check if building with OneDNN and OneDNN is enabled.
 
-mkl_repository is a repository rule for creating MKL repository rule that can
+mkl_repository is a repository rule for creating OneDNN repository rule that can
 be pointed to either a local folder, or download it from the internet.
 mkl_repository depends on the following environment variables:
   * `TF_MKL_ROOT`: The root folder where a copy of libmkl is located.
@@ -16,11 +16,11 @@ mkl_repository depends on the following environment variables:
 _TF_MKL_ROOT = "TF_MKL_ROOT"
 
 def if_mkl(if_true, if_false = []):
-    """Shorthand for select()'ing on whether we're building with MKL.
+    """Shorthand for select()'ing on whether we're building with OneDNN.
 
     Args:
-      if_true: expression to evaluate if building with MKL.
-      if_false: expression to evaluate if building without MKL.
+      if_true: expression to evaluate if building with OneDNN.
+      if_false: expression to evaluate if building without OneDNN.
 
     Returns:
       a select evaluating to either if_true or if_false as appropriate.
@@ -36,7 +36,7 @@ def if_mkl_ml(if_true, if_false = []):
     Args:
       if_true: expression to evaluate if building with MKL-ML.
       if_false: expression to evaluate if building without MKL-ML
-        (i.e. without MKL at all, or with MKL-DNN only).
+        (i.e. without OneDNN at all, or with OneDNN only).
 
     Returns:
       a select evaluating to either if_true or if_false as appropriate.
@@ -48,12 +48,12 @@ def if_mkl_ml(if_true, if_false = []):
     })
 
 def if_mkl_lnx_x64(if_true, if_false = []):
-    """Shorthand to select() if building with MKL and the target is Linux x86-64.
+    """Shorthand to select() if building with OneDNN and the target is Linux x86-64.
 
     Args:
-      if_true: expression to evaluate if building with MKL is enabled and the
+      if_true: expression to evaluate if building with OneDNN is enabled and the
         target platform is Linux x86-64.
-      if_false: expression to evaluate if building without MKL or for a
+      if_false: expression to evaluate if building without OneDNN or for a
         different platform.
 
     Returns:
@@ -65,13 +65,13 @@ def if_mkl_lnx_x64(if_true, if_false = []):
     })
 
 def if_enable_mkl(if_true, if_false = []):
-    """Shorthand to select() if we are building with MKL and MKL is enabled.
+    """Shorthand to select() if we are building with OneDNN and OneDNN is enabled.
 
-    This is only effective when built with MKL.
+    This is only effective when built with OneDNN.
 
     Args:
-      if_true: expression to evaluate if building with MKL and MKL is enabled
-      if_false: expression to evaluate if building without MKL or MKL is not enabled.
+      if_true: expression to evaluate if building with OneDNN and OneDNN is enabled
+      if_false: expression to evaluate if building without OneDNN or OneDNN is not enabled.
 
     Returns:
       A select evaluating to either if_true or if_false as appropriate.
@@ -82,9 +82,9 @@ def if_enable_mkl(if_true, if_false = []):
     })
 
 def mkl_deps():
-    """Shorthand for select() to pull in the correct set of MKL library deps.
+    """Shorthand for select() to pull in the correct set of OneDNN library deps.
 
-    Can pull in MKL-ML, MKL-DNN, both, or neither depending on config settings.
+    Can pull in MKL-ML, OneDNN, both, or neither depending on config settings.
 
     Returns:
       a select evaluating to a list of library dependencies, suitable for
@@ -111,7 +111,7 @@ def _mkl_autoconf_impl(repository_ctx):
         mkl_license_path = "%s/license.txt" % mkl_root
         repository_ctx.symlink(mkl_license_path, "license.txt")
     else:
-        # setup remote mkl repository.
+        # setup remote OneDNN repository.
         repository_ctx.download_and_extract(
             repository_ctx.attr.urls,
             sha256 = repository_ctx.attr.sha256,

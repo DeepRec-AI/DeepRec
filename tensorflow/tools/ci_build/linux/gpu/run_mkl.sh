@@ -36,7 +36,7 @@ yes "" | $PYTHON_BIN_PATH configure.py
 
 # Run bazel test command. Double test timeouts to avoid flakes.
 # Setting KMP_BLOCKTIME to 0 lets OpenMP threads to sleep right after parallel execution
-# in an MKL primitive. This reduces the effects of an oversubscription of OpenMP threads
+# in an OneDNN primitive. This reduces the effects of an oversubscription of OpenMP threads
 # caused by executing multiple tests concurrently.
 bazel test --config=cuda --test_tag_filters=-no_oss,-oss_serial,-no_gpu,-benchmark-test \
   --test_lang_filters=cc,py -k --jobs="${N_JOBS}" \

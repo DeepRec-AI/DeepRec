@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-// See docs in ../ops/nn_ops.cc. This opkernel uses MKL library, create MKL
-// layout and primitives, use MKL dnn primitives to compute convolution backward
+// See docs in ../ops/nn_ops.cc. This opkernel uses OneDNN library, create OneDNN
+// layout and primitives, use OneDNN primitives to compute convolution backward
 // input
 
 #ifdef INTEL_MKL
@@ -135,7 +135,7 @@ class MklConvBwdInputPrimitive : public MklPrimitive {
  private:
   // Primitive reuse context for conv bwd input.
   struct ConvBwdInputContext {
-    // MKL-DNN memory.
+    // OneDNN memory.
     std::shared_ptr<dnnl::memory> diff_src_mem;
     std::shared_ptr<dnnl::memory> filter_mem;
     std::shared_ptr<dnnl::memory> diff_dst_mem;
@@ -156,7 +156,7 @@ class MklConvBwdInputPrimitive : public MklPrimitive {
     std::shared_ptr<memory::desc> filter_md;
     std::shared_ptr<memory::desc> diff_dst_md;
 
-    // MKL-DNN pipeline for executing primitives.
+    // OneDNN pipeline for executing primitives.
     std::vector<dnnl::primitive> bwd_input_primitives;
     std::vector<std::unordered_map<int, memory>> bwd_input_primitives_args;
 
@@ -178,7 +178,7 @@ class MklConvBwdInputPrimitive : public MklPrimitive {
 
   void Setup(const MklConvBwdInputParams& convBwdInputDims) {
     // Create memory descriptors for conv bwd input without any specified
-    // format so that MKL-DNN can pick an appropriate one depending on the
+    // format so that OneDNN can pick an appropriate one depending on the
     // input parameters.
     context_.diff_src_md.reset(new memory::desc(
         {convBwdInputDims.diff_src_dims}, MklDnnType<T>(), MEMORY_FORMAT::any));
@@ -354,7 +354,7 @@ class MklConvCustomBackpropInputOp
         return;
       }
 
-      // By default, all dims are in MKL order except those that are suffixed
+      // By default, all dims are in OneDNN order except those that are suffixed
       // with `tf_order`.
       memory::dims diff_dst_dims, fwd_src_dims, fwd_filter_dims;
       memory::dims padding_left, padding_right, dilations, strides;
@@ -382,7 +382,7 @@ class MklConvCustomBackpropInputOp
       OP_REQUIRES(context, mkl_fmt_tag != memory::format_tag::undef,
                   errors::InvalidArgument("Invalid data format"));
 
-      // If filter is in MKL layout, then simply grab filter layout;
+      // If filter is in OneDNN layout, then simply grab filter layout;
       // otherwise, construct filter in TF layout.
       // For TF layout, filter is in HWIO format.
       auto fwd_filter_md =
@@ -402,7 +402,7 @@ class MklConvCustomBackpropInputOp
               : memory::desc(diff_dst_dims, MklDnnType<T>(), MKL_FMT_TAG);
 
       // The default dilation factor for each dimension is 1 in TF and
-      // 0 in MKL-DNN.
+      // 0 in OneDNN.
       for (int i = 0; i < dilations.size(); ++i) --dilations[i];
       MklConvBwdInputParams convBwdInputDims(
           fwd_src_dims, fwd_filter_dims, diff_dst_dims, strides, dilations,
@@ -410,9 +410,9 @@ class MklConvCustomBackpropInputOp
 
       // We don't cache those primitives if the environment variable
       // TF_MKL_OPTIMIZE_PRIMITIVE_MEMUSE is true and if primitive descriptor
-      // includes potentially large buffers. MKL-DNN allocates buffers
+      // includes potentially large buffers. OneDNN allocates buffers
       // in the following cases
-      //   1. Legacy CPU without AVX512/AVX2, or
+      //   1. Legacy CPU without AMX/AVX512/AVX2, or
       //   2. 1x1 convolution with stride != 1
       bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled() &&
                           (MklPrimitiveFactory<T>::IsLegacyPlatform() ||
@@ -487,7 +487,7 @@ class MklConvCustomBackpropInputOp
                                 bwd_cpu_stream);
       } else {
         // In eager mode we first write the output to temporary
-        // buffer in MKL format. Then we convert the data to TF format.
+        // buffer in OneDNN format. Then we convert the data to TF format.
         T* tmp_data =
             static_cast<T*>(const_cast<T*>(tmp_tensor.flat<T>().data()));
         conv_bwd_input->Execute(tmp_data, filter_data, diff_dst_data,

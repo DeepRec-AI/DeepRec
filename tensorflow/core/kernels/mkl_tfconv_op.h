@@ -66,7 +66,7 @@ class MklToTfOp : public OpKernel {
                              string data_format_str, DataType op_data_type,
                              bool has_avx512f, uint input_number) {
     try {
-      // Check that input tensor is in MKL format.
+      // Check that input tensor is in OneDNN format.
       const Tensor& input_tensor = MklGetInput(context, input_number);
       MklDnnShape input_shape;
       GetMklShape(context, input_number, &input_shape);
@@ -89,12 +89,12 @@ class MklToTfOp : public OpKernel {
       auto cpu_engine = engine(ENGINE_CPU, 0);
       MklDnnData<T> input(&cpu_engine);
 
-      // Get MKL layout of input tensor.
+      // Get OneDNN layout of input tensor.
       auto input_mkl_md = input_shape.GetMklLayout();
       // Get TensorFlow layout of input tensor. Expected output of conversion
       // has same layout as Tensorflow layout of input tensor.
       auto output_tf_md = input_shape.GetTfLayout();
-      // Set input MKL layout as the user layout.
+      // Set input OneDNN layout as the user layout.
       input.SetUsrMem(input_mkl_md, &input_tensor);
 
       // Allocate output tensor.
@@ -106,7 +106,7 @@ class MklToTfOp : public OpKernel {
 
       // Check if input needs to be reordered
       if (input.IsReorderNeeded(OUTPUT_TF_MD)) {
-        // Insert reorder between MKL layout and TensorFlow layout
+        // Insert reorder between OneDNN layout and TensorFlow layout
         OP_REQUIRES(
             context,
             input.CheckReorderToOpMem(OUTPUT_TF_MD, output_tensor, context),

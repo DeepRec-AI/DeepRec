@@ -84,7 +84,7 @@ class MklSoftmaxPrimitive : public MklPrimitive {
 
  private:
   struct SoftmaxFwdContext {
-    // MKL-DNN memory.
+    // OneDNN memory.
     std::shared_ptr<memory> src_mem;
     std::shared_ptr<memory> dst_mem;
 
@@ -222,12 +222,12 @@ class MklSoftmaxOp : public OpKernel {
         axis = input_dims - 1;
       }
       MKL_TENSOR_FORMAT layout_type;
-      // In MKL, data format passed to mkl softmax op depends on dimension of
-      // the input tensor. Here "x" data format in MKL is used for 1 dim tensor,
+      // In OneDNN, data format passed to OneDNN softmax op depends on dimension of
+      // the input tensor. Here "x" data format in OneDNN is used for 1 dim tensor,
       // "nc" for 2 dim tensor, "tnc" for 3 dim tensor, "nchw" for 4 dim tensor,
       // and "ncdhw" for 5 dim tensor. Each of the symbols has the following
       // meaning: n = batch, c = channels, t = sequence length, h = height, w =
-      // width, d = depth. When src tensor is MKL, layout_type here is only used
+      // width, d = depth. When src tensor is OneDNN, layout_type here is only used
       // for setting TF layout type of output tensor. When input is TF Tensor,
       // layout here is no special sense. We use axis to define on which
       // dimension to do softmax.
@@ -261,7 +261,7 @@ class MklSoftmaxOp : public OpKernel {
           return;
       }
 
-      // If input is in MKL layout, then simply get the format from input;
+      // If input is in OneDNN layout, then simply get the format from input;
       // otherwise, use TF layout defined before.
       auto src_fmt = src_mkl_shape.IsMklTensor()
                          ? GET_FORMAT_FROM_SHAPE(src_mkl_shape)
@@ -279,7 +279,7 @@ class MklSoftmaxOp : public OpKernel {
 
       auto dst_pd = softmax_fwd->GetSoftmaxFwdPd()->PRIMITIVE_DESC_DST;
 
-      // If input is MKL shape, output is also MKL shape.
+      // If input is OneDNN shape, output is also OneDNN shape.
       // If input is TF shape, output is also TF shape.
       if (src_mkl_shape.IsMklTensor()) {
         output_mkl_shape.SetMklTensor(true);

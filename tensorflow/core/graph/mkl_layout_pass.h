@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-// A graph pass that rewrites graph for propagating MKL layout as a tensor
+// A graph pass that rewrites graph for propagating OneDNN layout as a tensor
 
 #ifndef TENSORFLOW_CORE_COMMON_RUNTIME_MKL_LAYOUT_PASS_H_
 #define TENSORFLOW_CORE_COMMON_RUNTIME_MKL_LAYOUT_PASS_H_

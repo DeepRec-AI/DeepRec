@@ -41,7 +41,7 @@ int32 NumIntraOpThreadsFromEnvironment();
 // the function returns the value defined in the TF_NUM_INTEROP_THREADS
 // environment variable. If neither a value is specified in the options or in
 // the environment, this function will return a reasonable default value based
-// on the number of schedulable CPUs, and any MKL and OpenMP configurations.
+// on the number of schedulable CPUs, and any OneDNN and OpenMP configurations.
 int32 NumInterOpThreadsFromSessionOptions(const SessionOptions& options);
 
 // Creates a thread pool with number of inter op threads.

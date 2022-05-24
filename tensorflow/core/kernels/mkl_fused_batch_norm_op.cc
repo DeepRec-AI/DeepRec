@@ -555,7 +555,7 @@ class MklFusedBatchNormBwdPrimitive : public MklPrimitive {
     // For inference, specify use_global_stats
     //   1. on fwd propagation, use mean and variance provided as inputs.
     //   2. on bwd propagation, mean and variance are considered as constants.
-    //      Thus, reduce the amount of MKL computation.
+    //      Thus, reduce the amount of OneDNN computation.
     auto bwd_desc = batch_normalization_backward::desc(
         prop_kind::backward, diff_dst_md, src_md, bwdParams.eps, bn_flags);
     context_.bwd_pd.reset(new BatchNormBwdPd(bwd_desc, cpu_engine_, fwd_pd));
@@ -645,7 +645,7 @@ class MklFusedBatchNormBwdPrimitiveFactory : public MklPrimitiveFactory<T> {
 };
 
 //  Adding a third parameter to the template to support FusedBatchNormV3
-//  with MKL. This is different from default where the classes are
+//  with OneDNN. This is different from default where the classes are
 //  derived. Moves enabling to compile-time rather than runtime.
 template <typename Device, typename T, typename U, bool reserved_space,
           bool is_batch_norm_ex = false>
@@ -823,7 +823,7 @@ class MklFusedBatchNormOp : public OpKernel {
       else
         SetMeanVariance(est_mean_tensor, est_variance_tensor);
 
-      // MKL-DNN packs scale & shift as "weights":
+      // OneDNN packs scale & shift as "weights":
       // <scale>...<scale><shift>...<shift>
       weights.AllocateBuffer(2 * depth_ * sizeof(U));
       U* weights_data = reinterpret_cast<U*>(weights.GetAllocatedBuffer());
@@ -857,7 +857,7 @@ class MklFusedBatchNormOp : public OpKernel {
         src_data = static_cast<T*>(const_cast<T*>(src_tensor.flat<T>().data()));
       }
 
-      // Allocate output (dst) tensor; always set it as MKL-DNN layout
+      // Allocate output (dst) tensor; always set it as OneDNN layout
       MklDnnShape dnn_shape_dst;
       TensorShape tf_shape_dst;
       dnn_shape_dst.SetMklTensor(true);
@@ -1234,7 +1234,7 @@ class MklFusedBatchNormGradOp : public OpKernel {
       // Indices of output tensors
       const size_t kDiffSrcIndex = 0;
 
-      // Allocate output tensor diff_src, always set as MKL-DNN layout.
+      // Allocate output tensor diff_src, always set as OneDNN layout.
       MklDnnShape dnn_shape_diff_src;
       TensorShape tf_shape_diff_src;
       dnn_shape_diff_src.SetMklTensor(true);

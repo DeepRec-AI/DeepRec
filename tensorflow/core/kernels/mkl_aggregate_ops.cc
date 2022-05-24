@@ -107,7 +107,7 @@ class MklAddNOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
-    // Each input tensor in MKL layout has additional meta-tensor carrying
+    // Each input tensor in OneDNN layout has additional meta-tensor carrying
     // layout information. So the number of actual tensors is half the total
     // number of inputs.
     const int num_inputs = ctx->num_inputs() / 2;
@@ -167,7 +167,7 @@ class MklAddNOp : public OpKernel {
       if (mkl_input_index >= 0) {
         has_mkl_input = true;
         GetMklShape(ctx, mkl_input_index, &mkl_shape);
-        // MKL input has the data format information.
+        // OneDNN input has the data format information.
         mkl_data_format = mkl_shape.GetTfDataFormat();
         tf_data_format = MklDnnDataFormatToTFDataFormat(mkl_data_format);
         dnn_fmt = MklTensorFormatToMklDnnDataFormat(mkl_data_format);
@@ -177,9 +177,9 @@ class MklAddNOp : public OpKernel {
       MklDnnThreadPool eigen_tp(ctx);
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, cpu_engine));
 
-      // Create memory descriptor for MKL-DNN.
+      // Create memory descriptor for OneDNN.
       // If all input in Tensorflow format, create block memory descriptor,
-      // else convert TF format to MKL memory descriptor
+      // else convert TF format to OneDNN memory descriptor
       for (int src_idx = 0; src_idx < num_inputs; ++src_idx) {
         MklDnnShape src_mkl_shape;
         GetMklShape(ctx, src_idx, &src_mkl_shape);

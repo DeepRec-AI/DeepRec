@@ -38,7 +38,7 @@ namespace tensorflow {
 static const uint8 kDummyTensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
 static const TensorShape kDummyShape({2, 4});
 
-// Helper class for converting MKL tensors to TF tensors and comparing to
+// Helper class for converting OneDNN tensors to TF tensors and comparing to
 // expected values
 class ConvMklToTF : public OpsTestBase {
  public:
@@ -46,10 +46,10 @@ class ConvMklToTF : public OpsTestBase {
   void ConvertMKL2TF(DataType dtype, const Tensor& first, const Tensor& second,
                      Tensor& output) {
     // TO-DO : Has to be moved to common utility file
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));
@@ -77,13 +77,13 @@ TEST_F(QuantizedMatMulTest, Small_withBias) {
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
           .Attr("Toutput", DataTypeToEnum<qint32>::v())
           .Attr("T", DataTypeToEnum<qint32>::v())
           .Attr("_kernel", "QuantizedMklOp")
@@ -150,13 +150,13 @@ TEST_F(QuantizedMatMulTest, Small_withNegBias) {
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
           .Attr("Toutput", DataTypeToEnum<qint32>::v())
           .Attr("T", DataTypeToEnum<qint32>::v())
           .Attr("_kernel", "QuantizedMklOp")
@@ -224,13 +224,13 @@ TEST_F(QuantizedMatMulTest, Small_WithNegInp) {
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
           .Attr("Toutput", DataTypeToEnum<qint32>::v())
           .Attr("T", DataTypeToEnum<qint32>::v())
           .Attr("input_quant_mode", "MIN_FIRST")
@@ -314,15 +314,15 @@ TEST_F(QuantizedMatMulTest, Small_withBiasAndReq) {
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                    .Attr("Toutput", DataTypeToEnum<quint8>::v())
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("_kernel", "QuantizedMklOp")
@@ -407,15 +407,15 @@ TEST_F(QuantizedMatMulTest, Small_withBiasAndDeq) {
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                    .Attr("Toutput", DataTypeToEnum<float>::v())
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("_kernel", "QuantizedMklOp")
@@ -498,13 +498,13 @@ TEST_F(QuantizedMatMulTest, Small_withBiasAndRelu) {
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                    .Attr("Toutput", DataTypeToEnum<qint32>::v())
                    .Attr("T", DataTypeToEnum<qint32>::v())
                    .Attr("_kernel", "QuantizedMklOp")
@@ -576,15 +576,15 @@ TEST_F(QuantizedMatMulTest, Small_withBiasAndReluAndReq) {
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                    .Attr("Toutput", DataTypeToEnum<quint8>::v())
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("_kernel", "QuantizedMklOp")
@@ -671,13 +671,13 @@ TEST_F(QuantizedMatMulTest, Small_withWeightCached) {
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
           .Input(FakeInput(DT_FLOAT))
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
-          .Input(FakeInput(DT_UINT8))  // MKL second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+          .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
           .Attr("Toutput", DataTypeToEnum<qint32>::v())
           .Attr("T", DataTypeToEnum<qint32>::v())
           .Attr("_kernel", "QuantizedMklOp")

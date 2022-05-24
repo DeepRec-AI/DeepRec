@@ -104,7 +104,7 @@ class MklReorderWithScalePrimitive : public MklPrimitive {
  private:
   // Primitive reuse context for reorder
   struct ReorderContext {
-    // MKL-DNN memory
+    // OneDNN memory
     std::shared_ptr<dnnl::memory> src_mem;
     std::shared_ptr<dnnl::memory> dst_mem;
 

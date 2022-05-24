@@ -166,7 +166,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
  private:
   // Primitive reuse context for Conv2D Fwd op
   struct ConvFwdContext {
-    // MKL-DNN memory
+    // OneDNN memory
     std::shared_ptr<dnnl::memory> src_mem;
     std::shared_ptr<dnnl::memory> filter_mem;
     std::shared_ptr<dnnl::memory> bias_mem;
@@ -307,7 +307,7 @@ class MklConvFwdPrimitive : public MklPrimitive {
 
 // TODO(nhasabni): We should not require passing a type to MklPrimitiveFactory.
 // But removing the need for type in MklPrimitiveFactory is going to require
-// change to every MKL op. So not doing it now. Instead passing float.
+// change to every OneDNN op. So not doing it now. Instead passing float.
 template <typename Tinput, typename Tfilter, typename Tbias, typename Toutput>
 class MklConvFwdPrimitiveFactory : public MklPrimitiveFactory<float> {
  public:
@@ -502,7 +502,7 @@ class MklConvOp : public OpKernel {
                           quantized_pad_enabled);
       }
 
-      // Get shapes of input tensors in MKL-DNN order
+      // Get shapes of input tensors in OneDNN order
       MklDnnConvUtil conv_utl(context, strides_, padding_, data_format_,
                               dilations_);
       auto src_tf_shape = GetTfShape(context, kInputIndex_Src, eager_mode);
@@ -573,10 +573,10 @@ class MklConvOp : public OpKernel {
       OP_REQUIRES(context, mkl_fmt_tag != memory::format_tag::undef,
                   errors::InvalidArgument("Invalid data format"));
 
-      // If input is in MKL layout, then simply grab the layout; otherwise,
+      // If input is in OneDNN layout, then simply grab the layout; otherwise,
       // construct TF layout for input.
       // For constructing TF layout for input, although input shape (src_dims)
-      // is required to be in MKL-DNN order, the input layout is actually in
+      // is required to be in OneDNN order, the input layout is actually in
       // TF layout depending on the data format:
       //     Conv2D: NHWC or NCHW
       //     Conv3D: NDHWC or NCDHW
@@ -586,7 +586,7 @@ class MklConvOp : public OpKernel {
               : memory::desc(src_dims, MklDnnType<Tinput>(), mkl_fmt_tag);
       src.SetUsrMem(src_md, &src_tensor);
 
-      // Although filter shape (filter_dims) required is in MKL-DNN order,
+      // Although filter shape (filter_dims) required is in OneDNN order,
       // the layout is Tensorflow's layout (HWIO) and (HWIGO) for
       // depthwise/group convolutions.
       auto filter_format = is_conv2d ? (is_depthwise ? MEMORY_FORMAT::hwigo
@@ -600,14 +600,14 @@ class MklConvOp : public OpKernel {
               : memory::desc(filter_dims, MklDnnType<Tfilter>(), filter_format);
       filter.SetUsrMem(filter_md, &filter_tensor);
 
-      // MKL-DNN dilations start from 0.
+      // OneDNN dilations start from 0.
       for (int i = 0; i < dilations.size(); ++i) --dilations[i];
 
       // In some cases, primitive descriptor could potentially contain
       // large buffers. As a result, we don't cache these primitives if the
       // environment variable `TF_MKL_OPTIMIZE_PRIMITIVE_MEMUSE` is set to True.
-      // MKL-DNN allocates buffers in the following cases:
-      //   1. Legacy CPU without AVX512/AVX2, or
+      // OneDNN allocates buffers in the following cases:
+      //   1. Legacy CPU without AMX/AVX512/AVX2, or
       //   2. 1x1 convolution with strides != 1
       bool do_not_cache =
           MklPrimitiveFactory<Tinput>::IsPrimitiveMemOptEnabled() &&
@@ -665,7 +665,7 @@ class MklConvOp : public OpKernel {
       if (IS_FILTER_REORDER_NEEDED(filter_md, conv_fwd_pd, conv_fwd)) {
         bool is_filter_cached = false;
         // If filter is a constant, we can avoid the conversion of filter from
-        // Tensorflow format to MKL format by caching the filter when it is
+        // Tensorflow format to OneDNN format by caching the filter when it is
         // converted for the first time. This cached filter can then be reused
         // in subsequent iterations.
         if (is_filter_const_) {
@@ -715,7 +715,7 @@ class MklConvOp : public OpKernel {
           conv_fwd->Execute(src_data, filter_data, dst_data, fwd_cpu_stream);
         } else {
           // In eager mode we first write the output to temporary
-          // buffer in MKL format. Then we convert the data to TF format.
+          // buffer in OneDNN format. Then we convert the data to TF format.
           Ttemp_output* tmp_data = reinterpret_cast<Ttemp_output*>(
               tmp_tensor.flat<Toutput>().data());
           conv_fwd->Execute(src_data, filter_data, tmp_data, fwd_cpu_stream);
@@ -787,8 +787,8 @@ class MklConvOp : public OpKernel {
       pad_left = paddings[6];
       pad_right = paddings[7];
     }
-    // Create padding arrays for MKL-DNN convolutions.
-    // MKL-DNN uses asymmetric padding.
+    // Create padding arrays for OneDNN convolutions.
+    // OneDNN uses asymmetric padding.
     padding_left = {static_cast<int>(pad_top), static_cast<int>(pad_left)};
     padding_right = {static_cast<int>(pad_bottom), static_cast<int>(pad_right)};
   }
@@ -859,7 +859,7 @@ class MklConvOp : public OpKernel {
           static_cast<dnnl_data_type_t>(MklDnnType<Toutput>());
     }
 
-    // Allocate shape of MKL tensor
+    // Allocate shape of OneDNN tensor
     output_mkl_shape->SetMklTensor(true);
     output_mkl_shape->SetMklLayout(&DST_MD);
     output_mkl_shape->SetElemType(MklDnnType<Toutput>());
@@ -1003,7 +1003,7 @@ class MklConvOp : public OpKernel {
     DCHECK(filter_tensor);
     auto filter_md = conv_prim_desc.PRIMITIVE_DESC_WEIGHTS;
 
-    // Allocate shape of MKL tensor
+    // Allocate shape of OneDNN tensor
     MklDnnShape filter_mkl_shape;
     filter_mkl_shape.SetMklTensor(true);
     filter_mkl_shape.SetMklLayout(&filter_md);
@@ -1011,7 +1011,7 @@ class MklConvOp : public OpKernel {
 
     // The format of the filter is actually OIhw8i8o, but TF doesn't support
     // this format. Just use format::blocked for now because the layout
-    // is stored in the MKL data.
+    // is stored in the OneDNN data.
     filter_mkl_shape.SetTfLayout(filter_dims_tf_order.size(),
                                  filter_dims_tf_order,
                                  MKL_TENSOR_FORMAT_BLOCKED);
@@ -1034,7 +1034,7 @@ class MklConvOp : public OpKernel {
                             Tensor* filter_out_tensor) {
     DCHECK(filter_out_tensor);
 
-    // Create reorders between user layout and MKL layout if it is needed and
+    // Create reorders between user layout and OneDNN layout if it is needed and
     // add it to the net before convolution. No need to check for output
     // reorder as we propagate output layout to the next layer.
     src->CheckReorderToOpMem(
@@ -1754,7 +1754,7 @@ class MklQuantizedConv2DSumReluOp
       GetMklShape(context, summand_idx, &summand_mkl_shape);
       auto dst_md = summand_mkl_shape.GetMklLayout();
 
-      // TODO(mdfaijul): handle both non-MKL and MKL tensors
+      // TODO(mdfaijul): handle both non-OneDNN and OneDNN tensors
       if (summand_type == DT_QINT8) {
         OP_REQUIRES_OK(
             context, summand.BitcastFrom(summand, DT_QUINT8, summand.shape()));
@@ -1937,7 +1937,7 @@ class MklQuantizedConv2DReluSumOp
       GetMklShape(context, summand_idx, &summand_mkl_shape);
       auto dst_md = summand_mkl_shape.GetMklLayout();
 
-      // TODO(intel-tf): handle both non-MKL and MKL tensors
+      // TODO(intel-tf): handle both non-OneDNN and OneDNN tensors
       if (std::is_same<Toutput, quint8>::value && summand_type == DT_QINT8) {
         OP_REQUIRES_OK(
             context, summand.BitcastFrom(summand, DT_QUINT8, summand.shape()));
@@ -2098,7 +2098,7 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedConv2DAndRequantize")
                                              qint8, false, false>);
 
 // Register NoOp kernel for QuantizedConv2DWithBias to get a python interface.
-// This kernel will be replaced by an MKL kernel during graph
+// This kernel will be replaced by an OneDNN kernel during graph
 // optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DWithBias")
                             .Device(DEVICE_CPU)
@@ -2187,7 +2187,7 @@ REGISTER_KERNEL_BUILDER(
     MklQuantizedConv2DOp<CPUDevice, qint8, float, qint8, qint8, true, false>);
 
 // Register NoOp kernel for QuantizedConv2DAndRelu to get a python interface.
-// This kernel will be replaced by an MKL kernel during graph-optimization pass.
+// This kernel will be replaced by an OneDNN kernel during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DAndRelu")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("Tinput")
@@ -2223,7 +2223,7 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedConv2DAndReluAndRequantize")
 
 // Register NoOp kernel for QuantizedConv2DWithBiasAndRelu to get a python
 // interface.
-// This kernel will be replaced by an MKL kernel during graph-optimization pass.
+// This kernel will be replaced by an OneDNN kernel during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DWithBiasAndRelu")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("Tinput")
@@ -2240,7 +2240,7 @@ REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DWithBiasAndRelu")
 
 // Register NoOp kernel for QuantizedConv2DWithBiasAndReluAndRequantize
 // to get a python interface.
-// This kernel will be replaced by an MKL kernel during graph-optimization pass.
+// This kernel will be replaced by an OneDNN kernel during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DWithBiasAndReluAndRequantize")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("Tinput")
@@ -2371,7 +2371,7 @@ REGISTER_KERNEL_BUILDER(Name("_MklQuantizedConv2DWithBiasAndReluAndRequantize")
 
 // Register NoOp kernel for QuantizedConv2DWithBiasSumAndRelu to get a python
 // interface.
-// This kernel will be replaced by an MKL kernel during graph-optimization pass.
+// This kernel will be replaced by an OneDNN kernel during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DWithBiasSumAndRelu")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("Tinput")
@@ -2396,7 +2396,7 @@ REGISTER_KERNEL_BUILDER(
 
 // Register NoOp kernel for QuantizedConv2DWithBiasReluAndSum to get a python
 // interface.
-// This kernel will be replaced by an MKL kernel during graph-optimization pass.
+// This kernel will be replaced by an OneDNN kernel during graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedConv2DWithBiasReluAndSum")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("Tinput")
@@ -2607,7 +2607,7 @@ REGISTER_KERNEL_BUILDER(
 
 // Register NoOp kernels for non-fused and fused versions of
 // QuantizedDepthwiseConv2D to get a Python interface. These kernels will be
-// replaced by MKL kernels during the graph-optimization pass.
+// replaced by OneDNN kernels during the graph-optimization pass.
 REGISTER_KERNEL_BUILDER(Name("QuantizedDepthwiseConv2D")
                             .Device(DEVICE_CPU)
                             .TypeConstraint<quint8>("Tinput")
@@ -2651,7 +2651,7 @@ REGISTER_KERNEL_BUILDER(Name("DepthwiseConv2dNative")
 TF_CALL_float(REGISTER_NO_OP_CPU_2D_DEPTHWISE);
 TF_CALL_bfloat16(REGISTER_NO_OP_CPU_2D_DEPTHWISE);
 
-// Register templatized MKL kernels for non-fused and fused-versions of
+// Register templatized OneDNN kernels for non-fused and fused-versions of
 // QuantizedDepthwiseConv2D.
 REGISTER_KERNEL_BUILDER(Name("_MklQuantizedDepthwiseConv2D")
                             .Device(DEVICE_CPU)

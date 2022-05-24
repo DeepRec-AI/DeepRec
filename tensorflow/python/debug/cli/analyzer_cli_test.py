@@ -47,9 +47,9 @@ from tensorflow.python.platform import test
 from tensorflow.python.util import tf_inspect
 
 
-# Helper function to accommodate MKL-enabled TensorFlow:
-# MatMul op is supported by MKL and its name is prefixed with "_Mkl" during the
-# MKL graph rewrite pass.
+# Helper function to accommodate OneDNN-enabled TensorFlow:
+# MatMul op is supported by OneDNN and its name is prefixed with "_Mkl" during the
+# OneDNN graph rewrite pass.
 def _matmul_op_name():
   return "_MklMatMul" if test_util.IsMklEnabled() else "MatMul"
 

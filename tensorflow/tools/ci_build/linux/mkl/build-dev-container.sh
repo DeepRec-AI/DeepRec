@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-# Build a whl and container with Intel(R) MKL support
+# Build a whl and container with Intel(R) OneDNN support
 # Usage: build-dev-container.sh
 
 DEBUG=1

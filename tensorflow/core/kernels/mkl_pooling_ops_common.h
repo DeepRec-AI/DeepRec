@@ -111,7 +111,7 @@ class MklPoolingFwdPrimitive : public MklPrimitive {
     memory::data_type ws_dt;
     size_t ws_size;
 
-    // MKL-DNN memory, just dummy data.
+    // OneDNN memory, just dummy data.
     std::shared_ptr<dnnl::memory> ws_mem;
     std::shared_ptr<dnnl::memory> src_mem;
     std::shared_ptr<dnnl::memory> dst_mem;
@@ -251,7 +251,7 @@ class MklPoolingBwdPrimitive : public MklPrimitive {
     dnnl::memory::dims ws_dims;
     dnnl::memory::data_type ws_dt;
 
-    // MKL-DNN memory.
+    // OneDNN memory.
     std::shared_ptr<dnnl::memory> ws_mem;
     std::shared_ptr<dnnl::memory> diff_src_mem;
     std::shared_ptr<dnnl::memory> diff_dst_mem;
@@ -468,21 +468,21 @@ class MklPoolingOpBase : public OpKernel {
   void Compute(OpKernelContext* context) override = 0;
 
  protected:
-  // Calculate output shape of pooling op in MKL-DNN and TensorFlow order.
-  // MKL-DNN uses NCHW(Pool2D) or NCDHW(Pool3D) for output order.
+  // Calculate output shape of pooling op in OneDNN and TensorFlow order.
+  // OneDNN uses NCHW(Pool2D) or NCDHW(Pool3D) for output order.
   // But TensorFlow output will be in NHWC/NCHW(Pool2D) or
   // NDHWC/NCDHW(Pool3D) format depending on data format. Function expects
   // output height and width to have already been int32 bounds-checked.
   void GetOutputDims(const MklPoolParameters& mkl_pool_params,
                      memory::dims* output_dims_mkl_order) {
     if (this->ksize_.size() == 4) {
-      // Pooling2D: MKL-DNN always needs output in NCHW format.
+      // Pooling2D: OneDNN always needs output in NCHW format.
       *output_dims_mkl_order = {mkl_pool_params.tensor_in_batch,
                                 mkl_pool_params.out_depth,
                                 static_cast<int>(mkl_pool_params.out_height),
                                 static_cast<int>(mkl_pool_params.out_width)};
     } else {
-      // Pooling3D: MKL-DNN always needs output in NCDHW format.
+      // Pooling3D: OneDNN always needs output in NCDHW format.
       *output_dims_mkl_order = {mkl_pool_params.tensor_in_batch,
                                 mkl_pool_params.out_depth,
                                 static_cast<int>(mkl_pool_params.out_planes),
@@ -584,9 +584,9 @@ class MklPoolingOpBase : public OpKernel {
   std::vector<int32> stride_;
   Padding padding_;
   TensorFormat data_format_tf_;
-  // Either memory::format (MKL-DNN v-0.x) or MklTensorFormat (MKL-DNN v-1.x)
+  // Either memory::format (OneDNN v-0.x) or MklTensorFormat (OneDNN v-1.x)
   MKL_TENSOR_FORMAT tensor_format_dnnl_;
-  // Either memory::format (MKL-DNN v-0.x) or memory::format_tag (MKL-DNN v-1.x)
+  // Either memory::format (OneDNN v-0.x) or memory::format_tag (OneDNN v-1.x)
   MEMORY_FORMAT data_format_dnnl_;
   bool workspace_enabled_;
 };

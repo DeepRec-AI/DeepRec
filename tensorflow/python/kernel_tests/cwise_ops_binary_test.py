@@ -857,7 +857,7 @@ class ComparisonOpTest(test.TestCase):
     self.assertAllEqual(np_ans, tf_ans)
 
   def testCreateMemDecBlockedFormat(self):
-    """Try to create the mkl binary operation
+    """Try to create the OneDNN binary operation
 
     when one of the input's memory descriptor is in blocked format
     """

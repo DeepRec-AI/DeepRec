@@ -40,7 +40,7 @@ class MklReshapeOp : public OpKernel {
   explicit MklReshapeOp(OpKernelConstruction* context) : OpKernel(context) {}
 
  private:
-  // When the input tensor is in MKL layout and we are reshaping the tensor to a
+  // When the input tensor is in OneDNN layout and we are reshaping the tensor to a
   // different shape than its actual shape, then we use DNNL reorder primitive
   // to put tensor back in Tensorflow layout. But we can skip this reordering
   // some times. This function checks for all such cases.
@@ -150,9 +150,9 @@ class MklReshapeOp : public OpKernel {
           // If dimensions that are being expanded or collapsed are not
           // maintained contiguously by DNNL, then we use reorder.
 
-          // Get Mkl layout of input tensor.
+          // Get OneDNN layout of input tensor.
           auto input_mkl_md = mkl_shape_input.GetMklLayout();
-          // Set input Mkl layout as the user layout.
+          // Set input OneDNN layout as the user layout.
           dnn_data_input.SetUsrMem(input_mkl_md, &input_tensor);
           // Get expected Tensorflow layout of input tensor.
           auto output_tf_md = mkl_shape_input.GetTfLayout();
@@ -164,10 +164,10 @@ class MklReshapeOp : public OpKernel {
           AllocateOutputSetMklShape(context, kOutputSlotIdx, &output_tensor,
                                     shape_to, mkl_shape_output);
 
-          // Insert reorder between Mkl layout and TensorFlow layout if
+          // Insert reorder between OneDNN layout and TensorFlow layout if
           // needed. If reorder is not needed but reshape is needed (since
           // shape_from != shape_to), then we just copy input tensor to
-          // output tensor with target shape (we cannot forward Mkl layout
+          // output tensor with target shape (we cannot forward OneDNN layout
           // in such case because shape has changed.)
           if (dnn_data_input.CheckReorderToOpMem(OUTPUT_TF_MD, output_tensor,
                                                  context)) {
@@ -187,7 +187,7 @@ class MklReshapeOp : public OpKernel {
         }
       }
     } else {
-      // If input tensor is not in Mkl format, then just copy Tensorflow tensor
+      // If input tensor is not in OneDNN format, then just copy Tensorflow tensor
       // to output with specified shape.
       CopyTfTensorInToOutWithShape(context, kInputSlotIdx, kOutputSlotIdx,
                                    shape);

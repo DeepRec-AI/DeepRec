@@ -45,7 +45,7 @@ namespace tensorflow {
 // REQUIRES: perm is a permutation.
 
 namespace {
-// MKL-DNN based Transpose implementation
+// OneDNN based Transpose implementation
 template <typename T>
 Status MKLTransposeND(OpKernelContext* ctx, const Tensor& in, Tensor* out,
                       const gtl::ArraySlice<int32>& perm);
@@ -60,7 +60,7 @@ static inline memory::dims ReorderStrides(const memory::dims& strides,
   return reordered_strides;
 }
 
-// Transpose of N-dimensional tensor using MKL-DNN
+// Transpose of N-dimensional tensor using OneDNN
 template <typename T>
 Status MKLTransposeND(OpKernelContext* context, const Tensor& in_tensor,
                       Tensor* out_tensor, const gtl::ArraySlice<int32>& perm) {
@@ -108,7 +108,7 @@ Status MKLTransposeND(OpKernelContext* context, const Tensor& in_tensor,
 Status MklTransposeCpuOp::DoTranspose(OpKernelContext* ctx, const Tensor& in,
                                       gtl::ArraySlice<int32> perm,
                                       Tensor* out) {
-  // MKL-DNN has limit on the maximum number of dimensions in a tensor.
+  // OneDNN has limit on the maximum number of dimensions in a tensor.
   // Fallback to Eigen for not supported cases.
   if (in.dims() <= TENSOR_MAX_DIMS) {
     switch (in.dtype()) {
@@ -124,7 +124,7 @@ Status MklTransposeCpuOp::DoTranspose(OpKernelContext* ctx, const Tensor& in,
     }
   }
 
-  // Fallback to eigen if transpose parameters not supported by MKL or MKL-DNN
+  // Fallback to eigen if transpose parameters not supported by OneDNN
   typedef Eigen::ThreadPoolDevice CPUDevice;
   return ::tensorflow::DoTranspose(ctx->eigen_device<CPUDevice>(), in, perm,
                                    out);
@@ -134,7 +134,7 @@ Status MklConjugateTransposeCpuOp::DoTranspose(OpKernelContext* ctx,
                                                const Tensor& in,
                                                gtl::ArraySlice<int32> perm,
                                                Tensor* out) {
-  // MKL-DNN has limit on the maximum number of dimensions in a tensor.
+  // OneDNN has limit on the maximum number of dimensions in a tensor.
   // Fallback to Eigen for not supported cases.
   if (in.dims() <= TENSOR_MAX_DIMS) {
     switch (in.dtype()) {
@@ -150,7 +150,7 @@ Status MklConjugateTransposeCpuOp::DoTranspose(OpKernelContext* ctx,
     }
   }
 
-  // Fallback to eigen if transpose parameters not supported by MKL or MKL-DNN
+  // Fallback to eigen if transpose parameters not supported by OneDNN
   typedef Eigen::ThreadPoolDevice CPUDevice;
   return ::tensorflow::DoConjugateTranspose(ctx->eigen_device<CPUDevice>(), in,
                                             perm, out);

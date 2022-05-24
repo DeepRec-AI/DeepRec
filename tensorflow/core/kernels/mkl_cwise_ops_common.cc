@@ -370,7 +370,7 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
   void FallbackToEigen(OpKernelContext* context) {
     BinaryOp<Device, Functor>::Compute(context);
 
-    // Mkl metadata inputs won't be changed in Eigen path, direct forward them.
+    // OneDNN metadata inputs won't be changed in Eigen path, direct forward them.
     ForwardMklMetaDataInToOut(context, 0, 0);
   }
 

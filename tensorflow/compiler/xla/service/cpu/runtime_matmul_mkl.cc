@@ -81,7 +81,7 @@ TF_ATTRIBUTE_NO_SANITIZE_MEMORY void __xla_cpu_runtime_MKLMatMulF32(
   const xla::ExecutableRunOptions* run_options =
       static_cast<const xla::ExecutableRunOptions*>(run_options_ptr);
   // BLAS GEMM MatMul uses OpenMP for parallelization, so we pass the thread
-  // number specified in intra_op_thread_pool to MKL.
+  // number specified in intra_op_thread_pool to OneDNN.
   int prev_num_threads = mkl_set_num_threads_local(
       run_options->intra_op_thread_pool()->numThreads());
   MatMulF32(nullptr, out, lhs, rhs, m, n, k, transpose_lhs, transpose_rhs);

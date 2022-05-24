@@ -87,7 +87,7 @@ TEST_F(SingleMachineTest, CostModel) {
       continue;
     }
 #ifndef INTEL_MKL
-    // The output size of MKL op is 2, and cannot filter out the MKL op
+    // The output size of OneDNN op is 2, and cannot filter out the OneDNN op
     // with the OP name (no op name here), so just disable this check in
     // TF_MKL build.
     EXPECT_EQ(1, node.output_info_size());
@@ -204,7 +204,7 @@ TEST_F(SingleMachineTest, GraphOptimizations) {
   std::set<string> cost_nodes;
   for (const auto& node : metadata.cost_graph().node()) {
 #ifdef INTEL_MKL
-    // Skip the special nodes inserted by TF (and MKL): these are either
+    // Skip the special nodes inserted by TF (and OneDNN): these are either
     // prefixed with an underscore or contain "/_".
     if (node.name()[0] == '_' || node.name().find("/_") != string::npos) {
       continue;

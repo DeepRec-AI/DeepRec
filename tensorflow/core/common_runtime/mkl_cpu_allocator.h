@@ -123,8 +123,8 @@ class MklSmallSizeAllocator : public Allocator {
   AllocatorStats stats_ GUARDED_BY(mutex_);
 };
 
-/// CPU allocator for MKL that wraps BFC allocator and intercepts
-/// and redirects memory allocation calls from MKL.
+/// CPU allocator for OneDNN that wraps BFC allocator and intercepts
+/// and redirects memory allocation calls from OneDNN.
 class MklCPUAllocator : public Allocator {
  public:
   // Constructor and other standard functions
@@ -262,7 +262,7 @@ class MklCPUAllocator : public Allocator {
   }
 
  private:
-  // Hooks provided by this allocator for memory allocation routines from MKL
+  // Hooks provided by this allocator for memory allocation routines from OneDNN
 
   static inline void* MallocHook(size_t size) {
     VLOG(3) << "MklCPUAllocator: In MallocHook";

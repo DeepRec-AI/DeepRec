@@ -107,7 +107,7 @@ config_setting(
 config_setting(
     # Add "--define tensorflow_dnnl_contraction_kernel=0" to your build command to disable dnnl
     # sgemm in Eigen tensor contractions (matrix multiplications and convolutions). The dnnl
-    # kernels are generated at runtime and use avx/avx2/fma/avx512 based on cpu status registers
+    # kernels are generated at runtime and use amx/avx/avx2/fma/avx512 based on cpu status registers
     # (https://en.wikipedia.org/wiki/CPUID). Default Eigen contraction kernel is
     # Eigen::internal::gebp_kernel (general block-panel kernel).
     name = "no_dnnl_contraction_kernel",
@@ -777,8 +777,8 @@ cc_library(
 # blocks of the original tensors).
 #
 # 1) Default:
-#    Use Mkldnn single threaded sgemm. The dnnl kernels are generated at runtime and
-#    use avx/avx2/fma/avx512 based on cpu status registers (https://en.wikipedia.org/wiki/CPUID).
+#    Use OneDNN single threaded sgemm. The dnnl kernels are generated at runtime and
+#    use amx/avx/avx2/fma/avx512 based on cpu status registers (https://en.wikipedia.org/wiki/CPUID).
 #
 # 2) Eigen: --define tensorflow_dnnl_contraction_kernel=0 (disable dnnl)
 #    Use Eigen contraction kernel: Eigen::internal::gebp_kernel.
@@ -793,7 +793,7 @@ cc_library(
 # We define a two-level target because if we just add
 #   ":no_dnnl_contraction_kernel": []
 # in the same select list with //third_party/tensorflow:{android,arm,ios,ppc},
-# there can be more than one match, e.g., when building for android and MKL-DNN
+# there can be more than one match, e.g., when building for android and OneDNN
 # contraction kernel is disabled. Bazel doesn't allow multiple matches.
 # See more details in
 #   https://github.com/tensorflow/tensorflow/issues/24414
