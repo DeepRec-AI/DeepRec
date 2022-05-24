@@ -157,6 +157,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "mkl_dnn_v1",
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn_v1.BUILD"),
+        patch_file = clean_dep("//third_party/mkl_dnn:oneDNN-v2.3.2-expose-bf16-tp.patch"),
         sha256 = "d7a47caeb28d2c67dc8fa0d0f338b11fbf25b473a608f04cfed913aea88815a9",
         strip_prefix = "oneDNN-2.5",
         urls = [
