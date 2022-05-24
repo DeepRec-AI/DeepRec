@@ -15,7 +15,7 @@ limitations under the License.
 
 // See docs in ../ops/math_ops.cc.
 
-// This file uses MKL-DNN InnerProduct for acceleration of TF Matrix-Matrix
+// This file uses OneDNN InnerProduct for acceleration of TF Matrix-Matrix
 // Multiplication (MatMul) with bias (BiasAdd) operations.
 #ifdef INTEL_MKL
 
@@ -106,7 +106,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
         transpose_b_ ? MEMORY_FORMAT::oi : MEMORY_FORMAT::io;
 
     // Set weight format for primitive:
-    //   1. const, let MKL-DNN determine format because it will be cached;
+    //   1. const, let OneDNN determine format because it will be cached;
     //   2. var, keep the original format to avoid reordering.
     MklDnnMatMulFwdParams matmul_params(
         src_dims, weight_dims, bias_dims, dst_dims, src_format,
@@ -124,7 +124,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
     std::shared_ptr<dnnl::inner_product_forward::primitive_desc> matmul_pd =
         matmul_prim->GetPrimitiveDesc();
 
-    // The output shape of MatMul is same both for MKL and TF version.
+    // The output shape of MatMul is same both for OneDNN and TF version.
     // They are all NC format, no matter what's the format of input.
     // And the shape of AddOp is also the same with output's shape.
     auto dst_pd = matmul_pd->PRIMITIVE_DESC_DST;
@@ -285,7 +285,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
   const int kOutputIndex_Dst = 0;
 };
 
-// Register mkl kernels for supported operations and types.
+// Register OneDNN kernels for supported operations and types.
 #define REGISTER_FUSEDMATMUL_MKL_SUPPORTED_KERNELS_TYPES(type) \
   REGISTER_KERNEL_BUILDER(                                     \
       Name("_MklFusedMatMul")                                  \

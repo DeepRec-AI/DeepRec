@@ -46,7 +46,7 @@ class MklMaxPoolingOp : public MklPoolingForwardOpBase<T> {
  public:
   explicit MklMaxPoolingOp(OpKernelConstruction* context)
       : MklPoolingForwardOpBase<T>(context) {
-    // In Max Pooling, MKL-DNN does not allow passing workspace as nullptr.
+    // In Max Pooling, OneDNN does not allow passing workspace as nullptr.
     // So we set workspace_enabled_ to true.
     this->workspace_enabled_ = true;
   }
@@ -90,7 +90,7 @@ class MklMaxPoolingOp : public MklPoolingForwardOpBase<T> {
 
         // Allocate an empty workspace tensor if not Quantized MaxPooling
         // Because Quantized MaxPooling does not have backward pass
-        // Therefore no workspace, which is used to help backward pass in MKL
+        // Therefore no workspace, which is used to help backward pass in OneDNN
         if (!int8_forward_inference) {
           const int kOutputWorkspaceIndex = 1;
           // output_ws_tensor is not really used, so using output_dims_mkl_order

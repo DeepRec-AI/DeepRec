@@ -119,7 +119,7 @@ class EigenConcatBaseOp : public OpKernel {
       *output_min = -largest_value;
       *output_max = largest_value;
     } else {
-      // For MKL quantization, we only support scaled mode, so the range is
+      // For OneDNN quantization, we only support scaled mode, so the range is
       // [0, m] for unsigned data where m is the range maximum
       *output_min = 0.0f;
       *output_max = overall_max;
@@ -233,9 +233,9 @@ class EigenConcatBaseOp : public OpKernel {
   }
 };
 // --------------------------------------------------------------------------
-//                      Mkl Concat Op
+//                      OneDNN Concat Op
 // --------------------------------------------------------------------------
-// This structure aggregates multiple inputs to MklConcat* methods.
+// This structure aggregates multiple inputs to OneDNNConcat* methods.
 struct MklConcatFwdParams {
   std::vector<memory::dims> src_dims;
   memory::dims dst_dims;
@@ -315,7 +315,7 @@ class MklConcatFwdPrimitive : public MklPrimitive {
  private:
   // Primitive reuse context for concat Fwd op
   struct ConcatFwdContext {
-    // MKL-DNN memory
+    // OneDNN memory
     std::vector<dnnl::memory> data_mem;
     std::vector<std::shared_ptr<dnnl::memory>> data_mem_shdptr;
     std::shared_ptr<dnnl::memory> dst_mem;
@@ -335,7 +335,7 @@ class MklConcatFwdPrimitive : public MklPrimitive {
         : dst_mem(nullptr), fwd_pd(nullptr), concat_fwd(nullptr) {}
   };
 
-  // Creates the src and dst memory descriptor for mkl concat
+  // Creates the src and dst memory descriptor for OneDNN concat
   // and also creates the concat primitive and primitive descriptor
   void Setup(const MklConcatFwdParams& concat_fwd_dims,
              const std::vector<memory::desc>& srcs_md) {
@@ -376,7 +376,7 @@ class MklConcatFwdPrimitive : public MklPrimitive {
   struct ConcatFwdContext context_;
 };
 
-// Class to create/cache the mkl concat primitives based on the
+// Class to create/cache the OneDNN concat primitives based on the
 // input and output parameters
 template <typename T>
 class MklConcatFwdPrimitiveFactory : public MklPrimitiveFactory<T> {
@@ -525,10 +525,10 @@ class MklConcatOp : public OpKernel {
 
       if (num_of_empty_inputs == i) invoke_eigen = true;
 
-      // All inputs are not in one format (TF or MKL). This is mixed input case.
+      // All inputs are not in one format (TF or OneDNN). This is mixed input case.
       // We can potentially optimize this case by converting all TF inputs
-      // to Mkl format. But currently, we fall to Eigen for this case.
-      // It may be possible to convert inputs that in TF format to Mkl
+      // to OneDNN format. But currently, we fall to Eigen for this case.
+      // It may be possible to convert inputs that in TF format to OneDNN
       // format and avoid calling eigen version.
       if (!are_all_tf_inputs && !are_all_mkl_inputs) invoke_eigen = true;
 
@@ -540,7 +540,7 @@ class MklConcatOp : public OpKernel {
       bool quantized_input =
           std::is_same<T, qint8>::value || std::is_same<T, quint8>::value;
       if (quantized_input) {
-        // MKL-DNN concat does not support input tensors that have different
+        // OneDNN concat does not support input tensors that have different
         // ranges. Check if the ranges of the all input tensors are the same.
         // If not, forward it to Eigen implementation.
 
@@ -604,7 +604,7 @@ class MklConcatOp : public OpKernel {
                                 &isMklReorderNeeded, &dst_concat_dim_size);
 
         if (!isMklReorderNeeded) {
-          // All MKL tensors have a same format. Reorder is not needed.
+          // All OneDNN tensors have a same format. Reorder is not needed.
           for (int k = 0; k < N; k++) {
             if (input_tensors[k].NumElements() == 0) continue;
             auto src_md = mkl_input_shapes[k].GetMklLayout();
@@ -614,7 +614,7 @@ class MklConcatOp : public OpKernel {
             inputs.push_back(srcs[k].GetOpMem());
           }
         } else {
-          // MKL tensors have different formats.
+          // OneDNN tensors have different formats.
           // Reorder them to most common format.
           for (int k = 0; k < N; k++) {
             if (input_tensors[k].NumElements() == 0) continue;
@@ -666,7 +666,7 @@ class MklConcatOp : public OpKernel {
       memory::dims dst_dims_in_nchw;
       if (are_all_mkl_inputs) {
         // Since we are passing a specific format for destination,
-        // we need to have dst_dims in MklDnn order (NCHW).
+        // we need to have dst_dims in OneDNN order (NCHW).
         auto orig_tf_format = mkl_input_shapes[0].GetTfDataFormat();
         if (dst_dims.size() == 4) {
           dst_dims_in_nchw = MklDnnDimsInNCHW(
@@ -680,7 +680,7 @@ class MklConcatOp : public OpKernel {
               dst_dims_in_nchw, CalculateTFStrides(dst_dims_in_nchw));
         } else if (dst_dims.size() == 2 &&
                    mkl_common_format == MEMORY_FORMAT::nc) {
-          // When MEMORY_FORMAT::nc, dst_dims are already in MKL-DNN order
+          // When MEMORY_FORMAT::nc, dst_dims are already in OneDNN order
           dst_md = memory::desc(dst_dims, MklDnnType<T>(), mkl_common_format);
         } else {
           TF_CHECK_OK(Status(error::Code::FAILED_PRECONDITION,
@@ -703,13 +703,13 @@ class MklConcatOp : public OpKernel {
         }
       }
 
-      // If all inputs are in MKL format, then meaning of concat_dim needs to
+      // If all inputs are in OneDNN format, then meaning of concat_dim needs to
       // change. Value of concat_dim is tied to input Tensorflow data format
-      // (NHWC or NCHW). MklDnn dimensions are in NCHW order. So if Tensorflow
+      // (NHWC or NCHW). OneDNN dimensions are in NCHW order. So if Tensorflow
       // tensors are in NCHW order, then concat_dim semantics is preserved.
       // But ifinput tensors are in NHWC order, then semantics need to change.
       // E.g., if we are concatinating over Channel (dimension 3 for NHWC),
-      // then since MklDnn order is NCHW, concat_dim needs to be 1.
+      // then since OneDNN order is NCHW, concat_dim needs to be 1.
       if (are_all_mkl_inputs)
         concat_dim = mkl_input_shapes[0].TfDimIdx(concat_dim);
 
@@ -829,7 +829,7 @@ class MklConcatOp : public OpKernel {
     TensorShapeList tf_input_shapes;
     for (size_t i = 0; i < num_mkl_input_shapes; ++i) {
       if (mkl_input_shapes[i].IsMklTensor()) {
-        // do conversion from MKL to TF
+        // do conversion from OneDNN to TF
         OP_REQUIRES_OK(
             context, ConvertMklToTF<T>(context, values[i], mkl_input_shapes[i],
                                        &converted_values[i]));
@@ -860,16 +860,16 @@ class MklConcatOp : public OpKernel {
     }
   }
 
-  // This method finds the most common format across all MKL inputs
+  // This method finds the most common format across all OneDNN inputs
   // Inputs:
-  //   1. input_shapes: shapes of input (MKL) tensors.
+  //   1. input_shapes: shapes of input (OneDNN) tensors.
   //   2. concat_dim: concat dimension.
   // Outputs:
   //   1. is_reorder_needed is set to true if inputs have difference formats
   //      It is set to false otherwise.
   //   2. concat_dim_size is the size of concat_dim.
   // Return:
-  //   return the common MKL format.
+  //   return the common OneDNN format.
   MEMORY_FORMAT FindMklCommonFormat(const MklDnnShapeList& input_shapes,
                                     int concat_dim, bool* is_reorder_needed,
                                     int64* concat_dim_size) {

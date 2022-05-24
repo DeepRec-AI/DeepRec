@@ -1260,7 +1260,7 @@ Status IrEmitter::HandleConvolution(HloInstruction* convolution) {
       bool use_mkl_dnn =
           hlo_module_config_.debug_options().xla_cpu_use_mkl_dnn();
 
-      // TODO(b/78639006) Singlethread MKL conv2d is not implemented due to the
+      // TODO(b/78639006) Singlethread OneDNN conv2d is not implemented due to the
       // potential race condition by setting the omp_num_threads.
       const char* fn_name =
           primitive_type == F16

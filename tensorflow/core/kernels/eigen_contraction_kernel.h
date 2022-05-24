@@ -21,8 +21,8 @@ limitations under the License.
 // multiple together blocks of the original tensors).
 //
 // 1) --define tensorflow_dnnl_contraction_kernel=1
-//    Use Mkldnn single threaded sgemm. The dnnl kernels are generated at
-//    runtime and use avx/avx2/fma/avx512 based on cpu status registers
+//    Use OneDNN single threaded sgemm. The dnnl kernels are generated at
+//    runtime and use amx/avx/avx2/fma/avx512 based on cpu status registers
 //    (https://en.wikipedia.org/wiki/CPUID).
 //
 // If you use `tensor.contract(other_tensor)` in your code, you must include
@@ -266,10 +266,10 @@ class TensorContractionBlocking<float, float, float, StorageIndex,
   static constexpr float kScaleM = 1.5;
   static constexpr float kScaleN = 1.0;
 
-  // Mkldnn Avx/Avx2/Avx512 unroll factors are: 8/16/48.
+  // OneDNN Avx/Avx2/Avx512 unroll factors are: 8/16/48.
   static constexpr StorageIndex kUnrollM = 48;
 
-  // Mkldnn Avx/Avx2/Avx512 unroll factors are: 6/6/8.
+  // OneDNN Avx/Avx2/Avx512 unroll factors are: 6/6/8.
   static constexpr StorageIndex kUnrollN = 24;
 
  public:

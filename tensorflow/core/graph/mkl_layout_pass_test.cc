@@ -1236,11 +1236,11 @@ REGISTER_TEST_ALL_TYPES(NodeMerge_TransposeMaxPool3DTranspose_Negative);
 #undef REGISTER_TEST
 
 /////////////////////////////////////////////////////////////////////
-//  Unit tests related to rewriting node to Mkl node
+//  Unit tests related to rewriting node to OneDNN node
 /////////////////////////////////////////////////////////////////////
 
-// Single Conv2D Op; No Mkl layer on the input and on the output.
-// We will generate dummy Mkl tensor as 2nd input of Conv2D.
+// Single Conv2D Op; No OneDNN layer on the input and on the output.
+// We will generate dummy OneDNN tensor as 2nd input of Conv2D.
 #define REGISTER_TEST(NAME, T, INPUT)                                         \
   TEST_F(MklLayoutPassTest, NAME##_##T) {                                     \
     InitGraph("node { name: 'A' op: '" #INPUT "'}"                            \
@@ -1332,7 +1332,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_DepthwiseConv2dNative_Basic);
 REGISTER_TEST_ALL_TYPES(NodeRewrite_Conv2D_Positive1);
 #undef REGISTER_TEST
 
-// Conv2D with INT32 which is not supported by Mkl
+// Conv2D with INT32 which is not supported by OneDNN
 TEST_F(MklLayoutPassTest, NodeRewrite_Conv2D_Negative_UnsupportedType) {
   InitGraph(
       "node { name: 'A' op: 'HalfInput'}"
@@ -2700,7 +2700,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_BiasAddGrad_Positive2);
 REGISTER_TEST_ALL_TYPES(NodeRewrite_Concat_Basic);
 #undef REGISTER_TEST
 
-// Concat with 2 Mkl layers feeding it
+// Concat with 2 OneDNN layers feeding it
 #define REGISTER_TEST(NAME, T, INPUT)                                           \
   TEST_F(MklLayoutPassTest, NAME##_##T) {                                       \
   InitGraph(                                                                    \
@@ -2749,7 +2749,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_Concat_Basic);
 REGISTER_TEST_ALL_TYPES(NodeRewrite_Concat_Input_Mkl);
 #undef REGISTER_TEST
 
-// Concat with 1 Mkl and 1 non-Mkl layer feeding it
+// Concat with 1 OneDNN and 1 non-OneDNN layer feeding it
 #define REGISTER_TEST(NAME, T, INPUT)                                           \
   TEST_F(MklLayoutPassTest, NAME##_##T) {                                       \
 REGISTER_TEST_ALL_TYPES(NodeRewrite_Concat_Input_MixedMkl) {                    \
@@ -2818,7 +2818,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_Concat_Input_MixedMkl) {                    
 REGISTER_TEST_ALL_TYPES(NodeRewrite_ConcatV2_Basic);
 #undef REGISTER_TEST
 
-// ConcatV2 with 2 Mkl layers feeding it
+// ConcatV2 with 2 OneDNN layers feeding it
 #define REGISTER_TEST(NAME, T, INPUT)                                           \
   TEST_F(MklLayoutPassTest, NAME##_##T) {                                       \
   InitGraph(                                                                    \
@@ -2868,7 +2868,7 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_ConcatV2_Basic);
 REGISTER_TEST_ALL_TYPES(NodeRewrite_ConcatV2_Input_Mkl);
 #undef REGISTER_TEST
 
-// ConcatV2 with 1 Mkl and 1 non-Mkl layer feeding it
+// ConcatV2 with 1 OneDNN and 1 non-OneDNN layer feeding it
 #define REGISTER_TEST(NAME, T, INPUT)                                           \
   TEST_F(MklLayoutPassTest, NAME##_##T) {                                       \
   InitGraph(                                                                    \
@@ -3385,8 +3385,8 @@ TEST_F(MklLayoutPassTest, NodeRewrite_FusedBatchNormGradV2_Positive) {
             "E->F:4;F->G:1");
 }
 
-// T, U combination is not supported by MKL. Node will not be rewritten
-// into MKL node.
+// T, U combination is not supported by OneDNN. Node will not be rewritten
+// into OneDNN node.
 TEST_F(MklLayoutPassTest, NodeRewrite_FusedBatchNormGradV2_Negative) {
   InitGraph(
       "node { name: 'A' op: 'HalfInput'}"
@@ -3462,8 +3462,8 @@ TEST_F(MklLayoutPassTest, NodeRewrite_FusedBatchNormV2_Positive) {
             "E->F:4;F->G:1");
 }
 
-// T, U combination is not supported by MKL. Node will not be rewritten
-// into MKL node.
+// T, U combination is not supported by OneDNN. Node will not be rewritten
+// into OneDNN node.
 TEST_F(MklLayoutPassTest, NodeRewrite_FusedBatchNormV2_Negative) {
   InitGraph(
       "node { name: 'A' op: 'HalfInput'}"
@@ -3726,7 +3726,7 @@ TEST_F(MklLayoutPassTest, NodeRewrite_QuantizedDepthwiseConv2D_Positive) {
 //  Unit tests related to context-based node rewrite
 /////////////////////////////////////////////////////////////////////
 
-// If any of the inputs is an MKL op, then rewrite Slice to Mkl op.
+// If any of the inputs is an OneDNN op, then rewrite Slice to OneDNN op.
 TEST_F(MklLayoutPassTest, NodeRewrite_Ctxbased_Slice_Positive) {
   InitGraph(
       "node { name: 'A' op: 'Input'}"
@@ -3759,7 +3759,7 @@ TEST_F(MklLayoutPassTest, NodeRewrite_Ctxbased_Slice_Positive) {
             "E->F:2;M->C:2;N->C:3");
 }
 
-// If none of the inputs is an MKL op, then Slice should not be rewritten.
+// If none of the inputs is an OneDNN op, then Slice should not be rewritten.
 TEST_F(MklLayoutPassTest, NodeRewrite_Ctxbased_Slice_Negative) {
   InitGraph(
       "node { name: 'A' op: 'Input'}"
@@ -3986,7 +3986,7 @@ TEST_F(MklLayoutPassTest, NodeWorkspace_MaxPool_Negative1) {
 
 // Test MaxPoolGrad replacement when only one of them is present.
 // In this case, we will rewrite MaxPoolGrad and for workspace tensor and
-// its Mkl part, we will generate dummy tensor.
+// its OneDNN part, we will generate dummy tensor.
 TEST_F(MklLayoutPassTest, NodeWorkspace_MaxPool_Negative2) {
   InitGraph(
       "node { name: 'A' op: 'Input'}"
@@ -4335,7 +4335,7 @@ TEST_F(MklLayoutPassTest, NodeRewrite_AvgPool_DeviceTest) {
             "A(Input);B(AvgPool);C(Zeta)|A->B;A->C;B->C:1");
 }
 
-// Concat Op test: Concat with no Mkl layer feeding it
+// Concat Op test: Concat with no OneDNN layer feeding it
 TEST_F(MklLayoutPassTest, NodeRewrite_Concat_DeviceTest) {
   InitGraph(
       "node { name: 'A' op: 'Const' "
@@ -4497,8 +4497,8 @@ TEST_F(MklLayoutPassTest, NodeRewrite_Slice_DeviceTest) {
 }
 
 // The following positive and negative tests test the rewrite of Add and AddV2
-// to MKL versions. The operators will be rewritten only if one of the inputs
-// comes from another MKL operator.
+// to OneDNN versions. The operators will be rewritten only if one of the inputs
+// comes from another OneDNN operator.
 TEST_F(MklLayoutPassTest, PositiveRewriteAdd) {
   InitGraph(
       "node { name: 'A' op: 'Input'}"

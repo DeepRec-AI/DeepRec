@@ -88,7 +88,7 @@ message RewriterConfig {
   // Note that this can change the numerical stability of the graph and may
   // require the use of loss scaling to maintain model convergence.
   Toggle auto_mixed_precision = 23;
-  // Optimize data types for MKL (default is OFF).
+  // Optimize data types for OneDNN (default is OFF).
   // This will try to use bfloat16 on CPUs, which is faster.
   // Note that this can change the numerical stability of the graph.
   Toggle auto_mixed_precision_mkl = 25;

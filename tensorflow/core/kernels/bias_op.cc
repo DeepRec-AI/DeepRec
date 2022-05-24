@@ -110,7 +110,7 @@ class BiasOp : public BinaryOp<T> {
                 errors::InvalidArgument("Biases must be 1D: ",
                                         bias.shape().DebugString()));
 
-    // Added by intel_tf to support NCHW on CPU regardless of MKL used or not.
+    // Added by intel_tf to support NCHW on CPU regardless of OneDNN used or not.
     size_t channel_dim;
     if (data_format_ == FORMAT_NCHW) {
       channel_dim = 1;  // NCHW always have channel dim in 1 (with 3, 4, 5
@@ -132,7 +132,7 @@ class BiasOp : public BinaryOp<T> {
                                 {0}, 0, input.shape(), &output));
     if (input.NumElements() == 0) return;
 
-    // Added by intel_tf to support NCHW on CPU regardless of MKL used or not.
+    // Added by intel_tf to support NCHW on CPU regardless of OneDNN used or not.
     if (data_format_ == FORMAT_NCHW) {
       int32 batch, height, width, depth, channel;
       GetBiasValueDims(input, data_format_, &batch, &height, &width, &depth,
@@ -271,7 +271,7 @@ class BiasGradOp : public OpKernel {
       // Eigen often crashes by design on empty tensors, but setZero is safe
       output->template flat<T>().setZero();
     } else {
-      // Added by intel_tf to support NCHW on CPU regardless of MKL used or not.
+      // Added by intel_tf to support NCHW on CPU regardless of OneDNN used or not.
       using AccumT = typename AccumulatorType<T>::type;
       if (data_format_ == FORMAT_NCHW) {
         const functor::ReduceMiddleDimensions<

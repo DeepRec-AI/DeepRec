@@ -33,14 +33,14 @@ limitations under the License.
 #endif
 
 // TODO(ezhulenev): Add numerical tests that will compare results of default
-// (aka Eigen) convolutions with MKL convolutions.
+// (aka Eigen) convolutions with OneDNN convolutions.
 
 // -------------------------------------------------------------------------- //
 // Performance Benchmarks.                                                    //
 // -------------------------------------------------------------------------- //
 
 // Compare performance of default Tensorflow convolution kernels (Eigen) with
-// MKL kernels on CPU.
+// OneDNN kernels on CPU.
 
 // Before running these benchmarks configure OpenMP environment variables:
 //   export KMP_BLOCKTIME=0

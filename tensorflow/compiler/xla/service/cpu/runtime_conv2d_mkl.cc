@@ -73,7 +73,7 @@ void MKLConvImpl(const EigenDevice& device, ScalarType* out, ScalarType* lhs,
   memory::dims conv1_dst_dim = {ToInt(input_batch), ToInt(kernel_filters),
                                 ToInt(output_rows), ToInt(output_cols)};
   memory::dims conv1_strides = {ToInt(row_stride), ToInt(col_stride)};
-  // Note: In MKL_DNN dilation starts from 0.
+  // Note: In OneDNN dilation starts from 0.
   memory::dims conv1_dilates = {ToInt(rhs_row_dilation - 1),
                                 ToInt(rhs_col_dilation - 1)};
   memory::dims conv1_padding_l = {ToInt(padding_top), ToInt(padding_left)};
@@ -81,7 +81,7 @@ void MKLConvImpl(const EigenDevice& device, ScalarType* out, ScalarType* lhs,
 
   // Create memory for user data. Input and output data have format of NHWC and
   // kernel data has format of HWIO.
-  // Note that as a convention in MKL-DNN, the dimensions of the data is always
+  // Note that as a convention in OneDNN, the dimensions of the data is always
   // described in NCHW/IOHW, regardless of the actual layout of the data.
   auto user_src_memory =
       memory({{{conv1_src_dim}, memory::data_type::f32, memory::format::nhwc},
@@ -157,7 +157,7 @@ TF_ATTRIBUTE_NO_SANITIZE_MEMORY void __xla_cpu_runtime_MKLConvF32(
     int64 padding_left, int64 padding_right, int64 lhs_row_dilation,
     int64 lhs_col_dilation, int64 rhs_row_dilation, int64 rhs_col_dilation) {
 #ifdef INTEL_MKL
-  // Since MKL_DNN cannot handle transposed convolution, this is handled by
+  // Since OneDNN cannot handle transposed convolution, this is handled by
   // Eigen.
   if (lhs_row_dilation > 1 || lhs_col_dilation > 1) {
     __xla_cpu_runtime_EigenConvF32(

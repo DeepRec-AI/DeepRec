@@ -157,7 +157,7 @@ class MklConvBwdFilterPrimitive : public MklPrimitive {
  private:
   // Primitive reuse context for Conv2D backward filter op.
   struct ConvBwdFilterContext {
-    // MKL-DNN memory for inputs and outputs.
+    // OneDNN memory for inputs and outputs.
     std::shared_ptr<dnnl::memory> src_mem;
     std::shared_ptr<dnnl::memory> diff_filter_mem;
     std::shared_ptr<dnnl::memory> diff_bias_mem;
@@ -180,7 +180,7 @@ class MklConvBwdFilterPrimitive : public MklPrimitive {
     std::shared_ptr<dnnl::memory::desc> diff_bias_md;
     std::shared_ptr<dnnl::memory::desc> diff_dst_md;
 
-    // MKL-DNN pipeline for executing primitives.
+    // OneDNN pipeline for executing primitives.
     std::shared_ptr<dnnl::stream> bwd_filter_stream;
     std::vector<dnnl::primitive> bwd_filter_primitives;
     std::vector<MemoryArgsMap> bwd_filter_primitives_args;
@@ -203,7 +203,7 @@ class MklConvBwdFilterPrimitive : public MklPrimitive {
 
   void Setup(const MklConvBwdFilterParams& convBwdFilterDims) {
     // Create memory descriptors for convolution backward filter without any
-    // specific format so that MKL-DNN can pick an appropriate one depending
+    // specific format so that OneDNN can pick an appropriate one depending
     // on the input parameters.
     context_.src_md.reset(new memory::desc(
         {convBwdFilterDims.src_dims}, MklDnnType<T>(), MEMORY_FORMAT::any));
@@ -404,7 +404,7 @@ class MklConvCustomBackpropFilterOp
         return;
       }
 
-      // By default, all dims are in MKL order except those that are suffixed
+      // By default, all dims are in OneDNN order except those that are suffixed
       // with `tf_order`
       memory::dims diff_dst_dims, fwd_src_dims, fwd_filter_dims;
       memory::dims padding_left, padding_right, dilations, strides;
@@ -452,13 +452,13 @@ class MklConvCustomBackpropFilterOp
       }
 
       // The default dilation factor for each dimension is 1 in TF and
-      // 0 in MKL-DNN.
+      // 0 in OneDNN.
       for (int i = 0; i < dilations.size(); ++i) --dilations[i];
       MklConvBwdFilterParams convBwdFilterDims(
           fwd_src_dims, fwd_filter_dims, diff_bias_dims, diff_dst_dims, strides,
           dilations, padding_left, padding_right);
 
-      // MKL-DNN allocates large buffers when a conv gradient filter primitive
+      // OneDNN allocates large buffers when a conv gradient filter primitive
       // is created. So we don't cache conv backward primitives when the env
       // variable TF_MKL_OPTIMIZE_PRIMITIVE_MEMUSE is set to true.
       bool do_not_cache = MklPrimitiveFactory<T>::IsPrimitiveMemOptEnabled();
@@ -652,7 +652,7 @@ class MklConvCustomBackpropFilterOp
     return filter_shape;
   }
 
-  // Get the shape of output (diff_filter) in MKL-DNN order.
+  // Get the shape of output (diff_filter) in OneDNN order.
   // Computes shape of output from input shape (fwd_input_dims)
   // and filter shape (fwd_filter_dims).
   const memory::dims& GetOutputDims(const memory::dims& fwd_input_dims,
@@ -677,8 +677,8 @@ class MklConvCustomBackpropFilterOp
     // layout. Because typically, BackpropFilter is the last operator in the
     // graph that emit filter gradient that is provided to ApplyGradient
     // method to update the filter. But it may be possible to eliminate this
-    // by forwarding filter in MKL layout if we support ApplyGradient method
-    // for MKL layout propagation.
+    // by forwarding filter in OneDNN layout if we support ApplyGradient method
+    // for OneDNN layout propagation.
     MklDnnShape output_mkl_shape;
     output_mkl_shape.SetMklTensor(false);
     // output_dims_mkl_order is in OIHW format.

@@ -26,7 +26,7 @@ class EagerOpRewriteTest {
  public:
   EagerOpRewriteTest() {}
 
-  // Creates a new op to be used as input to MKL eager rewrite.
+  // Creates a new op to be used as input to OneDNN eager rewrite.
   static std::unique_ptr<tensorflow::EagerOperation> CreateOp(
       const string op_name) {
     std::unique_ptr<DeviceMgr> device_mgr =
@@ -52,7 +52,7 @@ class EagerOpRewriteTest {
     return op;
   }
 
-  // Validates the result of MKL eager rewrite.
+  // Validates the result of OneDNN eager rewrite.
   static void CheckRewrite(EagerOperation* orig_op, string expected_op_name) {
     std::unique_ptr<tensorflow::EagerOperation> out_op;
     EagerOpRewriteRegistry::Global()->RunRewrite(

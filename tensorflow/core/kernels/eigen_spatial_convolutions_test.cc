@@ -1721,7 +1721,7 @@ static void PackLhsHelper(int iters,
         input_mappers[filter_idx].getSubMapper(row_offset, col_offset);
 
 // NOTE: Eigen gemm_pack_lhs accepts contraction depth (k-th dimension) as a
-// first argument (aka block cols). MKL-DNN pack is generic for lhs and rhs
+// first argument (aka block cols). OneDNN pack is generic for lhs and rhs
 // and accepts block rows and cols in the same order for lhs and rhs.
 #if defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
     pack_lhs(packed.data() + packed_offset, sub_mapper, rows, cols);

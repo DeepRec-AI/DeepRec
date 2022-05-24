@@ -25,8 +25,8 @@ namespace tensorflow {
 
 // This file contains temporary registrations for some of the Eigen CPU backend
 // operators for BFloat16 type. The kernel registered for all these ops is a
-// NoOp. We do this so that MKL graph pass can rewrite these ops into
-// corresponding MKL ops. Without such registrations, Placer component in
+// NoOp. We do this so that OneDNN graph pass can rewrite these ops into
+// corresponding OneDNN ops. Without such registrations, Placer component in
 // TensorFlow fails because Eigen CPU backend does not support these ops in
 // BFloat16 type.
 

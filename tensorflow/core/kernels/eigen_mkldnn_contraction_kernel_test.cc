@@ -44,7 +44,7 @@ TEST(EigenMkldnnTest, GemmPackColMajor) {
   // Packing with gemm_pack_colmajor_block is the same as taking a slice of 2
   // dimensional Tensor.
 
-  // Mkldnn pack and gemm are used only in Tensor contractions, and it's
+  // OneDNN pack and gemm are used only in Tensor contractions, and it's
   // guaranteed that Tensors will have ColMajor layout.
   static const int Options = ColMajor;
 
@@ -94,7 +94,7 @@ TEST(EigenMkldnnTest, GemmPackColMajor) {
 }
 
 TEST(EigenMkldnnTest, MkldnnGemm) {
-  // Mkldnn pack and gemm are used only in Tensor contractions, and it's
+  // OneDNN pack and gemm are used only in Tensor contractions, and it's
   // guaranteed that Tensors will have ColMajor layout.
   static const int Options = ColMajor;
 
@@ -154,7 +154,7 @@ TEST(EigenMkldnnTest, MkldnnGemm) {
 }
 
 TEST(EigenMkldnnTest, MkldnnGemmQInt8xQUInt8) {
-  // Mkldnn pack and gemm are used only in Tensor contractions, and it's
+  // OneDNN pack and gemm are used only in Tensor contractions, and it's
   // guaranteed that Tensors will have ColMajor layout.
   static const int Options = ColMajor;
 

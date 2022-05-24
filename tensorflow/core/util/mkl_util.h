@@ -56,15 +56,15 @@ typedef unsigned int uint;
 
 namespace tensorflow {
 
-// The file contains a number of utility classes and functions used by MKL
+// The file contains a number of utility classes and functions used by OneDNN
 // enabled kernels
 
-// This class encapsulates all the meta data that is associated with an MKL
-// tensor. A tensor is an MKL tensor if it was created as the result of an
-// MKL operation, and did not go through a conversion to a standard
+// This class encapsulates all the meta data that is associated with an OneDNN
+// tensor. A tensor is an OneDNN tensor if it was created as the result of an
+// OneDNN operation, and did not go through a conversion to a standard
 // Tensorflow tensor.
 
-// The dimensions order that MKL-DNN internally uses for 2D activations
+// The dimensions order that OneDNN internally uses for 2D activations
 // [Batch, Channel, Height, Width] and
 // for 2D filters [Out_Channel, In_Channel, Height, Width].
 typedef enum {
@@ -76,7 +76,7 @@ typedef enum {
   Dim_I = 1
 } MklDnnDims;
 
-// The dimensions order that MKL-DNN internally uses for 3D activations
+// The dimensions order that OneDNN internally uses for 3D activations
 // [Batch, Channel, Depth, Height, Width] and
 // for 3D filters [Out_Channel, In_Channel, Depth, Height, Width].
 typedef enum {
@@ -108,7 +108,7 @@ typedef enum {
   TF_3DFILTER_DIM_O = 4
 } TFFilterDims3d;
 
-// The dimensions order that MKL-DNN requires for the filter in a grouped
+// The dimensions order that OneDNN requires for the filter in a grouped
 // convolution (2D only)
 typedef enum {
   MKL_GROUP_FILTER_DIM_G = 0,
@@ -136,16 +136,16 @@ inline void execute_primitives(
   }
 }
 
-// In MKL-DNN v1.x, the format (ex. NCHW) used to initialize a memory descriptor
+// In OneDNN v1.x, the format (ex. NCHW) used to initialize a memory descriptor
 // (md) structure will no longer be recorded in its `format` field. Instead, it
 // will be set to a canonical `blocked` format for every fully described md.
 //
-// Currently, we query this `format` field while mapping MKL-DNN's data format
+// Currently, we query this `format` field while mapping OneDNN's data format
 // to TF's data format. Due to the above restriction, we will now get this data
 // format information from TF's `data_format` attribute (i.e. via
-// `TensorFormat`) for MKL-DNN v1.x.
+// `TensorFormat`) for OneDNN v1.x.
 //
-// Some MKL-DNN operators such as ReLU do not have a `data_format` attribute
+// Some OneDNN operators such as ReLU do not have a `data_format` attribute
 // since they are usually in `blocked` format. Therefore, in order to
 // distinguish between blocked and non-blocked formats, we have defined a new
 // enum called `MklTensorFormat` that is semantically similar to `TensorFormat`
@@ -153,7 +153,7 @@ inline void execute_primitives(
 //  1) FORMAT_BLOCKED: as described above, this is needed for element-wise
 //     operators such as ReLU.
 //  2) FORMAT_INVALID: for error-checking (ex. unsupported format)
-//  3) FORMAT_X, FORMAT_NC, FORMAT_TNC: to distinguish between MKL tensors based
+//  3) FORMAT_X, FORMAT_NC, FORMAT_TNC: to distinguish between OneDNN tensors based
 //     on their dimensions in operators such as Softmax, i.e.:
 //        FORMAT_X   - 1D tensor
 //        FORMAT_NC  - 2D tensor
@@ -244,16 +244,16 @@ inline dnnl::stream* CreateStream(MklDnnThreadPool* eigen_tp,
 class MklDnnShape {
  private:
   typedef struct {
-    // Flag to indicate if the tensor is an MKL tensor or not
+    // Flag to indicate if the tensor is an OneDNN tensor or not
     bool is_mkl_tensor_ = false;
     // Number of dimensions in Tensorflow format
     size_t dimension_ = 0;
-    dnnl_dims_t sizes_;  // Required by MKL for conversions
+    dnnl_dims_t sizes_;  // Required by OneDNN for conversions
     MklTensorFormat tf_data_format_ = MklTensorFormat::FORMAT_BLOCKED;
     memory::data_type T_ = memory::data_type::undef;
     // MKL layout
     dnnl_memory_desc_t mkl_md_;
-    /// TF dimension corresponding to this MKL dimension
+    /// TF dimension corresponding to this OneDNN dimension
     dnnl_dims_t map_;
   } MklShapeData;
   MklShapeData data_;
@@ -283,7 +283,7 @@ class MklDnnShape {
       return false;
     }
 
-    // If input tensors are in MKL layout, then we check for dimensions and
+    // If input tensors are in OneDNN layout, then we check for dimensions and
     // sizes.
     if (this->IsMklTensor()) {
       const dnnl_memory_desc_t& cur_md = (this->GetMklLayout()).data;
@@ -293,7 +293,7 @@ class MklDnnShape {
              dnnl_memory_desc_equal(&cur_md, &input_shape_md);
     }
 
-    // Both inputs are not MKL tensors.
+    // Both inputs are not OneDNN tensors.
     return true;
   }
 
@@ -524,30 +524,30 @@ class MklDnnShape {
     return data_.sizes_[TfDimIdx(index)];
   }
 
-  /// Query TF-MKL dimension ordering map and check if Tensorflow dimension 'd'
-  /// corresponds to MKL's Channel dimension.
+  /// Query TF-OneDNN dimension ordering map and check if Tensorflow dimension 'd'
+  /// corresponds to OneDNN's Channel dimension.
   inline bool IsMklChannelDim(int d) const {
     return TfDimIdx(d) == MklDnnDims::Dim_C;
   }
 
-  /// Query TF-MKL dimension ordering map and check if Tensorflow dimension 'd'
-  /// corresponds to MKL's Batch dimension.
+  /// Query TF-OneDNN dimension ordering map and check if Tensorflow dimension 'd'
+  /// corresponds to OneDNN's Batch dimension.
   inline bool IsMklBatchDim(int d) const {
     return TfDimIdx(d) == MklDnnDims::Dim_N;
   }
 
-  /// Query TF-MKL dimension ordering map and check if Tensorflow dimension 'd'
-  /// corresponds to MKL's Width dimension.
+  /// Query TF-OneDNN dimension ordering map and check if Tensorflow dimension 'd'
+  /// corresponds to OneDNN's Width dimension.
   inline bool IsMklWidthDim(int d) const {
     return TfDimIdx(d) == MklDnnDims::Dim_W;
   }
-  /// Query TF-MKL dimension ordering map and check if Tensorflow dimension 'd'
-  /// corresponds to MKL's Height dimension.
+  /// Query TF-OneDNN dimension ordering map and check if Tensorflow dimension 'd'
+  /// corresponds to OneDNN's Height dimension.
   inline bool IsMklHeightDim(int d) const {
     return TfDimIdx(d) == MklDnnDims::Dim_H;
   }
 
-  /// Check if the TF-MKL dimension ordering map specifies if the input
+  /// Check if the TF-OneDNN dimension ordering map specifies if the input
   /// tensor is in NCHW format.
   inline bool IsTensorInNCHWFormat() const {
     TensorFormat data_format = FORMAT_NCHW;
@@ -557,7 +557,7 @@ class MklDnnShape {
             IsMklWidthDim(GetTensorDimIndex<2>(data_format, 'W')));
   }
 
-  /// Check if the TF-MKL dimension ordering map specifies if the input
+  /// Check if the TF-OneDNN dimension ordering map specifies if the input
   /// tensor is in NHWC format.
   inline bool IsTensorInNHWCFormat() const {
     TensorFormat data_format = FORMAT_NHWC;
@@ -642,7 +642,7 @@ inline Status ConvertMklToTF(OpKernelContext* context,
     engine cpu_engine(engine::kind::cpu, 0);
     MklDnnData<T> input(&cpu_engine);
 
-    // Get MKL layout of input tensor.
+    // Get OneDNN layout of input tensor.
     auto input_mkl_md = input_mkl_shape.GetMklLayout();
     auto output_tf_md = input_mkl_shape.GetTfLayout();
     input.SetUsrMem(input_mkl_md, &input_mkl_tensor);
@@ -676,7 +676,7 @@ inline Status ConvertMklToTF(OpKernelContext* context,
   }
 }
 
-// Get the MKL shape from the second string tensor
+// Get the OneDNN shape from the second string tensor
 inline void GetMklShape(OpKernelContext* ctext, int n, MklDnnShape* mklshape,
                         bool eager_mode) {
   if (!eager_mode) {
@@ -721,7 +721,7 @@ inline void GetMklShapeList(OpKernelContext* ctext, StringPiece name,
 }
 
 /// Get shape of input tensor pointed by 'input_idx' in TensorShape format.
-/// If the input tensor is in MKL layout, then obtains TensorShape from
+/// If the input tensor is in OneDNN layout, then obtains TensorShape from
 /// MklShape.
 inline TensorShape GetTfShape(OpKernelContext* context, size_t input_idx,
                               bool eager_mode = false) {
@@ -740,7 +740,7 @@ inline TensorShape GetTfShape(OpKernelContext* context, size_t input_idx,
 }
 
 // Allocate the second output tensor that will contain
-// the MKL shape serialized
+// the OneDNN shape serialized
 inline void AllocateOutputSetMklShape(OpKernelContext* ctext, int n,
                                       const MklDnnShape& mkl_shape) {
   Tensor* second_tensor = nullptr;
@@ -755,7 +755,7 @@ inline void AllocateOutputSetMklShape(OpKernelContext* ctext, int n,
 }
 
 // Allocate the output tensor, create a second output tensor that will contain
-// the MKL shape serialized
+// the OneDNN shape serialized
 inline void AllocateOutputSetMklShape(OpKernelContext* ctext, int n,
                                       Tensor** output,
                                       const TensorShape& tf_shape,
@@ -799,7 +799,7 @@ inline void AllocTmpBuffer(OpKernelContext* context, Tensor* tensor_out,
 inline void GetStridesFromSizes(MklTensorFormat data_format, size_t* strides,
                                 const size_t* sizes) {
   DCHECK_NE(data_format, MklTensorFormat::FORMAT_INVALID);
-  // MKL requires strides in NCHW
+  // OneDNN requires strides in NCHW
   if (data_format == MklTensorFormat::FORMAT_NHWC) {
     strides[0] = sizes[2];
     strides[1] = sizes[0] * sizes[2];
@@ -927,8 +927,8 @@ inline bool ForwardMklTensorInToOutWithMklShape(OpKernelContext* context,
   return false;
 }
 
-// Forward the MKL shape ONLY (used in elementwise and other ops where
-// we call the eigen implementation and MKL shape is not used)
+// Forward the OneDNN shape ONLY (used in elementwise and other ops where
+// we call the eigen implementation and OneDNN shape is not used)
 inline void ForwardMklMetaDataInToOut(OpKernelContext* context,
                                       uint32 idx_data_in,
                                       uint32_t idx_data_out) {
@@ -945,7 +945,7 @@ inline void ForwardMklMetaDataInToOut(OpKernelContext* context,
 }
 
 // -------------------------------------------------------------------
-//          Common utility functions used by MKL unit tests
+//          Common utility functions used by OneDNN unit tests
 
 inline Tensor GetMklMetaTensor() {
   MklDnnShape non_mkl_shape;
@@ -961,7 +961,7 @@ inline Tensor GetMklMetaTensor() {
 
 // -------------------------------------------------------------------
 
-/// Return MKL-DNN data type (memory::data_type) for input type T
+/// Return OneDNN data type (memory::data_type) for input type T
 ///
 /// @input None
 /// @return memory::data_type corresponding to type T
@@ -999,10 +999,10 @@ memory::data_type MklDnnType<bfloat16>() {
   return memory::data_type::bf16;
 }
 
-// Map MklTensorFormat to MKL-DNN format tag
+// Map MklTensorFormat to OneDNN format tag
 //
 // @input: MklTensorFormat i.e. TensorFlow data format
-// @return: MKL-DNN's memory format tag corresponding to MklTensorFormat.
+// @return: OneDNN's memory format tag corresponding to MklTensorFormat.
 //          Fails with an error if invalid data format.
 inline memory::format_tag MklTensorFormatToMklDnnDataFormat(
     MklTensorFormat format) {
@@ -1016,9 +1016,9 @@ inline memory::format_tag MklTensorFormatToMklDnnDataFormat(
   return memory::format_tag::undef;
 }
 
-/// Map TensorFlow data format into MKL-DNN 3D data format
+/// Map TensorFlow data format into OneDNN 3D data format
 /// @input: TensorFlow data format
-/// @return: MKL-DNN 3D data format corresponding to TensorFlow data format;
+/// @return: OneDNN 3D data format corresponding to TensorFlow data format;
 ///          Fails with an error if invalid data format.
 inline MklTensorFormat TFDataFormatToMklDnn3DDataFormat(TensorFormat format) {
   if (format == FORMAT_NHWC) return MklTensorFormat::FORMAT_NDHWC;
@@ -1027,10 +1027,10 @@ inline MklTensorFormat TFDataFormatToMklDnn3DDataFormat(TensorFormat format) {
   return MklTensorFormat::FORMAT_INVALID;
 }
 
-/// Map TensorFlow data format into MKL-DNN data format
+/// Map TensorFlow data format into OneDNN data format
 ///
 /// @input: TensorFlow data format
-/// @return: MKL-DNN data format corresponding to TensorFlow data format;
+/// @return: OneDNN data format corresponding to TensorFlow data format;
 ///          Fails with an error if invalid data format.
 inline MklTensorFormat TFDataFormatToMklDnnDataFormat(TensorFormat format) {
   if (format == FORMAT_NHWC) return MklTensorFormat::FORMAT_NHWC;
@@ -1039,10 +1039,10 @@ inline MklTensorFormat TFDataFormatToMklDnnDataFormat(TensorFormat format) {
   return MklTensorFormat::FORMAT_INVALID;
 }
 
-/// Map MKL-DNN data format into TensorFlow data format
+/// Map OneDNN data format into TensorFlow data format
 ///
-/// @input: MKL-DNN data format
-/// @return: Tensorflow data format corresponding to MKL-DNN data format;
+/// @input: OneDNN data format
+/// @return: Tensorflow data format corresponding to OneDNN data format;
 ///          Fails with an error if invalid data format.
 inline TensorFormat MklDnnDataFormatToTFDataFormat(MklTensorFormat format) {
   if (format == MklTensorFormat::FORMAT_NHWC ||
@@ -1058,9 +1058,9 @@ inline TensorFormat MklDnnDataFormatToTFDataFormat(MklTensorFormat format) {
   return FORMAT_NHWC;
 }
 
-/// Map TensorShape object into memory::dims required by MKL-DNN
+/// Map TensorShape object into memory::dims required by OneDNN
 ///
-/// This function will simply map input TensorShape into MKL-DNN dims
+/// This function will simply map input TensorShape into OneDNN dims
 /// naively. So it will preserve the order of dimensions. E.g., if
 /// input tensor is in NHWC format, then dims will be in NHWC format also.
 ///
@@ -1074,15 +1074,15 @@ inline memory::dims TFShapeToMklDnnDims(const TensorShape& shape) {
   return dims;
 }
 
-/// Map TensorShape object into memory::dims in NCHW format required by MKL-DNN
+/// Map TensorShape object into memory::dims in NCHW format required by OneDNN
 ///
 /// This function is a specific one than above function. It will map input
-/// TensorShape into MKL-DNN dims in NCHW format. So it may not preserve the
+/// TensorShape into OneDNN dims in NCHW format. So it may not preserve the
 /// order of dimensions. E.g., if input tensor is in NHWC format, then dims
 /// will be in NCHW format, and not in NHWC format.
 ///
 /// @input TensorShape object in shape
-/// @return memory::dims in MKL-DNN required NCHW format
+/// @return memory::dims in OneDNN required NCHW format
 inline memory::dims TFShapeToMklDnnDimsInNCHW(const TensorShape& shape,
                                               TensorFormat format) {
   // Check validity of format.
@@ -1094,7 +1094,7 @@ inline memory::dims TFShapeToMklDnnDimsInNCHW(const TensorShape& shape,
   int h = shape.dim_size(GetTensorDimIndex(format, 'H'));
   int w = shape.dim_size(GetTensorDimIndex(format, 'W'));
 
-  // MKL-DNN requires dimensions in NCHW format.
+  // OneDNN requires dimensions in NCHW format.
   return memory::dims({n, c, h, w});
 }
 
@@ -1110,7 +1110,7 @@ inline memory::dims TFShapeToMklDnnDimsInNCDHW(const TensorShape& shape,
   int h = shape.dim_size(GetTensorDimIndex<3>(format, '1'));
   int w = shape.dim_size(GetTensorDimIndex<3>(format, '2'));
 
-  // MKL-DNN requires dimensions in NCDHW format.
+  // OneDNN requires dimensions in NCDHW format.
   return memory::dims({n, c, d, h, w});
 }
 
@@ -1127,7 +1127,7 @@ inline memory::dims MklDnnDimsInNCHW(const memory::dims& in_dims,
   int h = in_dims[GetTensorDimIndex(format, 'H')];
   int w = in_dims[GetTensorDimIndex(format, 'W')];
 
-  // MKL-DNN requires dimensions in NCHW format.
+  // OneDNN requires dimensions in NCHW format.
   return memory::dims({n, c, h, w});
 }
 
@@ -1145,16 +1145,16 @@ inline memory::dims MklDnnDimsInNCDHW(const memory::dims& in_dims,
   int h = in_dims[GetTensorDimIndex<3>(format, '1')];
   int w = in_dims[GetTensorDimIndex<3>(format, '2')];
 
-  // MKL DNN requires dimensions in NCDHW format.
+  // OneDNN requires dimensions in NCDHW format.
   return memory::dims({n, c, d, h, w});
 }
 
-/// Map MklDnn memory::dims object into TensorShape object.
+/// Map OneDNN memory::dims object into TensorShape object.
 ///
-/// This function will simply map input shape in MKL-DNN memory::dims format
+/// This function will simply map input shape in OneDNN memory::dims format
 /// in Tensorflow's TensorShape object by preserving dimension order.
 ///
-/// @input MKL-DNN memory::dims object
+/// @input OneDNN memory::dims object
 /// @output TensorShape corresponding to memory::dims
 inline TensorShape MklDnnDimsToTFShape(const memory::dims& dims) {
   std::vector<int32> shape(dims.size(), -1);
@@ -1247,10 +1247,10 @@ inline MklReorderPrimitive* FindOrCreateReorder(const memory* from,
 template <typename T>
 class MklDnnData {
  private:
-  /// MKL-DNN memory primitive for input user memory
+  /// OneDNN memory primitive for input user memory
   memory* user_memory_;
 
-  /// MKL-DNN memory primitive in case input or output reorder is needed.
+  /// OneDNN memory primitive in case input or output reorder is needed.
   memory* reorder_memory_;
 
   /// Operations memory descriptor
@@ -1421,7 +1421,7 @@ class MklDnnData {
 
   /// Set memory descriptor of an operation in terms of dimensions and memory
   /// format. E.g., For Conv2D, the dimensions would be same as user dimensions
-  /// but memory::format_tag would be dnnl::any because we want MKL-DNN to
+  /// but memory::format_tag would be dnnl::any because we want OneDNN to
   /// choose the best layout/format for given input dimensions.
   inline void SetOpMemDesc(const memory::dims& dim, memory::format_tag fm) {
     // TODO(nhasabni): can we remove dynamic memory allocation?
@@ -1524,7 +1524,7 @@ class MklDnnData {
   /// @input: net_args - net to which user and reorder memories are added if
   ///                    needed. Each entry is a key-value pair of the form
   ///                    <argument-type, dnnl::memory>.
-  /// @input: engine - MKL-DNN's abstraction of a computational device
+  /// @input: engine - OneDNN's abstraction of a computational device
   /// @return: true in case reorder of input is needed; false, otherwise.
   inline bool CheckReorderToOpMem(const memory::desc& op_md,
                                   void* reorder_data_handle,
@@ -1591,7 +1591,7 @@ class MklDnnData {
   /// @input: net_args - net to which user and reorder memories are added if
   ///                    needed. Each entry is a key-value pair of the form
   ///                    <argument-type, dnnl::memory>.
-  /// @input: engine - MKL-DNN's abstraction of a computational device
+  /// @input: engine - OneDNN's abstraction of a computational device
   /// @return: true in case reorder of input is needed; false, otherwise.
   inline bool CheckReorderToOpMem(const memory::desc& op_md,
                                   Tensor* reorder_tensor,
@@ -1690,7 +1690,7 @@ class MklPrimitive {
   virtual ~MklPrimitive() {}
   MklPrimitive() {}
   MklPrimitive(const engine& cpu_engine) { cpu_engine_ = cpu_engine; }
-  // Dummy data which MKL DNN never operates on
+  // Dummy data which OneDNN never operates on
   unsigned char* DummyData = nullptr;
   engine cpu_engine_ = engine(engine::kind::cpu, 0);
   const engine& GetEngine() { return cpu_engine_; }
@@ -1820,9 +1820,9 @@ class MklPrimitiveFactory {
     lru_cache.SetOp(key, op);
   }
 
-  /// Function to decide whether HW has AVX512 or AVX2
-  /// For those legacy device(w/o AVX512 and AVX2),
-  /// MKL-DNN GEMM will be used.
+  /// Function to decide whether HW has AMX or AVX512 or AVX2
+  /// For those legacy device(w/o AMX and AVX512 and AVX2),
+  /// OneDNN GEMM will be used.
   static inline bool IsLegacyPlatform() {
     return (!port::TestCPUFeature(port::CPUFeature::AVX512F) &&
             !port::TestCPUFeature(port::CPUFeature::AVX2));
@@ -1844,7 +1844,7 @@ class MklPrimitiveFactory {
   }
 };
 
-// utility class for creating keys of MKL primitive pool.
+// utility class for creating keys of OneDNN primitive pool.
 class FactoryKeyCreator {
  public:
   FactoryKeyCreator() { key_.reserve(kMaxKeyLength); }

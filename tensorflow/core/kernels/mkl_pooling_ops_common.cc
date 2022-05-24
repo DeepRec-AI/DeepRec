@@ -54,7 +54,7 @@ void MklPoolingFwdPrimitive<T>::Setup(const MklPoolingParams& fwdParams) {
       new pooling_forward::primitive_desc(*context_.fwd_desc, cpu_engine_));
   context_.dst_fmt = static_cast<MEMORY_FORMAT>(MEMORY_FORMAT::any);
 
-  // Create MKL-DNN internal memory object with dummy data.
+  // Create OneDNN internal memory object with dummy data.
   context_.src_mem.reset(new MEMORY_CONSTRUCTOR(
       context_.fwd_pd.get()->PRIMITIVE_DESC_SRC, cpu_engine_, DummyData));
   context_.dst_mem.reset(new MEMORY_CONSTRUCTOR(
@@ -154,7 +154,7 @@ void MklPoolingBwdPrimitive<T>::Setup(const MklPoolingParams& bwdParams) {
   context_.bwd_pd.reset(new pooling_backward::primitive_desc(
       *context_.bwd_desc, cpu_engine_, *context_.fwd_pd));
 
-  // Create MKL-DNN internal memory object with dummy data.
+  // Create OneDNN internal memory object with dummy data.
   context_.diff_src_mem.reset(new memory(context_.bwd_pd.get()->diff_src_desc(),
                                          cpu_engine_, DummyData));
   context_.diff_dst_mem.reset(new memory(context_.bwd_pd.get()->diff_dst_desc(),
@@ -242,7 +242,7 @@ void MklPoolParameters::Init(OpKernelContext* context,
   Init(context, ksize, stride, padding, data_format);
 }
 
-// Initialization for MKL format.
+// Initialization for OneDNN format.
 void MklPoolParameters::Init(OpKernelContext* context,
                              const std::vector<int32>& ksize,
                              const std::vector<int32>& stride, Padding padding,
@@ -267,7 +267,7 @@ void MklPoolParameters::Init(OpKernelContext* context,
   Init(context, ksize, stride, padding, data_format);
 }
 
-// Common Initialization for TensorFlow and MKL formats.
+// Common Initialization for TensorFlow and OneDNN formats.
 void MklPoolParameters::Init(OpKernelContext* context,
                              const std::vector<int32>& ksize,
                              const std::vector<int32>& stride, Padding padding,

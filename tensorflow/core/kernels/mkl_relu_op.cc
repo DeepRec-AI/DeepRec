@@ -301,8 +301,8 @@ class MklEltwiseBwdPrimitive : public MklPrimitive {
     std::shared_ptr<memory::desc> common_md;
 
     // Memory primitive descriptor.
-    // TODO(gzmkl): for MKL-DNN 1.0, src_mpd is same as src_md
-    //              So it should be removed once MKL-DNN 0.x is cleaned.
+    // TODO(gzmkl): for OneDNN 1.0, src_mpd is same as src_md
+    //              So it should be removed once OneDNN 0.x is cleaned.
     std::shared_ptr<MEMORY_PRIMITIVE_DESC> src_mpd;
     std::shared_ptr<MEMORY_PRIMITIVE_DESC> diff_dst_mpd;
 
@@ -498,7 +498,7 @@ class MklReluOpBase : public OpKernel {
         src_data = const_cast<T*>(
             reinterpret_cast<T*>(src.GetOpMem().get_data_handle()));
       }
-      // Allocate dst tensor, always set it as MKL-DNN layout
+      // Allocate dst tensor, always set it as OneDNN layout
       if (dnn_shape_src.IsMklTensor()) {
         dnn_shape_dst.SetMklTensor(true);
         auto dst_pd = eltwise_fwd_pd->PRIMITIVE_DESC_DST;

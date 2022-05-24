@@ -36,7 +36,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-// Helper class for converting MKL tensors to TF tensors and comparing to
+// Helper class for converting OneDNN tensors to TF tensors and comparing to
 // expected values
 
 static const uint8 dummy_tensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -48,10 +48,10 @@ class ConvMklToTF : public OpsTestBase {
   template <typename T>
   void ConvertMklToTF(DataType dtype, const Tensor& input,
                       const Tensor& input_metadata_tensor, Tensor& output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // MKL metadata tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN metadata tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));
@@ -76,7 +76,7 @@ class QuantizedConv2DTest : public OpsTestBase {
                      .Input(FakeInput(DT_FLOAT))   // Max input
                      .Input(FakeInput(DT_FLOAT))   // Min filter
                      .Input(FakeInput(DT_FLOAT))   // Max filter
-                     //  MKL metadata tensors //
+                     //  OneDNN metadata tensors //
                      .Input(FakeInput(DT_UINT8))
                      .Input(FakeInput(DT_UINT8))
                      .Input(FakeInput(DT_UINT8))
@@ -303,7 +303,7 @@ TEST_F(QuantizedConv2DTest, SmallS8) {
                    .Input(FakeInput(DT_FLOAT))  // Max input
                    .Input(FakeInput(DT_FLOAT))  // Min filter
                    .Input(FakeInput(DT_FLOAT))  // Max filter
-                   //  MKL metadata tensors //
+                   //  OneDNN metadata tensors //
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
@@ -456,7 +456,7 @@ TEST_F(QuantizedConv2DTest, Small32BitWithPadding) {
                    .Input(FakeInput(DT_FLOAT))   // Max input
                    .Input(FakeInput(DT_FLOAT))   // Min filter
                    .Input(FakeInput(DT_FLOAT))   // Max filter
-                   //  MKL metadata tensors //
+                   //  OneDNN metadata tensors //
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
@@ -649,7 +649,7 @@ TEST_F(QuantizedConv2DTest, DepthwiseConv2D) {
                    .Input(FakeInput(DT_FLOAT))   // Max input
                    .Input(FakeInput(DT_FLOAT))   // Min filter
                    .Input(FakeInput(DT_FLOAT))   // Max filter
-                   //  MKL metadata tensors //
+                   //  OneDNN metadata tensors //
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
@@ -680,7 +680,7 @@ TEST_F(QuantizedConv2DTest, DepthwiseConv2DWithBias) {
                    .Input(FakeInput(DT_FLOAT))   // Max input
                    .Input(FakeInput(DT_FLOAT))   // Min filter
                    .Input(FakeInput(DT_FLOAT))   // Max filter
-                   //  MKL metadata tensors //
+                   //  OneDNN metadata tensors //
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
@@ -712,7 +712,7 @@ TEST_F(QuantizedConv2DTest, DepthwiseConv2DWithBiasAndRelu) {
                    .Input(FakeInput(DT_FLOAT))   // Max input
                    .Input(FakeInput(DT_FLOAT))   // Min filter
                    .Input(FakeInput(DT_FLOAT))   // Max filter
-                   //  MKL metadata tensors //
+                   //  OneDNN metadata tensors //
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))

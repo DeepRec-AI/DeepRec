@@ -31,7 +31,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-// Helper class for converting MKL tensors to TF tensors and comparing to
+// Helper class for converting OneDNN tensors to TF tensors and comparing to
 // expected values
 
 static const uint8 dummy_tensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -42,10 +42,10 @@ class ConvMklToTF : public OpsTestBase {
   template <typename T>
   void ConvertMKL2TF(DataType dtype, const Tensor& first, const Tensor& second,
                      Tensor& output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // Mkl second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));
@@ -68,9 +68,9 @@ TEST_F(QuantizedPoolingTest, SmallAveragePooling) {
                    .Input(FakeInput(DT_QUINT8))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKl second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("ksize", {1, ksize, ksize, 1})
                    .Attr("strides", {1, stride, stride, 1})
@@ -137,9 +137,9 @@ TEST_F(QuantizedPoolingTest, SmallMaxPooling) {
                    .Input(FakeInput(DT_QUINT8))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                   .Input(FakeInput(DT_UINT8))  // MKl second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("ksize", {1, ksize, ksize, 1})
                    .Attr("strides", {1, stride, stride, 1})
