@@ -1525,8 +1525,8 @@ Status AddFusedContractionNode(RemapperContext* ctx,
 
   CopyBatchMatMulAttributes(contraction, &fused_op);
   auto* attr = fused_op.mutable_attr();
-  absl::Span<const absl::string_view> fused_ops{"Mul"};
-  SetAttrValue(fused_ops, &(*attr)["fused_ops"]);
+  SetAttrValue(absl::Span<const absl::string_view>({"Mul"}),
+               &(*attr)["fused_ops"]);
   SetAttrValue(1, &(*attr)["num_args"]);
 
   utils::Mutation* mutation = ctx->graph_view.GetMutationBuilder();
