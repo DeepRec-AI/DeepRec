@@ -62,7 +62,7 @@ class EmbeddingVar : public ResourceBase {
       value_len_(0),
       alloc_(nullptr),
       emb_config_(emb_cfg) {
-        if (IsMultiLevel()) {
+        if (IsMultiLevel() || emb_config_.record_freq) {
           add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {
             value_ptr->AddFreq(freq);
           };
@@ -74,7 +74,7 @@ class EmbeddingVar : public ResourceBase {
         } else {
           add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {};
         }
-        if (emb_config_.is_primary() && emb_config_.steps_to_live != 0){
+        if (emb_config_.steps_to_live != 0 || emb_config_.record_version){
           update_version_fn_ = [](ValuePtr<V>* value_ptr, int64 gs) {
             value_ptr->SetStep(gs);
           };
@@ -191,6 +191,14 @@ class EmbeddingVar : public ResourceBase {
 
   bool IsMultiLevel() {
     return storage_manager_->IsMultiLevel();
+  }
+
+  bool IsRecordFreq() {
+    return emb_config_.record_freq;
+  }
+
+  bool IsRecordVersion() {
+    return emb_config_.record_version;
   }
 
   std::string DebugString() const {

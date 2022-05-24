@@ -124,7 +124,9 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
             slot_num=slot_config.slot_num,
             storage_type=primary.storage_type,
             l2_weight_threshold=primary._l2_weight_threshold,
-            filter_strategy=filter_strategy)
+            filter_strategy=filter_strategy,
+            record_freq=primary._record_freq,
+            record_version=primary._record_version)
         )
       else:
         slot = variable_scope.get_variable(

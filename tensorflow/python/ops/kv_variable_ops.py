@@ -285,14 +285,16 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                         config_pb2.StorageType.DRAM_SSDHASH, config_pb2.StorageType.HBM_DRAM,
                         config_pb2.StorageType.DRAM_PMEM_SSDHASH, config_pb2.StorageType.HBM_DRAM_SSDHASH]
       
+    self._record_freq = evconfig.record_freq
+    self._record_version = evconfig.record_version
     self._l2_weight_threshold = evconfig.l2_weight_threshold
     self._storage_type = evconfig.storage_type
     self._storage_path = evconfig.storage_path
     self._storage_size = evconfig.storage_size
     self._default_value_dim = evconfig.default_value_dim
     if (isinstance(evconfig.filter_strategy, variables.CounterFilter)  and self._filter_freq != 0) or \
-       self._steps_to_live not in [0, None] or \
-       self._storage_type in multi_level_list:
+       self._steps_to_live not in [0, None] or self._record_version or \
+       self._storage_type in multi_level_list or self._record_freq:
       if self._block_num not in [1, None] and self._storage_type in multi_level_list:
         raise ValueError("Dynamic-dimension Embedding and Multi-level EV can't be enabled together") 
       if self._block_num not in [1, None] or \
@@ -411,6 +413,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     storage_path = self._storage_path,
                     storage_size = self._storage_size,
                     default_value_dim = self._default_value_dim,
+                    record_freq = self._record_freq,
+                    record_version = self._record_version,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None
@@ -512,6 +516,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_path = self._initializer_op.get_attr("storage_path")
     self._storage_size = self._initializer_op.get_attr("storage_size")
     self._default_value_dim = self._initializer_op.get_attr("default_value_dim")
+    self._record_freq = self._initializer_op.get_attr("record_freq")
+    self._record_version = self._initializer_op.get_attr("record_version")
 
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
