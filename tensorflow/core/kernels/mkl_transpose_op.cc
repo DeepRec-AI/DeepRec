@@ -19,13 +19,13 @@ limitations under the License.
 
 #define EIGEN_USE_THREADS
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/transpose_functor.h"
 #include "tensorflow/core/kernels/transpose_op.h"
 #include "tensorflow/core/util/mkl_util.h"
 
-using mkldnn::stream;
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -83,7 +83,6 @@ Status MKLTransposeND(OpKernelContext* context, const Tensor& in_tensor,
     out.SetUsrMem(in_dims, out_strides, out_tensor);
 
     std::vector<primitive> net;
-#ifdef ENABLE_MKLDNN_V1
     auto* prim = FindOrCreateReorder<T>(in.GetUsrMem(), out.GetUsrMem());
     MklDnnThreadPool eigen_tp(context);
     transpose_stream.reset(CreateStream(&eigen_tp, prim->GetEngine()));
@@ -91,17 +90,12 @@ Status MKLTransposeND(OpKernelContext* context, const Tensor& in_tensor,
     out.SetUsrMemDataHandle(out_tensor, transpose_stream);
     net.push_back(*(prim->GetPrimitive()));
     std::vector<MemoryArgsMap> net_args;
-    net_args.push_back({{MKLDNN_ARG_FROM, *in.GetUsrMem()},
-                        {MKLDNN_ARG_TO, *out.GetUsrMem()}});
+    net_args.push_back({{DNNL_ARG_FROM, *in.GetUsrMem()},
+                        {DNNL_ARG_TO, *out.GetUsrMem()}});
     execute_primitives(net, transpose_stream, net_args);
-#else
-    transpose_stream.reset(new CPU_STREAM(cpu_engine));
-    net.push_back(FindOrCreateReorder<T>(in.GetUsrMem(), out.GetUsrMem()));
-    transpose_stream->submit(net).wait();
-#endif  // ENABLE_MKLDNN_V1
 
     return Status::OK();
-  } catch (mkldnn::error& e) {
+  } catch (dnnl::error& e) {
     string error_msg = "Status: " + std::to_string(e.status) +
                        ", message: " + std::string(e.message) + ", in file " +
                        std::string(__FILE__) + ":" + std::to_string(__LINE__);

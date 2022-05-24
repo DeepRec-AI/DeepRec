@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/fill_functor.h"
 #include "tensorflow/core/kernels/mkl_matmul_ops_common.h"
+#include "tensorflow/core/kernels/no_op.h"
 #include "tensorflow/core/lib/core/errors.h"
 
 namespace tensorflow {
@@ -120,7 +121,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
 
     // Allocate output tensor.
     Tensor* dst_tensor = nullptr;
-    std::shared_ptr<mkldnn::inner_product_forward::primitive_desc> matmul_pd =
+    std::shared_ptr<dnnl::inner_product_forward::primitive_desc> matmul_pd =
         matmul_prim->GetPrimitiveDesc();
 
     // The output shape of MatMul is same both for MKL and TF version.
@@ -204,13 +205,8 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
             this->CacheWeight(ctx, matmul_pd, cached_weight_data, weight_tensor,
                               weight_mkl, weight_md);
           }
-#ifdef ENABLE_MKLDNN_V1
           cached_weight_data = this->GetCachedWeight(
               ctx, GET_WEIGHTS_DESC_FROM_OP_PD(matmul_pd));
-#else
-          cached_weight_data = this->GetCachedWeight(
-              ctx, GET_WEIGHTS_DESC_FROM_OP_PD(matmul_pd).desc());
-#endif
         }
 
         // Cache weight may fail when it gets different format in different
@@ -244,7 +240,7 @@ class MklFusedMatMulOp : public MklDnnMatMulOpBase<T, T> {
       }
       if (do_not_cache)
         delete matmul_prim;
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);

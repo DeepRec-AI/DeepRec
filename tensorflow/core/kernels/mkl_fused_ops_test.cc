@@ -1115,7 +1115,7 @@ TEST_F(MklFusedMatMulCacheTest, WeightCached) {
                    .Finalize(node_def()));
 
   TF_EXPECT_OK(InitOp());
-  // The tensor shape of (1,3) is selected to allow the mkldnn expected
+  // The tensor shape of (1,3) is selected to allow the dnnl expected
   // weight format to be made as OI rather than IO for BS > 1
   // A matrix is:
   // |  1 |  2 |  3 |

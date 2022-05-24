@@ -110,14 +110,14 @@ TEST(EigenMkldnnTest, MkldnnGemm) {
   Tensor2d rhs(k, n);
   rhs.setRandom();
 
-  // Compute matmul with mkldnn gemm kernel.
+  // Compute matmul with dnnl gemm kernel.
   using OutputMapper = blas_data_mapper<Scalar, Index, ColMajor>;
   using MkldnnGemmKernel =
       dnnl_gemm_kernel<Scalar, Index, OutputMapper, ColMajor>;
 
-  Tensor2d mkldnn_result(m, n);
-  mkldnn_result.setRandom();
-  OutputMapper output_mapper(mkldnn_result.data(), m);
+  Tensor2d dnnl_result(m, n);
+  dnnl_result.setRandom();
+  OutputMapper output_mapper(dnnl_result.data(), m);
 
   MkldnnGemmKernel gemm_kernel;
   gemm_kernel(output_mapper, lhs.data(), rhs.data(), m, k, n, /*alpha=*/1.0,
@@ -136,7 +136,7 @@ TEST(EigenMkldnnTest, MkldnnGemm) {
 
   // Verify that results are equal.
   for (Index i = 0; i < m * n; ++i) {
-    Scalar gemm = mkldnn_result(i);
+    Scalar gemm = dnnl_result(i);
     Scalar matmul = matmul_result(i % m, i / m);
 
     Scalar delta = std::abs(gemm - matmul);

@@ -36,7 +36,7 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/tensor_format.h"
 
-using mkldnn::stream;
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -94,9 +94,6 @@ class MklToTfOp : public OpKernel {
       // Get TensorFlow layout of input tensor. Expected output of conversion
       // has same layout as Tensorflow layout of input tensor.
       auto output_tf_md = input_shape.GetTfLayout();
-#ifndef ENABLE_MKLDNN_V1
-      auto output_tf_pd = memory::primitive_desc(output_tf_md, cpu_engine);
-#endif  // !ENABLE_MKLDNN_V1
       // Set input MKL layout as the user layout.
       input.SetUsrMem(input_mkl_md, &input_tensor);
 
@@ -121,7 +118,7 @@ class MklToTfOp : public OpKernel {
                     errors::Internal(
                         "MklToTfOp: Failed to forward input tensor to output"));
       }
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       OP_REQUIRES_OK(
           context,
           errors::Aborted("Operation received an exception: Status: ", e.status,

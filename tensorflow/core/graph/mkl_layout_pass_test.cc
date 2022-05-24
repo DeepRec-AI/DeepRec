@@ -176,7 +176,6 @@ REGISTER_OP("QInt8Input").Output("o: qint8").SetIsStateful();
 REGISTER_OP("QUInt8Input").Output("o: quint8").SetIsStateful();
 REGISTER_OP("QInt32Input").Output("o: qint32").SetIsStateful();
 
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
 REGISTER_OP("BFloat16Input").Output("o: bfloat16").SetIsStateful();
 REGISTER_OP("BFloat16InputList")
     .Output("o: N * bfloat16")
@@ -186,7 +185,6 @@ REGISTER_OP("BFloat16Output2")
     .Input("i: bfloat16")
     .Input("i1: bfloat16")
     .SetIsStateful();
-#endif  // ENABLE_INTEL_MKL_BFLOAT16
 
 /////////////////////////////////////////////////////////////////////
 // Macros for handling registeration for various types
@@ -194,16 +192,12 @@ REGISTER_OP("BFloat16Output2")
 
 #define REGISTER_TEST_FLOAT32(TEST) REGISTER_TEST(TEST, DT_FLOAT, Float32Input);
 
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
 #define REGISTER_TEST_BFLOAT16(TEST) \
   REGISTER_TEST(TEST, DT_BFLOAT16, BFloat16Input);
 
 #define REGISTER_TEST_ALL_TYPES(TEST) \
   REGISTER_TEST_FLOAT32(TEST);        \
   REGISTER_TEST_BFLOAT16(TEST);
-#else
-#define REGISTER_TEST_ALL_TYPES(TEST) REGISTER_TEST_FLOAT32(TEST);
-#endif  // ENABLE_INTEL_MKL_BFLOAT16
 
 /////////////////////////////////////////////////////////////////////
 //  Unit tests related to node merge optimization
@@ -819,11 +813,8 @@ REGISTER_TEST_FLOAT32(NodeMerge_PadWithConv2D_Common_Input);
   }
 REGISTER_TEST(NodeMerge_PadWithConv2D_Common_InOutput, DT_FLOAT, Float32Input,
               Float32Output2);
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
-// TODO(nhasabni): Enable bfloat16 test when we enable the operator.
 REGISTER_TEST(NodeMerge_PadWithConv2D_Common_InOutput, DT_BFLOAT16,
               BFloat16Input, BFloat16Output2);
-#endif
 #undef REGISTER_TEST
 
 // Pad + Conv2D; padding is SAME
@@ -2494,11 +2485,8 @@ REGISTER_TEST_ALL_TYPES(Output_ControlEdge_PadWithFusedConv2D_Positive);
   }
 REGISTER_TEST(NodeMerge_PadWithFusedConv2D_Common_InOutput, DT_FLOAT,
               Float32Input, Float32Output2);
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
-// TODO(nhasabni): Enable bfloat16 test when we enable the operator.
 REGISTER_TEST(NodeMerge_PadWithFusedConv2D_Common_InOutput, DT_BFLOAT16,
               BFloat16Input, BFloat16Output2);
-#endif
 #undef REGISTER_TEST
 
 #define REGISTER_TEST(NAME, T, INPUT)                                                \
@@ -3611,7 +3599,6 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedBatchNormGradV3_5D_Negative_2);
 #undef REGISTER_TEST
 
 // clang-format off
-#ifdef ENABLE_MKLDNN_V1
 #define REGISTER_TEST(NAME, T, INPUT)                                        \
   TEST_F(MklLayoutPassTest, NAME##_##T) {                                    \
     InitGraph("node { name: 'A' op: '" #INPUT "'}"                           \
@@ -3701,7 +3688,6 @@ REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedBatchNormEx_Negative1);
   }
 REGISTER_TEST_ALL_TYPES(NodeRewrite_FusedBatchNormEx_Negative2);
 #undef REGISTER_TEST
-#endif  // ENABLE_MKLDNN_V1
 // clang-format on
 
 TEST_F(MklLayoutPassTest, NodeRewrite_QuantizedDepthwiseConv2D_Positive) {

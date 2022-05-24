@@ -1437,7 +1437,7 @@ static void PackRhsHelper(int iters,
       /*inner_dim_reordered*/ false,              //
       /*Alignment*/ 0>;
 
-#if defined(TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL)
+#if defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
   using PackRhsImpl =
       Eigen::internal::gemm_pack_colmajor_block<T, Eigen::Index, SubMapper,
                                                 ColMajor>;
@@ -1622,7 +1622,7 @@ static void PackLhsHelper(int iters,
       /*inner_dim_reordered*/ false,              //
       /*Alignment*/ 0>;
 
-#if defined(TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL)
+#if defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
   using PackLhsImpl =
       Eigen::internal::gemm_pack_colmajor_block<T, Eigen::Index, SubMapper,
                                                 ColMajor>;
@@ -1723,7 +1723,7 @@ static void PackLhsHelper(int iters,
 // NOTE: Eigen gemm_pack_lhs accepts contraction depth (k-th dimension) as a
 // first argument (aka block cols). MKL-DNN pack is generic for lhs and rhs
 // and accepts block rows and cols in the same order for lhs and rhs.
-#if defined(TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL)
+#if defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
     pack_lhs(packed.data() + packed_offset, sub_mapper, rows, cols);
 #else
     pack_lhs(packed.data() + packed_offset, sub_mapper, cols, rows);

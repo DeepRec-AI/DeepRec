@@ -29,26 +29,17 @@ limitations under the License.
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/util/tensor_format.h"
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/kernels/mkl_tfconv_op.h"
 #include "tensorflow/core/util/mkl_util.h"
 
 namespace tensorflow {
 
-#ifdef ENABLE_MKLDNN_V1
 #define ENGINE_CPU engine::kind::cpu
 #define GET_CHECK_REORDER_TO_OP_MEM_ARGS(md, tensor, net, net_args, engine) \
   md, tensor, net, net_args, engine
 #define GET_TF_DATA_FORMAT(shape, mem_desc) shape.GetTfDataFormat()
 #define NET_ARGS_PTR &net_args
-#else
-#define ENGINE_CPU engine::cpu
-#define GET_CHECK_REORDER_TO_OP_MEM_ARGS(md, tensor, net_ptr, net_args, \
-                                         engine)                        \
-  memory::primitive_desc(md, engine), tensor, &net_ptr
-#define GET_TF_DATA_FORMAT(shape, mem_desc) mem_desc.data.format
-#define NET_ARGS_PTR nullptr
-#endif  // ENABLE_MKLDNN_V1
 
 ///////////////////////////////////////////////////////////
 //               Op kernel

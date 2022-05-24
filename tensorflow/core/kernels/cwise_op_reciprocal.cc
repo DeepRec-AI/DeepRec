@@ -30,7 +30,7 @@ REGISTER3(SimpleBinaryOp, GPU, "InvGrad", functor::inverse_grad, float,
           Eigen::half, double);
 #endif
 
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
+#ifdef INTEL_MKL
 // Since Eigen backend does not support bfloat16 ops, we are selectively
 // enabling them for MKL backend.
 REGISTER6(UnaryOp, CPU, "Reciprocal", functor::inverse, float, Eigen::half,

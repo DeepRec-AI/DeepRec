@@ -25,7 +25,7 @@ limitations under the License.
 #include <unordered_map>
 #include <vector>
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -41,10 +41,10 @@ limitations under the License.
 #include "tensorflow/core/util/work_sharder.h"
 #endif
 
-using mkldnn::lrn_backward;
-using mkldnn::lrn_forward;
-using mkldnn::prop_kind;
-using mkldnn::stream;
+using dnnl::lrn_backward;
+using dnnl::lrn_forward;
+using dnnl::prop_kind;
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -171,22 +171,15 @@ class MklLRNOp : public OpKernel {
       std::vector<primitive> net;
       MklDnnThreadPool eigen_tp(context);
       fwd_stream_.reset(CreateStream(&eigen_tp, cpu_engine_));
-#ifdef ENABLE_MKLDNN_V1
       net.push_back(lrn_forward(lrn_prim_desc));
       std::vector<std::unordered_map<int, memory>> net_args;
-      net_args.push_back({{MKLDNN_ARG_SRC, src_dnn_data.GetOpMem()},
-                          {MKLDNN_ARG_WORKSPACE, workspace_dnn_data.GetOpMem()},
-                          { MKLDNN_ARG_DST,
+      net_args.push_back({{DNNL_ARG_SRC, src_dnn_data.GetOpMem()},
+                          {DNNL_ARG_WORKSPACE, workspace_dnn_data.GetOpMem()},
+                          { DNNL_ARG_DST,
                             dst_dnn_data.GetOpMem() }});
       net.push_back(lrn_forward(lrn_prim_desc));
       net.at(0).execute(*fwd_stream_, net_args.at(0));
-#else
-      net.push_back(lrn_forward(lrn_prim_desc, src_dnn_data.GetOpMem(),
-                                workspace_dnn_data.GetOpMem(),
-                                dst_dnn_data.GetOpMem()));
-      fwd_stream_->submit(net).wait();
-#endif
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);
@@ -360,9 +353,9 @@ class MklLRNGradOp : public OpKernel {
       GetMklShape(context, kIdxOrigInput, &orig_input_dnn_shape);
       GetMklShape(context, kIdxOrigOutput, &orig_output_dnn_shape);
 
-      // We only use MKLDNN if all of the necessary inputs are present
-      // in mkldnn format, and Channel is the last dimension
-      bool can_use_mkldnn = workspace_enabled_ &&
+      // We only use DNNL if all of the necessary inputs are present
+      // in dnnl format, and Channel is the last dimension
+      bool can_use_dnnl = workspace_enabled_ &&
                             input_grad_dnn_shape.IsMklTensor() &&
                             orig_input_dnn_shape.IsMklTensor() &&
                             orig_output_dnn_shape.IsMklTensor() &&
@@ -373,7 +366,7 @@ class MklLRNGradOp : public OpKernel {
                             orig_output_dnn_shape.IsMklChannelDim(
                                 orig_output_dnn_shape.GetDimension() - 1);
 
-      if (!can_use_mkldnn) {
+      if (!can_use_dnnl) {
         // Fallback to eigen
         MklDefaultToEigen(context);
         return;
@@ -444,22 +437,15 @@ class MklLRNGradOp : public OpKernel {
           lrn_fwd_prim_desc.PRIMITIVE_DESC_SRC, cpu_engine_));
 
       std::vector<primitive> net;
-#ifdef ENABLE_MKLDNN_V1
       std::vector<std::unordered_map<int, memory>> net_args;
       net.push_back(lrn_backward(lrn_bwd_prim_desc));
-      net_args.push_back({{MKLDNN_ARG_SRC, orig_input_dnn_data.GetOpMem()},
-                          {MKLDNN_ARG_DIFF_DST, input_grad_dnn_data.GetOpMem()},
-                          { MKLDNN_ARG_DST,
+      net_args.push_back({{DNNL_ARG_SRC, orig_input_dnn_data.GetOpMem()},
+                          {DNNL_ARG_DIFF_DST, input_grad_dnn_data.GetOpMem()},
+                          { DNNL_ARG_DST,
                             output_dnn_data.GetOpMem() }});
       net.push_back(lrn_backward(lrn_bwd_prim_desc));
       net.at(0).execute(*bwd_stream_, net_args.at(0));
-#else
-      net.push_back(lrn_backward(
-          lrn_bwd_prim_desc, orig_input_dnn_data.GetOpMem(),
-          input_grad_dnn_data.GetOpMem(), output_dnn_data.GetOpMem()));
-      bwd_stream_->submit(net).wait();
-#endif
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);

@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 // Implements a quantized eight-bit version of the matmul operation with bias,
-// relu and requantization fusion support utilizing mkldnn u8s8s32 inner
+// relu and requantization fusion support utilizing dnnl u8s8s32 inner
 // product API. Right now, this version can support
 //   - Input: quantized as uint8 via either MIN_FIRST or SCALE mode.
 //            SCALE mode is selected when input is guaranteed to be non-
@@ -200,7 +200,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       // specify buffers containing actual input and output data.
       Tensor* dst_tensor = nullptr;
       auto input_output_fmt = MEMORY_FORMAT::nc;
-      auto input_output_fmt_mkldnn = MKL_TENSOR_FORMAT_NC;
+      auto input_output_fmt_dnnl = MKL_TENSOR_FORMAT_NC;
 
       // If input is in MKL layout, then simply take input layout; otherwise,
       // construct input TF layout. For TF layout, although input shape
@@ -236,10 +236,10 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
                                           Toutput>::Get(matmul_fwd_dims, 0);
 
       // Allocate output Tensor.
-      std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>
+      std::shared_ptr<dnnl::inner_product_forward::primitive_desc>
           matmul_fwd_pd = matmul_fwd->GetPrimitiveDesc();
       this->AllocateOutputTensor(context, *matmul_fwd_pd, dst_dims_mkl_order,
-                                 input_output_fmt_mkldnn, &dst_tensor);
+                                 input_output_fmt_dnnl, &dst_tensor);
 
       Toutput* dst_data =
           reinterpret_cast<Toutput*>(dst_tensor->flat<Toutput>().data());
@@ -272,13 +272,8 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
             this->CacheWeight(context, matmul_fwd_pd, weight_data,
                               weight_tensor, weight, weight_md);
           }
-#ifdef ENABLE_MKLDNN_V1
           weight_data = this->GetCachedWeight(
               context, GET_WEIGHTS_DESC_FROM_OP_PD(matmul_fwd_pd));
-#else
-          weight_data = this->GetCachedWeight(
-              context, GET_WEIGHTS_DESC_FROM_OP_PD(matmul_fwd_pd).desc());
-#endif
           is_weight_cached = (weight_data != nullptr);
         }
 
@@ -306,7 +301,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
           context, matmul_fwd_pd, bias_tensor, weight_tensor, cpu_stream);
       matmul_fwd->Execute(src_data, weight_data, bias_data, dst_data,
                           cpu_stream);
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = tensorflow::strings::StrCat(
           "Status: ", e.status, ", message: ", string(e.message), ", in file ",
           __FILE__, ":", __LINE__);
@@ -403,8 +398,8 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
   //   Bs32 = Qa * Qw * Bf32.
   Tbias* GetBiasHandle(
       OpKernelContext* context,
-      std::shared_ptr<mkldnn::inner_product_forward::primitive_desc>&
-          mkldnn_matmul_fwd_pd,
+      std::shared_ptr<dnnl::inner_product_forward::primitive_desc>&
+          dnnl_matmul_fwd_pd,
       const Tensor& bias_tensor, const Tensor& weight_tensor,
       std::shared_ptr<stream> reorder_stream) {
     // If the bias is qint32, it means the bias is already converted offline.
@@ -419,7 +414,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
       const float min_weight = context->input(5).flat<float>()(0);
       const float max_weight = context->input(6).flat<float>()(0);
 
-      std::vector<mkldnn::primitive> net;
+      std::vector<dnnl::primitive> net;
       float out_scale;
       // If the bias is float and input quantize is MIN_FIRST, bias has to be
       // compensated with B's32 = Q'a * Qw * Bf32 + Q'a * Qw * Min(Af32) * 1 *
@@ -441,7 +436,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
                     ((max_input - min_input) *
                      std::max(std::abs(max_weight), std::abs(min_weight)));
 
-#ifdef ENABLE_MKLDNN_THREADPOOL
+#ifdef ENABLE_DNNL_THREADPOOL
         auto parallel_func = [&](int64 start, int64 end) {
           for (int64 j = start; j < end; j++) {
             int x = 0;
@@ -470,7 +465,7 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
           comp_bias[j] =
               ((bias_buf[j] * out_scale) + static_cast<float>(x * qa_amin));
         }
-#endif  // ENABLE_MKLDNN_THREADPOOL
+#endif  // ENABLE_DNNL_THREADPOOL
         return reinterpret_cast<Tbias*>(comp_bias_);
 
       } else if (mode_ == QUANTIZE_MODE_SCALED) {
@@ -481,35 +476,25 @@ class MklDnnQuantizedMatMulOp : public MklDnnMatMulOpBase<Tweight, Toutput> {
 
         std::vector<float> scales;
         scales.push_back(out_scale);
-        mkldnn::primitive_attr bias_attr;
+        dnnl::primitive_attr bias_attr;
         bias_attr.set_output_scales(0, scales);
 
         void* bias_buf = static_cast<void*>(
             const_cast<Tbias*>(bias_tensor.flat<Tbias>().data()));
         input_bias_ =
-            new MEMORY_CONSTRUCTOR(mkldnn_matmul_fwd_pd->PRIMITIVE_DESC_BIAS,
+            new MEMORY_CONSTRUCTOR(dnnl_matmul_fwd_pd->PRIMITIVE_DESC_BIAS,
                                    this->cpu_engine_, bias_buf);
         scaled_bias_ = new MEMORY_CONSTRUCTOR_WITHOUT_DATA(
-            mkldnn_matmul_fwd_pd->PRIMITIVE_DESC_BIAS, this->cpu_engine_);
+            dnnl_matmul_fwd_pd->PRIMITIVE_DESC_BIAS, this->cpu_engine_);
 
-#ifdef ENABLE_MKLDNN_V1
-        auto reorder_desc = mkldnn::reorder::primitive_desc(
+        auto reorder_desc = dnnl::reorder::primitive_desc(
             *input_bias_, *scaled_bias_, bias_attr);
-        net.push_back(mkldnn::reorder(reorder_desc));
+        net.push_back(dnnl::reorder(reorder_desc));
         std::unordered_map<int, memory> reorder_net_args = {
-            {MKLDNN_ARG_FROM, *input_bias_},
-            { MKLDNN_ARG_TO,
+            {DNNL_ARG_FROM, *input_bias_},
+            { DNNL_ARG_TO,
               *scaled_bias_ }};
         net.at(0).execute(*reorder_stream, reorder_net_args);
-#else
-        auto reorder_desc = mkldnn::reorder::primitive_desc(
-            input_bias_->get_primitive_desc(),
-            scaled_bias_->get_primitive_desc(), bias_attr);
-        net.push_back(
-            mkldnn::reorder(reorder_desc, *input_bias_, *scaled_bias_));
-        reorder_stream->submit(net).wait();
-#endif  // ENABLE_MKLDNN_V1
-
         return reinterpret_cast<Tbias*>(scaled_bias_->get_data_handle());
       } else {
         context->CtxFailure(

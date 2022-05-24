@@ -974,7 +974,7 @@ bool FindFusedBatchNormEx(const RemapperContext& ctx, int node_index,
   if (IsAdd(*relu_fanin_0_node_def)) {
     // Currently no CPU implementation for "FusedBatchNorm + SideInput +
     // <Activation>""
-#ifdef ENABLE_MKLDNN_V1
+#ifdef INTEL_MKL
     return false;
 #endif
 
@@ -1081,7 +1081,7 @@ void CopyFusedBatchNormAttributes(const NodeDef& fused_batch_norm,
   if (fused_batch_norm.op() != "FusedBatchNorm") {
     SetAttrValue(src_attr.at("U"), &(*attr)["U"]);
   } else {
-#ifndef ENABLE_MKLDNN_V1
+#ifndef INTEL_MKL
     SetAttrValue(src_attr.at("T"), &(*attr)["U"]);
 #else
     SetAttrValue(DT_FLOAT, &(*attr)["U"]);

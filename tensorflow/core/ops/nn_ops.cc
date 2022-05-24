@@ -238,7 +238,7 @@ REGISTER_OP("_FusedBatchNormEx")
     .Output("reserve_space_1: U")
     .Output("reserve_space_2: U")
     .Output("reserve_space_3: U")
-#ifdef ENABLE_MKLDNN_V1
+#ifdef INTEL_MKL
     .Attr("T: {half, float, bfloat16}")
 #else
     .Attr("T: {half, float}")

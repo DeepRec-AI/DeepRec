@@ -17,7 +17,7 @@ limitations under the License.
 #include <unordered_map>
 #include <vector>
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -33,8 +33,8 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_util.h"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
-using mkldnn::concat;
-using mkldnn::stream;
+using dnnl::concat;
+using dnnl::stream;
 
 namespace tensorflow {
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -275,13 +275,13 @@ class MklConcatFwdPrimitive : public MklPrimitive {
   // Concat forward execute
   //   src_data:    input data buffer of src
   //   dst_data:    output data buffer of dst
-  void Execute(const std::vector<mkldnn::memory>& in_data,
-               const mkldnn::memory& dst_data,
+  void Execute(const std::vector<dnnl::memory>& in_data,
+               const dnnl::memory& dst_data,
                const MklConcatFwdParams& concat_fwd_dims,
                std::shared_ptr<stream> fwd_stream) {
     DCHECK_EQ(in_data.size(), context_.data_mem.size());
     for (size_t i = 0; i < concat_fwd_dims.num_inputs; i++) {
-#ifdef ENABLE_MKLDNN_THREADPOOL
+#ifdef ENABLE_DNNL_THREADPOOL
       context_.data_mem_shdptr[i]->set_data_handle(
           static_cast<void*>(in_data[i].get_data_handle()), *fwd_stream);
     }
@@ -293,17 +293,13 @@ class MklConcatFwdPrimitive : public MklPrimitive {
     }
     context_.dst_mem->set_data_handle(
         static_cast<void*>(dst_data.get_data_handle()));
-#endif  // ENABLE_MKLDNN_THREADPOOL
+#endif  // ENABLE_DNNL_THREADPOOL
     for (size_t i = 0; i < concat_fwd_dims.num_inputs; i++) {
       context_.data_mem[i] = *context_.data_mem_shdptr[i];
     }
 
-#ifdef ENABLE_MKLDNN_V1
     execute_primitives(context_.fwd_primitives, fwd_stream,
                        context_.fwd_primitives_args);
-#else
-    fwd_stream->submit(context_.fwd_primitives);
-#endif  // ENABLE_MKLDNN_V1
 
     // After exec, set data handle back
     context_.dst_mem->set_data_handle(DummyData);
@@ -319,34 +315,21 @@ class MklConcatFwdPrimitive : public MklPrimitive {
  private:
   // Primitive reuse context for concat Fwd op
   struct ConcatFwdContext {
-#ifndef ENABLE_MKLDNN_V1
-    std::vector<mkldnn::memory::primitive_desc> src_pd;
-    std::vector<std::shared_ptr<mkldnn::memory::primitive_desc>> src_pd_shdptr;
-    std::shared_ptr<mkldnn::memory::primitive_desc> dst_pd;
-#endif  // !ENABLE_MKLDNN_V1
-
-// MKL-DNN memory
-#ifdef ENABLE_MKLDNN_V1
-    std::vector<mkldnn::memory> data_mem;
-#else
-    std::vector<mkldnn::primitive::at> data_mem;
-#endif  // ENABLE_MKLDNN_V1
-    std::vector<std::shared_ptr<mkldnn::memory>> data_mem_shdptr;
-    std::shared_ptr<mkldnn::memory> dst_mem;
+    // MKL-DNN memory
+    std::vector<dnnl::memory> data_mem;
+    std::vector<std::shared_ptr<dnnl::memory>> data_mem_shdptr;
+    std::shared_ptr<dnnl::memory> dst_mem;
 
     // Memory descriptor
-    std::vector<mkldnn::memory::desc> src_md;
-    std::shared_ptr<mkldnn::memory::desc> dst_md;
+    std::vector<dnnl::memory::desc> src_md;
+    std::shared_ptr<dnnl::memory::desc> dst_md;
 
     // Concat primitive descriptor
-    std::shared_ptr<mkldnn::concat::primitive_desc> fwd_pd;
-    std::shared_ptr<mkldnn::primitive> concat_fwd;
+    std::shared_ptr<dnnl::concat::primitive_desc> fwd_pd;
+    std::shared_ptr<dnnl::primitive> concat_fwd;
 
-    std::vector<mkldnn::primitive> fwd_primitives;
-
-#ifdef ENABLE_MKLDNN_V1
+    std::vector<dnnl::primitive> fwd_primitives;
     std::vector<std::unordered_map<int, memory>> fwd_primitives_args;
-#endif  // ENABLE_MKLDNN_V1
 
     ConcatFwdContext()
         : dst_mem(nullptr), fwd_pd(nullptr), concat_fwd(nullptr) {}
@@ -358,20 +341,10 @@ class MklConcatFwdPrimitive : public MklPrimitive {
              const std::vector<memory::desc>& srcs_md) {
     // Create memory descriptors for concat with specified srcs format
     for (size_t i = 0; i < concat_fwd_dims.num_inputs; i++) {
-      mkldnn::memory::desc source_md(memory::desc(srcs_md[i].data));
+      dnnl::memory::desc source_md(memory::desc(srcs_md[i].data));
       context_.src_md.push_back(source_md);
-#ifdef ENABLE_MKLDNN_V1
-      std::shared_ptr<mkldnn::memory> src_mem(
-          new mkldnn::memory(source_md, cpu_engine_, DummyData));
-#else
-      std::shared_ptr<mkldnn::memory::primitive_desc> src_mpd(
-          new memory::primitive_desc(source_md, cpu_engine_));
-      context_.src_pd_shdptr.push_back(src_mpd);
-
-      std::shared_ptr<mkldnn::memory> src_mem(
-          new mkldnn::memory(*src_mpd, DummyData));
-      context_.src_pd.push_back(*context_.src_pd_shdptr[i]);
-#endif  // ENABLE_MKLDNN_V1
+      std::shared_ptr<dnnl::memory> src_mem(
+          new dnnl::memory(source_md, cpu_engine_, DummyData));
       context_.data_mem_shdptr.push_back(src_mem);
       context_.data_mem.push_back(*context_.data_mem_shdptr[i]);
     }
@@ -379,43 +352,23 @@ class MklConcatFwdPrimitive : public MklPrimitive {
     context_.dst_md.reset(new memory::desc({concat_fwd_dims.dst_dims},
                                            MklDnnType<T>(),
                                            concat_fwd_dims.mkl_common_format));
-// Create a concat primitive descriptor
-#ifdef ENABLE_MKLDNN_V1
+    // Create a concat primitive descriptor
     context_.fwd_pd.reset(new concat::primitive_desc(
         *context_.dst_md, concat_fwd_dims.concat_dims, context_.src_md,
         cpu_engine_));
-#else
-    context_.fwd_pd.reset(new concat::primitive_desc(
-        concat_fwd_dims.concat_dims, context_.src_pd));
-#endif  // ENABLE_MKLDNN_V1
-
-#ifdef ENABLE_MKLDNN_V1
     // Create memory primitive based on dummy data
     context_.dst_mem.reset(
         new memory(*context_.dst_md, cpu_engine_, DummyData));
-#else
-    context_.dst_pd.reset(
-        new memory::primitive_desc(*context_.dst_md, cpu_engine_));
 
-    // Create memory primitive based on dummy data
-    context_.dst_mem.reset(new memory(*context_.dst_pd, DummyData));
-#endif  // ENABLE_MKLDNN_V1
-
-#ifdef ENABLE_MKLDNN_V1
     context_.concat_fwd.reset(new concat(*context_.fwd_pd));
     std::unordered_map<int, memory> net_args = {
-        { MKLDNN_ARG_DST,
+        { DNNL_ARG_DST,
           *context_.dst_mem }};
     for (int i = 0; i < concat_fwd_dims.num_inputs; ++i) {
-      net_args.insert({MKLDNN_ARG_MULTIPLE_SRC + i, context_.data_mem[i]});
+      net_args.insert({DNNL_ARG_MULTIPLE_SRC + i, context_.data_mem[i]});
     }
 
     context_.fwd_primitives_args.push_back(net_args);
-#else
-    // Create concat primitive
-    context_.concat_fwd.reset(
-        new concat(*context_.fwd_pd, context_.data_mem, *context_.dst_mem));
-#endif  // ENABLE_MKLDNN_V1
 
     context_.fwd_primitives.push_back(*context_.concat_fwd);
   }
@@ -579,11 +532,9 @@ class MklConcatOp : public OpKernel {
       // format and avoid calling eigen version.
       if (!are_all_tf_inputs && !are_all_mkl_inputs) invoke_eigen = true;
 
-#ifdef ENABLE_MKLDNN_V1
       // Temporally call Eigen if number of input dimensions is 2.
       // That is due to an incorrect output results in DNNL 1.2 path.
       if (expected_dims == 2) invoke_eigen = true;
-#endif  // ENABLE_MKLDNN_V1
 
       OpInputList input_mins, input_maxes;
       bool quantized_input =
@@ -642,13 +593,9 @@ class MklConcatOp : public OpKernel {
 
       bool isMklReorderNeeded = false;
       MEMORY_FORMAT mkl_common_format = MEMORY_FORMAT::any;
-#ifdef ENABLE_MKLDNN_V1
       std::vector<memory> inputs;
-#else
-      std::vector<primitive::at> inputs;
-#endif  // ENABLE_MKLDNN_V1
       std::vector<memory::dims> src_dims_pt;
-      std::vector<mkldnn::memory> srcs_mem;
+      std::vector<dnnl::memory> srcs_mem;
       std::vector<memory::desc> srcs_md;
 
       if (are_all_mkl_inputs) {
@@ -726,22 +673,11 @@ class MklConcatOp : public OpKernel {
               dst_dims, MklDnnDataFormatToTFDataFormat(orig_tf_format));
 // Set the output format same as the most common format of inputs
 // to avoid layout conversions.
-#ifdef ENABLE_MKLDNN_V1
           // DNN 1.0: internal format is always blocked;
           //          format_tag does not have "blocked" field.
           VLOG(1) << "mkl_common_format == MEMORY_FORMAT::blocked";
           dst_md = MklDnnData<T>::CreateBlockedMemDesc(
               dst_dims_in_nchw, CalculateTFStrides(dst_dims_in_nchw));
-#else
-          if (mkl_common_format == MEMORY_FORMAT::blocked) {
-            VLOG(1) << "mkl_common_format == MEMORY_FORMAT::blocked";
-            dst_md = MklDnnData<T>::CreateBlockedMemDesc(
-                dst_dims_in_nchw, CalculateTFStrides(dst_dims_in_nchw));
-          } else {
-            dst_md = memory::desc(dst_dims_in_nchw, MklDnnType<T>(),
-                                  mkl_common_format);
-          }
-#endif  // ENABLE_MKLDNN_V1
         } else if (dst_dims.size() == 2 &&
                    mkl_common_format == MEMORY_FORMAT::nc) {
           // When MEMORY_FORMAT::nc, dst_dims are already in MKL-DNN order
@@ -804,21 +740,14 @@ class MklConcatOp : public OpKernel {
             dst_md = dnn_shape_dst.GetMklLayout();
           dst.SetUsrMem(dst_md, dst_tensor);
           dst.SetUsrMemDataHandle(dst_tensor, fwd_cpu_stream);
-#ifdef ENABLE_MKLDNN_V1
           auto concat_op = concat(concat_pd);
           std::unordered_map<int, memory> net_args = {
-              { MKLDNN_ARG_DST,
+              { DNNL_ARG_DST,
                 dst.GetOpMem() }};
           for (int i = 0; i < inputs.size(); ++i) {
-            net_args.insert({MKLDNN_ARG_MULTIPLE_SRC + i, inputs[i]});
+            net_args.insert({DNNL_ARG_MULTIPLE_SRC + i, inputs[i]});
           }
           concat_op.execute(*fwd_cpu_stream, net_args);
-#else
-          auto concat_op = concat(concat_pd, inputs, dst.GetOpMem());
-          std::vector<primitive> net;
-          net.push_back(concat_op);
-          fwd_cpu_stream->submit(net).wait();
-#endif  // ENABLE_MKLDNN_V1
         } else {
           MklConcatFwdPrimitive<T>* concat_fwd = nullptr;
 
@@ -879,7 +808,7 @@ class MklConcatOp : public OpKernel {
                                   dnn_shape_dst);
         DCHECK(dst_tensor != nullptr) << "Output tensor pointer is NULL";
       }
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);

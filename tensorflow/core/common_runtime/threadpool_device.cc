@@ -51,7 +51,7 @@ ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
                                name, DEVICE_CPU, memory_limit, locality)),
       allocator_(allocator),
       scoped_allocator_mgr_(new ScopedAllocatorMgr(name)) {
-#if !defined(ENABLE_MKLDNN_THREADPOOL) && defined(INTEL_MKL)
+#if !defined(ENABLE_DNNL_THREADPOOL) && defined(INTEL_MKL)
   // Early return when MKL is disabled
   if (DisableMKL()) return;
 #ifdef _OPENMP
@@ -70,7 +70,7 @@ ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
     }
   }
 #endif  // _OPENMP
-#endif  // !defined(ENABLE_MKLDNN_THREADPOOL) && defined(INTEL_MKL)
+#endif  // !defined(ENABLE_DNNL_THREADPOOL) && defined(INTEL_MKL)
 }
 
 ThreadPoolDevice::~ThreadPoolDevice() {}
