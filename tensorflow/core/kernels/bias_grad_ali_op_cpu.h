@@ -21,11 +21,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 
 #ifdef INTEL_MKL
-#ifdef ENABLE_MKLDNN_V1
-#include "mkldnn.hpp"
-#else
-#include "mkl_cblas.h"
-#endif // EABLE_MKLDNN_V1
+#include "dnnl.hpp"
 #endif
 
 namespace tensorflow {
@@ -109,54 +105,6 @@ void SumIntoOneRow(const T* A, int m, int n, int lda, T* Y,
   }
   delete[] sum;
 }
-
-
-#ifdef INTEL_MKL
-#ifndef ENABLE_MKLDNN_V1
-template <typename T>
-bool ComputedByMklGemv(const T* A, int m, int n, T* Y) {
-  return false;
-}
-
-template <>
-bool ComputedByMklGemv<float>(const float* A, int m, int n, float* Y) {
-  std::vector<float> X(m, 1.0f);
-  cblas_sgemv(CblasRowMajor, CblasTrans,
-              m, n, 1.0f, A, n, X.data(), 1, 0.0f, Y, 1);
-  return true;
-}
-
-template <>
-bool ComputedByMklGemv<double>(const double* A, int m, int n, double* Y) {
-  std::vector<double> X(m, 1.0);
-  cblas_dgemv(CblasRowMajor, CblasTrans,
-              m, n, 1.0, A, n, X.data(), 1, 0.0, Y, 1);
-  return true;
-}
-
-template <>
-bool ComputedByMklGemv<complex64>(const complex64* A, int m, int n,
-                                  complex64* Y) {
-  complex64 one = static_cast<complex64>(1);
-  complex64 zero = static_cast<complex64>(0);
-  std::vector<complex64> X(m, one);
-  cblas_cgemv(CblasRowMajor, CblasTrans,
-              m, n, &one, A, n, X.data(), 1, &zero, Y, 1);
-  return true;
-}
-
-template <>
-bool ComputedByMklGemv<complex128>(const complex128* A, int m, int n,
-                                   complex128* Y) {
-  complex128 one = static_cast<complex128>(1);
-  complex128 zero = static_cast<complex128>(0);
-  std::vector<complex128> X(m, one);
-  cblas_zgemv(CblasRowMajor, CblasTrans,
-              m, n, &one, A, n, X.data(), 1, &zero, Y, 1);
-  return true;
-}
-#endif
-#endif // INTEL_MKL
 
 constexpr int block_size_avx512 = 16;
 constexpr int block_size_avx2 = 8;
@@ -424,13 +372,7 @@ void BiasGrad2DInternal(const CPUDevice& d, typename TTypes<T>::ConstFlat input,
   // make positive impact on most cases.
 #define CPU_CACHE_LINE_SIZE 64
 #define HALF_L1_CACHE_SIZE 16384
-#ifdef INTEL_MKL
-#ifndef ENABLE_MKLDNN_V1
-  if (sizeof(T) * channel >= CPU_CACHE_LINE_SIZE) {
-    if (ComputedByMklGemv(in, sum_size, channel, out)) return;
-  }
-#endif // ndef ENABLE_MKLDNN_V1
-#endif
+
   const int num_threads = d.numThreads();
 
   // Small cases would be explicitly done by single thread.
