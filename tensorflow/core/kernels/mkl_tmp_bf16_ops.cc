@@ -19,7 +19,7 @@ limitations under the License.
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/no_op.h"
 
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
+#ifdef INTEL_MKL
 
 namespace tensorflow {
 
@@ -51,4 +51,4 @@ TF_CALL_bfloat16(REGISTER_CPU);
 
 }  // namespace tensorflow
 
-#endif  // ENABLE_INTEL_MKL_BFLOAT16
+#endif  // INTEL_MKL

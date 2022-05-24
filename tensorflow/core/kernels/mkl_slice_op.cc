@@ -17,7 +17,7 @@ limitations under the License.
 
 #ifdef INTEL_MKL
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
@@ -29,10 +29,7 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_types.h"
 #include "tensorflow/core/util/mkl_util.h"
 
-using mkldnn::stream;
-#ifndef ENABLE_MKLDNN_V1
-using mkldnn::view;
-#endif
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -189,7 +186,7 @@ class MklSlicePrimitive : public MklPrimitive {
 
   void Execute(const MklSliceParams& sliceParams,
                std::shared_ptr<stream> slice_stream) {
-#ifdef ENABLE_MKLDNN_THREADPOOL
+#ifdef ENABLE_DNNL_THREADPOOL
     context_.src_mem->set_data_handle(sliceParams.from->get_data_handle(),
                                       *slice_stream);
     context_.dst_mem->set_data_handle(sliceParams.to->get_data_handle(),
@@ -197,13 +194,9 @@ class MklSlicePrimitive : public MklPrimitive {
 #else
     context_.src_mem->set_data_handle(sliceParams.from->get_data_handle());
     context_.dst_mem->set_data_handle(sliceParams.to->get_data_handle());
-#endif  // ENABLE_MKLDNN_THREADPOOL
-#ifdef ENABLE_MKLDNN_V1
+#endif  // ENABLE_DNNL_THREADPOOL
     execute_primitives(context_.slice_primitives, slice_stream,
                        context_.slice_primitives_args);
-#else
-    slice_stream->submit(context_.slice_primitives);
-#endif
 
     // We should set it back to DummyData so as to make the primitive
     // in cache pool stateless. Otherwise, if the result for previous
@@ -218,18 +211,14 @@ class MklSlicePrimitive : public MklPrimitive {
 
  private:
   struct SliceContext {
-    std::shared_ptr<mkldnn::memory> src_mem;
-    std::shared_ptr<mkldnn::memory> dst_mem;
+    std::shared_ptr<dnnl::memory> src_mem;
+    std::shared_ptr<dnnl::memory> dst_mem;
     std::shared_ptr<primitive> reorder_prim;
     std::shared_ptr<reorder::primitive_desc> reorder_pd;
-    std::shared_ptr<mkldnn::stream> slice_stream;
-    std::vector<mkldnn::primitive> slice_primitives;
-#ifdef ENABLE_MKLDNN_V1
-    std::shared_ptr<mkldnn::memory> src_sub_mem;
+    std::shared_ptr<dnnl::stream> slice_stream;
+    std::vector<dnnl::primitive> slice_primitives;
+    std::shared_ptr<dnnl::memory> src_sub_mem;
     std::vector<std::unordered_map<int, memory>> slice_primitives_args;
-#else
-    std::shared_ptr<view::primitive_desc> view_pd;
-#endif  // ENABLE_MKLDNN_V1
     SliceContext()
         : src_mem(nullptr), dst_mem(nullptr), reorder_prim(nullptr) {}
   } context_;
@@ -243,31 +232,18 @@ class MklSlicePrimitive : public MklPrimitive {
         sliceParams.to, cpu_engine_, DummyData));
     auto src_pd = context_.src_mem->GET_DESC;
     auto dst_pd = context_.dst_mem->GET_DESC;
-#ifdef ENABLE_MKLDNN_V1
-    // MKL-DNN 1.x removes struct view, alias of memory in 0.x version.
-    // So the implementation is based on submemory.
-    auto src_sub_desc = context_.src_mem->get_desc().submemory_desc(
+        auto src_sub_desc = context_.src_mem->get_desc().submemory_desc(
         sliceParams.size_dims, sliceParams.begin_dims);
     context_.src_sub_mem.reset(new memory(src_sub_desc, cpu_engine_, nullptr));
     context_.reorder_pd = std::make_shared<reorder::primitive_desc>(
         reorder::primitive_desc(*context_.src_sub_mem, *context_.dst_mem));
     context_.reorder_prim =
-        std::make_shared<mkldnn::reorder>(reorder(*context_.reorder_pd));
+        std::make_shared<dnnl::reorder>(reorder(*context_.reorder_pd));
 
     context_.slice_primitives_args.push_back(
-        {{MKLDNN_ARG_SRC, *context_.src_mem},
-         { MKLDNN_ARG_DST,
+        {{DNNL_ARG_SRC, *context_.src_mem},
+         { DNNL_ARG_DST,
            *context_.dst_mem }});
-#else
-    context_.view_pd =
-        std::make_shared<view::primitive_desc>(view::primitive_desc(
-            src_pd, sliceParams.size_dims, sliceParams.begin_dims));
-    context_.reorder_pd =
-        std::make_shared<reorder::primitive_desc>(reorder::primitive_desc(
-            context_.view_pd->dst_primitive_desc(), dst_pd));
-    context_.reorder_prim = std::make_shared<mkldnn::reorder>(
-        reorder(*context_.reorder_pd, *context_.src_mem, *context_.dst_mem));
-#endif
     context_.slice_primitives.push_back(*context_.reorder_prim);
   }
 };
@@ -315,15 +291,9 @@ class MklSlicePrimitiveFactory : public MklPrimitiveFactory<T> {
         &GET_BLOCK_STRIDES(to_strides, kIdxFirstStride)[to_desc.ndims]);
 
     key_creator.AddAsKey(prefix);
-#ifndef ENABLE_MKLDNN_V1
-    key_creator.AddAsKey(static_cast<int>(from_desc.format));
-#endif
     key_creator.AddAsKey(static_cast<int>(from_desc.data_type));
     key_creator.AddAsKey(from_dims);
     key_creator.AddAsKey(from_strides_outer_blocks);
-#ifndef ENABLE_MKLDNN_V1
-    key_creator.AddAsKey(static_cast<int>(to_desc.format));
-#endif
     key_creator.AddAsKey(static_cast<int>(to_desc.data_type));
     key_creator.AddAsKey(to_dims);
     key_creator.AddAsKey(to_strides_outer_blocks);
@@ -468,22 +438,13 @@ class MklSliceOp : public OpKernel {
       // Or else do nothing for it.
       auto op_md =
           MklDnnData<T>::CreateBlockedMemDesc(input_dims, input_strides);
-#ifdef ENABLE_MKLDNN_V1
       src.CheckReorderToOpMem(op_md, cpu_engine, context);
-#else
-      auto op_pd = memory::primitive_desc(op_md, cpu_engine);
-      src.CheckReorderToOpMem(op_pd);
-#endif
 
       // Step 2 - Create memory for output.
       auto output_strides = CalculateTFStrides(size_dims);
       auto output_md =
           MklDnnData<T>::CreateBlockedMemDesc(size_dims, output_strides);
-#ifdef ENABLE_MKLDNN_V1
       auto output_pd = output_md;
-#else
-      auto output_pd = memory::primitive_desc(output_md, cpu_engine);
-#endif
       AllocateOutputTensor(context, input_mkl_shape, &output_pd, size_dims,
                            &output_tensor, &output_mkl_shape);
       DCHECK(output_tensor);
@@ -500,7 +461,7 @@ class MklSliceOp : public OpKernel {
       MklDnnThreadPool eigen_tp(context);
       slice_stream.reset(CreateStream(&eigen_tp, reorder_prim->GetEngine()));
       reorder_prim->Execute(sliceParams, slice_stream);
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);

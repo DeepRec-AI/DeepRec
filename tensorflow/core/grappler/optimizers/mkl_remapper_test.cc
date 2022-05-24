@@ -15,10 +15,16 @@ limitations under the License.
 
 #ifdef INTEL_MKL
 #include "tensorflow/cc/ops/nn_ops_internal.h"
+#include "tensorflow/cc/client/client_session.h"
+#include "tensorflow/cc/framework/grad_op_registry.h"
+#include "tensorflow/cc/framework/gradients.h"
 #include "tensorflow/cc/ops/standard_ops.h"
+#include "tensorflow/core/framework/graph.pb.h"
+#include "tensorflow/core/framework/node_def_util.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/grappler/devices.h"
 #include "tensorflow/core/grappler/grappler_item.h"
+#include "tensorflow/core/grappler/optimizers/model_pruner.h"
 #include "tensorflow/core/grappler/optimizers/remapper.h"
 #include "tensorflow/core/grappler/utils/grappler_test.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
@@ -328,7 +334,6 @@ CREATE_CONV2DFUSION_ADD_BCAST_TEST(AddV2);
 REGISTER_TEST_ALL_TYPES(FuseDepthwiseConv2DWithBiasAndActivation);
 #undef REGISTER_TEST
 
-#ifdef ENABLE_MKLDNN_V1
 TEST_F(MklRemapperTest, FuseBatchNormWithRelu) {
   using ::tensorflow::ops::Placeholder;
 
@@ -710,7 +715,6 @@ TEST_F(MklRemapperTest, FuseMatMulWithBiasAddAndAdd) {
   EXPECT_EQ(1, tensors.size());
   test::ExpectClose(tensors_expected[0], tensors[0], 0, 1e-6);
 }
-#endif  // ENABLE_MKLDNN_V1
 
 }  // namespace grappler
 }  // namespace tensorflow

@@ -29,28 +29,28 @@ TEST(MklUtilTest, MklDnnTfShape) {
 
   const int N = 1, C = 2, H = 3, W = 4;
   memory::dims a_dims = {N, C, H, W};
-  MklDnnShape a_mkldnn_shape;
-  a_mkldnn_shape.SetMklTensor(true);
+  MklDnnShape a_dnnl_shape;
+  a_dnnl_shape.SetMklTensor(true);
   // Create TF layout in NCHW.
-  a_mkldnn_shape.SetTfLayout(a_dims.size(), a_dims, MKL_TENSOR_FORMAT_NCHW);
+  a_dnnl_shape.SetTfLayout(a_dims.size(), a_dims, MKL_TENSOR_FORMAT_NCHW);
   TensorShape a_tf_shape_nchw({N, C, H, W});
   TensorShape a_tf_shape_nhwc({N, H, W, C});
-  TensorShape a_mkldnn_tf_shape = a_mkldnn_shape.GetTfShape();
+  TensorShape a_dnnl_tf_shape = a_dnnl_shape.GetTfShape();
   // Check that returned shape is in NCHW format.
-  EXPECT_EQ(a_tf_shape_nchw, a_mkldnn_tf_shape);
-  EXPECT_NE(a_tf_shape_nhwc, a_mkldnn_tf_shape);
+  EXPECT_EQ(a_tf_shape_nchw, a_dnnl_tf_shape);
+  EXPECT_NE(a_tf_shape_nhwc, a_dnnl_tf_shape);
 
   memory::dims b_dims = {N, C, H, W};
-  MklDnnShape b_mkldnn_shape;
-  b_mkldnn_shape.SetMklTensor(true);
+  MklDnnShape b_dnnl_shape;
+  b_dnnl_shape.SetMklTensor(true);
   // Create TF layout in NHWC.
-  b_mkldnn_shape.SetTfLayout(b_dims.size(), b_dims, MKL_TENSOR_FORMAT_NHWC);
+  b_dnnl_shape.SetTfLayout(b_dims.size(), b_dims, MKL_TENSOR_FORMAT_NHWC);
   TensorShape b_tf_shape_nhwc({N, H, W, C});
   TensorShape b_tf_shape_nchw({N, C, H, W});
-  TensorShape b_mkldnn_tf_shape = b_mkldnn_shape.GetTfShape();
+  TensorShape b_dnnl_tf_shape = b_dnnl_shape.GetTfShape();
   // Check that returned shape is in NHWC format.
-  EXPECT_EQ(b_tf_shape_nhwc, b_mkldnn_tf_shape);
-  EXPECT_NE(b_tf_shape_nchw, b_mkldnn_tf_shape);
+  EXPECT_EQ(b_tf_shape_nhwc, b_dnnl_tf_shape);
+  EXPECT_NE(b_tf_shape_nchw, b_dnnl_tf_shape);
 }
 
 TEST(MklUtilTest, MklDnnBlockedFormatTest) {
@@ -68,9 +68,6 @@ TEST(MklUtilTest, MklDnnBlockedFormatTest) {
   EXPECT_EQ(a_md1.data.ndims, 2);
   EXPECT_EQ(a_md1.data.dims[0], 3);
   EXPECT_EQ(a_md1.data.dims[1], 4);
-#ifndef ENABLE_MKLDNN_V1
-  EXPECT_EQ(a_md1.data.format, mkldnn_blocked);
-#endif  // !ENABLE_MKLDNN_V1
 
   // Setting for case 2
   MklDnnData<float> b(&cpu_engine);
@@ -82,9 +79,6 @@ TEST(MklUtilTest, MklDnnBlockedFormatTest) {
   EXPECT_EQ(b_md2.data.ndims, 2);
   EXPECT_EQ(b_md2.data.dims[0], 3);
   EXPECT_EQ(b_md2.data.dims[1], 4);
-#ifndef ENABLE_MKLDNN_V1
-  EXPECT_EQ(b_md2.data.format, mkldnn_blocked);
-#endif  // !ENABLE_MKLDNN_V1
 }
 
 TEST(MklUtilTest, LRUCacheTest) {
