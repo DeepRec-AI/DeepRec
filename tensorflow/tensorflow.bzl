@@ -240,8 +240,8 @@ def if_override_eigen_strong_inline(a):
 
 def if_nccl(if_true, if_false = []):
     return select({
-        "//tensorflow:no_nccl_support": if_false,
-        "//tensorflow:windows": if_false,
+        clean_dep("//tensorflow:no_nccl_support"): if_false,
+        clean_dep("//tensorflow:windows"): if_false,
         "//conditions:default": if_true,
     })
 
