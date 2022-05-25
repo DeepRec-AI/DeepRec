@@ -320,25 +320,25 @@ class L2NormalizeTest(test_lib.TestCase):
     x_shape = [20, 7, 3]
     np.random.seed(1)
     x_np = np.random.random_sample(x_shape).astype(np.float32)
-    for dim in [0]:
+    for dim in [2]:
       y_np = self._l2Normalize(x_np, dim)
       x_tf = constant_op.constant(x_np, name="x")
-      y_tf = nn_impl.fused_l2_normalize(x_tf, dim)
+      y_tf = nn_impl.fused_l2_normalize(x_tf)
       self.assertAllClose(y_np, self.evaluate(y_tf))
 
-  # @test_util.run_deprecated_v1
-  # def testFusedL2NormalizeGradient(self):
-  #   x_shape = [20, 7, 3]
-  #   np.random.seed(1)
-  #   x_np = np.random.random_sample(x_shape).astype(np.float64)
-  #   for dim in range(len(x_shape)):
-  #     with self.cached_session():
-  #       x_tf = constant_op.constant(x_np, name="x")
-  #       y_tf = nn_impl.l2_normalize_v2(x_tf, dim)
-  #       err = gradient_checker.compute_gradient_error(x_tf, x_shape, y_tf,
-  #                                                     x_shape)
-  #     print("L2Normalize gradient err = %g " % err)
-  #     self.assertLess(err, 1e-4)
+  @test_util.run_deprecated_v1
+  def testFusedL2NormalizeGradient(self):
+    x_shape = [20, 7, 3]
+    np.random.seed(1)
+    x_np = np.random.random_sample(x_shape).astype(np.float32)
+    for dim in [2]:
+      with self.cached_session():
+        x_tf = constant_op.constant(x_np, name="x")
+        y_tf = nn_impl.fused_l2_normalize(x_tf)
+        err = gradient_checker.compute_gradient_error(x_tf, x_shape, y_tf,
+                                                      x_shape)
+      print("L2Normalize gradient err = %g " % err)
+      self.assertLess(err, 1e-4)
 
 
 # class DropoutTest(test_lib.TestCase):
