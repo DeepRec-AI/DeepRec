@@ -58,7 +58,6 @@ public:
     auto &worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
-    printf("[LOG] Start to calculate l2 norm in parallel.\n");
     thread_pool->ParallelFor(total_unit, unit_cost,
         [&input, &output, rows, cols, this](int64 begin_unit, int64 end_unit) {
           auto begin_row = begin_unit * BLOCK_SIZE;
@@ -68,7 +67,6 @@ public:
           }
           forward<8>(input, output, begin_row, end_row, cols);
         });
-    printf("[LOG] Complete calculate l2 norm in parallel.\n");
   }
 
 private:
@@ -109,10 +107,8 @@ private:
         int64 avx3_block_num = cols >> 7; // cols / 128
         // handle remainder of 128
         int64 remainder = cols - (avx3_block_num << 7);
-        printf("[LOG] cols: %d, avx3_block_num: %d, remainder %d\n", cols, avx3_block_num, remainder);
-        printf("[LOG] begin_row: %d, end_row:%d\n", begin_row, end_row);
+        // printf("cols: %d, avx3_block_num: %d, remainder %d\n", cols, avx3_block_num, remainder);
         for (int64 i = begin_row; i < end_row; ++i) {
-            printf("[LOG] \tstart to hande %d row\n", i);
             int64 tmp_remainder = remainder;
             float row_sum = 0.0;
             for (int64 j = 0; j < avx3_block_num; ++j) {
@@ -126,9 +122,7 @@ private:
                 row_sum += _mm512_reduce_add_ps(block_sum);
             }
             if (tmp_remainder > 0) {
-                printf("[LOG] \tStart to handle remainder and remainder is %d\n", tmp_remainder);
                 if (tmp_remainder >= 64) {
-                    printf("[LOG] \tHandle 64 remainer and remainder is %d\n", tmp_remainder);
                     __m256 inputs[8];
                     auto load_256 = [&](auto idx) {
                         inputs[idx] = _mm256_loadu_ps(input + cols * i + cols - tmp_remainder + 8 * idx);
@@ -140,7 +134,6 @@ private:
                     tmp_remainder -= 64;
                 }
                 if (tmp_remainder > 32) {
-                    printf("[LOG] \tHandle 32 remainer and remainder is %d\n", tmp_remainder);
                     __m256 inputs[4];
                     auto load_256 = [&](auto idx) {
                         inputs[idx] = _mm256_loadu_ps(input + cols * i + cols - tmp_remainder + 8 * idx);
@@ -152,14 +145,12 @@ private:
                     tmp_remainder -= 32;
                 }
                 if (tmp_remainder >= 16) {
-                    printf("[LOG] \tHandle 16 remainer and remainder is %d\n", tmp_remainder);
                     __m512 inputs = _mm512_loadu_ps(input + cols * i + cols - tmp_remainder);
                     inputs = _mm512_mul_ps(inputs, inputs);
                     row_sum += _mm512_reduce_add_ps(inputs);
                     tmp_remainder -= 16;
                 }
                 if (tmp_remainder > 0) {
-                    printf("[LOG] \tHandle 0 remainer and remainder is %d\n", tmp_remainder);
                     __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
                     __m512 inputs = _mm512_maskz_loadu_ps(mask, input + cols * i + cols - tmp_remainder);
                     inputs = _mm512_mul_ps(inputs, inputs);
@@ -170,7 +161,7 @@ private:
             row_sum += epsilon;
             row_sum = 1.0 / std::sqrt(row_sum);
             __m512 row_sums = _mm512_set1_ps(row_sum);
-            for (int64 j = 0; j < cols; j += 16) {
+            for (int64 j = 0; j < cols - 15; j += 16) {
                 __m512 inputs = _mm512_loadu_ps(input + cols * i + j);
                 inputs = _mm512_mul_ps(inputs, row_sums);
                 _mm512_storeu_ps(output + cols * i + j, inputs);
@@ -182,7 +173,6 @@ private:
                 _mm512_mask_storeu_ps(output + cols * i + cols - tmp_remainder, mask, inputs);
             }
         }
-        printf("[LOG] Complete row %d~%d\n", begin_row, end_row);
     }
 
     // data type: FP32, 16 FP32 per __m512
@@ -331,7 +321,7 @@ private:
         int64 avx3_block_num = cols >> 7; // cols / 128
         // handle remainder of 128
         int64 remainder = cols - (avx3_block_num << 7);
-        // printf("[LOG] cols: %d, avx3_block_num: %d, remainder %d\n", cols, avx3_block_num, remainder);
+        // printf("cols: %d, avx3_block_num: %d, remainder %d\n", cols, avx3_block_num, remainder);
         for (int64 i = begin_row; i < end_row; ++i) {
             T x_row_sum = 0.0;
             T y_grad_row_sum = 0.0;
@@ -420,7 +410,7 @@ private:
             y_grad_row_sum = (y_grad_row_sum * x_row_sum) * (x_row_sum * x_row_sum);
             __m512 x_row_sums = _mm512_set1_ps(x_row_sum);
             __m512 y_grad_row_sums = _mm512_set1_ps(y_grad_row_sum);
-            for (int64 j = 0; j < cols; j += 16) {
+            for (int64 j = 0; j < cols - 15; j += 16) {
                 __m512 y_grads = _mm512_loadu_ps(y_grad + cols * i + j);
                 __m512 xs = _mm512_loadu_ps(x + cols * i + j);
                 y_grads = _mm512_mul_ps(y_grads, x_row_sums);
