@@ -158,7 +158,7 @@ TEST(EVAllocator, TestMultiThreadAllocate40B) {
   
   double t0 = getResident()*getpagesize()/1024.0/1024.0;
 
-  constexpr int loop_size = 10000000;
+  constexpr int loop_size = 100000;
   constexpr int allocate_size = 40;
   auto func = [allocator, loop_size, allocate_size]() {
     constexpr int alignment = 4;
@@ -199,7 +199,7 @@ TEST(EVAllocator, TestMultiThreadBatchAllocate40B) {
   double t0 = getResident() * getpagesize() / 1024.0 / 1024.0;
 
   constexpr int loop_size = 1000;
-  constexpr int batch_size = 10000;
+  constexpr int batch_size = 1000;
   constexpr int allocate_size = 40;
   auto func = [allocator, loop_size, allocate_size, batch_size]() {
     constexpr int alignment = 4;
@@ -245,7 +245,7 @@ TEST(EVAllocator, TestMultiThreadAllocate4B) {
   
   double t0 = getResident()*getpagesize()/1024.0/1024.0;
 
-  constexpr int loop_size = 10000000;
+  constexpr int loop_size = 10000;
   constexpr int allocate_size = 4;
   auto func = [allocator, loop_size, allocate_size]() {
     constexpr int alignment = 4;
@@ -285,7 +285,7 @@ TEST(EVAllocator, TestMultiThreadAllocate80B) {
   
   double t0 = getResident()*getpagesize()/1024.0/1024.0;
 
-  constexpr int loop_size = 10000000;
+  constexpr int loop_size = 10000;
   constexpr int allocate_size = 80;
   auto func = [allocator, loop_size, allocate_size]() {
     constexpr int alignment = 8;
@@ -325,7 +325,7 @@ TEST(EVAllocator, TestMultiThreadAllocate256B) {
   
   double t0 = getResident()*getpagesize()/1024.0/1024.0;
 
-  constexpr int loop_size = 10000000;
+  constexpr int loop_size = 10000;
   constexpr int allocate_size = 256;
   auto func = [allocator, loop_size, allocate_size]() {
     constexpr int alignment = 8;
@@ -398,7 +398,7 @@ TEST(EVAllocator, TestMultiThreadAllocateDeallocateLongRun) {
 
   auto func = [allocator]() {
     constexpr int array_size = 1000;
-    constexpr int loop_size = 100000000;
+    constexpr int loop_size = 10000;
     constexpr int allocate_size = 40;
     constexpr int alignment = 8;
     void** ptr = new void*[array_size];
