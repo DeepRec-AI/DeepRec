@@ -20,6 +20,7 @@ DeepRec has super large-scale distributed training capability, supporting model 
  - Dynamic Dimension Embedding Variable.
  - Adaptive Embedding Variable.
  - Multiple Hash Embedding Variable.
+ - Multi-tier Hybrid Embedding Storage
  #### **Performance Optimization**
  - Distributed Training Framework Optimization, such as grpc+seastar, FuseRecv, StarServer, HybridBackend etc.
  - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator etc.
@@ -29,7 +30,7 @@ DeepRec has super large-scale distributed training capability, supporting model 
 #### **Deploy and Serving**
  - Incremental model loading and exporting
  - Super-scale sparse model distributed serving
- - Multilevel hybrid storage and multi backend supported
+ - Multi-tier hybrid storage and multi backend supported
  - Online deep learning with low latency
 
 

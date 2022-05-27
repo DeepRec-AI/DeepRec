@@ -57,10 +57,6 @@ BloomFilter的准入参数设置可以参考下面的表，其中m是`bloom filt
 
 **功能的开关**：如果构造`EmbeddingVariableOption`对象的时候，如果不传入`CounterFilterStrategy`或`BloomFIlterStrategy`或`filter_freq`设置为0则功能关闭。
 
-**ckpt相关**：对于checkpoint功能，当使用`tf.train.saver`时，对于已经准入的特征会将其counter一并写入checkpoint里，对于没有准入的特征，其counter也不会被记录，下次训练时counter从0开始计数。在load checkpoint的时候，无论ckpt中的特征的counter是否超过了filter阈值，都认为其是已经准入的特征。同时ckpt支持向前兼容，即可以读取没有conuter记录的ckpt。目前不支持incremental ckpt。
+**ckpt相关**：对于checkpoint功能，当使用`tf.train.saver`时，无论特征是否准入，都会将其id与频次信息记录在ckpt中，未准入特征的embedding值则不会被保存到ckpt中。在load checkpoint的时候，对于ckpt中未准入的特征，通过比较其频次与filter阈值大小来确定在新一轮训练中是否准入；对于ckpt中已经准入的特征，无论ckpt中的特征频次是否超过了filter阈值，都认为其在新一轮训练中是已经准入的特征。同时ckpt支持向前兼容，即可以读取没有conuter记录的ckpt。目前不支持incremental ckpt。
 
 **关于filter_freq的设置**：目前还需要用户自己根据数据配置。
-
-**TODO List**：
-
-1. restore ckpt的时候恢复未被准入的特征的频率
