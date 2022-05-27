@@ -5415,7 +5415,8 @@ tf_kernel_library(
 tf_cc_test(
     name = "fused_l2_normalize_ops_test",
     size = "small",
-    srcs = ["fused_l2_normalize/fused_l2_normalize_op_test.cc"],
+    srcs = ["fused_l2_normalize/fused_l2_normalize_op_test.cc",
+        "fused_l2_normalize/fused_l2_normalize_grad_op_test.cc"],
     deps = [
         ":fused_l2_normalize_ops",
         ":ops_testutil",

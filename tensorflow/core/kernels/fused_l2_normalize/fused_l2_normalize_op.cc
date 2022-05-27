@@ -65,7 +65,11 @@ public:
           if (end_row > rows) {
             end_row = rows;
           }
+#ifdef __AVX512F__
+          forward_avx512<8>(input, output, begin_row, end_row, cols);
+#else
           forward<8>(input, output, begin_row, end_row, cols);
+#endif
         });
   }
 
@@ -76,11 +80,12 @@ private:
     // temp = tf.math.rsqrt(temp)
     // outputs = tf.math.multiply(temp, inputs)
     template <int SUM_BLOCK_SIZE>
-    void ref_forward(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
+    void forward(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
+        int64 remainder = cols % SUM_BLOCK_SIZE;
+        // printf("Cols is %d, block size is %d, remainder is %d.\n", cols, SUM_BLOCK_SIZE, remainder);
         for (int64 i = begin_row; i < end_row; ++i) {
             T row_sum = 0;
-            // must be SUM_BLOCK_SIZE block !!!
-            for (int64 j = 0; j < cols; j += SUM_BLOCK_SIZE) {
+            for (int64 j = 0; j < cols - remainder; j += SUM_BLOCK_SIZE) {
                 T data_0 = input[i * cols + j];
                 T data_1 = input[i * cols + j + 1];
                 T data_2 = input[i * cols + j + 2];
@@ -94,6 +99,10 @@ private:
                                   + data_4 * data_4 + data_5 * data_5
                                   + data_6 * data_6 + data_7 * data_7;
             }
+            for (int64 j = cols - remainder; j < cols; j++) {
+                T data_0 = input[i * cols + j];
+                row_sum += data_0 * data_0;
+            }
             row_sum += epsilon;
             row_sum = 1.0 / std::sqrt(row_sum);
             for (int64 j = 0; j < cols; ++j) {
@@ -102,8 +111,10 @@ private:
         }
     }
 
+#ifdef __AVX512F__
     template <int SUM_BLOCK_SIZE>
-    void forward(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
+    void forward_avx512(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
+        // printf("Fused L2 norm by AVX512.");
         int64 avx3_block_num = cols >> 7; // cols / 128
         // handle remainder of 128
         int64 remainder = cols - (avx3_block_num << 7);
@@ -207,6 +218,7 @@ private:
         block_sum = _mm256_add_ps(block_sum, v[3]);
         return block_sum;
     }
+#endif
 
 private:
     float epsilon;
@@ -265,7 +277,11 @@ public:
           if (end_row > rows) {
             end_row = rows;
           }
+#ifdef __AVX512F__
+          backward_avx512<8>(y_grad, x, x_grad, begin_row, end_row, cols);
+#else
           backward<8>(y_grad, x, x_grad, begin_row, end_row, cols);
+#endif
         });
   }
 
@@ -274,12 +290,13 @@ private:
     // sum = tf.math.reduce_sum(y_grad * x, reduction_indices=1, keepdims=True)
     // grad_x = y_grad * rvar - x * ((sum * rvar) * (rvar * rvar))
     template <int SUM_BLOCK_SIZE>
-    void ref_backward(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
+    void backward(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
+        int64 remainder = cols % SUM_BLOCK_SIZE;
         for (int64 i = begin_row; i < end_row; ++i) {
             int64 new_row = i - begin_row;
             T x_row_sum = 0.0;
             T y_grad_row_sum = 0.0;
-            for (int64 j = cols - 1; j > 0; j -= SUM_BLOCK_SIZE) {
+            for (int64 j = cols - 1; j > remainder; j -= SUM_BLOCK_SIZE) {
                 T x_0 = x[i * cols + j];
                 T x_1 = x[i * cols + j - 1];
                 T x_2 = x[i * cols + j - 2];
@@ -306,6 +323,13 @@ private:
                                          + x_4 * y_grad_4 + x_5 * y_grad_5
                                          + x_6 * y_grad_6 + x_7 * y_grad_7;
             }
+            for (int64 j = remainder; j > 0; j--) {
+                T x_0 = x[i * cols + j];
+                x_row_sum += x_0 * x_0;
+
+                T y_grad_0 = y_grad[i * cols + j];
+                y_grad_row_sum += x_0 * y_grad_0;
+            }
             x_row_sum += epsilon;
             x_row_sum = 1.0 / std::sqrt(x_row_sum); // rvar
             y_grad_row_sum = (y_grad_row_sum * x_row_sum) * (x_row_sum * x_row_sum);
@@ -316,8 +340,10 @@ private:
         }
     }
 
+#ifdef __AVX512F__
     template <int SUM_BLOCK_SIZE>
-    void backward(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
+    void backward_avx512(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
+        // printf("Fused L2 norm grad by AVX512.");
         int64 avx3_block_num = cols >> 7; // cols / 128
         // handle remainder of 128
         int64 remainder = cols - (avx3_block_num << 7);
@@ -456,6 +482,7 @@ private:
         block_sum = _mm256_add_ps(block_sum, v[3]);
         return block_sum;
     }
+#endif
 
 private:
     float epsilon;
