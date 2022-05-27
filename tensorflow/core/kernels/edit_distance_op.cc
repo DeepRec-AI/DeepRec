@@ -64,6 +64,12 @@ Status ValidateShapes(OpKernelContext* ctx, const Tensor& hypothesis_indices,
     return errors::InvalidArgument(
         "truth_shape should be a vector, but got shape: ",
         truth_shape.shape().DebugString());
+  if (hypothesis_values.NumElements() != hypothesis_indices.dim_size(0))
+    return errors::InvalidArgument(
+        "Expected hypothesis_values.NumElements == "
+        "#rows(hypothesis_indices), their shapes are: ",
+        hypothesis_values.shape().DebugString(), " and ",
+        hypothesis_indices.shape().DebugString());
   if (hypothesis_shape.NumElements() != hypothesis_indices.dim_size(1))
     return errors::InvalidArgument(
         "Expected hypothesis_shape.NumElements == "
@@ -75,6 +81,12 @@ Status ValidateShapes(OpKernelContext* ctx, const Tensor& hypothesis_indices,
         "Input SparseTensors must have rank at least 2, but truth_shape "
         "rank is: ",
         truth_shape.NumElements());
+  if (truth_values.NumElements() != truth_indices.dim_size(0))
+    return errors::InvalidArgument(
+        "Expected truth_values.NumElements == "
+        "#rows(truth_indices), their shapes are: ",
+        truth_values.shape().DebugString(), " and ",
+        truth_indices.shape().DebugString());
   if (truth_shape.NumElements() != truth_indices.dim_size(1))
     return errors::InvalidArgument(
         "Expected truth_shape.NumElements == "
@@ -153,6 +165,11 @@ class EditDistanceOp : public OpKernel {
       output_shape.AddDim(std::max(hypothesis_st_shape.dim_size(d),
                                    truth_st_shape.dim_size(d)));
     }
+    const auto output_elements = output_shape.num_elements();
+    OP_REQUIRES(
+        ctx, output_elements > 0,
+        errors::InvalidArgument("Got output shape ", output_shape.DebugString(),
+                                " which has 0 elements"));
 
     Tensor* output = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output("output", output_shape, &output));
