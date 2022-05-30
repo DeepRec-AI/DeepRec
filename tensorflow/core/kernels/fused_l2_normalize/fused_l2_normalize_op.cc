@@ -26,7 +26,6 @@ public:
   }
 
   ~FusedL2NormalizeOp() {
-      printf("RUN ~FusedL2NormalizeOp().\n");
   }
 
   void Compute(OpKernelContext* context) override {
@@ -82,6 +81,7 @@ private:
     template <int SUM_BLOCK_SIZE>
     void forward(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
         int64 remainder = cols % SUM_BLOCK_SIZE;
+        printf("Fused l2 norm called.\n");
         // printf("Cols is %d, block size is %d, remainder is %d.\n", cols, SUM_BLOCK_SIZE, remainder);
         for (int64 i = begin_row; i < end_row; ++i) {
             T row_sum = 0;
@@ -114,7 +114,7 @@ private:
 #ifdef __AVX512F__
     template <int SUM_BLOCK_SIZE>
     void forward_avx512(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols) {
-        // printf("Fused L2 norm by AVX512.");
+        printf("AVX512 fused l2 norm called.\n");
         int64 avx3_block_num = cols >> 7; // cols / 128
         // handle remainder of 128
         int64 remainder = cols - (avx3_block_num << 7);
@@ -292,8 +292,8 @@ private:
     template <int SUM_BLOCK_SIZE>
     void backward(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
         int64 remainder = cols % SUM_BLOCK_SIZE;
+        printf("Fused l2 norm grad called.\n");
         for (int64 i = begin_row; i < end_row; ++i) {
-            int64 new_row = i - begin_row;
             T x_row_sum = 0.0;
             T y_grad_row_sum = 0.0;
             for (int64 j = cols - 1; j > remainder; j -= SUM_BLOCK_SIZE) {
@@ -343,7 +343,7 @@ private:
 #ifdef __AVX512F__
     template <int SUM_BLOCK_SIZE>
     void backward_avx512(const float *y_grad, const float *x, float *x_grad, int64 begin_row, int64 end_row, int64 cols) {
-        // printf("Fused L2 norm grad by AVX512.");
+        printf("AVX512 fused l2 norm grad called.\n");
         int64 avx3_block_num = cols >> 7; // cols / 128
         // handle remainder of 128
         int64 remainder = cols - (avx3_block_num << 7);
