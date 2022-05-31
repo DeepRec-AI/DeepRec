@@ -1179,6 +1179,34 @@ Status BaseGPUDeviceFactory::CreateDevices(
       TF_RETURN_IF_ERROR(SingleVirtualDeviceMemoryLimit(
           gpu_options, platform_gpu_id, &single_virtual_device_memory_limit));
       memory_limit_bytes.push_back(single_virtual_device_memory_limit);
+    } else if (virtual_devices.Get(i).memory_limit_mb()[0] < 0) {
+      // user no need to set memory to virtual devices in multi-streams.
+      // here will compute gpu memory.
+      int64 total_memory = 0;
+      int64 available_memory = 0;
+      se::StreamExecutor* se =
+          GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
+      if (!se->DeviceMemoryUsage(&available_memory, &total_memory)) {
+        return errors::Unknown("Failed to query available memory for GPU ",
+                               platform_gpu_id.value());
+      }
+      int cc_major = 0, cc_minor = 0;
+      if (!se->GetDeviceDescription().cuda_compute_capability(&cc_major,
+                                                              &cc_minor)) {
+        return errors::Internal("Failed to get compute capability for device.");
+      }
+      const int64 min_system_memory = MinSystemMemory(available_memory,
+                                                      cc_major);
+      int virtual_num = virtual_devices.Get(i).memory_limit_mb().size();
+      available_memory = (available_memory-min_system_memory)/virtual_num/1024/1024; // MB
+      std::vector<int64> tmp_memory_limit_mb;
+      for (int i = 0; i < virtual_num; ++i)  {
+        tmp_memory_limit_mb.push_back(available_memory);
+      }
+      std::transform(tmp_memory_limit_mb.begin(), tmp_memory_limit_mb.end(),
+                     std::back_inserter(memory_limit_bytes), [](float mb) {
+                       return static_cast<int64>(mb) * (1ll << 20);
+                     });
     } else {
       const auto& memory_limit_mb = virtual_devices.Get(i).memory_limit_mb();
       std::transform(memory_limit_mb.begin(), memory_limit_mb.end(),

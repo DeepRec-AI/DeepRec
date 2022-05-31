@@ -189,6 +189,21 @@ class DirectSessionFactory : public SessionFactory {
     if (options.config.graph_options().build_cost_model() > 0) {
       EnableCPUAllocatorFullStats(true);
     }
+
+    // Add virtual device here, each virtual device has a stream
+    int multi_streams_num = options.config.multi_streams_num();
+    if (multi_streams_num > 0) {
+      ConfigProto* config = const_cast<ConfigProto*>(&options.config);
+      GPUOptions* gpu_options = config->mutable_gpu_options();
+      auto virtual_devices =
+          gpu_options->mutable_experimental()->add_virtual_devices();
+      // will allocate gpu memory for each virtual device later.
+      int32 mem_per_virtual_device = -1;
+      for (int i = 0; i < multi_streams_num; ++i) {
+        virtual_devices->add_memory_limit_mb(-1);
+      }
+    }
+
     std::vector<std::unique_ptr<Device>> devices;
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
         options, "/job:localhost/replica:0/task:0", &devices));
@@ -1430,7 +1445,44 @@ Status DirectSession::CreateExecutors(
     std::unique_ptr<Graph>& partition_graph = iter->second;
 
     Device* device;
-    TF_RETURN_IF_ERROR(device_mgr_->LookupDevice(partition_name, &device));
+    std::vector<Device*> ds;
+    int multi_streams_num = options_.config.multi_streams_num();
+    if (multi_streams_num > 0) {
+      // For example: 2 multi-stream
+      // gpu 0 -> two virtual device: /device:GPU:0 and /device:GPU:1
+      // gpu 1 -> two virtual device: /device:GPU:2 and /device:GPU:3
+      const std::string gpu_device_flag("/device:GPU:");
+      auto offset = partition_name.find(gpu_device_flag);
+      if (offset == std::string::npos) {
+        offset = partition_name.find("/device:gpu:");
+      }
+
+      if (offset != std::string::npos) {
+        auto gpu_idx_offset = offset + gpu_device_flag.length();
+        std::string partition_name_prefix = partition_name.substr(0, gpu_idx_offset);
+        int tmp_idx = gpu_idx_offset;
+        int gpu_idx = 0;
+        while (tmp_idx < partition_name.length()) {
+          gpu_idx *= 10;
+          gpu_idx += partition_name[tmp_idx++] - '0';
+        }
+        int current_start_virtual_idx = multi_streams_num * gpu_idx;
+        for (auto i = 0; i < multi_streams_num; ++i) {
+          Device* d;
+          std::string virtual_device_name =
+              partition_name_prefix + std::to_string(current_start_virtual_idx+i);
+          LOG(INFO) << "origin partition name: " << partition_name
+                    << ", virtual partition name: " << virtual_device_name;
+          TF_RETURN_IF_ERROR(device_mgr_->LookupDevice(virtual_device_name, &d));
+          ds.push_back(d);
+        }
+        device = ds[0];
+      } else {
+        TF_RETURN_IF_ERROR(device_mgr_->LookupDevice(partition_name, &device));
+      }
+    } else {
+      TF_RETURN_IF_ERROR(device_mgr_->LookupDevice(partition_name, &device));
+    }
 
     ek->items.resize(ek->items.size() + 1);
     auto* item = &(ek->items.back());
@@ -1442,6 +1494,7 @@ Status DirectSession::CreateExecutors(
 
     LocalExecutorParams params;
     params.device = device;
+    params.multi_devices = ds;
     params.session_metadata = session_metadata;
     params.function_library = lib;
     auto opseg = device->op_segment();

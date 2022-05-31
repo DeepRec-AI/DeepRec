@@ -358,11 +358,13 @@ class ExecutorState {
   checkpoint::TensorSliceReaderCacheWrapper* slice_reader_cache_;
   CallFrameInterface* call_frame_;
   const ImmutableExecutorState& immutable_state_;
+  int active_stream_id_ = -1;
   ExecutorInternal::KernelStats* const kernel_stats_;
   ExecutorInternal::ExecuteCostModel* const cost_model_;
   CancellationManager* cancellation_manager_;
   // If not null, use this device to schedule intra-op operation
   std::unique_ptr<DeviceBase> user_device_;
+  Device* compute_device_;
   Executor::Args::Runner runner_ = nullptr;
   Executor::Args::CostRunner cost_runner_ = nullptr;
   bool sync_on_finish_;
@@ -449,6 +451,13 @@ class ExecutorStateFactory {
     ImmutableExecutorState& immutable_state = impl->GetImmutableState();
     ExecutorInternal::KernelStats* kernel_stats = impl->GetKernelStat();
 
+    // TODO: Each ExecutorState should choose a stream, use round-robin policy here.
+    static std::atomic<int64> active_stream_id{0};
+    if (immutable_state.params().multi_devices.size() > 0) {
+      int64 curr_stream_id = active_stream_id.fetch_add(1);
+      (const_cast<Executor::Args*>(&args))->active_stream_id = curr_stream_id;
+    }
+
     // InlineExecuteState
     if (args.executor_policy == ExecutorPolicy::USE_INLINE_EXECUTOR) {
       return new InlineExecutorState<PropagatorStateType>(
@@ -516,6 +525,7 @@ ExecutorState<PropagatorStateType>::ExecutorState(
       slice_reader_cache_(new checkpoint::TensorSliceReaderCacheWrapper),
       call_frame_(args.call_frame),
       immutable_state_(immutable_state),
+      active_stream_id_(args.active_stream_id),
       kernel_stats_(kernel_stats),
       cost_model_(cm),
       cancellation_manager_(args.cancellation_manager),
@@ -529,9 +539,14 @@ ExecutorState<PropagatorStateType>::ExecutorState(
   //if (args.cost_runner == nullptr) {
   //  LOG(FATAL) << "cost_runner is nullptr, please check the args.";
   //}
-
+  compute_device_ = immutable_state_.params().device;
+  int device_count = immutable_state_.params().multi_devices.size();
+  if (active_stream_id_ > 0 && device_count > 0) {
+    compute_device_ =
+        immutable_state_.params().multi_devices[active_stream_id_ % device_count];
+  }
   if (args.user_intra_op_threadpool != nullptr) {
-    Device* device = immutable_state_.params().device;
+    Device* device = compute_device_;
     user_device_ = RenamedDevice::NewRenamedDevice(
         device->name(), device, false, false, args.user_intra_op_threadpool);
   }
@@ -562,7 +577,7 @@ void ExecutorState<PropagatorStateType>::RunAsync(Executor::DoneCallback done) {
   TaggedNodeSeq ready;
 
   // Ask the device to fill in the device context map.
-  Device* device = immutable_state_.params().device;
+  Device* device = compute_device_;
   const Status get_context_status =
       device->TryGetDeviceContext(&device_context_);
   if (!get_context_status.ok()) {
@@ -661,7 +676,8 @@ Status ExecutorState<PropagatorStateType>::ProcessSync(
   kernel_stats_->StartCollectOp(&item, &kernel_stat_buffer);
 
   OpKernel* op_kernel = item.kernel;
-  Device* device = immutable_state_.params().device;
+  Device* device = compute_device_;
+
   const bool is_expensive = kernel_stats_->IsExpensive(item);
 
   if (TF_PREDICT_FALSE(MightTrace(item, event_collector_))) {
@@ -720,8 +736,9 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
 
   ExecutorInternal::KernelStatsInfo kernel_stat_buffer;
   kernel_stats_->StartCollectOp(&item, &kernel_stat_buffer);
-  auto done = [this, state, kernel_stat_buffer{std::move(kernel_stat_buffer)}]() {
-    Device* device = immutable_state_.params().device;
+
+  Device* device = compute_device_;
+  auto done = [this, device, state, kernel_stat_buffer{std::move(kernel_stat_buffer)}]() {
     NodeExecStatsInterface* stats = state->stats;  // Shorthand
     Entry* first_input = state->first_input;       // Shorthand
 
@@ -763,13 +780,13 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
             }
             return strings::StrCat(
                 async_kernel->name(), ":", async_kernel->type_string(),
-                "#id=", id, ",device=", immutable_state_.params().device->name(),
+                "#id=", id, ",device=", device->name(),
                  ",async=true#");
           },
           profiler::GetTFTraceMeLevel(async_kernel->IsExpensive()));
 
-    immutable_state_.params().device->ComputeAsync(async_kernel, &state->ctx,
-                                                   std::move(done));
+    device->ComputeAsync(async_kernel, &state->ctx,
+                         std::move(done));
   }
 }
 
@@ -815,7 +832,7 @@ void ExecutorState<PropagatorStateType>::BatchProcess(std::vector<TaggedNode> no
   params.step_id = step_id_;
   params.round_step_id = round_step_id_;
   // Override device's threadpool if user provides an intra_op_threadpool
-  Device* device = immutable_state_.params().device;
+  Device* device = compute_device_;
   if (user_device_) {
     params.device = user_device_.get();
   } else {
@@ -1210,7 +1227,7 @@ bool ExecutorState<PropagatorStateType>::NodeDone(
   if (stats) {
     nodestats::SetAllEnd(stats);
     DCHECK_NE(stats_collector_, nullptr);
-    stats->Done(immutable_state_.params().device->name());
+    stats->Done(compute_device_->name()); 
   }
 
   if (TF_PREDICT_TRUE(s.ok())) {
@@ -1260,7 +1277,7 @@ bool ExecutorState<PropagatorStateType>::NodeDone(
         // Use VLOG instead of LOG(warning) because error status is expected
         // when the executor is run under the grappler optimization phase or
         // when iterating through a tf.data input pipeline.
-        VLOG(1) << "[" << immutable_state_.params().device->name()
+        VLOG(1) << "[" << compute_device_->name()
                 << "] Executor start aborting: " << s;
       }
 
@@ -1363,7 +1380,8 @@ void ExecutorState<PropagatorStateType>::Finish() {
   mu_.unlock();
   int64_t step_id = step_id_;
   CHECK(done_cb != nullptr);
-  Device* device = immutable_state_.params().device;
+
+  Device* device = compute_device_;
 
   if (vlog_ && !status.ok() && VLOG_IS_ON(1)) {
     // Logs verbose information about the current state of active and pending

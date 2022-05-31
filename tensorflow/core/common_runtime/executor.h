@@ -121,6 +121,9 @@ class Executor {
     CostRunner cost_runner = nullptr;
 
     ExecutorPolicy executor_policy = ExecutorPolicy::USE_NORMAL_EXECUTOR;
+
+    // stream for current execute state
+    int active_stream_id = -1;
   };
   typedef std::function<void(const Status&)> DoneCallback;
   virtual void RunAsync(const Args& args, DoneCallback done) = 0;
@@ -160,6 +163,8 @@ struct LocalExecutorParams {
   std::function<void(OpKernel*)> delete_kernel;
 
   Executor::RendezvousFactory rendezvous_factory;
+
+  std::vector<Device*> multi_devices;
 };
 
 // Creates an Executor that computes the given "graph".

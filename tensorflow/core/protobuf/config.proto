@@ -570,6 +570,7 @@ message ConfigProto {
 
   ExecutorPolicy executor_policy = 205;
 
+  int32 multi_streams_num = 207;
   // Next: 206
 }
 
