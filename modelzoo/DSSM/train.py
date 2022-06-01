@@ -24,6 +24,8 @@ from tensorflow.python.client import timeline
 import json
 
 from tensorflow.python.ops import partitioned_variables
+from tensorflow.python.util import nest
+from pandas import read_parquet
 
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -264,14 +266,17 @@ class DSSM():
 
 # generate dataset pipline
 def build_model_input(filename, batch_size, num_epochs):
-    def parse_csv(value):
+    def parse(value):
         tf.logging.info('Parsing {}'.format(filename))
-        string_defaults = [[' '] for i in range(1, 19)]
-        label_defaults = [[0], [0]]
-        column_headers = INPUT_COLUMN
-        record_defaults = label_defaults + string_defaults
-        columns = tf.io.decode_csv(value, record_defaults=record_defaults)
-        all_columns = collections.OrderedDict(zip(column_headers, columns))
+        if args.dataset == 'csv':
+            string_defaults = [[' '] for i in range(1, 19)]
+            label_defaults = [[0], [0]]
+            column_headers = INPUT_COLUMN
+            record_defaults = label_defaults + string_defaults
+            columns = tf.io.decode_csv(value, record_defaults=record_defaults)
+            all_columns = collections.OrderedDict(zip(column_headers, columns))
+        elif args.dataset == 'parquet':
+            all_columns = value
         labels = all_columns.pop(LABEL_COLUMN[0])
         all_columns.pop(BUY_COLUMN[0])
         features = all_columns
@@ -287,13 +292,23 @@ def build_model_input(filename, batch_size, num_epochs):
     else:
         files = filename
     # Extract lines from input files using the Dataset API.
-    dataset = tf.data.TextLineDataset(files)
-    dataset = dataset.shuffle(buffer_size=20000,
-                              seed=args.seed)  # fix seed for reproducing
-    dataset = dataset.repeat(num_epochs)
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.map(parse_csv, num_parallel_calls=28)
-    dataset = dataset.prefetch(2)
+    if args.dataset == 'csv':
+        dataset = tf.data.TextLineDataset(files)
+        dataset = dataset.shuffle(buffer_size=20000,
+                                seed=args.seed)  # fix seed for reproducing
+        dataset = dataset.repeat(num_epochs)
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(parse, num_parallel_calls=28)
+        dataset = dataset.prefetch(2)
+    elif args.dataset == 'parquet':
+        import hybridbackend.tensorflow as hb
+        dataset = hb.data.ParquetDataset([files] * num_epochs, batch_size=batch_size)
+        dataset = dataset.map(parse, num_parallel_calls=28)
+        dataset = dataset.prefetch(2)
+        setattr(dataset, 'output_types', nest.map_structure(
+                    lambda spec: spec._to_legacy_output_types(), dataset.element_spec))
+        setattr(dataset, 'output_shapes', nest.map_structure(
+                    lambda spec: spec._to_legacy_output_shapes(), dataset.element_spec))
     return dataset
 
 
@@ -460,13 +475,18 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
 def main(tf_config=None, server=None):
     # check dataset and count data set size
     print("Checking dataset...")
-    train_file = args.data_location + '/taobao_train_data'
-    test_file = args.data_location + '/taobao_test_data'
-    if (not os.path.exists(train_file)) or (not os.path.exists(test_file)):
-        print("Dataset does not exist in the given data_location.")
-        sys.exit()
-    no_of_training_examples = sum(1 for line in open(train_file))
-    no_of_test_examples = sum(1 for line in open(test_file))
+    if args.dataset == 'csv':
+        train_file = args.data_location + '/taobao_train_data'
+        test_file = args.data_location + '/taobao_test_data'
+        no_of_training_examples = sum(1 for line in open(train_file))
+        no_of_test_examples = sum(1 for line in open(test_file))
+    elif args.dataset == 'parquet':
+        train_file = args.data_location + '/taobao_train_data_parquet'
+        test_file = args.data_location + '/taobao_test_data_parquet'
+        no_of_training_examples = read_parquet(train_file).count()['clk']
+        no_of_test_examples = read_parquet(test_file).count()['clk']
+    else:
+        raise ValueError('Dataset type is not supported')
     print("Numbers of training dataset is {}".format(no_of_training_examples))
     print("Numbers of test dataset is {}".format(no_of_test_examples))
 
@@ -696,6 +716,10 @@ def get_arg_parser():
                         help='Whether to enable Work Queue. Default to False.',
                         type=boolean_string,
                         default=False)
+    parser.add_argument('--dataset',
+                        help='which type the dataset is, include csv and parquet',
+                        type=str,
+                        default='csv')
     return parser
 
 
@@ -772,6 +796,8 @@ def set_env_for_DeepRec():
     os.environ['STOP_STATISTIC_STEP'] = '110'
     os.environ['MALLOC_CONF']= \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
+    if args.dataset == 'parquet':
+        os.environ['ARROW_NUM_THREADS'] = '8'
 
 
 if __name__ == '__main__':
