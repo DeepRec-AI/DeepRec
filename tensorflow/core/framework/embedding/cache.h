@@ -15,53 +15,41 @@ namespace embedding {
 
 template <class K>
 class BatchCache {
-public:
-  BatchCache():visit_count(0), hit_count(0) {}
+ public:
+  BatchCache() {}
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
   virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
   virtual size_t size() = 0;
-
-  void Hit() {
-    ++hit_count;
-  }
-  void Visit() {
-    ++visit_count;
+  virtual void reset_status() {
+     num_hit = 0;
+     num_miss = 0;
   }
   std::string DebugString() {
-    int hit_rate = 0;
-    if (visit_count > 0) {
-      hit_rate = hit_count * 10000 / visit_count;
+    float hit_rate = 0.0;
+    if (num_hit > 0 || num_miss > 0) {
+      hit_rate = num_hit * 100.0 / (num_hit + num_miss);
     }
     return strings::StrCat("HitRate = " , hit_rate,
-                          " %%, visit_count = ", visit_count,
-                          ", hit_count = ", hit_count);
+                          " %, visit_count = ", num_hit + num_miss,
+                           ", hit_count = ", num_hit);
   }
 
-private:
-  size_t visit_count;
-  size_t hit_count;
+ protected:
+  int64 num_hit;
+  int64 num_miss;
 };
 
 template <class K>
 class LRUCache : public BatchCache<K> {
-private:
-  class LRUNode {
-  public:
-    K id;
-    LRUNode *pre, *next;
-    LRUNode(K id) : id(id), pre(nullptr), next(nullptr) {}
-  };
-  LRUNode *head, *tail;
-  std::map<K, LRUNode *> mp;
-  mutex mu_;
-
-public:
+ public:
   LRUCache() {
     mp.clear();
     head = new LRUNode(0);
     tail = new LRUNode(0);
     head->next = tail;
     tail->pre = head;
+    BatchCache<K>::num_hit = 0;
+    BatchCache<K>::num_miss = 0;
   }
 
   size_t size() {
@@ -100,6 +88,7 @@ public:
         node->next = head->next;
         head->next = node;
         node->pre = head;
+        BatchCache<K>::num_hit++;
       } else {
         LRUNode *newNode = new LRUNode(id);
         head->next->pre = newNode;
@@ -107,32 +96,32 @@ public:
         head->next = newNode;
         newNode->pre = head;
         mp[id] = newNode;
+        BatchCache<K>::num_miss++;
       }
     }
   }
+ private:
+  class LRUNode {
+   public:
+     K id;
+     LRUNode *pre, *next;
+     LRUNode(K id) : id(id), pre(nullptr), next(nullptr) {}
+  };
+  LRUNode *head, *tail;
+  std::map<K, LRUNode *> mp;
+  mutex mu_;
 };
 
 template <class K>
 class LFUCache : public BatchCache<K> {
-private:
-  class LFUNode {
-  public:
-    K key;
-    size_t freq;
-    LFUNode(K key, size_t freq) : key(key), freq(freq) {}
-  };
-  size_t min_freq;
-  size_t max_freq;
-  std::unordered_map<K, typename std::list<LFUNode>::iterator> key_table;
-  std::unordered_map<K, typename std::list<LFUNode>> freq_table;
-  mutex mu_;
-
-public:
+ public:
   LFUCache() {
     min_freq = 0;
     max_freq = 0;
-    key_table.clear();
-    freq_table.clear();
+    freq_table.emplace_back(std::pair<std::list<LFUNode>*, int64>(
+      new std::list<LFUNode>, 0));
+    BatchCache<K>::num_hit = 0;
+    BatchCache<K>::num_miss = 0;
   }
 
   size_t size() {
@@ -143,18 +132,17 @@ public:
   size_t get_evic_ids(K *evic_ids, size_t k_size) {
     mutex_lock l(mu_);
     size_t true_size = 0;
-    for (size_t i = 0; i < k_size; ++i) {
-      auto rm_it = freq_table[min_freq].back();
+    for (size_t i = 0; i < k_size && key_table.size() > 0; ++i) {
+      auto rm_it = freq_table[min_freq-1].first->back();
       key_table.erase(rm_it.key);
       evic_ids[i] = rm_it.key;
       ++true_size;
-      freq_table[min_freq].pop_back();
-      if (freq_table[min_freq].size() == 0) {
-        freq_table.erase(min_freq);
+      freq_table[min_freq-1].first->pop_back();
+      freq_table[min_freq-1].second--;
+      if (freq_table[min_freq-1].second == 0) {
         ++min_freq;
         while (min_freq <= max_freq) {
-          auto it = freq_table.find(min_freq);
-          if (it == freq_table.end() || it->second.size() == 0) {
+          if (freq_table[min_freq-1].second == 0) {
             ++min_freq;
           } else {
             break;
@@ -171,24 +159,45 @@ public:
       K id = batch_ids[i];
       auto it = key_table.find(id);
       if (it == key_table.end()) {
-        freq_table[1].push_front(LFUNode(id, 1));
-        key_table[id] = freq_table[1].begin();
+        freq_table[0].first->emplace_front(LFUNode(id, 1));
+        freq_table[0].second++;
+        key_table[id] = freq_table[0].first->begin();
         min_freq = 1;
+        max_freq = std::max(max_freq, min_freq);
+        BatchCache<K>::num_miss++;
       } else {
         typename std::list<LFUNode>::iterator node = it->second;
         size_t freq = node->freq;
-        freq_table[freq].erase(node);
-        if (freq_table[freq].size() == 0) {
-          freq_table.erase(freq);
+        freq_table[freq-1].first->erase(node);
+        freq_table[freq-1].second--;
+        if (freq_table[freq-1].second == 0) {
           if (min_freq == freq)
             min_freq += 1;
         }
+        if (freq == freq_table.size()) {
+          freq_table.emplace_back(std::pair<std::list<LFUNode>*, int64>(
+           new std::list<LFUNode>, 0));
+        }
         max_freq = std::max(max_freq, freq + 1);
-        freq_table[freq + 1].push_front(LFUNode(id, freq + 1));
-        key_table[id] = freq_table[freq + 1].begin();
+        freq_table[freq].first->emplace_front(LFUNode(id, freq + 1));
+        freq_table[freq].second++;
+        key_table[id] = freq_table[freq].first->begin();
+        BatchCache<K>::num_hit++;
       }
     }
   }
+ private:
+  class LFUNode {
+   public:
+    K key;
+    size_t freq;
+    LFUNode(K key, size_t freq) : key(key), freq(freq) {}
+  };
+  size_t min_freq;
+  size_t max_freq;
+  std::vector<std::pair<std::list<LFUNode>*, int64>> freq_table;
+  std::unordered_map<K, typename std::list<LFUNode>::iterator> key_table;
+  mutex mu_;
 };
 
 } // embedding
