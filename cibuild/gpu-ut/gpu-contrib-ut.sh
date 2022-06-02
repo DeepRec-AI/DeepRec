@@ -65,6 +65,14 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/contrib/compiler/tests:adamax_test_gpu "\
 "-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_test_gpu "\
 "-//tensorflow/contrib/compiler/tests:powersign_test_gpu "\
+"-//tensorflow/contrib/image:distort_image_ops_test "\
+"-//tensorflow/contrib/image:distort_image_ops_test_gpu "\
+"-//tensorflow/contrib/image:sparse_image_warp_test "\
+"-//tensorflow/contrib/image:sparse_image_warp_test_gpu "\
+"-//tensorflow/contrib/layers:rev_block_lib_test "\
+"-//tensorflow/contrib/opt:ggt_test "\
+"-//tensorflow/contrib/opt:matrix_functions_test "\
+"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_test "
 
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
