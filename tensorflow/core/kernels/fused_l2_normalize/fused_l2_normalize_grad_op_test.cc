@@ -69,5 +69,48 @@ TEST_F(FusedL2NormalizeGradOpTest, 2Dims_Float) {
 //----------------------------------------------------------------------------//
 // Performance benchmarks                                                     //
 //----------------------------------------------------------------------------//
+static Graph* FusedL2NormalizeGrad(int rows, int cols) {
+  Graph* g = new Graph(OpRegistry::Global());
+  DataType dtype = DT_FLOAT;
+
+  Tensor in1(dtype, TensorShape({rows, cols}));
+  in1.flat<float>().setRandom();
+  Tensor in2(dtype, TensorShape({rows, cols}));
+  in2.flat<float>().setRandom();
+
+  Node* input_in1 = test::graph::Constant(g, in1);
+  Node* input_in2 = test::graph::Constant(g, in2);
+  auto nodeBuilder = NodeBuilder(g->NewName("n"), "FusedL2NormalizeGrad")
+                    .Input(input_in1)
+                    .Input(input_in2)
+                    .Attr("T", dtype)
+                    .Attr("axis", 0)
+                    .Attr("epsilon", 1e-12);
+  TF_CHECK_OK(nodeBuilder.Finalize(g, nullptr));
+
+  return g;
+}
+
+#define BM_FusedL2NormGrad(ROWS, COLS, NTH)                                         \
+  static void BM_FusedL2NormGrad##_##ROWS##_##COLS##_##NTH##_CPU(                   \
+  int iters) {                                                                  \
+  testing::UseRealTime();                                                       \
+  testing::ItemsProcessed(static_cast<int64>(iters) * ROWS * COLS * 5);         \
+  SessionOptions opts;                                                          \
+  opts.config.set_intra_op_parallelism_threads(NTH);                            \
+  test::Benchmark("cpu", FusedL2NormalizeGrad(ROWS, COLS), &opts).Run(iters);       \
+  }                                                                             \
+  BENCHMARK(BM_FusedL2NormGrad##_##ROWS##_##COLS##_##NTH##_CPU);                    \
+
+#define BM_FusedL2NormGrad_NTH(ROWS, COLS)  \
+  BM_FusedL2NormGrad(ROWS, COLS, 1);        \
+  BM_FusedL2NormGrad(ROWS, COLS, 4);        \
+  BM_FusedL2NormGrad(ROWS, COLS, 8);        \
+
+BM_FusedL2NormGrad_NTH(1024, 63);
+BM_FusedL2NormGrad_NTH(1024, 255);
+BM_FusedL2NormGrad_NTH(1024, 511);
+BM_FusedL2NormGrad_NTH(1024, 1023);
+
 }
 }

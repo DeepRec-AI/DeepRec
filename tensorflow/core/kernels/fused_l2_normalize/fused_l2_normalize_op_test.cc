@@ -60,5 +60,43 @@ TEST_F(FusedL2NormalizeOpTest, 2Dims_Float) {
 //----------------------------------------------------------------------------//
 // Performance benchmarks                                                     //
 //----------------------------------------------------------------------------//
+static Graph* FusedL2Normalize(int rows, int cols) {
+  Graph* g = new Graph(OpRegistry::Global());
+  DataType dtype = DT_FLOAT;
+
+  Tensor in(dtype, TensorShape({rows, cols}));
+  in.flat<float>().setRandom();
+
+  Node* input_in = test::graph::Constant(g, in);
+  auto nodeBuilder = NodeBuilder(g->NewName("n"), "FusedL2Normalize")
+                    .Input(input_in)
+                    .Attr("T", dtype)
+                    .Attr("axis", 0)
+                    .Attr("epsilon", 1e-12);
+  TF_CHECK_OK(nodeBuilder.Finalize(g, nullptr));
+
+  return g;
+}
+
+#define BM_FusedL2Norm(ROWS, COLS, NTH)                                         \
+  static void BM_FusedL2Norm##_##ROWS##_##COLS##_##NTH##_CPU(                   \
+  int iters) {                                                                  \
+  testing::UseRealTime();                                                       \
+  testing::ItemsProcessed(static_cast<int64>(iters) * ROWS * COLS * 3);         \
+  SessionOptions opts;                                                          \
+  opts.config.set_intra_op_parallelism_threads(NTH);                            \
+  test::Benchmark("cpu", FusedL2Normalize(ROWS, COLS), &opts).Run(iters);       \
+  }                                                                             \
+  BENCHMARK(BM_FusedL2Norm##_##ROWS##_##COLS##_##NTH##_CPU);                    \
+
+#define BM_FusedL2Norm_NTH(ROWS, COLS)  \
+  BM_FusedL2Norm(ROWS, COLS, 1);        \
+  BM_FusedL2Norm(ROWS, COLS, 4);        \
+  BM_FusedL2Norm(ROWS, COLS, 8);        \
+
+BM_FusedL2Norm_NTH(1024, 63);
+BM_FusedL2Norm_NTH(1024, 255);
+BM_FusedL2Norm_NTH(1024, 511);
+BM_FusedL2Norm_NTH(1024, 1023);
 }
 }
