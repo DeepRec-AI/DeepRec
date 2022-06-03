@@ -311,6 +311,9 @@ struct SparseApplyAdagrad<GPUDevice, T, Tindex, has_epsilon> {
                     typename TTypes<T>::ConstMatrix grad,
                     typename TTypes<Tindex>::ConstVec indices, int64 inner_dim,
                     bool update_slots) {
+    const Tindex N = static_cast<Tindex>(indices.dimension(0));
+    if (N == 0) return Status::OK();
+
     const Tindex first_dim_size = var.dimension(0);
     const Tindex grad_size = grad.size();
     const Tindex indices_size = indices.size();
@@ -364,6 +367,9 @@ struct SparseApplyProximalAdagrad<GPUDevice, T, Tindex> {
                     typename TTypes<T>::ConstMatrix grad,
                     typename TTypes<Tindex>::ConstVec indices,
                     int64 inner_dim) {
+    const Tindex N = static_cast<Tindex>(indices.dimension(0));
+    if (N == 0) return Status::OK();
+
     const Tindex first_dim_size = var.dimension(0);
     const Tindex grad_size = grad.size();
     const Tindex indices_size = indices.size();
@@ -416,6 +422,9 @@ struct SparseApplyFtrl<GPUDevice, T, Tindex, has_l2_shrinkage> {
                     typename TTypes<T>::ConstMatrix grad,
                     typename TTypes<Tindex>::ConstVec indices, int64 inner_dim,
                     bool multiply_linear_by_lr) {
+    const Tindex N = static_cast<Tindex>(indices.dimension(0));
+    if (N == 0) return Status::OK();
+
     const Tindex first_dim_size = var.dimension(0);
     const Tindex grad_size = grad.size();
     const Tindex indices_size = indices.size();
@@ -741,18 +750,6 @@ struct SparseApplyAdam<GPUDevice, T, Tindex> {
     const Tindex first_dim_size = var.dimension(0);
     const Tindex grad_size = grad.size();
     const Tindex indices_size = indices.size();
-
-    // auto var_flat = var.flat<T>();
-    // auto m_flat = m.flat<T>();
-    // auto v_flat = v.flat<T>();
-    // auto grad_flat = grad.flat<T>();
-    // auto beta1_power_scalar = beta1_power.scalar<T>();
-    // auto beta2_power_scalar = beta2_power.scalar<T>();
-    // auto lr_scalar = lr.scalar<T>();
-    // auto beta1_scalar = beta1.scalar<T>();
-    // auto beta2_scalar = beta2.scalar<T>();
-    // auto epsilon_scalar = epsilon.scalar<T>();
-    // auto indices_vec = indices.vec<Tindex>();
 
     GpuLaunchConfig config = GetGpuLaunchConfig(grad_size, d);
     return GpuLaunchKernel(SparseApplyAdamKernel<T, Tindex>, config.block_count,
