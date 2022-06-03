@@ -955,6 +955,7 @@ tf_cuda_library(
         "util/matmul_autotune.h",
         "util/util.h",
         "util/work_sharder.h",
+        "util/test_util.h",
     ] + select({
         "//tensorflow:windows": [],
         "//conditions:default": [

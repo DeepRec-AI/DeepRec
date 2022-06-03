@@ -18,6 +18,7 @@ limitations under the License.
 #include <random>
 #include <vector>
 
+#include "tensorflow/core/util/test_util.h"
 #include "tensorflow/core/common_runtime/device.h"
 #include "tensorflow/core/common_runtime/device_factory.h"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
@@ -37,8 +38,152 @@ limitations under the License.
 #include "tensorflow/core/platform/test_benchmark.h"
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/public/version.h"
+#include "tensorflow/core/public/session.h"
+#include "tensorflow/core/framework/fake_input.h"
+#include "tensorflow/cc/ops/standard_ops.h"
 
 namespace tensorflow {
+namespace SegmentSumTestUnitTest {
+typedef std::tuple<
+    DataType,                       // input_type
+    std::vector<long long int>,     // sizes
+    long long int                   // segment_number
+> SegmentSumTestParams;
+std::vector<DataType> DATATYPES {
+    DataType::DT_FLOAT,
+    DataType::DT_BFLOAT16
+};
+std::vector<std::vector<long long int>> SIZES = {
+    {1}, {64}, {1024}, {1000},
+    {64, 64}, {128, 1}, {1, 128},
+    {1, 1, 1024}, {1, 1024, 1}, {1024, 1, 1}, {32, 32, 32},
+    {1, 1, 1, 1024}, {1, 1, 1024, 1}, {1, 1024, 1, 1}, {1024, 1, 1, 1}, {32, 32, 32, 32}
+    };
+    
+std::vector<long long int> SEGMENTS = {1, 2, 7, 9};
+} // namespace SegmentSumTestUnitTest
+
+class SegmentSumTestBase :
+    public ::testing::WithParamInterface<SegmentSumTestUnitTest::SegmentSumTestParams>,
+    public OpsTestBase {
+ private:
+    // Test definition (straight from Params, filled in SetUp)
+    DataType input_type;
+    std::vector<long long int> input_size;
+    long long int segment_number;
+    // Test input Tensors (filled in SetUp)
+    Tensor input;
+    Tensor segments;
+    Tensor segment_number_tensor;
+    // Test output Tensors (filled in Run method)
+    Tensor op_values;
+    Tensor default_values;
+
+    template<typename T, int dims>
+    void makeCalculations() {
+      const int64 N = input_size[0];
+      auto seg_tensor = segments.tensor<long long int, 1>();
+      auto input_tensor = input.tensor<T, dims>();
+      auto output_tensor = default_values.tensor<T, dims>();
+      for(long long int i = 0; i < N; i++) {
+        auto j = seg_tensor(i);
+        output_tensor.template chip<0>(j) += input_tensor.template chip<0>(i);
+      }
+    };
+    template<typename T>
+    void makeCalculations(int dims) {
+        if (dims == 1) return makeCalculations<T, 1>();
+        if (dims == 2) return makeCalculations<T, 2>();
+        if (dims == 3) return makeCalculations<T, 3>();
+        return makeCalculations<T, 4>();
+    }
+
+    void runDefault() {
+      auto dims = input_size.size();
+      switch(input_type) {
+        case DT_FLOAT:
+          makeCalculations<float>(dims);
+          break;
+        case DT_BFLOAT16:
+          makeCalculations<Eigen::bfloat16>(dims);
+          break;
+        default:
+          GTEST_FAIL() << "Unexpected DataType" << test_utils::datatypeToString(input_type);
+      }
+    };
+
+    void runOp() {
+      auto root = tensorflow::Scope::NewRootScope();
+      auto input_0 =
+          ops::Const(root.WithOpName("input"), Input::Initializer(input));
+      auto segments_0 =
+          ops::Const(root.WithOpName("segments"), Input::Initializer(segments));
+      auto segments_num=
+          ops::Const(root.WithOpName("segments_num"), Input::Initializer(segment_number));
+
+      Output next_op = ops::UnsortedSegmentSum(root.WithOpName("UnsortedSegmentSum"), input_0, segments_0, segments_num);
+      string last_op = "UnsortedSegmentSum";
+      tensorflow::test_utils::RunAndFetch(root, last_op, &op_values);
+    }
+
+ public:
+    static std::string getTestCaseName(::testing::TestParamInfo<SegmentSumTestUnitTest::SegmentSumTestParams> obj) {
+        DataType input_type;
+        std::vector<long long int> input_size;
+        long long int num_segments;
+        std::tie(input_type, input_size, num_segments) = obj.param;
+        std::ostringstream result;
+
+        result << "UnsortedSegmentSum";
+        result << "_Type_" << test_utils::datatypeToString(input_type);
+        result << "_InputSize_" << test_utils::vectorToString(input_size);
+        result << "_NumSegments_" << num_segments; 
+
+        return result.str();
+    }
+
+    void SetUp() {
+        std::tie(input_type, input_size, segment_number) = this->GetParam();
+
+        auto default_shape = input_size;
+        default_shape[0] = segment_number;
+        input = test_utils::makeTensor(input_size, input_type, -100, 100);
+        default_values = test_utils::makeTensor(default_shape, input_type, 0,0);
+
+        if (input.shape() == Tensor().shape() || default_values.shape() == Tensor().shape()) 
+          GTEST_FAIL() << "input or default_values not created properly";
+
+        segments = Tensor(DT_INT64, {input_size[0]});
+        auto segments_flat = segments.flat<long long int>();
+        for(int i = 0; i < input_size[0]; i++) {
+          long long int rand_num = rand() % segment_number;
+          segments_flat(i) = rand_num;
+        }
+    }
+
+    void Run() {
+        runDefault();
+        runOp();
+    }
+
+    void Validate() {
+        ASSERT_EQ(default_values.dtype(), op_values.dtype());
+        ASSERT_EQ(default_values.shape(), op_values.shape());
+        test::ExpectClose(default_values, op_values, 1e-5);
+    }
+};
+TEST_P(SegmentSumTestBase, CompareWithRefs) {
+    SetUp();
+    Run();
+    Validate();
+};
+
+INSTANTIATE_TEST_CASE_P(basic, SegmentSumTestBase,
+    ::testing::Combine(
+        ::testing::ValuesIn(SegmentSumTestUnitTest::DATATYPES),
+        ::testing::ValuesIn(SegmentSumTestUnitTest::SIZES),
+        ::testing::ValuesIn(SegmentSumTestUnitTest::SEGMENTS)),
+    SegmentSumTestBase::getTestCaseName);
 
 static Graph* BM_UnsortedSegmentReduction(const string& reduction,
                                         int num_rows, int num_cols,
@@ -473,7 +618,10 @@ static Graph* UnsortedSegmentSum(Index num_rows, Index num_cols,
   }                                                                     \
   BENCHMARK(BM_##DEVICE##_unsorted_segsum_##INDEX##_##R##_##C)->Arg(2)
 
-BM_UNSORTED_SEGMENT_SUM(cpu, int32, 64, 32);
+BM_UNSORTED_SEGMENT_SUM(cpu, int32, 640, 320);
+BM_UNSORTED_SEGMENT_SUM(cpu, int32, 204800, 1);
+BM_UNSORTED_SEGMENT_SUM(cpu, int32, 1, 204800);
+BM_UNSORTED_SEGMENT_SUM(cpu, int32, 1280, 1280);
 #if GOOGLE_CUDA
 BM_UNSORTED_SEGMENT_SUM(gpu, int32, 64, 32);
 #endif

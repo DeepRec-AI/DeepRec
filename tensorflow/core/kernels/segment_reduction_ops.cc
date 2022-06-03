@@ -392,7 +392,14 @@ struct UnsortedSegmentFunctor<CPUDevice, T, Index, InitialValueF, ReductionF> {
     const int64 N = segment_ids.dimension(0);
     const int64 num_segments = output.dimension(0);
     const int64_t inner_dim = data.dimension(1);
+    const T* data_ptr = data.data();
+    T* out_ptr = output.data();
     ReductionF reduction;
+
+    bool data_is_1D = true;
+    for (int i=1; i<data.dimensions().size(); i++) {
+      if(data.dimensions()[i] != 1) data_is_1D = false;
+    }
 
     // `num_real_segment` counts the rows actually reduced from input,
     // the rows with negative segment index will be excluded.
@@ -439,7 +446,11 @@ struct UnsortedSegmentFunctor<CPUDevice, T, Index, InitialValueF, ReductionF> {
         Index j = internal::SubtleMustCopy(segment_ids(i));
         // If `j` is in work scope of this worker, do the reduction.
         if (j >= begin && j < end) {
-          reduction(data.template chip<0>(i), output.template chip<0>(j));
+          if (data_is_1D) {
+            reduction(data_ptr[i], out_ptr[j]);
+          } else {
+            reduction(data.template chip<0>(i), output.template chip<0>(j));
+          }
         }
       }
     };
@@ -468,12 +479,18 @@ struct SumOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
     output += data;
   }
+  void operator()(const T &data, T &output) {
+    output += data;
+  }
 };
 
 template <typename T>
 struct MaxOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
     output = data.cwiseMax(output);
+  }
+  void operator()(const T &data, T &output) {
+    output = std::max(data, output);
   }
 };
 
@@ -482,11 +499,17 @@ struct MinOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
     output = data.cwiseMin(output);
   }
+  void operator()(const T &data, T &output) {
+    output = std::min(data, output);
+  }
 };
 
 template <typename T>
 struct ProdOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
+    output *= data;
+  }
+  void operator()(const T &data, T &output) {
     output *= data;
   }
 };
@@ -559,77 +582,6 @@ class UnsortedSegmentReductionOp : public OpKernel {
 
  protected:
   DeviceReductionFunctor reduction_functor_;
-};
-
-template <typename T>
-using USS_FP32 = functor::UnsortedSegmentFunctor<
-  Eigen::ThreadPoolDevice,
-  float,
-  T,
-  functor::Zero<float>,
-  functor::SumOp<float>
->; 
-
-template <typename Index>
-class UnsortedSegmentReductionOp<
-      float,
-      Index,
-      USS_FP32<Index>
-      > : public OpKernel {
- public:
-  explicit UnsortedSegmentReductionOp(OpKernelConstruction* context)
-      : OpKernel(context), reduction_functor_(USS_FP32<Index>()) {}
-
-  void Compute(OpKernelContext* context) override {
-    const Tensor& data = context->input(0);
-    const Tensor& segment_ids = context->input(1);
-    const Tensor& num_segments = context->input(2);
-    if (!UnsortedSegmentReductionDoValidation(this, context, data, segment_ids,
-                                              num_segments)) {
-      return;
-    }
-    const auto segment_flat = segment_ids.flat<Index>();
-    const int64 output_rows = internal::SubtleMustCopy(static_cast<int64>(
-        num_segments.dtype() == DT_INT32 ? num_segments.scalar<int32>()()
-                                         : num_segments.scalar<int64>()()));
-    OP_REQUIRES(context, output_rows >= 0,
-                errors::InvalidArgument("Input num_segments == ", output_rows,
-                                        " must not be negative."));
-    TensorShape output_shape;
-    output_shape.AddDim(output_rows);
-    Tensor* output = nullptr;
-    bool data_is_1D = data.dims() == 1; 
-    if (data_is_1D) {
-      OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
-      auto data_flat = data.flat<float>();
-      auto output_flat = output->flat<float>();
-      output_flat.setConstant(tensorflow::functor::Zero<float>()());
-      const int64 N = segment_flat.dimension(0);
-      const int64 output_size = output_flat.dimension(0);
-      const float* data_ptr = data_flat.data();
-      const Index* id_ptr = segment_flat.data();
-      float* out_ptr = output_flat.data();
-      for (std::size_t i = 0; i < N; ++i) {
-        Index id = id_ptr[i];
-        if (id < 0 | id >= output_size) {
-          continue;
-        }
-        out_ptr[id] += data_ptr[i];
-      }
-    } else { 
-     for (int i = segment_ids.dims(); i < data.dims(); i++) {
-        output_shape.AddDim(data.dim_size(i));
-      }
-      OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
-      auto output_flat = output->flat_outer_dims<float>();
-      auto data_flat = data.flat_inner_outer_dims<float, 2>(segment_ids.dims() - 1);
-      reduction_functor_(context, segment_ids.shape(), segment_flat, data_flat,
-                        output_flat);
-    }
-  }
-
- protected:
-  USS_FP32<Index> reduction_functor_;
 };
 
 #define REGISTER_CPU_KERNEL_UNSORTEDSEGMENT(                           \
