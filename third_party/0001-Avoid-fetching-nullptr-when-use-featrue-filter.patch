@@ -1,17 +1,17 @@
-From 53d11308395423236fadd970e0e5b225eddf4036 Mon Sep 17 00:00:00 2001
+From 8956cb5535dae2b97df7dc3e4d083d3cab23683c Mon Sep 17 00:00:00 2001
 From: lxy268263 <lxy268263@alibaba-inc.com>
 Date: Tue, 13 Jul 2021 16:20:45 +0800
 Subject: [PATCH] Avoid fetching nullptr when use featrue filter.
 
 ---
  Makefile                                      |   13 +-
- sparsehash/dense_hash_map_lockless            |  447 ++++++
- sparsehash/internal/densehashtable_lockless.h | 1967 +++++++++++++++++++++++++
+ sparsehash/dense_hash_map_lockless            |  447 ++++
+ sparsehash/internal/densehashtable_lockless.h | 1966 +++++++++++++++++
  sparsehash/traits                             |   10 +-
- tests/bench_lockless.cc                       | 1466 ++++++++++++++++++
+ tests/bench_lockless.cc                       | 1466 ++++++++++++
  tests/dense_hash_map_unittests.cc             |  137 +-
- tests/rwlock.h                                |  224 +++
- 7 files changed, 4246 insertions(+), 18 deletions(-)
+ tests/rwlock.h                                |  224 ++
+ 7 files changed, 4245 insertions(+), 18 deletions(-)
  create mode 100644 sparsehash/dense_hash_map_lockless
  create mode 100644 sparsehash/internal/densehashtable_lockless.h
  create mode 100644 tests/bench_lockless.cc
@@ -515,10 +515,10 @@ index 0000000..e68891f
 +}  // namespace google
 diff --git a/sparsehash/internal/densehashtable_lockless.h b/sparsehash/internal/densehashtable_lockless.h
 new file mode 100644
-index 0000000..ac0ce49
+index 0000000..af17ecd
 --- /dev/null
 +++ b/sparsehash/internal/densehashtable_lockless.h
-@@ -0,0 +1,1967 @@
+@@ -0,0 +1,1966 @@
 +// Copyright (c) 2005, Google Inc.
 +// All rights reserved.
 +//
@@ -866,10 +866,10 @@ index 0000000..ac0ce49
 +  }
 +
 +  const_iterator begin() const {
-+    return const_iterator(this, table, table + num_buckets, true);
++    return const_iterator(this, pnew->table_, pnew->table_ + pnew->num_buckets_, true);
 +  }
 +  const_iterator end() const {
-+    return const_iterator(this, table + num_buckets, table + num_buckets, true);
++    return const_iterator(this, pnew->table_ + pnew->num_buckets_, pnew->table_ + pnew->num_buckets_, true);
 +  }
 +
 +  // These come from tr1 unordered_map.  They iterate over 'bucket' n.
@@ -969,7 +969,6 @@ index 0000000..ac0ce49
 +  // guarantees that key_info.delkey is valid.
 +
 +  bool test_deleted_key(const key_type& key) const {
-+    assert(pnew->num_deleted_ > 0);
 +    return equals(pnew->key_info_.delkey, key);
 +  }
 +
@@ -1028,14 +1027,14 @@ index 0000000..ac0ce49
 +  bool test_deleted(const iterator& it) const {
 +    // Invariant: !use_deleted() implies num_deleted is 0.
 +    assert(settings.use_deleted() || num_deleted == 0);
-+    return num_deleted > 0 && test_deleted_key(get_key(*it));
++    return test_deleted_key(get_key(*it));
 +  }
 +
 +
 +  bool test_deleted(const const_iterator& it) const {
 +    // Invariant: !use_deleted() implies num_deleted is 0.
 +    assert(pnew->settings_.use_deleted() || pnew->num_deleted_ == 0);
-+    return pnew->num_deleted_ > 0 && test_deleted_key(get_key(*it));
++    return test_deleted_key(get_key(*it));
 +  }
 +
 +
@@ -1105,12 +1104,12 @@ index 0000000..ac0ce49
 +
 +
 +  bool test_empty(const iterator& it) const {
-+    assert(settings.use_empty());  // we always need to know what's empty!
-+    return equals(key_info.empty_key, get_key(*it));
++    assert(pnew->settings_.use_empty());  // we always need to know what's empty!
++    return equals(pnew->key_info_.empty_key, get_key(*it));
 +  }
 +  bool test_empty(const const_iterator& it) const {
-+    assert(settings.use_empty());  // we always need to know what's empty!
-+    return equals(key_info.empty_key, get_key(*it));
++    assert(pnew->settings_.use_empty());  // we always need to know what's empty!
++    return equals(pnew->key_info_.empty_key, get_key(*it));
 +  }
 +
 + private:
@@ -4370,5 +4369,5 @@ index 0000000..59ef9b2
 +};
 \ No newline at end of file
 -- 
-2.14.4.44.g2045bb6
+2.19.1.6.gb485710b
 

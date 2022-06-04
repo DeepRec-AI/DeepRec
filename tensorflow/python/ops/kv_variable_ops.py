@@ -280,10 +280,10 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._false_positive_probability = -1.0
       self._counter_type = dtypes.uint64
 
-    multi_level_list = [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD,
+    multi_level_list = [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSDHASH,
                         config_pb2.StorageType.DRAM_PMEM, config_pb2.StorageType.DRAM_LEVELDB,
-                        config_pb2.StorageType.DRAM_SSD, config_pb2.StorageType.HBM_DRAM,
-                        config_pb2.StorageType.DRAM_PMEM_SSD, config_pb2.StorageType.HBM_DRAM_SSD]
+                        config_pb2.StorageType.DRAM_SSDHASH, config_pb2.StorageType.HBM_DRAM,
+                        config_pb2.StorageType.DRAM_PMEM_SSDHASH, config_pb2.StorageType.HBM_DRAM_SSDHASH]
       
     self._l2_weight_threshold = evconfig.l2_weight_threshold
     self._storage_type = evconfig.storage_type
@@ -307,7 +307,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._is_primary = True
     else:
       self._is_primary = False
-    
     with ops.control_dependencies(None):
       with ops.name_scope(name, "Variable", []
                           if init_from_fn else [initial_value]) as name:
