@@ -418,6 +418,13 @@ class KvResourceGatherOp : public OpKernel {
       auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
       Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
           slice_bytes, do_work);
+          
+      ev->storage_manager()->Schedule([ev, indices_flat, indices_size]() {
+        embedding::BatchCache<TKey>* cache = ev->Cache();
+        if (cache) {
+          cache->add_to_rank(indices_flat.data(), indices_size);
+        }
+      });
     }
   }
 

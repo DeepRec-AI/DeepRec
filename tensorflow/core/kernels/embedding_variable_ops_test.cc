@@ -1134,6 +1134,45 @@ TEST(EmbeddingVariableTest, TestLevelDBIterator) {
     index++;
   }
 }
+
+TEST(EmbeddingVariableTest, TestLRUCache) {
+  BatchCache<int64>* cache = new LRUCache<int64>();
+  int num_ids = 30;
+  int num_access = 100;
+  int num_evict = 50;
+  int64 ids[num_access] = {0};
+  int64 evict_ids[num_evict] = {0};
+  for (int i = 0; i < num_access; i++){
+    ids[i] = i % num_ids;
+  }
+  cache->add_to_rank(ids, num_access);
+  int64 size = cache->get_evic_ids(evict_ids, num_evict);
+  ASSERT_EQ(size, num_ids);
+  ASSERT_EQ(cache->size(), 0);
+  for (int i = 0; i < size; i++) {
+    ASSERT_EQ(evict_ids[i], (num_access % num_ids + i) % num_ids);
+  }
+}
+
+TEST(EmbeddingVariableTest, TestLFUCache) {
+  BatchCache<int64>* cache = new LFUCache<int64>();
+  int num_ids = 30;
+  int num_access = 100;
+  int num_evict = 50;
+  int64 ids[num_access] = {0};
+  int64 evict_ids[num_evict] = {0};
+  for (int i = 0; i < num_access; i++){
+    ids[i] = i % num_ids;
+  }
+  cache->add_to_rank(ids, num_access);
+  int64 size = cache->get_evic_ids(evict_ids, num_evict);
+  ASSERT_EQ(size, num_ids);
+  ASSERT_EQ(cache->size(), 0);
+  for (int i = 0; i < size; i++) {
+    ASSERT_EQ(evict_ids[i], (num_access % num_ids + i) % num_ids);
+  }
+}
+
 } // namespace
 } // namespace embedding
 } // namespace tensorflow
