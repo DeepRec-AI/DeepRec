@@ -43,6 +43,21 @@ struct SavedModelBundle {
   SavedModelBundle() = default;
 };
 
+struct SavedModelBundleV2 {
+  std::unique_ptr<SessionGroup> session_group;
+  MetaGraphDef meta_graph_def;
+
+  /// A TensorFlow Session does not Close itself on destruction. To avoid
+  /// resource leaks, we explicitly call Close on Sessions that we create.
+  ~SavedModelBundleV2() {
+    if (session_group) {
+      session_group->Close();
+    }
+  }
+
+  SavedModelBundleV2() = default;
+};
+
 /// Loads a SavedModel from the specified export directory. The meta graph def
 /// to be loaded is identified by the supplied tags, corresponding exactly to
 /// the set of tags used at SavedModel build time. Returns a SavedModel bundle
@@ -51,6 +66,11 @@ Status LoadSavedModel(const SessionOptions& session_options,
                       const RunOptions& run_options, const string& export_dir,
                       const std::unordered_set<string>& tags,
                       SavedModelBundle* const bundle);
+
+Status LoadSavedModel(const SessionGroupOptions& session_options,
+                      const RunOptions& run_options, const string& export_dir,
+                      const std::unordered_set<string>& tags,
+                      SavedModelBundleV2* const bundle);
 
 /// Checks whether the provided directory could contain a SavedModel. Note that
 /// the method does not load any data by itself. If the method returns `false`,

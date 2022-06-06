@@ -60,6 +60,15 @@ struct SessionOptions {
   SessionOptions();
 };
 
+struct SessionGroupOptions {
+  // default 1
+  int session_num = 1;
+  Env* env;
+  string target;
+  ConfigProto config;
+  SessionGroupOptions();
+};
+
 }  // end namespace tensorflow
 
 #endif  // TENSORFLOW_PUBLIC_SESSION_OPTIONS_H_

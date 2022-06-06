@@ -271,10 +271,19 @@ class Session {
 class SessionGroup {
  public:
   ~SessionGroup() {
+  }
+
+  Status Close() {
     for (int32_t i = 1; i < session_num_; ++i) {
-      if (sessions_[i]) delete sessions_[i];
+      if (sessions_[i]) {
+        sessions_[i]->Close().IgnoreError();
+      }
     }
-    if (sessions_[0]) delete sessions_[0];
+    if (session_num_ > 0 && sessions_[0]) {
+      sessions_[0]->Close().IgnoreError();
+    }
+
+    return Status::OK();
   }
 
   int32_t GetSessionNum() const {
@@ -285,7 +294,9 @@ class SessionGroup {
     if (session_num_ > 0) {
       return errors::AlreadyExists("Leader session is already existed.");
     }
-    sessions_.emplace_back(leader_session);
+    std::unique_ptr<Session> tmp;
+    tmp.reset(leader_session);
+    sessions_.emplace_back(std::move(tmp));
     ++session_num_;
     return Status::OK();
   }
@@ -295,17 +306,19 @@ class SessionGroup {
       return errors::NotFound(
           "Leader session is not created, please create it firstly.");
     }
-    sessions_.emplace_back(follower_session);
+    std::unique_ptr<Session> tmp;
+    tmp.reset(follower_session);
+    sessions_.emplace_back(std::move(tmp));
     ++session_num_;
     return Status::OK();
   }
 
   Session* GetLeaderSession() {
-    return sessions_[0];
+    return sessions_[0].get();
   }
 
   Status Create(const GraphDef& graph) {
-    for (auto sess : sessions_) {
+    for (auto& sess : sessions_) {
       Status s = sess->Create(graph);
       if (!s.ok()) return s;
     }
@@ -336,11 +349,30 @@ class SessionGroup {
                               target_node_names, outputs, run_metadata);
   }
 
+  Session* GetSession(int32_t hint_id = -1) {
+    int32_t id = 0;
+    Status s = GetServingSessionId(&id, hint_id);
+    if (!s.ok()) {
+      LOG(ERROR) << "Get serving session error, use default session[0]";
+      return sessions_[0].get();
+    }
+    return sessions_[id].get();
+  }
+
+  std::unique_ptr<Session>* GetSessionPtr(int id) {
+    if (id < 0 || id >= session_num_) {
+      LOG(ERROR) << "session num in current sess_group is " << session_num_
+                 << ", can not get session[" << id << "].";
+      return nullptr;
+    }
+    return &(sessions_[id]);
+  }
+
  private:
   // sessions_[0] is leader session which own resource,
   // and others are follower sessions who
   // will reuse leader's resource.
-  std::vector<Session*> sessions_;
+  std::vector<std::unique_ptr<Session>> sessions_;
   int32_t session_num_ = 0;
   std::atomic<int64_t> serving_index_{0};
 
