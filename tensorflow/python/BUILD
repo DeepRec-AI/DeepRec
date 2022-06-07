@@ -2255,7 +2255,7 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
-   name = "data_buffer_ops_gen",
+   name = "tensor_buffer_ops_gen",
 )
 
 tf_gen_op_wrapper_private_py(
@@ -2913,10 +2913,10 @@ py_library(
         ":array_ops",
         ":clip_ops",
         ":control_flow_ops",
-        ":data_buffer_ops_gen",
-	":framework",
-	":framework_ops",
-	":framework_for_generated_wrappers",
+        ":tensor_buffer_ops_gen",
+        ":framework",
+        ":framework_ops",
+        ":framework_for_generated_wrappers",
     ],
 )
 
@@ -2928,8 +2928,8 @@ py_library(
         ":array_ops",
         ":clip_ops",
         ":control_flow_ops",
-        ":data_buffer_ops_gen",
-	":framework",
+        ":tensor_buffer_ops_gen",
+        ":framework",
         ":framework_for_generated_wrappers",
     ],
 )
@@ -6564,8 +6564,8 @@ py_test(
         ":partitioned_variables",
         ":variable_scope",
         ":embedding_ops",
-	":prefetch",
-        #":data_buffer_ops_gen",
+        ":prefetch",
+        #":tensor_buffer_ops_gen",
         ":prefetch_runner",
         ":state_ops",
         "//tensorflow/contrib/layers:layers_py",

@@ -59,6 +59,16 @@ struct EmbeddingConfig {
     return ceil(loghpp / factor * max_element_size);
   }
 
+  bool is_counter_filter(){
+    if (filter_freq !=0 &&
+         kHashFunc == 0 &&
+         num_counter == 0){
+      return true;
+    } else {
+      return false;
+    }
+  }
+
   int64 calc_num_hash_func(float false_positive_probability) {
     float loghpp = fabs(log(false_positive_probability)/log(2));
     return ceil(loghpp);

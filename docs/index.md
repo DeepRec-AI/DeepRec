@@ -11,8 +11,11 @@ DeepRec(PAI-TF) 支持了淘宝搜索、猜你喜欢、定向、直通车等核�
 
 ```{toctree}
 :maxdepth: 2
+:caption: 编译安装
 
-Compile-And-Install
+DeepRec-Compile-And-Install
+Estimator-Compile-And-Install
+TFServing-Compile-And-Install
 ```
 
 # 功能
@@ -28,6 +31,7 @@ Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
 Embedding-Variable-GPU
+Multi-tier-Embedding-Storage
 ```
 
 ```{toctree}
@@ -45,6 +49,7 @@ SOK
 
 Auto-Micro-Batch
 Fused-Embedding
+Stage
 Smart-Stage
 Auto-Fusion
 ```
@@ -64,6 +69,7 @@ Executor-Optimization
 :caption: 模型导出
 
 Incremental-Checkpoint
+Embedding-Variable-Export-Format
 ```
 
 ```{toctree}
@@ -78,11 +84,18 @@ AdagradDecay-Optimizer
 :maxdepth: 2
 :caption: 算子及硬件加速
 
+oneDNN
 Operator-Optimization
 NVIDIA-TF32
-oneDNN
 PMEM
 Embedding-on-PMEM
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: 模型量化
+
+BFloat16
 ```
 
 ```{toctree}
@@ -96,7 +109,16 @@ KafkaGroupIODataset
 
 ```{toctree}
 :maxdepth: 2
-:caption: 线上Serving
+:caption: 编译优化
+
+BladeDISC
+XLA
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Inference优化
 
 Processor
+SessionGroup
 ```

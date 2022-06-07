@@ -1,0 +1,101 @@
+apiVersion: "kubeflow.org/v1"
+kind: "TFJob"
+metadata:
+  name: "trainer"
+spec:
+  cleanPodPolicy: None
+  tfReplicaSpecs:
+    Worker:
+      replicas: 10
+      restartPolicy: Never
+      template:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: replica-type
+                          operator: In
+                          values:
+                            - worker
+                    topologyKey: kubernetes.io/hostname
+          volumes:
+            - name: deeprec-storage
+              persistentVolumeClaim:
+                claimName: deeprec
+          containers:
+            - name: tensorflow
+              env:
+                - name: "JEMALLOC_PATH"
+                  value: "/root/modelzoo/"
+                - name: "TF_WORKSPACE"
+                  value: "/root/modelzoo/DIEN/"
+                - name: "TF_SCRIPT"
+                  value: "train.py"
+                - name: "MEM_USAGE_STRATEGY"
+                  value: "251"
+                - name: "START_STATISTIC_STEP"
+                  value: "100"
+                - name: "STOP_STATISTIC_STEP"
+                  value: "110"
+              image: alideeprec/deeprec-release-modelzoo:latest
+              imagePullPolicy: Always
+              workingDir: /root/
+              command: ["/bin/sh", "-c"]
+              args:
+                [
+                  "cd /root/modelzoo/; python launch.py --output_dir=/pvc --protocol=grpc --inter=8 --intra=8 --input_layer_partitioner=8 --dense_layer_partitioner=16 --bf16",
+                ]
+              volumeMounts:
+                - mountPath: "/pvc"
+                  name: "deeprec-storage"
+    PS:
+      replicas: 4
+      restartPolicy: Never
+      template:
+        spec:
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: replica-type
+                          operator: In
+                          values:
+                            - ps
+                    topologyKey: kubernetes.io/hostname
+          volumes:
+            - name: deeprec-storage
+              persistentVolumeClaim:
+                claimName: deeprec
+          containers:
+            - name: tensorflow
+              env:
+                - name: "JEMALLOC_PATH"
+                  value: "/root/modelzoo/"
+                - name: "TF_WORKSPACE"
+                  value: "/root/modelzoo/DIEN/"
+                - name: "TF_SCRIPT"
+                  value: "train.py"
+                - name: "MEM_USAGE_STRATEGY"
+                  value: "251"
+                - name: "START_STATISTIC_STEP"
+                  value: "100"
+                - name: "STOP_STATISTIC_STEP"
+                  value: "110"
+              image: alideeprec/deeprec-release-modelzoo:latest
+              imagePullPolicy: Always
+              workingDir: /root/
+              command: ["/bin/sh", "-c"]
+              args:
+                [
+                  "cd /root/modelzoo/; python launch.py --output_dir=/pvc --protocol=grpc --inter=8 --intra=8 --input_layer_partitioner=8 --dense_layer_partitioner=16 --bf16",
+                ]
+              volumeMounts:
+                - mountPath: "/pvc"
+                  name: "deeprec-storage"

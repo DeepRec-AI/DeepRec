@@ -52,9 +52,9 @@ namespace tensorflow {
 // (A) Merging nodes in the graph
 // (B) Rewriting a node in the graph to a new node
 //     Rewrite happens under following scenario:
-//     - Propagating Mkl layout as an additional output tensor
-//        (we will loosely call a tensor that carries Mkl layout as Mkl tensor
-//         henceforth.) from every Mkl supported NN layer.
+//     - Propagating OneDnn layout as an additional output tensor
+//        (we will loosely call a tensor that carries OneDNN layout as OneDNN tensor
+//         henceforth.) from every OneDNN supported NN layer.
 //
 // Example of A : Merging nodes in the graph
 // -----------------------------------------
@@ -75,7 +75,7 @@ namespace tensorflow {
 //    values.
 //  - Both the nodes must have been assigned to same device (if any).
 //
-// Example of B.1 : Rewriting nodes to Mkl nodes
+// Example of B.1 : Rewriting nodes to OneDNN nodes
 // ---------------------------------------------
 // Consider a Relu node. Current definition of Relu node looks like:
 //
@@ -91,42 +91,42 @@ namespace tensorflow {
 // MklRelu has 2 inputs (A and A_m) and 2 outputs (O and O_m). Here input A is
 // same as input A of Relu; output O is same as output O of Relu. O_m is the
 // additional output tensor that will be set by MklRelu, and it represents
-// Mkl tensor corresponding to O -- in other words, O_m is some kind of
+// OneDNN tensor corresponding to O -- in other words, O_m is some kind of
 // metadata for O. A_m is additional input of Relu, and it represents metadata
 // for A - as O_m is metadata for O, A_m is metadata for A. MklRelu receives
 // this metadata from previous node in the graph.
 //
-// When a previous node in the graph is an Mkl node, A_m will represent a valid
-// Mkl tensor. But when a previous node is not an Mkl node, A_m will represent
-// a dummy Mkl tensor.
+// When a previous node in the graph is an OneDNN node, A_m will represent a valid
+// OneDNN tensor. But when a previous node is not an OneDNN node, A_m will represent
+// a dummy OneDNN tensor.
 //
 // Rewriting rules:
 //  - Selection of a node for rewriting happens by registering the op type of
 //    the node with the rewriting pass. If the op type is not registered, then
 //    all nodes of this op type will not be rewritten.
 //  - Number of inputs after rewriting:
-//      Since for every input Tensorflow tensor, the rewritten node gets Mkl
+//      Since for every input Tensorflow tensor, the rewritten node gets OneDNN
 //      tensor(s), rewritten node gets 2*N inputs, where N is the number of
 //      inputs for the original node.
 //  - Number of outputs after rewriting:
 //      Since for every output Tensorflow tensor, the rewritten node generates
-//      Mkl tensor(s), the rewritten node generates 2*N outputs, where N is the
+//      OneDNN tensor(s), the rewritten node generates 2*N outputs, where N is the
 //      number of outputs of the original node.
-//  - Ordering of Tensorflow tensors and Mkl tensors:
+//  - Ordering of Tensorflow tensors and OneDNN tensors:
 //      Since every rewritten node generates twice the number of inputs and
 //      outputs, one could imagine various orderings among Tensorflow tensors
-//      and Mkl tensors. E.g., assume an op 'Conv2D' that takes (A, B) as
+//      and OneDNN tensors. E.g., assume an op 'Conv2D' that takes (A, B) as
 //      inputs, then the new op '_MklConv2D' can take inputs A, B, A_m and B_m
 //      in A, A_m, B, B_m order or it can also take them in A, B, A_m, B_m
 //      order. Among N inputs one can get N! permutations.
 //
 //      So the question is: which order do we follow? We support 2 types of
 //      orderings: (1) interleaved, and (2) contiguous. Interleaved ordering
-//      follows an intuitive order where an Mkl tensor follows the
+//      follows an intuitive order where an OneDNN tensor follows the
 //      corresponding Tensorflow tensor immediately. In the context of the
 //      above example, it will be: A, A_m, B, B_m. Note that the ordering rule
 //      applies to both the inputs and outputs. Contiguous ordering means
-//      all the Tensorflow tensors are contiguous followed by all the Mkl
+//      all the Tensorflow tensors are contiguous followed by all the OneDNN
 //      tensors. We use contiguous ordering as default.
 //
 // Graph rewrite algorithm:
@@ -137,7 +137,7 @@ namespace tensorflow {
 //        N = Topological_Sort(G) // N is a set of nodes in toposort order.
 //        foreach node n in N
 //        do
-//          if (Is_MKL_Op(n))  // Can this node accept an Mkl layout as input.
+//          if (Is_MKL_Op(n))  // Can this node accept an OneDNN layout as input.
 //          then
 //            E = set of <incoming edge and its src_output slot> of n
 //            E' = {}   // a new set of edges for rewritten node
@@ -148,12 +148,12 @@ namespace tensorflow {
 //              m = Source node of edge e
 //              if Is_Rewritten(m)  // Did we rewrite this node in this pass?
 //              then
-//                E' U {<m,s+1>}    // If yes, then m will generate an Mkl
+//                E' U {<m,s+1>}    // If yes, then m will generate an OneDNN
 //                                  // tensor as an additional output.
 //              else
 //                d = Generate_Dummy_Mkl_Tensor()  // If not, generate a dummy
-//                                                 // Mkl tensor.
-//                E' U {<d,0>}  // The dummy Mkl tensor has only 1 output slot.
+//                                                 // OneDNN tensor.
+//                E' U {<d,0>}  // The dummy OneDNN tensor has only 1 output slot.
 //              fi
 //            done
 //            n' = Build_New_Node(G,new_name,E')
@@ -171,13 +171,13 @@ namespace tensorflow {
 //        cannot be deleted later.)
 //
 //        While visiting a node, we first check if the op type of the node is
-//        an Mkl op. If it is, then we rewrite that node after constructing
-//        new inputs to the node. If the op type of the node is not Mkl op,
+//        an OneDNN op. If it is, then we rewrite that node after constructing
+//        new inputs to the node. If the op type of the node is not OneDNN op,
 //        then we do not rewrite that node.
 //
 // Handling workspace propagation for certain ops:
 //
-//        Certain backward ops in MKL (MaxPool, LRN and BatchNorm) require
+//        Certain backward ops in OneDNN (MaxPool, LRN and BatchNorm) require
 //        passing of a workspace from their respective forward ops. Workspace
 //        tensors provide memory for storing results of intermediate operations
 //        which are helpful in backward propagation. TensorFlow does not have
@@ -185,7 +185,7 @@ namespace tensorflow {
 //        additional outputs from these forward ops. For these ops, we need
 //        to add 2 extra edges between forward ops and their corresponding
 //        backward ops - the first extra edge carries a workspace tensor and
-//        the second one carries an Mkl tensor for the workspace tensor.
+//        the second one carries an OneDNN tensor for the workspace tensor.
 //
 //        Example:
 //
@@ -197,11 +197,11 @@ namespace tensorflow {
 //        We will transform this graph to propagate the workspace as:
 //        (with the contiguous ordering)
 //
-//        A, W, A_m, W_m = MklMaxPool(T, T_m)
-//        B, B_m = MklMaxPoolGrad(X, A, Y, W, X_m, A_m, Y_m, W_m)
+//        A, W, A_m, W_m = OneDNNMaxPool(T, T_m)
+//        B, B_m = OneDNNMaxPoolGrad(X, A, Y, W, X_m, A_m, Y_m, W_m)
 //
 //        Here W is the workspace tensor. Transformed tensor names with the
-//        suffix _m are Mkl tensors, and this transformation has been done
+//        suffix _m are OneDNN tensors, and this transformation has been done
 //        using the algorithm discussed earlier. The transformation for
 //        workspace propagation only adds extra outputs (W, W_m) for a forward
 //        op and connects them to the corresponding backward ops.
@@ -213,8 +213,8 @@ namespace tensorflow {
 //        Backward op name = name of the op in the backward pass that receives
 //          a workspace tensor from the forward op (MaxPoolGrad in the example)
 //        Slot = Position of the output or input slot that will be
-//               used by the workspace tensor (1 for MklMaxPool as W is the 2nd
-//               output of MaxPool (0 is 1st); 3 for MklMaxPoolGrad)
+//               used by the workspace tensor (1 for OneDNNMaxPool as W is the 2nd
+//               output of MaxPool (0 is 1st); 3 for OneDNNMaxPoolGrad)
 //
 //        Question:
 //
@@ -486,11 +486,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
         {csinfo_.fused_batch_norm_grad_v3,
          mkl_op_registry::GetMklOpName(csinfo_.fused_batch_norm_grad_v3),
          CopyAttrsAll, FusedBatchNormV3Rewrite, kRewriteForLayoutPropagation});
-#ifdef ENABLE_MKLDNN_V1
     rinfo_.push_back({csinfo_.fused_batch_norm_ex,
                       csinfo_.mkl_fused_batch_norm_ex, CopyAttrsAll,
                       FusedBatchNormExRewrite, kRewriteForLayoutPropagation});
-#endif
     rinfo_.push_back({csinfo_.fused_conv2d, csinfo_.mkl_fused_conv2d,
                       CopyAttrsFusedConv2D, FusedConv2DRewrite,
                       kRewriteForLayoutPropagation});
@@ -780,7 +778,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     finfo_.push_back(
         {"transpose-elimination for Conv2D",
          {CheckForTransposeToNHWC, CheckForConv2dOp, CheckForTransposeToNCHW},
-         // CheckForMklOp
+         // CheckForOneDNNOp
          FuseConv2D,
          CopyAttrsConv});
 
@@ -805,7 +803,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     finfo_.push_back(
         {"transpose-elimination for Conv3D",
          {CheckForTransposeToNDHWC, CheckForConv3dOp, CheckForTransposeToNCDHW},
-         // CheckForMklOp
+         // CheckForOneDNNOp
          FuseConv3D,
          CopyAttrsConv});
 
@@ -817,7 +815,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     finfo_.push_back({"transpose-elimination for MaxPool3D",
                       {CheckForTransposeToNDHWC, CheckForMaxPool3DOp,
                        CheckForTransposeToNCDHW},
-                      // CheckForMklOp
+                      // CheckForOneDNNOp
                       FuseMaxPool3D,
                       CopyAttrsPooling});
 
@@ -842,7 +840,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   Status Run(const GraphOptimizationPassOptions& options);
 
   // Helper function which does most of heavy lifting for rewriting
-  // Mkl nodes to propagate Mkl tensor as additional output
+  // OneDNN nodes to propagate OneDNN tensor as additional output
   //
   // Extracts common functionality between Run public interface and
   // test interface.
@@ -851,9 +849,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   bool RunPass(std::unique_ptr<Graph>* g);
 
   /// Cause for rewrite
-  /// Currently, we only support 2 causes - either for Mkl layout propagation
+  /// Currently, we only support 2 causes - either for OneDNN layout propagation
   /// which is the most common case, or for just a name change (used in case
-  /// of ops like MatMul, Transpose, which do not support Mkl layout)
+  /// of ops like MatMul, Transpose, which do not support OneDNN layout)
   enum RewriteCause { kRewriteForLayoutPropagation, kRewriteForOpNameChange };
 
   /// Structure to specify the name of an original node, its new name after
@@ -1090,7 +1088,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   }
 
   // Can op represented by node 'n' run on DEVICE_CPU?
-  // Op can run on CPU with MKL if the runtime assigned device or the
+  // Op can run on CPU with OneDNN if the runtime assigned device or the
   // user requested device contains device CPU, or both are empty.
   bool CanOpRunOnCPUDevice(const Node* n) {
     bool result = true;
@@ -1160,13 +1158,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
-#ifndef ENABLE_INTEL_MKL_BFLOAT16
-    // Don't try to merge if datatype is not DT_FLOAT
-    if (T_m != DT_FLOAT) return n;
-#else
     // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
     if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
-#endif
 
     if (m->type_string() == csinfo_.bias_add) {
       // If a is BiasAdd, then Conv2D is 0th input of BiasAdd.
@@ -1205,13 +1198,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
-#ifndef ENABLE_INTEL_MKL_BFLOAT16
-    // Don't try to merge if datatype is not DT_FLOAT
-    if (T_m != DT_FLOAT) return n;
-#else
     // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
     if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
-#endif
 
     const Node* conv_node;
     if (m->type_string() == csinfo_.pad) {
@@ -1327,13 +1315,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     DataType T_m;
     TF_CHECK_OK(GetNodeAttr(m->def(), "T", &T_m));
 
-#ifndef ENABLE_INTEL_MKL_BFLOAT16
-    // Don't try to merge if datatype is not DT_FLOAT
-    if (T_m != DT_FLOAT) return n;
-#else
     // Don't try to merge if datatype is not DT_FLOAT or DT_BFLOAT16
     if (T_m != DT_FLOAT && T_m != DT_BFLOAT16) return n;
-#endif
 
     if (m->type_string() == csinfo_.bias_add_grad) {
       // Get 1st input 'g' of BiasAddGrad.
@@ -1385,9 +1368,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   Status FuseNode(std::unique_ptr<Graph>* g, std::vector<Node*>& nodes,
                   const MklLayoutRewritePass::FusionInfo fi);
 
-  // Fuse transpose(to "NHWC") + mklop("NHWC") + transpose(to "NCHW") into
-  // mklop("NCHW").
-  // Here "mklop" can be any MKL-DNN supported op, such as Conv2D.
+  // Fuse transpose(to "NHWC") + OneDNNop("NHWC") + transpose(to "NCHW") into
+  // OneDNNop("NCHW").
+  // Here "OneDNNop" can be any OneDNN supported op, such as Conv2D.
   static Status FuseTransposeMklOpTranspose(
       std::unique_ptr<Graph>* g, std::vector<Node*>& nodes,
       std::function<void(const Node*, NodeBuilder* nb, bool)> copy_attrs,
@@ -1471,7 +1454,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
       return false;
     }
 
-    // if mklop has multiple outputs, don't fuse it.
+    // if OneDNNop has multiple outputs, don't fuse it.
     if (node->num_outputs() > 1) return false;
 
     if (node->out_edges().size() > 1) return false;
@@ -1496,21 +1479,21 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
 
   // Rewrite rule which considers "context" of the current node to decide if we
   // should rewrite. By "context" we currently mean all the inputs of current
-  // node. The idea is if none of the inputs of current node are not MKL nodes,
-  // then rewriting current node to MKL node _may not_ offer any performance
+  // node. The idea is if none of the inputs of current node are not OneDNN nodes,
+  // then rewriting current node to OneDNN node _may not_ offer any performance
   // improvement.
   //
   // One such case is element-wise ops. For such ops, we reuse the Eigen
-  // implementation and pass the MKL metadata tensor through so we can avoid
+  // implementation and pass the OneDNN metadata tensor through so we can avoid
   // conversions. However, if all incoming edges are in TF format, we don't
   // need all this overhead, so replace the elementwise node only if at least
-  // one of its parents is a MKL node.
+  // one of its parents is a OneDNN node.
   //
   // More generally, all memory- or IO-bound ops (such as Identity) may fall
   // under this category.
   //
   // @input - Input graph node to be rewritten
-  // @return - true if node is to be rewritten as MKL node; false otherwise.
+  // @return - true if node is to be rewritten as OneDNN node; false otherwise.
   static bool RewriteIfAtleastOneMklInput(const Node* n) {
     DataType T;
     if (GetNodeAttr(n->def(), "T", &T).ok() &&
@@ -1572,7 +1555,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   }
 
   // Check if we are performing pooling on depth or batch. If it is, then we
-  // do not rewrite MaxPool node to Mkl version.
+  // do not rewrite MaxPool node to OneDNN version.
   // @return - true (if it is not a depth/batch wise pooling case);
   //           false otherwise.
   static bool NonDepthBatchWisePoolRewrite(const Node* n) {
@@ -1598,17 +1581,17 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     return false;
   }
 
-  // If the depth_radius of LRN is not 2, then MKL DNN takes unoptimized
+  // If the depth_radius of LRN is not 2, then OneDNN takes unoptimized
   // path. The unoptimized path is slow. Thus we dont rewrite the node
-  // and use default Eigen. But for depth_radius=2, MKL DNN optimized
-  // path is taken, i.e., eigen node is rewritten by MKl DNN node.
+  // and use default Eigen. But for depth_radius=2, OneDNN optimized
+  // path is taken, i.e., eigen node is rewritten by OneDNN node.
   static bool LrnRewrite(const Node* n) {
     CHECK_NOTNULL(n);
 
     int depth_radius;
     TF_CHECK_OK(GetNodeAttr(n->def(), "depth_radius", &depth_radius));
 
-    // if the depth_radius of LRN is not 2, don't rewrite the node by MKL DNN
+    // if the depth_radius of LRN is not 2, don't rewrite the node by OneDNN
     // and use eigen node instead
     if (depth_radius == 2) {
       return true;
@@ -1637,11 +1620,11 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     return do_rewrite;
   }
 
-  // MKL-DNN's LeakyRelu(feature) = feature          (if feature > 0), or
+  // OneDNN's LeakyRelu(feature) = feature          (if feature > 0), or
   //                                feature * alpha  (otherwise),
   // while TensorFlow's LeakyRelu(feature) = max(feature, feature * alpha).
   // These two algorithms are not consistent when alpha > 1,
-  // so we only rewrite LeakyRelu to MKL OP when alpha <= 1.
+  // so we only rewrite LeakyRelu to OneDNN OP when alpha <= 1.
   static bool LeakyReluRewrite(const Node* n) {
     DCHECK(n);
 
@@ -1769,7 +1752,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   }
 
   static bool FusedConv2DRewrite(const Node* n) {
-    // MKL DNN currently doesn't support all fusions that grappler fuses
+    // OneDNN currently doesn't support all fusions that grappler fuses
     // together with Conv2D (ex. batchnorm). We rewrite _FusedConv2D only if
     // it includes those we support.
     DataType T;
@@ -1797,7 +1780,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   }
 
   static bool FusedDepthwiseConv2DRewrite(const Node* n) {
-    // MKL DNN currently doesn't support all fusions that grappler fuses
+    // OneDNN currently doesn't support all fusions that grappler fuses
     // together with DepthwiseConv2D (ex. batchnorm). We rewrite
     // _FusedDepthwiseConv2DNative only if it includes those we support.
     DataType T;
@@ -1853,7 +1836,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                                         const Node* orig_node, Node** new_node,
                                         const RewriteInfo* ri);
 
-  // Rewrites input node to enable MKL layout propagation. Please also refer to
+  // Rewrites input node to enable OneDNN layout propagation. Please also refer to
   // documentation for the function RewriteNodeForJustOpNameChange() to
   // understand what it means.
   //
@@ -1887,7 +1870,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
       int* input_idx, int list_length,
       std::vector<NodeBuilder::NodeOut>* output_nodes);
 
-  // Get nodes that will feed a list of Mkl tensors to the new
+  // Get nodes that will feed a list of OneDNN tensors to the new
   // node that we are constructing.
   //
   // @input g - input graph,
@@ -1898,8 +1881,8 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   //                    current input that we have processed so far
   // @output input_idx - index will be incremented by the number of nodes
   //                     from 'inputs' that are processed
-  // @input list_length - The expected length of list of Mkl tensors
-  // @output output_nodes - the list of new nodes creating Mkl tensors
+  // @input list_length - The expected length of list of OneDNN tensors
+  // @output output_nodes - the list of new nodes creating OneDNN tensors
   //
   // @return None
   void GetNodesProducingMklTensorList(
@@ -1908,17 +1891,17 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
       int* input_idx, int list_length,
       std::vector<NodeBuilder::NodeOut>* output_nodes);
 
-  // Get a node that will feed an Mkl tensor to the new
+  // Get a node that will feed an OneDNN tensor to the new
   // node that we are constructing. The output node could be (1) 'n'
-  // if it is Mkl layer, or (2) a dummy node producing dummy Mkl tensor
-  // if 'n' is not an Mkl layer.
+  // if it is OneDNN layer, or (2) a dummy node producing dummy OneDNN tensor
+  // if 'n' is not an OneDNN layer.
   //
   // @input g - input graph,
   // @input orig_node - Original node that we are rewriting,
-  // @input n - Node based on which we are creating Mkl node,
+  // @input n - Node based on which we are creating OneDNN node,
   // @input n_output_slot - the output slot of node 'n'
   //            which is feeding to the node that we are constructing
-  // @output mkl_node - the new node that will feed Mkl tensor
+  // @output mkl_node - the new node that will feed OneDNN tensor
   // @output mkl_node_output_slot - the slot number of mkl_node that
   //                                will feed the tensor
   // @return None
@@ -1948,7 +1931,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   // Setup new inputs using old inputs 'inputs' for the rewritten node in 'nb'
   // in graph 'g'. Original node is input in 'orig_node'.
   //
-  // For details, refer to 'Ordering of Tensorflow tensors and Mkl tensors'
+  // For details, refer to 'Ordering of Tensorflow tensors and OneDNN tensors'
   // section in the documentation above.
   //
   // Returns Status::OK() if setting up inputs is successful, otherwise
@@ -1970,7 +1953,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
 
   // Add workspace edge on the input or output side of Node 'orig_node' by using
   // NodeBuilder 'nb' for the new node provided. If 'orig_node' does not dictate
-  // adding workspace edge then do not add it. Workspace Tensorflow and Mkl
+  // adding workspace edge then do not add it. Workspace Tensorflow and OneDNN
   // tensors, if they need to be added, will be set into these tensors.
   // If we set workspace tensors, then are_ws_tensors_added should be true.
   void AddWorkSpaceEdgeIfNeeded(std::unique_ptr<Graph>* g,
@@ -1984,12 +1967,12 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   bool FixMklMetaDataEdgeIfNeeded(std::unique_ptr<Graph>* g, const Edge* e_data,
                                   const Edge* e_metadata);
 
-  // Are the input Mkl metadata edges for node 'n' in graph 'g' correctly
+  // Are the input OneDNN metadata edges for node 'n' in graph 'g' correctly
   // connected? If not, then fix them. This is needed because a graph may have
-  // some input Mkl metadata edges incorrectly setup after node merge and
+  // some input OneDNN metadata edges incorrectly setup after node merge and
   // rewrite passes. This could happen because GetReversePostOrder function may
   // not provide topologically sorted order if a graph contains cycles. The
-  // function returns true if at least one Mkl metadata edge for node 'n' was
+  // function returns true if at least one OneDNN metadata edge for node 'n' was
   // fixed. Otherwise, it returns false.
   //
   // Example:
@@ -1999,11 +1982,11 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   // Z = MklAdd(X, Y, DummyMklTensor, Y:1)
   //
   // For a graph such as shown above, note that 3rd argument of MklAdd contains
-  // DummyMklTensor. Actually, it should be getting the Mkl metadata from
+  // DummyMklTensor. Actually, it should be getting the OneDNN metadata from
   // MklConv2D op (specifically, X:2). This incorrect plumbing could be possible
-  // (although rare) if the Mkl NodeMerge + NodeRewrite passes visit Z before X
-  // (possible if X, Y, Z are part of a loop.) This function fixes the Mkl
-  // metadata edges only - it does not rewrite nodes nor does it modify the Mkl
+  // (although rare) if the OneDNN NodeMerge + NodeRewrite passes visit Z before X
+  // (possible if X, Y, Z are part of a loop.) This function fixes the OneDNN
+  // metadata edges only - it does not rewrite nodes nor does it modify the OneDNN
   // data edges (1st and 2nd arguments of MklAdd).
   bool FixMklMetaDataEdges(std::unique_ptr<Graph>* g, Node* n);
 
@@ -2053,7 +2036,7 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
   static void CopyAttrsPooling(const Node* orig_node, NodeBuilder* nb,
                                bool change_format = false);
 
-  // Generate a graph node in graph 'g' representing a dummy Mkl tensor node,
+  // Generate a graph node in graph 'g' representing a dummy OneDNN tensor node,
   // using node for original node 'orig_node' and return it in '*out'.
   // TODO(nhasabni) We should move this to mkl_util.h
   void GetDummyMklTensorNode(std::unique_ptr<Graph>* g, Node** out,
@@ -2064,9 +2047,9 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
 
 MklLayoutRewritePass::ConstStringsInfo MklLayoutRewritePass::csinfo_;
 
-// We register Mkl rewrite pass for phase 1 in post partitioning group.
-// We register it here so that we get a complete picture of all users of Mkl
-// nodes. Do not change the ordering of the Mkl passes.
+// We register OneDNN rewrite pass for phase 1 in post partitioning group.
+// We register it here so that we get a complete picture of all users of OneDNN
+// nodes. Do not change the ordering of the OneDNN passes.
 const OptimizationPassRegistry::Grouping kMklLayoutRewritePassGroup =
     OptimizationPassRegistry::POST_PARTITIONING;
 #ifdef ENABLE_MKL
@@ -2117,7 +2100,7 @@ void MklLayoutRewritePass::GetDummyMklTensorNode(std::unique_ptr<Graph>* g,
                                                  Node** out,
                                                  const Node* orig_node) {
   // We use a tensor of shape {8} and value 0,0,0,0,0,0,0,0 to represent
-  // dummy Mkl tensor. 8 = 2*size_t.
+  // dummy OneDNN tensor. 8 = 2*size_t.
   const DataType dt = DataTypeToEnum<uint8>::v();
   TensorProto proto;
   proto.set_dtype(dt);
@@ -2137,10 +2120,10 @@ void MklLayoutRewritePass::GetDummyMklTensorNode(std::unique_ptr<Graph>* g,
 
   // If number of inputs to the original node is > 0, then we add
   // control dependency between 1st input (index 0) of the original node and
-  // the dummy Mkl node. This is needed because control-flow ops such as Enter,
-  // Merge, etc, require frame_name of the dummy Mkl node to be same as the
+  // the dummy OneDNN node. This is needed because control-flow ops such as Enter,
+  // Merge, etc, require frame_name of the dummy OneDNN node to be same as the
   // rewritten node. Adding control edge between 1st input of the original node
-  // and the dummy Mkl node ensures that the dummy node is in the same frame
+  // and the dummy OneDNN node ensures that the dummy node is in the same frame
   // as the original node. Choosing 1st input is not necessary - any input of
   // the original node is fine because all the inputs of a node are always in
   // the same frame.
@@ -2169,7 +2152,7 @@ void MklLayoutRewritePass::GetNodesProducingMklTensorList(
     CHECK_LT(*input_idx, inputs.size());
     Node* n = inputs[*input_idx].first;
     int slot = inputs[*input_idx].second;
-    // If 'n' is producing a single tensor, then create a single Mkl tensor
+    // If 'n' is producing a single tensor, then create a single OneDNN tensor
     // node.
     Node* mkl_node = nullptr;
     int mkl_node_output_slot = 0;
@@ -2182,10 +2165,10 @@ void MklLayoutRewritePass::GetNodesProducingMklTensorList(
   }
 }
 
-// Get an input node that will feed Mkl tensor to the new
+// Get an input node that will feed OneDNN tensor to the new
 // node that we are constructing. An input node could be (1) 'n'
-// if it is Mkl layer, or (2) a dummy node producing dummy Mkl tensor
-// if 'n' is not an Mkl layer.
+// if it is OneDNN layer, or (2) a dummy node producing dummy OneDNN tensor
+// if 'n' is not an OneDNN layer.
 void MklLayoutRewritePass::GetNodeProducingMklTensor(
     std::unique_ptr<Graph>* g, const Node* orig_node, Node* n,
     int n_output_slot, Node** mkl_node, int* mkl_node_output_slot) {
@@ -2193,22 +2176,22 @@ void MklLayoutRewritePass::GetNodeProducingMklTensor(
   CHECK_NOTNULL(mkl_node);
   CHECK_NOTNULL(mkl_node_output_slot);
 
-  // If this is an MKL op, then it will create extra output for MKL layout.
+  // If this is an OneDNN op, then it will create extra output for OneDNN layout.
   DataType T;
   if (TryGetNodeAttr(n->def(), "T", &T) &&
       mkl_op_registry::IsMklLayoutDependentOp(n->type_string(), T)) {
-    // If this is an MKL op, then it will generate an edge that will receive
-    // Mkl tensor from a node.
-    // output slot number for Mkl tensor would be N+slot number of TensorFlow
+    // If this is an OneDNN op, then it will generate an edge that will receive
+    // OneDNN tensor from a node.
+    // output slot number for OneDNN tensor would be N+slot number of TensorFlow
     // tensor, where N is total number of TensorFlow tensors.
     *mkl_node = n;
     *mkl_node_output_slot =
         GetTensorMetaDataIndex(n_output_slot, n->num_outputs());
   } else {
     // If we have not visited the node and rewritten it, then we need
-    // to create a dummy node that will feed a dummy Mkl tensor to this node.
+    // to create a dummy node that will feed a dummy OneDNN tensor to this node.
     // DummyMklTensor node has no input and generates only 1 output
-    // (dummy Mkl tensor) as output slot number 0.
+    // (dummy OneDNN tensor) as output slot number 0.
     GetDummyMklTensorNode(g, mkl_node, orig_node);
     CHECK_NOTNULL(*mkl_node);
     *mkl_node_output_slot = 0;
@@ -2312,8 +2295,8 @@ int MklLayoutRewritePass::SetUpContiguousInputs(
     nn_slot_idx++;
   }
 
-  // Let's now setup all Mkl inputs to a new node.
-  // Number of Mkl inputs must be same as number of TF inputs.
+  // Let's now setup all OneDNN inputs to a new node.
+  // Number of OneDNN inputs must be same as number of TF inputs.
   iidx = 0;
   for (int on_slot_idx = 0; on_slot_idx < old_node_input_slots; on_slot_idx++) {
     // An input slot could be a single tensor or a list. We need
@@ -2349,12 +2332,12 @@ int MklLayoutRewritePass::SetUpContiguousInputs(
   }
 
   // If workspace tensors are available for this op and we are using
-  // contiguous ordering then we need to add Mkl tensor for
-  // workspace here because Mkl tensor for workspace is the
-  // last tensor in the list of Mkl tensors.
+  // contiguous ordering then we need to add OneDNN tensor for
+  // workspace here because OneDNN tensor for workspace is the
+  // last tensor in the list of OneDNN tensors.
   if (are_workspace_tensors_available) {
     CHECK_EQ(workspace_tensors->size(), 2);
-    // Mkl tensor
+    // OneDNN tensor
     nb->Input((*workspace_tensors)[1].node, (*workspace_tensors)[1].index);
     nn_slot_idx++;
   }
@@ -2424,14 +2407,14 @@ Status MklLayoutRewritePass::SetUpInputs(
     // If we are not adding workspace tensors for this op, then the total
     // number of input slots to the new node _must_ be 2 times the number
     // of input slots to the original node: N original Tensorflow tensors and
-    // N for Mkl tensors corresponding to each Tensorflow tensors.
+    // N for OneDNN tensors corresponding to each Tensorflow tensors.
     CHECK_EQ(new_node_input_slots, old_node_input_slots * 2);
   } else {
     // If we are adding workspace tensors for this op, then the total
     // The total number of input slots to new node _must_ be 2 times the number
     // of input slots to the original node: N original Tensorflow tensors and
-    // N for Mkl tensors corresponding to each Tensorflow tensors plus 2
-    // (for workspace Tensorflow tensor and workspace Mkl tensor).
+    // N for OneDNN tensors corresponding to each Tensorflow tensors plus 2
+    // (for workspace Tensorflow tensor and workspace OneDNN tensor).
     CHECK_EQ(new_node_input_slots, old_node_input_slots * 2 + 2);
   }
 
@@ -2525,19 +2508,19 @@ void MklLayoutRewritePass::AddWorkSpaceEdgeIfNeeded(
                    mkl_op_registry::GetMklOpName(orig_node->type_string()),
                    T)) {
       // If this op is a bwd op, then we need to add workspace edge and
-      // it's Mkl tensor edge between its corresponding fwd op and this
+      // it's OneDNN tensor edge between its corresponding fwd op and this
       // op. Corresponding fwd op is specified in 'fwd_op' field of
       // workspace info. fwd_slot and bwd_slot in workspace info specify
       // an edge between which slots connect forward and backward op.
       // Once all these criteria match, we add a workspace edge between
-      // ws_fwd_slot and ws_bwd_slot. Its corresponding Mkl tensor is
+      // ws_fwd_slot and ws_bwd_slot. Its corresponding OneDNN tensor is
       // determined by interleaved/contiguous ordering. Function
-      // DataIndexToMetaDataIndex tells us the location of Mkl tensor
+      // DataIndexToMetaDataIndex tells us the location of OneDNN tensor
       // from the location of the Tensorflow tensor.
       for (const Edge* e : orig_node->in_edges()) {
         if (e->src_output() == ws.fwd_slot &&
             // We would have rewritten the forward op, so we need to use
-            // GetMklOpName call to get its Mkl name.
+            // GetMklOpName call to get its OneDNN name.
             e->src()->type_string() ==
                 mkl_op_registry::GetMklOpName(ws.fwd_op) &&
             e->dst_input() == ws.bwd_slot) {
@@ -2545,13 +2528,13 @@ void MklLayoutRewritePass::AddWorkSpaceEdgeIfNeeded(
           CHECK_NOTNULL(ws_tensors);
           // Add workspace edge between fwd op and bwd op.
           ws_tensors->push_back(NodeBuilder::NodeOut(e->src(), ws.ws_fwd_slot));
-          // Add Mkl tensor edge for workspace edge between fwd op and bwd op.
+          // Add OneDNN tensor edge for workspace edge between fwd op and bwd op.
           ws_tensors->push_back(NodeBuilder::NodeOut(
               e->src(), DataIndexToMetaDataIndex(ws.ws_fwd_slot,
                                                  e->src()->num_outputs())));
           *are_ws_tensors_added = true;
           // In terms of input ordering, we add these calls to add Input
-          // here because workspace edge (and its Mkl tensor) is the last
+          // here because workspace edge (and its OneDNN tensor) is the last
           // edge in the fwdop and bwdop. So all inputs before workspace
           // tensor have been added by SetUpInputs function.
           VLOG(1) << "MklLayoutRewritePass: workspace_enabled for "
@@ -2564,12 +2547,12 @@ void MklLayoutRewritePass::AddWorkSpaceEdgeIfNeeded(
 
       // If we are here means we did not find fwd op that feeds to this
       // bwd op. So in this case, we need to generate dummy tensors for
-      // workspace input and Mkl tensor for workspace, and set
+      // workspace input and OneDNN tensor for workspace, and set
       // workspace_enabled to false.
       if (!workspace_edge_added) {
         nb->Attr("workspace_enabled", false);
         Node* dmt_ws = nullptr;      // Dummy tensor for workspace
-        Node* dmt_mkl_ws = nullptr;  // Dummy Mkl tensor for workspace
+        Node* dmt_mkl_ws = nullptr;  // Dummy OneDNN tensor for workspace
         GetDummyWorkspaceTensorNode(g, &dmt_ws, orig_node);
         GetDummyMklTensorNode(g, &dmt_mkl_ws, orig_node);
         CHECK_NOTNULL(dmt_ws);
@@ -2577,7 +2560,7 @@ void MklLayoutRewritePass::AddWorkSpaceEdgeIfNeeded(
         CHECK_NOTNULL(ws_tensors);
         // We add dummy tensor as workspace tensor.
         ws_tensors->push_back(NodeBuilder::NodeOut(dmt_ws, 0));
-        // We add dummy tensor as Mkl tensor for workspace tensor.
+        // We add dummy tensor as OneDNN tensor for workspace tensor.
         ws_tensors->push_back(NodeBuilder::NodeOut(dmt_mkl_ws, 0));
         *are_ws_tensors_added = true;
         VLOG(1) << "MklLayoutRewritePass: dummy workspace_enabled for "
@@ -3052,7 +3035,7 @@ void MklLayoutRewritePass::CopyAttrsPooling(const Node* orig_node,
 
 Node* MklLayoutRewritePass::CheckForNodeMerge(const Node* a) const {
   // TODO(nhasabni) Add check for type of node similar to CheckForNodeRewrite
-  // once we support BiasAddGrad as Mkl layer.
+  // once we support BiasAddGrad as OneDNN layer.
 
   // Search for all matching mergeinfo.
   // We allow more than one match for extensibility.
@@ -3664,9 +3647,9 @@ Status MklLayoutRewritePass::RewriteNodeForLayoutPropagation(
 
   // Copy outgoing edges from 'orig_node' node to new
   // 'new_node' node, since the output also follows same ordering among
-  // Tensorflow tensors and Mkl tensors. We need to connect Tensorflow
+  // Tensorflow tensors and OneDNN tensors. We need to connect Tensorflow
   // tensors appropriately. Specifically, nth output of the original node
-  // will become 2*nth output of the Mkl node for the interleaved ordering
+  // will become 2*nth output of the OneDNN node for the interleaved ordering
   // of the tensors. For the contiguous ordering of the tensors, it will be n.
   // GetTensorDataIndex provides this mapping function.
   for (const Edge* e : orig_node->out_edges()) {
@@ -3831,16 +3814,16 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
   const RewriteInfo* ri = CheckForQuantizedNodeRewrite(n);
   if (ri != nullptr) return ri;
 
-  // First check if node along with its type is supported by MKL layer.
-  // We do not want to rewrite an op into Mkl op if types are not supported.
-  // E.g., MklRelu does not support INT32. So we cannot rewrite Relu to
-  // MklRelu if type is INT32.
+  // First check if node along with its type is supported by OneDNN layer.
+  // We do not want to rewrite an op into OneDNN op if types are not supported.
+  // E.g., OneDNNRelu does not support INT32. So we cannot rewrite Relu to
+  // OneDNNRelu if type is INT32.
   DataType T;
   if (!TryGetNodeAttr(n->def(), "T", &T)) {
     return nullptr;
   }
 
-  // We make an exception for Conv2D, as the corresponding MKL ops
+  // We make an exception for Conv2D, as the corresponding OneDNN ops
   // currently do not support the case of padding == EXPLICIT yet.
   if (n->type_string() == csinfo_.conv2d ||
       n->type_string() == csinfo_.conv2d_grad_input ||
@@ -3869,7 +3852,7 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
   }
 
   // We now check if rewrite rule applies for this op. If rewrite rule passes
-  // for this op, then we rewrite it to Mkl op.
+  // for this op, then we rewrite it to OneDNN op.
   // Find matching RewriteInfo and then check that rewrite rule applies.
   if (enable_reco_ops_list_ && !CheckForRecoOpsListNodeRewrite(n)) return nullptr;
   for (auto ri = rinfo_.cbegin(); ri != rinfo_.cend(); ++ri) {
@@ -4022,7 +4005,7 @@ MklLayoutRewritePass::CheckForNodeFusion(Node* a) const {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//              Post-rewrite Mkl metadata fixup pass
+//              Post-rewrite OneDNN metadata fixup pass
 ///////////////////////////////////////////////////////////////////////////////
 bool MklLayoutRewritePass::FixMklMetaDataEdgeIfNeeded(std::unique_ptr<Graph>* g,
                                                       const Edge* e_data,
@@ -4036,7 +4019,7 @@ bool MklLayoutRewritePass::FixMklMetaDataEdgeIfNeeded(std::unique_ptr<Graph>* g,
   int n_metadata_op_slot =
       GetTensorMetaDataIndex(n_data_op_slot, n_data->num_outputs());
 
-  // If the source of meta edge is a constant node (producing dummy Mkl metadata
+  // If the source of meta edge is a constant node (producing dummy OneDNN metadata
   // tensor), then we will need to fix.
   if (IsConstant(e_metadata->src())) {
     Node* e_metadata_dst = e_metadata->dst();
@@ -4055,18 +4038,18 @@ bool MklLayoutRewritePass::FixMklMetaDataEdges(std::unique_ptr<Graph>* g,
                                                Node* n) {
   bool result = false;
 
-  // If graph node is not Mkl node, then return.
+  // If graph node is not OneDNN node, then return.
   DataType T = DT_INVALID;
   if (!TryGetNodeAttr(n->def(), "T", &T) ||
       !mkl_op_registry::IsMklLayoutDependentOp(n->type_string(), T)) {
     return result;
   }
 
-  // If it is Mkl node, then check if the input edges to this node that carry
-  // Mkl metadata are linked up correctly with the source node.
+  // If it is OneDNN node, then check if the input edges to this node that carry
+  // OneDNN metadata are linked up correctly with the source node.
 
-  // For Mkl nodes, we generate twice the number of input tensors (n for Mkl
-  // data tensors + n for Mkl metadata tensors). We need to check for correct
+  // For OneDNN nodes, we generate twice the number of input tensors (n for OneDNN
+  // data tensors + n for OneDNN metadata tensors). We need to check for correct
   // connection of n metadata tensors only.
   int num_data_inputs = n->num_inputs() / 2;
   for (int idx = 0; idx < num_data_inputs; idx++) {
@@ -4079,18 +4062,18 @@ bool MklLayoutRewritePass::FixMklMetaDataEdges(std::unique_ptr<Graph>* g,
       continue;
     }
 
-    // Check that the source node for edge 'e' is Mkl node. If it is not an Mkl
+    // Check that the source node for edge 'e' is OneDNN node. If it is not an OneDNN
     // node, then we don't need to do anything.
     Node* e_src = e->src();
     if (TryGetNodeAttr(e_src->def(), "T", &T) &&
         mkl_op_registry::IsMklLayoutDependentOp(e_src->type_string(), T)) {
-      // Source node for edge 'e' is Mkl node.
+      // Source node for edge 'e' is OneDNN node.
       // Destination node and destination input slot of e is node 'n' and 'idx'
       // resp.
       CHECK_EQ(e->dst(), n);
       CHECK_EQ(e->dst_input(), idx);
 
-      // Let's get edge that carries Mkl metadata corresponding to Mkl data edge
+      // Let's get edge that carries OneDNN metadata corresponding to OneDNN data edge
       // 'e'. For that, let's first get the input slot of 'n' where the meta
       // edge will feed the value.
       int e_meta_in_slot =

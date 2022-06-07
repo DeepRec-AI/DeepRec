@@ -1930,7 +1930,7 @@ void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
   }
 
   NodeDef node_def_stage;
-  TF_CHECK_OK(NodeDefBuilder(stage_node->name(), "DataBufferPut")
+  TF_CHECK_OK(NodeDefBuilder(stage_node->name(), "TensorBufferPut")
     .Device(stage_node->assigned_device_name())
     .Input(src_list)
     .Attr("container", stage_node->def().attr().at("container"))
@@ -1945,7 +1945,7 @@ void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
   dest->RemoveNode(stage_node);
 
   NodeDef node_def_unstage;
-  TF_CHECK_OK(NodeDefBuilder(unstage_node->name(), "DataBufferTake")
+  TF_CHECK_OK(NodeDefBuilder(unstage_node->name(), "TensorBufferTake")
     .Device(unstage_node->assigned_device_name())
     .Attr("container", unstage_node->def().attr().at("container"))
     .Attr("dtypes", DataTypeSlice(type_vec))

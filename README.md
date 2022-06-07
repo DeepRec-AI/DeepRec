@@ -20,15 +20,17 @@ DeepRec has super large-scale distributed training capability, supporting model 
  - Dynamic Dimension Embedding Variable.
  - Adaptive Embedding Variable.
  - Multiple Hash Embedding Variable.
+ - Multi-tier Hybrid Embedding Storage
  #### **Performance Optimization**
  - Distributed Training Framework Optimization, such as grpc+seastar, FuseRecv, StarServer, HybridBackend etc.
  - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator etc.
  - Operator level optimization, such as BF16 mixed precision  optimization, sparse operator optimization and EmbeddingVariable on PMEM and GPU, new hardware feature enabling, etc.
  - Graph level optimization, such as AutoGraphFusion, SmartStage, AutoPipeline, StrutureFeature, MicroBatch etc.
+ - Compilation optimization, support BladeDISC, XLA etc.
 #### **Deploy and Serving**
  - Incremental model loading and exporting
  - Super-scale sparse model distributed serving
- - Multilevel hybrid storage and multi backend supported ..
+ - Multi-tier hybrid storage and multi backend supported
  - Online deep learning with low latency
 
 
@@ -53,6 +55,10 @@ registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gp
 
 ### **How to Build**
 
+Setup Environment Variable (Compile for GPU)
+```
+$ export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
+```
 configure
 ```
 $ ./configure
@@ -67,11 +73,11 @@ $ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_US
 ```
 Compile for CPU optimization: oneDNN + Unified Eigen Thread pool
 ```
-$ bazel build  -c opt --config=opt  --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true //tensorflow/tools/pip_package:build_pip_package
+$ bazel build -c opt --config=opt --config=mkl_threadpool //tensorflow/tools/pip_package:build_pip_package
 ```
 Compile for CPU optimization and ABI=0
 ```
-$ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt --config=opt --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true //tensorflow/tools/pip_package:build_pip_package
+$ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt --config=opt --config=mkl_threadpool //tensorflow/tools/pip_package:build_pip_package
 ```
 ### **Create whl package** 
 ```
@@ -82,44 +88,14 @@ $ ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
 $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
 ```
 
-### **How to Build serving library**
-
-configure will modify .bazelrc file, please revert the change when you build DeepRec whl.
-```
-./configure serving
-```
-Or configure with some flags,
-```
-./configure serving --mkl
-./configure serving --mkl_open_source_v1_only
-./configure serving --mkl_threadpool
-./configure serving --mkl --cuda ...
-```
-More details see: serving/configure.py
-
-build processor library, this will generate libserving_processor.so. User should load the library, then call serving API to predict.
-```
-bazel build //serving/processor/serving:libserving_processor.so
-```
-
-UT test
-```
-bazel test -- //serving/processor/... -//serving/processor/framework:lookup_manual_test
-```
-
-End2End test
-```
-Details please see: serving/processor/tests/end2end/README
-```
-
 ### **Latest Release Images**
 #### Image for GPU CUDA11.0
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
 ```
 #### Image for CPU
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-cpu-py36-ubuntu18.04
 ```
 
 

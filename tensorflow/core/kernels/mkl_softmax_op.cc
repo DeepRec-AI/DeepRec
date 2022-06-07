@@ -17,7 +17,7 @@ limitations under the License.
 
 #ifdef INTEL_MKL
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/numeric_op.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -28,9 +28,9 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/tensor_format.h"
 
-using mkldnn::prop_kind;
-using mkldnn::softmax_forward;
-using mkldnn::stream;
+using dnnl::prop_kind;
+using dnnl::softmax_forward;
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -59,7 +59,7 @@ class MklSoftmaxPrimitive : public MklPrimitive {
   //   dst_data:  output data buffer of dst
   void Execute(const T* src_data, T* dst_data,
                std::shared_ptr<stream> fwd_cpu_stream) {
-#ifdef ENABLE_MKLDNN_THREADPOOL
+#ifdef ENABLE_DNNL_THREADPOOL
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)), *fwd_cpu_stream);
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data),
@@ -68,41 +68,37 @@ class MklSoftmaxPrimitive : public MklPrimitive {
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)));
     context_.dst_mem->set_data_handle(static_cast<void*>(dst_data));
-#endif  // ENABLE_MKLDNN_THREADPOOL
-#ifdef ENABLE_MKLDNN_V1
+#endif  // ENABLE_DNNL_THREADPOOL
     DCHECK_EQ(context_.fwd_primitives.size(), context_.fwd_net_args.size());
     execute_primitives(context_.fwd_primitives, fwd_cpu_stream,
                        context_.fwd_net_args);
-#else
-    fwd_cpu_stream->submit(context_.fwd_primitives);
-#endif
 
     // After execution, set data handle back.
     context_.src_mem->set_data_handle(DummyData);
     context_.dst_mem->set_data_handle(DummyData);
   }
 
-  std::shared_ptr<mkldnn::softmax_forward::primitive_desc> GetSoftmaxFwdPd() {
+  std::shared_ptr<dnnl::softmax_forward::primitive_desc> GetSoftmaxFwdPd() {
     return context_.fwd_pd;
   }
 
  private:
   struct SoftmaxFwdContext {
-    // MKL-DNN memory.
+    // OneDNN memory.
     std::shared_ptr<memory> src_mem;
     std::shared_ptr<memory> dst_mem;
 
     // Primitive descriptor.
-    std::shared_ptr<mkldnn::softmax_forward::desc> fwd_desc;
+    std::shared_ptr<dnnl::softmax_forward::desc> fwd_desc;
 
     // Memory descriptor.
     std::shared_ptr<memory::desc> src_md;
 
     // Softmax primitive.
-    std::shared_ptr<mkldnn::softmax_forward::primitive_desc> fwd_pd;
-    std::shared_ptr<mkldnn::primitive> softmax_fwd;
+    std::shared_ptr<dnnl::softmax_forward::primitive_desc> fwd_pd;
+    std::shared_ptr<dnnl::primitive> softmax_fwd;
 
-    std::vector<mkldnn::primitive> fwd_primitives;
+    std::vector<dnnl::primitive> fwd_primitives;
     std::vector<MemoryArgsMap> fwd_net_args;
 
     SoftmaxFwdContext()
@@ -122,9 +118,9 @@ class MklSoftmaxPrimitive : public MklPrimitive {
         new memory::desc({fwdParams.src_dims}, MklDnnType<T>(), src_format));
 
     // Create softmax descriptor and primitive descriptor.
-    context_.fwd_desc.reset(new mkldnn::softmax_forward::desc(
+    context_.fwd_desc.reset(new dnnl::softmax_forward::desc(
         prop_kind::forward_scoring, *context_.src_md, fwdParams.axis));
-    context_.fwd_pd.reset(new mkldnn::softmax_forward::primitive_desc(
+    context_.fwd_pd.reset(new dnnl::softmax_forward::primitive_desc(
         *context_.fwd_desc, cpu_engine_));
 
     // Create memory primitive based on dummy data.
@@ -133,17 +129,11 @@ class MklSoftmaxPrimitive : public MklPrimitive {
     context_.dst_mem.reset(new MEMORY_CONSTRUCTOR_PD(
         context_.fwd_pd.get()->PRIMITIVE_DESC_DST, cpu_engine_, DummyData));
 
-#ifdef ENABLE_MKLDNN_V1
     // Create softmax primitive and add it to net
-    context_.softmax_fwd.reset(new mkldnn::softmax_forward(*context_.fwd_pd));
-    context_.fwd_net_args.push_back({{MKLDNN_ARG_SRC, *context_.src_mem},
-                                     { MKLDNN_ARG_DST,
+    context_.softmax_fwd.reset(new dnnl::softmax_forward(*context_.fwd_pd));
+    context_.fwd_net_args.push_back({{DNNL_ARG_SRC, *context_.src_mem},
+                                     { DNNL_ARG_DST,
                                        *context_.dst_mem }});
-#else
-    context_.softmax_fwd.reset(new mkldnn::softmax_forward(
-        *context_.fwd_pd, *context_.src_mem, *context_.dst_mem));
-#endif  // ENABLE_MKLDNN_V1
-
     context_.fwd_primitives.push_back(*context_.softmax_fwd);
   }
 
@@ -232,12 +222,12 @@ class MklSoftmaxOp : public OpKernel {
         axis = input_dims - 1;
       }
       MKL_TENSOR_FORMAT layout_type;
-      // In MKL, data format passed to mkl softmax op depends on dimension of
-      // the input tensor. Here "x" data format in MKL is used for 1 dim tensor,
+      // In OneDNN, data format passed to OneDNN softmax op depends on dimension of
+      // the input tensor. Here "x" data format in OneDNN is used for 1 dim tensor,
       // "nc" for 2 dim tensor, "tnc" for 3 dim tensor, "nchw" for 4 dim tensor,
       // and "ncdhw" for 5 dim tensor. Each of the symbols has the following
       // meaning: n = batch, c = channels, t = sequence length, h = height, w =
-      // width, d = depth. When src tensor is MKL, layout_type here is only used
+      // width, d = depth. When src tensor is OneDNN, layout_type here is only used
       // for setting TF layout type of output tensor. When input is TF Tensor,
       // layout here is no special sense. We use axis to define on which
       // dimension to do softmax.
@@ -271,7 +261,7 @@ class MklSoftmaxOp : public OpKernel {
           return;
       }
 
-      // If input is in MKL layout, then simply get the format from input;
+      // If input is in OneDNN layout, then simply get the format from input;
       // otherwise, use TF layout defined before.
       auto src_fmt = src_mkl_shape.IsMklTensor()
                          ? GET_FORMAT_FROM_SHAPE(src_mkl_shape)
@@ -289,7 +279,7 @@ class MklSoftmaxOp : public OpKernel {
 
       auto dst_pd = softmax_fwd->GetSoftmaxFwdPd()->PRIMITIVE_DESC_DST;
 
-      // If input is MKL shape, output is also MKL shape.
+      // If input is OneDNN shape, output is also OneDNN shape.
       // If input is TF shape, output is also TF shape.
       if (src_mkl_shape.IsMklTensor()) {
         output_mkl_shape.SetMklTensor(true);
@@ -311,7 +301,7 @@ class MklSoftmaxOp : public OpKernel {
       MklDnnThreadPool eigen_tp(context);
       fwd_cpu_stream.reset(CreateStream(&eigen_tp, softmax_fwd->GetEngine()));
       softmax_fwd->Execute(src_data, dst_data, fwd_cpu_stream);
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);

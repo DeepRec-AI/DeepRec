@@ -268,7 +268,7 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
               initializer=init_ops.ones_initializer(dtypes.float32))
 
     ids={}
-    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,1],[2,2],[3,3],[4,4]], values=math_ops.cast([1,2,3,4,5], dtypes.int64), dense_shape=[5, 4])
+    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,1],[2,2],[3,3],[4,3]], values=math_ops.cast([1,2,3,4,5], dtypes.int64), dense_shape=[5, 4])
 
     emb = feature_column_ops.input_from_feature_columns(columns_to_tensors=ids, feature_columns=[W])
 

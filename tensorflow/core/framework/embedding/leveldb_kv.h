@@ -64,7 +64,7 @@ class DBIterator : public Iterator {
   virtual ~DBIterator() {
     delete it_;
   };
-  virtual bool Valid() const {
+  virtual bool Valid() {
     return it_->Valid();
   }
   virtual void SeekToFirst() {
@@ -73,11 +73,13 @@ class DBIterator : public Iterator {
   virtual void Next() {
     return it_->Next();
   }
-  virtual std::string Key() const {
-    return it_->key().ToString();
+  virtual void Key(char* val, int64 dim) {
+    memcpy(val, it_->key().ToString().data(), dim);
   }
-  virtual std::string Value() const {
-    return it_->value().ToString();
+  virtual void Value(char* val, int64 dim, int64 value_offset) {
+    memcpy(val,
+           it_->value().ToString().data() + value_offset + sizeof(FixedLengthHeader),
+           dim);
   }
  private:
   leveldb::Iterator* it_;
@@ -92,7 +94,7 @@ class LevelDBKV : public KVInterface<K, V> {
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
     CHECK(s.ok());
     counter_ =  new SizeCounter<K>(8);
-    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(ev_allocator(), size); };
+    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(cpu_allocator(), size); };
     total_dims_ = 0;
   }
 

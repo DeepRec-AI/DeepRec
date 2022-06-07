@@ -35,7 +35,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-// Helper class for converting MKL tensors to TF tensors and comparing to
+// Helper class for converting OneDNN tensors to TF tensors and comparing to
 // expected values
 
 static const uint8 dummy_tensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -52,10 +52,10 @@ class CommonTestUtilities : public OpsTestBase {
  public:
   void PerformConversion(DataType dtype, const Tensor& tensor,
                          const Tensor& mkl_meta_tensor, Tensor* output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // Mkl second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));

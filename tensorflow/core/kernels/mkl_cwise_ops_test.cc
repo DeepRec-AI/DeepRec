@@ -16,7 +16,7 @@ limitations under the License.
 #ifdef INTEL_MKL
 
 #include "absl/strings/match.h"
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/cc/ops/const_op.h"
 #include "tensorflow/cc/ops/math_ops.h"
 #include "tensorflow/cc/ops/math_ops_internal.h"
@@ -40,13 +40,13 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_util.h"
 
 // Compare performance of default Tensorflow cwise kernels (Eigen) with
-// MKL kernels on CPU.
+// OneDNN kernels on CPU.
 // Before running these benchmarks configure OpenMP environment variables:
 //   export KMP_BLOCKTIME=0
 //   export OMP_NUM_THREADS=${num_threads}
 //   export KMP_AFFINITY=granularity=fine,verbose,compact,1,0
 //
-// Then you could run below command to test MKL kernels performance:
+// Then you could run below command to test OneDNN kernels performance:
 // $bazel run --config opt --config=mkl
 // //tensorflow/core/kernels/mkl:mkl_cwise_ops_test \
 //   --  --benchmarks=..
@@ -54,7 +54,7 @@ limitations under the License.
 namespace tensorflow {
 
 // --------------------------------------------------------------------------//
-//  Test Mkl cwise kernels accuracy with Eigen kernels                       //
+//  Test OneDNN cwise kernels accuracy with Eigen kernels                       //
 // --------------------------------------------------------------------------//
 static const uint8 dummy_tensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
 static const TensorShape dummy_shape({8});
@@ -68,10 +68,10 @@ class CommonTestUtilities : public OpsTestBase {
  public:
   void PerformConversion(DataType dtype, const Tensor& tensor,
                          const Tensor& mkl_meta_tensor, Tensor* output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // Mkl second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));
@@ -293,7 +293,7 @@ using CwiseOpsDataTypes = ::testing::Types<float, bfloat16>;
 INSTANTIATE_TYPED_TEST_SUITE_P(Test, CwiseOpsTest, CwiseOpsDataTypes);
 
 // --------------------------------------------------------------------------//
-// Test Mkl element-wise kernels performance with Eigen                      //
+// Test OneDNN element-wise kernels performance with Eigen                      //
 // --------------------------------------------------------------------------//
 template <typename T>
 static Graph* Cwise(const string& op_name, const string& kind,

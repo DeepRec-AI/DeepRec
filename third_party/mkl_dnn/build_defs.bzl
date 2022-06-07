@@ -1,11 +1,11 @@
 def if_mkl_open_source_only(if_true, if_false = []):
-    """Returns `if_true` if MKL-DNN v0.x is used.
+    """Returns `if_true` if OneDNN v0.x is used.
 
     Shorthand for select()'ing on whether we're building with
-    MKL-DNN v0.x open source library only, without depending on MKL binary form.
+    OneDNN v0.x open source library only, without depending on OneDNN binary form.
 
     Returns a select statement which evaluates to if_true if we're building
-    with MKL-DNN v0.x open source library only. Otherwise, the select statement
+    with OneDNN v0.x open source library only. Otherwise, the select statement
     evaluates to if_false.
 
     """
@@ -15,13 +15,13 @@ def if_mkl_open_source_only(if_true, if_false = []):
     })
 
 def if_mkldnn_threadpool(if_true, if_false = []):
-    """Returns `if_true` if MKL-DNN v1.x is used.
+    """Returns `if_true` if OneDNN v1.x is used.
 
     Shorthand for select()'ing on whether we're building with
-    MKL-DNN v1.x open source library only with user specified threadpool, without depending on MKL binary form.
+    OneDNN v1.x open source library only with user specified threadpool, without depending on OneDNN binary form.
 
     Returns a select statement which evaluates to if_true if we're building
-    with MKL-DNN v1.x open source library only with user specified threadpool. Otherwise, the
+    with OneDNN v1.x open source library only with user specified threadpool. Otherwise, the
     select statement evaluates to if_false.
 
     """

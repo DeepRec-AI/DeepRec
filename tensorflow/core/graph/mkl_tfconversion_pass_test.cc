@@ -241,7 +241,7 @@ TEST_F(MklToTfConversionPass, Negative_DoubleInsert) {
 }
 
 // C=Conv2D(A,B); E=BiasAdd(C,D); Z=Sub(E,Y);
-// There is no Mkl layer so no conversion op should be inserted.
+// There is no OneDNN layer so no conversion op should be inserted.
 TEST_F(MklToTfConversionPass, Negative_NoMklLayer) {
   InitGraph(
       "node { name: 'A' op: 'Float_Input'}"

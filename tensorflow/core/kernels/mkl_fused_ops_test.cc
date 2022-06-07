@@ -33,7 +33,7 @@ limitations under the License.
 
 namespace tensorflow {
 
-// Helper class for converting MKL tensors to TF tensors and comparing to
+// Helper class for converting OneDNN tensors to TF tensors and comparing to
 // expected values
 
 static const uint8 dummy_tensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -53,10 +53,10 @@ class CommonTestUtilities : public OpsTestBase {
  public:
   void PerformConversion(DataType dtype, const Tensor& tensor,
                          const Tensor& mkl_meta_tensor, Tensor* output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // Mkl second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));
@@ -193,7 +193,7 @@ class CommonTestUtilities : public OpsTestBase {
   using random_gen_ = Eigen::internal::NormalRandomGenerator<T>;
 };
 
-// Testing MKL's fused convolution ops
+// Testing OneDNN's fused convolution ops
 
 template <typename T>
 class MklFusedConv2DOpTest : public OpsTestBase {
@@ -486,7 +486,7 @@ using MklFusedBiasAddDataTypes = ::testing::Types<float>;
 INSTANTIATE_TYPED_TEST_CASE_P(Test, MklFusedConv2DWithBiasOpTest,
                               MklFusedBiasAddDataTypes);
 
-// Testing MKL's fused depthwise convolution ops
+// Testing OneDNN's fused depthwise convolution ops
 template <typename T>
 class MklFusedDepthwiseConv2DOpTest : public OpsTestBase {
  protected:
@@ -716,9 +716,9 @@ class FusedPadConvOpTest : public OpsTestBase {
                      .Input(FakeInput(dtype))     // Input
                      .Input(FakeInput(dtype))     // Filter
                      .Input(FakeInput(DT_INT32))  // Padding
-                     .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                     .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                     .Input(FakeInput(DT_UINT8))  // MKl second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("padding", "VALID")
                      .Attr("data_format", data_format)
                      .Attr("T", dtype)
@@ -810,8 +810,8 @@ class FilterCacheTest : public OpsTestBase {
     TF_EXPECT_OK(NodeDefBuilder("conv2d_filter_cache", "_MklConv2D")
                      .Input(FakeInput(dtype))     // Input
                      .Input(FakeInput(dtype))     // Filter
-                     .Input(FakeInput(DT_UINT8))  // MKl second tensor
-                     .Input(FakeInput(DT_UINT8))  // MKl second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("padding", "VALID")
                      .Attr("data_format", "NHWC")
                      .Attr("is_filter_const", is_filter_const)
@@ -900,7 +900,7 @@ class MklFusedMatMulOpTest : public OpsTestBase {
     AddInputFromArray<T>(weight.shape(), weight.flat<T>());
     for (const Tensor& arg : args)
       AddInputFromArray<T>(arg.shape(), arg.flat<T>());
-    // Add MKL meta input for input, filter and bias.
+    // Add OneDNN meta input for input, filter and bias.
     AddInputFromArray<uint8>(dummy_shape, dummy_tensor);
     AddInputFromArray<uint8>(dummy_shape, dummy_tensor);
     for (const Tensor& arg : args)
@@ -1115,7 +1115,7 @@ TEST_F(MklFusedMatMulCacheTest, WeightCached) {
                    .Finalize(node_def()));
 
   TF_EXPECT_OK(InitOp());
-  // The tensor shape of (1,3) is selected to allow the mkldnn expected
+  // The tensor shape of (1,3) is selected to allow the dnnl expected
   // weight format to be made as OI rather than IO for BS > 1
   // A matrix is:
   // |  1 |  2 |  3 |
@@ -1128,7 +1128,7 @@ TEST_F(MklFusedMatMulCacheTest, WeightCached) {
                            {7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18});
   // Bias vector.
   AddInputFromArray<float>(TensorShape({4}), {1, 2, 3, 4});
-  // Add MKL meta input for input, filter and bias.
+  // Add OneDNN meta input for input, filter and bias.
   AddInputFromArray<uint8>(dummy_shape, dummy_tensor);
   AddInputFromArray<uint8>(dummy_shape, dummy_tensor);
   AddInputFromArray<uint8>(dummy_shape, dummy_tensor);
@@ -1188,15 +1188,15 @@ class BiasCacheTest : public OpsTestBase {
             .Input(FakeInput(DT_FLOAT))  // Max-filter
             .Input(FakeInput(DT_FLOAT))  // Min-output
             .Input(FakeInput(DT_FLOAT))  // Max-output
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
-            .Input(FakeInput(DT_UINT8))  // MKL second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
+            .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
             .Attr("Tinput", DT_QUINT8)
             .Attr("Tfilter", DT_QINT8)
             .Attr("Tbias", DT_FLOAT)
@@ -1453,7 +1453,7 @@ class MklPadWithFusedConv2DOpTest : public OpsTestBase {
     for (const Tensor& arg : args)
       AddInputFromArray<T>(arg.shape(), arg.flat<T>());
     AddInputFromArray<int32>(padding.shape(), padding.flat<int32>());
-    // Add MKL meta input for input, filter, pad and agrs.
+    // Add OneDNN meta input for input, filter, pad and agrs.
     for (int i = 0; i < args.size() + 3; ++i)
       AddInputFromArray<uint8>(dummy_shape, dummy_tensor);
     TF_ASSERT_OK(RunOpKernel());

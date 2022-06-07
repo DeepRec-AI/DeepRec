@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_PLATFORM_TSTRING_H_
 
 #include <string>
+#include "tensorflow/core/platform/stringpiece.h"
 
 // TODO(b/138799229): Used to toggle until global presubmits pass.
 // #define USE_TSTRING
@@ -72,6 +73,8 @@ class tstring {
 
   tstring(const char* str) : str_(str) {}
 
+  explicit tstring(const StringPiece str) : tstring(str.data(), str.size()) {}
+
   template <typename T,
             typename std::enable_if<std::is_same<T, absl::string_view>::value,
                                     T>::type* = nullptr>
@@ -82,6 +85,11 @@ class tstring {
   ~tstring() = default;
 
   tstring& operator=(const tstring& str) = default;
+
+  tstring& operator=(const StringPiece str) {
+    str_.assign(str.data(), str.size());
+    return *this;
+  }
 
   tstring& operator=(const std::string& str) {
     str_ = str;
@@ -119,6 +127,10 @@ class tstring {
   bool operator!=(const tstring& o) const { return str_ != o.str_; }
 
   operator std::string() const { return str_; }
+
+  operator StringPiece() const {
+    return StringPiece(str_.data(), str_.size());
+  }
 
   template <typename T,
             typename std::enable_if<std::is_same<T, absl::string_view>::value,

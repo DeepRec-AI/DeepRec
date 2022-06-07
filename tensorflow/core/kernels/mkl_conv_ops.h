@@ -20,7 +20,7 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/numeric_op.h"
@@ -41,23 +41,16 @@ limitations under the License.
 #include "tensorflow/core/util/padding.h"
 #include "tensorflow/core/util/tensor_format.h"
 
-#ifndef ENABLE_MKLDNN_V1
-using mkldnn::convolution_direct;
-#endif  // !ENABLE_MKLDNN_V1
-using mkldnn::convolution_forward;
-using mkldnn::prop_kind;
-using mkldnn::stream;
+using dnnl::convolution_forward;
+using dnnl::prop_kind;
+using dnnl::stream;
 
 namespace tensorflow {
 
-#ifdef ENABLE_MKLDNN_V1
-#define MKLDNN_SIZE_DTYPE memory::dim
-#else
-#define MKLDNN_SIZE_DTYPE int
-#endif  // ENABLE_MKLDNN_V1
+#define DNNL_SIZE_DTYPE memory::dim
 
-using ConvFwdDesc = mkldnn::convolution_forward::desc;
-using ConvFwdPd = mkldnn::convolution_forward::primitive_desc;
+using ConvFwdDesc = dnnl::convolution_forward::desc;
+using ConvFwdPd = dnnl::convolution_forward::primitive_desc;
 
 class MklDnnConvUtil {
  protected:
@@ -113,7 +106,7 @@ class MklDnnConvUtil {
     }
   }
 
-  // Calculate Convolution input size in MKL-DNN order. MKL-DNN
+  // Calculate Convolution input size in OneDNN order. OneDNN
   // requires input in NCHW/NCDHW format. Function does not return anything.
   // But errors arising from sanity checks are returned in context's
   // status.
@@ -148,14 +141,14 @@ class MklDnnConvUtil {
       CHECK_BOUNDS(input_cols_raw, "Input cols too large");
       int input_cols = static_cast<int>(input_cols_raw);
 
-      // MKL-DNN always requires input in NCHW format Conv2D.
-      std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(4, -1);
-      mkldnn_sizes[MklDnnDims::Dim_N] = input_batch;
-      mkldnn_sizes[MklDnnDims::Dim_C] = input_depth;
-      mkldnn_sizes[MklDnnDims::Dim_H] = input_rows;
-      mkldnn_sizes[MklDnnDims::Dim_W] = input_cols;
+      // OneDNN always requires input in NCHW format Conv2D.
+      std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(4, -1);
+      dnnl_sizes[MklDnnDims::Dim_N] = input_batch;
+      dnnl_sizes[MklDnnDims::Dim_C] = input_depth;
+      dnnl_sizes[MklDnnDims::Dim_H] = input_rows;
+      dnnl_sizes[MklDnnDims::Dim_W] = input_cols;
 
-      *input_dims = mkldnn_sizes;
+      *input_dims = dnnl_sizes;
     } else if (strides_.size() == 5) {  // NCDHW format for Conv3D
       // Input planes/third-dimension
       int64 input_planes_raw = GetTensorDim(input_shape, data_format_, '0');
@@ -172,21 +165,21 @@ class MklDnnConvUtil {
       CHECK_BOUNDS(input_cols_raw, "Input cols too large");
       int input_cols = static_cast<int>(input_cols_raw);
 
-      // MKL-DNN always requires input in NCDHW format for Conv3D.
-      std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(5, -1);
-      mkldnn_sizes[MklDnnDims3D::Dim3d_N] = input_batch;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_C] = input_depth;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_D] = input_planes;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_H] = input_rows;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_W] = input_cols;
+      // OneDNN always requires input in NCDHW format for Conv3D.
+      std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(5, -1);
+      dnnl_sizes[MklDnnDims3D::Dim3d_N] = input_batch;
+      dnnl_sizes[MklDnnDims3D::Dim3d_C] = input_depth;
+      dnnl_sizes[MklDnnDims3D::Dim3d_D] = input_planes;
+      dnnl_sizes[MklDnnDims3D::Dim3d_H] = input_rows;
+      dnnl_sizes[MklDnnDims3D::Dim3d_W] = input_cols;
 
-      *input_dims = mkldnn_sizes;
+      *input_dims = dnnl_sizes;
     }
 #undef CHECK_BOUNDS
   }
 
-  // Calculate Convolution filter size in MKL-DNN order.
-  // MKL-DNN requires filter in OIHW (Conv2D) or OIDHW (Conv3D) format.
+  // Calculate Convolution filter size in OneDNN order.
+  // OneDNN requires filter in OIHW (Conv2D) or OIDHW (Conv3D) format.
   // Function does not return anything.
   // But errors arising from sanity checks are returned in context's
   // status. This function differs from GetConvFilterSizeInMklOrder in
@@ -231,28 +224,28 @@ class MklDnnConvUtil {
           static_cast<int>(filter_shape.dim_size(TF_2DFILTER_DIM_I));
       int filter_out_depth =
           static_cast<int>(filter_shape.dim_size(TF_2DFILTER_DIM_O));
-      // MKL-DNN always needs filter in OIHW format for regular convolutions
+      // OneDNN always needs filter in OIHW format for regular convolutions
       // and GOIHW for grouped/depthwise convolutions,
       // OIHW = (out_depth, in_depth, rows, cols)
       // GOIHW = (group, out_depth, in_depth, rows, cols)
       // Specifically for depthwise G=filter_indepth, O=filter_outdepth, I=1
       if (is_depthwise) {
-        std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(5, -1);
-        mkldnn_sizes[MKL_GROUP_FILTER_DIM_G] = filter_in_depth;
-        mkldnn_sizes[MKL_GROUP_FILTER_DIM_O] = filter_out_depth;
-        mkldnn_sizes[MKL_GROUP_FILTER_DIM_I] = 1;
-        mkldnn_sizes[MKL_GROUP_FILTER_DIM_H] = filter_rows;
-        mkldnn_sizes[MKL_GROUP_FILTER_DIM_W] = filter_cols;
+        std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(5, -1);
+        dnnl_sizes[MKL_GROUP_FILTER_DIM_G] = filter_in_depth;
+        dnnl_sizes[MKL_GROUP_FILTER_DIM_O] = filter_out_depth;
+        dnnl_sizes[MKL_GROUP_FILTER_DIM_I] = 1;
+        dnnl_sizes[MKL_GROUP_FILTER_DIM_H] = filter_rows;
+        dnnl_sizes[MKL_GROUP_FILTER_DIM_W] = filter_cols;
 
-        *filter_dims = mkldnn_sizes;
+        *filter_dims = dnnl_sizes;
       } else {
-        std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(4, -1);
-        mkldnn_sizes[MklDnnDims::Dim_O] = filter_out_depth;
-        mkldnn_sizes[MklDnnDims::Dim_I] = filter_in_depth;
-        mkldnn_sizes[MklDnnDims::Dim_H] = filter_rows;
-        mkldnn_sizes[MklDnnDims::Dim_W] = filter_cols;
+        std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(4, -1);
+        dnnl_sizes[MklDnnDims::Dim_O] = filter_out_depth;
+        dnnl_sizes[MklDnnDims::Dim_I] = filter_in_depth;
+        dnnl_sizes[MklDnnDims::Dim_H] = filter_rows;
+        dnnl_sizes[MklDnnDims::Dim_W] = filter_cols;
 
-        *filter_dims = mkldnn_sizes;
+        *filter_dims = dnnl_sizes;
       }
     } else {  // Conv3D
       OP_REQUIRES(context_, input_depth == filter_shape.dim_size(3),
@@ -272,21 +265,21 @@ class MklDnnConvUtil {
       int filter_out_depth =
           static_cast<int>(filter_shape.dim_size(TF_3DFILTER_DIM_O));
 
-      // MKL-DNN always needs filter in OIDHW format.
+      // OneDNN always needs filter in OIDHW format.
       // OIDHW = (out_depth, in_depth, planes, rows, cols)
-      std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(5, -1);
-      mkldnn_sizes[MklDnnDims3D::Dim3d_O] = filter_out_depth;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_I] = filter_in_depth;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_D] = filter_planes;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_H] = filter_rows;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_W] = filter_cols;
+      std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(5, -1);
+      dnnl_sizes[MklDnnDims3D::Dim3d_O] = filter_out_depth;
+      dnnl_sizes[MklDnnDims3D::Dim3d_I] = filter_in_depth;
+      dnnl_sizes[MklDnnDims3D::Dim3d_D] = filter_planes;
+      dnnl_sizes[MklDnnDims3D::Dim3d_H] = filter_rows;
+      dnnl_sizes[MklDnnDims3D::Dim3d_W] = filter_cols;
 
-      *filter_dims = mkldnn_sizes;
+      *filter_dims = dnnl_sizes;
     }
   }
 
-  // Calculate Convolution filter size in MKL-DNN order.
-  // MKL-DNN requires filter in OIHW (Conv2D) or OIDHW(Conv3D format.
+  // Calculate Convolution filter size in OneDNN order.
+  // OneDNN requires filter in OIHW (Conv2D) or OIDHW(Conv3D format.
   // Function does not return anything. But errors arising from sanity
   // checks are returned in context's status.
   virtual inline void GetFilterSizeInMklOrder(size_t src_index,
@@ -313,8 +306,8 @@ class MklDnnConvUtil {
 
   // Function to calculate output and padding size for 2D/3D convolution.
   //
-  // Calculate output shape of Convolution in MKL-DNN and TensorFlow order.
-  // MKL-DNN uses NCHW(Conv2D) or NCDHW(Conv3D) for output order.
+  // Calculate output shape of Convolution in OneDNN and TensorFlow order.
+  // OneDNN uses NCHW(Conv2D) or NCDHW(Conv3D) for output order.
   // But TensorFlow output will be in NHWC||NCHW(Conv2D) or
   // NDHWC||NCDHW(Conv3D) format depending on data format.
   // Function also calculates left, right, top and bottom pads.
@@ -456,7 +449,7 @@ class MklDnnConvUtil {
     // Tensorflow output is in data_format order.
     //     Conv2D: NHWC or NCHW
     //     Conv3D: NDHWC or NCDHW
-    // MKL-DNN uses asymmetric padding.
+    // OneDNN uses asymmetric padding.
     TensorShape out_shape =
         is_conv2d
             ? ShapeFromFormat(data_format_, out_batch, out_rows, out_cols,
@@ -466,21 +459,21 @@ class MklDnnConvUtil {
     *output_dims_tf_order = TFShapeToMklDnnDims(out_shape);
 
     if (is_conv2d) {
-      // For Conv2D, MKL-DNN always needs output in NCHW format.
-      std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(4, -1);
-      mkldnn_sizes[MklDnnDims::Dim_N] = out_batch;
-      mkldnn_sizes[MklDnnDims::Dim_C] = out_depth;
-      mkldnn_sizes[MklDnnDims::Dim_H] = static_cast<int>(out_rows);
-      mkldnn_sizes[MklDnnDims::Dim_W] = static_cast<int>(out_cols);
-      *output_dims_mkl_order = mkldnn_sizes;
+      // For Conv2D, OneDNN always needs output in NCHW format.
+      std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(4, -1);
+      dnnl_sizes[MklDnnDims::Dim_N] = out_batch;
+      dnnl_sizes[MklDnnDims::Dim_C] = out_depth;
+      dnnl_sizes[MklDnnDims::Dim_H] = static_cast<int>(out_rows);
+      dnnl_sizes[MklDnnDims::Dim_W] = static_cast<int>(out_cols);
+      *output_dims_mkl_order = dnnl_sizes;
     } else {
-      std::vector<MKLDNN_SIZE_DTYPE> mkldnn_sizes(5, -1);
-      mkldnn_sizes[MklDnnDims3D::Dim3d_N] = out_batch;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_C] = out_depth;
-      mkldnn_sizes[MklDnnDims3D::Dim3d_D] = static_cast<int>(out_planes);
-      mkldnn_sizes[MklDnnDims3D::Dim3d_H] = static_cast<int>(out_rows);
-      mkldnn_sizes[MklDnnDims3D::Dim3d_W] = static_cast<int>(out_cols);
-      *output_dims_mkl_order = mkldnn_sizes;
+      std::vector<DNNL_SIZE_DTYPE> dnnl_sizes(5, -1);
+      dnnl_sizes[MklDnnDims3D::Dim3d_N] = out_batch;
+      dnnl_sizes[MklDnnDims3D::Dim3d_C] = out_depth;
+      dnnl_sizes[MklDnnDims3D::Dim3d_D] = static_cast<int>(out_planes);
+      dnnl_sizes[MklDnnDims3D::Dim3d_H] = static_cast<int>(out_rows);
+      dnnl_sizes[MklDnnDims3D::Dim3d_W] = static_cast<int>(out_cols);
+      *output_dims_mkl_order = dnnl_sizes;
     }
   }
 
@@ -520,7 +513,7 @@ class MklDnnConvUtil {
   }
 
   // Wrapper function to calculate input, filter, and output sizes of
-  // Conv2D/Conv3D in MKL order:
+  // Conv2D/Conv3D in OneDNN order:
   //     Conv2D: NCHW for input and output; OIHW for filter.
   //     Conv3D: NCDHW for input and output; OIDHW for filter.
   // Function also calculates output shape in Tensorflow order.
@@ -618,7 +611,7 @@ class MklConvBackpropCommonOp : public OpKernel {
 };
 
 /////////////////////////////////////////////////////////////////////
-///  Dummy Mkl op that is just used for operators that are intermediate
+///  Dummy OneDNN op that is just used for operators that are intermediate
 ///  output of node fusion in the graph
 /////////////////////////////////////////////////////////////////////
 
@@ -636,7 +629,7 @@ class MklDummyOp : public OpKernel {
   }
 };
 
-#undef MKLDNN_SIZE_DTYPE
+#undef DNNL_SIZE_DTYPE
 
 }  // namespace tensorflow
 

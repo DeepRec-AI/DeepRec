@@ -12,73 +12,43 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#pragma GCC system_header
 
-#ifndef TENSORFLOW_H_
-#define TENSORFLOW_H_
+#ifndef TENSORFLOW_CORE_KERNELS_TENSOR_BUFFER_OPS_H_
+#define TENSORFLOW_CORE_KERNELS_TENSOR_BUFFER_OPS_H_
 
 #define EIGEN_USE_THREADS
 #if GOOGLE_CUDA
 #define EIGEN_USE_GPU
 #endif  // GOOGLE_CUDA
 
-#include "tensorflow/core/common_runtime/device.h"
-#include "tensorflow/core/framework/bounds_check.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
-#include "tensorflow/core/framework/dataset_stateful_op_whitelist.h"
-#include "tensorflow/core/framework/device_attributes.pb.h"
-#include "tensorflow/core/framework/node_def.pb.h"
-#include "tensorflow/core/framework/numeric_op.h"
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/resource_mgr.h"
-#include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/framework/tensor.h"
-#include "tensorflow/core/framework/tensor_shape.h"
-#include "tensorflow/core/framework/tensor_types.h"
-#include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/blocking_counter.h"
-#include "tensorflow/core/lib/core/error_codes.pb.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/threadpool.h"
-#include "tensorflow/core/lib/strings/numbers.h"
-#include "tensorflow/core/lib/strings/str_util.h"
-#include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/mutex.h"
-#include "tensorflow/core/public/version.h"
-#include "tensorflow/core/util/env_var.h"
-#include "tensorflow/core/util/util.h"
 
 #include "third_party/eigen3/Eigen/Core"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 
-#if GOOGLE_CUDA
-#include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
-#include "tensorflow/core/platform/cuda.h"
-#include "tensorflow/stream_executor/stream_executor.h"
-#endif  // GOOGLE_CUDA
-
-
 #include <chrono>
 #include <cstddef>
 #include <deque>
-#include <mutex>
-#include <numeric>
 #include <vector>
 
 namespace tensorflow {
 
 #define TF_RESOURCE_DEBUG_STRING_CONST const
 
-class DataBuffer : public ResourceBase {
+class TensorBuf : public ResourceBase {
  public:
-  explicit DataBuffer(int64 capacity)
+  explicit TensorBuf(int64 capacity)
       : capacity_(capacity), is_cancelled_(false), is_closed_(false) {}
 
-  ~DataBuffer() { Cancel(); }
+  ~TensorBuf() { Cancel(); }
 
   Status Put(const std::vector<Tensor>& record, int64 timeout_millis) {
     std::unique_lock<std::mutex> lock(mu_);
@@ -159,7 +129,7 @@ class DataBuffer : public ResourceBase {
   }
 
   string DebugString() TF_RESOURCE_DEBUG_STRING_CONST override {
-    return strings::StrCat("DataBuffer(capacity=", capacity_, ")");
+    return strings::StrCat("TensorBuf(capacity=", capacity_, ")");
   }
 
   void Schedule(const string& name, int64 num_threads,
@@ -192,4 +162,4 @@ class DataBuffer : public ResourceBase {
 };
 }
 
-#endif //TENSORFLOW_H_
+#endif // TENSORFLOW_CORE_KERNELS_TENSOR_BUFFER_OPS_H_

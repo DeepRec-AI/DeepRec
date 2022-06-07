@@ -62,6 +62,19 @@ Status CreateSessionFromGraphDef(const SessionOptions& options,
   return (*session)->Create(graph);
 }
 
+Status CreateSessionGroupFromGraphDef(const SessionGroupOptions& options,
+                                      const GraphDef& graph,
+                                      std::unique_ptr<SessionGroup>* session_group) {
+  SessionGroup* sg = nullptr;
+  SessionOptions opt;
+  opt.env = options.env;
+  opt.target = options.target;
+  opt.config = options.config;
+  TF_RETURN_IF_ERROR(NewSessionGroup(opt, &sg, options.session_num));
+  session_group->reset(sg);
+  (*session_group)->Create(graph);
+}
+
 Status GetMetaGraphDefFromExport(const StringPiece export_dir,
                                  MetaGraphDef* meta_graph_def) {
   const string meta_graph_def_path =
@@ -224,24 +237,77 @@ Status LoadSessionBundleFromPathUsingRunOptionsInternal(
   return Status::OK();
 }
 
-}  // namespace
+Status LoadSessionBundleFromPathUsingRunOptionsInternal(
+    const SessionGroupOptions& options, const RunOptions& run_options,
+    const StringPiece export_dir, SessionGroupBundle* const bundle) {
+  LOG(INFO) << "Attempting to load a SessionBundle from: " << export_dir;
+  LOG(INFO) << "Using RunOptions: " << DebugStringIfAvailable(run_options);
+  TF_RETURN_IF_ERROR(
+      GetMetaGraphDefFromExport(export_dir, &(bundle->meta_graph_def)));
 
-Status LoadSessionBundleFromPath(const SessionOptions& options,
-                                 const StringPiece export_dir,
-                                 SessionBundle* const bundle) {
-  TF_RETURN_IF_ERROR(LoadSessionBundleFromPathUsingRunOptions(
-      options, RunOptions(), export_dir, bundle));
+  // Deprecated SessionBundle models may fail to load because newly added
+  // attributes are not added to the Graph in the default Session initialization
+  // flow. Add an explicit call here when first loading the graph from disk.
+  TF_RETURN_IF_ERROR(
+      AddDefaultAttrsToGraphDef(bundle->meta_graph_def.mutable_graph_def(),
+                                *OpRegistry::Global(), 0 /* node_offset */));
+
+  const auto& collection_def_map = bundle->meta_graph_def.collection_def();
+  const auto graph_it = bundle->meta_graph_def.collection_def().find(kGraphKey);
+  if (graph_it != collection_def_map.end()) {
+    const CollectionDef& graph_collection_def = graph_it->second;
+    // Use serving graph_def in MetaGraphDef collection_def.
+    if (graph_collection_def.any_list().value_size() != 1) {
+      return errors::FailedPrecondition(
+          "Expected exactly one serving GraphDef in : ", export_dir);
+    }
+    const auto& any = graph_collection_def.any_list().value(0);
+    GraphDef graph_def;
+    TF_RETURN_IF_ERROR(ParseAny(any, &graph_def, "tensorflow.GraphDef"));
+    TF_RETURN_IF_ERROR(
+        CreateSessionGroupFromGraphDef(options, graph_def, &bundle->session_group));
+  } else {
+    // Fallback to use the graph_def in the MetaGraphDef.
+    const GraphDef& graph_def = bundle->meta_graph_def.graph_def();
+    TF_RETURN_IF_ERROR(
+        CreateSessionGroupFromGraphDef(options, graph_def, &bundle->session_group));
+  }
+
+  std::vector<AssetFile> asset_files;
+  const auto assets_it = collection_def_map.find(kAssetsKey);
+  if (assets_it != collection_def_map.end()) {
+    const auto& any_assets = assets_it->second.any_list().value();
+    for (const auto& any_asset : any_assets) {
+      AssetFile asset_file;
+      TF_RETURN_IF_ERROR(
+          ParseAny(any_asset, &asset_file, "tensorflow.serving.AssetFile"));
+      asset_files.push_back(asset_file);
+    }
+  }
+
+  TF_RETURN_IF_ERROR(
+      RunRestoreOp(run_options, export_dir, asset_files,
+                   bundle->meta_graph_def.saver_def().restore_op_name(),
+                   bundle->meta_graph_def.saver_def().filename_tensor_name(),
+                   bundle->session_group->GetLeaderSession()));
+
+  const auto init_op_it = collection_def_map.find(kInitOpKey);
+  if (init_op_it != collection_def_map.end()) {
+    if (init_op_it->second.node_list().value_size() != 1) {
+      return errors::FailedPrecondition(strings::StrCat(
+          "Expected exactly one serving init op in : ", export_dir));
+    }
+    TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, asset_files,
+                                 init_op_it->second.node_list().value(0),
+                                 bundle->session_group->GetLeaderSession()));
+  }
+
   return Status::OK();
 }
 
-Status LoadSessionBundleFromPathUsingRunOptions(const SessionOptions& options,
-                                                const RunOptions& run_options,
-                                                const StringPiece export_dir,
-                                                SessionBundle* const bundle) {
-  const uint64 start_microseconds = Env::Default()->NowMicros();
-  const Status status = LoadSessionBundleFromPathUsingRunOptionsInternal(
-      options, run_options, export_dir, bundle);
-
+Status LogAndCount(const Status& status,
+                   const uint64 start_microseconds,
+                   const StringPiece export_dir) {
   const uint64 load_latency_microsecs = [&]() -> uint64 {
     const uint64 end_microseconds = Env::Default()->NowMicros();
     // Avoid clock skew.
@@ -261,6 +327,38 @@ Status LoadSessionBundleFromPathUsingRunOptions(const SessionOptions& options,
   load_latency->GetCell(string(export_dir))
       ->IncrementBy(load_latency_microsecs);
   return status;
+}
+
+}  // namespace
+
+Status LoadSessionBundleFromPath(const SessionOptions& options,
+                                 const StringPiece export_dir,
+                                 SessionBundle* const bundle) {
+  TF_RETURN_IF_ERROR(LoadSessionBundleFromPathUsingRunOptions(
+      options, RunOptions(), export_dir, bundle));
+  return Status::OK();
+}
+
+Status LoadSessionBundleFromPathUsingRunOptions(const SessionOptions& options,
+                                                const RunOptions& run_options,
+                                                const StringPiece export_dir,
+                                                SessionBundle* const bundle) {
+  const uint64 start_microseconds = Env::Default()->NowMicros();
+  const Status status = LoadSessionBundleFromPathUsingRunOptionsInternal(
+      options, run_options, export_dir, bundle);
+
+  return LogAndCount(status, start_microseconds, export_dir);
+}
+
+Status LoadSessionBundleFromPathUsingRunOptions(const SessionGroupOptions& options,
+                                                const RunOptions& run_options,
+                                                const StringPiece export_dir,
+                                                SessionGroupBundle* const bundle) {
+  const uint64 start_microseconds = Env::Default()->NowMicros();
+  const Status status = LoadSessionBundleFromPathUsingRunOptionsInternal(
+      options, run_options, export_dir, bundle);
+
+  return LogAndCount(status, start_microseconds, export_dir);
 }
 
 bool IsPossibleExportDirectory(const StringPiece directory) {

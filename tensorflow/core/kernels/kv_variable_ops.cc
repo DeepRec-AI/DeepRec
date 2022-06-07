@@ -292,7 +292,7 @@ class InitializeKvVariableOp : public OpKernel {
   float false_positive_probability_;
   embedding::StorageType storage_type_;
   std::string storage_path_;
-  int64 storage_size_;
+  std::vector<int64> storage_size_;
   int64 default_value_dim_;
 };
 
@@ -346,6 +346,26 @@ class KvResourceGatherOp : public OpKernel {
  public:
   explicit KvResourceGatherOp(OpKernelConstruction* c) : OpKernel(c) {
     OP_REQUIRES_OK(c, c->GetAttr("is_use_default_value_tensor", &is_use_default_value_tensor_));
+    if (is_use_default_value_tensor_) {
+      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
+                            int64 total_dim, int64 len) {
+        return default_v + len * index;
+      };
+    } else {
+      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
+                            int64 total_dim, int64 len) {
+        return default_v + len * (id % total_dim) ;
+      };
+    }
+    if (c->num_inputs() == 4) {
+      get_count_fn_ = [](const int32* count, int64 index) {
+        return count[index];
+      };
+    } else {
+      get_count_fn_ = [](const int32* count, int64 index) {
+        return 1;
+      };
+    }
   }
 
   void Compute(OpKernelContext* c) override {
@@ -362,14 +382,9 @@ class KvResourceGatherOp : public OpKernel {
     Tensor* out = nullptr;
     OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
 
-    std::function<void(TKey, TValue*, TValue*)> lookup_or_create_fn;
-    if (ev->IsMultiLevel()) {
-      lookup_or_create_fn = [ev] (TKey index, TValue* out, TValue* default_v){
-                                  ev->LookupOrCreateWithFreq(index, out, default_v);};
-    } else {
-      lookup_or_create_fn = [ev] (TKey index, TValue* out, TValue* default_v){
-                                  ev->LookupOrCreate(index, out, default_v);};
-    }
+    int32* counts = nullptr;
+    if (c->num_inputs() == 4)
+      counts = (int32*)c->input(3).data();
 
     if (N > 0) {
       auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
@@ -378,60 +393,45 @@ class KvResourceGatherOp : public OpKernel {
       auto indices_flat = indices.flat<TKey>();
       const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
       const int64 slice_elems = out_flat.dimension(1);
+      TValue* default_v = nullptr;
+      if (is_use_default_value_tensor_) {
+        default_v = (TValue*)c->input(2).data();
+      } else {
+        default_v = ev->GetDefaultValuePtr();
+      }
       OP_REQUIRES(c, ev->ValueLen() == slice_elems,
           errors::InvalidArgument(
               "ev's value_len should same with output's dimension(1)",
               std::to_string(slice_elems), std::to_string(ev->ValueLen())));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
-      if (is_use_default_value_tensor_) {
-        Tensor default_values(c->input(2));
-        auto default_values_matrix = default_values.shaped<TValue, 2>(
-            {default_values.NumElements()/ev->ValueLen(), ev->ValueLen()});
-        auto do_work = [this, indices_flat,
-             out_base, slice_elems, c, ev, default_values_matrix] (int64 start, int64 limit) {
-          for (int64 i = start; i < limit; ++i) {
-            TValue* default_v;
-            default_v = &default_values_matrix(i, 0);
-            ev->LookupOrCreate(indices_flat(i),
-                out_base + i * slice_elems, default_v);
-          }
-        };
-
-        auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-        Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
-            slice_bytes, do_work);
-      } else {
-        auto do_work = [this, indices_flat,
-             out_base, slice_elems, c, ev, lookup_or_create_fn] (int64 start, int64 limit) {
-          std::vector<TKey> ids;
-          for (int64 i = start; i < limit; ++i) {
-            TValue* default_v;
-            default_v = ev->GetDefaultValuePtr() +
-                          ((indices_flat(i)) % ev->GetDefaultValueDim()) * ev->ValueLen();
-            /*ev->LookupOrCreate(indices_flat(i),
-                out_base + i * slice_elems, default_v);*/
-            lookup_or_create_fn(indices_flat(i),
-                out_base + i * slice_elems, default_v);
-            ids.push_back(indices_flat(i));
-          }
-
-          ev->storage_manager()->Schedule([ev, ids]() {
-            embedding::BatchCache<TKey>* cache = ev->Cache();
-            if (cache) {
-              cache->add_to_rank(ids.data(), ids.size());
-            }
-          });
-        };
-
-        auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-        Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
-            slice_bytes, do_work);
-      }
+      auto do_work = [this, indices_flat,
+           out_base, slice_elems, c, default_v, ev, counts] (int64 start, int64 limit) {
+        for (int64 i = start; i < limit; ++i) {
+          TValue* default_v_ptr = get_default_v_fn_(default_v, indices_flat(i),
+                                                    i, ev->GetDefaultValueDim(),
+                                                    ev->ValueLen());
+          int32 count = get_count_fn_(counts, i);
+          ev->LookupOrCreate(indices_flat(i),
+              out_base + i * slice_elems, default_v_ptr, count);
+        }
+      };
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
+          slice_bytes, do_work);
+          
+      ev->storage_manager()->Schedule([ev, indices_flat, indices_size]() {
+        embedding::BatchCache<TKey>* cache = ev->Cache();
+        if (cache) {
+          cache->add_to_rank(indices_flat.data(), indices_size);
+        }
+      });
     }
   }
 
   private:
     bool is_use_default_value_tensor_;
+    std::function<TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
+    std::function<int32(int32*, int64)> get_count_fn_;
 };
 
 #define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
@@ -460,61 +460,6 @@ TF_CALL_double(REGISTER_GATHER_CPU);
 #undef REGISTER_GATHER_ALL_INDICES
 #undef REGISTER_GATHER_FULL
 
-
-template <typename TKey, typename TValue>
-class KvResourceGatherV1Op : public OpKernel {
- public:
-  explicit KvResourceGatherV1Op(OpKernelConstruction* c) : OpKernel(c) {}
-
-  void Compute(OpKernelContext* c) override {
-    EmbeddingVar<TKey, TValue>* ev = nullptr;
-    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
-    core::ScopedUnref unref_me(ev);
-
-    const Tensor& indices = c->input(1);
-    const int64 N = indices.NumElements();
-
-    TensorShape result_shape = indices.shape();
-    TensorShape value_shape({ev->ValueLen()});
-    result_shape.AppendShape(value_shape);
-
-    const Tensor& counts = c->input(3);
-
-    Tensor* out = nullptr;
-    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
-
-    if (N > 0) {
-      auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
-      TValue* out_base = &out_flat(0, 0);
-      auto counts_flat = counts.flat<int32>();
-      auto indices_flat = indices.flat<TKey>();
-      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
-      const int64 slice_elems = out_flat.dimension(1);
-      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
-          errors::InvalidArgument(
-              "ev's value_len should same with output's dimension(1)",
-              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
-      const size_t slice_bytes = slice_elems * sizeof(TValue);
-      auto do_work = [this, indices_flat,
-           out_base, slice_elems, c, ev, counts_flat] (int64 start, int64 limit) {
-        for (int64 i = start; i < limit; ++i) {
-          TValue* default_v;
-          default_v = ev->GetDefaultValuePtr() +
-                          ((indices_flat(i)) % ev->GetDefaultValueDim()) * ev->ValueLen();
-          //OP_REQUIRES_OK(c, ev->LookupOrCreate(indices_flat(i),
-          //    out_base + i * slice_elems, default_v));
-          ev->LookupOrCreate(indices_flat(i),
-              out_base + i * slice_elems, default_v, counts_flat(i));
-        }
-      };
-      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-      Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
-          slice_bytes, do_work);
-    }
-  }
-
-};
-
 #define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
   REGISTER_KERNEL_BUILDER(Name("KvResourceGatherV1")                \
                               .Device(DEVICE_##dev)               \
@@ -525,7 +470,7 @@ class KvResourceGatherV1Op : public OpKernel {
                               .HostMemory("output")               \
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceGatherV1Op<ktype, vtype>)
+                          KvResourceGatherOp<ktype, vtype>)
 
 #define REGISTER_GATHER_ALL_INDICES(dev, type) \
   REGISTER_GATHER_FULL(dev, int32, type);      \
@@ -780,7 +725,7 @@ class KvResourceImportV2Op: public OpKernel {
   int64 max_freq_;
   embedding::StorageType storage_type_;
   std::string storage_path_;
-  int64 storage_size_;
+  std::vector<int64> storage_size_;
   int64 default_value_dim_;
 };
 

@@ -219,7 +219,9 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   for (size_t i = 0; i < tot_key_list.size(); i++) {
     for (int partid = 0; partid < kSavedPartitionNum; partid++) {
       if (tot_key_list[i] % kSavedPartitionNum == partid) {
-        if (filter_freq != 0 && tot_freq_list[i] < filter_freq) {
+        if (tot_valueptr_list[i] == reinterpret_cast<V*>(-1)) {
+            // only forward, no backward, bypass
+        } else if (filter_freq != 0 && tot_freq_list[i] < filter_freq) {
           key_filter_list_parts[partid].push_back(tot_key_list[i]);
         } else {
           key_list_parts[partid].push_back(tot_key_list[i]);
@@ -316,7 +318,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer,
                                  bytes_limit, &ev_key_dump_iter,
                                  TensorShape({partitioned_tot_key_list.size() + iterator_size}),
-                                 it, true);
+                                 it);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -326,7 +328,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   st = SaveTensorWithFixedBuffer(tensor_key + "-values", writer, dump_buffer,
                                  bytes_limit, &ev_value_dump_iter,
                                  TensorShape({partitioned_tot_key_list.size() + iterator_size, ev->ValueLen()}),
-                                 it, false);
+                                 it, ev->storage_manager()->GetOffset(ev->GetEmbeddingIndex()));
   if (!st.ok()) {
     free(dump_buffer);
     return st;

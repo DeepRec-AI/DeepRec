@@ -198,22 +198,6 @@ class MultihashOption(object):
     self.operation = operation
     self.size = size
 
-@tf_export(v1=["EvictOption"])
-class EvictOption(object):
-  def __init__(self,
-               steps_to_live = None,
-               l2_weight_threshold = -1.0,
-               steps_to_live_l2reg=None,
-               l2reg_theta=None,
-               l2reg_lambda=None):
-    self.steps_to_live = steps_to_live
-    self.l2_weight_threshold = l2_weight_threshold
-    self.steps_to_live_l2reg = steps_to_live_l2reg
-    self.l2reg_theta = l2reg_theta
-    self.l2reg_lambda = l2reg_lambda
-    if self.steps_to_live != None and self.l2_weight_threshold != -1.0:
-      raise ValueError("step_to_live and l2_weight_threshold can't be enabled at same time.")
-
 @tf_export(v1=["GlobalStepEvict"])
 class GlobalStepEvict(object):
   def __init__(self,
@@ -245,10 +229,15 @@ class StorageOption(object):
   def __init__(self,
                storage_type=None,
                storage_path=None,
-               storage_size=None):
+               storage_size=[1024*1024*1024]):
     self.storage_type = storage_type
     self.storage_path = storage_path
     self.storage_size = storage_size
+    if not isinstance(storage_size, list):
+        raise ValueError("storage_size should be list type")
+    if len(storage_size) < 4:
+      for i in range(len(storage_size), 4):
+        storage_size.append(1024*1024*1024)
     if storage_path is not None:
       if storage_type is None:
         raise ValueError("storage_type musnt'be None when storage_path is set")
@@ -256,7 +245,10 @@ class StorageOption(object):
         if not file_io.file_exists(storage_path):
           file_io.recursive_create_dir(storage_path)
     else:
-      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSD]:
+      if storage_type is not None and storage_type in [config_pb2.StorageType.LEVELDB,
+                                                       config_pb2.StorageType.SSDHASH,
+                                                       config_pb2.StorageType.DRAM_SSDHASH,
+                                                       config_pb2.StorageType.DRAM_LEVELDB]:
         raise ValueError("storage_path musnt'be None when storage_type is set")
 
 @tf_export(v1=["EmbeddingVariableOption"])

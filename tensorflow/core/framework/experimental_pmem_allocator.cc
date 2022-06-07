@@ -6,6 +6,12 @@
 #include "libpmem.h"
 
 namespace tensorflow {
+// If true, pmem allocator collects more stats.
+static bool pmem_allocator_collect_stats = false;
+static const int kMaxTotalAllocationWarnings = 1;
+// If ev_allocator_collect_stats is true, warn when the total allocated memory
+// exceeds this threshold.
+static const double kTotalAllocationWarningThreshold = 0.5;
 
 std::atomic<uint64_t> ExperimentalPMemAllocator::next_instance_(0);
 thread_local std::vector<AllocatorThread>
@@ -143,6 +149,14 @@ void ExperimentalPMemAllocator::DeallocateRaw(void* addr) {
 
   uint64_t segment = Addr2Segment(addr);
   if (segment == kPMemNull) return;
+
+  if (pmem_allocator_collect_stats) {
+    const std::size_t alloc_size = AllocatedSize(addr);
+
+    mutex_lock l(mu_);
+    stats_.bytes_in_use -= alloc_size;
+  }
+
   uint32_t b_size = segment_record_size_[segment];
   assert(b_size > 0);
 
@@ -239,7 +253,31 @@ void* ExperimentalPMemAllocator::AllocateRaw(size_t alignment, size_t size) {
         (char*)thread_cache.segments[i].addr + aligned_size;
     break;
   }
+
+  if (pmem_allocator_collect_stats) {
+    const std::size_t alloc_size = AllocatedSize(ret);
+    mutex_lock l(mu_);
+    ++stats_.num_allocs;
+    stats_.bytes_in_use += alloc_size;
+    stats_.peak_bytes_in_use =
+        std::max<int64>(stats_.peak_bytes_in_use, stats_.bytes_in_use);
+    stats_.largest_alloc_size =
+        std::max<int64>(stats_.largest_alloc_size, alloc_size);
+
+    if (stats_.bytes_in_use > TotalAllocationWarningBytes() &&
+        total_allocation_warning_count_ < kMaxTotalAllocationWarnings) {
+      ++total_allocation_warning_count_;
+      LOG(WARNING) << "Total allocated pmem " << stats_.bytes_in_use
+                   << "exceeds " << 100 * kTotalAllocationWarningThreshold
+                   << "% of usable pmem";
+    }
+  }
+
   return ret;
+}
+
+int64 ExperimentalPMemAllocator::TotalAllocationWarningBytes() {
+  return static_cast<int64>(pmem_size_ * kTotalAllocationWarningThreshold);
 }
 
 REGISTER_MEM_ALLOCATOR("ExperimentalPMEMAllocator", 30,

@@ -13,13 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include "tensorflow/core/kernels/data_buffer_ops.h"
+#include "tensorflow/core/kernels/tensor_buffer_ops.h"
 
 namespace tensorflow {
 
-class DataBufferOp : public OpKernel {
+class TensorBufferOp : public OpKernel {
  public:
-  explicit DataBufferOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
+  explicit TensorBufferOp(OpKernelConstruction* ctx) : OpKernel(ctx) {}
 
   void Compute(OpKernelContext* ctx) override {
     auto rm = ctx->resource_manager();
@@ -28,27 +28,27 @@ class DataBufferOp : public OpKernel {
     ContainerInfo cinfo;
     OP_REQUIRES_OK(ctx, cinfo.Init(rm, ndef, true /* use name() */));
 
-    DataBuffer* buffer = nullptr;
-    OP_REQUIRES_OK(ctx, rm->LookupOrCreate<DataBuffer>(
+    TensorBuf* buffer = nullptr;
+    OP_REQUIRES_OK(ctx, rm->LookupOrCreate<TensorBuf>(
                             cinfo.container(), cinfo.name(), &buffer,
-                            [&ndef](DataBuffer** pbuf) -> Status {
+                            [&ndef](TensorBuf** pbuf) -> Status {
                               int64 capacity;
                               TF_RETURN_IF_ERROR(GetNodeAttr(
                                   ndef, "shared_capacity", &capacity));
-                              *pbuf = new DataBuffer(capacity);
+                              *pbuf = new TensorBuf(capacity);
                               return Status::OK();
                             }));
     core::ScopedUnref scope(buffer);
-    ComputeWithDataBuffer(ctx, buffer);
+    ComputeWithTensorBuf(ctx, buffer);
   }
 
  protected:
-  virtual void ComputeWithDataBuffer(OpKernelContext* ctx, DataBuffer* buf) = 0;
+  virtual void ComputeWithTensorBuf(OpKernelContext* ctx, TensorBuf* buf) = 0;
 };
 
-class DataBufferAsyncOp : public AsyncOpKernel {
+class TensorBufferAsyncOp : public AsyncOpKernel {
  public:
-  explicit DataBufferAsyncOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
+  explicit TensorBufferAsyncOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("shared_name", &shared_name_));
     OP_REQUIRES_OK(ctx, ctx->GetAttr("shared_threads", &shared_threads_));
   }
@@ -60,44 +60,44 @@ class DataBufferAsyncOp : public AsyncOpKernel {
     ContainerInfo cinfo;
     OP_REQUIRES_OK_ASYNC(ctx, cinfo.Init(rm, ndef, true /* use name() */),
                          done);
-    DataBuffer* buffer = nullptr;
-    OP_REQUIRES_OK_ASYNC(ctx, rm->LookupOrCreate<DataBuffer>(
+    TensorBuf* buffer = nullptr;
+    OP_REQUIRES_OK_ASYNC(ctx, rm->LookupOrCreate<TensorBuf>(
                                   cinfo.container(), cinfo.name(), &buffer,
-                                  [&ndef](DataBuffer** resource) {
+                                  [&ndef](TensorBuf** resource) {
                                     int64 capacity;
                                     TF_RETURN_IF_ERROR(GetNodeAttr(
                                         ndef, "shared_capacity", &capacity));
-                                    *resource = new DataBuffer(capacity);
+                                    *resource = new TensorBuf(capacity);
                                     return Status::OK();
                                   }),
                          done);
     core::ScopedUnref scoped_list(buffer);
     Schedule(buffer, [this, ctx, done, buffer]() {
-      ComputeAsyncWithDataBuffer(ctx, done, buffer);
+      ComputeAsyncWithTensorBuf(ctx, done, buffer);
     });
   }
 
  protected:
-  virtual void ComputeAsyncWithDataBuffer(OpKernelContext* ctx,
-                                          AsyncOpKernel::DoneCallback done,
-                                          DataBuffer* buffer) = 0;
+  virtual void ComputeAsyncWithTensorBuf(OpKernelContext* ctx,
+                                         AsyncOpKernel::DoneCallback done,
+                                         TensorBuf* buffer) = 0;
 
  private:
   string shared_name_;
   int64 shared_threads_;
 
-  void Schedule(DataBuffer* buffer, std::function<void()> fn) {
+  void Schedule(TensorBuf* buffer, std::function<void()> fn) {
     buffer->Schedule(shared_name_, shared_threads_, fn);
   }
 };
 
-class DataBufferPutOp : public DataBufferOp {
+class TensorBufferPutOp : public TensorBufferOp {
  public:
-  explicit DataBufferPutOp(OpKernelConstruction* ctx) : DataBufferOp(ctx) {
+  explicit TensorBufferPutOp(OpKernelConstruction* ctx) : TensorBufferOp(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("timeout_millis", &timeout_millis_));
   }
 
-  void ComputeWithDataBuffer(OpKernelContext* ctx, DataBuffer* buf) override {
+  void ComputeWithTensorBuf(OpKernelContext* ctx, TensorBuf* buf) override {
     std::vector<Tensor> record;
     record.reserve(ctx->num_inputs());
     for (int i = 0; i < ctx->num_inputs(); ++i) {
@@ -110,25 +110,25 @@ class DataBufferPutOp : public DataBufferOp {
   int64 timeout_millis_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("DataBufferPut").Device(DEVICE_CPU),
-                        DataBufferPutOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferPut").Device(DEVICE_CPU),
+                        TensorBufferPutOp);
 #if GOOGLE_CUDA
-REGISTER_KERNEL_BUILDER(Name("DataBufferPut").Device(DEVICE_GPU),
-                        DataBufferPutOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferPut").Device(DEVICE_GPU),
+                        TensorBufferPutOp);
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(Name("DataBufferPut").Device(DEVICE_SYCL),
-                        DataBufferPutOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferPut").Device(DEVICE_SYCL),
+                        TensorBufferPutOp);
 #endif  // TENSORFLOW_USE_SYCL
 
-class DataBufferTakeOp : public DataBufferAsyncOp {
+class TensorBufferTakeOp : public TensorBufferAsyncOp {
  public:
-  explicit DataBufferTakeOp(OpKernelConstruction* ctx)
-      : DataBufferAsyncOp(ctx) {}
+  explicit TensorBufferTakeOp(OpKernelConstruction* ctx)
+      : TensorBufferAsyncOp(ctx) {}
 
-  void ComputeAsyncWithDataBuffer(OpKernelContext* ctx,
-                                  AsyncOpKernel::DoneCallback done,
-                                  DataBuffer* buf) override {
+  void ComputeAsyncWithTensorBuf(OpKernelContext* ctx,
+                                 AsyncOpKernel::DoneCallback done,
+                                 TensorBuf* buf) override {
     std::vector<Tensor> record;
     Status s = buf->Take(&record);
     if (TF_PREDICT_FALSE(!s.ok())) {
@@ -150,24 +150,24 @@ class DataBufferTakeOp : public DataBufferAsyncOp {
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DataBufferTake").Device(DEVICE_CPU),
-                        DataBufferTakeOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferTake").Device(DEVICE_CPU),
+                        TensorBufferTakeOp);
 #if GOOGLE_CUDA
-REGISTER_KERNEL_BUILDER(Name("DataBufferTake").Device(DEVICE_GPU),
-                        DataBufferTakeOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferTake").Device(DEVICE_GPU),
+                        TensorBufferTakeOp);
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(Name("DataBufferTake").Device(DEVICE_SYCL),
-                        DataBufferTakeOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferTake").Device(DEVICE_SYCL),
+                        TensorBufferTakeOp);
 #endif  // TENSORFLOW_USE_SYCL
 
-class DataBufferCancelOp : public DataBufferOp {
+class TensorBufferCancelOp : public TensorBufferOp {
  public:
-  explicit DataBufferCancelOp(OpKernelConstruction* ctx) : DataBufferOp(ctx) {
+  explicit TensorBufferCancelOp(OpKernelConstruction* ctx) : TensorBufferOp(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("is_cancelled", &is_cancelled_));
   }
 
-  void ComputeWithDataBuffer(OpKernelContext* ctx, DataBuffer* buf) override {
+  void ComputeWithTensorBuf(OpKernelContext* ctx, TensorBuf* buf) override {
     ctx->SetStatus(buf->Cancel(is_cancelled_));
   }
 
@@ -175,59 +175,59 @@ class DataBufferCancelOp : public DataBufferOp {
   bool is_cancelled_;
 };
 
-REGISTER_KERNEL_BUILDER(Name("DataBufferCancel").Device(DEVICE_CPU),
-                        DataBufferCancelOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferCancel").Device(DEVICE_CPU),
+                        TensorBufferCancelOp);
 #if GOOGLE_CUDA
-REGISTER_KERNEL_BUILDER(Name("DataBufferCancel").Device(DEVICE_GPU),
-                        DataBufferCancelOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferCancel").Device(DEVICE_GPU),
+                        TensorBufferCancelOp);
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(Name("DataBufferCancel").Device(DEVICE_SYCL),
-                        DataBufferCancelOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferCancel").Device(DEVICE_SYCL),
+                        TensorBufferCancelOp);
 #endif  // TENSORFLOW_USE_SYCL
 
-class DataBufferCloseOp : public DataBufferOp {
+class TensorBufferCloseOp : public TensorBufferOp {
  public:
-  explicit DataBufferCloseOp(OpKernelConstruction* ctx) : DataBufferOp(ctx) {}
+  explicit TensorBufferCloseOp(OpKernelConstruction* ctx) : TensorBufferOp(ctx) {}
 
-  void ComputeWithDataBuffer(OpKernelContext* ctx, DataBuffer* buf) override {
+  void ComputeWithTensorBuf(OpKernelContext* ctx, TensorBuf* buf) override {
     ctx->SetStatus(buf->Close());
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DataBufferClose").Device(DEVICE_CPU),
-                        DataBufferCloseOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferClose").Device(DEVICE_CPU),
+                        TensorBufferCloseOp);
 #if GOOGLE_CUDA
-REGISTER_KERNEL_BUILDER(Name("DataBufferClose").Device(DEVICE_GPU),
-                        DataBufferCloseOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferClose").Device(DEVICE_GPU),
+                        TensorBufferCloseOp);
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
-REGISTER_KERNEL_BUILDER(Name("DataBufferClose").Device(DEVICE_SYCL),
-                        DataBufferCloseOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferClose").Device(DEVICE_SYCL),
+                        TensorBufferCloseOp);
 #endif  // TENSORFLOW_USE_SYCL
 
-class DataBufferSizeOp : public DataBufferOp {
+class TensorBufferSizeOp : public TensorBufferOp {
  public:
-  explicit DataBufferSizeOp(OpKernelConstruction* ctx) : DataBufferOp(ctx) {}
+  explicit TensorBufferSizeOp(OpKernelConstruction* ctx) : TensorBufferOp(ctx) {}
 
-  void ComputeWithDataBuffer(OpKernelContext* ctx, DataBuffer* buf) override {
+  void ComputeWithTensorBuf(OpKernelContext* ctx, TensorBuf* buf) override {
     Tensor* size = nullptr;
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({}), &size));
     OP_REQUIRES_OK(ctx, buf->GetSize(size));
   }
 };
 
-REGISTER_KERNEL_BUILDER(Name("DataBufferSize").Device(DEVICE_CPU),
-                        DataBufferSizeOp);
+REGISTER_KERNEL_BUILDER(Name("TensorBufferSize").Device(DEVICE_CPU),
+                        TensorBufferSizeOp);
 #if GOOGLE_CUDA
 REGISTER_KERNEL_BUILDER(
-    Name("DataBufferSize").HostMemory("size").Device(DEVICE_GPU),
-    DataBufferSizeOp);
+    Name("TensorBufferSize").HostMemory("size").Device(DEVICE_GPU),
+    TensorBufferSizeOp);
 #endif  // GOOGLE_CUDA
 #ifdef TENSORFLOW_USE_SYCL
 REGISTER_KERNEL_BUILDER(
-    Name("DataBufferSize").HostMemory("size").Device(DEVICE_SYCL),
-    DataBufferSizeOp);
+    Name("TensorBufferSize").HostMemory("size").Device(DEVICE_SYCL),
+    TensorBufferSizeOp);
 #endif  // TENSORFLOW_USE_SYCL
 
 }  // namespace tensorflow

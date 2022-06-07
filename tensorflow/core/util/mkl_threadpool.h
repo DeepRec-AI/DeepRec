@@ -26,14 +26,14 @@ limitations under the License.
 #include <vector>
 
 #include "dnnl_threadpool.hpp"
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/lib/core/threadpool.h"
 #define EIGEN_USE_THREADS
 
 namespace tensorflow {
 
-#ifdef ENABLE_MKLDNN_THREADPOOL
+#ifdef ENABLE_DNNL_THREADPOOL
 using dnnl::threadpool_interop::threadpool_iface;
 
 // Divide 'n' units of work equally among 'teams' threads. If 'n' is not
@@ -145,7 +145,7 @@ struct MklDnnThreadPool {
   MklDnnThreadPool(OpKernelContext* ctx) {}
 };
 
-#endif  // ENABLE_MKLDNN_THREADPOOL
+#endif  // ENABLE_DNNL_THREADPOOL
 
 }  // namespace tensorflow
 

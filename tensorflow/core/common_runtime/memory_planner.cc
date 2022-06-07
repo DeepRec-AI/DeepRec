@@ -10,8 +10,9 @@
 namespace tensorflow {
 
 namespace {
-constexpr int64 DEFAULT_START_STATISTIC_STEP = 1000;
-constexpr int64 DEFAULT_STOP_STATISTIC_STEP = 1100;
+constexpr int64 DEFAULT_START_STATISTIC_STEP = 100;
+constexpr int64 DEFAULT_STABLE_STATISTIC_STEP = 10;
+constexpr int64 DEFAULT_MAX_STATISTIC_STEP = 100;
 }
 
 MemoryPlanner::MemoryPlanner() :
@@ -20,7 +21,10 @@ MemoryPlanner::MemoryPlanner() :
     thread_pool_(nullptr),
     counter_(0),
     start_step_(DEFAULT_START_STATISTIC_STEP),
-    stop_step_(DEFAULT_STOP_STATISTIC_STEP) {
+    stable_step_(DEFAULT_STABLE_STATISTIC_STEP),
+    max_stat_step_(DEFAULT_MAX_STATISTIC_STEP),
+    current_stable_step_(0),
+    current_stat_step_(0) {
   InitPolicy();
   InitStepInfo();
 }
@@ -41,9 +45,24 @@ void MemoryPlanner::InitStepInfo() {
   Status s = ReadInt64FromEnvVar("START_STATISTIC_STEP",
       DEFAULT_START_STATISTIC_STEP,
       &start_step_);
-  s = ReadInt64FromEnvVar("STOP_STATISTIC_STEP",
-      DEFAULT_STOP_STATISTIC_STEP,
-      &stop_step_);
+  if (!s.ok()) {
+    LOG(FATAL) << "Read START_STATISTIC_STEP envrionment error. "
+                << s.error_message();
+  }
+  s = ReadInt64FromEnvVar("STABLE_STATISTIC_STEP",
+      DEFAULT_STABLE_STATISTIC_STEP,
+      &stable_step_);
+  if (!s.ok()) {
+    LOG(FATAL) << "Read STABLE_STATISTIC_STEP envrionment error. "
+                << s.error_message();
+  }
+  s = ReadInt64FromEnvVar("MAX_STATISTIC_STEP",
+      DEFAULT_MAX_STATISTIC_STEP,
+      &max_stat_step_);
+  if (!s.ok()) {
+    LOG(FATAL) << "Read MAX_STATISTIC_STEP envrionment error. "
+                << s.error_message();
+  }
 }
 
 // lifetime policy
@@ -51,7 +70,6 @@ LifetimePolicy* MemoryPlanner::BestLifetimePolicy() {
   LifetimePolicy* best_policy = nullptr;
   auto total_mem = std::numeric_limits<size_t>::max();
   for (auto policy : lifetime_stats_polices_) {
-    policy->BestFit();
     auto policy_mem = policy->TotalMem();
     if (policy_mem < total_mem) {
       best_policy = policy;
@@ -72,14 +90,35 @@ void MemoryPlanner::StartCollect() {
   auto current = counter_.fetch_add(1);
   if (current == start_step_) {
     is_stats_ = true;
-  } else if (current == stop_step_) {
-    is_stats_ = false;
-    CollectDone();
   }
 }
 
 void MemoryPlanner::StopCollect() {
-  // Make sure counter_ load is atomic.
+  if (is_stats_) {
+    Schedule([this]() {
+      // stop collecting stat when generating policy
+      is_stats_ = false;
+      ++current_stat_step_;
+      bool stable = true;
+      for (auto policy : lifetime_stats_polices_) {
+        if (!policy->BestFit()) {
+          stable = false;
+        }
+      }
+      if (stable) {
+        ++current_stable_step_;
+      } else {
+        current_stable_step_ = 0;
+      }
+      if (current_stable_step_ > stable_step_
+          || current_stat_step_ > max_stat_step_) {
+        VLOG(2) << "end planner: " << current_stat_step_;
+        CollectDone();
+      } else {
+        is_stats_ = true;
+      }
+    });
+  }
 }
 
 void MemoryPlanner::CollectDone() {
@@ -250,18 +289,24 @@ void LifetimeBin::TrackDeallocate(AllocStats* stats) {
   stats_.emplace_back(stats);
 }
 
-void LifetimePolicy::BestFit() {
-  {
-    std::lock_guard<spin_lock> l(large_bin_lock_);
-    for (auto it = large_bins_.rbegin();
-        it != large_bins_.rend(); ++it) {
-      auto bin_info = it->second;
-      bin_info->BestFit(this);
+bool LifetimePolicy::BestFit() {
+  bool stable = true;
+  std::lock_guard<spin_lock> l(large_bin_lock_);
+  for (auto it = large_bins_.rbegin();
+      it != large_bins_.rend(); ++it) {
+    auto bin_info = it->second;
+    bool ret = bin_info->BestFit(this);
+    if (!ret) {
+      stable = false;
     }
   }
   for (auto it = bins_.rbegin(); it != bins_.rend(); ++it) {
-    (*it)->BestFit(this);
+    bool ret = (*it)->BestFit(this);
+    if (!ret) {
+      stable = false;
+    }
   }
+  return stable;
 }
 
 std::vector<LifetimeBin*>& LifetimePolicy::GetBins() {
@@ -301,11 +346,12 @@ size_t LifetimePolicy::Interval() {
   return interval_;
 }
 
-void LifetimeBin::BestFit(LifetimePolicy* policy) {
+bool LifetimeBin::BestFit(LifetimePolicy* policy) {
   std::lock_guard<spin_lock> l(stats_lock_);
   if (stats_.empty()) {
-    return;
+    return true;
   }
+  bool stable = true;
   for (auto s : stats_) {
     auto block = FindBlock(s);
     if (block != nullptr) {
@@ -323,7 +369,10 @@ void LifetimeBin::BestFit(LifetimePolicy* policy) {
     block = new AllocBlock(chunk_size_, bin_index_);
     block->Insert(s);
     blocks_.emplace_back(block);
+    stable = false;
   }
+  stats_.clear();
+  return stable;
 }
 
 AllocBlock* LifetimeBin::FindBlock(AllocStats* stats) {
@@ -349,14 +398,13 @@ size_t LifetimeBin::Alignment() const {
 
 AllocBlock* LifetimePolicy::FindBlock(
     AllocStats* stats, size_t bindex) {
-  for (size_t i = bindex; i < large_bin_index_; ++i) {
-    auto block = bins_[i]->FindBlock(stats);
+  for ( ; bindex < large_bin_index_; ++bindex) {
+    auto block = bins_[bindex]->FindBlock(stats);
     if (block != nullptr) {
       return block;
     }
   }
-  // no need to lock, BestFit already hold large_bin_lock_ firstly
-  for (auto it = large_bins_.begin();
+  for (auto it = large_bins_.lower_bound(bindex);
       it != large_bins_.end(); ++it) {
     auto block = (it->second)->FindBlock(stats);
     if (block != nullptr) {

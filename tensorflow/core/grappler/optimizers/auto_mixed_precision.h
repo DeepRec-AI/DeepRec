@@ -28,8 +28,8 @@ enum class AutoMixedPrecisionMode { CUDA, MKL };
 // performance on GPUs or CPUs.
 class AutoMixedPrecision : public GraphOptimizer {
  public:
-  // If 'mode' is CUDA, converts nodes to float16 on Nvidia GPUs. If MKL,
-  // converts nodes to bfloat16 on CPUs in order to take advantage of MKL
+  // If 'mode' is CUDA, converts nodes to float16 on Nvidia GPUs. If OneDNN,
+  // converts nodes to bfloat16 on CPUs in order to take advantage of OneDNN
   // performance improvements with bfloat16.
   explicit AutoMixedPrecision(
       AutoMixedPrecisionMode mode = AutoMixedPrecisionMode::CUDA)

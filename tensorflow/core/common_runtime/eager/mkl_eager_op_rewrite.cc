@@ -45,12 +45,12 @@ class MklEagerOpRewrite : public EagerOpRewrite {
   static Status SetupNewOp(EagerOperation* orig_op, const string mkl_op_name,
                            std::unique_ptr<EagerOperation>* new_mkl_op);
 
-  // Generic rewrite that can be used for any mkl op that doesn't need
+  // Generic rewrite that can be used for any OneDNN op that doesn't need
   // special processing.
   static Status CreateGenericMklOp(EagerOperation* orig_op,
                                    std::unique_ptr<EagerOperation>* mkl_op);
 
-  // Creates new MKL op for Conv2D, Conv2DBackpropInput and
+  // Creates new OneDNN op for Conv2D, Conv2DBackpropInput and
   // Conv2DBackpropFilter.
   static Status CreateMklConv2DOp(
       EagerOperation* orig_op, std::unique_ptr<EagerOperation>* mkl_conv2d_op);
@@ -153,7 +153,7 @@ Status MklEagerOpRewrite::CreateMklConv2DOp(
 }
 
 bool MklEagerOpRewrite::ShouldRewriteOp(EagerOperation* op, int* op_idx) {
-  // Don't rewrite the op if MKL use is disabled at runtime.
+  // Don't rewrite the op if OneDNN use is disabled at runtime.
   if (DisableMKL()) {
     return false;
   }
@@ -161,7 +161,7 @@ bool MklEagerOpRewrite::ShouldRewriteOp(EagerOperation* op, int* op_idx) {
   if (op->Attrs().Get("T", &data_type) != Status::OK()) {
     return false;
   }
-  // Check if we have registered MKL kernel for this op.
+  // Check if we have registered OneDNN kernel for this op.
   if (!mkl_op_registry::IsMklNameChangeOp(
           mkl_op_registry::GetMklEagerOpName(op->Name()), data_type) &&
       !mkl_op_registry::IsMklNameChangeOp(

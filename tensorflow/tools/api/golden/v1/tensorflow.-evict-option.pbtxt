@@ -1,9 +1,0 @@
-path: "tensorflow.EvictOption"
-tf_class {
-  is_instance: "<class \'tensorflow.python.ops.variables.EvictOption\'>"
-  is_instance: "<type \'object\'>"
-  member_method {
-    name: "__init__"
-    argspec: "args=[\'self\', \'steps_to_live\', \'l2_weight_threshold\', \'steps_to_live_l2reg\', \'l2reg_theta\', \'l2reg_lambda\'], varargs=None, keywords=None, defaults=[\'None\', \'-1.0\', \'None\', \'None\', \'None\'], "
-  }
-}

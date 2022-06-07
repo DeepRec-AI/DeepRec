@@ -65,13 +65,21 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/contrib/compiler/tests:adamax_test_gpu "\
 "-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_test_gpu "\
 "-//tensorflow/contrib/compiler/tests:powersign_test_gpu "\
+"-//tensorflow/contrib/image:distort_image_ops_test "\
+"-//tensorflow/contrib/image:distort_image_ops_test_gpu "\
+"-//tensorflow/contrib/image:sparse_image_warp_test "\
+"-//tensorflow/contrib/image:sparse_image_warp_test_gpu "\
+"-//tensorflow/contrib/layers:rev_block_lib_test "\
+"-//tensorflow/contrib/opt:ggt_test "\
+"-//tensorflow/contrib/opt:matrix_functions_test "\
+"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_test "
 
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
     ret=0
     bazel test -c opt --config=cuda --verbose_failures \
     --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  \
-    --test_timeout="300,450,1200,3600" --local_test_jobs=80  \
+    --test_timeout="300,450,1200,3600" --local_test_jobs=1  \
     -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
 done
 

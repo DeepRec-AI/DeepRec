@@ -105,14 +105,14 @@ config_setting(
 )
 
 config_setting(
-    # Add "--define tensorflow_mkldnn_contraction_kernel=0" to your build command to disable mkldnn
-    # sgemm in Eigen tensor contractions (matrix multiplications and convolutions). The mkldnn
-    # kernels are generated at runtime and use avx/avx2/fma/avx512 based on cpu status registers
+    # Add "--define tensorflow_dnnl_contraction_kernel=0" to your build command to disable dnnl
+    # sgemm in Eigen tensor contractions (matrix multiplications and convolutions). The dnnl
+    # kernels are generated at runtime and use amx/avx/avx2/fma/avx512 based on cpu status registers
     # (https://en.wikipedia.org/wiki/CPUID). Default Eigen contraction kernel is
     # Eigen::internal::gebp_kernel (general block-panel kernel).
-    name = "no_mkldnn_contraction_kernel",
+    name = "no_dnnl_contraction_kernel",
     values = {
-        "define": "tensorflow_mkldnn_contraction_kernel=0",
+        "define": "tensorflow_dnnl_contraction_kernel=0",
     },
 )
 
@@ -777,10 +777,10 @@ cc_library(
 # blocks of the original tensors).
 #
 # 1) Default:
-#    Use Mkldnn single threaded sgemm. The mkldnn kernels are generated at runtime and
-#    use avx/avx2/fma/avx512 based on cpu status registers (https://en.wikipedia.org/wiki/CPUID).
+#    Use OneDNN single threaded sgemm. The dnnl kernels are generated at runtime and
+#    use amx/avx/avx2/fma/avx512 based on cpu status registers (https://en.wikipedia.org/wiki/CPUID).
 #
-# 2) Eigen: --define tensorflow_mkldnn_contraction_kernel=0 (disable mkldnn)
+# 2) Eigen: --define tensorflow_dnnl_contraction_kernel=0 (disable dnnl)
 #    Use Eigen contraction kernel: Eigen::internal::gebp_kernel.
 #
 # If you use `tensor.contract(other_tensor)` in your code, you must include additional header
@@ -791,9 +791,9 @@ cc_library(
 #   #endif
 #
 # We define a two-level target because if we just add
-#   ":no_mkldnn_contraction_kernel": []
+#   ":no_dnnl_contraction_kernel": []
 # in the same select list with //third_party/tensorflow:{android,arm,ios,ppc},
-# there can be more than one match, e.g., when building for android and MKL-DNN
+# there can be more than one match, e.g., when building for android and OneDNN
 # contraction kernel is disabled. Bazel doesn't allow multiple matches.
 # See more details in
 #   https://github.com/tensorflow/tensorflow/issues/24414
@@ -801,7 +801,7 @@ cc_library(
     name = "eigen_contraction_kernel",
     hdrs = ["eigen_contraction_kernel.h"],
     deps = select({
-        ":no_mkldnn_contraction_kernel": [":eigen_contraction_kernel_no_mkl"],
+        ":no_dnnl_contraction_kernel": [":eigen_contraction_kernel_no_mkl"],
         "//conditions:default": [":eigen_contraction_kernel_with_mkl"],
     }),
 )
@@ -818,7 +818,7 @@ cc_library(
         "//tensorflow:linux_ppc64le": [],
         "//conditions:default": [
             "TENSORFLOW_USE_CUSTOM_CONTRACTION_KERNEL",
-            "TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL",
+            "TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL",
         ],
     }),
     deps = [
@@ -2805,16 +2805,16 @@ tf_kernel_library(
 )
 
 tf_kernel_library(
-    name = "data_buffer_ops",
-    hdrs = ["data_buffer_ops.h"],
-    srcs = ["data_buffer_ops.cc"],
+    name = "tensor_buffer_ops",
+    hdrs = ["tensor_buffer_ops.h"],
+    srcs = ["tensor_buffer_ops.cc"],
     deps=[
       ":bounds_check",
       "//tensorflow/core:framework",
       "//tensorflow/core:protos_all_cc",
       "//tensorflow/core:proto_text",
       "//tensorflow/core:lib",
-      "//tensorflow/core:data_buffer_ops_op_lib",
+      "//tensorflow/core:tensor_buffer_ops_op_lib",
       "//tensorflow/core",
       "//third_party/eigen3",
     ],
@@ -3170,17 +3170,17 @@ tf_cc_tests(
 # Conditional test target generation is not supported by the "tf_cc_tests" macro
 # (can't add 'select' to the srcs field, type 'select' is not iterable).
 tf_cc_test(
-    name = "eigen_mkldnn_contraction_kernel_test",
+    name = "eigen_dnnl_contraction_kernel_test",
     size = "small",
     srcs = select({
         "//tensorflow:android": [],
         "//tensorflow:arm": [],
         "//tensorflow:ios": [],
         "//tensorflow:linux_ppc64le": [],
-        ":no_mkldnn_contraction_kernel": [],
-        "//conditions:default": ["eigen_mkldnn_contraction_kernel_test.cc"],
+        ":no_dnnl_contraction_kernel": [],
+        "//conditions:default": ["eigen_dnnl_contraction_kernel_test.cc"],
     }),
-    tags = ["mkldnn_contraction_kernel"],
+    tags = ["dnnl_contraction_kernel"],
     deps = [
         ":eigen_contraction_kernel",
         "//tensorflow/core:test",
@@ -6202,6 +6202,7 @@ tf_kernel_library(
         "training_ali_ops_gpu.cu.cc",
         "training_ali_ops_gpu.h",
     ],
+    copts = ["-g"],
     deps = [
         ":bounds_check",
         ":training_op_helpers",

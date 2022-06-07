@@ -716,7 +716,7 @@ class ConcatOffsetTest(test.TestCase):
       self.assertAllEqual(ans, [[0, 0, 0], [2, 0, 0], [3, 0, 0]])
 
   def testCreateMemDecBlockedFormat(self):
-    """Try to create the mkl concat operation
+    """Try to create the OneDNN concat operation
 
     when one of the input's memory descriptor is in blocked format
     """

@@ -61,7 +61,20 @@ class EmbeddingVar : public ResourceBase {
       default_value_(nullptr),
       value_len_(0),
       alloc_(nullptr),
-      emb_config_(emb_cfg) {}
+      emb_config_(emb_cfg) {
+        if (IsMultiLevel()) {
+          add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {
+            value_ptr->AddFreq(freq);
+          };
+        } else if (emb_config_.is_counter_filter()) {
+          add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {
+            if (value_ptr->GetFreq() < filter_freq)
+              value_ptr->AddFreq(freq);
+          };
+        } else {
+          add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {};
+        }
+      }
 
   Status Init(const Tensor& default_tensor, int64 default_value_dim) {
     filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(emb_config_, this, storage_manager_);
@@ -121,19 +134,11 @@ class EmbeddingVar : public ResourceBase {
     return filter_->GetFreq(key);
   }
 
-  void LookupOrCreate(K key, V* val, V* default_v)  {
+  void LookupOrCreate(K key, V* val, V* default_v, int count = 1)  {
     const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
-    filter_->LookupOrCreate(key, val, default_value_ptr);
-  }
-
-  void LookupOrCreateWithFreq(K key, V* val, V* default_v)  {
-    const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
-    filter_->LookupOrCreateWithFreq(key, val, default_value_ptr);
-  }
-
-  void LookupOrCreate(K key, V* val, V* default_v, int64 count)  {
-    const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
-    filter_->LookupOrCreate(key, val, default_value_ptr, count);
+    ValuePtr<V>* value_ptr = nullptr;
+    filter_->LookupOrCreate(key, val, default_value_ptr, &value_ptr, count);
+    add_freq_fn_(value_ptr, count, emb_config_.filter_freq);
   }
 
   V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {
@@ -251,6 +256,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->Cache();
   }
 
+  int64 GetEmbeddingIndex() {
+    return emb_config_.emb_index;
+  }
+
  private:
   std::string name_;
   bool is_initialized_ = false;
@@ -263,6 +272,7 @@ class EmbeddingVar : public ResourceBase {
   embedding::StorageManager<K, V>* storage_manager_;
   EmbeddingConfig emb_config_;
   EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
+  std::function<void(ValuePtr<V>*, int, int64)> add_freq_fn_;
 
   ~EmbeddingVar() override {
     // When dynamic dimension embedding is used, there will be more than one primary slot

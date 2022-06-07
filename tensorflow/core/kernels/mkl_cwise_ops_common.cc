@@ -25,7 +25,7 @@ limitations under the License.
 
 #include "tensorflow/core/util/mkl_util.h"
 
-using mkldnn::binary;
+using dnnl::binary;
 
 namespace tensorflow {
 
@@ -35,12 +35,12 @@ typedef Eigen::ThreadPoolDevice CPUDevice;
 struct MklBinaryParams {
   memory::desc src0_md;
   memory::desc src1_md;
-  mkldnn::algorithm alg_kind;
+  dnnl::algorithm alg_kind;
   bool is_src0_blocked_format;
   bool is_src1_blocked_format;
 
   MklBinaryParams(memory::desc& src0_md, memory::desc& src1_md,
-                  mkldnn::algorithm alg_kind, bool is_src0_blocked_format,
+                  dnnl::algorithm alg_kind, bool is_src0_blocked_format,
                   bool is_src1_blocked_format)
       : src0_md(src0_md),
         src1_md(src1_md),
@@ -59,7 +59,7 @@ class MklBinaryPrimitive : public MklPrimitive {
 
   ~MklBinaryPrimitive() {}
 
-  const std::shared_ptr<mkldnn::binary::primitive_desc> GetBinaryPd() const {
+  const std::shared_ptr<dnnl::binary::primitive_desc> GetBinaryPd() const {
     return context_.primitive_desc;
   }
 
@@ -89,11 +89,11 @@ class MklBinaryPrimitive : public MklPrimitive {
     std::shared_ptr<memory> src1_mem;
     std::shared_ptr<memory> dst_mem;
 
-    std::shared_ptr<mkldnn::binary::desc> desc;
-    std::shared_ptr<mkldnn::binary::primitive_desc> primitive_desc;
-    std::shared_ptr<mkldnn::primitive> primitive;
+    std::shared_ptr<dnnl::binary::desc> desc;
+    std::shared_ptr<dnnl::binary::primitive_desc> primitive_desc;
+    std::shared_ptr<dnnl::primitive> primitive;
 
-    std::vector<mkldnn::primitive> primitives;
+    std::vector<dnnl::primitive> primitives;
     std::vector<std::unordered_map<int, memory>> primitives_args;
 
     BinaryContext()
@@ -121,18 +121,18 @@ class MklBinaryPrimitive : public MklPrimitive {
         new memory(*context_.dst_md, cpu_engine_, DummyData));
 
     context_.desc.reset(
-        new mkldnn::binary::desc(binary_params.alg_kind, *context_.src0_md,
+        new dnnl::binary::desc(binary_params.alg_kind, *context_.src0_md,
                                  *context_.src1_md, *context_.dst_md));
 
     context_.primitive_desc.reset(
-        new mkldnn::binary::primitive_desc(*context_.desc, cpu_engine_));
+        new dnnl::binary::primitive_desc(*context_.desc, cpu_engine_));
 
-    context_.primitive.reset(new mkldnn::binary(*context_.primitive_desc));
+    context_.primitive.reset(new dnnl::binary(*context_.primitive_desc));
 
     std::unordered_map<int, memory> net_args;
-    net_args.insert({MKLDNN_ARG_SRC_0, *context_.src0_mem});
-    net_args.insert({MKLDNN_ARG_SRC_1, *context_.src1_mem});
-    net_args.insert({MKLDNN_ARG_DST, *context_.dst_mem});
+    net_args.insert({DNNL_ARG_SRC_0, *context_.src0_mem});
+    net_args.insert({DNNL_ARG_SRC_1, *context_.src1_mem});
+    net_args.insert({DNNL_ARG_DST, *context_.dst_mem});
 
     context_.primitives_args.push_back(net_args);
 
@@ -270,7 +270,7 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
       }
 
       // Get algorithm kind from Functor.
-      mkldnn::algorithm alg_kind = mkldnn::algorithm::undef;
+      dnnl::algorithm alg_kind = dnnl::algorithm::undef;
 
       if (std::is_same<Functor, functor::add<T>>::value) {
         alg_kind = ALGORITHM::binary_add;
@@ -370,7 +370,7 @@ class MklBinaryOp : public BinaryOp<Device, Functor> {
   void FallbackToEigen(OpKernelContext* context) {
     BinaryOp<Device, Functor>::Compute(context);
 
-    // Mkl metadata inputs won't be changed in Eigen path, direct forward them.
+    // OneDNN metadata inputs won't be changed in Eigen path, direct forward them.
     ForwardMklMetaDataInToOut(context, 0, 0);
   }
 

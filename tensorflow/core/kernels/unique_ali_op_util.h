@@ -493,9 +493,10 @@ void MultiMapCompute(OpKernelContext* context, const Tensor& input,
   OP_REQUIRES_OK(context, t0_runner.summary());
 
   // Parallel Step 1: Build hash maps.
-  HashMap uniq_maps[num_buckets];
+  HashMap uniq_maps_ptr[num_buckets];
+  HashMap* uniq_maps = uniq_maps_ptr;
   auto MapBuildTask = [N, num_partitions, &Tin, &partitions,
-    &uniq_maps, &idx_vec, unique_ratio_hint] (int32 task_id, int32 num_tasks) {
+    uniq_maps, &idx_vec, unique_ratio_hint] (int32 task_id, int32 num_tasks) {
     auto& uniq = uniq_maps[task_id];
     HashMapInitializer<HashMap>::Reserve(&uniq, N / num_tasks / unique_ratio_hint);
 

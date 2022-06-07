@@ -111,32 +111,32 @@ build --define framework_shared_object=true
 build --define open_source_build=true
 test --define open_source_build=true
 
-# Please note that MKL on MacOS or windows is still not supported.
-# If you would like to use a local MKL instead of downloading, please set the
+# Please note that OneDNN on MacOS or windows is still not supported.
+# If you would like to use a local OneDNN instead of downloading, please set the
 # environment variable "TF_MKL_ROOT" every time before build.
 build:mkl --define=build_with_mkl=true --define=enable_mkl=true
-build:mkl --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl --define=tensorflow_dnnl_contraction_kernel=0
 build:mkl -c opt
 
 # config to build OneDNN backend with a user specified threadpool.
 build:mkl_threadpool --define=build_with_mkl=true --define=enable_mkl=true
-build:mkl_threadpool --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl_threadpool --define=tensorflow_dnnl_contraction_kernel=0
 build:mkl_threadpool --define=build_with_mkl_opensource=true
 build:mkl_threadpool --define=build_with_mkldnn_threadpool=true
 build:mkl_threadpool -c opt
 
 # Config setting to build with oneDNN and without the binary blob
 build:mkl_opensource_only --define=build_with_mkl=true --define=enable_mkl=true
-build:mkl_opensource_only --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl_opensource_only --define=tensorflow_dnnl_contraction_kernel=0
 build:mkl_opensource_only --define=build_with_mkl_opensource=true
 build:mkl_opensource_only -c opt
 
-# This config option is used to enable MKL-DNN open source library only,
-# without depending on MKL binary version.
+# This config option is used to enable OneDNN open source library only,
+# without depending on OneDNN binary version.
 build:mkl_open_source_only --define=build_with_mkl_dnn_only=true
 build:mkl_open_source_only --define=build_with_mkl_dnn_v1_only=true
 build:mkl_open_source_only --define=build_with_mkl=true --define=enable_mkl=true
-build:mkl_open_source_only --define=tensorflow_mkldnn_contraction_kernel=0
+build:mkl_open_source_only --define=tensorflow_dnnl_contraction_kernel=0
 
 # This config refers to building with CUDA available. It does not necessarily
 # mean that we build CUDA op kernels.

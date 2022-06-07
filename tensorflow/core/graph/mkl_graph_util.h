@@ -26,7 +26,7 @@ limitations under the License.
 
 namespace tensorflow {
 // Since our ops are going to produce and also consume N addition tensors
-// (Mkl) for N Tensorflow tensors, we can have following different
+// (OneDNN) for N Tensorflow tensors, we can have following different
 // orderings among these 2N tensors.
 //
 // E.g., for Tensorflow tensors A, B, and C, our ops will produce and
@@ -36,7 +36,7 @@ namespace tensorflow {
 //              example, the ordering looks like: A, A_m, B, B_m, C, C_m.
 //
 // CONTIGUOUS: in thi case N Tensorflow tensors are contiguous followed
-//             by N Mkl tensors. So for above example, the ordering looks
+//             by N OneDNN tensors. So for above example, the ordering looks
 //             like: A, B, C, A_m, B_m, C_m
 //
 // Following APIs map index of original Tensorflow tensors to their
@@ -45,18 +45,18 @@ namespace tensorflow {
 //
 typedef enum { TENSORS_INTERLEAVED, TENSORS_CONTIGUOUS } MklTfTensorOrdering;
 // NOTE: Currently, we use contiguous ordering. If you change this, then you
-// would need to change Mkl op definitions in nn_ops.cc.
+// would need to change OneDNN op definitions in nn_ops.cc.
 static const MklTfTensorOrdering kTensorOrdering = TENSORS_CONTIGUOUS;
 
 // Get index of MetaData tensor from index 'n' of Data tensor.
 inline int DataIndexToMetaDataIndex(int n, int total_tensors) {
   if (kTensorOrdering == MklTfTensorOrdering::TENSORS_INTERLEAVED) {
-    // For interleaved ordering, Mkl tensor follows immediately after
+    // For interleaved ordering, OneDNN tensor follows immediately after
     // Tensorflow tensor.
     return n + 1;
   } else {
     CHECK_EQ(kTensorOrdering, MklTfTensorOrdering::TENSORS_CONTIGUOUS);
-    // For contiguous ordering, Mkl tensor is n+total_tensors / 2 away.
+    // For contiguous ordering, OneDNN tensor is n+total_tensors / 2 away.
     return n + total_tensors / 2;
   }
 }
@@ -98,14 +98,14 @@ bool inline Check5DFormat(const NodeDef& ndef) {
 }
 
 namespace mkl_op_registry {
-// MKL operators whose kernels are registered with 'MklLayoutDependentOp' label
-// (e.g., MklConv2D) understand input tensors in MKL layout. These operators
+// OneDNN operators whose kernels are registered with 'MklLayoutDependentOp' label
+// (e.g., MklConv2D) understand input tensors in OneDNN layout. These operators
 // get additional meta-tensors for actual input tensors.
 static const char* kMklLayoutDependentOpLabel = "MklLayoutDependentOp";
 static const char* kMklLayoutDependentOpLabelPattern =
     "label='MklLayoutDependentOp'";
-// MKL operators whose kernels are registered with 'MklNameChangeOp' label
-// (e.g., MklMatMul, MklTranspose) do not understand input tensors in MKL
+// OneDNN operators whose kernels are registered with 'MklNameChangeOp' label
+// (e.g., MklMatMul, MklTranspose) do not understand input tensors in OneDNN
 // layout. These operators do not get additional meta-tensors. The signatures of
 // these operators are the same as the original TensorFlow operators that they
 // correspond to. So these ops just go through a name change during graph
@@ -115,7 +115,7 @@ static const char* kMklNameChangeOpLabelPattern = "label='MklNameChangeOp'";
 static const char* kMklQuantizedOpLabel = "QuantizedMklOp";
 static const char* kMklQuantizedOpLabelPattern = "label='QuantizedMklOp'";
 
-// Prefix that we add to Tensorflow op name to construct Mkl op name.
+// Prefix that we add to Tensorflow op name to construct OneDNN op name.
 static const char* const kMklOpPrefix = "_Mkl";
 // TODO(intel-tf): PR review feedback (penpornk)
 // Can we add eager_mode (or is_eager) as an op attribute instead?
@@ -123,23 +123,21 @@ static const char* const kMklOpPrefix = "_Mkl";
 // through template parameter.
 static const char* const kMklEagerOpPrefix = "_MklEager";
 
-// Get the name of Mkl op from original TensorFlow op
-// We prefix 'Mkl' to the original op to get Mkl op.
+// Get the name of OneDNN op from original TensorFlow op
+// We prefix 'OneDNN' to the original op to get OneDNN op.
 inline string GetMklOpName(const string& name) {
   return string(kMklOpPrefix) + name;
 }
 
-// Get the name of Mkl Eager op from original TensorFlow op
-// We prefix 'MklEager' to the original op to get Mkl Eager op.
+// Get the name of OneDNN Eager op from original TensorFlow op
+// We prefix 'MklEager' to the original op to get OneDNN Eager op.
 inline string GetMklEagerOpName(const string& name) {
   return string(kMklEagerOpPrefix) + name;
 }
 
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
 static inline bool IsBF16SupportedByOneDNNOnThisCPU() {
   return port::TestCPUFeature(port::CPUFeature::AVX512F);
 }
-#endif
 
 static inline void BF16UnsupportedWarning() {
   static absl::once_flag cpu_bfloat16_warn_once_flag;
@@ -149,12 +147,12 @@ static inline void BF16UnsupportedWarning() {
   });
 }
 
-// Check whether opname with type T is registered as MKL operator
-// that can accept input tensors in MKL layout.
+// Check whether opname with type T is registered as OneDNN operator
+// that can accept input tensors in OneDNN layout.
 //
 // @input: name of the op
 // @input: T datatype to be used for checking op
-// @return: true if opname is registered as Mkl-layout dependent op;
+// @return: true if opname is registered as OneDNN-layout dependent op;
 // false otherwise
 static inline bool IsMklLayoutDependentOp(const string& op_name, DataType T) {
   string kernel = KernelsRegisteredForOp(op_name);
@@ -163,7 +161,6 @@ static inline bool IsMklLayoutDependentOp(const string& op_name, DataType T) {
   if (kernel.find(kMklQuantizedOpLabelPattern) != string::npos) {
     return (T == DT_QUINT8 || T == DT_QINT8 || T == DT_QINT32);
   }
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
   // Restrict regular ops to FLOAT and BFLOAT16
   if (kernel.find(kMklLayoutDependentOpLabelPattern) != string::npos) {
     if (T == DT_FLOAT) return true;
@@ -179,17 +176,11 @@ static inline bool IsMklLayoutDependentOp(const string& op_name, DataType T) {
     }
     return false;
   }
-#else
-  // Restrict regular ops to FLOAT
-  if (kernel.find(kMklLayoutDependentOpLabelPattern) != string::npos) {
-    return (T == DT_FLOAT);
-  }
-#endif  // ENABLE_INTEL_MKL_BFLOAT16
   return false;
 }
 
 // TODO(mdfaijul): QuantizedConv2D is registered with input: QUINT8
-// filter:QINT8 for mkldnn integration. First a dummy kernel is created
+// filter:QINT8 for dnnl integration. First a dummy kernel is created
 // and then it is replaced by an actual kernel.
 static inline bool IsMklLayoutDependentOp(const string& op_name,
                                           DataType Tinput, DataType Tfilter) {
@@ -202,12 +193,12 @@ static inline bool IsMklLayoutDependentOp(const string& op_name,
   return false;
 }
 
-// Check whether opname with type T is registered as an MKL operator that
+// Check whether opname with type T is registered as an OneDNN operator that
 // will go through name change.
 //
 // @input: name of the op
 // @input: T datatype to be used for checking op
-// @return: true if opname is registered as MKL op that will go through name
+// @return: true if opname is registered as OneDNN op that will go through name
 // change; false otherwise
 static inline bool IsMklNameChangeOp(const string& op_name, DataType T) {
   string kernel = KernelsRegisteredForOp(op_name);
@@ -225,7 +216,7 @@ static inline bool IsMklNameChangeOp(const string& op_name, DataType T) {
   search_string += DataType_Name(T) + string("]");
 
   // Temporarily replacing earlier check by adding a type-specific check so
-  // that we can selectively decide which type is supported by MKL operators.
+  // that we can selectively decide which type is supported by OneDNN operators.
   // That way kernel registration does not decide which operators we support.
   // We are using this change to temporarily disable BFLOAT16 support. Once
   // we want to enable it, we will go back to earlier check.
@@ -233,7 +224,6 @@ static inline bool IsMklNameChangeOp(const string& op_name, DataType T) {
   if (kernel.find(search_string) != string::npos) {
     isTypeAllowed = (T == DT_COMPLEX128 || T == DT_COMPLEX64 ||
                      T == DT_DOUBLE || T == DT_FLOAT);
-#ifdef ENABLE_INTEL_MKL_BFLOAT16
     if (!isTypeAllowed) {
       if (T == DT_BFLOAT16) {
         if (IsBF16SupportedByOneDNNOnThisCPU()) {
@@ -246,15 +236,14 @@ static inline bool IsMklNameChangeOp(const string& op_name, DataType T) {
         }
       }
     }
-#endif
     return isTypeAllowed;
   }
 
   return false;
 }
 
-// Check if the operator with 'op_name' and type 'T' is an MKL operator that
-// will either understand input tensors in MKL layout or will go through name
+// Check if the operator with 'op_name' and type 'T' is an OneDNN operator that
+// will either understand input tensors in OneDNN layout or will go through name
 // rewrite that some operators go through.
 static inline bool IsMklOp(const string& op_name, DataType T) {
   return IsMklLayoutDependentOp(op_name, T) || IsMklNameChangeOp(op_name, T);

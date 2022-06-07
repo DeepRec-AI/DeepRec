@@ -56,7 +56,7 @@ string PrintMemory(const char* ptr, size_t n);
 // "tensor", "tensor[i]", "tensor[i, j]", etc.
 string SliceDebugString(const TensorShape& shape, const int64 flat);
 
-// disable MKL in runtime
+// disable OneDNN in runtime
 #ifdef INTEL_MKL
 bool DisableMKL();
 #endif  // INTEL_MKL

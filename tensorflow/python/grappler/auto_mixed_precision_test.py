@@ -506,8 +506,8 @@ class AutoMixedPrecisionTest(test.TestCase, parameterized.TestCase):
     tol = 5e-2 if mode == 'mkl' else 1e-3
     self.assertAllClose(output_val_ref, output_val, atol=tol, rtol=tol)
 
-  # TODO(reedwm): Fix and enable this test with MKL. Currently this crashes with
-  # MKL
+  # TODO(reedwm): Fix and enable this test with OneDNN. Currently this crashes with
+  # OneDNN
   @parameterized.parameters(['cuda'])
   @test_util.run_deprecated_v1
   @test_util.disable_xla('This test does not pass with XLA')
@@ -541,8 +541,8 @@ class AutoMixedPrecisionTest(test.TestCase, parameterized.TestCase):
     tol = 2e-3 if test.is_built_with_rocm else 1e-3
     self.assertAllClose(output_val_ref, output_val, atol=tol, rtol=tol)
 
-  # TODO(reedwm): Fix and enable this test with MKL. Currently this crashes with
-  # MKL
+  # TODO(reedwm): Fix and enable this test with OneDNN. Currently this crashes with
+  # OneDNN
   @parameterized.parameters(['cuda'])
   @test_util.run_deprecated_v1
   @test_util.disable_xla('This test does not pass with XLA')
@@ -673,7 +673,7 @@ class AutoMixedPrecisionTest(test.TestCase, parameterized.TestCase):
       tol = 1e-3
     self.assertAllClose(output_val_ref, output_val, atol=tol, rtol=tol)
 
-  @parameterized.parameters(['cuda'])  # MKL doesn't support bf16 Sigmoid
+  @parameterized.parameters(['cuda'])  # OneDNN doesn't support bf16 Sigmoid
   @test_util.run_v1_only('b/138749235')
   @test_util.disable_xla('This test does not pass with XLA')
   def test_recurrent_lstm(self, mode):
