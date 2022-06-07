@@ -370,7 +370,7 @@ class IncrementalSaver(Saver):
     self._last_incr_checkpoints.append((latest_save_path, time.time()))
 
     # For incremental_save only save last 2 ckpt
-    if len(self._last_incr_checkpoints) > 2:
+    if len(self._last_incr_checkpoints) > self.incr_saver_def.max_to_keep:
       self._incr_checkpoints_to_be_deleted.append(self._last_incr_checkpoints.pop(0))
 
   def _MaybeDeleteOldIncrCheckpoints(self, meta_graph_suffix="meta"):
@@ -387,16 +387,16 @@ class IncrementalSaver(Saver):
       # Otherwise delete the files.
       try:
         checkpoint_prefix = self._CheckpointFilename(p)
-        self._delete_file_if_exists(
-            self._MetaGraphFilename(checkpoint_prefix, meta_graph_suffix))
+        #checkpoint_management._delete_file_if_exists(
+        #    self._MetaGraphFilename(checkpoint_prefix, meta_graph_suffix))
         if self.saver_def.version == saver_pb2.SaverDef.V2:
           # V2 has a metadata file and some data files.
-          self._delete_file_if_exists(checkpoint_prefix + ".index")
-          self._delete_file_if_exists(checkpoint_prefix +
+          checkpoint_management._delete_file_if_exists(checkpoint_prefix + ".index")
+          checkpoint_management._delete_file_if_exists(checkpoint_prefix +
                                       ".data-?????-of-?????")
         else:
           # V1, Legacy.  Exact match on the data file.
-          self._delete_file_if_exists(checkpoint_prefix)
+          checkpoint_management._delete_file_if_exists(checkpoint_prefix)
       except Exception as e:  # pylint: disable=broad-except
         logging.warning("Ignoring: %s", str(e))
 
