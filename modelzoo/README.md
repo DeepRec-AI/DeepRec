@@ -1,6 +1,6 @@
 # DeepRec Model Zoo
 
-Here is example training code of some public popular models using public dataset.   
+Here is example training code of some public popular models using public dataset.
 Contained models are as follow:
 - [WDL](WDL/README.md)
 - [DLRM](DLRM/README.md)
@@ -9,3 +9,4 @@ Contained models are as follow:
 - [DIN](DIN/README.md)
 - [DeepFM](DeepFM/README.md)
 - [BST](BST/README.md)
+- [SimpleMultiTask](SimpleMultiTask/README.md)
