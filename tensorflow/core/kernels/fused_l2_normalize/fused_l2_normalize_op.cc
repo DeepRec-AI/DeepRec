@@ -57,19 +57,34 @@ public:
     auto &worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
-    thread_pool->ParallelFor(total_unit, unit_cost,
-        [&input, &output, rows, cols, this](int64 begin_unit, int64 end_unit) {
+#ifdef __AVX512F__
+    int64 block_num = cols >> 7;
+    int64 remainder_128 = cols & 0x7F;
+    int64 remainder_16 = remainder_128 & 0x0F;
+    int64 remainder_block_num = remainder_128 >> 4;
+    int64 remainder_block_num_total = remainder_block_num+ !!remainder_16;
+
+    thread_pool->ParallelFor(total_unit, unit_cost, [&input, &output, rows, cols, block_num, remainder_block_num,
+         remainder_block_num_total, remainder_128, remainder_16, this](int64 begin_unit, int64 end_unit) {
           auto begin_row = begin_unit * BLOCK_SIZE;
           auto end_row = end_unit * BLOCK_SIZE;
           if (end_row > rows) {
             end_row = rows;
           }
-#ifdef __AVX512F__
-          forward_avx512<8>(input, output, begin_row, end_row, cols);
-#else
-          forward<8>(input, output, begin_row, end_row, cols);
-#endif
+          forward_avx512<8>(input, output, begin_row, end_row, cols, block_num, remainder_block_num,
+                               remainder_block_num_total, remainder_128, remainder_16);
         });
+#else
+    thread_pool->ParallelFor(total_unit, unit_cost, 
+         [&input, &output, rows, cols, this](int64 begin_unit, int64 end_unit) {
+          auto begin_row = begin_unit * BLOCK_SIZE;
+          auto end_row = end_unit * BLOCK_SIZE;
+          if (end_row > rows) {
+            end_row = rows;
+          }
+          forward<8>(input, output, begin_row, end_row, cols);
+        });
+#endif
   }
 
 private:
@@ -111,15 +126,11 @@ private:
 
 #ifdef __AVX512F__
   template <int SUM_BLOCK_SIZE>
-  void forward_avx512(const T* input, T* output, int64 begin_row, int64 end_row,
-                      int64 cols) {
-    int64 avx3_block_num = cols >> 7;  // cols / 128
-    // handle remainder of 128
-    int64 remainder = cols - (avx3_block_num << 7);
+  void forward_avx512(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols, int64 block_num, int64 remainder_block_num,
+                         int64 remainder_block_num_total, int64 remainder_128, int64 remainder_16) {
     for (int64 i = begin_row; i < end_row; ++i) {
-      int64 tmp_remainder = remainder;
       float row_sum = 0.0;
-      for (int64 j = 0; j < avx3_block_num; ++j) {
+      for (int64 j = 0; j < block_num; ++j) {
         __m512 inputs[SUM_BLOCK_SIZE];
         auto load = [&](auto idx) {
           inputs[idx] = _mm512_loadu_ps(input + cols * i +
@@ -127,50 +138,26 @@ private:
           inputs[idx] = _mm512_mul_ps(inputs[idx], inputs[idx]);
         };
         functor::compile_time_for<SUM_BLOCK_SIZE>::op(load);
-        __m512 block_sum = reduce_sum_block8_ps(inputs);
+        __m512 block_sum = reduce_sum_block<8>(inputs);
         row_sum += _mm512_reduce_add_ps(block_sum);
       }
-      if (tmp_remainder > 0) {
-        if (tmp_remainder >= 64) {
-          __m256 inputs[8];
-          auto load_256 = [&](auto idx) {
-            inputs[idx] = _mm256_loadu_ps(input + cols * i + cols -
-                                          tmp_remainder + 8 * idx);
-            inputs[idx] = _mm256_mul_ps(inputs[idx], inputs[idx]);
-          };
-          functor::compile_time_for<8>::op(load_256);
-          __m256 block_sum_remainder = reduce_sum_block8_mm256_ps(inputs);
-          row_sum +=
-              _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
-          tmp_remainder -= 64;
+      if (remainder_block_num_total) {
+        __m512 inputs[remainder_block_num_total];
+
+        for (int64 idx = 0; idx < remainder_block_num; idx++){
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + cols -
+                                          remainder_128 + 16 * idx);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], inputs[idx]);
         }
-        if (tmp_remainder > 32) {
-          __m256 inputs[4];
-          auto load_256 = [&](auto idx) {
-            inputs[idx] = _mm256_loadu_ps(input + cols * i + cols -
-                                          tmp_remainder + 8 * idx);
-            inputs[idx] = _mm256_mul_ps(inputs[idx], inputs[idx]);
-          };
-          functor::compile_time_for<4>::op(load_256);
-          __m256 block_sum_remainder = reduce_sum_block4_mm256_ps(inputs);
-          row_sum +=
-              _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
-          tmp_remainder -= 32;
+        if (remainder_16) {
+          __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+          inputs[remainder_block_num] = _mm512_maskz_loadu_ps(
+              mask, input + cols * i + cols - remainder_16);
+          inputs[remainder_block_num] = _mm512_mul_ps(inputs[remainder_block_num], inputs[remainder_block_num]);
         }
-        if (tmp_remainder >= 16) {
-          __m512 inputs =
-              _mm512_loadu_ps(input + cols * i + cols - tmp_remainder);
-          inputs = _mm512_mul_ps(inputs, inputs);
-          row_sum += _mm512_reduce_add_ps(inputs);
-          tmp_remainder -= 16;
-        }
-        if (tmp_remainder > 0) {
-          __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
-          __m512 inputs = _mm512_maskz_loadu_ps(
-              mask, input + cols * i + cols - tmp_remainder);
-          inputs = _mm512_mul_ps(inputs, inputs);
-          row_sum += _mm512_reduce_add_ps(inputs);
-        }
+        
+        __m512 block_sum = reduce_sum_block_ps(inputs, remainder_block_num_total);
+        row_sum += _mm512_reduce_add_ps(block_sum);
       }
 
       row_sum += epsilon;
@@ -181,12 +168,12 @@ private:
         inputs = _mm512_mul_ps(inputs, row_sums);
         _mm512_storeu_ps(output + cols * i + j, inputs);
       }
-      if (tmp_remainder > 0) {
-        __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
+      if (remainder_16) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder_16);
         __m512 inputs = _mm512_maskz_loadu_ps(
-            mask, input + cols * i + cols - tmp_remainder);
+            mask, input + cols * i + cols - remainder_16);
         inputs = _mm512_mul_ps(inputs, row_sums);
-        _mm512_mask_storeu_ps(output + cols * i + cols - tmp_remainder, mask,
+        _mm512_mask_storeu_ps(output + cols * i + cols - remainder_16, mask,
                               inputs);
       }
     }
@@ -198,31 +185,36 @@ private:
   //  ...
   //  v7: v7_0, v7_1, ..., v7_15
   // sum:  v_0,  v_1, ...,  v_15
-  inline __m512 reduce_sum_block8_ps(const __m512 (&v)[8]) {
-    __m512 block_sum = _mm512_add_ps(v[0], v[1]);
-    block_sum = _mm512_add_ps(block_sum, v[2]);
-    block_sum = _mm512_add_ps(block_sum, v[3]);
-    block_sum = _mm512_add_ps(block_sum, v[4]);
-    block_sum = _mm512_add_ps(block_sum, v[5]);
-    block_sum = _mm512_add_ps(block_sum, v[6]);
-    block_sum = _mm512_add_ps(block_sum, v[7]);
+  template <int BLOCK_NUM>
+  inline __m512 reduce_sum_block(const __m512* v) {
+    __m512 block_sum = _mm512_setzero_ps();
+    auto reduce_sum = [&](auto idx) {
+      block_sum = _mm512_add_ps(block_sum, v[idx]);
+    };
+    functor::compile_time_for<BLOCK_NUM>::op(reduce_sum);
     return block_sum;
   }
-  inline __m256 reduce_sum_block8_mm256_ps(const __m256 (&v)[8]) {
-    __m256 block_sum = _mm256_add_ps(v[0], v[1]);
-    block_sum = _mm256_add_ps(block_sum, v[2]);
-    block_sum = _mm256_add_ps(block_sum, v[3]);
-    block_sum = _mm256_add_ps(block_sum, v[4]);
-    block_sum = _mm256_add_ps(block_sum, v[5]);
-    block_sum = _mm256_add_ps(block_sum, v[6]);
-    block_sum = _mm256_add_ps(block_sum, v[7]);
-    return block_sum;
-  }
-  inline __m256 reduce_sum_block4_mm256_ps(const __m256 (&v)[4]) {
-    __m256 block_sum = _mm256_add_ps(v[0], v[1]);
-    block_sum = _mm256_add_ps(block_sum, v[2]);
-    block_sum = _mm256_add_ps(block_sum, v[3]);
-    return block_sum;
+  
+  inline __m512 reduce_sum_block_ps(const __m512* v, int64 BLOCK_NUM) {
+    switch (BLOCK_NUM)
+    {
+    case 1:
+      return reduce_sum_block<1>(v);
+    case 2:
+      return reduce_sum_block<2>(v);
+    case 3:
+      return reduce_sum_block<3>(v);
+    case 4:
+      return reduce_sum_block<4>(v);
+    case 5:
+      return reduce_sum_block<5>(v);
+    case 6:
+      return reduce_sum_block<6>(v);
+    case 7:
+      return reduce_sum_block<7>(v);
+    case 8:
+      return reduce_sum_block<8>(v);
+    }
   }
 #endif
 
@@ -276,19 +268,34 @@ public:
     auto &worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
-    thread_pool->ParallelFor(total_unit, unit_cost,
-        [&y_grad, &x, &x_grad, rows, cols, this](int64 begin_unit, int64 end_unit) {
+#ifdef __AVX512F__
+    int64 block_num = cols >> 7;
+    int64 remainder_128 = cols & 0x7F;
+    int64 remainder_16 = remainder_128 & 0x0F;
+    int64 remainder_block_num = remainder_128 >> 4;
+    int64 remainder_block_num_total = remainder_block_num+ !!remainder_16;
+
+    thread_pool->ParallelFor(total_unit, unit_cost, [&y_grad, &x, &x_grad, rows, cols, block_num, remainder_block_num,
+         remainder_block_num_total, remainder_128, remainder_16, this](int64 begin_unit, int64 end_unit) {
           auto begin_row = begin_unit * BLOCK_SIZE;
           auto end_row = end_unit * BLOCK_SIZE;
           if (end_row > rows) {
             end_row = rows;
           }
-#ifdef __AVX512F__
-          backward_avx512<8>(y_grad, x, x_grad, begin_row, end_row, cols);
-#else
-          backward<8>(y_grad, x, x_grad, begin_row, end_row, cols);
-#endif
+          backward_avx512<8>(y_grad, x, x_grad, begin_row, end_row, cols, block_num, 
+                               remainder_block_num, remainder_block_num_total, remainder_128, remainder_16);
         });
+#else
+    thread_pool->ParallelFor(total_unit, unit_cost, 
+         [&y_grad, &x, &x_grad, rows, cols, this](int64 begin_unit, int64 end_unit) {
+          auto begin_row = begin_unit * BLOCK_SIZE;
+          auto end_row = end_unit * BLOCK_SIZE;
+          if (end_row > rows) {
+            end_row = rows;
+          }
+          backward<8>(y_grad, x, x_grad, begin_row, end_row, cols);
+        });
+#endif
   }
 
 private:
@@ -344,18 +351,16 @@ private:
     }
   }
 
+
 #ifdef __AVX512F__
   template <int SUM_BLOCK_SIZE>
-  void backward_avx512(const float* y_grad, const float* x, float* x_grad,
-                       int64 begin_row, int64 end_row, int64 cols) {
-    int64 avx3_block_num = cols >> 7;  // cols / 128
-    // handle remainder of 128
-    int64 remainder = cols - (avx3_block_num << 7);
+  void backward_avx512(const float* y_grad, const float* x, float* x_grad, int64 begin_row, int64 end_row, int64 cols,
+                          int64 block_num, int64 remainder_block_num, int64 remainder_block_num_total, int64 remainder_128,
+                          int64 remainder_16) {
     for (int64 i = begin_row; i < end_row; ++i) {
       T x_row_sum = 0.0;
       T y_grad_row_sum = 0.0;
-      int64 tmp_remainder = remainder;
-      for (int64 j = 0; j < avx3_block_num; ++j) {
+      for (int64 j = 0; j < block_num; ++j) {
         __m512 xs[SUM_BLOCK_SIZE];
         auto x_load = [&](auto idx) {
           xs[idx] = _mm512_loadu_ps(x + cols * i + 16 * SUM_BLOCK_SIZE * j +
@@ -363,7 +368,7 @@ private:
           xs[idx] = _mm512_mul_ps(xs[idx], xs[idx]);
         };
         functor::compile_time_for<SUM_BLOCK_SIZE>::op(x_load);
-        __m512 x_block_sum = reduce_sum_block8_ps(xs);
+        __m512 x_block_sum = reduce_sum_block<8>(xs);
         x_row_sum += _mm512_reduce_add_ps(x_block_sum);
 
         __m512 y_grads[SUM_BLOCK_SIZE];
@@ -375,81 +380,37 @@ private:
           y_grads[idx] = _mm512_mul_ps(y_grads[idx], xs[idx]);
         };
         functor::compile_time_for<SUM_BLOCK_SIZE>::op(y_grad_load);
-        __m512 y_grad_block_sum = reduce_sum_block8_ps(y_grads);
+        __m512 y_grad_block_sum = reduce_sum_block<8>(y_grads);
         y_grad_row_sum += _mm512_reduce_add_ps(y_grad_block_sum);
       }
-      if (tmp_remainder > 0) {
-        if (tmp_remainder >= 64) {
-          __m256 xs[8];
-          auto x_load_256 = [&](auto idx) {
-            xs[idx] =
-                _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
-            xs[idx] = _mm256_mul_ps(xs[idx], xs[idx]);
-          };
-          functor::compile_time_for<8>::op(x_load_256);
-          __m256 block_sum_remainder = reduce_sum_block8_mm256_ps(xs);
-          x_row_sum +=
-              _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
+      if (remainder_block_num_total) {
+        __m512 xs[remainder_block_num_total];
+        for (int64 idx = 0; idx < remainder_block_num; idx++){
+          xs[idx] = _mm512_loadu_ps(x + cols * i + cols - remainder_128 + 16 * idx);
+          xs[idx] = _mm512_mul_ps(xs[idx], xs[idx]);
+        }
+        if (remainder_16) {
+          __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+          xs[remainder_block_num] = _mm512_maskz_loadu_ps(mask, x + cols * i + cols - remainder_16);
+          xs[remainder_block_num] = _mm512_mul_ps(xs[remainder_block_num], xs[remainder_block_num]);
+        }
+        __m512 x_block_sum = reduce_sum_block_ps(xs, remainder_block_num_total);
+        x_row_sum += _mm512_reduce_add_ps(x_block_sum);
 
-          __m256 y_grads[8];
-          auto y_grad_load_256 = [&](auto idx) {
-            y_grads[idx] = _mm256_loadu_ps(y_grad + cols * i + cols -
-                                           tmp_remainder + 8 * idx);
-            xs[idx] =
-                _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
-            y_grads[idx] = _mm256_mul_ps(y_grads[idx], xs[idx]);
-          };
-          functor::compile_time_for<8>::op(y_grad_load_256);
-          __m256 y_grad_block_sum_remainder =
-              reduce_sum_block8_mm256_ps(y_grads);
-          y_grad_row_sum += _mm512_reduce_add_ps(
-              _mm512_castps256_ps512(y_grad_block_sum_remainder));
-          tmp_remainder -= 64;
+        __m512 y_grads[remainder_block_num_total];
+        for (int64 idx = 0; idx < remainder_block_num; idx++){
+          y_grads[idx] = _mm512_loadu_ps(y_grad + cols * i + cols - remainder_128 + 16 * idx);
+          xs[idx] = _mm512_loadu_ps(x + cols * i + cols - remainder_128 + 16 * idx);
+          y_grads[idx] = _mm512_mul_ps(y_grads[idx], xs[idx]);
         }
-        if (tmp_remainder > 32) {
-          __m256 xs[4];
-          auto x_load_256 = [&](auto idx) {
-            xs[idx] =
-                _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
-            xs[idx] = _mm256_mul_ps(xs[idx], xs[idx]);
-          };
-          functor::compile_time_for<4>::op(x_load_256);
-          __m256 block_sum_remainder = reduce_sum_block4_mm256_ps(xs);
-          x_row_sum +=
-              _mm512_reduce_add_ps(_mm512_castps256_ps512(block_sum_remainder));
-
-          __m256 y_grads[4];
-          auto y_grad_load_256 = [&](auto idx) {
-            y_grads[idx] = _mm256_loadu_ps(y_grad + cols * i + cols -
-                                           tmp_remainder + 8 * idx);
-            xs[idx] =
-                _mm256_loadu_ps(x + cols * i + cols - tmp_remainder + 8 * idx);
-            y_grads[idx] = _mm256_mul_ps(y_grads[idx], xs[idx]);
-          };
-          functor::compile_time_for<4>::op(y_grad_load_256);
-          __m256 y_grad_block_sum_remainder =
-              reduce_sum_block4_mm256_ps(y_grads);
-          y_grad_row_sum += _mm512_reduce_add_ps(
-              _mm512_castps256_ps512(y_grad_block_sum_remainder));
-          tmp_remainder -= 32;
+        if (remainder_16) {
+          __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+          y_grads[remainder_block_num] = _mm512_maskz_loadu_ps(mask, y_grad + cols * i + cols - remainder_16);
+          xs[remainder_block_num] = _mm512_maskz_loadu_ps(mask, x + cols * i + cols - remainder_16);
+          y_grads[remainder_block_num] = _mm512_mul_ps(y_grads[remainder_block_num], xs[remainder_block_num]);
         }
-        if (tmp_remainder >= 16) {
-          __m512 xs = _mm512_loadu_ps(x + cols * i + cols - tmp_remainder);
-          __m512 y_grads =
-              _mm512_loadu_ps(y_grad + cols * i + cols - tmp_remainder);
-          x_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(xs, xs));
-          y_grad_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(y_grads, xs));
-          tmp_remainder -= 16;
-        }
-        if (tmp_remainder > 0) {
-          __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
-          __m512 xs =
-              _mm512_maskz_loadu_ps(mask, x + cols * i + cols - tmp_remainder);
-          __m512 y_grads = _mm512_maskz_loadu_ps(
-              mask, y_grad + cols * i + cols - tmp_remainder);
-          x_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(xs, xs));
-          y_grad_row_sum += _mm512_reduce_add_ps(_mm512_mul_ps(y_grads, xs));
-        }
+        __m512 y_grad_block_sum = reduce_sum_block_ps(xs, remainder_block_num_total);
+        y_grad_row_sum += _mm512_reduce_add_ps(y_grad_block_sum);
       }
 
       x_row_sum += epsilon;
@@ -465,46 +426,48 @@ private:
         y_grads = _mm512_sub_ps(y_grads, xs);
         _mm512_storeu_ps(x_grad + cols * i + j, y_grads);
       }
-      if (tmp_remainder > 0) {
-        __mmask16 mask = 0xFFFF >> (16 - tmp_remainder);
-        __m512 y_grads = _mm512_maskz_loadu_ps(
-            mask, y_grad + cols * i + cols - tmp_remainder);
-        __m512 xs =
-            _mm512_maskz_loadu_ps(mask, x + cols * i + cols - tmp_remainder);
+      if (remainder_16 > 0) {
+        __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+        __m512 y_grads = _mm512_maskz_loadu_ps(mask, y_grad + cols * i + cols - remainder_16);
+        __m512 xs = _mm512_maskz_loadu_ps(mask, x + cols * i + cols - remainder_16);
         y_grads = _mm512_mul_ps(y_grads, x_row_sums);
         xs = _mm512_mul_ps(xs, y_grad_row_sums);
         y_grads = _mm512_sub_ps(y_grads, xs);
-        _mm512_mask_storeu_ps(x_grad + cols * i + cols - tmp_remainder, mask,
-                              y_grads);
+        _mm512_mask_storeu_ps(x_grad + cols * i + cols - remainder_16, mask, y_grads);
       }
     }
   }
 
-  inline __m512 reduce_sum_block8_ps(const __m512 (&v)[8]) {
-    __m512 block_sum = _mm512_add_ps(v[0], v[1]);
-    block_sum = _mm512_add_ps(block_sum, v[2]);
-    block_sum = _mm512_add_ps(block_sum, v[3]);
-    block_sum = _mm512_add_ps(block_sum, v[4]);
-    block_sum = _mm512_add_ps(block_sum, v[5]);
-    block_sum = _mm512_add_ps(block_sum, v[6]);
-    block_sum = _mm512_add_ps(block_sum, v[7]);
+  template <int BLOCK_NUM>
+  inline __m512 reduce_sum_block(const __m512* v) {
+    __m512 block_sum = _mm512_setzero_ps();
+    auto reduce_sum = [&](auto idx) {
+      block_sum = _mm512_add_ps(block_sum, v[idx]);
+    };
+    functor::compile_time_for<BLOCK_NUM>::op(reduce_sum);
     return block_sum;
   }
-  inline __m256 reduce_sum_block8_mm256_ps(const __m256 (&v)[8]) {
-    __m256 block_sum = _mm256_add_ps(v[0], v[1]);
-    block_sum = _mm256_add_ps(block_sum, v[2]);
-    block_sum = _mm256_add_ps(block_sum, v[3]);
-    block_sum = _mm256_add_ps(block_sum, v[4]);
-    block_sum = _mm256_add_ps(block_sum, v[5]);
-    block_sum = _mm256_add_ps(block_sum, v[6]);
-    block_sum = _mm256_add_ps(block_sum, v[7]);
-    return block_sum;
-  }
-  inline __m256 reduce_sum_block4_mm256_ps(const __m256 (&v)[4]) {
-    __m256 block_sum = _mm256_add_ps(v[0], v[1]);
-    block_sum = _mm256_add_ps(block_sum, v[2]);
-    block_sum = _mm256_add_ps(block_sum, v[3]);
-    return block_sum;
+  
+  inline __m512 reduce_sum_block_ps(const __m512* v, int64 BLOCK_NUM) {
+    switch (BLOCK_NUM)
+    {
+    case 1:
+      return reduce_sum_block<1>(v);
+    case 2:
+      return reduce_sum_block<2>(v);
+    case 3:
+      return reduce_sum_block<3>(v);
+    case 4:
+      return reduce_sum_block<4>(v);
+    case 5:
+      return reduce_sum_block<5>(v);
+    case 6:
+      return reduce_sum_block<6>(v);
+    case 7:
+      return reduce_sum_block<7>(v);
+    case 8:
+      return reduce_sum_block<8>(v);
+    }
   }
 #endif
 

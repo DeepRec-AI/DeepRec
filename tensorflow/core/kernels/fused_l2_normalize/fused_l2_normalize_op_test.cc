@@ -95,6 +95,7 @@ static Graph* FusedL2Normalize(int rows, int cols) {
   BM_FusedL2Norm(ROWS, COLS, 8);        \
 
 BM_FusedL2Norm_NTH(1024, 63);
+BM_FusedL2Norm_NTH(1024, 127);
 BM_FusedL2Norm_NTH(1024, 255);
 BM_FusedL2Norm_NTH(1024, 511);
 BM_FusedL2Norm_NTH(1024, 1023);

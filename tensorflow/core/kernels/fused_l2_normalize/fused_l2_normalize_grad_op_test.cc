@@ -108,6 +108,7 @@ static Graph* FusedL2NormalizeGrad(int rows, int cols) {
   BM_FusedL2NormGrad(ROWS, COLS, 8);        \
 
 BM_FusedL2NormGrad_NTH(1024, 63);
+BM_FusedL2NormGrad_NTH(1024, 127);
 BM_FusedL2NormGrad_NTH(1024, 255);
 BM_FusedL2NormGrad_NTH(1024, 511);
 BM_FusedL2NormGrad_NTH(1024, 1023);
