@@ -2203,10 +2203,8 @@ def get_embedding_variable(name,
         storage_type = ev_option.storage_option.storage_type,
         storage_path = ev_option.storage_option.storage_path,
         storage_size = ev_option.storage_option.storage_size,
-        default_value_dim=ev_option.init.default_value_dim,
-        record_freq=ev_option.record_freq,
-        record_version=ev_option.record_version),
-      ht_partition_num=ev_option.ht_partition_num)
+        default_value_dim=ev_option.init.default_value_dim),
+        ht_partition_num=ev_option.ht_partition_num)
 
 
 
@@ -2226,8 +2224,7 @@ def get_embedding_variable_internal(name,
                            constraint=None,
                            steps_to_live=None,
                            init_data_source=None,
-                           ev_option = variables.EmbeddingVariableOption()
-                           ):
+                           ev_option = variables.EmbeddingVariableOption()):
   if key_dtype == dtypes.int64:
     invalid_key = 9223372036854775807
   elif key_dtype == dtypes.int32:
@@ -2241,7 +2238,7 @@ def get_embedding_variable_internal(name,
     initializer = init_ops.truncated_normal_initializer()
   elif ev_option.init.initializer is not None:
     if initializer is not None:
-      print("use initializer give in InitializerOption.")
+      logging.warning("Use initializer in InitializerOption.")
     initializer = ev_option.init.initializer
   if ev_option.evict != None:
     if isinstance(ev_option.evict, variables.GlobalStepEvict):
@@ -2269,9 +2266,7 @@ def get_embedding_variable_internal(name,
         storage_type=ev_option.storage_option.storage_type,
         storage_path=ev_option.storage_option.storage_path,
         storage_size=ev_option.storage_option.storage_size,
-        default_value_dim=ev_option.init.default_value_dim,
-        record_freq=ev_option.record_freq,
-        record_version=ev_option.record_version),
+        default_value_dim=ev_option.init.default_value_dim),
       ht_partition_num=ev_option.ht_partition_num)
 
 

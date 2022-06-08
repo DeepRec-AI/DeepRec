@@ -20,6 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import json
+import os
 
 from tensorflow.core.framework import attr_value_pb2
 from tensorflow.core.framework import variable_pb2
@@ -285,8 +286,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                         config_pb2.StorageType.DRAM_SSDHASH, config_pb2.StorageType.HBM_DRAM,
                         config_pb2.StorageType.DRAM_PMEM_SSDHASH, config_pb2.StorageType.HBM_DRAM_SSDHASH]
       
-    self._record_freq = evconfig.record_freq
-    self._record_version = evconfig.record_version
+    self._record_freq = (os.environ.get("TF_RECORD_FREQ", "0") == "1")
+    self._record_version = (os.environ.get("TF_RECORD_VERSION", "0") == "1")
     self._l2_weight_threshold = evconfig.l2_weight_threshold
     self._storage_type = evconfig.storage_type
     self._storage_path = evconfig.storage_path

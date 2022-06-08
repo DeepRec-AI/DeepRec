@@ -221,7 +221,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
       if (tot_key_list[i] % kSavedPartitionNum == partid) {
         if (tot_valueptr_list[i] == reinterpret_cast<V*>(-1)) {
             // only forward, no backward, bypass
-        } else if (filter_freq != 0 && tot_freq_list[i] < filter_freq) {
+        } else if (tot_valueptr_list[i] == nullptr) {
           key_filter_list_parts[partid].push_back(tot_key_list[i]);
         } else {
           key_list_parts[partid].push_back(tot_key_list[i]);
@@ -235,7 +235,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   for (size_t i = 0; i < tot_version_list.size(); i++) {
     for (int partid = 0; partid < kSavedPartitionNum; partid++) {
       if (tot_key_list[i] % kSavedPartitionNum == partid) {
-        if (filter_freq != 0 && tot_freq_list[i] < filter_freq) {
+        if (tot_valueptr_list[i] == nullptr) {
           version_filter_list_parts[partid].push_back(tot_version_list[i]);
         } else {
           version_list_parts[partid].push_back(tot_version_list[i]);
@@ -248,7 +248,7 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev, const string& tensor_key, Bun
   for (size_t i = 0; i < tot_freq_list.size(); i++) {
     for (int partid = 0; partid < kSavedPartitionNum; partid++) {
       if (tot_key_list[i] % kSavedPartitionNum == partid) {
-        if (filter_freq != 0 && tot_freq_list[i] < filter_freq) {
+        if (tot_valueptr_list[i] == nullptr) {
           freq_filter_list_parts[partid].push_back(tot_freq_list[i]);
         } else {
           freq_list_parts[partid].push_back(tot_freq_list[i]);

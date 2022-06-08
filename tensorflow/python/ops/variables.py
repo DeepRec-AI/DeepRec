@@ -260,9 +260,7 @@ class EmbeddingVariableOption(object):
                ckpt = None,
                filter_option = None,
                storage_option = StorageOption(),
-               init_option = InitializerOption(),
-               record_freq = False,
-               record_version = False):
+               init_option = InitializerOption()):
     self.ht_type = ht_type
     self.ht_partition_num = ht_partition_num
     self.evict = evict_option
@@ -270,8 +268,6 @@ class EmbeddingVariableOption(object):
     self.filter_strategy = filter_option
     self.storage_option = storage_option
     self.init = init_option
-    self.record_freq = record_freq
-    self.record_version = record_version
     
 @tf_export(v1=["CounterFilter"])
 class CounterFilter(object):
@@ -319,9 +315,7 @@ class EmbeddingVariableConfig(object):
                storage_type=config_pb2.StorageType.DRAM,
                storage_path=None,
                storage_size=None,
-               default_value_dim=4096,
-               record_freq=False,
-               record_version=False):
+               default_value_dim=4096):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
@@ -343,8 +337,6 @@ class EmbeddingVariableConfig(object):
     self.storage_path = storage_path
     self.storage_size = storage_size
     self.default_value_dim = default_value_dim
-    self.record_freq = record_freq
-    self.record_version = record_version
 
   def reveal(self):
     if self.steps_to_live is None:
