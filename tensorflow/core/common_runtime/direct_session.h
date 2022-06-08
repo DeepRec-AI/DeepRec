@@ -19,6 +19,7 @@ limitations under the License.
 #include <atomic>
 #include <memory>
 #include <string>
+#include <pthread.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -61,7 +62,14 @@ class DirectSession : public Session {
   // closed. This ensures that Reset requests from the 'factory' don't get sent
   // to sessions that are already closed.
   DirectSession(const SessionOptions& options, const DeviceMgr* device_mgr,
-                bool own_device_mgr, DirectSessionFactory* factory);
+                bool own_device_mgr,
+#ifdef TENSORFLOW_USE_NUMA
+                DirectSessionFactory* factory,
+                const std::vector<unsigned>& visible_cpus);
+#else
+                DirectSessionFactory* factory);
+#endif
+
   ~DirectSession() override;
 
   typedef std::vector<std::pair<string, Tensor>> NamedTensorList;

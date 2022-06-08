@@ -37,6 +37,7 @@ limitations under the License.
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <vector>
 #ifdef TF_USE_SNAPPY
 #include "snappy.h"
 #endif
@@ -179,6 +180,23 @@ int NUMANumNodes() {
   }
 #else
   return 1;
+#endif  // TENSORFLOW_USE_NUMA
+}
+
+void NUMANodeCPUs(int node, std::vector<unsigned>* cpus) {
+#ifdef TENSORFLOW_USE_NUMA
+  if (HaveHWLocTopology()) {
+    // Find the corresponding NUMA node topology object.
+    hwloc_obj_t obj = GetHWLocTypeIndex(HWLOC_OBJ_NUMANODE, node);
+    if (obj) {
+      unsigned idx = 0;
+      hwloc_bitmap_foreach_begin(idx, obj->cpuset)
+        cpus->push_back(idx);
+      hwloc_bitmap_foreach_end();
+    } else {
+      LOG(ERROR) << "Could not find hwloc NUMA node " << node;
+    }
+  }
 #endif  // TENSORFLOW_USE_NUMA
 }
 
