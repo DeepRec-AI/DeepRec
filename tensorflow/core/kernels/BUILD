@@ -575,10 +575,14 @@ tf_cc_test(
     ],
 )
 
-cc_library(
+tf_kernel_library(
     name = "reshape_util",
     srcs = ["reshape_util.cc"],
     hdrs = ["reshape_util.h"],
+    gpu_srcs = [
+        "reshape_util.h",
+        "reshape_util.cu.cc"
+    ],
     deps = [
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
@@ -3324,6 +3328,22 @@ tf_cuda_cc_test(
     srcs = ["adjust_contrast_op_benchmark_test.cc"],
     deps = [
         ":image",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cuda_cc_test(
+    name = "sparse_reshape_op_benchmark_test",
+    srcs = ["sparse_reshape_op_benchmark_test.cc"],
+    deps = [
+        ":sparse_reshape_op",
         ":ops_testutil",
         ":ops_util",
         "//tensorflow/core:core_cpu",

@@ -24,6 +24,7 @@ limitations under the License.
 #include "tensorflow/core/platform/mem.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 
@@ -36,6 +37,13 @@ string AllocatorStats::DebugString() const {
       "MaxAllocSize: %20lld\n",
       this->bytes_limit ? *this->bytes_limit : 0, this->bytes_in_use,
       this->peak_bytes_in_use, this->num_allocs, this->largest_alloc_size);
+}
+
+bool DisableEVAllocatorFromEnvironment() {
+  bool disable_ev_allocator = false;
+  ReadBoolFromEnvVar("TF_DISABLE_EV_ALLOCATOR", false,
+      &disable_ev_allocator);
+  return disable_ev_allocator;
 }
 
 constexpr size_t Allocator::kAllocatorAlignment;
@@ -109,11 +117,12 @@ Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allo
 }
 
 Allocator* ev_allocator() {
-  static Allocator* ev_alloc =
-      AllocatorFactoryRegistry::singleton()->GetEVAllocator();
-      //This is the function when we use ev as allocation destination
-  if (ev_alloc && cpu_allocator_collect_full_stats && !ev_alloc->TracksAllocationSizes()) {
-      ev_alloc = new TrackingAllocator(ev_alloc, true);
+  static Allocator* ev_alloc = DisableEVAllocatorFromEnvironment() ?
+    cpu_allocator() : AllocatorFactoryRegistry::singleton()->GetEVAllocator();
+
+  if (ev_alloc && cpu_allocator_collect_full_stats &&
+      !ev_alloc->TracksAllocationSizes()) {
+    ev_alloc = new TrackingAllocator(ev_alloc, true);
   }
   return ev_alloc;
 }
