@@ -8,6 +8,7 @@ Contained models are as follow:
 - [DIEN](DIEN/README.md)
 - [DIN](DIN/README.md)
 - [DeepFM](DeepFM/README.md)
+- [DBMTL](DBMTL/README.md)
 - [BST](BST/README.md)
 - [ESMM](ESMM/README.md)
 - [SimpleMultiTask](SimpleMultiTask/README.md)
