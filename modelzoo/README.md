@@ -9,4 +9,5 @@ Contained models are as follow:
 - [DIN](DIN/README.md)
 - [DeepFM](DeepFM/README.md)
 - [BST](BST/README.md)
+- [ESMM](ESMM/README.md)
 - [SimpleMultiTask](SimpleMultiTask/README.md)
