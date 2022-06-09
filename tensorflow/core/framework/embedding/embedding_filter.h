@@ -32,8 +32,7 @@ class EmbeddingFilter {
  public:
   virtual void LookupOrCreate(K key, V* val, const V* default_value_ptr,
                                ValuePtr<V>** value_ptr, int count) = 0;
-  virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
-      int update_version = -1) = 0;
+  virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) = 0;
 
   virtual int64 GetFreq(K key, ValuePtr<V>* value_ptr) = 0;
   virtual int64 GetFreq(K key) = 0;
@@ -86,11 +85,10 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
     }
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
-        int update_version = -1) override {
+  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) override {
     if (GetFreq(key, *val) >= config_.filter_freq) {
       *is_filter = true;
-      return ev_->LookupOrCreateKey(key, val, update_version);
+      return ev_->LookupOrCreateKey(key, val);
     }
     *is_filter = false;
     return Status::OK();
@@ -360,9 +358,8 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
     }
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
-      int update_version = -1) override {
-    Status s = ev_->LookupOrCreateKey(key, val, update_version);
+  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) override {
+    Status s = ev_->LookupOrCreateKey(key, val);
     *is_filter = GetFreq(key, *val) >= config_.filter_freq;
     return s;
   }
@@ -442,10 +439,9 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter,
-      int update_version = -1) override {
+  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) override {
     *is_filter = true;
-    return ev_->LookupOrCreateKey(key, val, update_version);
+    return ev_->LookupOrCreateKey(key, val);
   }
 
   int64 GetFreq(K key, ValuePtr<V>* value_ptr) override {

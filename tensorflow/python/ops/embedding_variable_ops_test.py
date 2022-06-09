@@ -53,6 +53,34 @@ from tensorflow.python.saved_model import loader
 
 
 class EmbeddingVariableTest(test_util.TensorFlowTestCase):
+  def testSaveVersionWithGlobalStepEviction(self):
+    print("testSaveVersionWithGlobalStepEviction")
+    checkpoint_directory = self.get_temp_dir()
+    with ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+                                          embedding_dim=6,
+                                          initializer=init_ops.ones_initializer,
+                                          steps_to_live = 5)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([5], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v, global_step=gs)
+      init = variables.global_variables_initializer()
+      saver = saver_module.Saver()
+      model_path = os.path.join(checkpoint_directory, "model.ckpt")
+      with self.test_session() as sess:
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        saver.save(sess, model_path)
+        for name, shape in checkpoint_utils.list_variables(model_path):
+          if name == "var_1-versions":
+            ckpt_value = checkpoint_utils.load_variable(model_path, name)
+            self.assertEqual(ckpt_value.tolist()[0], 1)
+
   def testDynamicDimensionEmbeddingVariable(self):
     print("testDynamicDimensionEmbeddingVariable")
     with ops.device('/cpu:0'):

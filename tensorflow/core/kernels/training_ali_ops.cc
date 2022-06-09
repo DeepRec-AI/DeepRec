@@ -130,8 +130,8 @@ class KvSparseApplyAdagradOp : public OpKernel {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter,
-                  gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto a = accum->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
@@ -1106,7 +1106,7 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
             if (is_filter) {
               auto a = accum->flat(value_ptr);
 
@@ -1269,7 +1269,8 @@ class KvSparseApplyAdamOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter =false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto var_i = var->flat(value_ptr);
               auto m_a = m->flat(value_ptr);
@@ -1832,7 +1833,8 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto v_ = v->flat(value_ptr);
               auto m_ = m->flat(value_ptr);
@@ -1880,7 +1882,8 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
               const Tindex index = indices_vec(i);
               ValuePtr<T>* value_ptr = nullptr;
               bool is_filter = false;
-              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+              var->UpdateVersion(value_ptr, gs);
               if (is_filter) {
                 auto m_a = m->flat(value_ptr);
                 auto v_a = v->flat(value_ptr);
@@ -1996,7 +1999,8 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);
