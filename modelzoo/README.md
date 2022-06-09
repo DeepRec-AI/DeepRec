@@ -10,3 +10,4 @@ Contained models are as follow:
 - [DeepFM](DeepFM/README.md)
 - [BST](BST/README.md)
 - [ESMM](ESMM/README.md)
+- [SimpleMultiTask](SimpleMultiTask/README.md)
