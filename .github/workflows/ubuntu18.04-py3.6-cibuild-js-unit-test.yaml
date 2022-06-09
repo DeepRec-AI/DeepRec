@@ -23,7 +23,7 @@ on:
       - '*.md'
 
 env:
-  IMAGE: registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-cibuild-py36-ubuntu18.04
+  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-cpu-cibuild-py36-ubuntu18.04
   JOBNAME: deeprec-ci-cpu-${{ github.run_id }}
 
 jobs:

@@ -74,6 +74,13 @@ class EmbeddingVar : public ResourceBase {
         } else {
           add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {};
         }
+        if (emb_config_.is_primary() && emb_config_.steps_to_live != 0){
+          update_version_fn_ = [](ValuePtr<V>* value_ptr, int64 gs) {
+            value_ptr->SetStep(gs);
+          };
+        } else {
+          update_version_fn_ = [](ValuePtr<V>* value_ptr, int64 gs) {};
+        }
       }
 
   Status Init(const Tensor& default_tensor, int64 default_value_dim) {
@@ -106,18 +113,18 @@ class EmbeddingVar : public ResourceBase {
     return is_initialized_;
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, bool* is_filter,
-      int64 update_version = -1) {
-    return filter_->LookupOrCreateKey(key, value_ptr, is_filter, update_version);
+  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, bool* is_filter) {
+    return filter_->LookupOrCreateKey(key, value_ptr, is_filter);
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, int64 update_version = -1) {
+  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr) {
     Status s = storage_manager_->GetOrCreate(key, value_ptr, emb_config_.total_num(storage_manager_->GetAllocLen()));
     TF_CHECK_OK(s);
-    if (emb_config_.is_primary() && emb_config_.steps_to_live != 0 && update_version != -1) {
-      (*value_ptr)->SetStep(update_version);
-    }
     return s;
+  }
+
+  void UpdateVersion(ValuePtr<V>* value_ptr, int64 gs) {
+    update_version_fn_(value_ptr, gs);
   }
 
   void BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
@@ -273,6 +280,7 @@ class EmbeddingVar : public ResourceBase {
   EmbeddingConfig emb_config_;
   EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
   std::function<void(ValuePtr<V>*, int, int64)> add_freq_fn_;
+  std::function<void(ValuePtr<V>*, int64)> update_version_fn_;
 
   ~EmbeddingVar() override {
     // When dynamic dimension embedding is used, there will be more than one primary slot

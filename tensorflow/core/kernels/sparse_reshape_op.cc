@@ -41,4 +41,23 @@ class SparseReshapeOp : public OpKernel {
 
 REGISTER_KERNEL_BUILDER(Name("SparseReshape").Device(DEVICE_CPU),
                         SparseReshapeOp)
+
+#if GOOGLE_CUDA
+class SparseReshapeOpGPU : public OpKernel {
+  public:
+    explicit SparseReshapeOpGPU(OpKernelConstruction *context) : OpKernel(context) {}
+
+  void Compute(OpKernelContext* context) override {
+    ReshapeGPU(context, context->input(0), context->input(1), context->input(2),
+            0 /* output indices index */, 1 /* output shape index */);
+  }
+};
+
+REGISTER_KERNEL_BUILDER(Name("SparseReshape")
+                        .Device(DEVICE_GPU)
+                        .HostMemory("input_shape")
+                        .HostMemory("new_shape"),
+                        SparseReshapeOpGPU)
+#endif  // GOOGLE_CUDA
+
 }  // namespace tensorflow
