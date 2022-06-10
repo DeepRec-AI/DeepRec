@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_PLATFORM_NUMA_H_
 #define TENSORFLOW_CORE_PLATFORM_NUMA_H_
 
+#include <vector>
 #include "tensorflow/core/platform/platform.h"
 #include "tensorflow/core/platform/types.h"
 
@@ -38,6 +39,8 @@ void NUMASetThreadNodeAffinity(int node);
 
 // Returns NUMA node affinity of the current thread, kNUMANoAffinity if none.
 int NUMAGetThreadNodeAffinity();
+
+void NUMANodeCPUs(int node, std::vector<unsigned>* cpus);
 
 // Like AlignedMalloc, but allocates memory with affinity to the specified NUMA
 // node.

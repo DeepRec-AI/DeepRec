@@ -414,6 +414,8 @@ class Thread {
   /// Blocks until the thread of control stops running.
   virtual ~Thread();
 
+  virtual void SetThreadPoolAffinity(const cpu_set_t& cpuset) {}
+
  private:
   TF_DISALLOW_COPY_AND_ASSIGN(Thread);
 };

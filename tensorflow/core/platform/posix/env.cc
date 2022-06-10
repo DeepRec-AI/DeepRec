@@ -68,6 +68,14 @@ class StdThread : public Thread {
     GetThreadNameRegistry().erase(thread_id);
   }
 
+  void SetThreadPoolAffinity(const cpu_set_t& cpuset) override {
+    int rc = pthread_setaffinity_np(thread_.native_handle(),
+                                    sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      LOG(INFO) << "Error calling pthread_setaffinity_np: " << rc;
+    }
+  }
+
  private:
   std::thread thread_;
 };
