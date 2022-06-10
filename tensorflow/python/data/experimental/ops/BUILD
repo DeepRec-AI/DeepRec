@@ -472,6 +472,7 @@ py_library(
         ":matching_files",
         ":optimization",
         ":prefetching_ops",
+        ":parquet_dataset_ops",
         ":readers",
         ":resampling",
         ":scan_ops",
@@ -487,5 +488,43 @@ py_library(
         "//tensorflow/python:util",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/data/util:nest",
+    ],
+)
+
+
+py_library(
+    name = "parquet_dataset_ops",
+    srcs = [
+        "parquet_dataset_ops.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":parquet_pybind",
+        ":dataframe",
+        "//tensorflow/python:parquet_ops_gen",
+        "//tensorflow/python/data/ops:dataset_ops",
+        "//tensorflow/python/data/ops:readers",
+        "//tensorflow/python/data/util:nest",
+    ],
+)
+
+py_library(
+    name = "parquet_pybind",
+    srcs = ["parquet_pybind.py"],
+    srcs_version = "PY2AND3",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/python:framework",
+        "//tensorflow/core/kernels/data:_parquet_pybind",
+    ],
+)
+
+py_library(
+    name = "dataframe",
+    srcs = ["dataframe.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow/python:framework",
+        "//tensorflow/python:ops",
     ],
 )

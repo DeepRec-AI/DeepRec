@@ -5,6 +5,7 @@ load(
     "//tensorflow:tensorflow.bzl",
     "tf_cc_test",
     "tf_kernel_library",
+    "pybind_extension",
 )
 
 package(
@@ -1263,6 +1264,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "data",
     deps = [
+        ":parquet_dataset_ops",
         ":batch_dataset_op",
         ":cache_dataset_ops",
         ":concatenate_dataset_op",
@@ -1363,5 +1365,43 @@ tf_kernel_library(
         "//tensorflow/core:functional_ops_op_lib",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
+    ],
+)
+
+cc_library(
+    name = "parquet_dataset_ops",
+    srcs = [
+        "parquet_dataset_ops.cc",
+        "parquet_batch_reader.h",
+        "parquet_batch_reader.cc",
+    ],
+    hdrs = ["parquet_dataset_ops.h"],
+    deps = [
+        ":arrow_util",
+        ":dataset_ops",
+    ],
+)
+
+pybind_extension(
+    name = "_parquet_pybind",
+    srcs = ["parquet_pybind.cc"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],
+    module_name = "_parquet_pybind",
+    deps = [
+        ":arrow_util",
+        "@pybind11",
+    ],
+)
+
+cc_library(
+    name = "arrow_util",
+    srcs = ["arrow_util.cc",
+            "eigen.h"],
+    hdrs = ["arrow_util.h"],
+    deps = [
+        "@arrow",
+        "//third_party/eigen3",
+        "//tensorflow/core:framework",
     ],
 )

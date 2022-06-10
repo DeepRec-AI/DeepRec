@@ -679,15 +679,15 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         ],
     )
 
-    tf_http_archive(
+    # Note: snappy is placed earlier as tensorflow's snappy does not include snappy-c
+    http_archive(
         name = "snappy",
-        build_file = clean_dep("//third_party:snappy.BUILD"),
-        sha256 = "3dfa02e873ff51a11ee02b9ca391807f0c8ea0529a4924afa645fbf97163f9d4",
-        strip_prefix = "snappy-1.1.7",
-        system_build_file = clean_dep("//third_party/systemlibs:snappy.BUILD"),
+        build_file = "//third_party:snappy.BUILD",
+        sha256 = "16b677f07832a612b0836178db7f374e414f94657c138e6993cbfc5dcc58651f",
+        strip_prefix = "snappy-1.1.8",
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/snappy/archive/1.1.7.tar.gz",
-            "https://github.com/google/snappy/archive/1.1.7.tar.gz",
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/snappy/archive/1.1.8.tar.gz",
+            "https://github.com/google/snappy/archive/1.1.8.tar.gz",
         ],
     )
 
@@ -1074,6 +1074,86 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         urls = [
             "https://mirror.tensorflow.org/github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
             "https://github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "arrow",
+        build_file = "//third_party:arrow.BUILD",
+        patch_cmds = [
+            # TODO: Remove the fowllowing once arrow issue is resolved.
+            """sed -i.bak 's/type_traits/std::max<int16_t>(sizeof(int16_t), type_traits/g' cpp/src/parquet/column_reader.cc""",
+            """sed -i.bak 's/value_byte_size/value_byte_size)/g' cpp/src/parquet/column_reader.cc""",
+        ],
+        strip_prefix = "arrow-apache-arrow-5.0.0",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/apache/arrow/archive/apache-arrow-5.0.0.tar.gz",
+            "https://github.com/apache/arrow/archive/apache-arrow-5.0.0.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "brotli",
+        build_file = "//third_party:brotli.BUILD",
+        sha256 = "4c61bfb0faca87219ea587326c467b95acb25555b53d1a421ffa3c8a9296ee2c",
+        strip_prefix = "brotli-1.0.7",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/google/brotli/archive/v1.0.7.tar.gz",
+            "https://github.com/google/brotli/archive/v1.0.7.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "bzip2",
+        build_file = "//third_party:bzip2.BUILD",
+        sha256 = "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269",
+        strip_prefix = "bzip2-1.0.8",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz",
+            "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "thrift",
+        build_file = "//third_party:thrift.BUILD",
+        sha256 = "5da60088e60984f4f0801deeea628d193c33cec621e78c8a43a5d8c4055f7ad9",
+        strip_prefix = "thrift-0.13.0",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/apache/thrift/archive/v0.13.0.tar.gz",
+            "https://github.com/apache/thrift/archive/v0.13.0.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "xsimd",
+        build_file = "//third_party:xsimd.BUILD",
+        sha256 = "45337317c7f238fe0d64bb5d5418d264a427efc53400ddf8e6a964b6bcb31ce9",
+        strip_prefix = "xsimd-7.5.0",
+        urls = [
+            "https://github.com/xtensor-stack/xsimd/archive/refs/tags/7.5.0.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "zstd",
+        build_file = "//third_party:zstd.BUILD",
+        sha256 = "a364f5162c7d1a455cc915e8e3cf5f4bd8b75d09bc0f53965b0c9ca1383c52c8",
+        strip_prefix = "zstd-1.4.4",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/facebook/zstd/archive/v1.4.4.tar.gz",
+            "https://github.com/facebook/zstd/archive/v1.4.4.tar.gz",
+        ],
+    )
+
+    http_archive(
+        name = "rapidjson",
+        build_file = "//third_party:rapidjson.BUILD",
+        sha256 = "30bd2c428216e50400d493b38ca33a25efb1dd65f79dfc614ab0c957a3ac2c28",
+        strip_prefix = "rapidjson-418331e99f859f00bdc8306f69eba67e8693c55e",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/miloyip/rapidjson/archive/418331e99f859f00bdc8306f69eba67e8693c55e.tar.gz",
+            "https://github.com/miloyip/rapidjson/archive/418331e99f859f00bdc8306f69eba67e8693c55e.tar.gz",
         ],
     )
 
