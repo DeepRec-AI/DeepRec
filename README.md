@@ -23,15 +23,16 @@ DeepRec has super large-scale distributed training capability, supporting model 
  - Multi-tier Hybrid Embedding Storage
  #### **Performance Optimization**
  - Distributed Training Framework Optimization, such as grpc+seastar, FuseRecv, StarServer, HybridBackend etc.
- - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator etc.
+ - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator, Cost based and critical path first Executor etc.
  - Operator level optimization, such as BF16 mixed precision  optimization, sparse operator optimization and EmbeddingVariable on PMEM and GPU, new hardware feature enabling, etc.
  - Graph level optimization, such as AutoGraphFusion, SmartStage, AutoPipeline, StrutureFeature, MicroBatch etc.
  - Compilation optimization, support BladeDISC, XLA etc.
 #### **Deploy and Serving**
- - Incremental model loading and exporting
- - Super-scale sparse model distributed serving
- - Multi-tier hybrid storage and multi backend supported
- - Online deep learning with low latency
+ - Incremental model loading and exporting.
+ - Super-scale sparse model distributed serving.
+ - Multi-tier hybrid storage and multi backend supported.
+ - Online deep learning with low latency.
+ - High performance processor with SessionGroup supported.
 
 
 ***
