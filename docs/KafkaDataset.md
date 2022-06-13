@@ -41,7 +41,7 @@ class KafkaDataset(dataset_ops.Dataset):
 import tensorflow as tf
 from tensorflow.python.data.ops import iterator_ops
  
-kafka_dataset = tf.data.KafkaDataset(topics=["dewu_1_partition:0:0:-1"],
+kafka_dataset = tf.data.KafkaDataset(topics=["test_1_partition:0:0:-1"],
                                      group="test_group1",
                                      timeout=100,
                                      eof=False)
