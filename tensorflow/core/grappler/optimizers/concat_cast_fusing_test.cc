@@ -19,17 +19,23 @@ limitations under the License.
 #include "tensorflow/cc/ops/array_ops.h"
 #include "tensorflow/cc/ops/array_ops_internal.h"
 #include "tensorflow/cc/ops/standard_ops.h"
+#include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/tensor_testutil.h"
 #include "tensorflow/core/grappler/grappler_item.h"
 #include "tensorflow/core/grappler/optimizers/model_pruner.h"
 #include "tensorflow/core/grappler/utils.h"
 #include "tensorflow/core/grappler/utils/grappler_test.h"
 #include "tensorflow/core/lib/core/status_test_util.h"
+#include "tensorflow/core/platform/test.h"
+#include "tensorflow/core/platform/test_benchmark.h"
 #include "tensorflow/core/public/session.h"
 
 namespace tensorflow {
 namespace grappler {
 namespace {
+//----------------------------------------------------------------------------//
+// Concat+Cast Functional Tests are below.                                    //
+//----------------------------------------------------------------------------//
 namespace ConcatCastFusingTestDefs {
     typedef std::tuple<
         std::vector<DataType>,          // src_type & dst_type
@@ -46,10 +52,10 @@ namespace ConcatCastFusingTestDefs {
         //{DataType::DT_INT32, DataType::DT_BFLOAT16}
     };
     std::vector<long long int> numInputs = {2};//, 4};
-    std::vector<long long int> AXIS_2D = {0};//, 1};
-    std::vector<long long int> AXIS_3D = {0, 1, 2};
+    std::vector<long long int> AXIS_2D = {0};//, 1, -1};
+    std::vector<long long int> AXIS_3D = {-1, 0, 1, 2};
     std::vector<long long int> AXIS_4D = {0, 1, 2, 3};
-    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}};//, {32, 21}, {64, 64}};
+    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}};//{32, 21}, {64, 64}};
     std::vector<std::vector<long long int>> SIZES_3D = {{32, 16, 1}, {128, 128, 128}, {1, 1, 1}};
     std::vector<std::vector<long long int>> SIZES_4D = {{32, 32, 32, 32}, {16, 1, 1, 1}, {31, 63, 15, 7}};
 } // namespace ConcatCastFusingTestDefs
@@ -327,6 +333,116 @@ INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestMultithreaded,
 //         ::testing::ValuesIn(SIZES_4D),
 //         ::testing::ValuesIn(AXIS_4D)),
 //     ConcatCastFusingTestSimpleFusing::getTestCaseName);
+
+//----------------------------------------------------------------------------//
+// Performance benchmarks are below.                                          //
+//----------------------------------------------------------------------------//
+template <typename SrcT, typename DstT>
+static Graph* ConcatCastFusion(bool if_fused, int num_inputs,
+                               int axis, std::vector<long long int> input_shape) {
+    Graph* g = new Graph(OpRegistry::Global());
+    DataType source_dt = DataTypeToEnum<SrcT>::v();
+    DataType dst_dt = DataTypeToEnum<DstT>::v();
+    Tensor concat_dim(DT_INT32, TensorShape({}));
+    concat_dim.scalar<int32>()() = axis;
+    std::vector<NodeBuilder::NodeOut> inputs;
+    inputs.reserve(num_inputs);
+    for (int i = 0; i < num_inputs; ++i) {
+        Tensor in(source_dt, TensorShape(tensorflow::gtl::ArraySlice<long long int>(input_shape.data(), input_shape.size())));
+        in.flat<SrcT>().setRandom();
+        inputs.push_back(test::graph::Constant(g, in));
+    }
+
+    if (if_fused) {
+        Node* concat_cast;
+        TF_CHECK_OK(NodeBuilder(g->NewName("concatcast"), "_FusedConcatCast")
+                      .Input(inputs)
+                      .Input(test::graph::Constant(g, concat_dim))
+                      .Attr("N", num_inputs)
+                      .Attr("SrcT", source_dt)
+                      .Attr("DstT", dst_dt)
+                      .Attr("Truncate", false)
+                      .Finalize(g, &concat_cast));
+
+        return g;
+    } else {
+        Node* concat;
+        TF_CHECK_OK(NodeBuilder(g->NewName("concat"), "Concat")
+                      .Input(test::graph::Constant(g, concat_dim))
+                      .Input(inputs)
+                      .Attr("N", num_inputs)
+                      .Attr("T", source_dt)
+                      .Finalize(g, &concat));
+
+        Node* cast;
+        TF_CHECK_OK(NodeBuilder(g->NewName("cast"), "Cast")
+                      .Input(concat)
+                      .Attr("SrcT", source_dt)
+                      .Attr("DstT", dst_dt)
+                      .Attr("Truncate", false)
+                      .Finalize(g, &cast));
+
+        return g;
+    }
+}
+
+using fp32 = float;
+using bfloat16 = Eigen::bfloat16;
+
+#define BM_NAME(name, IF_FUSED, SRCT, DSTT, NUM_INPUTS, axis_name, input_shape_name)    \
+    name##_##IF_FUSED##_##SRCT##_##DSTT##_##NUM_INPUTS##_##axis_name##_##input_shape_name
+
+#define BM_ConcatCastFusionBench(IF_FUSED, NUM_INPUTS, axis_name, AXIS, SRCT, DSTT, input_shape_name, INPUT_SHAPE, LABEL)                                                                                                                 \
+    static void BM_NAME(BM_ConcatCastFusion, IF_FUSED, SRCT, DSTT, NUM_INPUTS, axis_name, input_shape_name)(int iters) {          \
+      testing::StopTiming();                                                                                                      \
+      std::string base_label = IF_FUSED ? "fused_concat_cast" : "nonfused_concat_cast";                                           \
+      size_t input_shape_size = INPUT_SHAPE.size();                                                                               \
+      int all_elems = 1;                                                                                                          \
+      for (int i = 0; i < input_shape_size; ++i) {                                                                                \
+          all_elems *= INPUT_SHAPE[i];                                                                                            \
+      }                                                                                                                           \
+      testing::SetLabel(base_label + "_" + LABEL);                                                                                \
+      testing::BytesProcessed(static_cast<int64_t>(iters) * all_elems * NUM_INPUTS * sizeof(DSTT));                               \
+      testing::StartTiming();                                                                                                     \
+      test::Benchmark("cpu", ConcatCastFusion<SRCT, DSTT>(IF_FUSED, NUM_INPUTS, AXIS, INPUT_SHAPE))                               \
+          .Run(iters);                                                                                                            \
+    }                                                                                                                             \
+    BENCHMARK(BM_NAME(BM_ConcatCastFusion, IF_FUSED, SRCT, DSTT, NUM_INPUTS, axis_name, input_shape_name));
+
+#define DLRM_BENCHMARK(IF_FUSED)                                                                                   \
+    /* DLRM concat + cast operations */                                                                            \
+    BM_ConcatCastFusionBench(IF_FUSED, /*num_inputs*/ 2, /*axis_name*/ 1, /*axis*/ 1, /*Source T*/ fp32,           \
+                             /*Dst T*/ bfloat16, /*Input shape name*/ 512x16,                                      \
+                             /*Input shape*/ (std::vector<long long int>{512, 16}),                                \
+                             "2_1_fp32_bfloat16_512x16");                                                          \
+                                                                                                                   \
+    BM_ConcatCastFusionBench(IF_FUSED, /*num_inputs*/ 13, /*axis name*/ neg_1, /*axis*/ (-1), /*Source T*/ fp32,   \
+                             /*Dst T*/ bfloat16, /*Input shape name*/ 512x1,                                       \
+                             /*Input shape*/ (std::vector<long long int>{512, 1}),                                 \
+                             "13_-1_fp32_bfloat16_512x1");                                                         \
+                                                                                                                   \
+    BM_ConcatCastFusionBench(IF_FUSED, /*num_inputs*/ 13, /*axis_name*/ neg_1, /*axis*/ (-1), /*Source T*/ fp32,   \
+                             /*Dst T*/ bfloat16, /*Input shape name*/ 128x1,                                       \
+                             /*Input shape*/ (std::vector<long long int>{128, 1}),                                 \
+                             "13_-1_fp32_bfloat16_128x1");
+
+#define OTHER_BENCHMARK(IF_FUSED)                                                                                  \
+    BM_ConcatCastFusionBench(IF_FUSED, /*num_inputs*/ 16, /*axis_name*/ 2, /*axis*/ 2, /*Source T*/ fp32,          \
+                             /*Dst T*/ bfloat16, /*Input shape name*/ 512x32x16,                                   \
+                             /*Input shape*/ (std::vector<long long int>{512, 32, 16}),                            \
+                             "16_2_fp32_bfloat16_512x32x16");                                                      \
+                                                                                                                   \
+    BM_ConcatCastFusionBench(IF_FUSED, /*num_inputs*/ 64, /*axis_name*/ 1, /*axis*/ 1, /*Source T*/ bfloat16,      \
+                             /*Dst T*/ fp32, /*Input shape name*/ 400x60,                                          \
+                             /*Input shape*/ (std::vector<long long int>{400, 60}),                                \
+                             "64_1_bfloat16_fp32_40000x60");
+
+
+DLRM_BENCHMARK(/*IFFUSED=*/true)
+DLRM_BENCHMARK(/*IFFUSED=*/false)
+
+OTHER_BENCHMARK(/*IFFUSED=*/true)
+OTHER_BENCHMARK(/*IFFUSED=*/false)
 
 }  // namespace
 }  // namespace grappler
