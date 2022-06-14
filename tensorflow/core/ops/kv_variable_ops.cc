@@ -149,6 +149,8 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("storage_path: string = '.'")
     .Attr("storage_size: list(int) = []")
     .Attr("default_value_dim: int = 4096")
+    .Attr("record_freq: bool = false")
+    .Attr("record_version: bool = false")
     .SetShapeFn([](InferenceContext* c) { 
       return Status::OK();
     })
@@ -428,6 +430,8 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("storage_path: string = '.'")
     .Attr("storage_size: list(int) = []")
     .Attr("default_value_dim: int = 4096")
+    .Attr("record_freq: bool = false")
+    .Attr("record_version: bool = false")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));

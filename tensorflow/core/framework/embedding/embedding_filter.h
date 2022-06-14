@@ -224,7 +224,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
       }
       if (new_freq >= config_.filter_freq){
         TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
-        if (config_.is_primary() && config_.steps_to_live != 0) {
+        if (config_.steps_to_live != 0 || config_.record_version) {
           value_ptr->SetStep(version_buff[i]);
         }
         if (!is_filter){
@@ -402,7 +402,7 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
         value_ptr->SetFreq(freq_buff[i]); 
       }
         
-      if (config_.steps_to_live != 0) {
+      if (config_.steps_to_live != 0 || config_.record_version) {
         value_ptr->SetStep(version_buff[i]);
       }
       if (value_ptr->GetFreq() >= config_.filter_freq){
@@ -480,10 +480,11 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
       }
       ValuePtr<V>* value_ptr = nullptr;
       TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
-      if (config_.filter_freq !=0 || ev_->IsMultiLevel()) {
+      if (config_.filter_freq !=0 || ev_->IsMultiLevel()
+          || config_.record_freq) {
         value_ptr->SetFreq(freq_buff[i]);
       }
-      if (config_.steps_to_live != 0) {
+      if (config_.steps_to_live != 0 || config_.record_version) {
         value_ptr->SetStep(version_buff[i]);
       }
       if (!is_filter) {

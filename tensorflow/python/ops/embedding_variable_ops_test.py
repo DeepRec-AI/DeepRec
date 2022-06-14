@@ -1994,6 +1994,81 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for j in range(0, 30):
         self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
+  def testEmbeddingVariableForRecordFreq(self):
+    print("testEmbeddingVariableForRecordFreq")
+    checkpoint_directory = self.get_temp_dir()
+    os.environ["TF_RECORD_FREQ"] = "1"
+    os.environ["TF_RECORD_VERSION"] = "1"
+    emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32))
+    emb = embedding_ops.embedding_lookup(emb_var,
+            math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, train_op])
+      sess.run([emb, train_op])
+      save_path = saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-freqs":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 6)
+          self.assertEqual(ckpt_value.tolist()[1], 4)
+          self.assertEqual(ckpt_value.tolist()[2], 2)
+        if name == "var_1-versions":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 1)
+          self.assertEqual(ckpt_value.tolist()[1], 1)
+          self.assertEqual(ckpt_value.tolist()[2], 1)
+    os.environ["TF_RECORD_FREQ"] = "0"
+    os.environ["TF_RECORD_VERSION"] = "0"
+
+  def testEmbeddingVariableForRecordFreqWithCounterFilter(self):
+    print("testEmbeddingVariableForRecordFreqWithCounterFilter")
+    checkpoint_directory = self.get_temp_dir()
+    os.environ["TF_RECORD_FREQ"] = "1"
+    os.environ["TF_RECORD_VERSION"] = "1"
+    emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
+    emb = embedding_ops.embedding_lookup(emb_var,  math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, train_op])
+      sess.run([emb, train_op])
+      save_path = saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-freqs":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 6)
+          self.assertEqual(ckpt_value.tolist()[1], 4)
+        if name == "var_1-versions":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 1)
+          self.assertEqual(ckpt_value.tolist()[1], 1)
+    os.environ["TF_RECORD_FREQ"] = "0"
+    os.environ["TF_RECORD_VERSION"] = "0"
 
 if __name__ == "__main__":
   googletest.main()

@@ -150,6 +150,10 @@ class InitializeKvVariableOp : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
 
+    OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
+
     int64 storage_type = 0;
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
@@ -218,7 +222,8 @@ class InitializeKvVariableOp : public OpKernel {
                                          steps_to_live_, filter_freq_, max_freq_,
                                          l2_weight_threshold_, layout_,
                                          max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_));
+                                         counter_type_, default_value_dim_,
+                                         record_freq_, record_version_));
             return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -244,7 +249,7 @@ class InitializeKvVariableOp : public OpKernel {
                                         steps_to_live_, filter_freq_, max_freq_,
                                         l2_weight_threshold_, layout_,
                                         max_element_size_, false_positive_probability_,
-                                        counter_type_));
+                                        counter_type_, 0, record_freq_, record_version_));
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -262,7 +267,8 @@ class InitializeKvVariableOp : public OpKernel {
                                          steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
                                          layout_, max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_));
+                                         counter_type_, default_value_dim_,
+                                         record_freq_, record_version_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -294,6 +300,8 @@ class InitializeKvVariableOp : public OpKernel {
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
+  bool record_freq_;
+  bool record_version_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                               \
@@ -604,6 +612,10 @@ class KvResourceImportV2Op: public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
+
+    OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -644,7 +656,8 @@ class KvResourceImportV2Op: public OpKernel {
                                          steps_to_live_, filter_freq_,
                                          max_freq_, l2_weight_threshold_,
                                          layout_,  max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_));
+                                         counter_type_, default_value_dim_,
+                                         record_freq_, record_version_));
              return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -670,7 +683,7 @@ class KvResourceImportV2Op: public OpKernel {
                                         steps_to_live_, filter_freq_,
                                         max_freq_, l2_weight_threshold_,
                                         layout_,  max_element_size_, false_positive_probability_,
-                                        counter_type_));
+                                        counter_type_, 0, record_freq_, record_version_));
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -687,7 +700,8 @@ class KvResourceImportV2Op: public OpKernel {
                                          block_num_, slot_num_, opname,
                                          steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_,
                                          layout_, max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_));
+                                         counter_type_, default_value_dim_,
+                                         record_freq_, record_version_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -727,6 +741,8 @@ class KvResourceImportV2Op: public OpKernel {
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
+  bool record_freq_;
+  bool record_version_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                         \
