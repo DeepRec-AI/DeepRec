@@ -392,7 +392,14 @@ struct UnsortedSegmentFunctor<CPUDevice, T, Index, InitialValueF, ReductionF> {
     const int64 N = segment_ids.dimension(0);
     const int64 num_segments = output.dimension(0);
     const int64_t inner_dim = data.dimension(1);
+    const T* data_ptr = data.data();
+    T* out_ptr = output.data();
     ReductionF reduction;
+
+    bool data_is_1D = true;
+    for (int i=1; i<data.dimensions().size(); i++) {
+      if(data.dimensions()[i] != 1) data_is_1D = false;
+    }
 
     // `num_real_segment` counts the rows actually reduced from input,
     // the rows with negative segment index will be excluded.
@@ -439,7 +446,11 @@ struct UnsortedSegmentFunctor<CPUDevice, T, Index, InitialValueF, ReductionF> {
         Index j = internal::SubtleMustCopy(segment_ids(i));
         // If `j` is in work scope of this worker, do the reduction.
         if (j >= begin && j < end) {
-          reduction(data.template chip<0>(i), output.template chip<0>(j));
+          if (data_is_1D) {
+            reduction(data_ptr[i], out_ptr[j]);
+          } else {
+            reduction(data.template chip<0>(i), output.template chip<0>(j));
+          }
         }
       }
     };
@@ -468,12 +479,18 @@ struct SumOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
     output += data;
   }
+  void operator()(const T &data, T &output) {
+    output += data;
+  }
 };
 
 template <typename T>
 struct MaxOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
     output = data.cwiseMax(output);
+  }
+  void operator()(const T &data, T &output) {
+    output = std::max(data, output);
   }
 };
 
@@ -482,11 +499,17 @@ struct MinOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
     output = data.cwiseMin(output);
   }
+  void operator()(const T &data, T &output) {
+    output = std::min(data, output);
+  }
 };
 
 template <typename T>
 struct ProdOp {
   void operator()(const constMatrixChip<T> data, MatrixChip<T> output) {
+    output *= data;
+  }
+  void operator()(const T &data, T &output) {
     output *= data;
   }
 };

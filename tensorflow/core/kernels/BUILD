@@ -4428,11 +4428,15 @@ tf_cc_test(
     size = "small",
     srcs = ["segment_reduction_ops_test.cc"],
     deps = [
+        "//tensorflow/cc:cc_ops_internal",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:framework_internal",
         ":host_constant_op",
         ":ops_testutil",
         ":ops_util",
         ":segment_reduction_ali_ops",
         ":segment_reduction_ops",
+        "//tensorflow/core:tensorflow",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
@@ -4441,6 +4445,7 @@ tf_cc_test(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
+        "//tensorflow/core:ops",
     ],
 )
 
