@@ -149,8 +149,8 @@ class ExecutorImpl : public Executor {
     Status s = ReadBoolFromEnvVar(
         nodestats::enable_cost_model_env_name, true, &enable_cost_model_);
     if (!s.ok()) {
-      LOG(FATAL) << "Read ENABLE_EXECUTE_COST_MODEL envrionment error. "
-                 << s.error_message();
+      LOG(WARNING) << "Read ENABLE_EXECUTE_COST_MODEL envrionment error. "
+                   << s.error_message();
     }
   }
 
