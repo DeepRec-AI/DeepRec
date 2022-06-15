@@ -52,10 +52,10 @@ namespace ConcatCastFusingTestDefs {
         //{DataType::DT_INT32, DataType::DT_BFLOAT16}
     };
     std::vector<long long int> numInputs = {2};//, 4};
-    std::vector<long long int> AXIS_2D = {0};//, 1, -1};
+    std::vector<long long int> AXIS_2D = {1};//, 1, -1};
     std::vector<long long int> AXIS_3D = {-1, 0, 1, 2};
     std::vector<long long int> AXIS_4D = {0, 1, 2, 3};
-    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}};//{32, 21}, {64, 64}};
+    std::vector<std::vector<long long int>> SIZES_2D = {{10000, 4}};//{32, 21}, {64, 64}};
     std::vector<std::vector<long long int>> SIZES_3D = {{32, 16, 1}, {128, 128, 128}, {1, 1, 1}};
     std::vector<std::vector<long long int>> SIZES_4D = {{32, 32, 32, 32}, {16, 1, 1, 1}, {31, 63, 15, 7}};
 } // namespace ConcatCastFusingTestDefs
@@ -112,7 +112,10 @@ class ConcatCastFusingTest :
             result << "_" << x;
         }
 
-        result << "_Axis_" << ax;
+        if (ax < 0)
+            result << "_Axis_negative_" << abs(ax);
+        else
+            result << "_Axis_" << ax;
         return result.str();
     }
 

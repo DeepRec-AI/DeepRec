@@ -28,6 +28,7 @@ limitations under the License.
 #include "tensorflow/core/kernels/concat_lib.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/work_sharder.h"
 
 namespace tensorflow {
 
@@ -388,7 +389,7 @@ public:
                         axis_attribute_name,
                         " tensor should be a scalar integer, but got shape ",
                         concat_dim_tensor->shape().DebugString()));
-        int64 concat_dim;
+        int64_t concat_dim;
         OP_REQUIRES(
             c,
             (concat_dim_tensor->dtype() == DT_INT32 ||
@@ -409,7 +410,6 @@ public:
         const int input_dims = values[0].dims();
         const TensorShape& input_shape = values[0].shape();
 
-        // TODO: do version with negative dim
         int32 axis = concat_dim < 0 ? concat_dim + input_dims : concat_dim;
         OP_REQUIRES(c,
                    (0 <= axis && axis < input_dims) ||
@@ -419,12 +419,13 @@ public:
                         "[",
                         -input_dims, ", ", input_dims, "), but got ", concat_dim));
 
-        int64 inputs_flat_dim0 = 1;
+        int64_t inputs_flat_dim0 = 1;
         for (int d = 0; d < axis; ++d) {
           inputs_flat_dim0 *= input_shape.dim_size(d);
         }
-        int64 output_concat_dim = 0;
+        int64_t output_concat_dim = 0;
         const bool input_is_scalar = IsLegacyScalar(input_shape);
+		int64_t row_size = 0;
         std::vector<ptrdiff_t> sizes;
         sizes.reserve(N);
         std::vector<const SrcT*> input_pointers;
@@ -449,6 +450,7 @@ public:
             if (in.NumElements() > 0) {
                 int64_t inputs_flat_dim1 = in.NumElements() / inputs_flat_dim0;
                 sizes.push_back(inputs_flat_dim1);
+				row_size += sizes.back();
 
                 const SrcT* data_ptr = in.flat<SrcT>().data();
                 input_pointers.push_back(data_ptr);
@@ -465,7 +467,7 @@ public:
         Tensor* output = nullptr;
         OP_REQUIRES_OK(c, c->allocate_output(0, output_shape, &output));
 
-        //for (int i = 0; i < N; ++i) {
+        // for (int i = 0; i < N; ++i) {
         //     const auto& v = values[i];
         //     auto data_flat = v.flat<SrcT>();
         //     const SrcT* data_ptr = data_flat.data();
@@ -477,7 +479,25 @@ public:
         //     }
         //     std::cout << std::endl;
         //     std::cout << std::endl;
-        //}
+        // }
+
+    //     DataType source_dt = DataTypeToEnum<SrcT>::v();
+    //     DataType dst_dt = DataTypeToEnum<DstT>::v();
+    //     std::cout << "FusedConcatCast:" << std::endl;
+    //     std::cout << "N: " << N << std::endl;
+    //     std::cout << "Concat dim: " << concat_dim << std::endl;
+    //     std::cout << "Source T: " << source_dt << std::endl;
+    //     std::cout << "Destination T: " << dst_dt << std::endl;
+		// std::cout << "Input Dims: " << values[0].dims() << std::endl;
+		// std::cout << "Input shape: [";
+		// const TensorShape& input_shape_tmp = values[0].shape();
+    //     for (int i = 0; i < values[0].dims(); ++i){
+		// 	std::cout << input_shape_tmp.dim_size(i);
+		// 	if (i < values[0].dims() - 1)
+		// 		std::cout << ", ";
+		// }
+		// std::cout << "]" << std::endl;
+    //     std::cout << std::endl;
 
         if (output->NumElements() > 0) {
             auto output_flat = output->flat<DstT>();
@@ -485,7 +505,9 @@ public:
 
             auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
             int num_threads = std::min(static_cast<int>((output->NumElements() * sizeof(DstT)) / 4096), worker_threads->num_threads);
-            if (true/*num_threads == 0*/) {
+			      std::cout << "Num worker threads: " << worker_threads->num_threads << std::endl;
+			      std::cout << "Num threads: " << num_threads << std::endl;
+            if (false/*num_threads == 0*/) {
                 for (int64_t i = 0; i < inputs_flat_dim0; ++i) {
                     for (int64_t j = 0; j < N; ++j) {
                         auto size = sizes[j];
@@ -496,6 +518,62 @@ public:
                         //input_pointers[j] += size;
                     }
                 }
+            } else {
+            	// Sharded mode.
+  				auto work = [&row_size, &sizes, &input_pointers, &out_ptr, &N, &inputs_flat_dim0](int64_t start, int64_t end) {
+						std::cout << "Thread; row_size: " << row_size << " num inputs: " << N << " start: " << start << " end " << end << std::endl;
+    					int64_t skipped_rows = start / row_size;
+    					DstT* out = out_ptr + skipped_rows * row_size;
+    					DstT* out_start = out_ptr + start;
+    					DstT* out_end = out_ptr + end;
+
+    					// Handle partial row at start
+    					if (out < out_start) {
+    					  for (size_t j = 0; j < N; ++j) {
+    					    ptrdiff_t size = sizes[j];
+    					    ptrdiff_t offset = out_start - out;
+    					    if (size <= offset) {
+    					      out += size;
+    					      continue;
+    					    }
+    					    SrcT* inp = (*input_pointers[j]) + skipped_rows * inputs_flat_dim0;
+    					    if (offset > 0) {
+    					      out += offset;
+    					      inp += offset;
+    					      size -= offset;
+    					    }
+    					    size = std::min(size, out_end - out);
+    					    if (size <= 0) break;
+    					    for (int64_t s = 0; s < size; ++s) {
+                            	out[s] = static_cast<DstT>(*inp++);
+                        	}
+    				     	out += size;
+    					  }
+    					  ++skipped_rows;
+    					}
+    					if (out == out_end) return;
+    					CHECK(out >= out_start);
+    					CHECK(out < out_end);
+
+    					// Copy remaining data.
+    					// std::vector<const T*> inp;
+    					// inp.reserve(num_inputs);
+    					// for (const auto& input : inputs) {
+    					//   inp.push_back(&(*input)(skipped_rows, 0));
+    					// }
+    					// const int64 dim0 = output->dimension(0);
+    					// for (int64 i = skipped_rows; i < dim0; ++i) {
+    					//   for (int64 j = 0; j < num_inputs; ++j) {
+    					//     ptrdiff_t size = std::min(sizes[j], out_end - out);
+    					//     copier.Copy(out, inp[j], j, size);
+    					//     out += size;
+    					//     inp[j] += size;
+    					//     if (out == out_end) return;
+    					//   }
+    					// }
+  					};
+  				Shard(worker_threads->num_threads, worker_threads->workers, output_flat.size(),
+  				      sizeof(DstT) /* cost_per_unit */, work);
             }
             // DstT* new_out_ptr = output_flat.data();
             // auto out_size = output->NumElements();
