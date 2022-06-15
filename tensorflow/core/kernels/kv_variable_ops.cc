@@ -182,6 +182,14 @@ class InitializeKvVariableOp : public OpKernel {
         LOG(WARNING)<<"layout must be NORAML_CONTIGUOUS when storage type is LEVELDB";
       layout_ = "normal_contiguous";
     }
+
+    if (embedding::StorageType::PMEM_LIBPMEM == storage_type_ ||
+        embedding::StorageType::PMEM_MEMKIND == storage_type_){
+      if (layout_ != "normal"){
+        LOG(WARNING) << "layout must be NORMAL when storage type is PMEM_LIBPMEM or PMEM_MEMKIND";
+      }
+      layout_ = "normal";
+    }
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
   }
 
