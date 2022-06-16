@@ -30,9 +30,9 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/core/util/gpu_launch_config.h"
-#include "third_party/cub/device/device_radix_sort.cuh"
-#include "third_party/cub/device/device_segmented_radix_sort.cuh"
-#include "third_party/cub/device/device_select.cuh"
+#include "cub/device/device_radix_sort.cuh"
+#include "cub/device/device_segmented_radix_sort.cuh"
+#include "cub/device/device_select.cuh"
 
 namespace tensorflow {
 typedef Eigen::GpuDevice GPUDevice;

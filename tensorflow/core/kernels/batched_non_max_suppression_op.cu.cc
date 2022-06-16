@@ -11,9 +11,9 @@
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 #include "tensorflow/core/util/gpu_launch_config.h"
 #include "tensorflow/stream_executor/stream_executor.h"
-#include "third_party/cub/device/device_radix_sort.cuh"
-#include "third_party/cub/device/device_segmented_radix_sort.cuh"
-#include "third_party/cub/device/device_select.cuh"
+#include "cub/device/device_radix_sort.cuh"
+#include "cub/device/device_segmented_radix_sort.cuh"
+#include "cub/device/device_select.cuh"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 // DoTranspose is broken we need to use conv2d swapdimensions1and2intensor3
 #include "tensorflow/core/kernels/conv_2d_gpu.h"

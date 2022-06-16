@@ -10,10 +10,10 @@
 
 #include "tensorflow/core/kernels/fused_embedding/fused_embedding_common.cu.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
-#include "third_party/cub/device/device_radix_sort.cuh"
-#include "third_party/cub/device/device_select.cuh"
-#include "third_party/cub/iterator/constant_input_iterator.cuh"
-#include "third_party/cub/thread/thread_operators.cuh"
+#include "cub/device/device_radix_sort.cuh"
+#include "cub/device/device_select.cuh"
+#include "cub/iterator/constant_input_iterator.cuh"
+#include "cub/thread/thread_operators.cuh"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
