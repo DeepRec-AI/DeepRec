@@ -607,9 +607,10 @@ class Timeline(object):
                                         total_bytes)
     self._allocator_maximums = alloc_maxes
 
-  def analyze_step_stats(self, show_dataflow=True, show_memory=True):
+  def analyze_step_stats(self, show_dataflow=True, show_memory=True, use_real_thread_id=False):
     self._allocate_pids()
-    self._assign_lanes()
+    if not use_real_thread_id:
+      self._assign_lanes()
     self._analyze_tensors(show_memory)
     self._show_compute(show_dataflow)
     if show_memory:
@@ -618,7 +619,7 @@ class Timeline(object):
         chrome_trace=self._chrome_trace,
         allocator_maximums=self._allocator_maximums)
 
-  def generate_chrome_trace_format(self, show_dataflow=True, show_memory=False):
+  def generate_chrome_trace_format(self, show_dataflow=True, show_memory=False, use_real_thread_id=False):
     """Produces a trace in Chrome Trace Format.
 
     Args:
@@ -631,6 +632,6 @@ class Timeline(object):
       A JSON formatted string in Chrome Trace format.
     """
     step_stats_analysis = self.analyze_step_stats(
-        show_dataflow=show_dataflow, show_memory=show_memory)
+        show_dataflow=show_dataflow, show_memory=show_memory, use_real_thread_id=use_real_thread_id)
 
     return step_stats_analysis.chrome_trace.format_to_string(pretty=True)
