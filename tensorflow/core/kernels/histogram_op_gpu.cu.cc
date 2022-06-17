@@ -19,7 +19,7 @@ limitations under the License.
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #if GOOGLE_CUDA
-#include "third_party/cub/device/device_histogram.cuh"
+#include "cub/device/device_histogram.cuh"
 #elif TENSORFLOW_USE_ROCM
 #include "external/rocprim_archive/hipcub/include/hipcub/hipcub.hpp"
 #endif

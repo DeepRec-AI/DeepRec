@@ -25,11 +25,11 @@ limitations under the License.
 #endif  // CUDA_VERSION >= 9000
 
 #if GOOGLE_CUDA
-#include "third_party/cub/block/block_load.cuh"
-#include "third_party/cub/block/block_scan.cuh"
-#include "third_party/cub/block/block_store.cuh"
-#include "third_party/cub/iterator/counting_input_iterator.cuh"
-#include "third_party/cub/iterator/transform_input_iterator.cuh"
+#include "cub/block/block_load.cuh"
+#include "cub/block/block_scan.cuh"
+#include "cub/block/block_store.cuh"
+#include "cub/iterator/counting_input_iterator.cuh"
+#include "cub/iterator/transform_input_iterator.cuh"
 #include "third_party/gpus/cuda/include/cuComplex.h"
 #elif TENSORFLOW_USE_ROCM
 #include "external/rocprim_archive/hipcub/include/hipcub/hipcub.hpp"
