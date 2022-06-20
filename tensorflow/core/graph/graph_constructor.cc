@@ -1870,7 +1870,9 @@ void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
 }
 
 void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
-                const std::vector<std::string>& target_nodes) {
+                const std::vector<std::string>& target_nodes, 
+                const bool do_smart_stage_gpu,
+                const std::string cpu_device_name) {
   std::string s1 = stage_node->def().attr().at("shared_name").s();
   std::string s2 = unstage_node->def().attr().at("shared_name").s();
   CHECK(s1 == s2);
@@ -1929,6 +1931,7 @@ void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
     edge_to_unstage[e] = edge_map[name];
   }
 
+  // place stage node and unstage node on CPU device
   NodeDef node_def_stage;
   TF_CHECK_OK(NodeDefBuilder(stage_node->name(), "TensorBufferPut")
     .Device(stage_node->assigned_device_name())
@@ -1941,7 +1944,8 @@ void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
   Status s;
   Node* stage_xxx = dest->AddNode(node_def_stage, &s);
   TF_CHECK_OK(s);
-  stage_xxx->set_assigned_device_name(stage_node->assigned_device_name());
+  if (do_smart_stage_gpu)
+    stage_xxx->set_assigned_device_name(cpu_device_name);
   dest->RemoveNode(stage_node);
 
   NodeDef node_def_unstage;
@@ -1955,13 +1959,23 @@ void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
     .Finalize(&node_def_unstage));
   Node* unstage_xxx = dest->AddNode(node_def_unstage, &s);
   TF_CHECK_OK(s);
-  unstage_xxx->set_assigned_device_name(unstage_node->assigned_device_name());
+  if (do_smart_stage_gpu)
+    unstage_xxx->set_assigned_device_name(cpu_device_name);
   dest->RemoveNode(unstage_node);
 
   for (auto it = edge_to_stage.begin(); it != edge_to_stage.end(); ++it) {
     const Edge* e = it->first;
     dest->AddEdge(e->src(), e->src_output(), stage_xxx, it->second);
   }
+
+  // place node of stage subgraph on CPU
+  if (do_smart_stage_gpu) {
+    auto set_stage_sub_graph_node_device = [cpu_device_name](Node *n) {
+      n->set_assigned_device_name(cpu_device_name);
+    };
+    ReverseDFSFrom(*dest, {stage_xxx}, std::move(set_stage_sub_graph_node_device), nullptr);
+  }
+
   for (auto it = edge_to_unstage.begin(); it != edge_to_unstage.end(); ++it) {
     const Edge* e = it->first;
     Status s = dest->UpdateEdge(unstage_xxx, it->second, e->dst(), e->dst_input());
