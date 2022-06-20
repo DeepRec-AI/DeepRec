@@ -270,9 +270,21 @@ class DirectSessionFactory : public SessionFactory {
                                   visible_cpus_per_session);
 #endif  // TENSORFLOW_USE_NUMA
 
+    // Create shared resource for cpu devices
+    ResourceMgr* shared_rmgr = new ResourceMgr("localhost");
+    DeviceResourceMgrMap dev_rmgr_map;
+    std::string dev_prefix("/job:localhost/replica:0/task:0");
+    for (int i = 0; i < session_num; ++i) {
+      std::string dev_name = dev_prefix + "/device:CPU:" + std::to_string(i);
+      dev_rmgr_map.device_rmgr_map[dev_name] = shared_rmgr;
+      dev_name = dev_prefix + "/device:cpu:" + std::to_string(i);
+      dev_rmgr_map.device_rmgr_map[dev_name] = shared_rmgr;
+    }
+
     std::vector<std::unique_ptr<Device>> devices;
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
-        options, "/job:localhost/replica:0/task:0", &devices));
+        options, "/job:localhost/replica:0/task:0",
+        &devices, &dev_rmgr_map));
 
     DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
 
@@ -287,13 +299,18 @@ class DirectSessionFactory : public SessionFactory {
 #endif  // TENSORFLOW_USE_NUMA
     session_group->CreateLeaderSession(leader_session);
     for (int i = 1; i < session_num; ++i) {
+      std::vector<std::unique_ptr<Device>> dev;
+      TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
+          options, "/job:localhost/replica:0/task:0", &dev, &dev_rmgr_map));
+      DeviceMgr* dev_mgr = new DeviceMgr(std::move(dev));
+
 #ifdef TENSORFLOW_USE_NUMA
       DirectSession* follower_session =
-          new DirectSession(options, device_mgr, false, this,
+          new DirectSession(options, dev_mgr,true, this,
                             visible_cpus_per_session[i]);
 #else
       DirectSession* follower_session =
-          new DirectSession(options, device_mgr, false, this);
+          new DirectSession(options, dev_mgr, true, this);
 #endif  // TENSORFLOW_USE_NUMA
       session_group->CreateFollowerSession(follower_session);
       {

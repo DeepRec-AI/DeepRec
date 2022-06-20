@@ -58,6 +58,8 @@ class Device : public DeviceBase {
   typedef std::function<void(const Status&)> DoneCallback;
 
   Device(Env* env, const DeviceAttributes& device_attributes);
+  Device(Env* env, const DeviceAttributes& device_attributes,
+         const DeviceResourceMgrMap* dev_rmgr_map);
   ~Device() override;
 
   // Full name of this device (see top comment).
