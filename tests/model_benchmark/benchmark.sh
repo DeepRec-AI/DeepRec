@@ -53,11 +53,12 @@ function make_script()
         log_tag=$(echo $paras| sed 's/--/_/g' | sed 's/ //g')
         [[ $paras == "" ]] && log_tag=""
         model_name=$line
+        bs=$(cat config.yaml | shyaml get-value model_batchsize | grep $model_name | awk -F ":" '{print $2}')
         echo "echo 'Testing $model_name  $paras ...'" >> $script
         echo "cd /root/modelzoo/$model_name/" >> $script
         [[ ! -d  $checkpoint_dir/$currentTime/${model_name,,}_script$$log_tag ]]\
         &&mkdir -p $checkpoint_dir/$currentTime/${model_name,,}_$script$log_tag
-        newline="LD_PRELOAD=/root/modelzoo/libjemalloc.so.2.5.1 python train.py \$cat_param $paras  --checkpoint /benchmark_result/checkpoint/$currentTime/${model_name,,}_\${category}$log_tag  >/benchmark_result/log/$currentTime/${model_name,,}_\${category}$log_tag.log 2>&1"
+        newline="LD_PRELOAD=/root/modelzoo/libjemalloc.so.2.5.1 python train.py --batch_size $bs \$cat_param $paras  --checkpoint /benchmark_result/checkpoint/$currentTime/${model_name,,}_\${category}$log_tag  >/benchmark_result/log/$currentTime/${model_name,,}_\${category}$log_tag.log 2>&1"
         echo $newline >> $script
     done
 }

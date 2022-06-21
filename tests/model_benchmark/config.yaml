@@ -10,6 +10,11 @@ test_model:
   - DSSM
   - DIEN
   - DIN
+  - ESMM
+  - DBMTL
+  - MMoE
+  - SimpleMultiTask
+  - BST
   
 #batchsize map<model,batchsize>
 model_batchsize:
@@ -19,6 +24,11 @@ model_batchsize:
   DSSM: 4096
   DIEN: 512
   DIN: 512
+  ESMM: 512
+  DBMTL: 512
+  MMoE: 512
+  SimpleMultiTask: 512
+  BST: 512
   
 #args for deeprec
 #like --emb_fusion true

@@ -26,16 +26,11 @@ def read_config():
         for model in models:
             bs_dic[model]=config['model_batchsize'][model]
             
-        print("=" * 15 * (len(bs_dic)+1))
-        print('%-10s'%'model', end="\t")
-        for k in bs_dic.keys():
-            print('%-10s'%k, end='\t')
-        print("")
-        print('%-10s'%'batchsize' ,end='\t')
-        for k in bs_dic.keys():
-            print("%-10s" %bs_dic[k], end="\t")
-        print("")
-        print("=" * 15 * (len(bs_dic)+1))
+        print("=" * 30)
+        print('%-20s%s'%("Model", "batch_size"))
+        for model in models:
+            print('%-20s%s'%(model, bs_dic[model]))
+        print("=" * 30)
     return stock_tf, bs_dic, models
 
 
@@ -123,7 +118,7 @@ if __name__ == "__main__":
             print("%-5s\t %10s\t %-10s\t %-10.6f\t %-5.6f\t %10.2f\t %10.2f\t %10.2f%%" %('', 'DeepRec', 'FP32',  total_dic[model]['acc']['deeprec_fp32'], total_dic[model]['auc']['deeprec_fp32'], total_dic[model]['gstep']['deeprec_fp32'], total_dic[model]['gstep']['deeprec_fp32']*bs_dic[model], upgrade_dic[model]['deeprec_fp32']*100))
             print("%-5s\t %10s\t %-10s\t %-10.6f\t %-5.6f\t %10.2f\t %10.2f\t %10.2f%%" %('', 'DeepRec', 'BF16',  total_dic[model]['acc']['deeprec_bf16'], total_dic[model]['auc']['deeprec_bf16'], total_dic[model]['gstep']['deeprec_bf16'], total_dic[model]['gstep']['deeprec_bf16']*bs_dic[model], upgrade_dic[model]['deeprec_bf16']*100))
 
-            
+
     else:
         print("%-5s\t %10s\t %-10s\t %-10s\t %-11s\t %10s\t %10s\t" %('Model', 'FrameWork', 'Datatype', 'ACC', 'AUC', 'Gstep', 'Throughput'))
         for model in total_dic.keys():
