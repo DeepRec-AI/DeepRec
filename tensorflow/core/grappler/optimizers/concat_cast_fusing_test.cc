@@ -270,7 +270,6 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
         cfg->set_remapping(tensorflow::RewriterConfig::OFF);
         tensorflow::ClientSession session(s, session_options_);
         std::vector<Tensor> tensors;
-        RunOptions run_options;
         TF_ASSERT_OK(session.Run(feed_list, {d}, &tensors));
 
         // Create expected graph
@@ -289,7 +288,16 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
         item_expected.fetch.push_back("expected_cast");
         TF_CHECK_OK(s.ToGraphDef(&item_expected.graph));
         std::vector<string> fetch = {"expected_cast"};
-        auto tensors_expected = EvaluateNodes(item_expected.graph, fetch);
+
+        tensorflow::SessionOptions expected_session_options_;
+        tensorflow::RewriterConfig* expected_cfg = expected_session_options_.config.mutable_graph_options()->mutable_rewrite_options();
+        cfg->set_disable_meta_optimizer(tensorflow::RewriterConfig::OFF);
+        std::unique_ptr<Session> expected_session(NewSession(expected_session_options_));
+        TF_CHECK_OK(expected_session->Create(item_expected.graph));
+        std::vector<Tensor> tensors_expected;
+        RunOptions run_options;
+        TF_CHECK_OK(expected_session->Run(run_options, {}, fetch, fetch, &tensors_expected, nullptr));
+        TF_CHECK_OK(expected_session->Close());
 
         Validate(tensors, tensors_expected);
     }
