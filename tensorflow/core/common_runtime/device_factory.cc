@@ -119,6 +119,13 @@ Status DeviceFactory::ListAllPhysicalDevices(std::vector<string>* devices) {
 Status DeviceFactory::AddDevices(
     const SessionOptions& options, const string& name_prefix,
     std::vector<std::unique_ptr<Device>>* devices) {
+  return AddDevices(options, name_prefix, devices, nullptr);
+}
+
+Status DeviceFactory::AddDevices(
+    const SessionOptions& options, const string& name_prefix,
+    std::vector<std::unique_ptr<Device>>* devices,
+    const DeviceResourceMgrMap* dev_rmgr_map) {
   // CPU first. A CPU device is required.
   auto cpu_factory = GetFactory("CPU");
   if (!cpu_factory) {
@@ -126,7 +133,8 @@ Status DeviceFactory::AddDevices(
         "CPU Factory not registered. Did you link in threadpool_device?");
   }
   size_t init_size = devices->size();
-  TF_RETURN_IF_ERROR(cpu_factory->CreateDevices(options, name_prefix, devices));
+  TF_RETURN_IF_ERROR(cpu_factory->CreateDevices(
+      options, name_prefix, devices, dev_rmgr_map));
   if (devices->size() == init_size) {
     return errors::NotFound("No CPU devices are available in this process");
   }
