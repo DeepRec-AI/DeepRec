@@ -774,6 +774,12 @@ def tf_additional_pmem_lib_defines():
         "//conditions:default": [],
     })
 
+def tf_additional_gpu_ev_lib_defines():
+    return select({
+        "//tensorflow:with_gpu_ev_support": ["TENSORFLOW_USE_GPU_EV"],
+        "//conditions:default": [],
+    })
+
 def tf_py_clif_cc(name, visibility = None, **kwargs):
     pass
 

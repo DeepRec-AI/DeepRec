@@ -39,7 +39,9 @@ limitations under the License.
 #include "tensorflow/core/util/util.h"
 #include "tensorflow/core/util/work_sharder.h"
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 #include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
+#endif // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -880,7 +882,7 @@ REGISTER_KERNELS_ALL_INDEX(float);
 
 
 #if GOOGLE_CUDA
-
+#if TF_ENABLE_GPU_EV
 #define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
   REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
                           .Device(DEVICE_GPU)                          \
@@ -1232,6 +1234,7 @@ REGISTER_KERNELS_ALL_INDEX(float);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow

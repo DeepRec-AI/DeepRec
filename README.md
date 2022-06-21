@@ -66,11 +66,7 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 
 ### **How to Build**
 
-Setup Environment Variable (Compile for GPU)
-```
-$ export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
-```
-configure
+Configure
 ```
 $ ./configure
 ```
