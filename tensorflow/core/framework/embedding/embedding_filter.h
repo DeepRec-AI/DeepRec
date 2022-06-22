@@ -25,7 +25,20 @@ void UpdateCache(K* key_buff, int64 key_num, EV* ev) {
 }
 }
 
-struct RestoreBuffer;
+struct RestoreBuffer {
+  char* key_buffer = nullptr;
+  char* value_buffer = nullptr;
+  char* version_buffer = nullptr;
+  char* freq_buffer = nullptr;
+
+  ~RestoreBuffer() {
+    delete key_buffer;
+    delete value_buffer;
+    delete version_buffer;
+    delete freq_buffer;
+  }
+};
+
 
 template<typename K, typename V, typename EV>
 class EmbeddingFilter {
