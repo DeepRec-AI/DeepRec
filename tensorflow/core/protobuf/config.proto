@@ -255,6 +255,7 @@ message OptimizerOptions {
   bool do_op_fusion = 7;
   int32 micro_batch_num = 9;
   bool do_smart_stage = 10;
+  bool do_smart_stage_gpu = 11;
 }
 
 message GraphOptions {
