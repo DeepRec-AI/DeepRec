@@ -2096,7 +2096,7 @@ index 445248163..ea286fee1 100644
  template <> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
  float RandomToTypeUniform<float>(uint64_t* state, uint64_t stream) {
 diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
-index 43a274651..10914d756 100644
+index 43a274651..603387d91 100644
 --- a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
 +++ b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
 @@ -10,6 +10,13 @@
@@ -2304,7 +2304,7 @@ index 43a274651..10914d756 100644
    const bool allow_spinning_;
 +  std::atomic<int64_t> alien_next_idx_{0};
 +  std::vector<int> next_idx_;
-+  MaxSizeVector<std::atomic_int64_t> pending_cost_;
++  MaxSizeVector<std::atomic<int64_t>> pending_cost_;
    MaxSizeVector<ThreadData> thread_data_;
    MaxSizeVector<MaxSizeVector<unsigned>> all_coprimes_;
    MaxSizeVector<EventCount::Waiter> waiters_;

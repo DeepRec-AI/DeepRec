@@ -36,20 +36,6 @@ limitations under the License.
 
 namespace tensorflow {
 
-struct RestoreBuffer {
-  char* key_buffer;
-  char* value_buffer;
-  char* version_buffer;
-  char* freq_buffer;
-
-  ~RestoreBuffer() {
-    delete key_buffer;
-    delete value_buffer;
-    delete version_buffer;
-    delete freq_buffer;
-  }
-};
-
 template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:

@@ -86,9 +86,9 @@ class KernelStats {
     cost_estimates_ =
         absl::make_unique<std::atomic_uint_fast64_t[]>(gview.num_nodes());
     immutable_avg_cost_ =
-        absl::make_unique<std::atomic_int64_t[]>(gview.num_nodes());
+        absl::make_unique<std::atomic<int64_t>[]>(gview.num_nodes());
     node_stats_count_ =
-        absl::make_unique<std::atomic_int32_t[]>(gview.num_nodes());
+        absl::make_unique<std::atomic<int32_t>[]>(gview.num_nodes());
     for (int32_t i = 0; i < gview.num_nodes(); ++i) {
       if (gview.node(i)) {
         is_expensive_[i] =
@@ -291,8 +291,8 @@ class KernelStats {
   std::atomic<int64_t> counter_;
   int64_t nodes_count_ = 0;
   // Average execution time of nodes
-  std::unique_ptr<std::atomic_int64_t[]> immutable_avg_cost_;
-  std::unique_ptr<std::atomic_int32_t[]> node_stats_count_;
+  std::unique_ptr<std::atomic<int64_t>[]> immutable_avg_cost_;
+  std::unique_ptr<std::atomic<int32_t>[]> node_stats_count_;
   // The max total execute time of the graph execute path,
   // which from current node to the sink node.
   // Example:
