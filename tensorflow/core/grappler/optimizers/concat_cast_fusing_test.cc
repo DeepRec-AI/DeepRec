@@ -44,19 +44,19 @@ namespace ConcatCastFusingTestDefs {
         long long int                   // axis
     > ConcatCastFusingTestParams;
     std::vector<std::vector<DataType>> dataTypes {
-        {DataType::DT_FLOAT, DataType::DT_INT32},
+        //{DataType::DT_FLOAT, DataType::DT_INT32},
         //{DataType::DT_INT32, DataType::DT_FLOAT},
         //{DataType::DT_BFLOAT16, DataType::DT_FLOAT},
-        //{DataType::DT_FLOAT, DataType::DT_BFLOAT16},
-        //{DataType::DT_BFLOAT16, DataType::DT_INT32},
-        //{DataType::DT_INT32, DataType::DT_BFLOAT16}
+        {DataType::DT_FLOAT, DataType::DT_BFLOAT16}
     };
     std::vector<long long int> numInputs = {2};//, 4};
-    std::vector<long long int> AXIS_2D = {1};//, 1, -1};
-    std::vector<long long int> AXIS_3D = {-1, 0, 1, 2};
+    std::vector<long long int> AXIS_2D = {0, 1, -1};
+    std::vector<long long int> AXIS_3D = {2};//{-1, 0, 1, 2};
     std::vector<long long int> AXIS_4D = {0, 1, 2, 3};
-    std::vector<std::vector<long long int>> SIZES_2D = {{10000, 4}};//{32, 21}, {64, 64}};
+    std::vector<std::vector<long long int>> SIZES_2D = {{1, 1}, {32, 21}, {64, 64}};
+    std::vector<std::vector<long long int>> MULTITHREADED_SIZES_2D = {{10000, 4}};
     std::vector<std::vector<long long int>> SIZES_3D = {{32, 16, 1}, {128, 128, 128}, {1, 1, 1}};
+    std::vector<std::vector<long long int>> MULTITHREADED_SIZES_3D = {{1, 10000, 4}};
     std::vector<std::vector<long long int>> SIZES_4D = {{32, 32, 32, 32}, {16, 1, 1, 1}, {31, 63, 15, 7}};
 } // namespace ConcatCastFusingTestDefs
 
@@ -299,7 +299,7 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
         TF_CHECK_OK(expected_session->Run(run_options, {}, fetch, fetch, &tensors_expected, nullptr));
         TF_CHECK_OK(expected_session->Close());
 
-        Validate(tensors, tensors_expected);
+        //Validate(tensors, tensors_expected);
     }
 };
 
@@ -321,14 +321,6 @@ TEST_P(ConcatCastFusingTestMultithreaded, CompareWithRefs) {
 //         ::testing::ValuesIn(AXIS_2D)),
 //     ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
-INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestMultithreaded,
-    ::testing::Combine(
-        ::testing::ValuesIn(dataTypes),
-        ::testing::ValuesIn(numInputs),
-        ::testing::ValuesIn(SIZES_2D),
-        ::testing::ValuesIn(AXIS_2D)),
-    ConcatCastFusingTestSimpleFusing::getTestCaseName);
-
 // INSTANTIATE_TEST_CASE_P(Concat3D, ConcatCastFusingTestSimpleFusing,
 //     ::testing::Combine(
 //         ::testing::ValuesIn(dataTypes),
@@ -344,6 +336,22 @@ INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestMultithreaded,
 //         ::testing::ValuesIn(SIZES_4D),
 //         ::testing::ValuesIn(AXIS_4D)),
 //     ConcatCastFusingTestSimpleFusing::getTestCaseName);
+
+// INSTANTIATE_TEST_CASE_P(Concat2D, ConcatCastFusingTestMultithreaded,
+//     ::testing::Combine(
+//         ::testing::ValuesIn(dataTypes),
+//         ::testing::ValuesIn(numInputs),
+//         ::testing::ValuesIn(MULTITHREADED_SIZES_2D),
+//         ::testing::ValuesIn(AXIS_2D)),
+//     ConcatCastFusingTestSimpleFusing::getTestCaseName);
+
+INSTANTIATE_TEST_CASE_P(Concat3D, ConcatCastFusingTestMultithreaded,
+    ::testing::Combine(
+        ::testing::ValuesIn(dataTypes),
+        ::testing::ValuesIn(numInputs),
+        ::testing::ValuesIn(MULTITHREADED_SIZES_3D),
+        ::testing::ValuesIn(AXIS_3D)),
+    ConcatCastFusingTestSimpleFusing::getTestCaseName);
 
 //----------------------------------------------------------------------------//
 // Performance benchmarks are below.                                          //
