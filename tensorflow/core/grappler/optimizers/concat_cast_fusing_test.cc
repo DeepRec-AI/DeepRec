@@ -44,7 +44,6 @@ namespace ConcatCastFusingTestDefs {
         long long int                   // axis
     > ConcatCastFusingTestParams;
     std::vector<std::vector<DataType>> dataTypes {
-        {DataType::DT_FLOAT, DataType::DT_INT32},
         {DataType::DT_BFLOAT16, DataType::DT_FLOAT},
         {DataType::DT_FLOAT, DataType::DT_BFLOAT16}
     };

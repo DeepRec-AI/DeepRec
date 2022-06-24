@@ -168,7 +168,6 @@ class ConcatBaseOp : public OpKernel {
       }
 #endif  // TENSORFLOW_USE_SYCL
       ConcatCPU<T>(c->device(), inputs_flat, &output_flat);
-
     }
   }
 };
@@ -372,8 +371,6 @@ REGISTER_KERNEL_BUILDER(Name("ConcatOffset")
                         ConcatOffsetOp);
 #endif  // TENSORFLOW_USE_SYCL
 
-//TODO: add support for place Concat not just ConcatV2
-//template <typename Device, typename T, AxisArgumentName AxisArgName>
 template <typename SrcT, typename DstT>
 class FusedConcatCastOp : public OpKernel {
 public:
@@ -404,6 +401,10 @@ public:
         } else {
             concat_dim = internal::SubtleMustCopy(concat_dim_tensor->scalar<int64>()());
         }
+
+        OP_REQUIRES(c,
+                    use_truncation_ == false,
+                    errors::Unimplemented("Truncate attribute is not implemented."));
 
         OpInputList values;
         OP_REQUIRES_OK(c, c->input_list("values", &values));
@@ -560,7 +561,6 @@ private:
                               .HostMemory("axis"),                  \
                           FusedConcatCastOp<src_type, dst_type>)
 
-REGISTER_CONCATCAST(float, int32_t);
 REGISTER_CONCATCAST(float, Eigen::bfloat16);
 REGISTER_CONCATCAST(Eigen::bfloat16, float);
 

@@ -33,7 +33,7 @@ struct ConcatWithCast {
   int cast_id = -1;
 };
 
-DataType supported_types[] = {DataType::DT_INT32, DataType::DT_FLOAT, DataType::DT_BFLOAT16};
+DataType supported_types[] = {DataType::DT_FLOAT, DataType::DT_BFLOAT16};
 
 bool FindConcatWithCast(const utils::MutableGraphView& graph_view, int node_index, ConcatWithCast* matched) {
     const auto* concat_node_view = graph_view.GetNode(node_index);
@@ -44,7 +44,6 @@ bool FindConcatWithCast(const utils::MutableGraphView& graph_view, int node_inde
     if (node_def == nullptr) return false;
     if (!IsConcat(*node_def)) return false;
 
-    //TODO: MKL Concat _MklConcatV2 can have 2 outputs
     if (concat_node_view->NumRegularFanouts() != 1) return false;
     const auto& concat_fanouts = concat_node_view->GetRegularFanout(0);
     // If concat's output is connected with more than one op, don't fuse
