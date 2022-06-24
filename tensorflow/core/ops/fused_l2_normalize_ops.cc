@@ -16,10 +16,10 @@ REGISTER_OP("FusedL2Normalize")
     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext *c) {
                     c->set_output(0, c->input(0));
                     return Status::OK();
-                })
-    .Doc(R"doc(
-FusedL2Normalize ops.
-    )doc");
+                });
+//     .Doc(R"doc(
+// FusedL2Normalize ops.
+//     )doc");
 
 REGISTER_OP("FusedL2NormalizeGrad")
     .Input("y_grad: T")
@@ -31,9 +31,9 @@ REGISTER_OP("FusedL2NormalizeGrad")
     .SetShapeFn([](::tensorflow::shape_inference::InferenceContext *c) {
                     c->set_output(0, c->input(0));
                     return Status::OK();
-                })
-    .Doc(R"doc(
-FusedL2NormalizeGrad ops.
-    )doc");
+                });
+//     .Doc(R"doc(
+// FusedL2NormalizeGrad ops.
+//     )doc");
 
 }  // namespace tensorflow
