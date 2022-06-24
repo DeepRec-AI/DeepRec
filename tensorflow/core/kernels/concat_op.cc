@@ -373,192 +373,202 @@ REGISTER_KERNEL_BUILDER(Name("ConcatOffset")
 
 template <typename SrcT, typename DstT>
 class FusedConcatCastOp : public OpKernel {
-public:
-    explicit FusedConcatCastOp(OpKernelConstruction* c) : OpKernel(c) {
-        OP_REQUIRES_OK(c, c->GetAttr("Truncate", &use_truncation_));
+ public:
+  explicit FusedConcatCastOp(OpKernelConstruction* c) : OpKernel(c) {
+    OP_REQUIRES_OK(c, c->GetAttr("Truncate", &use_truncation_));
+  }
+
+  void Compute(OpKernelContext* c) override {
+    const Tensor* concat_dim_tensor;
+    const char* axis_attribute_name = "axis";
+    OP_REQUIRES_OK(c, c->input(axis_attribute_name, &concat_dim_tensor));
+    OP_REQUIRES(c, IsLegacyScalar(concat_dim_tensor->shape()),
+                errors::InvalidArgument(
+                    axis_attribute_name,
+                    " tensor should be a scalar integer, but got shape ",
+                    concat_dim_tensor->shape().DebugString()));
+    int64_t concat_dim;
+    OP_REQUIRES(
+        c,
+        (concat_dim_tensor->dtype() == DT_INT32 ||
+         concat_dim_tensor->dtype() == DT_INT64),
+        errors::InvalidArgument(axis_attribute_name,
+                                " tensor should be int32 or int64, but got ",
+                                DataTypeString(concat_dim_tensor->dtype())));
+
+    if (concat_dim_tensor->dtype() == DT_INT32) {
+      concat_dim =
+          internal::SubtleMustCopy(concat_dim_tensor->scalar<int32>()());
+    } else {
+      concat_dim =
+          internal::SubtleMustCopy(concat_dim_tensor->scalar<int64>()());
     }
 
-    void Compute(OpKernelContext* c) override {
-        const Tensor* concat_dim_tensor;
-        const char* axis_attribute_name = "axis";
-        OP_REQUIRES_OK(c, c->input(axis_attribute_name, &concat_dim_tensor));
-        OP_REQUIRES(c, IsLegacyScalar(concat_dim_tensor->shape()),
-                    errors::InvalidArgument(
-                        axis_attribute_name,
-                        " tensor should be a scalar integer, but got shape ",
-                        concat_dim_tensor->shape().DebugString()));
-        int64_t concat_dim;
+    OP_REQUIRES(
+        c, use_truncation_ == false,
+        errors::Unimplemented("Truncate attribute is not implemented."));
+
+    OpInputList values;
+    OP_REQUIRES_OK(c, c->input_list("values", &values));
+    const int N = values.size();
+    const int input_dims = values[0].dims();
+    const TensorShape& input_shape = values[0].shape();
+
+    int32 axis = concat_dim < 0 ? concat_dim + input_dims : concat_dim;
+    OP_REQUIRES(c,
+                (0 <= axis && axis < input_dims) ||
+                    (allow_legacy_scalars() && concat_dim == 0),
+                errors::InvalidArgument(
+                    "ConcatOp : Expected concatenating dimensions in the range "
+                    "[",
+                    -input_dims, ", ", input_dims, "), but got ", concat_dim));
+
+    int64_t inputs_flat_dim0 = 1;
+    for (int d = 0; d < axis; ++d) {
+      inputs_flat_dim0 *= input_shape.dim_size(d);
+    }
+    int64_t output_concat_dim = 0;
+    const bool input_is_scalar = IsLegacyScalar(input_shape);
+    int64_t row_size = 0;
+    std::vector<ptrdiff_t> sizes;
+    sizes.reserve(N);
+    std::vector<const SrcT*> input_pointers;
+    input_pointers.reserve(N);
+
+    for (int i = 0; i < N; ++i) {
+      const auto& in = values[i];
+      const bool in_is_scalar = IsLegacyScalar(in.shape());
+      OP_REQUIRES(
+          c, in.dims() == input_dims || (input_is_scalar && in_is_scalar),
+          errors::InvalidArgument(
+              "ConcatOp : Ranks of all input tensors should match: shape[0] = ",
+              input_shape.DebugString(), " vs. shape[", i,
+              "] = ", in.shape().DebugString()));
+      for (int j = 0; j < input_dims; ++j) {
+        if (j == axis) {
+          continue;
+        }
         OP_REQUIRES(
-            c,
-            (concat_dim_tensor->dtype() == DT_INT32 ||
-            concat_dim_tensor->dtype() == DT_INT64),
-            errors::InvalidArgument(axis_attribute_name,
-                                    " tensor should be int32 or int64, but got ",
-                                    DataTypeString(concat_dim_tensor->dtype())));
+            c, in.dim_size(j) == input_shape.dim_size(j),
+            errors::InvalidArgument(
+                "ConcatOp : Dimensions of inputs should match: shape[0] = ",
+                input_shape.DebugString(), " vs. shape[", i,
+                "] = ", in.shape().DebugString()));
+      }
+      if (in.NumElements() > 0) {
+        int64_t inputs_flat_dim1 = in.NumElements() / inputs_flat_dim0;
+        sizes.push_back(inputs_flat_dim1);
+        row_size += sizes.back();
 
-        if (concat_dim_tensor->dtype() == DT_INT32) {
-            concat_dim = internal::SubtleMustCopy(concat_dim_tensor->scalar<int32>()());
-        } else {
-            concat_dim = internal::SubtleMustCopy(concat_dim_tensor->scalar<int64>()());
-        }
-
-        OP_REQUIRES(c,
-                    use_truncation_ == false,
-                    errors::Unimplemented("Truncate attribute is not implemented."));
-
-        OpInputList values;
-        OP_REQUIRES_OK(c, c->input_list("values", &values));
-        const int N = values.size();
-        const int input_dims = values[0].dims();
-        const TensorShape& input_shape = values[0].shape();
-
-        int32 axis = concat_dim < 0 ? concat_dim + input_dims : concat_dim;
-        OP_REQUIRES(c,
-                   (0 <= axis && axis < input_dims) ||
-                        (allow_legacy_scalars() && concat_dim == 0),
-                    errors::InvalidArgument(
-                        "ConcatOp : Expected concatenating dimensions in the range "
-                        "[",
-                        -input_dims, ", ", input_dims, "), but got ", concat_dim));
-
-        int64_t inputs_flat_dim0 = 1;
-        for (int d = 0; d < axis; ++d) {
-          inputs_flat_dim0 *= input_shape.dim_size(d);
-        }
-        int64_t output_concat_dim = 0;
-        const bool input_is_scalar = IsLegacyScalar(input_shape);
-		int64_t row_size = 0;
-        std::vector<ptrdiff_t> sizes;
-        sizes.reserve(N);
-        std::vector<const SrcT*> input_pointers;
-        input_pointers.reserve(N);
-
-        for (int i = 0; i < N; ++i) {
-            const auto& in = values[i];
-            const bool in_is_scalar = IsLegacyScalar(in.shape());
-            OP_REQUIRES(c, in.dims() == input_dims || (input_is_scalar && in_is_scalar),
-                errors::InvalidArgument("ConcatOp : Ranks of all input tensors should match: shape[0] = ",
-                                        input_shape.DebugString(), " vs. shape[", i,
-                                        "] = ", in.shape().DebugString()));
-            for (int j = 0; j < input_dims; ++j) {
-                if (j == axis) {
-                    continue;
-                }
-                OP_REQUIRES(c, in.dim_size(j) == input_shape.dim_size(j),
-                errors::InvalidArgument("ConcatOp : Dimensions of inputs should match: shape[0] = ",
-                    input_shape.DebugString(), " vs. shape[", i,
-                    "] = ", in.shape().DebugString()));
-            }
-            if (in.NumElements() > 0) {
-                int64_t inputs_flat_dim1 = in.NumElements() / inputs_flat_dim0;
-                sizes.push_back(inputs_flat_dim1);
-				row_size += sizes.back();
-
-                const SrcT* data_ptr = in.flat<SrcT>().data();
-                input_pointers.push_back(data_ptr);
-            }
-            output_concat_dim += in.dims() > 0 ? in.dim_size(axis) : 1;
-        }
-
-        TensorShape output_shape(input_shape);
-        if (output_shape.dims() == 0) {
-            output_shape.AddDim(output_concat_dim);
-        } else {
-            output_shape.set_dim(axis, output_concat_dim);
-        }
-        Tensor* output = nullptr;
-        OP_REQUIRES_OK(c, c->allocate_output(0, output_shape, &output));
-
-        if (output->NumElements() > 0) {
-            auto output_flat = output->flat<DstT>();
-            DstT* out_ptr = output_flat.data();
-
-            auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-            int num_threads = std::min(static_cast<int>((output->NumElements() * sizeof(DstT)) / 4096), worker_threads->num_threads);
-            if (num_threads == 1 || num_threads == 0) {
-                for (int64_t i = 0; i < inputs_flat_dim0; ++i) {
-                    for (int64_t j = 0; j < N; ++j) {
-                        auto size = sizes[j];
-                        for (int64_t s = 0; s < size; ++s) {
-                            out_ptr[s] = static_cast<DstT>(*input_pointers[j]++);
-                        }
-                        out_ptr += size;
-                    }
-                }
-            } else {
-            	// Sharded mode.
-  				auto work = [&row_size, &sizes, &input_pointers, &out_ptr, &N, &inputs_flat_dim0](int64_t start, int64_t end) {
-    				int64_t skipped_rows = start / row_size;
-    				DstT* out = out_ptr + skipped_rows * row_size;
-    				DstT* out_start = out_ptr + start;
-    				DstT* out_end = out_ptr + end;
-
-    				// Handle partial row at start
-    				if (out < out_start) {
-    				  	for (size_t i = 0; i < N; ++i) {
-    				    	ptrdiff_t size = sizes[i];
-    				    	ptrdiff_t offset = out_start - out;
-    				    	if (size <= offset) {
-    				      		out += size;
-    				      		continue;
-    				    	}
-
-							const SrcT* data_ptr = input_pointers[i] + skipped_rows * sizes[i];
-    				    	if (offset > 0) {
-    				    		out += offset;
-								data_ptr += offset;
-    				    	  	size -= offset;
-    				    	}
-    				    	size = std::min(size, out_end - out);
-    				    	if (size <= 0) break;
-    				    	for (int64_t s = 0; s < size; ++s) {
-                        		out[s] = static_cast<DstT>(*data_ptr++);
-                    		}
-    				 		out += size;
-    				 	}
-    				  	++skipped_rows;
-    				}
-    				if (out == out_end) return;
-    				CHECK(out >= out_start);
-    				CHECK(out < out_end);
-
-    				// Copy remaining data
-    				std::vector<const SrcT*> inp;
-    				inp.reserve(N);
-    				for (size_t i = 0; i < N; ++i) {
-						const SrcT* data_ptr = input_pointers[i] + skipped_rows * sizes[i];
-    					inp.push_back(data_ptr);
-    				}
-
-    				for (int64_t i = skipped_rows; i < inputs_flat_dim0; ++i) {
-    				  	for (int64_t j = 0; j < N; ++j) {
-    				    	ptrdiff_t size = std::min(sizes[j], out_end - out);
-
-							for (int64_t s = 0; s < size; ++s) {
-                        		out[s] = static_cast<DstT>(*inp[j]++);
-                    		}
-
-    				    	out += size;
-    				    	if (out == out_end) return;
-    				  	}
-					}
-  				};
-  				Shard(worker_threads->num_threads, worker_threads->workers, output_flat.size(),
-  				      sizeof(DstT) /* cost_per_unit */, work);
-            }
-        }
+        const SrcT* data_ptr = in.flat<SrcT>().data();
+        input_pointers.push_back(data_ptr);
+      }
+      output_concat_dim += in.dims() > 0 ? in.dim_size(axis) : 1;
     }
 
-private:
-    bool use_truncation_;
+    TensorShape output_shape(input_shape);
+    if (output_shape.dims() == 0) {
+      output_shape.AddDim(output_concat_dim);
+    } else {
+      output_shape.set_dim(axis, output_concat_dim);
+    }
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(c, c->allocate_output(0, output_shape, &output));
+
+    if (output->NumElements() > 0) {
+      auto output_flat = output->flat<DstT>();
+      DstT* out_ptr = output_flat.data();
+
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      int num_threads = std::min(
+          static_cast<int>((output->NumElements() * sizeof(DstT)) / 4096),
+          worker_threads->num_threads);
+      if (num_threads == 1 || num_threads == 0) {
+        for (int64_t i = 0; i < inputs_flat_dim0; ++i) {
+          for (int64_t j = 0; j < N; ++j) {
+            auto size = sizes[j];
+            for (int64_t s = 0; s < size; ++s) {
+              out_ptr[s] = static_cast<DstT>(*input_pointers[j]++);
+            }
+            out_ptr += size;
+          }
+        }
+      } else {
+        // Sharded mode.
+        auto work = [&row_size, &sizes, &input_pointers, &out_ptr, &N,
+                     &inputs_flat_dim0](int64_t start, int64_t end) {
+          int64_t skipped_rows = start / row_size;
+          DstT* out = out_ptr + skipped_rows * row_size;
+          DstT* out_start = out_ptr + start;
+          DstT* out_end = out_ptr + end;
+
+          // Handle partial row at start
+          if (out < out_start) {
+            for (size_t i = 0; i < N; ++i) {
+              ptrdiff_t size = sizes[i];
+              ptrdiff_t offset = out_start - out;
+              if (size <= offset) {
+                out += size;
+                continue;
+              }
+
+              const SrcT* data_ptr =
+                  input_pointers[i] + skipped_rows * sizes[i];
+              if (offset > 0) {
+                out += offset;
+                data_ptr += offset;
+                size -= offset;
+              }
+              size = std::min(size, out_end - out);
+              if (size <= 0) break;
+              for (int64_t s = 0; s < size; ++s) {
+                out[s] = static_cast<DstT>(*data_ptr++);
+              }
+              out += size;
+            }
+            ++skipped_rows;
+          }
+          if (out == out_end) return;
+          CHECK(out >= out_start);
+          CHECK(out < out_end);
+
+          // Copy remaining data
+          std::vector<const SrcT*> inp;
+          inp.reserve(N);
+          for (size_t i = 0; i < N; ++i) {
+            const SrcT* data_ptr = input_pointers[i] + skipped_rows * sizes[i];
+            inp.push_back(data_ptr);
+          }
+
+          for (int64_t i = skipped_rows; i < inputs_flat_dim0; ++i) {
+            for (int64_t j = 0; j < N; ++j) {
+              ptrdiff_t size = std::min(sizes[j], out_end - out);
+
+              for (int64_t s = 0; s < size; ++s) {
+                out[s] = static_cast<DstT>(*inp[j]++);
+              }
+
+              out += size;
+              if (out == out_end) return;
+            }
+          }
+        };
+        Shard(worker_threads->num_threads, worker_threads->workers,
+              output_flat.size(), sizeof(DstT) /* cost_per_unit */, work);
+      }
+    }
+  }
+
+ private:
+  bool use_truncation_;
 };
 
-#define REGISTER_CONCATCAST(src_type, dst_type)                     \
-  REGISTER_KERNEL_BUILDER(Name("_FusedConcatCast")                  \
-                              .Device(DEVICE_CPU)                   \
-                              .TypeConstraint<src_type>("SrcT")     \
-                              .TypeConstraint<dst_type>("DstT")     \
-                              .HostMemory("axis"),                  \
+#define REGISTER_CONCATCAST(src_type, dst_type)                 \
+  REGISTER_KERNEL_BUILDER(Name("_FusedConcatCast")              \
+                              .Device(DEVICE_CPU)               \
+                              .TypeConstraint<src_type>("SrcT") \
+                              .TypeConstraint<dst_type>("DstT") \
+                              .HostMemory("axis"),              \
                           FusedConcatCastOp<src_type, dst_type>)
 
 REGISTER_CONCATCAST(float, Eigen::bfloat16);
