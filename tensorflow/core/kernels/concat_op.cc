@@ -169,17 +169,6 @@ class ConcatBaseOp : public OpKernel {
 #endif  // TENSORFLOW_USE_SYCL
       ConcatCPU<T>(c->device(), inputs_flat, &output_flat);
 
-	auto output_flat_2 = output->flat<T>();
-  	T* new_out_ptr = output_flat_2.data();
-  	auto out_size = output->NumElements();
-  	std::cout << "Printing output: " << std::endl;
-  	for (size_t j = 0; j < out_size; ++j) {
-      	std::cout << new_out_ptr[j] << " ";
-
-		if (j >= 50) break;
-  	}
-  	std::cout << std::endl;
-  	std::cout << std::endl;
     }
   }
 };
@@ -479,45 +468,13 @@ public:
         Tensor* output = nullptr;
         OP_REQUIRES_OK(c, c->allocate_output(0, output_shape, &output));
 
-        // for (int i = 0; i < N; ++i) {
-        //     const auto& v = values[i];
-        //     auto data_flat = v.flat<SrcT>();
-        //     const SrcT* data_ptr = data_flat.data();
-        //     auto in_size = v.NumElements();
-        //    std::cout << "Printing input: " << i << std::endl;
-
-        //     for (size_t j = 0; j < in_size; ++j) {
-        //         std::cout << data_ptr[j] << " ";
-        //     }
-        //     std::cout << std::endl;
-        //     std::cout << std::endl;
-        // }
-
-    //     DataType source_dt = DataTypeToEnum<SrcT>::v();
-    //     DataType dst_dt = DataTypeToEnum<DstT>::v();
-    //     std::cout << "FusedConcatCast:" << std::endl;
-    //     std::cout << "N: " << N << std::endl;
-    //     std::cout << "Concat dim: " << concat_dim << std::endl;
-    //     std::cout << "Source T: " << source_dt << std::endl;
-    //     std::cout << "Destination T: " << dst_dt << std::endl;
-		// std::cout << "Input Dims: " << values[0].dims() << std::endl;
-		// std::cout << "Input shape: [";
-		// const TensorShape& input_shape_tmp = values[0].shape();
-    //     for (int i = 0; i < values[0].dims(); ++i){
-		// 	std::cout << input_shape_tmp.dim_size(i);
-		// 	if (i < values[0].dims() - 1)
-		// 		std::cout << ", ";
-		// }
-		// std::cout << "]" << std::endl;
-    //     std::cout << std::endl;
-
         if (output->NumElements() > 0) {
             auto output_flat = output->flat<DstT>();
             DstT* out_ptr = output_flat.data();
 
             auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
             int num_threads = std::min(static_cast<int>((output->NumElements() * sizeof(DstT)) / 4096), worker_threads->num_threads);
-            if (num_threads == 0) {
+            if (num_threads == 1 || num_threads == 0) {
                 for (int64_t i = 0; i < inputs_flat_dim0; ++i) {
                     for (int64_t j = 0; j < N; ++j) {
                         auto size = sizes[j];
@@ -528,22 +485,15 @@ public:
                     }
                 }
             } else {
-				std::cout << "FusedConcatCast" << std::endl;
-				std::cout << "Num worker threads: " << worker_threads->num_threads << std::endl;
-			    std::cout << "Num threads: " << num_threads << std::endl;
             	// Sharded mode.
-				const int64_t output_dim0 = output_shape.dim_size(0);
-  				auto work = [&row_size, &sizes, &input_pointers, &out_ptr, &N, &output_dim0](int64_t start, int64_t end) {
+  				auto work = [&row_size, &sizes, &input_pointers, &out_ptr, &N, &inputs_flat_dim0](int64_t start, int64_t end) {
     				int64_t skipped_rows = start / row_size;
     				DstT* out = out_ptr + skipped_rows * row_size;
     				DstT* out_start = out_ptr + start;
     				DstT* out_end = out_ptr + end;
-					// TODO: Fix 3d case axis 2 calculation
-					std::cout << "Thread; row_size: " << row_size << " num inputs: " << N << " start: " << start << " end " << end << std::endl;
 
     				// Handle partial row at start
     				if (out < out_start) {
-                		std::cout << "ELO" << std::endl;
     				  	for (size_t i = 0; i < N; ++i) {
     				    	ptrdiff_t size = sizes[i];
     				    	ptrdiff_t offset = out_start - out;
@@ -579,7 +529,7 @@ public:
     					inp.push_back(data_ptr);
     				}
 
-    				for (int64_t i = skipped_rows; i < output_dim0; ++i) {
+    				for (int64_t i = skipped_rows; i < inputs_flat_dim0; ++i) {
     				  	for (int64_t j = 0; j < N; ++j) {
     				    	ptrdiff_t size = std::min(sizes[j], out_end - out);
 
@@ -595,16 +545,6 @@ public:
   				Shard(worker_threads->num_threads, worker_threads->workers, output_flat.size(),
   				      sizeof(DstT) /* cost_per_unit */, work);
             }
-            DstT* new_out_ptr = output_flat.data();
-            auto out_size = output->NumElements();
-            std::cout << "Printing output: " << std::endl;
-            for (size_t j = 0; j < out_size; ++j) {
-                std::cout << new_out_ptr[j] << " ";
-
-				if (j >= 50) break;
-            }
-            std::cout << std::endl;
-            std::cout << std::endl;
         }
     }
 
@@ -621,7 +561,6 @@ private:
                           FusedConcatCastOp<src_type, dst_type>)
 
 REGISTER_CONCATCAST(float, int32_t);
-REGISTER_CONCATCAST(int32_t, float);
 REGISTER_CONCATCAST(float, Eigen::bfloat16);
 REGISTER_CONCATCAST(Eigen::bfloat16, float);
 
