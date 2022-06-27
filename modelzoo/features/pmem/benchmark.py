@@ -105,12 +105,12 @@ def main(_):
               ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(
                                                               storage_type=config_pb2.StorageType.PMEM_LIBPMEM, 
                                                               storage_path=FLAGS.ev_storage_path, 
-                                                              storage_size=FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024))
+                                                              storage_size=[FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024]))
             elif FLAGS.ev_storage == "dram_pmem":
               ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(
                                                               storage_type=config_pb2.StorageType.DRAM_PMEM, 
                                                               storage_path=FLAGS.ev_storage_path, 
-                                                              storage_size=FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024))
+                                                              storage_size=[FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024, FLAGS.ev_storage_size_gb * 1024 * 1024 * 1024]))
             fm_w = tf.get_embedding_variable(
                name='fm_w{}'.format(sidx),
                embedding_dim=1,
