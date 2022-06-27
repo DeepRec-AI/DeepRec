@@ -2851,8 +2851,9 @@ tf_kernel_library(
         "@sparsehash_c11//:dense_hash_map",
         "@libcuckoo//:libcuckoo",
         "@com_github_google_leveldb//:leveldb",
-        "@cuCollections//:cuco_hash_table",
-    ],
+    ] + select({"//tensorflow:with_gpu_ev_support":
+                 ["@cuCollections//:cuco_hash_table"],
+                 "//conditions:default": []}),
 )
 
 tf_kernel_library(

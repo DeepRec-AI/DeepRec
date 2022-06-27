@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -291,6 +292,7 @@ class EmbeddingVarGPU : public ResourceBase {
 
 }  // namespace tensorflow
 
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_

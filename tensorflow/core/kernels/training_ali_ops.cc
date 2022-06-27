@@ -36,7 +36,9 @@ limitations under the License.
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -173,6 +175,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 template <class K, class V>
 Status GetInputEmbeddingVarGPU(OpKernelContext* ctx, int input,
                             EmbeddingVarGPU<K, V>** var) {
@@ -291,6 +294,7 @@ TF_CALL_float(REGISTER_GPU_KERNELS);
 
 #undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
@@ -498,6 +502,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 template <typename Device, typename TKey, typename T, bool has_l2_shrinkage>
 class KvSparseApplyFtrlOpGPU : public OpKernel {
  public:
@@ -673,6 +678,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.

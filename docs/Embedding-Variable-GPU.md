@@ -6,6 +6,17 @@ GPU具有强大的并行计算能力，对于EmbeddingVariable底层的Hash Tabl
 
 
 ## 使用方法
+**配置环境变量**
+
+下面的TF_CUDA_COMPUTE_CAPABILITIES（cuCollection需要7.5及以上）
+```
+export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
+```
+
+**编译**
+configure时GPU_EV配置Yes，编译打开EmbeddingVaraible on GPU版本。
+
+**使用**
 使用开启了GPU支持的DeepRec版本，在拥有NVIDIA GPU的环境下，EmbeddingVariable会自动被放置在GPU device上。
 
 我们也可手动指定device，将其放置于GPU上

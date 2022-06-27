@@ -15,6 +15,7 @@
  */
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 
 #define EIGEN_USE_GPU
 
@@ -431,4 +432,5 @@ template struct functor::KvEmbGetSnapshot<GPUDevice, int64, double>;
 
 }  // namespace tensorflow
 
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
