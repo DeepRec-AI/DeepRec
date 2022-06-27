@@ -185,9 +185,6 @@ class ConcatCastFusingTest :
     // Test input Tensors (filled in SetUp)
     std::vector<Tensor> inputs;
     Tensor axis;
-    // Test output Tensors (filled in Run method)
-    Tensor values;
-    Tensor default_values;
 
     GraphDef want;
 };
@@ -452,7 +449,7 @@ using bfloat16 = Eigen::bfloat16;
     BM_ConcatCastFusionBench(IF_FUSED, /*num_inputs*/ 64, /*axis_name*/ 1, /*axis*/ 1, /*Source T*/ bfloat16,      \
                              /*Dst T*/ fp32, /*Input shape name*/ 400x60,                                          \
                              /*Input shape*/ (std::vector<long long int>{400, 60}),                                \
-                             "64_1_bfloat16_fp32_40000x60");
+                             "64_1_bfloat16_fp32_400x60");
 
 
 DLRM_BENCHMARK(/*IFFUSED=*/true)
