@@ -98,7 +98,6 @@ class EVValueDumpIterator: public  DumpIterator<T> {
   int64 col_idx_;
 };
 
-
 template<class T>
 class EVVersionDumpIterator: public  DumpIterator<T> {
  public:
@@ -399,11 +398,14 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   return Status::OK();
 }
 
+namespace {
+const static string part_str = "part_";
+}
+
 template<typename K, typename V>
 Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string name_string, int orig_partnum,
     int64 partition_id = 0, int64 partition_num = 1) {
-  string part_str = "part_";
   string curr_partid_str = std::to_string(partition_id);
   bool filter_flag = true;
   bool restore_filter_flag = true;
@@ -522,9 +524,8 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
   return Status::OK();
 }
 
-
 template<typename K, typename V>
-Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
+Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string tensor_key, std::string tensor_value,
     std::string tensor_version, std::string tensor_freq) {
   TensorShape key_shape;
@@ -573,7 +574,6 @@ Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
       return st;
     }
   }
-
 
   bool filter_flag = true;
   bool restore_filter_flag = true;
@@ -701,31 +701,11 @@ Status RestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
   return Status::OK();
 }
 
-template<typename K, typename V>
-Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
-    std::string name_string, int partition_id, int partition_num,
-    OpKernelContext* context, BundleReader* reader,
-    std::string part_offset_tensor_suffix, std::string key_suffix,
-    std::string value_suffix, std::string version_suffix,
-    std::string freq_suffix) {
-
-  // first check whether there is partition
-  string part_str = "part_";
-
-  if (name_string.find(part_str) == std::string::npos) {
-    // no partition
-    Status s = RestoreValue(ev, reader, name_string + key_suffix,
-        name_string + value_suffix, name_string + version_suffix,
-        name_string + freq_suffix);
-    if (!s.ok()) {
-      LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
-    }
-    return s;
-  }
-    
+inline bool IsOldCheckpoint(const std::string& name_string,
+    const std::string& curr_partid_str, BundleReader* reader,
+    const std::string& part_offset_tensor_suffix) {
   // then check whether checkpoint is in old form
   bool is_oldform = false;
-  string curr_partid_str = std::to_string(partition_id);
 
   string part_id = std::to_string(0);
   string pre_subname =
@@ -742,34 +722,69 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
   if (!form_st.ok()) {
     is_oldform = true;
   }
+  return is_oldform;
+}
 
-  if (is_oldform) {
-    // first get original partition number
-    int orig_partnum = 0;
-    for (;  ; orig_partnum++) {
-      string part_id = std::to_string(orig_partnum);
-      string pre_subname = name_string.substr(0, name_string.find(part_str));
-      string post_subname = name_string.substr(name_string.find(part_str)
-          + part_str.size() + curr_partid_str.size());
-      string tensor_name = pre_subname + part_str + part_id + post_subname;
+template<typename K, typename V>
+Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
+    const std::string& name_string, const std::string& curr_partid_str,
+    const std::string& key_suffix, int partition_id,
+    BundleReader* reader, int partition_num) {
+  // first get original partition number
+  int orig_partnum = 0;
+  for (;  ; orig_partnum++) {
+    string part_id = std::to_string(orig_partnum);
+    string pre_subname = name_string.substr(0, name_string.find(part_str));
+    string post_subname = name_string.substr(name_string.find(part_str)
+        + part_str.size() + curr_partid_str.size());
+    string tensor_name = pre_subname + part_str + part_id + post_subname;
 
-      string tensor_key = tensor_name + key_suffix;
-      TensorShape key_shape;
-      Status st = reader->LookupTensorShape(tensor_key, &key_shape);
-      if (!st.ok()) {
-        break;
-      }
+    string tensor_key = tensor_name + key_suffix;
+    TensorShape key_shape;
+    Status st = reader->LookupTensorShape(tensor_key, &key_shape);
+    if (!st.ok()) {
+      break;
     }
+  }
 
-    VLOG(1) << "old form, EV name:" << name_string
-            << ", partition_id:" << partition_id
-            << ", old partition_num:" << orig_partnum
-            << ", new partition num:" << partition_num;
-    Status s = DynamicRestoreValue(ev, reader, name_string,
-        orig_partnum, partition_id, partition_num);
+  VLOG(1) << "old form, EV name:" << name_string
+          << ", partition_id:" << curr_partid_str
+          << ", old partition_num:" << orig_partnum
+          << ", new partition num:" << partition_num;
+  Status s = DynamicRestoreValue(ev, reader, name_string,
+      orig_partnum, partition_id, partition_num);
+  if (!s.ok()) {
+    LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
+  }
+}
+
+template<typename K, typename V>
+Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
+    const std::string& name_string, int partition_id,
+    int partition_num, OpKernelContext* context,
+    BundleReader* reader, const std::string& part_offset_tensor_suffix,
+    const std::string& key_suffix, const std::string& value_suffix,
+    const std::string& version_suffix, const std::string& freq_suffix) {
+
+  // first check whether there is partition
+  if (name_string.find(part_str) == std::string::npos) {
+    Status s = EVRestoreNoPartition(
+        ev, reader, name_string + key_suffix,
+        name_string + value_suffix, name_string + version_suffix,
+        name_string + freq_suffix);
     if (!s.ok()) {
       LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
     }
+    return s;
+  }
+
+  const string& curr_partid_str = std::to_string(partition_id);
+  auto is_oldform = IsOldCheckpoint(name_string, curr_partid_str,
+      reader, part_offset_tensor_suffix);
+
+  if (is_oldform) {
+    EVRestoreOldFromCheckpoint(ev, name_string, curr_partid_str, key_suffix,
+        partition_id, reader, partition_num);
   } else {
     // first find out which sub parts we should load
     bool filter_flag = true;
@@ -917,7 +932,6 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
       if (!st.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
       }
-
       Tensor part_offset_tensor;
       st = context->allocate_temp(part_offset_type,
           part_offset_shape, &part_offset_tensor);
@@ -930,7 +944,6 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
       if (!st.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
       }
-
       st = reader->Lookup(offset_tensor_name, &part_offset_tensor);
       if (!st.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
