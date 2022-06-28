@@ -36,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/platform/mem.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/util.h"
 #include "tensorflow/core/util/work_sharder.h"
 #if GOOGLE_CUDA
@@ -126,36 +127,21 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
     OP_REQUIRES(c, shape_.dims() == 1,
                 errors::InvalidArgument("KvVariable dimension must be 1"));
-
-     // get ev emb_index
     OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
-     // get ev block_num
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
-     // get ev slot_index
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
-
     OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
-
     OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
-
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
-
     OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
-
     OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
           &false_positive_probability_));
-
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
           &l2_weight_threshold_));
-
     OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
-
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim", &default_value_dim_));
-
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
-
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
-
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
 
     int64 storage_type = 0;
@@ -592,10 +578,34 @@ TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 */
-template <typename TKey, typename TValue>
-class KvResourceImportV2Op: public OpKernel {
+
+constexpr int64 DEFAULT_RESTORE_THREAD_NUM = 4;
+
+class KvRestoreThreadPool {
  public:
-  explicit KvResourceImportV2Op(OpKernelConstruction* c) : OpKernel(c) {
+  KvRestoreThreadPool() {
+    TF_CHECK_OK(ReadInt64FromEnvVar("TF_EV_RESTORE_THREAD_NUM",
+          DEFAULT_RESTORE_THREAD_NUM, &thread_num_));
+  }
+
+  static thread::ThreadPool* GetInstance() {
+    static thread::ThreadPool tp(Env::Default(),
+        "restore_ev_threadpool", thread_num_);
+    return &tp;
+  }
+
+ private:
+  static int64 thread_num_;
+};
+
+int64 KvRestoreThreadPool::thread_num_ =
+    DEFAULT_RESTORE_THREAD_NUM;
+
+template <typename TKey, typename TValue>
+class KvResourceImportV2Op: public AsyncOpKernel {
+ public:
+  explicit KvResourceImportV2Op(OpKernelConstruction* c)
+      : AsyncOpKernel(c) {
     OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
     OP_REQUIRES_OK(c, c->GetAttr("counter_type", &counter_type_));
     OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
@@ -619,15 +629,11 @@ class KvResourceImportV2Op: public OpKernel {
     //OP_REQUIRES_OK(c, c->GetAttr("restore_versions", &restore_versions_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
-    // get ev emb_index
     OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
-      // get ev slot_index
     OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
     OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
-
     OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
-
     OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
           &false_positive_probability_));
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
@@ -636,27 +642,26 @@ class KvResourceImportV2Op: public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim",
           &default_value_dim_));
-
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
-
     int64 storage_type = 0;
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
-
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
-
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
+
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ENABLE_EV_ASYNC_RESTORE", true,
+                                   &ev_async_restore_));
   }
 
-  void Compute(OpKernelContext* context) override {
+  void ComputeAsync(OpKernelContext* context, DoneCallback done) override {
     const Tensor& file_name = context->input(0);
     const std::string file_name_string = file_name.scalar<string>()();
     const Tensor& name = context->input(4);
     const std::string name_string = name.scalar<string>()();
-	  const Tensor& default_values = context->input(3);
+    const Tensor& default_values = context->input(3);
     OP_REQUIRES(context, dtype_ == default_values.dtype(),
         errors::InvalidArgument(
           "Variable and ddd value dtypes don't match; respectively, ",
@@ -744,15 +749,29 @@ class KvResourceImportV2Op: public OpKernel {
     }
     core::ScopedUnref unref_me(ev);
 
-    BundleReader reader(Env::Default(), file_name_string);
-    OP_REQUIRES_OK(context, reader.status());
+    auto do_compute = [this, context, file_name_string, ev,
+         name_string, done] () {
+      BundleReader reader(Env::Default(), file_name_string);
+      auto s = reader.status();
+      if (!s.ok()) {
+        LOG(FATAL) << "Restore EV failure, create BundleReader error:"
+                   << s.ToString();
+      }
 
-    EVRestoreDynamically(
-        ev, name_string, partition_id_, partition_num_, context, &reader,
-        "-partition_offset", "-keys", "-values", "-versions", "-freqs");
-    ev->SetInitialized();
+      EVRestoreDynamically(
+          ev, name_string, partition_id_, partition_num_, context, &reader,
+          "-partition_offset", "-keys", "-values", "-versions", "-freqs");
+      ev->SetInitialized();
+      done();
+    };
+
+    if (ev_async_restore_) {
+      auto tp = KvRestoreThreadPool::GetInstance();
+      tp->Schedule(do_compute);
+    } else {
+      do_compute();
+    }
   }
-
 
  private:
   int64 partition_id_;
@@ -780,6 +799,7 @@ class KvResourceImportV2Op: public OpKernel {
   int64 default_value_dim_;
   bool record_freq_;
   bool record_version_;
+  bool ev_async_restore_;
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                         \
@@ -798,9 +818,10 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
-class KvResourceIncrImportOp: public OpKernel {
+class KvResourceIncrImportOp: public AsyncOpKernel {
  public:
-  explicit KvResourceIncrImportOp(OpKernelConstruction* c) : OpKernel(c) {
+  explicit KvResourceIncrImportOp(OpKernelConstruction* c)
+      : AsyncOpKernel(c) {
     OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
 
     OP_REQUIRES_OK(c, c->GetAttr("partition_id", &partition_id_));
@@ -814,7 +835,7 @@ class KvResourceIncrImportOp: public OpKernel {
 
   }
 
-  void Compute(OpKernelContext* context) override {
+  void ComputeAsync(OpKernelContext* context, DoneCallback done) override {
     const Tensor& file_name = context->input(0);
     const std::string file_name_string = file_name.scalar<string>()();
     const Tensor& name = context->input(2);
@@ -833,11 +854,13 @@ class KvResourceIncrImportOp: public OpKernel {
               << name_string
               << "partition_num:"
               << partition_num_;
+
     EVRestoreDynamically(
         ev, name_string, partition_id_, partition_num_, context, &reader,
         "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values",
         "-sparse_incr_versions", "-sparse_incr_freqs");
     ev->SetInitialized();
+    done(); 
   }
 
  private:
