@@ -15,7 +15,7 @@ limitations under the License.
 #ifdef INTEL_MKL
 
 #include <vector>
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/op_kernel.h"

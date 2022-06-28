@@ -39,39 +39,39 @@ limitations under the License.
 
 namespace tensorflow {
 
-// This pass inserts Mkl to Tf tensor conversion nodes (represented by C)
+// This pass inserts OneDNN to Tf tensor conversion nodes (represented by C)
 // in the graph in between A and B, where A and B match any one
 // of the following cases:
 //
-//  1) A = a node that generates output in the Mkl format and,
-//     B = a node that does not accept input in the Mkl format and,
+//  1) A = a node that generates output in the OneDNN format and,
+//     B = a node that does not accept input in the OneDNN format and,
 //     A -> B (there is a direct edge between A and B, then
 //     We will insert C such that A->C->B.
 //
-//  2) A = a node that generates output in the Mkl format and,
+//  2) A = a node that generates output in the OneDNN format and,
 //     B = NULL (in other words, A is the last node in the graph), then
 //     We will insert C such that A->C->B. (C will be the last node.)
 //
 //  Note that case 1 applies to all outputs of A that are input to B.
 //  In other words, the conversions will be required for every output
 //  of A that is input to B. For example, let us say the output of A
-//  is A1, A2, A3, of which A1 and A2 are in Mkl format, but A3 is not
-//  in Mkl format, and all of them are input to B. In such case, we will
+//  is A1, A2, A3, of which A1 and A2 are in OneDNN format, but A3 is not
+//  in OneDNN format, and all of them are input to B. In such case, we will
 //  do the conversion for A1 and A2 only. We do not need to do any conversion
 //  for A3.
 //
-// This pass relies on ops registering themselves about their Mkl compliance.
-// An Mkl-compliant op can accept inputs in the Mkl format, and produce outputs
-// in the Mkl format. Non-compliant ops accept inputs and outputs in the
+// This pass relies on ops registering themselves about their OneDNN compliance.
+// An OneDNN-compliant op can accept inputs in the OneDNN format, and produce outputs
+// in the OneDNN format. Non-compliant ops accept inputs and outputs in the
 // TensorFlow format.
 //
 // ADDENDUM: For element-wise ops, we may or may not need a conversion to
 // take place before we hit the op. For this, we add a new op before each
-// element-wise MKL op to deal with the inputs, called _MklInputConversion.
+// element-wise OneDNN op to deal with the inputs, called _MklInputConversion.
 // This pass has been enhanced to add this capability.
 //
 // The _MklInputConversion op will check the inputs to the elementwise op and
-// make sure that either both are in MKL format or both are in TF format,
+// make sure that either both are in OneDNN format or both are in TF format,
 // depending on their initial state and whether broadcast is needed or not.
 
 class MklToTfConversionPass : public GraphOptimizationPass {
@@ -88,21 +88,21 @@ class MklToTfConversionPass : public GraphOptimizationPass {
   bool RunPass(std::unique_ptr<Graph>* g);
 
  private:
-  // Is the input Op supported by Mkl-specific layout?
+  // Is the input Op supported by OneDNN-specific layout?
   //
   // @input op_name string of the op
   // @input T Datatype to use for checking input op
-  // @return true if op is Mkl supported; false, otherwise.
+  // @return true if op is OneDNN supported; false, otherwise.
   inline bool IsMklSupportedOp(const string& op_name, DataType T) const {
     return mkl_op_registry::IsMklLayoutDependentOp(op_name, T);
   }
 
-  // Is the input Op supported by Mkl-specific layout AND
+  // Is the input Op supported by OneDNN-specific layout AND
   //  is it element-wise?
   //
   // @input op_name string of the op
   // @input T Datatype to use for checking input op
-  // @return true if op is Mkl supported; false, otherwise.
+  // @return true if op is OneDNN supported; false, otherwise.
   inline bool IsMklElementWiseOp(const string& op_name, DataType T) const {
     return mkl_op_registry::IsMklElementWiseOp(op_name, T);
   }
@@ -189,7 +189,7 @@ Status MklToTfConversionPass::InsertConversionNodeOnEdge(
   // We want conversion node to be on the same device as the source node.
   conversion_node->set_assigned_device_name(src->assigned_device_name());
 
-  // Set the Mkl op label for this op.
+  // Set the OneDNN op label for this op.
   conversion_node->AddAttr("_kernel",
                            mkl_op_registry::kMklLayoutDependentOpLabel);
 
@@ -305,8 +305,8 @@ bool MklToTfConversionPass::RunPass(std::unique_ptr<Graph>* g) {
 
   DumpGraph("Before MklToTfConversionPass", &**g);
 
-  // Since we are looking for an Mkl-supported op node immediately
-  // followed by a non-Mkl op node, we will just iterate over edge
+  // Since we are looking for an OneDNN-supported op node immediately
+  // followed by a non-OneDNN op node, we will just iterate over edge
   // set of the graph.
   // edge set whose source and destination are candidates for
   // inserting conversion node
@@ -333,7 +333,7 @@ bool MklToTfConversionPass::RunPass(std::unique_ptr<Graph>* g) {
 
     // Let's get source and destination data type.
     // We cannot check datatype on destination node because destination node
-    // may not be Mkl node.
+    // may not be OneDNN node.
     DataType src_datatype;
     DataType dst_datatype;
     bool src_is_mkl_op =
@@ -343,7 +343,7 @@ bool MklToTfConversionPass::RunPass(std::unique_ptr<Graph>* g) {
         (GetNodeAttr(dst->def(), "T", &dst_datatype) == Status::OK() &&
          IsMklSupportedOp(dst->type_string(), dst_datatype));
 
-    // Check if src with is Mkl-compliant, while dst is not Mkl-compliant.
+    // Check if src with is OneDNN-compliant, while dst is not OneDNN-compliant.
     if (src_is_mkl_op && !dst_is_mkl_op) {
       VLOG(1) << "MklToTfConversionPass: Scheduled nodes " << src->name()
               << " and " << dst->name() << " for inserting conversion nodes";
@@ -367,7 +367,7 @@ bool MklToTfConversionPass::RunPass(std::unique_ptr<Graph>* g) {
   DumpGraph("After MklToTfConversionPass", &**g);
 
   //---------------------------------------------------------------------------
-  // Check all nodes and add an input-conversion-node if the node is an mkl
+  // Check all nodes and add an input-conversion-node if the node is an OneDNN
   // element-wise node.
   VLOG(1) << "Before running MklToTfConversionPass - InputConversion";
 

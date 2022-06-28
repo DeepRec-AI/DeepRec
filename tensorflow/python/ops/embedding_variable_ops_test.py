@@ -53,6 +53,34 @@ from tensorflow.python.saved_model import loader
 
 
 class EmbeddingVariableTest(test_util.TensorFlowTestCase):
+  def testSaveVersionWithGlobalStepEviction(self):
+    print("testSaveVersionWithGlobalStepEviction")
+    checkpoint_directory = self.get_temp_dir()
+    with ops.device('/cpu:0'):
+      var = variable_scope.get_embedding_variable("var_1",
+                                          embedding_dim=6,
+                                          initializer=init_ops.ones_initializer,
+                                          steps_to_live = 5)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([5], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v, global_step=gs)
+      init = variables.global_variables_initializer()
+      saver = saver_module.Saver()
+      model_path = os.path.join(checkpoint_directory, "model.ckpt")
+      with self.test_session() as sess:
+        sess.run([init])
+        r, _, _ = sess.run([emb, train_op,loss])
+        r, _, _ = sess.run([emb, train_op,loss])
+        saver.save(sess, model_path)
+        for name, shape in checkpoint_utils.list_variables(model_path):
+          if name == "var_1-versions":
+            ckpt_value = checkpoint_utils.load_variable(model_path, name)
+            self.assertEqual(ckpt_value.tolist()[0], 1)
+
   def testDynamicDimensionEmbeddingVariable(self):
     print("testDynamicDimensionEmbeddingVariable")
     with ops.device('/cpu:0'):
@@ -1798,6 +1826,13 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             self.assertEqual(ckpt_value.tolist()[0][j], r[0][j])
             self.assertEqual(ckpt_value.tolist()[1][j], r[3][j])
             self.assertEqual(ckpt_value.tolist()[2][j], r[5][j])
+        if name == "var_1/AdagradDecay-values":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          slot = [[72.1, 72.1, 72.1], [32.1, 32.1, 32.1], [8.1, 8.1, 8.1]]
+          for j in range(0, 3):
+            self.assertAlmostEqual(ckpt_value.tolist()[0][j], slot[0][j], delta=1e-5)
+            self.assertAlmostEqual(ckpt_value.tolist()[1][j], slot[1][j], delta=1e-5)
+            self.assertAlmostEqual(ckpt_value.tolist()[2][j], slot[2][j], delta=1e-5)
     with self.test_session() as sess:
       saver.restore(sess, model_path)
       r1, _, _ = sess.run([emb, train_op,loss])
@@ -1876,13 +1911,13 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for i in range(6):
         for j in range(3):
           self.assertAlmostEqual(emb_ori[i][j], emb_right[i][j])
-
+  
   def testEmbeddingVariableForDRAMAndLEVELDB(self):
     print("testEmbeddingVariableForDRAMAndLEVELDB")
     def runTestAdagrad(self, var, g):
       #ids = array_ops.placeholder(dtypes.int64, name="ids")
       #emb = embedding_ops.embedding_lookup(var, ids)
-      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 2, 3, 4, 5, 6, 7, 8, 9], dtypes.int64))
       fun = math_ops.multiply(emb, 2.0, name='multiply')
       loss = math_ops.reduce_sum(fun, name='reduce_sum')
       gs = training_util.get_or_create_global_step()
@@ -1906,16 +1941,134 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path=db_directory)))
+                                                                                                 storage_path=db_directory,
+                                                                                                 storage_size=[4096])))
       emb1 = runTestAdagrad(self, emb_var, g)
 
     with ops.device('/cpu:0'), ops.Graph().as_default() as g:
       var = variable_scope.get_variable("var_2", shape=[100, 30], initializer=init_ops.ones_initializer(dtypes.float32))
       emb2 = runTestAdagrad(self, var, g)
 
-      for i in range(0, 6):
+      for i in range(0, 9):
         for j in range(0, 30):
           self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForDRAMAndSSD(self):
+    print("testEmbeddingVariableForDRAMAndSSD")
+    def runTestAdagrad(self, var, g):
+      #ids = array_ops.placeholder(dtypes.int64, name="ids")
+      #emb = embedding_ops.embedding_lookup(var, ids)
+      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 2, 3, 4, 5, 6, 7, 8, 9], dtypes.int64))
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        for i in xrange(60):
+          r, _, _ = sess.run([emb, train_op, loss])
+        return r
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      db_directory = self.get_temp_dir()
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 30,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
+            steps_to_live=5,
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_SSDHASH,
+                                                                                                 storage_path="/tmp/ssd_utpy",
+                                                                                                 storage_size=[512])))
+      emb1 = runTestAdagrad(self, emb_var, g)
+
+    with ops.device('/cpu:0'), ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var_2", shape=[100, 30], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb2 = runTestAdagrad(self, var, g)
+
+    for i in range(0, 9):
+      for j in range(0, 30):
+        self.assertAlmostEqual(emb1.tolist()[i][j], emb2.tolist()[i][j])
+
+  def testEmbeddingVariableForRecordFreq(self):
+    print("testEmbeddingVariableForRecordFreq")
+    checkpoint_directory = self.get_temp_dir()
+    os.environ["TF_RECORD_FREQ"] = "1"
+    os.environ["TF_RECORD_VERSION"] = "1"
+    emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32))
+    emb = embedding_ops.embedding_lookup(emb_var,
+            math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, train_op])
+      sess.run([emb, train_op])
+      save_path = saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-freqs":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 6)
+          self.assertEqual(ckpt_value.tolist()[1], 4)
+          self.assertEqual(ckpt_value.tolist()[2], 2)
+        if name == "var_1-versions":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 1)
+          self.assertEqual(ckpt_value.tolist()[1], 1)
+          self.assertEqual(ckpt_value.tolist()[2], 1)
+    os.environ["TF_RECORD_FREQ"] = "0"
+    os.environ["TF_RECORD_VERSION"] = "0"
+
+  def testEmbeddingVariableForRecordFreqWithCounterFilter(self):
+    print("testEmbeddingVariableForRecordFreqWithCounterFilter")
+    checkpoint_directory = self.get_temp_dir()
+    os.environ["TF_RECORD_FREQ"] = "1"
+    os.environ["TF_RECORD_VERSION"] = "1"
+    emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
+    emb = embedding_ops.embedding_lookup(emb_var,  math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, train_op])
+      sess.run([emb, train_op])
+      save_path = saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-freqs":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 6)
+          self.assertEqual(ckpt_value.tolist()[1], 4)
+        if name == "var_1-versions":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(ckpt_value.tolist()[0], 1)
+          self.assertEqual(ckpt_value.tolist()[1], 1)
+    os.environ["TF_RECORD_FREQ"] = "0"
+    os.environ["TF_RECORD_VERSION"] = "0"
 
 if __name__ == "__main__":
   googletest.main()

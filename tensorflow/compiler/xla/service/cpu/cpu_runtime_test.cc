@@ -194,7 +194,7 @@ std::unique_ptr<Array2D<float>> MKLMatrixMultiply(const Array2D<float>& a,
   int64 n = b.width();
   int64 k = a.width();
 
-  // The MKL matmul runtime function expects the matrix to be in column major
+  // The OneDNN matmul runtime function expects the matrix to be in column major
   // order and array2d is in row-major order. Create transposes of a and b. The
   // 'data' buffer in the transposed array is the original array in column major
   // order.

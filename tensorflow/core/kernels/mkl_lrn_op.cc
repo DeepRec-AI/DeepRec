@@ -14,8 +14,8 @@ limitations under the License.
 ==============================================================================*/
 
 // LRN = Local Response Normalization
-// See docs in ../ops/nn_ops.cc. This opkernel uses MKL library, create MKL
-// layout and primitives, use MKL dnn primitives to compute local
+// See docs in ../ops/nn_ops.cc. This opkernel uses OneDNN library, create OneDNN
+// layout and primitives, use OneDNN dnn primitives to compute local
 // response normalization
 
 #ifdef INTEL_MKL
@@ -25,7 +25,7 @@ limitations under the License.
 #include <unordered_map>
 #include <vector>
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -41,10 +41,10 @@ limitations under the License.
 #include "tensorflow/core/util/work_sharder.h"
 #endif
 
-using mkldnn::lrn_backward;
-using mkldnn::lrn_forward;
-using mkldnn::prop_kind;
-using mkldnn::stream;
+using dnnl::lrn_backward;
+using dnnl::lrn_forward;
+using dnnl::prop_kind;
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -99,13 +99,13 @@ class MklLRNOp : public OpKernel {
       MklDnnShape src_dnn_shape;
       GetMklShape(context, kIdxInput, &src_dnn_shape);
 
-      // MKL-DNN has a notion of kernel_size and not depth_radius.
+      // OneDNN has a notion of kernel_size and not depth_radius.
       int kernel_size = 2 * depth_radius_ + 1;
       float new_alpha = alpha_ * kernel_size;
 
-      // if the input tensor is not an MKL Tensor, or if the last
+      // if the input tensor is not an OneDNN Tensor, or if the last
       // dimension is not channel, then just use Eigen.
-      // MKL only support normalization over the channel dimension.
+      // OneDNN only support normalization over the channel dimension.
       if (!src_dnn_shape.IsMklTensor()) {
         MklDefaultToEigen(context, src_tensor);
         return;
@@ -118,7 +118,7 @@ class MklLRNOp : public OpKernel {
         MklDefaultToEigen(context, converted_tensor);
         return;
       }
-      // At this point, we can assume that the src is an MklTensor
+      // At this point, we can assume that the src is an OneDNN Tensor
       // and we can enable the workspace
       workspace_enabled_ = true;
 
@@ -133,7 +133,7 @@ class MklLRNOp : public OpKernel {
 
       // Create memory for user input.
       // Since Tensorflow always performs normalization over last dimension,
-      // and MKL-DNN performs normalization over Channel, we tell MKL-DNN
+      // and OneDNN performs normalization over Channel, we tell OneDNN
       // that input is in NHWC layout with Channel being the last dimension.
       src_dnn_data.SetUsrMem(src_md, &src_tensor);
       src_dnn_data.SetOpMemDesc(input_dims, MEMORY_FORMAT::nhwc);
@@ -145,7 +145,7 @@ class MklLRNOp : public OpKernel {
 
       // Create LRN primitive descriptor.
       // Tensorflow's normalization semantics is across channels.
-      // MKL-DNN also supports normalization within channel.
+      // OneDNN also supports normalization within channel.
       auto lrn_desc = lrn_forward::desc(
           prop_kind::forward, ALGORITHM::lrn_across_channels,
           src_dnn_data.GetUsrMemDesc(), kernel_size, new_alpha, beta_, bias_);
@@ -160,7 +160,7 @@ class MklLRNOp : public OpKernel {
       DCHECK(output_tensor != nullptr);
       dst_dnn_data.SetUsrMemDataHandle(output_tensor, fwd_stream_);
 
-      // Handle workspace required for MKL-DNN.
+      // Handle workspace required for OneDNN.
       AllocateWorkspaceTensor(context, lrn_prim_desc, &workspace_dnn_data);
       OP_REQUIRES_OK(context, context->status());
 
@@ -171,22 +171,15 @@ class MklLRNOp : public OpKernel {
       std::vector<primitive> net;
       MklDnnThreadPool eigen_tp(context);
       fwd_stream_.reset(CreateStream(&eigen_tp, cpu_engine_));
-#ifdef ENABLE_MKLDNN_V1
       net.push_back(lrn_forward(lrn_prim_desc));
       std::vector<std::unordered_map<int, memory>> net_args;
-      net_args.push_back({{MKLDNN_ARG_SRC, src_dnn_data.GetOpMem()},
-                          {MKLDNN_ARG_WORKSPACE, workspace_dnn_data.GetOpMem()},
-                          { MKLDNN_ARG_DST,
+      net_args.push_back({{DNNL_ARG_SRC, src_dnn_data.GetOpMem()},
+                          {DNNL_ARG_WORKSPACE, workspace_dnn_data.GetOpMem()},
+                          { DNNL_ARG_DST,
                             dst_dnn_data.GetOpMem() }});
       net.push_back(lrn_forward(lrn_prim_desc));
       net.at(0).execute(*fwd_stream_, net_args.at(0));
-#else
-      net.push_back(lrn_forward(lrn_prim_desc, src_dnn_data.GetOpMem(),
-                                workspace_dnn_data.GetOpMem(),
-                                dst_dnn_data.GetOpMem()));
-      fwd_stream_->submit(net).wait();
-#endif
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);
@@ -206,7 +199,7 @@ class MklLRNOp : public OpKernel {
     MEMORY_PRIMITIVE_DESC dst_pd = lrn_fwd_prim_desc.PRIMITIVE_DESC_DST;
 
     MklDnnShape output_mkl_shape;
-    // We only handle the case when the inputs and output are in Mkl format
+    // We only handle the case when the inputs and output are in OneDNN format
     // Any other case is handled by Eigen
     output_mkl_shape.SetMklTensor(true);
     output_mkl_shape.SetMklLayout(&dst_pd);
@@ -360,9 +353,9 @@ class MklLRNGradOp : public OpKernel {
       GetMklShape(context, kIdxOrigInput, &orig_input_dnn_shape);
       GetMklShape(context, kIdxOrigOutput, &orig_output_dnn_shape);
 
-      // We only use MKLDNN if all of the necessary inputs are present
-      // in mkldnn format, and Channel is the last dimension
-      bool can_use_mkldnn = workspace_enabled_ &&
+      // We only use DNNL if all of the necessary inputs are present
+      // in dnnl format, and Channel is the last dimension
+      bool can_use_dnnl = workspace_enabled_ &&
                             input_grad_dnn_shape.IsMklTensor() &&
                             orig_input_dnn_shape.IsMklTensor() &&
                             orig_output_dnn_shape.IsMklTensor() &&
@@ -373,17 +366,17 @@ class MklLRNGradOp : public OpKernel {
                             orig_output_dnn_shape.IsMklChannelDim(
                                 orig_output_dnn_shape.GetDimension() - 1);
 
-      if (!can_use_mkldnn) {
+      if (!can_use_dnnl) {
         // Fallback to eigen
         MklDefaultToEigen(context);
         return;
       }
-      // At this point, we have the all clear to use MklDnn constructs
+      // At this point, we have the all clear to use OneDNN constructs
       // Naming: diff_dst is input_gradient_tensor; src is orig_input_tensor.
       const Tensor& input_grad_tensor = MklGetInput(context, kIdxGradient);
       const Tensor& orig_input_tensor = MklGetInput(context, kIdxOrigInput);
 
-      // Get input sizes in MKL-DNN required NCHW format.
+      // Get input sizes in OneDNN required NCHW format.
       // LRN does not have data_format attribute. But by default it has
       // NHWC format.
       memory::desc original_output_md = orig_output_dnn_shape.GetCurLayout();
@@ -401,7 +394,7 @@ class MklLRNGradOp : public OpKernel {
       output_dnn_data.SetUsrMem(orig_input_md);
       output_dnn_data.SetOpMemDesc(orig_input_dims, MEMORY_FORMAT::nhwc);
 
-      // MKL-DNN has a notion of kernel_size and not depth_radius.
+      // OneDNN has a notion of kernel_size and not depth_radius.
       int kernel_size = 2 * depth_radius_ + 1;
       float new_alpha = alpha_ * kernel_size;
 
@@ -444,22 +437,15 @@ class MklLRNGradOp : public OpKernel {
           lrn_fwd_prim_desc.PRIMITIVE_DESC_SRC, cpu_engine_));
 
       std::vector<primitive> net;
-#ifdef ENABLE_MKLDNN_V1
       std::vector<std::unordered_map<int, memory>> net_args;
       net.push_back(lrn_backward(lrn_bwd_prim_desc));
-      net_args.push_back({{MKLDNN_ARG_SRC, orig_input_dnn_data.GetOpMem()},
-                          {MKLDNN_ARG_DIFF_DST, input_grad_dnn_data.GetOpMem()},
-                          { MKLDNN_ARG_DST,
+      net_args.push_back({{DNNL_ARG_SRC, orig_input_dnn_data.GetOpMem()},
+                          {DNNL_ARG_DIFF_DST, input_grad_dnn_data.GetOpMem()},
+                          { DNNL_ARG_DST,
                             output_dnn_data.GetOpMem() }});
       net.push_back(lrn_backward(lrn_bwd_prim_desc));
       net.at(0).execute(*bwd_stream_, net_args.at(0));
-#else
-      net.push_back(lrn_backward(
-          lrn_bwd_prim_desc, orig_input_dnn_data.GetOpMem(),
-          input_grad_dnn_data.GetOpMem(), output_dnn_data.GetOpMem()));
-      bwd_stream_->submit(net).wait();
-#endif
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + string(e.message) + ", in file " +
                          string(__FILE__) + ":" + std::to_string(__LINE__);
@@ -478,7 +464,7 @@ class MklLRNGradOp : public OpKernel {
     MEMORY_PRIMITIVE_DESC dst_pd = lrn_bkwd_prim_desc.PRIMITIVE_DESC_DIFF_SRC;
     MklDnnShape output_mkl_shape;
 
-    // We assume that all outputs at this point are MKL Tensors
+    // We assume that all outputs at this point are OneDNN Tensors
     output_mkl_shape.SetMklTensor(true);
     output_mkl_shape.SetMklLayout(&dst_pd);
     output_mkl_shape.SetElemType(MklDnnType<T>());

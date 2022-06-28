@@ -16,7 +16,7 @@ limitations under the License.
 // See docs in ../ops/array_ops.cc.
 #ifdef INTEL_MKL
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"

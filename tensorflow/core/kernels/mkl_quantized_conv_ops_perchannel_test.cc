@@ -41,17 +41,17 @@ static const uint8 dummy_tensor[] = {0, 0, 0, 0, 0, 0, 0, 0};
 static const TensorShape dummy_shape({8});
 
 // TODO(nammbash): Move this helper class to mkl_utils or mkl_test_utils
-// so that all tests can use. (set a separate PR that changes all MKL tests).
-// Helper class for converting MKL tensors to TF tensors
+// so that all tests can use. (set a separate PR that changes all OneDNN tests).
+// Helper class for converting OneDNN tensors to TF tensors
 class ConvMklToTF : public OpsTestBase {
  public:
   template <typename T>
   void ConvertMKL2TF(DataType dtype, const Tensor& first, const Tensor& second,
                      Tensor& output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklLayoutDependentOp")
                      .Finalize(node_def()));
@@ -77,7 +77,7 @@ TEST_F(QuantizedConv2DPerchannelTest, Small) {
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
                    .Input(FakeInput(DT_FLOAT))
-                   // MKL metadata tensors
+                   // OneDNN metadata tensors
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
                    .Input(FakeInput(DT_UINT8))
@@ -165,7 +165,7 @@ TEST_F(QuantizedConv2DPerchannelTest, Small) {
   const Tensor& output = *GetOutput(0);
   const Tensor& output_mkl_metadata = *GetOutput(3);
 
-  // Convert the output tensor in MKL to TF format.
+  // Convert the output tensor in OneDNN to TF format.
   ConvMklToTF conv_comp;
   Tensor output_quantized;
   conv_comp.ConvertMKL2TF<qint32>(DT_QINT32, output, output_mkl_metadata,

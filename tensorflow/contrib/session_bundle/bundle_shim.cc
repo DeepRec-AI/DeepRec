@@ -151,6 +151,30 @@ Status LoadSavedModelFromLegacySessionBundlePath(
                                                           saved_model_bundle);
 }
 
+Status LoadSavedModelFromLegacySessionBundlePath(
+    const SessionGroupOptions& session_options, const RunOptions& run_options,
+    const StringPiece session_bundle_export_dir,
+    SavedModelBundleV2* saved_model_bundle) {
+  if (session_bundle_export_dir.empty()) {
+    return Status(error::Code::NOT_FOUND, "Export directory path is empty.");
+  }
+  if (!IsPossibleExportDirectory(session_bundle_export_dir)) {
+    return Status(
+        error::Code::NOT_FOUND,
+        "Export directory does not contain a valid SessionBundle export.");
+  }
+
+  // Build the session-bundle.
+  SessionGroupBundle session_bundle;
+  TF_RETURN_IF_ERROR(LoadSessionBundleFromPathUsingRunOptions(
+      session_options, run_options, session_bundle_export_dir,
+      &session_bundle));
+
+  // Convert the session-bundle to a saved-model-bundle.
+  return internal::ConvertSessionGroupBundleToSavedModelBundleV2(
+      session_bundle, saved_model_bundle);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Helper functions to convert `Default` and `Named` signatures to
 // SignatureDefs.
@@ -349,6 +373,21 @@ Status ConvertSessionBundleToSavedModelBundle(
       &saved_model_bundle->meta_graph_def);
 }
 
+// Converts a SessionGroupBundle to a SavedModelBundleV2.
+Status ConvertSessionGroupBundleToSavedModelBundleV2(
+    SessionGroupBundle& session_bundle, SavedModelBundleV2* saved_model_bundle) {
+  // Transfer ownership of the session from old to new.
+  saved_model_bundle->session_group = std::move(session_bundle.session_group);
+
+  // Copy the meta graph def from the SessionBundle to the SavedModelBundle.
+  saved_model_bundle->meta_graph_def = session_bundle.meta_graph_def;
+
+  // Convert signatures from session-bundle to signature-defs in
+  // saved-model-bundle.
+  return internal::ConvertSignaturesToSignatureDefs(
+      &saved_model_bundle->meta_graph_def);
+}
+
 }  // namespace internal
 
 Status LoadSessionBundleOrSavedModelBundle(
@@ -356,6 +395,44 @@ Status LoadSessionBundleOrSavedModelBundle(
     const string& export_dir,
     const std::unordered_set<string>& saved_model_tags,
     SavedModelBundle* saved_model_bundle, bool* is_session_bundle) {
+  if (is_session_bundle != nullptr) {
+    *is_session_bundle = false;
+  }
+  if (MaybeSavedModelDirectory(export_dir)) {
+    LOG(INFO)
+        << "Attempting to load native SavedModelBundle in bundle-shim from: "
+        << export_dir;
+
+    return LoadSavedModel(session_options, run_options, export_dir,
+                          saved_model_tags, saved_model_bundle);
+  } else if (IsPossibleExportDirectory(export_dir)) {
+    LOG(ERROR) << "Found possible SessionBundle in export directory. "
+                  "SessionBundle is deprecated. Use SavedModel instead.";
+    LOG(INFO) << "Attempting to up-convert SessionBundle to SavedModelBundle "
+                 "in bundle-shim from: "
+              << export_dir;
+    if (is_session_bundle != nullptr) {
+      *is_session_bundle = true;
+    }
+    return LoadSavedModelFromLegacySessionBundlePath(
+        session_options, run_options, export_dir, saved_model_bundle);
+  }
+  return Status(
+      error::Code::NOT_FOUND,
+      strings::StrCat(
+          "Specified file path does not appear to contain a:\n"
+          "- Session bundle (should have a file called `export.meta`)\n"
+          "- or, SavedModel bundle (should have a file called "
+          "`saved_model.pb`)\n"
+          "Specified file path: ",
+          export_dir));
+}
+
+Status LoadSessionBundleOrSavedModelBundle(
+    const SessionGroupOptions& session_options, const RunOptions& run_options,
+    const string& export_dir,
+    const std::unordered_set<string>& saved_model_tags,
+    SavedModelBundleV2* saved_model_bundle, bool* is_session_bundle) {
   if (is_session_bundle != nullptr) {
     *is_session_bundle = false;
   }

@@ -21,4 +21,6 @@ namespace tensorflow {
 
 SessionOptions::SessionOptions() : env(Env::Default()) {}
 
+SessionGroupOptions::SessionGroupOptions() : env(Env::Default()) {}
+
 }  // namespace tensorflow

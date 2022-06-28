@@ -36,7 +36,9 @@ limitations under the License.
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -130,8 +132,8 @@ class KvSparseApplyAdagradOp : public OpKernel {
             const TKey index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter,
-                  gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto a = accum->flat(value_ptr);
               auto g = grad_flat.template chip<0>(i);
@@ -173,6 +175,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 template <class K, class V>
 Status GetInputEmbeddingVarGPU(OpKernelContext* ctx, int input,
                             EmbeddingVarGPU<K, V>** var) {
@@ -291,6 +294,7 @@ TF_CALL_float(REGISTER_GPU_KERNELS);
 
 #undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
@@ -498,6 +502,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
 template <typename Device, typename TKey, typename T, bool has_l2_shrinkage>
 class KvSparseApplyFtrlOpGPU : public OpKernel {
  public:
@@ -673,6 +678,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
@@ -1106,7 +1112,7 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
             if (is_filter) {
               auto a = accum->flat(value_ptr);
 
@@ -1269,7 +1275,8 @@ class KvSparseApplyAdamOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter =false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto var_i = var->flat(value_ptr);
               auto m_a = m->flat(value_ptr);
@@ -1832,7 +1839,8 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto v_ = v->flat(value_ptr);
               auto m_ = m->flat(value_ptr);
@@ -1868,8 +1876,6 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
              &lr_scalar, &beta1_scalar,
              &beta1_power, &beta2_power,
              &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
-          ValuePtr<T>* beta1_ptr = nullptr;
-          OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(0, &beta1_ptr));
           auto beta1_power_flat = beta1_power.flat<T>();
           auto beta2_power_flat = beta2_power.flat<T>();
 
@@ -1882,7 +1888,8 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
               const Tindex index = indices_vec(i);
               ValuePtr<T>* value_ptr = nullptr;
               bool is_filter = false;
-              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+              var->UpdateVersion(value_ptr, gs);
               if (is_filter) {
                 auto m_a = m->flat(value_ptr);
                 auto v_a = v->flat(value_ptr);
@@ -1998,7 +2005,8 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
-            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter, gs));
+            OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
+            var->UpdateVersion(value_ptr, gs);
             if (is_filter) {
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);

@@ -18,15 +18,10 @@ limitations under the License.
 #ifdef INTEL_MKL
 
 namespace tensorflow {
-// MKL DNN 0.x will not be supported. So all related macro's have been removed
-// This file will be removed once MKL DNN 0.x related source code is cleaned and
-// all MKL DNN 1.x related macro's have been replaced.
-
-#ifdef ENABLE_MKLDNN_V1
 #define ADD_MD add_md
-#define ALGORITHM mkldnn::algorithm
+#define ALGORITHM dnnl::algorithm
 #define ALGORITHM_UNDEF ALGORITHM::undef
-#define BN_FLAGS mkldnn::normalization_flags
+#define BN_FLAGS dnnl::normalization_flags
 #define CPU_STREAM(engine) stream(engine)
 #define DATA_WITH_ENGINE(data, engine) data, engine
 #define DST_MD dst_md
@@ -77,9 +72,9 @@ namespace tensorflow {
   memory(mem_desc, engine)
 #define MEMORY_DATA_TYPE_UNDEF memory::data_type::undef
 #define MEMORY_DESC memory::desc
-#define MEMORY_FORMAT mkldnn::memory::format_tag
+#define MEMORY_FORMAT dnnl::memory::format_tag
 #define MEMORY_FORMAT_DESC format_desc
-#define MEMORY_FORMAT_UNDEF mkldnn::memory::format_tag::undef
+#define MEMORY_FORMAT_UNDEF dnnl::memory::format_tag::undef
 #define MEMORY_PD_CONSTRUCTOR(dims, type, fm, engine) \
   memory::desc({dims}, MklDnnType<type>(), fm)
 #define MEMORY_PD_WITHOUT_DATA(md, engine) md, engine
@@ -117,9 +112,7 @@ namespace tensorflow {
 #define SUMMAND_MD summand_md
 #define TENSOR_FORMAT MKL_TENSOR_FORMAT
 #define TENSOR_FORMAT_NHWC MKL_TENSOR_FORMAT_NHWC
-#define TENSOR_MAX_DIMS MKLDNN_MAX_NDIMS
-
-#endif  // ENABLE_MKLDNN_V1
+#define TENSOR_MAX_DIMS DNNL_MAX_NDIMS
 
 }  // namespace tensorflow
 

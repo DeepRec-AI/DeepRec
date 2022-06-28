@@ -955,6 +955,7 @@ tf_cuda_library(
         "util/matmul_autotune.h",
         "util/util.h",
         "util/work_sharder.h",
+        "util/test_util.h",
     ] + select({
         "//tensorflow:windows": [],
         "//conditions:default": [
@@ -1281,7 +1282,7 @@ tf_gen_op_libs(
 tf_gen_op_libs(
     is_external = False,
     op_lib_names = [
-        "data_buffer_ops"
+        "tensor_buffer_ops"
     ],
     deps = [":lib"],
 )
@@ -1625,7 +1626,7 @@ cc_library(
         "//tensorflow/core/kernels:image",
         "//tensorflow/core/kernels:io",
         "//tensorflow/core/kernels:kv_variable_ops",
-        "//tensorflow/core/kernels:data_buffer_ops",
+        "//tensorflow/core/kernels:tensor_buffer_ops",
         "//tensorflow/core/kernels:work_queue_ops",
         "//tensorflow/core/kernels:linalg",
         "//tensorflow/core/kernels:lookup",

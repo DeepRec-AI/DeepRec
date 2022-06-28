@@ -107,6 +107,8 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/python/keras:convolutional_test "\
 "-//tensorflow/python/keras:lstm_v2_test "\
 "-//tensorflow/python/keras:lstm_v2_test_gpu "\
+"-//tensorflow/python:embedding_variable_ops_gpu_test "\
+"-//tensorflow/python:embedding_variable_ops_gpu_test_gpu "\
 
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2

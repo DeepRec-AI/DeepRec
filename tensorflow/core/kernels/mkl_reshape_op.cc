@@ -17,7 +17,7 @@ limitations under the License.
 
 #include <memory>
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -28,7 +28,7 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_types.h"
 #include "tensorflow/core/util/mkl_util.h"
 
-using mkldnn::stream;
+using dnnl::stream;
 
 namespace tensorflow {
 
@@ -40,8 +40,8 @@ class MklReshapeOp : public OpKernel {
   explicit MklReshapeOp(OpKernelConstruction* context) : OpKernel(context) {}
 
  private:
-  // When the input tensor is in MKL layout and we are reshaping the tensor to a
-  // different shape than its actual shape, then we use MKLDNN reorder primitive
+  // When the input tensor is in OneDNN layout and we are reshaping the tensor to a
+  // different shape than its actual shape, then we use DNNL reorder primitive
   // to put tensor back in Tensorflow layout. But we can skip this reordering
   // some times. This function checks for all such cases.
   bool SkipReorder(const MklDnnShape& mkl_shape_input,
@@ -49,7 +49,7 @@ class MklReshapeOp : public OpKernel {
     CHECK_EQ(mkl_shape_input.IsMklTensor(), true);
 
     // If Tensorflow's data format and the underlying format maintained by
-    // MKLDNN are equivalent (both are NHWC or both are NCHW), then we can
+    // DNNL are equivalent (both are NHWC or both are NCHW), then we can
     // safely return true.
     // @todo: Future do not force skip reorder for all blocked format. Use
     // blocking_desc_is_equal() for checking all the stride arrays in
@@ -141,24 +141,21 @@ class MklReshapeOp : public OpKernel {
           auto cpu_engine = engine(ENGINE_CPU, 0);
           MklDnnData<T> dnn_data_input(&cpu_engine);
           // Reshape is just a logical view change operation for a tensor.
-          // It does not change underlying layout. But MKLDNN may maintain
+          // It does not change underlying layout. But DNNL may maintain
           // tensor data in different layout than that specified by Tensorflow.
-          // If MKLDNN maintains input tensor in different layout than that
+          // If DNNL maintains input tensor in different layout than that
           // specified by Tensorflow, we will need to reorder tensor and then
           // put it in the shape expected by Tensorflow.
 
           // If dimensions that are being expanded or collapsed are not
-          // maintained contiguously by MKLDNN, then we use reorder.
+          // maintained contiguously by DNNL, then we use reorder.
 
-          // Get Mkl layout of input tensor.
+          // Get OneDNN layout of input tensor.
           auto input_mkl_md = mkl_shape_input.GetMklLayout();
-          // Set input Mkl layout as the user layout.
+          // Set input OneDNN layout as the user layout.
           dnn_data_input.SetUsrMem(input_mkl_md, &input_tensor);
           // Get expected Tensorflow layout of input tensor.
           auto output_tf_md = mkl_shape_input.GetTfLayout();
-#ifndef ENABLE_MKLDNN_V1
-          auto output_tf_pd = memory::primitive_desc(output_tf_md, cpu_engine);
-#endif  // !ENABLE_MKLDNN_V1
 
           Tensor* output_tensor = nullptr;
           MklDnnShape mkl_shape_output;
@@ -167,10 +164,10 @@ class MklReshapeOp : public OpKernel {
           AllocateOutputSetMklShape(context, kOutputSlotIdx, &output_tensor,
                                     shape_to, mkl_shape_output);
 
-          // Insert reorder between Mkl layout and TensorFlow layout if
+          // Insert reorder between OneDNN layout and TensorFlow layout if
           // needed. If reorder is not needed but reshape is needed (since
           // shape_from != shape_to), then we just copy input tensor to
-          // output tensor with target shape (we cannot forward Mkl layout
+          // output tensor with target shape (we cannot forward OneDNN layout
           // in such case because shape has changed.)
           if (dnn_data_input.CheckReorderToOpMem(OUTPUT_TF_MD, output_tensor,
                                                  context)) {
@@ -180,7 +177,7 @@ class MklReshapeOp : public OpKernel {
                         errors::InvalidArgument("invalid input tensor shape"));
           }
           return;
-        } catch (mkldnn::error& e) {
+        } catch (dnnl::error& e) {
           string error_msg = "Status: " + std::to_string(e.status) +
                              ", message: " + string(e.message) + ", in file " +
                              string(__FILE__) + ":" + std::to_string(__LINE__);
@@ -190,7 +187,7 @@ class MklReshapeOp : public OpKernel {
         }
       }
     } else {
-      // If input tensor is not in Mkl format, then just copy Tensorflow tensor
+      // If input tensor is not in OneDNN format, then just copy Tensorflow tensor
       // to output with specified shape.
       CopyTfTensorInToOutWithShape(context, kInputSlotIdx, kOutputSlotIdx,
                                    shape);

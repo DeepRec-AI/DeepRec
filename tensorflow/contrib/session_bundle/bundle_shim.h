@@ -56,6 +56,9 @@ Status ConvertSignaturesToSignatureDefs(MetaGraphDef* meta_graph_def);
 Status ConvertSessionBundleToSavedModelBundle(
     SessionBundle& session_bundle, SavedModelBundle* saved_model_bundle);
 
+Status ConvertSessionGroupBundleToSavedModelBundleV2(
+    SessionGroupBundle& session_bundle, SavedModelBundleV2* saved_model_bundle);
+
 }  // namespace internal
 
 // Loads a SavedModel from either a session-bundle path or a SavedModel bundle
@@ -66,6 +69,11 @@ Status LoadSessionBundleOrSavedModelBundle(
     const SessionOptions& session_options, const RunOptions& run_options,
     const string& export_dir, const std::unordered_set<string>& tags,
     SavedModelBundle* bundle, bool* is_session_bundle = nullptr);
+
+Status LoadSessionBundleOrSavedModelBundle(
+    const SessionGroupOptions& session_options, const RunOptions& run_options,
+    const string& export_dir, const std::unordered_set<string>& tags,
+    SavedModelBundleV2* bundle, bool* is_session_bundle = nullptr);
 
 }  // namespace serving
 }  // namespace tensorflow

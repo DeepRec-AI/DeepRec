@@ -118,6 +118,10 @@ ThreadPool::ThreadPool(thread::ThreadPoolInterface* user_threadpool) {
 
 ThreadPool::~ThreadPool() {}
 
+void ThreadPool::SetThreadPoolAffinity(const cpu_set_t& cpuset) {
+  underlying_threadpool_->SetThreadPoolAffinity(cpuset);
+}
+
 void ThreadPool::CostSchedule(std::function<void()> fn, int64 cost) {
   CHECK(fn != nullptr);
   if (cost < 1) {

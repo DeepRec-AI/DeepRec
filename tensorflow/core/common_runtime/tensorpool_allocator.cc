@@ -143,6 +143,7 @@ void TensorPoolAllocator::Init() {
       }
       lifetime_bins_[(*it)->BinIndex()] = bin;
     }
+    LOG(INFO) << "TensorPoolAllocator enabled";
     inited_ = true;
   }
 }

@@ -171,10 +171,13 @@ Allocator* GPUProcessState::GetGPUAllocator(const GPUOptions& options,
       // **WARNING** probably will not work in a multi-gpu scenario
       gpu_allocator =
           new GPUcudaMallocAllocator(gpu_allocator, platform_gpu_id);
-    } else if (useCudaMallocAsyncAllocator()) {
-      LOG(INFO) << "Using CUDA malloc Async allocator for GPU: " << platform_gpu_id;
-      // If true, passes all allocation requests through to cudaMallocAsync.
-      // Useful for doing memory debugging with tools like compute-sanitizer.
+    } else if (useCudaMallocAsyncAllocator() ||
+               options.experimental().use_cuda_malloc_async()) {
+      LOG(INFO) << "Using CUDA malloc Async allocator for GPU: "
+                << platform_gpu_id;
+      // If true, passes all allocation requests through to cudaMallocAsync
+      // TODO: useful for doing memory debugging with tools like
+      // compute-sanitizer.
       // TODO: **WARNING** probably will not work in a multi-gpu scenario
       gpu_allocator =
           new GpuCudaMallocAsyncAllocator(platform_gpu_id, total_bytes);

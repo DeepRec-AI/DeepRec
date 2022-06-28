@@ -51,13 +51,30 @@ ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
                                name, DEVICE_CPU, memory_limit, locality)),
       allocator_(allocator),
       scoped_allocator_mgr_(new ScopedAllocatorMgr(name)) {
-#if !defined(ENABLE_MKLDNN_THREADPOOL) && defined(INTEL_MKL)
-  // Early return when MKL is disabled
+  Init();
+}
+
+ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
+                                   const string& name, Bytes memory_limit,
+                                   const DeviceLocality& locality,
+                                   Allocator* allocator,
+                                   const DeviceResourceMgrMap* dev_rmgr_map)
+    : LocalDevice(options, Device::BuildDeviceAttributes(
+                               name, DEVICE_CPU, memory_limit, locality),
+                  dev_rmgr_map),
+      allocator_(allocator),
+      scoped_allocator_mgr_(new ScopedAllocatorMgr(name)) {
+  Init();
+}
+
+void ThreadPoolDevice::Init() {
+#if !defined(ENABLE_DNNL_THREADPOOL) && defined(INTEL_MKL)
+  // Early return when OneDNN is disabled
   if (DisableMKL()) return;
 #ifdef _OPENMP
   const char* user_omp_threads = getenv("OMP_NUM_THREADS");
   if (user_omp_threads == nullptr) {
-    // OMP_NUM_THREADS controls MKL's intra-op parallelization
+    // OMP_NUM_THREADS controls OneDNN's intra-op parallelization
     // Default to available physical cores
     const int mkl_intra_op = port::NumSchedulableCPUs();
     const int ht = port::NumHyperthreadsPerCore();
@@ -70,7 +87,7 @@ ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
     }
   }
 #endif  // _OPENMP
-#endif  // !defined(ENABLE_MKLDNN_THREADPOOL) && defined(INTEL_MKL)
+#endif  // !defined(ENABLE_DNNL_THREADPOOL) && defined(INTEL_MKL)
 }
 
 ThreadPoolDevice::~ThreadPoolDevice() {}

@@ -30,6 +30,13 @@ void Reshape(OpKernelContext *context, const Tensor &input_indices_in,
              const Tensor &input_shape_in, const Tensor &target_shape_in,
              Tensor* output_indices, Tensor* output_shape);
 
+#if GOOGLE_CUDA
+void ReshapeGPU(OpKernelContext *context, const Tensor &input_indices_in,
+             const Tensor &input_shape_in, const Tensor &target_shape_in,
+             int output_indices_idx, int output_shape_idx);
+
+#endif  // GOOGLE_CUDA
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_KERNELS_RESHAPE_UTIL_H_

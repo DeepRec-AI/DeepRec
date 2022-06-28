@@ -10,18 +10,18 @@ enum StorageType {
   DRAM = 1;
   PMEM_MEMKIND = 2;
   PMEM_LIBPMEM = 3;
-  SSD = 4;
+  SSDHASH = 4;
   LEVELDB = 5;
 
   // two level
   DRAM_PMEM = 11;
-  DRAM_SSD = 12;
+  DRAM_SSDHASH = 12;
   HBM_DRAM = 13;
   DRAM_LEVELDB = 14;
 
   // three level
-  DRAM_PMEM_SSD = 101;
-  HBM_DRAM_SSD = 102;
+  DRAM_PMEM_SSDHASH = 101;
+  HBM_DRAM_SSDHASH = 102;
 
 }
 

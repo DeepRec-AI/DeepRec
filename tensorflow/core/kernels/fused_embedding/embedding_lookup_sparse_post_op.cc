@@ -406,7 +406,7 @@ class FusedSafeEmbeddingPostLookupGradOp : public OpKernel {
           else {
             for (int k = 0; k < emb_vec_size; ++k) {
               grad[j*emb_vec_size + k] = top_grad[idx*emb_vec_size + k] / f_nums[idx];
-              if (l2_norm[j] > max_norm_) {
+              if (max_norm_ > 0.0 && l2_norm[j] > max_norm_) {
                 grad[j*emb_vec_size + k] *= max_norm_ / l2_norm[j];
               }
             }
@@ -421,7 +421,7 @@ class FusedSafeEmbeddingPostLookupGradOp : public OpKernel {
           else {
             for (int k = 0; k < emb_vec_size; ++k) {
               grad[j*emb_vec_size + k] = top_grad[idx*emb_vec_size + k] / std::sqrt(f_nums[idx]);
-              if (l2_norm[j] > max_norm_) {
+              if (max_norm_ > 0.0 && l2_norm[j] > max_norm_) {
                 grad[j*emb_vec_size + k] *= max_norm_ / l2_norm[j];
               }
             }

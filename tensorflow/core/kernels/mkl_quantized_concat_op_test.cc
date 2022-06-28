@@ -54,10 +54,10 @@ class ConvMklToTF : public OpsTestBase {
   template <typename T>
   void ConvertMKL2TF(DataType dtype, const Tensor& first, const Tensor& second,
                      Tensor& output) {
-    // Create an MKL to TF conversion node and execute it
+    // Create an OneDNN to TF conversion node and execute it
     TF_EXPECT_OK(NodeDefBuilder("mkl_to_tf_op", "_MklToTf")
                      .Input(FakeInput(dtype))     // Input
-                     .Input(FakeInput(DT_UINT8))  // MKL second tensor
+                     .Input(FakeInput(DT_UINT8))  // OneDNN second tensor
                      .Attr("T", dtype)
                      .Attr("_kernel", "MklOp")
                      .Finalize(node_def()));
@@ -97,10 +97,10 @@ void QuantizedConcatTest::TestSmall8Bit(float first_min, float first_max,
                    .Input(FakeInput(DT_INT32))
                    .Input(FakeInput(2, DT_FLOAT))
                    .Input(FakeInput(2, DT_FLOAT))
-                   .Input(FakeInput(2, DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))     // MKL second tensor
-                   .Input(FakeInput(2, DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(2, DT_UINT8))  // MKL second tensor
+                   .Input(FakeInput(2, DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))     // OneDNN second tensor
+                   .Input(FakeInput(2, DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(2, DT_UINT8))  // OneDNN second tensor
                    .Attr("N", 2)
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("Tidx", DT_INT32)
@@ -170,10 +170,10 @@ void QuantizedConcatTest::TestSecondDim8Bit(float first_min, float first_max,
                    .Input(FakeInput(DT_INT32))
                    .Input(FakeInput(2, DT_FLOAT))
                    .Input(FakeInput(2, DT_FLOAT))
-                   .Input(FakeInput(2, DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(DT_UINT8))     // MKL second tensor
-                   .Input(FakeInput(2, DT_UINT8))  // MKL second tensor
-                   .Input(FakeInput(2, DT_UINT8))  // MKL second tensor
+                   .Input(FakeInput(2, DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(DT_UINT8))     // OneDNN second tensor
+                   .Input(FakeInput(2, DT_UINT8))  // OneDNN second tensor
+                   .Input(FakeInput(2, DT_UINT8))  // OneDNN second tensor
                    .Attr("N", 2)
                    .Attr("T", DataTypeToEnum<quint8>::v())
                    .Attr("Tidx", DT_INT32)

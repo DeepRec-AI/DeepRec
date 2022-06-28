@@ -19,7 +19,7 @@ limitations under the License.
 #define EIGEN_USE_THREADS
 #include <math.h>
 
-#include "mkldnn.hpp"
+#include "dnnl.hpp"
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -95,7 +95,7 @@ class MklRequantizePerChannelOp : public OpKernel {
                               static_cast<float>(1L << 31));
       }
 
-      mkldnn::primitive_attr reorder_attr;
+      dnnl::primitive_attr reorder_attr;
       reorder_attr.set_output_scales(2, scales);
 
       memory::dims dims_mkl_order =
@@ -125,7 +125,7 @@ class MklRequantizePerChannelOp : public OpKernel {
       std::unique_ptr<memory> output_mem_prim(
           new MEMORY_CONSTRUCTOR_USING_MD(output_md, cpu_engine_, output_buf));
 
-      mkldnn::reorder::primitive_desc reorder_pd =
+      dnnl::reorder::primitive_desc reorder_pd =
           REORDER_PD_CONSTRUCTOR_WITH_ATTR(
               GET_MEMORY_PRIMITIVE_DESC_FROM_MEM_PTR(input_mem_prim),
               GET_MEMORY_PRIMITIVE_DESC_FROM_MEM_PTR(output_mem_prim),
@@ -133,17 +133,12 @@ class MklRequantizePerChannelOp : public OpKernel {
       std::shared_ptr<stream> reorder_stream;
       MklDnnThreadPool eigen_tp(ctx);
       reorder_stream.reset(CreateStream(&eigen_tp, cpu_engine_));
-#ifndef ENABLE_MKLDNN_V1
-      reorder_stream->submit(
-          {mkldnn::reorder(reorder_pd, *input_mem_prim, *output_mem_prim)});
-#else
-      std::unordered_map<int, mkldnn::memory> reorder_args = {
-          {MKLDNN_ARG_FROM, *input_mem_prim},
-          {MKLDNN_ARG_TO, *output_mem_prim}};
-      std::unique_ptr<mkldnn::primitive> reorder_prim(
-          new mkldnn::reorder(reorder_pd));
+      std::unordered_map<int, dnnl::memory> reorder_args = {
+          {DNNL_ARG_FROM, *input_mem_prim},
+          {DNNL_ARG_TO, *output_mem_prim}};
+      std::unique_ptr<dnnl::primitive> reorder_prim(
+          new dnnl::reorder(reorder_pd));
       reorder_prim->execute(*reorder_stream, reorder_args);
-#endif  // !ENABLE_MKLDNN_V1
 
       Tensor* output_min = nullptr;
       Tensor* output_max = nullptr;
@@ -154,7 +149,7 @@ class MklRequantizePerChannelOp : public OpKernel {
 
       output_min->flat<float>()(0) = input_requested_min_float;
       output_max->flat<float>()(0) = input_requested_max_float;
-    } catch (mkldnn::error& e) {
+    } catch (dnnl::error& e) {
       string error_msg = "Status: " + std::to_string(e.status) +
                          ", message: " + std::string(e.message) + ", in file " +
                          std::string(__FILE__) + ":" + std::to_string(__LINE__);

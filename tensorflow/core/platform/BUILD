@@ -270,6 +270,7 @@ cc_library(
 cc_library(
     name = "tstring",
     hdrs = ["tstring.h"],
+    deps = [":stringpiece",],
 )
 
 cc_library(

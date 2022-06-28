@@ -1,5 +1,5 @@
 diff --git a/Eigen/Core b/Eigen/Core
-index 688361d..ee5a5f1 100644
+index 688361d46..ee5a5f1dd 100644
 --- a/Eigen/Core
 +++ b/Eigen/Core
 @@ -163,6 +163,7 @@ using std::ptrdiff_t;
@@ -11,7 +11,7 @@ index 688361d..ee5a5f1 100644
  #include "src/Core/arch/Default/GenericPacketMathFunctionsFwd.h"
  
 diff --git a/Eigen/src/Core/GenericPacketMath.h b/Eigen/src/Core/GenericPacketMath.h
-index fb530e6..637aac9 100644
+index fb530e6a4..637aac9f9 100644
 --- a/Eigen/src/Core/GenericPacketMath.h
 +++ b/Eigen/src/Core/GenericPacketMath.h
 @@ -137,6 +137,22 @@ template <typename Src, typename Tgt> struct type_casting_traits {
@@ -38,7 +38,7 @@ index fb530e6..637aac9 100644
  /** \internal \returns static_cast<TgtType>(a) (coeff-wise) */
  template <typename SrcPacket, typename TgtPacket>
 diff --git a/Eigen/src/Core/arch/AVX/MathFunctions.h b/Eigen/src/Core/arch/AVX/MathFunctions.h
-index c539443..b746ff4 100644
+index c5394430f..b746ff43e 100644
 --- a/Eigen/src/Core/arch/AVX/MathFunctions.h
 +++ b/Eigen/src/Core/arch/AVX/MathFunctions.h
 @@ -152,6 +152,15 @@ Packet4d prsqrt<Packet4d>(const Packet4d& x) {
@@ -58,7 +58,7 @@ index c539443..b746ff4 100644
  }  // end namespace internal
  
 diff --git a/Eigen/src/Core/arch/AVX/PacketMath.h b/Eigen/src/Core/arch/AVX/PacketMath.h
-index 5ab989c..fcd2d14 100644
+index 5ab989ca9..fcd2d148c 100644
 --- a/Eigen/src/Core/arch/AVX/PacketMath.h
 +++ b/Eigen/src/Core/arch/AVX/PacketMath.h
 @@ -31,6 +31,7 @@ namespace internal {
@@ -434,7 +434,7 @@ index 5ab989c..fcd2d14 100644
  
  } // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX/TypeCasting.h b/Eigen/src/Core/arch/AVX/TypeCasting.h
-index 1810435..d507fb6 100644
+index 181043588..d507fb67b 100644
 --- a/Eigen/src/Core/arch/AVX/TypeCasting.h
 +++ b/Eigen/src/Core/arch/AVX/TypeCasting.h
 @@ -35,23 +35,6 @@ struct type_casting_traits<int, float> {
@@ -531,7 +531,7 @@ index 1810435..d507fb6 100644
  
  } // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX512/MathFunctions.h b/Eigen/src/Core/arch/AVX512/MathFunctions.h
-index 67043d0..db27890 100644
+index 67043d01b..db278909b 100644
 --- a/Eigen/src/Core/arch/AVX512/MathFunctions.h
 +++ b/Eigen/src/Core/arch/AVX512/MathFunctions.h
 @@ -29,6 +29,12 @@ namespace internal {
@@ -608,7 +608,7 @@ index 67043d0..db27890 100644
  
  }  // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/AVX512/PacketMath.h b/Eigen/src/Core/arch/AVX512/PacketMath.h
-index 99ccc03..5d0a56b 100644
+index 99ccc038c..5d0a56b93 100644
 --- a/Eigen/src/Core/arch/AVX512/PacketMath.h
 +++ b/Eigen/src/Core/arch/AVX512/PacketMath.h
 @@ -31,6 +31,7 @@ namespace internal {
@@ -1112,7 +1112,7 @@ index 99ccc03..5d0a56b 100644
  } // end namespace internal
  
 diff --git a/Eigen/src/Core/arch/AVX512/TypeCasting.h b/Eigen/src/Core/arch/AVX512/TypeCasting.h
-index a821769..08aa52f 100644
+index a82176941..08aa52ff4 100644
 --- a/Eigen/src/Core/arch/AVX512/TypeCasting.h
 +++ b/Eigen/src/Core/arch/AVX512/TypeCasting.h
 @@ -40,6 +40,33 @@ template<> EIGEN_STRONG_INLINE Packet16h pcast<Packet16f, Packet16h>(const Packe
@@ -1151,7 +1151,7 @@ index a821769..08aa52f 100644
  } // end namespace Eigen
 diff --git a/Eigen/src/Core/arch/Default/BFloat16.h b/Eigen/src/Core/arch/Default/BFloat16.h
 new file mode 100644
-index 0000000..aec7381
+index 000000000..aec73817f
 --- /dev/null
 +++ b/Eigen/src/Core/arch/Default/BFloat16.h
 @@ -0,0 +1,749 @@
@@ -1905,7 +1905,7 @@ index 0000000..aec7381
 +
 +#endif // EIGEN_BFLOAT16_H
 diff --git a/Eigen/src/Core/arch/Default/TypeCasting.h b/Eigen/src/Core/arch/Default/TypeCasting.h
-index b6df984..c94b09f 100644
+index b6df98468..c94b09fe8 100644
 --- a/Eigen/src/Core/arch/Default/TypeCasting.h
 +++ b/Eigen/src/Core/arch/Default/TypeCasting.h
 @@ -71,6 +71,47 @@ template<>
@@ -1957,7 +1957,7 @@ index b6df984..c94b09f 100644
  }
  
 diff --git a/Eigen/src/Core/arch/NEON/TypeCasting.h b/Eigen/src/Core/arch/NEON/TypeCasting.h
-index 4aa98e3..2734eac 100644
+index 4aa98e370..2734eacff 100644
 --- a/Eigen/src/Core/arch/NEON/TypeCasting.h
 +++ b/Eigen/src/Core/arch/NEON/TypeCasting.h
 @@ -347,6 +347,72 @@ template<> EIGEN_STRONG_INLINE Packet2l preinterpret<Packet2l,Packet2ul>(const P
@@ -2034,7 +2034,7 @@ index 4aa98e3..2734eac 100644
  
  template<> EIGEN_STRONG_INLINE Packet2f pcast<Packet2d,Packet2f>(const Packet2d& a) { return vcvt_f32_f64(a); }
 diff --git a/Eigen/src/Core/util/ConfigureVectorization.h b/Eigen/src/Core/util/ConfigureVectorization.h
-index 952abc3..92d9da7 100644
+index 952abc306..92d9da7b8 100644
 --- a/Eigen/src/Core/util/ConfigureVectorization.h
 +++ b/Eigen/src/Core/util/ConfigureVectorization.h
 @@ -289,6 +289,9 @@
@@ -2048,7 +2048,7 @@ index 952abc3..92d9da7 100644
  
      // Disable AVX support on broken xcode versions
 diff --git a/Eigen/src/Geometry/arch/Geometry_SSE.h b/Eigen/src/Geometry/arch/Geometry_SSE.h
-index 108cc9f..43677f4 100644
+index 108cc9f8e..43677f478 100644
 --- a/Eigen/src/Geometry/arch/Geometry_SSE.h
 +++ b/Eigen/src/Geometry/arch/Geometry_SSE.h
 @@ -33,13 +33,14 @@ struct quat_product<Architecture::SSE, Derived, OtherDerived, float>
@@ -2074,7 +2074,7 @@ index 108cc9f..43677f4 100644
    }
  };
 diff --git a/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h b/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
-index 4452481..ea286fe 100644
+index 445248163..ea286fee1 100644
 --- a/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
 +++ b/unsupported/Eigen/CXX11/src/Tensor/TensorRandom.h
 @@ -101,6 +101,17 @@ Eigen::half RandomToTypeUniform<Eigen::half>(uint64_t* state, uint64_t stream) {
@@ -2096,7 +2096,7 @@ index 4452481..ea286fe 100644
  template <> EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
  float RandomToTypeUniform<float>(uint64_t* state, uint64_t stream) {
 diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
-index 43a2746..6b62ba8 100644
+index 43a274651..603387d91 100644
 --- a/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
 +++ b/unsupported/Eigen/CXX11/src/ThreadPool/NonBlockingThreadPool.h
 @@ -10,6 +10,13 @@
@@ -2285,17 +2285,30 @@ index 43a2746..6b62ba8 100644
    void Cancel() EIGEN_OVERRIDE {
      cancelled_ = true;
      done_ = true;
-@@ -235,6 +376,9 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -161,6 +302,12 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+     }
+   }
+ 
++  void SetThreadPoolAffinity(const cpu_set_t& cpuset) EIGEN_OVERRIDE {
++    for (int i = 0; i < num_threads_; ++i) {
++      thread_data_[i].thread->SetThreadPoolAffinity(cpuset);
++    }
++  }
++
+  private:
+   // Create a single atomic<int> that encodes start and limit information for
+   // each thread.
+@@ -235,6 +382,9 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
    Environment env_;
    const int num_threads_;
    const bool allow_spinning_;
 +  std::atomic<int64_t> alien_next_idx_{0};
 +  std::vector<int> next_idx_;
-+  MaxSizeVector<std::atomic_int64_t> pending_cost_;
++  MaxSizeVector<std::atomic<int64_t>> pending_cost_;
    MaxSizeVector<ThreadData> thread_data_;
    MaxSizeVector<MaxSizeVector<unsigned>> all_coprimes_;
    MaxSizeVector<EventCount::Waiter> waiters_;
-@@ -244,6 +388,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -244,6 +394,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
    std::atomic<bool> done_;
    std::atomic<bool> cancelled_;
    EventCount ec_;
@@ -2303,7 +2316,7 @@ index 43a2746..6b62ba8 100644
  #ifndef EIGEN_THREAD_LOCAL
    std::unique_ptr<Barrier> init_barrier_;
    std::mutex per_thread_map_mutex_;  // Protects per_thread_map_.
-@@ -299,8 +444,10 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -299,8 +450,10 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
        while (!cancelled_) {
          Task t = q.PopFront();
          if (!t.f) {
@@ -2314,7 +2327,7 @@ index 43a2746..6b62ba8 100644
              t = GlobalSteal();
              if (!t.f) {
                // Leave one thread spinning. This reduces latency.
-@@ -322,8 +469,13 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -322,8 +475,13 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
              }
            }
          }
@@ -2328,7 +2341,7 @@ index 43a2746..6b62ba8 100644
          }
        }
      }
-@@ -333,6 +485,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -333,6 +491,7 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
    // limit) in best-effort manner.
    Task Steal(unsigned start, unsigned limit) {
      PerThread* pt = GetPerThread();
@@ -2336,7 +2349,7 @@ index 43a2746..6b62ba8 100644
      const size_t size = limit - start;
      unsigned r = Rand(&pt->rand);
      // Reduce r into [0, size) range, this utilizes trick from
-@@ -343,9 +496,14 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -343,9 +502,14 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
      unsigned inc = all_coprimes_[size - 1][index];
  
      for (unsigned i = 0; i < size; i++) {
@@ -2353,7 +2366,7 @@ index 43a2746..6b62ba8 100644
          return t;
        }
        victim += inc;
-@@ -392,6 +550,11 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
+@@ -392,6 +556,11 @@ class ThreadPoolTempl : public Eigen::ThreadPoolInterface {
          return false;
        } else {
          *t = thread_data_[victim].queue.PopBack();
@@ -2366,7 +2379,7 @@ index 43a2746..6b62ba8 100644
        }
      }
 diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h b/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h
-index b572ebc..e98a0ff 100644
+index b572ebcdf..e98a0ff12 100644
 --- a/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h
 +++ b/unsupported/Eigen/CXX11/src/ThreadPool/RunQueue.h
 @@ -96,6 +96,20 @@ class RunQueue {
@@ -2412,10 +2425,18 @@ index b572ebc..e98a0ff 100644
    // Returns number of elements removed.
    unsigned PopBackHalf(std::vector<Work>* result) {
 diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
-index d94a064..a92e7de 100644
+index d94a06416..32f576e5c 100644
 --- a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
 +++ b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadEnvironment.h
-@@ -14,7 +14,12 @@ namespace Eigen {
+@@ -10,11 +10,20 @@
+ #ifndef EIGEN_CXX11_THREADPOOL_THREAD_ENVIRONMENT_H
+ #define EIGEN_CXX11_THREADPOOL_THREAD_ENVIRONMENT_H
+ 
++#include <iostream>
++#include <sched.h>
++#include <pthread.h>
++
+ namespace Eigen {
  
  struct StlThreadEnvironment {
    struct Task {
@@ -2428,7 +2449,20 @@ index d94a064..a92e7de 100644
    };
  
    // EnvThread constructor must start the thread,
-@@ -31,7 +36,7 @@ struct StlThreadEnvironment {
+@@ -25,13 +34,20 @@ struct StlThreadEnvironment {
+     ~EnvThread() { thr_.join(); }
+     // This function is called when the threadpool is cancelled.
+     void OnCancel() { }
++    void SetThreadPoolAffinity(const cpu_set_t& cpuset) {
++      int rc = pthread_setaffinity_np(thr_.native_handle(),
++                                      sizeof(cpu_set_t), &cpuset);
++      if (rc != 0) {
++        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
++      }
++    }
+ 
+    private:
+     std::thread thr_;
    };
  
    EnvThread* CreateThread(std::function<void()> f) { return new EnvThread(std::move(f)); }
@@ -2438,10 +2472,19 @@ index d94a064..a92e7de 100644
  };
  
 diff --git a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h
-index 25030dc..8156930 100644
+index 25030dc0b..c35c05676 100644
 --- a/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h
 +++ b/unsupported/Eigen/CXX11/src/ThreadPool/ThreadPoolInterface.h
-@@ -19,6 +19,10 @@ class ThreadPoolInterface {
+@@ -10,6 +10,8 @@
+ #ifndef EIGEN_CXX11_THREADPOOL_THREAD_POOL_INTERFACE_H
+ #define EIGEN_CXX11_THREADPOOL_THREAD_POOL_INTERFACE_H
+ 
++#include <sched.h>
++
+ namespace Eigen {
+ 
+ // This defines an interface that ThreadPoolDevice can take to use
+@@ -19,6 +21,10 @@ class ThreadPoolInterface {
    // Submits a closure to be run by a thread in the pool.
    virtual void Schedule(std::function<void()> fn) = 0;
  
@@ -2452,7 +2495,7 @@ index 25030dc..8156930 100644
    // Submits a closure to be run by threads in the range [start, end) in the
    // pool.
    virtual void ScheduleWithHint(std::function<void()> fn, int /*start*/,
-@@ -28,6 +32,18 @@ class ThreadPoolInterface {
+@@ -28,6 +34,18 @@ class ThreadPoolInterface {
      Schedule(fn);
    }
  
@@ -2471,8 +2514,19 @@ index 25030dc..8156930 100644
    // If implemented, stop processing the closures that have been enqueued.
    // Currently running closures may still be processed.
    // If not implemented, does nothing.
+@@ -40,6 +58,10 @@ class ThreadPoolInterface {
+   // from one of the threads in the pool. Returns -1 otherwise.
+   virtual int CurrentThreadId() const = 0;
+ 
++  // set thread pool affinity, all threads in the pool will pin
++  // to cpuset.
++  virtual void SetThreadPoolAffinity(const cpu_set_t& cpuset) {}
++
+   virtual ~ThreadPoolInterface() {}
+ };
+ 
 diff --git a/unsupported/Eigen/SpecialFunctions b/unsupported/Eigen/SpecialFunctions
-index a098ce8..89ee368 100644
+index a098ce871..89ee368fc 100644
 --- a/unsupported/Eigen/SpecialFunctions
 +++ b/unsupported/Eigen/SpecialFunctions
 @@ -70,6 +70,7 @@ namespace Eigen {
@@ -2485,7 +2539,7 @@ index a098ce8..89ee368 100644
  #include "src/SpecialFunctions/SpecialFunctionsArrayAPI.h"
 diff --git a/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h b/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
 new file mode 100644
-index 0000000..2d94231
+index 000000000..2d94231f0
 --- /dev/null
 +++ b/unsupported/Eigen/src/SpecialFunctions/SpecialFunctionsBFloat16.h
 @@ -0,0 +1,58 @@

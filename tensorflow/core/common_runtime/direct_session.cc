@@ -156,6 +156,23 @@ string GetRendezvousKey(const string& tensor_name,
                          frame_iter.frame_id, ":", frame_iter.iter_id);
 }
 
+// TODO: Any better allocate policy?
+void AllocateVisibleCpusForSession(const std::vector<unsigned>& visible_cpus, int session_num,
+                                   std::vector<std::vector<unsigned> >& visible_cpus_per_session) {
+  if (session_num > 0) {
+    int cpus_count_per_session = visible_cpus.size() / session_num;
+    for (int i = 0; i < session_num; ++i) {
+      std::vector<unsigned> tmp;
+      int start_idx = i*cpus_count_per_session;
+      tmp.insert(tmp.end(), visible_cpus.begin()+start_idx,
+                 visible_cpus.begin()+start_idx+cpus_count_per_session);
+      visible_cpus_per_session.push_back(tmp);
+    }
+  } else {
+    LOG(FATAL) << "Session num of session group is " << session_num << ", should session_num > 0";
+  }
+}
+
 }  // namespace
 
 class DirectSessionFactory : public SessionFactory {
@@ -193,8 +210,15 @@ class DirectSessionFactory : public SessionFactory {
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
         options, "/job:localhost/replica:0/task:0", &devices));
 
+#ifdef TENSORFLOW_USE_NUMA
+    std::vector<unsigned> visible_cpus;
+    DirectSession* session =
+        new DirectSession(options, new DeviceMgr(std::move(devices)),
+                          true, this, visible_cpus);
+#else
     DirectSession* session =
         new DirectSession(options, new DeviceMgr(std::move(devices)), true, this);
+#endif
     {
       mutex_lock l(sessions_lock_);
       sessions_.push_back(session);
@@ -232,19 +256,62 @@ class DirectSessionFactory : public SessionFactory {
     if (options.config.graph_options().build_cost_model() > 0) {
       EnableCPUAllocatorFullStats(true);
     }
+
+#ifdef TENSORFLOW_USE_NUMA
+    int numa_num = port::NUMANumNodes();
+    std::vector<unsigned> visible_cpus;
+    for (int i = 0; i < numa_num; ++i) {
+      std::vector<unsigned> cpus;
+      port::NUMANodeCPUs(i, &cpus);
+      visible_cpus.insert(visible_cpus.end(), cpus.begin(), cpus.end());
+    }
+    std::vector<std::vector<unsigned> > visible_cpus_per_session;
+    AllocateVisibleCpusForSession(visible_cpus, session_num,
+                                  visible_cpus_per_session);
+#endif  // TENSORFLOW_USE_NUMA
+
+    // Create shared resource for cpu devices
+    ResourceMgr* shared_rmgr = new ResourceMgr("localhost");
+    DeviceResourceMgrMap dev_rmgr_map;
+    std::string dev_prefix("/job:localhost/replica:0/task:0");
+    for (int i = 0; i < session_num; ++i) {
+      std::string dev_name = dev_prefix + "/device:CPU:" + std::to_string(i);
+      dev_rmgr_map.device_rmgr_map[dev_name] = shared_rmgr;
+      dev_name = dev_prefix + "/device:cpu:" + std::to_string(i);
+      dev_rmgr_map.device_rmgr_map[dev_name] = shared_rmgr;
+    }
+
     std::vector<std::unique_ptr<Device>> devices;
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
-        options, "/job:localhost/replica:0/task:0", &devices));
+        options, "/job:localhost/replica:0/task:0",
+        &devices, &dev_rmgr_map));
 
     DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
 
     SessionGroup* session_group = new SessionGroup();
+#ifdef TENSORFLOW_USE_NUMA
+    DirectSession* leader_session =
+        new DirectSession(options, device_mgr, true, this,
+                          visible_cpus_per_session[0]);
+#else
     DirectSession* leader_session =
         new DirectSession(options, device_mgr, true, this);
+#endif  // TENSORFLOW_USE_NUMA
     session_group->CreateLeaderSession(leader_session);
     for (int i = 1; i < session_num; ++i) {
+      std::vector<std::unique_ptr<Device>> dev;
+      TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
+          options, "/job:localhost/replica:0/task:0", &dev, &dev_rmgr_map));
+      DeviceMgr* dev_mgr = new DeviceMgr(std::move(dev));
+
+#ifdef TENSORFLOW_USE_NUMA
       DirectSession* follower_session =
-          new DirectSession(options, device_mgr, false, this);
+          new DirectSession(options, dev_mgr,true, this,
+                            visible_cpus_per_session[i]);
+#else
+      DirectSession* follower_session =
+          new DirectSession(options, dev_mgr, true, this);
+#endif  // TENSORFLOW_USE_NUMA
       session_group->CreateFollowerSession(follower_session);
       {
         mutex_lock l(sessions_lock_);
@@ -369,7 +436,12 @@ bool DirectSession::ShouldUseRunHandlerPool(
 DirectSession::DirectSession(const SessionOptions& options,
                              const DeviceMgr* device_mgr,
                              bool owd_device_mgr,
+#ifdef TENSORFLOW_USE_NUMA
+                             DirectSessionFactory* factory,
+                             const std::vector<unsigned>& visible_cpus)
+#else
                              DirectSessionFactory* const factory)
+#endif
     : options_(options),
       own_device_mgr_(owd_device_mgr),
       device_mgr_(device_mgr),
@@ -403,12 +475,30 @@ DirectSession::DirectSession(const SessionOptions& options,
     MemoryPlannerFactory::GetMemoryPlanner()->SetThreadPool(GlobalThreadPool(options));
   }
 
+  bool use_cost_model_executor = false;
+  bool use_inline_executor = false;
+  bool pin_threadpool_to_cpu_core = false;
+  Status s =
+      ReadBoolFromEnvVar("USE_COST_MODEL_EXECUTOR", false, &use_cost_model_executor);
+  if (!s.ok()) {
+    LOG(FATAL) << s.error_message();
+  }
+  s = ReadBoolFromEnvVar("USE_INLINE_EXECUTOR", false, &use_inline_executor);
+  if (!s.ok()) {
+    LOG(FATAL) << s.error_message();
+  }
+  s = ReadBoolFromEnvVar("SET_SESSION_THREAD_POOL_AFFINITY", false,
+                         &pin_threadpool_to_cpu_core);
+  if (!s.ok()) {
+    LOG(FATAL) << s.error_message();
+  }
+
   // Select which executor to use
   if (options_.config.executor_policy() ==
-      ExecutorPolicy::USE_COST_MODEL_EXECUTOR) {
+      ExecutorPolicy::USE_COST_MODEL_EXECUTOR || use_cost_model_executor) {
     run_cost_model_executor_ = true;
   } else if (options_.config.executor_policy() ==
-             ExecutorPolicy::USE_INLINE_EXECUTOR) {
+             ExecutorPolicy::USE_INLINE_EXECUTOR || use_inline_executor) {
     run_in_caller_thread_ = true;
   }
 
@@ -446,6 +536,23 @@ DirectSession::DirectSession(const SessionOptions& options,
     }
     ++devices_added;
   }
+
+#ifdef TENSORFLOW_USE_NUMA
+  // thread pool set affinity
+  if (pin_threadpool_to_cpu_core && options_.config.use_per_session_threads()) {
+    if (thread_pools_.size() != 1) {
+      LOG(FATAL) << "Thread pool num is not 1 with 'use_per_session_threads' option.";
+    }
+
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    for(auto c : visible_cpus) {
+      CPU_SET(c, &cpuset);
+      LOG(INFO) << "Current DirectSession " << this << " will be pinned to core: " << c;
+    }
+    thread_pools_[0].first->SetThreadPoolAffinity(cpuset);
+  }
+#endif
 }
 
 DirectSession::~DirectSession() {

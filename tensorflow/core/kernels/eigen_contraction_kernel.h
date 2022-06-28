@@ -20,9 +20,9 @@ limitations under the License.
 // Eigen tensor contractions (small matrix multiplication kernel used to
 // multiple together blocks of the original tensors).
 //
-// 1) --define tensorflow_mkldnn_contraction_kernel=1
-//    Use Mkldnn single threaded sgemm. The mkldnn kernels are generated at
-//    runtime and use avx/avx2/fma/avx512 based on cpu status registers
+// 1) --define tensorflow_dnnl_contraction_kernel=1
+//    Use OneDNN single threaded sgemm. The dnnl kernels are generated at
+//    runtime and use amx/avx/avx2/fma/avx512 based on cpu status registers
 //    (https://en.wikipedia.org/wiki/CPUID).
 //
 // If you use `tensor.contract(other_tensor)` in your code, you must include
@@ -39,7 +39,7 @@ limitations under the License.
 #include "third_party/eigen3/unsupported/Eigen/CXX11/FixedPoint"
 // clang-format on
 
-#if defined(TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL)
+#if defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
 #include "dnnl.h"
 #endif
 
@@ -118,14 +118,14 @@ struct gemm_pack_colmajor_block<Scalar, IndexType, DataMapper,
 
 #endif  // TENSORFLOW_USE_CUSTOM_CONTRACTION_KERNEL
 
-// Enabled by build option: "--define tensorflow_mkldnn_contraction_kernel=1"
-#if defined(TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL)
+// Enabled by build option: "--define tensorflow_dnnl_contraction_kernel=1"
+#if defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
 
 template <typename Scalar, typename IndexType, typename OutputMapper,
           bool ConjugateLhs = false, bool ConjugateRhs = false>
 struct dnnl_gemm_kernel;
 
-// dnnl_gemm_kernel for floats defined as a thin layer on top of mkldnn_sgemm.
+// dnnl_gemm_kernel for floats defined as a thin layer on top of dnnl_sgemm.
 template <typename IndexType, typename OutputMapper, bool ConjugateLhs,
           bool ConjugateRhs>
 struct dnnl_gemm_kernel</*Scalar*/ float, IndexType, OutputMapper, ConjugateLhs,
@@ -182,7 +182,7 @@ struct dnnl_gemm_kernel</*Scalar*/ float, IndexType, OutputMapper, ConjugateLhs,
 
 template <typename IndexType, typename OutputMapper, bool ConjugateLhs = false,
           bool ConjugateRhs = false>
-struct mkldnn_gemm_s8u8s32_kernel {
+struct dnnl_gemm_s8u8s32_kernel {
   static_assert(!ConjugateLhs, "DNNL kernel doesn't support ConjugateLhs");
   static_assert(!ConjugateRhs, "DNNL kernel doesn't support ConjugateRhs");
 
@@ -249,16 +249,16 @@ struct mkldnn_gemm_s8u8s32_kernel {
   }
 };
 
-// For mkldnn_sgemm having the right dimensions (especially for small matrices)
+// For dnnl_sgemm having the right dimensions (especially for small matrices)
 // is more important than fitting all the working set in L1/L2 caches.
 // TODO(ezhulenev): Do better heuristics.
 template <typename StorageIndex, int sharding_type>
 class TensorContractionBlocking<float, float, float, StorageIndex,
                                 sharding_type> {
-  // For now mkldnn has only mkldnn_sgemm (gemm for floats).
+  // For now dnnl has only dnnl_sgemm (gemm for floats).
   using Scalar = float;
 
-  // Adjust the block sizes to work well with mkldnn kernels.
+  // Adjust the block sizes to work well with dnnl kernels.
 
   // Multiply default choice of block size along M and N dimensions.
   // TODO(ezhulenev): Explore if this can work in general (kScaleM=2.0 worked
@@ -266,10 +266,10 @@ class TensorContractionBlocking<float, float, float, StorageIndex,
   static constexpr float kScaleM = 1.5;
   static constexpr float kScaleN = 1.0;
 
-  // Mkldnn Avx/Avx2/Avx512 unroll factors are: 8/16/48.
+  // OneDNN Avx/Avx2/Avx512 unroll factors are: 8/16/48.
   static constexpr StorageIndex kUnrollM = 48;
 
-  // Mkldnn Avx/Avx2/Avx512 unroll factors are: 6/6/8.
+  // OneDNN Avx/Avx2/Avx512 unroll factors are: 6/6/8.
   static constexpr StorageIndex kUnrollN = 24;
 
  public:
@@ -292,7 +292,7 @@ class TensorContractionBlocking<float, float, float, StorageIndex,
     // block sizes for DNNL.
     if (!UseCustomContractionKernels()) return;
 
-    // 2. And refine them to work well with mkldnn sgemm.
+    // 2. And refine them to work well with dnnl sgemm.
     mc_ = (std::min)(
         m, Eigen::divup(static_cast<StorageIndex>(mc_ * kScaleM), kUnrollM) *
                kUnrollM);
@@ -502,7 +502,7 @@ template <typename StorageIndex, typename OutputMapper>
 struct GemmKernelProvider<Eigen::QInt32, Eigen::QInt8, Eigen::QUInt8,
                           StorageIndex, OutputMapper> {
   enum { Defined = 1 };
-  using GemmKernel = mkldnn_gemm_s8u8s32_kernel<StorageIndex, OutputMapper>;
+  using GemmKernel = dnnl_gemm_s8u8s32_kernel<StorageIndex, OutputMapper>;
 };
 
 // NOTE: 'std::enable_if' doesn't work for template specializations. See
@@ -883,7 +883,7 @@ REGISTER_TENSOR_CONTRACTION_KERNEL_NO_FALLBACK(Eigen::QInt32, Eigen::QInt8,
 
 #undef REGISTER_TENSOR_CONTRACTION_KERNEL
 
-#endif  // defined(TENSORFLOW_USE_MKLDNN_CONTRACTION_KERNEL)
+#endif  // defined(TENSORFLOW_USE_DNNL_CONTRACTION_KERNEL)
 
 }  // namespace internal
 }  // namespace Eigen

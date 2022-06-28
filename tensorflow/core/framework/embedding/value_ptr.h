@@ -132,7 +132,7 @@ struct NormalHeader {
         freq_counter, freq_counter + 1);
   }
 
-  inline void AddFreq(int64 count) {
+  inline void AddFreq(int count) {
     __sync_bool_compare_and_swap(&freq_counter,
         freq_counter, freq_counter + count);
   }
@@ -161,6 +161,7 @@ struct FixedLengthHeader {
   inline void SetGlobalStep(int64 gs) {
     int64 temp = global_step;
     temp &= 0xffff000000000000;
+    gs &= 0x0000ffffffffffff;
     temp |= gs;
     global_step = temp;
   }
@@ -178,7 +179,7 @@ struct FixedLengthHeader {
         freq_counter, freq_counter + 1);
   }
 
-  inline void AddFreq(int64 count) {
+  inline void AddFreq(int count) {
     __sync_bool_compare_and_swap(&freq_counter,
         freq_counter, freq_counter + count);
   }
@@ -273,8 +274,12 @@ class ValuePtr {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
   }
 
-  virtual void AddFreq(int64 count) {
+  virtual void AddFreq(int count) {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
+  }
+
+  virtual void SetValue(V val, size_t size){
+    LOG(FATAL) << "Unsupport SetValue in subclass of ValuePtrBase";
   }
 
  protected:
@@ -334,7 +339,7 @@ class NormalValuePtr : public ValuePtr<V> {
     return ((NormalHeader*)this->ptr_)->AddFreq();
   }
 
-  void AddFreq(int64 count) {
+  void AddFreq(int count) {
     MetaHeader* meta = (MetaHeader*)this->ptr_;
     return ((NormalHeader*)this->ptr_)->AddFreq(count);
   }
@@ -405,8 +410,14 @@ class NormalContiguousValuePtr : public ValuePtr<V>{
     ((FixedLengthHeader*)this->ptr_)->AddFreq();
   }
 
-  void AddFreq(int64 count) {
+  void AddFreq(int count) {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
+  }
+
+  void SetValue(V val, size_t size){
+    for(int i = 0; i < size; ++i) {
+      *((V*)this->ptr_ + sizeof(FixedLengthHeader) / sizeof(V) + i) = val;
+    }
   }
 };
 

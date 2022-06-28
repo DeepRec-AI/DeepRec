@@ -90,7 +90,7 @@ class LifetimeBin {
   void TrackDeallocate(AllocStats* stats);
   size_t TotalMem() const;
   void Dump() const;
-  void BestFit(LifetimePolicy* policy);
+  bool BestFit(LifetimePolicy* policy);
   void Cleanup();
 
   AllocBlock* FindBlock(AllocStats* stats);
@@ -128,7 +128,7 @@ class LifetimePolicy {
 
   AllocBlock* FindBlock(AllocStats* stats, size_t bin_index);
 
-  void BestFit();
+  bool BestFit();
   size_t Interval();
 
   std::vector<LifetimeBin*>& GetBins();
@@ -213,7 +213,10 @@ class MemoryPlanner : public MemoryPlannerBase {
   // step information
   std::atomic<int64_t> counter_;
   int64 start_step_;
-  int64 stop_step_;
+  int64 stable_step_;
+  int64 max_stat_step_;
+  int64 current_stable_step_;
+  int64 current_stat_step_;
 };
 
 class MemoryPlannerFactory {

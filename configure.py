@@ -1435,6 +1435,8 @@ def main():
   set_build_var(environ_cp, 'TF_ENABLE_PMEM', 'PMEM', 'with_pmem_support',
                 False, 'pmem')
 
+  set_build_var(environ_cp, 'TF_ENABLE_GPU_EV', 'GPU_EV', 'with_gpu_ev_support',
+                False, 'gpu_ev')
 
   set_action_env_var(
       environ_cp,

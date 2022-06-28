@@ -5,6 +5,7 @@
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/dense_hash_map.h"
 #include "tensorflow/core/framework/embedding/leveldb_kv.h"
+#include "tensorflow/core/framework/embedding/ssd_hashkv.h"
 #include "tensorflow/core/framework/embedding/lockless_hash_map.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/lib/core/threadpool.h"
@@ -20,11 +21,13 @@ class EmbeddingVar;
 namespace embedding {
 
 struct StorageConfig {
-  StorageConfig() : type(StorageType::INVALID), path(""), size(0), layout_type(LayoutType::NORMAL) {}
+  StorageConfig() : type(StorageType::INVALID), path(""), layout_type(LayoutType::NORMAL) {
+    size = {1<<30,1<<30,1<<30,1<<30};
+  }
   StorageConfig(StorageType t,
                 const std::string& p,
-                int64 s,
-                const std::string layout) : type(t), path(p), size(s) {
+                const std::vector<int64>& s,
+                const std::string& layout) : type(t), path(p) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
@@ -35,11 +38,12 @@ struct StorageConfig {
       LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
       layout_type = LayoutType::NORMAL;
     }
+    size = s;
   }
   StorageType type;
   LayoutType layout_type;
   std::string path;
-  int64 size;
+  std::vector<int64> size;
 };
 
 template <class K, class V>
@@ -82,6 +86,7 @@ class StorageManager {
     }
     
     switch (sc_.type) {
+      Allocator* alloc_ssd;
       case StorageType::DRAM:
         VLOG(1) << "StorageManager::DRAM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
@@ -93,7 +98,7 @@ class StorageManager {
       case StorageType::PMEM_LIBPMEM:
         VLOG(1) << "StorageManager::PMEM_LIBPMEM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(),
-                                      experimental_pmem_allocator(sc_.path, sc_.size)));
+                                      experimental_pmem_allocator(sc_.path, sc_.size[0])));
         break;
       case StorageType::LEVELDB:
         VLOG(1) << "StorageManager::LEVELDB: " << name_;
@@ -103,12 +108,23 @@ class StorageManager {
         VLOG(1) << "StorageManager::DRAM_PMEM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(),
-                                      experimental_pmem_allocator(sc_.path, sc_.size)));
+                                      experimental_pmem_allocator(sc_.path, sc_.size[1])));
         break;
       case StorageType::DRAM_LEVELDB:
         VLOG(1) << "StorageManager::DRAM_LEVELDB: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
-        kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), ev_allocator()));
+        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), cpu_allocator()));
+        kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), cpu_allocator()));
+        break;
+      case StorageType::SSDHASH:
+        VLOG(1) << "StorageManager::SSDHASH: " << name_;
+        alloc_ssd = cpu_allocator();
+        kvs_.emplace_back(std::make_pair(new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
+        break;
+      case StorageType::DRAM_SSDHASH:
+        VLOG(1) << "StorageManager::DRAM_SSDHASH: " << name_;
+        alloc_ssd = cpu_allocator();
+        kvs_.emplace_back(std::make_pair(new LocklessHashMap<K, V>(), alloc_ssd));
+        kvs_.emplace_back(std::make_pair(new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
         break;
       default:
         VLOG(1) << "StorageManager::default" << name_;
@@ -117,7 +133,7 @@ class StorageManager {
     }
 
     if (sc_.type == embedding::PMEM_MEMKIND || sc_.type == embedding::PMEM_LIBPMEM ||
-        sc_.type == embedding::DRAM_PMEM || sc_.type == embedding::DRAM_SSD ||
+        sc_.type == embedding::DRAM_PMEM || sc_.type == embedding::DRAM_SSDHASH ||
         sc_.type == embedding::HBM_DRAM || sc_.type == embedding::DRAM_LEVELDB) {
       is_multi_level_ = true;
     }
@@ -142,15 +158,15 @@ class StorageManager {
     //The start address of every slot should be aligned to 16 bytes, otherwise a coredump will happen in the ApplyOp.
     alloc_len_ = (value_len * sizeof(V) % 16 == 0) ? value_len : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
     int64 temp = alloc_len_ * slot_num;
-    if (total_dims_ == 0) {
+    if (temp > total_dims_) {
       total_dims_ = temp;
-      if (sc_.type == StorageType::LEVELDB) {
+      if (sc_.type == StorageType::LEVELDB || sc_.type == StorageType::SSDHASH) {
         kvs_[0].first->SetTotalDims(total_dims_);
-      } else if (sc_.type == StorageType::DRAM_LEVELDB) {
+      } else if (sc_.type == StorageType::DRAM_LEVELDB || sc_.type == StorageType::DRAM_SSDHASH) {
         kvs_[1].first->SetTotalDims(total_dims_);
       }
       if (hash_table_count_ > 1) {
-        cache_capacity_ = 1024 * 1024 * 1024 / total_dims_ * sizeof(V); 
+        cache_capacity_ = sc_.size[0] / (total_dims_ * sizeof(V));
         done_ = true;
         LOG(INFO) << "Cache cache_capacity: " << cache_capacity_;
       }
@@ -275,17 +291,22 @@ class StorageManager {
         V* val = value_ptr_list[i]->GetValue(emb_config.emb_index, GetOffset(emb_config.emb_index));
         V* primary_val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index, GetOffset(emb_config.primary_emb_index));
         key_list->push_back(key_list_tmp[i]);
-        if (emb_config.filter_freq != 0 || is_multi_level_) {
+        if (emb_config.filter_freq != 0 || is_multi_level_
+            || emb_config.record_freq) {
             int64 dump_freq = filter->GetFreq(key_list_tmp[i], value_ptr_list[i]);
             freq_list->push_back(dump_freq);
         }
-        if (emb_config.steps_to_live != 0) {
+        if (emb_config.steps_to_live != 0 || emb_config.record_version) {
             int64 dump_version = value_ptr_list[i]->GetStep();
             version_list->push_back(dump_version);
         }
         if (val != nullptr && primary_val != nullptr) {
           value_list->push_back(val);  
+        } else if (val == nullptr && primary_val != nullptr) {
+          // only forward, no backward
+          value_list->push_back(reinterpret_cast<V*>(-1));
         } else {
+          // feature filtered
           value_list->push_back(nullptr);
         }
         // storage_manager_->FreeValuePtr(value_ptr_list[i]);
@@ -396,7 +417,7 @@ class StorageManager {
  private:
   void BatchEviction() {
     Env* env = Env::Default();
-    const int kSize = 1000;
+    const int EvictionSize = 10000;
     if (cache_capacity_ == -1) {
       while (true) {
         mutex_lock l(mu_);
@@ -405,29 +426,33 @@ class StorageManager {
         }
       }
     }
-    K evic_ids[kSize];
+    K evic_ids[EvictionSize];
     while (true) {
       mutex_lock l(mu_);
       if (shutdown_) {
         break;
       }
-      const int kTimeoutMilliseconds = 10 * 1;
+      const int kTimeoutMilliseconds = 1;
       WaitForMilliseconds(&l, &shutdown_cv_, kTimeoutMilliseconds);
-
+     
+      for (int i = 0; i < value_ptr_out_of_date_.size(); i++) {
+        value_ptr_out_of_date_[i]->Destroy(kvs_[0].second);
+        delete value_ptr_out_of_date_[i];
+      }
+      value_ptr_out_of_date_.clear();
+      
       int cache_count = cache_->size();
       if (cache_count > cache_capacity_) {
         // eviction
         int k_size = cache_count - cache_capacity_;
-        k_size = std::min(k_size, kSize);
+        k_size = std::min(k_size, EvictionSize);
         size_t true_size = cache_->get_evic_ids(evic_ids, k_size);
         ValuePtr<V>* value_ptr;
         for (int64 i = 0; i < true_size; ++i) {
           if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
-            TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
             TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
-            // delete value_ptr is nessary;
-            value_ptr->Destroy(kvs_[0].second);
-            delete value_ptr;
+            TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
+            value_ptr_out_of_date_.emplace_back(value_ptr);
           } else {
             // bypass
           }
@@ -440,6 +465,7 @@ class StorageManager {
   int32 hash_table_count_;
   std::string name_;
   std::vector<std::pair<KVInterface<K, V>*, Allocator*>> kvs_;
+  std::vector<ValuePtr<V>*> value_ptr_out_of_date_;
   std::function<ValuePtr<V>*(Allocator*, size_t)> new_value_ptr_fn_;
   StorageConfig sc_;
   bool is_multi_level_;
@@ -450,7 +476,7 @@ class StorageManager {
   std::unique_ptr<thread::ThreadPool> thread_pool_;
   Thread* eviction_thread_;
   BatchCache<K>* cache_;
-  size_t cache_capacity_;
+  int64 cache_capacity_;
   mutex mu_;
   condition_variable shutdown_cv_;
   bool shutdown_ GUARDED_BY(mu_) = false;

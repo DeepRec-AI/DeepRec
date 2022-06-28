@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #if GOOGLE_CUDA
-
+#if TF_ENABLE_GPU_EV
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/framework/register_types.h"
@@ -280,4 +280,5 @@ template struct functor::KvSparseApplyFtrl<GPUDevice, int64, double>;
 
 }  // end namespace tensorflow
 
+#endif  // TF_ENABLE_GPU_EV
 #endif  // GOOGLE_CUDA
