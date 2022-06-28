@@ -6227,6 +6227,7 @@ tf_kernel_library(
     gpu_srcs = [
         "training_ali_ops_gpu.cu.cc",
         "training_ali_ops_gpu.h",
+        "training_ali_ops.h"
     ],
     copts = ["-g"],
     deps = [
