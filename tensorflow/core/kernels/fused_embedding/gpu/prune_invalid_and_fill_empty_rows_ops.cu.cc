@@ -92,22 +92,6 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
       max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
                                                          : max_cub_bytes;
 
-      // cub::DeviceSelect::Flagged(nullptr, temp_storage_bytes,
-      // (int64_t*)nullptr,
-      //                            (int*)nullptr, (int64_t*)nullptr,
-      //                            (int*)nullptr, nnz, device.stream());
-
-      // max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
-      //                                                    : max_cub_bytes;
-
-      // cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
-      //                            (IndicePair*)nullptr, (int*)nullptr,
-      //                            (IndicePair*)nullptr, (int*)nullptr, nnz,
-      //                            device.stream());
-
-      // max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
-      //                                                    : max_cub_bytes;
-
       if (fill_empty_row_) {
         cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
                                    (IndicePair*)nullptr, (int*)nullptr,
@@ -167,20 +151,6 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
               data_p_with_type<int64_t>(values_extended),
               data_p_with_type<IndicePair>(indices_extended))),
           data_p_with_type<int>(selected_num_d), int(nnz), device.stream());
-
-      // cub::DeviceSelect::Flagged(
-      //     data_p_with_type<int8>(cub_temp_storage), max_cub_bytes,
-      //     data_p_with_type<const int64_t>(values_tensor),
-      //     data_p_with_type<const int>(row_empty_and_invalid_flags) +
-      //     batch_size, data_p_with_type<int64_t>(values_extended),
-      //     data_p_with_type<int>(selected_num_d), int(nnz), device.stream());
-
-      // cub::DeviceSelect::Flagged(
-      //     data_p_with_type<int8>(cub_temp_storage), max_cub_bytes,
-      //     data_p_with_type<const IndicePair>(indices_tensor),
-      //     data_p_with_type<int>(row_empty_and_invalid_flags) + batch_size,
-      //     data_p_with_type<IndicePair>(indices_extended),
-      //     data_p_with_type<int>(selected_num_d), nnz, device.stream());
 
       if (prune_invalid_id_) {
         int selected_num;
