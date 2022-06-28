@@ -98,7 +98,7 @@ class DestroyKvResourceOp : public OpKernel {
  public:
   explicit DestroyKvResourceOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx,
-                   ctx->GetAttr("ignore_lookup_error", &ignore_lookup_error_));
+        ctx->GetAttr("ignore_lookup_error", &ignore_lookup_error_));
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -142,9 +142,11 @@ class InitializeKvVariableOp : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
 
-    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability", &false_positive_probability_));
+    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
+          &false_positive_probability_));
 
-    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
+          &l2_weight_threshold_));
 
     OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
 
@@ -174,21 +176,24 @@ class InitializeKvVariableOp : public OpKernel {
       //use_db_ = true;
     } else {
       OP_REQUIRES(c, steps_to_live_ >= 0,
-                 errors::InvalidArgument(
-                    "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
+          errors::InvalidArgument(
+            "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
     }
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     if (embedding::StorageType::LEVELDB == storage_type_) {
       ht_type_ = "leveldb_kv";
       if (layout_ != "normal_contiguous")
-        LOG(WARNING)<<"layout must be NORAML_CONTIGUOUS when storage type is LEVELDB";
+        LOG(WARNING)
+          << "layout must be NORAML_CONTIGUOUS when storage type is LEVELDB";
       layout_ = "normal_contiguous";
     }
 
     if (embedding::StorageType::PMEM_LIBPMEM == storage_type_ ||
         embedding::StorageType::PMEM_MEMKIND == storage_type_){
       if (layout_ != "normal_contiguous"){
-        LOG(WARNING) << "layout must be NORAML_CONTIGUOUS when storage type is PMEM_LIBPMEM or PMEM_MEMKIND";
+        LOG(WARNING)
+          << "layout must be NORAML_CONTIGUOUS"
+          << " when storage type is PMEM_LIBPMEM or PMEM_MEMKIND";
       }
       layout_ = "normal_contiguous";
     }
@@ -213,27 +218,27 @@ class InitializeKvVariableOp : public OpKernel {
     if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
 
-      OP_REQUIRES_OK(
-        context,
-        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
+      OP_REQUIRES_OK(context,
+          LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
             context, handle_self, &ev,
             [this, default_values, opname,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
-              auto storage_manager = new embedding::StorageManager<TKey, TValue>(
-                  handle_self.name(), embedding::StorageConfig(storage_type_,
-                                                               storage_path_,
-                                                               storage_size_,
-                                                               layout_));
+              auto storage_manager =
+                  new embedding::StorageManager<TKey, TValue>(
+                    handle_self.name(),
+                    embedding::StorageConfig(
+                      storage_type_, storage_path_, storage_size_, layout_));
               TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slot_num_, opname + "-primary",
-                                         steps_to_live_, filter_freq_, max_freq_,
-                                         l2_weight_threshold_, layout_,
-                                         max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_,
-                                         record_freq_, record_version_));
+                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
+                             emb_index_, block_num_, slot_num_,
+                             opname + "-primary", steps_to_live_,
+                             filter_freq_, max_freq_,
+                             l2_weight_threshold_, layout_,
+                             max_element_size_, false_positive_probability_,
+                             counter_type_, default_value_dim_,
+                             record_freq_, record_version_));
             return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -246,20 +251,21 @@ class InitializeKvVariableOp : public OpKernel {
            [this, default_values, opname,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             auto storage_manager = new embedding::StorageManager<TKey, TValue>(
+             auto storage_manager =
+               new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
-                                                                 storage_path_,
-                                                                 storage_size_,
-                                                                 layout_));
+                     storage_path_, storage_size_, layout_));
              TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         storage_manager,
-                        EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slot_num_, opname + "-primary",
-                                        steps_to_live_, filter_freq_, max_freq_,
-                                        l2_weight_threshold_, layout_,
-                                        max_element_size_, false_positive_probability_,
-                                        counter_type_, 0, record_freq_, record_version_));
+                        EmbeddingConfig(
+                          primary_emb_index + block_num_ * primary_slot_index,
+                          primary_emb_index,
+                          block_num_, slot_num_, opname + "-primary",
+                          steps_to_live_, filter_freq_, max_freq_,
+                          l2_weight_threshold_, layout_,
+                          max_element_size_, false_positive_probability_,
+                          counter_type_, 0, record_freq_, record_version_));
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -271,14 +277,16 @@ class InitializeKvVariableOp : public OpKernel {
             [this, default_values, opname, primary_variable,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
-                         primary_variable->storage_manager(),
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slot_num_, opname,
-                                         steps_to_live_, filter_freq_,
-                                         max_freq_, l2_weight_threshold_,
-                                         layout_, max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_,
-                                         record_freq_, record_version_));
+                  primary_variable->storage_manager(),
+                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
+                                  emb_index_,
+                                  block_num_, slot_num_, opname,
+                                  steps_to_live_, filter_freq_,
+                                  max_freq_, l2_weight_threshold_,
+                                  layout_, max_element_size_,
+                                  false_positive_probability_,
+                                  counter_type_, default_value_dim_,
+                                  record_freq_, record_version_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -340,7 +348,8 @@ class KvResourceIsInitializedOp : public OpKernel {
     OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {}, &output));
     EmbeddingVar<TKey, TValue>* ev = nullptr;
     bool found;
-    if (LookupResource<EmbeddingVar<TKey, TValue>>(ctx, HandleFromInput(ctx, 0), &ev).ok()) {
+    if (LookupResource<EmbeddingVar<TKey, TValue>>(
+          ctx, HandleFromInput(ctx, 0), &ev).ok()) {
       found = ev->IsInitialized();
       ev->Unref();
     } else {
@@ -363,7 +372,9 @@ template <typename TKey, typename TValue>
 class KvResourceGatherOp : public OpKernel {
  public:
   explicit KvResourceGatherOp(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("is_use_default_value_tensor", &is_use_default_value_tensor_));
+    OP_REQUIRES_OK(c,
+        c->GetAttr("is_use_default_value_tensor",
+          &is_use_default_value_tensor_));
     if (is_use_default_value_tensor_) {
       get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
                             int64 total_dim, int64 len) {
@@ -423,18 +434,20 @@ class KvResourceGatherOp : public OpKernel {
               std::to_string(slice_elems), std::to_string(ev->ValueLen())));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
       auto do_work = [this, indices_flat,
-           out_base, slice_elems, c, default_v, ev, counts] (int64 start, int64 limit) {
+           out_base, slice_elems, c, default_v, ev, counts] (
+               int64 start, int64 limit) {
         for (int64 i = start; i < limit; ++i) {
-          TValue* default_v_ptr = get_default_v_fn_(default_v, indices_flat(i),
-                                                    i, ev->GetDefaultValueDim(),
-                                                    ev->ValueLen());
+          TValue* default_v_ptr = get_default_v_fn_(
+              default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
+              ev->ValueLen());
           int32 count = get_count_fn_(counts, i);
           ev->LookupOrCreate(indices_flat(i),
               out_base + i * slice_elems, default_v_ptr, count);
         }
       };
       auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-      Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
+      Shard(worker_threads->num_threads,
+          worker_threads->workers, indices_size,
           slice_bytes, do_work);
           
       ev->storage_manager()->Schedule([ev, indices_flat, indices_size]() {
@@ -448,7 +461,8 @@ class KvResourceGatherOp : public OpKernel {
 
   private:
     bool is_use_default_value_tensor_;
-    std::function<TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
+    std::function<
+      TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
     std::function<int32(int32*, int64)> get_count_fn_;
 };
 
@@ -548,7 +562,10 @@ class KvResourceImportOp : public OpKernel {
     const Tensor& keys = context->input(3);
     const Tensor& values = context->input(4);
     const Tensor& versions = context->input(5);
-    LOG(INFO) <<  "EV:" << HandleFromInput(context, 0).name() << ", Import Size:" <<  keys.dim_size(0);
+    LOG(INFO) <<  "EV:"
+              << HandleFromInput(context, 0).name()
+              << ", Import Size:"
+              <<  keys.dim_size(0);
     OP_REQUIRES_OK(context, hashmap->Import(keys, values, versions));
     variable->SetInitialized();
   }
@@ -587,15 +604,18 @@ class KvResourceImportV2Op: public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
     OP_REQUIRES(c, steps_to_live_ >= 0,
                  errors::InvalidArgument(
-                    "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
+                    "steps_to_live must >= 0, ",
+                    std::to_string(steps_to_live_)));
     OP_REQUIRES_OK(c, c->GetAttr("partition_id", &partition_id_));
     OP_REQUIRES(c, partition_id_ >= 0,
                  errors::InvalidArgument(
-                    "partition_id must >= 0, ", std::to_string(partition_id_)));
+                    "partition_id must >= 0, ",
+                    std::to_string(partition_id_)));
     OP_REQUIRES_OK(c, c->GetAttr("partition_num", &partition_num_));
     OP_REQUIRES(c, partition_num_ >= 1,
                  errors::InvalidArgument(
-                    "partition_num must >= 1, ", std::to_string(partition_num_)));
+                    "partition_num must >= 1, ",
+                    std::to_string(partition_num_)));
     //OP_REQUIRES_OK(c, c->GetAttr("restore_versions", &restore_versions_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
@@ -608,11 +628,14 @@ class KvResourceImportV2Op: public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
 
-    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability", &false_positive_probability_));
-    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
+          &false_positive_probability_));
+    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
+          &l2_weight_threshold_));
     OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
-    OP_REQUIRES_OK(c, c->GetAttr("default_value_dim", &default_value_dim_));
+    OP_REQUIRES_OK(c, c->GetAttr("default_value_dim",
+          &default_value_dim_));
 
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
 
@@ -635,10 +658,9 @@ class KvResourceImportV2Op: public OpKernel {
     const std::string name_string = name.scalar<string>()();
 	  const Tensor& default_values = context->input(3);
     OP_REQUIRES(context, dtype_ == default_values.dtype(),
-                errors::InvalidArgument(
-                    "Variable and ddd value dtypes don't match; respectively, ",
-                    dtype_, " and ", default_values.dtype()));
-
+        errors::InvalidArgument(
+          "Variable and ddd value dtypes don't match; respectively, ",
+          dtype_, " and ", default_values.dtype()));
 
     ResourceHandle handle_self = HandleFromInput(context, 1);
     ResourceHandle handle_primary = HandleFromInput(context, 2);
@@ -653,21 +675,23 @@ class KvResourceImportV2Op: public OpKernel {
             context, handle_self, &ev,
             [this, default_values, opname,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
-              auto storage_manager = new embedding::StorageManager<TKey, TValue>(
-                  handle_self.name(), embedding::StorageConfig(storage_type_,
-                                                               storage_path_,
-                                                               storage_size_,
-                                                               layout_));
+              auto storage_manager =
+                new embedding::StorageManager<TKey, TValue>(
+                  handle_self.name(), embedding::StorageConfig(
+                    storage_type_, storage_path_, storage_size_, layout_));
               TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slot_num_, opname + "-primary",
-                                         steps_to_live_, filter_freq_,
-                                         max_freq_, l2_weight_threshold_,
-                                         layout_,  max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_,
-                                         record_freq_, record_version_));
+                         EmbeddingConfig(
+                           emb_index_ + block_num_ * slot_index_,
+                           emb_index_,
+                           block_num_, slot_num_, opname + "-primary",
+                           steps_to_live_, filter_freq_,
+                           max_freq_, l2_weight_threshold_,
+                           layout_,  max_element_size_,
+                           false_positive_probability_,
+                           counter_type_, default_value_dim_,
+                           record_freq_, record_version_));
              return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -680,20 +704,21 @@ class KvResourceImportV2Op: public OpKernel {
            [this, default_values, opname,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             auto storage_manager = new embedding::StorageManager<TKey, TValue>(
-                 handle_primary.name(), embedding::StorageConfig(storage_type_,
-                                                                 storage_path_,
-                                                                 storage_size_,
-                                                                 layout_));
+             auto storage_manager =
+               new embedding::StorageManager<TKey, TValue>(
+                 handle_primary.name(), embedding::StorageConfig(
+                   storage_type_, storage_path_, storage_size_,
+                   layout_));
              TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                        storage_manager,
-                        EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slot_num_, opname + "-primary",
-                                        steps_to_live_, filter_freq_,
-                                        max_freq_, l2_weight_threshold_,
-                                        layout_,  max_element_size_, false_positive_probability_,
-                                        counter_type_, 0, record_freq_, record_version_));
+                 storage_manager, EmbeddingConfig(
+                   primary_emb_index + block_num_ * primary_slot_index,
+                   primary_emb_index, block_num_, slot_num_,
+                   opname + "-primary", steps_to_live_, filter_freq_,
+                   max_freq_, l2_weight_threshold_,
+                   layout_,  max_element_size_,
+                   false_positive_probability_,
+                   counter_type_, 0, record_freq_, record_version_));
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -705,13 +730,14 @@ class KvResourceImportV2Op: public OpKernel {
             [this, default_values, opname, primary_variable,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
-                         primary_variable->storage_manager(),
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slot_num_, opname,
-                                         steps_to_live_, filter_freq_, max_freq_, l2_weight_threshold_,
-                                         layout_, max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_,
-                                         record_freq_, record_version_));
+                  primary_variable->storage_manager(),
+                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
+                    emb_index_, block_num_, slot_num_, opname,
+                    steps_to_live_, filter_freq_, max_freq_,
+                    l2_weight_threshold_, layout_, max_element_size_,
+                    false_positive_probability_,
+                    counter_type_, default_value_dim_,
+                    record_freq_, record_version_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -721,8 +747,9 @@ class KvResourceImportV2Op: public OpKernel {
     BundleReader reader(Env::Default(), file_name_string);
     OP_REQUIRES_OK(context, reader.status());
 
-    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader,
-                         "-partition_offset", "-keys", "-values", "-versions", "-freqs");
+    EVRestoreDynamically(
+        ev, name_string, partition_id_, partition_num_, context, &reader,
+        "-partition_offset", "-keys", "-values", "-versions", "-freqs");
     ev->SetInitialized();
   }
 
@@ -778,12 +805,12 @@ class KvResourceIncrImportOp: public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("partition_id", &partition_id_));
     OP_REQUIRES(c, partition_id_ >= 0,
-                 errors::InvalidArgument(
-                    "partition_id must >= 0, ", std::to_string(partition_id_)));
+        errors::InvalidArgument(
+          "partition_id must >= 0, ", std::to_string(partition_id_)));
     OP_REQUIRES_OK(c, c->GetAttr("partition_num", &partition_num_));
     OP_REQUIRES(c, partition_num_ >= 1,
-                 errors::InvalidArgument(
-                    "partition_num must >= 1, ", std::to_string(partition_num_)));
+        errors::InvalidArgument(
+          "partition_num must >= 1, ", std::to_string(partition_num_)));
 
   }
 
@@ -794,18 +821,22 @@ class KvResourceIncrImportOp: public OpKernel {
     const std::string name_string = name.scalar<string>()();
 
     EmbeddingVar<TKey, TValue>* ev = nullptr;
-    OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 1), &ev));
-
+    OP_REQUIRES_OK(context,
+        LookupResource(context, HandleFromInput(context, 1), &ev));
 
     core::ScopedUnref unref_me(ev);
 
     BundleReader reader(Env::Default(), file_name_string);
     OP_REQUIRES_OK(context, reader.status());
 
-    LOG(INFO) << "incr import, evname:" << name_string << "partition_num:" <<partition_num_;
-    EVRestoreDynamically(ev, name_string, partition_id_, partition_num_, context, &reader,
-                         "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values",
-                         "-sparse_incr_versions", "-sparse_incr_freqs");
+    LOG(INFO) << "incr import, evname:"
+              << name_string
+              << "partition_num:"
+              << partition_num_;
+    EVRestoreDynamically(
+        ev, name_string, partition_id_, partition_num_, context, &reader,
+        "-incr_partition_offset", "-sparse_incr_keys", "-sparse_incr_values",
+        "-sparse_incr_versions", "-sparse_incr_freqs");
     ev->SetInitialized();
   }
 
@@ -851,7 +882,9 @@ class KvResourceExportOp : public OpKernel {
     std::vector<int64> tot_version_list;
     std::vector<int64> tot_freq_list;
     embedding::Iterator* it = nullptr;
-    int64 total_size = ev->GetSnapshot(&tot_key_list, &tot_valueptr_list, &tot_version_list, &tot_freq_list, &it);
+    int64 total_size = ev->GetSnapshot(
+        &tot_key_list, &tot_valueptr_list, &tot_version_list,
+        &tot_freq_list, &it);
 
     // Create an output tensor
     Tensor *keys_output_tensor = NULL;
@@ -859,14 +892,17 @@ class KvResourceExportOp : public OpKernel {
     Tensor *versions_output_tensor = NULL;
     Tensor *freq_output_tensor = NULL;
 
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({total_size}),
-                                             &keys_output_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(1, TensorShape({total_size, ev->ValueLen()}),
-                                             &values_output_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(2, TensorShape({tot_version_list.size()}),
-                                             &versions_output_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(3, TensorShape({tot_freq_list.size()}),
-                                             &freq_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          0, TensorShape({total_size}), &keys_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          1, TensorShape({total_size, ev->ValueLen()}),
+          &values_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          2, TensorShape({tot_version_list.size()}),
+          &versions_output_tensor));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+          3, TensorShape({tot_freq_list.size()}),
+          &freq_output_tensor));
 
     auto keys_output = keys_output_tensor->template flat<TKey>();
     auto val_matrix = values_output_tensor->matrix<TValue>();
@@ -977,9 +1013,11 @@ class InitializeKvVariableOpGPU : public OpKernel {
 
     OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
 
-    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability", &false_positive_probability_));
+    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
+          &false_positive_probability_));
 
-    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold", &l2_weight_threshold_));
+    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
+          &l2_weight_threshold_));
 
     OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
 
@@ -1004,8 +1042,8 @@ class InitializeKvVariableOpGPU : public OpKernel {
       //use_db_ = true;
     } else {
       OP_REQUIRES(c, steps_to_live_ >= 0,
-                 errors::InvalidArgument(
-                    "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
+          errors::InvalidArgument(
+            "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
     }
     OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
     OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
@@ -1034,15 +1072,20 @@ class InitializeKvVariableOpGPU : public OpKernel {
             context, handle_self, &ev,
             [this, default_values, opname, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context->get_allocator(AllocatorAttributes()));
+              GPUHashTable<TKey, TValue>* ht =
+                new GPUHashTable<TKey, TValue>(-1,
+                    context->get_allocator(AllocatorAttributes()));
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                         ht, context->get_allocator(AllocatorAttributes()),
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slot_num_, opname + "-primary",
-                                         steps_to_live_, filter_freq_, max_freq_,
-                                         l2_weight_threshold_, layout_,
-                                         max_element_size_, false_positive_probability_,
-                                         counter_type_, default_value_dim_));
+                  ht, context->get_allocator(AllocatorAttributes()),
+                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
+                                  emb_index_,
+                                  block_num_, slot_num_,
+                                  opname + "-primary",
+                                  steps_to_live_, filter_freq_, max_freq_,
+                                  l2_weight_threshold_, layout_,
+                                  max_element_size_,
+                                  false_positive_probability_,
+                                  counter_type_, default_value_dim_));
             return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
@@ -1055,15 +1098,20 @@ class InitializeKvVariableOpGPU : public OpKernel {
            [this, default_values, opname, context,
             handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             GPUHashTable<TKey, TValue>* ht = new GPUHashTable<TKey, TValue>(-1, context->get_allocator(AllocatorAttributes()));
+             GPUHashTable<TKey, TValue>* ht =
+               new GPUHashTable<TKey, TValue>(-1,
+                   context->get_allocator(AllocatorAttributes()));
              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
-                        ht, context->get_allocator(AllocatorAttributes()),
-                        EmbeddingConfig(primary_emb_index + block_num_ * primary_slot_index, primary_emb_index,
-                                        block_num_, slot_num_, opname + "-primary",
-                                        steps_to_live_, filter_freq_, max_freq_,
-                                        l2_weight_threshold_, layout_,
-                                        max_element_size_, false_positive_probability_,
-                                        counter_type_));
+                 ht, context->get_allocator(AllocatorAttributes()),
+                 EmbeddingConfig(
+                   primary_emb_index + block_num_ * primary_slot_index,
+                   primary_emb_index,
+                   block_num_, slot_num_, opname + "-primary",
+                   steps_to_live_, filter_freq_, max_freq_,
+                   l2_weight_threshold_, layout_,
+                   max_element_size_,
+                   false_positive_probability_,
+                   counter_type_));
              return (*ptr)->Init(default_values, default_value_dim_);
            }));
 
@@ -1075,12 +1123,14 @@ class InitializeKvVariableOpGPU : public OpKernel {
             [this, default_values, opname, primary_variable, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                         primary_variable->kv(), context->get_allocator(AllocatorAttributes()),
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_, emb_index_,
-                                         block_num_, slot_num_, opname,
-                                         steps_to_live_, 0,
-                                         max_freq_, l2_weight_threshold_,
-                                         layout_, 0, -1.0, counter_type_, default_value_dim_));
+                  primary_variable->kv(),
+                  context->get_allocator(AllocatorAttributes()),
+                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
+                    emb_index_,
+                    block_num_, slot_num_, opname,
+                    steps_to_live_, 0,
+                    max_freq_, l2_weight_threshold_,
+                    layout_, 0, -1.0, counter_type_, default_value_dim_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);
@@ -1140,7 +1190,9 @@ template <typename Device, typename TKey, typename TValue>
 class KvResourceGatherOpGPU : public OpKernel {
  public:
   explicit KvResourceGatherOpGPU(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("is_use_default_value_tensor", &is_use_default_value_tensor_));
+    OP_REQUIRES_OK(c,
+        c->GetAttr("is_use_default_value_tensor",
+          &is_use_default_value_tensor_));
   }
 
   void Compute(OpKernelContext* c) override {
@@ -1163,25 +1215,30 @@ class KvResourceGatherOpGPU : public OpKernel {
       TValue* out_base = &out_flat(0, 0);
 
       auto indices_flat = indices.flat<TKey>();
-      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
+      const int64 indices_size = static_cast<int64>(
+          indices_flat.dimension(0));
       const int64 slice_elems = out_flat.dimension(1);
       OP_REQUIRES(c, ev->ValueLen() == slice_elems,
           errors::InvalidArgument(
-              "ev's value_len should same with output's dimension(1)",
-              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
+            "ev's value_len should same with output's dimension(1)",
+            std::to_string(slice_elems), std::to_string(ev->ValueLen())));
 
 
       const TKey* key_base = &indices_flat(0);
       const cudaStream_t& stream = c->eigen_device<Device>().stream();
       if (is_use_default_value_tensor_) {
         Tensor default_values(c->input(2));
-        auto default_value_num = default_values.NumElements()/ev->ValueLen();
+        auto default_value_num = default_values.NumElements() / ev->ValueLen();
         auto default_values_matrix = default_values.shaped<TValue, 2>(
             {default_value_num, ev->ValueLen()});     
         TValue* default_v_base = &default_values_matrix(0, 0);
-        ev->LookupOrCreate(key_base, out_base, default_v_base, default_value_num, is_use_default_value_tensor_, indices_size, stream);
+        ev->LookupOrCreate(key_base, out_base, default_v_base,
+            default_value_num, is_use_default_value_tensor_,
+            indices_size, stream);
       } else {
-        ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(), ev->GetDefaultValueDim(), is_use_default_value_tensor_, indices_size, stream);
+        ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(),
+            ev->GetDefaultValueDim(), is_use_default_value_tensor_,
+            indices_size, stream);
       }
     }
   }
@@ -1224,14 +1281,18 @@ class KvResourceExportOpGPU : public OpKernel {
     Tensor *versions_output_tensor = NULL;
     Tensor *freq_output_tensor = NULL;
 
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, TensorShape({total_size}),
-                                             &keys_output_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(1, TensorShape({total_size, ev->ValueLen()}),
-                                             &values_output_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(2, TensorShape({0}),
-                                             &versions_output_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(3, TensorShape({0}),
-                                             &freq_output_tensor));
+    OP_REQUIRES_OK(ctx,
+        ctx->allocate_output(0, TensorShape({total_size}),
+          &keys_output_tensor));
+    OP_REQUIRES_OK(ctx,
+        ctx->allocate_output(1, TensorShape({total_size, ev->ValueLen()}),
+          &values_output_tensor));
+    OP_REQUIRES_OK(ctx,
+        ctx->allocate_output(2, TensorShape({0}),
+          &versions_output_tensor));
+    OP_REQUIRES_OK(ctx,
+        ctx->allocate_output(3, TensorShape({0}),
+          &freq_output_tensor));
 
     auto keys_flat = keys_output_tensor->flat<TKey>();
     TKey* key_base = &keys_flat(0);
