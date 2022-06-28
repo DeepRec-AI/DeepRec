@@ -1322,15 +1322,15 @@ template <typename T>
 struct ApplyAdamAsync<CPUDevice, T> {
   void operator()(const CPUDevice& d, typename TTypes<T>::Flat var,
                   typename TTypes<T>::Flat m, typename TTypes<T>::Flat v,
-                  typename TTypes<T>::Flat beta1_power,
-                  typename TTypes<T>::Flat beta2_power,
+                  typename TTypes<T>::Scalar beta1_power,
+                  typename TTypes<T>::Scalar beta2_power,
                   typename TTypes<T>::ConstScalar lr,
                   typename TTypes<T>::ConstScalar beta1,
                   typename TTypes<T>::ConstScalar beta2,
                   typename TTypes<T>::ConstScalar epsilon,
                   typename TTypes<T>::ConstFlat grad, bool use_nesterov) {
-    auto alpha = lr() * Eigen::numext::sqrt(T(1) - beta2_power(0)) /
-                 (T(1) - beta1_power(0));
+    auto alpha = lr() * Eigen::numext::sqrt(T(1) - beta2_power()) /
+                 (T(1) - beta1_power());
 
     // beta1 == μ
     // beta2 == ν
@@ -1352,7 +1352,6 @@ struct ApplyAdamAsync<CPUDevice, T> {
 };
 } // namespace functor
 
-// Note, this op works on cpu only.
 template <typename Device, typename T>
 class ApplyAdamAsyncOp : public OpKernel {
  public:
@@ -1439,7 +1438,7 @@ class ApplyAdamAsyncOp : public OpKernel {
     const Device& device = ctx->template eigen_device<Device>();
     functor::ApplyAdamAsync<Device, T>()(
         device, var.flat<T>(), m.flat<T>(), v.flat<T>(),
-        beta1_power.flat<T>(), beta2_power.flat<T>(), lr.scalar<T>(),
+        beta1_power.scalar<T>(), beta2_power.scalar<T>(), lr.scalar<T>(),
         beta1.scalar<T>(), beta2.scalar<T>(), epsilon.scalar<T>(),
         grad.flat<T>(), use_nesterov_);
 
@@ -1453,17 +1452,12 @@ class ApplyAdamAsyncOp : public OpKernel {
 
 #define REGISTER_KERNELS(D, T)                                          \
   REGISTER_KERNEL_BUILDER(                                              \
-      Name("ApplyAdamAsync").Device(DEVICE_CPU).TypeConstraint<T>("T"), \
-      ApplyAdamAsyncOp<CPUDevice, T>);                                  \
+      Name("ApplyAdamAsync").Device(DEVICE_##D).TypeConstraint<T>("T"), \
+      ApplyAdamAsyncOp<D##Device, T>);                                  \
   REGISTER_KERNEL_BUILDER(Name("ResourceApplyAdamAsync")                \
-                              .HostMemory("var")                        \
-                              .HostMemory("m")                          \
-                              .HostMemory("v")                          \
-                              .HostMemory("beta1_power")                \
-                              .HostMemory("beta2_power")                \
-                              .Device(DEVICE_CPU)                       \
+                              .Device(DEVICE_##D)                       \
                               .TypeConstraint<T>("T"),                  \
-                          ApplyAdamAsyncOp<CPUDevice, T>);
+                          ApplyAdamAsyncOp<D##Device, T>);
 #define REGISTER_CPU_KERNELS(T) REGISTER_KERNELS(CPU, T);
 
 TF_CALL_half(REGISTER_CPU_KERNELS);
@@ -1472,9 +1466,146 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 TF_CALL_double(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
+
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+// Forward declarations of the functor specializations for GPU.
+namespace functor {
+#define DECLARE_GPU_SPEC(T)\
+  template <> \
+  void ApplyAdamAsync<GPUDevice, T>::operator()(const GPUDevice& d, \
+                   typename TTypes<T>::Flat var, \
+                  typename TTypes<T>::Flat m, typename TTypes<T>::Flat v, \
+                  typename TTypes<T>::Scalar beta1_power, \
+                  typename TTypes<T>::Scalar beta2_power, \
+                  typename TTypes<T>::ConstScalar lr, \
+                  typename TTypes<T>::ConstScalar beta1, \
+                  typename TTypes<T>::ConstScalar beta2, \
+                  typename TTypes<T>::ConstScalar epsilon, \
+                  typename TTypes<T>::ConstFlat grad, bool use_nesterov); \
+  extern template struct ApplyAdamAsync<GPUDevice, T>;
+
+DECLARE_GPU_SPEC(Eigen::half)
+DECLARE_GPU_SPEC(float)
+DECLARE_GPU_SPEC(double)
+#undef DECLARE_GPU_SPEC
+} // end of namespace functor
+
+#define REGISTER_GPU_KERNELS(T) REGISTER_KERNELS(GPU, T);
+
+TF_CALL_half(REGISTER_GPU_KERNELS);
+TF_CALL_float(REGISTER_GPU_KERNELS);
+TF_CALL_double(REGISTER_GPU_KERNELS);
+
+#undef REGISTER_GPU_KERNELS
+#endif // end of GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #undef REGISTER_KERNELS
 
-// Note, this op works on cpu only.
+namespace functor {
+template <typename T, typename Tindex>
+struct SparseApplyAdamAsync<CPUDevice, T, Tindex> {
+  Status operator()(const CPUDevice &d, typename TTypes<T>::Matrix var,
+                  typename TTypes<T>::Matrix m, typename TTypes<T>::Matrix v,
+                  typename TTypes<T>::Scalar beta1_power_scalar,
+                  typename TTypes<T>::Scalar beta2_power_scalar,
+                  typename TTypes<T>::ConstScalar lr_scalar,
+                  typename TTypes<T>::ConstScalar beta1_scalar,
+                  typename TTypes<T>::ConstScalar beta2_scalar,
+                  typename TTypes<T>::ConstScalar epsilon_scalar,
+                  typename TTypes<T>::ConstMatrix grad,
+                  typename TTypes<Tindex>::ConstVec indices_vec,
+                  bool apply_sparse_rmsprop, int64 inner_dim) {
+    const int64 N = indices_vec.dimension(0);
+    if (N <= 0) return Status::OK();
+
+    const T lr = lr_scalar();
+    const T beta1 = beta1_scalar();
+    const T beta2 = beta2_scalar();
+    const T epsilon = epsilon_scalar();
+    const int64 first_dim_size = static_cast<int64>(var.dimension(0));
+    // Validate all the indices are in range
+    for (int64 i = 0; i < N; i++) {
+      const Tindex index = indices_vec(i);
+      if (index < 0 || index >= first_dim_size) {
+        return errors::InvalidArgument(strings::StrCat("Index ", index, 
+                      " at offset ", i, " in indices is out of range"));
+      }
+    }
+
+    if (apply_sparse_rmsprop) {
+      auto do_work = [this, &indices_vec, &v, &m, &grad, &beta2, &beta1, 
+                      &epsilon, &lr, &var] (int64 start_i, int64 limit_i) {
+        for (Tindex i = start_i; i < limit_i; i++) {
+          const Tindex index = indices_vec(i);
+
+          auto v_ = v.template chip<0>(index);
+          auto m_ = m.template chip<0>(index);
+          auto grad_ = grad.template chip<0>(i);
+
+          v_ = v_ * v_.constant(beta2) +
+                grad_.square() * grad_.constant(T(1) - beta2);
+          m_ = m_ * m_.constant(beta1) +
+                  (v_ + v_.constant(epsilon)).rsqrt() *
+                      v_.constant(lr) * grad_;
+
+          auto v = var.template chip<0>(index);
+          v -= m_;
+        }
+      };
+      const int in_bytes = inner_dim * sizeof(T) * 4;
+      const int out_bytes = inner_dim * sizeof(T) * 3;
+      const int cycles = inner_dim * (Eigen::TensorOpCost::AddCost<int>() * 5 +
+                                      Eigen::TensorOpCost::MulCost<int>() * 6);
+      const Eigen::TensorOpCost cost(in_bytes, out_bytes, cycles);
+      d.parallelFor(N, cost, do_work);
+    } else {
+      const T alpha = lr *
+          Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_scalar()) /
+          (static_cast<T>(1) - beta1_power_scalar());
+
+      auto do_work = [this, inner_dim, &var, &m, &v, &grad, &indices_vec, 
+            &beta1_power_scalar, &beta2_power_scalar, &lr, &beta1, &beta2, 
+            &epsilon, &alpha] (int64 start_i, int64 limit_i) {
+        if (inner_dim > 1) {
+          for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            const Tindex index = internal::SubtleMustCopy(indices_vec(i));
+            auto m_a = m.template chip<0>(index);
+            auto v_a = v.template chip<0>(index);
+            auto g = grad.template chip<0>(i);
+            auto var_i = var.template chip<0>(index);
+
+            m_a = m_a * beta1 + g * (static_cast<T>(1) - beta1);
+            v_a = v_a * beta2 + g.square() * (static_cast<T>(1) - beta2);
+            var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon);
+          }
+        } else {
+          for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            const Tindex index = internal::SubtleMustCopy(indices_vec(i));
+            const T& g = grad(i);
+            T& m_a = m(index);
+            T& v_a = v(index);
+            m_a = m_a * beta1 + g * (static_cast<T>(1) - beta1);
+            v_a = v_a * beta2 + g * g * (static_cast<T>(1) - beta2);
+            var(index) -= (m_a * alpha) / (Eigen::numext::sqrt(v_a) + epsilon);
+          }
+        }
+      };
+
+      const int in_bytes = inner_dim * sizeof(T) * 4;
+      const int out_bytes = inner_dim * sizeof(T) * 3;
+      const int cycles = inner_dim * (Eigen::TensorOpCost::AddCost<T>() * 6 +
+                                      Eigen::TensorOpCost::MulCost<T>() * 6 +
+                                      Eigen::TensorOpCost::DivCost<T>());
+      const Eigen::TensorOpCost cost(in_bytes, out_bytes, cycles);
+      d.parallelFor(N, cost, do_work);
+
+      beta1_power_scalar() *= beta1;
+      beta2_power_scalar() *= beta2;
+    }
+    return Status::OK();
+  }
+};
+} // namespace functor
+
 template <typename Device, typename T, typename Tindex>
 class SparseApplyAdamAsyncOp : public OpKernel {
  public:
@@ -1583,118 +1714,13 @@ class SparseApplyAdamAsyncOp : public OpKernel {
         errors::InvalidArgument(
             "grad must be the same size as indices in the first dimension."));
 
-    if (N > 0) {
-      if (apply_sparse_rmsprop_) {
-        const int64 first_dim_size = var.dim_size(0);
-        // Validate all the indices are in range
-        auto indices_vec = indices.vec<Tindex>();
-        for (int64 i = 0; i < N; i++) {
-          const Tindex index = indices_vec(i);
-          OP_REQUIRES(ctx, index >= 0 && index < first_dim_size,
-                      errors::InvalidArgument(
-                          strings::StrCat("Index ", index, " at offset ", i,
-                                          " in indices is out of range")));
-        }
-
-        auto var_flat = var.flat_outer_dims<T>();
-        auto m_flat = m.flat_outer_dims<T>();
-        auto v_flat = v.flat_outer_dims<T>();
-        auto grad_flat = grad.flat_outer_dims<T>();
-        const T lr_scalar = lr.scalar<T>()();
-        const T beta1_scalar = beta1.scalar<T>()();
-        const T beta2_scalar = beta2.scalar<T>()();
-        const T epsilon_scalar = epsilon.scalar<T>()();
-        auto do_work = [this, ctx, &indices_vec, &v_flat, &m_flat,
-            &grad_flat, &beta2_scalar, &beta1_scalar, &epsilon_scalar,
-            &lr_scalar, &var_flat] (int64 start_i, int64 limit_i) {
-          for (int64 i = start_i; i < limit_i; i++) {
-            const Tindex index = indices_vec(i);
-
-            auto v_ = v_flat.template chip<0>(index);
-            auto m_ = m_flat.template chip<0>(index);
-            auto grad_ = grad_flat.template chip<0>(i);
-
-            v_ = v_ * v_.constant(beta2_scalar) +
-                  grad_.square() * grad_.constant(T(1) - beta2_scalar);
-            m_ = m_ * m_.constant(beta1_scalar) +
-                   (v_ + v_.constant(epsilon_scalar)).rsqrt() *
-                       v_.constant(lr_scalar) * grad_;
-
-            auto v = var_flat.template chip<0>(index);
-            v -= m_;
-          }
-        };
-        const int64 cost = 1000;
-        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
-        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
-      } else {
-        auto beta1_power_flat = beta1_power.flat<T>();
-        auto beta2_power_flat = beta2_power.flat<T>();
-        T lr_scalar = lr.scalar<T>()();
-        T beta1_scalar = beta1.scalar<T>()();
-        T beta2_scalar = beta2.scalar<T>()();
-        T epsilon_scalar = epsilon.scalar<T>()();
-        const T alpha = lr_scalar *
-            Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_flat(0)) /
-            (static_cast<T>(1) - beta1_power_flat(0));
-
-        auto do_work = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
-             &beta1_power_flat, &beta2_power_flat, &lr_scalar, &beta1_scalar,
-             &beta2_scalar, &epsilon_scalar, &alpha] (int64 start_i, int64 limit_i) {
-          if (inner_dim > 1) {
-            auto var_flat = var.flat_outer_dims<T>();
-            auto m_flat = m.flat_outer_dims<T>();
-            auto v_flat = v.flat_outer_dims<T>();
-            auto grad_flat = grad.flat_outer_dims<T>();
-            auto indices_vec = indices.vec<Tindex>();
-            const int64 first_dim_size = var.dim_size(0);
-
-            for (int64 i = start_i; i < limit_i; i++) {
-              const Tindex index = internal::SubtleMustCopy(indices_vec(i));
-              OP_REQUIRES(
-                ctx, FastBoundsCheck(index, first_dim_size),
-                errors::InvalidArgument(strings::StrCat("Index ", index,
-                        " at offset ", i, " in indices is out of range")));
-              auto m_a = m_flat.template chip<0>(index);
-              auto v_a = v_flat.template chip<0>(index);
-              auto g = grad_flat.template chip<0>(i);
-              auto var_i = var_flat.template chip<0>(index);
-
-              m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
-              v_a = v_a * beta2_scalar + g.square() * (static_cast<T>(1) - beta2_scalar);
-              var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar);
-            }
-          } else {
-            auto var_flat = var.flat<T>();
-            auto m_flat = m.flat<T>();
-            auto v_flat = v.flat<T>();
-            auto grad_flat = grad.flat<T>();
-            auto indices_vec = indices.vec<Tindex>();
-            const int64 first_dim_size = m_flat.size();
-
-            for (int64 i = start_i; i < limit_i; i++) {
-              const Tindex index = internal::SubtleMustCopy(indices_vec(i));
-              OP_REQUIRES(
-                ctx, FastBoundsCheck(index, first_dim_size),
-                errors::InvalidArgument(strings::StrCat("Index ", index,
-                        " at offset ", i, " in indices is out of range")));
-              const T& g = grad_flat(i);
-              T& m_a = m_flat(index);
-              T& v_a = v_flat(index);
-              m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
-              v_a = v_a * beta2_scalar + g * g * (static_cast<T>(1) - beta2_scalar);
-              var_flat(index) -= (m_a * alpha) / (Eigen::numext::sqrt(v_a) + epsilon_scalar);
-            }
-          }
-          beta1_power_flat(0) *= beta1_scalar;
-          beta2_power_flat(0) *= beta2_scalar;
-        };
-
-        const int64 cost = 1000;
-        auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
-        Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
-      }
-    }
+    const Device& device = ctx->template eigen_device<Device>();
+    OP_REQUIRES_OK(ctx, functor::SparseApplyAdamAsync<Device, T, Tindex>()(
+      device, var.flat_outer_dims<T>(), m.flat_outer_dims<T>(),
+      v.flat_outer_dims<T>(), beta1_power.scalar<T>(), beta2_power.scalar<T>(),
+      lr.scalar<T>(), beta1.scalar<T>(), beta2.scalar<T>(), epsilon.scalar<T>(),
+      grad.flat_outer_dims<T>(), indices.vec<Tindex>(), apply_sparse_rmsprop_,
+      inner_dim));
 
     MaybeForwardRefInputToRefOutput(ctx, 0, 0);
   }
@@ -1704,20 +1730,20 @@ class SparseApplyAdamAsyncOp : public OpKernel {
   bool apply_sparse_rmsprop_;
 };
 
-#define REGISTER_KERNELS(T, Tindices)                                      \
+#define REGISTER_KERNELS(D, T, Tindices)                                      \
   REGISTER_KERNEL_BUILDER(Name("SparseApplyAdamAsync")                     \
-                              .Device(DEVICE_CPU)                          \
+                              .Device(DEVICE_##D)                          \
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices"),       \
-                          SparseApplyAdamAsyncOp<CPUDevice, T, Tindices>); \
+                          SparseApplyAdamAsyncOp<D##Device, T, Tindices>); \
   REGISTER_KERNEL_BUILDER(Name("ResourceSparseApplyAdamAsync")             \
-                              .Device(DEVICE_CPU)                          \
+                              .Device(DEVICE_##D)                          \
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices"),       \
-                          SparseApplyAdamAsyncOp<CPUDevice, T, Tindices>);
+                          SparseApplyAdamAsyncOp<D##Device, T, Tindices>);
 #define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(T, int32);   \
-  REGISTER_KERNELS(T, int64);
+  REGISTER_KERNELS(CPU, T, int32);   \
+  REGISTER_KERNELS(CPU, T, int64);
 
 TF_CALL_half(REGISTER_CPU_KERNELS);
 TF_CALL_bfloat16(REGISTER_CPU_KERNELS);
@@ -1725,9 +1751,47 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 TF_CALL_double(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
+
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+// Forward declarations of the functor specializations for GPU.
+namespace functor {
+#define DECLARE_GPU_SPEC(T, Tindex) \
+  template <> \
+  Status SparseApplyAdamAsync<GPUDevice, T, Tindex>::operator()(const GPUDevice &d, \
+                  typename TTypes<T>::Matrix var, \
+                  typename TTypes<T>::Matrix m, typename TTypes<T>::Matrix v, \
+                  typename TTypes<T>::Scalar beta1_power, \
+                  typename TTypes<T>::Scalar beta2_power, \
+                  typename TTypes<T>::ConstScalar lr, \
+                  typename TTypes<T>::ConstScalar beta1, \
+                  typename TTypes<T>::ConstScalar beta2, \
+                  typename TTypes<T>::ConstScalar epsilon, \
+                  typename TTypes<T>::ConstMatrix grad, \
+                  typename TTypes<Tindex>::ConstVec indices_vec, \
+                  bool apply_sparse_rmsprop, int64 inner_dim); \
+  extern template struct SparseApplyAdamAsync<GPUDevice, T, Tindex>;
+
+DECLARE_GPU_SPEC(Eigen::half, int32);
+DECLARE_GPU_SPEC(Eigen::half, int64);
+DECLARE_GPU_SPEC(float, int32);
+DECLARE_GPU_SPEC(float, int64);
+DECLARE_GPU_SPEC(double, int32);
+DECLARE_GPU_SPEC(double, int64);
+#undef DECLARE_GPU_SPEC
+} // end of namespace functor
+
+#define REGISTER_GPU_KERNEL(T) \
+  REGISTER_KERNELS(GPU, T, int32); \
+  REGISTER_KERNELS(GPU, T, int64);
+
+TF_CALL_half(REGISTER_GPU_KERNEL);
+TF_CALL_float(REGISTER_GPU_KERNEL);
+TF_CALL_double(REGISTER_GPU_KERNEL);
+
+#undef REGISTER_GPU_KERNEL
+#endif // End of #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #undef REGISTER_KERNELS
 
-// Note, this op works on cpu only.
 template <typename Device, typename T, typename Tindex, typename Tstep>
 class KvSparseApplyAdamAsyncOp : public OpKernel {
  public:
@@ -1766,7 +1830,6 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         ctx, beta2_power.IsInitialized(),
         errors::FailedPrecondition(
             "Attempting to use uninitialized variables: ", requested_input(4)));
-    
 
     const Tensor& lr = ctx->input(5);
     const Tensor& beta1 = ctx->input(6);
@@ -1862,22 +1925,22 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
       } else {
-        auto beta1_power_flat = beta1_power.flat<T>();
-        auto beta2_power_flat = beta2_power.flat<T>();
+        auto beta1_power_scalar = beta1_power.scalar<T>();
+        auto beta2_power_scalar = beta2_power.scalar<T>();
         T lr_scalar = lr.scalar<T>()();
         T beta1_scalar = beta1.scalar<T>()();
         T beta2_scalar = beta2.scalar<T>()();
         T epsilon_scalar = epsilon.scalar<T>()();
         const T alpha = lr_scalar *
-            Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_flat(0)) /
-            (static_cast<T>(1) - beta1_power_flat(0));
+            Eigen::numext::sqrt(static_cast<T>(1) - beta2_power_scalar()) /
+            (static_cast<T>(1) - beta1_power_scalar());
 
         auto do_work = [this, ctx, inner_dim, &var, &m, &v, &grad, &indices,
              &lr_scalar, &beta1_scalar,
              &beta1_power, &beta2_power,
              &beta2_scalar, &epsilon_scalar, &alpha, &global_step] (int64 start_i, int64 limit_i) {
-          auto beta1_power_flat = beta1_power.flat<T>();
-          auto beta2_power_flat = beta2_power.flat<T>();
+          auto beta1_power_scalar = beta1_power.scalar<T>();
+          auto beta2_power_scalar = beta2_power.scalar<T>();
 
           if (inner_dim > 0) {
             auto grad_flat = grad.flat_outer_dims<T>();
@@ -1903,13 +1966,14 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
               }
             }
           }
-          beta1_power_flat(0) *= beta1_scalar;
-          beta2_power_flat(0) *= beta2_scalar;
         };
 
         const int64 cost = 1000;
         auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
         Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
+
+        beta1_power_scalar() *= beta1_scalar;
+        beta2_power_scalar() *= beta2_scalar;
       }
     }
 
@@ -1921,18 +1985,18 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
   bool apply_sparse_rmsprop_;
 };
 
-#define REGISTER_KERNELS(T, Tindices, Tstep)                               \
+#define REGISTER_KERNELS(D, T, Tindices, Tstep)                             \
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamAsync")           \
-                              .Device(DEVICE_CPU)                          \
+                              .Device(DEVICE_##D)                          \
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncOp<CPUDevice, T, Tindices, Tstep>);
+                          KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep>);
 #define REGISTER_CPU_KERNELS(T)        \
-  REGISTER_KERNELS(T, int32, int32);   \
-  REGISTER_KERNELS(T, int64, int32);   \
-  REGISTER_KERNELS(T, int32, int64);   \
-  REGISTER_KERNELS(T, int64, int64);
+  REGISTER_KERNELS(CPU, T, int32, int32);   \
+  REGISTER_KERNELS(CPU, T, int64, int32);   \
+  REGISTER_KERNELS(CPU, T, int32, int64);   \
+  REGISTER_KERNELS(CPU, T, int64, int64);
 
 TF_CALL_half(REGISTER_CPU_KERNELS);
 TF_CALL_bfloat16(REGISTER_CPU_KERNELS);
@@ -1941,6 +2005,177 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
+
+#if GOOGLE_CUDA
+#if TF_ENABLE_GPU_EV
+template <typename Device, typename T, typename Tindex, typename Tstep>
+class KvSparseApplyAdamAsyncOpGPU : public OpKernel {
+ public:
+  explicit KvSparseApplyAdamAsyncOpGPU(OpKernelConstruction* ctx) : OpKernel(ctx) {
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("use_locking", &use_exclusive_lock_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("apply_sparse_rmsprop", &apply_sparse_rmsprop_));
+  }
+
+  void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
+    auto locks = MaybeLockEmbeddingVariableInputMutexesInOrder<Tindex, T>(
+      ctx, use_exclusive_lock_, {0, 1, 2, 3, 4});
+    EmbeddingVarGPU<Tindex, T>* var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 0, &var));
+    core::ScopedUnref unref_var(var);
+
+    EmbeddingVarGPU<Tindex, T>* m = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 1, &m));
+    core::ScopedUnref unref_m(m);
+
+    EmbeddingVarGPU<Tindex, T>* v = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 2, &v));
+    core::ScopedUnref unref_v(v);
+
+    Tensor beta1_power;
+    OP_REQUIRES_OK(ctx, GetInputTensorFromVariable<Device, T>(
+                            ctx, 3, use_exclusive_lock_, true, &beta1_power));
+
+    Tensor beta2_power;
+    OP_REQUIRES_OK(ctx, GetInputTensorFromVariable<Device, T>(
+                            ctx, 4, use_exclusive_lock_, true, &beta2_power));
+    OP_REQUIRES(
+        ctx, beta1_power.IsInitialized(),
+        errors::FailedPrecondition(
+            "Attempting to use uninitialized variables: ", requested_input(3)));
+    OP_REQUIRES(
+        ctx, beta2_power.IsInitialized(),
+        errors::FailedPrecondition(
+            "Attempting to use uninitialized variables: ", requested_input(4)));
+
+    const Tensor& lr = ctx->input(5);
+    const Tensor& beta1 = ctx->input(6);
+    const Tensor& beta2 = ctx->input(7);
+    const Tensor& epsilon = ctx->input(8);
+    const Tensor& grad = ctx->input(9);
+    const Tensor& indices = ctx->input(10);
+    const Tensor& global_step = ctx->input(11);
+
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(lr.shape()),
+        errors::InvalidArgument("lr is not a scalar: ",
+                                lr.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(beta1.shape()),
+        errors::InvalidArgument("beta1 is not a scalar: ",
+                                beta1.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(beta2.shape()),
+        errors::InvalidArgument("beta2 is not a scalar: ",
+                                beta2.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsScalar(epsilon.shape()),
+        errors::InvalidArgument("epsilon is not a scalar: ",
+                                epsilon.shape().DebugString()));
+    OP_REQUIRES(
+        ctx, TensorShapeUtils::IsVector(indices.shape()),
+        errors::InvalidArgument("indices must be one-dimensional"));
+
+    int64 inner_dim = 1;
+    TensorShape var_shape({var->ValueLen()});
+    for (int d = 0; d < var_shape.dims(); d++) {
+      OP_REQUIRES(
+          ctx, var_shape.dim_size(d) == grad.dim_size(d + 1),
+          errors::InvalidArgument(strings::StrCat(
+                "var and grad must match in dimension ", d + 1)));
+      inner_dim *= grad.dim_size(d + 1);
+    }
+    OP_REQUIRES(
+        ctx, inner_dim > 0,
+        errors::InvalidArgument(
+            "Inner dimension should be greater than zero."));
+
+    OP_REQUIRES(
+        ctx, IsLegacyScalar(global_step.shape()),
+        errors::InvalidArgument(
+            "global_step is not a scalar: ", global_step.shape().DebugString()));
+
+    const Tindex N = indices.dim_size(0);
+    OP_REQUIRES(
+        ctx, grad.dim_size(0) == N,
+        errors::InvalidArgument(
+            "grad must be the same size as indices in the first dimension."));
+
+    const Device& device = ctx->eigen_device<Device>();
+    OP_REQUIRES_OK(ctx, 
+      functor::KvSparseApplyAdamAsync<Device, T, Tindex, Tstep>()(
+        device, var, m, v, beta1_power.scalar<T>(), beta2_power.scalar<T>(),
+        indices.vec<Tindex>(), grad.flat_outer_dims<T>(), lr.scalar<T>(),
+        beta1.scalar<T>(), beta2.scalar<T>(), epsilon.scalar<T>(), 
+        global_step.scalar<Tstep>(), apply_sparse_rmsprop_, inner_dim,
+        ctx->get_allocator(AllocatorAttributes())));
+    MaybeForwardRefInputToRefOutput(ctx, 0, 0);
+  }
+
+ private:
+  bool use_exclusive_lock_;
+  bool apply_sparse_rmsprop_;
+};
+
+#define REGISTER_KERNELS(D, T, Tindices, Tstep)                             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamAsync")           \
+                              .Device(DEVICE_##D)                          \
+                              .HostMemory("global_step")                   \
+                              .TypeConstraint<T>("T")                      \
+                              .TypeConstraint<Tindices>("Tindices")        \
+                              .TypeConstraint<Tstep>("Tstep"),             \
+                          KvSparseApplyAdamAsyncOpGPU<D##Device, T, Tindices, Tstep>);
+
+#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+// Forward declarations of the functor specializations for GPU.
+namespace functor {
+#define DECLARE_GPU_SPEC(T, Tindex, Tstep) \
+  template <> \
+  Status KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep>::operator()( \
+                    const GPUDevice &d, \
+                    EmbeddingVarGPU<Tindex, T> *var, \
+                    EmbeddingVarGPU<Tindex, T> *m, \
+                    EmbeddingVarGPU<Tindex, T> *v, \
+                    typename TTypes<T>::Scalar beta1_power_scalar, \
+                    typename TTypes<T>::Scalar beta2_power_scalar, \
+                    typename TTypes<Tindex>::ConstVec indices_vec, \
+                    typename TTypes<T>::ConstMatrix grad, \
+                    typename TTypes<T>::ConstScalar lr_scalar, \
+                    typename TTypes<T>::ConstScalar beta1_scalar, \
+                    typename TTypes<T>::ConstScalar beta2_scalar, \
+                    typename TTypes<T>::ConstScalar epsilon_scalar, \
+                    typename TTypes<Tstep>::ConstScalar global_step_scalar, \
+                    bool apply_sparse_rmsprop, const int64 inner_dim, \
+                    Allocator *alloc); \
+  extern template struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep>;
+
+#define DECLARE_GPU_SPEC_TYPE(T) \
+  DECLARE_GPU_SPEC(T, int32, int32); \
+  DECLARE_GPU_SPEC(T, int32, int64); \
+  DECLARE_GPU_SPEC(T, int64, int32); \
+  DECLARE_GPU_SPEC(T, int64, int64);
+
+DECLARE_GPU_SPEC_TYPE(float);
+DECLARE_GPU_SPEC_TYPE(double);
+
+#undef DECLARE_GPU_SPEC_TYPE
+#undef DECLARE_GPU_SPEC
+} // end of namespace functor
+
+#define REGISTER_GPU_KERNEL(T) \
+  REGISTER_KERNELS(GPU, T, int32, int32); \
+  REGISTER_KERNELS(GPU, T, int32, int64); \
+  REGISTER_KERNELS(GPU, T, int64, int32); \
+  REGISTER_KERNELS(GPU, T, int64, int64);
+  
+TF_CALL_float(REGISTER_GPU_KERNEL);
+TF_CALL_double(REGISTER_GPU_KERNEL);
+
+#undef REGISTER_GPU_KERNEL
+#endif // End of GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#undef REGISTER_KERNELS
+
+#endif // TF_ENABLE_GPU_EV
+#endif // GOOGLE_CUDA
 
 template <typename T, typename Tindex, typename Tstep>
 class KvResourceSparseApplyGradientDescentOp : public OpKernel {
