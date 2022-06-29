@@ -109,7 +109,7 @@ class KvSparseApplyAdagradOp : public OpKernel {
       inner_dim *= grad.dim_size(d + 1);
     }
 
-    const TKey N = indices.dim_size(0);
+    const int64 N = indices.dim_size(0);
     OP_REQUIRES(
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
@@ -223,7 +223,7 @@ class KvSparseApplyAdagradOpGPU : public OpKernel {
       inner_dim *= grad.dim_size(d + 1);
     }
 
-    const TKey N = indices.dim_size(0);
+    const int64 N = indices.dim_size(0);
     OP_REQUIRES(
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
@@ -901,7 +901,7 @@ class SparseApplyAdagradDecayOp : public OpKernel {
       ctx, inner_dim > 0,
       errors::InvalidArgument("Inner dimension should be greater than zero."));
 
-    const Tindex N = indices.dim_size(0);
+    const int64 N = indices.dim_size(0);
     OP_REQUIRES(
       ctx, grad.dim_size(0) == N,
       errors::InvalidArgument(
@@ -917,7 +917,7 @@ class SparseApplyAdagradDecayOp : public OpKernel {
       T decay_baseline_scalar = decay_baseline.scalar<T>()();
 
       if (inner_dim > 1) {
-        const Tindex first_dim_size = var.dim_size(0);
+        const int64 first_dim_size = var.dim_size(0);
         auto var_flat = var.flat_outer_dims<T>();
         auto accum_flat = accum.flat_outer_dims<T>();
         auto grad_flat = grad.flat_outer_dims<T>();
@@ -925,7 +925,7 @@ class SparseApplyAdagradDecayOp : public OpKernel {
             &accum_flat, &grad_flat, &var_flat, &global_step_scalar,
             &decay_step_scalar, &accum_decay_power_flat, &decay_rate_scalar,
             &decay_baseline_scalar, &lr_scalar] (int64 start_i, int64 limit_i) {
-          for (Tindex i = start_i; i < limit_i; i++) {
+          for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = internal::SubtleMustCopy(indices_vec(i));
             OP_REQUIRES(ctx, FastBoundsCheck(index, first_dim_size),
                         errors::InvalidArgument(
@@ -950,12 +950,12 @@ class SparseApplyAdagradDecayOp : public OpKernel {
         auto var_flat = var.flat<T>();
         auto accum_flat = accum.flat<T>();
         auto grad_flat = grad.flat<T>();
-        const Tindex first_dim_size = accum_flat.size();
+        const int64 first_dim_size = accum_flat.size();
         auto do_work = [this, ctx, &indices_vec, &first_dim_size, &accum_flat, &grad_flat,
             &global_step_scalar, &decay_step_scalar, &accum_decay_power_flat,
             &decay_rate_scalar, &decay_baseline_scalar, &lr_scalar, &var_flat]
                 (int64 start_i, int64 limit_i) {
-          for (Tindex i = start_i; i < limit_i; i++) {
+          for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = internal::SubtleMustCopy(indices_vec(i));
             OP_REQUIRES(ctx, FastBoundsCheck(index, first_dim_size),
                         errors::InvalidArgument(
@@ -1577,7 +1577,7 @@ class SparseApplyAdamAsyncOp : public OpKernel {
         errors::InvalidArgument(
             "Inner dimension should be greater than zero."));
 
-    const Tindex N = indices.dim_size(0);
+    const int64 N = indices.dim_size(0);
     OP_REQUIRES(
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
@@ -1585,10 +1585,10 @@ class SparseApplyAdamAsyncOp : public OpKernel {
 
     if (N > 0) {
       if (apply_sparse_rmsprop_) {
-        const Tindex first_dim_size = var.dim_size(0);
+        const int64 first_dim_size = var.dim_size(0);
         // Validate all the indices are in range
         auto indices_vec = indices.vec<Tindex>();
-        for (Tindex i = 0; i < N; i++) {
+        for (int64 i = 0; i < N; i++) {
           const Tindex index = indices_vec(i);
           OP_REQUIRES(ctx, index >= 0 && index < first_dim_size,
                       errors::InvalidArgument(
@@ -1607,7 +1607,7 @@ class SparseApplyAdamAsyncOp : public OpKernel {
         auto do_work = [this, ctx, &indices_vec, &v_flat, &m_flat,
             &grad_flat, &beta2_scalar, &beta1_scalar, &epsilon_scalar,
             &lr_scalar, &var_flat] (int64 start_i, int64 limit_i) {
-          for (Tindex i = start_i; i < limit_i; i++) {
+          for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
 
             auto v_ = v_flat.template chip<0>(index);
@@ -1647,9 +1647,9 @@ class SparseApplyAdamAsyncOp : public OpKernel {
             auto v_flat = v.flat_outer_dims<T>();
             auto grad_flat = grad.flat_outer_dims<T>();
             auto indices_vec = indices.vec<Tindex>();
-            const Tindex first_dim_size = var.dim_size(0);
+            const int64 first_dim_size = var.dim_size(0);
 
-            for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            for (int64 i = start_i; i < limit_i; i++) {
               const Tindex index = internal::SubtleMustCopy(indices_vec(i));
               OP_REQUIRES(
                 ctx, FastBoundsCheck(index, first_dim_size),
@@ -1670,9 +1670,9 @@ class SparseApplyAdamAsyncOp : public OpKernel {
             auto v_flat = v.flat<T>();
             auto grad_flat = grad.flat<T>();
             auto indices_vec = indices.vec<Tindex>();
-            const Tindex first_dim_size = m_flat.size();
+            const int64 first_dim_size = m_flat.size();
 
-            for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            for (int64 i = start_i; i < limit_i; i++) {
               const Tindex index = internal::SubtleMustCopy(indices_vec(i));
               OP_REQUIRES(
                 ctx, FastBoundsCheck(index, first_dim_size),
@@ -1815,7 +1815,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
         errors::InvalidArgument(
             "global_step is not a scalar: ", global_step.shape().DebugString()));
 
-    const Tindex N = indices.dim_size(0);
+    const int64 N = indices.dim_size(0);
     OP_REQUIRES(
         ctx, grad.dim_size(0) == N,
         errors::InvalidArgument(
@@ -1835,7 +1835,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             &beta2_scalar, &beta1_scalar, &epsilon_scalar, &lr_scalar, &global_step]
                 (int64 start_i, int64 limit_i) {
           Tstep gs = global_step.scalar<Tstep>()();
-          for (Tindex i = start_i; i < limit_i; i++) {
+          for (int64 i = start_i; i < limit_i; i++) {
             const Tindex index = indices_vec(i);
             ValuePtr<T>* value_ptr = nullptr;
             bool is_filter = false;
@@ -1884,7 +1884,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
             auto indices_vec = indices.vec<Tindex>();
             Tstep gs = global_step.scalar<Tstep>()();
 
-            for (Tindex i = static_cast<Tindex>(start_i); i < static_cast<Tindex>(limit_i); i++) {
+            for (int64 i = start_i; i < limit_i; i++) {
               const Tindex index = indices_vec(i);
               ValuePtr<T>* value_ptr = nullptr;
               bool is_filter = false;
