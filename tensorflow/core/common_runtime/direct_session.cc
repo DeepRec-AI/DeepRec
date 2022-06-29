@@ -274,12 +274,10 @@ class DirectSessionFactory : public SessionFactory {
     ResourceMgr* shared_rmgr = new ResourceMgr("localhost");
     DeviceResourceMgrMap dev_rmgr_map;
     std::string dev_prefix("/job:localhost/replica:0/task:0");
-    for (int i = 0; i < session_num; ++i) {
-      std::string dev_name = dev_prefix + "/device:CPU:" + std::to_string(i);
-      dev_rmgr_map.device_rmgr_map[dev_name] = shared_rmgr;
-      dev_name = dev_prefix + "/device:cpu:" + std::to_string(i);
-      dev_rmgr_map.device_rmgr_map[dev_name] = shared_rmgr;
-    }
+    dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:CPU:0"] = shared_rmgr;
+    dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:cpu:0"] = shared_rmgr;
+    dev_rmgr_map.device_rmgr_map["/device:CPU:0"] = shared_rmgr;
+    dev_rmgr_map.device_rmgr_map["/device:cpu:0"] = shared_rmgr;
 
     std::vector<std::unique_ptr<Device>> devices;
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
