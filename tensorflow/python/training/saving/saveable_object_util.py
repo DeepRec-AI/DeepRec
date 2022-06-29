@@ -182,6 +182,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
 
   def restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access
+    name_tensor = ops.convert_to_tensor(self.name)
     with ops.colocate_with(self.handle_op):
       handle_name = ops.name_from_scope_name(self.name)
       is_partitioned_ev = not isinstance(self.var._save_slice_info, str)
@@ -193,7 +194,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
             restored_tensors[0],
             self.handle_op, self.var._primary_handle,
             variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
-            self.name,
+            name_tensor,
             ops.convert_to_tensor(self.invalid_key),
             slot_num=self.var._slot_num,
             shape=self.op.initial_value.get_shape()[rank:], steps_to_live=self.steps_to_live,
@@ -218,10 +219,11 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access
+    name_tensor = ops.convert_to_tensor(self.name)
     with ops.colocate_with(self.handle_op):
       handle_name = ops.name_from_scope_name(self.name)
       return gen_kv_variable_ops.kv_resource_incr_import(
-              restored_tensors[0], self.handle_op, self.name,
+              restored_tensors[0], self.handle_op, name_tensor,
               ops.convert_to_tensor(self.invalid_key),
               variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
               partition_id=self.partition_id, partition_num=self.partition_num)
