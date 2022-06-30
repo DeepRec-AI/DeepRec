@@ -286,7 +286,7 @@ class DirectSessionFactory : public SessionFactory {
 
     DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
 
-    SessionGroup* session_group = new SessionGroup();
+    SessionGroup* session_group = new SessionGroup(shared_rmgr);
 #ifdef TENSORFLOW_USE_NUMA
     DirectSession* leader_session =
         new DirectSession(options, device_mgr, true, this,
