@@ -56,12 +56,12 @@ TRITONTF_IOList* TRITONTF_IOListNew(
 void TRITONTF_IOListDelete(TRITONTF_IOList* list);
 
 // If TensorFlow status is non-OK, return the equivalent TRITONTF_Error
-#define RETURN_IF_TF_ERROR(TFS)                          \
-  do {                                                   \
-    const tensorflow::Status& status__ = (TFS);          \
-    if (status__.code() != 0) {                          \
+#define RETURN_IF_TF_ERROR(TFS)                           \
+  do {                                                    \
+    const tensorflow::Status& status__ = (TFS);           \
+    if (status__.code() != 0) {                           \
       return TRITONTF_ErrorNew(status__.error_message()); \
-    }                                                    \
+    }                                                     \
   } while (false)
 
 namespace {
@@ -462,6 +462,9 @@ class ModelImpl {
       const std::vector<std::string>& output_names,
       TRITONTF_TensorList** output_tensors);
 
+  // Run a single operation.
+  TRITONTF_Error* RunOp(const std::string& op_name);
+
  private:
   const std::string model_name_;
   std::unique_ptr<tensorflow::SavedModelBundle> bundle_;
@@ -592,6 +595,13 @@ ModelImpl::Run(
     }
   }
 
+  return nullptr;
+}
+
+TRITONTF_Error*
+ModelImpl::RunOp(const std::string& op_name)
+{
+  RETURN_IF_TF_ERROR(session_->Run({}, {}, {op_name}, nullptr));
   return nullptr;
 }
 
@@ -944,10 +954,12 @@ TRITONTF_ModelCreateFromSavedModel(
   std::unique_ptr<tensorflow::SavedModelBundle> bundle(
       new tensorflow::SavedModelBundle);
 
-  // If user does not specify a 'tag' in the configuration file, use 'serve' as default
+  // If user does not specify a 'tag' in the configuration file, use 'serve' as
+  // default
   std::unordered_set<std::string> saved_model_tags;
-  const std::string TAG_TO_USE = 
-      (strcmp(graph_tag, "") == 0) ? tensorflow::kSavedModelTagServe : graph_tag;
+  const std::string TAG_TO_USE = (strcmp(graph_tag, "") == 0)
+                                     ? tensorflow::kSavedModelTagServe
+                                     : graph_tag;
   saved_model_tags.insert(TAG_TO_USE);
 
   tensorflow::RunOptions run_options;
@@ -971,12 +983,12 @@ TRITONTF_ModelCreateFromSavedModel(
 
   // If user does not specify a 'signature_def' in the configuration file,
   // then use "serving_default" as default
-  const std::string SIGNATURE_DEF_KEY_TO_USE = 
+  const std::string SIGNATURE_DEF_KEY_TO_USE =
       (strcmp(signature_def, "") == 0) ? "serving_default" : signature_def;
   static const std::string INIT_OP_SIGNATURE_DEF_KEY("__saved_model_init_op");
   static const std::string TRAIN_OP_SIGNATURE_DEF_KEY("__saved_model_train_op");
-  auto sig_itr = bundle->meta_graph_def.signature_def().find(
-      SIGNATURE_DEF_KEY_TO_USE);
+  auto sig_itr =
+      bundle->meta_graph_def.signature_def().find(SIGNATURE_DEF_KEY_TO_USE);
   if (sig_itr == bundle->meta_graph_def.signature_def().end()) {
     // If default serving signature_def key is not found, maybe it is named
     // something else, use one that is neither init_op key nor train_op key
@@ -1002,8 +1014,8 @@ TRITONTF_ModelCreateFromSavedModel(
   // Collect the inputs...
   TRITONTF_IOList* inputs = nullptr;
   for (const auto& sin : def.inputs()) {
-    inputs =
-        TRITONTF_IOListNew(sin.first.c_str(), sin.second.name().c_str(), inputs);
+    inputs = TRITONTF_IOListNew(
+        sin.first.c_str(), sin.second.name().c_str(), inputs);
     TRITONTF_IO* io = inputs->io_;
 
     const TRITONTF_DataType dt = ConvertDataType(sin.second.dtype());
@@ -1131,8 +1143,9 @@ TRITONTF_ModelMakeCallable(
 
 TRITONTF_Error*
 TRITONTF_ModelRun(
-    TRITONTF_Model* model, TRITONTF_TensorList* input_tensors, size_t num_outputs,
-    const char** output_names, TRITONTF_TensorList** output_tensors)
+    TRITONTF_Model* model, TRITONTF_TensorList* input_tensors,
+    size_t num_outputs, const char** output_names,
+    TRITONTF_TensorList** output_tensors)
 {
   ModelImpl* m = reinterpret_cast<ModelImpl*>(model);
 
@@ -1142,5 +1155,21 @@ TRITONTF_ModelRun(
   }
 
   return m->Run(input_tensors, output_tensor_names, output_tensors);
+}
+
+TRITONTF_Error*
+TRITONTF_ModelInitialize(
+    TRITONTF_Model* model, size_t num_init_operations,
+    const char** init_operation_names)
+{
+  ModelImpl* m = reinterpret_cast<ModelImpl*>(model);
+  for (auto i = 0; i < num_init_operations; i++) {
+    TRITONTF_Error* err = m->RunOp(init_operation_names[i]);
+    if (err != nullptr) {
+      return err;
+    }
+  }
+
+  return nullptr;
 }
 #endif
