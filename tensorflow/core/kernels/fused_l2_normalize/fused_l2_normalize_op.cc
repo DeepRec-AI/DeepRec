@@ -58,11 +58,12 @@ public:
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
 #ifdef __AVX512F__
-    int64 block_num = cols >> 7;
-    int64 remainder_128 = cols & 0x7F;
-    int64 remainder_16 = remainder_128 & 0x0F;
-    int64 remainder_block_num = remainder_128 >> 4;
-    int64 remainder_block_num_total = remainder_block_num+ !!remainder_16;
+    // Do forward in 128(8*16) block, avx512 handles 16 floats one time
+    int64 block_num = cols >> 7;  // 128-size block nums 
+    int64 remainder_128 = cols & 0x7F;  // remainder of 128
+    int64 remainder_16 = remainder_128 & 0x0F;  // remainder of 16
+    int64 remainder_block_num = remainder_128 >> 4;  // 16-size block num in 128-remainder
+    int64 remainder_block_num_total = remainder_block_num+ !!remainder_16;  // total 16-size block num in remainder
 
     thread_pool->ParallelFor(total_unit, unit_cost, [&input, &output, rows, cols, block_num, remainder_block_num,
          remainder_block_num_total, remainder_128, remainder_16, this](int64 begin_unit, int64 end_unit) {
@@ -99,6 +100,7 @@ private:
     int64 remainder = cols % SUM_BLOCK_SIZE;
     for (int64 i = begin_row; i < end_row; ++i) {
       T row_sum = 0;
+      // Sum of squares of the inputs
       for (int64 j = 0; j < cols - remainder; j += SUM_BLOCK_SIZE) {
         T data_0 = input[i * cols + j];
         T data_1 = input[i * cols + j + 1];
@@ -116,8 +118,12 @@ private:
         T data_0 = input[i * cols + j];
         row_sum += data_0 * data_0;
       }
+
+      // Square
       row_sum += epsilon;
       row_sum = 1.0 / std::sqrt(row_sum);
+
+      // Mul
       for (int64 j = 0; j < cols; ++j) {
         output[i * cols + j] = input[i * cols + j] * row_sum;
       }
@@ -130,6 +136,7 @@ private:
                          int64 remainder_block_num_total, int64 remainder_128, int64 remainder_16) {
     for (int64 i = begin_row; i < end_row; ++i) {
       float row_sum = 0.0;
+      // Sum of squares of the inputs
       for (int64 j = 0; j < block_num; ++j) {
         __m512 inputs[SUM_BLOCK_SIZE];
         auto load = [&](auto idx) {
@@ -160,8 +167,11 @@ private:
         row_sum += _mm512_reduce_add_ps(block_sum);
       }
 
+      // Square root 
       row_sum += epsilon;
       row_sum = 1.0 / std::sqrt(row_sum);
+
+      // Mul & store
       __m512 row_sums = _mm512_set1_ps(row_sum);
       for (int64 j = 0; j < cols - 15; j += 16) {
         __m512 inputs = _mm512_loadu_ps(input + cols * i + j);
@@ -268,12 +278,13 @@ public:
     auto &worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
-#ifdef __AVX512F__
-    int64 block_num = cols >> 7;
-    int64 remainder_128 = cols & 0x7F;
-    int64 remainder_16 = remainder_128 & 0x0F;
-    int64 remainder_block_num = remainder_128 >> 4;
-    int64 remainder_block_num_total = remainder_block_num+ !!remainder_16;
+#ifdef __AVX512F__ 
+    // Do forward in 128(8*16) block, avx512 handles 16 floats one time
+    int64 block_num = cols >> 7;  // 128-size block nums 
+    int64 remainder_128 = cols & 0x7F;  // remainder of 128
+    int64 remainder_16 = remainder_128 & 0x0F;  // remainder of 16
+    int64 remainder_block_num = remainder_128 >> 4;  // 16-size block num in 128-remainder
+    int64 remainder_block_num_total = remainder_block_num+ !!remainder_16;  // total 16-size block num in remainder
 
     thread_pool->ParallelFor(total_unit, unit_cost, [&y_grad, &x, &x_grad, rows, cols, block_num, remainder_block_num,
          remainder_block_num_total, remainder_128, remainder_16, this](int64 begin_unit, int64 end_unit) {
@@ -310,6 +321,7 @@ private:
     for (int64 i = begin_row; i < end_row; ++i) {
       T x_row_sum = 0.0;
       T y_grad_row_sum = 0.0;
+      // sum of squares of x and sum of y_grad * x
       for (int64 j = cols - 1; j > remainder; j -= SUM_BLOCK_SIZE) {
         T x_0 = x[i * cols + j];
         T x_1 = x[i * cols + j - 1];
@@ -344,6 +356,7 @@ private:
       x_row_sum += epsilon;
       x_row_sum = 1.0 / std::sqrt(x_row_sum);  // rvar
       y_grad_row_sum = (y_grad_row_sum * x_row_sum) * (x_row_sum * x_row_sum);
+      // Calculate x_grad = y_grad * rvar - x * ((sum * rvar) * (rvar * rvar))
       for (int64 j = 0; j < cols; ++j) {
         x_grad[i * cols + j] =
             y_grad[i * cols + j] * x_row_sum - x[i * cols + j] * y_grad_row_sum;
@@ -360,6 +373,7 @@ private:
     for (int64 i = begin_row; i < end_row; ++i) {
       T x_row_sum = 0.0;
       T y_grad_row_sum = 0.0;
+      // sum of squares of x and sum of y_grad * x
       for (int64 j = 0; j < block_num; ++j) {
         __m512 xs[SUM_BLOCK_SIZE];
         auto x_load = [&](auto idx) {
@@ -414,8 +428,9 @@ private:
       }
 
       x_row_sum += epsilon;
-      x_row_sum = 1.0 / std::sqrt(x_row_sum);
+      x_row_sum = 1.0 / std::sqrt(x_row_sum); // var
       y_grad_row_sum = (y_grad_row_sum * x_row_sum) * (x_row_sum * x_row_sum);
+      // Calculate x_grad = y_grad * rvar - x * ((sum * rvar) * (rvar * rvar))
       __m512 x_row_sums = _mm512_set1_ps(x_row_sum);
       __m512 y_grad_row_sums = _mm512_set1_ps(y_grad_row_sum);
       for (int64 j = 0; j < cols - 15; j += 16) {
