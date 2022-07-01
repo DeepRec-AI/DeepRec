@@ -115,7 +115,7 @@ for i in $(seq 1 3); do
     ret=0
     bazel test -c opt --config=cuda --verbose_failures \
     --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  \
-    --test_timeout="300,450,1200,3600" --local_test_jobs=20  \
+    --test_timeout="300,450,1200,3600" --local_test_jobs=20 --test_output=errors \
     -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
 done
 
