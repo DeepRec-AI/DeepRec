@@ -71,6 +71,17 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
                           int* invalid_id_flag, IndicePair* tmp_indices_buffer,
                           int64_t* values_extended);
 
+void InitFillEmptyBuffers(const GPUDevice& d, int64_t batch_size, int64_t nnz,
+                          int64_t default_id, float default_weight,
+                          bool use_sparse_weights, int64_t* sp_values_out,
+                          float* sp_weights_values_out, bool* is_row_empty,
+                          int64_t* tmp_indices);
+
+void DetectEmptyRow(const GPUDevice& d, const int64_t* indices,
+                    const int64_t* sp_values, const float* sp_weights_values,
+                    const bool prune_invalid, const bool prune_sparse_weights,
+                    const int64_t nnz, bool* is_row_empty);
+
 template <typename T>
 void RangeInit(const GPUDevice& d, const int64_t length, T* out);
 
@@ -97,19 +108,18 @@ void ApplyCombiner(const GPUDevice& d, const int batch_size,
 template <Combiner combiner>
 void DistributeGradToShardSinglePartition(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs,
-    const int nnz, const int emb_vec_size, const float max_norm,
-    const bool set_empty_row_zero, const int* feature_nums,
-    const int* row_emptiness_flag, float* grad_shard);
+    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
+    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
+    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard);
 
 template <Combiner combiner>
 void DistributeGradToShardMultiPartition(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs,
-    const int nnz, const int emb_vec_size, const float max_norm,
-    const bool set_empty_row_zero, const int* feature_nums,
-    const int* row_emptiness_flag, void** grad_shard_ptrs);
+    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
+    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
+    const int* feature_nums, const int* row_emptiness_flag,
+    void** grad_shard_ptrs);
 
 }  // namespace fused_embedding
 

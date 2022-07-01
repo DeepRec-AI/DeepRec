@@ -6,6 +6,8 @@
 
 #include "tensorflow/core/kernels/fused_embedding/gpu/functions/kernels.cu.h"
 
+#include <algorithm>
+
 #include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
@@ -62,7 +64,7 @@ void DetectInvalid(const GPUDevice& d, const int64_t* values, const int64_t nnz,
 
 __global__ void FusedMultiFunctionalKernel(
     const IndicePair* indices, const int64_t* values, const int64_t nnz,
-    const int64_t batch_size, const bool prune_invalid_id,
+    const int64_t batch_size, const bool prune_invalid,
     const int64_t default_id, int* row_emptiness_flag, int* invalid_id_flag,
     IndicePair* tmp_indices_buffer, int64_t* values_extended) {
   // This kernel will do many things together
@@ -73,7 +75,7 @@ __global__ void FusedMultiFunctionalKernel(
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
   if (offset < nnz) {
     // do DetectRowEmptiness
-    if (prune_invalid_id) {
+    if (prune_invalid) {
       const int64_t value = values[offset];
       if (value < 0) {
         // invalid, set invalid_id_flag
@@ -109,7 +111,7 @@ __global__ void FusedMultiFunctionalKernel(
 
 void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
                           const int64_t* values, const int64_t nnz,
-                          const int64_t batch_size, const bool prune_invalid_id,
+                          const int64_t batch_size, const bool prune_invalid,
                           const int64_t default_id, int* row_emptiness_flag,
                           int* invalid_id_flag, IndicePair* tmp_indices_buffer,
                           int64_t* values_extended) {
@@ -117,8 +119,110 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
   const int blocks = CalcBlocksLinearMapping(nnz + batch_size, threads);
   TF_CHECK_OK(GpuLaunchKernel(
       FusedMultiFunctionalKernel, blocks, threads, 0, d.stream(), indices,
-      values, nnz, batch_size, prune_invalid_id, default_id, row_emptiness_flag,
+      values, nnz, batch_size, prune_invalid, default_id, row_emptiness_flag,
       invalid_id_flag, tmp_indices_buffer, values_extended));
+}
+
+template <bool use_sparse_weights>
+__global__ void InitFillEmptyBuffersKernel(
+    int64_t batch_size, int64_t nnz, int64_t default_id, float default_weight,
+    int64_t* sp_values_out, float* sp_weights_values_out, bool* is_row_empty,
+    int64_t* tmp_indices) {
+  const int global_tid = threadIdx.x + blockDim.x * blockIdx.x;
+  if (global_tid < batch_size) {
+    // init is_row_empty
+    is_row_empty[global_tid] = true;
+  } else if (global_tid < 3 * batch_size) {
+    // init tmp indices
+    const int new_global_tid = global_tid - batch_size;
+    // even tid keep batch_id, odd tid keep 0
+    const int64_t data = ((new_global_tid + 1) % 2) * (new_global_tid / 2);
+    tmp_indices[new_global_tid] = data;
+  }
+
+  if (global_tid < nnz) {
+    sp_values_out[global_tid] = default_id;
+  }
+
+  // using template here to let compiler optimize this section out if
+  // use_sparse_weights == false
+  if (use_sparse_weights) {
+    if (global_tid < nnz) {
+      sp_weights_values_out[global_tid] = default_weight;
+    }
+  }
+}
+
+void InitFillEmptyBuffers(const GPUDevice& d, int64_t batch_size, int64_t nnz,
+                          int64_t default_id, float default_weight,
+                          bool use_sparse_weights, int64_t* sp_values_out,
+                          float* sp_weights_values_out, bool* is_row_empty,
+                          int64_t* tmp_indices) {
+  const int threads = 32;
+  const int blocks =
+      CalcBlocksLinearMapping(std::max(3 * batch_size, nnz), threads);
+
+  if (use_sparse_weights) {
+    TF_CHECK_OK(GpuLaunchKernel(
+        InitFillEmptyBuffersKernel<true>, blocks, threads, 0, d.stream(),
+        batch_size, nnz, default_id, default_weight, sp_values_out,
+        sp_weights_values_out, is_row_empty, tmp_indices));
+  } else {
+    TF_CHECK_OK(GpuLaunchKernel(
+        InitFillEmptyBuffersKernel<false>, blocks, threads, 0, d.stream(),
+        batch_size, nnz, default_id, default_weight, sp_values_out,
+        sp_weights_values_out, is_row_empty, tmp_indices));
+  }
+}
+
+template <bool prune_invalid, bool prune_sparse_weights>
+void __global__ DetectEmptyRowKernel(const int64_t* indices,
+                                     const int64_t* sp_values,
+                                     const float* sp_weights_values,
+                                     const int64_t nnz, bool* is_row_empty) {
+  const int global_tid = threadIdx.x + blockIdx.x * blockDim.x;
+  if (global_tid < nnz) {
+    const int64_t row_in_batch = indices[2 * global_tid];
+    // use template for compiler to optimize
+    if (prune_invalid) {
+      if (prune_sparse_weights) {
+        if (sp_values[global_tid] >= 0 && sp_weights_values[global_tid] > 0.0) {
+          is_row_empty[row_in_batch] = false;
+        }
+      } else {
+        if (sp_values[global_tid] >= 0) {
+          is_row_empty[row_in_batch] = false;
+        }
+      }
+    } else {
+      is_row_empty[row_in_batch] = false;
+    }
+  }
+}
+
+void DetectEmptyRow(const GPUDevice& d, const int64_t* indices,
+                    const int64_t* sp_values, const float* sp_weights_values,
+                    const bool prune_invalid, const bool prune_sparse_weights,
+                    const int64_t nnz, bool* is_row_empty) {
+  const int threads = 32;
+  const int blocks = CalcBlocksLinearMapping(nnz, threads);
+
+#define LAUNCH_KERNEL(prune_invalid, prune_sparse_weights)                \
+  TF_CHECK_OK(GpuLaunchKernel(                                            \
+      DetectEmptyRowKernel<prune_invalid, prune_sparse_weights>, blocks,  \
+      threads, 0, d.stream(), indices, sp_values, sp_weights_values, nnz, \
+      is_row_empty));
+
+  if (prune_invalid) {
+    if (prune_sparse_weights) {
+      LAUNCH_KERNEL(true, true);
+    } else {
+      LAUNCH_KERNEL(true, false);
+    }
+  } else {
+    LAUNCH_KERNEL(false, false);
+  }
+#undef LAUNCH_KERNEL
 }
 
 template <typename T>

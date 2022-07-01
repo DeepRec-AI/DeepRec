@@ -8,11 +8,11 @@
 
 #define EIGEN_USE_GPU
 
+#include "cub/thread/thread_operators.cuh"
 #include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
 #include "tensorflow/core/kernels/fused_embedding/gpu/functions/kernels.cu.h"
 #include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
-#include "third_party/cub/thread/thread_operators.cuh"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;

@@ -11,27 +11,50 @@
 #include <thrust/iterator/zip_iterator.h>
 #include <thrust/tuple.h>
 
+#include "cub/device/device_radix_sort.cuh"
+#include "cub/device/device_select.cuh"
+#include "cub/iterator/constant_input_iterator.cuh"
+#include "cub/thread/thread_operators.cuh"
 #include "tensorflow/core/kernels/fused_embedding/gpu/common.cu.h"
 #include "tensorflow/core/kernels/fused_embedding/gpu/functions/kernels.cu.h"
 #include "tensorflow/core/profiler/nvtx_utils.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
-#include "third_party/cub/device/device_radix_sort.cuh"
-#include "third_party/cub/device/device_select.cuh"
-#include "third_party/cub/iterator/constant_input_iterator.cuh"
-#include "third_party/cub/thread/thread_operators.cuh"
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
 class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
  public:
+  struct PruneInvalidSelectOp {
+    template <typename ThurstTupleT>
+    __host__ __device__ __forceinline__ bool operator()(
+        ThurstTupleT const& tuple) const {
+      return thrust::get<0>(tuple) >= 0;
+    }
+  };
+
+  struct PruneInvalidWithWeightSelectOp {
+    template <typename ThurstTupleT>
+    __host__ __device__ __forceinline__ bool operator()(
+        ThurstTupleT const& tuple) const {
+      return thrust::get<0>(tuple) >= 0 && thrust::get<2>(tuple) > 0;
+    }
+  };
+
   explicit PruneInvalidAndFillEmptyRowsGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("fill_empty_row", &fill_empty_row_));
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("prune_invalid_id", &prune_invalid_id_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("prune_invalid", &prune_invalid_));
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
-    default_id_ = int64_t(temp_default_id);
+    default_id_ = int64(temp_default_id);
+
+    OP_REQUIRES_OK(ctx,
+                   ctx->GetAttr("use_sparse_weights", &use_sparse_weights_));
+    OP_REQUIRES_OK(
+        ctx, ctx->GetAttr("prune_sparse_weights", &prune_sparse_weights_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("default_weight", &default_weight_));
+
     cudaEventCreateWithFlags(&memcpy_event_, cudaEventDisableTiming);
   }
 
@@ -39,180 +62,198 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
     using namespace fused_embedding;
     auto device = ctx->eigen_device<GPUDevice>();
 
-    const int64_t default_id = default_id_ >= 0 ? default_id_ : 0;
+    const int64 default_id = default_id_ >= 0 ? default_id_ : 0;
 
     nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
-    // ================ 1. bind inputs ================ //
-    Tensor const* values_tensor = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("sp_values", &values_tensor));
-    const int64_t nnz = values_tensor->shape().dim_size(0);
+    // 1. bind & set inputs, vars, outputs and Init buffers.
+    Tensor const* sp_values = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_values", &sp_values));
+    const int64 nnz = sp_values->shape().dim_size(0);
 
-    Tensor const* indices_tensor = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("sp_indices", &indices_tensor));
+    Tensor const* sp_indices = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_indices", &sp_indices));
 
-    Tensor const* dense_shape = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape));
-    const int64_t batch_size = dense_shape->flat<int64>().data()[0];
+    Tensor const* sp_dense_shape = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &sp_dense_shape));
+    const int64 batch_size = sp_dense_shape->flat<int64>().data()[0];
 
-    // =============================================== //
+    Tensor const* sp_weights_values = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_weights_values", &sp_weights_values));
 
-    // =============================================== //
+    if (!prune_invalid_ && !fill_empty_row_) {
+      ctx->set_output("sp_values_out", *sp_values);
+      ctx->set_output("sp_indices_out", *sp_indices);
+      ctx->set_output("sp_weights_values_out", *sp_weights_values);
+      return;
+    }
 
-    // === 2. fill_empty_row, prune, if avaliable. === //
-    Tensor values_extended;
-    Tensor indices_extended;
-    Tensor tmp_indices_buffer;
-    Tensor* row_empty_and_invalid_flags;
+    Tensor* sp_values_out;
+    Tensor* sp_indices_out;
+    Tensor* sp_weights_values_out;
+
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_values_out",
+                                             TensorShape{nnz + batch_size},
+                                             &sp_values_out));
+    OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_indices_out",
+                                             TensorShape{nnz + batch_size, 2},
+                                             &sp_indices_out));
+
+    if (use_sparse_weights_) {
+      OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_weights_values_out",
+                                               TensorShape{nnz + batch_size},
+                                               &sp_weights_values_out));
+    } else {
+      OP_REQUIRES_OK(
+          ctx, ctx->allocate_output("sp_weights_values_out", TensorShape{1},
+                                    &sp_weights_values_out));
+    }
+
+    Tensor tmp_indices;
+    Tensor* is_row_empty;
     Tensor selected_num_d;
-    int new_nnz = nnz;
 
+    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DT_INT64, TensorShape{batch_size, 2},
+                                           &tmp_indices));
+
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_temp(DT_INT32, TensorShape{1}, &selected_num_d));
+
+    if (fill_empty_row_) {
+      OP_REQUIRES_OK(
+          ctx, ctx->allocate_output("is_row_empty", TensorShape{batch_size},
+                                    &is_row_empty));
+
+      InitFillEmptyBuffers(device, batch_size, nnz, default_id, default_weight_,
+                           use_sparse_weights_,
+                           data_p_with_type<int64_t>(sp_values_out),
+                           data_p_with_type<float>(sp_weights_values_out),
+                           data_p_with_type<bool>(is_row_empty),
+                           data_p_with_type<int64_t>(tmp_indices));
+
+      DetectEmptyRow(device, data_p_with_type<const int64_t>(sp_indices),
+                     data_p_with_type<const int64_t>(sp_values),
+                     data_p_with_type<const float>(sp_weights_values),
+                     prune_invalid_, prune_sparse_weights_, nnz,
+                     data_p_with_type<bool>(is_row_empty));
+
+    } else {
+      OP_REQUIRES_OK(ctx, ctx->allocate_output("is_row_empty", TensorShape{1},
+                                               &is_row_empty));
+    }
+
+    // 2. Allocate cub tmp
+
+    // nnz = number of non zero
+    int new_nnz = nnz;
     Tensor cub_temp_storage;
     size_t max_cub_bytes = 0;
     size_t temp_storage_bytes = 0;
+    auto triple_input_iter = thrust::make_zip_iterator(
+        thrust::make_tuple(data_p_with_type<const int64_t>(sp_values),
+                           data_p_with_type<const IndicePair>(sp_indices),
+                           data_p_with_type<const float>(sp_weights_values)));
 
-    OP_REQUIRES_OK(ctx, ctx->allocate_output("row_empty_and_invalid_flags",
-                                             TensorShape{batch_size + nnz},
-                                             &row_empty_and_invalid_flags));
+    auto double_input_iter = thrust::make_zip_iterator(
+        thrust::make_tuple(data_p_with_type<const int64_t>(sp_values),
+                           data_p_with_type<const IndicePair>(sp_indices)));
 
-    if (fill_empty_row_ || prune_invalid_id_) {
-      // create cub temp storage
+    auto triple_output_iter = thrust::make_zip_iterator(
+        thrust::make_tuple(data_p_with_type<int64_t>(sp_values_out),
+                           data_p_with_type<IndicePair>(sp_indices_out),
+                           data_p_with_type<float>(sp_weights_values)));
 
-      cub::DeviceSelect::Flagged(
-          nullptr, temp_storage_bytes,
-          thrust::make_zip_iterator(thrust::make_tuple(
-              data_p_with_type<const int64_t>(values_tensor),
-              data_p_with_type<const IndicePair>(indices_tensor))),
-          (int*)nullptr,
-          thrust::make_zip_iterator(thrust::make_tuple(
-              data_p_with_type<int64_t>(values_extended),
-              data_p_with_type<IndicePair>(indices_extended))),
-          (int*)nullptr, int(nnz), device.stream());
+    auto double_output_iter = thrust::make_zip_iterator(
+        thrust::make_tuple(data_p_with_type<int64_t>(sp_values_out),
+                           data_p_with_type<IndicePair>(sp_indices_out)));
 
+    auto with_weight_select_op = PruneInvalidWithWeightSelectOp();
+    auto select_op = PruneInvalidSelectOp();
+
+    if (prune_invalid_) {
+      if (use_sparse_weights_) {
+        cub::DeviceSelect::If(nullptr, temp_storage_bytes, triple_input_iter,
+                              triple_output_iter, (int*)nullptr, int(nnz),
+                              with_weight_select_op, device.stream());
+      } else {
+        cub::DeviceSelect::If(nullptr, temp_storage_bytes, double_input_iter,
+                              double_output_iter, (int*)nullptr, int(nnz),
+                              select_op, device.stream());
+      }
       max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
                                                          : max_cub_bytes;
-
-      if (fill_empty_row_) {
-        cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
-                                   (IndicePair*)nullptr, (int*)nullptr,
-                                   (IndicePair*)nullptr, (int*)nullptr,
-                                   batch_size, device.stream());
-        max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
-                                                           : max_cub_bytes;
-      }
-
-      OP_REQUIRES_OK(
-          ctx, ctx->allocate_temp(
-                   DT_INT8, TensorShape({static_cast<int64_t>(max_cub_bytes)}),
-                   &cub_temp_storage));
-
-      // allocate temp
-
-      OP_REQUIRES_OK(ctx,
-                     ctx->allocate_temp(DT_INT64, TensorShape{nnz + batch_size},
-                                        &values_extended));
-      OP_REQUIRES_OK(
-          ctx, ctx->allocate_temp(DT_INT64, TensorShape{2 * (nnz + batch_size)},
-                                  &indices_extended));
-      OP_REQUIRES_OK(ctx,
-                     ctx->allocate_temp(DT_INT64, TensorShape{batch_size, 2},
-                                        &tmp_indices_buffer));
-      OP_REQUIRES_OK(
-          ctx, ctx->allocate_temp(DT_INT32, TensorShape{1}, &selected_num_d));
-
-      InitFlagsToOneInt4(device, batch_size + nnz,
-                         row_empty_and_invalid_flags->flat<int>().data());
-
-      // set flags, init tmp_indices_buffer etc.
-      if (fill_empty_row_) {
-        FusedMultiFunctional(
-            device, data_p_with_type<const IndicePair>(indices_tensor),
-            data_p_with_type<const int64_t>(values_tensor), nnz, batch_size,
-            prune_invalid_id_, default_id,
-            data_p_with_type<int>(row_empty_and_invalid_flags),
-            data_p_with_type<int>(row_empty_and_invalid_flags) + batch_size,
-            data_p_with_type<IndicePair>(tmp_indices_buffer),
-            data_p_with_type<int64_t>(values_extended));
-
-      } else if (prune_invalid_id_) {
-        DetectInvalid(
-            device, data_p_with_type<const int64_t>(values_tensor), nnz,
-            data_p_with_type<int>(row_empty_and_invalid_flags) + batch_size);
-      }
-      // select copy valid id, select copy empty row indices
-
-      cub::DeviceSelect::Flagged(
-          data_p_with_type<int8>(cub_temp_storage), max_cub_bytes,
-          thrust::make_zip_iterator(thrust::make_tuple(
-              data_p_with_type<const int64_t>(values_tensor),
-              data_p_with_type<const IndicePair>(indices_tensor))),
-          data_p_with_type<const int>(row_empty_and_invalid_flags) + batch_size,
-          thrust::make_zip_iterator(thrust::make_tuple(
-              data_p_with_type<int64_t>(values_extended),
-              data_p_with_type<IndicePair>(indices_extended))),
-          data_p_with_type<int>(selected_num_d), int(nnz), device.stream());
-
-      if (prune_invalid_id_) {
-        int selected_num;
-        CK_CUDA_THROW_(cudaMemcpyAsync(
-            &selected_num, data_p_with_type<int>(selected_num_d), sizeof(int),
-            cudaMemcpyDeviceToHost, device.stream()));
-        CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
-        CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
-        new_nnz = selected_num;
-      }
-
-      if (fill_empty_row_) {
-        cub::DeviceSelect::Flagged(
-            data_p_with_type<int8>(cub_temp_storage), max_cub_bytes,
-            data_p_with_type<const IndicePair>(tmp_indices_buffer),
-            data_p_with_type<int>(row_empty_and_invalid_flags),
-            data_p_with_type<IndicePair>(indices_extended) + new_nnz,
-            data_p_with_type<int>(selected_num_d), batch_size, device.stream());
-        int selected_num;
-        CK_CUDA_THROW_(cudaMemcpyAsync(
-            &selected_num, data_p_with_type<void>(selected_num_d), sizeof(int),
-            cudaMemcpyDeviceToHost, device.stream()));
-        CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
-        CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
-        new_nnz += selected_num;
-      }
     }
-    // =============================================== //
 
-    // 3.5 set the correct pointer
-    const int64_t* values_in =
-        (fill_empty_row_ || prune_invalid_id_)
-            ? data_p_with_type<const int64_t>(values_extended)
-            : data_p_with_type<const int64_t>(values_tensor);
-    const IndicePair* indices_in =
-        (fill_empty_row_ || prune_invalid_id_)
-            ? data_p_with_type<const IndicePair>(indices_extended)
-            : data_p_with_type<const IndicePair>(indices_tensor);
+    if (fill_empty_row_) {
+      cub::DeviceSelect::Flagged((void*)nullptr, temp_storage_bytes,
+                                 (IndicePair*)nullptr, (int*)nullptr,
+                                 (IndicePair*)nullptr, (int*)nullptr,
+                                 batch_size, device.stream());
+      max_cub_bytes = temp_storage_bytes > max_cub_bytes ? temp_storage_bytes
+                                                         : max_cub_bytes;
+    }
 
-    Tensor* sp_values_out;
-    OP_REQUIRES_OK(ctx,
-                   ctx->allocate_output("sp_values_out", TensorShape{new_nnz},
-                                        &sp_values_out));
-
-    Tensor* sp_indices_out;
     OP_REQUIRES_OK(
-        ctx, ctx->allocate_output("sp_indices_out", TensorShape{new_nnz, 2},
-                                  &sp_indices_out));
+        ctx, ctx->allocate_temp(
+                 DT_INT8, TensorShape({static_cast<int64>(max_cub_bytes)}),
+                 &cub_temp_storage));
 
-    CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(sp_values_out),
-                                   values_in, sizeof(int64) * new_nnz,
-                                   cudaMemcpyDeviceToDevice, device.stream()));
+    // 3. select valid id & empty row indices
+    if (prune_invalid_) {
+      if (use_sparse_weights_) {
+        cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
+                              max_cub_bytes, triple_input_iter,
+                              triple_output_iter,
+                              data_p_with_type<int>(selected_num_d), nnz,
+                              with_weight_select_op, device.stream());
+      } else {
+        cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
+                              max_cub_bytes, double_input_iter,
+                              double_output_iter,
+                              data_p_with_type<int>(selected_num_d), nnz,
+                              select_op, device.stream());
+      }
+      int selected_num;
+      CK_CUDA_THROW_(cudaMemcpyAsync(
+          &selected_num, data_p_with_type<int>(selected_num_d), sizeof(int),
+          cudaMemcpyDeviceToHost, device.stream()));
+      CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
+      CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
+      new_nnz = selected_num;
+    }
 
-    CK_CUDA_THROW_(cudaMemcpyAsync(data_p_with_type<int64>(sp_indices_out),
-                                   indices_in, sizeof(IndicePair) * new_nnz,
-                                   cudaMemcpyDeviceToDevice, device.stream()));
+    if (fill_empty_row_) {
+      cub::DeviceSelect::Flagged(
+          data_p_with_type<void>(cub_temp_storage), max_cub_bytes,
+          data_p_with_type<const IndicePair>(tmp_indices),
+          data_p_with_type<bool>(is_row_empty),
+          data_p_with_type<IndicePair>(sp_indices_out) + new_nnz,
+          data_p_with_type<int>(selected_num_d), batch_size, device.stream());
+      int selected_num;
+      CK_CUDA_THROW_(cudaMemcpyAsync(
+          &selected_num, data_p_with_type<void>(selected_num_d), sizeof(int),
+          cudaMemcpyDeviceToHost, device.stream()));
+      CK_CUDA_THROW_(cudaEventRecord(memcpy_event_, device.stream()));
+      CK_CUDA_THROW_(cudaEventSynchronize(memcpy_event_));
+      new_nnz += selected_num;
+    }
+
+    Tensor new_sp_values_out = sp_values_out->Slice(0, new_nnz);
+    Tensor new_sp_indices_out = sp_indices_out->Slice(0, new_nnz);
+    Tensor new_sp_weights_values_out = sp_weights_values_out->Slice(0, new_nnz);
+
+    ctx->set_output("sp_values_out", new_sp_values_out);
+    ctx->set_output("sp_indices_out", new_sp_indices_out);
+    ctx->set_output("sp_weights_values_out", new_sp_weights_values_out);
   }
 
  private:
   bool fill_empty_row_;
-  bool prune_invalid_id_;
-  int64_t default_id_;
+  bool prune_invalid_;
+  int64 default_id_;
+  bool use_sparse_weights_;
+  bool prune_sparse_weights_;
+  float default_weight_;
   cudaEvent_t memcpy_event_;
 };
 
@@ -222,4 +263,4 @@ REGISTER_KERNEL_BUILDER(Name("PruneInvalidAndFillEmptyRows")
                         PruneInvalidAndFillEmptyRowsGPU);
 }  // namespace tensorflow
 
-#endif  // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA‰

@@ -251,15 +251,20 @@ REGISTER_OP("FusedSafeEmbeddingLookupSparseLocalGrad")
     });
 
 REGISTER_OP("PruneInvalidAndFillEmptyRows")
-    .Attr("fill_empty_row: bool = false")
-    .Attr("prune_invalid_id: bool = false")
+    .Attr("fill_empty: bool = false")
+    .Attr("prune_invalid: bool = false")
     .Attr("default_id: int = -1")
+    .Attr("use_sparse_weights: bool = false")
+    .Attr("prune_sparse_weights: bool = false")
+    .Attr("default_weight: float = 1.0")
     .Input("sp_values: int64")
     .Input("sp_indices: int64")
     .Input("sp_dense_shape: int64")
+    .Input("sp_weights_values: float")
     .Output("sp_values_out: int64")
     .Output("sp_indices_out: int64")
-    .Output("row_empty_and_invalid_flags: int32")
+    .Output("sp_weights_values_out: float")
+    .Output("is_row_empty: bool")
     .SetShapeFn([](InferenceContext* ctx) {
       ShapeHandle unused;
       std::vector<ShapeHandle> unused_list;
@@ -275,11 +280,14 @@ REGISTER_OP("PruneInvalidAndFillEmptyRows")
       ctx->input("sp_dense_shape", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
+      ctx->input("sp_weights_values", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
       unused_list.clear();
       unused_list.resize(1);
       unused_list[0] = ctx->MakeShape({ctx->UnknownDim()});
       ctx->set_output("sp_values_out", unused_list);
-      ctx->set_output("row_empty_flags", unused_list);
+      ctx->set_output("is_row_empty", unused_list);
       unused_list[0] = ctx->MakeShape({ctx->UnknownDim(), 2});
       ctx->set_output("sp_indices_out", unused_list);
 
