@@ -12,9 +12,12 @@
 #include "tensorflow/cc/saved_model/loader.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/cc/saved_model/constants.h"
+#include "tensorflow/cc/saved_model/signature_constants.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
+
+using tensorflow::kPredictMethodName;
 
 namespace tensorflow {
 namespace processor {
@@ -114,6 +117,92 @@ bool ShouldWarmup(SignatureDef& sig_def) {
   return true;
 }
 
+void StringReplace(std::string& strBig, const std::string& strsrc,
+                   const std::string& strdst) {
+  std::string::size_type pos = 0;
+  std::string::size_type srclen = strsrc.size();
+  std::string::size_type dstlen = strdst.size();
+
+  while ((pos = strBig.find(strsrc, pos)) != std::string::npos) {
+    strBig.replace(pos, srclen, strdst);
+    pos += dstlen;
+  }
+}
+void GenerateJsonSignatureFormat(
+    const std::pair<std::string, SignatureDef>& signature,
+    std::string& json_signature) {
+  std::map<int, std::string> dtype_to_string = {
+      {1, "DT_FLOAT"}, {2, "DT_DOUBLE"}, {3, "DT_INT32"}, {4, "DT_UINT8"},
+      {6, "DT_INT8"},  {7, "DT_STRING"}, {9, "DT_INT64"}, {10, "DT_BOOL"}};
+  std::ostringstream model_signature;
+  if (signature.second.method_name() == kPredictMethodName) {
+    model_signature << "{";
+    model_signature << "\"signature_name\": \"" << signature.first << "\",";
+    model_signature << "\"inputs\": [";
+    LOG(INFO) << "Inputs:";
+    for (auto& input : (signature.second).inputs()) {
+      model_signature << "{";
+      model_signature << "\"name\": \"" << input.first << "\",";
+      std::stringstream signature_input_info;
+      signature_input_info << input.first + ": [";
+      model_signature << "\"shape\": [";
+      int dims = input.second.tensor_shape().dim_size();
+      if (dims > 0) {
+        for (int i = 0; i < dims - 1; i++) {
+          signature_input_info << input.second.tensor_shape().dim(i).size();
+          model_signature << input.second.tensor_shape().dim(i).size()
+                          << ", ";
+          signature_input_info << ", ";
+        }
+        signature_input_info
+            << input.second.tensor_shape().dim(dims - 1).size();
+        model_signature << input.second.tensor_shape().dim(dims - 1).size();
+      }
+      signature_input_info << "]; ";
+      model_signature << "],";
+      signature_input_info << dtype_to_string[input.second.dtype()];
+      model_signature << "\"type\": \""
+                      << dtype_to_string[input.second.dtype()] << "\"";
+      LOG(INFO) << signature_input_info.str();
+      model_signature << "},";
+    }
+    model_signature << "],";
+    LOG(INFO) << "Outputs:";
+    model_signature << "\"outputs\": [";
+    for (auto& output : (signature.second).outputs()) {
+      model_signature << "{";
+      model_signature << "\"name\": \"" << output.first << "\",";
+      std::stringstream signature_output_info;
+      signature_output_info << output.first + ": [";
+      model_signature << "\"shape\": [";
+      int dims = output.second.tensor_shape().dim_size();
+      if (dims > 0) {
+        for (int i = 0; i < dims - 1; i++) {
+          signature_output_info
+              << output.second.tensor_shape().dim(i).size();
+          model_signature << output.second.tensor_shape().dim(i).size()
+                          << ", ";
+          signature_output_info << ", ";
+        }
+        signature_output_info
+            << output.second.tensor_shape().dim(dims - 1).size();
+        model_signature
+            << output.second.tensor_shape().dim(dims - 1).size();
+      }
+      signature_output_info << "]; ";
+      model_signature << "],";
+      signature_output_info << dtype_to_string[output.second.dtype()];
+      model_signature << "\"type\": \""
+                      << dtype_to_string[output.second.dtype()] << "\"";
+      LOG(INFO) << signature_output_info.str();
+      model_signature << "},";
+    }
+    model_signature << "]}";
+  }
+  json_signature = model_signature.str();
+  StringReplace(json_signature, "},]", "}]");
+}
+
 } // namespace
 
 LocalSessionInstance::LocalSessionInstance(
@@ -185,6 +274,8 @@ Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
   for (auto it : model_signatures) {
     if (it.first == model_config->signature_name) {
       model_signature_ = it;
+      GenerateJsonSignatureFormat(model_signature_,
+                                  model_json_signature_);
       return Status::OK();
     }
   }
@@ -226,7 +317,7 @@ Status LocalSessionInstance::Warmup(
 }
 
 std::string LocalSessionInstance::DebugString() {
-  return model_signature_.second.DebugString();
+  return model_json_signature_;
 }
 
 Status LocalSessionInstance::FullModelUpdate(
@@ -279,6 +370,8 @@ Status RemoteSessionInstance::ReadModelSignature(ModelConfig* model_config) {
   for (auto it : model_signatures) {
     if (it.first == model_config->signature_name) {
       model_signature_ = it;
+      GenerateJsonSignatureFormat(model_signature_,
+                                  model_json_signature_);
       return Status::OK();
     }
   }
@@ -436,7 +529,7 @@ Status RemoteSessionInstance::DeltaModelUpdate(
 }
 
 std::string RemoteSessionInstance::DebugString() {
-  return model_signature_.second.DebugString();
+  return model_json_signature_;
 }
 
 LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
