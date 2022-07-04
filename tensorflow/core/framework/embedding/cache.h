@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <set>
 #include <list>
+#include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -17,6 +18,9 @@ template <class K>
 class BatchCache {
  public:
   BatchCache() {}
+  void add_to_rank(const Tensor& t) {
+    add_to_rank((K*)t.data(), t.NumElements());
+  }
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
   virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
   virtual size_t size() = 0;

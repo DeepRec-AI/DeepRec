@@ -163,6 +163,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->Size();
   }
 
+  int64 CacheSize() const {
+    return storage_manager_->CacheSize();
+  }
+
   int64 MinFreq() {
     return emb_config_.filter_freq;
   }
