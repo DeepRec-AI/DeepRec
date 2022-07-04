@@ -4,6 +4,6 @@ tf_class {
   is_instance: "<type \'object\'>"
   member_method {
     name: "__init__"
-    argspec: "args=[\'self\', \'storage_type\', \'storage_path\', \'storage_size\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'None\'], "
+    argspec: "args=[\'self\', \'storage_type\', \'storage_path\', \'storage_size\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'[1073741824, 1073741824, 1073741824, 1073741824]\'], "
   }
 }

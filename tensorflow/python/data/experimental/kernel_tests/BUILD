@@ -100,6 +100,20 @@ py_test(
 )
 
 py_test(
+    name = "parquet_dataset_ops_test",
+    size = "medium",
+    srcs = ["parquet_dataset_ops_test.py"],
+    python_version = "PY2",
+    srcs_version = "PY2AND3",
+    tags = ["no_pip"],
+    deps = [
+        "//tensorflow/python/data/experimental/ops:parquet_dataset_ops",
+        "//tensorflow/python/data/kernel_tests:test_base",
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_test(
     name = "dense_to_sparse_batch_test",
     srcs = ["dense_to_sparse_batch_test.py"],
     python_version = "PY2",
