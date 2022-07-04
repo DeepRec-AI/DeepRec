@@ -71,9 +71,12 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
                           int* invalid_id_flag, IndicePair* tmp_indices_buffer,
                           int64_t* values_extended);
 
-void InitFillEmptyBuffers(const GPUDevice& d, int64_t batch_size, int64_t nnz,
-                          int64_t default_id, float default_weight,
-                          bool use_sparse_weights, int64_t* sp_values_out,
+void InitFillEmptyBuffers(const GPUDevice& d, const int64_t batch_size,
+                          const int64_t nnz, const int64_t default_id,
+                          const float default_weight, const bool prune_invalid,
+                          const bool use_sparse_weights,
+                          const int64_t* sp_values, const int64_t* sp_indices,
+                          int64_t* sp_values_out, int64_t* sp_indices_out,
                           float* sp_weights_values_out, bool* is_row_empty,
                           int64_t* tmp_indices);
 

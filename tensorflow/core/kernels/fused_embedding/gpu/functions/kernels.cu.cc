@@ -123,10 +123,11 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
       invalid_id_flag, tmp_indices_buffer, values_extended));
 }
 
-template <bool use_sparse_weights>
+template <bool prune_invalid, bool use_sparse_weights>
 __global__ void InitFillEmptyBuffersKernel(
     int64_t batch_size, int64_t nnz, int64_t default_id, float default_weight,
-    int64_t* sp_values_out, float* sp_weights_values_out, bool* is_row_empty,
+    const int64_t* sp_values, const int64_t* sp_indices, int64_t* sp_values_out,
+    int64_t* sp_indices_out, float* sp_weights_values_out, bool* is_row_empty,
     int64_t* tmp_indices) {
   const int global_tid = threadIdx.x + blockDim.x * blockIdx.x;
   if (global_tid < batch_size) {
@@ -140,39 +141,60 @@ __global__ void InitFillEmptyBuffersKernel(
     tmp_indices[new_global_tid] = data;
   }
 
-  if (global_tid < nnz) {
+  if (global_tid < (batch_size + nnz)) {
     sp_values_out[global_tid] = default_id;
   }
 
-  // using template here to let compiler optimize this section out if
-  // use_sparse_weights == false
+  // using template here to let compiler decide whether to optimize this section
+  // out
   if (use_sparse_weights) {
-    if (global_tid < nnz) {
+    if (global_tid < (batch_size + nnz)) {
       sp_weights_values_out[global_tid] = default_weight;
+    }
+  }
+
+  // using template here to let compiler decide whether to optimize this section
+  // out
+  if (!prune_invalid) {
+    if (global_tid < nnz) {
+      sp_values_out[global_tid] = sp_values[global_tid];
+    }
+
+    if (global_tid < 2 * nnz) {
+      sp_indices_out[global_tid] = sp_indices[global_tid];
     }
   }
 }
 
-void InitFillEmptyBuffers(const GPUDevice& d, int64_t batch_size, int64_t nnz,
-                          int64_t default_id, float default_weight,
-                          bool use_sparse_weights, int64_t* sp_values_out,
+void InitFillEmptyBuffers(const GPUDevice& d, const int64_t batch_size,
+                          const int64_t nnz, const int64_t default_id,
+                          const float default_weight, const bool prune_invalid,
+                          const bool use_sparse_weights,
+                          const int64_t* sp_values, const int64_t* sp_indices,
+                          int64_t* sp_values_out, int64_t* sp_indices_out,
                           float* sp_weights_values_out, bool* is_row_empty,
                           int64_t* tmp_indices) {
   const int threads = 32;
-  const int blocks =
-      CalcBlocksLinearMapping(std::max(3 * batch_size, nnz), threads);
+  const int blocks = CalcBlocksLinearMapping(
+      std::max(std::max(3 * batch_size, batch_size + nnz), 2 * nnz), threads);
 
-  if (use_sparse_weights) {
-    TF_CHECK_OK(GpuLaunchKernel(
-        InitFillEmptyBuffersKernel<true>, blocks, threads, 0, d.stream(),
-        batch_size, nnz, default_id, default_weight, sp_values_out,
-        sp_weights_values_out, is_row_empty, tmp_indices));
-  } else {
-    TF_CHECK_OK(GpuLaunchKernel(
-        InitFillEmptyBuffersKernel<false>, blocks, threads, 0, d.stream(),
-        batch_size, nnz, default_id, default_weight, sp_values_out,
-        sp_weights_values_out, is_row_empty, tmp_indices));
+#define LAUNCH_KERNEL(prune_invalid, use_sparse_weights)                     \
+  TF_CHECK_OK(GpuLaunchKernel(                                               \
+      InitFillEmptyBuffersKernel<prune_invalid, use_sparse_weights>, blocks, \
+      threads, 0, d.stream(), batch_size, nnz, default_id, default_weight,   \
+      sp_values, sp_indices, sp_values_out, sp_indices_out,                  \
+      sp_weights_values_out, is_row_empty, tmp_indices));
+
+  if (prune_invalid && use_sparse_weights) {
+    LAUNCH_KERNEL(true, true);
+  } else if (prune_invalid && !use_sparse_weights) {
+    LAUNCH_KERNEL(true, false);
+  } else if (!prune_invalid && use_sparse_weights) {
+    LAUNCH_KERNEL(false, true);
+  } else if (!prune_invalid && !use_sparse_weights) {
+    LAUNCH_KERNEL(false, false);
   }
+#undef LAUNCH_KERNEL
 }
 
 template <bool prune_invalid, bool prune_sparse_weights>

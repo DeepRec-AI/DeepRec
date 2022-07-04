@@ -88,25 +88,21 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
       return;
     }
 
-    Tensor* sp_values_out;
-    Tensor* sp_indices_out;
-    Tensor* sp_weights_values_out;
+    Tensor sp_values_out;
+    Tensor sp_indices_out;
+    Tensor sp_weights_values_out;
 
-    OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_values_out",
-                                             TensorShape{nnz + batch_size},
-                                             &sp_values_out));
-    OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_indices_out",
-                                             TensorShape{nnz + batch_size, 2},
-                                             &sp_indices_out));
+    OP_REQUIRES_OK(ctx,
+                   ctx->allocate_temp(DT_INT64, TensorShape{nnz + batch_size},
+                                      &sp_values_out));
+    OP_REQUIRES_OK(
+        ctx, ctx->allocate_temp(DT_INT64, TensorShape{nnz + batch_size, 2},
+                                &sp_indices_out));
 
     if (use_sparse_weights_) {
-      OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_weights_values_out",
-                                               TensorShape{nnz + batch_size},
-                                               &sp_weights_values_out));
-    } else {
-      OP_REQUIRES_OK(
-          ctx, ctx->allocate_output("sp_weights_values_out", TensorShape{1},
-                                    &sp_weights_values_out));
+      OP_REQUIRES_OK(ctx,
+                     ctx->allocate_temp(DT_FLOAT, TensorShape{nnz + batch_size},
+                                        &sp_weights_values_out));
     }
 
     Tensor tmp_indices;
@@ -125,8 +121,11 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
                                     &is_row_empty));
 
       InitFillEmptyBuffers(device, batch_size, nnz, default_id, default_weight_,
-                           use_sparse_weights_,
+                           prune_invalid_, use_sparse_weights_,
+                           data_p_with_type<const int64_t>(sp_values),
+                           data_p_with_type<const int64_t>(sp_indices),
                            data_p_with_type<int64_t>(sp_values_out),
+                           data_p_with_type<int64_t>(sp_indices_out),
                            data_p_with_type<float>(sp_weights_values_out),
                            data_p_with_type<bool>(is_row_empty),
                            data_p_with_type<int64_t>(tmp_indices));
@@ -161,7 +160,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
     auto triple_output_iter = thrust::make_zip_iterator(
         thrust::make_tuple(data_p_with_type<int64_t>(sp_values_out),
                            data_p_with_type<IndicePair>(sp_indices_out),
-                           data_p_with_type<float>(sp_weights_values)));
+                           data_p_with_type<float>(sp_weights_values_out)));
 
     auto double_output_iter = thrust::make_zip_iterator(
         thrust::make_tuple(data_p_with_type<int64_t>(sp_values_out),
@@ -172,9 +171,15 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
 
     if (prune_invalid_) {
       if (use_sparse_weights_) {
-        cub::DeviceSelect::If(nullptr, temp_storage_bytes, triple_input_iter,
-                              triple_output_iter, (int*)nullptr, int(nnz),
-                              with_weight_select_op, device.stream());
+        if (prune_sparse_weights_) {
+          cub::DeviceSelect::If(nullptr, temp_storage_bytes, triple_input_iter,
+                                triple_output_iter, (int*)nullptr, int(nnz),
+                                with_weight_select_op, device.stream());
+        } else {
+          cub::DeviceSelect::If(nullptr, temp_storage_bytes, triple_input_iter,
+                                triple_output_iter, (int*)nullptr, int(nnz),
+                                select_op, device.stream());
+        }
       } else {
         cub::DeviceSelect::If(nullptr, temp_storage_bytes, double_input_iter,
                               double_output_iter, (int*)nullptr, int(nnz),
@@ -201,11 +206,20 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
     // 3. select valid id & empty row indices
     if (prune_invalid_) {
       if (use_sparse_weights_) {
-        cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
-                              max_cub_bytes, triple_input_iter,
-                              triple_output_iter,
-                              data_p_with_type<int>(selected_num_d), nnz,
-                              with_weight_select_op, device.stream());
+        if (prune_sparse_weights_) {
+          cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
+                                max_cub_bytes, triple_input_iter,
+                                triple_output_iter,
+                                data_p_with_type<int>(selected_num_d), nnz,
+                                with_weight_select_op, device.stream());
+        } else {
+          cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
+                                max_cub_bytes, triple_input_iter,
+                                triple_output_iter,
+                                data_p_with_type<int>(selected_num_d), nnz,
+                                select_op, device.stream());
+        }
+
       } else {
         cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
                               max_cub_bytes, double_input_iter,
@@ -238,13 +252,21 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
       new_nnz += selected_num;
     }
 
-    Tensor new_sp_values_out = sp_values_out->Slice(0, new_nnz);
-    Tensor new_sp_indices_out = sp_indices_out->Slice(0, new_nnz);
-    Tensor new_sp_weights_values_out = sp_weights_values_out->Slice(0, new_nnz);
+    Tensor new_sp_values_out = sp_values_out.Slice(0, new_nnz);
+    Tensor new_sp_indices_out = sp_indices_out.Slice(0, new_nnz);
 
     ctx->set_output("sp_values_out", new_sp_values_out);
     ctx->set_output("sp_indices_out", new_sp_indices_out);
-    ctx->set_output("sp_weights_values_out", new_sp_weights_values_out);
+
+    if (use_sparse_weights_) {
+      Tensor new_sp_weights_values_out =
+          sp_weights_values_out.Slice(0, new_nnz);
+      ctx->set_output("sp_weights_values_out", new_sp_weights_values_out);
+    } else {
+      Tensor* unused;
+      OP_REQUIRES_OK(ctx, ctx->allocate_output("sp_weights_values_out",
+                                               TensorShape{1}, &unused));
+    }
   }
 
  private:
