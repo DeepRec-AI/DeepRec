@@ -73,7 +73,7 @@ class DeviceFactory {
       const SessionOptions& options, const string& name_prefix,
       std::vector<std::unique_ptr<Device>>* devices,
       const DeviceResourceMgrMap* dev_rmgr_map) {
-    CreateDevices(options, name_prefix, devices);
+    return CreateDevices(options, name_prefix, devices);
   }
 
   // Return the device priority number for a "device_type" string.
