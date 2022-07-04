@@ -147,8 +147,10 @@ class SSDIterator : public Iterator {
   virtual void SeekToFirst() {
     curr_file_ = 0;
     curr_vec_ = 0;
-    int64 f_id = file_id_vec_[curr_file_];
-    emb_files_[f_id]->Map();
+    if (file_id_vec_.size() > 0) {
+      int64 f_id = file_id_vec_[curr_file_];
+      emb_files_[f_id]->Map();
+    }
   }
   virtual void Next() {
     curr_vec_++;
