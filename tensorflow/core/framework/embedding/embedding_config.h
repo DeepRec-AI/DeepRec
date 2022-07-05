@@ -61,7 +61,10 @@ struct EmbeddingConfig {
   int64 calc_num_counter(int64 max_element_size, float false_positive_probability) {
     float loghpp = fabs(log(false_positive_probability));
     float factor = log(2) * log(2);
-    return ceil(loghpp / factor * max_element_size);
+    int64 num_bucket = ceil(loghpp / factor * max_element_size);
+    if (num_bucket * sizeof(counter_type) > 10 * (1L << 30))
+      LOG(WARNING)<<"The Size of BloomFilter is more than 10GB!";
+    return num_bucket;
   }
 
   bool is_counter_filter(){
