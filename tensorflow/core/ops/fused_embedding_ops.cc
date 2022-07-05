@@ -371,12 +371,14 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpV2")
     .Attr("partition_axis: int >= 0 = 0")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
+    .Attr("use_sparse_weights: bool = false")
     .Input("emb_shards: num_partitions * T")
     .Input("partition_permutation: int32")
     .Input("sp_dense_shape: int64")
     .Input("indices_before_unique: int64")
-    .Input("row_empty_and_invalid_flags: int32")
+    .Input("is_row_empty: bool")
     .Input("unique_idxs: int32")
+    .Input("sp_weights_values: float")
     .Output("emb_vectors: T")
     .Output("feature_nums: int32")
     .Output("emb_shard_ptrs: uint64")
@@ -414,12 +416,15 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpV2")
       ctx->input("indices_before_unique", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 2, &unused));
 
-      // row_empty_and_invalid_flags
-      ctx->input("row_empty_and_invalid_flags", &unused_list);
+      // is_row_empty
+      ctx->input("is_row_empty", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // unique_counts
       ctx->input("unique_idxs", &unused_list);
+      TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
+
+      ctx->input("sp_weights_values", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // emb_vectors
@@ -457,6 +462,7 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpV2Grad")
     .Attr("default_id: int = -1")
     .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
     .Attr("max_norm: float = -1.0")
+    .Attr("use_sparse_weights: bool = false")
     .Input("top_grad: T")
     .Input("emb_shards: num_partitions * T")
     .Input("emb_shard_ptrs: uint64")
@@ -464,7 +470,8 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpV2Grad")
     .Input("feature_nums: int32")
     .Input("indices_before_unique: int64")
     .Input("unique_idxs: int32")
-    .Input("row_empty_and_invalid_flags: int32")
+    .Input("is_row_empty: bool")
+    .Input("sp_weights_values: float")
     .Output("grad_shards: num_partitions * T")
     .SetShapeFn([](InferenceContext* ctx) {
       int num_partitions;
@@ -507,8 +514,8 @@ REGISTER_OP("FusedEmbeddingSparsePostLookUpV2Grad")
       ctx->input("unique_idxs", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
-      // row_empty_and_invalid_flags
-      ctx->input("row_empty_and_invalid_flags", &unused_list);
+      // is_row_empty
+      ctx->input("is_row_empty", &unused_list);
       TF_RETURN_IF_ERROR(ctx->WithRank(unused_list[0], 1, &unused));
 
       // grad_shards

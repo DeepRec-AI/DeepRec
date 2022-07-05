@@ -268,7 +268,8 @@ template void RangeInit<int64_t>(const GPUDevice& d, const int64_t length,
 
 __global__ void SumUpEmbeddingShardSinglePartitionKernel(
     const float* emb_shard, const int64_t* indices_before_unique,
-    const int* unique_idxs, const int nnz, const float max_norm,
+    const int* unique_idxs, const float* sp_weights_values,
+    const bool use_sparse_weights, const int nnz, const float max_norm,
     const int emb_vec_size, float* emb_vectors, int* feature_nums) {
   __shared__ float l2_sum[1];
 
@@ -289,8 +290,13 @@ __global__ void SumUpEmbeddingShardSinglePartitionKernel(
       }
     }
 
-    atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
-              emb_element);
+    if (use_sparse_weights) {
+      atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
+                emb_element * sp_weights_values[blockIdx.x]);
+    } else {
+      atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
+                emb_element);
+    }
 
     if (threadIdx.x == 0) {
       atomicAdd(feature_nums + row_in_batch, 1);
@@ -298,26 +304,27 @@ __global__ void SumUpEmbeddingShardSinglePartitionKernel(
   }
 }
 
-void SumUpEmbeddingShardSinglePartition(const GPUDevice& d,
-                                        const float* emb_shard,
-                                        const int64_t* indices_before_unique,
-                                        const int* unique_idxs, const int nnz,
-                                        const float max_norm,
-                                        const int emb_vec_size,
-                                        float* emb_vectors, int* feature_nums) {
+void SumUpEmbeddingShardSinglePartition(
+    const GPUDevice& d, const float* emb_shard,
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const float max_norm, const int emb_vec_size,
+    float* emb_vectors, int* feature_nums) {
   const int blocks = nnz;
   const int threads = emb_vec_size;
-  TF_CHECK_OK(GpuLaunchKernel(SumUpEmbeddingShardSinglePartitionKernel, blocks,
-                              threads, 0, d.stream(), emb_shard,
-                              indices_before_unique, unique_idxs, nnz, max_norm,
-                              emb_vec_size, emb_vectors, feature_nums));
+  TF_CHECK_OK(
+      GpuLaunchKernel(SumUpEmbeddingShardSinglePartitionKernel, blocks, threads,
+                      0, d.stream(), emb_shard, indices_before_unique,
+                      unique_idxs, sp_weights_values, use_sparse_weights, nnz,
+                      max_norm, emb_vec_size, emb_vectors, feature_nums));
 }
 
 __global__ void SumUpEmbeddingShardMultiPartitionKernel(
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const float max_norm, const int emb_vec_size, float* emb_vectors,
-    int* feature_nums) {
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const float max_norm, const int emb_vec_size,
+    float* emb_vectors, int* feature_nums) {
   __shared__ float l2_sum[1];
 
   if (blockIdx.x < nnz) {
@@ -344,8 +351,13 @@ __global__ void SumUpEmbeddingShardMultiPartitionKernel(
       }
     }
 
-    atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
-              emb_element);
+    if (use_sparse_weights) {
+      atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
+                emb_element * sp_weights_values[blockIdx.x]);
+    } else {
+      atomicAdd(emb_vectors + row_in_batch * emb_vec_size + threadIdx.x,
+                emb_element);
+    }
 
     if (threadIdx.x == 0) {
       atomicAdd(feature_nums + row_in_batch, 1);
@@ -356,24 +368,26 @@ __global__ void SumUpEmbeddingShardMultiPartitionKernel(
 void SumUpEmbeddingShardMultiPartition(
     const GPUDevice& d, const void* const* emb_shard_ptrs,
     const int* partition_permutation, const int64_t* indices_before_unique,
-    const int* unique_idxs, const int nnz, const float max_norm,
+    const int* unique_idxs, const float* sp_weights_values,
+    const bool use_sparse_weights, const int nnz, const float max_norm,
     const int emb_vec_size, float* emb_vectors, int* feature_nums) {
   const int blocks = nnz;
   const int threads = emb_vec_size;
   TF_CHECK_OK(GpuLaunchKernel(
       SumUpEmbeddingShardMultiPartitionKernel, blocks, threads, 0, d.stream(),
       emb_shard_ptrs, partition_permutation, indices_before_unique, unique_idxs,
-      nnz, max_norm, emb_vec_size, emb_vectors, feature_nums));
+      sp_weights_values, use_sparse_weights, nnz, max_norm, emb_vec_size,
+      emb_vectors, feature_nums));
 }
 
 template <Combiner combiner>
-__global__ void ApplyCombinerKernel(const int* row_emptiness_flag,
+__global__ void ApplyCombinerKernel(const bool* is_row_empty,
                                     const bool set_empty_row_zero,
                                     int* feature_nums, float* emb_vectors) {
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
   const int feature_num = feature_nums[blockIdx.x];
   if (set_empty_row_zero) {
-    if (row_emptiness_flag[blockIdx.x]) {
+    if (is_row_empty[blockIdx.x]) {
       feature_nums[blockIdx.x] = 0;
       emb_vectors[offset] = 0.0f;
       return;
@@ -385,44 +399,46 @@ __global__ void ApplyCombinerKernel(const int* row_emptiness_flag,
 
 template <Combiner combiner>
 void ApplyCombiner(const GPUDevice& d, const int batch_size,
-                   const int emb_vec_size, const int* row_emptiness_flag,
+                   const int emb_vec_size, const bool* is_row_empty,
                    const bool set_empty_row_zero, int* feature_nums,
                    float* emb_vectors) {
   const int blocks = batch_size;
   const int threads = emb_vec_size;
   TF_CHECK_OK(GpuLaunchKernel(ApplyCombinerKernel<combiner>, blocks, threads, 0,
-                              d.stream(), row_emptiness_flag,
-                              set_empty_row_zero, feature_nums, emb_vectors));
+                              d.stream(), is_row_empty, set_empty_row_zero,
+                              feature_nums, emb_vectors));
 }
 
 template void ApplyCombiner<Sqrtn>(const GPUDevice& d, const int batch_size,
                                    const int emb_vec_size,
-                                   const int* row_emptiness_flag,
+                                   const bool* is_row_empty,
                                    const bool set_empty_row_zero,
                                    int* feature_nums, float* emb_vectors);
 template void ApplyCombiner<Mean>(const GPUDevice& d, const int batch_size,
                                   const int emb_vec_size,
-                                  const int* row_emptiness_flag,
+                                  const bool* is_row_empty,
                                   const bool set_empty_row_zero,
                                   int* feature_nums, float* emb_vectors);
 template void ApplyCombiner<Sum>(const GPUDevice& d, const int batch_size,
                                  const int emb_vec_size,
-                                 const int* row_emptiness_flag,
+                                 const bool* is_row_empty,
                                  const bool set_empty_row_zero,
                                  int* feature_nums, float* emb_vectors);
 
 template <Combiner combiner>
 __global__ void DistributeGradToShardSinglePartitionKernel(
     const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard) {
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, float* grad_shard) {
   __shared__ float l2_sum[1];
   float l2_norm = -1.0f;
 
   if (blockIdx.x < nnz) {
     const int64_t row_in_batch = indices_before_unique[2 * blockIdx.x];
-    if (set_empty_row_zero && row_emptiness_flag[row_in_batch]) {
+    if (set_empty_row_zero && is_row_empty[row_in_batch]) {
       return;
     }
 
@@ -443,6 +459,9 @@ __global__ void DistributeGradToShardSinglePartitionKernel(
     float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
     const int feature_num = feature_nums[row_in_batch];
     grad = CombineGrad<combiner>(grad, feature_num);
+    if (use_sparse_weights) {
+      grad = grad * sp_weights_values[blockIdx.x];
+    }
     if (max_norm >= 0.0f && l2_norm > max_norm) {
       grad *= max_norm / l2_norm;
     }
@@ -454,50 +473,58 @@ __global__ void DistributeGradToShardSinglePartitionKernel(
 template <Combiner combiner>
 void DistributeGradToShardSinglePartition(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard) {
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, float* grad_shard) {
   const int blocks = nnz;
   const int threads = emb_vec_size;
   TF_CHECK_OK(GpuLaunchKernel(
       DistributeGradToShardSinglePartitionKernel<combiner>, blocks, threads, 0,
-      d.stream(), top_grad, emb_shard, indices_before_unique, unique_idxs, nnz,
-      emb_vec_size, max_norm, set_empty_row_zero, feature_nums,
-      row_emptiness_flag, grad_shard));
+      d.stream(), top_grad, emb_shard, indices_before_unique, unique_idxs,
+      sp_weights_values, use_sparse_weights, nnz, emb_vec_size, max_norm,
+      set_empty_row_zero, feature_nums, is_row_empty, grad_shard));
 }
 
 template void DistributeGradToShardSinglePartition<Sqrtn>(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, float* grad_shard);
 
 template void DistributeGradToShardSinglePartition<Mean>(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, float* grad_shard);
 
 template void DistributeGradToShardSinglePartition<Sum>(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, float* grad_shard);
 
 template <Combiner combiner>
 __global__ void DistributeGradToShardMultiPartitionKernel(
     const float* top_grad, const void* const* emb_shard_ptrs,
     const int* partition_permutation, const int64_t* indices_before_unique,
-    const int* unique_idxs, const int nnz, const int emb_vec_size,
+    const int* unique_idxs, const float* sp_weights_values,
+    const bool use_sparse_weights, const int nnz, const int emb_vec_size,
     const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag,
-    void** grad_shard_ptrs) {
+    const int* feature_nums, const bool* is_row_empty, void** grad_shard_ptrs) {
   __shared__ float l2_sum[1];
   float l2_norm = -1.0f;
 
   if (blockIdx.x < nnz) {
     const int64_t row_in_batch = indices_before_unique[2 * blockIdx.x];
-    if (set_empty_row_zero && row_emptiness_flag[row_in_batch]) {
+    if (set_empty_row_zero && is_row_empty[row_in_batch]) {
       return;
     }
     const int unique_id = unique_idxs[blockIdx.x];
@@ -522,6 +549,9 @@ __global__ void DistributeGradToShardMultiPartitionKernel(
     float grad = top_grad[row_in_batch * emb_vec_size + threadIdx.x];
     const int feature_num = feature_nums[row_in_batch];
     grad = CombineGrad<combiner>(grad, feature_num);
+    if (use_sparse_weights) {
+      grad = grad * sp_weights_values[blockIdx.x];
+    }
     if (max_norm >= 0.0f && l2_norm > max_norm) {
       grad *= max_norm / l2_norm;
     }
@@ -536,42 +566,47 @@ template <Combiner combiner>
 void DistributeGradToShardMultiPartition(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag,
-    void** grad_shard_ptrs) {
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, void** grad_shard_ptrs) {
   const int blocks = nnz;
   const int threads = emb_vec_size;
   TF_CHECK_OK(GpuLaunchKernel(
       DistributeGradToShardMultiPartitionKernel<combiner>, blocks, threads, 0,
       d.stream(), top_grad, emb_shard_ptrs, partition_permutation,
-      indices_before_unique, unique_idxs, nnz, emb_vec_size, max_norm,
-      set_empty_row_zero, feature_nums, row_emptiness_flag, grad_shard_ptrs));
+      indices_before_unique, unique_idxs, sp_weights_values, use_sparse_weights,
+      nnz, emb_vec_size, max_norm, set_empty_row_zero, feature_nums,
+      is_row_empty, grad_shard_ptrs));
 }
 
 template void DistributeGradToShardMultiPartition<Sum>(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag,
-    void** grad_shard_ptrs);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, void** grad_shard_ptrs);
 
 template void DistributeGradToShardMultiPartition<Mean>(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag,
-    void** grad_shard_ptrs);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, void** grad_shard_ptrs);
 
 template void DistributeGradToShardMultiPartition<Sqrtn>(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag,
-    void** grad_shard_ptrs);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, void** grad_shard_ptrs);
 
 }  // namespace fused_embedding
 

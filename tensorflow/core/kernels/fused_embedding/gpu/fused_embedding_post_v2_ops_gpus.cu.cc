@@ -29,9 +29,13 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
+    OP_REQUIRES_OK(ctx,
+                   ctx->GetAttr("use_sparse_weights", &use_sparse_weights_));
   }
 
   void Compute(OpKernelContext* ctx) override {
+    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
+
     using namespace fused_embedding;
     auto device = ctx->eigen_device<GPUDevice>();
 
@@ -45,9 +49,8 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
     Tensor const* dense_shape_tensor = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_dense_shape", &dense_shape_tensor));
 
-    Tensor const* row_empty_and_invalid_flags = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("row_empty_and_invalid_flags",
-                                   &row_empty_and_invalid_flags));
+    Tensor const* is_row_empty = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("is_row_empty", &is_row_empty));
 
     Tensor const* indices_before_unique = nullptr;
     OP_REQUIRES_OK(ctx,
@@ -56,7 +59,8 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
     Tensor const* unique_idxs = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("unique_idxs", &unique_idxs));
 
-    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
+    Tensor const* sp_weights_values = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_weights_values", &sp_weights_values));
 
     const int emb_vec_size = emb_shards[0].shape().dim_size(1);
     const int batch_size = dense_shape_tensor->flat<int64>().data()[0];
@@ -91,8 +95,9 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
       SumUpEmbeddingShardSinglePartition(
           device, data_p_with_type<const float>(emb_shards[0]),
           data_p_with_type<const int64_t>(indices_before_unique),
-          data_p_with_type<const int>(unique_idxs), nnz, max_norm_,
-          emb_vec_size, data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<const int>(unique_idxs),
+          data_p_with_type<float>(sp_weights_values), use_sparse_weights_, nnz,
+          max_norm_, emb_vec_size, data_p_with_type<float>(emb_vectors_tensor),
           data_p_with_type<int>(feature_nums));
     } else {
       std::vector<void*> emb_shard_ptrs_host;
@@ -110,8 +115,9 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
           device, data_p_with_type<void*>(emb_shard_ptrs),
           data_p_with_type<int>(partition_permutation),
           data_p_with_type<const int64_t>(indices_before_unique),
-          data_p_with_type<const int>(unique_idxs), nnz, max_norm_,
-          emb_vec_size, data_p_with_type<float>(emb_vectors_tensor),
+          data_p_with_type<const int>(unique_idxs),
+          data_p_with_type<float>(sp_weights_values), use_sparse_weights_, nnz,
+          max_norm_, emb_vec_size, data_p_with_type<float>(emb_vectors_tensor),
           data_p_with_type<int>(feature_nums));
     }
 
@@ -119,23 +125,23 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
 
     // ========================= 2. combiner ========================== //
     if (combiner_ == "sqrtn") {
-      ApplyCombiner<Sqrtn>(
-          device, batch_size, emb_vec_size,
-          data_p_with_type<const int>(row_empty_and_invalid_flags),
-          set_empty_row_zero, data_p_with_type<int>(feature_nums),
-          data_p_with_type<float>(emb_vectors_tensor));
+      ApplyCombiner<Sqrtn>(device, batch_size, emb_vec_size,
+                           data_p_with_type<const bool>(is_row_empty),
+                           set_empty_row_zero,
+                           data_p_with_type<int>(feature_nums),
+                           data_p_with_type<float>(emb_vectors_tensor));
     } else if (combiner_ == "mean") {
-      ApplyCombiner<Mean>(
-          device, batch_size, emb_vec_size,
-          data_p_with_type<const int>(row_empty_and_invalid_flags),
-          set_empty_row_zero, data_p_with_type<int>(feature_nums),
-          data_p_with_type<float>(emb_vectors_tensor));
+      ApplyCombiner<Mean>(device, batch_size, emb_vec_size,
+                          data_p_with_type<const bool>(is_row_empty),
+                          set_empty_row_zero,
+                          data_p_with_type<int>(feature_nums),
+                          data_p_with_type<float>(emb_vectors_tensor));
     } else {
-      ApplyCombiner<Sum>(
-          device, batch_size, emb_vec_size,
-          data_p_with_type<const int>(row_empty_and_invalid_flags),
-          set_empty_row_zero, data_p_with_type<int>(feature_nums),
-          data_p_with_type<float>(emb_vectors_tensor));
+      ApplyCombiner<Sum>(device, batch_size, emb_vec_size,
+                         data_p_with_type<const bool>(is_row_empty),
+                         set_empty_row_zero,
+                         data_p_with_type<int>(feature_nums),
+                         data_p_with_type<float>(emb_vectors_tensor));
     }
     // ================================================================ //
   }
@@ -147,6 +153,7 @@ class FusedEmbeddingSparsePostLookUpV2GPU : public OpKernel {
   float max_norm_;
   bool fill_empty_row_;
   int64_t default_id_;
+  bool use_sparse_weights_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("FusedEmbeddingSparsePostLookUpV2")
@@ -166,9 +173,13 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64_t(temp_default_id);
+    OP_REQUIRES_OK(ctx,
+                   ctx->GetAttr("use_sparse_weights", &use_sparse_weights_));
   }
 
   void Compute(OpKernelContext* ctx) override {
+    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
+
     using namespace fused_embedding;
     auto device = ctx->eigen_device<GPUDevice>();
 
@@ -195,14 +206,14 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
     Tensor const* unique_idxs = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("unique_idxs", &unique_idxs));
 
-    Tensor const* row_empty_and_invalid_flags = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->input("row_empty_and_invalid_flags",
-                                   &row_empty_and_invalid_flags));
+    Tensor const* is_row_empty = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("is_row_empty", &is_row_empty));
+
+    Tensor const* sp_weights_values = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->input("sp_weights_values", &sp_weights_values));
 
     OpOutputList grad_shards;
     OP_REQUIRES_OK(ctx, ctx->output_list("grad_shards", &grad_shards));
-
-    nvtx::ScopedRangeIfEnabled<nvtx::CoreDomain> nvtx_range(this);
 
     const int batch_size = top_grad_tensor->shape().dim_size(0);
     const int emb_vec_size = emb_shards[0].shape().dim_size(1);
@@ -226,30 +237,33 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
             device, data_p_with_type<const float>(top_grad_tensor),
             data_p_with_type<const float>(emb_shards[0]),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int>(unique_idxs), nnz, emb_vec_size,
-            max_norm_, set_empty_row_zero,
-            data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            data_p_with_type<const int>(unique_idxs),
+            data_p_with_type<const float>(sp_weights_values),
+            use_sparse_weights_, nnz, emb_vec_size, max_norm_,
+            set_empty_row_zero, data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const bool>(is_row_empty),
             data_p_with_type<float>(grad_shards[0]));
       } else if (combiner_ == "sqrt") {
         DistributeGradToShardSinglePartition<Sqrtn>(
             device, data_p_with_type<const float>(top_grad_tensor),
             data_p_with_type<const float>(emb_shards[0]),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int>(unique_idxs), nnz, emb_vec_size,
-            max_norm_, set_empty_row_zero,
-            data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            data_p_with_type<const int>(unique_idxs),
+            data_p_with_type<const float>(sp_weights_values),
+            use_sparse_weights_, nnz, emb_vec_size, max_norm_,
+            set_empty_row_zero, data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const bool>(is_row_empty),
             data_p_with_type<float>(grad_shards[0]));
       } else {
         DistributeGradToShardSinglePartition<Sum>(
             device, data_p_with_type<const float>(top_grad_tensor),
             data_p_with_type<const float>(emb_shards[0]),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int>(unique_idxs), nnz, emb_vec_size,
-            max_norm_, set_empty_row_zero,
-            data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            data_p_with_type<const int>(unique_idxs),
+            data_p_with_type<const float>(sp_weights_values),
+            use_sparse_weights_, nnz, emb_vec_size, max_norm_,
+            set_empty_row_zero, data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const bool>(is_row_empty),
             data_p_with_type<float>(grad_shards[0]));
       }
 
@@ -269,10 +283,11 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
             data_p_with_type<void*>(emb_shard_ptrs),
             data_p_with_type<const int>(partition_permutation),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int>(unique_idxs), nnz, emb_vec_size,
-            max_norm_, set_empty_row_zero,
-            data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            data_p_with_type<const int>(unique_idxs),
+            data_p_with_type<const float>(sp_weights_values),
+            use_sparse_weights_, nnz, emb_vec_size, max_norm_,
+            set_empty_row_zero, data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const bool>(is_row_empty),
             data_p_with_type<void*>(grad_shard_ptrs));
       } else if (combiner_ == "sqrt") {
         DistributeGradToShardMultiPartition<Sqrtn>(
@@ -280,10 +295,11 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
             data_p_with_type<void*>(emb_shard_ptrs),
             data_p_with_type<const int>(partition_permutation),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int>(unique_idxs), nnz, emb_vec_size,
-            max_norm_, set_empty_row_zero,
-            data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            data_p_with_type<const int>(unique_idxs),
+            data_p_with_type<const float>(sp_weights_values),
+            use_sparse_weights_, nnz, emb_vec_size, max_norm_,
+            set_empty_row_zero, data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const bool>(is_row_empty),
             data_p_with_type<void*>(grad_shard_ptrs));
       } else {
         DistributeGradToShardMultiPartition<Sum>(
@@ -291,10 +307,11 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
             data_p_with_type<void*>(emb_shard_ptrs),
             data_p_with_type<const int>(partition_permutation),
             data_p_with_type<const int64_t>(indices_before_unique),
-            data_p_with_type<const int>(unique_idxs), nnz, emb_vec_size,
-            max_norm_, set_empty_row_zero,
-            data_p_with_type<const int>(feature_nums),
-            data_p_with_type<const int>(row_empty_and_invalid_flags),
+            data_p_with_type<const int>(unique_idxs),
+            data_p_with_type<const float>(sp_weights_values),
+            use_sparse_weights_, nnz, emb_vec_size, max_norm_,
+            set_empty_row_zero, data_p_with_type<const int>(feature_nums),
+            data_p_with_type<const bool>(is_row_empty),
             data_p_with_type<void*>(grad_shard_ptrs));
       }
     }
@@ -307,6 +324,7 @@ class FusedEmbeddingSparsePostLookUpV2GradGPU : public OpKernel {
   float max_norm_;
   bool fill_empty_row_;
   int64_t default_id_;
+  bool use_sparse_weights_;
 };
 
 REGISTER_KERNEL_BUILDER(

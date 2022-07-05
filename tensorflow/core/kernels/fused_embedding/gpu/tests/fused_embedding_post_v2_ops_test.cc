@@ -32,7 +32,8 @@ class FusedEmbeddingSparsePostLookUpV2OpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, int num_partitions, DataType dtype,
                           const std::string& combiner, const float max_norm,
-                          const bool fill_empty_row, const int default_id) {
+                          const bool fill_empty_row, const int default_id,
+                          const bool use_sparse_weights) {
     if (device == Device::GPU) {
       SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
@@ -48,12 +49,14 @@ class FusedEmbeddingSparsePostLookUpV2OpTest : public OpsTestBase {
                      .Attr("max_norm", max_norm)
                      .Attr("fill_empty_row", fill_empty_row)
                      .Attr("default_id", default_id)
+                     .Attr("use_sparse_weights", use_sparse_weights)
                      .Input(FakeInput(num_partitions, dtype))
                      .Input(FakeInput(DT_INT32))
                      .Input(FakeInput(DT_INT64))
                      .Input(FakeInput(DT_INT64))
+                     .Input(FakeInput(DT_BOOL))
                      .Input(FakeInput(DT_INT32))
-                     .Input(FakeInput(DT_INT32))
+                     .Input(FakeInput(DT_FLOAT))
                      .Finalize(node_def()));
     TF_EXPECT_OK(InitOp());
   }
@@ -66,7 +69,8 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
   const int emb_vector_dim = 8;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 3, DT_FLOAT, "sqrtn", 200.0, false, -1);
+  MakeOpAndSetDevice(Device::GPU, 3, DT_FLOAT, "sqrtn", 200.0, false, -1,
+                     false);
 
   // emb_shards 0
   AddInputFromArray<float>(
@@ -100,12 +104,15 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
       TensorShape({nnz, 2}),
       {0, 5, 0, 1, 2, 1, 1, 2, 3, 6, 1, 1, 1, 7, 2, 4, 2, 7, 3, 0});
 
-  // row_empty_and_invalid_flags
-  AddInputFromArray<int>(TensorShape({batch_size + nnz}),
-                         {0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1});
+  // is_row_empty
+  AddInputFromArray<bool>(TensorShape({batch_size}),
+                          {false, false, false, false});
 
   // unique_idxs
   AddInputFromArray<int>(TensorShape({nnz}), {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+  // sp_weights_values
+  AddInputFromArray<float>(TensorShape({1}), {1.0});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -138,7 +145,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest, Partition2SumFillEmpty) {
   const int emb_vector_dim = 4;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, true, -1);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, true, -1, false);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
@@ -156,11 +163,14 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest, Partition2SumFillEmpty) {
   // indices_before_unique
   AddInputFromArray<int64>(TensorShape({nnz + 1, 2}), {2, 0, 0, 0, 0, 5, 1, 4});
 
-  // row_empty_and_invalid_flags
-  AddInputFromArray<int>(TensorShape({batch_size + nnz}), {0, 0, 1, 1, 1, 1});
+  // is_row_empty
+  AddInputFromArray<bool>(TensorShape({batch_size}), {false, false, true});
 
   // unique_idxs
   AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 1, 2, 3});
+
+  // sp_weights_values
+  AddInputFromArray<float>(TensorShape({1}), {1.0});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -187,7 +197,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest, Partition2SumFillEmptyDefault2) {
   const int emb_vector_dim = 4;
   const int entries = 8;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, true, 2);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "sum", -1.0, true, 2, false);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
@@ -205,11 +215,14 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest, Partition2SumFillEmptyDefault2) {
   // indices_before_unique
   AddInputFromArray<int64>(TensorShape({nnz + 1, 2}), {2, 0, 0, 0, 0, 5, 1, 4});
 
-  // row_empty_and_invalid_flags
-  AddInputFromArray<int>(TensorShape({batch_size + nnz}), {0, 0, 1, 1, 1, 1});
+  // is_row_empty
+  AddInputFromArray<bool>(TensorShape({batch_size}), {false, false, true});
 
   // unique_idxs
   AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 1, 2, 3});
+
+  // sp_weights_values
+  AddInputFromArray<float>(TensorShape({1}), {1.0});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -237,7 +250,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
   const int emb_vector_dim = 2;
   const int entries = 4;
 
-  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "mean", -1.0, true, 2);
+  MakeOpAndSetDevice(Device::GPU, 2, DT_FLOAT, "mean", -1.0, true, 2, false);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({2, emb_vector_dim}),
@@ -256,21 +269,15 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
   AddInputFromArray<int64>(TensorShape({nnz + 1, 2}),
                            {0, 1, 0, 2, 1, 0, 1, 1, 3, 0, 3, 1, 4, 0, 2, 0});
 
-  // row_empty_and_invalid_flags
-  AddInputFromArray<int>(TensorShape({batch_size + nnz}),
-                         {0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1});
+  // is_row_empty
+  AddInputFromArray<bool>(TensorShape({batch_size}),
+                          {false, false, true, false, false});
 
   // unique_idxs
   AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 1, 1, 0, 2, 3, 3, 3});
 
-  // unique_counts
-  // AddInputFromArray<int64>(TensorShape({4}), {2, 2, 1, 3});
-
-  // idx_of_input_to_unique
-  // AddInputFromArray<int64>(TensorShape({nnz + 1}), {0, 3, 1, 2, 4, 5, 7, 6});
-
-  // unique_offsets
-  // AddInputFromArray<int64>(TensorShape({4}), {0, 2, 4, 5});
+  // sp_weights_values
+  AddInputFromArray<float>(TensorShape({1}), {1.0});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -300,7 +307,7 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
   const int emb_vector_dim = 2;
   const int entries = 4;
 
-  MakeOpAndSetDevice(Device::GPU, 1, DT_FLOAT, "mean", -1.0, true, 2);
+  MakeOpAndSetDevice(Device::GPU, 1, DT_FLOAT, "mean", -1.0, true, 2, false);
 
   // emb_shards 0
   AddInputFromArray<float>(TensorShape({4, emb_vector_dim}),
@@ -316,12 +323,15 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
   AddInputFromArray<int64>(TensorShape({nnz + 1, 2}),
                            {0, 1, 0, 2, 1, 0, 1, 1, 3, 0, 3, 1, 4, 0, 2, 0});
 
-  // row_empty_and_invalid_flags
-  AddInputFromArray<int>(TensorShape({batch_size + nnz}),
-                         {0, 0, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1});
+  // is_row_empty
+  AddInputFromArray<bool>(TensorShape({batch_size}),
+                          {false, false, true, false, false});
 
   // unique_idxs
   AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 1, 1, 0, 2, 3, 3, 3});
+
+  // sp_weights_values
+  AddInputFromArray<float>(TensorShape({1}), {1.0});
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -334,6 +344,58 @@ TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
                                 TensorShape({batch_size, emb_vector_dim}));
     test::FillValues<float>(&expected_emb_vectors,
                             {2.5, 2.5, 2.5, 2.5, 1.0, 1.0, 2.5, 2.5, 1.0, 1.0});
+    test::ExpectTensorNear<float>(expected_emb_vectors, *GetOutput(0), 1e-4);
+  }
+  {
+    Tensor feature_nums_expected(allocator(), DT_INT32,
+                                 TensorShape({batch_size}));
+    test::FillValues<int>(&feature_nums_expected, {2, 2, 1, 2, 1});
+    test::ExpectTensorEqual<int32>(feature_nums_expected, *GetOutput(1));
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePostLookUpV2OpTest,
+       SinglePartitionMeanFillEmptyDefault2UniqueSparseWeights) {
+  const int nnz = 7;
+  const int batch_size = 5;
+  const int emb_vector_dim = 2;
+  const int entries = 4;
+
+  MakeOpAndSetDevice(Device::GPU, 1, DT_FLOAT, "sum", -1.0, true, 2, true);
+
+  // emb_shards 0
+  AddInputFromArray<float>(TensorShape({4, emb_vector_dim}),
+                           {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0});
+
+  // partition_permutation, whatever, will not use this
+  AddInputFromArray<int>(TensorShape({1, 1}), {1});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {batch_size, entries});
+
+  // indices_before_unique
+  AddInputFromArray<int64>(TensorShape({nnz + 1, 2}),
+                           {0, 1, 0, 2, 1, 0, 1, 1, 3, 0, 3, 1, 4, 0, 2, 0});
+
+  // is_row_empty
+  AddInputFromArray<bool>(TensorShape({batch_size}),
+                          {false, false, true, false, false});
+
+  // unique_idxs
+  AddInputFromArray<int>(TensorShape({nnz + 1}), {0, 1, 1, 0, 2, 3, 3, 3});
+
+  // sp_weights_values
+  AddInputFromArray<float>(TensorShape({nnz + 1}),
+                           {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_emb_vectors(allocator(), DT_FLOAT,
+                                TensorShape({batch_size, emb_vector_dim}));
+    test::FillValues<float>(&expected_emb_vectors,
+                            {3.0, 3.0, 7.0, 7.0, 8.0, 8.0, 11.0, 11.0, 7.0, 7.0});
     test::ExpectTensorNear<float>(expected_emb_vectors, *GetOutput(0), 1e-4);
   }
   {

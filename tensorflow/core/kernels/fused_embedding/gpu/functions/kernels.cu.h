@@ -88,41 +88,44 @@ void DetectEmptyRow(const GPUDevice& d, const int64_t* indices,
 template <typename T>
 void RangeInit(const GPUDevice& d, const int64_t length, T* out);
 
-void SumUpEmbeddingShardSinglePartition(const GPUDevice& d,
-                                        const float* emb_shard,
-                                        const int64_t* indices_before_unique,
-                                        const int* unique_idxs, const int nnz,
-                                        const float max_norm,
-                                        const int emb_vec_size,
-                                        float* emb_vectors, int* feature_nums);
+void SumUpEmbeddingShardSinglePartition(
+    const GPUDevice& d, const float* emb_shard,
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const float max_norm, const int emb_vec_size,
+    float* emb_vectors, int* feature_nums);
 
 void SumUpEmbeddingShardMultiPartition(
     const GPUDevice& d, const void* const* emb_shard_ptrs,
     const int* partition_permutation, const int64_t* indices_before_unique,
-    const int* unique_idxs, const int nnz, const float max_norm,
+    const int* unique_idxs, const float* sp_weights_values,
+    const bool use_sparse_weights, const int nnz, const float max_norm,
     const int emb_vec_size, float* emb_vectors, int* feature_nums);
 
 template <Combiner combiner>
 void ApplyCombiner(const GPUDevice& d, const int batch_size,
-                   const int emb_vec_size, const int* row_emptiness_flag,
+                   const int emb_vec_size, const bool* is_row_empty,
                    const bool set_empty_row_zero, int* feature_nums,
                    float* emb_vectors);
 
 template <Combiner combiner>
 void DistributeGradToShardSinglePartition(
     const GPUDevice& d, const float* top_grad, const float* emb_shard,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag, float* grad_shard);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, float* grad_shard);
 
 template <Combiner combiner>
 void DistributeGradToShardMultiPartition(
     const GPUDevice& d, const float* top_grad,
     const void* const* emb_shard_ptrs, const int* partition_permutation,
-    const int64_t* indices_before_unique, const int* unique_idxs, const int nnz,
-    const int emb_vec_size, const float max_norm, const bool set_empty_row_zero,
-    const int* feature_nums, const int* row_emptiness_flag,
-    void** grad_shard_ptrs);
+    const int64_t* indices_before_unique, const int* unique_idxs,
+    const float* sp_weights_values, const bool use_sparse_weights,
+    const int nnz, const int emb_vec_size, const float max_norm,
+    const bool set_empty_row_zero, const int* feature_nums,
+    const bool* is_row_empty, void** grad_shard_ptrs);
 
 }  // namespace fused_embedding
 
