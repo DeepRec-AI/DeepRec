@@ -418,6 +418,10 @@ class KvResourceGatherOp : public OpKernel {
           errors::InvalidArgument(
               "ev's value_len should same with output's dimension(1)",
               std::to_string(slice_elems), std::to_string(ev->ValueLen())));
+      OP_REQUIRES(c, !ev->IsMultiLevel() || (ev->IsMultiLevel() && ev->CacheSize() >= N),
+          errors::InvalidArgument(
+              "MultiLevel EV's Cache size ", ev->CacheSize(),
+              " should large than IDs in batch ", N));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
       auto do_work = [this, indices_flat,
            out_base, slice_elems, c, default_v, ev, counts] (
@@ -436,10 +440,10 @@ class KvResourceGatherOp : public OpKernel {
           worker_threads->workers, indices_size,
           slice_bytes, do_work);
           
-      ev->storage_manager()->Schedule([ev, indices_flat, indices_size]() {
+      ev->storage_manager()->Schedule([ev, indices]() {
         embedding::BatchCache<TKey>* cache = ev->Cache();
         if (cache) {
-          cache->add_to_rank(indices_flat.data(), indices_size);
+          cache->add_to_rank(indices);
         }
       });
     }

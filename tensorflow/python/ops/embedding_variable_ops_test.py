@@ -1965,6 +1965,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         sess.run([init])
         for i in xrange(60):
           r, _, _ = sess.run([emb, train_op, loss])
+        r = sess.run(emb)
         return r
 
     with ops.Graph().as_default() as g:
@@ -1976,7 +1977,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             steps_to_live=5,
             ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_SSDHASH,
                                                                                                  storage_path="/tmp/ssd_utpy",
-                                                                                                 storage_size=[512])))
+                                                                                                 storage_size=[5120])))
       emb1 = runTestAdagrad(self, emb_var, g)
 
     with ops.Graph().as_default() as g:
