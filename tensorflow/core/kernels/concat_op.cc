@@ -30,6 +30,10 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/work_sharder.h"
 
+#ifdef INTEL_MKL
+#include "dnnl.hpp"
+#endif  // INTEL_MKL
+
 namespace tensorflow {
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -479,6 +483,10 @@ class FusedConcatCastOp : public OpKernel {
       auto output_flat = output->flat<DstT>();
       DstT* out_ptr = output_flat.data();
 
+      DataType source_dt = DataTypeToEnum<SrcT>::v();
+      DataType dst_dt = DataTypeToEnum<DstT>::v();
+      bool if_source_bfloat16 = source_dt == DataType::DT_BFLOAT16;
+
       auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
       int num_threads = std::min(
           static_cast<int>((output->NumElements() * sizeof(DstT)) / 4096),
@@ -487,9 +495,13 @@ class FusedConcatCastOp : public OpKernel {
         for (int64_t i = 0; i < inputs_flat_dim0; ++i) {
           for (int64_t j = 0; j < N; ++j) {
             auto size = sizes[j];
+#if INTEL_MKL
+            castElements(out_ptr, input_pointers[j], size);
+#else
             for (int64_t s = 0; s < size; ++s) {
               out_ptr[s] = static_cast<DstT>(*input_pointers[j]++);
             }
+#endif  // INTEL_MKL
             out_ptr += size;
           }
         }
@@ -521,9 +533,13 @@ class FusedConcatCastOp : public OpKernel {
               }
               size = std::min(size, out_end - out);
               if (size <= 0) break;
+#if INTEL_MKL
+              castElements(out, data_ptr, size);
+#else
               for (int64_t s = 0; s < size; ++s) {
                 out[s] = static_cast<DstT>(*data_ptr++);
               }
+#endif  // INTEL_MKL
               out += size;
             }
             ++skipped_rows;
@@ -560,8 +576,17 @@ class FusedConcatCastOp : public OpKernel {
   }
 
  private:
+  static void castElements(Eigen::bfloat16* dst, const float* src, ptrdiff_t size) {
+    dnnl::cvt_float_to_bfloat16((dnnl_bfloat16_t *)dst, (const float *)src, size);
+  }
+
+  static void castElements(float* dst, const Eigen::bfloat16* src, ptrdiff_t size) {
+    dnnl::cvt_bfloat16_to_float((float *)dst, (const dnnl_bfloat16_t *)src, size);
+  }
+
   bool use_truncation_;
 };
+
 
 #define REGISTER_CONCATCAST(src_type, dst_type)                 \
   REGISTER_KERNEL_BUILDER(Name("_FusedConcatCast")              \

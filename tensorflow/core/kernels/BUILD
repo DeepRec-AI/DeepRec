@@ -1087,7 +1087,7 @@ tf_kernel_library(
 tf_kernel_library(
     name = "concat_op",
     prefix = "concat_op",
-    deps = ARRAY_DEPS,
+    deps = ARRAY_DEPS + mkl_deps(),
 )
 
 tf_kernel_library(
