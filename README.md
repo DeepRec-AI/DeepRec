@@ -97,24 +97,25 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux
 ```
 
 ### **Latest Release Images**
-#### Image for GPU CUDA11.0
-```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
-```
-Docker Hub repository
-
-```
-alideeprec/deeprec-release:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
-```
 
 #### Image for CPU
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2206-cpu-py36-ubuntu18.04
 ```
 Docker Hub repository
 ```
-alideeprec/deeprec-release:deeprec2204u1-cpu-py36-ubuntu18.04
+alideeprec/deeprec-release:deeprec2206-cpu-py36-ubuntu18.04
+```
+
+#### Image for GPU CUDA11.0
+```
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2206-gpu-py36-cu110-ubuntu18.04
+```
+Docker Hub repository
+
+```
+alideeprec/deeprec-release:deeprec2206-gpu-py36-cu110-ubuntu18.04
 ```
 
 ***
