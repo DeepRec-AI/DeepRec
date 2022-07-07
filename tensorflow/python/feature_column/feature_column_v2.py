@@ -1018,7 +1018,8 @@ def shared_embedding_columns(categorical_columns,
                              ckpt_to_load_from=None,
                              tensor_name_in_ckpt=None,
                              max_norm=None,
-                             trainable=True):
+                             trainable=True,
+                             do_fusion=False):
   """List of dense columns that convert from sparse, categorical input.
 
   This is similar to `embedding_column`, except that it produces a list of
@@ -1177,7 +1178,8 @@ def shared_embedding_columns(categorical_columns,
             ckpt_to_load_from=ckpt_to_load_from,
             tensor_name_in_ckpt=tensor_name_in_ckpt,
             max_norm=max_norm,
-            trainable=trainable))
+            trainable=trainable,
+            do_fusion=do_fusion))
 
   return result
 
@@ -1191,7 +1193,8 @@ def shared_embedding_column(categorical_column,
                             tensor_name_in_ckpt=None,
                             max_norm=None,
                             trainable=True,
-                            coalesced_scope=None):
+                            coalesced_scope=None,
+                            do_fusion=False):
   """Dense column that convert from sparse, categorical input.
 
   This is similar to `embedding_column`, except that it produces a 
@@ -1292,7 +1295,8 @@ def shared_embedding_column(categorical_column,
       tensor_name_in_ckpt=tensor_name_in_ckpt,
       max_norm=max_norm,
       trainable=trainable,
-      coalesced_scope=coalesced_scope)
+      coalesced_scope=coalesced_scope,
+      do_fusion=do_fusion)
   if coalesced_scope:
     coalesced_scope.add_column(column)
     coalesced_utils.add_embedding_signature(
@@ -4510,7 +4514,7 @@ class SharedEmbeddingColumnV2(
         'SharedEmbeddingColumnV2',
         ('categorical_column', 'dimension', 'shared_name','combiner',
          'initializer', 'ckpt_to_load_from', 'tensor_name_in_ckpt',
-         'max_norm', 'trainable', 'coalesced_scope'))):
+         'max_norm', 'trainable', 'coalesced_scope', 'do_fusion'))):
   """See `shared_embedding_column`."""
 
   def __new__(
@@ -4524,12 +4528,13 @@ class SharedEmbeddingColumnV2(
       tensor_name_in_ckpt,
       max_norm,
       trainable,
-      coalesced_scope=None):
+      coalesced_scope=None,
+      do_fusion=False):
     """Create feature column in compatible way."""
     return super(SharedEmbeddingColumnV2, cls).__new__(
         cls, categorical_column, dimension, shared_name, combiner, initializer,
         ckpt_to_load_from, tensor_name_in_ckpt, max_norm, trainable,
-        coalesced_scope=coalesced_scope)
+        coalesced_scope=coalesced_scope, do_fusion=do_fusion)
 
   @property
   def _is_v2_column(self):
@@ -4644,13 +4649,22 @@ class SharedEmbeddingColumnV2(
       })
 
     # Return embedding lookup result.
-    return embedding_ops.safe_embedding_lookup_sparse(
-        embedding_weights=embedding_weights,
-        sparse_ids=sparse_ids,
-        sparse_weights=sparse_weights,
-        combiner=self.combiner,
-        name='%s_weights' % self.name,
-        max_norm=self.max_norm)
+    if self.do_fusion:
+      return embedding_ops.fused_safe_embedding_lookup_sparse(
+          embedding_weights=embedding_weights,
+          sparse_ids=sparse_ids,
+          sparse_weights=sparse_weights,
+          combiner=self.combiner,
+          name='%s_weights' % self.name,
+          max_norm=self.max_norm)
+    else:
+      return embedding_ops.safe_embedding_lookup_sparse(
+          embedding_weights=embedding_weights,
+          sparse_ids=sparse_ids,
+          sparse_weights=sparse_weights,
+          combiner=self.combiner,
+          name='%s_weights' % self.name,
+          max_norm=self.max_norm)
 
   def _get_dense_tensor_internal(self, sparse_tensors, state_manager):
     """Private method that follows the signature of get_dense_tensor."""

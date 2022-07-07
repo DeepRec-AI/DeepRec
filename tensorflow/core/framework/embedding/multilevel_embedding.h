@@ -267,6 +267,10 @@ class StorageManager {
     return total_size;
   }
 
+  int64 CacheSize() const {
+    return cache_capacity_;
+  }
+
   Status GetSnapshot(std::vector<K>* key_list,
                      std::vector<ValuePtr<V>* >* value_ptr_list) {
     for (auto kv : kvs_) {
@@ -291,11 +295,12 @@ class StorageManager {
         V* val = value_ptr_list[i]->GetValue(emb_config.emb_index, GetOffset(emb_config.emb_index));
         V* primary_val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index, GetOffset(emb_config.primary_emb_index));
         key_list->push_back(key_list_tmp[i]);
-        if (emb_config.filter_freq != 0 || is_multi_level_) {
+        if (emb_config.filter_freq != 0 || is_multi_level_
+            || emb_config.record_freq) {
             int64 dump_freq = filter->GetFreq(key_list_tmp[i], value_ptr_list[i]);
             freq_list->push_back(dump_freq);
         }
-        if (emb_config.steps_to_live != 0) {
+        if (emb_config.steps_to_live != 0 || emb_config.record_version) {
             int64 dump_version = value_ptr_list[i]->GetStep();
             version_list->push_back(dump_version);
         }
@@ -374,7 +379,6 @@ class StorageManager {
   Status Destroy() {
     if (eviction_thread_) {
       mutex_lock l(mu_);
-      shutdown_cv_.notify_all();
       shutdown_ = true;
     }
     delete eviction_thread_;
@@ -431,9 +435,7 @@ class StorageManager {
       if (shutdown_) {
         break;
       }
-      const int kTimeoutMilliseconds = 1;
-      WaitForMilliseconds(&l, &shutdown_cv_, kTimeoutMilliseconds);
-     
+      // add WaitForMilliseconds() for sleep if necessary
       for (int i = 0; i < value_ptr_out_of_date_.size(); i++) {
         value_ptr_out_of_date_[i]->Destroy(kvs_[0].second);
         delete value_ptr_out_of_date_[i];
@@ -477,10 +479,9 @@ class StorageManager {
   BatchCache<K>* cache_;
   int64 cache_capacity_;
   mutex mu_;
-  condition_variable shutdown_cv_;
-  bool shutdown_ GUARDED_BY(mu_) = false;
+  volatile bool shutdown_ GUARDED_BY(mu_) = false;
 
-  bool done_ = false;
+  volatile bool done_ = false;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 
 };

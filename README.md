@@ -23,15 +23,16 @@ DeepRec has super large-scale distributed training capability, supporting model 
  - Multi-tier Hybrid Embedding Storage
  #### **Performance Optimization**
  - Distributed Training Framework Optimization, such as grpc+seastar, FuseRecv, StarServer, HybridBackend etc.
- - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator etc.
+ - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator, Cost based and critical path first Executor etc.
  - Operator level optimization, such as BF16 mixed precision  optimization, sparse operator optimization and EmbeddingVariable on PMEM and GPU, new hardware feature enabling, etc.
  - Graph level optimization, such as AutoGraphFusion, SmartStage, AutoPipeline, StrutureFeature, MicroBatch etc.
  - Compilation optimization, support BladeDISC, XLA etc.
 #### **Deploy and Serving**
- - Incremental model loading and exporting
- - Super-scale sparse model distributed serving
- - Multi-tier hybrid storage and multi backend supported
- - Online deep learning with low latency
+ - Incremental model loading and exporting.
+ - Super-scale sparse model distributed serving.
+ - Multi-tier hybrid storage and multi backend supported.
+ - Online deep learning with low latency.
+ - High performance processor with SessionGroup supported.
 
 
 ***
@@ -40,26 +41,33 @@ DeepRec has super large-scale distributed training capability, supporting model 
 
 ### **Prepare for installation**
 
-
-CPU Platform
+**CPU Platform**
 
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-py36-ubuntu18.04
 ```
 
-GPU Platform
+Docker Hub repository
+
+``````
+alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
+``````
+
+**GPU Platform**
 
 ```
 registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 ```
 
+Docker Hub repository
+
+```
+alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
+```
+
 ### **How to Build**
 
-Setup Environment Variable (Compile for GPU)
-```
-$ export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
-```
-configure
+Configure
 ```
 $ ./configure
 ```
@@ -89,15 +97,26 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux
 ```
 
 ### **Latest Release Images**
-#### Image for GPU CUDA11.0
-```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
-```
+
 #### Image for CPU
+
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2206-cpu-py36-ubuntu18.04
+```
+Docker Hub repository
+```
+alideeprec/deeprec-release:deeprec2206-cpu-py36-ubuntu18.04
 ```
 
+#### Image for GPU CUDA11.0
+```
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2206-gpu-py36-cu110-ubuntu18.04
+```
+Docker Hub repository
+
+```
+alideeprec/deeprec-release:deeprec2206-gpu-py36-cu110-ubuntu18.04
+```
 
 ***
 ## Continuous Build Status

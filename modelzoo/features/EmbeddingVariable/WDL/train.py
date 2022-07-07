@@ -9,6 +9,8 @@ from tensorflow.python.client import timeline
 import json
 from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.training import incremental_saver as tf_incr_saver
+from tensorflow.core.framework.embedding import config_pb2
+from tensorflow.python.ops import variables
 
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -154,9 +156,27 @@ def build_feature_cols(train_file_path, test_file_path):
             deep_columns.append(
                 tf.feature_column.indicator_column(categorical_column))
         elif column_name in CATEGORICAL_COLUMNS:
+            ev_option = None
+            if(args.ev_storage == "pmem_libpmem"):
+                ev_option = tf.EmbeddingVariableOption(storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.PMEM_LIBPMEM,
+                    storage_path=args.ev_storage_path,
+                    storage_size=[args.ev_storage_size_gb*1024*1024*1024]))
+            elif(args.ev_storage == "pmem_memkind"):
+                ev_option = tf.EmbeddingVariableOption(storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.PMEM_MEMKIND))
+            elif(args.ev_storage == "dram_pmem"):
+                ev_option = tf.EmbeddingVariableOption(storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM_PMEM,
+                    storage_path=args.ev_storage_path,
+                    storage_size=[args.ev_storage_size_gb*1024*1024*1024, args.ev_storage_size_gb*1024*1024*1024]))
+            else:
+                ev_option = tf.EmbeddingVariableOption(storage_option=variables.StorageOption(
+                    storage_type=config_pb2.StorageType.DRAM))
             categorical_column = tf.feature_column.categorical_column_with_embedding(
                 column_name,
-                dtype=tf.string)
+                dtype=tf.string,
+                ev_option=ev_option)
             wide_columns.append(categorical_column)
 
             deep_columns.append(
@@ -437,6 +457,18 @@ def get_arg_parser():
     parser.add_argument('--no_saver',
                         help='not add saver to the model.',
                         action='store_true')
+    parser.add_argument('--ev_storage',
+                        type=str,
+                        choices=['dram', 'pmem_libpmem', 'pmem_memkind', 'dram_pmem'],
+                        default='dram')
+    parser.add_argument('--ev_storage_path',
+                        type=str,
+                        default='/mnt/pmem0/pmem_allocator/',
+                        help='path of ev_storage, only useful for pmem_libpmem and dram_pmem now')
+    parser.add_argument('--ev_storage_size_gb',
+                        type=int,
+                        default=512,
+                        help='size of ev_storage, only useful for pmem_libpmem and dram_pmem now')
     return parser
 
 
@@ -507,21 +539,24 @@ def main(tf_config=None, server=None):
         min_slice_size=args.dense_layer_partitioner <<
         10) if args.dense_layer_partitioner else None
 
-    is_saved_model=False
-    real_input=next_element
+    is_saved_model = False
+    real_input = next_element
     if args.saved_model_path:
-        is_saved_model=True
+        is_saved_model = True
         inputs = {}
         # I1-I13
         for x in range(1, 10):
-            inputs['I'+str(x)] = tf.placeholder(tf.float32, [None], name='I'+str(x))
+            inputs['I'+str(x)] = tf.placeholder(tf.float32,
+                                                [None], name='I'+str(x))
         inputs['I10'] = tf.placeholder(tf.int64, [None], name='I10')
         for x in range(11, 14):
-            inputs['I'+str(x)] = tf.placeholder(tf.float32, [None], name='I'+str(x))
+            inputs['I'+str(x)] = tf.placeholder(tf.float32,
+                                                [None], name='I'+str(x))
         # C1-C26
         for x in range(1, 27):
-            inputs['C'+str(x)] = tf.placeholder(tf.string, [None], name='C'+str(x))
-        real_input=inputs
+            inputs['C'+str(x)] = tf.placeholder(tf.string,
+                                                [None], name='C'+str(x))
+        real_input = inputs
 
     # create model
     model = WDL(wide_column=wide_column,
@@ -571,7 +606,7 @@ def main(tf_config=None, server=None):
             with tf.Session(config=sess_config) as sess:
                 sess.run(tf.global_variables_initializer())
                 sess.run(tf.local_variables_initializer())
-                export_dir = args.saved_model_path #'./savedmodel'
+                export_dir = args.saved_model_path  # './savedmodel'
                 tf.saved_model.simple_save(
                     sess,
                     args.saved_model_path,
@@ -585,9 +620,10 @@ def main(tf_config=None, server=None):
                 writer = tf.summary.FileWriter(checkpoint_dir, sess.graph)
                 if not args.no_saver:
                     saver = tf.train.Saver(tf.global_variables(),
-                                        max_to_keep=args.keep_checkpoint_max,
-                                        incremental_save_restore=True)
-                    incr_saver = tf_incr_saver._get_incremental_saver(True, saver)
+                                           max_to_keep=args.keep_checkpoint_max,
+                                           incremental_save_restore=True)
+                    incr_saver = tf_incr_saver._get_incremental_saver(
+                        True, saver)
                 options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                 run_metadata = tf.RunMetadata()
 
@@ -606,7 +642,7 @@ def main(tf_config=None, server=None):
                             checkpoint_path = saver.save(
                                 sess,
                                 save_path=os.path.join(checkpoint_dir,
-                                                    'WIDE_AND_DEEP-checkpoint'),
+                                                       'WIDE_AND_DEEP-checkpoint'),
                                 global_step=_in)
                             print("Save checkpoint to %s" % checkpoint_path)
                     elif args.incr_save_steps > 0 and _in % args.incr_save_steps == 0:
@@ -615,9 +651,11 @@ def main(tf_config=None, server=None):
                         if not args.no_saver:
                             incr_checkpoint_path = incr_saver.incremental_save(
                                 sess,
-                                os.path.join(checkpoint_dir, '.incremental_checkpoint/incr-WIDE_AND_DEEP-checkpoint'),
+                                os.path.join(
+                                    checkpoint_dir, '.incremental_checkpoint/incr-WIDE_AND_DEEP-checkpoint'),
                                 global_step=_in)
-                            print("Save incremental checkpoint to %s" % incr_checkpoint_path)
+                            print("Save incremental checkpoint to %s" %
+                                  incr_checkpoint_path)
                     elif (args.timeline > 0 and _in % args.timeline == 0):
                         _, train_loss = sess.run([model.train_op, model.loss],
                                                  options=options,
@@ -669,7 +707,8 @@ def main(tf_config=None, server=None):
                             writer.add_summary(events, _in)
                             print("Evaluation complate:[{}/{}]".format(
                                 _in, test_steps))
-                            print("ACC = {}\nAUC = {}".format(eval_acc, eval_auc))
+                            print("ACC = {}\nAUC = {}".format(
+                                eval_acc, eval_auc))
 
 
 if __name__ == "__main__":
@@ -730,7 +769,7 @@ if __name__ == "__main__":
                     'index': task_index,
                     'is_chief': is_chief
                 },
-                     server=server)
+                    server=server)
         else:
             print("Task type or index error.")
             sys.exit()

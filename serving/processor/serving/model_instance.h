@@ -49,6 +49,7 @@ class LocalSessionInstance {
  private: 
   MetaGraphDef meta_graph_def_;
   std::pair<std::string, SignatureDef> model_signature_;
+  std::string model_json_signature_;
   std::string warmup_file_name_;
 
   ModelSessionMgr* session_mgr_ = nullptr;
@@ -91,6 +92,7 @@ class RemoteSessionInstance {
  private:
   MetaGraphDef meta_graph_def_;
   std::pair<std::string, SignatureDef> model_signature_;
+  std::string model_json_signature_;
   std::string warmup_file_name_;
 
   ModelSessionMgr* session_mgr_ = nullptr;

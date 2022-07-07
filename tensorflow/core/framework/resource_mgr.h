@@ -906,6 +906,14 @@ Status ScopedStepContainer::Delete(ResourceMgr* rm, const string& name) {
   return rm->Delete<T>(container_, name);
 }
 
+// dev_rmgr_map save device name map to resource_mgr,
+// user can offer rsource_mgr for decvice,
+// dev_rmgr_map[dev] = rmgr means dev will use rmgr as
+// the resource_mgr.
+struct DeviceResourceMgrMap {
+  std::unordered_map<std::string, ResourceMgr*> device_rmgr_map;
+};
+
 }  //  end namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_FRAMEWORK_RESOURCE_MGR_H_

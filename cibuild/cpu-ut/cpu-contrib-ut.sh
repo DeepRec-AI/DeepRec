@@ -49,7 +49,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
     ret=0
-    bazel test -c opt --config=opt --verbose_failures --local_test_jobs=40 -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
+    bazel test -c opt --config=opt --verbose_failures --local_test_jobs=40 --test_output=errors -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
 done
 
 exit $ret

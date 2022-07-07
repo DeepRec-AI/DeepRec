@@ -143,7 +143,8 @@ def shared_embedding_columns(categorical_columns,
                              initializer=None,
                              shared_embedding_collection_name=None,
                              max_sequence_lengths=None,
-                             learning_rate_fn=None):
+                             learning_rate_fn=None,
+                             do_fusion=False):
   """List of dense columns that convert from sparse, categorical input.
 
   Note that the interface for TPU embedding_column is different from the non-TPU
@@ -248,7 +249,8 @@ def shared_embedding_columns(categorical_columns,
         max_norm=None,
         trainable=True,
         max_sequence_length=max_sequence_length,
-        learning_rate_fn=learning_rate_fn)
+        learning_rate_fn=learning_rate_fn,
+        do_fusion=do_fusion)
     tpu_columns.append(column)
 
   return tpu_columns
@@ -466,7 +468,8 @@ class _TPUSharedEmbeddingColumn(_TPUBaseEmbeddingColumn,
               max_norm=None,
               trainable=True,
               max_sequence_length=0,
-              learning_rate_fn=None):
+              learning_rate_fn=None,
+              do_fusion=False):
     return fc._SharedEmbeddingColumn.__new__(
         cls,
         categorical_column,
@@ -477,7 +480,8 @@ class _TPUSharedEmbeddingColumn(_TPUBaseEmbeddingColumn,
         ckpt_to_load_from=ckpt_to_load_from,
         tensor_name_in_ckpt=tensor_name_in_ckpt,
         max_norm=max_norm,
-        trainable=trainable)
+        trainable=trainable,
+        do_fusion=do_fusion)
 
   def __init__(self,
                categorical_column,
@@ -490,7 +494,8 @@ class _TPUSharedEmbeddingColumn(_TPUBaseEmbeddingColumn,
                max_norm=None,
                trainable=True,
                max_sequence_length=0,
-               learning_rate_fn=None):
+               learning_rate_fn=None,
+               do_fusion=False):
 
     _TPUBaseEmbeddingColumn.__init__(
         self,

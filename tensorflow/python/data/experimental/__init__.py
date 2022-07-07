@@ -43,6 +43,7 @@ See [Importing Data](https://tensorflow.org/guide/datasets) for an overview.
 @@TensorArrayStructure
 @@TensorStructure
 @@ThreadingOptions
+@@ParquetDataset
 
 @@bucket_by_sequence_length
 @@bytes_produced_stats
@@ -128,6 +129,7 @@ from tensorflow.python.data.experimental.ops.take_while_ops import take_while
 from tensorflow.python.data.experimental.ops.threading_options import ThreadingOptions
 from tensorflow.python.data.experimental.ops.unique import unique
 from tensorflow.python.data.experimental.ops.writers import TFRecordWriter
+from tensorflow.python.data.experimental.ops.parquet_dataset_ops import ParquetDataset
 from tensorflow.python.data.ops.dataset_ops import AUTOTUNE
 from tensorflow.python.data.ops.dataset_ops import DatasetSpec as DatasetStructure
 from tensorflow.python.data.ops.dataset_ops import from_variant

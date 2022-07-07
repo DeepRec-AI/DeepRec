@@ -117,7 +117,7 @@ def extract_pandas_matrix(data):
   if not isinstance(data, pd.DataFrame):
     return data
 
-  return data.as_matrix()
+  return data.values
 
 
 @deprecated(None, 'Please access pandas data directly.')

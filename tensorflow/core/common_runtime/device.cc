@@ -28,6 +28,25 @@ Device::Device(Env* env, const DeviceAttributes& device_attributes)
   CHECK(DeviceNameUtils::ParseFullName(name(), &parsed_name_))
       << "Invalid device name: " << name();
   rmgr_ = new ResourceMgr(parsed_name_.job);
+  owned_rmgr_ = true;
+}
+
+Device::Device(Env* env, const DeviceAttributes& device_attributes,
+               const DeviceResourceMgrMap* dev_rmgr_map)
+    : DeviceBase(env), device_attributes_(device_attributes) {
+  CHECK(DeviceNameUtils::ParseFullName(name(), &parsed_name_))
+      << "Invalid device name: " << name();
+
+  if (dev_rmgr_map != nullptr &&
+      dev_rmgr_map->device_rmgr_map.find(name()) !=
+          dev_rmgr_map->device_rmgr_map.end()) {
+    rmgr_ = const_cast<DeviceResourceMgrMap*>(dev_rmgr_map)->device_rmgr_map[name()];
+    LOG(INFO) << "Device " << name() << " got a shared resource_mgr: " << rmgr_;
+    owned_rmgr_ = false;
+  } else {
+    rmgr_ = new ResourceMgr(parsed_name_.job);
+    owned_rmgr_ = true;
+  }
 }
 
 Device::~Device() {

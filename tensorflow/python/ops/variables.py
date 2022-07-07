@@ -267,7 +267,7 @@ class EmbeddingVariableOption(object):
     self.ckpt = ckpt
     self.filter_strategy = filter_option
     self.storage_option = storage_option
-    self.init = init_option   
+    self.init = init_option
     
 @tf_export(v1=["CounterFilter"])
 class CounterFilter(object):

@@ -59,20 +59,20 @@ class KernelStats {
     Status s = ReadInt64FromEnvVar(
         start_node_stats_step_env_name, 100, &start_step_);
     if (!s.ok()) {
-      LOG(FATAL) << "Read START_NODE_STATS_STEP envrionment error. "
+      LOG(WARNING) << "Read START_NODE_STATS_STEP envrionment error. "
                  << s.error_message();
     }    
     s = ReadInt64FromEnvVar(
         stop_node_stats_step_env_name, 200, &stop_step_);
     if (!s.ok()) {
-      LOG(FATAL) << "Read STOP_NODE_STATS_STEP envrionment error. "
+      LOG(WARNING) << "Read STOP_NODE_STATS_STEP envrionment error. "
                  << s.error_message();
     }    
     if (start_step_ > 0 && stop_step_ > 0 && 
         stop_step_ > start_step_) {
       collect_kernel_stats = true;
-      LOG(INFO) << "User collect node stats, start_step is " << start_step_
-                << ", stop_step is " << stop_step_;
+      VLOG(1) << "User collect node stats, start_step is " << start_step_
+              << ", stop_step is " << stop_step_;
     }    
   }    
 
@@ -86,9 +86,9 @@ class KernelStats {
     cost_estimates_ =
         absl::make_unique<std::atomic_uint_fast64_t[]>(gview.num_nodes());
     immutable_avg_cost_ =
-        absl::make_unique<std::atomic_int64_t[]>(gview.num_nodes());
+        absl::make_unique<std::atomic<int64_t>[]>(gview.num_nodes());
     node_stats_count_ =
-        absl::make_unique<std::atomic_int32_t[]>(gview.num_nodes());
+        absl::make_unique<std::atomic<int32_t>[]>(gview.num_nodes());
     for (int32_t i = 0; i < gview.num_nodes(); ++i) {
       if (gview.node(i)) {
         is_expensive_[i] =
@@ -226,8 +226,8 @@ class KernelStats {
 
     stat->op_stop_time_ = Env::Default()->NowNanos();
     if (item->node_id >= nodes_count_) {
-      LOG(FATAL) << "Item node is exceed nodes_count_, "
-                 << item->node_id << " VS " << nodes_count_;
+      LOG(WARNING) << "Item node is exceed nodes_count_, "
+                   << item->node_id << " VS " << nodes_count_;
     }
 
     immutable_avg_cost_[item->node_id] +=
@@ -240,15 +240,15 @@ class KernelStats {
 
   int64 GetNodeCost(const NodeItem* item) {
     if (item->node_id >= nodes_count_) {
-      LOG(FATAL) << "Item node is exceed nodes_count_, "
-                 << item->node_id << " VS " << nodes_count_;
+      LOG(WARNING) << "Item node is exceed nodes_count_, "
+                   << item->node_id << " VS " << nodes_count_;
     }
     return immutable_avg_cost_[item->node_id];
   }
 
   int64 GetOpAccumulativeCost(const NodeItem* item) {
     if (item->node_id >= nodes_count_) {
-      LOG(FATAL) << "Item node is exceed nodes_count_, "
+      LOG(WARNING) << "Item node is exceed nodes_count_, "
                  << item->node_id << " VS " << nodes_count_;
     }
     return immutable_accumulative_cost_[item->node_id];
@@ -291,8 +291,8 @@ class KernelStats {
   std::atomic<int64_t> counter_;
   int64_t nodes_count_ = 0;
   // Average execution time of nodes
-  std::unique_ptr<std::atomic_int64_t[]> immutable_avg_cost_;
-  std::unique_ptr<std::atomic_int32_t[]> node_stats_count_;
+  std::unique_ptr<std::atomic<int64_t>[]> immutable_avg_cost_;
+  std::unique_ptr<std::atomic<int32_t>[]> node_stats_count_;
   // The max total execute time of the graph execute path,
   // which from current node to the sink node.
   // Example:

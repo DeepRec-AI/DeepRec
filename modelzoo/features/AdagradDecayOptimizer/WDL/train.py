@@ -311,6 +311,7 @@ class WDL():
         self.global_step = tf.train.get_or_create_global_step()
         dnn_optimizer = tf.train.AdagradDecayOptimizer(
             learning_rate=self.deep_learning_rate,
+            global_step=self.global_step,
             initial_accumulator_value=0.1,
             use_locking=False)
         linear_optimizer = tf.train.FtrlOptimizer(

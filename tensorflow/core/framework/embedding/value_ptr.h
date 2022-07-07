@@ -161,6 +161,7 @@ struct FixedLengthHeader {
   inline void SetGlobalStep(int64 gs) {
     int64 temp = global_step;
     temp &= 0xffff000000000000;
+    gs &= 0x0000ffffffffffff;
     temp |= gs;
     global_step = temp;
   }

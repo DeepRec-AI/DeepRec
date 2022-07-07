@@ -2572,7 +2572,7 @@ class _SharedEmbeddingColumn(
         '_SharedEmbeddingColumn',
         ('categorical_column', 'dimension', 'combiner', 'initializer',
          'shared_embedding_collection_name', 'ckpt_to_load_from',
-         'tensor_name_in_ckpt', 'max_norm', 'trainable'))):
+         'tensor_name_in_ckpt', 'max_norm', 'trainable', 'do_fusion'))):
   """See `embedding_column`."""
 
   @property
@@ -2654,13 +2654,22 @@ class _SharedEmbeddingColumn(
         })
 
       # Return embedding lookup result.
-      return embedding_ops.safe_embedding_lookup_sparse(
-          embedding_weights=embedding_weights,
-          sparse_ids=sparse_ids,
-          sparse_weights=sparse_weights,
-          combiner=self.combiner,
-          name='%s_weights' % self.name,
-          max_norm=self.max_norm)
+      if self.do_fusion:
+        return embedding_ops.fused_safe_embedding_lookup_sparse(
+            embedding_weights=embedding_weights,
+            sparse_ids=sparse_ids,
+            sparse_weights=sparse_weights,
+            combiner=self.combiner,
+            name='%s_weights' % self.name,
+            max_norm=self.max_norm)
+      else:
+        return embedding_ops.safe_embedding_lookup_sparse(
+            embedding_weights=embedding_weights,
+            sparse_ids=sparse_ids,
+            sparse_weights=sparse_weights,
+            combiner=self.combiner,
+            name='%s_weights' % self.name,
+            max_norm=self.max_norm)
 
   def _get_dense_tensor(self, inputs, weight_collections=None, trainable=None):
     if isinstance(self.categorical_column, _SequenceCategoricalColumn):

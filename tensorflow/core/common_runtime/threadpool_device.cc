@@ -51,6 +51,23 @@ ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
                                name, DEVICE_CPU, memory_limit, locality)),
       allocator_(allocator),
       scoped_allocator_mgr_(new ScopedAllocatorMgr(name)) {
+  Init();
+}
+
+ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
+                                   const string& name, Bytes memory_limit,
+                                   const DeviceLocality& locality,
+                                   Allocator* allocator,
+                                   const DeviceResourceMgrMap* dev_rmgr_map)
+    : LocalDevice(options, Device::BuildDeviceAttributes(
+                               name, DEVICE_CPU, memory_limit, locality),
+                  dev_rmgr_map),
+      allocator_(allocator),
+      scoped_allocator_mgr_(new ScopedAllocatorMgr(name)) {
+  Init();
+}
+
+void ThreadPoolDevice::Init() {
 #if !defined(ENABLE_DNNL_THREADPOOL) && defined(INTEL_MKL)
   // Early return when OneDNN is disabled
   if (DisableMKL()) return;

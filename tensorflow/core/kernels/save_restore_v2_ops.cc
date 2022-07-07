@@ -106,19 +106,25 @@ class SaveV2 : public OpKernel {
   }
 
   template <typename TKey, typename TValue>
-  void DumpEvWithGlobalStep(OpKernelContext* context, int variable_index, const string& tensor_name, BundleWriter& writer, DataType global_step_type) {
+  void DumpEvWithGlobalStep(OpKernelContext* context, int variable_index,
+      const string& tensor_name, BundleWriter& writer,
+      DataType global_step_type) {
     if (global_step_type == DT_INT32) {
-      DumpEv<TKey, TValue, int32>(context, variable_index, tensor_name, writer);
+      DumpEv<TKey, TValue, int32>(context, variable_index,
+          tensor_name, writer);
     } else {
-      DumpEv<TKey, TValue, int64>(context, variable_index, tensor_name, writer);
+      DumpEv<TKey, TValue, int64>(context, variable_index,
+          tensor_name, writer);
     }
   }
 
   template <typename TKey, typename TValue, typename TGlobalStep>
-  void DumpEv(OpKernelContext* context, int variable_index, const string& tensor_name, BundleWriter& writer) {
+  void DumpEv(OpKernelContext* context, int variable_index,
+      const string& tensor_name, BundleWriter& writer) {
     EmbeddingVar<TKey, TValue>* variable = nullptr;
     OP_REQUIRES_OK(context,
-                   LookupResource(context, HandleFromInput(context, variable_index), &variable));
+                   LookupResource(context,
+                     HandleFromInput(context, variable_index), &variable));
     const Tensor& global_step = context->input(3);
     Tensor part_offset_tensor;
     context->allocate_temp(DT_INT32,
@@ -130,7 +136,8 @@ class SaveV2 : public OpKernel {
       OP_REQUIRES_OK(context, variable->Shrink());
     else
       OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
-    OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name, &writer, &part_offset_tensor));
+    OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,
+          &writer, &part_offset_tensor));
   }
 
   void Compute(OpKernelContext* context) override {
@@ -162,19 +169,12 @@ class SaveV2 : public OpKernel {
       if (tensor_types_[i] == DT_RESOURCE) {
         auto& handle = HandleFromInput(context, i + kFixedInputs);
         if (IsHandle<EmbeddingVar<int64, float>>(handle)) {
-          EmbeddingVar<int64, float>* variable = nullptr;
-          OP_REQUIRES_OK(context,
-              LookupResource(context, HandleFromInput(context, i + kFixedInputs), &variable));
-          core::ScopedUnref unref_variable(variable);
-          const Tensor& global_step = context->input(3);
-          Tensor part_offset_tensor;
-          context->allocate_temp(DT_INT32,
-                                 TensorShape({kSavedPartitionNum + 1}),
-                                 &part_offset_tensor);
           if (ev_key_types_[start_ev_key_index] == DT_INT32) {
-            DumpEvWithGlobalStep<int32, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
+            DumpEvWithGlobalStep<int32, float>(context,
+                i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
           } else if (ev_key_types_[start_ev_key_index] == DT_INT64) {
-            DumpEvWithGlobalStep<int64, float>(context, i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
+            DumpEvWithGlobalStep<int64, float>(context,
+                i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
           }
         } else if (IsHandle<HashTableResource>(handle)) {
           auto handles = context->input(i + kFixedInputs).flat<ResourceHandle>();
@@ -221,9 +221,11 @@ class SaveV2 : public OpKernel {
         } else if (IsHandle<HashTableAdmitStrategyResource>(handle)) {
           HashTableAdmitStrategyResource* resource;
           OP_REQUIRES_OK(context,
-              LookupResource(context, HandleFromInput(context, i + kFixedInputs), &resource));
+              LookupResource(context,
+                HandleFromInput(context, i + kFixedInputs), &resource));
           HashTableAdmitStrategy* strategy = resource->Internal();
-          BloomFilterAdmitStrategy* bf = dynamic_cast<BloomFilterAdmitStrategy*>(strategy);
+          BloomFilterAdmitStrategy* bf =
+            dynamic_cast<BloomFilterAdmitStrategy*>(strategy);
           CHECK(bf != nullptr) << "Cannot save Non-BloomFilterAdmitStrategy!";
 
           string shape_spec = shape_and_slices_flat(i);
@@ -248,13 +250,13 @@ class SaveV2 : public OpKernel {
           TensorShape slice_shape;
 
           OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
-                                      shape_spec, &shape, &slice, &slice_shape));
+                             shape_spec, &shape, &slice, &slice_shape));
           OP_REQUIRES(context, slice_shape.IsSameSize(tensor.shape()),
-                      errors::InvalidArgument("Slice in shape_and_slice "
-                                              "specification does not match the "
-                                              "shape of the tensor to  save: ",
-                                              shape_spec, ", tensor: ",
-                                              tensor.shape().DebugString()));
+              errors::InvalidArgument("Slice in shape_and_slice "
+                                      "specification does not match the "
+                                      "shape of the tensor to  save: ",
+                                      shape_spec, ", tensor: ",
+                                      tensor.shape().DebugString()));
 
           OP_REQUIRES_OK(context,
                          writer.AddSlice(tensor_name, shape, slice, tensor));
@@ -275,7 +277,8 @@ REGISTER_KERNEL_BUILDER(Name("SaveV2").Device(DEVICE_CPU), SaveV2);
 // Restores a list of named tensors from a tensor bundle (V2 checkpoint format).
 class RestoreHashTableOp : public AsyncOpKernel {
  public:
-  explicit RestoreHashTableOp(OpKernelConstruction* context) : AsyncOpKernel(context) {
+  explicit RestoreHashTableOp(OpKernelConstruction* context)
+      : AsyncOpKernel(context) {
     OP_REQUIRES_OK(context, context->GetAttr("clear", &clear_));
   }
 
@@ -285,7 +288,8 @@ class RestoreHashTableOp : public AsyncOpKernel {
     const Tensor& shape_and_slices = context->input(2);
     const Tensor& handles = context->input(3);
     const string& prefix_string = prefix.scalar<string>()();
-    const string& shape_and_slices_string = shape_and_slices.scalar<string>()();
+    const string& shape_and_slices_string =
+      shape_and_slices.scalar<string>()();
     auto tensor_names_flat = tensor_names.flat<string>();
     auto handles_flat = handles.flat<ResourceHandle>();
 
@@ -371,7 +375,8 @@ class RestoreHashTableOp : public AsyncOpKernel {
  private:
   bool clear_;
 };
-REGISTER_KERNEL_BUILDER(Name("RestoreHashTable").Device(DEVICE_CPU), RestoreHashTableOp);
+REGISTER_KERNEL_BUILDER(Name("RestoreHashTable").Device(DEVICE_CPU),
+    RestoreHashTableOp);
 
 class RestoreBloomFilterOp : public AsyncOpKernel {
  public:
@@ -402,7 +407,8 @@ class RestoreBloomFilterOp : public AsyncOpKernel {
       OP_REQUIRES_OK_ASYNC(
           context, LookupResource(context, handle_flat, &resource), done);
       strategy = dynamic_cast<BloomFilterAdmitStrategy*>(resource->Internal());
-      CHECK(strategy != nullptr) << "Cannot restore BloomFilter from another strategy";
+      CHECK(strategy != nullptr)
+        << "Cannot restore BloomFilter from another strategy";
     }
     Status st = RestoreBloomFilter(
         reader.get(), strategy, tensor_name_flat, slice.start(0),
@@ -411,7 +417,8 @@ class RestoreBloomFilterOp : public AsyncOpKernel {
     done();
   }
 };
-REGISTER_KERNEL_BUILDER(Name("RestoreBloomFilter").Device(DEVICE_CPU), RestoreBloomFilterOp);
+REGISTER_KERNEL_BUILDER(Name("RestoreBloomFilter").Device(DEVICE_CPU),
+    RestoreBloomFilterOp);
 
 // Restores a list of named tensors from a tensor bundle (V2 checkpoint format).
 class RestoreV2 : public OpKernel {
