@@ -23,8 +23,3 @@ RUN pip install \
     protobuf==3.17.3 && \
     pip install --no-deps \
     keras-preprocessing==1.0.5
-
-RUN mkdir -p /src && \
-    git clone https://github.com/alibaba/DeepRec.git /src/DeepRec && \
-    cd /src/DeepRec/tensorflow && \
-    tools/ci_build/install/install_bazel.sh
