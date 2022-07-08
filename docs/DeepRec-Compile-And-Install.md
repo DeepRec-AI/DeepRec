@@ -48,6 +48,24 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 
 ## 代码编译
 
+**GPU Environment**
+为了更好的发挥GPU性能，根据编译/运行的GPU卡，配置不同的TF_CUDA_COMPUTE_CAPABILITIES
+
+| GPU architecture    | TF_CUDA_COMPUTE_CAPABILITIES |
+| ------------------- | ---------------------------- |
+| Pascal (P100)       | 6.0+6.1                      |
+| Volta (V100)        | 7.0                          |
+| Turing (T4)         | 7.5                          |
+| Ampere (A10, A100)  | 8.0+8.6                      |
+
+如果希望编译出支持不同GPU卡上执行的版本，可以配置多个值，比如DeepRec中默认配置为"6.0,6.1,7.0,7.5,8.0"
+
+比如配置环境变量TF_CUDA_COMPUTE_CAPABILITIES方法：
+
+```bash
+export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
+```
+
 ```bash
 ./configure
 ```
@@ -93,23 +111,23 @@ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x
 **GPU CUDA11.0镜像**
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2206-gpu-py36-cu110-ubuntu18.04
 ```
 
 Docker Hub repository
 ```
-alideeprec/deeprec-release:deeprec2204u1-gpu-py36-cu110-ubuntu18.04
+alideeprec/deeprec-release:deeprec2206-gpu-py36-cu110-ubuntu18.04
 ```
 
 **CPU镜像**
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204u1-cpu-py36-ubuntu18.04
+registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2206-cpu-py36-ubuntu18.04
 ```
 
 Docker Hub repository
 ```
-alideeprec/deeprec-release:deeprec2204u1-cpu-py36-ubuntu18.04
+alideeprec/deeprec-release:deeprec2206-cpu-py36-ubuntu18.04
 ```
 
 ## DeepRec Processor编译打包
