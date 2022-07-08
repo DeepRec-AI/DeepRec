@@ -73,20 +73,4 @@ BM_SparseReshapeDev(cpu, 4096, 8, 4);
 BM_SparseReshapeDev(cpu, 8192, 8, 4);
 BM_SparseReshapeDev(cpu, 16384, 8, 4);
 
-#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
-    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
-BM_SparseReshapeDev(gpu, 16, 8, 4);
-BM_SparseReshapeDev(gpu, 32, 8, 4);
-BM_SparseReshapeDev(gpu, 64, 8, 4);
-BM_SparseReshapeDev(gpu, 128, 8, 4);
-BM_SparseReshapeDev(gpu, 256, 8, 4);
-BM_SparseReshapeDev(gpu, 512, 8, 4);
-BM_SparseReshapeDev(gpu, 1024, 8, 4);
-BM_SparseReshapeDev(gpu, 2048, 8, 4);
-BM_SparseReshapeDev(gpu, 4096, 8, 4);
-BM_SparseReshapeDev(gpu, 8192, 8, 4);
-BM_SparseReshapeDev(gpu, 16384, 8, 4);
-#endif // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    
-
 } // End of namespace tensorflow
