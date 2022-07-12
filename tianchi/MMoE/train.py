@@ -11,6 +11,11 @@ import json
 
 from tensorflow.python.ops import partitioned_variables
 
+result_dir='/tmp/tianchi/result/MMoE/'
+result_path=result_dir+'result'
+global_steps_per_sec = 0
+global_auc = 0
+
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
 tf.logging.set_verbosity(tf.logging.INFO)
 print("Using TensorFlow version %s" % (tf.__version__))
@@ -477,19 +482,24 @@ def train(sess_config,
         print("Please see the comments in the code.")
         sys.exit()
     
+    time_start = time.perf_counter()
     with tf.train.MonitoredTrainingSession(
             master=server.target if server else '',
             is_chief=tf_config['is_chief'] if tf_config else True,
             hooks=hooks,
             scaffold=scaffold,
             checkpoint_dir=checkpoint_dir,
-            save_checkpoint_steps=save_steps,
+            save_checkpoint_secs=None,
             summary_dir=checkpoint_dir,
-            save_summaries_steps=args.save_steps,
+            save_summaries_steps=None,
             config=sess_config) as sess:
         while not sess.should_stop():
             sess.run([model.loss, model.train_op])
+    time_end = time.perf_counter()
     print("Training completed.")
+    time_cost = time_end - time_start
+    global global_steps_per_sec
+    global_steps_per_sec = steps / time_cost
 
 def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
     model.is_training = False
@@ -516,6 +526,8 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
                 writer.add_summary(events, _in)
                 print("Evaluation complete:[{}/{}]".format(_in, steps))
                 print("ACC = {}\nAUC = {}".format(eval_acc, eval_auc))
+                global global_auc
+                global_auc = eval_auc
 
 def main(tf_config=None, server=None):
         # check dataset and count data set size
@@ -621,6 +633,10 @@ def main(tf_config=None, server=None):
     if not (args.no_eval or tf_config):
         eval(sess_config, hooks, model, test_init_op, test_steps,
              checkpoint_dir)
+    os.makedirs(result_dir, exist_ok=True)
+    with open(result_path, 'w') as f:
+        f.write(str(global_steps_per_sec)+'\n')
+        f.write(str(global_auc)+'\n')
 
 def boolean_string(string):
     low_string = string.lower()
