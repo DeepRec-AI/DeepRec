@@ -322,31 +322,31 @@ private:
       T x_row_sum = 0.0;
       T y_grad_row_sum = 0.0;
       // sum of squares of x and sum of y_grad * x
-      for (int64 j = cols - 1; j > remainder; j -= SUM_BLOCK_SIZE) {
+      for (int64 j = 0; j < cols - remainder; j += SUM_BLOCK_SIZE) {
         T x_0 = x[i * cols + j];
-        T x_1 = x[i * cols + j - 1];
-        T x_2 = x[i * cols + j - 2];
-        T x_3 = x[i * cols + j - 3];
-        T x_4 = x[i * cols + j - 4];
-        T x_5 = x[i * cols + j - 5];
-        T x_6 = x[i * cols + j - 6];
-        T x_7 = x[i * cols + j - 7];
+        T x_1 = x[i * cols + j + 1];
+        T x_2 = x[i * cols + j + 2];
+        T x_3 = x[i * cols + j + 3];
+        T x_4 = x[i * cols + j + 4];
+        T x_5 = x[i * cols + j + 5];
+        T x_6 = x[i * cols + j + 6];
+        T x_7 = x[i * cols + j + 7];
         x_row_sum += x_0 * x_0 + x_1 * x_1 + x_2 * x_2 + x_3 * x_3 + x_4 * x_4 +
                      x_5 * x_5 + x_6 * x_6 + x_7 * x_7;
 
         T y_grad_0 = y_grad[i * cols + j];
-        T y_grad_1 = y_grad[i * cols + j - 1];
-        T y_grad_2 = y_grad[i * cols + j - 2];
-        T y_grad_3 = y_grad[i * cols + j - 3];
-        T y_grad_4 = y_grad[i * cols + j - 4];
-        T y_grad_5 = y_grad[i * cols + j - 5];
-        T y_grad_6 = y_grad[i * cols + j - 6];
-        T y_grad_7 = y_grad[i * cols + j - 7];
+        T y_grad_1 = y_grad[i * cols + j + 1];
+        T y_grad_2 = y_grad[i * cols + j + 2];
+        T y_grad_3 = y_grad[i * cols + j + 3];
+        T y_grad_4 = y_grad[i * cols + j + 4];
+        T y_grad_5 = y_grad[i * cols + j + 5];
+        T y_grad_6 = y_grad[i * cols + j + 6];
+        T y_grad_7 = y_grad[i * cols + j + 7];
         y_grad_row_sum += x_0 * y_grad_0 + x_1 * y_grad_1 + x_2 * y_grad_2 +
                           x_3 * y_grad_3 + x_4 * y_grad_4 + x_5 * y_grad_5 +
                           x_6 * y_grad_6 + x_7 * y_grad_7;
       }
-      for (int64 j = remainder; j > 0; j--) {
+      for (int64 j = cols - remainder; j < cols; j++) {
         T x_0 = x[i * cols + j];
         x_row_sum += x_0 * x_0;
 
@@ -423,12 +423,12 @@ private:
           xs[remainder_block_num] = _mm512_maskz_loadu_ps(mask, x + cols * i + cols - remainder_16);
           y_grads[remainder_block_num] = _mm512_mul_ps(y_grads[remainder_block_num], xs[remainder_block_num]);
         }
-        __m512 y_grad_block_sum = reduce_sum_block_ps(xs, remainder_block_num_total);
+        __m512 y_grad_block_sum = reduce_sum_block_ps(y_grads, remainder_block_num_total);
         y_grad_row_sum += _mm512_reduce_add_ps(y_grad_block_sum);
       }
 
       x_row_sum += epsilon;
-      x_row_sum = 1.0 / std::sqrt(x_row_sum); // var
+      x_row_sum = 1.0 / std::sqrt(x_row_sum); // rvar
       y_grad_row_sum = (y_grad_row_sum * x_row_sum) * (x_row_sum * x_row_sum);
       // Calculate x_grad = y_grad * rvar - x * ((sum * rvar) * (rvar * rvar))
       __m512 x_row_sums = _mm512_set1_ps(x_row_sum);

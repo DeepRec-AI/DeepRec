@@ -39,14 +39,18 @@ TEST_F(FusedL2NormalizeGradOpTest, 2Dims_Float) {
 
   // y_grad
     float y_grad_array[1008];
-    for (int i = 0; i < sizeof(y_grad_array) / sizeof(float); i++) {
+    for (int i = 0; i < rows * cols; i++) {
       y_grad_array[i] = 1.0;
     }
+    y_grad_array[251] = 2.0;
+    y_grad_array[503] = 2.0;
+    y_grad_array[755] = 2.0;
+    y_grad_array[1007] = 2.0;
   AddInputFromArray<float>(TensorShape({rows, cols}), y_grad_array);
   
   // x
     float x_array[1008];
-    for (int i = 0; i < sizeof(x_array) / sizeof(float); i++) {
+    for (int i = 0; i < rows * cols; i++) {
       x_array[i] = 1.0;
     }
   AddInputFromArray<float>(TensorShape({rows, cols}), x_array);
@@ -58,9 +62,13 @@ TEST_F(FusedL2NormalizeGradOpTest, 2Dims_Float) {
     Tensor expected_output(allocator(), DT_FLOAT,
                                 TensorShape({rows, cols}));
     float output_array[1008];
-    for (int i = 0; i < sizeof(output_array) / sizeof(float); i++) {
-      output_array[i] = 0;
+    for (int i = 0; i < rows * cols; i++) {
+      output_array[i] = - 1.0 / (252 * std::sqrt(252));
     }
+    output_array[251] = 251.0 / (252 * std::sqrt(252));
+    output_array[503] = 251.0 / (252 * std::sqrt(252));
+    output_array[755] = 251.0 / (252 * std::sqrt(252));
+    output_array[1007] = 251.0 / (252 * std::sqrt(252));
     test::FillValues<float>(&expected_output, output_array);
     test::ExpectTensorNear<float>(expected_output, *GetOutput(0), 1e-6);
   }
