@@ -682,7 +682,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     # Note: snappy is placed earlier as tensorflow's snappy does not include snappy-c
     http_archive(
         name = "snappy",
-        build_file = "//third_party:snappy.BUILD",
+        build_file = clean_dep("//third_party:snappy.BUILD"),
         sha256 = "16b677f07832a612b0836178db7f374e414f94657c138e6993cbfc5dcc58651f",
         strip_prefix = "snappy-1.1.8",
         urls = [
@@ -1079,7 +1079,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "arrow",
-        build_file = "//third_party:arrow.BUILD",
+        build_file = clean_dep("//third_party:arrow.BUILD"),
         patch_cmds = [
             # TODO: Remove the fowllowing once arrow issue is resolved.
             """sed -i.bak 's/type_traits/std::max<int16_t>(sizeof(int16_t), type_traits/g' cpp/src/parquet/column_reader.cc""",
@@ -1095,7 +1095,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "brotli",
-        build_file = "//third_party:brotli.BUILD",
+        build_file = clean_dep("//third_party:brotli.BUILD"),
         sha256 = "4c61bfb0faca87219ea587326c467b95acb25555b53d1a421ffa3c8a9296ee2c",
         strip_prefix = "brotli-1.0.7",
         urls = [
@@ -1106,7 +1106,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "bzip2",
-        build_file = "//third_party:bzip2.BUILD",
+        build_file = clean_dep("//third_party:bzip2.BUILD"),
         sha256 = "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269",
         strip_prefix = "bzip2-1.0.8",
         urls = [
@@ -1117,7 +1117,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "thrift",
-        build_file = "//third_party:thrift.BUILD",
+        build_file = clean_dep("//third_party:thrift.BUILD"),
         sha256 = "5da60088e60984f4f0801deeea628d193c33cec621e78c8a43a5d8c4055f7ad9",
         strip_prefix = "thrift-0.13.0",
         urls = [
@@ -1128,7 +1128,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "xsimd",
-        build_file = "//third_party:xsimd.BUILD",
+        build_file = clean_dep("//third_party:xsimd.BUILD"),
         sha256 = "45337317c7f238fe0d64bb5d5418d264a427efc53400ddf8e6a964b6bcb31ce9",
         strip_prefix = "xsimd-7.5.0",
         urls = [
@@ -1138,7 +1138,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "zstd",
-        build_file = "//third_party:zstd.BUILD",
+        build_file = clean_dep("//third_party:zstd.BUILD"),
         sha256 = "a364f5162c7d1a455cc915e8e3cf5f4bd8b75d09bc0f53965b0c9ca1383c52c8",
         strip_prefix = "zstd-1.4.4",
         urls = [
@@ -1149,7 +1149,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "rapidjson",
-        build_file = "//third_party:rapidjson.BUILD",
+        build_file = clean_dep("//third_party:rapidjson.BUILD"),
         sha256 = "30bd2c428216e50400d493b38ca33a25efb1dd65f79dfc614ab0c957a3ac2c28",
         strip_prefix = "rapidjson-418331e99f859f00bdc8306f69eba67e8693c55e",
         urls = [
@@ -1160,7 +1160,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "aws_c_common",
-        build_file = "//third_party/aws_util:aws_c_common.BUILD",
+        build_file = clean_dep("//third_party/aws_util:aws_c_common.BUILD"),
         sha256 = "e9462a141b5db30006704f537d19b92357a59be38d590272e6118976b0356ccd",
         strip_prefix = "aws-c-common-0.7.4",
         urls = [
@@ -1171,7 +1171,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "aws_c_io",
-        build_file = "//third_party/aws_util:aws_c_io.BUILD",
+        build_file = clean_dep("//third_party/aws_util:aws_c_io.BUILD"),
         sha256 = "b60270d23b6e2f4a5d80e64ca6538ba114cd6044b53752964c940f87e59bf0d9",
         strip_prefix = "aws-c-io-0.11.2",
         urls = [
@@ -1182,7 +1182,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "aws_c_event_stream",
-        build_file = "//third_party/aws_util:aws_c_event_stream.BUILD",
+        build_file = clean_dep("//third_party/aws_util:aws_c_event_stream.BUILD"),
         sha256 = "bae0c762b6a4b779a0db0f4730512da6cb500e76681ffdcb9f7286d8e26e547a",
         strip_prefix = "aws-c-event-stream-0.2.6",
         urls = [
@@ -1193,7 +1193,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "aws_checksums",
-        build_file = "//third_party/aws_util:aws_checksums.BUILD",
+        build_file = clean_dep("//third_party/aws_util:aws_checksums.BUILD"),
         sha256 = "394723034b81cc7cd528401775bc7aca2b12c7471c92350c80a0e2fb9d2909fe",
         strip_prefix = "aws-checksums-0.1.12",
         urls = [
@@ -1204,7 +1204,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     http_archive(
         name = "aws_c_cal",
-        build_file = "//third_party/aws_util:aws_c_cal.BUILD",
+        build_file = clean_dep("//third_party/aws_util:aws_c_cal.BUILD"),
         sha256 = "40297da04443d4ee2988d1c5fb0dc4a156d0e4cfaf80e6a1df1867452566d540",
         strip_prefix = "aws-c-cal-0.5.17",
         urls = [
