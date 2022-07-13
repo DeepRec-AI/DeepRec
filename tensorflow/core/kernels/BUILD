@@ -5404,6 +5404,37 @@ tf_cc_test(
 )
 
 tf_kernel_library(
+    name = "fused_l2_normalize_ops",
+    srcs = [
+        "fused_l2_normalize/fused_l2_normalize_op.cc",
+    ],
+    hdrs = ["fused_l2_normalize/compile_util.h"],
+    deps = ["//third_party/eigen3"] + DYNAMIC_DEPS + mkl_deps(),
+)
+
+tf_cc_test(
+    name = "fused_l2_normalize_ops_test",
+    size = "small",
+    srcs = ["fused_l2_normalize/fused_l2_normalize_op_test.cc",
+        "fused_l2_normalize/fused_l2_normalize_grad_op_test.cc"],
+    deps = [
+        ":fused_l2_normalize_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_kernel_library(
     name = "run_graph_op",
     prefix = "run_graph_op",
     deps = REQUIRED_DEPS + [
