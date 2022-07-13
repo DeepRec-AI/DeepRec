@@ -19,7 +19,7 @@ enum class Device { GPU };
 class PruneInvalidAndFillEmptyRowsOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, const bool fill_empty_row,
-                          const bool prune_invalid, const int default_id,
+                          const bool prune, const int default_id,
                           const bool use_sparse_weights,
                           const bool prune_sparse_weights,
                           const float default_weight) {
@@ -32,7 +32,7 @@ class PruneInvalidAndFillEmptyRowsOpTest : public OpsTestBase {
     TF_EXPECT_OK(NodeDefBuilder("prune_invalid_and_fill_empty_rows",
                                 "PruneInvalidAndFillEmptyRows")
                      .Attr("fill_empty_row", fill_empty_row)
-                     .Attr("prune_invalid", prune_invalid)
+                     .Attr("prune", prune)
                      .Attr("default_id", default_id)
                      .Attr("use_sparse_weights", use_sparse_weights)
                      .Attr("prune_sparse_weights", prune_sparse_weights)

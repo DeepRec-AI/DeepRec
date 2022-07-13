@@ -137,7 +137,7 @@ def fused_embedding_lookup_sparse_v2(params,
                                      combiner=None,
                                      max_norm=None,
                                      default_id=None,
-                                     prune_invalid_ids=False,
+                                     prune=False,
                                      fill_empty_row=True,
                                      blocknums=None):
 ```
@@ -153,16 +153,15 @@ def fused_embedding_lookup_sparse_v2(params,
 - `max_norm`: 如果不为 None, 则对每个 embedding vector 都计算 l2，然后对于超过 max_norm 值的进行 normalization。
 - `default_id`: 若 `fill_empty_row=True`, 则对于 empty 的 row，填充 default_id。如果 default_id 为 None, 则默认填充 0。
 - `fill_empty_row`: 是否对 sparse_ids 进行空行填充，结合 `default_id` 使用。
-- `prune_invalid_ids`: 是否对 sparse_ids 去除非法值(id < 0)。
+- `prune_invalid_ids` or `prune`: 是否去除非法值。
 - `blocknums`: DynamicEmbeddingVariable 使用的参数。
 
 
-`'v1'` 目前为 CPU fusion 实现，`'v2'` 目前为 GPU fusion 实现。请根据需要相应选择。
-
 ## 注意事项
-
-1. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
-2. 使用 v2 GPU fusion 时，可以考虑 `tf.ConfigProto(inter_op_parallelism_threads=1)`，测试发现在 embedding 数量较多的情况下，`inter_op_parallelism_threads=1` 可以避免一些 Schedule 的 overhead，更高的提速。
+1. `v2` 目前仅有 GPU 实现。
+2. `v2` 目前支持 `sparse_weights` 功能，`v1` 还不支持。
+3. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
+4. 使用 GPU fusion 时，可以考虑 `export TF_GPU_THREAD_MODE="gpu_private"` 以及 `export TF_GPU_THREAD_COUNT=1`。测试发现在 feature 数目较多的情况下，GPU 使用单线程去 lanuch kernels 时 overhead 较小，有助于进一步提速。
 
 
 ## Op 介绍

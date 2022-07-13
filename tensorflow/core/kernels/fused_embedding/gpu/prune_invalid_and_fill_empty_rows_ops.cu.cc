@@ -44,7 +44,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
   explicit PruneInvalidAndFillEmptyRowsGPU(OpKernelConstruction* ctx)
       : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("fill_empty_row", &fill_empty_row_));
-    OP_REQUIRES_OK(ctx, ctx->GetAttr("prune_invalid", &prune_invalid_));
+    OP_REQUIRES_OK(ctx, ctx->GetAttr("prune", &prune_));
     int temp_default_id;
     OP_REQUIRES_OK(ctx, ctx->GetAttr("default_id", &temp_default_id));
     default_id_ = int64(temp_default_id);
@@ -81,7 +81,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
     Tensor const* sp_weights_values = nullptr;
     OP_REQUIRES_OK(ctx, ctx->input("sp_weights_values", &sp_weights_values));
 
-    if (!prune_invalid_ && !fill_empty_row_) {
+    if (!prune_ && !fill_empty_row_) {
       ctx->set_output("sp_values_out", *sp_values);
       ctx->set_output("sp_indices_out", *sp_indices);
       ctx->set_output("sp_weights_values_out", *sp_weights_values);
@@ -121,7 +121,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
                                     &is_row_empty));
 
       InitFillEmptyBuffers(device, batch_size, nnz, default_id, default_weight_,
-                           prune_invalid_, use_sparse_weights_,
+                           prune_, use_sparse_weights_,
                            data_p_with_type<const int64_t>(sp_values),
                            data_p_with_type<const int64_t>(sp_indices),
                            data_p_with_type<int64_t>(sp_values_out),
@@ -133,7 +133,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
       DetectEmptyRow(device, data_p_with_type<const int64_t>(sp_indices),
                      data_p_with_type<const int64_t>(sp_values),
                      data_p_with_type<const float>(sp_weights_values),
-                     prune_invalid_, prune_sparse_weights_, nnz,
+                     prune_, prune_sparse_weights_, nnz,
                      data_p_with_type<bool>(is_row_empty));
 
     } else {
@@ -169,7 +169,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
     auto with_weight_select_op = PruneInvalidWithWeightSelectOp();
     auto select_op = PruneInvalidSelectOp();
 
-    if (prune_invalid_) {
+    if (prune_) {
       if (use_sparse_weights_) {
         if (prune_sparse_weights_) {
           cub::DeviceSelect::If(nullptr, temp_storage_bytes, triple_input_iter,
@@ -204,7 +204,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
                  &cub_temp_storage));
 
     // 3. select valid id & empty row indices
-    if (prune_invalid_) {
+    if (prune_) {
       if (use_sparse_weights_) {
         if (prune_sparse_weights_) {
           cub::DeviceSelect::If(data_p_with_type<void>(cub_temp_storage),
@@ -271,7 +271,7 @@ class PruneInvalidAndFillEmptyRowsGPU : public OpKernel {
 
  private:
   bool fill_empty_row_;
-  bool prune_invalid_;
+  bool prune_;
   int64 default_id_;
   bool use_sparse_weights_;
   bool prune_sparse_weights_;

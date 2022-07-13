@@ -1439,7 +1439,7 @@ def _embeddings_from_arguments(column,
       input_tensor,
       sparse_weights=weight_tensor,
       combiner=args.combiner,
-      name=column.name + "weights",
+      name=column.name + "_weights",
       max_norm=args.max_norm,
       fusion_version=args.do_fusion
     )

@@ -73,7 +73,7 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
 
 void InitFillEmptyBuffers(const GPUDevice& d, const int64_t batch_size,
                           const int64_t nnz, const int64_t default_id,
-                          const float default_weight, const bool prune_invalid,
+                          const float default_weight, const bool prune,
                           const bool use_sparse_weights,
                           const int64_t* sp_values, const int64_t* sp_indices,
                           int64_t* sp_values_out, int64_t* sp_indices_out,
@@ -82,7 +82,7 @@ void InitFillEmptyBuffers(const GPUDevice& d, const int64_t batch_size,
 
 void DetectEmptyRow(const GPUDevice& d, const int64_t* indices,
                     const int64_t* sp_values, const float* sp_weights_values,
-                    const bool prune_invalid, const bool prune_sparse_weights,
+                    const bool prune, const bool prune_sparse_weights,
                     const int64_t nnz, bool* is_row_empty);
 
 template <typename T>

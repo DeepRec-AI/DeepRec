@@ -252,7 +252,7 @@ REGISTER_OP("FusedSafeEmbeddingLookupSparseLocalGrad")
 
 REGISTER_OP("PruneInvalidAndFillEmptyRows")
     .Attr("fill_empty_row: bool = false")
-    .Attr("prune_invalid: bool = false")
+    .Attr("prune: bool = false")
     .Attr("default_id: int = -1")
     .Attr("use_sparse_weights: bool = false")
     .Attr("prune_sparse_weights: bool = false")

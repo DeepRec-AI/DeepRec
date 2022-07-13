@@ -64,8 +64,8 @@ void DetectInvalid(const GPUDevice& d, const int64_t* values, const int64_t nnz,
 
 __global__ void FusedMultiFunctionalKernel(
     const IndicePair* indices, const int64_t* values, const int64_t nnz,
-    const int64_t batch_size, const bool prune_invalid,
-    const int64_t default_id, int* row_emptiness_flag, int* invalid_id_flag,
+    const int64_t batch_size, const bool prune, const int64_t default_id,
+    int* row_emptiness_flag, int* invalid_id_flag,
     IndicePair* tmp_indices_buffer, int64_t* values_extended) {
   // This kernel will do many things together
   // 1. The first part of threads will do job 1(DetectRowEmptiness), others will
@@ -75,7 +75,7 @@ __global__ void FusedMultiFunctionalKernel(
   const int offset = blockIdx.x * blockDim.x + threadIdx.x;
   if (offset < nnz) {
     // do DetectRowEmptiness
-    if (prune_invalid) {
+    if (prune) {
       const int64_t value = values[offset];
       if (value < 0) {
         // invalid, set invalid_id_flag
@@ -111,7 +111,7 @@ __global__ void FusedMultiFunctionalKernel(
 
 void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
                           const int64_t* values, const int64_t nnz,
-                          const int64_t batch_size, const bool prune_invalid,
+                          const int64_t batch_size, const bool prune,
                           const int64_t default_id, int* row_emptiness_flag,
                           int* invalid_id_flag, IndicePair* tmp_indices_buffer,
                           int64_t* values_extended) {
@@ -119,11 +119,11 @@ void FusedMultiFunctional(const GPUDevice& d, const IndicePair* indices,
   const int blocks = CalcBlocksLinearMapping(nnz + batch_size, threads);
   TF_CHECK_OK(GpuLaunchKernel(
       FusedMultiFunctionalKernel, blocks, threads, 0, d.stream(), indices,
-      values, nnz, batch_size, prune_invalid, default_id, row_emptiness_flag,
+      values, nnz, batch_size, prune, default_id, row_emptiness_flag,
       invalid_id_flag, tmp_indices_buffer, values_extended));
 }
 
-template <bool prune_invalid, bool use_sparse_weights>
+template <bool prune, bool use_sparse_weights>
 __global__ void InitFillEmptyBuffersKernel(
     int64_t batch_size, int64_t nnz, int64_t default_id, float default_weight,
     const int64_t* sp_values, const int64_t* sp_indices, int64_t* sp_values_out,
@@ -155,7 +155,7 @@ __global__ void InitFillEmptyBuffersKernel(
 
   // using template here to let compiler decide whether to optimize this section
   // out
-  if (!prune_invalid) {
+  if (!prune) {
     if (global_tid < nnz) {
       sp_values_out[global_tid] = sp_values[global_tid];
     }
@@ -168,7 +168,7 @@ __global__ void InitFillEmptyBuffersKernel(
 
 void InitFillEmptyBuffers(const GPUDevice& d, const int64_t batch_size,
                           const int64_t nnz, const int64_t default_id,
-                          const float default_weight, const bool prune_invalid,
+                          const float default_weight, const bool prune,
                           const bool use_sparse_weights,
                           const int64_t* sp_values, const int64_t* sp_indices,
                           int64_t* sp_values_out, int64_t* sp_indices_out,
@@ -178,26 +178,26 @@ void InitFillEmptyBuffers(const GPUDevice& d, const int64_t batch_size,
   const int blocks = CalcBlocksLinearMapping(
       std::max(std::max(3 * batch_size, batch_size + nnz), 2 * nnz), threads);
 
-#define LAUNCH_KERNEL(prune_invalid, use_sparse_weights)                     \
-  TF_CHECK_OK(GpuLaunchKernel(                                               \
-      InitFillEmptyBuffersKernel<prune_invalid, use_sparse_weights>, blocks, \
-      threads, 0, d.stream(), batch_size, nnz, default_id, default_weight,   \
-      sp_values, sp_indices, sp_values_out, sp_indices_out,                  \
-      sp_weights_values_out, is_row_empty, tmp_indices));
+#define LAUNCH_KERNEL(prune, use_sparse_weights)                              \
+  TF_CHECK_OK(GpuLaunchKernel(                                                \
+      InitFillEmptyBuffersKernel<prune, use_sparse_weights>, blocks, threads, \
+      0, d.stream(), batch_size, nnz, default_id, default_weight, sp_values,  \
+      sp_indices, sp_values_out, sp_indices_out, sp_weights_values_out,       \
+      is_row_empty, tmp_indices));
 
-  if (prune_invalid && use_sparse_weights) {
+  if (prune && use_sparse_weights) {
     LAUNCH_KERNEL(true, true);
-  } else if (prune_invalid && !use_sparse_weights) {
+  } else if (prune && !use_sparse_weights) {
     LAUNCH_KERNEL(true, false);
-  } else if (!prune_invalid && use_sparse_weights) {
+  } else if (!prune && use_sparse_weights) {
     LAUNCH_KERNEL(false, true);
-  } else if (!prune_invalid && !use_sparse_weights) {
+  } else if (!prune && !use_sparse_weights) {
     LAUNCH_KERNEL(false, false);
   }
 #undef LAUNCH_KERNEL
 }
 
-template <bool prune_invalid, bool prune_sparse_weights>
+template <bool prune, bool prune_sparse_weights>
 void __global__ DetectEmptyRowKernel(const int64_t* indices,
                                      const int64_t* sp_values,
                                      const float* sp_weights_values,
@@ -206,7 +206,7 @@ void __global__ DetectEmptyRowKernel(const int64_t* indices,
   if (global_tid < nnz) {
     const int64_t row_in_batch = indices[2 * global_tid];
     // use template for compiler to optimize
-    if (prune_invalid) {
+    if (prune) {
       if (prune_sparse_weights) {
         if (sp_values[global_tid] >= 0 && sp_weights_values[global_tid] > 0.0) {
           is_row_empty[row_in_batch] = false;
@@ -224,18 +224,17 @@ void __global__ DetectEmptyRowKernel(const int64_t* indices,
 
 void DetectEmptyRow(const GPUDevice& d, const int64_t* indices,
                     const int64_t* sp_values, const float* sp_weights_values,
-                    const bool prune_invalid, const bool prune_sparse_weights,
+                    const bool prune, const bool prune_sparse_weights,
                     const int64_t nnz, bool* is_row_empty) {
   const int threads = 32;
   const int blocks = CalcBlocksLinearMapping(nnz, threads);
 
-#define LAUNCH_KERNEL(prune_invalid, prune_sparse_weights)                \
-  TF_CHECK_OK(GpuLaunchKernel(                                            \
-      DetectEmptyRowKernel<prune_invalid, prune_sparse_weights>, blocks,  \
-      threads, 0, d.stream(), indices, sp_values, sp_weights_values, nnz, \
-      is_row_empty));
+#define LAUNCH_KERNEL(prune, prune_sparse_weights)                           \
+  TF_CHECK_OK(GpuLaunchKernel(                                               \
+      DetectEmptyRowKernel<prune, prune_sparse_weights>, blocks, threads, 0, \
+      d.stream(), indices, sp_values, sp_weights_values, nnz, is_row_empty));
 
-  if (prune_invalid) {
+  if (prune) {
     if (prune_sparse_weights) {
       LAUNCH_KERNEL(true, true);
     } else {

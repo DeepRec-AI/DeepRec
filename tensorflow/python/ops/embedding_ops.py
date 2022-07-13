@@ -653,6 +653,7 @@ def embedding_lookup_sparse(params,
       else:
         assert False, "Unrecognized combiner"
     else:
+
       assert idx is not None
       if combiner == "sum":
         embeddings = math_ops.sparse_segment_sum(
@@ -1404,7 +1405,7 @@ def fused_safe_embedding_lookup_sparse(embedding_weights,
         sparse_ids,
         sparse_weights=sparse_weights,
         partition_strategy=partition_strategy,
-        name=name,
+        name=None if default_id is None else scope,
         combiner=combiner,
         max_norm=max_norm,
         default_id=default_id,
@@ -1416,11 +1417,11 @@ def fused_safe_embedding_lookup_sparse(embedding_weights,
         sparse_ids,
         sparse_weights=sparse_weights,
         partition_strategy=partition_strategy,
-        name=name,
+        name=None if default_id is None else scope,
         combiner=combiner,
         max_norm=max_norm,
         default_id=default_id,
-        prune_invalid_ids=True,
+        prune=True,
       )
 
     # Reshape back from linear ids back into higher-dimensional dense result.

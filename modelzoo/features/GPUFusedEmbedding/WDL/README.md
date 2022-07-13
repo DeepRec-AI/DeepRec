@@ -15,6 +15,13 @@ deep_columns.append(tf.feature_column.embedding_column(
 
 On A100-80GB-PCIE GPU, with 8 cores AMD EPYC 7232P CPU @ 3.20GHz. Average of 5000 iterations. The perf boost:
 
+Let tensorflow use private single thread for GPU kernels:
+
+```bash
+export TF_GPU_THREAD_MODE="gpu_private"
+export TF_GPU_THREAD_COUNT=1
+```
+
 |                              | Unfused | Fused   | Speedup |
 | ---------------------------- | ------- |
 | Step Time, Batch Size = 512  | 41.3ms | 38.4ms | 1.07x   |

@@ -12,7 +12,15 @@ categorical_embedding_column = tf.feature_column.embedding_column(
 
 ## Benchmark
 
-On A100-80GB-PCIE GPU, with 8 cores AMD EPYC 7232P CPU @ 3.20GHz. Average of 5000 iterations. The perf boost:
+On A100-80GB-PCIE GPU, with 8 cores AMD EPYC 7232P CPU @ 3.20GHz. Average of 5000 iterations.
+Let tensorflow use private single thread for GPU kernels:
+
+```bash
+export TF_GPU_THREAD_MODE="gpu_private"
+export TF_GPU_THREAD_COUNT=1
+```
+
+The perf boost:
 
 |                              | Unfused | Fused   | Speedup |
 | ---------------------------- | ------- |
