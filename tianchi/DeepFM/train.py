@@ -26,7 +26,7 @@ from tensorflow.python.feature_column import utils as fc_utils
 
 result_dir='/tmp/tianchi/result/DeepFM/'
 result_path=result_dir+'result'
-global_steps_per_sec = 0
+global_time_cost = 0
 global_auc = 0
 
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
@@ -388,8 +388,8 @@ def train(sess_config,
     time_end = time.perf_counter();
     print("Training completed.")
     time_cost = time_end - time_start;
-    global global_steps_per_sec
-    global_steps_per_sec = steps / time_cost
+    global global_time_cost
+    global_time_cost = time_cost
 
 
 def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
@@ -503,7 +503,7 @@ def main(tf_config=None, server=None):
              checkpoint_dir)
     os.makedirs(result_dir, exist_ok=True)
     with open(result_path, 'w') as f:
-        f.write(str(global_steps_per_sec)+'\n')
+        f.write(str(global_time_cost)+'\n')
         f.write(str(global_auc)+'\n')
 
 
@@ -663,6 +663,7 @@ def set_env_for_DeepRec():
     os.environ['STOP_STATISTIC_STEP'] = '110'
     os.environ['MALLOC_CONF'] = \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
+    os.environ['ENABLE_MEMORY_OPTIMIZATION'] = '0'
 
 
 if __name__ == '__main__':
