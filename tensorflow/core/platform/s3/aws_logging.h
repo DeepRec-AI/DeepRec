@@ -43,6 +43,11 @@ class AWSLogSystem : public Aws::Utils::Logging::LogSystemInterface {
     log_level_.store(log_level);
   }
 
+  // Writes any buffered messages to the underlying device if the logger supports buffering.
+  void Flush() override {
+    LogMessage(Aws::Utils::Logging::LogLevel::Error, "AWSLogSystem::Flush() not supported");
+  }
+
   // Does a printf style output to ProcessFormattedStatement. Don't use this,
   // it's unsafe. See LogStream.
   // Since non-static C++ methods have an implicit this argument,

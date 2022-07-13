@@ -90,6 +90,19 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
           options.config.gpu_options().force_gpu_compatible();
     }
   }
+  GPUCompatibleCPUDevice(const SessionOptions& options, const string& name,
+                         Bytes memory_limit, const DeviceLocality& locality,
+                         Allocator* allocator,
+                         const DeviceResourceMgrMap* dev_rmgr_map)
+      : ThreadPoolDevice(options, name, memory_limit,
+                         locality, allocator, dev_rmgr_map),
+        numa_node_(locality.numa_node()) {
+    if (options.config.has_gpu_options()) {
+      force_gpu_compatible_ =
+          options.config.gpu_options().force_gpu_compatible();
+    }
+  }
+
   ~GPUCompatibleCPUDevice() override {}
 
   Allocator* GetAllocator(AllocatorAttributes attr) override {
@@ -118,6 +131,12 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
 
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices) override {
+    return CreateDevices(options, name_prefix, devices, nullptr);
+  }
+
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix,
+                       std::vector<std::unique_ptr<Device>>* devices,
+                       const DeviceResourceMgrMap* dev_rmgr_map) override {
     int n = 1;
     auto iter = options.config.device_count().find("CPU");
     if (iter != options.config.device_count().end()) {
@@ -133,7 +152,8 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
       locality.set_numa_node(numa_node);
       devices->push_back(absl::make_unique<GPUCompatibleCPUDevice>(
           options, name, Bytes(256 << 20), DeviceLocality(),
-          ProcessState::singleton()->GetCPUAllocator(numa_node)));
+          ProcessState::singleton()->GetCPUAllocator(numa_node),
+          dev_rmgr_map));
     }
 
     return Status::OK();

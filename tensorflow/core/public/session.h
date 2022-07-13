@@ -30,6 +30,7 @@ limitations under the License.
 
 namespace tensorflow {
 class DeviceMgr;
+class ResourceMgr;
 
 namespace thread {
 
@@ -270,7 +271,12 @@ class Session {
 
 class SessionGroup {
  public:
+  SessionGroup() : shared_resource_mgr_(nullptr) {}
+  SessionGroup(ResourceMgr* mgr) : shared_resource_mgr_(mgr) {}
   ~SessionGroup() {
+    if (shared_resource_mgr_) {
+      delete shared_resource_mgr_;
+    }
   }
 
   Status Close() {
@@ -375,6 +381,7 @@ class SessionGroup {
   std::vector<std::unique_ptr<Session>> sessions_;
   int32_t session_num_ = 0;
   std::atomic<int64_t> serving_index_{0};
+  ResourceMgr* shared_resource_mgr_ = nullptr;
 
   Status GetServingSessionId(int32_t* serving_id, int32_t hint_id = -1) {
     if (session_num_ < 1) {

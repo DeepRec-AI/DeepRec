@@ -12,13 +12,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA
 
 #define EIGEN_USE_GPU
 
 #include "tensorflow/core/kernels/reshape_util.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
+#include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
 
@@ -143,6 +144,8 @@ void ReshapeGPU(OpKernelContext *context, const Tensor &input_indices_in,
 
   if (nnz == 0) return;
 
+  auto *allocator = context->get_allocator(AllocatorAttributes());
+
   gtl::InlinedVector<int64, 8> input_strides(input_rank);
   int64 *d_input_strides = nullptr;
   if (input_rank > 0) {
@@ -150,7 +153,7 @@ void ReshapeGPU(OpKernelContext *context, const Tensor &input_indices_in,
     for (int d = input_rank - 2; d >= 0; --d) {
       input_strides[d] = input_strides[d + 1] * input_shape.dim_size(d + 1);
     }
-    cudaMalloc(&d_input_strides, input_rank*sizeof(int64));
+    d_input_strides = TypedAllocator::Allocate<int64>(allocator, input_rank, AllocationAttributes());
     cudaMemcpy(d_input_strides, input_strides.data(), input_rank*sizeof(int64),
                cudaMemcpyHostToDevice);
   }
@@ -162,7 +165,7 @@ void ReshapeGPU(OpKernelContext *context, const Tensor &input_indices_in,
     for (int d = output_rank - 2; d >= 0; --d) {
       output_strides[d] = output_strides[d + 1] * output_shape.dim_size(d + 1);
     }
-    cudaMalloc(&d_output_strides, output_rank*sizeof(int64));
+    d_output_strides = TypedAllocator::Allocate<int64>(allocator, output_rank, AllocationAttributes());
     cudaMemcpy(d_output_strides, output_strides.data(), output_rank*sizeof(int64),
                cudaMemcpyHostToDevice);
   }
@@ -179,10 +182,10 @@ void ReshapeGPU(OpKernelContext *context, const Tensor &input_indices_in,
                 d_input_strides, d_output_strides,
                 input_rank, output_rank, nnz);
 
-  cudaFree(d_input_strides);
-  cudaFree(d_output_strides);
+  TypedAllocator::Deallocate(allocator, d_input_strides, input_rank);
+  TypedAllocator::Deallocate(allocator, d_output_strides, output_rank);
 }
 
 } // End of namespace tensorflow
 
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#endif  // GOOGLE_CUDA

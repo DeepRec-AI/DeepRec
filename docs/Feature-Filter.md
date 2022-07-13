@@ -55,8 +55,10 @@ BloomFilter的准入参数设置可以参考下面的表，其中m是`bloom filt
 
 ![img_1.png](Embedding-Variable/img_1.png)
 
-**功能的开关**：如果构造`EmbeddingVariableOption`对象的时候，如果不传入`CounterFilterStrategy`或`BloomFIlterStrategy`或`filter_freq`设置为0则功能关闭。
+**功能的开关**：如果构造`EmbeddingVariableOption`对象的时候，如果不传入`CounterFilterStrategy`或`BloomFilterStrategy`或`filter_freq`设置为0则功能关闭。
 
 **ckpt相关**：对于checkpoint功能，当使用`tf.train.saver`时，无论特征是否准入，都会将其id与频次信息记录在ckpt中，未准入特征的embedding值则不会被保存到ckpt中。在load checkpoint的时候，对于ckpt中未准入的特征，通过比较其频次与filter阈值大小来确定在新一轮训练中是否准入；对于ckpt中已经准入的特征，无论ckpt中的特征频次是否超过了filter阈值，都认为其在新一轮训练中是已经准入的特征。同时ckpt支持向前兼容，即可以读取没有conuter记录的ckpt。目前不支持incremental ckpt。
 
 **关于filter_freq的设置**：目前还需要用户自己根据数据配置。
+
+**特征准入与Embedding多级存储**：由于基于BloomFilter的特征准入功能与Embedding多级存储功能基于不同的计数组件统计特征的频次，同时打开两个功能将导致计数功能出现错误，因此目前无法同时使用基于BloomFilter的特征准入与Embedding多级存储功能。

@@ -191,7 +191,9 @@ class Device : public DeviceBase {
 
  protected:
   void DeleteResourceMgr() {
-    delete rmgr_;
+    if (owned_rmgr_) {
+      delete rmgr_;
+    }
     rmgr_ = nullptr;
   }
 
@@ -204,6 +206,7 @@ class Device : public DeviceBase {
 
   // Resources associated w/ this device. E.g., shared variables, etc.
   ResourceMgr* rmgr_ = nullptr;
+  bool owned_rmgr_ = true;
 
   TF_DISALLOW_COPY_AND_ASSIGN(Device);
 };

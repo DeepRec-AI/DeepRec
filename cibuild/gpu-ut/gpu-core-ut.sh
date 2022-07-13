@@ -80,9 +80,9 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
     ret=0
-    bazel test -c opt --config=cuda --verbose_failures \
+    bazel test -c opt --config=cuda --verbose_failures --test_env='NVIDIA_TF32_OVERRIDE=0' \
     --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  \
-    --test_timeout="300,450,1200,3600" --local_test_jobs=80  \
+    --test_timeout="300,450,1200,3600" --local_test_jobs=80 --test_output=errors \
     -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
 done
 
