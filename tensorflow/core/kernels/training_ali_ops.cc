@@ -1294,7 +1294,7 @@ class KvSparseApplyAdamOp : public OpKernel {
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
               v_a += (g.square() - v_a) * (static_cast<T>(1) - beta2_scalar);
               if (this->apply_weight_decay_) {
-                var_i -= (m_a / (v_a.sqrt() + epsilon_scalar) + weight_decay_scalar * var_i) * alpha;
+                var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar) + weight_decay_scalar * var_i;
               } else {
                 var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar);
               }

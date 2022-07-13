@@ -312,7 +312,7 @@ class AdamWOptimizer(DecoupledWeightDecayExtension, adam.AdamOptimizer):
 
   Note that this optimizer can also be instantiated as
   ```python
-  extend_with_weight_decay(tf.compat.v1.train.AdamOptimizer,
+  extend_with_weight_decay(tf.train.AdamOptimizer,
   weight_decay=weight_decay)
   ```
   """

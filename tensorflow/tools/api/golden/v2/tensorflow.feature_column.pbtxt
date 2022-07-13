@@ -114,7 +114,7 @@ tf_module {
   }
   member_method {
     name: "shared_embedding_column"
-    argspec: "args=[\'categorical_column\', \'dimension\', \'shared_name\', \'combiner\', \'initializer\', \'ckpt_to_load_from\', \'tensor_name_in_ckpt\', \'max_norm\', \'trainable\', \'coalesced_scope\'], varargs=None, keywords=None, defaults=[\'mean\', \'None\', \'None\', \'None\', \'None\', \'True\', \'None\'], "
+    argspec: "args=[\'categorical_column\', \'dimension\', \'shared_name\', \'combiner\', \'initializer\', \'ckpt_to_load_from\', \'tensor_name_in_ckpt\', \'max_norm\', \'trainable\', \'coalesced_scope\', \'do_fusion\'], varargs=None, keywords=None, defaults=[\'mean\', \'None\', \'None\', \'None\', \'None\', \'True\', \'None\', \'False\'], "
   }
   member_method {
     name: "shared_embeddings"

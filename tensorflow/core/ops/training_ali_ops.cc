@@ -393,12 +393,10 @@ REGISTER_OP("ResourceSparseApplyAdamAsync")
     .Input("epsilon: T")
     .Input("grad: T")
     .Input("indices: Tindices")
-    .Input("weight_decay: T")
     .Attr("T: numbertype")
     .Attr("Tindices: {int32, int64}")
     .Attr("use_locking: bool = false")
     .Attr("apply_sparse_rmsprop: bool = false")
-    .Attr("apply_weight_decay: bool = false")
     .SetShapeFn([](InferenceContext* c) {
       return ApplyAdamAsyncShapeFn(c, true /* sparse */);
     });
