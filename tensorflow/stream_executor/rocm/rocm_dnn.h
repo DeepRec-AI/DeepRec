@@ -235,7 +235,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       const DeviceMemory<float>& scale, const DeviceMemory<float>& offset,
       const DeviceMemory<float>& estimated_mean,
       const DeviceMemory<float>& estimated_variance,
-      const DeviceMemory<float>& side_input, const dnn::BatchDescriptor& x_desc,
+      const DeviceMemory<Eigen::half>& side_input, const dnn::BatchDescriptor& x_desc,
       const dnn::BatchDescriptor& scale_offset_desc, const double epsilon,
       const double exponential_average_factor,
       dnn::ActivationMode activation_mode, DeviceMemory<Eigen::half>* y,
@@ -277,6 +277,21 @@ class MIOpenSupport : public dnn::DnnSupport {
       const dnn::ConvolutionDescriptor& convolution_descriptor,
       dnn::AlgorithmDesc algorithm_desc, DeviceMemory<uint8> scratch_memory,
       dnn::ProfileResult* output_profile_result) override;
+
+  port::Status DoConvolve(
+      dnn::ConvolutionKind kind, dnn::DataType element_type, 
+      dnn::DataType output_type, Stream* stream, 
+      const dnn::BatchDescriptor& input_descriptor, DeviceMemoryBase input_data, 
+      const dnn::FilterDescriptor& filter_descriptor,
+      DeviceMemoryBase filter_data, const dnn::BatchDescriptor& output_descriptor,
+      DeviceMemoryBase output_data,
+      const dnn::ConvolutionDescriptor& convolution_descriptor,
+      const dnn::ExecutionPlanConfig& plan_config,
+      ScratchAllocator* scratch_allocator, 
+      dnn::ProfileExecutionPlanResult* output_profile_result) override {
+        return port::InternalError(absl::StrCat(
+            "Please provide algorithm_desc ", "Try another DoConvolve api"));
+      }
 
   bool DoFusedConvolve(
       Stream* stream, const dnn::BatchDescriptor& conv_input_descriptor,
@@ -649,7 +664,7 @@ class MIOpenSupport : public dnn::DnnSupport {
       const DeviceMemory<U>& scale, const DeviceMemory<U>& offset,
       const DeviceMemory<U>& estimated_mean,
       const DeviceMemory<U>& estimated_variance,
-      const DeviceMemory<U>& side_input, const dnn::BatchDescriptor& x_desc,
+      const DeviceMemory<T>& side_input, const dnn::BatchDescriptor& x_desc,
       const dnn::BatchDescriptor& scale_offset_desc, const double epsilon,
       const double exponential_average_factor,
       dnn::ActivationMode activation_mode, DeviceMemory<T>* y,

@@ -74,7 +74,7 @@ class AlgorithmDesc;
 
 class StreamExecutor;
 class ScratchAllocator;
-enum BatchNormalizationKind;
+enum class BatchNormalizationKind;
 
 // Convert a type to the corresponding QuantizedActivationMode.
 template <typename ElementType>

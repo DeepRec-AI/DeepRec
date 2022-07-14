@@ -39,7 +39,7 @@ __global__ void TridiagonalMatMulKernel(int batch_size, int m, int n,
                                         const Scalar* maindiag,
                                         const Scalar* subdiag,
                                         const Scalar* rhs, Scalar* product) {
-  for (int i : CudaGridRangeX(batch_size * m * n)) {
+  for (int i : GpuGridRangeX(batch_size * m * n)) {
     int row_id = i / n;
     Scalar result = maindiag[row_id] * rhs[i];
     if (row_id % m != 0) {
