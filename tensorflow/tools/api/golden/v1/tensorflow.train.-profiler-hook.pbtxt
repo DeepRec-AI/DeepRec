@@ -5,7 +5,7 @@ tf_class {
   is_instance: "<type \'object\'>"
   member_method {
     name: "__init__"
-    argspec: "args=[\'self\', \'save_steps\', \'save_secs\', \'output_dir\', \'show_dataflow\', \'show_memory\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'\', \'True\', \'False\'], "
+    argspec: "args=[\'self\', \'save_steps\', \'save_secs\', \'output_dir\', \'show_dataflow\', \'show_memory\', \'use_real_thread_id\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'\', \'True\', \'False\', \'False\'], "
   }
   member_method {
     name: "after_create_session"
