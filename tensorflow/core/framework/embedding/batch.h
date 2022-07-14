@@ -2,7 +2,7 @@
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_BATCH_
 
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 
 namespace tensorflow {
 
@@ -24,7 +24,7 @@ __global__ void CopyEmbedding(V** batch, V* batch_data_space, int total_dims, in
 
 }  // namespace tensorflow
 
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_BATCH_

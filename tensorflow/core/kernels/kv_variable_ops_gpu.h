@@ -17,7 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_
 
 #if GOOGLE_CUDA
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/op_kernel.h"
@@ -77,6 +77,22 @@ struct KvLookupCreateEmb {
                   int32 slot_idx,
                   int32 default_v_num,
                   bool is_use_default_value_tensor,
+                  Value** d_banks,
+                  bool** d_flags,
+                  int32 slot_num,
+                  int32 bank_size,
+                  cudaStream_t stream);
+};
+
+template <typename Device, typename Key, typename Value>
+struct KvUpdateEmb {
+  void operator()(const Key* key_first,
+                  Value* default_v,
+                  int64 dim,
+                  int32* item_idxs,
+                  int32 num_items,
+                  int32 slot_idx,
+                  int32 default_v_num,
                   Value** d_banks,
                   bool** d_flags,
                   int32 slot_num,
@@ -200,13 +216,21 @@ class EmbeddingVarGPU : public ResourceBase {
 
   void GetSnapshot(K* keys, V* values, cudaStream_t stream) {
     int32* item_idxs = TypedAllocator::Allocate<int32>(alloc_, Size(), AllocationAttributes());
-    functor::KvKeyGetSnapshot<Eigen::GpuDevice, K, V>()(keys, item_idxs, emb_config_.emb_index, emb_config_.primary_emb_index,
+    K* keys_gpu = TypedAllocator::Allocate<K>(alloc_, Size(), AllocationAttributes());
+    V* values_gpu = TypedAllocator::Allocate<V>(alloc_, Size() * ValueLen(), AllocationAttributes());
+
+    functor::KvKeyGetSnapshot<Eigen::GpuDevice, K, V>()(keys_gpu, item_idxs, emb_config_.emb_index, emb_config_.primary_emb_index,
                                                          kv_->d_existence_flag_ptrs, kv_->mem_bank_num, (emb_config_.block_num * (1 + emb_config_.slot_num)),
                                                          kv_->initial_bank_size, kv_, Size(), stream);
-    functor::KvEmbGetSnapshot<Eigen::GpuDevice, K, V>()(keys, values, -1, value_len_, item_idxs, Size(), emb_config_.emb_index,
+    functor::KvEmbGetSnapshot<Eigen::GpuDevice, K, V>()(keys_gpu, values_gpu, -1, value_len_, item_idxs, Size(), emb_config_.emb_index,
                                                         kv_->d_bank_ptrs, kv_->mem_bank_num, (emb_config_.block_num * (1 + emb_config_.slot_num)),
                                                         kv_->initial_bank_size, stream);
+    cudaMemcpy(keys, keys_gpu, Size() * sizeof(K), cudaMemcpyDeviceToHost);
+    cudaMemcpy(values, values_gpu, Size() * ValueLen()* sizeof(V), cudaMemcpyDeviceToHost);
+    
     TypedAllocator::Deallocate(alloc_, item_idxs, Size());
+    TypedAllocator::Deallocate(alloc_, keys_gpu, Size());
+    TypedAllocator::Deallocate(alloc_, values_gpu, Size() * ValueLen());
   }
 
   int64 Size() const {
@@ -261,6 +285,43 @@ class EmbeddingVarGPU : public ResourceBase {
     return emb_config_.default_value_dim;
   }
 
+  Status Import(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter,
+                cudaStream_t stream) {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    std::vector<K> key_import;
+    std::vector<V> value_import;
+    for (auto i = 0; i < key_num; ++ i) {
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      key_import.emplace_back(*(key_buff + i));
+      for (int j = 0; j < value_len_; j++) {
+        value_import.emplace_back(*(value_buff + i * value_len_ + j));
+      }
+    }
+    int n = key_import.size();
+    int32* item_idxs = TypedAllocator::Allocate<int32>(alloc_, n, AllocationAttributes());
+    K* key_gpu = TypedAllocator::Allocate<K>(alloc_, n, AllocationAttributes());
+    cudaMemcpy(key_gpu, key_import.data(), key_import.size() * sizeof(K), cudaMemcpyHostToDevice);
+    LookupOrCreateKey(key_gpu, item_idxs, n, stream);
+    V* value_gpu = TypedAllocator::Allocate<V>(alloc_, value_import.size(), AllocationAttributes());
+    cudaMemcpy(value_gpu, value_import.data(), value_import.size() * sizeof(V), cudaMemcpyHostToDevice);
+    functor::KvUpdateEmb<Eigen::GpuDevice, K, V>()(key_import.data(), value_gpu, value_len_, item_idxs, n, emb_config_.emb_index, key_import.size(),
+                                                      kv_->d_bank_ptrs, kv_->d_existence_flag_ptrs,
+                                                      (emb_config_.block_num * (1 + emb_config_.slot_num)), kv_->initial_bank_size, stream);
+    TypedAllocator::Deallocate(alloc_, item_idxs, n);
+    TypedAllocator::Deallocate(alloc_, value_gpu, value_import.size());
+    TypedAllocator::Deallocate(alloc_, key_gpu, n);
+    return Status::OK();
+  }
+
  private:
   std::string name_;
   GPUHashTable<K, V>* kv_;
@@ -292,7 +353,7 @@ class EmbeddingVarGPU : public ResourceBase {
 
 }  // namespace tensorflow
 
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_KERNELS_KV_GPU_HASH_TABLE_H_

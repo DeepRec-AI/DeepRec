@@ -43,7 +43,7 @@ __device__ Eigen::half impl_rsqrt(Eigen::half x) {
   return __float2half(rsqrt(__half2float(x)));
 }
 
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 template <typename Value>
 __global__ void kv_sparse_apply_adagrad_kernel(int32* item_idxs,
                                                int64 dim,
@@ -427,7 +427,7 @@ struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep> {
 }
 };
 
-#endif // TF_ENABLE_GPU_EV
+#endif // TENSORFLOW_USE_GPU_EV
 
 template <typename T>
 __global__ __launch_bounds__(1024) void ApplyAdamAsyncKernel(
@@ -584,7 +584,7 @@ struct SparseApplyAdamAsync<GPUDevice, T, Tindex> {
 
 }  // namespace functor
 
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, float>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, double>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, float>;
@@ -601,7 +601,7 @@ template struct functor::KvSparseApplyFtrl<GPUDevice, int64, double>;
 EXPLICITLY_INSTANTIATE_FUNCTOR(float);
 EXPLICITLY_INSTANTIATE_FUNCTOR(double);
 #undef EXPLICITLY_INSTANTIATE_FUNCTOR
-#endif // TF_ENABLE_GPU_EV
+#endif // TENSORFLOW_USE_GPU_EV
 
 template struct functor::ApplyAdamAsync<GPUDevice, Eigen::half>;
 template struct functor::ApplyAdamAsync<GPUDevice, float>;
