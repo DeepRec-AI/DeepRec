@@ -267,6 +267,10 @@ class StorageManager {
     return total_size;
   }
 
+  int64 CacheSize() const {
+    return cache_capacity_;
+  }
+
   Status GetSnapshot(std::vector<K>* key_list,
                      std::vector<ValuePtr<V>* >* value_ptr_list) {
     for (auto kv : kvs_) {
@@ -375,7 +379,6 @@ class StorageManager {
   Status Destroy() {
     if (eviction_thread_) {
       mutex_lock l(mu_);
-      shutdown_cv_.notify_all();
       shutdown_ = true;
     }
     delete eviction_thread_;
@@ -432,9 +435,7 @@ class StorageManager {
       if (shutdown_) {
         break;
       }
-      const int kTimeoutMilliseconds = 1;
-      WaitForMilliseconds(&l, &shutdown_cv_, kTimeoutMilliseconds);
-     
+      // add WaitForMilliseconds() for sleep if necessary
       for (int i = 0; i < value_ptr_out_of_date_.size(); i++) {
         value_ptr_out_of_date_[i]->Destroy(kvs_[0].second);
         delete value_ptr_out_of_date_[i];
@@ -478,10 +479,9 @@ class StorageManager {
   BatchCache<K>* cache_;
   int64 cache_capacity_;
   mutex mu_;
-  condition_variable shutdown_cv_;
-  bool shutdown_ GUARDED_BY(mu_) = false;
+  volatile bool shutdown_ GUARDED_BY(mu_) = false;
 
-  bool done_ = false;
+  volatile bool done_ = false;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
 
 };

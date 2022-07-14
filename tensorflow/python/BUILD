@@ -2106,6 +2106,26 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
+    name = "parquet_ops_gen",
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
+    deps = [
+        "//tensorflow/core:parquet_ops_op_lib"
+    ]
+)
+
+tf_gen_op_wrapper_private_py(
+    name = "fused_l2_normalize_ops_gen",
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
+    deps = [
+        "//tensorflow/core:fused_l2_normalize_ops_op_lib"
+    ]
+)
+
+tf_gen_op_wrapper_private_py(
     name = "image_ops_gen",
     visibility = ["//learning/brain/python/ops:__pkg__"],
 )
@@ -3526,6 +3546,7 @@ py_library(
         ":sparse_ops",
         ":util",
         ":variables",
+        ":fused_l2_normalize_ops_gen"
     ],
 )
 
@@ -3543,6 +3564,7 @@ py_library(
         ":sparse_ops",
         ":tensor_util",
         "//tensorflow/python/eager:context",
+        ":fused_l2_normalize_ops_gen"
     ],
 )
 

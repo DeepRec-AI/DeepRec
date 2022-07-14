@@ -1161,6 +1161,7 @@ cc_library(
 tf_gen_op_libs(
     is_external = False,
     op_lib_names = [
+        "parquet_ops",
         "batch_ops",
         "bitwise_ops",
         "boosted_trees_ops",
@@ -1180,6 +1181,7 @@ tf_gen_op_libs(
         "function_ops",
         "functional_ops",
         "fused_embedding_ops",
+        "fused_l2_normalize_ops",
         "hash_ops",
         "hash_training_ops",
         "fuserecv_ops",
@@ -1416,6 +1418,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":array_ops_op_lib",
+        ":parquet_ops_op_lib",
         ":audio_ops_op_lib",
         ":batch_ops_op_lib",
         ":bitwise_ops_op_lib",
@@ -1437,6 +1440,7 @@ cc_library(
         ":function_ops_op_lib",
         ":functional_ops_op_lib",
         ":fused_embedding_ops_op_lib",
+        ":fused_l2_normalize_ops_op_lib",
         ":fuserecv_ops_op_lib",
         ":hash_ops_op_lib",
         ":hash_training_ops_op_lib",
@@ -1620,6 +1624,8 @@ cc_library(
         "//tensorflow/core/kernels:function_ops",
         "//tensorflow/core/kernels:functional_ops",
         "//tensorflow/core/kernels:fused_embedding_ops",
+        "//tensorflow/core/kernels/data:parquet_dataset_ops",
+        "//tensorflow/core/kernels:fused_l2_normalize_ops",
         "//tensorflow/core/kernels:grappler",
         "//tensorflow/core/kernels:hash_ops",
         "//tensorflow/core/kernels:histogram_op",
