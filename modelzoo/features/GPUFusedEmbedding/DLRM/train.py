@@ -288,7 +288,7 @@ class DLRM():
         tf.summary.scalar('loss', loss)
 
         self.global_step = tf.train.get_or_create_global_step()
-        optimizer = tf.train.GradientDescentOptimizer(
+        optimizer = tf.train.AdamOptimizer(
             learning_rate=self.learning_rate)
 
         train_op = optimizer.minimize(loss, global_step=self.global_step)
