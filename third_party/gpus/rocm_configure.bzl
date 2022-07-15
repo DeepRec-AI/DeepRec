@@ -449,7 +449,7 @@ def _find_libs(repository_ctx, rocm_config):
             "hip_hcc",
             repository_ctx,
             cpu_value,
-            rocm_config.rocm_toolkit_path,
+            rocm_config.rocm_toolkit_path + "/hip",
         ),
         "rocblas": _find_rocm_lib(
             "rocblas",

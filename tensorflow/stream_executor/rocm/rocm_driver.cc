@@ -46,6 +46,15 @@ bool FLAGS_gpuexec_rocm_device_0_only = false;
 // matches the expected one.
 constexpr bool kVerifyGpuContext = false;
 
+#define RETURN_IF_ROCM_ERROR(expr, ...)                                \
+  do {                                                                 \
+    hipError_t _res = (expr);                                          \
+    if (TF_PREDICT_FALSE(_res != hipSuccess)) {                        \
+      return port::InternalError(absl::StrCat(                         \
+          __VA_ARGS__, ": ", ::stream_executor::gpu::ToString(_res))); \
+    }                                                                  \
+  } while (0)
+
 namespace stream_executor {
 namespace gpu {
 
@@ -1334,34 +1343,34 @@ static port::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
 
 /* static */ bool GpuDriver::EndGraphCaptureOnStream(GpuContext* context,
                                                      GpuStreamHandle stream,
-                                                     GpuGraph* graph) {
+                                                     GpuGraphHandle* graph) {
   LOG(ERROR)
       << "Feature not supported on ROCm platform (EndGraphCaptureOnStream)";
   return false;
 }
 
 /* static */ void GpuDriver::DestroyGraph(GpuContext* context,
-                                          GpuGraph* graph) {
+                                          GpuGraphHandle* graph) {
   LOG(ERROR) << "Feature not supported on ROCm platform (DestroyGraph)";
 }
 
 /* static */ bool GpuDriver::InstantiateExecutableGraph(
-    GpuContext* context, GpuGraph graph, GpuGraphExec* graph_exec) {
+    GpuContext* context, GpuGraphHandle graph, GpuGraphExecHandle* graph_exec) {
   LOG(ERROR)
       << "Feature not supported on ROCm platform (InstantiateExecutableGraph)";
   return false;
 }
 
 /* static */ bool GpuDriver::UpdateExecutableGraph(GpuContext* context,
-                                                   GpuGraphExec graph_exec,
-                                                   GpuGraph graph) {
+                                                   GpuGraphExecHandle graph_exec,
+                                                   GpuGraphHandle graph) {
   LOG(ERROR)
       << "Feature not supported on ROCm platform (UpdateExecutableGraph)";
   return false;
 }
 
 /* static */ bool GpuDriver::LaunchExecutableGraph(GpuContext* context,
-                                                   GpuGraphExec graph_exec,
+                                                   GpuGraphExecHandle graph_exec,
                                                    GpuStreamHandle stream) {
   LOG(ERROR)
       << "Feature not supported on ROCm platform (LaunchExecutableGraph)";
@@ -1369,7 +1378,7 @@ static port::StatusOr<T> GetSimpleAttribute(hipDevice_t device,
 }
 
 /* static */ void GpuDriver::DestroyExecutableGraph(GpuContext* context,
-                                                    GpuGraphExec* graph_exec) {
+                                                    GpuGraphExecHandle* graph_exec) {
   LOG(ERROR)
       << "Feature not supported on ROCm platform (DestroyExecutableGraph)";
 }

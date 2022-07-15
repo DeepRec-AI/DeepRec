@@ -307,7 +307,11 @@ class DynamicPartitionOpGPU : public AsyncOpKernel {
         c, status,
         errors::Internal("Failed to launch copy from device to host."), done);
 
+#if GOOGLE_CUDA
     cudaDeviceSynchronize();
+#elif TENSORFLOW_USE_ROCM
+    hipDeviceSynchronize();
+#endif
 
     OpOutputList outputs;
     this->AllocateOutputs(c, &data, &partitions, &cpu_tensor, &outputs, done);

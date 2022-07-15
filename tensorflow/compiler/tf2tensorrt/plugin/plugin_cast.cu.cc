@@ -38,7 +38,7 @@ using nvinfer1::PluginFormat;
 
 template <typename SrcT, typename DstT>
 __global__ void Cast(const SrcT* input, int num_elements, DstT* output) {
-  for (int i : CudaGridRangeX(num_elements)) {
+  for (int i : GpuGridRangeX(num_elements)) {
     output[i] = static_cast<DstT>(input[i]);
   }
 }

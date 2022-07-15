@@ -189,7 +189,7 @@ class DynamicStitchOpImplBase : public OpKernel {
   }
 };
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 
 template <typename T>
 void DynamicStitchGPUImpl(const Eigen::GpuDevice& gpu_device,
@@ -570,7 +570,7 @@ TF_CALL_variant(REGISTER_DYNAMIC_STITCH);
 TF_CALL_QUANTIZED_TYPES(REGISTER_DYNAMIC_STITCH);
 #undef REGISTER_DYNAMIC_STITCH
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 #define REGISTER_DYNAMIC_STITCH_GPU(type)                \
   REGISTER_KERNEL_BUILDER(Name("DynamicStitch")          \
                               .Device(DEVICE_GPU)        \

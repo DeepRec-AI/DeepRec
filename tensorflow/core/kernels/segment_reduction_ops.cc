@@ -203,7 +203,7 @@ class SegmentReductionOp : public OpKernel {
   }
 };
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 //  SegmentSumGPUOp is a segment sum operator implemented for GPU only.
 //  TODO: This implementation of SegmentSumGPUOp is sometimes slower than
 //  its unsorted counterpart (mostly when problem size is small).
@@ -352,7 +352,7 @@ REGISTER_COMPLEX_CPU_KERNELS_ALL(complex128);
 #undef REGISTER_REAL_CPU_KERNELS_ALL
 #undef REGISTER_COMPLEX_CPU_KERNELS_ALL
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 #define REGISTER_GPU_SORTED_KERNELS(type, index_type)                  \
   REGISTER_KERNEL_BUILDER(Name("SegmentSum")                           \
                               .Device(DEVICE_GPU)                      \
@@ -637,7 +637,7 @@ REGISTER_COMPLEX_CPU_UNSORTED_KERNELS_ALL(complex128);
 #undef REGISTER_COMPLEX_CPU_UNSORTED_KERNELS_ALL
 #undef REGISTER_REAL_CPU_UNSORTED_KERNELS_ALL
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 #define REGISTER_GPU_KERNEL_UNSORTEDSEGMENT(                                 \
     name, type, index_type, initial_value_functor, reduction_kernel_functor) \
   REGISTER_KERNEL_BUILDER(                                                   \
