@@ -409,7 +409,7 @@ def train(sess_config,
             hooks=hooks,
             scaffold=scaffold,
             checkpoint_dir=checkpoint_dir,
-            save_checkpoint_secs=None,
+            save_checkpoint_steps=steps,
             summary_dir=checkpoint_dir,
             save_summaries_steps=None,
             config=sess_config) as sess:
