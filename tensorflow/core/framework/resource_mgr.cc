@@ -178,7 +178,7 @@ Status ResourceMgr::DoCreate(const string& container, TypeIndex type,
   // key can contain a StringPiece that borrows from the string in the value.
   ResourceAndName resource_and_name(resource, name);
   StringPiece borrowed_name(*resource_and_name.name);
-  Container::value_type key_and_value(Key(type.hash_code(), borrowed_name),
+  Container::value_type key_and_value(Key(type.hash_code(), std::string(borrowed_name.data(), borrowed_name.size())),
                                       std::move(resource_and_name));
 
   if ((*b)->insert(std::move(key_and_value)).second) {

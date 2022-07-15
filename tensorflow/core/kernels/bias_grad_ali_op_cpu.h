@@ -195,6 +195,7 @@ void TwoColumnWiseReduction(const float* A, int m, int n, int lda, float* Y,
 
 void MultipleColumnWiseReduction(const float* A, int m, int n, int lda,
                                 float* Y, bool overwrite = true) {
+#if defined(__GNUC__) && (__GNUC__ >6)
 #ifdef __AVX512F__
   if (n >= block_size_avx512) {
     int block_num = n / block_size_avx512;
@@ -242,6 +243,7 @@ void MultipleColumnWiseReduction(const float* A, int m, int n, int lda,
     return;
   }
 #endif
+#endif
   // Normal cases.
   if (overwrite) {
     for (int j = 0; j < n; ++j) {
@@ -270,6 +272,7 @@ void SumIntoOneRow(const float* A, int m, int n, int lda, float* Y,
   }
 }
 
+#if defined(__GNUC__) && (__GNUC__ >6)
 #ifdef __AVX512F__
 void ColumnParallel_512(const CPUDevice& d, float* input_data, float* output_data,
     int sum_size, int channel) {
@@ -354,6 +357,7 @@ void ColumnParallel_256(const CPUDevice& d, float* input_data, float* output_dat
   }
   _mm256_mask_storeu_ps(output_data + offset_block_end, mask, sum);
 }
+#endif
 #endif
 
 template <typename T>
@@ -453,6 +457,7 @@ struct BiasGrad2D<CPUDevice, float> {
                   Eigen::DSizes<int, 2>& two_dims,
                   typename TTypes<float>::Flat output) {
     auto thread_num = d.numThreads();
+#if defined(__GNUC__) && (__GNUC__ >6)
 #ifdef __AVX512F__
     if (two_dims[1] >= block_size_avx512 * thread_num) {
       ColumnParallel_512(d, (float*)(input.data()), output.data(),
@@ -465,6 +470,7 @@ struct BiasGrad2D<CPUDevice, float> {
           two_dims[0], two_dims[1]);
       return;
     }
+#endif
 #endif
     BiasGrad2DInternal<float>(d, input, two_dims, output);
   }
