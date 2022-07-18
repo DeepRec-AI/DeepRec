@@ -65,49 +65,23 @@ class FusedLayerNormOp : public OpKernel {
     T* output = output_tensor->flat<T>().data();
     float* mean = mean_tensor->flat<float>().data();
     float* rvariance = rvariance_tensor->flat<float>().data();
+
+    // Init
     memset(output, 0, sizeof(float) * rows * cols);
     memset(mean, 0, sizeof(float) * rows);
     memset(rvariance, 0, sizeof(float) * rows);
-
-    // printf("[INFO] Output_init_array:\n");
-    // for (int i = 0; i < rows; i++) {
-    //   for (int j = 0; j < cols; j++) {
-    //     printf("%f\t", output[i * cols + j]);
-    //   }
-    //   printf("\n");
-    // }
-
-    // printf("[INFO] Mean_init_array:\n");
-    // for (int i = 0; i < rows; i++) {
-    //   printf("%f\t", mean[i]);
-    // }
-    // printf("\n");
-
-    // printf("[INFO] Rvar_init_array:\n");
-    // for (int i = 0; i < rows; i++) {
-    //   printf("%f\t", rvariance[i]);
-    // }
-    // printf("\n");
-
-    
-    // printf("[INFO] Gamma:\n");
-    // for (int i = 0; i < cols; i++) {
-    //   printf("%f\t", gamma[i]);
-    // }
-    // printf("\n");
-
-    // printf("[INFO] Beta:\n");
-    // for (int i = 0; i < cols; i++) {
-    //   printf("%f\t", beta[i]);
-    // }
-    // printf("\n");
-
-    // printf("EPS is %0.12f\n", epsilon);
 
     // Do it
     // Let every thread compute 16 rows to avoid false sharing
     const int64 total_unit = (rows + 15) / 16;
     const int64 unit_cost = 16 * cols * 50;  // assume every element consumes 50 cycles
+
+    int64 block_num = cols >> 7;
+    int64 remainder_128 = cols & 0x7F;
+    int64 remainder_16 = remainder_128 & 0x0F;
+    int64 remainder_block_num = remainder_128 >> 4;
+    int64 remainder_block_num_total = remainder_block_num + !!remainder_16;
+    const float one_over_cols = 1.0f / cols;
 
     auto& worker_threads =
         *(context->device()->tensorflow_cpu_worker_threads());
@@ -121,26 +95,19 @@ class FusedLayerNormOp : public OpKernel {
             end_row = rows;
           }
 #ifdef __AVX512F__
-          // int i = begin_row;
-          // for (; i + 3 < end_row; i += 4) {
-          //   forward_avx512<4>(input, gamma, beta, output, mean, rvariance, cols, i);
-          // }
-          // for (; i < end_row; ++i) {
-          //   forward_avx512<1>(input, gamma, beta, output, mean, rvariance, cols, i);
-          // }
-          // printf("[INFO] AVX512 OP.\n");
-          forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
+          forward_avx512(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, block_num, 
+                         remainder_block_num, remainder_block_num_total, remainder_128, remainder_16, one_over_cols);
+          // forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
 #else
-          forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
+          forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
 #endif
         });
   }
 
  private:
 // Compute the rows locate in the range of [begin_row, begin_row + ROWS)
-  void forward(const float* input, const float* gamma, const float* beta, float* output, 
-                              float* mean, float* rvariance, int64 cols, int begin_row, int end_row) {
-    const float one_over_cols = 1.0f / cols;
+  void forward(const float* input, const float* gamma, const float* beta, float* output, float* mean, 
+                              float* rvariance, int64 cols, int64 begin_row, int64 end_row, const float one_over_cols) {
     for (int64 i = begin_row; i < end_row; i++){
       // Sum
       int64 j = 0;
@@ -210,116 +177,164 @@ class FusedLayerNormOp : public OpKernel {
   }
 
 #ifdef __AVX512F__
-  template <int ROWS>
+  // AVX512 block size = 8; pack 8 * 16 = 128;
   inline void forward_avx512(const float* input, const float* gamma, const float* beta, float* output, 
-                              float* mean, float* rvariance, int64 cols, int begin_row) {
-    const float one_over_cols = 1.0f / cols;
-    int64 remainder = cols & 0x0F;
-    __mmask16 mask = 0xFFFF >> (16 - remainder);
-    // printf("cols: %d, remainder: %d\n", cols, remainder);
+                              float* mean, float* rvariance, int64 cols, int64 begin_row, int64 end_row,
+                              int64 block_num, int64 remainder_block_num,int64 remainder_block_num_total, 
+                              int64 remainder_128, int64 remainder_16, const float one_over_cols) {
+    for (int64 i = begin_row; i < end_row; ++i) {
+      // Sum
+      for (int64 j = 0; j < block_num; ++j) {
+      __m512 inputs[8];
+      auto load = [&](auto idx) {
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + 128 * j + 16 * idx);
+        };
+      compile_time_for<8>::op(load);
+      __m512 block_sum = reduce_sum_block<8>(inputs);
+      mean[i] += _mm512_reduce_add_ps(block_sum);
+      }
+      if (remainder_block_num_total) { // remainder sum
+        __m512 inputs[remainder_block_num_total];
+        for (int64 idx = 0; idx < remainder_block_num; idx++){
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + cols - remainder_128 + 16 * idx);
+        }
+        if (remainder_16) {
+          __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+          inputs[remainder_block_num] = _mm512_maskz_loadu_ps(
+              mask, input + cols * i + cols - remainder_16);
+        }
+        __m512 block_sum = reduce_sum_block_ps(inputs, remainder_block_num_total);
+        mean[i] += _mm512_reduce_add_ps(block_sum);
+      }
 
-    const float* px = input + begin_row * cols;
-    float* py = output + begin_row * cols;
+      // Mean
+      mean[i] *= one_over_cols;
+      __m512 means = _mm512_set1_ps(mean[i]);
 
-    float tmean[ROWS], tvar[ROWS];  // for temporary result
-    __m512 vmean[ROWS], vvar[ROWS];
+      // Variance
+      for (int64 j = 0; j < block_num; ++j) {
+        __m512 inputs[8];
+        auto load_var = [&](auto idx) {
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + 128 * j + 16 * idx);
+          inputs[idx] = _mm512_sub_ps(inputs[idx], means);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], inputs[idx]);
+        };
+        compile_time_for<8>::op(load_var);
+        __m512 block_sum = reduce_sum_block<8>(inputs);
+        rvariance[i] += _mm512_reduce_add_ps(block_sum);
+      }
+      if (remainder_block_num_total) { // remainder var
+        __m512 inputs[remainder_block_num_total];
+        for (int64 idx = 0; idx < remainder_block_num; idx++){
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + cols - remainder_128 + 16 * idx);
+          inputs[idx] = _mm512_sub_ps(inputs[idx], means);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], inputs[idx]);
+        }
+        if (remainder_16) {
+          __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+          inputs[remainder_block_num] = _mm512_maskz_loadu_ps(
+              mask, input + cols * i + cols - remainder_16);
+          inputs[remainder_block_num] = _mm512_maskz_sub_ps(mask, inputs[remainder_block_num], means);
+          inputs[remainder_block_num] = _mm512_mul_ps(inputs[remainder_block_num], inputs[remainder_block_num]);
+        }
+        __m512 block_sum = reduce_sum_block_ps(inputs, remainder_block_num_total);
+        rvariance[i] += _mm512_reduce_add_ps(block_sum);
+      }
 
-    // Init
-    auto setzero = [&](auto idx) {
-      vmean[idx] = _mm512_setzero_ps();
-      vvar[idx] = _mm512_setzero_ps();
+      rvariance[i] *= one_over_cols;
+      rvariance[i] += epsilon;
+      rvariance[i] = 1.0f / sqrtf(rvariance[i]);
+      __m512 rvariances = _mm512_set1_ps(rvariance[i]);
+      // Normalize and store
+      for (int64 j = 0; j < block_num; ++j) {
+        __m512 inputs[8];
+        __m512 nums[8]; // used to load gammas and betas 
+        auto load_normalize = [&](auto idx) {
+          // (x - mean) / sqrt(var + eps)
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + 128 * j + 16 * idx);
+          inputs[idx] = _mm512_sub_ps(inputs[idx], means);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], rvariances);
+          // Mul gamma
+          nums[idx] = _mm512_loadu_ps(gamma + 128 * j + 16 * idx);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], nums[idx]);
+          // Add beta
+          nums[idx] = _mm512_loadu_ps(beta + 128 * j + 16 * idx);
+          inputs[idx] = _mm512_add_ps(inputs[idx], nums[idx]);
+
+          // Store
+          _mm512_storeu_ps(output + cols * i + 128 * j + 16 * idx, inputs[idx]);
+        };
+        compile_time_for<8>::op(load_normalize);
+      }
+      if (remainder_block_num_total) { // remainder normalize and store
+        __m512 inputs[remainder_block_num_total];
+        __m512 nums[remainder_block_num_total]; // used to load gammas and betas 
+        for (int64 idx = 0; idx < remainder_block_num; idx++){ // remainder of 128
+          // (x - mean) / sqrt(var + eps)
+          inputs[idx] = _mm512_loadu_ps(input + cols * i + cols - remainder_128 + 16 * idx);
+          inputs[idx] = _mm512_sub_ps(inputs[idx], means);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], rvariances);
+          // Mul gamma
+          nums[idx] = _mm512_loadu_ps(gamma + cols - remainder_128 + 16 * idx);
+          inputs[idx] = _mm512_mul_ps(inputs[idx], nums[idx]);
+          // Add beta
+          nums[idx] = _mm512_loadu_ps(beta + cols - remainder_128 + 16 * idx);
+          inputs[idx] = _mm512_add_ps(inputs[idx], nums[idx]);
+
+          // Store
+          _mm512_storeu_ps(output + cols * i + cols - remainder_128 + 16 * idx, inputs[idx]);
+        }
+        if (remainder_16) { // remainder of 16
+          __mmask16 mask = 0xFFFF >> (16 - remainder_16);
+          // (x - mean) / sqrt(var + eps)
+          inputs[remainder_block_num] = _mm512_maskz_loadu_ps(mask, input + cols * i + cols - remainder_16);
+          inputs[remainder_block_num] = _mm512_sub_ps(inputs[remainder_block_num], means);
+          inputs[remainder_block_num] = _mm512_mul_ps(inputs[remainder_block_num], rvariances);
+          // Mul gamma
+          nums[remainder_block_num] = _mm512_maskz_loadu_ps(mask, gamma + cols - remainder_16);
+          inputs[remainder_block_num] = _mm512_mul_ps(inputs[remainder_block_num], nums[remainder_block_num]);
+          // Add beta
+          nums[remainder_block_num] = _mm512_maskz_loadu_ps(mask, beta + cols - remainder_16);
+          inputs[remainder_block_num] = _mm512_add_ps(inputs[remainder_block_num], nums[remainder_block_num]);
+
+          // Store
+          _mm512_mask_storeu_ps(output + cols * i + cols - remainder_16, mask, inputs[remainder_block_num]);
+
+        }
+      }
+    }
+  }
+
+  template <int BLOCK_NUM>
+  inline __m512 reduce_sum_block(const __m512* v) {
+    __m512 block_sum = _mm512_setzero_ps();
+    auto reduce_sum = [&](auto idx) {
+      block_sum = _mm512_add_ps(block_sum, v[idx]);
     };
-    compile_time_for<ROWS>::op(setzero);
+    compile_time_for<BLOCK_NUM>::op(reduce_sum);
+    return block_sum;
+  }
 
-    // Sum
-    int64 j = 0;
-    for (; j < cols - remainder; j += 16) {
-      auto compute_sum = [&](auto idx) {
-        __m512 vx = _mm512_loadu_ps(px + idx * cols + j);
-        vmean[idx] = _mm512_add_ps(vx, vmean[idx]);
-      };
-      compile_time_for<ROWS>::op(compute_sum);
+  inline __m512 reduce_sum_block_ps(const __m512* v, int64 BLOCK_NUM) {
+    switch (BLOCK_NUM)
+    {
+    case 1:
+      return v[0];
+    case 2:
+      return reduce_sum_block<2>(v);
+    case 3:
+      return reduce_sum_block<3>(v);
+    case 4:
+      return reduce_sum_block<4>(v);
+    case 5:
+      return reduce_sum_block<5>(v);
+    case 6:
+      return reduce_sum_block<6>(v);
+    case 7:
+      return reduce_sum_block<7>(v);
+    case 8:
+      return reduce_sum_block<8>(v);
     }
-    if (remainder > 0){
-      auto compute_remainder_sum = [&](auto idx){
-        __m512 vx = _mm512_maskz_loadu_ps(mask, px + idx * cols + cols - remainder);
-        vmean[idx] = _mm512_add_ps(vx, vmean[idx]);
-      };
-      compile_time_for<ROWS>::op(compute_remainder_sum);
-    }
-
-    // Mean: reduce the result and add remain elements, and average it
-    auto reduce_mean = [&](auto idx) {
-      tmean[idx] = _mm512_reduce_add_ps(vmean[idx]);
-      tmean[idx] *= one_over_cols;
-      // save mean
-      mean[begin_row + idx] = tmean[idx];
-      vmean[idx] = _mm512_set1_ps(tmean[idx]);
-    };
-    compile_time_for<ROWS>::op(reduce_mean);
-
-    // variance
-    for (j = 0; j < cols - remainder; j += 16) {
-      auto compute_variance = [&](auto idx) {
-        __m512 vx = _mm512_loadu_ps(px + idx * cols + j);
-        __m512 tmp = _mm512_sub_ps(vx, vmean[idx]);
-        vvar[idx] = _mm512_fmadd_ps(tmp, tmp, vvar[idx]);
-      };
-      compile_time_for<ROWS>::op(compute_variance);
-    }
-    if (remainder > 0){
-      auto compute_remainder_variance = [&](auto idx){
-        __m512 vx = _mm512_maskz_loadu_ps(mask, px + idx * cols + cols - remainder);
-        __m512 tmp = _mm512_sub_ps(vx, vmean[idx]);
-        vvar[idx] = _mm512_fmadd_ps(tmp, tmp, vvar[idx]);
-      };
-      compile_time_for<ROWS>::op(compute_remainder_variance);
-    }
-
-    auto reduce_rvariance = [&](auto idx) {
-      tvar[idx] = _mm512_reduce_add_ps(vvar[idx]);
-      tvar[idx] *= one_over_cols;
-      tvar[idx] += epsilon;
-      tvar[idx] = 1.0f / sqrtf(tvar[idx]);
-      // save rvariance
-      rvariance[begin_row + idx] = tvar[idx];
-      vvar[idx] = _mm512_set1_ps(tvar[idx]);
-    };
-    compile_time_for<ROWS>::op(reduce_rvariance);
-
-    // Compute norm and save
-    for (j = 0; j < cols - remainder; j += 16) {
-      __m512 vgamma = _mm512_loadu_ps(gamma + j);
-      __m512 vbeta = _mm512_loadu_ps(beta + j);
-      auto compute_norm = [&](auto idx) {
-        // (x - mean) / variance
-        __m512 vx = _mm512_loadu_ps(px + idx * cols + j);
-        __m512 norm = _mm512_sub_ps(vx, vmean[idx]);
-        norm = _mm512_mul_ps(norm, vvar[idx]);
-
-        //* gamma then + beta
-        norm = _mm512_mul_ps(norm, vgamma);
-        norm = _mm512_add_ps(norm, vbeta);
-
-        _mm512_storeu_ps(py + idx * cols + j, norm);
-      };
-      compile_time_for<ROWS>::op(compute_norm);
-    }
-    __m512 vgamma = _mm512_maskz_loadu_ps(mask, gamma + cols - remainder);
-    __m512 vbeta = _mm512_maskz_loadu_ps(mask, beta + cols - remainder);
-    auto remain_norm = [&](auto idx) {
-      // (x - mean) / variance
-      __m512 vx = _mm512_maskz_loadu_ps(mask, px + idx * cols + cols - remainder);
-      __m512 norm = _mm512_sub_ps(vx, vmean[idx]);
-      norm = _mm512_mul_ps(norm, vvar[idx]);
-
-      //* gamma then + beta
-      norm = _mm512_mul_ps(norm, vgamma);
-      norm = _mm512_add_ps(norm, vbeta);
-
-      _mm512_mask_storeu_ps(py + idx * cols + cols - remainder, mask, norm);
-    };
-    compile_time_for<ROWS>::op(remain_norm);
   }
 #endif
 };
@@ -368,8 +383,6 @@ class FusedLayerNormGradOp : public OpKernel {
     float* gamma_diff = gamma_diff_tensor->flat<float>().data();
     float* beta_diff = beta_diff_tensor->flat<float>().data();
 
-    // backward_ref(diff, x, mean, rvariance, gamma, x_diff, gamma_diff,
-    // beta_diff, rows, cols); return;
 
     // Do it in parallel
     const int units = (rows >= 128 ? 8 : (rows + 15) / 16);
@@ -396,9 +409,13 @@ class FusedLayerNormGradOp : public OpKernel {
           if (end_row > rows) {
             end_row = rows;
           }
+#ifdef __AVX512F__
+// backwarod_avx512
+#else
           backward(diff, x, mean, rvariance, gamma, x_diff,
                    t_gamma_diff + begin_unit * cols,
                    t_beta_diff + begin_unit * cols, cols, begin_row, end_row);
+#endif
         });
 
     // Reduce/sum N records into one
@@ -425,6 +442,50 @@ class FusedLayerNormGradOp : public OpKernel {
     }
   }
 
+  void backward_ref(const float* diff, const float* x, const float* mean,
+                    const float* rvariance, const float* gamma, float* x_diff,
+                    float* gamma_diff, float* beta_diff, int64 rows,
+                    int64 cols) {
+    // printf("in backward_ref\n");
+    memset(gamma_diff, 0, cols * sizeof(float));
+    memset(beta_diff, 0, cols * sizeof(float));
+
+    // For gradient of x, it comes from 3 parts: x-mean, mean, and rvariance
+    // grad from (x - mean): diff * gamma * rvariance
+    // grad from mean: - sum_row(diff * gamma * rvariance) / #cols
+    // grad from rvariance: sum_row(diff * gamma * (x - mean)) * (- rvariance^3)
+    // * (x - mean) / #cols
+    for (int64 r = 0; r < rows; ++r) {
+      float sum_m = 0, sum_r = 0;
+      for (int64 c = 0; c < cols; ++c) {
+        const auto idx = r * cols + c;
+        sum_m += diff[idx] * gamma[c];
+        sum_r += diff[idx] * gamma[c] * (x[idx] - mean[r]);
+      }
+
+      sum_m /= cols;
+      sum_r *= rvariance[r] * rvariance[r];
+      sum_r /= cols;
+
+      for (int64 c = 0; c < cols; ++c) {
+        const auto idx = r * cols + c;
+        float v_diff_x = diff[idx] * gamma[c];
+        v_diff_x -= sum_m + sum_r * (x[idx] - mean[r]);
+        v_diff_x *= rvariance[r];  // rvariance is the common factor for 3 parts
+
+        x_diff[idx] = v_diff_x;
+      }
+
+      // For gradient of gamma & beta
+      for (int64 c = 0; c < cols; ++c) {
+        const auto idx = r * cols + c;
+        gamma_diff[c] += diff[idx] * (x[idx] - mean[r]) * rvariance[r];
+        beta_diff[c] += diff[idx];
+      }
+    }  // end for r
+  }
+
+#ifdef __AVX512F__
   // look into backward_ref for more
   template <int ROWS>
   inline void backward_avx3(const float* diff, const float* x,
@@ -463,8 +524,8 @@ class FusedLayerNormGradOp : public OpKernel {
     }
 
     auto reduce_sum = [&](auto idx) {
-      sum_m[idx] = LnUtil::horizontal_add(vsum_m[idx]);
-      sum_r[idx] = LnUtil::horizontal_add(vsum_r[idx]);
+      // sum_m[idx] = LnUtil::horizontal_add(vsum_m[idx]);
+      // sum_r[idx] = LnUtil::horizontal_add(vsum_r[idx]);
 
       for (int64 c = j; c < cols; ++c) {
         const auto offset = (start_row + idx) * cols + c;
@@ -544,49 +605,8 @@ class FusedLayerNormGradOp : public OpKernel {
       compile_time_for<ROWS>::op(remain_diff);
     }
   }
-
-  void backward_ref(const float* diff, const float* x, const float* mean,
-                    const float* rvariance, const float* gamma, float* x_diff,
-                    float* gamma_diff, float* beta_diff, int64 rows,
-                    int64 cols) {
-    // printf("in backward_ref\n");
-    memset(gamma_diff, 0, cols * sizeof(float));
-    memset(beta_diff, 0, cols * sizeof(float));
-
-    // For gradient of x, it comes from 3 parts: x-mean, mean, and rvariance
-    // grad from (x - mean): diff * gamma * rvariance
-    // grad from mean: - sum_row(diff * gamma * rvariance) / #cols
-    // grad from rvariance: sum_row(diff * gamma * (x - mean)) * (- rvariance^3)
-    // * (x - mean) / #cols
-    for (int64 r = 0; r < rows; ++r) {
-      float sum_m = 0, sum_r = 0;
-      for (int64 c = 0; c < cols; ++c) {
-        const auto idx = r * cols + c;
-        sum_m += diff[idx] * gamma[c];
-        sum_r += diff[idx] * gamma[c] * (x[idx] - mean[r]);
-      }
-
-      sum_m /= cols;
-      sum_r *= rvariance[r] * rvariance[r];
-      sum_r /= cols;
-
-      for (int64 c = 0; c < cols; ++c) {
-        const auto idx = r * cols + c;
-        float v_diff_x = diff[idx] * gamma[c];
-        v_diff_x -= sum_m + sum_r * (x[idx] - mean[r]);
-        v_diff_x *= rvariance[r];  // rvariance is the common factor for 3 parts
-
-        x_diff[idx] = v_diff_x;
-      }
-
-      // For gradient of gamma & beta
-      for (int64 c = 0; c < cols; ++c) {
-        const auto idx = r * cols + c;
-        gamma_diff[c] += diff[idx] * (x[idx] - mean[r]) * rvariance[r];
-        beta_diff[c] += diff[idx];
-      }
-    }  // end for r
-  }
+#endif
+  
 
   void add_n(const float* src, float* dst, int rows, int64 cols) {
     int64 c = 0;

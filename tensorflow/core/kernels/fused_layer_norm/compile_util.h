@@ -1,5 +1,6 @@
-#ifndef __COMPILE_UTIL_H
-#define __COMPILE_UTIL_H
+#ifndef TENSORFLOW_CORE_KERNELS_FUSED_LAYER_NORMALIZE_COMPILE_UTIL_OP_H_
+#define TENSORFLOW_CORE_KERNELS_FUSED_LAYER_NORMALIZE_COMPILE_UTIL_OP_H_
+
 #include <type_traits>
 
 // A class for forced loop unrolling at compile time
@@ -26,4 +27,4 @@ struct compile_time_for<0> {
     }
 };
 
-#endif
+#endif  // TENSORFLOW_CORE_KERNELS_FUSED_LAYER_NORMALIZE_COMPILE_UTIL_OP_H_
