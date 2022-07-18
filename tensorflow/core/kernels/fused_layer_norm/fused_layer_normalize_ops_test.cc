@@ -40,12 +40,12 @@ TEST_F(FusedLayerNormalizeOpTest, 2Dims_Float) {
   for (int i = 0; i < sizeof(input_array) / sizeof(float); i++) {
     input_array[i] = 1.0;
   }
-  for (int i =0; i < rows; i++) {
-    input_array[i * rows] = 2.0;
+  for (int i = 0; i < rows; i++) {
+    input_array[i * cols] = 2.0;
   }
   AddInputFromArray<float>(TensorShape({rows, cols}), input_array);
   AddInput<float>(TensorShape({cols}), [](int i) -> float { return 2.0; });
-  AddInput<float>(TensorShape({cols}), [](int i) -> float { return 1; });
+  AddInput<float>(TensorShape({cols}), [](int i) -> float { return 1.0; });
 
   TF_ASSERT_OK(RunOpKernel());
   TF_EXPECT_OK(device_->Sync());
@@ -56,26 +56,93 @@ TEST_F(FusedLayerNormalizeOpTest, 2Dims_Float) {
     Tensor mean(allocator(), DT_FLOAT, TensorShape({rows}));
     Tensor rvariance(allocator(), DT_FLOAT, TensorShape({rows}));
     float output_array[1785];
-    float result = -2.0f / sqrtf(254.0f) + 1;
+    // 16.000123977661133
+    // 16.000125885009766
+    // 1.0f / sqrtf(((254.0f / 255.0f) * (254.0f / 255.0f) + 254.0f / 255.0f /255.0f) / 255.0f + 1e-12)
+    float rvar_value = 16.000125885009766f;
+    // float result = -2.0f / 255.0f * rvar_value + 1.0f;
     for (int i = 0; i < sizeof(output_array) / sizeof(float); i++) {
-      output_array[i] = result;
+      output_array[i] = 0.87450695037841797;
     }
-    for (int i =0; i < rows; i++) {
-      input_array[i * rows] = -2.0f * sqrtf(254.0f) + 1.0;
+    for (int i = 0; i < rows; i++) {
+      output_array[i * cols] = 2.0f * sqrtf(254.0f) + 1.0f;
     }
 
-    float mean_array[cols];
+    float mean_array[rows];
     for (int i = 0; i < sizeof(mean_array) / sizeof(float); i++) {
-      mean_array[i] = 256 / 255;
+      mean_array[i] = 256.0f / 255.0f;
     }
 
-    float rvariance_array[cols];
+    float rvariance_array[rows];
+    
     for (int i = 0; i < sizeof(rvariance_array) / sizeof(float); i++) {
-      rvariance_array[i] = sqrtf(254.0f) / 255.0f;;
+      rvariance_array[i] = rvar_value;
     }
     test::FillValues<float>(&expected_output, output_array);
     test::FillValues<float>(&mean, mean_array);
     test::FillValues<float>(&rvariance, rvariance_array);
+    test::ExpectTensorNear<float>(expected_output, *GetOutput(0), 1e-6);
+    test::ExpectTensorNear<float>(mean, *GetOutput(1), 1e-6);
+    test::ExpectTensorNear<float>(rvariance, *GetOutput(2), 1e-6);
+  }
+}
+
+
+TEST_F(FusedLayerNormalizeOpTest, small) {
+  const int rows = 7;
+  const int cols = 4;
+
+  MakeOpAndSetDevice(Device::CPU, DT_FLOAT, 0, 1e-12);
+
+  float input_array[28];
+  for (int i = 0; i < rows * cols; i++) {
+    input_array[i] = 1.0;
+  }
+  AddInputFromArray<float>(TensorShape({rows, cols}), input_array);
+  AddInput<float>(TensorShape({cols}), [](int i) -> float { return 2.0; });
+  AddInput<float>(TensorShape({cols}), [](int i) -> float { return 1.0; });
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_output(allocator(), DT_FLOAT,
+                                TensorShape({rows, cols}));
+    Tensor mean(allocator(), DT_FLOAT, TensorShape({rows}));
+    Tensor rvariance(allocator(), DT_FLOAT, TensorShape({rows}));
+    float output_array[28];
+    float result = 1.0f;
+    for (int i = 0; i < rows * cols; i++) {
+      output_array[i] = result;
+    }
+
+    float mean_array[rows];
+    for (int i = 0; i < rows; i++) {
+      mean_array[i] = 1.0f;
+    }
+
+    float rvariance_array[rows];
+    for (int i = 0; i < rows; i++) {
+      rvariance_array[i] = 1.0f / sqrtf(0.0f + 1e-12);
+    }
+    test::FillValues<float>(&expected_output, output_array);
+    test::FillValues<float>(&mean, mean_array);
+    test::FillValues<float>(&rvariance, rvariance_array);
+    // float* resultarray = GetOutput(0)->flat<float>().data();
+    // printf("[INFO] Output_array:\n");
+    // for (int i = 0; i < rows; i++) {
+    //   for (int j = 0; j < cols; j++) {
+    //     printf("%f\t", resultarray[i * cols + j]);
+    //   }
+    //   printf("\n");
+    // }
+    // printf("[INFO] Input_array:\n");
+    // for (int i = 0; i < rows; i++) {
+    //   for (int j = 0; j < cols; j++) {
+    //     printf("%f\t", input_array[i * cols + j]);
+    //   }
+    //   printf("\n");
+    // }
     test::ExpectTensorNear<float>(expected_output, *GetOutput(0), 1e-6);
     test::ExpectTensorNear<float>(mean, *GetOutput(1), 1e-6);
     test::ExpectTensorNear<float>(rvariance, *GetOutput(2), 1e-6);

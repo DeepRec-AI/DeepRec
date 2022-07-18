@@ -65,12 +65,49 @@ class FusedLayerNormOp : public OpKernel {
     T* output = output_tensor->flat<T>().data();
     float* mean = mean_tensor->flat<float>().data();
     float* rvariance = rvariance_tensor->flat<float>().data();
+    memset(output, 0, sizeof(float) * rows * cols);
+    memset(mean, 0, sizeof(float) * rows);
+    memset(rvariance, 0, sizeof(float) * rows);
+
+    // printf("[INFO] Output_init_array:\n");
+    // for (int i = 0; i < rows; i++) {
+    //   for (int j = 0; j < cols; j++) {
+    //     printf("%f\t", output[i * cols + j]);
+    //   }
+    //   printf("\n");
+    // }
+
+    // printf("[INFO] Mean_init_array:\n");
+    // for (int i = 0; i < rows; i++) {
+    //   printf("%f\t", mean[i]);
+    // }
+    // printf("\n");
+
+    // printf("[INFO] Rvar_init_array:\n");
+    // for (int i = 0; i < rows; i++) {
+    //   printf("%f\t", rvariance[i]);
+    // }
+    // printf("\n");
+
+    
+    // printf("[INFO] Gamma:\n");
+    // for (int i = 0; i < cols; i++) {
+    //   printf("%f\t", gamma[i]);
+    // }
+    // printf("\n");
+
+    // printf("[INFO] Beta:\n");
+    // for (int i = 0; i < cols; i++) {
+    //   printf("%f\t", beta[i]);
+    // }
+    // printf("\n");
+
+    // printf("EPS is %0.12f\n", epsilon);
 
     // Do it
     // Let every thread compute 16 rows to avoid false sharing
     const int64 total_unit = (rows + 15) / 16;
-    const int64 unit_cost =
-        16 * cols * 50;  // assume every element consumes 50 cycles
+    const int64 unit_cost = 16 * cols * 50;  // assume every element consumes 50 cycles
 
     auto& worker_threads =
         *(context->device()->tensorflow_cpu_worker_threads());
@@ -84,14 +121,15 @@ class FusedLayerNormOp : public OpKernel {
             end_row = rows;
           }
 #ifdef __AVX512F__
-          int i = begin_row;
-          for (; i + 3 < end_row; i += 4) {
-            forward_avx512<4>(input, gamma, beta, output, mean, rvariance, cols, i);
-          }
-          for (; i < end_row; ++i) {
-            forward_avx512<1>(input, gamma, beta, output, mean, rvariance, cols, i);
-          }
-          // forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
+          // int i = begin_row;
+          // for (; i + 3 < end_row; i += 4) {
+          //   forward_avx512<4>(input, gamma, beta, output, mean, rvariance, cols, i);
+          // }
+          // for (; i < end_row; ++i) {
+          //   forward_avx512<1>(input, gamma, beta, output, mean, rvariance, cols, i);
+          // }
+          printf("[INFO] AVX512 OP.\n");
+          forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
 #else
           forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
 #endif
@@ -118,7 +156,7 @@ class FusedLayerNormOp : public OpKernel {
         mean[i] += data_0 + data_1 + data_2 + data_3 + 
                    data_4 + data_5 + data_6 + data_7;
       }
-      for (; j < cols; j ++) {
+      for (; j < cols; j++) {
         mean[i] += input[i * cols + j];
       }
       // Mean
@@ -126,29 +164,20 @@ class FusedLayerNormOp : public OpKernel {
 
       // variance
       for (j = 0; j + 7 < cols; j += 8) {
-        T data_0 = input[i * cols + j];
-        T data_1 = input[i * cols + j + 1];
-        T data_2 = input[i * cols + j + 2];
-        T data_3 = input[i * cols + j + 3];
-        T data_4 = input[i * cols + j + 4];
-        T data_5 = input[i * cols + j + 5];
-        T data_6 = input[i * cols + j + 6];
-        T data_7 = input[i * cols + j + 7];
-        data_0 = data_0 - mean[i];
-        data_1 = data_1 - mean[i];
-        data_2 = data_2 - mean[i];
-        data_3 = data_3 - mean[i];
-        data_4 = data_4 - mean[i];
-        data_5 = data_5 - mean[i];
-        data_6 = data_6 - mean[i];
-        data_7 = data_7 - mean[i];
+        T data_0 = input[i * cols + j] - mean[i];
+        T data_1 = input[i * cols + j + 1] - mean[i];
+        T data_2 = input[i * cols + j + 2] - mean[i];
+        T data_3 = input[i * cols + j + 3] - mean[i];
+        T data_4 = input[i * cols + j + 4] - mean[i];
+        T data_5 = input[i * cols + j + 5] - mean[i];
+        T data_6 = input[i * cols + j + 6] - mean[i];
+        T data_7 = input[i * cols + j + 7] - mean[i];
         rvariance[i] += data_0 * data_0 + data_1 * data_1 + data_2 * data_2 +
                    data_3 * data_3 + data_4 * data_4 + data_5 * data_5 +
                    data_6 * data_6 + data_7 * data_7;
       }
-      for (; j < cols; j ++) {
-        T data = input[i * cols + j];
-        data = data - mean[i];
+      for (; j < cols; j++) {
+        T data = input[i * cols + j] - mean[i];
         rvariance[i] += data * data;
       }
       rvariance[i] *= one_over_cols;
@@ -156,35 +185,26 @@ class FusedLayerNormOp : public OpKernel {
       rvariance[i] = 1.0f / sqrtf(rvariance[i]);
 
       for (j = 0; j + 7 < cols; j += 8) {
-        T data_0 = input[i * cols + j];
-        T data_1 = input[i * cols + j + 1];
-        T data_2 = input[i * cols + j + 2];
-        T data_3 = input[i * cols + j + 3];
-        T data_4 = input[i * cols + j + 4];
-        T data_5 = input[i * cols + j + 5];
-        T data_6 = input[i * cols + j + 6];
-        T data_7 = input[i * cols + j + 7];
-        data_0 = (data_0 - mean[i]) / rvariance[i];
-        data_1 = (data_1 - mean[i]) / rvariance[i];
-        data_2 = (data_2 - mean[i]) / rvariance[i];
-        data_3 = (data_3 - mean[i]) / rvariance[i];
-        data_4 = (data_4 - mean[i]) / rvariance[i];
-        data_5 = (data_5 - mean[i]) / rvariance[i];
-        data_6 = (data_6 - mean[i]) / rvariance[i];
-        data_7 = (data_7 - mean[i]) / rvariance[i];
-        input[i * cols + j] = gamma[i] * data_0 + beta[i];
-        input[i * cols + j + 1] =  gamma[i] * data_1 + beta[i];
-        input[i * cols + j + 2] =  gamma[i] * data_2 + beta[i];
-        input[i * cols + j + 3] =  gamma[i] * data_3 + beta[i];
-        input[i * cols + j + 4] =  gamma[i] * data_4 + beta[i];
-        input[i * cols + j + 5] =  gamma[i] * data_5 + beta[i];
-        input[i * cols + j + 6] =  gamma[i] * data_6 + beta[i];
-        input[i * cols + j + 7] =  gamma[i] * data_7 + beta[i];
+        T data_0 = (input[i * cols + j] - mean[i]) * rvariance[i];
+        T data_1 = (input[i * cols + j + 1] - mean[i]) * rvariance[i];
+        T data_2 = (input[i * cols + j + 2] - mean[i]) * rvariance[i];
+        T data_3 = (input[i * cols + j + 3] - mean[i]) * rvariance[i];
+        T data_4 = (input[i * cols + j + 4] - mean[i]) * rvariance[i];
+        T data_5 = (input[i * cols + j + 5] - mean[i]) * rvariance[i];
+        T data_6 = (input[i * cols + j + 6] - mean[i]) * rvariance[i];
+        T data_7 = (input[i * cols + j + 7] - mean[i]) * rvariance[i];
+        output[i * cols + j] = gamma[j] * data_0 + beta[i];
+        output[i * cols + j + 1] =  gamma[j] * data_1 + beta[j];
+        output[i * cols + j + 2] =  gamma[j] * data_2 + beta[j];
+        output[i * cols + j + 3] =  gamma[j] * data_3 + beta[j];
+        output[i * cols + j + 4] =  gamma[j] * data_4 + beta[j];
+        output[i * cols + j + 5] =  gamma[j] * data_5 + beta[j];
+        output[i * cols + j + 6] =  gamma[j] * data_6 + beta[j];
+        output[i * cols + j + 7] =  gamma[j] * data_7 + beta[j];
       }
       for (; j < cols; j ++) {
-        T data = input[i * cols + j];
-        data = (data - mean[i]) / rvariance[i];
-        output[i * cols + j] = gamma[i] * data + beta[i];
+        T data = (input[i * cols + j] - mean[i]) * rvariance[i];
+        output[i * cols + j] = gamma[j] * data + beta[j];;
       }
     }
   }
