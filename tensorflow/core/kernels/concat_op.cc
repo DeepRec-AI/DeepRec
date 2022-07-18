@@ -483,10 +483,6 @@ class FusedConcatCastOp : public OpKernel {
       auto output_flat = output->flat<DstT>();
       DstT* out_ptr = output_flat.data();
 
-      DataType source_dt = DataTypeToEnum<SrcT>::v();
-      DataType dst_dt = DataTypeToEnum<DstT>::v();
-      bool if_source_bfloat16 = source_dt == DataType::DT_BFLOAT16;
-
       auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
       int num_threads = std::min(
           static_cast<int>((output->NumElements() * sizeof(DstT)) / 4096),
@@ -576,6 +572,7 @@ class FusedConcatCastOp : public OpKernel {
   }
 
  private:
+#if INTEL_MKL
   static void castElements(Eigen::bfloat16* dst, const float* src, ptrdiff_t size) {
     dnnl::cvt_float_to_bfloat16((dnnl_bfloat16_t *)dst, (const float *)src, size);
   }
@@ -583,6 +580,7 @@ class FusedConcatCastOp : public OpKernel {
   static void castElements(float* dst, const Eigen::bfloat16* src, ptrdiff_t size) {
     dnnl::cvt_bfloat16_to_float((float *)dst, (const dnnl_bfloat16_t *)src, size);
   }
+#endif  // INTEL_MKL
 
   bool use_truncation_;
 };
