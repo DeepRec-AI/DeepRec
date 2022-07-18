@@ -1,14 +1,32 @@
 package main
 
 /*
-#cgo CFLAGS: -I${SRCDIR}
-#cgo LDFLAGS: -L${SRCDIR} -lserving_processor
+#cgo LDFLAGS: -ldl
 #include <stdlib.h>
-#include "processor.h"
+#include <dlfcn.h>
+
+void* processor_initialize(void* f, const char* model_entry,
+                    const char* model_config, int* state)
+{
+    void* (*initialize)(const char*, const char*, int*);
+
+    initialize = (void* (*)(const char*, const char*, int*))f;
+    return initialize(model_entry, model_config, state);
+}
+
+int processor_process(void* f, void* model_buf, const void* input_data,
+            int input_size, void** output_data, int* output_size)
+{
+    int (*process)(void*, const void*, int, void**, int*);
+
+    process = (int (*)(void*, const void*, int, void**, int*))f;
+    return process(model_buf, input_data, input_size, output_data, output_size);
+}
 */
 import "C"
 import (
 	tensorflow_eas "demo/tensorflow_eas"
+	errors "errors"
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
 	unsafe "unsafe"
@@ -34,7 +52,14 @@ func main() {
 	// Load shared library
 	modelEntry := []byte(".")
 	state := C.int(0)
-	model := C.initialize((*C.char)(unsafe.Pointer(&modelEntry[0])), (*C.char)(unsafe.Pointer(&modelConfig[0])), &state)
+	handle := C.dlopen(C.CString("libserving_process.so"), C.RTLD_LAZY)
+	var err error
+	if handle == nil {
+		err = errors.New(C.GoString(C.dlerror()))
+		println(err)
+	}
+	initialize := C.dlsym(handle, C.CString("initialize"))
+	model := C.processor_initialize(initialize, (*C.char)(unsafe.Pointer(&modelEntry[0])), (*C.char)(unsafe.Pointer(&modelConfig[0])), &state)
 	defer C.free(unsafe.Pointer(model))
 	if int(state) == -1 {
 		println("initialize error")
@@ -68,7 +93,8 @@ func main() {
 	output := unsafe.Pointer(nil)
 	defer C.free(output)
 	outputSize := C.int(0)
-	state = C.process(model, unsafe.Pointer(&buffer[0]), size, &output, &outputSize)
+	process := C.dlsym(handle, C.CString("process"))
+	state = C.processor_process(process, model, unsafe.Pointer(&buffer[0]), size, &output, &outputSize)
 
 	// parse response
 	outputString := C.GoBytes(output, outputSize)
