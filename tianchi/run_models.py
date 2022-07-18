@@ -20,9 +20,9 @@ def run_models():
                   'DIEN': 2700,
                   'DIN': 16000,
                   'DLRM': 11600,
-                  'DeepFM': 110,
+                  'DeepFM': 700,
                   'MMoE': 27700,
-                  'WDL': 1800}
+                  'WDL': 8900}
 
     model_total_speed = 0
     model_scores = {}
