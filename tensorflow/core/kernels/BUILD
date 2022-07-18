@@ -4161,6 +4161,41 @@ tf_cc_test_mkl(
 )
 
 tf_kernel_library(
+    name = "fused_layer_normalize_ops",
+    srcs = [
+        "fused_layer_norm/fused_layer_normalize_ops.cc",
+    ],
+    hdrs = [
+        "fused_layer_norm/compile_util.h",
+        "fused_layer_norm/ln_util.h",
+        ],
+    deps = ["//third_party/eigen3"] + DYNAMIC_DEPS,
+)
+
+tf_cc_test(
+    name = "fused_layer_normalize_ops_test",
+    size = "small",
+    srcs = [
+        "fused_layer_norm/fused_layer_normalize_ops_test.cc",
+    ],
+    deps = [
+        ":fused_layer_normalize_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_kernel_library(
     name = "reduction_ops",
     gpu_srcs = ["reduction_gpu_kernels.cu.h"],
     prefix = "reduction_ops",
