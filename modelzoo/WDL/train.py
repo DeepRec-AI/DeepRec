@@ -315,6 +315,7 @@ def build_model_input(filename, batch_size, num_epochs):
         files = filename
     # Extract lines from input files using the Dataset API.
     # dataset = tf.data.TextLineDataset(files)
+
     import pandas as pd
     import numpy as np
     df = pd.read_csv(files, header=None, names=TRAIN_DATA_COLUMNS)
@@ -328,8 +329,10 @@ def build_model_input(filename, batch_size, num_epochs):
     import hashlib
     for col in CATEGORICAL_COLUMNS:
         df[col] = df[col].apply(lambda x: int(hashlib.md5(str(x).encode('utf_8')).hexdigest(), 16) % 10000)
+        output_types[col] = tf.int32
         features[col] = df[col].to_numpy().astype(np.int32)
-        output_types[col] = tf.string
+        # features[col] = df[col].to_numpy()
+        # output_types[col] = tf.string
     labels = df[LABEL_COLUMN[0]].to_numpy().astype(np.int32)
     print(df.head(5))
     dataset = tf.data.Dataset.from_tensor_slices((features, labels))
@@ -349,7 +352,7 @@ def build_model_input(filename, batch_size, num_epochs):
     dataset = dataset.shuffle(buffer_size=20000,
                               seed=args.seed)  # fix seed for reproducing
     dataset = dataset.repeat(num_epochs)
-    # dataset = dataset.prefetch(batch_size)
+    dataset = dataset.prefetch(batch_size)
     dataset = dataset.batch(batch_size)
     # dataset = dataset.map(parse_csv, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
