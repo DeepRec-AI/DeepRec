@@ -8469,10 +8469,27 @@ tf_mkl_kernel_library(
 tf_mkl_kernel_library(
     name = "mkl_layer_norm_op",
     srcs = ["mkl_layer_norm_op.cc"],
+    deps = MATH_DEPS + mkl_deps(),
+)
+
+tf_cc_test_mkl(
+    name = "mkl_layer_norm_op_test",
+    srcs = ["mkl_layer_norm_op_test.cc"],
     deps = [
-        "//tensorflow/core:nn_ops_op_lib",
-        "//tensorflow/core:mkl_nn_ops_op_lib",
-    ] + MKL_DEPS,
+        ":mkl_layer_norm_op",
+        ":fused_layer_normalize_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_cc_test_mkl(

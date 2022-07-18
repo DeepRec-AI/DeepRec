@@ -128,7 +128,7 @@ class FusedLayerNormOp : public OpKernel {
           // for (; i < end_row; ++i) {
           //   forward_avx512<1>(input, gamma, beta, output, mean, rvariance, cols, i);
           // }
-          printf("[INFO] AVX512 OP.\n");
+          // printf("[INFO] AVX512 OP.\n");
           forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
 #else
           forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row);
@@ -216,7 +216,7 @@ class FusedLayerNormOp : public OpKernel {
     const float one_over_cols = 1.0f / cols;
     int64 remainder = cols & 0x0F;
     __mmask16 mask = 0xFFFF >> (16 - remainder);
-    printf("cols: %d, remainder: %d\n", cols, remainder);
+    // printf("cols: %d, remainder: %d\n", cols, remainder);
 
     const float* px = input + begin_row * cols;
     float* py = output + begin_row * cols;
