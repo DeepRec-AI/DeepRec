@@ -111,7 +111,7 @@ Status ConcatCastFusing::Optimize(Cluster* cluster, const GrapplerItem& item,
 
             NodeDef fused_op;
             fused_op.set_name(cast.name());
-            fused_op.set_op("_FusedConcatCast");
+            fused_op.set_op("FusedConcatCast");
             fused_op.set_device(concat.device());
             for (size_t j = 0; j < concat_num_inputs - 1; ++j)
                 fused_op.add_input(concat.input(j));  // inputs

@@ -1,5 +1,5 @@
 op {
-  graph_op_name: "_FusedConcatCast"
+  graph_op_name: "FusedConcatCast"
   in_arg {
     name: "values"
     description: <<END

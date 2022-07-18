@@ -151,7 +151,7 @@ class ConcatCastFusingTest :
         axis = Tensor((int32)ax);
         AddNode("axis", "Const", {}, {}, &ref_graph);
         input_names.push_back("axis");
-        AddNode("cast", "_FusedConcatCast", input_names, {}, &ref_graph);
+        AddNode("cast", "FusedConcatCast", input_names, {}, &ref_graph);
         want = ref_graph;
     }
 
@@ -369,7 +369,7 @@ static Graph* ConcatCastFusion(bool if_fused, int num_inputs,
 
     if (if_fused) {
         Node* concat_cast;
-        TF_CHECK_OK(NodeBuilder(g->NewName("concatcast"), "_FusedConcatCast")
+        TF_CHECK_OK(NodeBuilder(g->NewName("concatcast"), "FusedConcatCast")
                       .Input(inputs)
                       .Input(test::graph::Constant(g, concat_dim))
                       .Attr("N", num_inputs)

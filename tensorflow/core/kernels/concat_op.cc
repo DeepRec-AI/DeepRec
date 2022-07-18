@@ -587,7 +587,7 @@ class FusedConcatCastOp : public OpKernel {
 
 
 #define REGISTER_CONCATCAST(src_type, dst_type)                 \
-  REGISTER_KERNEL_BUILDER(Name("_FusedConcatCast")              \
+  REGISTER_KERNEL_BUILDER(Name("FusedConcatCast")               \
                               .Device(DEVICE_CPU)               \
                               .TypeConstraint<src_type>("SrcT") \
                               .TypeConstraint<dst_type>("DstT") \

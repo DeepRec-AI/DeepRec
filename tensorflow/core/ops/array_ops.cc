@@ -588,7 +588,7 @@ REGISTER_OP("ConcatOffset")
       return Status::OK();
     });
 
-REGISTER_OP("_FusedConcatCast")
+REGISTER_OP("FusedConcatCast")
     .Input("values: N * SrcT")
     .Input("axis: Tidx")
     .Output("output: DstT")
@@ -599,11 +599,7 @@ REGISTER_OP("_FusedConcatCast")
     .Attr("DstT: type")
     .Attr("Truncate: bool = false")
     // ---------------------------------------------------------------------- //
-    .SetShapeFn(shape_inference::ConcatV2Shape)
-    .Doc(R"doc(
-*NOTE*: Do not invoke this operator directly in Python. Grappler is
-expected to create these operators.
-)doc");
+    .SetShapeFn(shape_inference::ConcatV2Shape);
 
 // --------------------------------------------------------------------------
 REGISTER_OP("Split")
