@@ -760,6 +760,108 @@ struct SparseApplyAdam<GPUDevice, T, Tindex> {
   }
 };
 
+template <typename T>
+__global__ __launch_bounds__(1024)
+void ApplyFtrlV2Kernel(T *var, T *accum, T *linear, const T *grad, const T lr, const T l1,
+		       const T l2, const T l2_shrinkage, const T lr_power, const int64 grad_size) {
+  GPU_1D_KERNEL_LOOP(grad_index, grad_size) {
+    auto grad_with_shrinkage = grad[grad_index]  +
+      static_cast<T>(2)*l2_shrinkage*var[grad_index];
+    auto new_accum = accum[grad_index] + grad[grad_index]*grad[grad_index];
+    // special case for which lr_power=-0.5
+    if (lr == static_cast<T>(-0.5)) {
+      linear[grad_index] += grad_with_shrinkage -
+	(sqrt(new_accum) - sqrt(accum[grad_index])) / lr * var[grad_index];
+    } else {
+      linear[grad_index] += grad_with_shrinkage -
+	(pow(new_accum, -lr_power) - pow(accum[grad_index], -lr_power)) / lr * var[grad_index];
+    }
+    T sign = linear[grad_index] < static_cast<T>(0) ? static_cast<T>(-1) : static_cast<T>(1);
+    auto x = l1*sign - linear[grad_index];
+    if (lr_power == static_cast<T>(-0.5)) {
+      auto y = sqrt(new_accum) / lr + static_cast<T>(2)*l2;
+      auto pre_shrink = x / y;
+      var[grad_index] = (linear[grad_index] > l1 || linear[grad_index] < -l1) ?
+	pre_shrink : static_cast<T>(0);
+    } else {
+      auto y = pow(new_accum, -lr_power) / lr + static_cast<T>(2)*l2;
+      auto pre_shrink = x / y;
+      var[grad_index] = (linear[grad_index] > l1 || linear[grad_index] < -l1) ?
+	pre_shrink : static_cast<T>(0);
+    }
+
+    accum[grad_index] += grad[grad_index]*grad[grad_index];
+  }
+}
+  
+template <typename T>
+struct ApplyFtrlV2<GPUDevice, T> {
+  void operator()(const GPUDevice& d, typename TTypes<T>::Flat var,
+                  typename TTypes<T>::Flat accum,
+                  typename TTypes<T>::Flat linear,
+                  typename TTypes<T>::ConstFlat grad,
+                  typename TTypes<T>::ConstScalar lr,
+                  typename TTypes<T>::ConstScalar l1,
+                  typename TTypes<T>::ConstScalar l2,
+                  typename TTypes<T>::ConstScalar l2_shrinkage,
+                  typename TTypes<T>::ConstScalar lr_power) {
+    int64 grad_size = grad.size();
+    GpuLaunchConfig config = GetGpuLaunchConfig(grad_size, d);
+    GpuLaunchKernel(ApplyFtrlV2Kernel<T>, config.block_count, config.thread_per_block,
+		    0, d.stream(), var.data(), accum.data(), linear.data(),
+		    grad.data(), lr(), l1(), l2(), l2_shrinkage(), lr_power(), grad_size);
+  }
+};
+
+template <typename T>
+__global__ __launch_bounds__(1024)  
+void ApplyFtrlKernel(T *var, T *accum, T *linear, const T *grad, const T lr, const T l1,
+		     const T l2, const T lr_power, const int64 grad_size) {
+  GPU_1D_KERNEL_LOOP(grad_index, grad_size) {
+    auto new_accum = accum[grad_index] + grad[grad_index]*grad[grad_index];
+    // special case for which lr_power=-0.5
+    if (lr_power == static_cast<T>(-0.5)) {
+      linear[grad_index] += grad[grad_index] -
+	(sqrt(new_accum) - sqrt(accum[grad_index])) / lr * var[grad_index];
+    } else {
+      linear[grad_index] += grad[grad_index] -
+	(pow(new_accum, -lr_power) - pow(accum[grad_index], -lr_power)) / lr * var[grad_index];
+    }
+    T sign = linear[grad_index] < static_cast<T>(0) ? static_cast<T>(-1) : static_cast<T>(1);
+    auto x = l1*sign - linear[grad_index];
+    if (lr_power == static_cast<T>(-0.5)) {
+      auto y = sqrt(new_accum) / lr + static_cast<T>(2)*l2;
+      auto pre_shrink = x / y;
+      var[grad_index] = (linear[grad_index] > l1 || linear[grad_index] < -l1) ?
+	pre_shrink : static_cast<T>(0);
+    } else {
+      auto y = pow(new_accum, -lr_power) / lr + static_cast<T>(2)*l2;
+      auto pre_shrink = x / y;
+      var[grad_index] = (linear[grad_index] > l1 || linear[grad_index] < -l1) ?
+	pre_shrink : static_cast<T>(0);
+    }
+    accum[grad_index] += grad[grad_index]*grad[grad_index];
+  }
+}
+
+template <typename T>
+struct ApplyFtrl<GPUDevice, T> {
+  void operator()(const GPUDevice& d, typename TTypes<T>::Flat var,
+                  typename TTypes<T>::Flat accum,
+                  typename TTypes<T>::Flat linear,
+                  typename TTypes<T>::ConstFlat grad,
+                  typename TTypes<T>::ConstScalar lr,
+                  typename TTypes<T>::ConstScalar l1,
+                  typename TTypes<T>::ConstScalar l2,
+                  typename TTypes<T>::ConstScalar lr_power) {
+    int64 grad_size = grad.size();
+    GpuLaunchConfig config = GetGpuLaunchConfig(grad_size, d);
+    GpuLaunchKernel(ApplyFtrlKernel<T>, config.block_count, config.thread_per_block,
+		    0, d.stream(), var.data(), accum.data(), linear.data(),
+		    grad.data(), lr(), l1(), l2(), lr_power(), grad_size);
+  }
+};
+
 }  // namespace functor
 
 template struct functor::ApplyGradientDescent<GPUDevice, Eigen::half>;
@@ -863,6 +965,15 @@ EXPLICITLY_INSTANTIATE_FUNCTOR(Eigen::half);
 EXPLICITLY_INSTANTIATE_FUNCTOR(float);
 EXPLICITLY_INSTANTIATE_FUNCTOR(double);
 #undef EXPLICITLY_INSTANTIATE_FUNCTOR
+
+#define EXPLICITLY_INSTANTIATE_FUNCTOR(T)		\
+  template struct functor::ApplyFtrl<GPUDevice, T>;	\
+  template struct functor::ApplyFtrlV2<GPUDevice, T>;
+  EXPLICITLY_INSTANTIATE_FUNCTOR(Eigen::half);
+  EXPLICITLY_INSTANTIATE_FUNCTOR(float);
+  EXPLICITLY_INSTANTIATE_FUNCTOR(double);
+#undef EXPLICITLY_INSTANTIATE_FUNCTOR
+  
 }  // end namespace tensorflow
 
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
