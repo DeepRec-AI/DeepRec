@@ -588,6 +588,19 @@ REGISTER_OP("ConcatOffset")
       return Status::OK();
     });
 
+REGISTER_OP("FusedConcatCast")
+    .Input("values: N * SrcT")
+    .Input("axis: Tidx")
+    .Output("output: DstT")
+    .Attr("N: int >= 2")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    // Attributes for the Cast ------------------------------------ //
+    .Attr("SrcT: type")
+    .Attr("DstT: type")
+    .Attr("Truncate: bool = false")
+    // ---------------------------------------------------------------------- //
+    .SetShapeFn(shape_inference::ConcatV2Shape);
+
 // --------------------------------------------------------------------------
 REGISTER_OP("Split")
     .Input("split_dim: int32")
