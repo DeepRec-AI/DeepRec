@@ -383,36 +383,37 @@ class IncrSaveRestoreTest(test_util.TensorFlowTestCase):
           self.assertAlmostEqual(1.8211145, sess.run(emb, feed_dict={"ids:0": i})[j], delta=1e-05)
 
   def testIncrementalRestoreNormalFlushPartitionedVariableWithNormalVariable(self):
-    ev_var = variable_scope.get_embedding_variable("ev_a", embedding_dim=4,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-    sparse_var = variable_scope.get_variable("sparse_var", shape=[30,4],
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-    dense_var = variable_scope.get_variable("dense_var", shape=[30,4],
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    with ops.device("/device:CPU:0"):
+      ev_var = variable_scope.get_embedding_variable("ev_a", embedding_dim=4,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+      sparse_var = variable_scope.get_variable("sparse_var", shape=[30,4],
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+      dense_var = variable_scope.get_variable("dense_var", shape=[30,4],
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
 
-    ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
-    emb = embedding_ops.embedding_lookup(sparse_var, ids)
-    emb2 = embedding_ops.embedding_lookup(ev_var, ids)
-    emb = (emb + emb2)
-    fun = math_ops.multiply(emb, 2.0, name='multiply')
-    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
+      emb = embedding_ops.embedding_lookup(sparse_var, ids)
+      emb2 = embedding_ops.embedding_lookup(ev_var, ids)
+      emb = (emb + emb2)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
 
-    gs = training_util.get_or_create_global_step()
+      gs = training_util.get_or_create_global_step()
 
-    opt=adagrad.AdagradOptimizer(0.1, initial_accumulator_value=1)
-    g_v = opt.compute_gradients(loss)
-    train_op = opt.apply_gradients(g_v, global_step=gs)
+      opt=adagrad.AdagradOptimizer(0.1, initial_accumulator_value=1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v, global_step=gs)
 
-    path = os.path.join(self.get_temp_dir(), "model.ckpt")
-    incr_path = os.path.join(self.get_temp_dir(), ".incr/model.ckpt")
-    saver=saver_module.Saver(sharded=True, incremental_save_restore=True, incremental_include_normal_var=True)
-    incr_saver=incr_saver_module.IncrementalSaver(sharded=True, saver_def=saver.saver_def, defer_build=True, incremental_include_normal_var=True)
-    incr_saver.build(saver._builder.filename_tensor)
+      path = os.path.join(self.get_temp_dir(), "model.ckpt")
+      incr_path = os.path.join(self.get_temp_dir(), ".incr/model.ckpt")
+      saver=saver_module.Saver(sharded=True, incremental_save_restore=True, incremental_include_normal_var=True)
+      incr_saver=incr_saver_module.IncrementalSaver(sharded=True, saver_def=saver.saver_def, defer_build=True, incremental_include_normal_var=True)
+      incr_saver.build(saver._builder.filename_tensor)
 
-    init = variables.global_variables_initializer()
+      init = variables.global_variables_initializer()
     with self.test_session() as sess:
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
       sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
