@@ -1,0 +1,45 @@
+op {
+  graph_op_name: "FusedConcatCast"
+  in_arg {
+    name: "values"
+    description: <<END
+The `N` Tensors in `SrcT` datatype to concatenate and cast. Their ranks must match,
+and their sizes must match in all dimensions except `axis`.
+END
+  }
+  in_arg {
+    name: "axis"
+    description: <<END
+0-D.  The dimension along which to concatenate. Must be in the
+range [-rank(values), rank(values)).
+END
+  }
+  out_arg {
+    name: "output"
+    description: <<END
+A `Tensor` with the concatenation of values stacked along the
+`concat_dim` dimension. The tensor's datatype must equal `DstT`.
+This tensor's shape matches that of `values` except in `concat_dim`
+where it has the sum of the sizes.
+END
+  }
+  attr {
+    name: "N"
+    description: <<END
+0-D The number of Tensors that will be concatenated and casted.
+END
+  }
+  attr {
+    name: "SrcT"
+    description: <<END
+Source datatype from which the tensors will be casted.
+END
+  }
+  attr {
+    name: "DstT"
+    description: <<END
+Destination datatype to which the tensors will be casted.
+END
+  }
+  summary: "Concatenates tensors along one dimension and cast the values from SrcT to DstT."
+}

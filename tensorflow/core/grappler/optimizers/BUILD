@@ -591,6 +591,7 @@ cc_library(
         ":arithmetic_optimizer",
         ":auto_mixed_precision",
         ":auto_parallel",
+        ":concat_cast_fusing",
         ":constant_folding",
         ":custom_graph_optimizer_registry",
         ":debug_stripper",
@@ -1179,5 +1180,31 @@ tf_cc_test(
         "//tensorflow/core:test_main",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "concat_cast_fusing",
+    srcs = ["concat_cast_fusing.cc"],
+    hdrs = ["concat_cast_fusing.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":graph_optimizer",
+        "//tensorflow/core/grappler/costs:graph_properties",
+        "//tensorflow/core/grappler/utils:graph_view",
+    ],
+)
+
+tf_cc_test(
+    name = "concat_cast_fusing_test",
+    srcs = ["concat_cast_fusing_test.cc"],
+    deps = [
+        ":concat_cast_fusing",
+        "//tensorflow/cc:array_ops_internal",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:client_session",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//tensorflow/core/grappler/utils:grappler_test",
     ],
 )

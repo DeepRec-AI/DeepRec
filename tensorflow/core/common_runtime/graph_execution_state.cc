@@ -681,6 +681,17 @@ Status GraphExecutionState::SmartStageGraph(std::unique_ptr<Graph>* g,
                    target_nodes, do_smart_stage_gpu, cpu_device_name);
       }
     }
+
+    // place TensorBufferCancel op and TensorBufferClose on CPU
+    // when enable optimization for smartstage on GPU.
+    if (do_smart_stage_gpu) {
+      for (Node *n : staged_graph.get()->op_nodes()) {
+	if (n->type_string() == "TensorBufferCancel" ||
+	    n->type_string() == "TensorBufferClose") {
+	  n->set_assigned_device_name(cpu_device_name);
+	}
+      }
+    }
     g->swap(staged_graph);
     return Status::OK();
 }

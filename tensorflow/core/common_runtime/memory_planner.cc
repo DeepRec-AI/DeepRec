@@ -94,10 +94,11 @@ void MemoryPlanner::StartCollect() {
 }
 
 void MemoryPlanner::StopCollect() {
-  if (is_stats_) {
+  bool tmp = true;
+  // stop collecting stat when generating policy
+  // and avoid multiple threads entering
+  if (is_stats_.compare_exchange_strong(tmp, false)) {
     Schedule([this]() {
-      // stop collecting stat when generating policy
-      is_stats_ = false;
       ++current_stat_step_;
       bool stable = true;
       for (auto policy : lifetime_stats_polices_) {
@@ -122,12 +123,10 @@ void MemoryPlanner::StopCollect() {
 }
 
 void MemoryPlanner::CollectDone() {
-  Schedule([this]() {
-    if (allocator_ != nullptr) {
-      allocator_->Init();
-    }
-    Cleanup();
-  });
+  if (allocator_ != nullptr) {
+    allocator_->Init();
+  }
+  Cleanup();
 }
 
 void MemoryPlanner::Cleanup() {
