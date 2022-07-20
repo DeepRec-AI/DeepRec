@@ -10,8 +10,8 @@ def run_models():
     models_dir = '/tianchi/models/'
     models_name = ['DIEN', 'DIN', 'DLRM', 'DeepFM', 'MMoE', 'WDL']
     model_standard_auc =  {
-                  'DIEN': 0.748,
-                  'DIN': 0.712,
+                  'DIEN': 0.745,
+                  'DIN': 0.707,
                   'DLRM': 0,
                   'DeepFM': 0,
                   'MMoE': 0.753,
@@ -27,7 +27,7 @@ def run_models():
     model_total_speed = 0
     model_scores = {}
     is_valid = True
-    # �~]次�~I��~L�~P~D个模�~^~K
+    # 依次执行各个模型
     for model in models_name:
         model_path = models_dir + model
         os.system('cd '+model_path+'; python train.py --steps '+str(model_steps[model]))
