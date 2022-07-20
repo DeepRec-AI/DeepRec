@@ -19,6 +19,7 @@ limitations under the License.
 #include <atomic>
 #include <string>
 #include <vector>
+#include <mutex>
 
 #include "tensorflow/core/framework/device_attributes.pb.h"
 #include "tensorflow/core/framework/graph.pb.h"
@@ -381,6 +382,7 @@ class SessionGroup {
   std::vector<std::unique_ptr<Session>> sessions_;
   int32_t session_num_ = 0;
   std::atomic<int64_t> serving_index_{0};
+  std::mutex serving_routing_mtx_;
   ResourceMgr* shared_resource_mgr_ = nullptr;
 
   Status GetServingSessionId(int32_t* serving_id, int32_t hint_id = -1) {
@@ -392,6 +394,7 @@ class SessionGroup {
       if (hint_id >= 0) {
         *serving_id = hint_id % session_num_;
       } else {
+        std::lock_guard<std::mutex> guard(serving_routing_mtx_);
         *serving_id = serving_index_.fetch_add(1);
         *serving_id %= session_num_;
       }
