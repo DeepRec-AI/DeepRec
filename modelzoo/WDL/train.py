@@ -314,12 +314,47 @@ def build_model_input(filename, batch_size, num_epochs):
     else:
         files = filename
     # Extract lines from input files using the Dataset API.
-    dataset = tf.data.TextLineDataset(files)
+    # dataset = tf.data.TextLineDataset(files)
+
+    import pandas as pd
+    import numpy as np
+    df = pd.read_csv(files, header=None, names=TRAIN_DATA_COLUMNS)
+    df[CONTINUOUS_COLUMNS] = df[CONTINUOUS_COLUMNS].fillna(0.0)
+    df[CATEGORICAL_COLUMNS] = df[CATEGORICAL_COLUMNS].fillna(' ')
+    features = collections.OrderedDict()
+    output_types = collections.OrderedDict()
+    for col in CONTINUOUS_COLUMNS:
+        features[col] = df[col].to_numpy().astype(np.float32)
+        output_types[col] = tf.float32
+    import hashlib
+    for col in CATEGORICAL_COLUMNS:
+        df[col] = df[col].apply(lambda x: int(hashlib.md5(str(x).encode('utf_8')).hexdigest(), 16) % 10000)
+        output_types[col] = tf.int32
+        features[col] = df[col].to_numpy().astype(np.int32)
+        # features[col] = df[col].to_numpy()
+        # output_types[col] = tf.string
+    labels = df[LABEL_COLUMN[0]].to_numpy().astype(np.int32)
+    print(df.head(5))
+    dataset = tf.data.Dataset.from_tensor_slices((features, labels))
+
+    # def get_item():
+    #     i = 0
+    #     size = len(labels)
+    #     while i < size:
+    #         single_features = collections.OrderedDict()
+    #         for k, v in features.items():
+    #             single_features[k] = v[i]
+    #         single_label = labels[i]
+    #         yield single_features, single_label
+    #         i += 1
+    #
+    # dataset = tf.data.Dataset.from_generator(get_item, output_types=(output_types, tf.int32))
     dataset = dataset.shuffle(buffer_size=20000,
                               seed=args.seed)  # fix seed for reproducing
     dataset = dataset.repeat(num_epochs)
+    dataset = dataset.prefetch(batch_size)
     dataset = dataset.batch(batch_size)
-    dataset = dataset.map(parse_csv, num_parallel_calls=28)
+    # dataset = dataset.map(parse_csv, num_parallel_calls=28)
     dataset = dataset.prefetch(2)
     return dataset
 
@@ -345,8 +380,10 @@ def build_feature_columns():
     wide_columns = []
     for column_name in FEATURE_COLUMNS:
         if column_name in CATEGORICAL_COLUMNS:
-            categorical_column = tf.feature_column.categorical_column_with_hash_bucket(
-                column_name, hash_bucket_size=10000, dtype=tf.string)
+            # categorical_column = tf.feature_column.categorical_column_with_hash_bucket(
+            #     column_name, hash_bucket_size=10000, dtype=tf.string)
+            categorical_column = tf.feature_column.categorical_column_with_identity(
+                column_name, num_buckets=10000)
             wide_columns.append(categorical_column)
 
             if not args.tf:
@@ -465,6 +502,8 @@ def train(sess_config,
         print("Please see the comments in the code.")
         sys.exit()
 
+    print("Start creating session......")
+    session_start = time.time()
     with tf.train.MonitoredTrainingSession(
             master=server.target if server else '',
             is_chief=tf_config['is_chief'] if tf_config else True,
@@ -475,6 +514,8 @@ def train(sess_config,
             summary_dir=checkpoint_dir,
             save_summaries_steps=args.save_steps,
             config=sess_config) as sess:
+        session_end = time.time()
+        print("Session creation time: ", session_end - session_start)
         while not sess.should_stop():
             sess.run([model.loss, model.train_op])
     print("Training completed.")
@@ -510,7 +551,7 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
 def main(tf_config=None, server=None):
     # check dataset and count data set size
     print("Checking dataset...")
-    train_file = args.data_location + '/train.csv'
+    train_file = args.data_location + '/eval.csv'
     test_file = args.data_location + '/eval.csv'
     if (not os.path.exists(train_file)) or (not os.path.exists(test_file)):
         print("Dataset does not exist in the given data_location.")
