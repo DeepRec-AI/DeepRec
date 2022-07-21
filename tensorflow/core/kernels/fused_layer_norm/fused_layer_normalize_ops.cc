@@ -1,5 +1,5 @@
 #include "compile_util.h"
-#include "ln_util.h"
+// #include "ln_util.h"
 
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/resource_mgr.h"
@@ -297,7 +297,7 @@ class FusedLayerNormOp : public OpKernel {
           inputs = _mm512_maskz_mul_ps(mask, inputs, nums);
           // Add beta
           nums = _mm512_maskz_loadu_ps(mask, beta + cols - remainder_16);
-          inputs = _mm512_maskz_mul_ps(mask, inputs, nums);
+          inputs = _mm512_maskz_add_ps(mask, inputs, nums);
 
           // Store
           _mm512_mask_storeu_ps(output + cols * i + cols - remainder_16, mask, inputs);

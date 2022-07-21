@@ -4167,7 +4167,6 @@ tf_kernel_library(
     ],
     hdrs = [
         "fused_layer_norm/compile_util.h",
-        "fused_layer_norm/ln_util.h",
         ],
     deps = ["//third_party/eigen3"] + DYNAMIC_DEPS,
 )
