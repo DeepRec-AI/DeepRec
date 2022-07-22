@@ -8466,7 +8466,7 @@ tf_mkl_kernel_library(
 )
 
 tf_mkl_kernel_library(
-    name = "mkl_layer_norm_op",
+    name = "mkl_layer_norm_ops",
     srcs = ["mkl_layer_norm_op.cc"],
     deps = MATH_DEPS + mkl_deps(),
 )
@@ -8475,7 +8475,7 @@ tf_cc_test_mkl(
     name = "mkl_layer_norm_op_test",
     srcs = ["mkl_layer_norm_op_test.cc"],
     deps = [
-        ":mkl_layer_norm_op",
+        ":mkl_layer_norm_ops",
         ":fused_layer_normalize_ops",
         ":ops_testutil",
         ":ops_util",

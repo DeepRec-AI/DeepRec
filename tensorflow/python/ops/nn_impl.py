@@ -36,12 +36,17 @@ from tensorflow.python.ops import linalg_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import gen_fused_l2_normalize_ops
+from tensorflow.python.ops import fused_layer_normalize_ops_gen
+from tensorflow.python.ops import mkl_layer_norm_ops_gen
 from tensorflow.python.ops import gen_sparse_ops
+from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import variables
+from tensorflow.python.ops import variables_scope
 from tensorflow.python.ops.losses import util as losses_util
 from tensorflow.python.util.deprecation import deprecated_args
 from tensorflow.python.util.deprecation import deprecated_argument_lookup
 from tensorflow.python.util.tf_export import tf_export
+from tensorflow.contrib.layers.python.layers import layers
 
 
 @tf_export("nn.log_poisson_loss")
@@ -673,6 +678,73 @@ def fused_l2_normalize(x, epsilon=1e-12, name=None):
     x = ops.convert_to_tensor(x, name="x")
     return gen_fused_l2_normalize_ops.fused_l2_normalize(x, 
               epsilon=epsilon, name=name)
+
+@tf_export("fused_layer_normalize")
+def fused_layer_normalize(
+      x,
+      center=True,
+      scale=True,
+      epsilon=1e-8,
+      name=None,
+      fusion=True,
+      type='default'):
+  """Layer Normalizes over last dimension.
+
+  Args:
+    x: A tensor having rank `R`. The normalization is performed over last axis
+      and centering and scaling parameters are calculated over `begin_params_axis ... R - 1`.
+    center: If True, add offset of `beta` to normalized tensor. If False, `beta`
+      is ignored.
+    scale: If True, multiply by `gamma`. If False, `gamma` is not used. When the
+      next layer is linear (also e.g. `nn.relu`), this can be disabled since the
+      scaling can be done by the next layer.
+    epsilon: A lower bound value for the norm. Will use `sqrt(epsilon)` as the
+      divisor if `norm < sqrt(epsilon)`.
+    name: A name for this operation (optional).
+
+  Returns:
+    A `Tensor` with the same shape as `x`.
+  """
+  if fusion:
+    if type not in ['default', 'mkl', 'bn']:
+      raise ValueError("Fusion tpye error.")
+
+  with ops.name_scope(name, "fused_layer_normalize", [x]) as name:
+    x = ops.convert_to_tensor(x, name="x")
+    
+    if not fusion or type == 'bn':
+      if center:
+        beta = variables_scope.get_variable(
+                name='beta',
+                shape=x.get_shape()[1],
+                dtype=dtypes.float32,
+                initializer=init_ops.zeros_initializer(),
+                trainable=True)
+      else:
+        beta = array_ops.zeros(x.get_shape()[1], dtype=dtypes.float32);
+      if scale:
+        gamma = variables_scope.get_variable(
+                name='gamma',
+                shape=x.get_shape()[1],
+                dtype=dtypes.float32,
+                initializer=init_ops.ones_initializer(),
+                trainable=True)
+      else:
+        gamma = array_ops.ones(x.get_shape()[1], dtype=dtypes.float32);
+      
+    if fusion:
+      if type == 'default':
+        return fused_layer_normalize_ops_gen.fused_layer_normalize(
+                x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)
+      elif type == 'mkl':
+        return mkl_layer_norm_ops_gen.mkl_layer_norm(
+                x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)
+      elif type == 'bn':
+        return layers.layer_norm(x, use_fused_batch_norm=True)
+      else:
+        raise ValueError("Fusion tpye error!!!!!!")
+    else:
+      return layers.layer_norm(x)
 
 
 def _count_nonzero(input_tensor, dtype=dtypes.int64):

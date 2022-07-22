@@ -81,7 +81,7 @@ TEST_F(FusedLayerNormalizeOpTest, 2Dims_Float) {
     test::FillValues<float>(&expected_output, output_array);
     test::FillValues<float>(&mean, mean_array);
     test::FillValues<float>(&rvariance, rvariance_array);
-    test::ExpectTensorNear<float>(expected_output, *GetOutput(0), 1e-6);
+    test::ExpectTensorNear<float>(expected_output, *GetOutput(0), 1e-50);
     // test::ExpectTensorNear<float>(mean, *GetOutput(1), 1e-6);
     // test::ExpectTensorNear<float>(rvariance, *GetOutput(2), 1e-6);
   }
