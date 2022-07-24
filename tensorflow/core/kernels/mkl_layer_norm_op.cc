@@ -12,7 +12,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#define INTEL_MKL 1
 #ifdef INTEL_MKL
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"

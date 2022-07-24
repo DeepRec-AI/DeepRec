@@ -36,17 +36,15 @@ from tensorflow.python.ops import linalg_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import gen_fused_l2_normalize_ops
-from tensorflow.python.ops import fused_layer_normalize_ops_gen
-from tensorflow.python.ops import mkl_layer_norm_ops_gen
 from tensorflow.python.ops import gen_sparse_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import variables
-from tensorflow.python.ops import variables_scope
+from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops.losses import util as losses_util
 from tensorflow.python.util.deprecation import deprecated_args
 from tensorflow.python.util.deprecation import deprecated_argument_lookup
 from tensorflow.python.util.tf_export import tf_export
-from tensorflow.contrib.layers.python.layers import layers
+# from tensorflow.contrib.layers.python.layers import layers
 
 
 @tf_export("nn.log_poisson_loss")
@@ -714,7 +712,7 @@ def fused_layer_normalize(
     
     if not fusion or type == 'bn':
       if center:
-        beta = variables_scope.get_variable(
+        beta = variable_scope.get_variable(
                 name='beta',
                 shape=x.get_shape()[1],
                 dtype=dtypes.float32,
@@ -722,29 +720,30 @@ def fused_layer_normalize(
                 trainable=True)
       else:
         beta = array_ops.zeros(x.get_shape()[1], dtype=dtypes.float32);
-      if scale:
-        gamma = variables_scope.get_variable(
-                name='gamma',
-                shape=x.get_shape()[1],
-                dtype=dtypes.float32,
-                initializer=init_ops.ones_initializer(),
-                trainable=True)
-      else:
-        gamma = array_ops.ones(x.get_shape()[1], dtype=dtypes.float32);
-      
+
+    if scale:
+      gamma = variable_scope.get_variable(
+              name='gamma',
+              shape=x.get_shape()[1],
+              dtype=dtypes.float32,
+              initializer=init_ops.ones_initializer(),
+              trainable=True)
+    else:
+      gamma = array_ops.ones(x.get_shape()[1], dtype=dtypes.float32);
+
     if fusion:
       if type == 'default':
-        return fused_layer_normalize_ops_gen.fused_layer_normalize(
+        return gen_nn_ops.fused_layer_norm(
                 x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)
-      elif type == 'mkl':
-        return mkl_layer_norm_ops_gen.mkl_layer_norm(
-                x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)
-      elif type == 'bn':
-        return layers.layer_norm(x, use_fused_batch_norm=True)
+      # elif type == 'mkl':
+      #   return mkl_layer_norm_ops_gen.mkl_layer_norm(
+      #           x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)
+      # elif type == 'bn':
+      #   return layers.layer_norm(x, use_fused_batch_norm=True)
       else:
         raise ValueError("Fusion tpye error!!!!!!")
-    else:
-      return layers.layer_norm(x)
+    # else:
+    #   return layers.layer_norm(x)
 
 
 def _count_nonzero(input_tensor, dtype=dtypes.int64):

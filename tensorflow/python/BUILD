@@ -2126,26 +2126,6 @@ tf_gen_op_wrapper_private_py(
 )
 
 tf_gen_op_wrapper_private_py(
-    name = "fused_layer_normalize_ops_gen",
-    visibility = [
-        "//tensorflow:__subpackages__",
-    ],
-    deps = [
-        "//tensorflow/core:fused_layer_normalize_ops_op_lib"
-    ]
-)
-
-tf_gen_op_wrapper_private_py(
-    name = "mkl_layer_norm_ops_gen",
-    visibility = [
-        "//tensorflow:__subpackages__",
-    ],
-    deps = [
-        "//tensorflow/core:mkl_layer_norm_ops_op_lib"
-    ]
-)
-
-tf_gen_op_wrapper_private_py(
     name = "image_ops_gen",
     visibility = ["//learning/brain/python/ops:__pkg__"],
 )
@@ -3566,9 +3546,7 @@ py_library(
         ":sparse_ops",
         ":util",
         ":variables",
-        ":fused_l2_normalize_ops_gen",
-        ":fused_layer_normalize_ops_gen",
-        ":mkl_layer_norm_ops_gen",
+        ":fused_l2_normalize_ops_gen"
     ],
 )
 
@@ -3587,7 +3565,6 @@ py_library(
         ":tensor_util",
         "//tensorflow/python/eager:context",
         ":fused_l2_normalize_ops_gen",
-        ":fused_layer_normalize_ops_gen",
     ],
 )
 

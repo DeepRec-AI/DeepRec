@@ -28,7 +28,6 @@ from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import gen_fused_l2_normalize_ops
-from tensorflow.python.ops import fused_layer_normalize_ops_gen
 
 
 @ops.RegisterGradient("Conv2DBackpropInput")
@@ -1191,5 +1190,5 @@ def _FusedLayerNormalizeGrad(op, grad):
   rvariance = op.outputs[2]
   gamma = op.inputs[1]
 
-  return gen_fused_l2_normalize_ops.fused_layer_normalize_grad(
+  return gen_nn_ops.fused_layer_normalize_grad(
     grad, x, mean, rvariance, gamma)
