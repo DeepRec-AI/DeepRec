@@ -215,6 +215,42 @@ class _ChromeTraceFormatter(object):
     event = self._create_event('t', 'DataFlow', name, pid, tid, timestamp)
     event['id'] = flow_id
     self._events.append(event)
+  
+  def emit_flow_type_start(self, flow_type, name, timestamp, pid, tid, flow_id):
+    """Adds a flow start event to the trace.
+
+    When matched with a flow end event (with the same 'flow_id') this will
+    cause the trace viewer to draw an arrow between the start and end events.
+
+    Args:
+      flow_type: The flow event type name as a string
+      name:  The event name as a string.
+      timestamp:  The timestamp of this event as a long integer.
+      pid:  Identifier of the process generating this event as an integer.
+      tid:  Identifier of the thread generating this event as an integer.
+      flow_id: Identifier of the flow as an integer.
+    """
+    event = self._create_event('s', flow_type, name, pid, tid, timestamp)
+    event['id'] = flow_id
+    self._events.append(event)  
+
+  def emit_flow_type_end(self, flow_type, name, timestamp, pid, tid, flow_id):
+    """Adds a flow end event to the trace.
+
+    When matched with a flow start event (with the same 'flow_id') this will
+    cause the trace viewer to draw an arrow between the start and end events.
+
+    Args:
+      flow_type: The flow event type name as a string
+      name:  The event name as a string.
+      timestamp:  The timestamp of this event as a long integer.
+      pid:  Identifier of the process generating this event as an integer.
+      tid:  Identifier of the thread generating this event as an integer.
+      flow_id: Identifier of the flow as an integer.
+    """
+    event = self._create_event('t', flow_type, name, pid, tid, timestamp)
+    event['id'] = flow_id
+    self._events.append(event)
 
   def emit_counter(self, category, name, pid, timestamp, counter, value):
     """Emits a record for a single counter.
@@ -413,7 +449,7 @@ class Timeline(object):
           lanes.append(ns.all_start_micros + ns.all_end_rel_micros)
         ns.thread_id = l
 
-  def _emit_op(self, nodestats, pid, is_gputrace):
+  def _emit_op(self, nodestats, pid, is_gputrace, is_hosttrace):
     """Generates a Chrome Trace event to show Op execution.
 
     Args:
@@ -421,21 +457,42 @@ class Timeline(object):
       pid: The pid assigned for the device where this op ran.
       is_gputrace: If True then this op came from the GPUTracer.
     """
+    kernel_name = None
     node_name = nodestats.node_name
     start = nodestats.all_start_micros
     duration = nodestats.all_end_rel_micros
     tid = nodestats.thread_id
     inputs = []
     if is_gputrace:
+      # Node names should always have the form 'name:op@@kernel_name'
+      fields = node_name.split('@@') + ["unknown"]
+      node_name, kernel_name = fields[:2]
       # Node names should always have the form 'name:op'.
-      fields = node_name.split(':') + ['unknown']
+      fields = node_name.split(':') + [kernel_name]
       node_name, op = fields[:2]
+    elif is_hosttrace:
+      # Node names should have the form 'name:op' or 'op'
+      if '::' in node_name:
+        fields = node_name.split('::')
+        node_name = fields[0].split(':')
+        if len(node_name)==1:
+          op = '::'.join(fields)
+          node_name = 'unknown'
+          kernel = op
+        else:
+          kernel = "::".join([node_name[-1]]+fields[1:])
+          node_name, op = node_name[:2]
+      else:
+        fields = node_name.split(':') + ['unknown']
+        node_name, op = fields[:2]
     elif node_name == 'RecvTensor':
       # RPC tracing does not use the standard timeline_label format.
       op = 'RecvTensor'
     else:
       _, op, inputs = self._parse_op_label(nodestats.timeline_label)
     args = {'name': node_name, 'op': op}
+    if kernel_name is not None:
+      args['kernel'] = kernel_name
     for i, iname in enumerate(inputs):
       args['input%d' % i] = iname
     self._chrome_trace.emit_region(start, duration, pid, tid, 'Op', op, args)
@@ -464,7 +521,13 @@ class Timeline(object):
 
   def _is_gputrace_device(self, device_name):
     """Returns true if this device is part of the GPUTracer logging."""
-    return '/stream:' in device_name or '/memcpy' in device_name
+    return '/stream:' in device_name or '/memcpy' in device_name or \
+           '/stream#' in device_name or 'stream:MemcpyHtoD' in device_name or \
+           'stream:MemcpyDtoH' in device_name
+
+  def _is_hosttrace_dvice(self, device_name):
+    """ Retruns true if this device is part of the HostTracer logging. """
+    return '/host:CPU' in device_name
 
   def _allocate_pids(self):
     """Allocate fake process ids for each device in the StepStats."""
@@ -518,12 +581,15 @@ class Timeline(object):
       device_name = dev_stats.device
       device_pid = self._device_pids[device_name]
       is_gputrace = self._is_gputrace_device(device_name)
+      is_hosttrace = self._is_hosttrace_dvice(device_name)
+      # The trace must not be hosttrace and gputrace simultaneously
+      assert not (is_gputrace and is_hosttrace)
 
       for node_stats in dev_stats.node_stats:
         tid = node_stats.thread_id
         start_time = node_stats.all_start_micros
         end_time = node_stats.all_start_micros + node_stats.all_end_rel_micros
-        self._emit_op(node_stats, device_pid, is_gputrace)
+        self._emit_op(node_stats, device_pid, is_gputrace, is_hosttrace)
 
         if is_gputrace or node_stats.node_name == 'RecvTensor':
           continue
@@ -556,6 +622,15 @@ class Timeline(object):
                                                    create_pid, create_tid,
                                                    flow_id)
                 self._chrome_trace.emit_flow_end(input_name, start_time,
+                                                 device_pid, tid, flow_id)
+              else:
+                flow_id = self._alloc_flow_id()
+                self._chrome_trace.emit_flow_type_start("Horizontal Dataflow",
+                                                   input_name, create_time,
+                                                   create_pid, create_tid,
+                                                   flow_id)
+                self._chrome_trace.emit_flow_type_end("Horizontal Dataflow",
+                                                 input_name, start_time,
                                                  device_pid, tid, flow_id)
           else:
             logging.vlog(1, 'Can\'t find tensor %s - removed by CSE?',
