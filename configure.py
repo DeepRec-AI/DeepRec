@@ -1586,7 +1586,7 @@ def main():
   print('Preconfigured Bazel build configs. You can use any of the below by '
         'adding "--config=<>" to your build command. See .bazelrc for more '
         'details.')
-  config_info_line('mkl', 'Build with MKL support.')
+  config_info_line('mkl_threadpool', 'Build with oneDNN support.')
   config_info_line('monolithic', 'Config for mostly static monolithic build.')
   config_info_line('gdr', 'Build with GDR support.')
   config_info_line('verbs', 'Build with libverbs support.')

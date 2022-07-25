@@ -1198,6 +1198,10 @@ cc_library(
 tf_cc_test(
     name = "concat_cast_fusing_test",
     srcs = ["concat_cast_fusing_test.cc"],
+    tags = [
+        "no_gpu",
+        "no_pip_gpu"
+    ],
     deps = [
         ":concat_cast_fusing",
         "//tensorflow/cc:array_ops_internal",

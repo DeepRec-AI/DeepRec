@@ -153,6 +153,10 @@ class ConcatCastFusingTest :
         input_names.push_back("axis");
         AddNode("cast", "FusedConcatCast", input_names, {}, &ref_graph);
         want = ref_graph;
+
+        for (auto& node : *want.mutable_node()) {
+            node.set_device("/cpu:0");
+        }
     }
 
     protected:
@@ -209,6 +213,10 @@ class ConcatCastFusingTestSimpleFusing : public ConcatCastFusingTest {
         item.fetch.push_back("cast");
         TF_CHECK_OK(s.ToGraphDef(&item.graph));
 
+        for (auto& node : *item.graph.mutable_node()) {
+            node.set_device("/cpu:0");
+        }
+
         ConcatCastFusing optimizer;
         GraphDef output;
         Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
@@ -248,6 +256,9 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
         GrapplerItem item;
         item.fetch.push_back("cast");
         TF_CHECK_OK(s.ToGraphDef(&item.graph));
+        for (auto& node : *item.graph.mutable_node()) {
+            node.set_device("/cpu:0");
+        }
         ConcatCastFusing optimizer;
         GraphDef output;
         Status status = optimizer.Optimize(/*cluster=*/nullptr, item, &output);
@@ -283,6 +294,10 @@ class ConcatCastFusingTestMultithreaded : public ConcatCastFusingTest {
         item_expected.fetch.push_back("expected_cast");
         TF_CHECK_OK(s.ToGraphDef(&item_expected.graph));
         std::vector<string> fetch = {"expected_cast"};
+
+        for (auto& node : *item_expected.graph.mutable_node()) {
+            node.set_device("/cpu:0");
+        }
 
         tensorflow::SessionOptions expected_session_options_;
         tensorflow::RewriterConfig* expected_cfg = expected_session_options_.config.mutable_graph_options()->mutable_rewrite_options();
