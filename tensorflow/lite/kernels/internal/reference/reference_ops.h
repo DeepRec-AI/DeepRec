@@ -30,6 +30,7 @@ limitations under the License.
 #include "fixedpoint/fixedpoint.h"
 #include "profiling/instrumentation.h"
 #include "tensorflow/lite/c/c_api_internal.h"
+#include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow/lite/kernels/internal/common.h"
 #include "tensorflow/lite/kernels/internal/quantization_util.h"
 #include "tensorflow/lite/kernels/internal/reference/add.h"
@@ -2198,12 +2199,16 @@ inline void Gather(const tflite::GatherParams& op_params,
   }
 }
 
+// Implements GatherNd.
+// Returns an error if any of the indices_data would cause an out of bounds
+// memory read.
 template <typename ParamsT, typename IndicesT = int32>
-inline void GatherNd(const RuntimeShape& params_shape,
-                     const ParamsT* params_data,
-                     const RuntimeShape& indices_shape,
-                     const IndicesT* indices_data,
-                     const RuntimeShape& output_shape, ParamsT* output_data) {
+inline TfLiteStatus GatherNd(const RuntimeShape& params_shape,
+                             const ParamsT* params_data,
+                             const RuntimeShape& indices_shape,
+                             const IndicesT* indices_data,
+                             const RuntimeShape& output_shape,
+                             ParamsT* output_data) {
   gemmlowp::ScopedProfilingLabel label("GatherNd");
 
   int n_slices = 1;
@@ -2226,13 +2231,17 @@ inline void GatherNd(const RuntimeShape& params_shape,
   }
 
   for (int i = 0; i < n_slices; ++i) {
-    int from_pos = 0;
+    int64 from_pos = 0;
     for (int j = 0; j < indices_nd; ++j) {
       from_pos += indices_data[i * indices_nd + j] * dims_to_count[j];
+    }
+    if (from_pos < 0 || from_pos + res.slice_size > params_shape.FlatSize()) {
+      return kTfLiteError;
     }
     std::memcpy(output_data + i * slice_size, params_data + from_pos,
                 sizeof(ParamsT) * slice_size);
   }
+  return kTfLiteOk;
 }
 
 template <typename T>
