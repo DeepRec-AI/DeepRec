@@ -72,6 +72,7 @@ message NodeExecStats {
   int64 op_end_rel_nanos = 15;
   int64 all_end_rel_nanos = 16;
   int64 scheduled_nanos = 17;
+  int64 correlation_id = 18;
 };
 
 message DeviceStepStats {

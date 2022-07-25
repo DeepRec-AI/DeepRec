@@ -497,6 +497,59 @@ class Timeline(object):
       args['input%d' % i] = iname
     self._chrome_trace.emit_region(start, duration, pid, tid, 'Op', op, args)
 
+  def _emit_launch(self, nodestats, pid):
+    """Generates a Chrome Trace event to show Launch execution.
+
+    Args:
+      nodestats: The 'NodeExecStats' proto recording op execution.
+      pid: The pid assigned for the device where this op ran.
+    """
+    kernel_name = None
+    node_name = nodestats.node_name
+    start = nodestats.op_start_rel_micros
+    duration = nodestats.op_end_rel_micros
+    latency = nodestats.all_start_micros - nodestats.op_start_rel_micros
+    tid = nodestats.thread_id
+    # Node names should always have the form 'name:op@@kernel_name##target_device_name'
+    fields = node_name.split('##')
+    node_name, target_device = fields[:2]
+    # Node names should always have the form 'name:op@@kernel_name'
+    fields = node_name.split('@@') + ["unknown"]
+    node_name, kernel_name = fields[:2]
+    # Node names should always have the form 'name:op'.
+    fields = node_name.split(':') + [kernel_name]
+    node_name, op = fields[:2]
+    args = {'name': node_name, 'op': op, 'kernel':kernel_name, 'latency':latency, 'target_device':target_device}
+    self._chrome_trace.emit_region(start, duration, pid, tid, 'Launch', kernel_name, args)
+    # now search for the launched kernel event on the target device trace
+    target_corr_id = nodestats.correlation_id
+    target_ts = None
+    target_pid = None
+    target_tid = None
+    for dev_stats in self._step_stats.dev_stats:
+      device_name = dev_stats.device
+      if device_name != target_device:
+        continue
+      target_pid = self._device_pids[device_name]
+      for node_stats in dev_stats.node_stats:
+        if node_stats.correlation_id != target_corr_id:
+          continue
+        target_tid = node_stats.thread_id
+        target_ts = node_stats.all_start_micros
+        break
+      break
+    assert target_pid is not None
+    assert target_ts is not None
+    assert target_tid is not None
+    flow_id = self._alloc_flow_id()
+    self._chrome_trace.emit_flow_type_start("Kernel Launch",
+                                        kernel_name, nodestats.op_start_rel_micros,
+                                        pid, tid,
+                                        flow_id)
+    self._chrome_trace.emit_flow_type_end("Kernel Launch",
+                                      kernel_name, target_ts,
+                                      target_pid, target_tid, flow_id)
+
   def _emit_tensor_snapshot(self, tensor, timestamp, pid, tid, value):
     """Generate Chrome Trace snapshot event for a computed Tensor.
 
@@ -528,6 +581,9 @@ class Timeline(object):
   def _is_hosttrace_dvice(self, device_name):
     """ Retruns true if this device is part of the HostTracer logging. """
     return '/host:CPU' in device_name
+
+  def _is_launchtrace_device(self, device_name):
+    return "/host:CPU Launch" in device_name
 
   def _allocate_pids(self):
     """Allocate fake process ids for each device in the StepStats."""
@@ -582,6 +638,7 @@ class Timeline(object):
       device_pid = self._device_pids[device_name]
       is_gputrace = self._is_gputrace_device(device_name)
       is_hosttrace = self._is_hosttrace_dvice(device_name)
+      is_launchtrace = self._is_launchtrace_device(device_name)
       # The trace must not be hosttrace and gputrace simultaneously
       assert not (is_gputrace and is_hosttrace)
 
@@ -589,9 +646,13 @@ class Timeline(object):
         tid = node_stats.thread_id
         start_time = node_stats.all_start_micros
         end_time = node_stats.all_start_micros + node_stats.all_end_rel_micros
-        self._emit_op(node_stats, device_pid, is_gputrace, is_hosttrace)
 
-        if is_gputrace or node_stats.node_name == 'RecvTensor':
+        if is_launchtrace:
+          self._emit_launch(node_stats, device_pid)
+        else:
+          self._emit_op(node_stats, device_pid, is_gputrace, is_hosttrace)
+
+        if is_launchtrace or is_gputrace or node_stats.node_name == 'RecvTensor':
           continue
 
         _, _, inputs = self._parse_op_label(node_stats.timeline_label)
