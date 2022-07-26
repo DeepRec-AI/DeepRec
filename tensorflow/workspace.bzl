@@ -127,13 +127,16 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         print("path_prefix was specified to tf_workspace but is no longer used " +
               "and will be removed in the future.")
 
-    new_git_repository(
+    tf_http_archive(
         name = "cudnn_frontend_archive",
         build_file = clean_dep("//third_party:cudnn_frontend.BUILD"),
-        patches = [clean_dep("//third_party:cudnn_frontend_header_fix.patch")],
-        patch_args = ['-p1'],
-        commit = "e9ad21cc61f8427bbaed98045b7e4f24bad57619",
-        remote = "https://oauth2:J64G8MymaUmqNKG_N3rR@gitlab-master.nvidia.com/cudnn/cudnn_frontend.git"
+        patch_file = clean_dep("//third_party:cudnn_frontend_header_fix.patch"),
+        sha256 = "314569f65d5c7d05fb7e90157a838549db3e2cfb464c80a6a399b39a004690fa",
+        strip_prefix = "cudnn-frontend-0.6.2",
+        urls = [
+            "https://github.com/NVIDIA/cudnn-frontend/archive/refs/tags/v0.6.2.zip",
+            "https://github.com/AlibabaPAI/cudnn-frontend/archive/refs/tags/v0.6.2.zip",
+        ],
     )
 
     # Important: If you are upgrading MKL-DNN, then update the version numbers
