@@ -132,8 +132,7 @@ class StorageManager {
         break;
     }
 
-    if (sc_.type == embedding::PMEM_MEMKIND || sc_.type == embedding::PMEM_LIBPMEM ||
-        sc_.type == embedding::DRAM_PMEM || sc_.type == embedding::DRAM_SSDHASH ||
+    if (sc_.type == embedding::DRAM_PMEM || sc_.type == embedding::DRAM_SSDHASH ||
         sc_.type == embedding::HBM_DRAM || sc_.type == embedding::DRAM_LEVELDB) {
       is_multi_level_ = true;
     }
