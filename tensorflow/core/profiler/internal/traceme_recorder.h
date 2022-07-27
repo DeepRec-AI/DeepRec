@@ -48,6 +48,7 @@ class TraceMeRecorder {
     string name;
     uint64 start_time;  // 0 = missing
     uint64 end_time;    // 0 = missing
+    uint64 parent_id;   // 0 = missing
   };
   struct ThreadInfo {
     int32 tid;

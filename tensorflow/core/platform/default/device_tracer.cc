@@ -96,6 +96,7 @@ struct KernelRecord {
   int thread_id;
   uint64_t launch_start_us;
   uint64_t launch_end_us;
+  int64_t op_context;
   const std::string* annotation;
 };
 
@@ -111,6 +112,7 @@ struct MemcpyRecord {
   int thread_id;
   uint64_t launch_start_us;
   uint64_t launch_end_us;
+  int64_t op_context;
   const std::string* annotation;
 };
 
@@ -138,6 +140,7 @@ class CudaEventRecorder {
           &*annotations_.emplace(Annotation::CurrentAnnotation()).first;
       LOG(INFO) << "######### CudaEventRecorder StartKernel " << kernel_name << " " << *record.annotation << "\n";
     }
+    record.op_context = tracing::CallingContext::GetCurrentContext();
     kernel_records_.push_back(record);
     return kernel_records_.size() - 1;
   }
@@ -163,6 +166,7 @@ class CudaEventRecorder {
       record.annotation =
           &*annotations_.emplace(Annotation::CurrentAnnotation()).first;
     }
+    record.op_context = tracing::CallingContext::GetCurrentContext();
     memcpy_records_.push_back(record);
     return memcpy_records_.size() - 1;
   }
@@ -590,6 +594,7 @@ class CudaEventCollector {
     stats->set_op_start_rel_micros(record.launch_start_us);
     stats->set_op_end_rel_micros(record.launch_end_us - record.launch_start_us);
     stats->set_all_end_rel_micros(elapsed_us);
+    stats->set_parent_id(record.op_context);
     return SaveStats(std::move(stats), stream_info);
   }
 
@@ -622,6 +627,7 @@ class CudaEventCollector {
     stats->set_op_start_rel_micros(record.launch_start_us);
     stats->set_op_end_rel_micros(record.launch_end_us - record.launch_start_us);
     stats->set_all_end_rel_micros(elapsed_us);
+    stats->set_parent_id(record.op_context);
     return SaveStats(std::move(stats), stream_info);
   }
 

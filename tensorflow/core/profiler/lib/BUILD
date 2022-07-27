@@ -58,6 +58,7 @@ tf_cuda_library(
         "//tensorflow/core:lib",
         "//tensorflow/core/profiler/internal:traceme_recorder",
         "@com_google_absl//absl/strings",
+        "//tensorflow/core/platform:annotation"
     ],
 )
 

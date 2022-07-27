@@ -23,6 +23,8 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/profiler/internal/traceme_recorder.h"
 
+#include "tensorflow/core/platform/annotation.h"
+
 namespace tensorflow {
 namespace profiler {
 
@@ -81,6 +83,7 @@ class TraceMe {
     DCHECK_GE(level, 1);
     if (TraceMeRecorder::Active(level)) {
       new (&no_init_.name) string(activity_name);
+      myActivityID = tracing::CallingContext::GetAndPush();
       start_time_ = EnvTime::Default()->NowNanos();
     } else {
       start_time_ = kUntracedActivity;
@@ -96,6 +99,7 @@ class TraceMe {
     DCHECK_GE(level, 1);
     if (TraceMeRecorder::Active(level)) {
       new (&no_init_.name) string(std::move(activity_name));
+      myActivityID = tracing::CallingContext::GetAndPush();
       start_time_ = EnvTime::Default()->NowNanos();
     } else {
       start_time_ = kUntracedActivity;
@@ -126,6 +130,7 @@ class TraceMe {
     DCHECK_GE(level, 1);
     if (TraceMeRecorder::Active(level)) {
       new (&no_init_.name) string(name_generator());
+      myActivityID = tracing::CallingContext::GetAndPush();
       start_time_ = EnvTime::Default()->NowNanos();
     } else {
       start_time_ = kUntracedActivity;
@@ -146,8 +151,10 @@ class TraceMe {
     //   start/stop session timestamp.
     if (start_time_ != kUntracedActivity) {
       if (TraceMeRecorder::Active()) {
-        TraceMeRecorder::Record({kCompleteActivity, std::move(no_init_.name),
-                                 start_time_, EnvTime::Default()->NowNanos()});
+        tracing::CallingContext::Pop();
+        TraceMeRecorder::Record({myActivityID, std::move(no_init_.name),
+                                 start_time_, EnvTime::Default()->NowNanos(),
+                                 tracing::CallingContext::GetCurrentContext()});
       }
       no_init_.name.~string();
       start_time_ = kUntracedActivity;
@@ -178,12 +185,14 @@ class TraceMe {
       }
     }
   }
-
+  
  private:
   // Activity ID or start time used when tracing is disabled.
   constexpr static uint64 kUntracedActivity = 0;
   // Activity ID used as a placeholder when both start and end are present.
   constexpr static uint64 kCompleteActivity = 1;
+
+  uint64 myActivityID = kCompleteActivity;
 
   static uint64 ActivityStartImpl(absl::string_view activity_name);
   static void ActivityEndImpl(uint64 activity_id);
