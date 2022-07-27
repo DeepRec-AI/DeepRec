@@ -971,6 +971,7 @@ tf_cuda_library(
         ":framework_internal",
         "@com_google_absl//absl/base",
         "@sparsehash_c11//:dense_hash_map",
+        "@com_github_google_leveldb//:leveldb",
     ],
 )
 
