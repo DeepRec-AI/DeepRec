@@ -7636,6 +7636,39 @@ class EmbeddingColumnTest(test.TestCase):
         self.assertNotEqual(val, 1.0)
       ev_shape1=sess.run(ev_shape)
       self.assertEqual(ev_shape1.tolist()[0], 4)
+
+  @test_util.run_deprecated_v1
+  def testEmbeddingVariableForSharedEmbeddingColumns(self):
+    columns_list=[]
+    columns_list.append(fc.categorical_column_with_embedding("col_emb", dtype=dtypes.string))
+    W = fc.shared_embedding_columns(columns_list,
+            dimension=3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            shared_embedding_collection_name="xxxxx_shared")
+
+    ids={}
+    ids["col_emb"] = sparse_tensor.SparseTensor(indices=[[0,0],[1,0],[2,0],[3,0],[4,0]], values=["aaaa","bbbbb","ccc","4nn","5b"], dense_shape=[5, 5])
+    emb = fc_old.input_layer(ids, W)
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables_lib.global_variables_initializer()
+
+    with self.test_session() as sess:
+      sess.run(init)
+      sess.run([emb, train_op,loss])
+      sess.run([emb, train_op,loss])
+      emb_r, _, _ = sess.run([emb, train_op,loss])
+      emb_right = [[0.61775327, 0.61775327, 0.61775327],
+       [0.61775327, 0.61775327, 0.61775327],
+       [0.61775327, 0.61775327, 0.61775327],
+       [0.61775327, 0.61775327, 0.61775327],
+       [0.61775327, 0.61775327, 0.61775327]]
+      for i in range(5):
+        for j in range(3):
+          self.assertAlmostEqual(emb_r[i][j], emb_right[i][j])
    
   @test_util.run_deprecated_v1
   def test_transform_feature(self):
