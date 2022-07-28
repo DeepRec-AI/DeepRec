@@ -1,0 +1,20 @@
+import random
+
+fi = open("/home/test/modelzoo/DIEN/data/local_test", "r")
+ftrain = open("/home/test/modelzoo/DIEN/data/local_train_splitByUser", "w")
+ftest = open("/home/test/modelzoo/DIEN/data/local_test_splitByUser", "w")
+
+while True:
+    rand_int = random.randint(1, 10)
+    noclk_line = fi.readline().strip()
+    clk_line = fi.readline().strip()
+    if noclk_line == "" or clk_line == "":
+        break
+    if rand_int == 2:
+        print(noclk_line,file=ftest)
+        print(clk_line,file=ftest)
+    else:
+        print(noclk_line,file=ftrain)
+        print(clk_line,file=ftrain)
+        
+
