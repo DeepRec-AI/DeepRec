@@ -1705,40 +1705,23 @@ class LayerNormalizeTest(test_lib.TestCase):
 
   
   @test_util.run_in_graph_and_eager_modes
-  def testUnfusedTest(self):
-    x = np.ones([7,4])
-    except_y = np.ones([7,4]) * 1e8
-    y = nn_impl.fused_layer_normalize(x,fusion=False)
+  def testMKLTest(self):
+    x = np.ones([7,4], dtype=np.float32)
+    except_y = np.zeros([7,4])
+    y = nn_impl.fused_layer_normalize(x, center=False, scale=False, fusion=False)
     output_y = self.evaluate(y)
     self.assertAllClose(except_y, output_y)
-    print("Unfused output is %f" % output_y)
+
 
   @test_util.run_in_graph_and_eager_modes
   def testFusedTest(self):
-    x = np.ones([7,4])
-    except_y = np.ones([7,4]) * 1e8
-    y = nn_impl.fused_layer_normalize(x)
+    x = np.ones([7,4], dtype=np.float32)
+    except_y = np.zeros([7,4])
+    # y = nn_impl.fused_layer_normalize(x)
+    y = nn_impl.fused_layer_normalize(x, center=False, scale=False)
     output_y = self.evaluate(y)
     self.assertAllClose(except_y, output_y)
-    print("Fused output is %f" % output_y)
 
-  @test_util.run_in_graph_and_eager_modes
-  def testUnMklTest(self):
-    x = np.ones([7,4])
-    except_y = np.ones([7,4]) * 1e8
-    y = nn_impl.fused_layer_normalize(x,type='mkl')
-    output_y = self.evaluate(y)
-    self.assertAllClose(except_y, output_y)
-    print("MKL output is %f" % output_y)
-
-  @test_util.run_in_graph_and_eager_modes
-  def testUnMklTest(self):
-    x = np.ones([7,4])
-    except_y = np.ones([7,4]) * 1e8
-    y = nn_impl.fused_layer_normalize(x,type='bn')
-    output_y = self.evaluate(y)
-    self.assertAllClose(except_y, output_y)
-    print("BN output is %f" % output_y)
 
 
   # @test_util.run_deprecated_v1

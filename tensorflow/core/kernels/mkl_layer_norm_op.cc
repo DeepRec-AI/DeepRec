@@ -163,11 +163,11 @@ class MklLayerNormOp : public OpKernel {
 };
 
 REGISTER_KERNEL_BUILDER(
-    Name("_MklLayerNorm").Device(DEVICE_CPU).TypeConstraint<float>("T"),
+    Name("MklLayerNorm").Device(DEVICE_CPU).TypeConstraint<float>("T"),
     MklLayerNormOp<CPUDevice, float>);
 
 REGISTER_KERNEL_BUILDER(
-    Name("_MklLayerNorm").Device(DEVICE_CPU).TypeConstraint<bfloat16>("T"),
+    Name("MklLayerNorm").Device(DEVICE_CPU).TypeConstraint<bfloat16>("T"),
     MklLayerNormOp<CPUDevice, bfloat16>);
 
 }  // namespace tensorflow

@@ -19,7 +19,7 @@ enum class Device { CPU, GPU };
 class FusedLayerNormalizeOpTest : public OpsTestBase {
  protected:
   void MakeOpAndSetDevice(Device device, DataType dtype, int axis, float epsilon) {
-    TF_EXPECT_OK(NodeDefBuilder("fused_layer_normalize", "_MklLayerNorm")
+    TF_EXPECT_OK(NodeDefBuilder("fused_layer_normalize", "MklLayerNorm")
                      .Attr("T", dtype)
                      .Attr("epsilon", epsilon)
                      .Input(FakeInput(DT_FLOAT))
@@ -157,7 +157,7 @@ static Graph* FusedLayerNormalize(const string& kind, int rows, int cols) {
   DataType dtype = DT_FLOAT;
 
   const bool isDefault = (kind == "Default");
-  string op_name = isDefault ? "FusedLayerNorm" : "_MklLayerNorm";
+  string op_name = isDefault ? "FusedLayerNorm" : "MklLayerNorm";
 
   Tensor in(dtype, TensorShape({rows, cols}));
   in.flat<float>().setRandom();

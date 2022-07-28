@@ -344,6 +344,15 @@ REGISTER_OP("FusedLayerNormGrad")
                     return Status::OK();
                 });
 
+REGISTER_OP("MklLayerNorm")
+    .Input("x: T")
+    .Input("scale: T")
+    .Input("offset: T")
+    .Output("y: T")
+    .Attr("T: {float, bfloat16}")
+    .Attr("epsilon: float = 0.001")
+    .SetShapeFn(shape_inference::UnchangedShape);
+
 // --------------------------------------------------------------------------
 
 REGISTER_OP("BiasAdd")
