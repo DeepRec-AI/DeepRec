@@ -923,7 +923,8 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
   // Otherwise, depending on the capability version assign
   //  675MiB (for cuda_compute_capability <= 6.x) or
   // 1064MiB (for cuda_compute_capability <= 7.x) or
-  // 1600MiB (for cuda_compute_capability >= 8.x)
+  // 1800MiB (for cuda_compute_capability >= 8.x) or
+  // 4096MiB (for cuda_compute_capability >= 9.x)
   //
   // In the future we could be more sophisticated by using a table of devices.
   int64 min_system_memory;
@@ -934,8 +935,10 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
       min_system_memory = 675 * 1024 * 1024;
     } else if (cc_major <= 7) {
       min_system_memory = 1064 * 1024 * 1024;
+    } else if (cc_major <= 8) {
+      min_system_memory = 1800 * 1024 * 1024;
     } else {
-      min_system_memory = 1600 * 1024 * 1024;
+      min_system_memory = 4096 * 1024 * 1024;
     }
   }
 #if defined(__GNUC__) && defined(__OPTIMIZE__)
