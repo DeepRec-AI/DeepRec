@@ -111,6 +111,17 @@ class QuantizeV2Op : public OpKernel {
     const Tensor& input_min_range = ctx->input(1);
     const Tensor& input_max_range = ctx->input(2);
 
+    OP_REQUIRES(ctx, input_min_range.NumElements() == 1,
+                errors::InvalidArgument(
+                    "min_range must contain a single float element, "
+                    "but it contains ",
+                    input_min_range.NumElements(), " elements"));
+    OP_REQUIRES(ctx, input_max_range.NumElements() == 1,
+                errors::InvalidArgument(
+                    "max_range must contain a single float element, "
+                    "but it contains ",
+                    input_max_range.NumElements(), " elements"));
+
     int num_slices = 1;
     if (axis_ > -1) {
       num_slices = input.dim_size(axis_);
