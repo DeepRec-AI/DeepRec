@@ -2636,13 +2636,29 @@ class _SharedEmbeddingColumn(
                              embedding_weights.name,
                              embedding_weights.get_shape(), embedding_shape))
       else:
-        embedding_weights = variable_scope.get_variable(
+        from tensorflow.python.feature_column import feature_column_v2 as fc_new
+        if isinstance(self.categorical_column, fc_new.EmbeddingCategoricalColumn):
+          if self.categorical_column.partition_num is None:
+            partitioner = None
+          else:
+            partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+          embedding_weights = variable_scope.get_embedding_variable_internal(
             name='embedding_weights',
-            shape=embedding_shape,
-            dtype=dtypes.float32,
+            embedding_dim=self.dimension,
             initializer=self.initializer,
             trainable=self.trainable and trainable,
-            collections=weight_collections)
+            collections=weight_collections,
+            partitioner=partitioner,
+            ev_option=self.categorical_column.ev_option
+          )
+        else:
+          embedding_weights = variable_scope.get_variable(
+              name='embedding_weights',
+              shape=embedding_shape,
+              dtype=dtypes.float32,
+              initializer=self.initializer,
+              trainable=self.trainable and trainable,
+              collections=weight_collections)
         ops.add_to_collection(self.shared_embedding_collection_name,
                               embedding_weights)
       if self.ckpt_to_load_from is not None:
