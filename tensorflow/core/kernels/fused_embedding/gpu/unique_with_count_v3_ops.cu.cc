@@ -148,6 +148,11 @@ __global__ void GetInsertKernel(const KeyType* d_key, CounterType* d_val,
     KeyType target_key = d_key[idx];
     size_t hash_index = hasher::hash(target_key) % capacity;
     size_t counter = 0;
+
+#if __CUDA_ARCH__ < 700
+    // pre-volta
+    bool thread_finished = false;
+#endif
     while (true) {
       // Have searched all the slot in the hashtable, but all slots in the
       // hashtable are occupied by other keys
@@ -158,6 +163,8 @@ __global__ void GetInsertKernel(const KeyType* d_key, CounterType* d_val,
       const KeyType old_key =
           atomicCAS(keys + hash_index, empty_key, target_key);
       volatile CounterType& target_val_pos = vals[hash_index];
+#if __CUDA_ARCH__ >= 700
+      // volta & post-volta, independent scheduling
       if (empty_key == old_key) {
         CounterType result_val;
         result_val = atomicAdd(d_global_counter, 1);
@@ -172,6 +179,29 @@ __global__ void GetInsertKernel(const KeyType* d_key, CounterType* d_val,
         atomicAdd(counts + hash_index, 1);
         break;
       }
+#else
+      // pre-volta
+      if (empty_key == old_key || target_key == old_key) {
+        while (true) {
+          if (empty_key == old_key) {
+            CounterType result_val;
+            result_val = atomicAdd(d_global_counter, 1);
+            d_val[idx] = result_val;
+            target_val_pos = result_val;
+            atomicAdd(counts + hash_index, 1);
+            break;
+          } else {
+            if (target_val_pos != empty_val) {
+              d_val[idx] = target_val_pos;
+              atomicAdd(counts + hash_index, 1);
+              break;
+            }
+          }
+        }
+        thread_finished = true;
+      }
+      if (thread_finished) break;
+#endif
       counter++;
       hash_index = (hash_index + 1) % capacity;
     }
