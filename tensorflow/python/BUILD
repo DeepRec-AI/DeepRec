@@ -5252,6 +5252,7 @@ tf_py_wrap_cc(
         "//tensorflow/core/grappler/graph_analyzer:graph_analyzer_tool",
         "//tensorflow/core/grappler/optimizers:meta_optimizer",
         "//tensorflow/core:lib",
+        "//tensorflow/core/platform:tensor_float_32_utils",
         "//tensorflow/core:reader_base",
         "//tensorflow/core/debug",
         "//tensorflow/core/distributed_runtime:server_lib",

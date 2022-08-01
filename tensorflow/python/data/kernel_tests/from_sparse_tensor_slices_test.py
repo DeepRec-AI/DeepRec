@@ -80,7 +80,6 @@ class FromSparseTensorSlicesTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.OutOfRangeError):
         sess.run(get_next)
 
-  @combinations.generate(combinations.combine(tf_api_version=1, mode=["graph"]))
   def testEmptySparseTensorSlicesInvalid(self):
     """Test a dataset based on invalid `tf.sparse.SparseTensor`."""
     st = array_ops.sparse_placeholder(dtypes.float64)
@@ -100,7 +99,6 @@ class FromSparseTensorSlicesTest(test_base.DatasetTestBase):
       with self.assertRaises(errors.InvalidArgumentError):
         sess.run(init_op, feed_dict={st: sparse_feed})
 
-  @combinations.generate(combinations.combine(tf_api_version=1, mode=["graph"]))
   def testEmptySparseTensorSlicesInvalid2(self):
     """Test a dataset based on invalid `tf.sparse.SparseTensor`."""
     st = array_ops.sparse_placeholder(dtypes.float64)
