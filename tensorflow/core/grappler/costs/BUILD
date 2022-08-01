@@ -293,6 +293,7 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/grappler/clusters:utils",
+        "//tensorflow/stream_executor/lib",
     ] + tf_protos_grappler(),
 )
 
