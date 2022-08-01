@@ -5943,5 +5943,6 @@ cuda_library(
     visibility = ["//visibility:public"],
     alwayslink = 1,
     deps = ["//tensorflow/stream_executor/cuda:cudart_stub",
-	    ":stream_executor"],
+	    ":stream_executor",
+	    ":framework"],
 )

@@ -58,8 +58,11 @@ const int64 kInitializableEmbeddingVarUseDB = -215;
                           .TypeConstraint<ktype>("Tkeys")              \
                           .TypeConstraint<vtype>("dtype"),             \
                           ResourceHandleOp<EmbeddingVar<ktype, vtype>>);
-REGISTER_KV_VAR_HANDLE(int32, float)
-REGISTER_KV_VAR_HANDLE(int64, float)
+#define REGISTER_KERNELS_ALL_INDEX(type)                               \
+  REGISTER_KV_VAR_HANDLE(int32, type)                                  \
+  REGISTER_KV_VAR_HANDLE(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KV_VAR_HANDLE
 
 #if GOOGLE_CUDA
@@ -95,17 +98,21 @@ class KvVariableShapeOp : public OpKernel {
   }
 };
 
-#define REGISTER_KV_VARIABLE_SHAPE(type, ktype, vtype)                \
+#define REGISTER_KERNELS(type, ktype, vtype)                          \
   REGISTER_KERNEL_BUILDER(                                            \
       Name("KvVariableShape").Device(DEVICE_CPU)                      \
                              .TypeConstraint<type>("out_type")        \
-                             .TypeConstraint<ktype>("Tkeys"),         \
+                             .TypeConstraint<ktype>("Tkeys")          \
+                             .TypeConstraint<vtype>("dtype"),         \
                              KvVariableShapeOp<type, ktype, vtype>);
-REGISTER_KV_VARIABLE_SHAPE(int32, int32, float)
-REGISTER_KV_VARIABLE_SHAPE(int32, int64, float)
-REGISTER_KV_VARIABLE_SHAPE(int64, int32, float)
-REGISTER_KV_VARIABLE_SHAPE(int64, int64, float)
-#undef REGISTER_KV_VARIABLE_SHAPE
+#define REGISTER_KERNELS_ALL_INDEX(type)                              \
+  REGISTER_KERNELS(int32, int32, type)                                \
+  REGISTER_KERNELS(int32, int64, type)                                \
+  REGISTER_KERNELS(int64, int32, type)                                \
+  REGISTER_KERNELS(int64, int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
 
 class DestroyKvResourceOp : public OpKernel {
  public:
@@ -331,14 +338,11 @@ class InitializeKvVariableOp : public OpKernel {
                               .TypeConstraint<ktype>("Tkeys")        \
                               .TypeConstraint<vtype>("dtype"),       \
                           InitializeKvVariableOp<ktype, vtype>);
-
-#define REGISTER_CPU_KERNELS(T)        \
-  REGISTER_KERNELS(int32, T);          \
-  REGISTER_KERNELS(int64, T);
-
-TF_CALL_float(REGISTER_CPU_KERNELS);
-TF_CALL_double(REGISTER_CPU_KERNELS);
-#undef REGISTER_CPU_KERNELS
+#define REGISTER_KERNELS_ALL_INDEX(type)                             \
+  REGISTER_KERNELS(int32, type)                                      \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
@@ -390,10 +394,14 @@ class KvResourceIsInitializedOp : public OpKernel {
 #define REGISTER_KERNELS(ktype, vtype)                             \
   REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
                           .TypeConstraint<ktype>("Tkeys")          \
+                          .TypeConstraint<vtype>("dtype")          \
                           .Device(DEVICE_CPU),                     \
                           KvResourceIsInitializedOp<ktype, vtype>);
-REGISTER_KERNELS(int32, float)
-REGISTER_KERNELS(int64, float)
+#define REGISTER_KERNELS_ALL_INDEX(type)                           \
+  REGISTER_KERNELS(int32, type)                                    \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
@@ -521,18 +529,11 @@ class KvResourceGatherOp : public OpKernel {
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceGatherOp<ktype, vtype>)
 
-#define REGISTER_GATHER_ALL_INDICES(dev, type) \
-  REGISTER_GATHER_FULL(dev, int32, type);      \
-  REGISTER_GATHER_FULL(dev, int64, type)
+#define REGISTER_GATHER_ALL_INDICES(type)                         \
+  REGISTER_GATHER_FULL(CPU, int32, type);                         \
+  REGISTER_GATHER_FULL(CPU, int64, type)
 
-#define REGISTER_GATHER_CPU(type) REGISTER_GATHER_ALL_INDICES(CPU, type)
-
-// Registration of the CPU implementations.
-TF_CALL_float(REGISTER_GATHER_CPU);
-TF_CALL_double(REGISTER_GATHER_CPU);
-//TF_CALL_QUANTIZED_TYPES(REGISTER_GATHER_CPU);
-
-#undef REGISTER_GATHER_CPU
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_GATHER_ALL_INDICES)
 #undef REGISTER_GATHER_ALL_INDICES
 #undef REGISTER_GATHER_FULL
 
@@ -705,18 +706,10 @@ TF_CALL_double(REGISTER_GATHER_GPU);
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceGatherOp<ktype, vtype>)
 
-#define REGISTER_GATHER_ALL_INDICES(dev, type) \
-  REGISTER_GATHER_FULL(dev, int32, type);      \
-  REGISTER_GATHER_FULL(dev, int64, type)
-
-#define REGISTER_GATHER_CPU(type) REGISTER_GATHER_ALL_INDICES(CPU, type)
-
-// Registration of the CPU implementations.
-TF_CALL_float(REGISTER_GATHER_CPU);
-TF_CALL_double(REGISTER_GATHER_CPU);
-//TF_CALL_QUANTIZED_TYPES(REGISTER_GATHER_CPU);
-
-#undef REGISTER_GATHER_CPU
+#define REGISTER_GATHER_ALL_INDICES(type)                         \
+  REGISTER_GATHER_FULL(CPU, int32, type);                         \
+  REGISTER_GATHER_FULL(CPU, int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_GATHER_ALL_INDICES)
 #undef REGISTER_GATHER_ALL_INDICES
 #undef REGISTER_GATHER_FULL
 /*
@@ -1026,9 +1019,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
 #define REGISTER_KERNELS_ALL_INDEX(type)                       \
   REGISTER_KERNELS(int32, type)                                \
   REGISTER_KERNELS(int64, type)
-TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
-//TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
@@ -1117,9 +1108,7 @@ class KvResourceIncrImportOp: public AsyncOpKernel {
 #define REGISTER_KERNELS_ALL_INDEX(type)                       \
   REGISTER_KERNELS(int32, type)                                \
   REGISTER_KERNELS(int64, type)
-TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
-//TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
@@ -1208,9 +1197,7 @@ class KvResourceExportOp : public OpKernel {
 #define REGISTER_KERNELS_ALL_INDEX(type)                       \
   REGISTER_KERNELS(int32, type)                                \
   REGISTER_KERNELS(int64, type)
-
-REGISTER_KERNELS_ALL_INDEX(float);
-
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 

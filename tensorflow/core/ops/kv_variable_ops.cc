@@ -170,6 +170,7 @@ REGISTER_OP("KvVarIsInitializedOp")
     .Input("resource: resource")
     .Output("is_initialized: bool")
     .Attr("Tkeys: {int64,int32,string}")
+    .Attr("dtype: type = DT_FLOAT")
     .SetShapeFn(tensorflow::shape_inference::ScalarShape)
     .Doc(R"doc(
 Checks whether a resource handle-based variable has been initialized.
@@ -193,6 +194,7 @@ REGISTER_OP("KvVariableShape")
     .Output("output: out_type")
     .Attr("out_type: {int32, int64} = DT_INT32")
     .Attr("Tkeys: {int64,int32,string}")
+    .Attr("dtype: type = DT_FLOAT")
     .SetShapeFn(KvVariableShapeShapeFn)
     .Doc(R"doc(
 Returns the shape of the variable pointed to by `resource`.
