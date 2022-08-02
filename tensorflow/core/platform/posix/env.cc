@@ -43,7 +43,6 @@ namespace tensorflow {
 
 namespace {
 
-static std::atomic<uint32_t> thread_counter(0);
 mutex name_mutex(tensorflow::LINKER_INITIALIZED);
 
 std::map<std::thread::id, string>& GetThreadNameRegistry()

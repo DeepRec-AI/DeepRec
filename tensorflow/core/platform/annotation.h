@@ -134,7 +134,12 @@ class CallingContext {
   public:
     static uint64_t GetCurrentContext() { return Context_.empty() ? 0 : Context_.back(); }
     static uint64_t GetAndPush();
-    static void Pop() { Context_.pop_back(); }
+    static void Pop() {
+      if (Context_.empty()) {
+        return;
+      }
+      Context_.pop_back();
+    }
   private:
     thread_local static std::vector<uint64_t> Context_;
 };
