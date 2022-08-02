@@ -18,7 +18,6 @@ from __future__ import division
 from __future__ import print_function
 
 import argparse
-import os
 import sys
 import tempfile
 
@@ -45,11 +44,8 @@ def main(_):
   z = tf.matmul(m, v, name="z")
 
   if FLAGS.debug:
-    if FLAGS.use_random_config_path:
-      fd, config_file_path = tempfile.mkstemp(".tfdbg_config")
-      os.close(fd)
-    else:
-      config_file_path = None
+    config_file_path = (tempfile.mktemp(".tfdbg_config")
+                        if FLAGS.use_random_config_path else None)
     sess = tf_debug.LocalCLIDebugWrapperSession(
         sess,
         ui_type=FLAGS.ui_type,

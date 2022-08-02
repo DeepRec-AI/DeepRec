@@ -139,7 +139,7 @@ class LocalCLIDebuggerWrapperSessionForTest(
 class LocalCLIDebugWrapperSessionTest(test_util.TensorFlowTestCase):
 
   def setUp(self):
-    self._tmp_dir = tempfile.mkdtemp()
+    self._tmp_dir = tempfile.mktemp()
 
     self.v = variables.VariableV1(10.0, name="v")
     self.w = variables.VariableV1(21.0, name="w")

@@ -1909,13 +1909,14 @@ class TensorFlowTestCase(googletest.TestCase):
     """
     stream.flush()
     fd = stream.fileno()
-    tmp_file, tmp_file_path = tempfile.mkstemp(dir=self.get_temp_dir())
+    tmp_file_path = tempfile.mktemp(dir=self.get_temp_dir())
+    tmp_file = open(tmp_file_path, "w")
     orig_fd = os.dup(fd)
-    os.dup2(tmp_file, fd)
+    os.dup2(tmp_file.fileno(), fd)
     try:
       yield CapturedWrites(tmp_file_path)
     finally:
-      os.close(tmp_file)
+      tmp_file.close()
       os.dup2(orig_fd, fd)
 
   def _AssertProtoEquals(self, a, b, msg=None):

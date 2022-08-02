@@ -19,7 +19,6 @@ from __future__ import division
 from __future__ import print_function
 
 import json
-import os
 import tempfile
 from tensorflow.lite.schema import upgrade_schema as upgrade_schema_lib
 from tensorflow.python.framework import test_util
@@ -255,15 +254,13 @@ class TestSchemaUpgrade(test_util.TensorFlowTestCase):
 
   def testNonExistentFile(self):
     converter = upgrade_schema_lib.Converter()
-    fd, non_existent = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
+    non_existent = tempfile.mktemp(suffix=".json")
     with self.assertRaisesRegexp(IOError, "No such file or directory"):
       converter.Convert(non_existent, non_existent)
 
   def testInvalidExtension(self):
     converter = upgrade_schema_lib.Converter()
-    fd, invalid_extension = tempfile.mkstemp(suffix=".foo")
-    os.close(fd)
+    invalid_extension = tempfile.mktemp(suffix=".foo")
     with self.assertRaisesRegexp(ValueError, "Invalid extension on input"):
       converter.Convert(invalid_extension, invalid_extension)
     with tempfile.NamedTemporaryFile(suffix=".json", mode="w+") as in_json:

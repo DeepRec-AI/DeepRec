@@ -151,7 +151,8 @@ class DebugTensorDatumTest(test_util.TensorFlowTestCase):
 class DebugDumpDirTest(test_util.TensorFlowTestCase):
 
   def setUp(self):
-    self._dump_root = tempfile.mkdtemp()
+    self._dump_root = tempfile.mktemp()
+    os.mkdir(self._dump_root)
 
   def tearDown(self):
     # Tear down temporary dump directory.
@@ -182,7 +183,7 @@ class DebugDumpDirTest(test_util.TensorFlowTestCase):
 
   def testDebugDumpDir_nonexistentDumpRoot(self):
     with self.assertRaisesRegexp(IOError, "does not exist"):
-      debug_data.DebugDumpDir(tempfile.mkdtemp() + "_foo")
+      debug_data.DebugDumpDir(tempfile.mktemp() + "_foo")
 
   def testDebugDumpDir_invalidFileNamingPattern(self):
     # File name with too few underscores should lead to an exception.

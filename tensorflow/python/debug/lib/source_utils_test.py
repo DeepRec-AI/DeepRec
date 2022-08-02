@@ -244,8 +244,7 @@ class SourceHelperTest(test_util.TensorFlowTestCase):
 
   def testCallingAnnotateSourceOnUnrelatedSourceFileDoesNotError(self):
     # Create an unrelated source file.
-    fd, unrelated_source_path = tempfile.mkstemp()
-    os.close(fd)
+    unrelated_source_path = tempfile.mktemp()
     with open(unrelated_source_path, "wt") as source_file:
       source_file.write("print('hello, world')\n")
 
