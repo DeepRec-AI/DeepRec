@@ -43,6 +43,7 @@ namespace tensorflow {
 
 namespace {
 
+static std::atomic<uint32_t> thread_counter(0);
 mutex name_mutex(tensorflow::LINKER_INITIALIZED);
 
 std::map<std::thread::id, string>& GetThreadNameRegistry()
@@ -117,14 +118,19 @@ class PosixEnv : public Env {
   }
 
   int32 GetCurrentThreadId() override {
-#ifdef __APPLE__
+#ifdef USE_OS_ID
+#  ifdef __APPLE__
     uint64_t tid64;
     pthread_threadid_np(nullptr, &tid64);
     return static_cast<int32>(tid64);
-#elif defined(__FreeBSD__)
+#  elif defined(__FreeBSD__)
     return pthread_getthreadid_np();
-#else
+#  else
     return static_cast<int32>(pthread_self());
+#  endif
+#else
+    const thread_local static uint32_t thread_id = thread_counter.fetch_add(1);
+    return thread_id;
 #endif
   }
 

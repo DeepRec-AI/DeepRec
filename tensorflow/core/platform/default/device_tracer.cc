@@ -585,6 +585,8 @@ class CudaEventCollector {
       node_name = absl::StrCat(*record.annotation, "@@", node_name);
     }
     stats->set_node_name(node_name);
+    // thread id is meaningless for kernel events, but useful for kernel launch events
+    stats->set_thread_id(record.thread_id);
     // TODO(csigg): Report grid size?
     std::string node_label;
     stats->set_timeline_label(node_label);
@@ -618,6 +620,8 @@ class CudaEventCollector {
       node_name = absl::StrCat(*record.annotation, "@@", node_name);
     }
     stats->set_node_name(node_name);
+    // thread id is meaningless for kernel events, but useful for kernel launch events
+    stats->set_thread_id(record.thread_id);
     // TODO(csigg): Show label in Chrome trace viewer.
     std::string node_label = absl::StrFormat("%d bytes", record.size_bytes);
     stats->set_timeline_label(node_label);

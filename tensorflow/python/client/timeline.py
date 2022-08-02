@@ -432,22 +432,26 @@ class Timeline(object):
       inputs = inputs.split(', ')
     return nn, op, inputs
 
-  def _assign_lanes(self):
+  def _assign_lanes(self, device_only):
     """Assigns non-overlapping lanes for the activities on each device."""
     for device_stats in self._step_stats.dev_stats:
-      # TODO(pbar): Genuine thread IDs in NodeExecStats might be helpful.
-      lanes = [0]
-      for ns in device_stats.node_stats:
-        l = -1
-        for (i, lts) in enumerate(lanes):
-          if ns.all_start_micros > lts:
-            l = i
-            lanes[l] = ns.all_start_micros + ns.all_end_rel_micros
-            break
-        if l < 0:
-          l = len(lanes)
-          lanes.append(ns.all_start_micros + ns.all_end_rel_micros)
-        ns.thread_id = l
+      device_name = device_stats.device
+      is_gputrace = self._is_gputrace_device(device_name)
+      is_launchtrace = self._is_launchtrace_device(device_name)
+      if (not device_only) or (device_only and is_gputrace and not is_launchtrace):
+        # TODO(pbar): Genuine thread IDs in NodeExecStats might be helpful.
+        lanes = [0]
+        for ns in device_stats.node_stats:
+          l = -1
+          for (i, lts) in enumerate(lanes):
+            if ns.all_start_micros > lts:
+              l = i
+              lanes[l] = ns.all_start_micros + ns.all_end_rel_micros
+              break
+          if l < 0:
+            l = len(lanes)
+            lanes.append(ns.all_start_micros + ns.all_end_rel_micros)
+          ns.thread_id = l
 
   def _emit_op(self, nodestats, pid, is_gputrace, is_hosttrace, activity_cache):
     """Generates a Chrome Trace event to show Op execution.
@@ -808,10 +812,9 @@ class Timeline(object):
                                         total_bytes)
     self._allocator_maximums = alloc_maxes
 
-  def analyze_step_stats(self, show_dataflow=True, show_memory=True, use_real_thread_id=False):
+  def analyze_step_stats(self, show_dataflow=True, show_memory=True, use_real_thread_id=True):
     self._allocate_pids()
-    if not use_real_thread_id:
-      self._assign_lanes()
+    self._assign_lanes(use_real_thread_id)
     self._analyze_tensors(show_memory)
     self._show_compute(show_dataflow)
     if show_memory:
@@ -820,7 +823,7 @@ class Timeline(object):
         chrome_trace=self._chrome_trace,
         allocator_maximums=self._allocator_maximums)
 
-  def generate_chrome_trace_format(self, show_dataflow=True, show_memory=False, use_real_thread_id=False):
+  def generate_chrome_trace_format(self, show_dataflow=True, show_memory=False, use_real_thread_id=True):
     """Produces a trace in Chrome Trace Format.
 
     Args:
