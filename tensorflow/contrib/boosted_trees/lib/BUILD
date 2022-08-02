@@ -40,7 +40,6 @@ cc_library(
     deps = [
         "//tensorflow/contrib/boosted_trees/proto:learner_proto_cc",
         "//tensorflow/core:framework_headers_lib",
-        "//tensorflow/stream_executor/lib",
         "//third_party/eigen3",
     ],
 )
