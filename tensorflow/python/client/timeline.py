@@ -449,7 +449,7 @@ class Timeline(object):
           lanes.append(ns.all_start_micros + ns.all_end_rel_micros)
         ns.thread_id = l
 
-  def _emit_op(self, nodestats, pid, is_gputrace, is_hosttrace):
+  def _emit_op(self, nodestats, pid, is_gputrace, is_hosttrace, activity_cache):
     """Generates a Chrome Trace event to show Op execution.
 
     Args:
@@ -462,6 +462,19 @@ class Timeline(object):
     start = nodestats.all_start_micros
     duration = nodestats.all_end_rel_micros
     tid = nodestats.thread_id
+    # extract calling contexts via backtracing the parents
+    cct = ""
+    parent_id = nodestats.parent_id
+    while parent_id != 0:
+      if parent_id not in activity_cache.keys():
+        cct += "<unknown>"
+        break
+      node, _ = activity_cache[parent_id]
+      cct += node.node_name + "\n"
+      parent_id = node.parent_id
+    if parent_id == 0:
+      cct += "<root>"
+    # extract info from node name
     inputs = []
     if is_gputrace:
       # Node names should always have the form 'name:op@@kernel_name'
@@ -490,14 +503,14 @@ class Timeline(object):
       op = 'RecvTensor'
     else:
       _, op, inputs = self._parse_op_label(nodestats.timeline_label)
-    args = {'name': node_name, 'op': op}
+    args = {'name': node_name, 'op': op, 'calling context': cct}
     if kernel_name is not None:
       args['kernel'] = kernel_name
     for i, iname in enumerate(inputs):
       args['input%d' % i] = iname
     self._chrome_trace.emit_region(start, duration, pid, tid, 'Op', op, args)
 
-  def _emit_launch(self, nodestats, pid):
+  def _emit_launch(self, nodestats, pid, activity_cache):
     """Generates a Chrome Trace event to show Launch execution.
 
     Args:
@@ -519,7 +532,25 @@ class Timeline(object):
     # Node names should always have the form 'name:op'.
     fields = node_name.split(':') + [kernel_name]
     node_name, op = fields[:2]
-    args = {'name': node_name, 'op': op, 'kernel':kernel_name, 'latency':latency, 'target_device':target_device}
+    # extract calling contexts via backtracing the parents
+    cct = ""
+    parent_id = nodestats.parent_id
+    while parent_id != 0:
+      if parent_id not in activity_cache.keys():
+        cct += "<unknown>"
+        break
+      node, _ = activity_cache[parent_id]
+      cct += node.node_name + "\n"
+      parent_id = node.parent_id
+    if parent_id == 0:
+      cct += "<root>"
+    # pack additional infos
+    args = {'name': node_name, 
+            'op': op, 
+            'kernel':kernel_name, 
+            'latency':latency, 
+            'target_device':target_device, 
+            'calling context':cct }
     self._chrome_trace.emit_region(start, duration, pid, tid, 'Launch', kernel_name, args)
     # now search for the launched kernel event on the target device trace
     target_corr_id = nodestats.correlation_id
@@ -633,6 +664,21 @@ class Timeline(object):
 
   def _show_compute(self, show_dataflow):
     """Visualize the computation activity."""
+    # extract CCTs
+    activity_cache = {}
+    for dev_stats in self._step_stats.dev_stats:
+      device_name = dev_stats.device
+      device_pid = self._device_pids[device_name]
+      is_gputrace = self._is_gputrace_device(device_name)
+      is_hosttrace = self._is_hosttrace_dvice(device_name)
+      is_launchtrace = self._is_launchtrace_device(device_name)
+      # The trace must not be hosttrace and gputrace simultaneously
+      assert not (is_gputrace and is_hosttrace)
+      for node_stats in dev_stats.node_stats:
+        # cache for the op via the correlation id (activity id)
+        if not is_launchtrace:
+          activity_cache[node_stats.correlation_id] = (node_stats, device_pid)
+    # generate chrome traces
     for dev_stats in self._step_stats.dev_stats:
       device_name = dev_stats.device
       device_pid = self._device_pids[device_name]
@@ -648,11 +694,30 @@ class Timeline(object):
         end_time = node_stats.all_start_micros + node_stats.all_end_rel_micros
 
         if is_launchtrace:
-          self._emit_launch(node_stats, device_pid)
+          self._emit_launch(node_stats, device_pid, activity_cache)
         else:
-          self._emit_op(node_stats, device_pid, is_gputrace, is_hosttrace)
+          self._emit_op(node_stats, device_pid, is_gputrace, is_hosttrace, activity_cache)
 
-        if is_launchtrace or is_gputrace or node_stats.node_name == 'RecvTensor':
+        if is_gputrace or node_stats.node_name == 'RecvTensor':
+          continue
+
+        # cache for the op via the correlation id (activity id)
+        if node_stats.parent_id != 0:
+          if node_stats.parent_id in activity_cache.keys():
+            parent, parent_pid = activity_cache[node_stats.parent_id]
+            invoke_time = node_stats.all_start_micros
+            flow_id = self._alloc_flow_id()
+            flow_name = parent.node_name + ' => ' + node_stats.node_name
+            # Make sure the invoke edge can be properly displayed in chrome://tracing
+            self._chrome_trace.emit_flow_type_start("Invoke",
+                                                flow_name, invoke_time-1,
+                                                parent_pid, parent.thread_id,
+                                                flow_id)
+            self._chrome_trace.emit_flow_type_end("Invoke",
+                                              flow_name, invoke_time,
+                                              device_pid, node_stats.thread_id, flow_id)        
+        # currently kernels cannot track dataflows
+        if is_launchtrace:
           continue
 
         _, _, inputs = self._parse_op_label(node_stats.timeline_label)
@@ -763,6 +828,8 @@ class Timeline(object):
         connecting producers and consumers of tensors.
       show_memory: (Optional.) If True, add object snapshot events to the trace
         showing the sizes and lifetimes of tensors.
+      show_real_thread_id: (Optional.) If True, use the collected thread id instead
+        of generating fake thread id for concurrent events.
 
     Returns:
       A JSON formatted string in Chrome Trace format.
