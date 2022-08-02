@@ -595,7 +595,6 @@ class Timeline(object):
                 self._chrome_trace.emit_flow_end(input_name, start_time,
                                                  device_pid, tid, flow_id)
               else:
-                print("######## Generate Horizontal Dataflow")
                 flow_id = self._alloc_flow_id()
                 self._chrome_trace.emit_flow_type_start("Horizontal Dataflow",
                                                    input_name, create_time,

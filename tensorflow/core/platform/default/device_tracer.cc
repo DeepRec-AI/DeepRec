@@ -134,11 +134,9 @@ class CudaEventRecorder {
     record.thread_id = Env::Default()->GetCurrentThreadId();
     // TODO: Make it lock-free for lower profiling overhead
     mutex_lock lock(mutex_);
-    //LOG(INFO) << "######### CudaEventRecorder StartKernel locked\n";
     if (tracing::ScopedAnnotation::IsEnabled()) {
       record.annotation =
           &*annotations_.emplace(Annotation::CurrentAnnotation()).first;
-      LOG(INFO) << "######### CudaEventRecorder StartKernel " << kernel_name << " " << *record.annotation << "\n";
     }
     record.op_context = tracing::CallingContext::GetCurrentContext();
     kernel_records_.push_back(record);
@@ -576,7 +574,6 @@ class CudaEventCollector {
 
     auto stats = absl::make_unique<NodeExecStats>();
     std::string node_name = port::MaybeAbiDemangle(record.kernel_name);
-    LOG(INFO) << "### SaveRecord " << record.kernel_name << " ## Demangled ## " << node_name << " ## " << start_us << ", " << elapsed_us << ", " << record.launch_start_us << ", " << record.launch_end_us << ", " << start_us-record.launch_start_us << "\n";
     // Sometimes CUPTI returns invalid characters. See b/129892466.
     if (!IsAscii(node_name)) {
       node_name = "<invalid_name>";
