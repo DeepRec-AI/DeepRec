@@ -8,10 +8,10 @@
 
 #include "tensorflow/core/framework/typed_allocator.h"
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -446,7 +446,7 @@ class NormalGPUValuePtr : public ValuePtr<V> {
   }
 
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
   virtual V* GetOrAllocate(Allocator* allocator, int64 value_len, const V* default_v, int emb_index, int offset) override {
     int8 meta = *((int8*)((char*)this->ptr_ + 6));
     std::bitset<8> bs(meta);
@@ -464,7 +464,7 @@ class NormalGPUValuePtr : public ValuePtr<V> {
       return *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) + offset;
     }
   }
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
   virtual V* GetOrAllocate(Allocator* allocator, int64 value_len, const V* default_v, int emb_index, int offset, bool &need_initialize) override {

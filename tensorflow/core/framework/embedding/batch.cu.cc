@@ -1,5 +1,5 @@
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 
 #include "tensorflow/core/framework/embedding/batch.h"
 
@@ -75,5 +75,5 @@ template __global__ void CopyEmbedding<double>(double**, double*, int, int);
 template __global__ void CopyEmbedding<long long>(long long**, long long*, int, int);
 
 }  // namespace tensorflow
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA

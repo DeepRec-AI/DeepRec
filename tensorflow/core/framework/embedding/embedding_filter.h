@@ -4,9 +4,9 @@
 //#include "tensorflow/core/framework/embedding/embedding_var.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/framework/embedding/batch.h"
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -469,7 +469,7 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
   void CreateGPUBatch(V* val_base, V** default_values, int64 size,
     int64 slice_elems, int64 value_len, bool* init_flags, V** memcpy_address) {
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
     int block_dim = 128;
     V** dev_value_address = (V**)ev_->GetBuffer1(size);
     V** dev_default_address = (V**)ev_->GetBuffer2(size);
@@ -486,7 +486,7 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     cudaLaunchKernel((void *)BatchCopy<V>, (limit + block_dim - 1) / block_dim * length,
                      block_dim, args1, 0, NULL);
     cudaDeviceSynchronize();
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
   }
 
