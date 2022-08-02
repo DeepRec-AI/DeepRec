@@ -434,6 +434,8 @@ class Timeline(object):
 
   def _assign_lanes(self, device_only):
     """Assigns non-overlapping lanes for the activities on each device."""
+    cpu_tid_assign = 0
+    cpu_tid_map = {}
     for device_stats in self._step_stats.dev_stats:
       device_name = device_stats.device
       is_gputrace = self._is_gputrace_device(device_name)
@@ -452,6 +454,14 @@ class Timeline(object):
             l = len(lanes)
             lanes.append(ns.all_start_micros + ns.all_end_rel_micros)
           ns.thread_id = l
+      else:
+        for ns in device_stats.node_stats:
+          if ns.thread_id not in cpu_tid_map.keys():
+            cpu_tid_map[ns.thread_id] = cpu_tid_assign
+            ns.thread_id = cpu_tid_assign
+            cpu_tid_assign = cpu_tid_assign + 1
+          else:
+            ns.thread_id = cpu_tid_map[ns.thread_id]
 
   def _emit_op(self, nodestats, pid, is_gputrace, is_hosttrace, activity_cache):
     """Generates a Chrome Trace event to show Op execution.

@@ -118,19 +118,14 @@ class PosixEnv : public Env {
   }
 
   int32 GetCurrentThreadId() override {
-#ifdef USE_OS_ID
-#  ifdef __APPLE__
+#ifdef __APPLE__
     uint64_t tid64;
     pthread_threadid_np(nullptr, &tid64);
     return static_cast<int32>(tid64);
-#  elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__)
     return pthread_getthreadid_np();
-#  else
-    return static_cast<int32>(pthread_self());
-#  endif
 #else
-    const thread_local static uint32_t thread_id = thread_counter.fetch_add(1);
-    return thread_id;
+    return static_cast<int32>(pthread_self());
 #endif
   }
 
