@@ -2843,7 +2843,6 @@ tf_kernel_library(
         ":state",
         ":training_op_helpers",
         ":variable_ops",
-        "//tensorflow/core:embedding_gpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:kv_variable_ops_op_lib",

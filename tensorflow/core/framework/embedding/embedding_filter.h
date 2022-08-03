@@ -3,9 +3,35 @@
 
 //#include "tensorflow/core/framework/embedding/embedding_var.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
+
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
-#include "tensorflow/core/framework/embedding/batch.h"
+
+namespace tensorflow {
+template<class V>
+__global__ void BatchCopy(V** batch, V* val_base, int value_len,
+    int limit, V** default_value, bool* init_flags) {
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  int item_id = i / value_len;
+  int item_pos = i % value_len;
+
+  if (i < limit * value_len) {
+    if (init_flags[item_id]) {
+      *(batch[item_id] + item_pos) = *(default_value[item_id] + item_pos);
+    }
+    val_base[i] = *(batch[item_id] + item_pos);
+  }
+}
+
+template __global__ void BatchCopy<int>(int**, int*, int,
+    int, int**, bool*);
+template __global__ void BatchCopy<float>(float**, float*,
+    int, int, float**, bool*);
+template __global__ void BatchCopy<double>(double**, double*,
+    int, int, double**, bool*);
+template __global__ void BatchCopy<long long>(long long**,
+    long long*, int, int, long long**, bool*); 
+}
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 

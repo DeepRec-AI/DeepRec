@@ -3025,7 +3025,6 @@ tf_cuda_library(
         ":stats_calculator_portable",
         ":version_lib",
         ":framework_internal_impl_hash_table",
-        ":embedding_gpu",
         "//tensorflow/stream_executor/lib",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -5916,17 +5915,4 @@ cc_library(
         "//tensorflow/core/platform:types",
         "//third_party/eigen3",
     ],
-)
-
-tf_kernel_library(
-    name = "embedding_gpu",
-    hdrs = [
-        "framework/embedding/batch.h"
-    ],
-    gpu_srcs = [
-        "framework/embedding/batch.cu.cc",
-        "framework/embedding/batch.h"
-    ],
-    copts = ["-g"],
-    nocopts = "-fno-exceptions",
 )

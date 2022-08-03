@@ -78,6 +78,16 @@ struct KvSparseApplyAdamAsync {
 }  // end namespace functor
 }  // end namespace tensorflow
 #endif  // TENSORFLOW_USE_GPU_EV
+
+#if !TENSORFLOW_USE_GPU_EV
+
+template<class V>
+__global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
+                                      int embedding_dim, long long int limit,
+                                      bool* init_flags, V* default_value);
+
+#endif
+
 #endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_KERNELS_TRAINING_ALI_OPS_GPU_H_

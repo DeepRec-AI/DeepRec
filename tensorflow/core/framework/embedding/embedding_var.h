@@ -35,6 +35,28 @@ limitations under the License.
 #include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+
+template<class V>
+__global__ void BatchUnpack(V** dev_value_address, V* memcpy_buffer_gpu,
+                            int value_len, int limit) {
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  int item_id = i / value_len;
+  int item_pos = i % value_len;
+
+  if (i < limit * value_len) {
+    *(dev_value_address[item_id] + item_pos) = memcpy_buffer_gpu[i];
+  }
+}
+
+template __global__ void BatchUnpack<int>(int**, int*, int, int);
+template __global__ void BatchUnpack<float>(float**, float*, int, int);
+template __global__ void BatchUnpack<double>(double**, double*, int, int);
+template __global__ void BatchUnpack<long long>(long long**, long long*, int, int);
+
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
 
 template <class K, class V>
 class EmbeddingVar : public ResourceBase {

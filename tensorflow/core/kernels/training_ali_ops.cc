@@ -36,9 +36,7 @@ limitations under the License.
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {

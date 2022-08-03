@@ -615,5 +615,27 @@ EXPLICITLY_INSTANTIATE_FUNCTOR(float);
 EXPLICITLY_INSTANTIATE_FUNCTOR(double);
 #undef EXPLICITLY_INSTANTIATE_FUNCTOR
 
+#if !TENSORFLOW_USE_GPU_EV
+template<class V>
+__global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
+                                      int embedding_dim, long long int limit,
+                                      bool* init_flags, V* default_value) {
+  int i = blockDim.x * blockIdx.x + threadIdx.x;
+  int item_id = i / embedding_dim;
+  int item_pos = i % embedding_dim;
+
+  if (i < limit * embedding_dim) {
+    if (init_flags[item_id]) {
+      *(a[item_id] + item_pos) = default_value[item_pos];
+    }
+    *(a[item_id] + item_pos) += g[i] * g[i];
+    *(v[item_id] + item_pos) -= lr * g[i] * rsqrt(*(a[item_id] + item_pos));
+  }
+}
+
+template __global__ void SparseApplyAdagradGPU<float>(float**, float**, float*, float, int, long long int, bool*, float*);
+template __global__ void SparseApplyAdagradGPU<double>(double**, double**, double*, float, int, long long int, bool*, double*);
+#endif // !TENSORFLOW_USE_GPU_EV
+
 }  // end namespace tensorflow
 #endif  // GOOGLE_CUDA
