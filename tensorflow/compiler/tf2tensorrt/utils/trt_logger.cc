@@ -23,7 +23,7 @@ namespace tensorflow {
 namespace tensorrt {
 
 // Use TF logging for TensorRT informations
-void Logger::log(Severity severity, const char* msg) {
+void Logger::log(Severity severity, const char* msg) noexcept {
   // Suppress info-level messages
   switch (severity) {
 #if NV_TENSORRT_MAJOR > 5 || (NV_TENSORRT_MAJOR == 5 && NV_TENSORRT_MINOR >= 1)
@@ -53,6 +53,10 @@ void Logger::log(Severity severity, const char* msg) {
       break;
     }
   }
+}
+Logger* Logger::GetLogger() {
+  static Logger* logger = new Logger("DefaultLogger");
+  return logger;
 }
 }  // namespace tensorrt
 }  // namespace tensorflow

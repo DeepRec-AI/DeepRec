@@ -12,6 +12,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include "tensorflow/compiler/tf2tensorrt/common/utils.h"
 #include "tensorflow/core/platform/env.h"
 #include "tensorflow/stream_executor/platform/dso_loader.h"
 #include "third_party/tensorrt/NvInferPlugin.h"
@@ -50,10 +51,10 @@ void LogFatalSymbolNotFound(const char* symbol_name) {
 }
 }  // namespace
 
-#if NV_TENSORRT_MAJOR < 5
-#error TensorRT version earlier than 5 is not supported.
-#elif NV_TENSORRT_MINOR < 1
+#if IS_TRT_VERSION_GE(5, 1, 0, 0)
+#include "tensorflow/compiler/tf2tensorrt/stub/NvInferPlugin_5_1.inc"
+#elif IS_TRT_VERSION_GE(5, 0, 0, 0)
 #include "tensorflow/compiler/tf2tensorrt/stub/NvInferPlugin_5_0.inc"
 #else
-#include "tensorflow/compiler/tf2tensorrt/stub/NvInferPlugin_5_1.inc"
+#error TensorRT version earlier than 5 is not supported.
 #endif

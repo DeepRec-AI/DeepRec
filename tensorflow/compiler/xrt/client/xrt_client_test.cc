@@ -136,9 +136,10 @@ TEST_F(XrtClientTest, XrtTfClientWorks) {
   const TensorProto& out_proto = response->tensor();
   EXPECT_EQ(out_proto.dtype(), DT_INT32);
 
-  ASSERT_EQ(out_proto.tensor_content().size(), sizeof(int32) * 2);
+  size_t out_size = sizeof(int32) * 2;
+  ASSERT_EQ(out_proto.tensor_content().size(), out_size);
   std::vector<int32> out(2);
-  out_proto.tensor_content().CopyToArray(reinterpret_cast<char*>(out.data()));
+  memcpy(out.data(), out_proto.tensor_content().c_str(), out_size);
   // TODO(phawkins): handle endian conversion.
   EXPECT_EQ(out[0], -54);
   EXPECT_EQ(out[1], 50);

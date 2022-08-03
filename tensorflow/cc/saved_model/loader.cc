@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/attr_value.pb.h"
 #include "tensorflow/core/framework/function.pb.h"
 #include "tensorflow/core/framework/node_def.pb.h"
+#include "tensorflow/core/framework/op_def.pb.h"
 #include "tensorflow/core/framework/tensor.pb.h"
 #include "tensorflow/core/graph/default_device.h"
 #include "tensorflow/core/grappler/utils.h"
@@ -95,6 +96,19 @@ static Status ValidateNode(const NodeDef& node) {
   return Status::OK();
 }
 
+static Status ValidateFunctionNotRecursive(const FunctionDef& function) {
+  const auto& function_name = function.signature().name();
+  for (const auto& node : function.node_def()) {
+    if (node.op() == function_name) {
+      return errors::FailedPrecondition(
+          "Function ", function_name,
+          " is self recursive and TensorFlow does not support this scenario.");
+    }
+  }
+
+  return Status::OK();
+}
+
 static Status ValidateSavedTensors(const GraphDef& graph_def) {
   for (const auto& node : graph_def.node()) {
     TF_RETURN_IF_ERROR(ValidateNode(node));
@@ -106,6 +120,10 @@ static Status ValidateSavedTensors(const GraphDef& graph_def) {
       for (const auto& node : function.node_def()) {
 	TF_RETURN_IF_ERROR(ValidateNode(node));
       }
+
+      // Also check that there is no recursivity in the library
+      // TODO(mihaimaruseac): Do more than self-recursivity
+      TF_RETURN_IF_ERROR(ValidateFunctionNotRecursive(function));
     }
   }
 
@@ -231,9 +249,14 @@ Status GetInitOp(const string& export_dir, const MetaGraphDef& meta_graph_def,
   const auto& init_op_sig_it =
       meta_graph_def.signature_def().find(kSavedModelInitOpSignatureKey);
   if (init_op_sig_it != sig_def_map.end()) {
-    *init_op_name = init_op_sig_it->second.outputs()
-                        .find(kSavedModelInitOpSignatureKey)
-                        ->second.name();
+    const auto& sig_def_outputs = init_op_sig_it->second.outputs();
+    const auto& sig_def_outputs_it =
+        sig_def_outputs.find(kSavedModelInitOpSignatureKey);
+    if (sig_def_outputs_it == sig_def_outputs.end()) {
+      return errors::FailedPrecondition("Could not find output ",
+                                        kSavedModelInitOpSignatureKey);
+    }
+    *init_op_name = sig_def_outputs_it->second.name();
     return Status::OK();
   }
 

@@ -23,6 +23,7 @@ import numpy as np
 from tensorflow.python.client import session
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
@@ -110,6 +111,12 @@ class MatrixSolveOpTest(test.TestCase):
       rhs = constant_op.constant([[1., 0.]])
       with self.assertRaises(ValueError):
         linalg_ops.matrix_solve(matrix, rhs)
+
+    # The matrix and right-hand side should have the same batch dimensions
+    matrix = np.random.normal(size=(2, 6, 2, 2))
+    rhs = np.random.normal(size=(2, 3, 2, 2))
+    with self.assertRaises((ValueError, errors_impl.InvalidArgumentError)):
+      self.evaluate(linalg_ops.matrix_solve(matrix, rhs))
 
   def testNotInvertible(self):
     # The input should be invertible.

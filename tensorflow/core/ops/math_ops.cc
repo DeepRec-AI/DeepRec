@@ -1526,14 +1526,20 @@ Status RangeSize(const Tensor* start_t, const Tensor* limit_t,
     return errors::InvalidArgument("Requires delta != 0");
   }
 
-  int64 size = (std::is_integral<T>::value
+  auto size = (std::is_integral<T>::value
                    ? ((Eigen::numext::abs(limit - start) +
                        Eigen::numext::abs(delta) - T(1)) /
                       Eigen::numext::abs(delta))
                    : (Eigen::numext::ceil(
                          Eigen::numext::abs((limit - start) / delta))));
 
-  c->set_output(0, c->Vector(size));
+  // Undefined behaviour if size will not fit into int64
+  if (size > std::numeric_limits<int64>::max()) {
+    return errors::InvalidArgument("Requires ((limit - start) / delta) <= ",
+                                   std::numeric_limits<int64>::max());
+  }
+
+  c->set_output(0, c->Vector(static_cast<int64>(size)));
   return Status::OK();
 }
 
@@ -1728,6 +1734,11 @@ REGISTER_OP("Bincount")
         // Return unknown shape if size is not known.
         c->set_output(0, c->UnknownShapeOfRank(1));
         return Status::OK();
+      }
+
+      if (size_tensor->dims() != 0) {
+        return errors::InvalidArgument("Shape must be rank 0 but is rank ",
+                                       size_tensor->dims());
       }
 
       // Return `[size]` shape if size is known.

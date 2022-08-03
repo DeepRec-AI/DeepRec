@@ -61,8 +61,8 @@ Status ConvolutionThunk::ExecuteOnStream(const ExecuteParams& params) {
   tensorflow::nvtx::ScopedRangeIfEnabled<tensorflow::nvtx::CoreDomain>
       nvtx_range(cudnn_call_->metadata().op_type(), [&]() {
         return tensorflow::nvtx::GetThunkExecutionRangeMessage(
-            cudnn_call_->GetModule()->name(),
-            cudnn_call_->metadata().op_name());
+            cudnn_call_->GetModule()->name(), cudnn_call_->metadata().op_name(),
+            cudnn_call_->metadata().op_type());
       });
   TF_RETURN_IF_ERROR(RunGpuConv(cudnn_call_, absl::MakeSpan(operand_se_buffers),
                                 result_buffer, scratch, params.stream));

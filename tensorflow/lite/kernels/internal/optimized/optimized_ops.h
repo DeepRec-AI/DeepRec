@@ -2886,7 +2886,7 @@ inline int NodeOffset(int b, int h, int w, int height, int width) {
   return (b * height + h) * width + w;
 }
 
-inline void AveragePool(const PoolParams& params,
+inline bool AveragePool(const PoolParams& params,
                         const RuntimeShape& input_shape,
                         const float* input_data,
                         const RuntimeShape& output_shape, float* output_data) {
@@ -2900,6 +2900,9 @@ inline void AveragePool(const PoolParams& params,
   const int output_width = output_shape.Dims(2);
   const int stride_height = params.stride_height;
   const int stride_width = params.stride_width;
+
+  if (stride_height == 0) return false;
+  if (stride_width == 0) return false;
 
   // TODO(benoitjacob) make this a proper reference impl without Eigen!
   const auto in_mat = MapAsMatrixWithLastDimAsRows(input_data, input_shape);
@@ -2946,9 +2949,11 @@ inline void AveragePool(const PoolParams& params,
                                                   params.float_activation_min,
                                                   params.float_activation_max);
   }
+
+  return true;
 }
 
-inline void AveragePool16(const PoolParams& params,
+inline bool AveragePool16(const PoolParams& params,
                           const RuntimeShape& input_shape,
                           const uint8* input_data,
                           const RuntimeShape& output_shape,
@@ -2998,6 +3003,7 @@ inline void AveragePool16(const PoolParams& params,
               std::min(params.filter_height, input_height - in_y_origin);
           const int filter_count =
               (filter_x_end - filter_x_start) * (filter_y_end - filter_y_start);
+          if (filter_count == 0) return false;
           memset(acc, 0, tranche_depth * sizeof(acc[0]));
           const uint8* input_ptr =
               input_data + depth_base +
@@ -3078,9 +3084,10 @@ inline void AveragePool16(const PoolParams& params,
       }
     }
   }
+  return true;
 }
 
-inline void AveragePool32(const PoolParams& params,
+inline bool AveragePool32(const PoolParams& params,
                           const RuntimeShape& input_shape,
                           const uint8* input_data,
                           const RuntimeShape& output_shape,
@@ -3130,6 +3137,7 @@ inline void AveragePool32(const PoolParams& params,
               std::min(params.filter_height, input_height - in_y_origin);
           const int filter_count =
               (filter_x_end - filter_x_start) * (filter_y_end - filter_y_start);
+          if (filter_count == 0) return false;
           memset(acc, 0, tranche_depth * sizeof(acc[0]));
           const uint8* input_ptr =
               input_data + depth_base +
@@ -3216,16 +3224,17 @@ inline void AveragePool32(const PoolParams& params,
       }
     }
   }
+  return true;
 }
 
-inline void AveragePool(const PoolParams& params,
+inline bool AveragePool(const PoolParams& params,
                         const RuntimeShape& input_shape,
                         const uint8* input_data,
                         const RuntimeShape& output_shape, uint8* output_data) {
   if (params.filter_height * params.filter_width > 16 * 16) {
-    AveragePool32(params, input_shape, input_data, output_shape, output_data);
+    return AveragePool32(params, input_shape, input_data, output_shape, output_data);
   } else {
-    AveragePool16(params, input_shape, input_data, output_shape, output_data);
+    return AveragePool16(params, input_shape, input_data, output_shape, output_data);
   }
 }
 

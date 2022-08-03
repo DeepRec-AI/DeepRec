@@ -16,8 +16,11 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from tensorflow.python.framework import errors
+import numpy as np
+
+from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
@@ -268,7 +271,6 @@ class MapStageTest(test.TestCase):
 
     from six.moves import queue as Queue
     import threading
-    import numpy as np
 
     queue = Queue.Queue()
     n = 8
@@ -594,6 +596,52 @@ class MapStageTest(test.TestCase):
 
       # All gone
       self.assertTrue(sess.run([size, isize]) == [0, 0])
+
+  @test_util.run_deprecated_v1
+  def testNonScalarKeyOrderedMap(self):
+    with ops.Graph().as_default() as g:
+      x = array_ops.placeholder(dtypes.float32)
+      v = 2. * (array_ops.zeros([128, 128]) + x)
+      t = data_flow_ops.gen_data_flow_ops.ordered_map_stage(
+          key=constant_op.constant(value=[1], shape=(1, 3), dtype=dtypes.int64),
+          indices=np.array([[6]]),
+          values=[x, v],
+          dtypes=[dtypes.int64],
+          capacity=0,
+          memory_limit=0,
+          container='container1',
+          shared_name='',
+          name=None)
+
+    g.finalize()
+
+    with self.session(graph=g) as sess:
+      with self.assertRaisesRegex(errors.InvalidArgumentError,
+                                  'key must be an int64 scalar'):
+        sess.run(t, feed_dict={x: 1})
+
+  @test_util.run_deprecated_v1
+  def testNonScalarKeyUnorderedMap(self):
+    with ops.Graph().as_default() as g:
+      x = array_ops.placeholder(dtypes.float32)
+      v = 2. * (array_ops.zeros([128, 128]) + x)
+      t = data_flow_ops.gen_data_flow_ops.map_stage(
+          key=constant_op.constant(value=[1], shape=(1, 3), dtype=dtypes.int64),
+          indices=np.array([[6]]),
+          values=[x, v],
+          dtypes=[dtypes.int64],
+          capacity=0,
+          memory_limit=0,
+          container='container1',
+          shared_name='',
+          name=None)
+
+    g.finalize()
+
+    with self.session(graph=g) as sess:
+      with self.assertRaisesRegex(errors.InvalidArgumentError,
+                                  'key must be an int64 scalar'):
+        sess.run(t, feed_dict={x: 1})
 
 
 if __name__ == '__main__':

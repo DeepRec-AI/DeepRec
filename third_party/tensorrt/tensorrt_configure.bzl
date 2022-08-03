@@ -31,6 +31,17 @@ _TF_TENSORRT_HEADERS_V6 = [
     "NvInferRuntimeCommon.h",
     "NvInferPluginUtils.h",
 ]
+_TF_TENSORRT_HEADERS_V8 = [
+    "NvInfer.h",
+    "NvInferLegacyDims.h",
+    "NvInferImpl.h",
+    "NvUtils.h",
+    "NvInferPlugin.h",
+    "NvInferVersion.h",
+    "NvInferRuntime.h",
+    "NvInferRuntimeCommon.h",
+    "NvInferPluginUtils.h",
+]
 
 _DEFINE_TENSORRT_SONAME_MAJOR = "#define NV_TENSORRT_SONAME_MAJOR"
 _DEFINE_TENSORRT_SONAME_MINOR = "#define NV_TENSORRT_SONAME_MINOR"
@@ -42,6 +53,8 @@ def _at_least_version(actual_version, required_version):
     return actual >= required
 
 def _get_tensorrt_headers(tensorrt_version):
+    if _at_least_version(tensorrt_version, "8"):
+        return _TF_TENSORRT_HEADERS_V8
     if _at_least_version(tensorrt_version, "6"):
         return _TF_TENSORRT_HEADERS_V6
     return _TF_TENSORRT_HEADERS

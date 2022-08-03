@@ -974,6 +974,7 @@ tf_cuda_library(
         "@com_google_absl//absl/base",
         "@sparsehash_c11//:dense_hash_map",
         "@com_github_google_leveldb//:leveldb",
+        "//tensorflow/stream_executor/lib",
     ],
 )
 
@@ -3025,6 +3026,7 @@ tf_cuda_library(
         ":version_lib",
         ":framework_internal_impl_hash_table",
         ":embedding_gpu",
+        "//tensorflow/stream_executor/lib",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",

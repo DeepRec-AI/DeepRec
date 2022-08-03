@@ -30,11 +30,15 @@ class SparseSplitOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* context) override {
-    const int64 split_dim = context->input(0).scalar<int64>()();
+    const Tensor& input_axis = context->input(0);
     const Tensor& input_indices = context->input(1);
     const Tensor& input_values = context->input(2);
     const Tensor& input_shape = context->input(3);
 
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(input_axis.shape()),
+                errors::InvalidArgument(
+                    "Input axis should be a scalar but received shape ",
+                    input_axis.shape().DebugString()));
     OP_REQUIRES(context, TensorShapeUtils::IsMatrix(input_indices.shape()),
                 errors::InvalidArgument(
                     "Input indices should be a matrix but received shape ",
@@ -47,6 +51,8 @@ class SparseSplitOp : public OpKernel {
                 errors::InvalidArgument(
                     "Input shape should be a vector but received shape ",
                     input_shape.shape().DebugString()));
+
+    const int64 split_dim = input_axis.scalar<int64>()();
 
     OP_REQUIRES(
         context,

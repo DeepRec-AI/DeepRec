@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_shape.pb.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/grappler/clusters/utils.h"
+#include "tensorflow/core/util/overflow.h"
 
 namespace tensorflow {
 namespace grappler {
@@ -1133,7 +1134,14 @@ int64 OpLevelCostEstimator::CalculateTensorElementCount(
   auto tensor_shape =
       MaybeGetMinimumShape(tensor.shape(), num_dims, found_unknown_shapes);
   for (const auto& dim : tensor_shape.dim()) {
-    tensor_size *= dim.size();
+    int64 new_tensor_size = MultiplyWithoutOverflow(tensor_size, dim.size());
+    if (new_tensor_size < 0) {
+      VLOG(1) << "Overflow encountered when computing element count of a "
+                 "tensor, multiplying "
+              << tensor_size << " with " << dim.size();
+      return -1;
+    }
+    tensor_size = new_tensor_size;
   }
   return tensor_size;
 }
@@ -1143,7 +1151,13 @@ int64 OpLevelCostEstimator::CalculateTensorSize(
   int64 count = CalculateTensorElementCount(tensor, found_unknown_shapes);
   int size = DataTypeSize(BaseType(tensor.dtype()));
   VLOG(2) << "Count: " << count << " DataTypeSize: " << size;
-  return count * size;
+  int64 tensor_size = MultiplyWithoutOverflow(count, size);
+  if (tensor_size < 0) {
+    VLOG(1) << "Overflow encountered when computing tensor size, multiplying "
+            << count << " with " << size;
+    return -1;
+  }
+  return tensor_size;
 }
 
 int64 OpLevelCostEstimator::CalculateInputSize(
@@ -1185,7 +1199,13 @@ int64 OpLevelCostEstimator::CalculateOutputSize(
     auto output_shape = MaybeGetMinimumShape(original_output_shape, num_dims,
                                              found_unknown_shapes);
     for (const auto& dim : output_shape.dim()) {
-      output_size *= dim.size();
+      int64 new_output_size = MultiplyWithoutOverflow(output_size, dim.size());
+      if (new_output_size < 0) {
+        VLOG(1) << "Overflow encountered when estimating cost, multiplying "
+                << output_size << " with " << dim.size();
+        return -1;
+      }
+      output_size = new_output_size;
     }
     total_output_size += output_size;
     VLOG(1) << "Output Size: " << output_size
@@ -1729,8 +1749,21 @@ OpInfo::TensorProperties OpLevelCostEstimator::DescribeTensor(
   return ret;
 }
 
+// Helper for error handling with OpDimensionsFromInputs
+#define GET_DIMS_OR_RETURN_ZERO_COST(dims, shape, info, unknown_flag) \
+  auto statusor = OpDimensionsFromInputs(shape, info, &unknown_flag); \
+  if (TF_PREDICT_FALSE(!statusor.ok())) {                             \
+    LOG(WARNING) << "Error predicting cost for the op: "              \
+                 << info.ShortDebugString();                          \
+    Costs c = Costs::ZeroCosts();                                     \
+    c.inaccurate = true;                                              \
+    c.num_ops_with_unknown_shapes = unknown_flag;                     \
+    return c;                                                         \
+  }                                                                   \
+  dims = std::move(statusor.ValueOrDie());
+
 /* static */
-OpLevelCostEstimator::ConvolutionDimensions
+se::port::StatusOr<OpLevelCostEstimator::ConvolutionDimensions>
 OpLevelCostEstimator::OpDimensionsFromInputs(
     const TensorShapeProto& original_image_shape, const OpInfo& op_info,
     bool* found_unknown_shapes) {
@@ -1767,6 +1800,11 @@ OpLevelCostEstimator::OpDimensionsFromInputs(
   std::vector<int64> strides = GetStrides(op_info);
   int64 sx = strides[x_index];
   int64 sy = strides[y_index];
+  if (sx == 0 || sy == 0) {
+    return errors::InvalidArgument(
+        "Stride must be > 0 for Height and Width, but got (", sy, ", ", sx,
+        ")");
+  }
   const auto padding = GetPadding(op_info);
 
   int64 ox = GetOutputSize(ix, kx, sx, padding);
@@ -1782,8 +1820,9 @@ Costs OpLevelCostEstimator::PredictMaxPool(const OpContext& op_context) const {
   bool found_unknown_shapes = false;
   const auto& op_info = op_context.op_info;
   // x: op_info.inputs(0)
-  ConvolutionDimensions dims = OpDimensionsFromInputs(
-      op_info.inputs(0).shape(), op_info, &found_unknown_shapes);
+  GET_DIMS_OR_RETURN_ZERO_COST(ConvolutionDimensions dims,
+                               op_info.inputs(0).shape(), op_info,
+                               found_unknown_shapes);
   // kx * ky - 1 comparisons per output (kx * xy > 1)
   // or 1 copy per output (kx * k1 = 1).
   int per_output_ops = dims.kx * dims.ky == 1 ? 1 : dims.kx * dims.ky - 1;
@@ -1819,8 +1858,16 @@ Costs OpLevelCostEstimator::PredictMaxPoolGrad(
   // x: op_info.inputs(0)
   // y: op_info.inputs(1)
   // y_grad: op_info.inputs(2)
-  ConvolutionDimensions dims = OpDimensionsFromInputs(
-      op_info.inputs(0).shape(), op_info, &found_unknown_shapes);
+  if (op_info.inputs_size() < 3) {
+    LOG(WARNING) << "MaxPoolGrad op has invalid inputs: "
+                 << op_info.ShortDebugString();
+    Costs c = Costs::ZeroCosts();
+    c.inaccurate = true;
+  }
+
+  GET_DIMS_OR_RETURN_ZERO_COST(ConvolutionDimensions dims,
+                               op_info.inputs(0).shape(), op_info,
+                               found_unknown_shapes);
 
   int64 ops = 0;
   if (dims.kx == 1 && dims.ky == 1) {
@@ -1859,8 +1906,9 @@ Costs OpLevelCostEstimator::PredictAvgPool(const OpContext& op_context) const {
   bool found_unknown_shapes = false;
   const auto& op_info = op_context.op_info;
   // x: op_info.inputs(0)
-  ConvolutionDimensions dims = OpDimensionsFromInputs(
-      op_info.inputs(0).shape(), op_info, &found_unknown_shapes);
+  GET_DIMS_OR_RETURN_ZERO_COST(ConvolutionDimensions dims,
+                               op_info.inputs(0).shape(), op_info,
+                               found_unknown_shapes);
 
   // kx * ky - 1 additions and 1 multiplication per output.
   int64 ops = dims.batch * dims.ox * dims.oy * dims.oz * dims.kx * dims.ky;
@@ -1915,8 +1963,8 @@ Costs OpLevelCostEstimator::PredictAvgPoolGrad(
     found_unknown_shapes = true;
   }
 
-  ConvolutionDimensions dims =
-      OpDimensionsFromInputs(x_shape, op_info, &found_unknown_shapes);
+  GET_DIMS_OR_RETURN_ZERO_COST(ConvolutionDimensions dims,
+                               x_shape, op_info, found_unknown_shapes);
 
   int64 ops = 0;
   if (dims.kx <= dims.sx && dims.ky <= dims.sy) {
@@ -1950,8 +1998,9 @@ Costs OpLevelCostEstimator::PredictFusedBatchNorm(
   // offset: op_info.inputs(2)
   // mean: op_info.inputs(3)  --> only for inference
   // variance: op_info.inputs(4) --> only for inference
-  ConvolutionDimensions dims = OpDimensionsFromInputs(
-      op_info.inputs(0).shape(), op_info, &found_unknown_shapes);
+  GET_DIMS_OR_RETURN_ZERO_COST(ConvolutionDimensions dims,
+                               op_info.inputs(0).shape(), op_info,
+                               found_unknown_shapes);
   const bool is_training = IsTraining(op_info);
 
   int64 ops = 0;
@@ -1997,8 +2046,10 @@ Costs OpLevelCostEstimator::PredictFusedBatchNormGrad(
   // scale: op_info.inputs(2)
   // mean: op_info.inputs(3)
   // variance or inverse of variance: op_info.inputs(4)
-  ConvolutionDimensions dims = OpDimensionsFromInputs(
-      op_info.inputs(1).shape(), op_info, &found_unknown_shapes);
+
+  GET_DIMS_OR_RETURN_ZERO_COST(ConvolutionDimensions dims,
+                               op_info.inputs(1).shape(), op_info,
+                               found_unknown_shapes);
 
   int64 ops = 0;
   const auto rsqrt_cost = Eigen::internal::functor_traits<
