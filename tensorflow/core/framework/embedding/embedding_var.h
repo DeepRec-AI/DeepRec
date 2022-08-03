@@ -78,7 +78,7 @@ class EmbeddingVar : public ResourceBase {
     } else {
       if (embedding::StorageType::HBM_DRAM == storage_manager_->GetStorageType()) {
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
         emb_config_.default_value_dim = default_value_dim;
         value_len_ = default_tensor.NumElements() / emb_config_.default_value_dim;
         default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
@@ -90,7 +90,7 @@ class EmbeddingVar : public ResourceBase {
         buffer2_size = 0;
         buffer3_size = 0;
         cudaMemcpy(default_value_, &default_tensor_flat(0), default_tensor.TotalBytes(), cudaMemcpyHostToDevice);
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
       } else {
         alloc_ = cpu_allocator();
@@ -179,7 +179,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
   void CreateGPUBatch(V* val_base, V** default_values, int64 size, int64 slice_elems, bool* init_flags, V** memcpy_address) {
     for (int i = 0;i < size;i++) {
       default_values[i] = (default_values[i] == nullptr) ? default_value_ : default_values[i];
@@ -224,7 +224,7 @@ class EmbeddingVar : public ResourceBase {
     delete []copyback_cursor;
     delete []gpu_value_ptrs;
   }
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
   V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v) {

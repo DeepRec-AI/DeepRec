@@ -36,9 +36,9 @@ limitations under the License.
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -173,7 +173,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 template <typename TKey, typename T, typename Tstep>
 class KvSparseApplyAdagradGPUOp : public OpKernel {
  public:
@@ -340,11 +340,11 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
 TF_CALL_float(REGISTER_GPU_KERNELS);
 #undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 #if GOOGLE_CUDA
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 template <class K, class V>
 Status GetInputEmbeddingVarGPU(OpKernelContext* ctx, int input,
                             EmbeddingVarGPU<K, V>** var) {
@@ -463,7 +463,7 @@ TF_CALL_float(REGISTER_GPU_KERNELS);
 
 #undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
@@ -671,7 +671,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 template <typename Device, typename TKey, typename T, bool has_l2_shrinkage>
 class KvSparseApplyFtrlOpGPU : public OpKernel {
  public:
@@ -847,7 +847,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 // Note, this op works on cpu only.
@@ -2176,7 +2176,7 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-#if TF_ENABLE_GPU_EV
+#if TENSORFLOW_USE_GPU_EV
 template <typename Device, typename T, typename Tindex, typename Tstep>
 class KvSparseApplyAdamAsyncOpGPU : public OpKernel {
  public:
@@ -2343,7 +2343,7 @@ TF_CALL_double(REGISTER_GPU_KERNEL);
 #endif // End of GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #undef REGISTER_KERNELS
 
-#endif // TF_ENABLE_GPU_EV
+#endif // TENSORFLOW_USE_GPU_EV
 #endif // GOOGLE_CUDA
 
 template <typename T, typename Tindex, typename Tstep>

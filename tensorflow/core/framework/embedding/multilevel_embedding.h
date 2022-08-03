@@ -8,9 +8,9 @@
 #include "tensorflow/core/framework/embedding/ssd_hashkv.h"
 #include "tensorflow/core/framework/embedding/lockless_hash_map.h"
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/framework/embedding/lockless_hash_map_cpu.h"
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/lib/core/threadpool.h"
@@ -132,12 +132,12 @@ class StorageManager {
         break;
       case StorageType::HBM_DRAM:
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
         new_value_ptr_fn_ = [] (Allocator* allocator, size_t size) { return new NormalGPUValuePtr<V>(allocator, size); };
         LOG(INFO) << "StorageManager::HBM_DRAM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), alloc_));
         kvs_.push_back(std::make_pair(new LocklessHashMapCPU<K, V>(), cpu_allocator()));
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
         break;
       default:
@@ -254,13 +254,13 @@ class StorageManager {
 
     if (sc_.type == StorageType::HBM_DRAM && level && found) {
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
       ValuePtr<V>* gpu_value_ptr = new_value_ptr_fn_(kvs_[0].second, size);
       V* cpu_data_address = (*value_ptr)->GetValue(0, 0);
       V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
       cudaMemcpy(gpu_data_address, cpu_data_address, size * sizeof(V), cudaMemcpyHostToDevice);
       *value_ptr = gpu_value_ptr;
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
     }
     if (level || !found) {
@@ -315,7 +315,7 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
   }
 
 #if GOOGLE_CUDA
-#if !TF_ENABLE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
   void CopyBackToGPU(int total, K* keys, int64 size, bool* copyback_flags, V** memcpy_address, size_t value_len, int *copyback_cursor, ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
     V *memcpy_buffer_cpu;
     memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
@@ -338,7 +338,7 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
 
     cudaMemcpy(memcpy_buffer_gpu, memcpy_buffer_cpu, total * value_len * sizeof(V), cudaMemcpyHostToDevice);
   }
-#endif  // TF_ENABLE_GPU_EV
+#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
   Status Remove(K key) {
