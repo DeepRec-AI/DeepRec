@@ -1,7 +1,21 @@
-diff -ru a/icu4c/source/common/udata.cpp b/icu4c/source/common/udata.cpp
---- a/icu4c/source/common/udata.cpp	2019-04-17 12:03:04.000000000 +0000
-+++ b/icu4c/source/common/udata.cpp	2020-07-14 23:49:37.836668741 +0000
-@@ -18,11 +18,10 @@
+--- a/icu4c/source/common/unicode/uconfig.h
++++ b/icu4c/source/common/unicode/uconfig.h
+@@ -55,6 +55,11 @@
+ #include "uconfig_local.h"
+ #endif
+ 
++// Tensorflow is statically linked on all platforms.
++#ifndef U_STATIC_IMPLEMENTATION
++#define U_STATIC_IMPLEMENTATION
++#endif
++
+ /**
+  * \def U_DEBUG
+  * Determines whether to include debugging code.
+
+--- a/icu4c/source/common/udata.cpp
++++ b/icu4c/source/common/udata.cpp
+@@ -18,15 +18,15 @@
  
  #include "unicode/utypes.h"  /* U_PLATFORM etc. */
  
@@ -17,7 +31,12 @@ diff -ru a/icu4c/source/common/udata.cpp b/icu4c/source/common/udata.cpp
  #endif
  
  #include "unicode/putil.h"
-@@ -649,10 +648,9 @@
+ #include "unicode/udata.h"
++#include "unicode/umachine.h"
+ #include "unicode/uversion.h"
+ #include "charstr.h"
+ #include "cmemory.h"
+@@ -641,10 +641,11 @@
   * partial-data-library access functions where each returns a pointer
   * to its data package, if it is linked in.
   */
@@ -25,38 +44,25 @@ diff -ru a/icu4c/source/common/udata.cpp b/icu4c/source/common/udata.cpp
 -extern const void *uprv_getICUData_collation(void) ATTRIBUTE_WEAK;
 -extern const void *uprv_getICUData_conversion(void) ATTRIBUTE_WEAK;
 -*/
++
++//extern "C" const void *uprv_getICUData_collation(void);
 +U_CDECL_BEGIN
 +const void *uprv_getICUData_conversion(void) ATTRIBUTE_WEAK;
 +U_CDECL_END
  
  /*----------------------------------------------------------------------*
   *                                                                      *
-@@ -710,10 +708,11 @@
+@@ -702,10 +703,11 @@
          if (uprv_getICUData_collation) {
              setCommonICUDataPointer(uprv_getICUData_collation(), FALSE, pErrorCode);
          }
 +        */
          if (uprv_getICUData_conversion) {
-             setCommonICUDataPointer(uprv_getICUData_conversion(), FALSE, pErrorCode);
+-            setCommonICUDataPointer(uprv_getICUData_conversion(), FALSE, pErrorCode);
++          setCommonICUDataPointer(uprv_getICUData_conversion(), FALSE, pErrorCode);
          }
 -        */
 +
- #if !defined(ICU_DATA_DIR_WINDOWS)
- // When using the Windows system data, we expect only a single data file.
+ #if U_PLATFORM_HAS_WINUWP_API == 0 // Windows UWP Platform does not support dll icu data at this time
          setCommonICUDataPointer(&U_ICUDATA_ENTRY_POINT, FALSE, pErrorCode);
          {
-diff -ru a/icu4c/source/common/unicode/uconfig.h b/icu4c/source/common/unicode/uconfig.h
---- a/icu4c/source/common/unicode/uconfig.h	2019-04-17 12:03:04.000000000 +0000
-+++ b/icu4c/source/common/unicode/uconfig.h	2020-07-14 23:49:37.836668741 +0000
-@@ -55,6 +55,11 @@
- #include "uconfig_local.h"
- #endif
- 
-+// Tensorflow is statically linked on all platforms.
-+#ifndef U_STATIC_IMPLEMENTATION
-+#define U_STATIC_IMPLEMENTATION
-+#endif
-+
- /**
-  * \def U_DEBUG
-  * Determines whether to include debugging code.
