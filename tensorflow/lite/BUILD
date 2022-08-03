@@ -392,7 +392,6 @@ cc_library(
     copts = TFLITE_DEFAULT_COPTS + tflite_copts(),
     deps = [
         "//tensorflow/lite/c:c_api_internal",
-        ":macros",
     ],
 )
 
@@ -407,7 +406,6 @@ cc_test(
     deps = [
         ":util",
         "//tensorflow/lite/c:c_api_internal",
-        "//tensorflow/lite/c:c_api_types",
         "@com_google_googletest//:gtest",
     ],
 )
