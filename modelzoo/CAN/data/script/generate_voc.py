@@ -1,13 +1,13 @@
 import  pickle  as pk
 
-f_train = open("/home/test/modelzoo/DIEN/data/local_train_splitByUser", "r")
+f_train = open("../../DIEN/data/local_train_splitByUser", "r")
 uid_dict = {}
 mid_dict = {}
 cat_dict = {}
 item_carte_dict = {}
 cate_carte_dict = {}
 
-iddd = 0
+
 for line in f_train:
     arr = line.strip("\n").split("\t")
     clk = arr[0]
@@ -34,8 +34,7 @@ for line in f_train:
         if (mid, m) not in item_carte_dict:
             item_carte_dict[(mid, m)] = 0
         item_carte_dict[(mid, m)] += 1
-    #print iddd
-    iddd+=1
+
     for c in cat_list.split(""):
         if c not in cat_dict:
             cat_dict[c] = 0

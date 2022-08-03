@@ -1,17 +1,15 @@
 import numpy
 import json
-#import cPickle as pkl
 import _pickle as cPickle
 import random
 
 import gzip
 
-import shuffle
+import data.script.shuffle
 
 def unicode_to_utf8(d):
     return dict((key.encode("UTF-8"), value) for (key,value) in d.items())
 def dict_unicode_to_utf8(d):
-    print('d={}'.format(d))
     return dict(((key[0].encode("UTF-8"), key[1].encode("UTF-8")), value) for (key,value) in d.items())
 
 def load_dict(filename):
@@ -53,11 +51,10 @@ class DataIterator:
         else:
             self.source = fopen(source, 'r')
         self.source_dicts = []
-        #for source_dict in [uid_voc, mid_voc, cat_voc, cat_voc, cat_voc]:# 'item_carte_voc.pkl', 'cate_carte_voc.pkl']:
-        for source_dict in [uid_voc, mid_voc, cat_voc, '/home/test/modelzoo/CAN/data/item_carte_voc.pkl', '/home/test/modelzoo/CAN/data/cate_carte_voc.pkl']:
+        for source_dict in [uid_voc, mid_voc, cat_voc, '../CAN/data/item_carte_voc.pkl', '../CAN/data/cate_carte_voc.pkl']:
             self.source_dicts.append(load_dict(source_dict))
 
-        f_meta = open("/home/test/modelzoo/CAN/data/item-info", "r")
+        f_meta = open("../CAN/data/item-info", "r")
         meta_map = {}
         for line in f_meta:
             arr = line.strip().split("\t")
@@ -76,7 +73,7 @@ class DataIterator:
                 cat_idx = 0
             self.meta_id_map[mid_idx] = cat_idx
 
-        f_review = open("/home/test/modelzoo/CAN/data/reviews-info", "r")
+        f_review = open("../CAN/data/reviews-info", "r")
         self.mid_list_for_random = []
         for line in f_review:
             arr = line.strip().split("\t")
@@ -94,7 +91,6 @@ class DataIterator:
         self.n_mid = len(self.source_dicts[1])
         self.n_cat = len(self.source_dicts[2])
         self.n_carte = [len(self.source_dicts[3]), len(self.source_dicts[4])]
-        print("n_uid=%d, n_mid=%d, n_cat=%d" % (self.n_uid, self.n_mid, self.n_cat))
 
         self.shuffle = shuffle_each_epoch
         self.sort_by_length = sort_by_length

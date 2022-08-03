@@ -1,12 +1,10 @@
-#import tensorflow as tf
-import tensorflow.compat.v1 as tf
+import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import GRUCell
 from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn as bi_rnn
-#from tensorflow.python.ops.rnn import dynamic_rnn
-from rnn import dynamic_rnn
-from utils import *
-from Dice import dice
+from data.script.rnn import dynamic_rnn
+from data.script.utils import *
+from data.script.Dice import dice
 
 #### CAN config #####
 weight_emb_w = [[16, 8], [8,4]] 
@@ -21,7 +19,7 @@ if order_indep:
 
 print("orders: ",orders)
 CALC_MODE = "can"
-device = '/gpu:2'
+device = '/gpu:0'
 #### CAN config #####
 
 def gen_coaction(ad, his_items, dim, mode="can", mask=None,keep_fake_carte_seq=False):

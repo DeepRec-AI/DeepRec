@@ -1,11 +1,11 @@
 import numpy
-from data_iterator import DataIterator
+from data.script.data_iterator import DataIterator
 import tensorflow as tf
-from model import *
+from data.script.model import *
 import time
 import random
 import sys
-from utils import *
+from data.script.utils import *
 from tqdm import tqdm
 
 EMBEDDING_DIM = 18
@@ -120,11 +120,11 @@ def eval(sess, test_data, model, model_path):
     return test_auc, loss_sum, accuracy_sum, aux_loss_sum
 
 def train(
-        train_file = "/home/test/modelzoo/DIEN/data/local_train_splitByUser",
-        test_file = "/home/test/modelzoo/DIEN/data/local_test_splitByUser",
-        uid_voc = "/home/test/modelzoo/CAN/data/uid_voc.pkl",
-        mid_voc = "/home/test/modelzoo/CAN/data/mid_voc.pkl",
-        cat_voc = "/home/test/modelzoo/CAN/data/cat_voc.pkl",
+        train_file = "../DIEN/data/local_train_splitByUser",
+        test_file = "../DIEN/data/local_test_splitByUser",
+        uid_voc = "../CAN/data/uid_voc.pkl",
+        mid_voc = "../CAN/data/mid_voc.pkl",
+        cat_voc = "../CAN/data/cat_voc.pkl",
         batch_size = 128,
         maxlen = 100,
         test_iter = 8400,
@@ -183,7 +183,7 @@ def train(
         sys.stdout.flush()
 
         count()
-        start_time = time.time()
+
         iter = 0
         lr = 0.001
 
@@ -191,7 +191,6 @@ def train(
             loss_sum = 0.0
             accuracy_sum = 0.
             aux_loss_sum = 0.
-            print('train_data:',train_data)
             for src, tgt in train_data:
                 uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, noclk_mids, noclk_cats, carte = prepare_data(src, tgt, maxlen, return_neg=True)
                 loss, acc, aux_loss = model.train(sess, [uids, mids, cats, mid_his, cat_his, mid_mask, target, sl, lr, noclk_mids, noclk_cats, carte])
@@ -200,21 +199,21 @@ def train(
                 aux_loss_sum += aux_loss
                 iter += 1
                 sys.stdout.flush()
-                #if (iter % 100) == 0:
-                print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- train_aux_loss: %.4f' %  (iter, loss_sum / 100, accuracy_sum / 100, aux_loss_sum / 100))
-                loss_sum = 0.0
-                accuracy_sum = 0.0
-                aux_loss_sum = 0.0
-                #if (iter % test_iter) == 0:
-                auc_, loss_, acc_, aux_ = eval(sess, test_data, model, best_model_path)
-                print('iter: %d --- test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f' % (iter, auc_, loss_, acc_, aux_))
-                loss_sum = 0.0
-                accuracy_sum = 0.0
-                aux_loss_sum = 0.0
+                if (iter % 100) == 0:
+                    print('iter: %d ----> train_loss: %.4f ---- train_accuracy: %.4f ---- train_aux_loss: %.4f' %  (iter, loss_sum / 100, accuracy_sum / 100, aux_loss_sum / 100))
+                    loss_sum = 0.0
+                    accuracy_sum = 0.0
+                    aux_loss_sum = 0.0
+                if (iter % test_iter) == 0:
+                    auc_, loss_, acc_, aux_ = eval(sess, test_data, model, best_model_path)
+                    print('iter: %d --- test_auc: %.4f ---- test_loss: %.4f ---- test_accuracy: %.4f ---- test_aux_loss: %.4f' % (iter, auc_, loss_, acc_, aux_))
+                    loss_sum = 0.0
+                    accuracy_sum = 0.0
+                    aux_loss_sum = 0.0
                 if (iter % save_iter) == 0:
                     print('save model iter: %d' %(iter))
                     model.save(sess, model_path+"--"+str(iter))
-                print('time:%f',(time.time()-start_time))
+
             lr *= 0.5
 
 def count_flops(graph):
@@ -233,11 +232,11 @@ def count():
     print("Prameter: ", total_parameters)
 
 def test(
-        train_file = "/home/test/modelzoo/DIEN/data/local_train_splitByUser",
-        test_file = "/home/test/modelzoo/DIEN/data/local_test_splitByUser",
-        uid_voc = "/home/test/modelzoo/CAN/data/uid_voc.pkl",
-        mid_voc = "/home/test/modelzoo/CAN/data/mid_voc.pkl",
-        cat_voc = "/home/test/modelzoo/CAN/data/cat_voc.pkl",
+        train_file = "../DIEN/data/local_train_splitByUser",
+        test_file = "../DIEN/data/local_test_splitByUser",
+        uid_voc = "../CAN/data/uid_voc.pkl",
+        mid_voc = "../CAN/data/mid_voc.pkl",
+        cat_voc = "../CAN/data/cat_voc.pkl",
         batch_size = 128,
         maxlen = 100,
         model_type = 'DNN',

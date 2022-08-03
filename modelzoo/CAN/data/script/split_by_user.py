@@ -1,8 +1,8 @@
 import random
 
-fi = open("/home/test/modelzoo/DIEN/data/local_test", "r")
-ftrain = open("/home/test/modelzoo/DIEN/data/local_train_splitByUser", "w")
-ftest = open("/home/test/modelzoo/DIEN/data/local_test_splitByUser", "w")
+fi = open("../../DIEN/data/local_test", "r")
+ftrain = open("../../DIEN/data/local_train_splitByUser", "w")
+ftest = open("../../DIEN/data/local_test_splitByUser", "w")
 
 while True:
     rand_int = random.randint(1, 10)

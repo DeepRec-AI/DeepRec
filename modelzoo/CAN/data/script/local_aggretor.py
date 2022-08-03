@@ -2,9 +2,9 @@ import sys
 import hashlib
 import random
 
-fin = open("/home/test/modelzoo/DIEN/data/jointed-new-split-info", "r")
-ftrain = open("/home/test/modelzoo/DIEN/data/local_train", "w")
-ftest = open("/home/test/modelzoo/DIEN/data/local_test", "w")
+fin = open("../../DIEN/data/jointed-new-split-info", "r")
+ftrain = open("../../DIEN/data/local_train", "w")
+ftest = open("../../DIEN/data/local_test", "w")
 
 last_user = "0"
 common_fea = ""
@@ -25,7 +25,6 @@ for line in fin:
     if user != last_user:
         movie_id_list = []
         cate1_list = []
-        #print >> fo, items[1] + "\t" + user + "\t" + movie_id + "\t" + cat1 +"\t" + "" + "\t" + "" 
     else:
         history_clk_num = len(movie_id_list)
         cat_str = ""
