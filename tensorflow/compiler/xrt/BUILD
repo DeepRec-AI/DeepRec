@@ -26,7 +26,7 @@ tf_proto_library_cc(
     cc_api_version = 2,
     protodeps = [
         "//tensorflow/compiler/tf2xla:host_compute_metadata_proto",
-        "//tensorflow/compiler/xla:xla_data_proto_cc",
+        "//tensorflow/compiler/xla:xla_data_proto",
         "//tensorflow/compiler/xla:xla_proto",
         "//tensorflow/compiler/xla/service:hlo_proto",
     ],
@@ -57,7 +57,7 @@ cc_library(
         "xrt_util.h",
     ],
     deps = [
-        ":xrt_proto",
+        ":xrt_proto_cc",
         "//tensorflow/compiler/jit:xla_device",
         "//tensorflow/compiler/tf2xla:xla_compiler",
         "//tensorflow/compiler/xla:debug_options_flags",
@@ -67,7 +67,7 @@ cc_library(
         "//tensorflow/compiler/xla:statusor",
         "//tensorflow/compiler/xla:types",
         "//tensorflow/compiler/xla:xla_data_proto_cc",
-        "//tensorflow/compiler/xla:xla_proto",
+        "//tensorflow/compiler/xla:xla_proto_cc",
         "//tensorflow/compiler/xla/client:local_client",
         "//tensorflow/compiler/xla/service:backend",
         "//tensorflow/compiler/xla/service:shaped_buffer",

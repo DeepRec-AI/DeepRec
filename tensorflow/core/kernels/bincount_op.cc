@@ -94,6 +94,9 @@ class BincountOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override {
     const Tensor& arr_t = ctx->input(0);
     const Tensor& size_tensor = ctx->input(1);
+    OP_REQUIRES(ctx, size_tensor.dims() == 0,
+                errors::InvalidArgument("Shape must be rank 0 but is rank ",
+                                        size_tensor.dims()));
     const Tensor& weights_t = ctx->input(2);
 
     int32 size = size_tensor.scalar<int32>()();

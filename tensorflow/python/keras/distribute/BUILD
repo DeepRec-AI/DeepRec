@@ -413,6 +413,7 @@ cuda_py_test(
         "//tensorflow/python/keras",
     ],
     tags = [
+        "no_oss",
         "multi_and_single_gpu",
     ],
     xla_enable_strict_auto_jit = True,

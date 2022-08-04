@@ -92,7 +92,8 @@ class PadOp : public OpKernel {
                                           before_d, " ", after_d));
       const int64 size_d =
           (allow_legacy_scalars() && d == in0.dims()) ? 1 : in0.dim_size(d);
-      output_shape.AddDim(before_d + size_d + after_d);
+      OP_REQUIRES_OK(
+          context, output_shape.AddDimWithStatus(before_d + size_d + after_d));
     }
 
     // If there is no padding to be done, forward the input to output.

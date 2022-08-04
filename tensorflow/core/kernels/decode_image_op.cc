@@ -25,6 +25,7 @@ limitations under the License.
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gif/gif_io.h"
+#include "tensorflow/core/lib/gtl/cleanup.h"
 #include "tensorflow/core/lib/jpeg/jpeg_mem.h"
 #include "tensorflow/core/lib/png/png_io.h"
 #include "tensorflow/core/lib/strings/str_util.h"
@@ -241,6 +242,15 @@ class DecodeImageOp : public OpKernel {
                 errors::InvalidArgument("Invalid PNG header, data size ",
                                         input.size()));
 
+    // If we reach this point, then there is data in `decode` which must be
+    // freed by the time we end execution in this function. We cannot call
+    // `png::CommonFreeDecode()` before an `OP_REQUIRES` because if
+    // `OP_REQUIRES` constraint is satisfied then the data would be freed
+    // prematurely. Instead, let's use a `Cleanup` object.
+    auto cleanup = gtl::MakeCleanup([&decode]() {
+      png::CommonFreeDecode(&decode);
+    });
+
     // Verify that width and height are not too large:
     // - verify width and height don't overflow int.
     // - width can later be multiplied by channels_ and sizeof(uint16), so
@@ -254,7 +264,6 @@ class DecodeImageOp : public OpKernel {
     if (width != static_cast<int64>(decode.width) || width <= 0 ||
         width >= (1LL << 27) || height != static_cast<int64>(decode.height) ||
         height <= 0 || height >= (1LL << 27) || total_size >= (1LL << 29)) {
-      png::CommonFreeDecode(&decode);
       OP_REQUIRES(context, false,
                   errors::InvalidArgument("PNG size too large for int: ",
                                           decode.width, " by ", decode.height));
@@ -262,13 +271,17 @@ class DecodeImageOp : public OpKernel {
 
     // Allocate tensor
     Tensor* output = nullptr;
-    const auto status = context->allocate_output(
-        0,
-        format_ == kGifFormat ? TensorShape({1, height, width, decode.channels})
-                              : TensorShape({height, width, decode.channels}),
-        &output);
-    if (!status.ok()) png::CommonFreeDecode(&decode);
-    OP_REQUIRES_OK(context, status);
+    if (format_ == kGifFormat) {
+      OP_REQUIRES_OK(
+          context,
+          context->allocate_output(
+              0, TensorShape({1, height, width, decode.channels}), &output));
+    } else {
+      OP_REQUIRES_OK(
+          context,
+          context->allocate_output(
+              0, TensorShape({height, width, decode.channels}), &output));
+    }
 
     if (channel_bits_ == 8) {
       // Finish decoding png

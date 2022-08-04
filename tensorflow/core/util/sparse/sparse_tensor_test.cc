@@ -676,7 +676,8 @@ TEST(SparseTensorTest, Slice) {
   size[0] = 2;
   size[1] = 3;
 
-  SparseTensor slice = SparseTensor::Slice<int64>(st, start, size);
+  TF_ASSERT_OK_AND_ASSIGN(SparseTensor slice,
+                          SparseTensor::Slice<int64>(st, start, size));
 
   EXPECT_EQ(TensorShape(slice.shape()), TensorShape({2, 3}));
   EXPECT_EQ(slice.values().NumElements(), 3);

@@ -509,7 +509,7 @@ class NetworkConstructionTest(keras_parameterized.TestCase):
     out = _MultiOutput(name='out')(inp)
     model = keras.models.Model(inp, out)
     self.assertEqual(['out', 'out_1'], model.output_names)
-    self.assertAllClose([2., 3.], model(1.))
+    self.assertAllClose([[[2.]], [[3.]]], model.predict(np.ones(1)))
 
   @test_util.run_deprecated_v1
   def test_recursion(self):

@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "third_party/eigen3/Eigen/Core"
@@ -22,6 +23,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/kernels/boosted_trees/boosted_trees.pb.h"
 #include "tensorflow/core/kernels/boosted_trees/tree_helper.h"
+#include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/logging.h"
 
 namespace tensorflow {
@@ -48,6 +50,16 @@ class BoostedTreesCalculateBestGainsPerFeatureOp : public OpKernel {
     // node_id_range
     const Tensor* node_id_range_t;
     OP_REQUIRES_OK(context, context->input("node_id_range", &node_id_range_t));
+    OP_REQUIRES(
+        context, node_id_range_t->dims() == 1,
+        errors::InvalidArgument("node_id_range must be a rank 1 tensor, but "
+                                "given node_id_range has dims of ",
+                                node_id_range_t->dims()));
+    OP_REQUIRES(context, node_id_range_t->dim_size(0) == 2,
+                errors::InvalidArgument(
+                    "node_id_range must be a rank 1 tensor with shape=[2], but "
+                    "given node_id_range has shape ",
+                    node_id_range_t->dim_size(0), " on its first dim"));
     const auto node_id_range = node_id_range_t->vec<int32>();
     const int32 node_id_first = node_id_range(0);  // inclusive
     const int32 node_id_last = node_id_range(1);   // exclusive
@@ -57,7 +69,10 @@ class BoostedTreesCalculateBestGainsPerFeatureOp : public OpKernel {
                                                 &stats_summary_list));
     const int64 num_buckets = stats_summary_list[0].dim_size(1);
     // Check for single logit: 1 gradient + 1 hessian value.
-    DCHECK_EQ(stats_summary_list[0].dim_size(2), 2);
+    OP_REQUIRES(context, stats_summary_list[0].dim_size(2) == 2,
+                errors::InvalidArgument("stats_summary_list[0] must have "
+                                        "exactly 2 dimensions, obtained: ",
+                                        stats_summary_list[0].dim_size(2)));
     std::vector<TTypes<float, 3>::ConstTensor> stats_summary;
     stats_summary.reserve(stats_summary_list.size());
     for (const auto& tensor : stats_summary_list) {
@@ -65,17 +80,33 @@ class BoostedTreesCalculateBestGainsPerFeatureOp : public OpKernel {
     }
     const Tensor* l1_t;
     OP_REQUIRES_OK(context, context->input("l1", &l1_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(l1_t->shape()),
+        errors::InvalidArgument("l1 must be a scalar, got a tensor of shape ",
+                                l1_t->shape().DebugString()));
     const auto l1 = l1_t->scalar<float>()();
     const Tensor* l2_t;
     OP_REQUIRES_OK(context, context->input("l2", &l2_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(l2_t->shape()),
+        errors::InvalidArgument("l2 must be a scalar, got a tensor of shape ",
+                                l2_t->shape().DebugString()));
     const auto l2 = l2_t->scalar<float>()();
     const Tensor* tree_complexity_t;
     OP_REQUIRES_OK(context,
                    context->input("tree_complexity", &tree_complexity_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(tree_complexity_t->shape()),
+                errors::InvalidArgument(
+                    "tree_complexity must be a scalar, got a tensor of shape ",
+                    tree_complexity_t->shape().DebugString()));
     const auto tree_complexity = tree_complexity_t->scalar<float>()();
     const Tensor* min_node_weight_t;
     OP_REQUIRES_OK(context,
                    context->input("min_node_weight", &min_node_weight_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(min_node_weight_t->shape()),
+                errors::InvalidArgument(
+                    "min_node_weight must be a scalar, got a tensor of shape ",
+                    min_node_weight_t->shape().DebugString()));
     const auto min_node_weight = min_node_weight_t->scalar<float>()();
 
     // Allocate output lists of tensors:
@@ -241,12 +272,22 @@ class BoostedTreesCalculateBestFeatureSplitOp : public OpKernel {
     // node_id_range
     const Tensor* node_id_range_t;
     OP_REQUIRES_OK(context, context->input("node_id_range", &node_id_range_t));
+    OP_REQUIRES(
+        context, node_id_range_t->NumElements() == 2,
+        errors::InvalidArgument("node_id_range argument must have shape [2]"));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(node_id_range_t->shape()),
+                errors::InvalidArgument(
+                    "node_id_range must be a vector, received shape ",
+                    node_id_range_t->shape().DebugString()));
     const auto node_id_range = node_id_range_t->vec<int32>();
     const int32 node_id_first = node_id_range(0);  // inclusive
     const int32 node_id_last = node_id_range(1);   // exclusive
 
     const Tensor* stats_summary_t;
     OP_REQUIRES_OK(context, context->input("stats_summary", &stats_summary_t));
+    OP_REQUIRES(
+        context, stats_summary_t->shape().dims() == 4,
+        errors::InvalidArgument("stats_summary argument must have rank 4"));
     TTypes<float, 4>::ConstTensor stats_summary =
         stats_summary_t->tensor<float, 4>();
     const int32 feature_dims = stats_summary_t->dim_size(1);
@@ -254,31 +295,51 @@ class BoostedTreesCalculateBestFeatureSplitOp : public OpKernel {
     const int32 num_buckets = stats_summary_t->dim_size(2) - 1;
     const int32 logits_dim = logits_dim_;
     const int32 hessian_dim = stats_summary_t->dim_size(3) - logits_dim;
-    DCHECK_GT(hessian_dim, 0);
-    DCHECK_LE(hessian_dim, logits_dim * logits_dim);
+    OP_REQUIRES(context, hessian_dim > 0,
+                errors::InvalidArgument("hessian dim should be < 0, got ",
+                                        hessian_dim));
+    OP_REQUIRES(context, hessian_dim <= logits_dim * logits_dim,
+                errors::InvalidArgument(
+                    "hessian dim should be <= ", logits_dim * logits_dim,
+                    " but got: ", hessian_dim));
 
     const Tensor* l1_t;
     OP_REQUIRES_OK(context, context->input("l1", &l1_t));
+    OP_REQUIRES(context, l1_t->NumElements() == 1,
+                errors::InvalidArgument("l1 argument must be a scalar"));
     const auto l1 = l1_t->scalar<float>()();
-    DCHECK_GE(l1, 0);
+    OP_REQUIRES(context, l1 >= 0,
+                errors::InvalidArgument("l1 = ", l1, " but it should be >= 0"));
     if (logits_dim_ > 1) {
       // Multi-class L1 regularization not supported yet.
-      DCHECK_EQ(l1, 0);
+      OP_REQUIRES(
+          context, l1 == 0,
+          errors::InvalidArgument(
+              "l1 != 0 is not yet supported for multi-class regularization"));
     }
 
     const Tensor* l2_t;
     OP_REQUIRES_OK(context, context->input("l2", &l2_t));
+    OP_REQUIRES(context, l2_t->NumElements() == 1,
+                errors::InvalidArgument("l2 argument must be a scalar"));
     const auto l2 = l2_t->scalar<float>()();
-    DCHECK_GE(l2, 0);
+    OP_REQUIRES(context, l2 >= 0,
+                errors::InvalidArgument("l2 = ", l2, " but it should be >= 0"));
 
     const Tensor* tree_complexity_t;
     OP_REQUIRES_OK(context,
                    context->input("tree_complexity", &tree_complexity_t));
+    OP_REQUIRES(
+        context, tree_complexity_t->NumElements() == 1,
+        errors::InvalidArgument("tree_complexity argument must be a scalar"));
     const auto tree_complexity = tree_complexity_t->scalar<float>()();
 
     const Tensor* min_node_weight_t;
     OP_REQUIRES_OK(context,
                    context->input("min_node_weight", &min_node_weight_t));
+    OP_REQUIRES(
+        context, min_node_weight_t->NumElements() == 1,
+        errors::InvalidArgument("min_node_weight argument must be a scalar"));
     const auto min_node_weight = min_node_weight_t->scalar<float>()();
 
     std::vector<int32> output_node_ids;
@@ -287,7 +348,7 @@ class BoostedTreesCalculateBestFeatureSplitOp : public OpKernel {
     std::vector<int32> output_thresholds;
     std::vector<Eigen::VectorXf> output_left_node_contribs;
     std::vector<Eigen::VectorXf> output_right_node_contribs;
-    std::vector<string> output_split_types;
+    std::vector<std::string> output_split_types;
 
     // TODO(tanzheny) parallelize the computation.
     // Iterate each node and find the best gain per node.
@@ -572,44 +633,83 @@ class BoostedTreesSparseCalculateBestFeatureSplitOp : public OpKernel {
     // node_id_range
     const Tensor* node_id_range_t;
     OP_REQUIRES_OK(context, context->input("node_id_range", &node_id_range_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(node_id_range_t->shape()),
+                errors::InvalidArgument(
+                    "node_id_range must be a vector, received shape ",
+                    node_id_range_t->shape().DebugString()));
     const auto node_id_range = node_id_range_t->vec<int32>();
+    OP_REQUIRES(
+        context, node_id_range.size() == 2,
+        errors::InvalidArgument("node_id_range should have 2 entries, got: ",
+                                node_id_range.size()));
     const int32 node_id_first = node_id_range(0);  // inclusive
     const int32 node_id_last = node_id_range(1);   // exclusive
 
     const Tensor* stats_summary_indices_t;
     OP_REQUIRES_OK(context, context->input("stats_summary_indices",
                                            &stats_summary_indices_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsMatrix(stats_summary_indices_t->shape()),
+        errors::InvalidArgument(
+            "stats_summary_indices must be a matrix, got a tensor of shape ",
+            stats_summary_indices_t->shape().DebugString()));
     const auto stats_summary_indices = stats_summary_indices_t->matrix<int32>();
     const int32 num_sparse_entries = stats_summary_indices_t->dim_size(0);
 
     const Tensor* stats_summary_values_t;
     OP_REQUIRES_OK(context, context->input("stats_summary_values",
                                            &stats_summary_values_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(stats_summary_values_t->shape()),
+        errors::InvalidArgument(
+            "stats_summary_values must be a vector, got a tensor of shape ",
+            stats_summary_values_t->shape().DebugString()));
     const auto stats_summary_values = stats_summary_values_t->vec<float>();
 
     const Tensor* stats_summary_shape_t;
     OP_REQUIRES_OK(
         context, context->input("stats_summary_shape", &stats_summary_shape_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(stats_summary_shape_t->shape()),
+        errors::InvalidArgument(
+            "stats_summary_shape must be a vector, got a tensor of shape ",
+            stats_summary_shape_t->shape().DebugString()));
     const auto stats_summary_shape = stats_summary_shape_t->vec<int32>();
     const int32 num_buckets = stats_summary_shape(2) - 1;
     const int32 stats_dims = stats_summary_shape(3);
 
     const Tensor* l1_t;
     OP_REQUIRES_OK(context, context->input("l1", &l1_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(l1_t->shape()),
+        errors::InvalidArgument("l1 must be a scalar, got a tensor of shape ",
+                                l1_t->shape().DebugString()));
     const auto l1 = l1_t->scalar<float>()();
 
     const Tensor* l2_t;
     OP_REQUIRES_OK(context, context->input("l2", &l2_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsScalar(l2_t->shape()),
+        errors::InvalidArgument("l2 must be a scalar, got a tensor of shape ",
+                                l2_t->shape().DebugString()));
     const auto l2 = l2_t->scalar<float>()();
 
     const Tensor* tree_complexity_t;
     OP_REQUIRES_OK(context,
                    context->input("tree_complexity", &tree_complexity_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(tree_complexity_t->shape()),
+                errors::InvalidArgument(
+                    "tree_complexity must be a scalar, got a tensor of shape ",
+                    tree_complexity_t->shape().DebugString()));
     const auto tree_complexity = tree_complexity_t->scalar<float>()();
 
     const Tensor* min_node_weight_t;
     OP_REQUIRES_OK(context,
                    context->input("min_node_weight", &min_node_weight_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsScalar(min_node_weight_t->shape()),
+                errors::InvalidArgument(
+                    "min_node_weight must be a scalar, got a tensor of shape ",
+                    min_node_weight_t->shape().DebugString()));
     const auto min_node_weight = min_node_weight_t->scalar<float>()();
 
     std::vector<int32> output_node_ids;
@@ -634,11 +734,25 @@ class BoostedTreesSparseCalculateBestFeatureSplitOp : public OpKernel {
         f_map.clear();
       }
       previous_node_id = node_id;
-      DCHECK_LE(node_id_first, node_id);
-      DCHECK_LT(node_id, node_id_last);
+      OP_REQUIRES(
+          context, node_id_first <= node_id && node_id < node_id_last,
+          errors::InvalidArgument("node_id = ", node_id, " which is not in [",
+                                  node_id_first, ", ", node_id_last, ")"));
       const int32 feature_dim = stats_summary_indices(idx, 1);
       const int32 bucket_id = stats_summary_indices(idx, 2);
       const int32 stat_dim = stats_summary_indices(idx, 3);
+      OP_REQUIRES(context, stat_dim < stats_dims,
+                  errors::InvalidArgument(
+                      "Stat dim, the sum of logits dim and hessian dim in "
+                      "stats_summary_indices, cannot be greater than stats "
+                      "dims, the last value in stats_summary_shape, which was ",
+                      stats_dims, ". At index (", idx,
+                      ", 4), stats_summary_indices contains value ", stat_dim));
+      OP_REQUIRES(context, stat_dim >= 0,
+                  errors::InvalidArgument(
+                      "Stat dim, the sum of logits dim and hessian dim in "
+                      "stats_summary_indices, should be >= 0, which was ",
+                      stat_dim, " at index ", idx));
       std::pair<FeatureMapIterator, bool> const& f_insert_result = f_map.insert(
           FeatureMapIterator::value_type(feature_dim, BucketMap()));
       auto& b_map = f_insert_result.first->second;
@@ -866,15 +980,39 @@ class BoostedTreesMakeStatsSummaryOp : public OpKernel {
     // node_ids
     const Tensor* node_ids_t;
     OP_REQUIRES_OK(context, context->input("node_ids", &node_ids_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(node_ids_t->shape()),
+                errors::InvalidArgument(
+                    "node_ids must be a vector, got a tensor of shape ",
+                    node_ids_t->shape().DebugString()));
     const auto node_ids = node_ids_t->vec<int32>();
     // gradients
     const Tensor* gradients_t;
     OP_REQUIRES_OK(context, context->input("gradients", &gradients_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsMatrix(gradients_t->shape()),
+                errors::InvalidArgument(
+                    "gradients must be a matrix, got a tensor of shape ",
+                    gradients_t->shape().DebugString()));
     const auto gradients = gradients_t->matrix<float>();
+    OP_REQUIRES(
+        context, node_ids.size() == gradients.dimension(0),
+        errors::InvalidArgument(
+            "node_ids size should match 0th dim of gradients. node ids "
+            "size: ",
+            node_ids.size(), ", gradients dim0: ", gradients.dimension(0)));
     // hessians
     const Tensor* hessians_t;
     OP_REQUIRES_OK(context, context->input("hessians", &hessians_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsMatrix(hessians_t->shape()),
+                errors::InvalidArgument(
+                    "hessians must be a matrix, got a tensor of shape ",
+                    hessians_t->shape().DebugString()));
     const auto hessians = hessians_t->matrix<float>();
+    OP_REQUIRES(
+        context, node_ids.size() == hessians.dimension(0),
+        errors::InvalidArgument(
+            "node_ids size should match 0th dim of hessians. node ids "
+            "size: ",
+            node_ids.size(), ", hessians dim0: ", hessians.dimension(0)));
     // bucketized_features
     OpInputList bucketized_features_list;
     OP_REQUIRES_OK(context, context->input_list("bucketized_features_list",
@@ -894,6 +1032,11 @@ class BoostedTreesMakeStatsSummaryOp : public OpKernel {
     // Partition by node, and then bucketize.
     for (int feature_idx = 0; feature_idx < num_features_; ++feature_idx) {
       const auto& features = bucketized_features_list[feature_idx].vec<int32>();
+      OP_REQUIRES(
+          context, features.size() == node_ids.size(),
+          errors::InvalidArgument("feature ", feature_idx,
+                                  " should have same size as node_ids, got ",
+                                  features.size(), " and ", node_ids.size()));
       for (int i = 0; i < batch_size; ++i) {
         const int32 node = node_ids(i);
         const int32 bucket = features(i);
@@ -933,21 +1076,44 @@ class BoostedTreesAggregateStatsOp : public OpKernel {
     // node_ids.
     const Tensor* node_ids_t;
     OP_REQUIRES_OK(context, context->input("node_ids", &node_ids_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(node_ids_t->shape()),
+                errors::InvalidArgument(
+                    "node_ids must be a vector, got a tensor of shape ",
+            node_ids_t->shape().DebugString()));
     const auto node_ids = node_ids_t->vec<int32>();
 
     // gradients.
     const Tensor* gradients_t;
     OP_REQUIRES_OK(context, context->input("gradients", &gradients_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsMatrix(gradients_t->shape()),
+                errors::InvalidArgument(
+                    "gradients must be a matrix, got a tensor of shape ",
+                    gradients_t->shape().DebugString()));
     const auto gradients = gradients_t->matrix<float>();
+
+    OP_REQUIRES(
+        context, node_ids.size() == gradients.dimension(0),
+        errors::InvalidArgument(
+            "node_ids size should match 0th dim of gradients. node ids "
+            "size: ",
+            node_ids.size(), ", gradients dim0: ", gradients.dimension(0)));
 
     // hessians.
     const Tensor* hessians_t;
     OP_REQUIRES_OK(context, context->input("hessians", &hessians_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsMatrix(hessians_t->shape()),
+                errors::InvalidArgument(
+                    "hessians must be a matrix, got a tensor of shape ",
+                    hessians_t->shape().DebugString()));
     const auto hessians = hessians_t->matrix<float>();
 
     // feature.
     const Tensor* feature_t;
     OP_REQUIRES_OK(context, context->input("feature", &feature_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsMatrix(feature_t->shape()),
+                errors::InvalidArgument(
+                    "feature must be a matrix, got a tensor of shape ",
+                    feature_t->shape().DebugString()));
     const auto feature = feature_t->matrix<int32>();
 
     // Infer batch size, feature dimension and stats dimension.
@@ -970,6 +1136,9 @@ class BoostedTreesAggregateStatsOp : public OpKernel {
 
     for (int i = 0; i < batch_size; ++i) {
       const int32 node = node_ids(i);
+      OP_REQUIRES(context, node >= 0,
+                  errors::InvalidArgument(
+                      "node_ids ", i, "th entry should be >=0, got: ", node));
       for (int feature_dim = 0; feature_dim < feature_dims; ++feature_dim) {
         const int32 feature_value = feature(i, feature_dim);
         const int32 bucket =
@@ -1100,7 +1269,8 @@ static void AddInstanceStatsToMap(const int32 instance, const int32 feature_dim,
 // Add statistics to StatsPartitionMap for bucket_id ranging from
 // (start_instance, start_feature_dim) to (end_instance, end_feature_dim),
 // inclusive on start and end instances, exclusive on end feature dim.
-static void AddRangeStats(const int start_instance, const int end_instance,
+static void AddRangeStats(OpKernelContext* const context,
+                          const int start_instance, const int end_instance,
                           const int start_feature_dim,
                           const int end_feature_dim,
                           StatsPartitionMap* stats_map,
@@ -1109,9 +1279,15 @@ static void AddRangeStats(const int start_instance, const int end_instance,
                           const TTypes<int32>::ConstVec& node_ids,
                           const int32 feature_dims, const int32 bucket_id,
                           const int32 logits_dims, const int32 stats_dims) {
-  DCHECK_LE(start_instance, end_instance);
+  OP_REQUIRES(context, start_instance <= end_instance,
+              errors::InvalidArgument(
+                  "start_instance = ", start_instance,
+                  " which is not at most end_instance=", end_instance));
   if (start_instance == end_instance) {
-    DCHECK_LT(start_feature_dim, end_feature_dim);
+    OP_REQUIRES(context, start_feature_dim < end_feature_dim,
+                errors::InvalidArgument(
+                    "start_feature_dim = ", start_feature_dim,
+                    " which is not at most end_feature_dim=", end_feature_dim));
   }
   for (int32 instance = start_instance; instance <= end_instance; ++instance) {
     const int32 start_f_dim =
@@ -1138,29 +1314,71 @@ class BoostedTreesSparseAggregateStatsOp : public OpKernel {
     // node_ids.
     const Tensor* node_ids_t;
     OP_REQUIRES_OK(context, context->input("node_ids", &node_ids_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsVector(node_ids_t->shape()),
+        errors::InvalidArgument("node_ids must be a vector, received shape ",
+                                node_ids_t->shape().DebugString()));
     const auto node_ids = node_ids_t->vec<int32>();
+    const auto num_nodes = node_ids_t->NumElements();
+    for (int i = 0; i < num_nodes; ++i) {
+      OP_REQUIRES(
+          context, node_ids(i) <= max_splits_,
+          errors::InvalidArgument(
+              "Nodes in node_ids must be at most max_splits. Node ", i, " is ",
+              node_ids(i), " which is greater than ", max_splits_));
+    }
 
     // gradients.
     const Tensor* gradients_t;
     OP_REQUIRES_OK(context, context->input("gradients", &gradients_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsMatrix(gradients_t->shape()),
+        errors::InvalidArgument("gradients must be a matrix, received shape ",
+                                gradients_t->shape().DebugString()));
     const auto gradients = gradients_t->matrix<float>();
 
     // hessians.
     const Tensor* hessians_t;
     OP_REQUIRES_OK(context, context->input("hessians", &hessians_t));
+    OP_REQUIRES(
+        context, TensorShapeUtils::IsMatrix(hessians_t->shape()),
+        errors::InvalidArgument("hessians must be a matrix, received shape ",
+                                hessians_t->shape().DebugString()));
     const auto hessians = hessians_t->matrix<float>();
 
     // feature indices.
     const Tensor* feature_indices_t;
     OP_REQUIRES_OK(context,
                    context->input("feature_indices", &feature_indices_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsMatrix(feature_indices_t->shape()),
+                errors::InvalidArgument(
+                    "feature_indices must be a matrix, received shape ",
+                    feature_indices_t->shape().DebugString()));
+    OP_REQUIRES(
+        context, feature_indices_t->shape().dim_size(1) == 2,
+        errors::InvalidArgument(
+            "feature_indices must be a matrix of shape [?, 2], received shape ",
+            feature_indices_t->shape().DebugString()));
     const auto feature_indices = feature_indices_t->matrix<int32>();
 
     // feature values.
     const Tensor* feature_values_t;
     OP_REQUIRES_OK(context,
                    context->input("feature_values", &feature_values_t));
+    OP_REQUIRES(context, TensorShapeUtils::IsVector(feature_values_t->shape()),
+                errors::InvalidArgument(
+                    "feature_values must be a vector, received shape ",
+                    feature_values_t->shape().DebugString()));
     const auto feature_values = feature_values_t->vec<int32>();
+    const auto num_features = feature_values_t->NumElements();
+    for (int i = 0; i < num_features; ++i) {
+      OP_REQUIRES(
+          context, feature_values(i) <= num_buckets_,
+          errors::InvalidArgument(
+              "Features in feature_values must be at most num_buckets. Node ",
+              i, " is ", feature_values(i), " which is greater than ",
+              num_buckets_));
+    }
 
     // feature shape.
     const Tensor* feature_shape_t;
@@ -1177,7 +1395,26 @@ class BoostedTreesSparseAggregateStatsOp : public OpKernel {
     const int64 stats_dims = logits_dims + hessians_dims;
     const int64 num_sparse_entries = feature_indices_t->dim_size(0);
     const int32 feature_dims = feature_shape(1);
-    DCHECK_LE(num_sparse_entries, batch_size * feature_dims);
+    OP_REQUIRES(context, num_features == num_sparse_entries,
+                errors::InvalidArgument(
+                    "Number of elements in feature_values must match number of "
+                    "sparse entries in feature_indices. Got ",
+                    num_features, " and ", num_sparse_entries));
+    for (int i = 0; i < num_sparse_entries; ++i) {
+      const int32_t f_dim = feature_indices(i, 1);
+      OP_REQUIRES(
+          context, f_dim <= feature_dims,
+          errors::InvalidArgument(
+              "Got invalid feature index feature_indices(", i, "1) = ", f_dim,
+              " which is above ", feature_dims,
+              " (from feature_shape: ", feature_shape_t->DebugString(), ")"));
+    }
+    OP_REQUIRES(context, num_sparse_entries <= batch_size * feature_dims,
+                errors::InvalidArgument(
+                    "feature_indices dim0 should be <= gradients dim0 * "
+                    "feature_shape[1]. features_indices dim0: ",
+                    num_sparse_entries, " gradients dim0: ", batch_size,
+                    ", feature_shape[1]: ", feature_dims));
 
     // Aggregate statistics info to map.
     StatsPartitionMap stats_map;
@@ -1185,26 +1422,44 @@ class BoostedTreesSparseAggregateStatsOp : public OpKernel {
     int prev_instance = 0;
     int prev_f_dim = -1;
 
+    if (num_sparse_entries > 0) {
+      OP_REQUIRES(
+          context, feature_indices(0, 0) >= 0,
+          errors::InvalidArgument("feature_indices should be non-negative but "
+                                  "got feature_indices(0, 0)=",
+                                  feature_indices(0, 0)));
+    }
+
     for (int i = 0; i < num_sparse_entries; ++i) {
       // the instance number within a batch
       const int32 instance = feature_indices(i, 0);
-      DCHECK_LE(instance, batch_size);
-      DCHECK_GE(instance, prev_instance);
+      OP_REQUIRES(context, instance <= batch_size,
+                  errors::InvalidArgument("feature_indices(", i,
+                                          "0) should be at most batch size (",
+                                          batch_size, " but got ", instance));
+      OP_REQUIRES(
+          context, instance >= prev_instance,
+          errors::InvalidArgument(
+              "feature_indices should be increasing but got feature_indices(",
+              i, ", 0) < ", prev_instance, " (feature_indices(", i - 1, "0))"));
       // the node id within a tree.
-      const int32 node_id = node_ids(instance);
-      DCHECK_LE(node_id, max_splits_);
+      // We don't need the node id here, we just validate that the `instance`
+      // is a valid index as this is needed later in the code.
+      OP_REQUIRES(context, instance < num_nodes,
+                  errors::InvalidArgument("feature_indices(", i,
+                                          "0) is not a valid index in the "
+                                          "node_ids vector (must be less than ",
+                                          num_nodes, ", got ", instance, ")"));
       // the feature dimension.
       const int32 f_dim = feature_indices(i, 1);
-      DCHECK_LE(f_dim, feature_dims);
       // the bucket id of the value.
       const int32 bucket_id = feature_values(i);
-      DCHECK_LE(bucket_id, num_buckets_);
 
       // Add statistics for the missing entries into default bucket.
       // The last bucket is default bucket.
       const int missing_entry_bucket = num_buckets_;
-      AddRangeStats(prev_instance, instance, prev_f_dim, f_dim, &stats_map,
-                    gradients, hessians, node_ids, feature_dims,
+      AddRangeStats(context, prev_instance, instance, prev_f_dim, f_dim,
+                    &stats_map, gradients, hessians, node_ids, feature_dims,
                     missing_entry_bucket, logits_dims, stats_dims);
       prev_instance = instance;
       prev_f_dim = f_dim;
@@ -1213,9 +1468,9 @@ class BoostedTreesSparseAggregateStatsOp : public OpKernel {
       AddInstanceStatsToMap(instance, f_dim, bucket_id, logits_dims, stats_dims,
                             &stats_map, gradients, hessians, node_ids);
     }
-    AddRangeStats(prev_instance, batch_size - 1, prev_f_dim, feature_dims,
-                  &stats_map, gradients, hessians, node_ids, feature_dims,
-                  num_buckets_, logits_dims, stats_dims);
+    AddRangeStats(context, prev_instance, batch_size - 1, prev_f_dim,
+                  feature_dims, &stats_map, gradients, hessians, node_ids,
+                  feature_dims, num_buckets_, logits_dims, stats_dims);
 
     // Serialize statistics info map to tensor output.
     const int64 num_slots = stats_map.size() * stats_dims;

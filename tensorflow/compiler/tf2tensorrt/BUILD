@@ -37,7 +37,7 @@ cc_library(
         "stub/nvinfer_stub.cc",
         "stub/nvinfer_plugin_stub.cc",
     ]),
-    textual_hdrs = glob(["stub/*.inc"]),
+    textual_hdrs = glob(["stub/*.inc", "common/utils.h"]),
     deps = if_tensorrt([
         "@local_config_tensorrt//:tensorrt_headers",
         "//tensorflow/core:lib",
@@ -63,6 +63,8 @@ tf_cuda_cc_test(
         "nomac",
     ],
     deps = [
+        ":trt_logging",
+        ":utils",
         "//tensorflow/core:gpu_init",
         "//tensorflow/core:lib",
         "//tensorflow/core:stream_executor",
@@ -246,6 +248,7 @@ tf_cuda_library(
     hdrs = [
         "utils/trt_int8_calibrator.h",
         "utils/trt_lru_cache.h",
+        "utils/trt_tensor_proxy.h",
     ],
     deps = [
         ":trt_allocator",
@@ -454,17 +457,17 @@ tf_cuda_cc_test(
     ],
 )
 
-tf_gpu_kernel_library(
-    name = "plugin_cast",
-    srcs = ["plugin/plugin_cast.cu.cc"],
-    deps = [
-        ":trt_plugins",
-        "//tensorflow/core:framework_lite",
-    ] + if_tensorrt([
-        "@local_config_cuda//cuda:cuda_headers",
-        "@local_config_tensorrt//:tensorrt",
-    ]),
-)
+#tf_gpu_kernel_library(
+#    name = "plugin_cast",
+#    srcs = ["plugin/plugin_cast.cu.cc"],
+#    deps = [
+#        ":trt_plugins",
+#        "//tensorflow/core:framework_lite",
+#    ] + if_tensorrt([
+#        "@local_config_cuda//cuda:cuda_headers",
+#        "@local_config_tensorrt//:tensorrt",
+#    ]),
+#)
 
 tf_cuda_library(
     name = "trt_plugins",
@@ -479,7 +482,11 @@ tf_cuda_library(
 cc_library(
     name = "utils",
     srcs = ["convert/utils.cc"],
-    hdrs = ["convert/utils.h"],
+    hdrs = [
+        "common/utils.h",
+        "convert/utils.h",
+        "utils/trt_tensor_proxy.h",
+    ],
     copts = tf_copts(),
     deps = [
         "//tensorflow/core:framework",

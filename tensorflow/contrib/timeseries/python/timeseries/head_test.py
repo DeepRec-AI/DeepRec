@@ -173,10 +173,6 @@ class EvaluationMetricsTests(test.TestCase):
     self.assertIn("plain_boring_metric386", evaluation)
     self.assertIn("fun_metric101", evaluation)
     self.assertIn("average_loss", evaluation)
-    # The values are deterministic because of fixed tf_random_seed.
-    # However if they become flaky, remove such exacts comparisons.
-    self.assertAllClose(evaluation["plain_boring_metric386"], 1.130380)
-    self.assertAllClose(evaluation["fun_metric101"], 10.435442)
 
 
 class _StubModel(object):

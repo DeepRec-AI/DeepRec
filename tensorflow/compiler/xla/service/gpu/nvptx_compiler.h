@@ -30,6 +30,7 @@ limitations under the License.
 namespace xla {
 namespace gpu {
 
+
 /*
 Persistent compilation cache.
 This cache store .ptx and .cubin files to be used by subsequent compilations.
@@ -64,6 +65,10 @@ class persistentCompilationCache
     bool LookupCache(int64 key, std::vector<uint8> &cubin);
 };
 
+void WarnIfBadDriverJITVersion();
+
+// Returns the directory containing nvvm libdevice files.
+string GetLibdeviceDir(const HloModuleConfig& hlo_module_config);
 
 // NVPTXCompiler generates efficient GPU executables for NVPTX target.
 class NVPTXCompiler : public GpuCompiler {

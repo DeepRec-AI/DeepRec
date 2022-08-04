@@ -136,8 +136,8 @@ class BatchNormTest(test_util.VectorDistributionTestHelpers,
           # When training=False, moving_mean, moving_var remain at their
           # initialized values (0., 1.), resulting in no scale/shift (a small
           # shift occurs if epsilon > 0.)
-          self.assertAllClose(x_, norm_x_)
-          self.assertAllClose(x_, denorm_x_, atol=1e-5)
+          self.assertAllClose(x_, norm_x_, atol=1e-5, rtol=1e-5)
+          self.assertAllClose(x_, denorm_x_, atol=1e-5, rtol=1e-5)
           # ildj is computed with saved statistics.
           expected_ildj = np.sum(
               np.log(1.) - .5 * np.log(1. + batch_norm.batchnorm.epsilon))

@@ -20,6 +20,7 @@ from __future__ import print_function
 
 import numpy as np
 
+from tensorflow.python.framework import errors
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import sparse_ops
@@ -262,6 +263,15 @@ class SparseSplitOpTest(test.TestCase):
       sparse_ops.sparse_split(sp_input=1)
     with self.assertRaisesRegexp(ValueError, 'axis is required'):
       sparse_ops.sparse_split(num_split=2, sp_input=1)
+
+  def testInvalidArgumentError(self):
+    # Test case for GitHub issue 53660.
+    axis = [1, 2]
+    with self.assertRaisesRegexp(errors.InvalidArgumentError,
+                                 r'axis should be a scalar'):
+      self.evaluate(
+          sparse_ops.sparse_split(
+              sp_input=self._SparseTensor_4x6(), num_split=3, axis=axis))
 
 
 if __name__ == '__main__':
