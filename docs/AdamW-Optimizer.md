@@ -1,11 +1,8 @@
 # AdamW Optimizer
 ## 介绍
-Optimizer that implements the Adam algorithm with weight decay.
-​
+AdamW优化器支持Embedding Variable，相对于Adam优化器增加了了权重衰减的功能。
 
-This is an implementation of the AdamW optimizer described in "Decoupled Weight Decay Regularization" by Loshch ilov & Hutter ([https://arxiv.org/abs/1711.05101](https://arxiv.org/pdf/1711.05101.pdf)).
-
-It computes the update step of `tf.train.Adam` and additionally decays the variable. Note that this is different from adding L2 regularization on the variables to the loss: it regularizes variables with large gradients more than L2 regularization would, which was shown to yield better training loss and generalization error in the paper above.
+这是Loshch ilov & Hutter (https://arxiv.org/abs/1711.05101)的 "Decoupled Weight Decay Regularization"中描述的AdamW优化器的一个实现。
 
 
 ## 用户接口

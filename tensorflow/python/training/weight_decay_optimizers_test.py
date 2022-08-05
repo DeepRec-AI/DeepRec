@@ -43,8 +43,7 @@ def adamw_update_numpy(param, g_t, t, m, v, lr=0.001, beta1=0.9,
   m_t = beta1 * m + (1 - beta1) * g_t
   v_t = beta2 * v + (1 - beta2) * g_t * g_t
 
-  param_t = (param - lr_t * m_t / (np.sqrt(v_t) + epsilon) -
-             (param * WEIGHT_DECAY))
+  param_t = param * (1 - WEIGHT_DECAY) - lr_t * m_t / (np.sqrt(v_t) + epsilon)
   return param_t, m_t, v_t
 
 
