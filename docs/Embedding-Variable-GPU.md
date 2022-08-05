@@ -37,4 +37,4 @@ with tf.device('/gpu:0'):
                 initializer=tf.ones_initializer(tf.dtypes.float32))
 ```
 
-注意：GPU版本的EmbeddingVariable暂时无法和TensorFlow自带Saver一起使用，我们后面会修复这个问题。
+注意：目前GPU EV不支持incremental checkpoint，如果使用的话EV相关的OP会被放置到CPU上，这个问题我们后续会修复。
