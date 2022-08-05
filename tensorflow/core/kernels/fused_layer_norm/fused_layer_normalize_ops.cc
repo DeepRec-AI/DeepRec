@@ -1,11 +1,11 @@
 #include "compile_util.h"
 // #include "ln_util.h"
 
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/resource_mgr.h"
-#include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/lib/core/threadpool.h"
+// #include "tensorflow/core/framework/op.h"
+// #include "tensorflow/core/framework/resource_mgr.h"
+// #include "tensorflow/core/framework/shape_inference.h"
+// #include "tensorflow/core/framework/op_kernel.h"
+// #include "tensorflow/core/lib/core/threadpool.h"
 
 using namespace tensorflow;
 
@@ -100,11 +100,13 @@ class FusedLayerNormOp : public OpKernel {
           forward_avx512(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, block_num, 
                          remainder_block_num, remainder_block_num_total, remainder_128, remainder_16, one_over_cols);
           // forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
+          // forward_pj(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, epsilon);
 #else
           forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
 #endif
         });
   }
+
 
  private:
 // Compute the rows locate in the range of [begin_row, begin_row + ROWS)
@@ -415,6 +417,7 @@ class FusedLayerNormGradOp : public OpKernel {
           if (end_row > rows) {
             end_row = rows;
           }
+          
 #ifdef __AVX512F__
           // backward_ref(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
           //          beta_grad, begin_row, end_row, cols);
@@ -425,6 +428,7 @@ class FusedLayerNormGradOp : public OpKernel {
                           remainder_128, remainder_16, one_over_cols);
           // backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
           //          beta_grad, begin_row, end_row, cols, one_over_cols);
+          // backwardpj
 #else
           backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
                    beta_grad, begin_row, end_row, cols, one_over_cols);
