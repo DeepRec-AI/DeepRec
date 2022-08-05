@@ -507,4 +507,28 @@ REGISTER_OP("KvResourceSparseApplyGradientDescent")
     .Attr("use_locking: bool = false")
     .SetShapeFn(KvApplyGradientDescentShapeFn);
 
+REGISTER_OP("KvResourceSparseApplyAdamW")
+    .Input("var: resource")
+    .Input("m: resource")
+    .Input("v: resource")
+    .Input("beta1_power: T")
+    .Input("beta2_power: T")
+    .Input("lr: T")
+    .Input("beta1: T")
+    .Input("beta2: T")
+    .Input("epsilon: T")
+    .Input("grad: T")
+    .Input("indices: Tindices")
+    .Input("global_step: Tstep")
+    .Input("weight_decay: T")
+    .Attr("T: numbertype")
+    .Attr("Tindices: {int32, int64, string}")
+    .Attr("Tstep: {int32, int64}")
+    .Attr("use_locking: bool = false")
+    .SetShapeFn([](InferenceContext* c) {
+      return KvResourceApplyAdamShapeFn(c, true /* sparse */);
+    })
+    .Doc(R"doc(
+)doc");
+
 }  // namespace tensorflow

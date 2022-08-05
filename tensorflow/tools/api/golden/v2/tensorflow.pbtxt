@@ -733,6 +733,10 @@ tf_module {
     argspec: "args=[\'func\', \'input_signature\', \'autograph\', \'experimental_autograph_options\', \'experimental_relax_shapes\', \'experimental_compile\'], varargs=None, keywords=None, defaults=[\'None\', \'None\', \'True\', \'None\', \'False\', \'None\'], "
   }
   member_method {
+    name: "fused_concat_cast"
+    argspec: "args=[\'values\', \'axis\', \'DstT\', \'Truncate\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
+  }
+  member_method {
     name: "fused_embedding_local_sparse_look_up"
     argspec: "args=[\'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'emb_variable\', \'combiner\', \'max_norm\', \'name\'], varargs=None, keywords=None, defaults=[\'-1\', \'None\'], "
   }
@@ -751,6 +755,14 @@ tf_module {
   member_method {
     name: "fused_embedding_sparse_pre_look_up"
     argspec: "args=[\'partition_shapes\', \'sp_values\', \'sp_indices\', \'sp_dense_shape\', \'partition_axis\', \'fill_empty_row\', \'prune_invalid_id\', \'default_id\', \'partition_strategy\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'False\', \'False\', \'-1\', \'div\', \'None\'], "
+  }
+  member_method {
+    name: "fused_l2_normalize"
+    argspec: "args=[\'x\', \'axis\', \'epsilon\', \'name\'], varargs=None, keywords=None, defaults=[\'1\', \'1e-12\', \'None\'], "
+  }
+  member_method {
+    name: "fused_l2_normalize_grad"
+    argspec: "args=[\'y_grad\', \'x\', \'axis\', \'epsilon\', \'name\'], varargs=None, keywords=None, defaults=[\'1\', \'1e-12\', \'None\'], "
   }
   member_method {
     name: "fused_safe_embedding_lookup_sparse_local"
@@ -961,6 +973,10 @@ tf_module {
     argspec: "args=[\'resource\', \'indices\', \'default_value\', \'counts\', \'validate_indices\', \'is_use_default_value_tensor\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'False\', \'None\'], "
   }
   member_method {
+    name: "kv_resource_generate_partitioned_tensor"
+    argspec: "args=[\'keys\', \'values\', \'versions\', \'freqs\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "kv_resource_import"
     argspec: "args=[\'resource_handle\', \'value\', \'empty_key\', \'keys\', \'values\', \'versions\', \'shape\', \'steps_to_live\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'\', \'1000\', \'None\'], "
   }
@@ -991,6 +1007,10 @@ tf_module {
   member_method {
     name: "kv_resource_sparse_apply_adam_async"
     argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'global_step\', \'use_locking\', \'apply_sparse_rmsprop\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'False\', \'None\'], "
+  }
+  member_method {
+    name: "kv_resource_sparse_apply_adam_w"
+    argspec: "args=[\'var\', \'m\', \'v\', \'beta1_power\', \'beta2_power\', \'lr\', \'beta1\', \'beta2\', \'epsilon\', \'grad\', \'indices\', \'global_step\', \'weight_decay\', \'use_locking\', \'name\'], varargs=None, keywords=None, defaults=[\'False\', \'None\'], "
   }
   member_method {
     name: "kv_resource_sparse_apply_ftrl"

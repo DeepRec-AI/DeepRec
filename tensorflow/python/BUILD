@@ -7379,3 +7379,20 @@ cuda_py_test(
     ],
     xla_enable_strict_auto_jit = True,
 )
+
+cuda_py_test(
+    name = "weight_decay_optimizers_test",
+    size = "small",
+    srcs = ["training/weight_decay_optimizers_test.py"],
+    additional_deps = [
+        ":array_ops",
+        ":framework",
+        ":math_ops",
+        ":platform",
+        ":training",
+        ":platform_test",
+        ":client_testlib",
+        "//third_party/py/numpy",
+    ],
+    xla_enable_strict_auto_jit = True,
+)
