@@ -62,3 +62,28 @@ BloomFilter的准入参数设置可以参考下面的表，其中m是`bloom filt
 **关于filter_freq的设置**：目前还需要用户自己根据数据配置。
 
 **特征准入与Embedding多级存储**：由于基于BloomFilter的特征准入功能与Embedding多级存储功能基于不同的计数组件统计特征的频次，同时打开两个功能将导致计数功能出现错误，因此目前无法同时使用基于BloomFilter的特征准入与Embedding多级存储功能。
+
+**收集未准入特征的信息**：
+
+用户如果想要获取一些未准入特征的信息，例如有哪些特征未准入，他们的被访问频次分别是多少，用户可以通过读取ckpt中的内容来获得这些信息。读取checkpoint中内容的方法如下：
+```python
+from tensorflow.contrib.framework.python.framework import checkpoint_utils
+for name, shape in checkpoint_utils.list_variables("xxxxx.ckpt"):
+      print('loading... ', name, shape, checkpoint_utils.load_variable("xxxxx.ckpt", name))
+```
+
+执行上述代码可以得到如下结果：
+![img_2.png](Embedding-Variable/img_2.jpg)
+对于EV，在存入ckpt时会被分成9个部分保存，假设EV的名字是var，那么将在ckpt中看到：
+
+- `var-keys`:已准入特征的id
+- `var-values`:已准入特征的embedding
+- `var-freqs`:已准入特征被查询的次数
+- `var-versions`:已准入特征最近一次被更新的global step
+- `var-keys_filtered`:未准入特征的id
+- `var-freqs_filtered`:未准入特征被查询的频次
+- `var-versions_filtered`:未准入特征最近一次被更新的global step
+- `var-partition_offset`:用于恢复已准入特征的参数
+- `var-partition_filter_offset`:用于恢复未准入特征的参数
+
+用户通过读取filtered相关的参数就可以收集未准入特征的信息。
