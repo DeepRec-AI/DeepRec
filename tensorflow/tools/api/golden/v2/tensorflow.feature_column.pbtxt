@@ -85,6 +85,10 @@ tf_module {
     argspec: "args=[\'key\', \'shape\', \'default_value\', \'dtype\', \'normalizer_fn\'], varargs=None, keywords=None, defaults=[\'(1,)\', \'None\', \"<dtype: \'float32\'>\", \'None\'], "
   }
   member_method {
+    name: "sequence_categorical_column_with_embedding"
+    argspec: "args=[\'key\', \'dtype\', \'partition_num\', \'ev_option\'], varargs=None, keywords=None, defaults=[\"<dtype: \'int64\'>\", \'None\', \'<tensorflow.python.ops.variables.EmbeddingVariableOption object instance>\'], "
+  }
+  member_method {
     name: "sequence_categorical_column_with_hash_bucket"
     argspec: "args=[\'key\', \'hash_bucket_size\', \'dtype\'], varargs=None, keywords=None, defaults=[\"<dtype: \'string\'>\"], "
   }

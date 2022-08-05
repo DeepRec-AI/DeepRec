@@ -2073,6 +2073,10 @@ tf_module {
     argspec: "args=[\'resource\', \'indices\', \'default_value\', \'counts\', \'validate_indices\', \'is_use_default_value_tensor\', \'name\'], varargs=None, keywords=None, defaults=[\'True\', \'False\', \'None\'], "
   }
   member_method {
+    name: "KvResourceGeneratePartitionedTensor"
+    argspec: "args=[\'keys\', \'values\', \'versions\', \'freqs\', \'name\'], varargs=None, keywords=None, defaults=[\'None\'], "
+  }
+  member_method {
     name: "KvResourceImport"
     argspec: "args=[\'resource_handle\', \'value\', \'empty_key\', \'keys\', \'values\', \'versions\', \'shape\', \'steps_to_live\', \'ht_type\', \'ht_partition_num\', \'name\'], varargs=None, keywords=None, defaults=[\'0\', \'\', \'1000\', \'None\'], "
   }
