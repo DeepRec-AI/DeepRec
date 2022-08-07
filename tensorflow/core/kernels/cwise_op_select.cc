@@ -524,8 +524,7 @@ struct SelectFunctorBase<Device, float> {
                   typename TTypes<bool>::ConstFlat cond_flat,
                   typename TTypes<float>::ConstFlat then_flat,
                   typename TTypes<float>::ConstFlat else_flat) {
-#if defined(__GNUC__) && (__GNUC__ >6)
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
     const size_t num = cond_flat.size();
     const bool* c = cond_flat.data();
     const float* t = then_flat.data();
@@ -558,7 +557,6 @@ struct SelectFunctorBase<Device, float> {
     Assign(d, out, out);
 #else
     Assign(d, out, cond_flat.select(then_flat, else_flat));
-#endif
 #endif
   }
 };
@@ -836,8 +834,7 @@ struct BatchSelectFunctor<CPUDevice, float> {
     const float* t = then_flat_outer_dims.data();
     const float* e = else_flat_outer_dims.data();
 
-#if defined(__GNUC__) && (__GNUC__ >6)
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
     size_t quotient = batch_size / float_alignment;
     int remainder = batch_size - (quotient * float_alignment);
 
@@ -891,7 +888,6 @@ struct BatchSelectFunctor<CPUDevice, float> {
         }
       }
     };
-#endif
 #endif
     auto cost = Eigen::TensorOpCost(sizeof(float) * batch_size * 2,  // ld bytes
                                     sizeof(float) * batch_size,      // st bytes
