@@ -32,7 +32,6 @@ This is the first release of DeepRec. DeepRec has super large-scale distributed 
 ### **Optimizer**
 - AdamAsync Optimizer
 - AdagradDecay Optimizer
-- AdamW Optimizer
 
 ### **Op & Hardware Acceleration**
 - Operators Optimization: Unique, Gather, DynamicStitch, BiasAdd, Select, Transpose, SparseSegmentReduction, where, DynamicPartition, SparseConcat tens of ops' CPU/GPU optimization.
