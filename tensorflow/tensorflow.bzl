@@ -1393,6 +1393,24 @@ register_extension_info(
     label_regex_for_dep = "{extension_name}",
 )
 
+def if_cuda_clang_opt(if_true, if_false = []):
+   """Shorthand for select()'ing on wheteher we're building with cuda-clang
+   in opt mode.
+
+    Returns a select statement which evaluates to if_true if we're building
+    with cuda-clang in opt mode. Otherwise, the select statement evaluates to
+    if_false.
+
+   """
+   return select({
+       "@local_config_cuda//cuda:using_clang_opt": if_true,
+       "//conditions:default": if_false
+   })
+
+def cuda_library(copts = [], **kwargs):
+    """Wrapper over cc_library which adds default CUDA options."""
+    native.cc_library(copts = cuda_default_copts() + copts, **kwargs)
+
 def tf_kernel_library(
         name,
         prefix = None,

@@ -80,7 +80,7 @@ load(
     "tf_cc_tests",
     "tf_copts",
     "tf_cuda_library",
-    "tf_kernel_library",
+    "cuda_library",
     "tf_cuda_only_cc_test",
     "tf_features_nomodules_if_android",
     "tf_features_nomodules_if_emscripten",
@@ -5918,15 +5918,30 @@ cc_library(
     ],
 )
 
-tf_kernel_library(
+cuda_library(
     name = "embedding_gpu",
     hdrs = [
         "framework/embedding/batch.h"
     ],
-    gpu_srcs = [
+    srcs = [
         "framework/embedding/batch.cu.cc",
         "framework/embedding/batch.h"
     ],
-    copts = ["-g"],
+    copts = ["-g"] + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
+        + if_cuda(["-DGOOGLE_CUDA=1"]) +
+	select({
+        "//conditions:default": [],
+        "@local_config_cuda//cuda:using_nvcc": [
+            #"-nvcc_options=relaxed-constexpr",
+            #"-nvcc_options=ftz=true",
+        ],
+        "@local_config_cuda//cuda:using_clang": [
+            "-fcuda-flush-denormals-to-zero",
+        ],
+        }),
     nocopts = "-fno-exceptions",
+    visibility = ["//visibility:public"],
+    alwayslink = 1,
+    deps = ["//tensorflow/stream_executor/cuda:cudart_stub",
+	    ":stream_executor"],
 )
