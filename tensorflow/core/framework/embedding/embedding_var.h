@@ -210,7 +210,11 @@ class EmbeddingVar : public ResourceBase {
 
   int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list,
                     std::vector<int64>* version_list, std::vector<int64>* freq_list,
-                    embedding::Iterator** it) {
+                    embedding::Iterator** it = nullptr) {
+    // for Interface Compatible
+    // TODO Multi-tiered Embedding should use iterator in 'GetSnapshot' caller
+    embedding::Iterator* _it = nullptr;
+    it = (it == nullptr) ? &_it : it;
     return storage_manager_->GetSnapshot(key_list, value_list, version_list,
                                          freq_list, emb_config_, filter_, it);
   }
