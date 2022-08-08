@@ -47,7 +47,7 @@ inline void GetPartitionIndex<Part_Strategy::DIV>(
                         const int64_t* id_table, const int64_t numPartitions,
                         const int64_t idsPerPartition, const int64_t extras,
                         const int64_t originId, int64_t* segment, int64_t* newId) {
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   const int64_t *prange = id_table + numPartitions % 8;
   __m512i voffset = _mm512_set1_epi64(originId);
   int vectorSize = numPartitions / 8;
@@ -171,7 +171,7 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
     int64_t p_val = 0;
     register int64_t tmp_id;
     int64_t* const min_id_per_seg = new int64_t[num_partitions_];
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
     int64_t* tmp_value_arr;
 
     // 2.1 build min_id_per_seg

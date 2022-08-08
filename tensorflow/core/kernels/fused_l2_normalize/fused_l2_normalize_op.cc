@@ -57,7 +57,7 @@ public:
     auto &worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
     // Do forward in 128(8*16) block, avx512 handles 16 floats one time
     int64 block_num = cols >> 7;  // 128-size block nums 
     int64 remainder_128 = cols & 0x7F;  // remainder of 128
@@ -130,7 +130,7 @@ private:
     }
   }
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   template <int SUM_BLOCK_SIZE>
   void forward_avx512(const T* input, T* output, int64 begin_row, int64 end_row, int64 cols, int64 block_num, int64 remainder_block_num,
                          int64 remainder_block_num_total, int64 remainder_128, int64 remainder_16) {
@@ -278,7 +278,7 @@ public:
     auto &worker_threads = *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool *thread_pool = worker_threads.workers;
 
-#ifdef __AVX512F__ 
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
     // Do forward in 128(8*16) block, avx512 handles 16 floats one time
     int64 block_num = cols >> 7;  // 128-size block nums 
     int64 remainder_128 = cols & 0x7F;  // remainder of 128
@@ -364,8 +364,7 @@ private:
     }
   }
 
-
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   template <int SUM_BLOCK_SIZE>
   void backward_avx512(const float* y_grad, const float* x, float* x_grad, int64 begin_row, int64 end_row, int64 cols,
                           int64 block_num, int64 remainder_block_num, int64 remainder_block_num_total, int64 remainder_128,
