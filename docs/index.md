@@ -78,6 +78,7 @@ Embedding-Variable-Export-Format
 
 AdamAsync-Optimizer
 AdagradDecay-Optimizer
+AdamW-Optimizer
 ```
 
 ```{toctree}
