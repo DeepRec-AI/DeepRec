@@ -47,6 +47,7 @@ def get_multihash_variable(name,
 ​
 
 **使用示例：**
+使用`get_multihash_variable`接口
 ```python
 import tensorflow as tf
 
@@ -67,7 +68,38 @@ def main(unused_argv):
   with tf.Session() as sess:
        sess.run([init])
        print(sess.run([var, train_op]))
+       print(sess.run([var, train_op]))
+       print(sess.run([var, train_op]))
 
 if __name__=="__main__":
   tf.app.run()
+```
+使用`categorical_column_with_multihash`接口
+```python
+import tensorflow as tf
+from tensorflow.python.framework import ops
+from tensorflow.python.feature_column import feature_column_v2 as fc2
+
+columns = fc2.categorical_column_with_multihash("col_emb", dims = (2,2))
+W = tf.feature_column.embedding_column(categorical_column=columns,
+            dimension=(2,3),
+            initializer=tf.ones_initializer(tf.dtypes.float32))
+
+ids={}
+ids["col_emb"] = tf.SparseTensor(indices=[[0,0],[1,1],[2,2],[3,3]], values=tf.cast([0,1,2,3], tf.dtypes.int64), dense_shape=[4, 4])
+
+emb = tf.feature_column.input_layer(ids, [W])
+fun = tf.multiply(emb, 2.0, name='multiply')
+loss1 = tf.reduce_sum(fun, name='reduce_sum')
+opt = tf.train.AdagradOptimizer(0.1)
+g_v = opt.compute_gradients(loss1)
+train_op = opt.apply_gradients(g_v)
+init = tf.global_variables_initializer()
+
+with tf.Session() as sess:
+    sess.run(init)
+    print("init global done")
+    print(sess.run([emb, train_op]))
+    print(sess.run([emb, train_op]))
+    print(sess.run([emb, train_op]))
 ```
