@@ -79,6 +79,11 @@ bool IsAscii(string& str) {
   return true;
 }
 
+int64_t GetCorrelationID() {
+  static std::atomic<int64_t> node_id{0};
+  return node_id.fetch_add(1, std::memory_order_relaxed);
+}
+
 struct KernelRecord {
   const char* kernel_name;
   // TODO(csigg): cuStreamGetCtx introduced in CUDA 9.2 would allow us to only
@@ -87,6 +92,11 @@ struct KernelRecord {
   CUstream stream;
   CUevent start_event;
   CUevent stop_event;
+  // which thread to launch the kernel
+  int thread_id;
+  uint64_t launch_start_us;
+  uint64_t launch_end_us;
+  int64_t op_context;
   const std::string* annotation;
 };
 
@@ -98,6 +108,11 @@ struct MemcpyRecord {
   CUstream stream;
   CUevent start_event;
   CUevent stop_event;
+  // which thread to launch the Memcpy
+  int thread_id;
+  uint64_t launch_start_us;
+  uint64_t launch_end_us;
+  int64_t op_context;
   const std::string* annotation;
 };
 
@@ -114,18 +129,24 @@ class CudaEventRecorder {
   size_t StartKernel(const char* kernel_name, CUcontext context,
                      CUstream stream) {
     KernelRecord record = {kernel_name, context, stream};
+    record.launch_start_us = Env::Default()->NowMicros();
     LogIfError(CreateAndRecordEvent(&record.start_event, stream));
+    record.thread_id = Env::Default()->GetCurrentThreadId();
+    // TODO: Make it lock-free for lower profiling overhead
     mutex_lock lock(mutex_);
     if (tracing::ScopedAnnotation::IsEnabled()) {
       record.annotation =
           &*annotations_.emplace(Annotation::CurrentAnnotation()).first;
     }
+    record.op_context = tracing::CallingContext::GetCurrentContext();
     kernel_records_.push_back(record);
     return kernel_records_.size() - 1;
   }
   void StopKernel(size_t index) {
+    uint64_t ts = Env::Default()->NowMicros();
     mutex_lock lock(mutex_);
     auto& record = kernel_records_[index];
+    record.launch_end_us = ts;
     LogIfError(CreateAndRecordEvent(&record.stop_event, record.stream));
   }
 
@@ -134,18 +155,24 @@ class CudaEventRecorder {
   size_t StartMemcpy(CUmemorytype src_type, CUmemorytype dst_type,
                      size_t size_bytes, CUcontext context, CUstream stream) {
     MemcpyRecord record = {src_type, dst_type, size_bytes, context, stream};
+    record.launch_start_us = Env::Default()->NowMicros();
     LogIfError(CreateAndRecordEvent(&record.start_event, stream));
+    record.thread_id = Env::Default()->GetCurrentThreadId();
+    // TODO: Make it lock-free for lower profiling overhead
     mutex_lock lock(mutex_);
     if (tracing::ScopedAnnotation::IsEnabled()) {
       record.annotation =
           &*annotations_.emplace(Annotation::CurrentAnnotation()).first;
     }
+    record.op_context = tracing::CallingContext::GetCurrentContext();
     memcpy_records_.push_back(record);
     return memcpy_records_.size() - 1;
   }
   void StopMemcpy(size_t index) {
+    uint64_t ts = Env::Default()->NowMicros();
     mutex_lock lock(mutex_);
     auto& record = memcpy_records_[index];
+    record.launch_end_us = ts;
     LogIfError(CreateAndRecordEvent(&record.stop_event, record.stream));
   }
 
@@ -522,6 +549,15 @@ class CudaEventCollector {
     if (!stream_info.name.empty()) {
       absl::StrAppend(&name, ":", stream_info.name);
     }
+    int64_t correlation_id = GetCorrelationID();
+    auto launch_stats = new NodeExecStats(*stats);
+    // ensure the same encoding as other events
+    auto launch_name = absl::StrFormat("%s##%s", launch_stats->node_name(), name);
+    launch_stats->set_node_name(launch_name);
+    // add correlation id info to create edges
+    launch_stats->set_correlation_id(correlation_id);
+    stats->set_correlation_id(correlation_id);
+    collector_->Save("/host:CPU Launch:all", launch_stats);
     collector_->Save(name, stats.release());
     return Status::OK();
   }
@@ -546,12 +582,18 @@ class CudaEventCollector {
       node_name = absl::StrCat(*record.annotation, "@@", node_name);
     }
     stats->set_node_name(node_name);
+    // thread id is meaningless for kernel events, but useful for kernel launch events
+    stats->set_thread_id(record.thread_id);
     // TODO(csigg): Report grid size?
     std::string node_label;
     stats->set_timeline_label(node_label);
     stats->set_all_start_micros(end_walltime_us_ - start_us);
-    stats->set_op_end_rel_micros(elapsed_us);
+    // op_start and op_end are used to indicate the launch time range
+    // stats->set_op_end_rel_micros(elapsed_us);
+    stats->set_op_start_rel_micros(record.launch_start_us);
+    stats->set_op_end_rel_micros(record.launch_end_us - record.launch_start_us);
     stats->set_all_end_rel_micros(elapsed_us);
+    stats->set_parent_id(record.op_context);
     return SaveStats(std::move(stats), stream_info);
   }
 
@@ -575,12 +617,18 @@ class CudaEventCollector {
       node_name = absl::StrCat(*record.annotation, "@@", node_name);
     }
     stats->set_node_name(node_name);
+    // thread id is meaningless for kernel events, but useful for kernel launch events
+    stats->set_thread_id(record.thread_id);
     // TODO(csigg): Show label in Chrome trace viewer.
     std::string node_label = absl::StrFormat("%d bytes", record.size_bytes);
     stats->set_timeline_label(node_label);
     stats->set_all_start_micros(end_walltime_us_ - start_us);
-    stats->set_op_end_rel_micros(elapsed_us);
+    // op_start and op_end are used to indicate the launch time range
+    // stats->set_op_end_rel_micros(elapsed_us);
+    stats->set_op_start_rel_micros(record.launch_start_us);
+    stats->set_op_end_rel_micros(record.launch_end_us - record.launch_start_us);
     stats->set_all_end_rel_micros(elapsed_us);
+    stats->set_parent_id(record.op_context);
     return SaveStats(std::move(stats), stream_info);
   }
 

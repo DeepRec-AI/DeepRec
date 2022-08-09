@@ -197,7 +197,7 @@ class _ChromeTraceFormatter(object):
     """
     event = self._create_event('s', 'DataFlow', name, pid, tid, timestamp)
     event['id'] = flow_id
-    self._events.append(event)
+    self._events.append(event)  
 
   def emit_flow_end(self, name, timestamp, pid, tid, flow_id):
     """Adds a flow end event to the trace.
@@ -215,6 +215,43 @@ class _ChromeTraceFormatter(object):
     event = self._create_event('t', 'DataFlow', name, pid, tid, timestamp)
     event['id'] = flow_id
     self._events.append(event)
+
+  def emit_flow_type_start(self, flow_type, name, timestamp, pid, tid, flow_id):
+    """Adds a flow start event to the trace.
+
+    When matched with a flow end event (with the same 'flow_id') this will
+    cause the trace viewer to draw an arrow between the start and end events.
+
+    Args:
+      flow_type: The flow event type name as a string
+      name:  The event name as a string.
+      timestamp:  The timestamp of this event as a long integer.
+      pid:  Identifier of the process generating this event as an integer.
+      tid:  Identifier of the thread generating this event as an integer.
+      flow_id: Identifier of the flow as an integer.
+    """
+    event = self._create_event('s', flow_type, name, pid, tid, timestamp)
+    event['id'] = flow_id
+    self._events.append(event)  
+
+  def emit_flow_type_end(self, flow_type, name, timestamp, pid, tid, flow_id):
+    """Adds a flow end event to the trace.
+
+    When matched with a flow start event (with the same 'flow_id') this will
+    cause the trace viewer to draw an arrow between the start and end events.
+
+    Args:
+      flow_type: The flow event type name as a string
+      name:  The event name as a string.
+      timestamp:  The timestamp of this event as a long integer.
+      pid:  Identifier of the process generating this event as an integer.
+      tid:  Identifier of the thread generating this event as an integer.
+      flow_id: Identifier of the flow as an integer.
+    """
+    event = self._create_event('t', flow_type, name, pid, tid, timestamp)
+    event['id'] = flow_id
+    self._events.append(event)
+
 
   def emit_counter(self, category, name, pid, timestamp, counter, value):
     """Emits a record for a single counter.
@@ -556,6 +593,15 @@ class Timeline(object):
                                                    create_pid, create_tid,
                                                    flow_id)
                 self._chrome_trace.emit_flow_end(input_name, start_time,
+                                                 device_pid, tid, flow_id)
+              else:
+                flow_id = self._alloc_flow_id()
+                self._chrome_trace.emit_flow_type_start("Horizontal Dataflow",
+                                                   input_name, create_time,
+                                                   create_pid, create_tid,
+                                                   flow_id)
+                self._chrome_trace.emit_flow_type_end("Horizontal Dataflow",
+                                                 input_name, start_time,
                                                  device_pid, tid, flow_id)
           else:
             print ("Can not find tensor ", input_name, " - removed by CSE?")

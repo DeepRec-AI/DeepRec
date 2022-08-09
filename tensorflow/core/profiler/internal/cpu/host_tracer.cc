@@ -129,6 +129,8 @@ Status HostTracer::CollectData(RunMetadata* run_metadata) {
         ns->set_all_end_rel_micros((event.end_time - event.start_time) /
                                    EnvTime::kMicrosToNanos);
         ns->set_thread_id(thread.thread.tid);
+        ns->set_correlation_id(event.activity_id);
+        ns->set_parent_id(event.parent_id);
         // TODO(fishx): Add thread name to RunMetadata
         step_stats_collector.Save(cpu_name, ns);
       }

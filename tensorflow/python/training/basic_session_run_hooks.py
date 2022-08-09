@@ -1029,7 +1029,7 @@ class ProfilerHook(session_run_hook.SessionRunHook):
                output_dir="",
                show_dataflow=True,
                show_memory=False,
-               use_real_thread_id=False):
+               use_real_thread_id=True):
     """Initializes a hook that takes periodic profiling snapshots.
 
     `options.run_metadata` argument of `tf.Session.Run` is used to collect
@@ -1047,6 +1047,8 @@ class ProfilerHook(session_run_hook.SessionRunHook):
         producers and consumers of tensors.
       show_memory: `bool`, if True, add object snapshot events to the trace
         showing the sizes and lifetimes of tensors.
+      use_real_thread_id: `bool`, if True, use real collected thread id instead
+        of generating fake thread id for concurrent events.
     """
     self._output_file = os.path.join(output_dir, "timeline-{}.json")
     self._file_writer = SummaryWriterCache.get(output_dir)

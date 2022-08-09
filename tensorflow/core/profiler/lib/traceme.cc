@@ -18,28 +18,21 @@ limitations under the License.
 namespace tensorflow {
 namespace profiler {
 
-// Activity IDs: To avoid contention over a counter, the top 32 bits identify
-// the originating thread, the bottom 32 bits name the event within a thread.
-// IDs may be reused after 4 billion events on one thread, or 4 billion threads.
-static std::atomic<uint32> thread_counter(1);  // avoid kUntracedActivity
-uint64 NewActivityId() {
-  const thread_local static uint32 thread_id = thread_counter.fetch_add(1);
-  thread_local static uint32 per_thread_activity_id = 0;
-  return static_cast<uint64>(thread_id) << 32 | per_thread_activity_id++;
-}
-
 /* static */ uint64 TraceMe::ActivityStartImpl(
     absl::string_view activity_name) {
-  uint64 activity_id = NewActivityId();
+  uint64 parent_id = tracing::CallingContext::GetCurrentContext();
+  uint64 activity_id = tracing::CallingContext::GetAndPush();
   TraceMeRecorder::Record({activity_id, string(activity_name),
                            /*start_time=*/EnvTime::Default()->NowNanos(),
-                           /*end_time=*/0});
+                           /*end_time=*/0, /*parent_id=*/parent_id});
   return activity_id;
 }
 
 /* static */ void TraceMe::ActivityEndImpl(uint64 activity_id) {
+  tracing::CallingContext::Pop();
   TraceMeRecorder::Record({activity_id, /*name=*/"", /*start_time=*/0,
-                           /*end_time=*/EnvTime::Default()->NowNanos()});
+                           /*end_time=*/EnvTime::Default()->NowNanos(),
+                           /*parent_id=*/0});
 }
 
 }  // namespace profiler
