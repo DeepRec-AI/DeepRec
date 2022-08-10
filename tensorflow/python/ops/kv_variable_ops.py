@@ -386,7 +386,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         with ops.name_scope("IsInitialized"):
           self._is_initialized_op = (
               gen_kv_variable_ops.kv_var_is_initialized_op(self._handle,
-                                                           Tkeys=self._invalid_key_type))
+                                                           Tkeys=self._invalid_key_type,
+                                                           dtype=self._dtype))
         if initial_value is not None:
           with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
             with ops.control_dependencies(None if self._is_primary else [self._primary.initializer]):
@@ -622,7 +623,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
   def total_count(self):
     """The shape of this variable."""
     return gen_kv_variable_ops.kv_variable_shape(self._handle,
-		    Tkeys=self._invalid_key_type)
+               Tkeys=self._invalid_key_type,
+               dtype=self._dtype)
 
   def export(self):
     return gen_kv_variable_ops.kv_resource_export(self._handle,

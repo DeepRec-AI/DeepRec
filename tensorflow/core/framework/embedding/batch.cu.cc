@@ -2,6 +2,7 @@
 #if !TENSORFLOW_USE_GPU_EV
 
 #include "tensorflow/core/framework/embedding/batch.h"
+#include "tensorflow/core/framework/register_types.h"
 
 namespace tensorflow {
 template<class V>
@@ -19,10 +20,10 @@ __global__ void BatchCopy(V** batch, V* val_base, int value_len,
   }
 }
 
-template __global__ void BatchCopy<int>(int**, int*, int, int, int**, bool*);
-template __global__ void BatchCopy<float>(float**, float*, int, int, float**, bool*);
-template __global__ void BatchCopy<double>(double**, double*, int, int, double**, bool*);
-template __global__ void BatchCopy<long long>(long long**, long long*, int, int, long long**, bool*);
+#define REGISTER_KERNELS_ALL_INDEX(T) \
+   template __global__ void BatchCopy<T>(T**, T*, int, int, T**, bool*);
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 
 template<class V>
 __global__ void BatchUnpack(V** dev_value_address, V* memcpy_buffer_gpu,

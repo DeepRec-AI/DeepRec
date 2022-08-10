@@ -5923,9 +5923,8 @@ cuda_library(
     hdrs = [
         "framework/embedding/batch.h"
     ],
-    srcs = [
-        "framework/embedding/batch.cu.cc",
-        "framework/embedding/batch.h"
+    srcs = FRAMEWORK_INTERNAL_PRIVATE_HEADERS + [
+        "framework/embedding/batch.cu.cc"
     ],
     copts = ["-g"] + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
         + if_cuda(["-DGOOGLE_CUDA=1"]) +
@@ -5943,5 +5942,5 @@ cuda_library(
     visibility = ["//visibility:public"],
     alwayslink = 1,
     deps = ["//tensorflow/stream_executor/cuda:cudart_stub",
-	    ":stream_executor"],
+	    ":stream_executor"]
 )

@@ -135,6 +135,7 @@ def is_variable_initialized(ref, name=None):
     # Handle kv variable
     return gen_kv_variable_ops.kv_var_is_initialized_op(ref.handle,
                                                         ref._invalid_key_type,
+                                                        ref._dtype,
                                                         name=name)
   elif ref.op.type == "BloomFilterAdmitStrategyOp":
     return gen_hash_ops.bloom_filter_is_initialized_op(ref.handle,
