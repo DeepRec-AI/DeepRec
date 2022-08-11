@@ -14,12 +14,11 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/c/quantize_embedding_variable.h"
+#include "tensorflow/core/framework/bfloat16.h"
 
-// #include <unordered_set>
-// #include <utility>
-
-// #include "tensorflow/core/lib/core/status.h"
-// #include "tensorflow/core/platform/types.h"
+#ifdef INTEL_MKL
+#include "dnnl.hpp"
+#endif  // INTEL_MKL
 
 namespace tensorflow {
 namespace checkpoint {
@@ -44,7 +43,9 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
   for (int idx = 0; idx < names.size(); ++idx) {
     string value_name = names[idx] + "-values";
     status = reader.LookupDtypeAndShape(value_name, &dtype, &shape);
-    if (!status.ok()) errors::InvalidArgument("Invalid name:", value_name);
+    if (!status.ok()) {
+      errors::InvalidArgument("Invalid variable name:", value_name);
+    }
     Tensor in_tensor(dtype, shape);
     status = reader.Lookup(value_name, &in_tensor);
     auto in_data = in_tensor.flat<float>();
@@ -52,30 +53,43 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
     if (data_type == TF_DataType::TF_BFLOAT16) {
       Tensor out_tensor(DataTypeToEnum<bfloat16>::v(), shape);
       auto out_data = out_tensor.flat<bfloat16>();
+      int64 data_size = out_tensor.NumElements();
+#if INTEL_MKL
+      dnnl::cvt_float_to_bfloat16((dnnl_bfloat16_t*)out_data.data(),
+                                  (const float*)in_data.data(), data_size);
+#else
+      FloatToBFloat16(in_data.data(), out_data.data(), data_size);
+#endif  // INTEL_MKL
+      writer.Add(quant_names[idx] + "-values", out_tensor);
+    } else if (data_type == TF_DataType::TF_HALF) {
+      Tensor out_tensor(DataTypeToEnum<Eigen::half>::v(), shape);
+      auto out_data = out_tensor.flat<Eigen::half>();
       for (int i = 0; i < out_tensor.NumElements(); ++i) {
-        out_data(i) = static_cast<bfloat16>(in_data(i));
+        out_data(i) = static_cast<Eigen::half>(in_data(i));
       }
       writer.Add(quant_names[idx] + "-values", out_tensor);
     } else if (data_type == TF_DataType::TF_INT8) {
       Tensor out_tensor(DataTypeToEnum<int8_t>::v(), shape);
       auto out_data = out_tensor.flat<int8_t>();
-      int embedding_dim = shape.dim_size(shape.dims() - 1);
-      Tensor scale_tensor(DT_FLOAT, TensorShape({embedding_dim}));
+      int embed_dim = shape.dim_size(shape.dims() - 1);
+      Tensor scale_tensor(DT_FLOAT, TensorShape({embed_dim}));
       auto scale_data = scale_tensor.flat<float>();
-      for (int i = 0; i < embedding_dim; ++i) {
-        int size = in_tensor.NumElements() / embedding_dim;
-        float max_value = std::numeric_limits<float>::min();
-        for (int j = 0; j < size; ++j) {
-          max_value = std::max(max_value, std::abs(in_data(i * size + j)));
+      for (int i = 0; i < embed_dim; ++i) {
+        int voc_size = in_tensor.NumElements() / embed_dim;
+        float max_val = 0;
+        for (int j = 0; j < voc_size; ++j) {
+          max_val = std::max(max_val, std::abs(in_data(j * embed_dim + i)));
         }
-        scale_data(i) = max_value / 127.0;
-        for (int j = 0; j < size; ++j) {
-          float int8_value = in_data(i * size + j) / scale_data(i);
-          out_data(i * size + j) = static_cast<int8_t>(round(int8_value));
+        scale_data(i) = max_val / 127.0;
+        for (int j = 0; j < voc_size; ++j) {
+          float int8_value = in_data(j * embed_dim + i) / scale_data(i);
+          out_data(j * embed_dim + i) = static_cast<int8_t>(round(int8_value));
         }
       }
       writer.Add(scale_names[idx], scale_tensor);
       writer.Add(quant_names[idx] + "-values", out_tensor);
+    } else {
+      errors::InvalidArgument("Unsupported data type:", data_type);
     }
     updated_names.insert(value_name);
 

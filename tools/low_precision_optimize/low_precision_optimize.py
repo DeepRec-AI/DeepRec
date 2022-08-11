@@ -17,6 +17,7 @@ from tensorflow.python.util import quantize_embedding_variable
 
 INT8 = 'INT8'
 BF16 = 'BF16'
+FP16 = 'FP16'
 
 ev_attrs = [
     '_block_num',
@@ -219,33 +220,36 @@ def dense_opt(session, graph_def, opt_config, data_type, calib_file):
             update_dict[node.name] = [opt_dtype]
             pref = node.name
             dense_op = session.graph.get_operation_by_name(node.name)
-            if opt_dtype == BF16:
-                w_bf16_ts = tf.constant(
-                    value=tf.cast(w_data, tf.bfloat16).eval(),
-                    dtype=tf.bfloat16,
-                    name=f'{pref}/bf16_weight',
+            if opt_dtype in [BF16, FP16]:
+                tf_dtype = tf.bfloat16 if opt_dtype == BF16 else tf.float16
+                w_f16_ts = tf.constant(
+                    value=tf.cast(w_data, tf_dtype).eval(),
+                    dtype=tf_dtype,
+                    name=f'{pref}/{opt_dtype.lower()}_weight',
                 )
-                in_bf16_ts = tf.cast(
-                    dense_op.inputs[0], tf.bfloat16, name=f'{pref}/bf16'
+                in_f16_ts = tf.cast(
+                    dense_op.inputs[0], tf_dtype, name=f'{pref}/{opt_dtype.lower()}'
                 )
-                out_bf16_ts = tf.matmul(
-                    a=in_bf16_ts,
-                    b=w_bf16_ts,
+                out_f16_ts = tf.matmul(
+                    a=in_f16_ts,
+                    b=w_f16_ts,
                     transpose_a=dense_op.get_attr('transpose_a'),
                     transpose_b=dense_op.get_attr('transpose_b'),
-                    name=f'{pref}/bf16_matmul',
+                    name=f'{pref}/{opt_dtype.lower()}_matmul',
                 )
                 if with_bias:
-                    bias_bf16_ts = tf.constant(
-                        value=tf.cast(bias_data, tf.bfloat16).eval(),
-                        dtype=tf.bfloat16,
-                        name=f'{pref}/bf16_bias',
+                    bias_f16_ts = tf.constant(
+                        value=tf.cast(bias_data, tf_dtype).eval(),
+                        dtype=tf_dtype,
+                        name=f'{pref}/{opt_dtype.lower()}_bias',
                     )
-                    out_bf16_ts = tf.nn.bias_add(out_bf16_ts, bias_bf16_ts)
-                out_bf16_ts = tf.nn.relu(out_bf16_ts) if with_relu else out_bf16_ts
-                out_fp32_ts = tf.cast(out_bf16_ts, tf.float32, name=f'{pref}/fp32')
+                    out_f16_ts = tf.nn.bias_add(out_f16_ts, bias_f16_ts)
+                out_f16_ts = tf.nn.relu(out_f16_ts) if with_relu else out_f16_ts
+                out_fp32_ts = tf.cast(out_f16_ts, tf.float32, name=f'{pref}/fp32')
                 update_op_inputs(session.graph, {ptm[first_key]: out_fp32_ts})
                 continue
+            elif opt_dtype != INT8:
+                raise Exception(f'Unsupported data type: {opt_dtype}')
             # Optimize to INT8
             # Update weight
             w_max_abs_val = np.max(np.abs(w_data))
@@ -376,11 +380,14 @@ def embedding_opt(session, graph_def, opt_config, data_type):
                 scale_var = tf.get_variable(scale_name, scale.shape, tf.float32)
                 session.run(scale_var.assign(scale))
                 update_dict[embed_node.name] = [int8_var, scale_var, opt_dtype]
-            elif opt_dtype == BF16:
-                bf16_name = f'{embed_node.name}/bf16_data'
-                bf16_var = tf.get_variable(bf16_name, fp32_data.shape, tf.bfloat16)
-                session.run(bf16_var.assign(tf.cast(fp32_data, tf.bfloat16)))
-                update_dict[embed_node.name] = [bf16_var, opt_dtype]
+            elif opt_dtype in [BF16, FP16]:
+                tf_dtype = tf.bfloat16 if opt_dtype == BF16 else tf.float16
+                f16_name = f'{embed_node.name}/{opt_dtype.lower()}_data'
+                f16_var = tf.get_variable(f16_name, fp32_data.shape, tf_dtype)
+                session.run(f16_var.assign(tf.cast(fp32_data, tf_dtype)))
+                update_dict[embed_node.name] = [f16_var, opt_dtype]
+            else:
+                raise Exception(f'Unsupported data type: {opt_dtype}')
         # Update Graph
         gather_op = session.graph.get_operation_by_name(ptm['gather'])
         opt_gather = tf.gather(
@@ -411,6 +418,14 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
         pattern_nodes = {node.name: node for node in pl}
         return pattern_nodes, pl[0].name
 
+    def _get_tf_dtype(dtype):
+        if dtype == INT8:
+            return tf.int8
+        elif dtype in [BF16, FP16]:
+            return tf.bfloat16 if dtype == BF16 else tf.float16
+        else:
+            raise Exception(f'Unsupported data type: {dtype}')
+
     update_dict = dict()
     pattern, first_key = _get_gather_pattern()
     ptm_list = util.get_matched_pattern(simple_graph, pattern, first_key)
@@ -427,7 +442,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
             # Add variables
             var = get_variable_by_name(_ts(embed_name))
             embedding_dim = var.shape[0].value
-            value_dtype = tf.int8 if opt_dtype == INT8 else tf.bfloat16
+            value_dtype = _get_tf_dtype(opt_dtype)
             opt_var = tf.get_embedding_variable(
                 name=f'{embed_name}/{opt_dtype.lower()}_data',
                 embedding_dim=embedding_dim,
@@ -441,7 +456,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
                 scale_name = f'{embed_name}/int8_scale'
                 scale_var = tf.get_variable(scale_name, [embedding_dim], tf.float32)
                 update_dict[embed_name] = [var, opt_var, scale_var, opt_dtype]
-            elif opt_dtype == BF16:
+            elif opt_dtype in [BF16, FP16]:
                 update_dict[embed_name] = [var, opt_var, opt_dtype]
 
         # Update Graph
@@ -476,7 +491,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
 
     # Convert checkpoint
     input_path = variable_path
-    for opt_dtype in [INT8, BF16]:
+    for opt_dtype in [INT8, BF16, FP16]:
         opt_dict = {k: v for k, v in update_dict.items() if v[-1] == opt_dtype}
         if len(opt_dict) > 0:
             names = [_nd(key) for key in opt_dict.keys()]
@@ -489,7 +504,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
                 scale_names = []
             tmp_path = tempfile.mkdtemp(dir='.')
             opt_path = f'{tmp_path}/variables'
-            tf_dtype = tf.int8 if opt_dtype == INT8 else tf.bfloat16
+            tf_dtype = _get_tf_dtype(opt_dtype)
             quantize_embedding_variable.quantize_by_name(
                 variable_path, opt_path, names, quant_names, scale_names, tf_dtype
             )

@@ -10,6 +10,11 @@ load(
     "tf_kernel_library",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
+load(
+    "//third_party/mkl:build_defs.bzl",
+    "if_mkl_ml",
+    "mkl_deps",
+)
 
 package(
     licenses = ["notice"],  # Apache 2.0
@@ -321,7 +326,7 @@ tf_cuda_library(
     srcs = ["quantize_embedding_variable.cc"],
     hdrs = ["quantize_embedding_variable.h"],
     visibility = ["//visibility:public"],
-    deps = [
+    deps = mkl_deps() + [
         ":tf_datatype",
         ":tf_status_helper",
         "//tensorflow/core:framework",
