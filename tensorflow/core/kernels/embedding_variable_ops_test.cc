@@ -27,8 +27,10 @@
 #include "tensorflow/core/lib/strings/strcat.h"
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
+#if GOOGLE_CUDA
 #include "tensorflow/core/common_runtime/gpu/gpu_device.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_process_state.h"
+#endif //GOOGLE_CUDA
 
 #include <time.h>
 #include <sys/resource.h>
@@ -1183,7 +1185,9 @@ void t1_gpu(KVInterface<int64, float>* hashmap) {
   }
 }
 
-/*TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
     KVInterface<int64, float>* hashmap = new LocklessHashMapCPU<int64, float>();
     ASSERT_EQ(hashmap->Size(), 0);
     LOG(INFO) << "hashmap size: " << hashmap->Size();
@@ -1196,9 +1200,11 @@ void t1_gpu(KVInterface<int64, float>* hashmap) {
     ASSERT_EQ(hashmap->Size(), 98);
     LOG(INFO) << "2 size:" << hashmap->Size();
 }
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
 
 
-void CommitGPU(KVInterface<int64, float>* hashmap) {
+/*void CommitGPU(KVInterface<int64, float>* hashmap) {
   for (int64 i = 0; i< 100; ++i) {
     ValuePtr<float>* tmp= new NormalGPUValuePtr<float>(ev_allocator(), 100);
     hashmap->Commit(i, tmp);
@@ -1340,6 +1346,7 @@ TEST(EmbeddingVariableTest, TestCPUMalloc) {
   }
 }
 
+#if GOOGLE_CUDA
 TEST(EmbeddingVariableTest, TestGPUMalloc) {
   SessionOptions sops;
   std::unique_ptr<Device> device = DeviceFactory::NewDevice(DEVICE_GPU, sops, "/job:a/replica:0/task:0");
@@ -1394,6 +1401,7 @@ TEST(EmbeddingVariableTest, TestCPUGPUMalloc) {
   clock_gettime(CLOCK_MONOTONIC, &end);
   LOG(INFO) << "cost time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
 }
+#endif //GOOGLE_CUDA
 
 void malloc_free_use_allocator(Allocator* allocator){
   timespec start;
@@ -1455,7 +1463,7 @@ void SingleCommit(KVInterface<int64, float>* hashmap, std::vector<int64> keys, i
 }
 
 TEST(KVInterfaceTest, TestSSDKVCompaction) {
-  std::string temp_dir = "/tmp/ssd_ut";//testing::TmpDir();
+  std::string temp_dir = testing::TmpDir();
   KVInterface<int64, float>* hashmap = new SSDHashKV<int64, float>(temp_dir, cpu_allocator());
   hashmap->SetTotalDims(124);
   ASSERT_EQ(hashmap->Size(), 0);

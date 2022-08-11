@@ -224,14 +224,14 @@ class SSDHashKV : public KVInterface<K, V> {
     };
     is_async_compaction = std::getenv("TF_SSDHASH_ASYNC_COMPACTION");
     if (is_async_compaction == nullptr|| is_async_compaction[0] == '0') {
-      LOG(INFO)<<"Use Sync Compactor!";
+      LOG(INFO)<<"Use Sync Compactor in SSDHashKV of Multi-tier Embedding Stroage!";
       compaction_fn = [this](){Compaction();}; 
       check_buffer_fn = [this](){CheckBuffer();};
       save_kv_fn = [this](K key, const ValuePtr<V>* value_ptr, bool is_compaction=false) {
         SaveKV(key, value_ptr, is_compaction);
       };
     } else {
-      LOG(INFO)<<"Use Aysnc Compactor!";
+      LOG(INFO)<<"Use Async Compactor in SSDHashKV of Multi-tier Embedding Stroage!";
       compaction_fn = [](){};
       check_buffer_fn = [this](){CheckBufferAsync();};
       save_kv_fn = [this](K key, const ValuePtr<V>* value_ptr, bool is_compaction=false) {
@@ -338,8 +338,6 @@ class SSDHashKV : public KVInterface<K, V> {
     __sync_fetch_and_add(&total_app_count, 1);
     check_buffer_fn();
     save_kv_fn(key, value_ptr, false);
-    //CheckBuffer();
-    //SaveKV(key, value_ptr);
     return Status::OK();
   }
 
@@ -361,12 +359,24 @@ class SSDHashKV : public KVInterface<K, V> {
   void FreeValuePtr(ValuePtr<V>* value_ptr) { delete value_ptr; }
 
  private:
-  Status FlushAndUpdate(char* value_buffer, K* id_buffer, EmbPosition** pos_buffer, int64& n_ids, std::vector<int64>& invalid_files) {
+  void WriteFile(size_t version, size_t curr_buffer_offset) {
+    emb_files[version]->Write(write_buffer, curr_buffer_offset);
+    emb_files[version]->app_count += buffer_cur;
+    emb_files[version]->Flush();
+  }
+
+  void CreateFile(size_t version) {
+    emb_files.emplace_back(
+            new EmbFile(path_, version, buffer_size));
+  }
+
+  Status FlushAndUpdate(char* value_buffer, K* id_buffer,
+                        EmbPosition** pos_buffer, int64& n_ids,
+                        std::vector<int64>& invalid_files) {
     {
       mutex_lock l(mu);
       compaction_version = ++current_version;
-      emb_files.emplace_back(
-        new EmbFile(path_, compaction_version, buffer_size));
+      CreateFile(compaction_version);
     }
     emb_files[compaction_version]->Write(value_buffer, n_ids * val_len);
     emb_files[compaction_version]->app_count += n_ids;
@@ -407,14 +417,11 @@ class SSDHashKV : public KVInterface<K, V> {
   void CheckBuffer() {
     size_t curr_buffer_offset = buffer_cur * val_len;
     if (curr_buffer_offset + val_len > buffer_size) {
-      emb_files[current_version]->Write(write_buffer, curr_buffer_offset);
-      emb_files[current_version]->app_count += buffer_cur;
-      emb_files[current_version]->Flush();
+      WriteFile(current_version, curr_buffer_offset);
       if (emb_files[current_version]->app_count >= max_app_count) {
         ++current_version;
         current_offset = 0;
-        emb_files.emplace_back(
-            new EmbFile(path_, current_version, buffer_size));
+        CreateFile(current_version);
       }
       TF_CHECK_OK(UpdateFlushStatus());
       buffer_cur = 0;
@@ -424,36 +431,56 @@ class SSDHashKV : public KVInterface<K, V> {
   void CheckBufferAsync() {
     size_t curr_buffer_offset = buffer_cur * val_len;
     if (curr_buffer_offset + val_len > buffer_size) {
-      emb_files[evict_version]->Write(write_buffer, curr_buffer_offset);
-      emb_files[evict_version]->app_count += buffer_cur;
-      emb_files[evict_version]->Flush();
+      WriteFile(evict_version, curr_buffer_offset);
       TF_CHECK_OK(UpdateFlushStatus());
-      //if (emb_files[evict_version]->app_count >= max_app_count) {
-        mutex_lock l(mu);
-        evict_version = ++current_version;
-        current_offset = 0;
-        emb_files.emplace_back(
-            new EmbFile(path_, evict_version, buffer_size));
-      //}
+      mutex_lock l(mu);
+      evict_version = ++current_version;
+      current_offset = 0;
+      CreateFile(evict_version);
       buffer_cur = 0;
     }
   }
 
-  void SaveKV(K key, const ValuePtr<V>* value_ptr, bool is_compaction = false) {
-    size_t curr_buffer_offset = buffer_cur * val_len;
-    EmbPosition* ep = new EmbPosition(current_offset, current_version,
-                                      curr_buffer_offset, false);
-
+  void AppendToWriteBuffer(size_t curr_buffer_offset, K key,
+                            const ValuePtr<V>* value_ptr) {
     current_offset += val_len;
     memcpy(write_buffer + curr_buffer_offset, (char*)value_ptr->GetPtr(),
            val_len);
     key_buffer[buffer_cur] = key;
     ++buffer_cur;
+  }
+
+  void AppendToPositionRecordQueue(EmbPosition* old_posi) {
+    //A parameter that can be adjusted in the future
+    if (pos_out_of_date.size() > cap_invalid_pos) {
+      EmbPosition* posi = pos_out_of_date.front();
+      delete posi;
+      pos_out_of_date.pop_front();
+    }
+    pos_out_of_date.emplace_back(old_posi);
+  }
+
+  bool UpdatePosition(EmbPosition** pos, EmbPosition* old_posi,
+                       EmbPosition* new_posi) {
+    bool flag = __sync_bool_compare_and_swap(pos, old_posi, new_posi);
+    if (flag)
+      AppendToPositionRecordQueue(old_posi);
+    return flag;
+  }
+
+  void SaveKV(K key, const ValuePtr<V>* value_ptr,
+               bool is_compaction = false) {
+    size_t curr_buffer_offset = buffer_cur * val_len;
+    EmbPosition* ep = new EmbPosition(current_offset, current_version,
+                                      curr_buffer_offset, false);
+    AppendToWriteBuffer(curr_buffer_offset, key, value_ptr);
 
     auto iter = hash_map.insert_lockless(std::move(
         std::pair<K, EmbPosition*>(key, const_cast<EmbPosition*>(ep))));
+
     if ((*(iter.first)).second != ep) {
-      int version = (*(iter.first)).second->version;
+      EmbPosition* old_posi = (*(iter.first)).second;
+      int64 version = old_posi->version;
       if (!is_compaction) {
         emb_files[version]->app_invalid_count++;
         //A parameter that can be adjusted in the future
@@ -461,62 +488,138 @@ class SSDHashKV : public KVInterface<K, V> {
                 emb_files[version]->app_invalid_count &&
             emb_files[version]->app_count / 3 <
                 emb_files[version]->app_invalid_count)
-          evict_file_set.insert_lockless((*(iter.first)).second->version);
+          evict_file_set.insert_lockless(version);
       }
-      EmbPosition* old_posi = (*(iter.first)).second;
-      __sync_bool_compare_and_swap(&((*(iter.first)).second),
-                                   (*(iter.first)).second, ep);
-      //A parameter that can be adjusted in the future
-      if (pos_out_of_date.size() > cap_invalid_pos) {
-        EmbPosition* posi = pos_out_of_date.front();
-        delete posi;
-        pos_out_of_date.pop_front();
-      }
-      pos_out_of_date.emplace_back(old_posi);
+      UpdatePosition(&((*(iter.first)).second), old_posi, ep);
     }
   }
 
-  void SaveKVAsync(K key, const ValuePtr<V>* value_ptr, bool is_compaction = false) {
+  void SaveKVAsync(K key, const ValuePtr<V>* value_ptr,
+                    bool is_compaction = false) {
     size_t curr_buffer_offset = buffer_cur * val_len;
     EmbPosition* ep = new EmbPosition(current_offset, evict_version,
                                       curr_buffer_offset, false);
 
-    current_offset += val_len;
-    memcpy(write_buffer + curr_buffer_offset, (char*)value_ptr->GetPtr(),
-           val_len);
-    key_buffer[buffer_cur] = key;
-    ++buffer_cur;
+    AppendToWriteBuffer(curr_buffer_offset, key, value_ptr);
     auto iter = hash_map.insert_lockless(std::move(
         std::pair<K, EmbPosition*>(key, const_cast<EmbPosition*>(ep))));
+
     if ((*(iter.first)).second != ep) {
       bool flag = false;
       EmbPosition* old_posi = nullptr;
       do {
-        EmbPosition* old_posi = (*(iter.first)).second;
-        flag = __sync_bool_compare_and_swap(&((*(iter.first)).second),
-                                   old_posi, ep);
-        if (flag) {
-          if (!is_compaction) {
-            int version = old_posi->version;
-            __sync_fetch_and_add(&emb_files[version]->app_invalid_count, 1);
-            //A parameter that can be adjusted in the future
-            if (version != evict_version && emb_files[version]->app_count >=
-                  emb_files[version]->app_invalid_count &&
-                  emb_files[version]->app_count / 3 <
-                  emb_files[version]->app_invalid_count) {
-              evict_file_set.insert_lockless(version);
-            }
+        old_posi = (*(iter.first)).second;
+        flag = UpdatePosition(&((*(iter.first)).second), old_posi, ep);
+      } while (!flag);
+
+      if (!is_compaction) {
+        int version = old_posi->version;
+        __sync_fetch_and_add(&emb_files[version]->app_invalid_count, 1);
+        //A parameter that can be adjusted in the future
+        if (version != evict_version && emb_files[version]->app_count >=
+             emb_files[version]->app_invalid_count &&
+             emb_files[version]->app_count / 3 <
+             emb_files[version]->app_invalid_count) {
+          evict_file_set.insert_lockless(version);
+        }
+      }
+    }
+  }
+
+  void DeleteInvalidFiles() {
+    for (auto it : evict_file_map) {
+      emb_files[it.first]->DeleteFile();
+    }
+    evict_file_map.clear();
+  }
+
+  void DeleteInvalidRecord() {
+    for (auto it: pos_out_of_date_compact) {
+      delete it;
+    }
+    pos_out_of_date_compact.clear();
+  }
+
+  void LookupValidItems() {
+    for (auto it : hash_map) {
+      EmbPosition* posi = it.second;
+      auto iter = evict_file_map.find(posi->version);
+      if (iter != evict_file_map.end()) {
+        (*iter).second.emplace_back(it);
+      }
+    }
+  }
+
+  void InitializeEvictMap() {
+    for (auto it : evict_file_set) {
+      std::vector<std::pair<K, EmbPosition*>> tmp;
+      evict_file_map[it] = tmp;
+      evict_file_set.erase_lockless(it);
+    }
+    LookupValidItems();
+  }
+
+    void InitializeEvictMapWithoutErase() {
+    for (auto it : evict_file_set) {
+      std::vector<std::pair<K, EmbPosition*>> tmp;
+      evict_file_map[it] = tmp;
+    }
+    LookupValidItems();
+  }
+
+  void MoveToNewFile() {
+    ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
+    for (auto it : evict_file_map) {
+      EmbFile* file = emb_files[it.first];
+      total_app_count -= file->app_invalid_count;
+      file->Map();
+      for (auto it_vec : it.second) {
+        EmbPosition* posi = it_vec.second;
+        file->ReadWithoutMap((char*)(val->GetPtr()), val_len, posi->offset);
+        CheckBuffer();
+        SaveKV(it_vec.first, val, true);
+      }
+      file->Unmap();
+    }
+    delete val;
+  }
+
+  void MoveToNewFileAsync() {
+    ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
+    char* compact_buffer = new char[buffer_size];
+    int64 n_ids = 0;
+    std::vector<int64> invalid_files;
+    unsigned int max_key_count = 1 + int(buffer_size / val_len);
+    K id_buffer[max_key_count] = {0};
+    EmbPosition* pos_buffer[max_key_count] = {0};
+    for (auto it : evict_file_map) {
+      EmbFile* file = emb_files[it.first];
+      __sync_fetch_and_sub(&total_app_count, file->app_invalid_count);
+      file->Map();
+      for (auto it_vec : it.second) {
+        EmbPosition* posi = it_vec.second;
+        id_buffer[n_ids] = it_vec.first;
+        pos_buffer[n_ids] = posi;
+        file->ReadWithoutMap(compact_buffer + val_len * n_ids, val_len, posi->offset);
+        n_ids++;
+        if (n_ids == max_app_count) {
+          Status st = FlushAndUpdate(compact_buffer, id_buffer,
+                                      pos_buffer, n_ids, invalid_files);
+          if(!st.ok()) {
+            LOG(WARNING)<<"FLUSH ERROR: "<<st.ToString();
           }
         }
-      } while (!flag);
-      //A parameter that can be adjusted in the future
-      if (pos_out_of_date.size() > cap_invalid_pos) {
-        EmbPosition* posi = pos_out_of_date.front();
-        delete posi;
-        pos_out_of_date.pop_front();
       }
-      pos_out_of_date.emplace_back(old_posi);
+      file->Unmap();
+      invalid_files.emplace_back(it.first);
     }
+    Status st = FlushAndUpdate(compact_buffer, id_buffer,
+                                pos_buffer, n_ids, invalid_files);
+    if(!st.ok()) {
+      LOG(WARNING)<<"FLUSH ERROR: "<<st.ToString();
+    }
+    delete val;
+    delete[] compact_buffer;
   }
 
   void Compaction() {
@@ -526,123 +629,35 @@ class SSDHashKV : public KVInterface<K, V> {
     if (hash_size * 3 / 2 < total_app_count ||
         total_app_count - hash_size > cap_invalid_id) {
       // delete the evict_files
-      for (auto it : evict_file_map) {
-        emb_files[it.first]->DeleteFile();
-      }
-      // flush the data in buffer
-      evict_file_map.clear();
+      DeleteInvalidFiles();
       // Initialize evict_file_map
-      for (auto it : evict_file_set) {
-        std::vector<std::pair<K, EmbPosition*>> tmp;
-        evict_file_map[it] = tmp;
-        evict_file_set.erase_lockless(it);
-      }
-      //evict_file_set.clear();
-      for (auto it : hash_map) {
-        EmbPosition* posi = it.second;
-        auto iter = evict_file_map.find(posi->version);
-        if (iter != evict_file_map.end()) {
-          (*iter).second.emplace_back(it);
-        }
-      }
+      InitializeEvictMap();
       // read embeddings and write to new file
-      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
-      for (auto it : evict_file_map) {
-        EmbFile* file = emb_files[it.first];
-        total_app_count -= file->app_invalid_count;
-        file->Map();
-        for (auto it_vec : it.second) {
-          EmbPosition* posi = it_vec.second;
-          file->ReadWithoutMap((char*)(val->GetPtr()), val_len, posi->offset);
-          CheckBuffer();
-          SaveKV(it_vec.first, val, true);
-        }
-        file->Unmap();
-      }
-      delete val;
+      MoveToNewFile();
     }
   }
 
   void CompactionAsync() {
     int64 hash_size = hash_map.size_lockless();
     //These parameter that can be adjusted in the future
-    //if (false) {
     if (hash_size * 3 / 2 < total_app_count ||
         total_app_count - hash_size > cap_invalid_id) {
-      for (auto it: pos_out_of_date_compact) {
-        delete it;
-      }
-      pos_out_of_date_compact.clear();
+      DeleteInvalidRecord();
       // delete the evict_files
-      for (auto it : evict_file_map) {
-        emb_files[it.first]->DeleteFile();
-      }
-      // flush the data in buffer
-      evict_file_map.clear();
+      DeleteInvalidFiles();
       // Initialize evict_file_map
-      for (auto it : evict_file_set) {
-        std::vector<std::pair<K, EmbPosition*>> tmp;
-        evict_file_map[it] = tmp;
-      }
-
-      for (auto it : hash_map) {
-        EmbPosition* posi = it.second;
-        auto iter = evict_file_map.find(posi->version);
-        if (iter != evict_file_map.end()) {
-          (*iter).second.emplace_back(it);
-        }
-      }
-
+      InitializeEvictMapWithoutErase();
       // read embeddings and write to new file
-      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
-      char* compact_buffer = (char*)malloc(buffer_size * sizeof(char));
-      int64 n_ids = 0;
-      int64 no_use = 0;
-      std::vector<int64> invalid_files;
-      unsigned int max_key_count = 1 + int(buffer_size / val_len);
-      K id_buffer[max_key_count] = {0};
-      EmbPosition* pos_buffer[max_key_count] = {0};    
-      for (auto it : evict_file_map) {
-        EmbFile* file = emb_files[it.first];
-        __sync_fetch_and_sub(&total_app_count, file->app_invalid_count);
-        file->Map();
-        for (auto it_vec : it.second) {
-          EmbPosition* posi = it_vec.second;
-          id_buffer[n_ids] = it_vec.first;
-          pos_buffer[n_ids] = posi;
-          file->ReadWithoutMap(compact_buffer + val_len * n_ids, val_len, posi->offset);
-          n_ids++;
-          if (n_ids == max_app_count) {
-            Status st = FlushAndUpdate(compact_buffer, id_buffer, pos_buffer, n_ids, invalid_files);
-            if(!st.ok()) {
-              LOG(WARNING)<<"FLUSH ERROR!";
-            }
-          }
-        }
-        file->Unmap();
-        invalid_files.emplace_back(it.first);
-      }
-      Status st = FlushAndUpdate(compact_buffer, id_buffer, pos_buffer, n_ids, invalid_files);
-      if(!st.ok()) {
-        LOG(WARNING)<<"FLUSH ERROR!";
-      }
-      delete val;
-      free(compact_buffer);
+      MoveToNewFileAsync();
     }
   }
 
   void CompactionThread() {
     if (val_len == -1) {
-      while (true) {
-        if (done) {
-          break;
-        }
+      while (!done) {
       }
     }
-    while (true) {
-      if (shutdown) {
-        break;
-      }
+    while (!shutdown) {
       CompactionAsync();
     }
   }
@@ -701,7 +716,7 @@ class SSDHashKV : public KVInterface<K, V> {
 
   Thread* compaction_thread;
   condition_variable shutdown_cv;
-  bool shutdown = false;
+  volatile bool shutdown = false;
   volatile bool done = false;
   std::atomic_flag flag = ATOMIC_FLAG_INIT;
 
@@ -714,7 +729,7 @@ const int SSDHashKV<K, V>::EMPTY_KEY_ = -1;
 template <class K, class V>
 const int SSDHashKV<K, V>::DELETED_KEY_ = -2;
 template <class K, class V>
-const int SSDHashKV<K, V>::cap_invalid_pos = 100000;
+const int SSDHashKV<K, V>::cap_invalid_pos = 200000;
 template <class K, class V>
 const int SSDHashKV<K, V>::cap_invalid_id = 10000000;
 template <class K, class V>
