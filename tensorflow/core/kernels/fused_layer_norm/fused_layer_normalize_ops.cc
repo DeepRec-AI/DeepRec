@@ -97,10 +97,10 @@ class FusedLayerNormOp : public OpKernel {
             end_row = rows;
           }
 #ifdef __AVX512F__
-          forward_avx512(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, block_num, 
-                         remainder_block_num, remainder_block_num_total, remainder_128, remainder_16, one_over_cols);
+          // forward_avx512(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, block_num, 
+          //                remainder_block_num, remainder_block_num_total, remainder_128, remainder_16, one_over_cols);
           // forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
-          // forward_pj(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, epsilon);
+          forward_pj(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, epsilon);
 #else
           forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
 #endif
@@ -391,7 +391,7 @@ class FusedLayerNormGradOp : public OpKernel {
     memset(x_grad, 0, sizeof(T) * rows * cols);
     memset(gamma_grad, 0, sizeof(float) * cols);
     memset(beta_grad, 0, sizeof(float) * cols);
-
+    
 #ifdef __AVX512F__
     int64 block_num = cols >> 7;
     int64 remainder_128 = cols & 0x7F;
@@ -410,30 +410,33 @@ class FusedLayerNormGradOp : public OpKernel {
         *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool* thread_pool = worker_threads.workers;
 
-    thread_pool->ParallelFor(
-        total_unit, unit_cost, [&](int64 begin_unit, int64 end_unit) {
-          auto begin_row = begin_unit * 16;
-          auto end_row = end_unit * 16;
-          if (end_row > rows) {
-            end_row = rows;
-          }
-          
 #ifdef __AVX512F__
-          // backward_ref(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
-          //          beta_grad, begin_row, end_row, cols);
-
-          backward_avx512(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
-                          beta_grad, begin_row, end_row, cols, block_num,
-                          remainder_block_num, remainder_block_num_total,
-                          remainder_128, remainder_16, one_over_cols);
-          // backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
-          //          beta_grad, begin_row, end_row, cols, one_over_cols);
-          // backwardpj
-#else
-          backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
-                   beta_grad, begin_row, end_row, cols, one_over_cols);
+    backwardpj
 #endif
-        });
+
+//     thread_pool->ParallelFor(
+//         total_unit, unit_cost, [&](int64 begin_unit, int64 end_unit) {
+//           auto begin_row = begin_unit * 16;
+//           auto end_row = end_unit * 16;
+//           if (end_row > rows) {
+//             end_row = rows;
+//           }
+          
+// #ifdef __AVX512F__
+//           // backward_ref(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
+//           //          beta_grad, begin_row, end_row, cols);
+
+//           backward_avx512(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
+//                           beta_grad, begin_row, end_row, cols, block_num,
+//                           remainder_block_num, remainder_block_num_total,
+//                           remainder_128, remainder_16, one_over_cols);
+//           // backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
+//           //          beta_grad, begin_row, end_row, cols, one_over_cols);
+// #else
+//           backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
+//                    beta_grad, begin_row, end_row, cols, one_over_cols);
+// #endif
+//         });
   }
 
  private:
