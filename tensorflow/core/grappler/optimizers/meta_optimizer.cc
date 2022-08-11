@@ -40,6 +40,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/pin_to_host_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/remapper.h"
 #include "tensorflow/core/grappler/optimizers/concat_cast_fusing.h"
+#include "tensorflow/core/grappler/optimizers/split_concat_fuse.h"
 #include "tensorflow/core/grappler/optimizers/scoped_allocator_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/shape_optimizer.h"
 #include "tensorflow/core/grappler/utils/canonicalizer.h"
@@ -213,6 +214,7 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
   MK_OPT("pin_to_host",
          new PinToHostOptimizer(cfg_.pin_to_host_optimization()));
   MK_OPT("concat_cast_fusing", new ConcatCastFusing());
+  MK_OPT("split_concat_fuse", new SplitConcatFuse());
 
   return std::unique_ptr<GraphOptimizer>();
 }
@@ -304,6 +306,7 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(MakeUnique<ScopedAllocatorOptimizer>(
         cfg_.scoped_allocator_optimization(), cfg_.scoped_allocator_opts()));
   }
+  optimizers->push_back(MakeUnique<SplitConcatFuse>());
 
   optimizers->push_back(MakeUnique<ConcatCastFusing>());
   return InitializeCustomGraphOptimizers(std::set<string>(), optimizers);

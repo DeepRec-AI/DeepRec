@@ -24,9 +24,11 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/kernels/ops_util.h"
 #include "tensorflow/core/kernels/split_lib.h"
+#include "tensorflow/core/kernels/concat_lib.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/gtl/array_slice.h"
 #include "tensorflow/core/util/work_sharder.h"
+#include "tensorflow/core/platform/prefetch.h"
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "tensorflow/core/common_runtime/gpu/gpu_event_mgr.h"
 #include "tensorflow/core/kernels/gpu_device_array.h"
@@ -437,4 +439,184 @@ TF_CALL_GPU_NUMBER_TYPES_NO_HALF(REGISTER_SYCL);
 
 #endif  // TENSORFLOW_USE_SYCL
 
+template <typename T>
+class FusedSplitConcatOp : public SplitOpBase<CPUDevice, T> {
+  public:
+    typedef SplitOpBase<CPUDevice, T> Base;
+
+    typedef std::vector<std::unique_ptr<typename TTypes<T, 2>::ConstMatrix>>
+      ConstMatrixVector;
+
+    explicit FusedSplitConcatOp(OpKernelConstruction* c) : Base(c) {
+      // Concat attributes.
+      OP_REQUIRES_OK(c, c->GetAttr("N", &n_concat_));
+      OP_REQUIRES_OK(c, c->GetAttr("Tidx", &axis_dtype_));
+      OP_REQUIRES_OK(c, c->GetAttr("num_split", &num_split_));
+    }
+  
+   auto tf_tensor_to_vector(Tensor tensor, int32_t tensorSize){
+    int32_t* tensor_ptr = tensor.flat<T>().data();
+    std::vector<T> v(tensor_ptr, tensor_ptr + tensorSize);
+    return v;
+   }
+
+   auto create_dx(std::vector<T> input){
+    const int v_size = input.size();
+    std::vector<T> return_vec({1});
+    for(int i = 1; i < v_size; ++i){
+      return_vec.push_back(return_vec[i - 1] * input[v_size - i]);
+    }
+    std::reverse(return_vec.begin(), return_vec.end());
+    return return_vec;
+   }
+
+   std::vector<T> to_vector(auto input){
+    std::vector<T> return_vec;
+    for(int i = input.size() - 1; i >= 0; --i){
+      return_vec.push_back(input[i]);
+    }
+    std::reverse(return_vec.begin(), return_vec.end());
+    return return_vec;
+   }
+
+   void Compute(OpKernelContext* context) override {
+    Tensor input = context->input(1);
+    const TensorShape& input_shape = input.shape();
+    Tensor split_dim_tensor = context->input(0);
+    auto split_dim = split_dim_tensor.scalar<int>()();
+    Tensor concat_axis_tensor = context->input(2);
+    auto concat_axis = concat_axis_tensor.scalar<int>()(); 
+
+    split_dim = split_dim < 0 ? split_dim + input_shape.dims() : split_dim;
+    concat_axis = concat_axis < 0 ? concat_axis + input_shape.dims() : concat_axis;
+    
+    // Split dim and Concat axis equal case
+    if (split_dim == concat_axis) {
+      TensorShape output_shape(input_shape);
+      Tensor* output = nullptr;
+      OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+
+      auto out_ptr = output->flat<T>().data();
+      auto in_ptr = input.flat<T>().data();
+      auto cpu_device = context->eigen_cpu_device();
+      auto worker = [&](int64_t begin, int64_t end) -> void {
+        int64_t range = end-begin;
+        std::memcpy(out_ptr + begin, in_ptr + begin, range * 4);    
+      };
+      const Eigen::TensorOpCost cost(4, 4, 1);
+      cpu_device.parallelFor(output->NumElements(), cost, worker );
+
+      return;
+    } else {
+
+      // Split dim and Concat axis not equal case
+      auto shape = input_shape.dim_sizes();
+      int concat_cat_dim_size = shape[concat_axis]; 
+      int split_size = shape[split_dim] / num_split_;
+      int size_dot = 1;
+      std::vector<int> size_ranges;
+
+      for(int i = 0; i < shape.size(); ++i){
+        size_ranges.push_back(size_dot);
+        size_dot = size_dot * shape[shape.size() - i - 1];
+      }
+
+      std::reverse(size_ranges.begin(), size_ranges.end());
+      auto new_shape = shape;
+      new_shape[split_dim] = split_size;
+      new_shape[concat_axis] = new_shape[concat_axis] * num_split_;
+      TensorShape output_shape(new_shape);
+
+      Tensor* output = nullptr;
+      OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+
+      std::vector<T> new_dx = create_dx(to_vector(new_shape));
+      std::vector<T> old_dx = create_dx(to_vector(shape));
+      auto output_flat_data = output->flat<T>().data();
+      auto input_flat_data = input.flat<T>().data();
+
+      // calculate maximum number of copying in parallel
+      auto split_max_stride = 1;
+      for(int i = shape.size() - 1; i >= split_dim; i--) {
+        split_max_stride *= shape[i];
+      }
+      split_max_stride /= num_split_; // maximum number of data that can be taken before striding occurs
+
+      auto concat_max_stride = 1;
+      for(int i = shape.size() - 1; i >= concat_axis; i--) {
+        concat_max_stride *= shape[i]; // maximum number of data that can be inserted before data from other strides is inserted
+      }
+
+      if (concat_max_stride > split_max_stride) {
+        auto worker_number = size_dot / split_max_stride / num_split_;
+        auto cpu_device = context->eigen_cpu_device();
+        auto worker = [&](int64_t begin, int64_t end) -> void {
+          int64_t dot_begin = begin * split_max_stride * num_split_;
+          std::vector<int> original_indexes(split_dim);
+          std::div_t dv{};
+          for(auto i = begin; i < end; i++) {
+            dv.rem = dot_begin;
+            for(int x = 0; x <= split_dim - 1; ++x){
+              dv = std::div(dv.rem, size_ranges[x]);
+              original_indexes[x] = dv.quot;
+            }
+
+            int new_flat = 0;
+            for(int x = 0; x <= split_dim - 1; ++x){
+              new_flat += original_indexes[x] * new_dx[x];
+            }
+
+            for(int j = 0; j < num_split_; j++) {
+              memcpy(output_flat_data + new_flat, input_flat_data + dot_begin, split_max_stride * 4);
+              new_flat += concat_max_stride / num_split_;
+              dot_begin += split_max_stride;
+            }
+          }
+        };
+
+        const Eigen::TensorOpCost cost(split_max_stride * num_split_ * 4, split_max_stride * num_split_ * 4, (split_max_stride * num_split_) + (split_dim - 1) * 15);
+        cpu_device.parallelFor(worker_number, cost, worker);
+      } else {
+        auto worker_number = size_dot / concat_max_stride / num_split_;
+        auto cpu_device = context->eigen_cpu_device();
+
+        auto worker = [&](int64_t begin, int64_t end) -> void {
+          std::vector<int> original_indexes(concat_axis+1);
+          for(auto i = begin; i < end; i++) {
+            int64_t dot_begin = i * concat_max_stride;
+            int number_of_splits = dot_begin / split_max_stride;
+            int old_flat = dot_begin + number_of_splits * (num_split_ - 1) * split_max_stride;
+            auto new_flat = dot_begin * num_split_;
+
+            for(int j = 0; j < num_split_; j++) {
+              memcpy(output_flat_data + new_flat, input_flat_data + old_flat, concat_max_stride * 4);
+              old_flat += split_max_stride;
+              new_flat += concat_max_stride;
+            }
+          }
+        };
+
+        const Eigen::TensorOpCost cost(concat_max_stride * num_split_ * 4, concat_max_stride * num_split_ * 4, (concat_max_stride * num_split_) + (concat_axis) * 15);
+        cpu_device.parallelFor(worker_number, cost, worker);
+      }
+    }
+  }
+  private:
+    int n_concat_;
+    DataType axis_dtype_;
+    int num_split_;
+};
+
+#define REGISTER_SPLITCONCAT(type)                       \
+REGISTER_KERNEL_BUILDER(Name("_FusedSplitConcat")        \
+                            .Device(DEVICE_CPU)          \ 
+                            .TypeConstraint<type>("T")   \
+                            .HostMemory("split_dim"),    \
+                        FusedSplitConcatOp<type>)
+
+// TF_CALL_POD_STRING_TYPES(REGISTER_SPLITCONCAT);
+//TF_CALL_ALL_TYPES(REGISTER_SPLITCONCAT);
+REGISTER_SPLITCONCAT(float);
+
+#undef REGISTER_SPLITCONCAT
 }  // end namespace tensorflow

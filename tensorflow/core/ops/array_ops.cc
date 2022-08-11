@@ -741,6 +741,44 @@ REGISTER_OP("SplitV")
       return Status::OK();
     });
 
+REGISTER_OP("_FusedSplitConcat")
+    .Input("split_dim: int32")
+    .Input("value: T")
+    .Input("axis: Tidx")
+    .Output("output: T")
+    .Attr("num_split: int >= 1")
+    .Attr("T: type")
+    // Concat attributes
+    .Attr("N: int >= 2")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    .SetShapeFn([](InferenceContext* c) {
+      DimensionHandle split_dimension;
+      ShapeHandle input = c->input(1);
+      TF_RETURN_IF_ERROR(c->MakeDimForScalarInputWithNegativeIndexing(
+          0, c->Rank(input), &split_dimension));
+      int num_split = c->num_outputs();
+      ShapeHandle out;
+      if (!c->ValueKnown(split_dimension)) {
+        if (c->RankKnown(input)) {
+          out = c->UnknownShapeOfRank(c->Rank(input));
+        } else {
+          out = c->UnknownShape();
+        }
+      } else {
+        int64 split_dim = c->Value(split_dimension);
+        TF_RETURN_IF_ERROR(c->WithRankAtLeast(input, split_dim + 1, &input));
+        DimensionHandle split_dim_size;
+        TF_RETURN_WITH_CONTEXT_IF_ERROR(
+            c->Divide(c->Dim(input, split_dim), num_split,
+                      true /* evenly_divisible */, &split_dim_size),
+            "Number of ways to split should evenly divide the split dimension");
+        TF_RETURN_IF_ERROR(
+            c->ReplaceDim(input, split_dim, split_dim_size, &out));
+      }
+      for (int i = 0; i < num_split; ++i) c->set_output(i, out);
+      return Status::OK();
+    });
+
 // --------------------------------------------------------------------------
 REGISTER_OP("Const")
     .Output("output: dtype")
