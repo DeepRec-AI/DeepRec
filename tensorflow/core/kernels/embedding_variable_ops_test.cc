@@ -1183,7 +1183,7 @@ void t1_gpu(KVInterface<int64, float>* hashmap) {
   }
 }
 
-TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
+/*TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
     KVInterface<int64, float>* hashmap = new LocklessHashMapCPU<int64, float>();
     ASSERT_EQ(hashmap->Size(), 0);
     LOG(INFO) << "hashmap size: " << hashmap->Size();
@@ -1197,7 +1197,7 @@ TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
     LOG(INFO) << "2 size:" << hashmap->Size();
 }
 
-/*
+
 void CommitGPU(KVInterface<int64, float>* hashmap) {
   for (int64 i = 0; i< 100; ++i) {
     ValuePtr<float>* tmp= new NormalGPUValuePtr<float>(ev_allocator(), 100);
@@ -1435,6 +1435,78 @@ TEST(EmbeddingVariableTest, TestEVMallocFree) {
     th_arr[i].join();
   }
 }
+
+void SingleCommit(KVInterface<int64, float>* hashmap, std::vector<int64> keys, int bias) {
+  std::vector<ValuePtr<float>*> value_ptrs;
+  for (int64 i = 0; i < keys.size(); ++i) {
+    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(cpu_allocator(), 124);
+    tmp->SetValue(float(keys[i] + bias), 124);
+    value_ptrs.push_back(tmp);
+  }
+  ASSERT_EQ(keys.size(), value_ptrs.size());
+  uint64 start = Env::Default()->NowNanos();
+  
+  for (int64 i = 0; i < keys.size(); i++) {
+    hashmap->Commit(keys[i], value_ptrs[i]);
+  }
+  uint64 end = Env::Default()->NowNanos();
+  uint64 result_cost = end - start;
+  //LOG(INFO) << "SingleCommit time: " << result_cost << " ns";
+}
+
+TEST(KVInterfaceTest, TestSSDKVCompaction) {
+  std::string temp_dir = "/tmp/ssd_ut";//testing::TmpDir();
+  KVInterface<int64, float>* hashmap = new SSDHashKV<int64, float>(temp_dir, cpu_allocator());
+  hashmap->SetTotalDims(124);
+  ASSERT_EQ(hashmap->Size(), 0);
+  std::vector<int64> ids;
+  for (int i = 0; i < 262144; i++) {
+    ids.emplace_back(i);
+  }
+  auto t1 = std::thread(SingleCommit, hashmap, ids, 3);
+  t1.join();
+  ids.clear();
+  for (int i = 0; i < 131073; i++) {
+    ids.emplace_back(i);
+  }
+  t1 = std::thread(SingleCommit, hashmap, ids, 1);
+  t1.join();
+  ids.clear();
+  sleep(1);
+  ValuePtr<float>* val = nullptr;
+  for (int i = 131073; i < 262144; i++) {
+    hashmap->Lookup(i, &val);
+    float* v = (float*)val->GetPtr();
+    for (int j = 0; j < 124; j++){
+      ASSERT_EQ(v[4+j], i+3);
+    }
+  }
+  for (int i = 131073; i < 262144; i++) {
+    ids.emplace_back(i);
+  }
+  t1 = std::thread(SingleCommit, hashmap, ids, 2);
+  t1.join();
+  ids.clear();
+  ids.emplace_back(262155);
+  t1 = std::thread(SingleCommit, hashmap, ids, 0);
+  t1.join();
+  sleep(1);
+  for (int i = 0; i < 131073; i++) {
+    hashmap->Lookup(i, &val);
+    float* v = (float*)val->GetPtr();
+    for (int j = 0; j < 124; j++){
+      ASSERT_EQ(v[4+j], i + 1);
+    }
+  }
+  for (int i = 131073; i < 262144; i++) {
+    hashmap->Lookup(i, &val);
+    float* v = (float*)val->GetPtr();
+    for (int j = 0; j < 124; j++){
+      ASSERT_EQ(v[4+j], i + 2);
+    }
+  }
+}
+
 
 
 
