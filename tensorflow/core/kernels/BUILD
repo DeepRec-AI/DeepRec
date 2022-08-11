@@ -4745,7 +4745,7 @@ tf_kernel_library(
 
 tf_cc_test(
     name = "bias_grad_ali_op_test",
-    size = "large",
+    size = "small",
     srcs = ["bias_grad_ali_op_test.cc"],
     deps = [
         ":bias_grad_ali_op",

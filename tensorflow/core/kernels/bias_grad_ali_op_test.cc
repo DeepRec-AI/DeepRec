@@ -100,6 +100,71 @@ TEST_F(BiasGradTest, Bar_int64) {
   test::ExpectTensorEqual<int64>(expected, *GetOutput(0));
 }
 
+TEST_F(BiasGradTest, Brick_float) {
+  CreateOp(DT_FLOAT);
+  TF_ASSERT_OK(InitOp());
+  std::vector<float> in(131072 * 6, 1.0);
+  std::vector<float> out(131072, 6.0);
+
+  // input
+  AddInputFromArray<float>(TensorShape({6, 131072}), in);
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected(DT_FLOAT, {131072});
+  test::FillValues<float>(&expected, out);
+  test::ExpectTensorEqual<float>(expected, *GetOutput(0));
+}
+
+TEST_F(BiasGradTest, Brick_Long_float) {
+  CreateOp(DT_FLOAT);
+  TF_ASSERT_OK(InitOp());
+  std::vector<float> in(131072 * 97, 1.0);
+  std::vector<float> out(131072, 97.0);
+
+  // input
+  AddInputFromArray<float>(TensorShape({97, 131072}), in);
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected(DT_FLOAT, {131072});
+  test::FillValues<float>(&expected, out);
+  test::ExpectTensorEqual<float>(expected, *GetOutput(0));
+}
+
+TEST_F(BiasGradTest, Line_float) {
+  CreateOp(DT_FLOAT);
+  TF_ASSERT_OK(InitOp());
+  std::vector<float> in(262144, 1.0);
+  std::vector<float> out(1, 262144.0);
+
+  // input
+  AddInputFromArray<float>(TensorShape({262144, 1}), in);
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected(DT_FLOAT, {1});
+  test::FillValues<float>(&expected, out);
+  test::ExpectTensorEqual<float>(expected, *GetOutput(0));
+}
+
+TEST_F(BiasGradTest, TwoColumn_float) {
+  CreateOp(DT_FLOAT);
+  TF_ASSERT_OK(InitOp());
+  std::vector<float> in(131072 * 2, 1.0);
+  std::vector<float> out(2, 131072);
+
+  // input
+  AddInputFromArray<float>(TensorShape({131072, 2}), in);
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected(DT_FLOAT, {2});
+  test::FillValues<float>(&expected, out);
+  test::ExpectTensorEqual<float>(expected, *GetOutput(0));
+}
+
+
 TEST_F(BiasGradTest, Brick_double) {
   CreateOp(DT_DOUBLE);
   TF_ASSERT_OK(InitOp());
