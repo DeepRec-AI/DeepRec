@@ -317,6 +317,20 @@ tf_cuda_library(
 )
 
 tf_cuda_library(
+    name = "quantize_embedding_variable",
+    srcs = ["quantize_embedding_variable.cc"],
+    hdrs = ["quantize_embedding_variable.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tf_datatype",
+        ":tf_status_helper",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core/util/tensor_bundle",
+    ],
+)
+
+tf_cuda_library(
     name = "env",
     srcs = [
         "env.cc",

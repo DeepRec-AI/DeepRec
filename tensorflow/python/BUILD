@@ -5210,6 +5210,7 @@ tf_py_wrap_cc(
         "util/tfprof.i",
         "util/traceme.i",
         "util/transform_graph.i",
+        "util/quantize_embedding_variable.i",
         "util/util.i",
     ],
     # add win_def_file for pywrap_tensorflow
@@ -5236,6 +5237,7 @@ tf_py_wrap_cc(
         "//tensorflow/c:c_api",
         "//tensorflow/c:c_api_experimental",
         "//tensorflow/c:checkpoint_reader",
+        "//tensorflow/c:quantize_embedding_variable",
         "//tensorflow/c:python_api",
         "//tensorflow/c:tf_status_helper",
         "//tensorflow/c/eager:c_api",

@@ -172,6 +172,30 @@ def get_matched_pattern(
     return matched_name_maps
 
 
+def get_input_target_op_name(
+    simple_graph: SimpleGraph,
+    node_name: str,
+    input_index: int,
+    target_op: str,
+    op_map: Dict[str, List[int]],
+) -> Optional[str]:
+    node = get_simple_node_by_name(simple_graph, node_name)
+    input_node_name = get_node_name_from_input(node.inputs[input_index])
+    input_node = get_simple_node_by_name(simple_graph, input_node_name)
+    if input_node.op == target_op:
+        return input_node_name
+    if input_node.op in op_map:
+        for tmp_index in op_map[input_node.op]:
+            target_name = get_input_target_op_name(
+                simple_graph, input_node_name, tmp_index, target_op, op_map
+            )
+            if target_name is not None:
+                break
+        return target_name
+    else:
+        return None
+
+
 def remove_underscore_class_attr(graph_def: tf.GraphDef):
     for i, node in enumerate(graph_def.node):
         if '_class' in node.attr.keys():
