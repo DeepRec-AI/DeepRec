@@ -676,16 +676,15 @@ def fused_l2_normalize(x, epsilon=1e-12, name=None):
     return gen_fused_l2_normalize_ops.fused_l2_normalize(x, 
               epsilon=epsilon, name=name)
 
-@tf_export("fused_layer_normalize")
+@tf_export("nn.fused_layer_normalize")
 def fused_layer_normalize(
       x,
-      center=True,
-      scale=True,
-      gamma=None,
+      center=False,
+      scale=False,
       beta=None,
+      gamma=None,
       epsilon=1e-8,
-      name=None,
-      fusion=True):
+      name=None):
   """Layer Normalizes over last dimension.
 
   Args:
@@ -696,43 +695,36 @@ def fused_layer_normalize(
     scale: If True, multiply by `gamma`. If False, `gamma` is not used. When the
       next layer is linear (also e.g. `nn.relu`), this can be disabled since the
       scaling can be done by the next layer.
+    gamma: If scale is True, it will be used to multiply layer normalization's 
+      result. The shape should be `begin_params_axis ... R - 1`.
+    beta: If center is True, it will be used to add layer normalization's 
+      result. The shape should be `begin_params_axis ... R - 1`.
     epsilon: A lower bound value for the norm. Will use `sqrt(epsilon)` as the
       divisor if `norm < sqrt(epsilon)`.
     name: A name for this operation (optional).
 
   Returns:
     A `Tensor` with the same shape as `x`.
+  Raises:
+    ValueError: If beta or gamma is not provided when center or scale is True.
   """
   with ops.name_scope(name, "fused_layer_normalize", [x]) as name:
     x = ops.convert_to_tensor(x, name="x")
     
-    # if center:
-    # # TODO:auto init problem
-    #   beta = variable_scope.get_variable(
-    #           name='beta',
-    #           shape=x.get_shape()[1],
-    #           dtype=dtypes.float32,
-    #           initializer=init_ops.zeros_initializer(),
-    #           trainable=True)
-    # else:
-    beta = array_ops.zeros(x.get_shape()[1], dtype=dtypes.float32) if beta is None else beta
-
-    # if scale:
-    #   gamma = variable_scope.get_variable(
-    #           name='gamma',
-    #           shape=x.get_shape()[1],
-    #           dtype=dtypes.float32,
-    #           initializer=init_ops.ones_initializer(),
-    #           trainable=True)
-    # else:
-    gamma = array_ops.ones(x.get_shape()[1], dtype=dtypes.float32) if gamma is None else gamma
-
-    if fusion:
-      return gen_nn_ops.fused_layer_norm(
-              x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)[0]
+    if center:
+      if beta is None:
+        raise ValueError("Please provide beta.")
     else:
-      return gen_nn_ops.mkl_layer_norm(
-              x, scale=gamma, offset=beta, epsilon=epsilon, name=name)
+      beta = array_ops.zeros(x.get_shape()[1], dtype=dtypes.float32)
+
+    if scale:
+      if gamma is None:
+        raise ValueError("Please provide gamma.")
+    else:
+      gamma = array_ops.ones(x.get_shape()[1], dtype=dtypes.float32)
+
+    return gen_nn_ops.fused_layer_norm(
+              x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)[0]
 
 def _count_nonzero(input_tensor, dtype=dtypes.int64):
   """Same as math_ops.count_nonzero.

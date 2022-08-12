@@ -1703,21 +1703,11 @@ from tensorflow.python.platform import test as test_lib
 
 class LayerNormalizeTest(test_lib.TestCase):
 
-  
-  @test_util.run_in_graph_and_eager_modes
-  def testMKLTest(self):
-    x = np.ones([7,4], dtype=np.float32)
-    except_y = np.zeros([7,4])
-    y = nn_impl.fused_layer_normalize(x, center=False, scale=False, fusion=False)
-    output_y = self.evaluate(y)
-    self.assertAllClose(except_y, output_y)
-
-
   @test_util.run_in_graph_and_eager_modes
   def testFusedTest(self):
     x = np.ones([7,4], dtype=np.float32)
     except_y = np.zeros([7,4])
-    y = nn_impl.fused_layer_normalize(x, center=False, scale=False)
+    y = nn_impl.fused_layer_normalize(x)
     output_y = self.evaluate(y)
     self.assertAllClose(except_y, output_y)
 
@@ -1728,7 +1718,7 @@ class LayerNormalizeTest(test_lib.TestCase):
     x_np = np.random.random_sample(x_shape).astype(np.float32)
     with self.cached_session():
       x_tf = constant_op.constant(x_np, name="x")
-      y_tf = nn_impl.fused_layer_normalize(x_tf, center=False, scale=False)
+      y_tf = nn_impl.fused_layer_normalize(x_tf)
       err = gradient_checker.compute_gradient_error(x_tf, x_shape, y_tf,
                                                     x_shape)
     print("FusedL2Normalize gradient err = %g " % err)
