@@ -48,13 +48,6 @@ std::vector<seastar::user_packet*> SeastarServerTag::ToUserPacketWithTensors() {
   // For fuse recv / zero copy run graph, if error happens 'resp_tensor_count_'
   // is zero as when it is inited, so no tensor can be sent.
   for (auto i = 0; i < resp_tensor_count_; ++i) {
-    if (frags.size() > IOV_MAX / 2) {
-      std::swap(up->_fragments, frags);
-
-      up->_done = []() {};
-      ret.emplace_back(up);
-      up = new seastar::user_packet;
-    }
     frags.emplace_back(seastar::net::fragment {resp_message_bufs_[i].data_,
         resp_message_bufs_[i].len_});
     total_len += resp_message_bufs_[i].len_;
