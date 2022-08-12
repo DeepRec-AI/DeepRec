@@ -51,7 +51,8 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 由于DeepRec新增了分布式grpc++、star_server等protocol，在使用DeepRec配合原生Estimator会存在像grpc++, star_server功能使用时无法通过Estimator检查的问题，因为我们提供了针对DeepRec版本的Estimator.
 
 代码库：[https://github.com/AlibabaPAI/estimator](https://github.com/AlibabaPAI/estimator)
-分支：deeprec
+
+开发分支：master，最新Release分支：deeprec2206
 
 ## Estimator编译
 
