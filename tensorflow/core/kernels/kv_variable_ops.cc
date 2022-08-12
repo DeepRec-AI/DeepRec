@@ -159,6 +159,8 @@ class InitializeKvVariableOp : public OpKernel {
           &l2_weight_threshold_));
     OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim", &default_value_dim_));
+    OP_REQUIRES_OK(c, c->GetAttr("default_value_no_permission",
+          &default_value_no_permission_));
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
@@ -244,6 +246,7 @@ class InitializeKvVariableOp : public OpKernel {
                              l2_weight_threshold_, layout_,
                              max_element_size_, false_positive_probability_,
                              counter_type_, default_value_dim_,
+                             default_value_no_permission_,
                              record_freq_, record_version_),
                          allocator);
             return Status::OK();
@@ -295,6 +298,7 @@ class InitializeKvVariableOp : public OpKernel {
                                   layout_, max_element_size_,
                                   false_positive_probability_,
                                   counter_type_, default_value_dim_,
+                                  default_value_no_permission_,
                                   record_freq_, record_version_),
                   ev_allocator());
              return (*ptr)->Init(default_values, default_value_dim_);
@@ -328,6 +332,7 @@ class InitializeKvVariableOp : public OpKernel {
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
+  float default_value_no_permission_;
   bool record_freq_;
   bool record_version_;
 };
@@ -850,6 +855,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim",
           &default_value_dim_));
+    OP_REQUIRES_OK(c, c->GetAttr("default_value_no_permission",
+          &default_value_no_permission_));
     OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
     int64 storage_type = 0;
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
@@ -904,6 +911,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                            layout_,  max_element_size_,
                            false_positive_probability_,
                            counter_type_, default_value_dim_,
+                           default_value_no_permission_,
                            record_freq_, record_version_));
              return Status::OK();
             }));
@@ -950,6 +958,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                     l2_weight_threshold_, layout_, max_element_size_,
                     false_positive_probability_,
                     counter_type_, default_value_dim_,
+                    default_value_no_permission_,
                     record_freq_, record_version_));
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
@@ -1005,6 +1014,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
+  float default_value_no_permission_;
   bool record_freq_;
   bool record_version_;
   bool ev_async_restore_;

@@ -293,6 +293,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_path = evconfig.storage_path
     self._storage_size = evconfig.storage_size
     self._default_value_dim = evconfig.default_value_dim
+    self._default_value_no_permission = evconfig.default_value_no_permission
     if (isinstance(evconfig.filter_strategy, variables.CounterFilter)  and self._filter_freq != 0) or \
        self._steps_to_live not in [0, None] or self._record_version or \
        self._storage_type in multi_level_list or self._record_freq:
@@ -415,6 +416,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     storage_path = self._storage_path,
                     storage_size = self._storage_size,
                     default_value_dim = self._default_value_dim,
+                    default_value_no_permission = self._default_value_no_permission,
                     record_freq = self._record_freq,
                     record_version = self._record_version,
                     name=n))
@@ -518,6 +520,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_path = self._initializer_op.get_attr("storage_path")
     self._storage_size = self._initializer_op.get_attr("storage_size")
     self._default_value_dim = self._initializer_op.get_attr("default_value_dim")
+    self._default_value_no_permission= self._initializer_op.get_attr("default_value_no_permission")
     self._record_freq = self._initializer_op.get_attr("record_freq")
     self._record_version = self._initializer_op.get_attr("record_version")
 
