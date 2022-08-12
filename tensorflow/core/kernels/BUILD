@@ -8465,32 +8465,6 @@ tf_mkl_kernel_library(
     ] + mkl_deps(),
 )
 
-tf_mkl_kernel_library(
-    name = "mkl_layer_norm_ops",
-    srcs = ["mkl_layer_norm_op.cc"],
-    deps = MATH_DEPS + mkl_deps(),
-)
-
-tf_cc_test_mkl(
-    name = "mkl_layer_norm_op_test",
-    srcs = ["mkl_layer_norm_op_test.cc"],
-    deps = [
-        ":mkl_layer_norm_ops",
-        ":fused_layer_normalize_ops",
-        ":ops_testutil",
-        ":ops_util",
-        "//tensorflow/cc:cc_ops",
-        "//tensorflow/core:core_cpu",
-        "//tensorflow/core:framework",
-        "//tensorflow/core:framework_internal",
-        "//tensorflow/core:lib",
-        "//tensorflow/core:tensorflow",
-        "//tensorflow/core:test",
-        "//tensorflow/core:test_main",
-        "//tensorflow/core:testlib",
-    ],
-)
-
 tf_cc_test_mkl(
     name = "mkl_fused_batch_norm_op_test",
     size = "small",
