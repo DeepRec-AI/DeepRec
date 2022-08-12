@@ -135,14 +135,6 @@ std::vector<seastar::user_packet*> SeastarClientTag::ToUserPacketWithTensors() {
   total_len += req_body_buf_.len_;
 
   for (int i = 0; i < req_tensor_count_; ++i) {
-    if (frags.size() > IOV_MAX / 2) {
-      std::swap(up->_fragments, frags);
-
-      up->_done = []() {};
-      ret.emplace_back(up);
-      up = new seastar::user_packet;
-    }
-
     frags.emplace_back(seastar::net::fragment {req_message_bufs_[i].data_,
           req_message_bufs_[i].len_});
     total_len += req_message_bufs_[i].len_;
