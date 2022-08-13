@@ -131,7 +131,9 @@ def sequence_input_layer(
     fc._verify_static_batch_size_equality(sequence_lengths, ordered_columns)
     sequence_length = _assert_all_equal_and_return(sequence_lengths)
 
-    return array_ops.concat(output_tensors, -1), sequence_length
+    concat_result = array_ops.concat(output_tensors, -1)
+    ops.add_to_collection(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, concat_result)
+    return concat_result, sequence_length
 
 
 def concatenate_context_input(context_input, sequence_input):

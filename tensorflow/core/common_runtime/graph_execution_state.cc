@@ -763,14 +763,19 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   if (session_optimizer_options.do_smart_stage() ||
       session_optimizer_options.do_smart_stage_gpu()) {
     VLOG(2) << "RUN Graph Optimization: SmartStage";
-    std::string tn;
-    ReadStringFromEnvVar("TARGET_NODES_NAME", "", &tn);
-    std::vector<std::string> target_nodes;
-    for (std::string s : str_util::Split(tn, ';')) {
-      target_nodes.push_back(s.substr(0, s.find_last_of(':')));
+
+    if (session_optimizer_options.do_async_embedding()) {
+      VLOG(0) << "Async Embedding is enable, disable SmartStage";
+    } else {
+      std::string tn;
+      ReadStringFromEnvVar("TARGET_NODES_NAME", "", &tn);
+      std::vector<std::string> target_nodes;
+      for (std::string s : str_util::Split(tn, ';')) {
+	target_nodes.push_back(s.substr(0, s.find_last_of(':')));
+      }
+      SmartStageGraph(&new_graph, target_nodes, 
+		      session_optimizer_options.do_smart_stage_gpu());
     }
-    SmartStageGraph(&new_graph, target_nodes, 
-                    session_optimizer_options.do_smart_stage_gpu());
   }
 
   SaveStatefulNodes(new_graph.get());

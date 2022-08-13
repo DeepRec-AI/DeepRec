@@ -43,6 +43,7 @@ from tensorflow.python.training import incremental_saver as incr_saver
 from tensorflow.python.training import saver as training_saver
 from tensorflow.python.training import session_manager as sm
 from tensorflow.python.training import session_run_hook
+from tensorflow.python.training import async_embedding_stage as async_embedding
 from tensorflow.python.training.tracking import graph_view
 from tensorflow.python.training.tracking import util as trackable_util
 from tensorflow.python.util import function_utils
@@ -184,6 +185,10 @@ class Scaffold(object):
     self._saver = saver
     self._incremental_save_restore = incremental_save_restore
     self._incr_saver = None
+    self._enable_async_embedding = False
+    self._async_embedding_checkpoint_dir = None
+    self._async_embedding_threads_num = 1
+    self._async_embedding_capacity = 1
 
   def finalize(self):
     """Creates operations if needed and finalizes the graph."""
@@ -246,9 +251,32 @@ class Scaffold(object):
     if core.get_structured_model():
       core.get_structured_model().graph_transform()
 
+    if self._enable_async_embedding:
+      async_embedding_stage = async_embedding.AsyncEmbeddingStage(
+        self._async_embedding_threads_num,
+        self._async_embedding_capacity,
+        self._async_embedding_checkpoint_dir)
+      async_embedding_stage.stage(ops.get_default_graph())
+
     ops.get_default_graph().finalize()
     logging.info('Graph was finalized.')
     return self
+
+  def set_enable_async_embedding(self, value):
+    if isinstance(value, bool):
+      self._enable_async_embedding = value
+
+  def set_async_embedding_checkpoint_dir(self, value):
+    if isinstance(value, str) and len(str.strip(value)) != 0:
+      self._async_embedding_checkpoint_dir = value
+
+  def set_async_embedding_capacity(self, value):
+    if isinstance(value, int) and value >= 1:
+      self._async_embedding_capacity = value
+
+  def set_async_embedding_threads_num(self, value):
+    if isinstance(value, int) and value >= 1:
+      self._async_embedding_threads_num = value
 
   @property
   def init_fn(self):
@@ -558,6 +586,15 @@ def MonitoredTrainingSession(
   incremental_save_restore = True if save_incremental_checkpoint_secs else False
   scaffold = scaffold or Scaffold(incremental_save_restore=incremental_save_restore)
   worker_context = distribute_coordinator_context.get_current_worker_context()
+
+  # set async_embedding parameters
+  if config != None:
+    # Get async_embedding parameters from config
+    optimizer_options = config.graph_options.optimizer_options
+    scaffold.set_enable_async_embedding(optimizer_options.do_async_embedding)
+    scaffold.set_async_embedding_threads_num(optimizer_options.async_embedding_threads_num)
+    scaffold.set_async_embedding_capacity(optimizer_options.async_embedding_capacity)
+  scaffold.set_async_embedding_checkpoint_dir(checkpoint_dir)
 
   if worker_context:
     return _create_monitored_session_with_worker_context(

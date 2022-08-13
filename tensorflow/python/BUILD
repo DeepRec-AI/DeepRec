@@ -4641,6 +4641,8 @@ py_library(
         ":util",
         ":variable_scope",
         ":variables",
+	":prefetch",
+	":prefetch_runner",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/data/ops:dataset_ops",
         "//tensorflow/python/distribute:distribute_coordinator_context",
@@ -6252,6 +6254,20 @@ tf_py_test(
     tags = [
         "no_pip",
         "notsan",  # b/67945581
+    ],
+)
+
+tf_py_test(
+    name = "async_embedding_stage_test",
+    size = "small",
+    srcs = ["training/async_embedding_stage_test.py"],
+    additional_deps = [
+        ":training",
+	":prefetch",
+	":prefetch_runner",
+	":variables",
+	":math_ops",
+	"framework",
     ],
 )
 
