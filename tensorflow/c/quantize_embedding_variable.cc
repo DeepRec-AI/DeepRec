@@ -24,90 +24,9 @@ limitations under the License.
 namespace tensorflow {
 namespace checkpoint {
 
-Status QuantizeEmbeddingVariable(const string& input_prefix,
-                                 const string& output_prefix,
-                                 const std::vector<string>& names,
-                                 const std::vector<string>& quant_names,
-                                 const std::vector<string>& scale_names,
-                                 TF_DataType data_type) {
-  BundleReader reader(Env::Default(), input_prefix);
-  BundleWriter writer(Env::Default(), output_prefix);
-  std::set<string> ev_suffix = {
-      "-freqs",         "-freqs_filtered",          "-keys",
-      "-keys_filtered", "-partition_filter_offset", "-partition_offset",
-      "-versions",      "-versions_filtered"};
-
-#if INTEL_MKL
-#pragma omp parallel for num_threads(omp_get_num_procs())
-#endif  // INTEL_MKL
-  for (int idx = 0; idx < names.size(); ++idx) {
-    Status status;
-    DataType dtype;
-    TensorShape shape;
-    string value_name = names[idx] + "-values";
-    status = reader.LookupDtypeAndShape(value_name, &dtype, &shape);
-    if (!status.ok()) {
-      errors::InvalidArgument("Invalid variable name:", value_name);
-    }
-    Tensor in_tensor(dtype, shape);
-    status = reader.Lookup(value_name, &in_tensor);
-    auto in_data = in_tensor.flat<float>();
-
-    if (data_type == TF_DataType::TF_BFLOAT16) {
-      Tensor out_tensor(DataTypeToEnum<bfloat16>::v(), shape);
-      auto out_data = out_tensor.flat<bfloat16>();
-      int64 data_size = out_tensor.NumElements();
-#if INTEL_MKL
-      dnnl::cvt_float_to_bfloat16((dnnl_bfloat16_t*)out_data.data(),
-                                  (const float*)in_data.data(), data_size);
-#else
-      FloatToBFloat16(in_data.data(), out_data.data(), data_size);
-#endif  // INTEL_MKL
-      writer.Add(quant_names[idx] + "-values", out_tensor);
-    } else if (data_type == TF_DataType::TF_HALF) {
-      Tensor out_tensor(DataTypeToEnum<Eigen::half>::v(), shape);
-      auto out_data = out_tensor.flat<Eigen::half>();
-      for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
-        out_data(i) = static_cast<Eigen::half>(in_data(i));
-      }
-      writer.Add(quant_names[idx] + "-values", out_tensor);
-    } else if (data_type == TF_DataType::TF_INT8) {
-      Tensor out_tensor(DataTypeToEnum<int8_t>::v(), shape);
-      auto out_data = out_tensor.flat<int8_t>();
-      int embed_dim = shape.dim_size(shape.dims() - 1);
-      Tensor scale_tensor(DT_FLOAT, TensorShape({embed_dim}));
-      auto scale_data = scale_tensor.flat<float>();
-      for (int i = 0; i < embed_dim; ++i) {
-        int64 voc_size = in_tensor.NumElements() / embed_dim;
-        float max_val = 0;
-        for (size_t j = 0; j < voc_size; ++j) {
-          max_val = std::max(max_val, std::abs(in_data(j * embed_dim + i)));
-        }
-        scale_data(i) = max_val / 127.0;
-        for (size_t j = 0; j < voc_size; ++j) {
-          float int8_value = in_data(j * embed_dim + i) / scale_data(i);
-          out_data(j * embed_dim + i) = static_cast<int8_t>(round(int8_value));
-        }
-      }
-      writer.Add(scale_names[idx], scale_tensor);
-      writer.Add(quant_names[idx] + "-values", out_tensor);
-    } else {
-      errors::InvalidArgument("Unsupported data type:", data_type);
-    }
-
-    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
-      string tensor_name = names[idx] + *it;
-      status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
-      if (status.ok()) {
-        Tensor tensor(dtype, shape);
-        status = reader.Lookup(tensor_name, &tensor);
-        if (status.ok()) {
-          writer.Add(quant_names[idx] + *it, tensor);
-        }
-      }
-    }
-  }
-
+void WriteRestVariables(BundleReader& reader, BundleWriter& writer,
+                        const std::vector<string>& names,
+                        const std::set<string>& ev_suffix) {
   std::set<string> updated_names;
   for (int idx = 0; idx < names.size(); ++idx) {
     updated_names.insert(names[idx] + "-values");
@@ -134,9 +53,113 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
       writer.Add(tensor_name, tensor);
     }
   }
+}
 
+void ConvertToBF16Value(const Tensor& in_tensor, const string name,
+                        BundleWriter& writer) {
+  auto in_data = in_tensor.flat<float>();
+  Tensor out_tensor(DataTypeToEnum<bfloat16>::v(), in_tensor.shape());
+  auto out_data = out_tensor.flat<bfloat16>();
+  int64 data_size = out_tensor.NumElements();
+#if TEL_MKL
+  dnnl::cvt_float_to_bfloat16((dnnl_bfloat16_t*)out_data.data(),
+                              (const float*)in_data.data(), data_size);
+#else
+  FloatToBFloat16(in_data.data(), out_data.data(), data_size);
+#endif  // INTEL_MKL
+  writer.Add(name, out_tensor);
+}
+
+void ConvertToHalfValue(const Tensor& in_tensor, const string name,
+                        BundleWriter& writer) {
+  auto in_data = in_tensor.flat<float>();
+  Tensor out_tensor(DataTypeToEnum<Eigen::half>::v(), in_tensor.shape());
+  auto out_data = out_tensor.flat<Eigen::half>();
+  for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
+    out_data(i) = static_cast<Eigen::half>(in_data(i));
+  }
+  writer.Add(name, out_tensor);
+}
+
+void ConvertToInt8Value(const Tensor& in_tensor, const string name,
+                        const string scale_name, BundleWriter& writer) {
+  auto in_data = in_tensor.flat<float>();
+  TensorShape shape = in_tensor.shape();
+  Tensor out_tensor(DataTypeToEnum<int8_t>::v(), shape);
+  auto out_data = out_tensor.flat<int8_t>();
+  int embed_dim = shape.dim_size(shape.dims() - 1);
+  Tensor scale_tensor(DT_FLOAT, TensorShape({embed_dim}));
+  auto scale_data = scale_tensor.flat<float>();
+  std::vector<float> max_val(embed_dim, 0.0);
+  for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
+    int embed_i = i % embed_dim;
+    max_val[embed_i] = std::max(max_val[embed_i], std::abs(in_data(i)));
+  }
+  for (size_t i = 0; i < embed_dim; ++i) {
+    scale_data(i) = max_val[i] / 127.0;
+  }
+  for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
+    int embed_i = i % embed_dim;
+    out_data(i) = static_cast<int8_t>(round(in_data(i) / scale_data(embed_i)));
+  }
+  writer.Add(scale_name, scale_tensor);
+  writer.Add(name, out_tensor);
+}
+
+Status QuantizeEmbeddingVariable(const string& input_prefix,
+                                 const string& output_prefix,
+                                 const std::vector<string>& names,
+                                 const std::vector<string>& quant_names,
+                                 const std::vector<string>& scale_names,
+                                 TF_DataType data_type) {
+  BundleReader reader(Env::Default(), input_prefix);
+  BundleWriter writer(Env::Default(), output_prefix);
+  const std::set<string> ev_suffix = {
+      "-freqs",         "-freqs_filtered",          "-keys",
+      "-keys_filtered", "-partition_filter_offset", "-partition_offset",
+      "-versions",      "-versions_filtered"};
+
+#if INTEL_MKL
+#pragma omp parallel for num_threads(omp_get_num_procs())
+#endif  // INTEL_MKL
+  for (int idx = 0; idx < names.size(); ++idx) {
+    Status status;
+    DataType dtype;
+    TensorShape shape;
+    string value_name = names[idx] + "-values";
+    status = reader.LookupDtypeAndShape(value_name, &dtype, &shape);
+    if (!status.ok()) {
+      errors::InvalidArgument("Invalid variable name:", value_name);
+    }
+    Tensor in_tensor(dtype, shape);
+    status = reader.Lookup(value_name, &in_tensor);
+    auto in_data = in_tensor.flat<float>();
+
+    string quant_name = quant_names[idx] + "-values";
+    if (data_type == TF_DataType::TF_BFLOAT16) {
+      ConvertToBF16Value(in_tensor, quant_name, writer);
+    } else if (data_type == TF_DataType::TF_HALF) {
+      ConvertToHalfValue(in_tensor, quant_name, writer);
+    } else if (data_type == TF_DataType::TF_INT8) {
+      ConvertToInt8Value(in_tensor, quant_name, scale_names[idx], writer);
+    } else {
+      errors::InvalidArgument("Unsupported data type:", data_type);
+    }
+    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
+      string tensor_name = names[idx] + *it;
+      status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
+      if (status.ok()) {
+        Tensor tensor(dtype, shape);
+        status = reader.Lookup(tensor_name, &tensor);
+        if (status.ok()) {
+          writer.Add(quant_names[idx] + *it, tensor);
+        }
+      }
+    }
+  }
+
+  WriteRestVariables(reader, writer, names, ev_suffix);
   writer.Finish();
-
   return Status::OK();
 }
 
