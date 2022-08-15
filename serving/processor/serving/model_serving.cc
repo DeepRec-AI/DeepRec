@@ -38,7 +38,8 @@ Status Model::Init(const char* model_config) {
 Status Model::Predict(const void* input_data, int input_size,
     void** output_data, int* output_size) {
   Call call;
-  parser_->ParseRequestFromBuf(input_data, input_size, call);
+  parser_->ParseRequestFromBuf(input_data, input_size, call,
+                               impl_->GetServingSignatureOutputs());
   auto status = Predict(call.request, call.response);
   if (!status.ok()) {
     return status;
@@ -51,7 +52,8 @@ Status Model::Predict(const void* input_data, int input_size,
 Status Model::BatchPredict(const void* input_data[], int* input_size,
     void* output_data[], int* output_size) {
   BatchCall call;
-  parser_->ParseBatchRequestFromBuf(input_data, input_size, call);
+  parser_->ParseBatchRequestFromBuf(input_data, input_size, call,
+                                    impl_->GetServingSignatureOutputs());
   auto status = Predict(call.batched_request, call.batched_response);
   if (!status.ok()) {
     return status;
