@@ -39,6 +39,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/optimization_registry.h"
 #include "tensorflow/core/common_runtime/process_util.h"
 #include "tensorflow/core/common_runtime/rendezvous_mgr.h"
+#include "tensorflow/core/common_runtime/direct_session_group.h"
 #include "tensorflow/core/common_runtime/scoped_allocator_mgr.h"
 #include "tensorflow/core/common_runtime/step_stats_collector.h"
 #include "tensorflow/core/framework/function.h"
@@ -330,7 +331,8 @@ class DirectSessionFactory : public SessionFactory {
 #endif // GOOGLE_CUDA
     DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
 
-    SessionGroup* session_group = new SessionGroup(shared_rmgr, gpu_shared_rmgr);
+    SessionGroup* session_group =
+        new DirectSessionGroup(shared_rmgr, gpu_shared_rmgr);
     SessionOptions leader_options = options;
 #if GOOGLE_CUDA
     if (use_multi_stream) {

@@ -3,6 +3,7 @@
 #include "serving/processor/serving/model_session.h"
 #include "serving/processor/serving/model_config.h"
 #include "serving/processor/serving/model_message.h"
+#include "tensorflow/core/common_runtime/direct_session_group.h"
 #include "tensorflow/core/public/session.h"
 
 namespace tensorflow {
@@ -186,7 +187,7 @@ class TestableModelSessionMgr : public ModelSessionMgr {
   Status CreateSessionGroup(SessionGroup** sess_group, 
       ModelConfig* config) override {
     int session_num = config->session_num;
-    *sess_group = new SessionGroup();
+    *sess_group = new DirectSessionGroup();
     if (session_num > 0) {
       (*sess_group)->CreateLeaderSession(new FakeSession());
       for (int i = 1; i < session_num; ++i) {
