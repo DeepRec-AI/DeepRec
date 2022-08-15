@@ -8,8 +8,9 @@ ProtoBufParser::ProtoBufParser(int thread_num) {
       thread_num));
 }
 
-Status ProtoBufParser::ParseRequestFromBuf(const void* input_data,
-    int input_size, Call& call) {
+Status ProtoBufParser::ParseRequestFromBuf(
+    const void* input_data, int input_size, Call& call,
+    const std::vector<std::string>* default_signature_outputs) {
   eas::PredictRequest request;
   request.ParseFromArray(input_data, input_size);
 
@@ -20,6 +21,9 @@ Status ProtoBufParser::ParseRequestFromBuf(const void* input_data,
   call.request.output_tensor_names =
       std::vector<std::string>(request.output_filter().begin(),
                                request.output_filter().end());
+  if (call.request.output_tensor_names.empty()) {
+    call.request.output_tensor_names = *default_signature_outputs;
+  }
 
   return Status::OK();
 }
@@ -35,10 +39,12 @@ Status ProtoBufParser::ParseResponseToBuf(const Call& call,
 }
 
 Status ProtoBufParser::ParseBatchRequestFromBuf(
-    const void* input_data[], int* input_size, BatchCall& call) {
+    const void* input_data[], int* input_size, BatchCall& call,
+    const std::vector<std::string>* default_signature_outputs) {
   auto size = sizeof(input_data) / sizeof(void*);
   call.call_num = size;
-  auto do_work = [&call, input_data, input_size](size_t begin, size_t end) {
+  auto do_work = [&call, input_data, input_size,
+                  default_signature_outputs](size_t begin, size_t end) {
     for (size_t i = begin; i < end; ++i) {
       eas::PredictRequest request;
       request.ParseFromArray(input_data[i], input_size[i]);
@@ -51,6 +57,9 @@ Status ProtoBufParser::ParseBatchRequestFromBuf(
         call.request[0].output_tensor_names =
             std::vector<std::string>(request.output_filter().begin(),
                                      request.output_filter().end());
+        if (call.request[0].output_tensor_names.empty()) {
+          call.request[0].output_tensor_names = *default_signature_outputs;
+        }
       }
     }
   };

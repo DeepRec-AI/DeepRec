@@ -203,6 +203,15 @@ void GenerateJsonSignatureFormat(
   StringReplace(json_signature, "},]", "}]");
 }
 
+void GetSignatureOutputs(
+    const std::pair<std::string, SignatureDef>& signature,
+    std::vector<std::string>& model_signature_outputs) {
+  for (auto& iter : signature.second.outputs()) {
+    model_signature_outputs.emplace_back(iter.second.name());
+    //model_signature_outputs.emplace_back(iter.first);
+  }
+}
+
 } // namespace
 
 LocalSessionInstance::LocalSessionInstance(
@@ -276,6 +285,8 @@ Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       model_signature_ = it;
       GenerateJsonSignatureFormat(model_signature_,
                                   model_json_signature_);
+      GetSignatureOutputs(model_signature_,
+                          default_signature_outputs_);
       return Status::OK();
     }
   }
@@ -318,6 +329,15 @@ Status LocalSessionInstance::Warmup(
 
 std::string LocalSessionInstance::DebugString() {
   return model_json_signature_;
+}
+
+SignatureDef LocalSessionInstance::GetServingSignatureDef() {
+  return model_signature_.second;
+}
+
+const std::vector<std::string>*
+LocalSessionInstance::GetServingSignatureOutputs() {
+  return &default_signature_outputs_;
 }
 
 Status LocalSessionInstance::FullModelUpdate(
@@ -372,6 +392,8 @@ Status RemoteSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       model_signature_ = it;
       GenerateJsonSignatureFormat(model_signature_,
                                   model_json_signature_);
+      GetSignatureOutputs(model_signature_,
+                          default_signature_outputs_);
       return Status::OK();
     }
   }
@@ -532,6 +554,15 @@ std::string RemoteSessionInstance::DebugString() {
   return model_json_signature_;
 }
 
+SignatureDef RemoteSessionInstance::GetServingSignatureDef() {
+  return model_signature_.second;
+}
+
+const std::vector<std::string>*
+RemoteSessionInstance::GetServingSignatureOutputs() {
+  return &default_signature_outputs_;
+}
+
 LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
     : ModelUpdater(config) {
   session_options_ = new SessionOptions();
@@ -576,6 +607,15 @@ Status LocalSessionInstanceMgr::Rollback() {
 
 std::string LocalSessionInstanceMgr::DebugString() {
   return instance_->DebugString();
+}
+
+SignatureDef LocalSessionInstanceMgr::GetServingSignatureDef() {
+  return instance_->GetServingSignatureDef();
+}
+
+const std::vector<std::string>*
+LocalSessionInstanceMgr::GetServingSignatureOutputs() {
+  return instance_->GetServingSignatureOutputs();
 }
 
 Status LocalSessionInstanceMgr::FullModelUpdate(
@@ -683,6 +723,15 @@ Status RemoteSessionInstanceMgr::Rollback() {
 
 std::string RemoteSessionInstanceMgr::DebugString() {
   return cur_instance_->DebugString();
+}
+
+SignatureDef RemoteSessionInstanceMgr::GetServingSignatureDef() {
+  return cur_instance_->GetServingSignatureDef();
+}
+
+const std::vector<std::string>*
+RemoteSessionInstanceMgr::GetServingSignatureOutputs() {
+  return cur_instance_->GetServingSignatureOutputs();
 }
 
 Status RemoteSessionInstanceMgr::FullModelUpdate(const Version& version,
