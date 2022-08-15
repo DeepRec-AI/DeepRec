@@ -17,6 +17,7 @@ limitations under the License.
 #include "tensorflow/core/framework/bfloat16.h"
 
 #ifdef INTEL_MKL
+#include <omp.h>
 #include "dnnl.hpp"
 #endif  // INTEL_MKL
 
@@ -36,11 +37,13 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
       "-keys_filtered", "-partition_filter_offset", "-partition_offset",
       "-versions",      "-versions_filtered"};
 
-  Status status;
-  DataType dtype;
-  TensorShape shape;
-  std::set<string> updated_names;
+#if INTEL_MKL
+#pragma omp parallel for num_threads(omp_get_num_procs())
+#endif  // INTEL_MKL
   for (int idx = 0; idx < names.size(); ++idx) {
+    Status status;
+    DataType dtype;
+    TensorShape shape;
     string value_name = names[idx] + "-values";
     status = reader.LookupDtypeAndShape(value_name, &dtype, &shape);
     if (!status.ok()) {
@@ -64,7 +67,7 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
     } else if (data_type == TF_DataType::TF_HALF) {
       Tensor out_tensor(DataTypeToEnum<Eigen::half>::v(), shape);
       auto out_data = out_tensor.flat<Eigen::half>();
-      for (int i = 0; i < out_tensor.NumElements(); ++i) {
+      for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
         out_data(i) = static_cast<Eigen::half>(in_data(i));
       }
       writer.Add(quant_names[idx] + "-values", out_tensor);
@@ -75,13 +78,13 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
       Tensor scale_tensor(DT_FLOAT, TensorShape({embed_dim}));
       auto scale_data = scale_tensor.flat<float>();
       for (int i = 0; i < embed_dim; ++i) {
-        int voc_size = in_tensor.NumElements() / embed_dim;
+        int64 voc_size = in_tensor.NumElements() / embed_dim;
         float max_val = 0;
-        for (int j = 0; j < voc_size; ++j) {
+        for (size_t j = 0; j < voc_size; ++j) {
           max_val = std::max(max_val, std::abs(in_data(j * embed_dim + i)));
         }
         scale_data(i) = max_val / 127.0;
-        for (int j = 0; j < voc_size; ++j) {
+        for (size_t j = 0; j < voc_size; ++j) {
           float int8_value = in_data(j * embed_dim + i) / scale_data(i);
           out_data(j * embed_dim + i) = static_cast<int8_t>(round(int8_value));
         }
@@ -91,9 +94,8 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
     } else {
       errors::InvalidArgument("Unsupported data type:", data_type);
     }
-    updated_names.insert(value_name);
 
-    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); it++) {
+    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
       string tensor_name = names[idx] + *it;
       status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
       if (status.ok()) {
@@ -101,9 +103,16 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
         status = reader.Lookup(tensor_name, &tensor);
         if (status.ok()) {
           writer.Add(quant_names[idx] + *it, tensor);
-          updated_names.insert(tensor_name);
         }
       }
+    }
+  }
+
+  std::set<string> updated_names;
+  for (int idx = 0; idx < names.size(); ++idx) {
+    updated_names.insert(names[idx] + "-values");
+    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
+      updated_names.insert(names[idx] + *it);
     }
   }
 
@@ -114,6 +123,9 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
     tensor_names.emplace_back(reader.key());
   }
   for (auto& tensor_name : tensor_names) {
+    Status status;
+    DataType dtype;
+    TensorShape shape;
     if (updated_names.count(tensor_name)) continue;
     status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
     if (status.ok()) {
