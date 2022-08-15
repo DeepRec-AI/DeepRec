@@ -75,6 +75,9 @@ void ConvertToHalfValue(const Tensor& in_tensor, const string name,
   auto in_data = in_tensor.flat<float>();
   Tensor out_tensor(DataTypeToEnum<Eigen::half>::v(), in_tensor.shape());
   auto out_data = out_tensor.flat<Eigen::half>();
+#if INTEL_MKL
+#pragma omp parallel for num_threads(omp_get_num_procs())
+#endif  // INTEL_MKL
   for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
     out_data(i) = static_cast<Eigen::half>(in_data(i));
   }
@@ -91,6 +94,9 @@ void ConvertToInt8Value(const Tensor& in_tensor, const string name,
   Tensor scale_tensor(DT_FLOAT, TensorShape({embed_dim}));
   auto scale_data = scale_tensor.flat<float>();
   std::vector<float> max_val(embed_dim, 0.0);
+#if INTEL_MKL
+#pragma omp parallel for num_threads(omp_get_num_procs())
+#endif  // INTEL_MKL
   for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
     int embed_i = i % embed_dim;
     max_val[embed_i] = std::max(max_val[embed_i], std::abs(in_data(i)));
@@ -98,6 +104,9 @@ void ConvertToInt8Value(const Tensor& in_tensor, const string name,
   for (size_t i = 0; i < embed_dim; ++i) {
     scale_data(i) = max_val[i] / 127.0;
   }
+#if INTEL_MKL
+#pragma omp parallel for num_threads(omp_get_num_procs())
+#endif  // INTEL_MKL
   for (size_t i = 0; i < out_tensor.NumElements(); ++i) {
     int embed_i = i % embed_dim;
     out_data(i) = static_cast<int8_t>(round(in_data(i) / scale_data(embed_i)));
@@ -119,9 +128,6 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
       "-keys_filtered", "-partition_filter_offset", "-partition_offset",
       "-versions",      "-versions_filtered"};
 
-#if INTEL_MKL
-#pragma omp parallel for num_threads(omp_get_num_procs())
-#endif  // INTEL_MKL
   for (int idx = 0; idx < names.size(); ++idx) {
     Status status;
     DataType dtype;
