@@ -3564,7 +3564,7 @@ py_library(
         ":sparse_ops",
         ":tensor_util",
         "//tensorflow/python/eager:context",
-        ":fused_l2_normalize_ops_gen",
+        ":fused_l2_normalize_ops_gen"
     ],
 )
 

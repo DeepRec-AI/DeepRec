@@ -679,10 +679,10 @@ def fused_l2_normalize(x, epsilon=1e-12, name=None):
 @tf_export("nn.fused_layer_normalize")
 def fused_layer_normalize(
       x,
-      center=False,
       scale=False,
-      beta=None,
+      center=False,
       gamma=None,
+      beta=None,
       epsilon=1e-8,
       name=None):
   """Layer Normalizes over last dimension.

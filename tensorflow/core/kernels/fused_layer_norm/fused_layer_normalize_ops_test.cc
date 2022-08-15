@@ -244,7 +244,7 @@ static Graph* FusedLayerNormalizeGrad(int rows, int cols) {
   opts.config.set_intra_op_parallelism_threads(NTH);                              \
   test::Benchmark("cpu", FusedLayerNormalizeGrad(ROWS, COLS), &opts).Run(iters);  \
   }                                                                               \
-  BENCHMARK(BM_FusedLayerNormGrad##_##ROWS##_##COLS##_##NTH##_CPU);                   \
+  BENCHMARK(BM_FusedLayerNormGrad##_##ROWS##_##COLS##_##NTH##_CPU);               \
 
 #define BM_FusedLayerNormGrad_NTH(ROWS, COLS) \
   BM_FusedLayerNormGrad(ROWS, COLS, 1);       \
