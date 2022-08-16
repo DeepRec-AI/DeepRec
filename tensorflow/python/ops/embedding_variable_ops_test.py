@@ -551,7 +551,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       for val1 in emb1.tolist():
         for val in val1:
-          self.assertEqual(val, 1.0)
+          self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for index, val1 in enumerate(emb1.tolist()):
         if index < 7:
@@ -559,7 +559,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             self.assertNotEqual(val, 1.0)
         else:
           for val in val1:
-            self.assertEqual(val, 1.0)
+            self.assertEqual(val, .0)
 
   def testEmbeddingVariableForSparseColumnEmbeddingCol(self):
     columns = feature_column.sparse_column_with_embedding(column_name="col_emb", dtype=dtypes.int64)
@@ -659,7 +659,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -692,7 +692,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -725,7 +725,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -758,7 +758,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -786,7 +786,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -816,7 +816,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         emb1, top, l = sess.run([emb, train_op, loss])
         emb1, top, l = sess.run([emb, train_op, loss])
         for val in emb1.tolist()[0]:
-          self.assertEqual(val, 1.0)
+          self.assertEqual(val, .0)
         emb1, top, l = sess.run([emb, train_op, loss])
         for val in emb1.tolist()[0]:
           self.assertNotEqual(val, 1.0)
@@ -845,7 +845,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         emb1, top, l = sess.run([emb, train_op, loss])
         emb1, top, l = sess.run([emb, train_op, loss])
         for val in emb1.tolist()[0]:
-          self.assertEqual(val, 1.0)
+          self.assertEqual(val, .0)
         emb1, top, l = sess.run([emb, train_op, loss])
         for val in emb1.tolist()[0]:
           self.assertNotEqual(val, 1.0)
@@ -873,7 +873,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -901,7 +901,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -929,7 +929,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       emb1, top, l = sess.run([emb, train_op, loss])
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
-        self.assertEqual(val, 1.0)
+        self.assertEqual(val, .0)
       emb1, top, l = sess.run([emb, train_op, loss])
       for val in emb1.tolist()[0]:
         self.assertNotEqual(val, 1.0)
@@ -1439,7 +1439,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
       for i in range(0, 6):
         for j in range(0, 3):
-          self.assertEqual(emb1.tolist()[i][j], 1.0)
+          self.assertEqual(emb1.tolist()[i][j], .0)
 
   def testEVInitializerWithKeyFetch(self):
     print("testEVInitializerWithKeyFetch")
@@ -1498,13 +1498,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
+        emb1 = np.zeros([8,3])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
         emb1 = sess.run(var_emb)
-        emb2 = sess.run(emb_emb)
-        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
-        emb2 = sess.run(emb_emb)
-        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
-        emb2 = sess.run(emb_emb)
-        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
         emb2 = sess.run(emb_emb)
         self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
 
@@ -1539,13 +1540,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
+        emb1 = np.zeros([8,3])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
+        emb2 = sess.run(emb_emb)
+        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
         emb1 = sess.run(var_emb)
-        emb2 = sess.run(emb_emb)
-        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
-        emb2 = sess.run(emb_emb)
-        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
-        emb2 = sess.run(emb_emb)
-        self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
         emb2 = sess.run(emb_emb)
         self.assertListEqual(emb1.tolist()[3], emb2.tolist()[0])
 
@@ -2170,6 +2172,38 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertEqual(ckpt_value.tolist()[1], 1)
     os.environ["TF_RECORD_FREQ"] = "0"
     os.environ["TF_RECORD_VERSION"] = "0"
+
+  def testEmbeddingVariableForDefaultValueNoPermission(self):
+    print("testEmbeddingVariableForDefaultValueNoPermission")
+    var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            ev_option = variables.EmbeddingVariableOption(
+                          filter_option=variables.CounterFilter(filter_freq=3),
+                          init_option=variables.InitializerOption(
+                            initializer=init_ops.zeros_initializer(dtypes.float32),
+                            default_value_no_permission=.2)),
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = gradient_descent.GradientDescentOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+      sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+      sess.run([init])
+      emb1 = sess.run(emb)
+      emb1 = sess.run(emb)
+      emb1 = sess.run(emb)
+      for val in emb1.tolist()[0]:
+        self.assertAlmostEqual(val, .2, delta=1e-05)
+      emb1 = sess.run(emb)
+      for val in emb1.tolist()[0]:
+        self.assertEqual(val, .0)
 
 '''
   @test_util.run_gpu_only

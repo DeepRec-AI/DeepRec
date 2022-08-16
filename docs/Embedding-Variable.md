@@ -249,9 +249,11 @@ emb_var = tf.feature_column.categorical_column_with_embedding("var", ev_option=e
 class InitializerOption(object):
   def __init__(self,
                initializer = None,
-               default_value_dim = 4096):
+               default_value_dim = 4096,
+               default_value_no_permission = .0):
     self.initializer = initializer
     self.default_value_dim  = default_value_dim
+    self.default_value_no_permission = default_value_no_permission
     if default_value_dim <=0:
       print("default value dim must larger than 1, the default value dim is set to default 4096.")
       default_value_dim = 4096
@@ -260,6 +262,7 @@ class InitializerOption(object):
 
 - `initializer`：Embedding Variable使用的Initializer，如果不配置的话则会被设置EV默认设置为truncated normal initializer。
 - `default value dim`：生成的default value的数量，设置可以参考hash bucket size或是特征的数量，默认是4096。
+- `default value no permission`：当使用准入功能时，如果特征未准入，返回的Embedding默认值。
 
 
 

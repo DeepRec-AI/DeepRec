@@ -222,6 +222,7 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
             storage_size=self.var._storage_size,
             partition_id=self.partition_id, partition_num=self.partition_num,
             default_value_dim=self.var._default_value_dim,
+            default_value_no_permission=self.var._default_value_no_permission,
             record_freq=self.var._record_freq,
             record_version=self.var._record_version)
 
