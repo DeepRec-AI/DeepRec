@@ -348,17 +348,20 @@ class LayerNormalizeTest(test_lib.TestCase):
     x = np.ones([7,4], dtype=np.float32)
     except_y = np.zeros([7,4])
     y = nn_impl.fused_layer_normalize(x)
-    output_y = self.evaluate(y)
-    self.assertAllClose(except_y, output_y)
+    with self.cached_session() as sess:
+      sess.run(variables.global_variables_initializer())
+      output_y = sess.run(y)
+      self.assertAllClose(except_y, output_y)
 
   @test_util.run_deprecated_v1
   def testFusedL2NormalizeGradient(self):
     x_shape = [7,4]
     np.random.seed(1)
     x_np = np.random.random_sample(x_shape).astype(np.float32)
-    with self.cached_session():
+    with self.cached_session() as sess:
       x_tf = constant_op.constant(x_np, name="x")
       y_tf = nn_impl.fused_layer_normalize(x_tf)
+      sess.run(variables.global_variables_initializer())
       err = gradient_checker.compute_gradient_error(x_tf, x_shape, y_tf,
                                                     x_shape)
     print("FusedL2Normalize gradient err = %g " % err)
