@@ -1,8 +1,8 @@
 diff --git a/include/oneapi/dnnl/dnnl.h b/include/oneapi/dnnl/dnnl.h
-index 1dc4a261d..22d9cc1cf 100644
+index 2673c6245..4b34d5dd6 100644
 --- a/include/oneapi/dnnl/dnnl.h
 +++ b/include/oneapi/dnnl/dnnl.h
-@@ -3742,6 +3742,60 @@ dnnl_status_t DNNL_API dnnl_gemm_s8s8s32(char transa, char transb, char offsetc,
+@@ -4171,6 +4171,60 @@ dnnl_status_t DNNL_API dnnl_gemm_s8s8s32(char transa, char transb, char offsetc,
          dnnl_dim_t lda, int8_t ao, const int8_t *B, dnnl_dim_t ldb, int8_t bo,
          float beta, int32_t *C, dnnl_dim_t ldc, const int32_t *co);
  
@@ -64,10 +64,10 @@ index 1dc4a261d..22d9cc1cf 100644
  
  /// @} dnnl_api
 diff --git a/include/oneapi/dnnl/dnnl.hpp b/include/oneapi/dnnl/dnnl.hpp
-index 8f6370c1b..46e1607a2 100644
+index 0a6fa01b2..14f65d673 100644
 --- a/include/oneapi/dnnl/dnnl.hpp
 +++ b/include/oneapi/dnnl/dnnl.hpp
-@@ -11020,6 +11020,30 @@ inline status gemm_s8s8s32(char transa, char transb, char offsetc, dnnl_dim_t M,
+@@ -12994,6 +12994,30 @@ inline status gemm_s8s8s32(char transa, char transb, char offsetc, dnnl_dim_t M,
              K, alpha, A, lda, ao, B, ldb, bo, beta, C, ldc, co));
  }
  
@@ -139,10 +139,10 @@ index 7285ca635..6cae766a6 100644
  
  /// @} dnnl_api_threadpool_interop
 diff --git a/include/oneapi/dnnl/dnnl_types.h b/include/oneapi/dnnl/dnnl_types.h
-index bc8b4a142..75f6ce05b 100644
+index 372abee64..430c9c5c7 100644
 --- a/include/oneapi/dnnl/dnnl_types.h
 +++ b/include/oneapi/dnnl/dnnl_types.h
-@@ -2840,6 +2840,13 @@ typedef enum {
+@@ -3131,6 +3131,13 @@ typedef enum {
      dnnl_cpu_isa_prefer_ymm = 0x1,
  } dnnl_cpu_isa_hints_t;
  
@@ -235,10 +235,10 @@ index 20fe0f5b0..1629cf86b 100644
  
  #endif
 diff --git a/src/common/gemm.cpp b/src/common/gemm.cpp
-index 72f5b73e5..885b0312f 100644
+index 831b7adc8..90818aa7a 100644
 --- a/src/common/gemm.cpp
 +++ b/src/common/gemm.cpp
-@@ -77,7 +77,7 @@ dnnl_status_t dnnl_gemm_s8s8s32(char transa, char transb, char offsetc, dim_t M,
+@@ -88,7 +88,7 @@ dnnl_status_t dnnl_gemm_s8s8s32(char transa, char transb, char offsetc, dim_t M,
  #endif
  }
  
@@ -247,7 +247,7 @@ index 72f5b73e5..885b0312f 100644
          char transb, dim_t M, dim_t N, dim_t K, float alpha,
          const bfloat16_t *A, dim_t lda, const bfloat16_t *B, dim_t ldb,
          float beta, float *C, dim_t ldc) {
-@@ -127,7 +127,7 @@ dnnl_status_t dnnl_threadpool_interop_gemm_s8s8s32(char transa, char transb,
+@@ -143,7 +143,7 @@ dnnl_status_t dnnl_threadpool_interop_gemm_s8s8s32(char transa, char transb,
      return status;
  }
  
@@ -289,11 +289,135 @@ index 62c75d445..0d01d4788 100644
 +    add_floats_and_cvt_to_bfloat16(out, inp0, inp1, nelems);
 +}
 \ No newline at end of file
+diff --git a/src/cpu/gemm/gemm.cpp b/src/cpu/gemm/gemm.cpp
+index af699ee0c..116c6dd91 100644
+--- a/src/cpu/gemm/gemm.cpp
++++ b/src/cpu/gemm/gemm.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "oneapi/dnnl/dnnl.h"
+ 
++#include "common/verbose.hpp"
+ #include "common/bfloat16.hpp"
+ #include "common/c_types_map.hpp"
+ #include "common/dnnl_thread.hpp"
+@@ -105,15 +106,33 @@ dnnl_status_t extended_sgemm(const char *transa, const char *transb,
+         bool trB = *transb == 't' || *transb == 'T';
+         CBLAS_TRANSPOSE Cblas_trA = trA ? CblasTrans : CblasNoTrans;
+         CBLAS_TRANSPOSE Cblas_trB = trB ? CblasTrans : CblasNoTrans;
+-        cblas_sgemm(CblasColMajor, Cblas_trA, Cblas_trB, *M, *N, *K, *alpha, A,
+-                *lda, B, *ldb, *beta, C, *ldc);
+-        if (bias) {
+-            // Add bias if necessary (bias is applied to columns of C)
+-            dim_t incx = 1, incy = 1;
+-            parallel_nd(*N, [&](dim_t n) {
++        if (get_verbose() == 3) {
++            double ms = get_msec();
++            cblas_sgemm(CblasColMajor, Cblas_trA, Cblas_trB, *M, *N, *K, *alpha, A,
++                    *lda, B, *ldb, *beta, C, *ldc);
++            if (bias) {
++                // Add bias if necessary (bias is applied to columns of C)
++                dim_t incx = 1, incy = 1;
++                parallel_nd(*N, [&](dim_t n) {
+                 dim_t offset = n * (*ldc);
+                 cblas_saxpy(*M, 1.0, bias, incx, C + offset, incy);
+-            });
++                });
++            }
++            ms = get_msec() - ms;
++            printf("dnnl_verbose,exec,cpu,api,cblas_sgemm,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                    *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++            fflush(0);
++        } else {
++            cblas_sgemm(CblasColMajor, Cblas_trA, Cblas_trB, *M, *N, *K, *alpha, A,
++                    *lda, B, *ldb, *beta, C, *ldc);
++            if (bias) {
++                // Add bias if necessary (bias is applied to columns of C)
++                dim_t incx = 1, incy = 1;
++                parallel_nd(*N, [&](dim_t n) {
++                dim_t offset = n * (*ldc);
++                cblas_saxpy(*M, 1.0, bias, incx, C + offset, incy);
++                });
++            }
+         }
+         msan_unpoison_matrix(C, *M, *N, *ldc, sizeof(*C));
+         return dnnl_success;
+@@ -124,14 +143,37 @@ dnnl_status_t extended_sgemm(const char *transa, const char *transb,
+     if (mayiuse(sse41)) {
+         float *dummy_ao = nullptr;
+         float *dummy_bo = nullptr;
+-        return gemm_driver(transa, transb, bias ? "C" : nullptr, M, N, K, alpha,
+-                A, lda, dummy_ao, B, ldb, dummy_bo, beta, C, ldc, bias,
+-                force_jit_nocopy_gemm);
++        if (get_verbose() == 3) {
++            double ms = get_msec();
++            status = gemm_driver(transa, transb, bias ? "C" : nullptr, M, N, K, alpha, A,
++                    lda, dummy_ao, B, ldb, dummy_bo, beta, C, ldc, bias,
++                    force_jit_nocopy_gemm);
++            ms = get_msec() - ms;
++            printf("dnnl_verbose,exec,cpu,api,sgemm:jit,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                    *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++            fflush(0);
++        } else {
++            status = gemm_driver(transa, transb, bias ? "C" : nullptr, M, N, K, alpha, A,
++                    lda, dummy_ao, B, ldb, dummy_bo, beta, C, ldc, bias,
++                    force_jit_nocopy_gemm);
++        }
++        return status;
+     }
+ #endif
+ 
+-    return ref_gemm<float>(
+-            transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, bias);
++    if (get_verbose() == 3) {
++        double ms = get_msec();
++        status = ref_gemm<float>(
++                transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, bias);
++        ms = get_msec() - ms;
++        printf("dnnl_verbose,exec,cpu,api,ref_sgemm,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++        fflush(0);
++    } else {
++        status = ref_gemm<float>(
++                transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, bias);
++    }
++    return status;
+ }
+ 
+ // Tries calling Intel MKL cblas_gemm_s8u8s32 if applicable and available
+@@ -240,10 +282,23 @@ dnnl_status_t gemm_bf16bf16f32(const char *transa, const char *transb,
+     bfloat16_t *dummy_bo = nullptr;
+     float *dummy_co = nullptr;
+ 
+-    if (mayiuse(avx512_core))
+-        return gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
+-                (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
+-                ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);
++    if (mayiuse(avx512_core)) {
++        if (get_verbose() == 3) {
++            double ms = get_msec();
++            status = gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
++                    (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
++                    ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);
++            ms = get_msec() - ms;
++            printf("dnnl_verbose,exec,cpu,api,gemm_bf16bf16f32,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                    *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++            fflush(0);
++        } else {
++            status = gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
++                    (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
++                    ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);
++        }
++        return status;
++    }
+ #endif
+ 
+     return dnnl_unimplemented;
 diff --git a/tests/benchdnn/dnnl_common.cpp b/tests/benchdnn/dnnl_common.cpp
-index caa79d222..a8fb28090 100644
+index badcca9aa..ec5466408 100644
 --- a/tests/benchdnn/dnnl_common.cpp
 +++ b/tests/benchdnn/dnnl_common.cpp
-@@ -75,7 +75,7 @@ int check_primitive_cache(dnnl_primitive_t p) {
+@@ -213,7 +213,7 @@ int test_persistent_cache_api(benchdnn_dnnl_wrapper_t<dnnl_primitive_t> &prim,
  float round_to_nearest_representable(dnnl_data_type_t dt, float value) {
      switch (dt) {
          case dnnl_f32: break;
@@ -303,10 +427,10 @@ index caa79d222..a8fb28090 100644
          case dnnl_s32:
          case dnnl_s8:
 diff --git a/tests/benchdnn/dnnl_common.hpp b/tests/benchdnn/dnnl_common.hpp
-index 4be0ac686..79888fc5a 100644
+index 32e647e78..f3c94bbcc 100644
 --- a/tests/benchdnn/dnnl_common.hpp
 +++ b/tests/benchdnn/dnnl_common.hpp
-@@ -65,7 +65,6 @@ int check_primitive_cache(dnnl_primitive_t p);
+@@ -66,7 +66,6 @@ int check_primitive_cache(dnnl_primitive_t p);
      } while (0)
  
  /* aux */
@@ -315,7 +439,7 @@ index 4be0ac686..79888fc5a 100644
  template <dnnl_data_type_t>
  struct prec_traits;
 diff --git a/tests/gtests/dnnl_test_common.hpp b/tests/gtests/dnnl_test_common.hpp
-index 8e708a335..7fbc1d11a 100644
+index bb5588209..30392a259 100644
 --- a/tests/gtests/dnnl_test_common.hpp
 +++ b/tests/gtests/dnnl_test_common.hpp
 @@ -62,7 +62,6 @@
@@ -327,7 +451,7 @@ index 8e708a335..7fbc1d11a 100644
  
  #ifdef DNNL_ENABLE_MEM_DEBUG
 diff --git a/tests/gtests/test_gemm_common.hpp b/tests/gtests/test_gemm_common.hpp
-index c24514e46..b067b74cc 100644
+index ecc0b5af6..aa0b7d3c9 100644
 --- a/tests/gtests/test_gemm_common.hpp
 +++ b/tests/gtests/test_gemm_common.hpp
 @@ -63,14 +63,6 @@
