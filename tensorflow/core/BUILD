@@ -3569,9 +3569,11 @@ cc_library(
 
 tf_cuda_library(
     name = "direct_session_internal",
-    srcs = ["common_runtime/direct_session.cc"],
+    srcs = ["common_runtime/direct_session.cc",
+            "common_runtime/direct_session_group.cc"],
     hdrs = [
         "common_runtime/direct_session.h",
+        "common_runtime/direct_session_group.h",
         "util/env_var.h",
     ],
     copts = tf_copts(),
