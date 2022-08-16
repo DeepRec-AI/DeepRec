@@ -368,6 +368,24 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     }
   }
 
+  if (!json_config["ev_storage_type"].isNull()) {
+    auto st = json_config["ev_storage_type"].asInt();
+    switch (st) {
+      case embedding::StorageType::INVALID:
+        break;
+      case embedding::StorageType::DRAM:
+        (*config)->storage_type = embedding::StorageType::DRAM;
+        break;
+      case embedding::StorageType::DRAM_SSDHASH:
+        (*config)->storage_type = embedding::StorageType::DRAM_SSDHASH;
+        (*config)->storage_path = json_config["ev_storage_path"].asString();
+        break;
+      default:
+        return Status(error::Code::INVALID_ARGUMENT,
+          "[TensorFlow] Only support ev storage type {DRAM, DRAM_SSDHASH}.");
+    }
+  }
+
   return Status::OK();
 }
 
