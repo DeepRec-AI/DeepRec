@@ -641,6 +641,8 @@ def l2_normalize_v2(x, axis=None, epsilon=1e-12, name=None, do_fusion=True):
 
   Returns:
     A `Tensor` with the same shape as `x`.
+  Raises:
+    ValueError: If datatype of x is not float32'.
   """
   if do_fusion and x.dtype == dtypes.float32 and (
         axis is None or axis== x.shape.rank - 1):
@@ -711,6 +713,9 @@ def fused_layer_normalize(
 
   with ops.name_scope(name, "fused_layer_normalize", [x]) as name:
     x = ops.convert_to_tensor(x, name="x")
+    if x.dtype != dtypes.float32:
+      raise ValueError("Fused layer normalize only supports float32 now! Input is %s" 
+              % x.dtype)
     
     if center:
       beta_collections = get_variable_collections(variables_collections, 'beta')
