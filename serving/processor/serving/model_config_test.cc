@@ -216,6 +216,64 @@ const std::string oss_and_redis_config = " \
   EXPECT_EQ("test_key", config->oss_access_key);
 }
 
+TEST_F(ModelConfigTest, ShouldSuccessWhenConfigEmbeddingConfig) {
+const std::string oss_config = " \
+  { \
+    \"serialize_protocol\": \"protobuf\", \
+    \"inter_op_parallelism_threads\" : 4, \
+    \"intra_op_parallelism_threads\" : 2, \
+    \"init_timeout_minutes\" : 1, \
+    \"signature_name\": \"tensorflow_serving\", \
+    \"checkpoint_dir\" : \"oss://test_ckpt/1\", \
+    \"savedmodel_dir\" : \"oss://test_savedmodel/1\", \
+    \"feature_store_type\" : \"memory\", \
+    \"redis_url\" :\"test_url\",  \
+    \"redis_password\" :\"test_password\", \
+    \"read_thread_num\" : 2, \
+    \"update_thread_num\":1, \
+    \"model_store_type\": \"oss\", \
+    \"oss_endpoint\": \"test.endpoint\", \
+    \"oss_access_id\" : \"test_id\", \
+    \"ev_storage_type\" : 12, \
+    \"ev_storage_path\" : \"123\", \
+    \"oss_access_key\" : \"test_key\" \
+  }";
+
+  ModelConfig* config = nullptr;
+  EXPECT_TRUE(
+      ModelConfigFactory::Create(oss_config.c_str(), &config).ok());
+  EXPECT_EQ(12, config->storage_type);
+  EXPECT_EQ("123", config->storage_path);
+}
+
+TEST_F(ModelConfigTest, ShouldFailureWhenConfigEmbeddingConfig) {
+const std::string oss_config = " \
+  { \
+    \"serialize_protocol\": \"protobuf\", \
+    \"inter_op_parallelism_threads\" : 4, \
+    \"intra_op_parallelism_threads\" : 2, \
+    \"init_timeout_minutes\" : 1, \
+    \"signature_name\": \"tensorflow_serving\", \
+    \"checkpoint_dir\" : \"oss://test_ckpt/1\", \
+    \"savedmodel_dir\" : \"oss://test_savedmodel/1\", \
+    \"feature_store_type\" : \"memory\", \
+    \"redis_url\" :\"test_url\",  \
+    \"redis_password\" :\"test_password\", \
+    \"read_thread_num\" : 2, \
+    \"update_thread_num\":1, \
+    \"model_store_type\": \"oss\", \
+    \"oss_endpoint\": \"test.endpoint\", \
+    \"oss_access_id\" : \"test_id\", \
+    \"ev_storage_type\" : 14, \
+    \"ev_storage_path\" : \"123\", \
+    \"oss_access_key\" : \"test_key\" \
+  }";
+
+  ModelConfig* config = nullptr;
+  EXPECT_EQ(error::Code::INVALID_ARGUMENT,
+      ModelConfigFactory::Create(oss_config.c_str(), &config).code());
+}
+
 } // processor
 } // tensorflow
 

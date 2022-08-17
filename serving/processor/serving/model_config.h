@@ -2,6 +2,7 @@
 #define SERVING_PROCESSOR_SERVING_MODEL_CONFIG_H
 
 #include <string>
+#include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/lib/core/status.h"
 
 namespace tensorflow {
@@ -54,6 +55,10 @@ struct ModelConfig {
 
   // session use self-owned thread pool
   bool use_per_session_threads = false;
+
+  // EmbeddingVariable Config
+  embedding::StorageType storage_type = embedding::StorageType::INVALID;
+  std::string storage_path;
 };
 
 class ModelConfigFactory {

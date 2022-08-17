@@ -253,6 +253,9 @@ Status LocalSessionInstance::Init(ModelConfig* config,
         PartitionPolicy::GetGlobalPolicy()->GetShardInstanceCount();
   }
 
+  option.st = config->storage_type;
+  option.path = config->storage_path;
+
   optimizer_ = new SavedModelOptimizer(config->signature_name,
       &meta_graph_def_, option);
   TF_RETURN_IF_ERROR(optimizer_->Optimize());

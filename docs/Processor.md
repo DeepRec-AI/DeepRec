@@ -313,9 +313,7 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 
 # [feature_store_type是'redis'需要], redis读线程数
 "read_thread_num": 4,
-
-# [feature_store_type是'redis'需要]，redis更新模型线程数
-"update_thread_num": 1,
+# [feature_store_type是'redis'需要]，redis更新模型线程数 "update_thread_num": 1,
 
 # 默认序列化使用protobuf(预留参数)
 "serialize_protocol": "protobuf",
@@ -369,7 +367,15 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 
 # timeline保存位置，支持oss和local
 # local: "/root/timeline/"
-"timeline_path": "oss://mybucket/timeline/"
+"timeline_path": "oss://mybucket/timeline/",
+
+# EmbeddingVariable 存储配置
+# 0: 使用原图配置, 1: DRAM单级存储, 12: DRAM+SSDHASH 多级存储
+# 默认值: 0
+"ev_storage_type": 12,
+
+# 多级存储路径, 如果设置了多级存储
+"ev_storage_path": "/ssd/1/"
 }
 ```
 #### 模型路径配置
