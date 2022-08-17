@@ -359,24 +359,15 @@ class FusedLayerNormGradOp : public OpKernel {
     const int total_unit = (rows >= 128 ? 8 : (rows + 15) / 16);
     const int64 rows_per_unit = (rows + total_unit - 1) / total_unit; 
     const int64 unit_cost = rows_per_unit * cols * 100;
-    float *t_gamma_grad = (float *)aligned_alloc(64, total_unit * cols * sizeof(float)); 
-    float *t_beta_grad = (float *)aligned_alloc(64, total_unit * cols * sizeof(float)); 
-    memset(t_gamma_grad, 0, total_unit * cols * sizeof(float)); 
-    memset(t_beta_grad, 0, total_unit * cols * sizeof(float)); 
     thread_pool->ParallelFor(total_unit, unit_cost, 
         [&](int64 begin_unit, int64 end_unit) 
         {auto begin_row = begin_unit * rows_per_unit; 
             auto end_row = end_unit * rows_per_unit; 
             if (end_row > rows) 
             {end_row = rows;}
-            backward(y_grad, x, mean, rvariance, gamma, 
-                        x_grad, t_gamma_grad + begin_unit * cols, t_beta_grad + begin_unit * cols, 
-                        cols, begin_row, end_row); 
+            backward(y_grad, x, mean, rvariance, gamma, x_grad, gamma_grad,
+                     beta_grad, cols, begin_row, end_row); 
         }); 
-    add_n(t_gamma_grad, gamma_grad, total_unit, cols); 
-    add_n(t_beta_grad, beta_grad, total_unit, cols); 
-    free(t_gamma_grad); 
-    free(t_beta_grad);
 #else
     const float one_over_cols = 1.0f / cols;
     const int64 total_unit = (rows + 15) / 16;
