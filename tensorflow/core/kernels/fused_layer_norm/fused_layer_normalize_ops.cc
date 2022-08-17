@@ -75,7 +75,7 @@ class FusedLayerNormOp : public OpKernel {
     int64 remainder_16 = remainder_128 & 0x0F;
     int64 remainder_block_num = remainder_128 >> 4;
     int64 remainder_block_num_total = remainder_block_num + !!remainder_16;
-#endif
+#endif  //AVX512F
     const float one_over_cols = 1.0f / cols;
 
     auto& worker_threads =
@@ -94,7 +94,7 @@ class FusedLayerNormOp : public OpKernel {
                          remainder_block_num, remainder_block_num_total, remainder_128, remainder_16, one_over_cols);
 #else
           forward(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, one_over_cols);
-#endif
+#endif  //AVX512F
         });
   }
 
@@ -155,7 +155,7 @@ class FusedLayerNormOp : public OpKernel {
         T data_5 = (input[i * cols + j + 5] - mean[i]) * rvariance[i];
         T data_6 = (input[i * cols + j + 6] - mean[i]) * rvariance[i];
         T data_7 = (input[i * cols + j + 7] - mean[i]) * rvariance[i];
-        output[i * cols + j] = gamma[j] * data_0 + beta[i];
+        output[i * cols + j] = gamma[j] * data_0 + beta[j];
         output[i * cols + j + 1] =  gamma[j] * data_1 + beta[j];
         output[i * cols + j + 2] =  gamma[j] * data_2 + beta[j];
         output[i * cols + j + 3] =  gamma[j] * data_3 + beta[j];
@@ -528,126 +528,121 @@ class FusedLayerNormGradOp : public OpKernel {
 #endif // backward define
 
 #ifdef __AVX512F__
-template <int ROWS>
-inline void backward_avx512(const float *y_grad, const float *x, const float *mean, const float *rvariance,
-                            const float *gamma, float *x_grad, float *gamma_grad, float *beta_grad,
-                            int64 cols, int64 start_row)
-{
+  template <int ROWS>
+  inline void backward_avx512(const float* y_grad, const float* x,
+                              const float* mean, const float* rvariance,
+                              const float* gamma, float* x_grad,
+                              float* gamma_grad, float* beta_grad, int64 cols,
+                              int64 start_row) {
     float sum_m[ROWS], sum_r[ROWS];
     __m512 vsum_m[ROWS], vsum_r[ROWS], vmean[ROWS], vrvariance[ROWS];
 
     // Init
-    auto setzero = [&](auto idx)
-    {
-        vsum_m[idx] = _mm512_setzero_ps();
-        vsum_r[idx] = _mm512_setzero_ps();
-        vmean[idx] = _mm512_set1_ps(mean[start_row + idx]);
-        vrvariance[idx] = _mm512_set1_ps(rvariance[start_row + idx]);
+    auto setzero = [&](auto idx) {
+      vsum_m[idx] = _mm512_setzero_ps();
+      vsum_r[idx] = _mm512_setzero_ps();
+      vmean[idx] = _mm512_set1_ps(mean[start_row + idx]);
+      vrvariance[idx] = _mm512_set1_ps(rvariance[start_row + idx]);
     };
     compile_time_for<ROWS>::op(setzero);
 
     // Compute sum for y_grad * gamma and y_grad * gamma * (x - mean)
     int64 j = 0;
-    for (; j + 15 < cols; j += 16)
-    {
-        auto compute_sum = [&](auto idx)
-        {
-            __m512 vy_grad = _mm512_loadu_ps(y_grad + (start_row + idx) * cols + j);
-            __m512 vgamma = _mm512_loadu_ps(gamma + j);
+    for (; j + 15 < cols; j += 16) {
+      auto compute_sum = [&](auto idx) {
+        __m512 vy_grad = _mm512_loadu_ps(y_grad + (start_row + idx) * cols + j);
+        __m512 vgamma = _mm512_loadu_ps(gamma + j);
 
-            __m512 mul = _mm512_mul_ps(vy_grad, vgamma);
-            vsum_m[idx] = _mm512_add_ps(mul, vsum_m[idx]);
+        __m512 mul = _mm512_mul_ps(vy_grad, vgamma);
+        vsum_m[idx] = _mm512_add_ps(mul, vsum_m[idx]);
 
-            __m512 vx = _mm512_loadu_ps(x + (start_row + idx) * cols + j);
-            __m512 x_minus_mean = _mm512_sub_ps(vx, vmean[idx]);
-            vsum_r[idx] = _mm512_fmadd_ps(mul, x_minus_mean, vsum_r[idx]);
-        };
+        __m512 vx = _mm512_loadu_ps(x + (start_row + idx) * cols + j);
+        __m512 x_minus_mean = _mm512_sub_ps(vx, vmean[idx]);
+        vsum_r[idx] = _mm512_fmadd_ps(mul, x_minus_mean, vsum_r[idx]);
+      };
 
-        compile_time_for<ROWS>::op(compute_sum);
+      compile_time_for<ROWS>::op(compute_sum);
     }
 
-    auto reduce_sum = [&](auto idx)
-    {
-        sum_m[idx] = horizontal_add(vsum_m[idx]);
-        sum_r[idx] = horizontal_add(vsum_r[idx]);
+    auto reduce_sum = [&](auto idx) {
+      sum_m[idx] = horizontal_add(vsum_m[idx]);
+      sum_r[idx] = horizontal_add(vsum_r[idx]);
 
-        for (int64 c = j; c < cols; ++c)
-        {
-            const auto offset = (start_row + idx) * cols + c;
-            sum_m[idx] += y_grad[offset] * gamma[c];
-            sum_r[idx] += y_grad[offset] * gamma[c] * (x[offset] - mean[start_row + idx]);
-        }
+      for (int64 c = j; c < cols; ++c) {
+        const auto offset = (start_row + idx) * cols + c;
+        sum_m[idx] += y_grad[offset] * gamma[c];
+        sum_r[idx] +=
+            y_grad[offset] * gamma[c] * (x[offset] - mean[start_row + idx]);
+      }
 
-        sum_m[idx] /= cols;
-        sum_r[idx] *= rvariance[start_row + idx] * rvariance[start_row + idx];
-        sum_r[idx] /= cols;
+      sum_m[idx] /= cols;
+      sum_r[idx] *= rvariance[start_row + idx] * rvariance[start_row + idx];
+      sum_r[idx] /= cols;
 
-        vsum_m[idx] = _mm512_set1_ps(sum_m[idx]);
-        vsum_r[idx] = _mm512_set1_ps(sum_r[idx]);
+      vsum_m[idx] = _mm512_set1_ps(sum_m[idx]);
+      vsum_r[idx] = _mm512_set1_ps(sum_r[idx]);
     };
 
     compile_time_for<ROWS>::op(reduce_sum);
 
     // Compute gradient for x, gamma, beta
-    for (j = 0; j + 15 < cols; j += 16)
-    {
-        __m512 vgamma_grad = _mm512_loadu_ps(gamma_grad + j);
-        __m512 vbeta_grad = _mm512_loadu_ps(beta_grad + j);
+    for (j = 0; j + 15 < cols; j += 16) {
+      __m512 vgamma_grad = _mm512_loadu_ps(gamma_grad + j);
+      __m512 vbeta_grad = _mm512_loadu_ps(beta_grad + j);
 
-        auto compute_grad = [&](auto idx)
-        {
-            __m512 vy_grad = _mm512_loadu_ps(y_grad + (start_row + idx) * cols + j);
-            __m512 vgamma = _mm512_loadu_ps(gamma + j);
+      auto compute_grad = [&](auto idx) {
+        __m512 vy_grad = _mm512_loadu_ps(y_grad + (start_row + idx) * cols + j);
+        __m512 vgamma = _mm512_loadu_ps(gamma + j);
 
-            __m512 vx_grad = _mm512_mul_ps(vy_grad, vgamma);
+        __m512 vx_grad = _mm512_mul_ps(vy_grad, vgamma);
 
-            __m512 vx = _mm512_loadu_ps(x + (start_row + idx) * cols + j);
-            __m512 x_minus_mean = _mm512_sub_ps(vx, vmean[idx]);
+        __m512 vx = _mm512_loadu_ps(x + (start_row + idx) * cols + j);
+        __m512 x_minus_mean = _mm512_sub_ps(vx, vmean[idx]);
 
-            vx_grad = _mm512_sub_ps(vx_grad, _mm512_fmadd_ps(vsum_r[idx], x_minus_mean, vsum_m[idx]));
-            vx_grad = _mm512_mul_ps(vx_grad, vrvariance[idx]);
+        vx_grad = _mm512_sub_ps(
+            vx_grad, _mm512_fmadd_ps(vsum_r[idx], x_minus_mean, vsum_m[idx]));
+        vx_grad = _mm512_mul_ps(vx_grad, vrvariance[idx]);
 
-            // save gradient of x
-            _mm512_storeu_ps(x_grad + (start_row + idx) * cols + j, vx_grad);
+        // save gradient of x
+        _mm512_storeu_ps(x_grad + (start_row + idx) * cols + j, vx_grad);
 
-            // gradient for gamma and beta
-            vgamma_grad = _mm512_fmadd_ps(_mm512_mul_ps(vy_grad, x_minus_mean), vrvariance[idx], vgamma_grad);
-            vbeta_grad = _mm512_add_ps(vy_grad, vbeta_grad);
-        };
+        // gradient for gamma and beta
+        vgamma_grad = _mm512_fmadd_ps(_mm512_mul_ps(vy_grad, x_minus_mean),
+                                      vrvariance[idx], vgamma_grad);
+        vbeta_grad = _mm512_add_ps(vy_grad, vbeta_grad);
+      };
 
-        compile_time_for<ROWS>::op(compute_grad);
+      compile_time_for<ROWS>::op(compute_grad);
 
-        // save gradient of gamma, beta
-        _mm512_storeu_ps(gamma_grad + j, vgamma_grad);
-        _mm512_storeu_ps(beta_grad + j, vbeta_grad);
+      // save gradient of gamma, beta
+      _mm512_storeu_ps(gamma_grad + j, vgamma_grad);
+      _mm512_storeu_ps(beta_grad + j, vbeta_grad);
     }
 
     // Deal with the remain data
-    if (cols % 16 != 0)
-    {
-        int remain = cols % 16;
-        auto remain_grad = [&](auto idx)
-        {
-            for (int64 c = j; c < cols; ++c)
-            {
-                const auto offset = (start_row + idx) * cols + c;
-                float vx_grad = y_grad[offset] * gamma[c];
-                float x_minus_mean = x[offset] - mean[start_row + idx];
-                vx_grad -= sum_m[idx] + sum_r[idx] * x_minus_mean;
-                vx_grad *= rvariance[start_row + idx];
+    if (cols % 16 != 0) {
+      int remain = cols % 16;
+      auto remain_grad = [&](auto idx) {
+        for (int64 c = j; c < cols; ++c) {
+          const auto offset = (start_row + idx) * cols + c;
+          float vx_grad = y_grad[offset] * gamma[c];
+          float x_minus_mean = x[offset] - mean[start_row + idx];
+          vx_grad -= sum_m[idx] + sum_r[idx] * x_minus_mean;
+          vx_grad *= rvariance[start_row + idx];
 
-                // save gradient of x
-                x_grad[offset] = vx_grad;
+          // save gradient of x
+          x_grad[offset] = vx_grad;
 
-                // gradient for gamma and beta
-                gamma_grad[c] += y_grad[offset] * x_minus_mean * rvariance[start_row + idx];
-                beta_grad[c] += y_grad[offset];
-            }
-        };
+          // gradient for gamma and beta
+          gamma_grad[c] +=
+              y_grad[offset] * x_minus_mean * rvariance[start_row + idx];
+          beta_grad[c] += y_grad[offset];
+        }
+      };
 
-        compile_time_for<ROWS>::op(remain_grad);
+      compile_time_for<ROWS>::op(remain_grad);
     }
-}
+  }
 #endif // backward layer norm avx512 impl
 };
 

@@ -12,25 +12,24 @@ using namespace tensorflow;
 // A class for forced loop unrolling at compile time
 template <int i>
 struct compile_time_for {
-    template <typename Lambda, typename... Args>
-    inline static void op(const Lambda& function, Args... args) {
-        compile_time_for<i-1>::op(function, args...);
-        function(std::integral_constant<int, i-1>{}, args...);
-    }
+  template <typename Lambda, typename... Args>
+  inline static void op(const Lambda& function, Args... args) {
+    compile_time_for<i - 1>::op(function, args...);
+    function(std::integral_constant<int, i - 1>{}, args...);
+  }
 };
 template <>
 struct compile_time_for<1> {
-    template <typename Lambda, typename... Args>
-    inline static void op(const Lambda& function, Args... args) {
-        function(std::integral_constant<int, 0>{}, args...);
-    }
+  template <typename Lambda, typename... Args>
+  inline static void op(const Lambda& function, Args... args) {
+    function(std::integral_constant<int, 0>{}, args...);
+  }
 };
 template <>
-struct compile_time_for<0> { 
-    // 0 loops, do nothing
-    template <typename Lambda, typename... Args>
-    inline static void op(const Lambda& function, Args... args) {
-    }
+struct compile_time_for<0> {
+  // 0 loops, do nothing
+  template <typename Lambda, typename... Args>
+  inline static void op(const Lambda& function, Args... args) {}
 };
 #ifdef __AVX512F__
 
@@ -65,40 +64,37 @@ inline __m512 reduce_sum_block_ps(const __m512* v, int64 BLOCK_NUM) {
   }
 }
 
-static inline float horizontal_add(__m512 src)
-    {
-        __m512 tmp = _mm512_add_ps(src, _mm512_shuffle_f32x4(src, src, _MM_SHUFFLE(1, 0, 3, 2)));
-        __m128 r = _mm512_castps512_ps128(_mm512_add_ps(tmp, _mm512_shuffle_f32x4(tmp, tmp, _MM_SHUFFLE(2, 3, 0, 1))));
-        r = _mm_hadd_ps(r, r);
-        return _mm_cvtss_f32(_mm_hadd_ps(r, r));
-    }
-
-void add_n(const float *src, float *dst, int rows, int64 cols)
-{
-    int64 c = 0;
-    for (; c + 15 < cols; c += 16)
-    {
-        __m512 sum = _mm512_set1_ps(0);
-        auto offset = c;
-        for (int r = 0; r < rows; ++r)
-        {
-            sum = _mm512_add_ps(_mm512_loadu_ps(src + offset), sum);
-            offset += cols;
-        }
-        _mm512_storeu_ps(dst + c, sum);
-    }
-    // Remain data
-    for (; c < cols; ++c)
-    {
-        float sum = 0;
-        auto offset = c;
-        for (int r = 0; r < rows; ++r) {
-            sum += src[offset];
-            offset += cols;
-        }
-        dst[c] = sum;
-    }
+static inline float horizontal_add(__m512 src) {
+  __m512 tmp = _mm512_add_ps(
+      src, _mm512_shuffle_f32x4(src, src, _MM_SHUFFLE(1, 0, 3, 2)));
+  __m128 r = _mm512_castps512_ps128(_mm512_add_ps(
+      tmp, _mm512_shuffle_f32x4(tmp, tmp, _MM_SHUFFLE(2, 3, 0, 1))));
+  r = _mm_hadd_ps(r, r);
+  return _mm_cvtss_f32(_mm_hadd_ps(r, r));
 }
 
-#endif
+void add_n(const float* src, float* dst, int rows, int64 cols) {
+  int64 c = 0;
+  for (; c + 15 < cols; c += 16) {
+    __m512 sum = _mm512_set1_ps(0);
+    auto offset = c;
+    for (int r = 0; r < rows; ++r) {
+      sum = _mm512_add_ps(_mm512_loadu_ps(src + offset), sum);
+      offset += cols;
+    }
+    _mm512_storeu_ps(dst + c, sum);
+  }
+  // Remain data
+  for (; c < cols; ++c) {
+    float sum = 0;
+    auto offset = c;
+    for (int r = 0; r < rows; ++r) {
+      sum += src[offset];
+      offset += cols;
+    }
+    dst[c] = sum;
+  }
+}
+
+#endif  //AVX512
 #endif  // TENSORFLOW_CORE_KERNELS_FUSED_LAYER_NORMALIZE_COMPILE_UTIL_OP_H_

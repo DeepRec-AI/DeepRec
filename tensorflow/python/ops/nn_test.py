@@ -345,8 +345,9 @@ class LayerNormalizeTest(test_lib.TestCase):
 
   @test_util.run_in_graph_and_eager_modes
   def testFusedTest(self):
-    x = np.ones([7,4], dtype=np.float32)
-    except_y = np.zeros([7,4])
+    x_shape = [3,5,9]
+    x = np.ones(x_shape, dtype=np.float32)
+    except_y = np.zeros(x_shape)
     y = nn_impl.fused_layer_normalize(x)
     with self.cached_session() as sess:
       sess.run(variables.global_variables_initializer())
@@ -355,7 +356,7 @@ class LayerNormalizeTest(test_lib.TestCase):
 
   @test_util.run_deprecated_v1
   def testFusedL2NormalizeGradient(self):
-    x_shape = [7,4]
+    x_shape = [5,7,16]
     np.random.seed(1)
     x_np = np.random.random_sample(x_shape).astype(np.float32)
     with self.cached_session() as sess:
