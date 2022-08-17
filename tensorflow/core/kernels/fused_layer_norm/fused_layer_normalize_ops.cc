@@ -60,7 +60,6 @@ class FusedLayerNormOp : public OpKernel {
     float* rvariance = rvariance_tensor->flat<float>().data();
 
     // Init
-    memset(output, 0, sizeof(float) * rows * cols);
     memset(mean, 0, sizeof(float) * rows);
     memset(rvariance, 0, sizeof(float) * rows);
 
@@ -347,7 +346,6 @@ class FusedLayerNormGradOp : public OpKernel {
     float* beta_grad = beta_grad_tensor->flat<float>().data();
 
     // Init
-    memset(x_grad, 0, sizeof(T) * rows * cols);
     memset(gamma_grad, 0, sizeof(float) * cols);
     memset(beta_grad, 0, sizeof(float) * cols);
 
