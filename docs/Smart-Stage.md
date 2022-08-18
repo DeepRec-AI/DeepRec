@@ -9,14 +9,24 @@ DeepRec已经提供了stage 功能，该功能可以实现IO Bound操作和计�
 
 **注意**：该功能的先决条件是，用户的原图中存在至少一个stage阶段
 
-## 用户接口
+## 用户接口（CPU 场景）
 ConfigProro中定义了如下配置选项
 
 ```python
 sess_config = tf.ConfigProto()
-sess_config.graph_options.optimizer_options.do_smart_stage = True
+sess_config.graph_options.optimizer_options.do_smart_stage = True # 通用优化选项
 ```
+## 用户接口（GPU 场景）
+
+ConfigProro中定义了如下配置选项
+
+```python
+sess_config = tf.ConfigProto()
+sess_config.graph_options.optimizer_options.do_smart_stage_gpu = True # 针对GPU训练优化的选项
+```
+
 ## 代码示例
+
 ```python
 import tensorflow as tf
 
@@ -37,6 +47,8 @@ target = tf.concat([tf.as_string(xx[0]), [xx[1], xx[1]]], 0)
 config = tf.ConfigProto()
 # enable smart stage
 config.graph_options.optimizer_options.do_smart_stage = True
+# 对于GPU训练，可以考虑使用以下选项替代do_smart_stage来获得更好地性能
+# config.graph_options.optimizer_options.do_smart_stage_gpu = True
 # mark target 节点
 tf.train.mark_target_node([target])
 
@@ -45,7 +57,7 @@ with tf.train.MonitoredTrainingSession(config=config,
   for i in range(5):
       print(sess.run([target]))
 ```
-## 性能对比
+## 性能对比（CPU场景）
 在modelzoo中的DLRM模型中测试该功能
 机型为Aliyun ECS 实例 ecs.hfg7.8xlarge
 
@@ -61,5 +73,25 @@ with tf.train.MonitoredTrainingSession(config=config,
 | DLRM | w/o smart stage |  201 (baseline)  |
 | DLRM | w/o smart stage |  212 (+ 1.05x)   |
 
+## 性能对比（GPU场景）
 
+------
 
+在modelzoo中的模型测试该功能在GPU训练场景下的性能。
+
+机器配置：
+
+| CPU  | Intel(R) Xeon(R) Platinum 8369B CPU @ 2.90GHz | 64核心 |
+| ---- | --------------------------------------------- | ------ |
+| GPU  | NVIDIA A100 80G                               | 单卡   |
+| MEM  | 492G                                          |        |
+
+性能结果对比：
+
+| 模型   | 不开启SmartStage <br>(global steps/sec) | do_smartstage <br>(global steps/sec) | do_smartstage_gpu <br>(global steps/sec) |
+| ------ | --------------------------------------- | ------------------------------------ | ---------------------------------------- |
+| DIEN   | 17.1673                                 | 16.918                               | 17.2557                                  |
+| DIN    | 137.584                                 | 132.619                              | 165.069                                  |
+| DLRM   | 91.6982                                 | 67.735                               | 188.105                                  |
+| DSSM   | 92.4544                                 | 83.7194                              | 101.352                                  |
+| DeepFM | 74.7011                                 | 62.1227                              | 93.0858                                  |
