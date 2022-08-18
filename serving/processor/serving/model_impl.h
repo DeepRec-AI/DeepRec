@@ -15,6 +15,7 @@ class IModelInstanceMgr;
 class Request;
 class Response;
 class ServingModelInfo;
+class SignatureInfo;
 
 class ModelImpl {
  public:
@@ -25,7 +26,7 @@ class ModelImpl {
   virtual Status Rollback() = 0;
   virtual std::string DebugString() = 0;
   virtual SignatureDef GetServingSignatureDef() = 0;
-  virtual const std::vector<std::string>* GetServingSignatureOutputs() = 0;
+  virtual const SignatureInfo* GetSignatureInfo() = 0;
 };
 
 class FreezeSavedModelImpl : public ModelImpl {
@@ -57,7 +58,7 @@ class FreezeSavedModelImpl : public ModelImpl {
     return def;
   }
 
-  const std::vector<std::string>* GetServingSignatureOutputs() override {
+  const SignatureInfo* GetSignatureInfo() override {
     return nullptr;
   }
 };
@@ -73,7 +74,7 @@ class SavedModelImpl : public ModelImpl {
   Status Rollback() override;
   std::string DebugString() override;
   SignatureDef GetServingSignatureDef() override;
-  const std::vector<std::string>* GetServingSignatureOutputs() override;
+  const SignatureInfo* GetSignatureInfo() override;
 
  private:
   ModelConfig* model_config_;

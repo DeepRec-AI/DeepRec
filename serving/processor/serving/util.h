@@ -76,7 +76,8 @@ Tensor Proto2Tensor(const eas::ArrayProto& input);
 
 eas::PredictResponse Tensor2Response(
     const processor::Request& req,
-    const processor::Response& resp);
+    const processor::Response& resp,
+    const SignatureInfo* info);
  
 } // namespace util
 } // namespace processor

@@ -501,8 +501,10 @@ Tensor Proto2Tensor(const eas::ArrayProto& input) {
   return Tensor();
 }
 
-eas::PredictResponse Tensor2Response(const processor::Request& req,
-    const processor::Response& resp) {
+eas::PredictResponse Tensor2Response(
+    const processor::Request& req,
+    const processor::Response& resp,
+    const SignatureInfo* signature_info) {
   eas::PredictResponse response;
   const auto& output_tensor_names = req.output_tensor_names;
   const auto & outputs = resp.outputs;
@@ -684,7 +686,14 @@ eas::PredictResponse Tensor2Response(const processor::Request& req,
         LOG(ERROR) << "Output Tensor Not Support this DataType";
         break;
     }
-    (*response.mutable_outputs())[output_tensor_names[i]] = output;
+    if (signature_info->output_value_name_idx.find(output_tensor_names[i]) ==
+        signature_info->output_value_name_idx.end()) {
+      LOG(ERROR) << "Response contain invalid output tensor name: "
+                 << output_tensor_names[i];
+    }
+    std::string key =
+        signature_info->output_key[signature_info->output_value_name_idx.at(output_tensor_names[i])];
+    (*response.mutable_outputs())[key] = output;
   }
   return response;
 }

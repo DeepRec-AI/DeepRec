@@ -39,13 +39,14 @@ Status Model::Predict(const void* input_data, int input_size,
     void** output_data, int* output_size) {
   Call call;
   parser_->ParseRequestFromBuf(input_data, input_size, call,
-                               impl_->GetServingSignatureOutputs());
+                               impl_->GetSignatureInfo());
   auto status = Predict(call.request, call.response);
   if (!status.ok()) {
     return status;
   }
 
-  parser_->ParseResponseToBuf(call, output_data, output_size);
+  parser_->ParseResponseToBuf(call, output_data, output_size,
+                              impl_->GetSignatureInfo());
   return Status::OK();
 }
 
@@ -53,13 +54,14 @@ Status Model::BatchPredict(const void* input_data[], int* input_size,
     void* output_data[], int* output_size) {
   BatchCall call;
   parser_->ParseBatchRequestFromBuf(input_data, input_size, call,
-                                    impl_->GetServingSignatureOutputs());
+                                    impl_->GetSignatureInfo());
   auto status = Predict(call.batched_request, call.batched_response);
   if (!status.ok()) {
     return status;
   }
 
-  parser_->ParseBatchResponseToBuf(call, output_data, output_size);
+  parser_->ParseBatchResponseToBuf(call, output_data, output_size,
+                                   impl_->GetSignatureInfo());
   return Status::OK();
 }
 

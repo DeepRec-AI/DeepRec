@@ -40,9 +40,8 @@ SignatureDef SavedModelImpl::GetServingSignatureDef() {
   return instance_mgr_->GetServingSignatureDef();
 }
 
-const std::vector<std::string>*
-SavedModelImpl::GetServingSignatureOutputs() {
-  return instance_mgr_->GetServingSignatureOutputs();
+const SignatureInfo* SavedModelImpl::GetSignatureInfo() {
+  return instance_mgr_->GetSignatureInfo();
 }
 
 } // processor

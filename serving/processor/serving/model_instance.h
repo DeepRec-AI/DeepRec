@@ -38,7 +38,7 @@ class LocalSessionInstance {
   void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
   SignatureDef GetServingSignatureDef();
-  const std::vector<std::string>* GetServingSignatureOutputs();
+  const SignatureInfo* GetSignatureInfo();
 
   Status FullModelUpdate(const Version& version,
                          ModelConfig* model_config);
@@ -54,7 +54,7 @@ class LocalSessionInstance {
   // for current serving signature model
   std::pair<std::string, SignatureDef> model_signature_;
   std::string model_json_signature_;
-  std::vector<std::string> default_signature_outputs_;
+  SignatureInfo signature_info_;
 
   std::string warmup_file_name_;
 
@@ -88,7 +88,7 @@ class RemoteSessionInstance {
   void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
   SignatureDef GetServingSignatureDef();
-  const std::vector<std::string>* GetServingSignatureOutputs();
+  const SignatureInfo* GetSignatureInfo();
 
  private:
   Status ReadModelSignature(ModelConfig* model_config);
@@ -103,7 +103,7 @@ class RemoteSessionInstance {
   // for current serving signature model
   std::pair<std::string, SignatureDef> model_signature_;
   std::string model_json_signature_;
-  std::vector<std::string> default_signature_outputs_;
+  SignatureInfo signature_info_;
 
   std::string warmup_file_name_;
 
@@ -130,7 +130,7 @@ class IModelInstanceMgr {
 
   virtual std::string DebugString() = 0;
   virtual SignatureDef GetServingSignatureDef() = 0;
-  virtual const std::vector<std::string>* GetServingSignatureOutputs() = 0;
+  virtual const SignatureInfo* GetSignatureInfo() = 0;
 };
 
 class ModelUpdater {
@@ -169,7 +169,7 @@ class LocalSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
 
   std::string DebugString() override;
   SignatureDef GetServingSignatureDef() override;
-  const std::vector<std::string>* GetServingSignatureOutputs() override;
+  const SignatureInfo* GetSignatureInfo() override;
 
  protected:
   Status FullModelUpdate(const Version& version,
@@ -196,7 +196,7 @@ class RemoteSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
   Status Rollback() override;
   std::string DebugString() override;
   SignatureDef GetServingSignatureDef() override;
-  const std::vector<std::string>* GetServingSignatureOutputs() override;
+  const SignatureInfo* GetSignatureInfo() override;
 
  protected:
   Status FullModelUpdate(const Version& version,
