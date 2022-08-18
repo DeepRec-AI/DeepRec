@@ -17,6 +17,17 @@ struct Response {
   std::vector<Tensor> outputs;
 };
 
+struct SignatureInfo {
+  std::vector<std::string> input_key;
+  std::vector<std::string> input_value_name;
+  std::vector<std::string> output_key;
+  std::vector<std::string> output_value_name;
+  std::unordered_map<std::string, int> input_key_idx;
+  std::unordered_map<std::string, int> input_value_name_idx;
+  std::unordered_map<std::string, int> output_key_idx;
+  std::unordered_map<std::string, int> output_value_name_idx;
+};
+
 struct Call {
   Request request;
   Response response;

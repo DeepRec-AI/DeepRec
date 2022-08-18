@@ -203,12 +203,25 @@ void GenerateJsonSignatureFormat(
   StringReplace(json_signature, "},]", "}]");
 }
 
-void GetSignatureOutputs(
+void InternalGetSignatureInfo(
     const std::pair<std::string, SignatureDef>& signature,
-    std::vector<std::string>& model_signature_outputs) {
+    SignatureInfo& signature_info) {
+  int idx = 0;
+  for (auto& iter : signature.second.inputs()) {
+    signature_info.input_key.emplace_back(iter.first);
+    signature_info.input_value_name.emplace_back(iter.second.name());
+    signature_info.input_key_idx[iter.first] = idx;
+    signature_info.input_value_name_idx[iter.second.name()] = idx;
+    ++idx;
+  }
+
+  idx = 0;
   for (auto& iter : signature.second.outputs()) {
-    model_signature_outputs.emplace_back(iter.second.name());
-    //model_signature_outputs.emplace_back(iter.first);
+    signature_info.output_key.emplace_back(iter.first);
+    signature_info.output_value_name.emplace_back(iter.second.name());
+    signature_info.output_key_idx[iter.first] = idx;
+    signature_info.output_value_name_idx[iter.second.name()] = idx;
+    ++idx;
   }
 }
 
@@ -285,8 +298,8 @@ Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       model_signature_ = it;
       GenerateJsonSignatureFormat(model_signature_,
                                   model_json_signature_);
-      GetSignatureOutputs(model_signature_,
-                          default_signature_outputs_);
+      InternalGetSignatureInfo(model_signature_,
+                               signature_info_);
       return Status::OK();
     }
   }
@@ -335,9 +348,8 @@ SignatureDef LocalSessionInstance::GetServingSignatureDef() {
   return model_signature_.second;
 }
 
-const std::vector<std::string>*
-LocalSessionInstance::GetServingSignatureOutputs() {
-  return &default_signature_outputs_;
+const SignatureInfo* LocalSessionInstance::GetSignatureInfo() {
+  return &signature_info_;
 }
 
 Status LocalSessionInstance::FullModelUpdate(
@@ -392,8 +404,8 @@ Status RemoteSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       model_signature_ = it;
       GenerateJsonSignatureFormat(model_signature_,
                                   model_json_signature_);
-      GetSignatureOutputs(model_signature_,
-                          default_signature_outputs_);
+      InternalGetSignatureInfo(model_signature_,
+                               signature_info_);
       return Status::OK();
     }
   }
@@ -558,9 +570,8 @@ SignatureDef RemoteSessionInstance::GetServingSignatureDef() {
   return model_signature_.second;
 }
 
-const std::vector<std::string>*
-RemoteSessionInstance::GetServingSignatureOutputs() {
-  return &default_signature_outputs_;
+const SignatureInfo* RemoteSessionInstance::GetSignatureInfo() {
+  return &signature_info_;
 }
 
 LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
@@ -613,9 +624,8 @@ SignatureDef LocalSessionInstanceMgr::GetServingSignatureDef() {
   return instance_->GetServingSignatureDef();
 }
 
-const std::vector<std::string>*
-LocalSessionInstanceMgr::GetServingSignatureOutputs() {
-  return instance_->GetServingSignatureOutputs();
+const SignatureInfo* LocalSessionInstanceMgr::GetSignatureInfo() {
+  return instance_->GetSignatureInfo();
 }
 
 Status LocalSessionInstanceMgr::FullModelUpdate(
@@ -729,9 +739,8 @@ SignatureDef RemoteSessionInstanceMgr::GetServingSignatureDef() {
   return cur_instance_->GetServingSignatureDef();
 }
 
-const std::vector<std::string>*
-RemoteSessionInstanceMgr::GetServingSignatureOutputs() {
-  return cur_instance_->GetServingSignatureOutputs();
+const SignatureInfo* RemoteSessionInstanceMgr::GetSignatureInfo() {
+  return cur_instance_->GetSignatureInfo();
 }
 
 Status RemoteSessionInstanceMgr::FullModelUpdate(const Version& version,

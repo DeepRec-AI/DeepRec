@@ -14,8 +14,8 @@ static const char* model_config = "{ \
     \"read_thread_num\": 3, \
     \"update_thread_num\": 2, \
     \"model_store_type\": \"local\", \
-    \"checkpoint_dir\": \"/tmp/checkpoint/\", \
-    \"savedmodel_dir\": \"/tmp/saved_model/\" \
+    \"checkpoint_dir\": \"/tmp/ckpt/\", \
+    \"savedmodel_dir\": \"/tmp/pb/\" \
   } ";
 
 int main(int argc, char** argv) {
@@ -40,8 +40,8 @@ int main(int argc, char** argv) {
   // PredictRequest
   ::tensorflow::eas::PredictRequest req;
   req.set_signature_name("serving_default");
-  req.add_output_filter("y:0");
-  (*req.mutable_inputs())["x:0"] = input;
+  req.add_output_filter("y");
+  (*req.mutable_inputs())["x"] = input;
   size_t size = req.ByteSizeLong(); 
   void *buffer = malloc(size);
   req.SerializeToArray(buffer, size);
