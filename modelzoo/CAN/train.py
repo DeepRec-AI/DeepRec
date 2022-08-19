@@ -1,11 +1,11 @@
 import numpy
 from data.script.data_iterator import DataIterator
 import tensorflow as tf
-from data.script.model import *
+from script.model import *
 import time
 import random
 import sys
-from data.script.utils import *
+from script.utils import *
 from tqdm import tqdm
 
 EMBEDDING_DIM = 18

@@ -2,9 +2,9 @@ import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import GRUCell
 from tensorflow.python.ops.rnn_cell import LSTMCell
 from tensorflow.python.ops.rnn import bidirectional_dynamic_rnn as bi_rnn
-from data.script.rnn import dynamic_rnn
-from data.script.utils import *
-from data.script.Dice import dice
+from script.rnn import dynamic_rnn
+from script.utils import *
+from script.Dice import dice
 
 #### CAN config #####
 weight_emb_w = [[16, 8], [8,4]] 
