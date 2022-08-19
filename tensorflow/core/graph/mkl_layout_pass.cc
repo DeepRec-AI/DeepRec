@@ -1551,6 +1551,11 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
     // impact.
     TF_CHECK_OK(GetNodeAttr(n->def(), "transpose_a", &trans_a));
 
+    // Do not Fuse Matmul which gpu op not implemented.
+    if (NodeIsOnGpu(n->node())) {
+      return false;
+    }
+
     return !trans_a;
   }
 
