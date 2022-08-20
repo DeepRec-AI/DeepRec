@@ -130,7 +130,10 @@ class ResourceVariableSaveable(saveable_object.SaveableObject):
     self._full_name = full_name
     variable = ops.get_default_graph().get_variale_by_name(full_name or name)
     if variable is not None:
-      self.is_sparse = variable._is_sparse
+      if hasattr(variable, '_is_sparse'):
+        self.is_sparse = variable._is_sparse
+      elif hasattr(variable, 'values'):  # DistributedVariable
+        self.is_sparse = variable.values[0]._is_sparse
 
   def restore(self, restored_tensors, restored_shapes):
     restored_tensor = restored_tensors[0]
