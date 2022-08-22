@@ -641,8 +641,6 @@ def l2_normalize_v2(x, axis=None, epsilon=1e-12, name=None, do_fusion=True):
 
   Returns:
     A `Tensor` with the same shape as `x`.
-  Raises:
-    ValueError: If datatype of x is not float32'.
   """
   if do_fusion and x.dtype == dtypes.float32 and (
         axis is None or axis== x.shape.rank - 1):
@@ -703,6 +701,8 @@ def fused_layer_normalize(
 
   Returns:
     A `Tensor` with the same shape as `x`.
+  Raises:
+    ValueError: If datatype of x is not float32'.
   """
   def get_variable_collections(variables_collections, name):
     if isinstance(variables_collections, dict):

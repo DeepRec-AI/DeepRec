@@ -73,28 +73,5 @@ static inline float horizontal_add(__m512 src) {
   return _mm_cvtss_f32(_mm_hadd_ps(r, r));
 }
 
-void add_n(const float* src, float* dst, int rows, int64 cols) {
-  int64 c = 0;
-  for (; c + 15 < cols; c += 16) {
-    __m512 sum = _mm512_set1_ps(0);
-    auto offset = c;
-    for (int r = 0; r < rows; ++r) {
-      sum = _mm512_add_ps(_mm512_loadu_ps(src + offset), sum);
-      offset += cols;
-    }
-    _mm512_storeu_ps(dst + c, sum);
-  }
-  // Remain data
-  for (; c < cols; ++c) {
-    float sum = 0;
-    auto offset = c;
-    for (int r = 0; r < rows; ++r) {
-      sum += src[offset];
-      offset += cols;
-    }
-    dst[c] = sum;
-  }
-}
-
 #endif  //AVX512
 #endif  // TENSORFLOW_CORE_KERNELS_FUSED_LAYER_NORMALIZE_COMPILE_UTIL_OP_H_
