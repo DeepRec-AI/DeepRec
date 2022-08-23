@@ -37,7 +37,9 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
 from tensorflow.python.ops import gen_fused_l2_normalize_ops
 from tensorflow.python.ops import gen_sparse_ops
+from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import variables
+from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops.losses import util as losses_util
 from tensorflow.python.util.deprecation import deprecated_args
 from tensorflow.python.util.deprecation import deprecated_argument_lookup
@@ -674,6 +676,73 @@ def fused_l2_normalize(x, epsilon=1e-12, name=None):
     return gen_fused_l2_normalize_ops.fused_l2_normalize(x, 
               epsilon=epsilon, name=name)
 
+@tf_export("nn.fused_layer_normalize")
+def fused_layer_normalize(
+      x,
+      scale=True,
+      center=True,
+      variables_collections=None,
+      epsilon=1e-8,
+      name=None):
+  """Layer Normalizes over last dimension.
+
+  Args:
+    x: A tensor having rank `R`. The normalization is performed over last axis
+      and centering and scaling parameters are calculated over `begin_params_axis ... R - 1`.
+    center: If True, add offset of `beta` to normalized tensor. If False, `beta`
+      is ignored.
+    scale: If True, multiply by `gamma`. If False, `gamma` is not used. When the
+      next layer is linear (also e.g. `nn.relu`), this can be disabled since the
+      scaling can be done by the next layer.
+    variables_collections: Optional collections for the variables 'gamma' and 'beta'.
+    epsilon: A lower bound value for the norm. Will use `sqrt(epsilon)` as the
+      divisor if `norm < sqrt(epsilon)`.
+    name: A name for this operation (optional).
+
+  Returns:
+    A `Tensor` with the same shape as `x`.
+  Raises:
+    ValueError: If datatype of x is not float32'.
+  """
+  def get_variable_collections(variables_collections, name):
+    if isinstance(variables_collections, dict):
+      variable_collections = variables_collections.get(name, None)
+    else:
+      variable_collections = variables_collections
+    return variable_collections
+
+  with ops.name_scope(name, "fused_layer_normalize", [x]) as name:
+    x = ops.convert_to_tensor(x, name="x")
+    if x.dtype != dtypes.float32:
+      raise ValueError("Fused layer normalize only supports float32 now! Input is %s" 
+              % x.dtype)
+    
+    if center:
+      beta_collections = get_variable_collections(variables_collections, 'beta')
+      beta = variable_scope.get_variable(
+            'beta',
+            shape=x.get_shape()[-1],
+            dtype=dtypes.float32,
+            initializer=init_ops.zeros_initializer(),
+            trainable=True,
+            collections=beta_collections)
+    else:
+      beta = array_ops.zeros(x.get_shape()[-1], dtype=dtypes.float32)
+
+    if scale:
+      gamma_collections = get_variable_collections(variables_collections, 'gamma')
+      gamma = variable_scope.get_variable(
+            'gamma',
+            shape=x.get_shape()[-1],
+            dtype=dtypes.float32,
+            initializer=init_ops.ones_initializer(),
+            trainable=True,
+            collections=gamma_collections)
+    else:
+      gamma = array_ops.ones(x.get_shape()[-1], dtype=dtypes.float32)
+
+    return gen_nn_ops.fused_layer_norm(
+              x, gamma=gamma, beta=beta, epsilon=epsilon, name=name)[0]
 
 def _count_nonzero(input_tensor, dtype=dtypes.int64):
   """Same as math_ops.count_nonzero.

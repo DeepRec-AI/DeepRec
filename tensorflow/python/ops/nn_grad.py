@@ -1180,3 +1180,15 @@ def _FusedL2NormalizeGrad(op, grad):
 
   return gen_fused_l2_normalize_ops.fused_l2_normalize_grad(
     grad, x, axis=axis, epsilon=epsilon)
+
+@ops.RegisterGradient("FusedLayerNorm")
+def _FusedLayerNormalizeGrad(op, grad, *args):
+  """Return the gradients for FusedLayerNorm"""
+
+  x = op.inputs[0]  # pylint: disable=redefined-builtin
+  mean = op.outputs[1]
+  rvariance = op.outputs[2]
+  gamma = op.inputs[1]
+
+  return gen_nn_ops.fused_layer_norm_grad(
+    grad, x, mean, rvariance, gamma)

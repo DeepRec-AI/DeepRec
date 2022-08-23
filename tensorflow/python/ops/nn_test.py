@@ -341,6 +341,34 @@ class L2NormalizeTest(test_lib.TestCase):
       self.assertLess(err, 1e-4)
 
 
+class LayerNormalizeTest(test_lib.TestCase):
+
+  @test_util.run_in_graph_and_eager_modes
+  def testFusedTest(self):
+    x_shape = [3,5,9]
+    x = np.ones(x_shape, dtype=np.float32)
+    except_y = np.zeros(x_shape)
+    y = nn_impl.fused_layer_normalize(x)
+    with self.cached_session() as sess:
+      sess.run(variables.global_variables_initializer())
+      output_y = sess.run(y)
+      self.assertAllClose(except_y, output_y)
+
+  @test_util.run_deprecated_v1
+  def testFusedL2NormalizeGradient(self):
+    x_shape = [5,7,16]
+    np.random.seed(1)
+    x_np = np.random.random_sample(x_shape).astype(np.float32)
+    with self.cached_session() as sess:
+      x_tf = constant_op.constant(x_np, name="x")
+      y_tf = nn_impl.fused_layer_normalize(x_tf)
+      sess.run(variables.global_variables_initializer())
+      err = gradient_checker.compute_gradient_error(x_tf, x_shape, y_tf,
+                                                    x_shape)
+    print("FusedL2Normalize gradient err = %g " % err)
+    self.assertLess(err, 1e-3)
+
+
 class DropoutTest(test_lib.TestCase):
 
   def testDropout(self):

@@ -1630,6 +1630,7 @@ cc_library(
         "//tensorflow/core/kernels:fused_embedding_ops",
         "//tensorflow/core/kernels/data:parquet_dataset_ops",
         "//tensorflow/core/kernels:fused_l2_normalize_ops",
+        "//tensorflow/core/kernels:fused_layer_normalize_ops",
         "//tensorflow/core/kernels:grappler",
         "//tensorflow/core/kernels:hash_ops",
         "//tensorflow/core/kernels:histogram_op",
