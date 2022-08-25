@@ -99,8 +99,10 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     V* batch_data_place;
     V* dev_batch_data_place;
     Allocator *allocator = ev_allocator();
-    dev_value_address = (V**)allocator->AllocateRaw(0, batch_size * sizeof(V *));
-    dev_batch_data_place = (V*)allocator->AllocateRaw(0, sizeof(V) * batch_size * total_dims_);
+    dev_value_address = (V**)allocator->AllocateRaw(Allocator::kAllocatorAlignment,
+      batch_size * sizeof(V *));
+    dev_batch_data_place = (V*)allocator->AllocateRaw(Allocator::kAllocatorAlignment,
+      sizeof(V) * batch_size * total_dims_);
     batch_data_place = (V *)malloc(sizeof(V) * batch_size * total_dims_);
 
     // Copy GPU addresses V*
