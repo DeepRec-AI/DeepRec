@@ -2235,8 +2235,12 @@ def get_embedding_variable_internal(name,
   else:
     raise ValueError("Not support key_dtype: %s, only support int64/int32/string" % key_dtype)
   l2_weight_threshold = -1.0
-  if initializer is None:
+  if initializer is None and ev_option.init.initializer is None:
     initializer = init_ops.truncated_normal_initializer()
+  elif ev_option.init.initializer is not None:
+    if initializer is not None:
+      logging.warning("Use initializer in InitializerOption.")
+    initializer = ev_option.init.initializer
   if ev_option.evict != None:
     if isinstance(ev_option.evict, variables.GlobalStepEvict):
       if steps_to_live != None:
