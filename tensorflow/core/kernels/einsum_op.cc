@@ -514,20 +514,6 @@ Status ReshapeToRank3(const Tensor& input, int batch_size, Tensor* output) {
   return CopyFrom(input, output_shape, output);
 }
 
-// Conjugates the input.
-template <typename Device, typename T>
-Status Conjugate(OpKernelContext* ctx, Tensor* input) {
-  std::vector<int> permutation(input->dims());
-  std::iota(permutation.begin(), permutation.end(), 0);
-  Tensor output;
-  TF_RETURN_IF_ERROR(
-      ctx->allocate_temp(DataTypeToEnum<T>::value, input->shape(), &output));
-  const Device& d = ctx->eigen_device<Device>();
-  TF_RETURN_IF_ERROR(DoConjugateTranspose(d, *input, permutation, &output));
-  std::swap(*input, output);
-  return Status::OK();
-}
-
 // Contracts the inputs along the last axis. (or the second last if the
 // corresponding value of swap_free_and_contract is true). The batch dimensions
 // are broadcast to the output shape.
@@ -540,7 +526,7 @@ Status Conjugate(OpKernelContext* ctx, Tensor* input) {
 template <typename Device, typename T>
 Status ContractOperands(OpKernelContext* ctx, absl::Span<const Tensor> inputs,
                         absl::Span<const bool> swap_free_and_contract,
-                        Tensor* output) {
+                        bool use_autotune, Tensor* output) {
   if (inputs.size() == 1) return CopyFrom(inputs[0], inputs[0].shape(), output);
   MatMulBCast bcast(inputs[0].shape().dim_sizes(),
                     inputs[1].shape().dim_sizes());
@@ -559,19 +545,18 @@ Status ContractOperands(OpKernelContext* ctx, absl::Span<const Tensor> inputs,
         inputs[i].dims() - (swap_free_and_contract[i] ? 1 : 2);
     output_shape.AddDim(inputs[i].dim_size(free_axis));
   }
-  bool adj_x = swap_free_and_contract[0];
-  bool adj_y = !swap_free_and_contract[1];
-  if (is_complex<T>::value) {
-    if (adj_x) TF_RETURN_IF_ERROR(Conjugate<Device, T>(ctx, &lhs));
-    if (adj_y) TF_RETURN_IF_ERROR(Conjugate<Device, T>(ctx, &rhs));
-  }
+
+  bool trans_x = swap_free_and_contract[0];
+  bool trans_y = !swap_free_and_contract[1];
+  
   TF_RETURN_IF_ERROR(
       ctx->allocate_temp(DataTypeToEnum<T>::value, output_shape, output));
   Tensor output_reshaped;
   TF_RETURN_IF_ERROR(
       ReshapeToRank3(*output, bcast.output_batch_size(), &output_reshaped));
-  LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, adj_x, adj_y, bcast,
-                                       &output_reshaped);
+  LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, false, false, trans_x,
+                                       trans_y, bcast,
+                                       use_autotune, &output_reshaped);
   return Status::OK();
 }
 }  // namespace
@@ -586,6 +571,7 @@ class EinsumOp : public OpKernel {
                                     &label_types_, &input_label_counts_,
                                     &output_label_counts_, &input_has_ellipsis_,
                                     &output_has_ellipsis_));
+    use_autotune_ = MatmulAutotuneEnable();
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -628,7 +614,7 @@ class EinsumOp : public OpKernel {
     Tensor contraction_output_reshaped;
     OP_REQUIRES_OK(ctx, ContractOperands<Device, T>(
                             ctx, inputs_reduced, swap_free_and_contract,
-                            &contraction_output_reshaped));
+                            use_autotune_, &contraction_output_reshaped));
 
     // Copy the batch labels from the contraction output. Recover the batch
     // shape, which may have been broadcasted.
@@ -709,6 +695,7 @@ class EinsumOp : public OpKernel {
   LabelCounts output_label_counts_;
   gtl::InlinedVector<bool, 2> input_has_ellipsis_;
   bool output_has_ellipsis_ = false;
+  bool use_autotune_;
 };
 
 #if GOOGLE_CUDA
