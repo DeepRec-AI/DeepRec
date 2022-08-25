@@ -388,7 +388,8 @@ class EmbeddingVar : public ResourceBase {
       if (buffer1_size != 0) {
         alloc_->DeallocateRaw(buffer1);
       }
-      buffer1 = (V**)alloc_->AllocateRaw(0, size * sizeof(V*));
+      buffer1 = (V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+        size * sizeof(V*));
       buffer1_size = size;
       return buffer1;
     }
@@ -401,7 +402,8 @@ class EmbeddingVar : public ResourceBase {
       if (buffer2_size != 0) {
         alloc_->DeallocateRaw(buffer2);
       }
-      buffer2 =(V**)alloc_->AllocateRaw(0, size * sizeof(V*));
+      buffer2 =(V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+        size * sizeof(V*));
       buffer2_size = size;
       return buffer2;
     }
@@ -414,7 +416,8 @@ class EmbeddingVar : public ResourceBase {
       if (buffer3_size != 0) {
         alloc_->DeallocateRaw(buffer3);
       }
-      buffer3 = (V**)alloc_->AllocateRaw(0, size * sizeof(V*));
+      buffer3 = (V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+        size * sizeof(V*));
       buffer3_size = size;
       return buffer3;
     }

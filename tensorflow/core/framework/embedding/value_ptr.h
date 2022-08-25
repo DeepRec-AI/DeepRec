@@ -211,7 +211,8 @@ class ValuePtr {
       }
       embnum++ ;
       int64 alloc_value_len = value_len;
-      V* tensor_val = (V*)allocator->AllocateRaw(0/*alignment unused*/, sizeof(V) * alloc_value_len);
+      V* tensor_val = (V*)allocator->AllocateRaw(Allocator::kAllocatorAlignment,
+        sizeof(V) * alloc_value_len);
       memcpy(tensor_val, default_v, sizeof(V) * value_len);
       ((V**)((int64*)ptr_ + meta->GetHeaderSize()))[emb_index]  = tensor_val;
 
@@ -359,7 +360,8 @@ template <class V>
 class NormalContiguousValuePtr : public ValuePtr<V>{
   public:
    NormalContiguousValuePtr(Allocator* allocator, size_t size) {
-    this->ptr_ = allocator->AllocateRaw(0/*alignemnt unused*/, sizeof(FixedLengthHeader) + sizeof(V) * size);
+    this->ptr_ = allocator->AllocateRaw(Allocator::kAllocatorAlignment,
+      sizeof(FixedLengthHeader) + sizeof(V) * size);
     memset(this->ptr_ + sizeof(FixedLengthHeader), 0, sizeof(V) * size);
     new ((char*)this->ptr_) FixedLengthHeader();
    }
@@ -437,7 +439,8 @@ class NormalGPUValuePtr : public ValuePtr<V> {
   NormalGPUValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(FixedLengthHeader) + sizeof(V *));
     alloc_ = allocator;
-    *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) = (V*)allocator->AllocateRaw(0/*alignment unused*/, sizeof(V) * size);
+    *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) =
+      (V*)allocator->AllocateRaw(Allocator::kAllocatorAlignment,sizeof(V) * size);
     new ((char*)this->ptr_) FixedLengthHeader();
   }
 
