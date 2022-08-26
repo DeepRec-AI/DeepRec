@@ -526,7 +526,7 @@ Status ReshapeToRank3(const Tensor& input, int batch_size, Tensor* output) {
 template <typename Device, typename T>
 Status ContractOperands(OpKernelContext* ctx, absl::Span<const Tensor> inputs,
                         absl::Span<const bool> swap_free_and_contract,
-                        bool use_autotune, Tensor* output) {
+                        Tensor* output) {
   if (inputs.size() == 1) return CopyFrom(inputs[0], inputs[0].shape(), output);
   MatMulBCast bcast(inputs[0].shape().dim_sizes(),
                     inputs[1].shape().dim_sizes());
@@ -555,8 +555,7 @@ Status ContractOperands(OpKernelContext* ctx, absl::Span<const Tensor> inputs,
   TF_RETURN_IF_ERROR(
       ReshapeToRank3(*output, bcast.output_batch_size(), &output_reshaped));
   LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, false, false, trans_x,
-                                       trans_y, bcast,
-                                       use_autotune, &output_reshaped);
+                                       trans_y, bcast, &output_reshaped);
   return Status::OK();
 }
 }  // namespace
@@ -571,7 +570,6 @@ class EinsumOp : public OpKernel {
                                     &label_types_, &input_label_counts_,
                                     &output_label_counts_, &input_has_ellipsis_,
                                     &output_has_ellipsis_));
-    use_autotune_ = MatmulAutotuneEnable();
   }
 
   void Compute(OpKernelContext* ctx) override {
@@ -614,7 +612,7 @@ class EinsumOp : public OpKernel {
     Tensor contraction_output_reshaped;
     OP_REQUIRES_OK(ctx, ContractOperands<Device, T>(
                             ctx, inputs_reduced, swap_free_and_contract,
-                            use_autotune_, &contraction_output_reshaped));
+                            &contraction_output_reshaped));
 
     // Copy the batch labels from the contraction output. Recover the batch
     // shape, which may have been broadcasted.
@@ -695,7 +693,6 @@ class EinsumOp : public OpKernel {
   LabelCounts output_label_counts_;
   gtl::InlinedVector<bool, 2> input_has_ellipsis_;
   bool output_has_ellipsis_ = false;
-  bool use_autotune_;
 };
 
 #if GOOGLE_CUDA
