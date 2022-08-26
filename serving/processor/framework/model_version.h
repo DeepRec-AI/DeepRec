@@ -20,6 +20,13 @@ struct Version {
   Version(const Version&) = default;
   Version& operator=(const Version&) = default;
 
+  bool IsValid() {
+    if (full_ckpt_version == -1 ||
+        full_ckpt_name.empty() ||
+        savedmodel_dir.empty()) return false;
+    return true;
+  }
+
   const std::string DebugString() const {
     return tensorflow::strings::StrCat(
         "full_ckpt_version: ", std::to_string(full_ckpt_version),

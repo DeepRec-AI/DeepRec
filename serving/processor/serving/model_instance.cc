@@ -807,22 +807,33 @@ void ModelUpdater::WorkLoop() {
     auto status = model_store_->GetLatestVersion(version);
     LOG(INFO) << "[Processor] ModelUpdater::WorkLoop get latest version: "
               << version.DebugString();
-    if (!status.ok()) {
-      LOG(WARNING) << "[Processor] Not found full model or incremental model directory. "
-                   << "Please ignore this warning if you confirm it. "
-                   << "And we will try 60 seconds later. Warning message: "
-                   << status.error_message() << std::endl;
-    }
-
-    // New model directory is generated or the version step is greater than the pre.
-    Version pre_version = GetVersion();
-    bool new_full_ckpt_generated =
-        pre_version.full_ckpt_name != version.full_ckpt_name;
-    if (new_full_ckpt_generated || pre_version < version) {
-      auto status = ModelUpdate(version, model_config_,
-                                new_full_ckpt_generated);
+    if (!version.IsValid()) {
+      LOG(ERROR) << "[Processor] Found a invalid model, "
+                 << "please check other error message, "
+                 << "we will try 60 seconds later. status: " << status.error_message()
+                 << "version debug string: " << version.DebugString();
+    } else {
       if (!status.ok()) {
-        LOG(ERROR) << status.error_message() << std::endl;
+        LOG(WARNING) << "[Processor] Not found full model or incremental model directory. "
+                     << "Please ignore this warning if you confirm it. "
+                     << "And we will try 60 seconds later. Warning message: "
+                     << status.error_message();
+      }
+
+      // New model directory is generated or the version step is greater than the pre.
+      Version pre_version = GetVersion();
+      bool new_full_ckpt_generated = version.IsValid() &&
+          (pre_version.full_ckpt_name != version.full_ckpt_name);
+      if (new_full_ckpt_generated || pre_version < version) {
+        LOG(INFO) << "Start to load new version model: " << version.DebugString();
+        auto status = ModelUpdate(version, model_config_,
+                                  new_full_ckpt_generated);
+        if (!status.ok()) {
+          LOG(ERROR) << "Load new version model failed: " << status.error_message()
+                     << ", version info: " << version.DebugString();
+        } else {
+          LOG(INFO) << "Load new version model successful: " << version.DebugString();
+        }
       }
     }
 
