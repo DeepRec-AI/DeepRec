@@ -102,15 +102,14 @@ class PrintOpFilegroupTest(test.TestCase):
 
     ops_and_kernels = selective_registration_header_lib.get_ops_and_kernels(
         'rawproto', self.WriteGraphFiles(graphs), default_ops)
-    matmul_prefix = ''
+    matmul_prefix = 'Batch'
 
     self.assertListEqual(
         [
             ('AccumulateNV2', None),  #
             ('BiasAdd', 'BiasOp<CPUDevice, float>'),  #
-            ('MatMul',
-             matmul_prefix + 'MatMulOp<CPUDevice, double, false >'),  #
-            ('MatMul', matmul_prefix + 'MatMulOp<CPUDevice, float, false >'),  #
+            ('MatMul', matmul_prefix + 'MatMulOp<CPUDevice, double, true>'),  #
+            ('MatMul', matmul_prefix + 'MatMulOp<CPUDevice, float, true>'),  #
             ('NoOp', 'NoOp'),  #
             ('Reshape', 'ReshapeOp'),  #
             ('_Recv', 'RecvOp'),  #
@@ -126,9 +125,8 @@ class PrintOpFilegroupTest(test.TestCase):
         [
             ('AccumulateNV2', None),  #
             ('BiasAdd', 'BiasOp<CPUDevice, float>'),  #
-            ('MatMul',
-             matmul_prefix + 'MatMulOp<CPUDevice, double, false >'),  #
-            ('MatMul', matmul_prefix + 'MatMulOp<CPUDevice, float, false >'),  #
+            ('MatMul', matmul_prefix + 'MatMulOp<CPUDevice, double, true>'),  #
+            ('MatMul', matmul_prefix + 'MatMulOp<CPUDevice, float, true>'),  #
             ('NoOp', 'NoOp'),  #
             ('Reshape', 'ReshapeOp'),  #
             ('_Recv', 'RecvOp'),  #
