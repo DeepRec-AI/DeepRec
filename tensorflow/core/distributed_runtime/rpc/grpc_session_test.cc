@@ -896,7 +896,6 @@ TEST(SessionTest, InvalidOpInputName) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                      "Illegal op input name");
@@ -915,7 +914,6 @@ TEST(SessionTest, InvalidOpInputName) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                      "Illegal op input name");
@@ -934,7 +932,6 @@ TEST(SessionTest, InvalidOpInputName) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                      "Illegal op input name");
@@ -953,7 +950,6 @@ TEST(SessionTest, InvalidOpInputName) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                      "Illegal op input name");
@@ -991,7 +987,6 @@ TEST(SessionTest, ExtendValidation) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                                                   &extension);
@@ -1008,7 +1003,6 @@ TEST(SessionTest, ExtendValidation) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                                                   &extension);
@@ -1022,7 +1016,6 @@ TEST(SessionTest, ExtendValidation) {
       attr { key: 'T' value { type: DT_FLOAT } }
       attr { key: 'transpose_a' value { b: false } }
       attr { key: 'transpose_b' value { b: false } }
-      attr { key: '_kernel' value { s: 'eigen' } }
     }
   )",
                                                   &extension);
