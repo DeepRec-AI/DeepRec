@@ -1125,7 +1125,9 @@ cc_library(
 
 cc_library(
     name = "framework_types_hdr",
-    hdrs = ["//tensorflow/core/framework:types.h"],
+    hdrs = [
+        "framework/types.h",
+    ],
     linkstatic = 1,
     visibility = ["//visibility:public"],
 )

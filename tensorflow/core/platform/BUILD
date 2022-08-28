@@ -290,17 +290,26 @@ cc_library(
     hdrs = ["tensor_float_32_utils.h"],
     copts = tf_copts(),
     alwayslink = 1,
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
 )
 
 filegroup(
     name = "tensor_float_32_hdr",
     srcs = ["tensor_float_32_utils.h"],
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
 )
 
 cc_library(
     name = "tensor_float_32_hdr_lib",
     hdrs = [":tensor_float_32_hdr"],
     copts = tf_copts(),
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
 )
 
 # --------------------------------------------------------------------------

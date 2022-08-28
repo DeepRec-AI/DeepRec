@@ -24,7 +24,7 @@ int64_t GetWorkspaceLimit(int64_t default_value_in_bytes) {
       getenv("TF_CUBLAS_WORKSPACE_LIMIT_IN_MB");
   if (workspace_limit_in_mb_str != nullptr &&
       strcmp(workspace_limit_in_mb_str, "") != 0) {
-    int64_t scratch_limit_in_mb = -1;
+    int64 scratch_limit_in_mb = -1;
     if (tensorflow::strings::safe_strto64(workspace_limit_in_mb_str,
                                           &scratch_limit_in_mb)) {
       return scratch_limit_in_mb * (1 << 20);
@@ -37,7 +37,7 @@ int64_t GetWorkspaceLimit(int64_t default_value_in_bytes) {
 }
 
 int MatmulMaxAutotuneAlgorithmCount() {
-  int64_t value;
+  int64 value;
   tensorflow::Status status = tensorflow::ReadInt64FromEnvVar(
       "TF_MATMUL_AUTOTUNE_MAX_ALGORITHMS", 10, &value);
   if (!status.ok()) {
@@ -104,9 +104,11 @@ port::StatusOr<const blas::PlanAndAlgorithms*> GetPlanAndAlgorithms(
   const blas::PlanAndAlgorithms* plan_and_algorithms =
       BatchMatmulPlanMapSingleton::GetInstance()->Find(matmul_parameters);
   if (!plan_and_algorithms) {
-    TF_ASSIGN_OR_RETURN(blas::BlasLtMatmulPlanParams plan_params,
-                        CreatePlanParams(batch_size, dtype, lhs_matrix,
-                                         rhs_matrix, output_matrix));
+    TF_ASSIGN_OR_RETURN(
+        blas::BlasLtMatmulPlanParams plan_params,
+        CreatePlanParams(batch_size, dtype, matmul_parameters.GetEpilogOp(),
+                         lhs_matrix, rhs_matrix, output_matrix));
+
     TF_ASSIGN_OR_RETURN(std::unique_ptr<blas::IBlasLtMatmulPlan> plan,
                         stream->parent()->CreateBlasLtMatmulPlan(plan_params));
     TF_ASSIGN_OR_RETURN(
@@ -122,7 +124,7 @@ port::StatusOr<const blas::PlanAndAlgorithms*> GetPlanAndAlgorithms(
 }
 
 port::StatusOr<blas::BlasLtMatmulPlanParams> CreatePlanParams(
-    int64_t batch_size, tensorflow::DataType dtype,
+    int64_t batch_size, tensorflow::DataType dtype, blas::Epilogue epilog_op,
     blas::MatrixDescriptor lhs_matrix, blas::MatrixDescriptor rhs_matrix,
     blas::MatrixDescriptor output_matrix) {
   blas::BlasLtMatmulPlanParams plan_params;
@@ -141,6 +143,7 @@ port::StatusOr<blas::BlasLtMatmulPlanParams> CreatePlanParams(
 
   plan_params.pointer_mode = blas::PointerMode::kHost;
   plan_params.epilogue = blas::Epilogue::kDefault;
+  plan_params.epilogue = epilog_op;
 
   plan_params.transa = lhs_matrix.transpose;
   plan_params.transb = rhs_matrix.transpose;
