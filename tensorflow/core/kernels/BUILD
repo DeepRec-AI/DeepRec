@@ -4017,6 +4017,7 @@ tf_kernel_library(
         "//conditions:default": [],
     }) + mkl_deps() + if_cuda([
         "//tensorflow/core/platform/default/build_config:cublas_plugin",
+        "//tensorflow/stream_executor:matmul_util",
     ]) + if_cuda_or_rocm([":gpu_utils"]),
 )
 
@@ -4024,7 +4025,7 @@ tf_mkl_kernel_library(
     name = "mkl_batch_matmul_op",
     srcs = ["mkl_batch_matmul_op.cc"],
     hdrs = [
-        "batch_matmul_op_impl.h",
+        "matmul_op_impl.h",
         "mkl_matmul_ops_common.h",
         "no_op.h"
     ],
