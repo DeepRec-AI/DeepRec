@@ -22,12 +22,14 @@ limitations under the License.
 
 #include "absl/synchronization/mutex.h"
 #include "tensorflow/stream_executor/blas.h"
-#include "third_party/gpus/cuda/include/cublasLt.h"
-#include "third_party/gpus/cuda/include/cuda.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tensorflow/stream_executor/host_or_device_scalar.h"
 #include "tensorflow/stream_executor/platform/port.h"
 #include "tensorflow/stream_executor/platform/thread_annotations.h"
 #include "tensorflow/stream_executor/plugin_registry.h"
+#include "third_party/gpus/cuda/include/cublasLt.h"
+#include "third_party/gpus/cuda/include/cublas_v2.h"
+#include "third_party/gpus/cuda/include/cuda.h"
 
 typedef struct cublasContext *cublasHandle_t;
 
@@ -180,10 +182,8 @@ class CUDABlas : public blas::BlasSupport {
   // cuBLAS library handle on the device.
   cublasHandle_t blas_ GUARDED_BY(mu_);
 
-#if CUDA_VERSION >= 11000
   // cuBLASLt library handle on the device.
   cublasLtHandle_t blasLt_ GUARDED_BY(mu_);
-#endif
 
   SE_DISALLOW_COPY_AND_ASSIGN(CUDABlas);
 };

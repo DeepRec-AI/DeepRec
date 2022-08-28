@@ -1124,6 +1124,13 @@ cc_library(
 )
 
 cc_library(
+    name = "framework_types_hdr",
+    hdrs = ["//tensorflow/core/framework:types.h"],
+    linkstatic = 1,
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "framework_lite",
     srcs = [
         "//tensorflow/core/platform:legacy_minimal_lib_srcs",
