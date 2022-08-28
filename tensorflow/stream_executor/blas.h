@@ -193,6 +193,25 @@ class AlgorithmConfig {
   AlgorithmType algorithm_;
 };
 
+// This struct contains the metadata of a matrix, e.g., its base address and
+// dimensions.
+struct MatrixDescriptor {
+  DeviceMemoryBase data;
+  Transpose transpose;
+  int64_t num_rows;
+  int64_t num_cols;
+  int64_t stride;
+
+  int64_t reduced_dim() const {
+    return transpose == Transpose::kTranspose ? num_rows : num_cols;
+  }
+
+  template <typename T>
+  DeviceMemory<T> cast() const {
+    return DeviceMemory<T>(data);
+  }
+};
+
 struct IBlasLtMatmulPlan {
   // Returns the data type of the A and B (input) matrices.
   virtual DataType ab_type() const = 0;
@@ -229,6 +248,11 @@ struct BlasLtMatmulPlanParams {
   int64 stride_a = 0;
   int64 stride_b = 0;
   int64 stride_c = 0;
+};
+
+struct PlanAndAlgorithms {
+  std::unique_ptr<blas::IBlasLtMatmulPlan> plan;
+  std::vector<std::unique_ptr<blas::IBlasLtMatmulAlgorithm>> algorithms;
 };
 
 // BLAS support interface -- this can be derived from a GPU executor when the

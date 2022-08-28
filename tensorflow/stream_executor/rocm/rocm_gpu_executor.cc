@@ -846,6 +846,8 @@ bool FillBlockDimLimit(GpuDeviceHandle device, BlockDim* block_dim_limit) {
   return true;
 }
 
+bool GpuExecutor::SupportsBlasPlans() const { return false; }
+
 bool GpuExecutor::SupportsBlas() const { return true; }
 
 bool GpuExecutor::SupportsFft() const { return true; }

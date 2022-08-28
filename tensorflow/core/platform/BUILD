@@ -297,7 +297,11 @@ filegroup(
     srcs = ["tensor_float_32_utils.h"],
 )
 
-
+cc_library(
+    name = "tensor_float_32_hdr_lib",
+    hdrs = [":tensor_float_32_hdr"],
+    copts = tf_copts(),
+)
 
 # --------------------------------------------------------------------------
 #     Below libraries are here only to make sure the legacy build rules
