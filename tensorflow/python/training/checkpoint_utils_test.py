@@ -28,7 +28,10 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import init_ops
+from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import partitioned_variables
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import variable_scope
@@ -57,6 +60,30 @@ def _create_checkpoints(sess, checkpoint_dir):
       global_step=0,
       latest_filename=checkpoint_state_name)
   return v1_value, v2_value, v3_value, v4_value
+
+
+def _create_ev_checkpoints(sess, checkpoint_dir):
+  checkpoint_prefix = os.path.join(checkpoint_dir, "model")
+  checkpoint_state_name = "checkpoint"
+  with variable_scope.variable_scope("useful_scope"):
+    ev1 = variable_scope.get_embedding_variable("ev1", embedding_dim=8)
+    ev2 = variable_scope.get_embedding_variable("ev2", embedding_dim=8,
+      partitioner=partitioned_variables.fixed_size_partitioner(4))
+  emb_1 = embedding_ops.embedding_lookup(ev1,
+    array_ops.constant([0,1,2,3,4], dtype=dtypes.int64))
+  emb_2 = embedding_ops.embedding_lookup(ev2,
+    array_ops.constant([5,6,7,8,9], dtype=dtypes.int64))
+  emb = array_ops.concat([emb_1, emb_2], axis=1)
+  loss = math_ops.reduce_sum(emb)
+  saver = saver_lib.Saver()
+  sess.run(variables.global_variables_initializer())
+  l = sess.run(loss)
+  saver.save(
+      sess,
+      checkpoint_prefix,
+      global_step=0,
+      latest_filename=checkpoint_state_name)
+  return l
 
 
 def _create_partition_checkpoints(sess, checkpoint_dir):
@@ -394,6 +421,31 @@ class CheckpointsTest(test.TestCase):
             op.type != "Identity")
     ]
     self.assertEqual(ops_in_init_from_checkpoint_scope, [])
+
+  def testInitWithScopeEmbeddingVariable(self):
+    checkpoint_dir = self.get_temp_dir()
+    with self.cached_session() as session:
+      loss = _create_ev_checkpoints(session, checkpoint_dir)
+
+    with ops.Graph().as_default() as g:
+      with variable_scope.variable_scope("useful_scope"):
+        ev1 = variable_scope.get_embedding_variable("ev1", embedding_dim=8)
+      with variable_scope.variable_scope("useful_scope"):
+        ev2 = variable_scope.get_embedding_variable("ev2", embedding_dim=8,
+          partitioner=partitioned_variables.fixed_size_partitioner(4))
+
+      emb_1 = embedding_ops.embedding_lookup(ev1,
+        array_ops.constant([0,1,2,3,4], dtype=dtypes.int64))
+      emb_2 = embedding_ops.embedding_lookup(ev2,
+        array_ops.constant([5,6,7,8,9], dtype=dtypes.int64))
+      emb = array_ops.concat([emb_1, emb_2], axis=1)
+      my_loss = math_ops.reduce_sum(emb)
+
+      checkpoint_utils.init_from_checkpoint(checkpoint_dir,
+                                            {"useful_scope/": "useful_scope/"})
+      with self.session(graph=g) as session:
+        session.run(variables.global_variables_initializer())
+        self.assertAllEqual(session.run(my_loss), loss)
 
 
 class CheckpointIteratorTest(test.TestCase):

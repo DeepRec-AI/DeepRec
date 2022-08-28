@@ -26,6 +26,8 @@ from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import io_ops
 from tensorflow.python.ops import resource_variable_ops
+from tensorflow.python.ops import gen_kv_variable_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import gfile
@@ -356,6 +358,7 @@ def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
       for var_name in sorted(scope_variables):
         # Lookup name with specified prefix and suffix from current variable.
         # If tensor_name given is '/' (root), don't use it for full name.
+        var = store_vars.get(var_name, None)
         full_tensor_name = var_name[len(scopes):]
         if current_var_or_name != "/":
           full_tensor_name = full_tensor_name[1:]
@@ -364,13 +367,13 @@ def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
         # Remove trailing '/', if any, in the full_tensor_name
         if full_tensor_name.endswith("/"):
           full_tensor_name = full_tensor_name[:-1]
-        if full_tensor_name not in variable_map:
+        if full_tensor_name not in variable_map and var is not None and (
+            not isinstance(var, kv_variable_ops.EmbeddingVariable)):
           raise ValueError(
               "Tensor %s (%s in %s) is not found in %s checkpoint" % (
                   full_tensor_name, var_name[len(scopes) + 1:],
                   tensor_name_in_ckpt, ckpt_dir_or_file
               ))
-        var = store_vars.get(var_name, None)
         if var is None:
           var = _collect_partitioned_variable(var_name, store_vars)
         _set_variable_or_list_initializer(var, ckpt_file, full_tensor_name)
@@ -402,28 +405,68 @@ def _set_checkpoint_initializer(variable,
     slice_spec: Slice specification for loading partitioned tensors.
     name: Name of the operation.
   """
-  base_type = variable.dtype.base_dtype
-  # Do not colocate with variable since RestoreV2 op only runs on CPU and
-  # colocation will force variable (and other ops that colocate with variable)
-  # to be on CPU as well. It is okay to place the variable's initializer op on
-  # CPU since it will only be run once at the start.
-  with ops.device(variable.device), ops.device("/cpu:0"):
-    restore_op = io_ops.restore_v2(
-        ckpt_file, [tensor_name], [slice_spec], [base_type], name=name)[0]
+  if isinstance(variable, kv_variable_ops.EmbeddingVariable):
+    base_type = variable.dtype.base_dtype
+    with ops.colocate_with(variable):
+      if variable.op.name.split('/')[-1].startswith('part_') and \
+         not tensor_name.split('/')[-1].startswith('part_'):
+        tensor_name = tensor_name + '/' + variable.op.name.split('/')[-1]
+      is_partitioned_ev = variable._save_slice_info is not None
+      partition_id = variable._save_slice_info.var_offset[0] if is_partitioned_ev else 0
+      partition_num = variable._save_slice_info.full_shape[0] if is_partitioned_ev else 1
+      rank = variable.initial_value.get_shape().rank - 1
+      variable._initializer_op = gen_kv_variable_ops.kv_resource_import_v2(
+          ckpt_file,
+          variable.handle, variable._primary_handle,
+          variables._try_guard_against_uninitialized_dependencies(variable.name,
+              variable.initial_value),
+          tensor_name,
+          ops.convert_to_tensor(variable.invalid_key),
+          slot_num=variable._slot_num,
+          shape=variable.initial_value.get_shape()[rank:],
+          steps_to_live=variable.steps_to_live,
+          emb_index=variable._emb_index, slot_index=variable._slot_index,
+          block_num=variable.block_num,
+          ht_type=variable._ht_type,
+          ht_partition_num=variable._ht_partition_num,
+          filter_freq = variable._filter_freq,
+          max_freq = 99999,
+          l2_weight_threshold = variable._l2_weight_threshold,
+          max_element_size = variable._max_element_size,
+          false_positive_probability = variable._false_positive_probability,
+          counter_type = variable._counter_type,
+          layout = variable._layout,
+          storage_type=variable._storage_type,
+          storage_path=variable._storage_path,
+          storage_size=variable._storage_size,
+          partition_id=partition_id, partition_num=partition_num,
+          default_value_dim=variable._default_value_dim,
+          default_value_no_permission=variable._default_value_no_permission,
+          record_freq=variable._record_freq,
+          record_version=variable._record_version)
+  else:
+    base_type = variable.dtype.base_dtype
+    # Do not colocate with variable since RestoreV2 op only runs on CPU and
+    # colocation will force variable (and other ops that colocate with variable)
+    # to be on CPU as well. It is okay to place the variable's initializer op on
+    # CPU since it will only be run once at the start.
+    with ops.device(variable.device), ops.device("/cpu:0"):
+      restore_op = io_ops.restore_v2(
+          ckpt_file, [tensor_name], [slice_spec], [base_type], name=name)[0]
 
-    names_to_saveables = saveable_object_util.op_list_to_dict([variable])
-    saveable_objects = []
-    for name, op in names_to_saveables.items():
-      for s in saveable_object_util.saveable_objects_for_op(op, name):
-        saveable_objects.append(s)
+      names_to_saveables = saveable_object_util.op_list_to_dict([variable])
+      saveable_objects = []
+      for name, op in names_to_saveables.items():
+        for s in saveable_object_util.saveable_objects_for_op(op, name):
+          saveable_objects.append(s)
 
-    assert len(saveable_objects) == 1  # Should be only one variable.
-  init_op = saveable_objects[0].restore([restore_op], restored_shapes=None)
+      assert len(saveable_objects) == 1  # Should be only one variable.
+    init_op = saveable_objects[0].restore([restore_op], restored_shapes=None)
 
-  # pylint:disable=protected-access
-  variable._initializer_op = init_op
-  restore_op.set_shape(variable.shape)
-  variable._initial_value = restore_op
+    # pylint:disable=protected-access
+    variable._initializer_op = init_op
+    restore_op.set_shape(variable.shape)
+    variable._initial_value = restore_op
   # pylint:enable=protected-access
 
 
