@@ -41,6 +41,7 @@ from tensorflow.python.platform import test
 from tensorflow.python.training import adagrad
 from tensorflow.python.training import checkpoint_utils
 from tensorflow.python.training import saver as saver_lib
+from tensorflow.python.training import training_util
 from tensorflow.python.training.tracking import util as trackable_utils
 
 
@@ -63,13 +64,14 @@ def _create_checkpoints(sess, checkpoint_dir):
   return v1_value, v2_value, v3_value, v4_value
 
 
-def _create_ev_checkpoints(sess, checkpoint_dir):
+def _create_ev_checkpoints(sess, checkpoint_dir, steps_to_live = None,
+                             train_steps_before_save=2):
   checkpoint_prefix = os.path.join(checkpoint_dir, "model")
   checkpoint_state_name = "checkpoint"
   with variable_scope.variable_scope("useful_scope"):
-    ev1 = variable_scope.get_embedding_variable("ev1", embedding_dim=8)
+    ev1 = variable_scope.get_embedding_variable("ev1", embedding_dim=8, steps_to_live=steps_to_live)
     ev2 = variable_scope.get_embedding_variable("ev2", embedding_dim=8,
-      partitioner=partitioned_variables.fixed_size_partitioner(4))
+      partitioner=partitioned_variables.fixed_size_partitioner(4), steps_to_live=steps_to_live)
   emb_1 = embedding_ops.embedding_lookup(ev1,
     array_ops.constant([0,1,2,3,4], dtype=dtypes.int64))
   emb_2 = embedding_ops.embedding_lookup(ev2,
@@ -78,11 +80,12 @@ def _create_ev_checkpoints(sess, checkpoint_dir):
   loss = math_ops.reduce_sum(emb)
   opt = adagrad.AdagradOptimizer(0.1)
   g_v = opt.compute_gradients(loss)
-  train_op = opt.apply_gradients(g_v)
+  gs = training_util.get_or_create_global_step()
+  train_op = opt.apply_gradients(g_v, global_step=gs)
   saver = saver_lib.Saver()
   sess.run(variables.global_variables_initializer())
-  sess.run([emb, loss, train_op])
-  sess.run([emb, loss, train_op])
+  for i in range(0, train_steps_before_save):
+    sess.run([emb, loss, train_op])
   saver.save(
       sess,
       checkpoint_prefix,
@@ -456,6 +459,66 @@ class CheckpointsTest(test.TestCase):
         session.run(variables.global_variables_initializer())
         session.run([emb, my_loss, train_op])
         self.assertAllEqual(session.run(my_loss), loss)
+
+  def testResetVersionWithScopeEmbeddingVariable(self):
+    checkpoint_dir = self.get_temp_dir()
+    with self.cached_session() as session:
+      loss = _create_ev_checkpoints(session, checkpoint_dir, steps_to_live=20)
+
+    with ops.Graph().as_default() as g:
+      with variable_scope.variable_scope("useful_scope"):
+        ev1 = variable_scope.get_embedding_variable("ev1", embedding_dim=8, steps_to_live=20)
+      with variable_scope.variable_scope("useful_scope"):
+        ev2 = variable_scope.get_embedding_variable("ev2", embedding_dim=8,
+          partitioner=partitioned_variables.fixed_size_partitioner(4), steps_to_live=20)
+      saver = saver_lib.Saver()
+      checkpoint_utils.init_from_checkpoint(checkpoint_dir,
+                                            {"useful_scope/": "useful_scope/"}, reset_version=True)
+      with self.session(graph=g) as session:
+        session.run(variables.global_variables_initializer())
+        checkpoint_prefix = os.path.join(checkpoint_dir, "model")
+        checkpoint_state_name = "checkpoint"
+        saver.save(
+          session,
+          checkpoint_prefix,
+          global_step=0,
+          latest_filename=checkpoint_state_name)
+        for name, shape in checkpoint_utils.list_variables(checkpoint_dir):
+          if "-versions" in name:
+            version_list = checkpoint_utils.load_variable(checkpoint_dir, name)
+            for val in version_list:
+              self.assertEqual(val, 0)
+
+  def testWithoutResetVersionWithScopeEmbeddingVariable(self):
+    checkpoint_dir = self.get_temp_dir()
+    with self.cached_session() as session:
+      loss = _create_ev_checkpoints(session, checkpoint_dir, steps_to_live=20)
+
+    with ops.Graph().as_default() as g:
+      with variable_scope.variable_scope("useful_scope"):
+        ev1 = variable_scope.get_embedding_variable("ev1", embedding_dim=8, steps_to_live=20)
+      with variable_scope.variable_scope("useful_scope"):
+        ev2 = variable_scope.get_embedding_variable("ev2", embedding_dim=8,
+          partitioner=partitioned_variables.fixed_size_partitioner(4), steps_to_live=20)
+      saver = saver_lib.Saver()
+      checkpoint_utils.init_from_checkpoint(checkpoint_dir,
+                                            {"useful_scope/": "useful_scope/"})
+      with self.session(graph=g) as session:
+        session.run(variables.global_variables_initializer())
+        checkpoint_prefix = os.path.join(checkpoint_dir, "model")
+        checkpoint_state_name = "checkpoint"
+        saver.save(
+          session,
+          checkpoint_prefix,
+          global_step=0,
+          latest_filename=checkpoint_state_name)
+        for name, shape in checkpoint_utils.list_variables(checkpoint_dir):
+          if "-versions" in name:
+            version_list = checkpoint_utils.load_variable(checkpoint_dir, name)
+            for val in version_list:
+              self.assertEqual(val, 1)
+
+
 
 
 class CheckpointIteratorTest(test.TestCase):

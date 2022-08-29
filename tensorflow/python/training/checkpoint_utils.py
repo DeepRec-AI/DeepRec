@@ -203,7 +203,7 @@ def checkpoints_iterator(checkpoint_dir,
 
 
 @tf_export(v1=["train.init_from_checkpoint"])
-def init_from_checkpoint(ckpt_dir_or_file, assignment_map):
+def init_from_checkpoint(ckpt_dir_or_file, assignment_map, reset_version=False):
   """Replaces `tf.Variable` initializers so they load from a checkpoint file.
 
   Values are not loaded immediately, but when the initializer is run
@@ -285,7 +285,7 @@ def init_from_checkpoint(ckpt_dir_or_file, assignment_map):
       checkpoints or tensors in checkpoints.
   """
   init_from_checkpoint_fn = lambda _: _init_from_checkpoint(
-      ckpt_dir_or_file, assignment_map)
+      ckpt_dir_or_file, assignment_map, reset_version)
   if distribution_strategy_context.get_cross_replica_context():
     init_from_checkpoint_fn(None)
   else:
@@ -293,7 +293,7 @@ def init_from_checkpoint(ckpt_dir_or_file, assignment_map):
         init_from_checkpoint_fn)
 
 
-def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
+def _init_from_checkpoint(ckpt_dir_or_file, assignment_map, reset_version=False):
   """See `init_from_checkpoint` for documentation."""
   ckpt_file = _get_checkpoint_filename(ckpt_dir_or_file)
   reader = load_checkpoint(ckpt_dir_or_file)
@@ -388,7 +388,7 @@ def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
               ))
         if var is None:
           var = _collect_partitioned_variable(var_name, store_vars)
-        _set_variable_or_list_initializer(var, ckpt_file, full_tensor_name)
+        _set_variable_or_list_initializer(var, ckpt_file, full_tensor_name, reset_version)
         logging.debug("Initialize variable %s from checkpoint %s with %s",
                       var_name, ckpt_dir_or_file, full_tensor_name)
 
@@ -404,7 +404,8 @@ def _set_checkpoint_initializer(variable,
                                 ckpt_file,
                                 tensor_name,
                                 slice_spec,
-                                name="checkpoint_initializer"):
+                                name="checkpoint_initializer",
+                                reset_version=False):
   """Overrides given variable's initialization op.
 
   Sets variable initializer to assign op that initializes variable from tensor's
@@ -470,7 +471,8 @@ def _set_checkpoint_initializer(variable,
           default_value_dim=variable._default_value_dim,
           default_value_no_permission=variable._default_value_no_permission,
           record_freq=variable._record_freq,
-          record_version=variable._record_version)
+          record_version=variable._record_version,
+          reset_version=reset_version)
   else:
     base_type = variable.dtype.base_dtype
     # Do not colocate with variable since RestoreV2 op only runs on CPU and
@@ -498,7 +500,7 @@ def _set_checkpoint_initializer(variable,
 
 
 def _set_variable_or_list_initializer(variable_or_list, ckpt_file,
-                                      tensor_name):
+                                      tensor_name, reset_version=False):
   """Overrides initialization op of given variable or list of variables.
 
   Calls `_set_checkpoint_initializer` for each variable in the given list of
@@ -523,9 +525,9 @@ def _set_variable_or_list_initializer(variable_or_list, ckpt_file,
       elif slice_name != slice_info.full_name:
         raise ValueError("Slices must all be from the same tensor: %s != %s" %
                          (slice_name, slice_info.full_name))
-      _set_checkpoint_initializer(v, ckpt_file, tensor_name, slice_info.spec)
+      _set_checkpoint_initializer(v, ckpt_file, tensor_name, slice_info.spec, reset_version=reset_version)
   else:
-    _set_checkpoint_initializer(variable_or_list, ckpt_file, tensor_name, "")
+    _set_checkpoint_initializer(variable_or_list, ckpt_file, tensor_name, "", reset_version=reset_version)
 
 
 def _is_variable(x):
