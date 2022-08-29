@@ -150,6 +150,12 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
 
+    if (storage_type > 5 && storage_size_.size() == 0) {
+      for (int i = 0; i < 4; i++) {
+        storage_size_.emplace_back(1024*1024*1024);
+      }
+    }
+
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
@@ -666,6 +672,12 @@ class KvResourceImportV2Op: public AsyncOpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
+
+    if (storage_type > 5 && storage_size_.size() == 0) {
+      for (int i = 0; i < 4; i++) {
+        storage_size_.emplace_back(1024*1024*1024);
+      }
+    }
 
     if ((filter_freq_ != 0 && max_element_size_ == 0)
          || steps_to_live_ != -1 || record_freq_
