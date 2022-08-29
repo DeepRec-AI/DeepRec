@@ -157,7 +157,6 @@ class InitializeKvVariableOp : public OpKernel {
           &false_positive_probability_));
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
           &l2_weight_threshold_));
-    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim", &default_value_dim_));
     OP_REQUIRES_OK(c, c->GetAttr("default_value_no_permission",
           &default_value_no_permission_));
@@ -176,6 +175,20 @@ class InitializeKvVariableOp : public OpKernel {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
     }
+
+    if ((filter_freq_ != 0 && max_element_size_ == 0)
+         || steps_to_live_ != 0 || record_freq_
+         || record_version_ || storage_type > 5) {
+      if (block_num_ > 1 || (filter_freq_ != 0 && storage_type <= 5)) {
+        layout_ = "normal";
+      } else {
+        layout_ = "normal_contiguous";
+      }
+    } else {
+      layout_ = "light";
+    }
+
+    CHECK(block_num_ == 1 || layout_ != "normal_contiguous");
 
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {
@@ -220,7 +233,6 @@ class InitializeKvVariableOp : public OpKernel {
     std::string opname = handle_self.name();
 
     EmbeddingVar<TKey, TValue>* ev = nullptr;
-    CHECK(block_num_ == 1 || layout_ != "normal_contiguous");
 
     if (handle_self.name() == handle_primary.name() &&
         handle_self.container() == handle_primary.container()) {
@@ -851,7 +863,6 @@ class KvResourceImportV2Op: public AsyncOpKernel {
           &false_positive_probability_));
     OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
           &l2_weight_threshold_));
-    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
     OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("default_value_dim",
           &default_value_dim_));
@@ -866,6 +877,20 @@ class KvResourceImportV2Op: public AsyncOpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
+
+    if ((filter_freq_ != 0 && max_element_size_ == 0)
+         || steps_to_live_ != -1 || record_freq_
+         || record_version_ || storage_type > 5) {
+      if (block_num_ > 1 || (filter_freq_ != 0 && storage_type <= 5)) {
+        layout_ = "normal";
+      } else {
+        layout_ = "normal_contiguous";
+      }
+    } else {
+      layout_ = "light";
+    }
+
+    CHECK(block_num_ == 1 || layout_ != "normal_contiguous");
 
     TF_CHECK_OK(ReadBoolFromEnvVar("TF_ENABLE_EV_ASYNC_RESTORE", true,
                                    &ev_async_restore_));
