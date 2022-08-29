@@ -82,7 +82,7 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   }
 
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
-    ValuePtr<V>* cpu_value_ptr = new NormalContiguousValuePtr<V>(cpu_allocator(), total_dims_);
+    ValuePtr<V>* cpu_value_ptr = new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
     cudaMemcpy((char *)cpu_value_ptr->GetPtr() + sizeof(FixedLengthHeader),
                *(char **)((char*)value_ptr->GetPtr() + sizeof(FixedLengthHeader)),
                total_dims_ * sizeof(V),
@@ -121,7 +121,7 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
 
     // Copy data to ValuePtrs in memory;Insert it into hashmap
     for(int i = 0;i < batch_size;++i) {
-      ValuePtr<V>* cpu_value_ptr = new NormalContiguousValuePtr<V>(cpu_allocator(), total_dims_);
+      ValuePtr<V>* cpu_value_ptr = new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
       memcpy((char *)cpu_value_ptr->GetPtr() + sizeof(FixedLengthHeader), &batch_data_place[i * total_dims_], total_dims_ * sizeof(V));
       memcpy((char *)cpu_value_ptr->GetPtr(), (char *)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader));
       Insert(keys[i], cpu_value_ptr);

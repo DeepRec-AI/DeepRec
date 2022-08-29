@@ -93,7 +93,7 @@ class StorageManager {
       Allocator* alloc_ssd;
       case StorageType::DRAM:
         VLOG(1) << "StorageManager::DRAM: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), cpu_allocator()));
+        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
         break;
       case StorageType::PMEM_MEMKIND:
         VLOG(1) << "StorageManager::PMEM_MEMKIND: " << name_;
@@ -116,17 +116,17 @@ class StorageManager {
         break;
       case StorageType::DRAM_LEVELDB:
         VLOG(1) << "StorageManager::DRAM_LEVELDB: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), cpu_allocator()));
-        kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), cpu_allocator()));
+        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
+        kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), ev_allocator()));
         break;
       case StorageType::SSDHASH:
         VLOG(1) << "StorageManager::SSDHASH: " << name_;
-        alloc_ssd = cpu_allocator();
+        alloc_ssd = ev_allocator();
         kvs_.emplace_back(std::make_pair(new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
         break;
       case StorageType::DRAM_SSDHASH:
         VLOG(1) << "StorageManager::DRAM_SSDHASH: " << name_;
-        alloc_ssd = cpu_allocator();
+        alloc_ssd = ev_allocator();
         kvs_.emplace_back(std::make_pair(new LocklessHashMap<K, V>(), alloc_ssd));
         kvs_.emplace_back(std::make_pair(new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
         break;
@@ -136,13 +136,13 @@ class StorageManager {
         new_value_ptr_fn_ = [] (Allocator* allocator, size_t size) { return new NormalGPUValuePtr<V>(allocator, size); };
         LOG(INFO) << "StorageManager::HBM_DRAM: " << name_;
         kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), alloc_));
-        kvs_.push_back(std::make_pair(new LocklessHashMapCPU<K, V>(), cpu_allocator()));
+        kvs_.push_back(std::make_pair(new LocklessHashMapCPU<K, V>(), ev_allocator()));
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
         break;
       default:
         VLOG(1) << "StorageManager::default" << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), cpu_allocator()));
+        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
         break;
     }
 

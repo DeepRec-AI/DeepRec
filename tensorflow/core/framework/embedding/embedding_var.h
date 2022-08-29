@@ -93,7 +93,7 @@ class EmbeddingVar : public ResourceBase {
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
       } else {
-        alloc_ = cpu_allocator();
+        alloc_ = ev_allocator();
         emb_config_.default_value_dim = default_value_dim;
         value_len_ = default_tensor.NumElements()/emb_config_.default_value_dim;
         default_value_ = TypedAllocator::Allocate<V>(alloc_, default_tensor.NumElements(), AllocationAttributes());
