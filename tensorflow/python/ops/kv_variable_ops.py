@@ -294,18 +294,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_size = evconfig.storage_size
     self._default_value_dim = evconfig.default_value_dim
     self._default_value_no_permission = evconfig.default_value_no_permission
-    if (isinstance(evconfig.filter_strategy, variables.CounterFilter)  and self._filter_freq != 0) or \
-       self._steps_to_live not in [0, None] or self._record_version or \
-       self._storage_type in multi_level_list or self._record_freq:
-      if self._block_num not in [1, None] and self._storage_type in multi_level_list:
-        raise ValueError("Dynamic-dimension Embedding and Multi-level EV can't be enabled together") 
-      if self._block_num not in [1, None] or \
-          (self._filter_freq != 0 and self._storage_type not in multi_level_list):
-        self._layout = "normal"
-      else:
-        self._layout = "normal_contiguous"
-    else:
-      self._layout = "light"
 
     if self._primary is None:
       self._is_primary = True
@@ -411,7 +399,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     false_positive_probability = self._false_positive_probability,
                     counter_type = self._counter_type,
                     max_freq = 99999,
-                    layout = self._layout,
+                    layout = "",
                     storage_type = self._storage_type,
                     storage_path = self._storage_path,
                     storage_size = self._storage_size,
