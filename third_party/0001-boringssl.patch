@@ -1,0 +1,26 @@
+diff --git a/src/third_party/fiat/curve25519.c b/src/third_party/fiat/curve25519.c
+index 60da1c890..97c6bec4d 100644
+--- a/src/third_party/fiat/curve25519.c
++++ b/src/third_party/fiat/curve25519.c
+@@ -1902,7 +1902,7 @@ static void table_select(ge_precomp *t, int pos, signed char b) {
+ //
+ // Preconditions:
+ //   a[31] <= 127
+-void x25519_ge_scalarmult_base(ge_p3 *h, const uint8_t *a) {
++void x25519_ge_scalarmult_base(ge_p3 *h, const uint8_t a[32]) {
+   signed char e[64];
+   signed char carry;
+   ge_p1p1 r;
+diff --git a/src/crypto/fipsmodule/bn/internal.h b/src/crypto/fipsmodule/bn/internal.h
+index 9796831f5..f74d03e68 100644
+--- a/src/crypto/fipsmodule/bn/internal.h
++++ b/src/crypto/fipsmodule/bn/internal.h
+@@ -285,7 +285,7 @@ void bn_mul_comba4(BN_ULONG r[8], const BN_ULONG a[4], const BN_ULONG b[4]);
+ void bn_mul_comba8(BN_ULONG r[16], const BN_ULONG a[8], const BN_ULONG b[8]);
+
+ // bn_sqr_comba8 sets |r| to |a|^2.
+-void bn_sqr_comba8(BN_ULONG r[16], const BN_ULONG a[4]);
++void bn_sqr_comba8(BN_ULONG r[16], const BN_ULONG a[8]);
+
+ // bn_sqr_comba4 sets |r| to |a|^2.
+ void bn_sqr_comba4(BN_ULONG r[8], const BN_ULONG a[4]);
