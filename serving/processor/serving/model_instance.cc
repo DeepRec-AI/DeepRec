@@ -23,6 +23,7 @@ namespace tensorflow {
 namespace processor {
 namespace {
 constexpr int _60_Seconds = 60;
+constexpr int MAX_TRY_COUNT = 10;
 
 Tensor CreateTensor(const TensorInfo& tensor_info) {
   auto real_ts = tensor_info.tensor_shape();
@@ -802,17 +803,24 @@ Status ModelUpdater::ModelUpdate(const Version& version,
 }
 
 void ModelUpdater::WorkLoop() {
+  int try_count = 0;
   while(!is_stop_) {
     Version version;
     auto status = model_store_->GetLatestVersion(version);
     LOG(INFO) << "[Processor] ModelUpdater::WorkLoop get latest version: "
               << version.DebugString();
     if (!version.IsValid()) {
+      try_count++;
       LOG(ERROR) << "[Processor] Found a invalid model, "
                  << "please check other error message, "
                  << "we will try 60 seconds later. status: " << status.error_message()
                  << "version debug string: " << version.DebugString();
+      if (try_count >= MAX_TRY_COUNT) {
+        LOG(FATAL) << "Try to get the latest model failed " << try_count << " times, "
+                   << "please check the model directory or network.";
+      }
     } else {
+      try_count = 0;
       if (!status.ok()) {
         LOG(WARNING) << "[Processor] Not found full model or incremental model directory. "
                      << "Please ignore this warning if you confirm it. "
