@@ -16,3 +16,15 @@ diff -Naur a/absl/strings/string_view.h b/absl/strings/string_view.h
    }
  
    const char* ptr_;
+diff --git "a/absl/synchronization/internal/graphcycles.cc" "b/absl/synchronization/internal/graphcycles.cc"
+index 19f9aab5..27fec216 100644
+--- "a/absl/synchronization/internal/graphcycles.cc"
++++ "b/absl/synchronization/internal/graphcycles.cc"
+@@ -37,6 +37,7 @@
+
+ #include <algorithm>
+ #include <array>
++#include <limits>
+ #include "absl/base/internal/hide_ptr.h"
+ #include "absl/base/internal/raw_logging.h"
+ #include "absl/base/internal/spinlock.h"
