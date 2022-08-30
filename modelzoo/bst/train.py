@@ -908,4 +908,5 @@ if __name__ == '__main__':
         main()
     else:
         tf_config, server, tf_device = generate_cluster_info(TF_CONFIG)
-        main(tf_config, server)
+        with tf_device:
+            main(tf_config, server)

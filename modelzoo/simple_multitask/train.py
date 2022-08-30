@@ -775,4 +775,5 @@ if __name__ == '__main__':
         main(stock_tf)
     else:
         tf_config, server, tf_device = generate_cluster_info(TF_CONFIG)
-        main(stock_tf, tf_config, server)
+        with tf_device:
+            main(stock_tf, tf_config, server)
