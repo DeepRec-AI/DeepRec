@@ -72,6 +72,17 @@ Status RunRestore(const RunOptions& run_options,
                   Session* session, bool update_sparse, int64_t latest_version,
                   std::vector<std::pair<std::string, Tensor>>& extra_tensors);
 
+Status RunInitOp(const RunOptions& run_options, const string& export_dir,
+                 const MetaGraphDef& meta_graph_def,
+                 const std::vector<AssetFileDef>& asset_file_defs,
+                 Session* session, const string& init_op_name);
+
+Status GetInitOp(const string& export_dir,
+                 const MetaGraphDef& meta_graph_def,
+                 string* init_op_name);
+
+Status ValidateSavedTensors(const GraphDef& graph_def);
+
 Tensor Proto2Tensor(const eas::ArrayProto& input);
 
 eas::PredictResponse Tensor2Response(

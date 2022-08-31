@@ -17,6 +17,15 @@ Tensor CreateStringTensor(const string& value) {
 
 Status GetAssetFileDefs(const MetaGraphDef& meta_graph_def,
                         std::vector<AssetFileDef>* asset_file_defs) {
+  // With SavedModel v2, we write asset file def into metagraph instead of
+  // collection, so read from metagraph first.
+  if (meta_graph_def.asset_file_def_size() > 0) {
+    for (const auto& asset : meta_graph_def.asset_file_def()) {
+      asset_file_defs->push_back(asset);
+    }
+    return Status::OK();
+  }
+
   const auto& collection_def_map = meta_graph_def.collection_def();
   const auto assets_it = collection_def_map.find(kSavedModelAssetsKey);
   if (assets_it == collection_def_map.end()) {
@@ -249,6 +258,118 @@ Status RunRestore(const RunOptions& run_options,
   }
 
   return s;
+}
+
+// RunInitOp will return OK if the initialization op was run successfully.
+// An empty init_op_name indicates that there are no init ops to run.
+Status RunInitOp(const RunOptions& run_options, const string& export_dir,
+                 const MetaGraphDef& meta_graph_def,
+                 const std::vector<AssetFileDef>& asset_file_defs,
+                 Session* session, const string& init_op_name) {
+  if (!init_op_name.empty()) {
+    LOG(INFO) << "Running initialization op on SavedModel bundle at path: "
+              << export_dir;
+    std::vector<std::pair<string, Tensor>> inputs;
+    AddAssetsTensorsToInputs(export_dir, asset_file_defs, &inputs);
+    RunMetadata run_metadata;
+    return RunOnce(run_options, inputs, {}, {init_op_name},
+                   nullptr /* outputs */, &run_metadata, session);
+  }
+  return Status::OK();
+}
+
+Status GetInitOp(const string& export_dir, const MetaGraphDef& meta_graph_def,
+                 string* init_op_name) {
+  const auto& sig_def_map = meta_graph_def.signature_def();
+  const auto& init_op_sig_it =
+      meta_graph_def.signature_def().find(kSavedModelInitOpSignatureKey);
+  if (init_op_sig_it != sig_def_map.end()) {
+    const auto& sig_def_outputs = init_op_sig_it->second.outputs();
+    const auto& sig_def_outputs_it =
+        sig_def_outputs.find(kSavedModelInitOpSignatureKey);
+    if (sig_def_outputs_it == sig_def_outputs.end()) {
+      return errors::FailedPrecondition("Could not find output ",
+                                        kSavedModelInitOpSignatureKey);
+    }
+    *init_op_name = sig_def_outputs_it->second.name();
+    return Status::OK();
+  }
+
+  const auto& collection_def_map = meta_graph_def.collection_def();
+  string init_op_collection_key;
+  if (collection_def_map.find(kSavedModelMainOpKey) !=
+      collection_def_map.end()) {
+    init_op_collection_key = kSavedModelMainOpKey;
+  } else {
+    init_op_collection_key = kSavedModelLegacyInitOpKey;
+  }
+
+  const auto init_op_it = collection_def_map.find(init_op_collection_key);
+  if (init_op_it != collection_def_map.end()) {
+    if (init_op_it->second.node_list().value_size() != 1) {
+      return errors::FailedPrecondition(
+          strings::StrCat("Expected exactly one main op in : ", export_dir));
+    }
+    *init_op_name = init_op_it->second.node_list().value(0);
+  }
+  return Status::OK();
+}
+
+namespace {
+Status ValidateNode(const NodeDef& node) {
+  const auto node_iterator = node.attr().find("value");
+  if (node_iterator != node.attr().end()) {
+    AttrValue node_value = node_iterator->second;
+    if (node_value.has_tensor()) {
+      const PartialTensorShape node_shape(node_value.tensor().tensor_shape());
+      if (node_shape.num_elements() < 0) {
+        return errors::FailedPrecondition(
+            "Saved model contains node \"", node.name(), "\" (op \"", node.op(),
+            "\") which initializes from a tensor with ",
+            node_shape.num_elements(), " elements");
+      }
+    }
+  } else if (node.op() == "Const") {
+    return errors::FailedPrecondition(
+        "Saved model contains node \"", node.name(),
+        "\" which is a constant tensor but no value has been provided");
+  }
+  return Status::OK();
+}
+
+Status ValidateFunctionNotRecursive(const FunctionDef& function) {
+  const auto& function_name = function.signature().name();
+  for (const auto& node : function.node_def()) {
+    if (node.op() == function_name) {
+      return errors::FailedPrecondition(
+          "Function ", function_name,
+          " is self recursive and TensorFlow does not support this scenario.");
+    }
+  }
+
+  return Status::OK();
+}
+}
+
+Status ValidateSavedTensors(const GraphDef& graph_def) {
+  for (const auto& node : graph_def.node()) {
+    TF_RETURN_IF_ERROR(ValidateNode(node));
+  }
+
+  if (graph_def.has_library()) {
+    const FunctionDefLibrary& library = graph_def.library();
+    for (const auto& function : library.function()) {
+      for (const auto& node : function.node_def()) {
+        TF_RETURN_IF_ERROR(ValidateNode(node));
+      }
+
+      // Also check that there is no recursivity in the library
+      // TODO(mihaimaruseac): Do more than self-recursivity
+      TF_RETURN_IF_ERROR(ValidateFunctionNotRecursive(function));
+    }
+  }
+
+  return Status::OK();
 }
 
 Tensor Proto2Tensor(const eas::ArrayProto& input) {

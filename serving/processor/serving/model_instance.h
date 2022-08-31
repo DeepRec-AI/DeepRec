@@ -47,6 +47,8 @@ class LocalSessionInstance {
  
  private:
   Status ReadModelSignature(ModelConfig* model_config);
+  Status LoadModelFromCheckpoint(ModelConfig* config);
+  Status LoadSavedModel(ModelConfig* config);
 
  private: 
   MetaGraphDef meta_graph_def_;
