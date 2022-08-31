@@ -929,16 +929,16 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
   // In the future we could be more sophisticated by using a table of devices.
   int64 min_system_memory;
   if (available_memory < (1LL << 31)) {
-    min_system_memory = 225 * 1024 * 1024;
+    min_system_memory = 225LL * 1024 * 1024;
   } else {
     if (cc_major <= 6) {
-      min_system_memory = 675 * 1024 * 1024;
+      min_system_memory = 675LL * 1024 * 1024;
     } else if (cc_major <= 7) {
-      min_system_memory = 1064 * 1024 * 1024;
+      min_system_memory = 1064LL * 1024 * 1024;
     } else if (cc_major <= 8) {
-      min_system_memory = 1800 * 1024 * 1024;
+      min_system_memory = 1800LL * 1024 * 1024;
     } else {
-      min_system_memory = 4096 * 1024 * 1024;
+      min_system_memory = 4096LL * 1024 * 1024;
     }
   }
 #if defined(__GNUC__) && defined(__OPTIMIZE__)
@@ -955,7 +955,7 @@ int64 MinSystemMemory(int64 available_memory, int cc_major) {
 #if defined(ANDROID_TEGRA)
   // 1GB system mem for NVIDIA Tegra devices since they use the same mem for
   // RAM and Video RAM
-  min_system_memory = 1 << 30;
+  min_system_memory = 1LL << 30;
 #endif
   return min_system_memory;
 }
