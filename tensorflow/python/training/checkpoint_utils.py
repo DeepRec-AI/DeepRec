@@ -350,10 +350,22 @@ def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
       # and create variable to variable mapping.
       scope_variables = set()
       for var_name in store_vars:
+        var = store_vars.get(var_name, None)
         if not scopes or var_name.startswith(scopes + "/"):
           # Consume /part_ if partitioned variable.
           if "/part_" in var_name:
-            var_name = var_name[:var_name.index("/part_")]
+            if isinstance(var, kv_variable_ops.EmbeddingVariable):
+              part_index = var_name.find("/part_")
+              for i in range(part_index + 1, len(var_name)):
+                if var_name[i] == "/":
+                  break
+              if i == len(var_name) - 1:
+                part_str = var_name[part_index :]
+              else:
+                part_str = var_name[part_index : i]
+              var_name =var_name.replace(part_str, "")
+            else:
+              var_name = var_name[:var_name.index("/part_")]
           scope_variables.add(var_name)
       for var_name in sorted(scope_variables):
         # Lookup name with specified prefix and suffix from current variable.
@@ -408,9 +420,24 @@ def _set_checkpoint_initializer(variable,
   if isinstance(variable, kv_variable_ops.EmbeddingVariable):
     base_type = variable.dtype.base_dtype
     with ops.colocate_with(variable):
-      if variable.op.name.split('/')[-1].startswith('part_') and \
-         not tensor_name.split('/')[-1].startswith('part_'):
-        tensor_name = tensor_name + '/' + variable.op.name.split('/')[-1]
+      if "/part_" in variable.op.name and "/part_" not in tensor_name:
+        if variable.op.name.split('/')[-1].startswith('part_'):
+          tensor_name = tensor_name + '/' + variable.op.name.split('/')[-1]
+        else:
+          part_index = variable.op.name.find("/part_")
+          for i in range(part_index + 1, len(variable.op.name)):
+            if variable.op.name[i] == "/":
+              break
+          if i == len(variable.op.name) - 1:
+            part_str = variable.op.name[part_index :]
+          else:
+            part_str = variable.op.name[part_index : i]
+          for i in range(len(tensor_name)-1, -1, -1):
+            if tensor_name[i] == "/":
+              break
+          prev_str = tensor_name[:i]
+          next_str = tensor_name[i:]
+          tensor_name = prev_str + part_str + next_str
       is_partitioned_ev = variable._save_slice_info is not None
       partition_id = variable._save_slice_info.var_offset[0] if is_partitioned_ev else 0
       partition_num = variable._save_slice_info.full_shape[0] if is_partitioned_ev else 1
@@ -435,7 +462,7 @@ def _set_checkpoint_initializer(variable,
           max_element_size = variable._max_element_size,
           false_positive_probability = variable._false_positive_probability,
           counter_type = variable._counter_type,
-          layout = variable._layout,
+          layout = "",
           storage_type=variable._storage_type,
           storage_path=variable._storage_path,
           storage_size=variable._storage_size,
@@ -515,4 +542,21 @@ def _collect_partitioned_variable(name, all_vars):
       var.append(all_vars[name + "/part_%d" % i])
       i += 1
     return var
+  else:
+    if name is "/":
+      st = 1
+    else:
+      st = 2
+    for i in range(len(name) - st, -1, -1):
+      if name[i] == "/":
+        break
+    prev_str = name[:i]
+    next_str = name[i:]
+    if prev_str + "/part_0" + next_str in all_vars:
+      var = []
+      i = 0
+      while prev_str + "/part_%d" % i + next_str in all_vars:
+        var.append(all_vars[prev_str + "/part_%d" % i + next_str])
+        i += 1
+      return var
   return None

@@ -38,6 +38,7 @@ from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import gfile
 from tensorflow.python.platform import test
+from tensorflow.python.training import adagrad
 from tensorflow.python.training import checkpoint_utils
 from tensorflow.python.training import saver as saver_lib
 from tensorflow.python.training.tracking import util as trackable_utils
@@ -75,14 +76,20 @@ def _create_ev_checkpoints(sess, checkpoint_dir):
     array_ops.constant([5,6,7,8,9], dtype=dtypes.int64))
   emb = array_ops.concat([emb_1, emb_2], axis=1)
   loss = math_ops.reduce_sum(emb)
+  opt = adagrad.AdagradOptimizer(0.1)
+  g_v = opt.compute_gradients(loss)
+  train_op = opt.apply_gradients(g_v)
   saver = saver_lib.Saver()
   sess.run(variables.global_variables_initializer())
-  l = sess.run(loss)
+  sess.run([emb, loss, train_op])
+  sess.run([emb, loss, train_op])
   saver.save(
       sess,
       checkpoint_prefix,
       global_step=0,
       latest_filename=checkpoint_state_name)
+  sess.run([loss, train_op])
+  l = sess.run(loss)
   return l
 
 
@@ -440,11 +447,14 @@ class CheckpointsTest(test.TestCase):
         array_ops.constant([5,6,7,8,9], dtype=dtypes.int64))
       emb = array_ops.concat([emb_1, emb_2], axis=1)
       my_loss = math_ops.reduce_sum(emb)
-
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(my_loss)
+      train_op = opt.apply_gradients(g_v)
       checkpoint_utils.init_from_checkpoint(checkpoint_dir,
                                             {"useful_scope/": "useful_scope/"})
       with self.session(graph=g) as session:
         session.run(variables.global_variables_initializer())
+        session.run([emb, my_loss, train_op])
         self.assertAllEqual(session.run(my_loss), loss)
 
 

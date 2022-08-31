@@ -764,6 +764,7 @@ Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
   if (!s.ok()) {
     LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
   }
+  return s;
 }
 
 template<typename K, typename V>
