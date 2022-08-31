@@ -1045,6 +1045,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "seastar_repo",
+        patch_file = clean_dep("//third_party:0001-seastar.patch"),
         sha256 = "bf97d343149f95983317888dd39a3231639f67c39d826413ea226f9c9c5267d4",
         strip_prefix = "seastar-b9357c525a552ad21b5609622c900e0649921712",
         build_file = str(Label("//third_party:seastar.BUILD")),
