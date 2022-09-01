@@ -10,6 +10,7 @@ namespace processor {
 struct ModelConfig {
 
   // Model Info
+  bool enable_incr_model_update = true;
   std::string checkpoint_dir;
   std::string savedmodel_dir;
   std::string signature_name;

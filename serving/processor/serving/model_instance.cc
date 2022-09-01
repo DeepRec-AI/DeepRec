@@ -242,11 +242,19 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   PartitionPolicy::GetGlobalPolicy()->Init(config);
 
   model_store->GetLatestVersion(version_);
-  while (version_.SavedModelEmpty() || version_.CkptEmpty()) {
-    // Wait until saved model meta file ready
-    LOG(INFO) << "[Model Instance] SavedModel or Checkpoint dir is empty,"
-              << "will try 1 minute later, current version: "
-              << version_.DebugString();
+  while (version_.SavedModelEmpty() ||
+         (config->enable_incr_model_update && version_.CkptEmpty())) {
+    if (config->enable_incr_model_update) {
+      // Wait until saved model meta file ready
+      LOG(INFO) << "[Model Instance] SavedModel or Checkpoint dir is empty,"
+                << "will try 1 minute later, current version: "
+                << version_.DebugString();
+    } else {
+      LOG(INFO) << "[Model Instance] SavedModel dir is empty,"
+                << "will try 1 minute later, current version: "
+                << version_.DebugString();
+    }
+
     sleep(60);
     model_store->GetLatestVersion(version_);
   }
@@ -279,20 +287,36 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   session_mgr_ = new ModelSessionMgr(meta_graph_def_,
       session_options_, run_options_);
 
+  if (config->enable_incr_model_update) {
+    return LoadModelFromCheckpoint(config);
+  } else {
+    return LoadSavedModel(config);
+  }
+}
+
+Status LocalSessionInstance::LoadModelFromCheckpoint(
+    ModelConfig* config) {
   // Load full model
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version_,
-        version_.full_ckpt_name.c_str(),
-        version_.delta_ckpt_name.c_str(),
-        /*is_incr_ckpt*/false, config));
+      version_.full_ckpt_name.c_str(),
+      version_.delta_ckpt_name.c_str(),
+      /*is_incr_ckpt*/false, config));
 
   // Load delta model if existed
   if (version_.delta_ckpt_name.empty()) {
     return Status::OK();
   }
+
   return session_mgr_->CreateModelSession(version_,
       version_.full_ckpt_name.c_str(),
       version_.delta_ckpt_name.c_str(),
       /*is_incr_ckpt*/true, config);
+}
+
+Status LocalSessionInstance::LoadSavedModel(
+    ModelConfig* config) {
+  return session_mgr_->CreateModelSession(version_,
+      version_.savedmodel_dir.c_str(), config);
 }
 
 Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
@@ -603,7 +627,10 @@ Status LocalSessionInstanceMgr::Init() {
       model_store_));
   TF_RETURN_IF_ERROR(instance_->Warmup());
 
-  thread_ = new std::thread(&ModelUpdater::WorkLoop, this);
+  if (model_config_->enable_incr_model_update) {
+    thread_ = new std::thread(&ModelUpdater::WorkLoop, this);
+  }
+
   return Status::OK();
 }
 

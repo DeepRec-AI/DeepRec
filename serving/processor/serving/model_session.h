@@ -66,6 +66,11 @@ class ModelSessionMgr {
   Status LocalPredict(Request& req, Response& resp);
 
   Status CreateModelSession(
+      const Version& version,
+      const char* saved_model_path,
+      ModelConfig* config);
+
+  Status CreateModelSession(
       const Version& version, const char* ckpt_name,
       IFeatureStoreMgr* sparse_storage,
       bool is_incr_ckpt, bool is_initialize,

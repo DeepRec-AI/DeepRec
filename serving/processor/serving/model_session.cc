@@ -422,6 +422,36 @@ Status ModelSessionMgr::CreateModelSession(
 }
 
 Status ModelSessionMgr::CreateModelSession(
+    const Version& version,
+    const char* saved_model_path,
+    ModelConfig* config) {
+  SessionGroup* session_group = nullptr;
+  Session* session = nullptr;
+  TF_RETURN_IF_ERROR(CreateSessionGroup(&session_group, config));
+  session = session_group->GetLeaderSession();
+  TF_RETURN_IF_ERROR(util::ValidateSavedTensors(meta_graph_def_.graph_def()));
+
+  TF_RETURN_IF_ERROR(
+      util::RunRestore(*run_options_, saved_model_path,
+          meta_graph_def_.saver_def().restore_op_name(),
+          meta_graph_def_.saver_def().filename_tensor_name(),
+          asset_file_defs_, session));
+
+  string init_op_name;
+  TF_RETURN_IF_ERROR(
+      util::GetInitOp(saved_model_path, meta_graph_def_, &init_op_name));
+  TF_RETURN_IF_ERROR(util::RunInitOp(*run_options_, saved_model_path,
+                                     meta_graph_def_, asset_file_defs_,
+                                     session, init_op_name));
+
+  auto new_model_session = new ModelSession(
+      session_group, config->select_session_policy, version);
+  ResetServingSession(new_model_session);
+
+  return Status::OK();
+}
+
+Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* full_ckpt_name,
     const char* incr_ckpt_name, bool is_incr_ckpt,
     ModelConfig* config) {
