@@ -74,10 +74,12 @@ cc_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/cc/saved_model:loader",
+        "//tensorflow/cc/saved_model:reader",
+        "//tensorflow/cc/saved_model:constants",
         "//serving/processor/framework:model_version",
         "//serving/processor/framework/filesystem:oss_filesystem",
         "//serving/processor/serving:model_config",
-        "feature_store_mgr",
+        ":feature_store_mgr",
     ],
     alwayslink = 1,
 )
