@@ -144,7 +144,8 @@ class EmbeddingVar : public ResourceBase {
     return s;
   }
 
-  void BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+  void BatchCommit(const std::vector<K>& keys,
+                   const std::vector<ValuePtr<V>*>& value_ptrs) {
     TF_CHECK_OK(storage_manager_->BatchCommit(keys, value_ptrs));
   }
 

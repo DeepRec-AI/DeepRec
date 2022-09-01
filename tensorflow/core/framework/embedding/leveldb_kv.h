@@ -127,11 +127,13 @@ class LevelDBKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status BatchInsert(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchInsert(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     return BatchCommit(keys, value_ptrs);
   } 
 
-  Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchCommit(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     WriteBatch batch;
     for (int i = 0; i < keys.size(); i++) {
       std::string value_res((char*)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));

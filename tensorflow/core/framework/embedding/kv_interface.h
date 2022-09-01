@@ -47,22 +47,25 @@ class KVInterface {
   virtual Status Remove(K key) = 0;
 
   // KV Batch Lookup
-  virtual Status BatchLookup(std::vector<K> keys, std::vector<ValuePtr<V>**> value_ptrs) {
+  virtual Status BatchLookup(const std::vector<K>& keys,
+                             std::vector<ValuePtr<V>**>* value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
                       "Unimplemented for BatchLookup in KVInterface.");
   }
   // KV Batch Insert
-  virtual Status BatchInsert(std::vector<K> keys, std::vector<const ValuePtr<V>*> value_ptrs) {
+  virtual Status BatchInsert(const std::vector<K>& keys,
+                             const std::vector<const ValuePtr<V>*>& value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
                       "Unimplemented for BatchInsert in KVInterface.");
   }
   // KV Batch Remove
-  virtual Status BatchRemove(std::vector<K> keys) {
+  virtual Status BatchRemove(const std::vector<K>& keys) {
     return Status(error::Code::UNIMPLEMENTED,
                       "Unimplemented for BatchRemove in KVInterface.");
   }
 
-  virtual Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {return Status::OK();}
+  virtual Status BatchCommit(const std::vector<K>& keys,
+                             const std::vector<ValuePtr<V>*>& value_ptrs) = 0;
 
   // KV Size
   virtual int64 Size() const = 0;
