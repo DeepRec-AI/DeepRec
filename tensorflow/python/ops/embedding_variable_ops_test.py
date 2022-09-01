@@ -2205,6 +2205,37 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for val in emb1.tolist()[0]:
         self.assertEqual(val, .0)
 
+  def testEmbeddingVariableForGetFrequencyAndVersion(self):
+    print("testEmbeddingVariableForGetFrequencyAndVersion")
+    var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = variables.EmbeddingVariableOption(
+              filter_option=variables.CounterFilter(filter_freq=3),
+              evict_option=variables.GlobalStepEvict(steps_to_live=2))
+            )
+    shape=var.get_dynamic_shape()
+    frequency=var.get_frequency(math_ops.cast([1,2,3,4,5,6,7], dtypes.int64))
+    version=var.get_version(math_ops.cast([1,2,3,4,5,6,7], dtypes.int64))
+    ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
+    emb = embedding_ops.embedding_lookup(var, ids)
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, train_op, loss], feed_dict={'ids:0': [1,2,3]})
+      sess.run([emb, train_op, loss], feed_dict={'ids:0': [1,3,5]})
+      sess.run([emb, train_op, loss], feed_dict={'ids:0': [1,5,7]})
+      s, f, v = sess.run([shape, frequency, version])
+      self.assertAllEqual(np.array([5,3]), s)
+      self.assertAllEqual(np.array([3,1,2,0,2,0,1]), f)
+      self.assertAllEqual(np.array([2,0,1,0,2,0,2]), v)
+
 '''
   @test_util.run_gpu_only
   def testEmbeddingVariableForHBMandDRAM(self):

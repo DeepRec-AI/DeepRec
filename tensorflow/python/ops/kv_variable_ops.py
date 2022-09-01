@@ -38,6 +38,7 @@ from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import variables
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.util import compat
+from tensorflow.python.util import deprecation
 
 __all__ = ["EmbeddingVariable"]
 
@@ -611,11 +612,26 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     """The embedding dim of this variable."""
     return self._graph_shape
 
+  @deprecation.deprecated(
+    None, "total_count() have been replaced by `get_dynamic_shape()`.")
   def total_count(self):
     """The shape of this variable."""
     return gen_kv_variable_ops.kv_variable_shape(self._handle,
                Tkeys=self._invalid_key_type,
                dtype=self._dtype)
+
+  def get_dynamic_shape(self):
+    return self.total_count()
+
+  def get_frequency(self, ids):
+    return gen_kv_variable_ops.ev_get_frequency(self._handle,
+                                                ids,
+                                                Tvalues=self.dtype)
+
+  def get_version(self, ids):
+    return gen_kv_variable_ops.ev_get_version(self._handle,
+                                              ids,
+                                              Tvalues=self.dtype)
 
   def export(self):
     return gen_kv_variable_ops.kv_resource_export(self._handle,

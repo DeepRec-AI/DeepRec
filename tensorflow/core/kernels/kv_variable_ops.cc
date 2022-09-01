@@ -1903,5 +1903,75 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
+template <typename TKey, typename TValue>
+class EVGetFrequencyOp : public OpKernel {
+ public:
+  explicit EVGetFrequencyOp(OpKernelConstruction* c) : OpKernel(c) {}
+
+  void Compute(OpKernelContext* ctx) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    const Tensor& indices = ctx->input(1);
+    auto indices_flat = indices.flat<TKey>();
+
+    Tensor* output;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {indices.NumElements()}, &output));
+    for (int i = 0; i < indices.NumElements(); ++i) {
+      int64 f = ev->GetFreq(indices_flat(i));
+      output->flat<int64>()(i) = f;
+    }
+  }
+};
+
+#define REGISTER_EV_GET_FREQUENCY(ktype, vtype)                 \
+  REGISTER_KERNEL_BUILDER(Name("EVGetFrequency")                \
+                            .Device(DEVICE_CPU)                 \
+                            .TypeConstraint<ktype>("Tkeys")     \
+                            .TypeConstraint<vtype>("Tvalues"),  \
+                          EVGetFrequencyOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                        \
+  REGISTER_EV_GET_FREQUENCY(int32, type)                        \
+  REGISTER_EV_GET_FREQUENCY(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_EV_GET_FREQUENCY
+
+template <typename TKey, typename TValue>
+class EVGetVersionOp : public OpKernel {
+ public:
+  explicit EVGetVersionOp(OpKernelConstruction* c) : OpKernel(c) {}
+
+  void Compute(OpKernelContext* ctx) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    const Tensor& indices = ctx->input(1);
+    auto indices_flat = indices.flat<TKey>();
+
+    Tensor* output;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {indices.NumElements()}, &output));
+    for (int i = 0; i < indices.NumElements(); ++i) {
+      int64 v = ev->GetVersion(indices_flat(i));
+      output->flat<int64>()(i) = v;
+    }
+  }
+};
+
+#define REGISTER_EV_GET_VERSION(ktype, vtype)                   \
+  REGISTER_KERNEL_BUILDER(Name("EVGetVersion")                  \
+                            .Device(DEVICE_CPU)                 \
+                            .TypeConstraint<ktype>("Tkeys")     \
+                            .TypeConstraint<vtype>("Tvalues"),  \
+                          EVGetVersionOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                        \
+  REGISTER_EV_GET_VERSION(int32, type)                          \
+  REGISTER_EV_GET_VERSION(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_EV_GET_VERSION
+
 }  // namespace tensorflow
 

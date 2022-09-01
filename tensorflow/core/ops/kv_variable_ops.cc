@@ -523,4 +523,26 @@ keys: Vector of all keys present in the table.
 partial_offset: Vector of partial offset used for restore.
 )doc");
 
+REGISTER_OP("EVGetFrequency")
+    .Input("resource_handle: resource")
+    .Input("ids: Tkeys")
+    .Output("output: int64")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("Tvalues: type")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
+REGISTER_OP("EVGetVersion")
+    .Input("resource_handle: resource")
+    .Input("ids: Tkeys")
+    .Output("output: int64")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("Tvalues: type")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
 }  // namespace tensorflow
