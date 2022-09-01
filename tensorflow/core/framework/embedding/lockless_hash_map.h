@@ -77,6 +77,11 @@ class LocklessHashMap : public KVInterface<K, V> {
     }
   }
 
+  Status BatchCommit(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
+    return Status::OK();
+  }
+
   Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
     std::pair<const K, ValuePtr<V>*> *hash_map_dump;
     int64 bucket_count;

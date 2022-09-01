@@ -92,7 +92,8 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchCommit(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     int batch_size = keys.size();
     V** value_address = (V**)malloc(sizeof(V * ) * batch_size);
     V** dev_value_address;
@@ -133,16 +134,6 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     delete []value_address;
     return Status::OK();
   }
-
-  /*
-  Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
-    int batch_size = keys.size();
-    for (int i = 0; i < batch_size; i++) {
-      Commit(keys[i],value_ptrs[i]);
-    }
-    return Status::OK();
-  }
-  */
 
   Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
     std::pair<const K, ValuePtr<V>*> *hash_map_dump;

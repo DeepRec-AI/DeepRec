@@ -316,13 +316,13 @@ class SSDHashKV : public KVInterface<K, V> {
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) { return Status::OK(); }
 
-  Status BatchInsert(std::vector<K>& keys,
-                     std::vector<ValuePtr<V>*>& value_ptrs) {
+  Status BatchInsert(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     return BatchCommit(keys, value_ptrs);
   }
 
-  Status BatchCommit(std::vector<K>& keys,
-                     std::vector<ValuePtr<V>*>& value_ptrs) {
+  Status BatchCommit(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     compaction_fn();
     __sync_fetch_and_add(&total_app_count, keys.size());
     for (int i = 0; i < keys.size(); i++) {
