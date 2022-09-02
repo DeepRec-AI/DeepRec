@@ -413,7 +413,7 @@ const static string part_str = "part_";
 template<typename K, typename V>
 Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string name_string, int orig_partnum,
-    int64 partition_id = 0, int64 partition_num = 1) {
+    int64 partition_id = 0, int64 partition_num = 1, bool reset_version = false) {
   string curr_partid_str = std::to_string(partition_id);
   bool filter_flag = true;
   bool restore_filter_flag = true;
@@ -501,10 +501,15 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
           restore_buff.key_buffer, key_bytes_read);
       reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes,
           restore_buff.value_buffer, value_bytes_read);
-      reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
-          restore_buff.version_buffer, version_bytes_read);
-      if (version_bytes_read == 0) {
-        memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+      if (!reset_version) {
+        reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
+            restore_buff.version_buffer, version_bytes_read);
+        if (version_bytes_read == 0) {
+          memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+        }
+      } else {
+        int64 *version_tmp = (int64*)restore_buff.version_buffer;
+        memset(version_tmp, 0, read_key_num * sizeof(int64));
       }
       if (filter_flag) {
         reader->LookupSegment(tensor_freq, (read_key_num + 1)* sizeof(int64),
@@ -535,7 +540,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
 template<typename K, typename V>
 Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string tensor_key, std::string tensor_value,
-    std::string tensor_version, std::string tensor_freq) {
+    std::string tensor_version, std::string tensor_freq, bool reset_version=false) {
   TensorShape key_shape;
   TensorShape value_shape;
   TensorShape version_shape;
@@ -653,10 +658,15 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
         restore_buff.key_buffer, key_bytes_read);
     reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes,
         restore_buff.value_buffer, value_bytes_read);
-    reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
-        restore_buff.version_buffer, version_bytes_read);
-    if (version_bytes_read == 0) {
-        memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+    if (!reset_version) {
+      reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
+          restore_buff.version_buffer, version_bytes_read);
+      if (version_bytes_read == 0) {
+          memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+      }
+    } else {
+      int64 *version_tmp = (int64*)restore_buff.version_buffer;
+      memset(version_tmp, 0, read_key_num * sizeof(int64));
     }
     if (filter_flag) {
       reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64),
@@ -688,9 +698,14 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
       reader->LookupSegment(tensor_key + "_filtered",
           read_key_num * sizeof(K), restore_buff.key_buffer,
           key_filter_bytes_read);
-      reader->LookupSegment(tensor_version + "_filtered",
-          read_key_num * sizeof(int64), restore_buff.version_buffer,
-          version_filter_bytes_read);
+      if (!reset_version) {
+        reader->LookupSegment(tensor_version + "_filtered",
+            read_key_num * sizeof(int64), restore_buff.version_buffer,
+            version_filter_bytes_read);
+      } else {
+        int64 *version_tmp = (int64*)restore_buff.version_buffer;
+        memset(version_tmp, 0, read_key_num * sizeof(int64));
+      }
       reader->LookupSegment(tensor_freq + "_filtered",
           read_key_num * sizeof(int64), restore_buff.freq_buffer,
           freq_filter_bytes_read);
@@ -737,7 +752,7 @@ template<typename K, typename V>
 Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
     const std::string& name_string, const std::string& curr_partid_str,
     const std::string& key_suffix, int partition_id,
-    BundleReader* reader, int partition_num) {
+    BundleReader* reader, int partition_num, bool reset_version=false) {
   // first get original partition number
   int orig_partnum = 0;
   for (;  ; orig_partnum++) {
@@ -760,7 +775,7 @@ Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
           << ", old partition_num:" << orig_partnum
           << ", new partition num:" << partition_num;
   Status s = DynamicRestoreValue(ev, reader, name_string,
-      orig_partnum, partition_id, partition_num);
+      orig_partnum, partition_id, partition_num, reset_version);
   if (!s.ok()) {
     LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
   }
@@ -773,14 +788,15 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     int partition_num, OpKernelContext* context,
     BundleReader* reader, const std::string& part_offset_tensor_suffix,
     const std::string& key_suffix, const std::string& value_suffix,
-    const std::string& version_suffix, const std::string& freq_suffix) {
+    const std::string& version_suffix, const std::string& freq_suffix,
+    bool reset_version = false) {
 
   // first check whether there is partition
   if (name_string.find(part_str) == std::string::npos) {
     Status s = EVRestoreNoPartition(
         ev, reader, name_string + key_suffix,
         name_string + value_suffix, name_string + version_suffix,
-        name_string + freq_suffix);
+        name_string + freq_suffix, reset_version);
     if (!s.ok()) {
       LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
     }
@@ -793,7 +809,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
 
   if (is_oldform) {
     EVRestoreOldFromCheckpoint(ev, name_string, curr_partid_str, key_suffix,
-        partition_id, reader, partition_num);
+        partition_id, reader, partition_num, reset_version);
   } else {
     // first find out which sub parts we should load
     bool filter_flag = true;
@@ -1002,13 +1018,17 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
               value_part_offset + tot_value_bytes_read,
               read_key_num * value_unit_bytes, restore_buff.value_buffer,
               value_bytes_read);
-
-          reader->LookupSegmentOffset(tensor_version,
-              version_part_offset + tot_version_bytes_read,
-              read_key_num * sizeof(int64), restore_buff.version_buffer,
-              version_bytes_read);
-          if (version_bytes_read == 0) {
-             memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+          if (!reset_version) {
+            reader->LookupSegmentOffset(tensor_version,
+                version_part_offset + tot_version_bytes_read,
+                read_key_num * sizeof(int64), restore_buff.version_buffer,
+                version_bytes_read);
+            if (version_bytes_read == 0) {
+              memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+            }
+          } else {
+            int64 *version_tmp = (int64*)restore_buff.version_buffer;
+            memset(version_tmp, 0, read_key_num * sizeof(int64));
           }
           if (filter_flag) {
             reader->LookupSegmentOffset(tensor_freq,
@@ -1057,10 +1077,15 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
                 key_filter_part_offset + key_filter_bytes_read,
                 read_key_num * sizeof(K), restore_buff.key_buffer,
                 key_filter_bytes_read);
-            reader->LookupSegmentOffset(tensor_version + "_filtered",
-                version_filter_part_offset + version_filter_bytes_read,
-                read_key_num * sizeof(int64), restore_buff.version_buffer,
-                version_filter_bytes_read);
+            if (!reset_version) {
+              reader->LookupSegmentOffset(tensor_version + "_filtered",
+                  version_filter_part_offset + version_filter_bytes_read,
+                  read_key_num * sizeof(int64), restore_buff.version_buffer,
+                  version_filter_bytes_read);
+            } else {
+              int64 *version_tmp = (int64*)restore_buff.version_buffer;
+              memset(version_tmp, 0, read_key_num * sizeof(int64));
+            }
             reader->LookupSegmentOffset(tensor_freq + "_filtered",
                 freq_filter_part_offset + freq_filter_bytes_read,
                 read_key_num * sizeof(int64), restore_buff.freq_buffer,

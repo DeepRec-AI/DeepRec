@@ -877,6 +877,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
+    OP_REQUIRES_OK(c, c->GetAttr("reset_version", &reset_version_));
+   
 
     if ((filter_freq_ != 0 && max_element_size_ == 0)
          || steps_to_live_ != -1 || record_freq_
@@ -1002,7 +1004,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
 
       EVRestoreDynamically(
           ev, name_string, partition_id_, partition_num_, context, &reader,
-          "-partition_offset", "-keys", "-values", "-versions", "-freqs");
+          "-partition_offset", "-keys", "-values", "-versions", "-freqs", reset_version_);
       ev->SetInitialized();
       done();
     };
@@ -1042,6 +1044,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
   float default_value_no_permission_;
   bool record_freq_;
   bool record_version_;
+  bool reset_version_;
   bool ev_async_restore_;
 };
 

@@ -436,6 +436,7 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("default_value_no_permission: float = .0")
     .Attr("record_freq: bool = false")
     .Attr("record_version: bool = false")
+    .Attr("reset_version: bool = false")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));
