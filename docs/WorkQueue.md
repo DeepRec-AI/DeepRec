@@ -103,7 +103,7 @@ with tf.train.MonitoredTrainingSession() as sess:
 ```python
 from tensorflow.python.ops.work_queue import WorkQueue
 
-work_queue = pai.data.WorkQueue(
+work_queue = WorkQueue(
   [odps_path1, odps_path2, odps_path3], shuffle=True, num_slices=FLAGS.num_workers * 10)
 # 创建表读取器
 reader = tf.TableRecordReader()
