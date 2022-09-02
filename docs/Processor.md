@@ -375,7 +375,10 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 "ev_storage_type": 12,
 
 # 多级存储路径, 如果设置了多级存储
-"ev_storage_path": "/ssd/1/"
+"ev_storage_path": "/ssd/1/",
+
+# 多级存储中每级存储的大小
+"ev_storage_size": [1024, 1024]
 }
 ```
 #### 模型路径配置

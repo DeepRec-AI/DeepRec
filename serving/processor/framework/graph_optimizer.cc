@@ -607,7 +607,8 @@ Status SavedModelOptimizer::RunNativeTFGraphPass() {
   }
 
   if (option_.st) {
-    TF_RETURN_IF_ERROR(RewriteEmbeddingVariableAttr(option_.st, option_.path));
+    TF_RETURN_IF_ERROR(RewriteEmbeddingVariableAttr(option_.st,
+                        option_.path, option_.size));
   }
 
   // Add other passes here
@@ -2360,12 +2361,14 @@ Node* SavedModelOptimizer::UpdateRestoreShardNodeInputs(
 }
 
 Status SavedModelOptimizer::RewriteEmbeddingVariableAttr(
-    embedding::StorageType st, std::string path) {
+    embedding::StorageType st, const std::string& path,
+    const std::vector<int64>& storage_size) {
   for (Node* node : graph_.nodes()) {
     if (node->op_def().name() == "KvResourceImportV2" ||
         node->op_def().name() == "InitializeKvVariableOp") {
       node->AddAttr("storage_type", st);
       node->AddAttr("storage_path", path);
+      node->AddAttr("storage_size", storage_size);
 
       LOG(INFO) << "debug op: " << node->DebugString();
     }

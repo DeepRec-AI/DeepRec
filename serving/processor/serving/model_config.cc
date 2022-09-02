@@ -379,6 +379,12 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
       case embedding::StorageType::DRAM_SSDHASH:
         (*config)->storage_type = embedding::StorageType::DRAM_SSDHASH;
         (*config)->storage_path = json_config["ev_storage_path"].asString();
+        for (int i = 0; i < json_config["ev_storage_size"].size(); i++)
+          (*config)->storage_size.emplace_back(json_config["ev_storage_size"][i].asInt64());
+        if (json_config["ev_storage_size"].size() < 4) {
+          for (int i =  json_config["ev_storage_size"].size(); i < 4; i++)
+            (*config)->storage_size.emplace_back(1024*1024*1024);
+        }
         break;
       default:
         return Status(error::Code::INVALID_ARGUMENT,

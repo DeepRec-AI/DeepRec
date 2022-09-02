@@ -236,6 +236,7 @@ const std::string oss_config = " \
     \"oss_access_id\" : \"test_id\", \
     \"ev_storage_type\" : 12, \
     \"ev_storage_path\" : \"123\", \
+    \"ev_storage_size\" : [1024, 1024], \
     \"oss_access_key\" : \"test_key\" \
   }";
 
@@ -244,6 +245,12 @@ const std::string oss_config = " \
       ModelConfigFactory::Create(oss_config.c_str(), &config).ok());
   EXPECT_EQ(12, config->storage_type);
   EXPECT_EQ("123", config->storage_path);
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(1024, config->storage_size[i]);
+  }
+  for (int i = 2; i < 4; i++) {
+    EXPECT_EQ(1024*1024*1024, config->storage_size[i]);
+  }
 }
 
 TEST_F(ModelConfigTest, ShouldFailureWhenConfigEmbeddingConfig) {
@@ -266,6 +273,7 @@ const std::string oss_config = " \
     \"oss_access_id\" : \"test_id\", \
     \"ev_storage_type\" : 14, \
     \"ev_storage_path\" : \"123\", \
+    \"ev_storage_size\" : [1024, 1024, 1024, 1024], \
     \"oss_access_key\" : \"test_key\" \
   }";
 

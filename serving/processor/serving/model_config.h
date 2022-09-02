@@ -59,6 +59,7 @@ struct ModelConfig {
   // EmbeddingVariable Config
   embedding::StorageType storage_type = embedding::StorageType::INVALID;
   std::string storage_path;
+  std::vector<int64> storage_size;
 };
 
 class ModelConfigFactory {

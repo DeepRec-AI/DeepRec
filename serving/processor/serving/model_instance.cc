@@ -269,6 +269,7 @@ Status LocalSessionInstance::Init(ModelConfig* config,
 
   option.st = config->storage_type;
   option.path = config->storage_path;
+  option.size = config->storage_size;
 
   optimizer_ = new SavedModelOptimizer(config->signature_name,
       &meta_graph_def_, option);
