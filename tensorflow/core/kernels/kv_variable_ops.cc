@@ -312,7 +312,7 @@ class InitializeKvVariableOp : public OpKernel {
                                   counter_type_, default_value_dim_,
                                   default_value_no_permission_,
                                   record_freq_, record_version_),
-                  ev_allocator());
+                  primary_variable->GetAllocator());
              return (*ptr)->Init(default_values, default_value_dim_);
             }));
       core::ScopedUnref unref_me(primary_variable);

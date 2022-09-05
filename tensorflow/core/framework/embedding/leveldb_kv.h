@@ -94,7 +94,7 @@ class LevelDBKV : public KVInterface<K, V> {
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
     CHECK(s.ok());
     counter_ =  new SizeCounter<K>(8);
-    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(cpu_allocator(), size); };
+    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(ev_allocator(), size); };
     total_dims_ = 0;
   }
 
