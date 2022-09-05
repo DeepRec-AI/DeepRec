@@ -1220,6 +1220,46 @@ TEST(EmbeddingVariableTest, TestLFUCache) {
   }
 }
 
+TEST(EmbeddingVariableTest, TestCacheRestore) {
+  int64 value_size = 4;
+  Tensor value(DT_FLOAT, TensorShape({value_size}));
+  test::FillValues<float>(&value, std::vector<float>(value_size, 9.0));
+  float* fill_v = (float*)malloc(value_size * sizeof(float));
+  std::vector<int64> size;
+  size.emplace_back(64);
+  auto storage_manager = new embedding::StorageManager<int64, float>(
+                 "EmbeddingVar",
+                  embedding::StorageConfig(embedding::DRAM_SSDHASH,
+                                           testing::TmpDir(),
+                                           size, "normal_contiguous",
+                                           CacheType::LFU, true));
+  TF_CHECK_OK(storage_manager->Init());
+  EmbeddingVar<int64, float>* variable
+    = new EmbeddingVar<int64, float>("EmbeddingVar",
+        storage_manager,
+          EmbeddingConfig(/*emb_index = */0, /*primary_emb_index = */0,
+                          /*block_num = */1, /*slot_num = */0,
+                          /*name = */"", /*steps_to_live = */0,
+                          /*filter_freq = */0, /*max_freq = */999999,
+                          /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
+                          /*max_element_size = */0, /*false_positive_probability = */-1.0,
+                          /*counter_type = */DT_UINT64));
+  variable->Init(value, 1);
+  RestoreBuffer buf;
+  buf.key_buffer = new char[6 * sizeof(int64)];
+  buf.version_buffer = new char[6 * sizeof(int64)];
+  buf.freq_buffer = new char[6 * sizeof(int64)];
+  buf.value_buffer = new char[24 * sizeof(float)];
+  for (int i = 1; i < 7; i++) {
+    ((int64*)buf.key_buffer)[i-1] = i;
+    ((int64*)buf.version_buffer)[i-1] = 1;
+    ((int64*)buf.freq_buffer)[i-1] = i * 10;
+  }
+  variable->Import(buf, 6, 1, 0, 1, false);
+  ASSERT_EQ(variable->storage_manager()->Size(0), 4);
+  ASSERT_EQ(variable->storage_manager()->Size(1), 2);
+}
+
 void t1_gpu(KVInterface<int64, float>* hashmap) {
   for (int i = 0; i< 100; ++i) {
     hashmap->Insert(i, new NormalGPUValuePtr<float>(ev_allocator(), 100));

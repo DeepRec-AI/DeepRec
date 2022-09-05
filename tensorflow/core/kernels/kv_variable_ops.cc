@@ -39,6 +39,9 @@ limitations under the License.
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/util.h"
 #include "tensorflow/core/util/work_sharder.h"
+
+#include <json/reader.h>
+#include <json/value.h>
 #if GOOGLE_CUDA
 #if TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
@@ -172,6 +175,18 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
 
+    std::string attr_json_str;
+    OP_REQUIRES_OK(c, c->GetAttr("attr_json_str", &attr_json_str));
+    Json::Reader reader;
+    Json::Value val;
+    if (reader.parse(attr_json_str, val)) {
+      storage_cache_strategy_ =
+        static_cast<embedding::CacheType>(
+          val["storage_cache_strategy"].asInt());
+    } else {
+      LOG(FATAL)<<"Parsing attr_json_str of EV failed!";
+    }
+    
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
@@ -247,7 +262,8 @@ class InitializeKvVariableOp : public OpKernel {
                   new embedding::StorageManager<TKey, TValue>(
                     handle_self.name(),
                     embedding::StorageConfig(
-                      storage_type_, storage_path_, storage_size_, layout_));
+                      storage_type_, storage_path_, storage_size_, layout_,
+                      storage_cache_strategy_));
               Allocator* allocator = context->device()->GetAllocator(AllocatorAttributes());
               TF_CHECK_OK(storage_manager->Init(allocator));
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
@@ -277,7 +293,8 @@ class InitializeKvVariableOp : public OpKernel {
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
-                     storage_path_, storage_size_, layout_));
+                     storage_path_, storage_size_, layout_,
+                     storage_cache_strategy_));
              Allocator* allocator = context->device()->GetAllocator(AllocatorAttributes());
              TF_CHECK_OK(storage_manager->Init(allocator));
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
@@ -342,6 +359,7 @@ class InitializeKvVariableOp : public OpKernel {
   int64 max_element_size_;
   float false_positive_probability_;
   embedding::StorageType storage_type_;
+  embedding::CacheType storage_cache_strategy_;
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
@@ -536,12 +554,13 @@ class KvResourceGatherOp : public OpKernel {
       Shard(worker_threads->num_threads,
             worker_threads->workers, indices_size,
             slice_bytes, do_work);
-      ev->storage_manager()->Schedule([ev, indices]() {
-        embedding::BatchCache<TKey>* cache = ev->Cache();
-        if (cache) {
-          cache->add_to_rank(indices);
-        }
-      });
+      embedding::BatchCache<TKey>* cache = ev->Cache();
+      if (cache) {
+        ev->storage_manager()->Schedule([ev, indices]() {
+          embedding::BatchCache<TKey>* cache = ev->Cache();
+            cache->add_to_rank(indices);
+        });
+      }
     }
   }
 
@@ -907,6 +926,18 @@ class KvResourceImportV2Op: public AsyncOpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("reset_version", &reset_version_));
    
 
+    std::string attr_json_str;
+    OP_REQUIRES_OK(c, c->GetAttr("attr_json_str", &attr_json_str));
+    Json::Reader reader;
+    Json::Value val;
+    if (reader.parse(attr_json_str, val)) {
+      storage_cache_strategy_ =
+        static_cast<embedding::CacheType>(
+          val["storage_cache_strategy"].asInt());
+    } else {
+      LOG(FATAL)<<"Parsing attr_json_str of EV failed!";
+    }
+
     if ((filter_freq_ != 0 && max_element_size_ == 0)
          || steps_to_live_ != -1 || record_freq_
          || record_version_ || storage_type > 5) {
@@ -952,7 +983,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
               auto storage_manager =
                 new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(
-                    storage_type_, storage_path_, storage_size_, layout_));
+                    storage_type_, storage_path_, storage_size_, layout_,
+                    storage_cache_strategy_));
               TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
@@ -983,7 +1015,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(
                    storage_type_, storage_path_, storage_size_,
-                   layout_));
+                   layout_, storage_cache_strategy_));
              TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                  storage_manager, EmbeddingConfig(
@@ -1066,6 +1098,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
   std::string layout_;
   int64 max_freq_;
   embedding::StorageType storage_type_;
+  embedding::CacheType storage_cache_strategy_;
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
@@ -1575,6 +1608,7 @@ class InitializeKvVariableOpGPU : public OpKernel {
  private:
   DataType dtype_;
   DataType counter_type_;
+  embedding::CacheType storage_cache_type_;
   TensorShape shape_;
   int64 steps_to_live_;
   int64 emb_index_;

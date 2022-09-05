@@ -227,7 +227,8 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
             default_value_dim=self.var._default_value_dim,
             default_value_no_permission=self.var._default_value_no_permission,
             record_freq=self.var._record_freq,
-            record_version=self.var._record_version)
+            record_version=self.var._record_version,
+            attr_json_str = self.var._attr_json_str)
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access

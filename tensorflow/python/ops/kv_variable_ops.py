@@ -176,6 +176,13 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
   # doesn't call the constructor, so changes here might need to be reflected
   # there.
   # pylint: disable=unused-argument
+
+  def _generate_embedding_variable_attrs(self, storage_cache_strategy):
+    json_str = "{"
+    json_str += "\"storage_cache_strategy\":" + str(storage_cache_strategy)
+    json_str += "}"
+    return json_str
+
   def _init_from_args(self,
                       initial_value=None,
                       initializer=None,
@@ -294,7 +301,11 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_path = evconfig.storage_path
     self._storage_size = evconfig.storage_size
     self._default_value_dim = evconfig.default_value_dim
+    self._storage_cache_strategy = evconfig.storage_cache_strategy
     self._default_value_no_permission = evconfig.default_value_no_permission
+    json_str = \
+      self._generate_embedding_variable_attrs(evconfig.storage_cache_strategy)
+    self._attr_json_str = json_str
 
     if self._primary is None:
       self._is_primary = True
@@ -408,6 +419,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     default_value_no_permission = self._default_value_no_permission,
                     record_freq = self._record_freq,
                     record_version = self._record_version,
+                    attr_json_str = self._attr_json_str,
                     name=n))
         self._graph_element = self._handle
         self._cached_value = None
@@ -512,6 +524,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._default_value_no_permission= self._initializer_op.get_attr("default_value_no_permission")
     self._record_freq = self._initializer_op.get_attr("record_freq")
     self._record_version = self._initializer_op.get_attr("record_version")
+    self._attr_json_str = self._initializer_op.get_attr("attr_json_str")
 
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 

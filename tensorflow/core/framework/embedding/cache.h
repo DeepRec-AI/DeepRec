@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <set>
 #include <list>
+#include <limits>
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/platform/mutex.h"
@@ -23,7 +24,10 @@ class BatchCache {
     add_to_rank((K*)t.data(), t.NumElements());
   }
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
-  virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
+  virtual void add_to_rank(const K* batch_ids, const size_t batch_size) = 0;
+  virtual void add_to_rank(const K* batch_ids, const size_t batch_size,
+                           const int64* batch_versions,
+                           const int64* batch_freqs) = 0;
   virtual size_t size() = 0;
   virtual void reset_status() {
      num_hit = 0;
@@ -80,7 +84,7 @@ class LRUCache : public BatchCache<K> {
     return true_size;
   }
 
-  void add_to_rank(const K* batch_ids, size_t batch_size) {
+  void add_to_rank(const K* batch_ids, const size_t batch_size) {
     mutex_lock l(mu_);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];
@@ -105,6 +109,13 @@ class LRUCache : public BatchCache<K> {
       }
     }
   }
+
+  void add_to_rank(const K* batch_ids, const size_t batch_size,
+                    const int64* batch_version,
+                    const int64* batch_freqs) {
+    //TODO: add to rank accroding to the version of ids
+    add_to_rank(batch_ids, batch_size);
+  }
  private:
   class LRUNode {
    public:
@@ -121,7 +132,7 @@ template <class K>
 class LFUCache : public BatchCache<K> {
  public:
   LFUCache() {
-    min_freq = 0;
+    min_freq = std::numeric_limits<size_t>::max();
     max_freq = 0;
     freq_table.emplace_back(std::pair<std::list<LFUNode>*, int64>(
       new std::list<LFUNode>, 0));
@@ -137,18 +148,19 @@ class LFUCache : public BatchCache<K> {
   size_t get_evic_ids(K *evic_ids, size_t k_size) {
     mutex_lock l(mu_);
     size_t true_size = 0;
+    size_t st_freq = min_freq;
     for (size_t i = 0; i < k_size && key_table.size() > 0; ++i) {
-      auto rm_it = freq_table[min_freq-1].first->back();
+      auto rm_it = freq_table[st_freq-1].first->back();
       key_table.erase(rm_it.key);
       evic_ids[i] = rm_it.key;
       ++true_size;
-      freq_table[min_freq-1].first->pop_back();
-      freq_table[min_freq-1].second--;
-      if (freq_table[min_freq-1].second == 0) {
-        ++min_freq;
-        while (min_freq <= max_freq) {
-          if (freq_table[min_freq-1].second == 0) {
-            ++min_freq;
+      freq_table[st_freq-1].first->pop_back();
+      freq_table[st_freq-1].second--;
+      if (freq_table[st_freq-1].second == 0) {
+        ++st_freq;
+        while (st_freq <= max_freq) {
+          if (freq_table[st_freq-1].second == 0) {
+            ++st_freq;
           } else {
             break;
           }
@@ -158,7 +170,7 @@ class LFUCache : public BatchCache<K> {
     return true_size;
   }
 
-  void add_to_rank(const K *batch_ids, size_t batch_size) {
+  void add_to_rank(const K *batch_ids, const size_t batch_size) {
     mutex_lock l(mu_);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];
@@ -191,6 +203,61 @@ class LFUCache : public BatchCache<K> {
       }
     }
   }
+
+  void add_to_rank(const K *batch_ids, const size_t batch_size,
+                   const int64* batch_versions,
+                   const int64* batch_freqs) {
+    mutex_lock l(mu_);
+    for (size_t i = 0; i < batch_size; ++i) {
+      K id = batch_ids[i];
+      auto it = key_table.find(id);
+      size_t freq =  batch_freqs[i];
+      if (it == key_table.end()) {
+        if (freq < min_freq) {
+          min_freq = freq;
+        }
+
+        if (freq >= max_freq) {
+          max_freq = freq;
+          freq_table.resize(max_freq, std::pair<std::list<LFUNode>*, int64>(
+           new std::list<LFUNode>, 0));
+        }
+        freq_table[freq-1].first->emplace_front(LFUNode(id, freq));
+        freq_table[freq-1].second++;
+        key_table[id] = freq_table[freq-1].first->begin();
+        BatchCache<K>::num_miss++;
+      } else {
+        typename std::list<LFUNode>::iterator node = it->second;
+        size_t last_freq = node->freq;
+        size_t curr_freq = last_freq + freq;
+        freq_table[last_freq-1].first->erase(node);
+        freq_table[last_freq-1].second--;
+        
+        if (curr_freq > max_freq) {
+          max_freq = curr_freq;
+          freq_table.resize(max_freq, std::pair<std::list<LFUNode>*, int64>(
+           new std::list<LFUNode>, 0));
+        }
+
+        if (freq_table[last_freq-1].second == 0) {
+          if (min_freq == last_freq){
+            for (size_t j = last_freq + 1; j < max_freq; j++) {
+              if(freq_table[j-1].second != 0) {
+                min_freq = j;
+              }
+            }
+          }
+        }
+       
+        freq_table[curr_freq-1].first->emplace_front(LFUNode(id, curr_freq));
+        freq_table[curr_freq-1].second++;
+        key_table[id] = freq_table[curr_freq-1].first->begin();
+        BatchCache<K>::num_hit++;
+      }
+    }
+  }
+
+
  private:
   class LFUNode {
    public:

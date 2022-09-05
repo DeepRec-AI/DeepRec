@@ -472,7 +472,8 @@ def _set_checkpoint_initializer(variable,
           default_value_no_permission=variable._default_value_no_permission,
           record_freq=variable._record_freq,
           record_version=variable._record_version,
-          reset_version=reset_version)
+          reset_version=reset_version,
+          attr_json_str=variable._attr_json_str)
   else:
     base_type = variable.dtype.base_dtype
     # Do not colocate with variable since RestoreV2 op only runs on CPU and

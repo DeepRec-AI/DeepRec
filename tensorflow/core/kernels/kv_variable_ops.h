@@ -514,11 +514,16 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
       if (filter_flag) {
         reader->LookupSegment(tensor_freq, (read_key_num + 1)* sizeof(int64),
             restore_buff.freq_buffer, freq_bytes_read);
+        if (freq_bytes_read == 0) {
+          int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+          for (int64 i = 0; i < read_key_num; i++) {
+            freq_tmp[i] = (ev->MinFreq() == 0) ? 1 : ev->MinFreq();
+          }
+        }
       }else {
         int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
-        freq_tmp[0] = 0;
-        for (int64 i = 1; i < read_key_num + 1; i++) {
-          freq_tmp[i] = ev->MinFreq();
+        for (int64 i = 0; i < read_key_num; i++) {
+          freq_tmp[i] = (ev->MinFreq() == 0) ? 1 : ev->MinFreq();
         }
       }
 
@@ -671,11 +676,16 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     if (filter_flag) {
       reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64),
           restore_buff.freq_buffer, freq_bytes_read);
+      if (freq_bytes_read == 0) {
+        int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+        for (int64 i = 0; i < read_key_num; i++) {
+          freq_tmp[i] = (ev->MinFreq() == 0) ? 1 : ev->MinFreq();
+        }
+      }
     } else {
       int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
-      freq_tmp[0] = 0;
-      for (int64 i = 1; i < read_key_num + 1; i++) {
-        freq_tmp[i] = ev->MinFreq();
+      for (int64 i = 0; i < read_key_num; i++) {
+        freq_tmp[i] = (ev->MinFreq() == 0) ? 1 : ev->MinFreq();
       }
     }
     if (key_bytes_read > 0) {
@@ -1035,10 +1045,16 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
                 freq_part_offset + tot_freq_bytes_read,
                 read_key_num * sizeof(int64), restore_buff.freq_buffer,
                 freq_bytes_read);
+            if (freq_bytes_read == 0) {
+              int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
+              for (int64 i = 0; i < read_key_num; i++) {
+                freq_tmp[i] = (ev->MinFreq() == 0) ? 1 : ev->MinFreq();
+              }
+            }
           } else {
             int64 *freq_tmp = (int64 *)restore_buff.freq_buffer;
             for (int64 i = 0; i < read_key_num; i++) {
-              freq_tmp[i] = ev->MinFreq();
+              freq_tmp[i] = (ev->MinFreq() == 0) ? 1 : ev->MinFreq();
             }
           }
           if (key_bytes_read > 0) {

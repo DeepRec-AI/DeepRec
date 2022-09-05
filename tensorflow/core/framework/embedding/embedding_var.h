@@ -170,6 +170,10 @@ class EmbeddingVar : public ResourceBase {
     TF_CHECK_OK(storage_manager_->BatchCommit(keys, value_ptrs));
   }
 
+  void Eviction(K* evict_ids, int64 evict_size) {
+    TF_CHECK_OK(storage_manager_->Eviction(evict_ids, evict_size));
+  }
+
   int64 GetVersion(K key) {
     ValuePtr<V>* value_ptr = nullptr;
     TF_CHECK_OK(LookupOrCreateKey(key, &value_ptr));

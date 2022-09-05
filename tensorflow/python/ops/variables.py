@@ -231,10 +231,12 @@ class StorageOption(object):
   def __init__(self,
                storage_type=None,
                storage_path=None,
-               storage_size=[1024*1024*1024]):
+               storage_size=[1024*1024*1024],
+               cache_strategy = config_pb2.CacheType.LFU):
     self.storage_type = storage_type
     self.storage_path = storage_path
     self.storage_size = storage_size
+    self.cache_strategy = cache_strategy
     if not isinstance(storage_size, list):
         raise ValueError("storage_size should be list type")
     if len(storage_size) < 4:
@@ -317,6 +319,7 @@ class EmbeddingVariableConfig(object):
                storage_type=config_pb2.StorageType.DRAM,
                storage_path=None,
                storage_size=None,
+               storage_cache_strategy=config_pb2.CacheType.LFU,
                default_value_dim=4096,
                default_value_no_permission=.0):
     self.steps_to_live = steps_to_live
@@ -339,6 +342,7 @@ class EmbeddingVariableConfig(object):
     self.storage_type = storage_type
     self.storage_path = storage_path
     self.storage_size = storage_size
+    self.storage_cache_strategy = storage_cache_strategy
     self.default_value_dim = default_value_dim
     self.default_value_no_permission = default_value_no_permission
 
