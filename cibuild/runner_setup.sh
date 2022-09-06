@@ -1,14 +1,15 @@
 #!/bin/bash
 set -e
 
-if [ $# -ne 2 ]
+if [ $# -ne 3 ]
 then
-        echo "Usage:\n\tsetup.sh REPO_URL TOKEN"
+        echo "Usage:\n\tsetup.sh REPO_URL TOKEN LABEL"
         exit; 
 fi
 
 REPO_URL=$1
 TOKEN=$2
+LABEL=$3
 
 # install docker
 echo "Installing docker"
@@ -34,7 +35,7 @@ SELFHOST_HOME=/home/selfhost
 sudo -u selfhost mkdir -p $SELFHOST_HOME/actions-runner && cd $SELFHOST_HOME/actions-runner
 sudo -u selfhost curl -o actions-runner-linux-x64-2.288.1.tar.gz -L https://github.com/actions/runner/releases/download/v2.288.1/actions-runner-linux-x64-2.288.1.tar.gz
 sudo -u selfhost tar xzf ./actions-runner-linux-x64-2.288.1.tar.gz
-sudo -u selfhost ./config.sh --url $REPO_URL --token $TOKEN
+sudo -u selfhost ./config.sh --url $REPO_URL --token $TOKEN --labels $LABEL --unattended
 # set runner startup at boot and start runner now
 cd $SELFHOST_HOME/actions-runner
 ./svc.sh install
