@@ -23,6 +23,7 @@ namespace tensorflow {
 namespace processor {
 namespace {
 constexpr int _60_Seconds = 60;
+constexpr int MAX_TRY_COUNT = 10;
 
 Tensor CreateTensor(const TensorInfo& tensor_info) {
   auto real_ts = tensor_info.tensor_shape();
@@ -203,6 +204,28 @@ void GenerateJsonSignatureFormat(
   StringReplace(json_signature, "},]", "}]");
 }
 
+void InternalGetSignatureInfo(
+    const std::pair<std::string, SignatureDef>& signature,
+    SignatureInfo& signature_info) {
+  int idx = 0;
+  for (auto& iter : signature.second.inputs()) {
+    signature_info.input_key.emplace_back(iter.first);
+    signature_info.input_value_name.emplace_back(iter.second.name());
+    signature_info.input_key_idx[iter.first] = idx;
+    signature_info.input_value_name_idx[iter.second.name()] = idx;
+    ++idx;
+  }
+
+  idx = 0;
+  for (auto& iter : signature.second.outputs()) {
+    signature_info.output_key.emplace_back(iter.first);
+    signature_info.output_value_name.emplace_back(iter.second.name());
+    signature_info.output_key_idx[iter.first] = idx;
+    signature_info.output_value_name_idx[iter.second.name()] = idx;
+    ++idx;
+  }
+}
+
 } // namespace
 
 LocalSessionInstance::LocalSessionInstance(
@@ -219,11 +242,19 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   PartitionPolicy::GetGlobalPolicy()->Init(config);
 
   model_store->GetLatestVersion(version_);
-  while (version_.SavedModelEmpty() || version_.CkptEmpty()) {
-    // Wait until saved model meta file ready
-    LOG(INFO) << "[Model Instance] SavedModel or Checkpoint dir is empty,"
-              << "will try 1 minute later, current version: "
-              << version_.DebugString();
+  while (version_.SavedModelEmpty() ||
+         (config->enable_incr_model_update && version_.CkptEmpty())) {
+    if (config->enable_incr_model_update) {
+      // Wait until saved model meta file ready
+      LOG(INFO) << "[Model Instance] SavedModel or Checkpoint dir is empty,"
+                << "will try 1 minute later, current version: "
+                << version_.DebugString();
+    } else {
+      LOG(INFO) << "[Model Instance] SavedModel dir is empty,"
+                << "will try 1 minute later, current version: "
+                << version_.DebugString();
+    }
+
     sleep(60);
     model_store->GetLatestVersion(version_);
   }
@@ -244,6 +275,9 @@ Status LocalSessionInstance::Init(ModelConfig* config,
         PartitionPolicy::GetGlobalPolicy()->GetShardInstanceCount();
   }
 
+  option.st = config->storage_type;
+  option.path = config->storage_path;
+
   optimizer_ = new SavedModelOptimizer(config->signature_name,
       &meta_graph_def_, option);
   TF_RETURN_IF_ERROR(optimizer_->Optimize());
@@ -253,20 +287,36 @@ Status LocalSessionInstance::Init(ModelConfig* config,
   session_mgr_ = new ModelSessionMgr(meta_graph_def_,
       session_options_, run_options_);
 
+  if (config->enable_incr_model_update) {
+    return LoadModelFromCheckpoint(config);
+  } else {
+    return LoadSavedModel(config);
+  }
+}
+
+Status LocalSessionInstance::LoadModelFromCheckpoint(
+    ModelConfig* config) {
   // Load full model
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version_,
-        version_.full_ckpt_name.c_str(),
-        version_.delta_ckpt_name.c_str(),
-        /*is_incr_ckpt*/false, config));
+      version_.full_ckpt_name.c_str(),
+      version_.delta_ckpt_name.c_str(),
+      /*is_incr_ckpt*/false, config));
 
   // Load delta model if existed
   if (version_.delta_ckpt_name.empty()) {
     return Status::OK();
   }
+
   return session_mgr_->CreateModelSession(version_,
       version_.full_ckpt_name.c_str(),
       version_.delta_ckpt_name.c_str(),
       /*is_incr_ckpt*/true, config);
+}
+
+Status LocalSessionInstance::LoadSavedModel(
+    ModelConfig* config) {
+  return session_mgr_->CreateModelSession(version_,
+      version_.savedmodel_dir.c_str(), config);
 }
 
 Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
@@ -276,6 +326,8 @@ Status LocalSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       model_signature_ = it;
       GenerateJsonSignatureFormat(model_signature_,
                                   model_json_signature_);
+      InternalGetSignatureInfo(model_signature_,
+                               signature_info_);
       return Status::OK();
     }
   }
@@ -318,6 +370,14 @@ Status LocalSessionInstance::Warmup(
 
 std::string LocalSessionInstance::DebugString() {
   return model_json_signature_;
+}
+
+SignatureDef LocalSessionInstance::GetServingSignatureDef() {
+  return model_signature_.second;
+}
+
+const SignatureInfo* LocalSessionInstance::GetSignatureInfo() {
+  return &signature_info_;
 }
 
 Status LocalSessionInstance::FullModelUpdate(
@@ -372,6 +432,8 @@ Status RemoteSessionInstance::ReadModelSignature(ModelConfig* model_config) {
       model_signature_ = it;
       GenerateJsonSignatureFormat(model_signature_,
                                   model_json_signature_);
+      InternalGetSignatureInfo(model_signature_,
+                               signature_info_);
       return Status::OK();
     }
   }
@@ -532,6 +594,14 @@ std::string RemoteSessionInstance::DebugString() {
   return model_json_signature_;
 }
 
+SignatureDef RemoteSessionInstance::GetServingSignatureDef() {
+  return model_signature_.second;
+}
+
+const SignatureInfo* RemoteSessionInstance::GetSignatureInfo() {
+  return &signature_info_;
+}
+
 LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
     : ModelUpdater(config) {
   session_options_ = new SessionOptions();
@@ -557,7 +627,10 @@ Status LocalSessionInstanceMgr::Init() {
       model_store_));
   TF_RETURN_IF_ERROR(instance_->Warmup());
 
-  thread_ = new std::thread(&ModelUpdater::WorkLoop, this);
+  if (model_config_->enable_incr_model_update) {
+    thread_ = new std::thread(&ModelUpdater::WorkLoop, this);
+  }
+
   return Status::OK();
 }
 
@@ -576,6 +649,14 @@ Status LocalSessionInstanceMgr::Rollback() {
 
 std::string LocalSessionInstanceMgr::DebugString() {
   return instance_->DebugString();
+}
+
+SignatureDef LocalSessionInstanceMgr::GetServingSignatureDef() {
+  return instance_->GetServingSignatureDef();
+}
+
+const SignatureInfo* LocalSessionInstanceMgr::GetSignatureInfo() {
+  return instance_->GetSignatureInfo();
 }
 
 Status LocalSessionInstanceMgr::FullModelUpdate(
@@ -685,6 +766,14 @@ std::string RemoteSessionInstanceMgr::DebugString() {
   return cur_instance_->DebugString();
 }
 
+SignatureDef RemoteSessionInstanceMgr::GetServingSignatureDef() {
+  return cur_instance_->GetServingSignatureDef();
+}
+
+const SignatureInfo* RemoteSessionInstanceMgr::GetSignatureInfo() {
+  return cur_instance_->GetSignatureInfo();
+}
+
 Status RemoteSessionInstanceMgr::FullModelUpdate(const Version& version,
                                        ModelConfig* model_config) {
   return cur_instance_->FullModelUpdate(
@@ -741,27 +830,45 @@ Status ModelUpdater::ModelUpdate(const Version& version,
 }
 
 void ModelUpdater::WorkLoop() {
+  int try_count = 0;
   while(!is_stop_) {
     Version version;
     auto status = model_store_->GetLatestVersion(version);
     LOG(INFO) << "[Processor] ModelUpdater::WorkLoop get latest version: "
               << version.DebugString();
-    if (!status.ok()) {
-      LOG(WARNING) << "[Processor] Not found full model or incremental model directory. "
-                   << "Please ignore this warning if you confirm it. "
-                   << "And we will try 60 seconds later. Warning message: "
-                   << status.error_message() << std::endl;
-    }
-
-    // New model directory is generated or the version step is greater than the pre.
-    Version pre_version = GetVersion();
-    bool new_full_ckpt_generated =
-        pre_version.full_ckpt_name != version.full_ckpt_name;
-    if (new_full_ckpt_generated || pre_version < version) {
-      auto status = ModelUpdate(version, model_config_,
-                                new_full_ckpt_generated);
+    if (!version.IsValid()) {
+      try_count++;
+      LOG(ERROR) << "[Processor] Found a invalid model, "
+                 << "please check other error message, "
+                 << "we will try 60 seconds later. status: " << status.error_message()
+                 << "version debug string: " << version.DebugString();
+      if (try_count >= MAX_TRY_COUNT) {
+        LOG(FATAL) << "Try to get the latest model failed " << try_count << " times, "
+                   << "please check the model directory or network.";
+      }
+    } else {
+      try_count = 0;
       if (!status.ok()) {
-        LOG(ERROR) << status.error_message() << std::endl;
+        LOG(WARNING) << "[Processor] Not found full model or incremental model directory. "
+                     << "Please ignore this warning if you confirm it. "
+                     << "And we will try 60 seconds later. Warning message: "
+                     << status.error_message();
+      }
+
+      // New model directory is generated or the version step is greater than the pre.
+      Version pre_version = GetVersion();
+      bool new_full_ckpt_generated = version.IsValid() &&
+          (pre_version.full_ckpt_name != version.full_ckpt_name);
+      if (new_full_ckpt_generated || pre_version < version) {
+        LOG(INFO) << "Start to load new version model: " << version.DebugString();
+        auto status = ModelUpdate(version, model_config_,
+                                  new_full_ckpt_generated);
+        if (!status.ok()) {
+          LOG(ERROR) << "Load new version model failed: " << status.error_message()
+                     << ", version info: " << version.DebugString();
+        } else {
+          LOG(INFO) << "Load new version model successful: " << version.DebugString();
+        }
       }
     }
 

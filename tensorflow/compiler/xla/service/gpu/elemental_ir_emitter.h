@@ -69,7 +69,8 @@ class GpuElementalIrEmitter : public ElementalIrEmitter {
                                  llvm::Value* value) override;
 
   StatusOr<llvm::Value*> EmitExp(PrimitiveType prim_type,
-                                 llvm::Value* value) override;
+                                 llvm::Value* value,
+                                 absl::string_view name = "") override;
 
   StatusOr<llvm::Value*> EmitExpm1(PrimitiveType prim_type,
                                    llvm::Value* value) override;
@@ -81,10 +82,10 @@ class GpuElementalIrEmitter : public ElementalIrEmitter {
                                    llvm::Value* value) override;
 
   StatusOr<llvm::Value*> EmitPow(PrimitiveType prim_type, llvm::Value* lhs,
-                                 llvm::Value* rhs) override;
+                                 llvm::Value* rhs, absl::string_view name = "") override;
 
   StatusOr<llvm::Value*> EmitAtan2(PrimitiveType prim_type, llvm::Value* lhs,
-                                   llvm::Value* rhs) override;
+                                   llvm::Value* rhs, absl::string_view name = "") override;
 
   StatusOr<llvm::Value*> EmitTanh(PrimitiveType prim_type,
                                   llvm::Value* value) override;
@@ -112,13 +113,15 @@ class GpuElementalIrEmitter : public ElementalIrEmitter {
   // return value of the function.
   StatusOr<llvm::Value*> EmitDeviceMathCall(
       TargetDeviceFunctionID funcid, absl::Span<llvm::Value* const> operands,
-      absl::Span<const PrimitiveType> input_types, PrimitiveType output_type);
+      absl::Span<const PrimitiveType> input_types, PrimitiveType output_type,
+      absl::string_view name = "");
 
   // Emits IR to call a function of type [T] -> T.  Does not munge callee_name.
   // Returns the IR value that represents the return value of the function.
   StatusOr<llvm::Value*> EmitMathCall(
       const string& callee_name, absl::Span<llvm::Value* const> operands,
-      absl::Span<const PrimitiveType> input_types, PrimitiveType output_type);
+      absl::Span<const PrimitiveType> input_types, PrimitiveType output_type,
+      absl::string_view name = "");
 
   NestedComputer compute_nested_;
 };

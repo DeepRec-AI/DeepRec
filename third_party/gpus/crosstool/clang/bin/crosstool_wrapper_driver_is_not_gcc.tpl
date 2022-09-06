@@ -205,10 +205,13 @@ def InvokeNvcc(argv, log=False):
 
   supported_cuda_compute_capabilities = [ %{cuda_compute_capabilities} ]
   nvccopts = '-D_FORCE_INLINES '
-  for capability in supported_cuda_compute_capabilities:
+  for capability in supported_cuda_compute_capabilities[:-1]:
     capability = capability.replace('.', '')
-    nvccopts += r'-gencode=arch=compute_%s,\"code=sm_%s,compute_%s\" ' % (
-        capability, capability, capability)
+    nvccopts += r'-gencode=arch=compute_%s,\"code=sm_%s\" ' % (
+        capability, capability)
+  final_capability = supported_cuda_compute_capabilities[-1].replace('.', '')
+  nvccopts += r'-gencode=arch=compute_%s,\"code=sm_%s,compute_%s\" ' % (
+      final_capability, final_capability, final_capability)
   nvccopts += ' ' + nvcc_compiler_options
   nvccopts += undefines
   nvccopts += defines

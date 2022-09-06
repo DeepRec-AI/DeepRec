@@ -138,4 +138,5 @@ with tf.Session() as sess:
 - DRAM：CPU内存
 - PMEM：持久化内存
 - LevelDB：基于LevelDB开发的SSD存储
-- SSDHASH：基于Hash索引的SSD存储，相比LevelDB实现，有更好的性能和内存稳定性
+- SSDHASH：基于Hash索引的SSD存储，相比LevelDB实现，有更好的性能和内存稳定性。SSDHASH支持同步和异步两种compaction的方式。使用同步compaction时，向SSD写入数据和compaction将会使用同一个线程，异步时则各使用一个线程。
+用户可以通过配置环境变量`TF_SSDHASH_ASYNC_COMPACTION`选择使用哪种compaction方式，当TF_SSDHASH_ASYNC_COMPACTION=1时打开异步compaction功能；设置为0或不设置时使用同步compaction。

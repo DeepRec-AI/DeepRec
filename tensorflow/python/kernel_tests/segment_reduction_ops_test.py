@@ -25,6 +25,7 @@ import numpy as np
 from tensorflow.python.client import session
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes as dtypes_lib
+from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import gradient_checker
@@ -271,6 +272,20 @@ class SegmentReductionOpTest(SegmentReductionHelper):
             x_init_value=np_x.astype(np.double),
             delta=1)
       self.assertAllClose(jacob_t, jacob_n)
+
+  def testInvalidIds(self):
+    # Test case for GitHub issue 46888.
+    for op in [
+        math_ops.segment_max,
+        math_ops.segment_min,
+        math_ops.segment_mean,
+        math_ops.segment_sum,
+        math_ops.segment_prod,
+    ]:
+      with self.cached_session():
+        with self.assertRaises((ValueError, errors_impl.InvalidArgumentError)):
+          s = op(data=np.ones((1, 10, 1)), segment_ids=[1676240524292489355])
+          self.evaluate(s)
 
 
 class UnsortedSegmentTest(SegmentReductionHelper):
@@ -751,6 +766,20 @@ class SparseSegmentReductionOpTest(SparseSegmentReductionHelper):
       for tf_op in ops_list:
         s = tf_op(data=tf_x, indices=tf_indices, segment_ids=segment_indices)
         with self.assertRaisesOpError("segment ids must be >= 0"):
+          self.evaluate(s)
+
+  @test_util.run_deprecated_v1
+  def testSegmentsInvalid8(self):
+    tf_x, _ = self._input([10, 4], dtype=dtypes_lib.float32)
+    ops_list = [math_ops.sparse_segment_sum, math_ops.sparse_segment_mean]
+    segment_indices = [2**62 - 1]
+    tf_indices = [2**62 - 1]
+    with self.session(use_gpu=False):
+      for tf_op in ops_list:
+        s = tf_op(data=tf_x, indices=tf_indices, segment_ids=segment_indices)
+        with self.assertRaisesOpError("segment ids must be >= 0"):
+        #with self.assertRaisesOpError(
+        #    "Encountered overflow when multiplying"):
           self.evaluate(s)
 
   def testSegmentWithNumSegmentsValid(self):

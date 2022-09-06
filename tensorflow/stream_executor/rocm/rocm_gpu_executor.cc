@@ -355,7 +355,7 @@ port::Status GpuExecutor::BeginGraphCapture(Stream* stream) {
       "Feature not supported on ROCm platform (BeginGraphCapture)");
 }
 
-port::Status<void*> GpuExecutor::EndGraphCapture(Stream* capture_stream,
+port::StatusOr<void*> GpuExecutor::EndGraphCapture(Stream* capture_stream,
                                                  void* graph) {
   return port::InternalError(
       "Feature not supported on ROCm platform (EndGraphCapture)");
@@ -373,11 +373,11 @@ port::Status GpuExecutor::UpdateExecutableGraph(void* graph, void* graph_exec) {
 }
 
 void GpuExecutor::DestroyExecutableGraph(void* context, void* exec_graph) {
-  LOG(ERROR) << "Feature not supported on ROCm platform (DestroyExecutableGraph)");
+  LOG(ERROR) << "Feature not supported on ROCm platform (DestroyExecutableGraph)";
 }
 
 void GpuExecutor::DestroyGraph(void* context, void* graph) {
-  LOG(ERROR) << "Feature not supported on ROCm platform (DestroyGraph)");
+  LOG(ERROR) << "Feature not supported on ROCm platform (DestroyGraph)";
 }
 
 int GpuExecutor::CalculateOccupancy(const DeviceDescription& device_description,
@@ -845,6 +845,8 @@ bool FillBlockDimLimit(GpuDeviceHandle device, BlockDim* block_dim_limit) {
   block_dim_limit->z = z;
   return true;
 }
+
+bool GpuExecutor::SupportsBlasPlans() const { return false; }
 
 bool GpuExecutor::SupportsBlas() const { return true; }
 

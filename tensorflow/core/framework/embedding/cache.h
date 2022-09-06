@@ -18,6 +18,7 @@ template <class K>
 class BatchCache {
  public:
   BatchCache() {}
+  virtual ~BatchCache() {}
   void add_to_rank(const Tensor& t) {
     add_to_rank((K*)t.data(), t.NumElements());
   }

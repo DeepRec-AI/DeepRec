@@ -20,7 +20,7 @@ limitations under the License.
 
 #include "absl/base/call_once.h"
 #include "absl/strings/str_replace.h"
-#include "tensorflow/compiler/xla/service/gpu/partition_assignment.h"
+#include "tensorflow/compiler/xla/service/gpu/launch_dimensions.h"
 #include "tensorflow/compiler/xla/service/gpu/stream_executor_util.h"
 #include "tensorflow/compiler/xla/service/hlo_module_config.h"
 #include "tensorflow/compiler/xla/shape_util.h"
@@ -358,7 +358,7 @@ BB1_8:
 
 BB2_3:
  {
- .reg .b32 %temp; 
+ .reg .b32 %temp;
  mov.b64  {%temp, %r2}, %fd2;
  }
  and.b32   %r7, %r2, 2147483647;
@@ -366,14 +366,14 @@ BB2_3:
  @%p4 bra  BB2_8;
 
  {
- .reg .b32 %temp; 
+ .reg .b32 %temp;
  mov.b64  {%r8, %temp}, %fd2;
  }
  setp.ne.s32 %p5, %r8, 0;
  @%p5 bra  BB2_8;
 
  {
- .reg .b32 %temp; 
+ .reg .b32 %temp;
  mov.b64  {%temp, %r3}, %fd1;
  }
  and.b32   %r9, %r3, 2147483647;
@@ -381,7 +381,7 @@ BB2_3:
  @%p6 bra  BB2_8;
 
  {
- .reg .b32 %temp; 
+ .reg .b32 %temp;
  mov.b64  {%r10, %temp}, %fd1;
  }
  setp.ne.s32 %p7, %r10, 0;
@@ -605,8 +605,25 @@ static StatusOr<bool> DeviceCompare(se::Stream* stream,
                                    se::DeviceMemory<uint64>>(
           kernel_name, buffer_compare_ptx, compiled_ptx)));
 
-  LaunchDimensions dim =
-      CalculateLaunchDimensions(buffer_shape, executor->GetDeviceDescription());
+  GpuDeviceInfo gpu_device_info;
+  gpu_device_info.threads_per_block_limit =
+      executor->GetDeviceDescription().threads_per_block_limit();
+  gpu_device_info.threads_per_warp =
+      executor->GetDeviceDescription().threads_per_warp();
+  gpu_device_info.shared_memory_per_block =
+      executor->GetDeviceDescription().shared_memory_per_block();
+  gpu_device_info.threads_per_core_limit =
+      executor->GetDeviceDescription().threads_per_core_limit();
+  gpu_device_info.core_count = executor->GetDeviceDescription().core_count();
+  gpu_device_info.block_dim_limit_x =
+      executor->GetDeviceDescription().block_dim_limit().x;
+  gpu_device_info.block_dim_limit_y =
+      executor->GetDeviceDescription().block_dim_limit().y;
+  gpu_device_info.block_dim_limit_z =
+      executor->GetDeviceDescription().block_dim_limit().z;
+
+  TF_ASSIGN_OR_RETURN(LaunchDimensions dim,
+                      CalculateLaunchDimensions(buffer_shape, gpu_device_info));
 
   auto thread_counts = dim.thread_counts_per_block();
   auto block_counts = dim.block_counts();

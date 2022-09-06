@@ -284,6 +284,34 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "tensor_float_32_utils",
+    srcs = ["tensor_float_32_utils.cc"],
+    hdrs = ["tensor_float_32_utils.h"],
+    copts = tf_copts(),
+    alwayslink = 1,
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
+)
+
+filegroup(
+    name = "tensor_float_32_hdr",
+    srcs = ["tensor_float_32_utils.h"],
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
+)
+
+cc_library(
+    name = "tensor_float_32_hdr_lib",
+    hdrs = [":tensor_float_32_hdr"],
+    copts = tf_copts(),
+    visibility = [
+        "//tensorflow:__subpackages__",
+    ],
+)
+
 # --------------------------------------------------------------------------
 #     Below libraries are here only to make sure the legacy build rules
 #     in tensorflow/core/BUILD are working!
@@ -417,6 +445,7 @@ filegroup(
             "protobuf.cc",
             "stringprintf.cc",
             "str_util.cc",
+            "tensor_float_32_utils.cc"
         ],
     ),
     visibility = ["//tensorflow/core:__pkg__"],

@@ -606,6 +606,10 @@ Status SavedModelOptimizer::RunNativeTFGraphPass() {
     TF_RETURN_IF_ERROR(RewriteEmbeddingLookupGraph(var_parts, import_nodes));
   }
 
+  if (option_.st) {
+    TF_RETURN_IF_ERROR(RewriteEmbeddingVariableAttr(option_.st, option_.path));
+  }
+
   // Add other passes here
 
   // replace the graph def in saved_model_bundle
@@ -2353,6 +2357,20 @@ Node* SavedModelOptimizer::UpdateRestoreShardNodeInputs(
   }
 
   return shard_node;
+}
+
+Status SavedModelOptimizer::RewriteEmbeddingVariableAttr(
+    embedding::StorageType st, std::string path) {
+  for (Node* node : graph_.nodes()) {
+    if (node->op_def().name() == "KvResourceImportV2" ||
+        node->op_def().name() == "InitializeKvVariableOp") {
+      node->AddAttr("storage_type", st);
+      node->AddAttr("storage_path", path);
+
+      LOG(INFO) << "debug op: " << node->DebugString();
+    }
+  }
+  return Status::OK();
 }
 
 } // namespace processor

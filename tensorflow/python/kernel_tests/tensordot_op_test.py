@@ -53,8 +53,8 @@ class TensordotTest(test_lib.TestCase):
       math_ops.tensordot(a, b, (a_axes, b_axes))
     # Invalid dynamic shapes.
     with self.cached_session() as sess:
-      with self.assertRaisesRegexp(errors_impl.InvalidArgumentError,
-                                   "Matrix size-incompatible"):
+      with self.assertRaisesOpError(
+          r"In\[0\] mismatch In\[1\] shape: 2 vs\. 3: \[2,2\] \[3,2\]"):
         a_ph = array_ops.placeholder(dtypes.float32)
         b_ph = array_ops.placeholder(dtypes.float32)
         axes_ph = array_ops.placeholder(dtypes.int32)

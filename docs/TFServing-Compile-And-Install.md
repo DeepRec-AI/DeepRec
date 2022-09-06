@@ -51,8 +51,8 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 我们提供了针对DeepRec版本的TFServing，该版本指向DeepRec Repo.
 
 代码库：[https://github.com/AlibabaPAI/serving](https://github.com/AlibabaPAI/serving)
-开发分支：deeprec
-Latest Release Tag：r1.15.5-deeprec2204u1
+
+开发分支：master，最新Release分支：deeprec2206
 
 ## TFServing编译&打包
 

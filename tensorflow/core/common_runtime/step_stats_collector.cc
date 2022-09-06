@@ -193,6 +193,14 @@ void NodeExecStatsWrapper::AddAllocation(
   allocations_.push_back(std::make_pair(memory, tracking_allocator));
 }
 
+void NodeExecStatsWrapper::SetActivityID(int64 id) {
+  stats_->set_correlation_id(id);
+}
+
+void NodeExecStatsWrapper::SetParentID(int64 id) {
+  stats_->set_parent_id(id);
+}
+
 void NodeExecStatsWrapper::Finalize() {
   for (auto& alloc : allocations_) {
     AllocatorMemoryUsed* memory = alloc.first;

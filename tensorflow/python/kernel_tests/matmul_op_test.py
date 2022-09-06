@@ -197,14 +197,16 @@ class MatMulInfixOperatorTest(test_lib.TestCase):
 
   def testMismatchedShape(self):
     with self.assertRaisesRegexp(
-        Exception, "(Shape must be rank 2 but is rank 1|is not a matrix)"):
+        Exception, (r"(In\[0\] and In\[1\] has different ndims|In\[0\] "
+                    r"ndims must be >= 2|Shape must be rank 2 but is rank 1)")):
       infix_matmul(
           ops.convert_to_tensor([10.0, 20.0, 30.0]),
           ops.convert_to_tensor([[40.0, 50.0], [60.0, 70.0]]))
 
   def testMismatchedDimensions(self):
     with self.assertRaisesRegexp(
-        Exception, "(Dimensions must be equal|Matrix size-incompatible)"):
+        Exception,
+        r"(In\[0\] mismatch In\[1\] shape|Dimensions must be equal)"):
       infix_matmul(
           ops.convert_to_tensor([[10.0, 20.0, 30.0]]),
           ops.convert_to_tensor([[40.0, 50.0], [60.0, 70.0]]))
@@ -223,7 +225,6 @@ class MatMulInfixOperatorTest(test_lib.TestCase):
     d = math_ops.matmul(a, b)
     self.assertAllEqual(c, d)
 
-
 if __name__ == "__main__":
   sizes = [1, 3, 5]
   trans_options = [[False, False], [True, False], [False, True]]
@@ -234,9 +235,10 @@ if __name__ == "__main__":
   # TF2 does not support placeholders under eager so we skip it
   for use_static_shape in set([True, tf2.enabled()]):
     for dtype in dtypes_to_test:
-      if not use_static_shape and (dtype == np.int32 or dtype == np.int64):
-        # TODO(rmlarsen): Re-enable this test when we have fixed the underlying
-        # bug in Windows (b/35935459).
+      if test_util.is_xla_enabled() and (dtype == np.int32 or
+                                         dtype == np.int64):
+        # TODO(b/171924639): Enable this test when XLA DOT supports
+        # integer types.
         continue
       for m in sizes:
         for n in sizes:

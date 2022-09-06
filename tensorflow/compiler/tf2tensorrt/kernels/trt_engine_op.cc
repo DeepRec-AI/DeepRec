@@ -51,7 +51,7 @@ limitations under the License.
 
 namespace tensorflow {
 namespace tensorrt {
-static Logger logger;
+Logger& logger = *Logger::GetLogger();
 using absl::StrAppend;
 using absl::StrCat;
 using ::nvinfer1::IRuntime;

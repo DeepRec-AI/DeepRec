@@ -62,14 +62,16 @@ class SparseSoftmaxOp : public OpKernel {
                 errors::InvalidArgument(
                     "Input should have rank >= 2, but received shape: ",
                     shape_t->SummarizeValue(3)));
+    TensorShape shape;
+    OP_REQUIRES_OK(context, TensorShape::BuildTensorShape(
+                                shape_t->flat<int64>(), &shape));
 
     const int64 nnz = indices_t->dim_size(0);
     const int rank = static_cast<int>(indices_t->dim_size(1));
     SparseTensor st;
     OP_REQUIRES_OK(
-        context, SparseTensor::Create(
-                     tensor::DeepCopy(*indices_t), tensor::DeepCopy(*values_t),
-                     TensorShape(shape_t->flat<int64>()), &st));
+        context, SparseTensor::Create(tensor::DeepCopy(*indices_t),
+                                      tensor::DeepCopy(*values_t), shape, &st));
 
     Tensor *output_values = nullptr;
     OP_REQUIRES_OK(context, context->allocate_output(0, TensorShape({nnz}),

@@ -29,7 +29,7 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/tensor_types.h"
-#include "tensorflow/core/kernels/batch_matmul_op_impl.h"
+#include "tensorflow/core/kernels/matmul_op_impl.h"
 #include "tensorflow/core/kernels/reduction_ops_common.h"
 #include "tensorflow/core/kernels/transpose_functor.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -145,6 +145,7 @@ Status ParseEquation(const string& equation, OperandLabels* input_labels,
   input_has_ellipsis->resize(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
     input_label_counts->at(i).resize(num_labels);
+    input_has_ellipsis->at(i) = false;
     for (const int label : input_labels->at(i)) {
       if (label != kEllipsisLabel)
         input_label_counts->at(i)[label] += 1;
@@ -153,6 +154,7 @@ Status ParseEquation(const string& equation, OperandLabels* input_labels,
     }
   }
   output_label_counts->resize(num_labels);
+  *output_has_ellipsis = false;
   for (const int label : *output_labels) {
     if (label != kEllipsisLabel)
       output_label_counts->at(label) += 1;
@@ -512,20 +514,6 @@ Status ReshapeToRank3(const Tensor& input, int batch_size, Tensor* output) {
   return CopyFrom(input, output_shape, output);
 }
 
-// Conjugates the input.
-template <typename Device, typename T>
-Status Conjugate(OpKernelContext* ctx, Tensor* input) {
-  std::vector<int> permutation(input->dims());
-  std::iota(permutation.begin(), permutation.end(), 0);
-  Tensor output;
-  TF_RETURN_IF_ERROR(
-      ctx->allocate_temp(DataTypeToEnum<T>::value, input->shape(), &output));
-  const Device& d = ctx->eigen_device<Device>();
-  TF_RETURN_IF_ERROR(DoConjugateTranspose(d, *input, permutation, &output));
-  std::swap(*input, output);
-  return Status::OK();
-}
-
 // Contracts the inputs along the last axis. (or the second last if the
 // corresponding value of swap_free_and_contract is true). The batch dimensions
 // are broadcast to the output shape.
@@ -557,19 +545,17 @@ Status ContractOperands(OpKernelContext* ctx, absl::Span<const Tensor> inputs,
         inputs[i].dims() - (swap_free_and_contract[i] ? 1 : 2);
     output_shape.AddDim(inputs[i].dim_size(free_axis));
   }
-  bool adj_x = swap_free_and_contract[0];
-  bool adj_y = !swap_free_and_contract[1];
-  if (is_complex<T>::value) {
-    if (adj_x) TF_RETURN_IF_ERROR(Conjugate<Device, T>(ctx, &lhs));
-    if (adj_y) TF_RETURN_IF_ERROR(Conjugate<Device, T>(ctx, &rhs));
-  }
+
+  bool trans_x = swap_free_and_contract[0];
+  bool trans_y = !swap_free_and_contract[1];
+  
   TF_RETURN_IF_ERROR(
       ctx->allocate_temp(DataTypeToEnum<T>::value, output_shape, output));
   Tensor output_reshaped;
   TF_RETURN_IF_ERROR(
       ReshapeToRank3(*output, bcast.output_batch_size(), &output_reshaped));
-  LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, adj_x, adj_y, bcast,
-                                       &output_reshaped);
+  LaunchBatchMatMul<Device, T>::Launch(ctx, lhs, rhs, false, false, trans_x,
+                                       trans_y, bcast, &output_reshaped);
   return Status::OK();
 }
 }  // namespace

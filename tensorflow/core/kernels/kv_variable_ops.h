@@ -33,8 +33,16 @@ limitations under the License.
 #include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/lib/random/random_distributions.h"
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
+#if GOOGLE_CUDA
+#define EIGEN_USE_GPU
+#if TENSORFLOW_USE_GPU_EV
+#include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
+#endif // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
 
 namespace tensorflow {
+using GPUDevice = Eigen::GpuDevice;
+
 namespace {
   const int kSavedPartitionNum = 1000;
 }
@@ -405,7 +413,7 @@ const static string part_str = "part_";
 template<typename K, typename V>
 Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string name_string, int orig_partnum,
-    int64 partition_id = 0, int64 partition_num = 1) {
+    int64 partition_id = 0, int64 partition_num = 1, bool reset_version = false) {
   string curr_partid_str = std::to_string(partition_id);
   bool filter_flag = true;
   bool restore_filter_flag = true;
@@ -493,10 +501,15 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
           restore_buff.key_buffer, key_bytes_read);
       reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes,
           restore_buff.value_buffer, value_bytes_read);
-      reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
-          restore_buff.version_buffer, version_bytes_read);
-      if (version_bytes_read == 0) {
-        memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+      if (!reset_version) {
+        reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
+            restore_buff.version_buffer, version_bytes_read);
+        if (version_bytes_read == 0) {
+          memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+        }
+      } else {
+        int64 *version_tmp = (int64*)restore_buff.version_buffer;
+        memset(version_tmp, 0, read_key_num * sizeof(int64));
       }
       if (filter_flag) {
         reader->LookupSegment(tensor_freq, (read_key_num + 1)* sizeof(int64),
@@ -527,7 +540,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
 template<typename K, typename V>
 Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     std::string tensor_key, std::string tensor_value,
-    std::string tensor_version, std::string tensor_freq) {
+    std::string tensor_version, std::string tensor_freq, bool reset_version=false) {
   TensorShape key_shape;
   TensorShape value_shape;
   TensorShape version_shape;
@@ -645,10 +658,15 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
         restore_buff.key_buffer, key_bytes_read);
     reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes,
         restore_buff.value_buffer, value_bytes_read);
-    reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
-        restore_buff.version_buffer, version_bytes_read);
-    if (version_bytes_read == 0) {
-        memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+    if (!reset_version) {
+      reader->LookupSegment(tensor_version, read_key_num * sizeof(int64),
+          restore_buff.version_buffer, version_bytes_read);
+      if (version_bytes_read == 0) {
+          memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+      }
+    } else {
+      int64 *version_tmp = (int64*)restore_buff.version_buffer;
+      memset(version_tmp, 0, read_key_num * sizeof(int64));
     }
     if (filter_flag) {
       reader->LookupSegment(tensor_freq, read_key_num * sizeof(int64),
@@ -680,9 +698,14 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
       reader->LookupSegment(tensor_key + "_filtered",
           read_key_num * sizeof(K), restore_buff.key_buffer,
           key_filter_bytes_read);
-      reader->LookupSegment(tensor_version + "_filtered",
-          read_key_num * sizeof(int64), restore_buff.version_buffer,
-          version_filter_bytes_read);
+      if (!reset_version) {
+        reader->LookupSegment(tensor_version + "_filtered",
+            read_key_num * sizeof(int64), restore_buff.version_buffer,
+            version_filter_bytes_read);
+      } else {
+        int64 *version_tmp = (int64*)restore_buff.version_buffer;
+        memset(version_tmp, 0, read_key_num * sizeof(int64));
+      }
       reader->LookupSegment(tensor_freq + "_filtered",
           read_key_num * sizeof(int64), restore_buff.freq_buffer,
           freq_filter_bytes_read);
@@ -729,7 +752,7 @@ template<typename K, typename V>
 Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
     const std::string& name_string, const std::string& curr_partid_str,
     const std::string& key_suffix, int partition_id,
-    BundleReader* reader, int partition_num) {
+    BundleReader* reader, int partition_num, bool reset_version=false) {
   // first get original partition number
   int orig_partnum = 0;
   for (;  ; orig_partnum++) {
@@ -752,10 +775,11 @@ Status EVRestoreOldFromCheckpoint(EmbeddingVar<K, V>* ev,
           << ", old partition_num:" << orig_partnum
           << ", new partition num:" << partition_num;
   Status s = DynamicRestoreValue(ev, reader, name_string,
-      orig_partnum, partition_id, partition_num);
+      orig_partnum, partition_id, partition_num, reset_version);
   if (!s.ok()) {
     LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
   }
+  return s;
 }
 
 template<typename K, typename V>
@@ -764,14 +788,15 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     int partition_num, OpKernelContext* context,
     BundleReader* reader, const std::string& part_offset_tensor_suffix,
     const std::string& key_suffix, const std::string& value_suffix,
-    const std::string& version_suffix, const std::string& freq_suffix) {
+    const std::string& version_suffix, const std::string& freq_suffix,
+    bool reset_version = false) {
 
   // first check whether there is partition
   if (name_string.find(part_str) == std::string::npos) {
     Status s = EVRestoreNoPartition(
         ev, reader, name_string + key_suffix,
         name_string + value_suffix, name_string + version_suffix,
-        name_string + freq_suffix);
+        name_string + freq_suffix, reset_version);
     if (!s.ok()) {
       LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
     }
@@ -784,7 +809,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
 
   if (is_oldform) {
     EVRestoreOldFromCheckpoint(ev, name_string, curr_partid_str, key_suffix,
-        partition_id, reader, partition_num);
+        partition_id, reader, partition_num, reset_version);
   } else {
     // first find out which sub parts we should load
     bool filter_flag = true;
@@ -993,13 +1018,17 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
               value_part_offset + tot_value_bytes_read,
               read_key_num * value_unit_bytes, restore_buff.value_buffer,
               value_bytes_read);
-
-          reader->LookupSegmentOffset(tensor_version,
-              version_part_offset + tot_version_bytes_read,
-              read_key_num * sizeof(int64), restore_buff.version_buffer,
-              version_bytes_read);
-          if (version_bytes_read == 0) {
-             memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+          if (!reset_version) {
+            reader->LookupSegmentOffset(tensor_version,
+                version_part_offset + tot_version_bytes_read,
+                read_key_num * sizeof(int64), restore_buff.version_buffer,
+                version_bytes_read);
+            if (version_bytes_read == 0) {
+              memset(restore_buff.version_buffer, -1, sizeof(int64) * read_key_num);
+            }
+          } else {
+            int64 *version_tmp = (int64*)restore_buff.version_buffer;
+            memset(version_tmp, 0, read_key_num * sizeof(int64));
           }
           if (filter_flag) {
             reader->LookupSegmentOffset(tensor_freq,
@@ -1048,10 +1077,15 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
                 key_filter_part_offset + key_filter_bytes_read,
                 read_key_num * sizeof(K), restore_buff.key_buffer,
                 key_filter_bytes_read);
-            reader->LookupSegmentOffset(tensor_version + "_filtered",
-                version_filter_part_offset + version_filter_bytes_read,
-                read_key_num * sizeof(int64), restore_buff.version_buffer,
-                version_filter_bytes_read);
+            if (!reset_version) {
+              reader->LookupSegmentOffset(tensor_version + "_filtered",
+                  version_filter_part_offset + version_filter_bytes_read,
+                  read_key_num * sizeof(int64), restore_buff.version_buffer,
+                  version_filter_bytes_read);
+            } else {
+              int64 *version_tmp = (int64*)restore_buff.version_buffer;
+              memset(version_tmp, 0, read_key_num * sizeof(int64));
+            }
             reader->LookupSegmentOffset(tensor_freq + "_filtered",
                 freq_filter_part_offset + freq_filter_bytes_read,
                 read_key_num * sizeof(int64), restore_buff.freq_buffer,
@@ -1072,6 +1106,213 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
   }
   return Status::OK();
 }
+#if GOOGLE_CUDA
+#if TENSORFLOW_USE_GPU_EV
+template<typename K, typename V>
+Status EVRestoreNoPartitionGPU(EmbeddingVarGPU<K, V>* ev, BundleReader* reader,
+    std::string tensor_key, std::string tensor_value, OpKernelContext* context,
+    std::string tensor_version, std::string tensor_freq) {
+  TensorShape key_shape;
+  TensorShape value_shape;
+
+  Status st;
+  reader->LookupTensorShape(tensor_key, &key_shape);
+  reader->LookupTensorShape(tensor_value, &value_shape);
+  const cudaStream_t& stream = context->eigen_device<GPUDevice>().stream();
+  bool filter_flag = true;
+  bool restore_filter_flag = true;
+  st = reader->LookupHeader(tensor_key,
+      sizeof(K) * key_shape.dim_size(0));
+  if (!st.ok())
+    return st;
+  st = reader->LookupHeader(tensor_value,
+      sizeof(V) * value_shape.dim_size(0) * value_shape.dim_size(1));
+  if (!st.ok())
+    return st;
+
+  size_t buffer_size = 8 << 20;
+  RestoreBuffer restore_buff;
+  restore_buff.key_buffer = new char[buffer_size];
+  restore_buff.value_buffer = new char[buffer_size];
+
+  size_t key_bytes_read = 0;
+  size_t value_bytes_read = 0;
+
+  int64 tot_key_num = key_shape.dim_size(0);
+  size_t value_unit_bytes = sizeof(V) *  value_shape.dim_size(1);
+  std::string key_str = "|";
+  while(tot_key_num > 0) {
+    size_t read_key_num = std::min(
+        std::min(buffer_size / sizeof(K),
+          buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
+    read_key_num = std::min((int64)read_key_num, tot_key_num);
+    reader->LookupSegment(tensor_key, read_key_num * sizeof(K),
+        restore_buff.key_buffer, key_bytes_read);
+    reader->LookupSegment(tensor_value, read_key_num * value_unit_bytes,
+        restore_buff.value_buffer, value_bytes_read);
+
+    if (key_bytes_read > 0) {
+      read_key_num = key_bytes_read / sizeof(K);
+      VLOG(2) << "restore, read_key_num:" << read_key_num;
+
+      st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false, stream);
+      if (!st.ok())
+        return st;
+      tot_key_num -= read_key_num;
+    }
+  }
+  
+  return Status::OK();
+}
+
+template<typename K, typename V>
+Status EVRestoreDynamicallyGPU(EmbeddingVarGPU<K, V>* ev,
+    const std::string& name_string, int partition_id,
+    int partition_num, OpKernelContext* context,
+    BundleReader* reader, const std::string& part_offset_tensor_suffix,
+    const std::string& key_suffix, const std::string& value_suffix,
+    const std::string& version_suffix, const std::string& freq_suffix) {
+
+  // first check whether there is partition
+  if (name_string.find(part_str) == std::string::npos) {
+    Status s = EVRestoreNoPartitionGPU(
+        ev, reader, name_string + key_suffix,
+        name_string + value_suffix, context, name_string + version_suffix,
+        name_string + freq_suffix);
+    if (!s.ok()) {
+      LOG(FATAL) <<  "EV restoring fail:" << s.ToString();
+    }
+    return s;
+  }
+
+  const string& curr_partid_str = std::to_string(partition_id);
+  // first find out which sub parts we should load
+  std::vector<int> loaded_parts;
+  for (int i = 0; i < kSavedPartitionNum; i++) {
+    if (i % partition_num == partition_id) {
+      loaded_parts.push_back(i);
+    }
+  }
+
+  // then we use primary partition number to compose with
+  // sub partition number
+  VLOG(1) << "new form:" << name_string
+          << ", partition_id:" << partition_id
+          << ", partition_num:" << partition_num;
+
+  int orig_partnum = 0;
+  size_t buffer_size = 8 << 20;
+  RestoreBuffer restore_buff;
+  restore_buff.key_buffer = new char[buffer_size];
+  restore_buff.value_buffer = new char[buffer_size];
+  char* part_buffer = new char[buffer_size];
+
+  const cudaStream_t& stream = context->eigen_device<GPUDevice>().stream();
+
+
+  for (;  ; orig_partnum++) {
+    string part_id = std::to_string(orig_partnum);
+    string pre_subname = name_string.substr(0, name_string.find(part_str));
+    string post_subname = name_string.substr(name_string.find(part_str)
+        + part_str.size() + curr_partid_str.size());
+    string tensor_name = pre_subname + part_str + part_id + post_subname;
+
+    // first check whether is  old ckpt form
+    string tensor_key = tensor_name + key_suffix;
+    string tensor_value = tensor_name + value_suffix;
+    string offset_tensor_name = tensor_name + part_offset_tensor_suffix;
+
+    TensorShape key_shape, value_shape, version_shape, freq_shape, part_offset_shape;
+    Status st = reader->LookupTensorShape(tensor_key, &key_shape);
+    if (!st.ok()) {
+      VLOG(1) << "ev part " << tensor_key
+              << " not exist, reach the end of restoring";
+      break;
+    }
+    st = reader->LookupTensorShape(tensor_value, &value_shape);
+    if (!st.ok()) {
+      break;
+    }
+
+    st = reader->LookupTensorShape(offset_tensor_name, &part_offset_shape);
+    if (!st.ok()) {
+      break;
+    }
+
+    st = reader->LookupHeader(tensor_key, sizeof(K) * key_shape.dim_size(0));
+    if (!st.ok()) {
+      break;
+    }
+    
+    st = reader->LookupHeader(tensor_value,
+        sizeof(V) * value_shape.dim_size(0) * value_shape.dim_size(1));
+    if (!st.ok()) {
+      break;
+    }
+
+    st = reader->LookupHeader(offset_tensor_name, sizeof(int32) * (kSavedPartitionNum + 1));
+    if (!st.ok()) {
+      break;
+    }
+
+    size_t tot_part_bytes_read(0);
+    st = reader->LookupSegment(offset_tensor_name, (kSavedPartitionNum + 1) * sizeof(int32),
+        part_buffer, tot_part_bytes_read);
+
+    for (size_t i = 0; i < loaded_parts.size(); i++) {
+      int32* part_offset = (int32*)part_buffer;
+      int subpart_id = loaded_parts[i];
+      int subpart_offset = part_offset[subpart_id];
+
+      size_t value_unit_bytes = sizeof(V) *  value_shape.dim_size(1);
+      int64 tot_key_num = part_offset[subpart_id + 1] - subpart_offset;
+      int64 key_part_offset = subpart_offset * sizeof(K);
+      int64 value_part_offset = subpart_offset *  value_unit_bytes;
+  
+      VLOG(1) << "dynamically load ev : " << name_string
+              << ", subpartid:" << loaded_parts[i]
+              << ", subpart_offset:" << subpart_offset
+              << ", partition_id:" << partition_id
+              << ", partition_num:" << partition_num
+              << ", keynum:" << tot_key_num;
+
+      int64 tot_key_bytes_read(0);
+      int64 tot_value_bytes_read(0);
+      size_t key_bytes_read = 0;
+      size_t value_bytes_read = 0;
+      while(tot_key_num > 0) {
+        size_t read_key_num = std::min(std::min(buffer_size / sizeof(K),
+              buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
+        read_key_num = std::min((int64)read_key_num, tot_key_num);
+        reader->LookupSegmentOffset(tensor_key,
+            key_part_offset + tot_key_bytes_read, read_key_num * sizeof(K),
+            restore_buff.key_buffer, key_bytes_read);
+
+        reader->LookupSegmentOffset(tensor_value,
+            value_part_offset + tot_value_bytes_read,
+            read_key_num * value_unit_bytes, restore_buff.value_buffer,
+            value_bytes_read);
+
+        if (key_bytes_read > 0) {
+          read_key_num = key_bytes_read / sizeof(K);
+          VLOG(2) << "restore, read_key_num:" << read_key_num;
+          st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
+              partition_id, partition_num, false, stream);
+          if (!st.ok()) {
+            LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
+          }
+        }
+        tot_key_num -= read_key_num;
+        tot_key_bytes_read += key_bytes_read;
+        tot_value_bytes_read += value_bytes_read;
+        
+      }
+    }
+  }
+  return Status::OK();
+}
+#endif // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow
 

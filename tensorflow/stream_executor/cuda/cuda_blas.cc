@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "third_party/gpus/cuda/include/cublas_v2.h"
+#include "third_party/gpus/cuda/include/cublasLt.h"
 #include "third_party/gpus/cuda/include/cuda.h"
 
 #define SE_CUDA_DATA_HALF CUDA_R_16F
@@ -52,6 +53,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "third_party/eigen3/Eigen/Core"
+#include "tensorflow/core/platform/tensor_float_32_utils.h"
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/stream_executor/cuda/cuda_activation.h"
 #include "tensorflow/stream_executor/cuda/cuda_gpu_executor.h"
@@ -102,18 +104,6 @@ static string ToString(cublasStatus_t status) {
     default:
       return absl::StrCat("<invalid cublas status: ", status, ">");
   }
-}
-
-// Decide whether to enable TENSOR_OP_MATH
-static bool TensorOpMathEnabled() {
-  static bool is_enabled = [] {
-    bool is_disabled;
-    TF_CHECK_OK(
-        tensorflow::ReadBoolFromEnvVar("TF_DISABLE_CUBLAS_TENSOR_OP_MATH",
-                                       /*default_val=*/false, &is_disabled));
-    return !is_disabled;
-  }();
-  return is_enabled;
 }
 
 // cuBLAS has interfaces that permit pointers to be passed from either the host
@@ -240,25 +230,39 @@ bool CUDABlas::Init() {
     return false;
   }
 
-#if CUBLAS_VER_MAJOR >= 11
-  ret = cublasSetMathMode(blas_, CUBLAS_TF32_TENSOR_OP_MATH);
+#if CUDA_VERSION >= 11000
+  ret = cublasLtCreate(&blasLt_);
   if (ret != CUBLAS_STATUS_SUCCESS) {
-    LOG(ERROR) << "failed to set cublas default math mode: " << ToString(ret);
+    LOG(ERROR) << "failed to create cublasLt handle: " << ToString(ret);
     return false;
   }
-#endif  // CUBLAS_VER_MAJOR >= 11
+  LOG(INFO) << "Create cuBLASLt success.";
+#endif  // CUDA_VERSION >= 11000
 
   return true;
 }
 
-CUDABlas::CUDABlas(gpu::GpuExecutor *parent)
-    : parent_(CHECK_NOTNULL(parent)), blas_(nullptr) {}
+CUDABlas::CUDABlas(gpu::GpuExecutor* parent)
+    : parent_(CHECK_NOTNULL(parent)),
+      blas_(nullptr)
+#if CUDA_VERSION >= 11000
+      ,
+      blasLt_(nullptr)
+#endif
+{
+}
 
 CUDABlas::~CUDABlas() {
   if (blas_ != nullptr) {
     gpu::ScopedActivateExecutorContext sac{parent_};
     cublasDestroy(blas_);
   }
+#if CUDA_VERSION >= 11000
+  if (blasLt_ != nullptr) {
+    gpu::ScopedActivateExecutorContext sac{parent_};
+    cublasLtDestroy(blasLt_);
+  }
+#endif
 }
 
 bool CUDABlas::SetStream(Stream *stream) {
@@ -273,6 +277,13 @@ bool CUDABlas::SetStream(Stream *stream) {
   }
 
   return true;
+}
+
+cudaStream_t CUDABlas::CUDAStream(Stream* stream) {
+  CHECK(stream != nullptr);
+  CHECK(AsGpuStreamValue(stream) != nullptr);
+  gpu::ScopedActivateExecutorContext sac{parent_};
+  return AsGpuStreamValue(stream);
 }
 
 namespace {
@@ -403,14 +414,124 @@ cudaDataType_t CUDAComputationType(blas::ComputationType ty) {
       return CUDA_C_32F;
     case blas::ComputationType::kComplexF64:
       return CUDA_C_64F;
+    case blas::ComputationType::kTF32AsF32:  // fall-through
+    case blas::ComputationType::kBF16AsF32:
+      // These cases are currently only supported in the blasLt routines, which
+      // use CUBLASComputationType() instead.
+      LOG(FATAL) << "Invalid value of blas::ComputationType.";
   }
 }
+
+#if CUDA_VERSION >= 11000
+cublasComputeType_t CUBLASComputationType(blas::ComputationType ty) {
+  switch (ty) {
+    case blas::ComputationType::kF16:
+      return CUBLAS_COMPUTE_16F;
+    case blas::ComputationType::kF32:  // fall-through
+    case blas::ComputationType::kComplexF32:
+      return CUBLAS_COMPUTE_32F;
+    case blas::ComputationType::kF64:  // fall-through
+    case blas::ComputationType::kComplexF64:
+      return CUBLAS_COMPUTE_64F;
+    case blas::ComputationType::kI32:
+      return CUBLAS_COMPUTE_32I;
+    case blas::ComputationType::kTF32AsF32:
+      return CUBLAS_COMPUTE_32F_FAST_TF32;
+    case blas::ComputationType::kBF16AsF32:
+      return CUBLAS_COMPUTE_32F_FAST_16BF;
+  }
+}
+#endif  // CUDA_VERSION >= 11000
+
+blas::DataType GetScaleType(blas::DataType data_type,
+                            blas::ComputationType compute_type) {
+  bool is_complex = data_type == blas::DataType::kComplexFloat ||
+                    data_type == blas::DataType::kComplexDouble;
+  switch (compute_type) {
+    case blas::ComputationType::kF16:
+      return blas::DataType::kHalf;
+    case blas::ComputationType::kF32:         // fall-through
+    case blas::ComputationType::kComplexF32:  // fall-through
+    case blas::ComputationType::kTF32AsF32:   // fall-through
+    case blas::ComputationType::kBF16AsF32:
+      return is_complex ? blas::DataType::kComplexFloat
+                        : blas::DataType::kFloat;
+    case blas::ComputationType::kF64:  // fall-through
+    case blas::ComputationType::kComplexF64:
+      return is_complex ? blas::DataType::kComplexDouble
+                        : blas::DataType::kDouble;
+    case blas::ComputationType::kI32:
+      return blas::DataType::kInt32;
+  }
+}
+
+#if CUDA_VERSION >= 11000
+cublasLtPointerMode_t CUBLASPointerMode(blas::PointerMode pointer_mode) {
+  switch (pointer_mode) {
+  case blas::PointerMode::kHost:
+    return CUBLASLT_POINTER_MODE_HOST;
+  case blas::PointerMode::kDevice:
+    return CUBLASLT_POINTER_MODE_DEVICE;
+  }
+}
+cublasLtEpilogue_t CUBLASEpilogue(blas::Epilogue epilogue) {
+  switch (epilogue) {
+  case blas::Epilogue::kDefault:
+    return CUBLASLT_EPILOGUE_DEFAULT;
+  case blas::Epilogue::kReLU:
+    return CUBLASLT_EPILOGUE_RELU;
+  case blas::Epilogue::kBias:
+    return CUBLASLT_EPILOGUE_BIAS;
+  case blas::Epilogue::kBiasThenReLU:
+    return CUBLASLT_EPILOGUE_RELU_BIAS;
+  }
+}
+#endif  // CUDA_VERSION >= 11000
+
+cudaDataType_t GetCUDADataType(blas::DataType ty) {
+  switch (ty) {
+    case blas::DataType::kHalf:
+      return CUDA_R_16F;
+    case blas::DataType::kFloat:
+      return CUDA_R_32F;
+    case blas::DataType::kDouble:
+      return CUDA_R_64F;
+    case blas::DataType::kInt8:
+      return CUDA_R_8I;
+    case blas::DataType::kInt32:
+      return CUDA_R_32I;
+    case blas::DataType::kComplexFloat:
+      return CUDA_C_32F;
+    case blas::DataType::kComplexDouble:
+      return CUDA_C_64F;
+  }
+}
+
+int GetDataTypeSizeBytes(blas::DataType ty) {
+  switch (ty) {
+    case blas::DataType::kHalf:
+      return 2;
+    case blas::DataType::kFloat:
+      return 4;
+    case blas::DataType::kDouble:
+      return 8;
+    case blas::DataType::kInt8:
+      return 1;
+    case blas::DataType::kInt32:
+      return 4;
+    case blas::DataType::kComplexFloat:
+      return 8;
+    case blas::DataType::kComplexDouble:
+      return 16;
+  }
+}
+
 }  // namespace
 
-template <typename FuncT, typename... Args>
+template <typename InpT, typename FuncT, typename... Args>
 bool CUDABlas::DoBlasInternalImpl(FuncT cublas_func, Stream *stream,
                                   bool pointer_mode_host, bool err_on_failure,
-                                  bool use_tensor_op_math, Args... args) {
+                                  Args... args) {
   absl::MutexLock lock(&mu_);
 
   CHECK(blas_ != nullptr);
@@ -418,20 +539,34 @@ bool CUDABlas::DoBlasInternalImpl(FuncT cublas_func, Stream *stream,
     return false;
   }
 
+#if CUDA_VERSION >= 9000
+  ScopedCublasMathMode math_mode{blas_};
+#if CUBLAS_VER_MAJOR < 11
+  // Pre cublas 11, no TF32 is available, so we can
+  // enable tensor cores in all cases.
+  cublasMath_t math_type = CUBLAS_TENSOR_OP_MATH;
+#else
+  cublasMath_t math_type;
+  if (tensorflow::tensor_float_32_execution_enabled() &&
+      (CUDADataType<InpT>::type == CUDA_R_32F ||
+       CUDADataType<InpT>::type == CUDA_C_32F)) {
+    math_type = CUBLAS_TF32_TENSOR_OP_MATH;
+  } else {
+    // In cublas 11+ DEFAULT_MATH enables tensorcores in FP16 cases.
+    math_type = CUBLAS_DEFAULT_MATH;
+  }
+#endif
+  if (!math_mode.Init(math_type)) {
+    return false;
+  }
+#endif
+
   gpu::ScopedActivateExecutorContext sac{parent_};
   ScopedCublasPointerMode pointer_mode{blas_};
   if (!pointer_mode.Init(pointer_mode_host ? CUBLAS_POINTER_MODE_HOST
                                            : CUBLAS_POINTER_MODE_DEVICE)) {
     return false;
   }
-#if CUDA_VERSION >= 9000
-  ScopedCublasMathMode math_mode{blas_};
-  if (use_tensor_op_math) {
-    if (!math_mode.Init(CUBLAS_TENSOR_OP_MATH)) {
-      return false;
-    }
-  }
-#endif
   cublasStatus_t ret = cublas_func(blas_, args...);
   if ((err_on_failure || VLOG_IS_ON(3)) && ret != CUBLAS_STATUS_SUCCESS) {
     LOG(ERROR) << "failed to run cuBLAS routine: " << ToString(ret);
@@ -442,249 +577,252 @@ bool CUDABlas::DoBlasInternalImpl(FuncT cublas_func, Stream *stream,
 bool CUDABlas::DoBlasAsum(Stream *stream, uint64 elem_count,
                           const DeviceMemory<float> &x, int incx,
                           DeviceMemory<float> *result) {
-  return DoBlasInternal(cublasSasum, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<float>(cublasSasum, stream,
+                               false /* = pointer_mode_host */, elem_count,
+                               GpuMemory(x), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasAsum(Stream *stream, uint64 elem_count,
                           const DeviceMemory<double> &x, int incx,
                           DeviceMemory<double> *result) {
-  return DoBlasInternal(cublasDasum, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<double>(cublasDasum, stream,
+                                false /* = pointer_mode_host */, elem_count,
+                                GpuMemory(x), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasAsum(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           DeviceMemory<float> *result) {
-  return DoBlasInternal(cublasScasum, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<float>>(
+      cublasScasum, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasAsum(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           DeviceMemory<double> *result) {
-  return DoBlasInternal(cublasDzasum, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<double>>(
+      cublasDzasum, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasAxpy(Stream *stream, uint64 elem_count, float alpha,
                           const DeviceMemory<float> &x, int incx,
                           DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSaxpy, stream, true /* = pointer_mode_host */,
-                        elem_count, &alpha, GpuMemory(x), incx,
-                        GpuMemoryMutable(y), incy);
+  return DoBlasInternal<float>(
+      cublasSaxpy, stream, true /* = pointer_mode_host */, elem_count, &alpha,
+      GpuMemory(x), incx, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasAxpy(Stream *stream, uint64 elem_count, double alpha,
                           const DeviceMemory<double> &x, int incx,
                           DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDaxpy, stream, true /* = pointer_mode_host */,
-                        elem_count, &alpha, GpuMemory(x), incx,
-                        GpuMemoryMutable(y), incy);
+  return DoBlasInternal<double>(
+      cublasDaxpy, stream, true /* = pointer_mode_host */, elem_count, &alpha,
+      GpuMemory(x), incx, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasAxpy(Stream *stream, uint64 elem_count,
                           std::complex<float> alpha,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasCaxpy, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCaxpy, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasAxpy(Stream *stream, uint64 elem_count,
                           std::complex<double> alpha,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZaxpy, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZaxpy, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasCopy(Stream *stream, uint64 elem_count,
                           const DeviceMemory<float> &x, int incx,
                           DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasScopy, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx, GpuMemoryMutable(y),
-                        incy);
+  return DoBlasInternal<float>(cublasScopy, stream,
+                               true /* = pointer_mode_host */, elem_count,
+                               GpuMemory(x), incx, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasCopy(Stream *stream, uint64 elem_count,
                           const DeviceMemory<double> &x, int incx,
                           DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDcopy, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx, GpuMemoryMutable(y),
-                        incy);
+  return DoBlasInternal<double>(cublasDcopy, stream,
+                                true /* = pointer_mode_host */, elem_count,
+                                GpuMemory(x), incx, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasCopy(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasCcopy, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCcopy, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasCopy(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZcopy, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZcopy, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasDot(Stream *stream, uint64 elem_count,
                          const DeviceMemory<float> &x, int incx,
                          const DeviceMemory<float> &y, int incy,
                          DeviceMemory<float> *result) {
-  return DoBlasInternal(cublasSdot, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx, GpuMemory(y), incy,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<float>(
+      cublasSdot, stream, false /* = pointer_mode_host */, elem_count,
+      GpuMemory(x), incx, GpuMemory(y), incy, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasDot(Stream *stream, uint64 elem_count,
                          const DeviceMemory<double> &x, int incx,
                          const DeviceMemory<double> &y, int incy,
                          DeviceMemory<double> *result) {
-  return DoBlasInternal(cublasDdot, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx, GpuMemory(y), incy,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<double>(
+      cublasDdot, stream, false /* = pointer_mode_host */, elem_count,
+      GpuMemory(x), incx, GpuMemory(y), incy, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasDotc(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           const DeviceMemory<std::complex<float>> &y, int incy,
                           DeviceMemory<std::complex<float>> *result) {
-  return DoBlasInternal(cublasCdotc, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(result)));
+  return DoBlasInternal<std::complex<float>>(
+      cublasCdotc, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuComplex(GpuMemory(y)), incy,
+      GpuComplex(GpuMemoryMutable(result)));
 }
 
 bool CUDABlas::DoBlasDotc(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           const DeviceMemory<std::complex<double>> &y, int incy,
                           DeviceMemory<std::complex<double>> *result) {
-  return DoBlasInternal(cublasZdotc, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(result)));
+  return DoBlasInternal<std::complex<double>>(
+      cublasZdotc, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuComplex(GpuMemory(y)), incy,
+      GpuComplex(GpuMemoryMutable(result)));
 }
 
 bool CUDABlas::DoBlasDotu(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           const DeviceMemory<std::complex<float>> &y, int incy,
                           DeviceMemory<std::complex<float>> *result) {
-  return DoBlasInternal(cublasCdotu, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(result)));
+  return DoBlasInternal<std::complex<float>>(
+      cublasCdotu, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuComplex(GpuMemory(y)), incy,
+      GpuComplex(GpuMemoryMutable(result)));
 }
 
 bool CUDABlas::DoBlasDotu(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           const DeviceMemory<std::complex<double>> &y, int incy,
                           DeviceMemory<std::complex<double>> *result) {
-  return DoBlasInternal(cublasZdotu, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(result)));
+  return DoBlasInternal<std::complex<double>>(
+      cublasZdotu, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuComplex(GpuMemory(y)), incy,
+      GpuComplex(GpuMemoryMutable(result)));
 }
 
 bool CUDABlas::DoBlasNrm2(Stream *stream, uint64 elem_count,
                           const DeviceMemory<float> &x, int incx,
                           DeviceMemory<float> *result) {
-  return DoBlasInternal(cublasSnrm2, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<float>(cublasSnrm2, stream,
+                               false /* = pointer_mode_host */, elem_count,
+                               GpuMemory(x), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasNrm2(Stream *stream, uint64 elem_count,
                           const DeviceMemory<double> &x, int incx,
                           DeviceMemory<double> *result) {
-  return DoBlasInternal(cublasDnrm2, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<double>(cublasDnrm2, stream,
+                                false /* = pointer_mode_host */, elem_count,
+                                GpuMemory(x), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasNrm2(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           DeviceMemory<float> *result) {
-  return DoBlasInternal(cublasScnrm2, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<float>>(
+      cublasScnrm2, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasNrm2(Stream *stream, uint64 elem_count,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           DeviceMemory<double> *result) {
-  return DoBlasInternal(cublasDznrm2, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<double>(
+      cublasDznrm2, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasRot(Stream *stream, uint64 elem_count,
                          DeviceMemory<float> *x, int incx,
                          DeviceMemory<float> *y, int incy, float c, float s) {
-  return DoBlasInternal(cublasSrot, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuMemoryMutable(x), incx,
-                        GpuMemoryMutable(y), incy, &c, &s);
+  return DoBlasInternal<float>(
+      cublasSrot, stream, true /* = pointer_mode_host */, elem_count,
+      GpuMemoryMutable(x), incx, GpuMemoryMutable(y), incy, &c, &s);
 }
 
 bool CUDABlas::DoBlasRot(Stream *stream, uint64 elem_count,
                          DeviceMemory<double> *x, int incx,
                          DeviceMemory<double> *y, int incy, double c,
                          double s) {
-  return DoBlasInternal(cublasDrot, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuMemoryMutable(x), incx,
-                        GpuMemoryMutable(y), incy, &c, &s);
+  return DoBlasInternal<double>(
+      cublasDrot, stream, true /* = pointer_mode_host */, elem_count,
+      GpuMemoryMutable(x), incx, GpuMemoryMutable(y), incy, &c, &s);
 }
 
 bool CUDABlas::DoBlasRot(Stream *stream, uint64 elem_count,
                          DeviceMemory<std::complex<float>> *x, int incx,
                          DeviceMemory<std::complex<float>> *y, int incy,
                          float c, float s) {
-  return DoBlasInternal(cublasCsrot, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemoryMutable(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy, &c, &s);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCsrot, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemoryMutable(x)), incx, GpuComplex(GpuMemoryMutable(y)),
+      incy, &c, &s);
 }
 
 bool CUDABlas::DoBlasRot(Stream *stream, uint64 elem_count,
                          DeviceMemory<std::complex<double>> *x, int incx,
                          DeviceMemory<std::complex<double>> *y, int incy,
                          double c, double s) {
-  return DoBlasInternal(cublasZdrot, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemoryMutable(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy, &c, &s);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZdrot, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemoryMutable(x)), incx, GpuComplex(GpuMemoryMutable(y)),
+      incy, &c, &s);
 }
 
 bool CUDABlas::DoBlasRotg(Stream *stream, DeviceMemory<float> *a,
                           DeviceMemory<float> *b, DeviceMemory<float> *c,
                           DeviceMemory<float> *s) {
-  return DoBlasInternal(cublasSrotg, stream, false /* = pointer_mode_host */,
-                        GpuMemoryMutable(a), GpuMemoryMutable(b),
-                        GpuMemoryMutable(c), GpuMemoryMutable(s));
+  return DoBlasInternal<float>(
+      cublasSrotg, stream, false /* = pointer_mode_host */, GpuMemoryMutable(a),
+      GpuMemoryMutable(b), GpuMemoryMutable(c), GpuMemoryMutable(s));
 }
 
 bool CUDABlas::DoBlasRotg(Stream *stream, DeviceMemory<double> *a,
                           DeviceMemory<double> *b, DeviceMemory<double> *c,
                           DeviceMemory<double> *s) {
-  return DoBlasInternal(cublasDrotg, stream, false /* = pointer_mode_host */,
-                        GpuComplex(GpuMemoryMutable(a)), GpuMemoryMutable(b),
-                        GpuMemoryMutable(c), GpuMemoryMutable(s));
+  return DoBlasInternal<double>(
+      cublasDrotg, stream, false /* = pointer_mode_host */,
+      GpuComplex(GpuMemoryMutable(a)), GpuMemoryMutable(b), GpuMemoryMutable(c),
+      GpuMemoryMutable(s));
 }
 
 bool CUDABlas::DoBlasRotg(Stream *stream, DeviceMemory<std::complex<float>> *a,
                           DeviceMemory<std::complex<float>> *b,
                           DeviceMemory<float> *c,
                           DeviceMemory<std::complex<float>> *s) {
-  return DoBlasInternal(
+  return DoBlasInternal<std::complex<float>>(
       cublasCrotg, stream, false /* = pointer_mode_host */,
       GpuComplex(GpuMemoryMutable(a)), GpuComplex(GpuMemoryMutable(b)),
       GpuComplex(GpuMemoryMutable(c)), GpuComplex(GpuMemoryMutable(s)));
@@ -694,7 +832,7 @@ bool CUDABlas::DoBlasRotg(Stream *stream, DeviceMemory<std::complex<double>> *a,
                           DeviceMemory<std::complex<double>> *b,
                           DeviceMemory<double> *c,
                           DeviceMemory<std::complex<double>> *s) {
-  return DoBlasInternal(
+  return DoBlasInternal<std::complex<double>>(
       cublasZrotg, stream, false /* = pointer_mode_host */,
       GpuComplex(GpuMemoryMutable(a)), GpuComplex(GpuMemoryMutable(b)),
       GpuComplex(GpuMemoryMutable(c)), GpuComplex(GpuMemoryMutable(s)));
@@ -704,176 +842,180 @@ bool CUDABlas::DoBlasRotm(Stream *stream, uint64 elem_count,
                           DeviceMemory<float> *x, int incx,
                           DeviceMemory<float> *y, int incy,
                           const DeviceMemory<float> &param) {
-  return DoBlasInternal(cublasSrotm, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemoryMutable(x), incx,
-                        GpuMemoryMutable(y), incy, GpuMemory(param));
+  return DoBlasInternal<float>(
+      cublasSrotm, stream, false /* = pointer_mode_host */, elem_count,
+      GpuMemoryMutable(x), incx, GpuMemoryMutable(y), incy, GpuMemory(param));
 }
 
 bool CUDABlas::DoBlasRotm(Stream *stream, uint64 elem_count,
                           DeviceMemory<double> *x, int incx,
                           DeviceMemory<double> *y, int incy,
                           const DeviceMemory<double> &param) {
-  return DoBlasInternal(cublasDrotm, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemoryMutable(x), incx,
-                        GpuMemoryMutable(y), incy, GpuMemory(param));
+  return DoBlasInternal<double>(
+      cublasDrotm, stream, false /* = pointer_mode_host */, elem_count,
+      GpuMemoryMutable(x), incx, GpuMemoryMutable(y), incy, GpuMemory(param));
 }
 
 bool CUDABlas::DoBlasRotmg(Stream *stream, DeviceMemory<float> *d1,
                            DeviceMemory<float> *d2, DeviceMemory<float> *x1,
                            const DeviceMemory<float> &y1,
                            DeviceMemory<float> *param) {
-  return DoBlasInternal(cublasSrotmg, stream, false /* = pointer_mode_host */,
-                        GpuMemoryMutable(d1), GpuMemoryMutable(d2),
-                        GpuMemoryMutable(x1), GpuMemory(y1),
-                        GpuMemoryMutable(param));
+  return DoBlasInternal<float>(
+      cublasSrotmg, stream, false /* = pointer_mode_host */,
+      GpuMemoryMutable(d1), GpuMemoryMutable(d2), GpuMemoryMutable(x1),
+      GpuMemory(y1), GpuMemoryMutable(param));
 }
 
 bool CUDABlas::DoBlasRotmg(Stream *stream, DeviceMemory<double> *d1,
                            DeviceMemory<double> *d2, DeviceMemory<double> *x1,
                            const DeviceMemory<double> &y1,
                            DeviceMemory<double> *param) {
-  return DoBlasInternal(cublasDrotmg, stream, false /* = pointer_mode_host */,
-                        GpuMemoryMutable(d1), GpuMemoryMutable(d2),
-                        GpuMemoryMutable(x1), GpuMemory(y1),
-                        GpuMemoryMutable(param));
+  return DoBlasInternal<double>(
+      cublasDrotmg, stream, false /* = pointer_mode_host */,
+      GpuMemoryMutable(d1), GpuMemoryMutable(d2), GpuMemoryMutable(x1),
+      GpuMemory(y1), GpuMemoryMutable(param));
 }
 
 bool CUDABlas::DoBlasScal(Stream *stream, uint64 elem_count, float alpha,
                           DeviceMemory<float> *x, int incx) {
-  return DoBlasInternal(cublasSscal, stream, true /* = pointer_mode_host */,
-                        elem_count, &alpha, GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(cublasSscal, stream,
+                               true /* = pointer_mode_host */, elem_count,
+                               &alpha, GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasScal(Stream *stream, uint64 elem_count, double alpha,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDscal, stream, true /* = pointer_mode_host */,
-                        elem_count, &alpha, GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(cublasDscal, stream,
+                                true /* = pointer_mode_host */, elem_count,
+                                &alpha, GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasScal(Stream *stream, uint64 elem_count, float alpha,
                           DeviceMemory<std::complex<float>> *x, int incx) {
-  return DoBlasInternal(cublasCsscal, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(&alpha),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCsscal, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(&alpha), GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasScal(Stream *stream, uint64 elem_count, double alpha,
                           DeviceMemory<std::complex<double>> *x, int incx) {
-  return DoBlasInternal(cublasZdscal, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(&alpha),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZdscal, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(&alpha), GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasScal(Stream *stream, uint64 elem_count,
                           std::complex<float> alpha,
                           DeviceMemory<std::complex<float>> *x, int incx) {
-  return DoBlasInternal(cublasCscal, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(&alpha),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCscal, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(&alpha), GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasScal(Stream *stream, uint64 elem_count,
                           std::complex<double> alpha,
                           DeviceMemory<std::complex<double>> *x, int incx) {
-  return DoBlasInternal(cublasZscal, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(&alpha),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZscal, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(&alpha), GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasSwap(Stream *stream, uint64 elem_count,
                           DeviceMemory<float> *x, int incx,
                           DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSswap, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuMemoryMutable(x), incx,
-                        GpuMemoryMutable(y), incy);
+  return DoBlasInternal<float>(
+      cublasSswap, stream, true /* = pointer_mode_host */, elem_count,
+      GpuMemoryMutable(x), incx, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSwap(Stream *stream, uint64 elem_count,
                           DeviceMemory<double> *x, int incx,
                           DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDswap, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuMemoryMutable(x), incx,
-                        GpuMemoryMutable(y), incy);
+  return DoBlasInternal<double>(
+      cublasDswap, stream, true /* = pointer_mode_host */, elem_count,
+      GpuMemoryMutable(x), incx, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSwap(Stream *stream, uint64 elem_count,
                           DeviceMemory<std::complex<float>> *x, int incx,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasCswap, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemoryMutable(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCswap, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemoryMutable(x)), incx, GpuComplex(GpuMemoryMutable(y)),
+      incy);
 }
 
 bool CUDABlas::DoBlasSwap(Stream *stream, uint64 elem_count,
                           DeviceMemory<std::complex<double>> *x, int incx,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZswap, stream, true /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemoryMutable(x)), incx,
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZswap, stream, true /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemoryMutable(x)), incx, GpuComplex(GpuMemoryMutable(y)),
+      incy);
 }
 
 bool CUDABlas::DoBlasIamax(Stream *stream, uint64 elem_count,
                            const DeviceMemory<float> &x, int incx,
                            DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIsamax, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<float>(cublasIsamax, stream,
+                               false /* = pointer_mode_host */, elem_count,
+                               GpuMemory(x), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamax(Stream *stream, uint64 elem_count,
                            const DeviceMemory<double> &x, int incx,
                            DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIdamax, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuMemory(x), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<double>(cublasIdamax, stream,
+                                false /* = pointer_mode_host */, elem_count,
+                                GpuMemory(x), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamax(Stream *stream, uint64 elem_count,
                            const DeviceMemory<std::complex<float>> &x, int incx,
                            DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIcamax, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<float>>(
+      cublasIcamax, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamax(Stream *stream, uint64 elem_count,
                            const DeviceMemory<std::complex<double>> &x,
                            int incx, DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIzamax, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<double>>(
+      cublasIzamax, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamin(Stream *stream, uint64 elem_count,
                            const DeviceMemory<float> &x, int incx,
                            DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIsamin, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<float>(
+      cublasIsamin, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamin(Stream *stream, uint64 elem_count,
                            const DeviceMemory<double> &x, int incx,
                            DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIdamin, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<double>(
+      cublasIdamin, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamin(Stream *stream, uint64 elem_count,
                            const DeviceMemory<std::complex<float>> &x, int incx,
                            DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIcamin, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<float>>(
+      cublasIcamin, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasIamin(Stream *stream, uint64 elem_count,
                            const DeviceMemory<std::complex<double>> &x,
                            int incx, DeviceMemory<int> *result) {
-  return DoBlasInternal(cublasIzamin, stream, false /* = pointer_mode_host */,
-                        elem_count, GpuComplex(GpuMemory(x)), incx,
-                        GpuMemoryMutable(result));
+  return DoBlasInternal<std::complex<double>>(
+      cublasIzamin, stream, false /* = pointer_mode_host */, elem_count,
+      GpuComplex(GpuMemory(x)), incx, GpuMemoryMutable(result));
 }
 
 bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
@@ -881,10 +1023,10 @@ bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
                           const DeviceMemory<float> &a, int lda,
                           const DeviceMemory<float> &x, int incx, float beta,
                           DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSgbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, kl, ku, &alpha,
-                        GpuMemory(a), lda, GpuMemory(x), incx, &beta,
-                        GpuMemoryMutable(y), incy);
+  return DoBlasInternal<float>(
+      cublasSgbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, kl, ku, &alpha, GpuMemory(a), lda,
+      GpuMemory(x), incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
@@ -892,10 +1034,10 @@ bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
                           const DeviceMemory<double> &a, int lda,
                           const DeviceMemory<double> &x, int incx, double beta,
                           DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDgbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, kl, ku, &alpha,
-                        GpuMemory(a), lda, GpuMemory(x), incx, &beta,
-                        GpuMemoryMutable(y), incy);
+  return DoBlasInternal<double>(
+      cublasDgbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, kl, ku, &alpha, GpuMemory(a), lda,
+      GpuMemory(x), incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
@@ -905,11 +1047,11 @@ bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasCgbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, kl, ku,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(x)), incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCgbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, kl, ku, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
@@ -919,31 +1061,31 @@ bool CUDABlas::DoBlasGbmv(Stream *stream, blas::Transpose trans, uint64 m,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZgbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, kl, ku,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(x)), incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZgbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, kl, ku, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
                           uint64 n, float alpha, const DeviceMemory<float> &a,
                           int lda, const DeviceMemory<float> &x, int incx,
                           float beta, DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSgemv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, &alpha, GpuMemory(a),
-                        lda, GpuMemory(x), incx, &beta, GpuMemoryMutable(y),
-                        incy);
+  return DoBlasInternal<float>(
+      cublasSgemv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, &alpha, GpuMemory(a), lda, GpuMemory(x),
+      incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
                           uint64 n, double alpha, const DeviceMemory<double> &a,
                           int lda, const DeviceMemory<double> &x, int incx,
                           double beta, DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDgemv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, &alpha, GpuMemory(a),
-                        lda, GpuMemory(x), incx, &beta, GpuMemoryMutable(y),
-                        incy);
+  return DoBlasInternal<double>(
+      cublasDgemv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, &alpha, GpuMemory(a), lda, GpuMemory(x),
+      incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
@@ -952,11 +1094,11 @@ bool CUDABlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasCgemv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCgemv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
@@ -965,29 +1107,29 @@ bool CUDABlas::DoBlasGemv(Stream *stream, blas::Transpose trans, uint64 m,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZgemv, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(trans), m, n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZgemv, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(trans), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasGer(Stream *stream, uint64 m, uint64 n, float alpha,
                          const DeviceMemory<float> &x, int incx,
                          const DeviceMemory<float> &y, int incy,
                          DeviceMemory<float> *a, int lda) {
-  return DoBlasInternal(cublasSger, stream, true /* = pointer_mode_host */, m,
-                        n, &alpha, GpuMemory(x), incx, GpuMemory(y), incy,
-                        GpuMemoryMutable(a), lda);
+  return DoBlasInternal<float>(
+      cublasSger, stream, true /* = pointer_mode_host */, m, n, &alpha,
+      GpuMemory(x), incx, GpuMemory(y), incy, GpuMemoryMutable(a), lda);
 }
 
 bool CUDABlas::DoBlasGer(Stream *stream, uint64 m, uint64 n, double alpha,
                          const DeviceMemory<double> &x, int incx,
                          const DeviceMemory<double> &y, int incy,
                          DeviceMemory<double> *a, int lda) {
-  return DoBlasInternal(cublasDger, stream, true /* = pointer_mode_host */, m,
-                        n, &alpha, GpuMemory(x), incx, GpuMemory(y), incy,
-                        GpuMemoryMutable(a), lda);
+  return DoBlasInternal<double>(
+      cublasDger, stream, true /* = pointer_mode_host */, m, n, &alpha,
+      GpuMemory(x), incx, GpuMemory(y), incy, GpuMemoryMutable(a), lda);
 }
 
 bool CUDABlas::DoBlasGerc(Stream *stream, uint64 m, uint64 n,
@@ -995,10 +1137,10 @@ bool CUDABlas::DoBlasGerc(Stream *stream, uint64 m, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           const DeviceMemory<std::complex<float>> &y, int incy,
                           DeviceMemory<std::complex<float>> *a, int lda) {
-  return DoBlasInternal(cublasCgerc, stream, true /* = pointer_mode_host */, m,
-                        n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCgerc, stream, true /* = pointer_mode_host */, m, n,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(a)), lda);
 }
 
 bool CUDABlas::DoBlasGerc(Stream *stream, uint64 m, uint64 n,
@@ -1006,10 +1148,10 @@ bool CUDABlas::DoBlasGerc(Stream *stream, uint64 m, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           const DeviceMemory<std::complex<double>> &y, int incy,
                           DeviceMemory<std::complex<double>> *a, int lda) {
-  return DoBlasInternal(cublasZgerc, stream, true /* = pointer_mode_host */, m,
-                        n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZgerc, stream, true /* = pointer_mode_host */, m, n,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(a)), lda);
 }
 
 bool CUDABlas::DoBlasGeru(Stream *stream, uint64 m, uint64 n,
@@ -1017,10 +1159,10 @@ bool CUDABlas::DoBlasGeru(Stream *stream, uint64 m, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           const DeviceMemory<std::complex<float>> &y, int incy,
                           DeviceMemory<std::complex<float>> *a, int lda) {
-  return DoBlasInternal(cublasCgeru, stream, true /* = pointer_mode_host */, m,
-                        n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCgeru, stream, true /* = pointer_mode_host */, m, n,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(a)), lda);
 }
 
 bool CUDABlas::DoBlasGeru(Stream *stream, uint64 m, uint64 n,
@@ -1028,10 +1170,10 @@ bool CUDABlas::DoBlasGeru(Stream *stream, uint64 m, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           const DeviceMemory<std::complex<double>> &y, int incy,
                           DeviceMemory<std::complex<double>> *a, int lda) {
-  return DoBlasInternal(cublasZgeru, stream, true /* = pointer_mode_host */, m,
-                        n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZgeru, stream, true /* = pointer_mode_host */, m, n,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(a)), lda);
 }
 
 bool CUDABlas::DoBlasHbmv(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1040,11 +1182,11 @@ bool CUDABlas::DoBlasHbmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasChbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, k, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasChbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, k, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasHbmv(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1053,11 +1195,11 @@ bool CUDABlas::DoBlasHbmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZhbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, k, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZhbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, k, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasHemv(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1066,11 +1208,11 @@ bool CUDABlas::DoBlasHemv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasChemv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasChemv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(a)),
+      lda, GpuComplex(GpuMemory(x)), incx, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasHemv(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1079,31 +1221,31 @@ bool CUDABlas::DoBlasHemv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZhemv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZhemv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(a)),
+      lda, GpuComplex(GpuMemory(x)), incx, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasHer(Stream *stream, blas::UpperLower uplo, uint64 n,
                          float alpha,
                          const DeviceMemory<std::complex<float>> &x, int incx,
                          DeviceMemory<std::complex<float>> *a, int lda) {
-  return DoBlasInternal(cublasCher, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha,
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCher, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemoryMutable(a)), lda);
 }
 
 bool CUDABlas::DoBlasHer(Stream *stream, blas::UpperLower uplo, uint64 n,
                          double alpha,
                          const DeviceMemory<std::complex<double>> &x, int incx,
                          DeviceMemory<std::complex<double>> *a, int lda) {
-  return DoBlasInternal(cublasZher, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha,
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZher, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(GpuMemoryMutable(a)), lda);
 }
 
 bool CUDABlas::DoBlasHer2(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1111,11 +1253,11 @@ bool CUDABlas::DoBlasHer2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           const DeviceMemory<std::complex<float>> &y, int incy,
                           DeviceMemory<std::complex<float>> *a, int lda) {
-  return DoBlasInternal(cublasCher2, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCher2, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)),
+      incx, GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(a)),
+      lda);
 }
 
 bool CUDABlas::DoBlasHer2(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1123,11 +1265,11 @@ bool CUDABlas::DoBlasHer2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           const DeviceMemory<std::complex<double>> &y, int incy,
                           DeviceMemory<std::complex<double>> *a, int lda) {
-  return DoBlasInternal(cublasZher2, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemory(y)), incy,
-                        GpuComplex(GpuMemoryMutable(a)), lda);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZher2, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)),
+      incx, GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(a)),
+      lda);
 }
 
 bool CUDABlas::DoBlasHpmv(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1136,11 +1278,11 @@ bool CUDABlas::DoBlasHpmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *y, int incy) {
-  return DoBlasInternal(cublasChpmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(ap)), GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<float>>(
+      cublasChpmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(ap)), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasHpmv(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1149,31 +1291,31 @@ bool CUDABlas::DoBlasHpmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *y, int incy) {
-  return DoBlasInternal(cublasZhpmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(ap)), GpuComplex(GpuMemory(x)),
-                        incx, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(y)), incy);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZhpmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(ap)), GpuComplex(GpuMemory(x)), incx,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(y)), incy);
 }
 
 bool CUDABlas::DoBlasHpr(Stream *stream, blas::UpperLower uplo, uint64 n,
                          float alpha,
                          const DeviceMemory<std::complex<float>> &x, int incx,
                          DeviceMemory<std::complex<float>> *ap) {
-  return DoBlasInternal(cublasChpr, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(ap)));
+  return DoBlasInternal<std::complex<float>>(
+      cublasChpr, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)),
+      incx, GpuComplex(GpuMemoryMutable(ap)));
 }
 
 bool CUDABlas::DoBlasHpr(Stream *stream, blas::UpperLower uplo, uint64 n,
                          double alpha,
                          const DeviceMemory<std::complex<double>> &x, int incx,
                          DeviceMemory<std::complex<double>> *ap) {
-  return DoBlasInternal(cublasZhpr, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, GpuComplex(&alpha),
-                        GpuComplex(GpuMemory(x)), incx,
-                        GpuComplex(GpuMemoryMutable(ap)));
+  return DoBlasInternal<std::complex<double>>(
+      cublasZhpr, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)),
+      incx, GpuComplex(GpuMemoryMutable(ap)));
 }
 
 bool CUDABlas::DoBlasHpr2(Stream *stream, blas::UpperLower uplo, uint64 n,
@@ -1181,7 +1323,7 @@ bool CUDABlas::DoBlasHpr2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<float>> &x, int incx,
                           const DeviceMemory<std::complex<float>> &y, int incy,
                           DeviceMemory<std::complex<float>> *ap) {
-  return DoBlasInternal(
+  return DoBlasInternal<std::complex<float>>(
       cublasChpr2, stream, true /* = pointer_mode_host */,
       CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)),
       incx, GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(ap)));
@@ -1192,7 +1334,7 @@ bool CUDABlas::DoBlasHpr2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           const DeviceMemory<std::complex<double>> &x, int incx,
                           const DeviceMemory<std::complex<double>> &y, int incy,
                           DeviceMemory<std::complex<double>> *ap) {
-  return DoBlasInternal(
+  return DoBlasInternal<std::complex<double>>(
       cublasZhpr2, stream, true /* = pointer_mode_host */,
       CUDABlasUpperLower(uplo), n, GpuComplex(&alpha), GpuComplex(GpuMemory(x)),
       incx, GpuComplex(GpuMemory(y)), incy, GpuComplex(GpuMemoryMutable(ap)));
@@ -1202,144 +1344,158 @@ bool CUDABlas::DoBlasSbmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           uint64 k, float alpha, const DeviceMemory<float> &a,
                           int lda, const DeviceMemory<float> &x, int incx,
                           float beta, DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSsbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, k, &alpha, GpuMemory(a),
-                        lda, GpuMemory(x), incx, &beta, GpuMemoryMutable(y),
-                        incy);
+  return DoBlasInternal<float>(
+      cublasSsbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, k, &alpha, GpuMemory(a), lda, GpuMemory(x),
+      incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSbmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           uint64 k, double alpha, const DeviceMemory<double> &a,
                           int lda, const DeviceMemory<double> &x, int incx,
                           double beta, DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDsbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, k, &alpha, GpuMemory(a),
-                        lda, GpuMemory(x), incx, &beta, GpuMemoryMutable(y),
-                        incy);
+  return DoBlasInternal<double>(
+      cublasDsbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, k, &alpha, GpuMemory(a), lda, GpuMemory(x),
+      incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSpmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           float alpha, const DeviceMemory<float> &ap,
                           const DeviceMemory<float> &x, int incx, float beta,
                           DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSspmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(ap),
-                        GpuMemory(x), incx, &beta, GpuMemoryMutable(y), incy);
+  return DoBlasInternal<float>(
+      cublasSspmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(ap), GpuMemory(x), incx,
+      &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSpmv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           double alpha, const DeviceMemory<double> &ap,
                           const DeviceMemory<double> &x, int incx, double beta,
                           DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDspmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(ap),
-                        GpuMemory(x), incx, &beta, GpuMemoryMutable(y), incy);
+  return DoBlasInternal<double>(
+      cublasDspmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(ap), GpuMemory(x), incx,
+      &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSpr(Stream *stream, blas::UpperLower uplo, uint64 n,
                          float alpha, const DeviceMemory<float> &x, int incx,
                          DeviceMemory<float> *ap) {
-  return DoBlasInternal(cublasSspr, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemoryMutable(ap));
+  return DoBlasInternal<float>(cublasSspr, stream,
+                               true /* = pointer_mode_host */,
+                               CUDABlasUpperLower(uplo), n, &alpha,
+                               GpuMemory(x), incx, GpuMemoryMutable(ap));
 }
 
 bool CUDABlas::DoBlasSpr(Stream *stream, blas::UpperLower uplo, uint64 n,
                          double alpha, const DeviceMemory<double> &x, int incx,
                          DeviceMemory<double> *ap) {
-  return DoBlasInternal(cublasDspr, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemoryMutable(ap));
+  return DoBlasInternal<double>(cublasDspr, stream,
+                                true /* = pointer_mode_host */,
+                                CUDABlasUpperLower(uplo), n, &alpha,
+                                GpuMemory(x), incx, GpuMemoryMutable(ap));
 }
 
 bool CUDABlas::DoBlasSpr2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           float alpha, const DeviceMemory<float> &x, int incx,
                           const DeviceMemory<float> &y, int incy,
                           DeviceMemory<float> *ap) {
-  return DoBlasInternal(cublasSspr2, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemory(y), incy, GpuMemoryMutable(ap));
+  return DoBlasInternal<float>(
+      cublasSspr2, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx, GpuMemory(y),
+      incy, GpuMemoryMutable(ap));
 }
 
 bool CUDABlas::DoBlasSpr2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           double alpha, const DeviceMemory<double> &x, int incx,
                           const DeviceMemory<double> &y, int incy,
                           DeviceMemory<double> *ap) {
-  return DoBlasInternal(cublasDspr2, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemory(y), incy, GpuMemoryMutable(ap));
+  return DoBlasInternal<double>(
+      cublasDspr2, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx, GpuMemory(y),
+      incy, GpuMemoryMutable(ap));
 }
 
 bool CUDABlas::DoBlasSymv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           float alpha, const DeviceMemory<float> &a, int lda,
                           const DeviceMemory<float> &x, int incx, float beta,
                           DeviceMemory<float> *y, int incy) {
-  return DoBlasInternal(cublasSsymv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(a), lda,
-                        GpuMemory(x), incx, &beta, GpuMemoryMutable(y), incy);
+  return DoBlasInternal<float>(
+      cublasSsymv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(a), lda, GpuMemory(x),
+      incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSymv(Stream *stream, blas::UpperLower uplo, uint64 n,
                           double alpha, const DeviceMemory<double> &a, int lda,
                           const DeviceMemory<double> &x, int incx, double beta,
                           DeviceMemory<double> *y, int incy) {
-  return DoBlasInternal(cublasDsymv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(a), lda,
-                        GpuMemory(x), incx, &beta, GpuMemoryMutable(y), incy);
+  return DoBlasInternal<double>(
+      cublasDsymv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(a), lda, GpuMemory(x),
+      incx, &beta, GpuMemoryMutable(y), incy);
 }
 
 bool CUDABlas::DoBlasSyr(Stream *stream, blas::UpperLower uplo, uint64 n,
                          float alpha, const DeviceMemory<float> &x, int incx,
                          DeviceMemory<float> *a, int lda) {
-  return DoBlasInternal(cublasSsyr, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemoryMutable(a), lda);
+  return DoBlasInternal<float>(cublasSsyr, stream,
+                               true /* = pointer_mode_host */,
+                               CUDABlasUpperLower(uplo), n, &alpha,
+                               GpuMemory(x), incx, GpuMemoryMutable(a), lda);
 }
 
 bool CUDABlas::DoBlasSyr(Stream *stream, blas::UpperLower uplo, uint64 n,
                          double alpha, const DeviceMemory<double> &x, int incx,
                          DeviceMemory<double> *a, int lda) {
-  return DoBlasInternal(cublasDsyr, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemoryMutable(a), lda);
+  return DoBlasInternal<double>(cublasDsyr, stream,
+                                true /* = pointer_mode_host */,
+                                CUDABlasUpperLower(uplo), n, &alpha,
+                                GpuMemory(x), incx, GpuMemoryMutable(a), lda);
 }
 
 bool CUDABlas::DoBlasSyr2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           float alpha, const DeviceMemory<float> &x, int incx,
                           const DeviceMemory<float> &y, int incy,
                           DeviceMemory<float> *a, int lda) {
-  return DoBlasInternal(cublasSsyr2, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemory(y), incy, GpuMemoryMutable(a), lda);
+  return DoBlasInternal<float>(
+      cublasSsyr2, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx, GpuMemory(y),
+      incy, GpuMemoryMutable(a), lda);
 }
 
 bool CUDABlas::DoBlasSyr2(Stream *stream, blas::UpperLower uplo, uint64 n,
                           double alpha, const DeviceMemory<double> &x, int incx,
                           const DeviceMemory<double> &y, int incy,
                           DeviceMemory<double> *a, int lda) {
-  return DoBlasInternal(cublasDsyr2, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx,
-                        GpuMemory(y), incy, GpuMemoryMutable(a), lda);
+  return DoBlasInternal<double>(
+      cublasDsyr2, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), n, &alpha, GpuMemory(x), incx, GpuMemory(y),
+      incy, GpuMemoryMutable(a), lda);
 }
 
 bool CUDABlas::DoBlasTbmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           uint64 k, const DeviceMemory<float> &a, int lda,
                           DeviceMemory<float> *x, int incx) {
-  return DoBlasInternal(cublasStbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(
+      cublasStbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda, GpuMemoryMutable(x),
+      incx);
 }
 
 bool CUDABlas::DoBlasTbmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           uint64 k, const DeviceMemory<double> &a, int lda,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDtbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(
+      cublasDtbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda, GpuMemoryMutable(x),
+      incx);
 }
 
 bool CUDABlas::DoBlasTbmv(Stream *stream, blas::UpperLower uplo,
@@ -1347,10 +1503,11 @@ bool CUDABlas::DoBlasTbmv(Stream *stream, blas::UpperLower uplo,
                           uint64 k, const DeviceMemory<std::complex<float>> &a,
                           int lda, DeviceMemory<std::complex<float>> *x,
                           int incx) {
-  return DoBlasInternal(cublasCtbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTbmv(Stream *stream, blas::UpperLower uplo,
@@ -1358,30 +1515,33 @@ bool CUDABlas::DoBlasTbmv(Stream *stream, blas::UpperLower uplo,
                           uint64 k, const DeviceMemory<std::complex<double>> &a,
                           int lda, DeviceMemory<std::complex<double>> *x,
                           int incx) {
-  return DoBlasInternal(cublasZtbmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtbmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTbsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           uint64 k, const DeviceMemory<float> &a, int lda,
                           DeviceMemory<float> *x, int incx) {
-  return DoBlasInternal(cublasStbsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(
+      cublasStbsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda, GpuMemoryMutable(x),
+      incx);
 }
 
 bool CUDABlas::DoBlasTbsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           uint64 k, const DeviceMemory<double> &a, int lda,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDtbsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(
+      cublasDtbsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuMemory(a), lda, GpuMemoryMutable(x),
+      incx);
 }
 
 bool CUDABlas::DoBlasTbsv(Stream *stream, blas::UpperLower uplo,
@@ -1389,10 +1549,11 @@ bool CUDABlas::DoBlasTbsv(Stream *stream, blas::UpperLower uplo,
                           uint64 k, const DeviceMemory<std::complex<float>> &a,
                           int lda, DeviceMemory<std::complex<float>> *x,
                           int incx) {
-  return DoBlasInternal(cublasCtbsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtbsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTbsv(Stream *stream, blas::UpperLower uplo,
@@ -1400,170 +1561,179 @@ bool CUDABlas::DoBlasTbsv(Stream *stream, blas::UpperLower uplo,
                           uint64 k, const DeviceMemory<std::complex<double>> &a,
                           int lda, DeviceMemory<std::complex<double>> *x,
                           int incx) {
-  return DoBlasInternal(cublasZtbsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtbsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, k, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTpmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<float> &ap, DeviceMemory<float> *x,
                           int incx) {
-  return DoBlasInternal(cublasStpmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(ap),
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(
+      cublasStpmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(ap), GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTpmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<double> &ap,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDtpmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(ap),
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(
+      cublasDtpmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(ap), GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTpmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<float>> &ap,
                           DeviceMemory<std::complex<float>> *x, int incx) {
-  return DoBlasInternal(cublasCtpmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtpmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTpmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<double>> &ap,
                           DeviceMemory<std::complex<double>> *x, int incx) {
-  return DoBlasInternal(cublasZtpmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtpmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTpsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<float> &ap, DeviceMemory<float> *x,
                           int incx) {
-  return DoBlasInternal(cublasStpsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(ap),
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(
+      cublasStpsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(ap), GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTpsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<double> &ap,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDtpsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(ap),
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(
+      cublasDtpsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(ap), GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTpsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<float>> &ap,
                           DeviceMemory<std::complex<float>> *x, int incx) {
-  return DoBlasInternal(cublasCtpsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtpsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTpsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<double>> &ap,
                           DeviceMemory<std::complex<double>> *x, int incx) {
-  return DoBlasInternal(cublasZtpsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
-                        GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtpsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(ap)),
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTrmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<float> &a, int lda,
                           DeviceMemory<float> *x, int incx) {
-  return DoBlasInternal(cublasStrmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(
+      cublasStrmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(a), lda, GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTrmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<double> &a, int lda,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDtrmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(
+      cublasDtrmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(a), lda, GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTrmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<float>> &a, int lda,
                           DeviceMemory<std::complex<float>> *x, int incx) {
-  return DoBlasInternal(cublasCtrmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtrmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTrmv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           DeviceMemory<std::complex<double>> *x, int incx) {
-  return DoBlasInternal(cublasZtrmv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtrmv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<float> &a, int lda,
                           DeviceMemory<float> *x, int incx) {
-  return DoBlasInternal(cublasStrsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<float>(
+      cublasStrsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(a), lda, GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<double> &a, int lda,
                           DeviceMemory<double> *x, int incx) {
-  return DoBlasInternal(cublasDtrsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuMemory(a), lda,
-                        GpuMemoryMutable(x), incx);
+  return DoBlasInternal<double>(
+      cublasDtrsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuMemory(a), lda, GpuMemoryMutable(x), incx);
 }
 
 bool CUDABlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<float>> &a, int lda,
                           DeviceMemory<std::complex<float>> *x, int incx) {
-  return DoBlasInternal(cublasCtrsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtrsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasTrsv(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, blas::Diagonal diag, uint64 n,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           DeviceMemory<std::complex<double>> *x, int incx) {
-  return DoBlasInternal(cublasZtrsv, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
-                        CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)),
-                        lda, GpuComplex(GpuMemoryMutable(x)), incx);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtrsv, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans),
+      CUDABlasDiagonal(diag), n, GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemoryMutable(x)), incx);
 }
 
 bool CUDABlas::DoBlasGemm(
@@ -1572,7 +1742,12 @@ bool CUDABlas::DoBlasGemm(
     float alpha, const DeviceMemory<Eigen::half> &a, int lda,
     const DeviceMemory<Eigen::half> &b, int ldb, float beta,
     DeviceMemory<Eigen::half> *c, int ldc) {
-#if CUDA_VERSION >= 7050
+  cublasMath_t math_type = CUBLAS_DEFAULT_MATH;
+
+#if CUDA_VERSION < 11000
+  math_type = CUBLAS_TENSOR_OP_MATH;
+#endif
+
   VLOG(1) << absl::StrFormat(
       "doing cuBLAS SGEMM: at=%d bt=%d m=%u n=%u "
       "k=%u alpha=%f a=%p lda=%d b=%p ldb=%d beta=%f "
@@ -1602,30 +1777,18 @@ bool CUDABlas::DoBlasGemm(
     }
   }
 
-  bool use_tensor_ops = false;
-#if CUDA_VERSION >= 9000
-  int cc_major, cc_minor;
-  stream->parent()->GetDeviceDescription().cuda_compute_capability(&cc_major,
-                                                                   &cc_minor);
-
-  // GPUs < sm_70 don't support tensor ops.
-  if (cc_major >= 7 && TensorOpMathEnabled()) {
-    use_tensor_ops = true;
-  }
-#endif
-
-  return DoBlasInternalImpl(
-      cublasSgemmEx, stream, true /* = pointer_mode_host */,
-      true /* = err_on_failure= */, use_tensor_ops, CUDABlasTranspose(transa),
-      CUDABlasTranspose(transb), m, n, k, &alpha, GpuMemory(a),
-      SE_CUDA_DATA_HALF, lda, GpuMemory(b), SE_CUDA_DATA_HALF, ldb, &beta,
-      GpuMemoryMutable(c), SE_CUDA_DATA_HALF, ldc);
-
-#else
+#if CUDA_VERSION < 7050
   LOG(ERROR) << "fp16 sgemm is not implemented in this cuBLAS version "
              << "(need at least CUDA 7.5)";
   return false;
 #endif
+
+  return DoBlasInternalImpl<Eigen::half>(
+      cublasSgemmEx, stream, true /* = pointer_mode_host */,
+      true /* = err_on_failure= */, CUDABlasTranspose(transa),
+      CUDABlasTranspose(transb), m, n, k, &alpha, GpuMemory(a),
+      SE_CUDA_DATA_HALF, lda, GpuMemory(b), SE_CUDA_DATA_HALF, ldb, &beta,
+      GpuMemoryMutable(c), SE_CUDA_DATA_HALF, ldc);
 }
 
 bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
@@ -1633,6 +1796,12 @@ bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                           float alpha, const DeviceMemory<float> &a, int lda,
                           const DeviceMemory<float> &b, int ldb, float beta,
                           DeviceMemory<float> *c, int ldc) {
+  cublasMath_t math_type = CUBLAS_DEFAULT_MATH;
+
+#if CUDA_VERSION >= 11000
+  math_type = CUBLAS_TF32_TENSOR_OP_MATH;
+#endif
+
   VLOG(1) << absl::StrFormat(
       "doing cuBLAS SGEMM: at=%d bt=%d m=%u n=%u "
       "k=%u alpha=%f a=%p lda=%d b=%p ldb=%d beta=%f "
@@ -1662,26 +1831,12 @@ bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
     }
   }
 
-#if CUDA_VERSION >= 9000
-  int cc_major, cc_minor;
-  stream->parent()->GetDeviceDescription().cuda_compute_capability(&cc_major,
-                                                                   &cc_minor);
-
-  // GPUs < sm_70 don't support tensor cores.
-  if (cc_major >= 7) {
-    return DoBlasInternalImpl(
-        cublasSgemmEx, stream, true /* = pointer_mode_host */,
-        true /* = err_on_failure */, false /* = use_tensor_op_math */,
-        CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
-        GpuMemory(a), SE_CUDA_DATA_FLOAT, lda, GpuMemory(b), SE_CUDA_DATA_FLOAT,
-        ldb, &beta, GpuMemoryMutable(c), SE_CUDA_DATA_FLOAT, ldc);
-  }
-#endif
-
-  return DoBlasInternal(
-      cublasSgemm, stream, true /* = pointer_mode_host */,
-      CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
-      GpuMemory(a), lda, GpuMemory(b), ldb, &beta, GpuMemoryMutable(c), ldc);
+  return DoBlasInternalImpl<float>(
+      cublasSgemmEx, stream, true /* = pointer_mode_host */,
+      true /* = err_on_failure */, CUDABlasTranspose(transa),
+      CUDABlasTranspose(transb), m, n, k, &alpha, GpuMemory(a),
+      SE_CUDA_DATA_FLOAT, lda, GpuMemory(b), SE_CUDA_DATA_FLOAT, ldb, &beta,
+      GpuMemoryMutable(c), SE_CUDA_DATA_FLOAT, ldc);
 }
 
 bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
@@ -1689,10 +1844,10 @@ bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                           double alpha, const DeviceMemory<double> &a, int lda,
                           const DeviceMemory<double> &b, int ldb, double beta,
                           DeviceMemory<double> *c, int ldc) {
-  return DoBlasInternal(cublasDgemm, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(transa), CUDABlasTranspose(transb), m,
-                        n, k, &alpha, GpuMemory(a), lda, GpuMemory(b), ldb,
-                        &beta, GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<double>(
+      cublasDgemm, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
+      GpuMemory(a), lda, GpuMemory(b), ldb, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
@@ -1702,11 +1857,12 @@ bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                           const DeviceMemory<std::complex<float>> &b, int ldb,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *c, int ldc) {
-  return DoBlasInternal(cublasCgemm, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(transa), CUDABlasTranspose(transb), m,
-                        n, k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCgemm, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
@@ -1716,11 +1872,12 @@ bool CUDABlas::DoBlasGemm(Stream *stream, blas::Transpose transa,
                           const DeviceMemory<std::complex<double>> &b, int ldb,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *c, int ldc) {
-  return DoBlasInternal(cublasZgemm, stream, true /* = pointer_mode_host */,
-                        CUDABlasTranspose(transa), CUDABlasTranspose(transb), m,
-                        n, k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZgemm, stream, true /* = pointer_mode_host */,
+      CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasGemvWithProfiling(
@@ -1901,8 +2058,7 @@ static bool TensorOpsAvailable(int cc_major) {
   // strictly correct.  We can't simply enable it, though, as that would change
   // clients' behavior significantly: Using tensor ops on fp32 inputs cause them
   // to be rounded to fp16.
-  if (cc_major >= 7 && TensorOpMathEnabled() &&
-      std::is_same<InType, Eigen::half>::value) {
+  if (cc_major >= 7 && std::is_same<InType, Eigen::half>::value) {
     return true;
   }
 #endif
@@ -1986,7 +2142,7 @@ bool CUDABlas::DoBlasGemmWithAlgorithmImpl(
                          cudaDataType, int, cudaDataType,
                          cublasGemmAlgo_t) = cublasGemmEx;
 
-  bool result = DoBlasInternalFailureOK(
+  bool result = DoBlasInternalFailureOK<InT>(
       gemm, stream, /* pointer_mode_host = */ !alpha.is_pointer(),
       CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
       alpha.is_pointer() ? GpuMemory(alpha.pointer()) : &alpha.value(),
@@ -2248,9 +2404,28 @@ port::Status CUDABlas::DoBlasGemmBatchedInternal(
   if (stream->parent()->GetDeviceDescription().cuda_compute_capability(
           &cc_major, &cc_minor) &&
       cc_major >= 5) {
-    bool use_tensor_ops = TensorOpMathEnabled() && data_type == CUDA_R_16F;
-    cublasGemmAlgo_t algo =
-        (use_tensor_ops ? CUBLAS_GEMM_DFALT_TENSOR_OP : CUBLAS_GEMM_DFALT);
+    cublasMath_t math_type;
+    cublasGemmAlgo_t algo;
+    if (data_type == CUDA_R_16F) {
+#if CUDA_VERSION < 11000
+      math_type = CUBLAS_TENSOR_OP_MATH;
+#else
+      math_type = CUBLAS_DEFAULT_MATH;
+#endif
+      algo = CUBLAS_GEMM_DFALT_TENSOR_OP;
+#if CUBLAS_VER_MAJOR >= 11
+    } else if (data_type == CUDA_R_32F) {
+      // DoBlassInternalImpl will switch math_type back to CUBLAS_DEFAULT_MATH
+      // if TensorFloat-32 is disabled.
+      math_type = CUBLAS_TF32_TENSOR_OP_MATH;
+      algo = tensorflow::tensor_float_32_execution_enabled()
+                 ? CUBLAS_GEMM_DFALT_TENSOR_OP
+                 : CUBLAS_GEMM_DFALT;
+#endif
+    } else {
+      math_type = CUBLAS_DEFAULT_MATH;
+      algo = CUBLAS_GEMM_DFALT;
+    }
     cudaDataType_t compute_type =
         (data_type == CUDA_R_16F ? CUDA_R_32F : data_type);
     const void **a_void_ptrs = reinterpret_cast<const void **>(
@@ -2260,7 +2435,6 @@ port::Status CUDABlas::DoBlasGemmBatchedInternal(
     void **c_void_ptrs =
         reinterpret_cast<void **>(const_cast<CUDA_T **>(GpuMemory(c)));
     bool ok;
-    
 
     cublasStatus_t (*gemm)(cublasHandle_t, cublasOperation_t, cublasOperation_t,
                             int, int, int, const void*, const void *const [],
@@ -2269,9 +2443,9 @@ port::Status CUDABlas::DoBlasGemmBatchedInternal(
                             cudaDataType, int, int, cudaDataType,
                             cublasGemmAlgo_t) = cublasGemmBatchedEx;
 
-    ok = DoBlasInternalImpl(
+    ok = DoBlasInternalImpl<T>(
         gemm, stream, true /* = pointer_mode_host */,
-        true /* = err_on_failure */, use_tensor_ops, CUDABlasTranspose(transa),
+        true /* = err_on_failure */, CUDABlasTranspose(transa),
         CUDABlasTranspose(transb), m, n, k, &alpha, a_void_ptrs, data_type, lda,
         b_void_ptrs, data_type, ldb, &beta, c_void_ptrs, data_type, ldc,
         batch_count, compute_type, algo);
@@ -2284,7 +2458,7 @@ port::Status CUDABlas::DoBlasGemmBatchedInternal(
 #endif
   // either CUDA_VERSION < 9.1 or SM < 5.0
   if (data_type != CUDA_R_16F) {
-    bool ok = DoBlasInternal(
+    bool ok = DoBlasInternal<T>(
         cublas_func, stream, true /* = pointer_mode_host */,
         CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
         GpuComplex(&alpha), const_cast<const CUDA_T **>(GpuMemory(a)), lda,
@@ -2312,7 +2486,6 @@ port::Status CUDABlas::DoBlasGemmBatchedInternal(
   }
 }
 
-// Supports tensor ops, use with half and float only
 template <typename T>
 port::Status CUDABlas::DoBlasGemmBatchedInternalV2(
     Stream *stream, blas::Transpose transa, blas::Transpose transb, uint64 m,
@@ -2392,8 +2565,7 @@ port::Status CUDABlas::DoBlasGemmBatchedInternalV2(
   if (stream->parent()->GetDeviceDescription().cuda_compute_capability(
           &cc_major, &cc_minor) &&
       cc_major >= 5) {
-    bool use_tensor_ops =
-        TensorOpMathEnabled() && data_type == CUDA_R_16F;
+    bool use_tensor_ops = data_type == CUDA_R_16F;
     cublasGemmAlgo_t algo =
         (use_tensor_ops ? CUBLAS_GEMM_DFALT_TENSOR_OP : CUBLAS_GEMM_DFALT);
     bool ok;
@@ -2403,9 +2575,9 @@ port::Status CUDABlas::DoBlasGemmBatchedInternalV2(
                             cudaDataType, int, const void*, void *const [],
                             cudaDataType, int, int, cudaDataType,
                             cublasGemmAlgo_t) = cublasGemmBatchedEx;
-    ok = DoBlasInternalImpl(
+    ok = DoBlasInternalImpl<T>(
         gemm, stream, true /* = pointer_mode_host */,
-        true /* = err_on_failure */, use_tensor_ops, CUDABlasTranspose(transa),
+        true /* = err_on_failure */, CUDABlasTranspose(transa),
         CUDABlasTranspose(transb), m, n, k, &alpha,
         const_cast<const void **>(GpuMemory(a)), data_type, lda,
         const_cast<const void **>(GpuMemory(b)), data_type, ldb, &beta,
@@ -2420,7 +2592,7 @@ port::Status CUDABlas::DoBlasGemmBatchedInternalV2(
 #endif
   // either CUDA_VERSION < 9.1 or SM < 5.0
   if (data_type == SE_CUDA_DATA_FLOAT) {
-    bool ok = DoBlasInternal(
+    bool ok = DoBlasInternal<float>(
         cublasSgemmBatched, stream, true /* = pointer_mode_host */,
         CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
         (const float **)(GpuMemory(a)), lda, (const float **)(GpuMemory(b)),
@@ -2534,7 +2706,7 @@ bool CUDABlas::DoBlasGemmStridedBatched(
   if (stream->parent()->GetDeviceDescription().cuda_compute_capability(
           &cc_major, &cc_minor)) {
     // GPUs < sm_70 don't support tensor ops.
-    if (cc_major >= 7 && TensorOpMathEnabled()) {
+    if (cc_major >= 7) {
       use_tensor_ops = true;
     }
 #if CUDA_VERSION >= 9010
@@ -2547,15 +2719,15 @@ bool CUDABlas::DoBlasGemmStridedBatched(
                              long long int, const void*, void*, cudaDataType, int,
                              long long int, int, cudaDataType,
                              cublasGemmAlgo_t algo) = cublasGemmStridedBatchedEx;
-      bool ok = DoBlasInternalImpl(
-          bgemm, stream, true /* = pointer_mode_host */,
-          true /* = err_on_failure */, use_tensor_ops,
-          CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
-          GpuMemory(a), CUDA_R_16F, lda, stride_a, GpuMemory(b), CUDA_R_16F,
-          ldb, stride_b, &beta, GpuMemoryMutable(c), CUDA_R_16F, ldc, stride_c,
-          batch_count, CUDA_R_32F, algo);
-      if (ok) {
-        return true;
+    bool ok = DoBlasInternalImpl<Eigen::half>(
+        bgemm, stream, true /* = pointer_mode_host */,
+        true /* = err_on_failure */, CUDABlasTranspose(transa),
+        CUDABlasTranspose(transb), m, n, k, &alpha, GpuMemory(a), CUDA_R_16F,
+        lda, stride_a, GpuMemory(b), CUDA_R_16F, ldb, stride_b, &beta,
+        GpuMemoryMutable(c), CUDA_R_16F, ldc, stride_c, batch_count, CUDA_R_32F,
+        algo);
+    if (ok) {
+      return true;
       }
       LOG(ERROR) << "failed BLAS call, see log for details";
       return false;
@@ -2571,9 +2743,9 @@ bool CUDABlas::DoBlasGemmStridedBatched(
         reinterpret_cast<const __half *>(GpuMemory(b) + batch * stride_b);
     auto *c_matrix =
         reinterpret_cast<__half *>(GpuMemoryMutable(c) + batch * stride_c);
-    bool ok = DoBlasInternalImpl(
+    bool ok = DoBlasInternalImpl<Eigen::half>(
         cublasSgemmEx, stream, true /* = pointer_mode_host */,
-        true /* = err_on_failure= */, use_tensor_ops, CUDABlasTranspose(transa),
+        true /* = err_on_failure= */, CUDABlasTranspose(transa),
         CUDABlasTranspose(transb), m, n, k, &alpha, a_matrix, SE_CUDA_DATA_HALF,
         lda, b_matrix, SE_CUDA_DATA_HALF, ldb, &beta, c_matrix,
         SE_CUDA_DATA_HALF, ldc);
@@ -2591,7 +2763,7 @@ bool CUDABlas::DoBlasGemmStridedBatched(
     int64 stride_a, const DeviceMemory<float> &b, int ldb, int64 stride_b,
     float beta, DeviceMemory<float> *c, int ldc, int64 stride_c,
     int batch_count) {
-  return DoBlasInternal(
+  return DoBlasInternal<float>(
       cublasSgemmStridedBatched, stream, true /* = pointer_mode_host */,
       CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
       GpuMemory(a), lda, stride_a, GpuMemory(b), ldb, stride_b, &beta,
@@ -2604,7 +2776,7 @@ bool CUDABlas::DoBlasGemmStridedBatched(
     int64 stride_a, const DeviceMemory<double> &b, int ldb, int64 stride_b,
     double beta, DeviceMemory<double> *c, int ldc, int64 stride_c,
     int batch_count) {
-  return DoBlasInternal(
+  return DoBlasInternal<double>(
       cublasDgemmStridedBatched, stream, true /* = pointer_mode_host */,
       CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k, &alpha,
       GpuMemory(a), lda, stride_a, GpuMemory(b), ldb, stride_b, &beta,
@@ -2618,7 +2790,7 @@ bool CUDABlas::DoBlasGemmStridedBatched(
     const DeviceMemory<std::complex<float>> &b, int ldb, int64 stride_b,
     std::complex<float> beta, DeviceMemory<std::complex<float>> *c, int ldc,
     int64 stride_c, int batch_count) {
-  return DoBlasInternal(
+  return DoBlasInternal<std::complex<float>>(
       cublasCgemmStridedBatched, stream, true /* = pointer_mode_host */,
       CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
       GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda, stride_a,
@@ -2633,7 +2805,7 @@ bool CUDABlas::DoBlasGemmStridedBatched(
     const DeviceMemory<std::complex<double>> &b, int ldb, int64 stride_b,
     std::complex<double> beta, DeviceMemory<std::complex<double>> *c, int ldc,
     int64 stride_c, int batch_count) {
-  return DoBlasInternal(
+  return DoBlasInternal<std::complex<double>>(
       cublasZgemmStridedBatched, stream, true /* = pointer_mode_host */,
       CUDABlasTranspose(transa), CUDABlasTranspose(transb), m, n, k,
       GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda, stride_a,
@@ -2648,11 +2820,11 @@ bool CUDABlas::DoBlasHemm(Stream *stream, blas::Side side,
                           const DeviceMemory<std::complex<float>> &b, int ldb,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *c, int ldc) {
-  return DoBlasInternal(cublasChemm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasChemm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(b)), ldb,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasHemm(Stream *stream, blas::Side side,
@@ -2662,11 +2834,11 @@ bool CUDABlas::DoBlasHemm(Stream *stream, blas::Side side,
                           const DeviceMemory<std::complex<double>> &b, int ldb,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *c, int ldc) {
-  return DoBlasInternal(cublasZhemm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZhemm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(b)), ldb,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasHerk(Stream *stream, blas::UpperLower uplo,
@@ -2675,10 +2847,11 @@ bool CUDABlas::DoBlasHerk(Stream *stream, blas::UpperLower uplo,
                           const DeviceMemory<std::complex<float>> &a, int lda,
                           float beta, DeviceMemory<std::complex<float>> *c,
                           int ldc) {
-  return DoBlasInternal(cublasCherk, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        &beta, GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCherk, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda, &beta,
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasHerk(Stream *stream, blas::UpperLower uplo,
@@ -2687,10 +2860,11 @@ bool CUDABlas::DoBlasHerk(Stream *stream, blas::UpperLower uplo,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           double beta, DeviceMemory<std::complex<double>> *c,
                           int ldc) {
-  return DoBlasInternal(cublasZherk, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        &beta, GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZherk, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda, &beta,
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasHer2k(Stream *stream, blas::UpperLower uplo,
@@ -2700,11 +2874,12 @@ bool CUDABlas::DoBlasHer2k(Stream *stream, blas::UpperLower uplo,
                            const DeviceMemory<std::complex<float>> &b, int ldb,
                            float beta, DeviceMemory<std::complex<float>> *c,
                            int ldc) {
-  return DoBlasInternal(cublasCher2k, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, &beta,
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCher2k, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemory(b)), ldb, &beta, GpuComplex(GpuMemoryMutable(c)),
+      ldc);
 }
 
 bool CUDABlas::DoBlasHer2k(Stream *stream, blas::UpperLower uplo,
@@ -2714,11 +2889,12 @@ bool CUDABlas::DoBlasHer2k(Stream *stream, blas::UpperLower uplo,
                            const DeviceMemory<std::complex<double>> &b, int ldb,
                            double beta, DeviceMemory<std::complex<double>> *c,
                            int ldc) {
-  return DoBlasInternal(cublasZher2k, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, &beta,
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZher2k, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemory(b)), ldb, &beta, GpuComplex(GpuMemoryMutable(c)),
+      ldc);
 }
 
 bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
@@ -2726,10 +2902,10 @@ bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
                           float alpha, const DeviceMemory<float> &a, int lda,
                           const DeviceMemory<float> &b, int ldb, float beta,
                           DeviceMemory<float> *c, int ldc) {
-  return DoBlasInternal(cublasSsymm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo), m, n,
-                        &alpha, GpuMemory(a), lda, GpuMemory(b), ldb, &beta,
-                        GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<float>(
+      cublasSsymm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), m, n, &alpha, GpuMemory(a), lda, GpuMemory(b),
+      ldb, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
@@ -2737,10 +2913,10 @@ bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
                           double alpha, const DeviceMemory<double> &a, int lda,
                           const DeviceMemory<double> &b, int ldb, double beta,
                           DeviceMemory<double> *c, int ldc) {
-  return DoBlasInternal(cublasDsymm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo), m, n,
-                        &alpha, GpuMemory(a), lda, GpuMemory(b), ldb, &beta,
-                        GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<double>(
+      cublasDsymm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), m, n, &alpha, GpuMemory(a), lda, GpuMemory(b),
+      ldb, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
@@ -2750,11 +2926,11 @@ bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
                           const DeviceMemory<std::complex<float>> &b, int ldb,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *c, int ldc) {
-  return DoBlasInternal(cublasCsymm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCsymm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(b)), ldb,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
@@ -2764,31 +2940,31 @@ bool CUDABlas::DoBlasSymm(Stream *stream, blas::Side side,
                           const DeviceMemory<std::complex<double>> &b, int ldb,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *c, int ldc) {
-  return DoBlasInternal(cublasZsymm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZsymm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemory(b)), ldb,
+      GpuComplex(&beta), GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasSyrk(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, uint64 n, uint64 k,
                           float alpha, const DeviceMemory<float> &a, int lda,
                           float beta, DeviceMemory<float> *c, int ldc) {
-  return DoBlasInternal(cublasSsyrk, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, &alpha, GpuMemory(a), lda, &beta,
-                        GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<float>(
+      cublasSsyrk, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k, &alpha,
+      GpuMemory(a), lda, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasSyrk(Stream *stream, blas::UpperLower uplo,
                           blas::Transpose trans, uint64 n, uint64 k,
                           double alpha, const DeviceMemory<double> &a, int lda,
                           double beta, DeviceMemory<double> *c, int ldc) {
-  return DoBlasInternal(cublasDsyrk, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, &alpha, GpuMemory(a), lda, &beta,
-                        GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<double>(
+      cublasDsyrk, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k, &alpha,
+      GpuMemory(a), lda, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasSyrk(Stream *stream, blas::UpperLower uplo,
@@ -2797,11 +2973,11 @@ bool CUDABlas::DoBlasSyrk(Stream *stream, blas::UpperLower uplo,
                           const DeviceMemory<std::complex<float>> &a, int lda,
                           std::complex<float> beta,
                           DeviceMemory<std::complex<float>> *c, int ldc) {
-  return DoBlasInternal(cublasCsyrk, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(&beta), GpuComplex(GpuMemoryMutable(c)),
-                        ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCsyrk, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasSyrk(Stream *stream, blas::UpperLower uplo,
@@ -2810,11 +2986,11 @@ bool CUDABlas::DoBlasSyrk(Stream *stream, blas::UpperLower uplo,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           std::complex<double> beta,
                           DeviceMemory<std::complex<double>> *c, int ldc) {
-  return DoBlasInternal(cublasZsyrk, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(&beta), GpuComplex(GpuMemoryMutable(c)),
-                        ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZsyrk, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
@@ -2822,10 +2998,10 @@ bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
                            float alpha, const DeviceMemory<float> &a, int lda,
                            const DeviceMemory<float> &b, int ldb, float beta,
                            DeviceMemory<float> *c, int ldc) {
-  return DoBlasInternal(cublasSsyr2k, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, &alpha, GpuMemory(a), lda, GpuMemory(b), ldb, &beta,
-                        GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<float>(
+      cublasSsyr2k, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k, &alpha,
+      GpuMemory(a), lda, GpuMemory(b), ldb, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
@@ -2833,10 +3009,10 @@ bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
                            double alpha, const DeviceMemory<double> &a, int lda,
                            const DeviceMemory<double> &b, int ldb, double beta,
                            DeviceMemory<double> *c, int ldc) {
-  return DoBlasInternal(cublasDsyr2k, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, &alpha, GpuMemory(a), lda, GpuMemory(b), ldb, &beta,
-                        GpuMemoryMutable(c), ldc);
+  return DoBlasInternal<double>(
+      cublasDsyr2k, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k, &alpha,
+      GpuMemory(a), lda, GpuMemory(b), ldb, &beta, GpuMemoryMutable(c), ldc);
 }
 
 bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
@@ -2846,11 +3022,12 @@ bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
                            const DeviceMemory<std::complex<float>> &b, int ldb,
                            std::complex<float> beta,
                            DeviceMemory<std::complex<float>> *c, int ldc) {
-  return DoBlasInternal(cublasCsyr2k, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCsyr2k, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
@@ -2860,11 +3037,12 @@ bool CUDABlas::DoBlasSyr2k(Stream *stream, blas::UpperLower uplo,
                            const DeviceMemory<std::complex<double>> &b, int ldb,
                            std::complex<double> beta,
                            DeviceMemory<std::complex<double>> *c, int ldc) {
-  return DoBlasInternal(cublasZsyr2k, stream, true /* = pointer_mode_host */,
-                        CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n,
-                        k, GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
-                        GpuComplex(GpuMemoryMutable(c)), ldc);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZsyr2k, stream, true /* = pointer_mode_host */,
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(trans), n, k,
+      GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
+      GpuComplex(GpuMemory(b)), ldb, GpuComplex(&beta),
+      GpuComplex(GpuMemoryMutable(c)), ldc);
 }
 
 bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
@@ -2872,11 +3050,11 @@ bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
                           blas::Diagonal diag, uint64 m, uint64 n, float alpha,
                           const DeviceMemory<float> &a, int lda,
                           DeviceMemory<float> *b, int ldb) {
-  return DoBlasInternal(cublasStrmm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        &alpha, GpuMemory(a), lda, GpuMemoryMutable(b), ldb,
-                        GpuMemoryMutable(b), ldb);
+  return DoBlasInternal<float>(
+      cublasStrmm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, &alpha, GpuMemory(a), lda,
+      GpuMemoryMutable(b), ldb, GpuMemoryMutable(b), ldb);
 }
 
 bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
@@ -2884,11 +3062,11 @@ bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
                           blas::Diagonal diag, uint64 m, uint64 n, double alpha,
                           const DeviceMemory<double> &a, int lda,
                           DeviceMemory<double> *b, int ldb) {
-  return DoBlasInternal(cublasDtrmm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        &alpha, GpuMemory(a), lda, GpuMemoryMutable(b), ldb,
-                        GpuMemoryMutable(b), ldb);
+  return DoBlasInternal<double>(
+      cublasDtrmm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, &alpha, GpuMemory(a), lda,
+      GpuMemoryMutable(b), ldb, GpuMemoryMutable(b), ldb);
 }
 
 bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
@@ -2897,12 +3075,12 @@ bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
                           std::complex<float> alpha,
                           const DeviceMemory<std::complex<float>> &a, int lda,
                           DeviceMemory<std::complex<float>> *b, int ldb) {
-  return DoBlasInternal(cublasCtrmm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemoryMutable(b)), ldb,
-                        GpuComplex(GpuMemoryMutable(b)), ldb);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtrmm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemoryMutable(b)), ldb,
+      GpuComplex(GpuMemoryMutable(b)), ldb);
 }
 
 bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
@@ -2911,12 +3089,12 @@ bool CUDABlas::DoBlasTrmm(Stream *stream, blas::Side side,
                           std::complex<double> alpha,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           DeviceMemory<std::complex<double>> *b, int ldb) {
-  return DoBlasInternal(cublasZtrmm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemoryMutable(b)), ldb,
-                        GpuComplex(GpuMemoryMutable(b)), ldb);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtrmm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemoryMutable(b)), ldb,
+      GpuComplex(GpuMemoryMutable(b)), ldb);
 }
 
 bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
@@ -2924,10 +3102,11 @@ bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
                           blas::Diagonal diag, uint64 m, uint64 n, float alpha,
                           const DeviceMemory<float> &a, int lda,
                           DeviceMemory<float> *b, int ldb) {
-  return DoBlasInternal(cublasStrsm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        &alpha, GpuMemory(a), lda, GpuMemoryMutable(b), ldb);
+  return DoBlasInternal<float>(
+      cublasStrsm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, &alpha, GpuMemory(a), lda,
+      GpuMemoryMutable(b), ldb);
 }
 
 bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
@@ -2935,10 +3114,11 @@ bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
                           blas::Diagonal diag, uint64 m, uint64 n, double alpha,
                           const DeviceMemory<double> &a, int lda,
                           DeviceMemory<double> *b, int ldb) {
-  return DoBlasInternal(cublasDtrsm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        &alpha, GpuMemory(a), lda, GpuMemoryMutable(b), ldb);
+  return DoBlasInternal<double>(
+      cublasDtrsm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, &alpha, GpuMemory(a), lda,
+      GpuMemoryMutable(b), ldb);
 }
 
 bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
@@ -2947,11 +3127,11 @@ bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
                           std::complex<float> alpha,
                           const DeviceMemory<std::complex<float>> &a, int lda,
                           DeviceMemory<std::complex<float>> *b, int ldb) {
-  return DoBlasInternal(cublasCtrsm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemoryMutable(b)), ldb);
+  return DoBlasInternal<std::complex<float>>(
+      cublasCtrsm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemoryMutable(b)), ldb);
 }
 
 bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
@@ -2960,11 +3140,682 @@ bool CUDABlas::DoBlasTrsm(Stream *stream, blas::Side side,
                           std::complex<double> alpha,
                           const DeviceMemory<std::complex<double>> &a, int lda,
                           DeviceMemory<std::complex<double>> *b, int ldb) {
-  return DoBlasInternal(cublasZtrsm, stream, true /* = pointer_mode_host */,
-                        CUDABlasSide(side), CUDABlasUpperLower(uplo),
-                        CUDABlasTranspose(transa), CUDABlasDiagonal(diag), m, n,
-                        GpuComplex(&alpha), GpuComplex(GpuMemory(a)), lda,
-                        GpuComplex(GpuMemoryMutable(b)), ldb);
+  return DoBlasInternal<std::complex<double>>(
+      cublasZtrsm, stream, true /* = pointer_mode_host */, CUDABlasSide(side),
+      CUDABlasUpperLower(uplo), CUDABlasTranspose(transa),
+      CUDABlasDiagonal(diag), m, n, GpuComplex(&alpha),
+      GpuComplex(GpuMemory(a)), lda, GpuComplex(GpuMemoryMutable(b)), ldb);
+}
+
+// We only use cublasLt from CUDA 11.0 onward.
+#if CUDA_VERSION >= 11000
+
+namespace {
+
+template <typename T>
+inline port::Status SetCublasLtAttr(cublasLtMatrixLayout_t handle,
+                                    cublasLtMatrixLayoutAttribute_t attr,
+                                    const T& value) {
+  cublasStatus_t status =
+      cublasLtMatrixLayoutSetAttribute(handle, attr, &value, sizeof(T));
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(
+        port::error::INTERNAL,
+        absl::StrCat("cublasLtMatrixLayoutSetAttribute(attr=", attr,
+                     ", value=", value, ") failed: ", ToString(status)));
+  }
+  return port::Status::OK();
+}
+
+template <typename T>
+inline port::Status SetCublasLtAttr(cublasLtMatmulAlgo_t* handle,
+                                    cublasLtMatmulAlgoConfigAttributes_t attr,
+                                    const T& value) {
+  cublasStatus_t status =
+      cublasLtMatmulAlgoConfigSetAttribute(handle, attr, &value, sizeof(T));
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(
+        port::error::INTERNAL,
+        absl::StrCat("cublasLtMatmulAlgoConfigSetAttribute(attr=", attr,
+                     ", value=", value, ") failed: ", ToString(status)));
+  }
+  return port::Status::OK();
+}
+
+template <typename T>
+inline port::Status SetCublasLtAttr(cublasLtMatmulPreference_t handle,
+                                    cublasLtMatmulPreferenceAttributes_t attr,
+                                    const T& value) {
+  cublasStatus_t status =
+      cublasLtMatmulPreferenceSetAttribute(handle, attr, &value, sizeof(value));
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(
+        port::error::INTERNAL,
+        absl::StrCat("cublasLtMatmulPreferenceSetAttribute(attr=", attr,
+                     ", value=", value, ") failed: ", ToString(status)));
+  }
+  return port::Status::OK();
+}
+
+template <typename T>
+inline bool GetCublasLtAttr(const cublasLtMatmulAlgo_t* handle,
+                            cublasLtMatmulAlgoConfigAttributes_t attr,
+                            T* value) {
+  auto mutable_handle = const_cast<cublasLtMatmulAlgo_t*>(handle);
+  size_t bytes_written = 0;
+  return cublasLtMatmulAlgoConfigGetAttribute(mutable_handle, attr, value,
+                                              sizeof(T), &bytes_written) ==
+             CUBLAS_STATUS_SUCCESS &&
+         bytes_written == sizeof(T);
+}
+
+template <typename T>
+inline const T& ValueForStrCat(const T& value) {
+  return value;
+}
+template <typename T>
+inline absl::Hex ValueForStrCat(T* ptr) {
+  return absl::Hex(reinterpret_cast<uintptr_t>(ptr));
+}
+
+template <typename T>
+inline port::Status SetCublasLtAttr(cublasLtMatmulDesc_t handle,
+                                    cublasLtMatmulDescAttributes_t attr,
+                                    const T& value) {
+  cublasStatus_t status =
+      cublasLtMatmulDescSetAttribute(handle, attr, &value, sizeof(value));
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(
+        port::error::INTERNAL,
+        absl::StrCat("cublasLtMatmulDescSetAttribute(attr=", attr, ", value=",
+                     ValueForStrCat(value), ") failed: ", ToString(status)));
+  }
+  return port::Status::OK();
+}
+
+struct MatmulDescDestroyer {
+  void operator()(cublasLtMatmulDesc_t matmul_desc) const {
+    cublasLtMatmulDescDestroy(matmul_desc);
+  }
+};
+struct LayoutDestroyer {
+  void operator()(cublasLtMatrixLayout_t layout) const {
+    cublasLtMatrixLayoutDestroy(layout);
+  }
+};
+struct MatmulPreferenceDestroyer {
+  void operator()(cublasLtMatmulPreference_t matmul_pref) const {
+    cublasLtMatmulPreferenceDestroy(matmul_pref);
+  }
+};
+using UniqueOpDesc =
+    std::unique_ptr<std::remove_pointer<cublasLtMatmulDesc_t>::type,
+                    MatmulDescDestroyer>;
+using UniqueLayoutDesc =
+    std::unique_ptr<std::remove_pointer<cublasLtMatrixLayout_t>::type,
+                    LayoutDestroyer>;
+using UniqueMatmulPreference =
+    std::unique_ptr<std::remove_pointer<cublasLtMatmulPreference_t>::type,
+                    MatmulPreferenceDestroyer>;
+
+port::StatusOr<UniqueOpDesc> CreateCublasLtOperationDesc(
+    blas::ComputationType computation_type, blas::DataType scale_type,
+    blas::PointerMode pointer_mode, blas::Epilogue epilogue,
+    blas::Transpose transa, blas::Transpose transb) {
+  cublasLtMatmulDesc_t desc;
+  cublasComputeType_t cublas_compute_type =
+      CUBLASComputationType(computation_type);
+  cudaDataType_t cuda_scale_type = GetCUDADataType(scale_type);
+  cublasStatus_t status =
+      cublasLtMatmulDescCreate(&desc, cublas_compute_type, cuda_scale_type);
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(
+        port::error::INTERNAL,
+        absl::StrCat("cublasLtMatmulDescCreate(computation_type=",
+                     computation_type, ") failed: ", ToString(status)));
+  }
+  UniqueOpDesc unique_desc(desc);
+  SE_RETURN_IF_ERROR(SetCublasLtAttr(desc, CUBLASLT_MATMUL_DESC_POINTER_MODE,
+                                     CUBLASPointerMode(pointer_mode)));
+  SE_RETURN_IF_ERROR(SetCublasLtAttr(desc, CUBLASLT_MATMUL_DESC_EPILOGUE,
+                                     CUBLASEpilogue(epilogue)));
+  SE_RETURN_IF_ERROR(SetCublasLtAttr(desc, CUBLASLT_MATMUL_DESC_TRANSA,
+                                     CUDABlasTranspose(transa)));
+  SE_RETURN_IF_ERROR(SetCublasLtAttr(desc, CUBLASLT_MATMUL_DESC_TRANSB,
+                                     CUDABlasTranspose(transb)));
+  return unique_desc;
+}
+
+port::StatusOr<UniqueLayoutDesc> CreateCublasLtLayoutDesc(
+    blas::DataType data_type, uint64 rows, uint64 cols, int64 ld, int64 stride,
+    int batch_count) {
+  cublasLtMatrixLayout_t desc;
+  cublasStatus_t status = cublasLtMatrixLayoutCreate(
+      &desc, GetCUDADataType(data_type), rows, cols, ld);
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(
+        port::error::INTERNAL,
+        absl::StrCat("cublasLtMatrixLayoutCreate failed: ", ToString(status)));
+  }
+  UniqueLayoutDesc unique_desc(desc);
+  SE_RETURN_IF_ERROR(
+      SetCublasLtAttr(desc, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, batch_count));
+  SE_RETURN_IF_ERROR(SetCublasLtAttr(
+      desc, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, stride));
+  return unique_desc;
+}
+
+// Helper function to allocate workspace.
+port::Status AllocateWorkspace(void** workspace,
+                               ScratchAllocator* scratch_allocator,
+                               size_t num_bytes) {
+  SE_ASSIGN_OR_RETURN(DeviceMemory<uint8> workspace_bytes,
+                      scratch_allocator->AllocateBytes(num_bytes));
+  *workspace = (void*)GpuMemoryMutable(&workspace_bytes);
+  return port::Status::OK();
+}
+
+template<typename T>
+blas::ComputationType ToComputationType();
+template <>
+blas::ComputationType ToComputationType<Eigen::half>() {
+  return blas::ComputationType::kF16;
+}
+template <>
+blas::ComputationType ToComputationType<float>() {
+  return blas::ComputationType::kF32;
+}
+template <>
+blas::ComputationType ToComputationType<double>() {
+  return blas::ComputationType::kF64;
+}
+template <>
+blas::ComputationType ToComputationType<std::complex<float>>() {
+  return blas::ComputationType::kComplexF32;
+}
+template <>
+blas::ComputationType ToComputationType<std::complex<double>>() {
+  return blas::ComputationType::kComplexF64;
+}
+
+class CUDABlasLtMatmulPlan final : public blas::IBlasLtMatmulPlan {
+ public:
+  port::Status init(const blas::BlasLtMatmulPlanParams& p) {
+    params_ = p;
+    scale_type_ = GetScaleType(p.c_type, p.computation_type);
+    SE_ASSIGN_OR_RETURN(
+        op_desc_,
+        CreateCublasLtOperationDesc(
+            p.computation_type, GetScaleType(p.c_type, p.computation_type),
+            p.pointer_mode, p.epilogue, p.transa, p.transb));
+    uint64 rows_a = p.transa == blas::Transpose::kNoTranspose ? p.m : p.k;
+    uint64 cols_a = p.transa == blas::Transpose::kNoTranspose ? p.k : p.m;
+    uint64 rows_b = p.transb == blas::Transpose::kNoTranspose ? p.k : p.n;
+    uint64 cols_b = p.transb == blas::Transpose::kNoTranspose ? p.n : p.k;
+    SE_ASSIGN_OR_RETURN(
+        a_desc_, CreateCublasLtLayoutDesc(p.ab_type, rows_a, cols_a, p.lda,
+                                          p.stride_a, capped_batch_count()));
+    SE_ASSIGN_OR_RETURN(
+        b_desc_, CreateCublasLtLayoutDesc(p.ab_type, rows_b, cols_b, p.ldb,
+                                          p.stride_b, capped_batch_count()));
+    SE_ASSIGN_OR_RETURN(
+        c_desc_, CreateCublasLtLayoutDesc(p.c_type, p.m, p.n, p.ldc, p.stride_c,
+                                          capped_batch_count()));
+    SE_ASSIGN_OR_RETURN(
+        d_desc_, CreateCublasLtLayoutDesc(p.c_type, p.m, p.n, p.ldc, p.stride_c,
+                                          capped_batch_count()));
+    remainder_batch_count_ =
+        p.batch_count > kMaxBatchCount ? p.batch_count % kMaxBatchCount : 0;
+    if (remainder_batch_count_) {
+      SE_ASSIGN_OR_RETURN(
+          a_remainder_desc_,
+          CreateCublasLtLayoutDesc(p.ab_type, rows_a, cols_a, p.lda, p.stride_a,
+                                   remainder_batch_count_));
+      SE_ASSIGN_OR_RETURN(
+          b_remainder_desc_,
+          CreateCublasLtLayoutDesc(p.ab_type, rows_b, cols_b, p.ldb, p.stride_b,
+                                   remainder_batch_count_));
+      SE_ASSIGN_OR_RETURN(
+          c_remainder_desc_,
+          CreateCublasLtLayoutDesc(p.c_type, p.m, p.n, p.ldc, p.stride_c,
+                                   remainder_batch_count_));
+      SE_ASSIGN_OR_RETURN(
+          d_remainder_desc_,
+          CreateCublasLtLayoutDesc(p.c_type, p.m, p.n, p.ldc, p.stride_c,
+                                   remainder_batch_count_));
+    }
+    return port::Status::OK();
+  }
+
+  cublasLtMatmulDesc_t op_desc() const { return op_desc_.get(); }
+  cublasLtMatrixLayout_t a_desc() const { return a_desc_.get(); }
+  cublasLtMatrixLayout_t b_desc() const { return b_desc_.get(); }
+  cublasLtMatrixLayout_t c_desc() const { return c_desc_.get(); }
+  cublasLtMatrixLayout_t d_desc() const { return d_desc_.get(); }
+  cublasLtMatrixLayout_t a_remainder_desc() const {
+    return a_remainder_desc_.get();
+  }
+  cublasLtMatrixLayout_t b_remainder_desc() const {
+    return b_remainder_desc_.get();
+  }
+  cublasLtMatrixLayout_t c_remainder_desc() const {
+    return c_remainder_desc_.get();
+  }
+  cublasLtMatrixLayout_t d_remainder_desc() const {
+    return d_remainder_desc_.get();
+  }
+
+  const blas::BlasLtMatmulPlanParams& params() const { return params_; }
+  blas::DataType scale_type() const { return scale_type_; }
+
+  blas::DataType ab_type() const override { return params_.ab_type; }
+  blas::DataType c_type() const override { return params_.c_type; }
+  int capped_batch_count() const {
+    return std::min(params_.batch_count, kMaxBatchCount);
+  }
+  int remainder_batch_count() const { return remainder_batch_count_; }
+
+  // Note: Must be const to satisfy API. This is always called before the plan
+  // is executed, so the state change is not observed in subsequent executions.
+  bool SetBiasPointer(const void* bias) const;
+
+ private:
+  static constexpr const int kMaxBatchCount = 65535;
+  blas::BlasLtMatmulPlanParams params_;
+  blas::DataType scale_type_;
+  UniqueOpDesc op_desc_;
+  UniqueLayoutDesc a_desc_;
+  UniqueLayoutDesc b_desc_;
+  UniqueLayoutDesc c_desc_;
+  UniqueLayoutDesc d_desc_;
+  int remainder_batch_count_;
+  // These have batch count set to remainder_batch_count_, and are only created
+  // if params_.batch_count > kMaxBatchSize.
+  UniqueLayoutDesc a_remainder_desc_;
+  UniqueLayoutDesc b_remainder_desc_;
+  UniqueLayoutDesc c_remainder_desc_;
+  UniqueLayoutDesc d_remainder_desc_;
+};
+
+bool CUDABlasLtMatmulPlan::SetBiasPointer(const void* bias) const {
+  return SetCublasLtAttr(op_desc_.get(), CUBLASLT_MATMUL_DESC_BIAS_POINTER,
+                         bias).ok();
+}
+
+class CUDABlasLtMatmulAlgorithm final : public blas::IBlasLtMatmulAlgorithm {
+ public:
+  CUDABlasLtMatmulAlgorithm(blas::AlgorithmType index,
+                            cublasLtMatmulAlgo_t algo, size_t workspace_size)
+      : index_(index), algo_(algo), workspace_size_(workspace_size) {}
+
+  blas::AlgorithmType index() const override { return index_; }
+
+  size_t workspace_size() const override { return workspace_size_; }
+
+  const cublasLtMatmulAlgo_t* algo() const { return &algo_; }
+
+  int algo_id() const {
+    int id;
+    GetCublasLtAttr(&algo_, CUBLASLT_ALGO_CONFIG_ID, &id);
+    return id;
+  }
+
+ private:
+  blas::AlgorithmType index_;
+  cublasLtMatmulAlgo_t algo_;
+  size_t workspace_size_;
+};
+
+port::StatusOr<UniqueMatmulPreference> CreateCublasLtMatmulPreference(
+    const blas::IBlasLtMatmulPlan* plan, size_t max_workspace_bytes) {
+  cublasLtMatmulPreference_t preference;
+  cublasStatus_t status = cublasLtMatmulPreferenceCreate(&preference);
+  if (status != CUBLAS_STATUS_SUCCESS) {
+    return port::Status(port::error::INTERNAL,
+                        absl::StrCat("cublasLtMatmulPreferenceCreate failed: ",
+                                     ToString(status)));
+  }
+  UniqueMatmulPreference unique_preference(preference);
+  SE_RETURN_IF_ERROR(SetCublasLtAttr(preference,
+                                     CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+                                     max_workspace_bytes));
+
+  const auto& cuda_plan = *static_cast<const CUDABlasLtMatmulPlan*>(plan);
+  if (cuda_plan.params().batch_count == 0) {
+    return unique_preference;
+  }
+  // This is a workaround for a known issue in cuBlasLt where the heuristic may
+  // in rare cases select an algo that does not support the specified stride.
+  // Specifying the alignment requirements manually like this avoids the issue.
+  auto get_alignment_bytes = [](int64 stride, blas::DataType dtype) {
+    return (stride & -stride) * GetDataTypeSizeBytes(dtype);
+  };
+
+  if (cuda_plan.params().stride_a) {
+    SE_RETURN_IF_ERROR(SetCublasLtAttr(
+        preference, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES,
+        (uint32)get_alignment_bytes(cuda_plan.params().stride_a,
+                                    cuda_plan.params().ab_type)));
+  }
+  if (cuda_plan.params().stride_b) {
+    SE_RETURN_IF_ERROR(SetCublasLtAttr(
+        preference, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES,
+        (uint32)get_alignment_bytes(cuda_plan.params().stride_b,
+                                    cuda_plan.params().ab_type)));
+  }
+  if (cuda_plan.params().stride_c) {
+    SE_RETURN_IF_ERROR(SetCublasLtAttr(
+        preference, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES,
+        (uint32)get_alignment_bytes(cuda_plan.params().stride_c,
+                                    cuda_plan.params().c_type)));
+  }
+  if (cuda_plan.params().stride_c) {
+    SE_RETURN_IF_ERROR(SetCublasLtAttr(
+        preference, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES,
+        (uint32)get_alignment_bytes(cuda_plan.params().stride_c,
+                                    cuda_plan.params().c_type)));
+  }
+  return unique_preference;
+}
+
+} // namespace
+
+#endif  // CUDA_VERSION >= 11000
+
+port::StatusOr<std::unique_ptr<blas::IBlasLtMatmulPlan>>
+CUDABlas::CreateBlasLtMatmulPlan(const blas::BlasLtMatmulPlanParams& p) {
+#if CUDA_VERSION >= 11000
+  auto cuda_plan = std::make_unique<CUDABlasLtMatmulPlan>();
+  SE_RETURN_IF_ERROR(cuda_plan->init(p));
+  return static_cast<std::unique_ptr<blas::IBlasLtMatmulPlan>>(
+      std::move(cuda_plan));
+#else
+  return port::Status(
+      port::error::UNIMPLEMENTED,
+      "CreateBlasLtMatmulPlan is not supported with this version of CUDA");
+#endif
+}
+
+port::StatusOr<std::vector<std::unique_ptr<blas::IBlasLtMatmulAlgorithm>>>
+CUDABlas::GetBlasLtMatmulAlgorithmsInternal(const blas::IBlasLtMatmulPlan* plan,
+                                            size_t max_workspace_size,
+                                            int max_algorithm_count,
+                                            bool for_remainder_batch) {
+#if CUDA_VERSION >= 11000
+  SE_ASSIGN_OR_RETURN(UniqueMatmulPreference preference,
+                      CreateCublasLtMatmulPreference(plan, max_workspace_size));
+
+  std::vector<cublasLtMatmulHeuristicResult_t> results(max_algorithm_count);
+  {
+    absl::MutexLock lock(&mu_);
+
+    CHECK(blasLt_ != nullptr);
+
+    gpu::ScopedActivateExecutorContext sac{parent_};
+
+    int found_algorithm_count = 0;
+    const auto& cuda_plan = *static_cast<const CUDABlasLtMatmulPlan*>(plan);
+    const auto& a_desc =
+        for_remainder_batch ? cuda_plan.a_remainder_desc() : cuda_plan.a_desc();
+    const auto& b_desc =
+        for_remainder_batch ? cuda_plan.b_remainder_desc() : cuda_plan.b_desc();
+    const auto& c_desc =
+        for_remainder_batch ? cuda_plan.c_remainder_desc() : cuda_plan.c_desc();
+    const auto& d_desc =
+        for_remainder_batch ? cuda_plan.d_remainder_desc() : cuda_plan.d_desc();
+    cublasStatus_t status = cublasLtMatmulAlgoGetHeuristic(
+        blasLt_, cuda_plan.op_desc(), a_desc, b_desc, c_desc, d_desc,
+        preference.get(), max_algorithm_count, results.data(),
+        &found_algorithm_count);
+    if (status != CUBLAS_STATUS_SUCCESS) {
+      return port::Status(
+          port::error::INTERNAL,
+          absl::StrCat("cublasLtMatmulAlgoGetHeuristic failed: ",
+                       ToString(status)));
+    }
+    results.resize(found_algorithm_count);
+  }
+
+  std::vector<std::unique_ptr<blas::IBlasLtMatmulAlgorithm>> out_algorithms;
+  out_algorithms.reserve(results.size());
+  for (size_t i = 0; i < results.size(); ++i) {
+    const auto& result = results[i];
+    if (result.state != CUBLAS_STATUS_SUCCESS) continue;  // Skip failed algos
+    out_algorithms.emplace_back(std::make_unique<CUDABlasLtMatmulAlgorithm>(
+        i, result.algo, result.workspaceSize));
+  }
+  return out_algorithms;
+#else  // if CUDA_VERSION < 11000
+  return port::Status(
+      port::error::UNIMPLEMENTED,
+      "GetBlasLtMatmulAlgorithms is not supported with this version of CUDA");
+#endif
+}
+
+port::StatusOr<std::vector<std::unique_ptr<blas::IBlasLtMatmulAlgorithm>>>
+CUDABlas::GetBlasLtMatmulAlgorithms(const blas::IBlasLtMatmulPlan* plan,
+                                    size_t max_workspace_size,
+                                    int max_algorithm_count) {
+  return GetBlasLtMatmulAlgorithmsInternal(plan, max_workspace_size,
+                                           max_algorithm_count);
+}
+
+#if CUDA_VERSION >= 11000
+bool CUDABlas::DoBlasLtMatmulInternal(
+    Stream* stream, bool err_on_failure, const blas::IBlasLtMatmulPlan* plan,
+    const HostOrDeviceScalar<void>& alpha, DeviceMemoryBase a,
+    DeviceMemoryBase b, const HostOrDeviceScalar<void>& beta,
+    DeviceMemoryBase c, DeviceMemoryBase d, ScratchAllocator* scratch_allocator,
+    const blas::IBlasLtMatmulAlgorithm* algorithm, DeviceMemoryBase bias) {
+  const auto& cuda_plan = *static_cast<const CUDABlasLtMatmulPlan*>(plan);
+  const auto& cuda_algo =
+      *static_cast<const CUDABlasLtMatmulAlgorithm*>(algorithm);
+
+  if (alpha.data_type() != cuda_plan.scale_type() ||
+      beta.data_type() != cuda_plan.scale_type()) {
+    VLOG(2) << "DoBlasLtMatmul returning false because alpha and beta types do "
+               "not match plan: expected "
+            << cuda_plan.c_type() << ", got alpha=" << alpha.data_type()
+            << " beta=" << beta.data_type();
+    return false;
+  }
+  if (alpha.is_pointer() != beta.is_pointer()) {
+    VLOG(2) << "DoBlasLtMatmul returning false because one of `alpha` "
+               "and `beta` is a pointer, but the other is not.";
+    return false;
+  }
+  bool is_pointer_mode_host = !alpha.is_pointer();
+  if ((cuda_plan.params().pointer_mode == blas::PointerMode::kHost) !=
+      is_pointer_mode_host) {
+    VLOG(2) << "DoBlasLtMatmul returning false because plan has wrong "
+               "pointer_mode for the given alpha/beta.";
+    return false;
+  }
+  if ((cuda_plan.params().epilogue == blas::Epilogue::kBias ||
+       cuda_plan.params().epilogue == blas::Epilogue::kBiasThenReLU) !=
+      (bias != nullptr)) {
+    VLOG(2) << "DoBlasLtMatmul returning false because plan has wrong "
+               "epilogue for the given bias pointer.";
+    return false;
+  }
+  const void* alpha_ptr = alpha.is_pointer() ? alpha.opaque_pointer().opaque()
+                                             : alpha.opaque_value();
+  const void* beta_ptr =
+      beta.is_pointer() ? beta.opaque_pointer().opaque() : beta.opaque_value();
+
+  void* workspace = nullptr;
+  if (cuda_algo.workspace_size()) {
+    port::Status allocation_status = AllocateWorkspace(
+        &workspace, scratch_allocator, cuda_algo.workspace_size());
+    if (!allocation_status.ok()) {
+      if (err_on_failure || VLOG_IS_ON(3)) {
+        LOG(ERROR)
+            << "Failed to allocate workspace for cublasLtMatmul algo with id: "
+            << cuda_algo.algo_id() << " requiring "
+            << cuda_algo.workspace_size() << " bytes of workspace";
+      }
+      return false;
+    }
+  }
+
+  // This is only used when batch_count > kMaxBatchCount.
+  std::unique_ptr<blas::IBlasLtMatmulAlgorithm> unique_remainder_algo;
+  if (cuda_plan.remainder_batch_count()) {
+    // There is no easy way to get the user-specified max workspace size here,
+    // so we just allow a very small amount and don't worry too much about
+    // performance because this is only used in rare cases. The same reasoning
+    // applies to selection of the algorithm.
+    size_t max_workspace_size = 4 * 1024 * 1024;  // 4 MiB
+    auto status_or_algorithms =
+        GetBlasLtMatmulAlgorithmsInternal(plan, max_workspace_size,
+                                          /* max_algorithm_count = */ 1,
+                                          /* for_remainder_batch = */ true);
+    if (!status_or_algorithms.ok()) {
+      if (err_on_failure || VLOG_IS_ON(3)) {
+        LOG(ERROR) << "Failed to get algorithms for blasLt remainder batch.";
+      }
+      return false;
+    }
+    auto algorithms = status_or_algorithms.ConsumeValueOrDie();
+    unique_remainder_algo = std::move(algorithms.front());
+  }
+
+  cudaStream_t cuda_stream = CUDAStream(stream);
+
+  absl::MutexLock lock(&mu_);
+
+  if (bias != nullptr) {
+    if (!cuda_plan.SetBiasPointer(bias.opaque())) {
+      VLOG(2) << "DoBlasLtMatmul returning false because setting the bias "
+                 "pointer failed.";
+      return false;
+    }
+  }
+
+  CHECK(blasLt_ != nullptr);
+
+  gpu::ScopedActivateExecutorContext sac{parent_};
+
+  // Plan execution is broken down into repeat calls with capped_batch_count,
+  // followed by a final call with remainder_batch_count.
+  // Cases where batch_count <= kMaxBatchCount require only a single call (a
+  // single loop iteration and no remainder).
+  int ab_type_size = GetDataTypeSizeBytes(cuda_plan.params().ab_type);
+  int c_type_size = GetDataTypeSizeBytes(cuda_plan.params().c_type);
+  const char* a_ptr = static_cast<const char*>(a.opaque());
+  const char* b_ptr = static_cast<const char*>(b.opaque());
+  const char* c_ptr = static_cast<const char*>(c.opaque());
+  char* d_ptr = static_cast<char*>(d.opaque());
+  int capped_batch_count = cuda_plan.capped_batch_count();
+  for (int batch = 0;
+       batch + capped_batch_count <= cuda_plan.params().batch_count;
+       batch += capped_batch_count) {
+    cublasStatus_t ret = cublasLtMatmul(
+        blasLt_, cuda_plan.op_desc(), alpha_ptr, a_ptr, cuda_plan.a_desc(),
+        b_ptr, cuda_plan.b_desc(), beta_ptr, c_ptr, cuda_plan.c_desc(), d_ptr,
+        cuda_plan.d_desc(), cuda_algo.algo(), workspace,
+        cuda_algo.workspace_size(), cuda_stream);
+    if (ret != CUBLAS_STATUS_SUCCESS) {
+      if (err_on_failure || VLOG_IS_ON(3)) {
+        LOG(ERROR) << "failed to run cublasLtMatmul routine: " << ToString(ret);
+      }
+      return false;
+    }
+    a_ptr += capped_batch_count * cuda_plan.params().stride_a * ab_type_size;
+    b_ptr += capped_batch_count * cuda_plan.params().stride_b * ab_type_size;
+    c_ptr += capped_batch_count * cuda_plan.params().stride_c * c_type_size;
+    d_ptr += capped_batch_count * cuda_plan.params().stride_c * c_type_size;
+  }
+  // This is only used when batch_count > kMaxBatchCount.
+  if (cuda_plan.remainder_batch_count()) {
+    const auto& remainder_algo = *static_cast<const CUDABlasLtMatmulAlgorithm*>(
+        unique_remainder_algo.get());
+    if (remainder_algo.workspace_size()) {
+      port::Status allocation_status = AllocateWorkspace(
+          &workspace, scratch_allocator, remainder_algo.workspace_size());
+      if (!allocation_status.ok()) {
+        if (err_on_failure || VLOG_IS_ON(3)) {
+          LOG(ERROR) << "Failed to allocate workspace for cublasLtMatmul algo "
+                        "with id: "
+                     << remainder_algo.algo_id() << " requiring "
+                     << remainder_algo.workspace_size()
+                     << " bytes of workspace";
+        }
+        return false;
+      }
+    }
+    cublasStatus_t ret = cublasLtMatmul(
+        blasLt_, cuda_plan.op_desc(), alpha_ptr, a_ptr,
+        cuda_plan.a_remainder_desc(), b_ptr, cuda_plan.b_remainder_desc(),
+        beta_ptr, c_ptr, cuda_plan.c_remainder_desc(), d_ptr,
+        cuda_plan.d_remainder_desc(), remainder_algo.algo(), workspace,
+        remainder_algo.workspace_size(), cuda_stream);
+    if (ret != CUBLAS_STATUS_SUCCESS) {
+      if (err_on_failure || VLOG_IS_ON(3)) {
+        LOG(ERROR) << "failed to run remainder cublasLtMatmul routine: "
+                   << ToString(ret);
+      }
+      return false;
+    }
+  }
+  return true;
+}
+#endif  // CUDA_VERSION >= 11000
+
+bool CUDABlas::DoBlasLtMatmul(
+    Stream* stream, const blas::IBlasLtMatmulPlan* plan,
+    const HostOrDeviceScalar<void>& alpha, DeviceMemoryBase a,
+    DeviceMemoryBase b, const HostOrDeviceScalar<void>& beta,
+    DeviceMemoryBase c, ScratchAllocator* scratch_allocator,
+    const blas::IBlasLtMatmulAlgorithm* algorithm, DeviceMemoryBase bias,
+    blas::ProfileResult* output_profile_result) {
+#if CUDA_VERSION >= 11000
+  const auto& cuda_plan = *static_cast<const CUDABlasLtMatmulPlan*>(plan);
+  HostOrDeviceScalar<void> alpha_cast = alpha;
+  HostOrDeviceScalar<void> beta_cast = beta;
+  if (cuda_plan.c_type() == blas::DataType::kHalf &&
+      cuda_plan.scale_type() == blas::DataType::kFloat) {
+    // The given alpha and beta types are F16 (they always match c), but F32*
+    // computation type requires that they be F32, so we must cast them.
+    if (alpha.is_pointer() || beta.is_pointer()) {
+      // We cannot easily convert a pointer to f16 memory to a pointer to f32
+      // memory from here, so we don't support this for now.
+      return false;
+    }
+    alpha_cast = HostOrDeviceScalar<void>(
+        static_cast<float>(alpha.value<Eigen::half>()));
+    beta_cast =
+        HostOrDeviceScalar<void>(static_cast<float>(beta.value<Eigen::half>()));
+  }
+
+  std::unique_ptr<GpuTimer, GpuTimerDeleter> timer;
+  if (output_profile_result) {
+    timer.reset(new GpuTimer(parent_));
+    if (!timer->Init() || !timer->Start(AsGpuStream(stream))) {
+      return false;
+    }
+  }
+
+  bool err_on_failure = timer != nullptr;
+  bool result = DoBlasLtMatmulInternal(stream, err_on_failure, plan, alpha_cast,
+                                       a, b, beta_cast, c, c, scratch_allocator,
+                                       algorithm, bias);
+
+  if (timer && result) {
+    // GpuTimer will CHECK-fail if we Stop() it while the stream is in an error
+    // state.
+    if (!timer->Stop(AsGpuStream(stream))) {
+      return false;
+    }
+    output_profile_result->set_is_valid(true);
+    output_profile_result->set_algorithm(algorithm->index());
+    output_profile_result->set_elapsed_time_in_ms(
+        timer->GetElapsedMilliseconds());
+  }
+  return result;
+#else  // if CUDA_VERSION < 11000
+  return false;
+#endif
 }
 
 port::Status CUDABlas::GetVersion(string *version) {

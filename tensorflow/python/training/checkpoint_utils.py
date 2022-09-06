@@ -26,6 +26,8 @@ from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import io_ops
 from tensorflow.python.ops import resource_variable_ops
+from tensorflow.python.ops import gen_kv_variable_ops
+from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import variables
 from tensorflow.python.platform import gfile
@@ -201,7 +203,7 @@ def checkpoints_iterator(checkpoint_dir,
 
 
 @tf_export(v1=["train.init_from_checkpoint"])
-def init_from_checkpoint(ckpt_dir_or_file, assignment_map):
+def init_from_checkpoint(ckpt_dir_or_file, assignment_map, reset_version=False):
   """Replaces `tf.Variable` initializers so they load from a checkpoint file.
 
   Values are not loaded immediately, but when the initializer is run
@@ -283,7 +285,7 @@ def init_from_checkpoint(ckpt_dir_or_file, assignment_map):
       checkpoints or tensors in checkpoints.
   """
   init_from_checkpoint_fn = lambda _: _init_from_checkpoint(
-      ckpt_dir_or_file, assignment_map)
+      ckpt_dir_or_file, assignment_map, reset_version)
   if distribution_strategy_context.get_cross_replica_context():
     init_from_checkpoint_fn(None)
   else:
@@ -291,7 +293,7 @@ def init_from_checkpoint(ckpt_dir_or_file, assignment_map):
         init_from_checkpoint_fn)
 
 
-def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
+def _init_from_checkpoint(ckpt_dir_or_file, assignment_map, reset_version=False):
   """See `init_from_checkpoint` for documentation."""
   ckpt_file = _get_checkpoint_filename(ckpt_dir_or_file)
   reader = load_checkpoint(ckpt_dir_or_file)
@@ -348,14 +350,27 @@ def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
       # and create variable to variable mapping.
       scope_variables = set()
       for var_name in store_vars:
+        var = store_vars.get(var_name, None)
         if not scopes or var_name.startswith(scopes + "/"):
           # Consume /part_ if partitioned variable.
           if "/part_" in var_name:
-            var_name = var_name[:var_name.index("/part_")]
+            if isinstance(var, kv_variable_ops.EmbeddingVariable):
+              part_index = var_name.find("/part_")
+              for i in range(part_index + 1, len(var_name)):
+                if var_name[i] == "/":
+                  break
+              if i == len(var_name) - 1:
+                part_str = var_name[part_index :]
+              else:
+                part_str = var_name[part_index : i]
+              var_name =var_name.replace(part_str, "")
+            else:
+              var_name = var_name[:var_name.index("/part_")]
           scope_variables.add(var_name)
       for var_name in sorted(scope_variables):
         # Lookup name with specified prefix and suffix from current variable.
         # If tensor_name given is '/' (root), don't use it for full name.
+        var = store_vars.get(var_name, None)
         full_tensor_name = var_name[len(scopes):]
         if current_var_or_name != "/":
           full_tensor_name = full_tensor_name[1:]
@@ -364,16 +379,16 @@ def _init_from_checkpoint(ckpt_dir_or_file, assignment_map):
         # Remove trailing '/', if any, in the full_tensor_name
         if full_tensor_name.endswith("/"):
           full_tensor_name = full_tensor_name[:-1]
-        if full_tensor_name not in variable_map:
+        if full_tensor_name not in variable_map and var is not None and (
+            not isinstance(var, kv_variable_ops.EmbeddingVariable)):
           raise ValueError(
               "Tensor %s (%s in %s) is not found in %s checkpoint" % (
                   full_tensor_name, var_name[len(scopes) + 1:],
                   tensor_name_in_ckpt, ckpt_dir_or_file
               ))
-        var = store_vars.get(var_name, None)
         if var is None:
           var = _collect_partitioned_variable(var_name, store_vars)
-        _set_variable_or_list_initializer(var, ckpt_file, full_tensor_name)
+        _set_variable_or_list_initializer(var, ckpt_file, full_tensor_name, reset_version)
         logging.debug("Initialize variable %s from checkpoint %s with %s",
                       var_name, ckpt_dir_or_file, full_tensor_name)
 
@@ -389,7 +404,8 @@ def _set_checkpoint_initializer(variable,
                                 ckpt_file,
                                 tensor_name,
                                 slice_spec,
-                                name="checkpoint_initializer"):
+                                name="checkpoint_initializer",
+                                reset_version=False):
   """Overrides given variable's initialization op.
 
   Sets variable initializer to assign op that initializes variable from tensor's
@@ -402,33 +418,89 @@ def _set_checkpoint_initializer(variable,
     slice_spec: Slice specification for loading partitioned tensors.
     name: Name of the operation.
   """
-  base_type = variable.dtype.base_dtype
-  # Do not colocate with variable since RestoreV2 op only runs on CPU and
-  # colocation will force variable (and other ops that colocate with variable)
-  # to be on CPU as well. It is okay to place the variable's initializer op on
-  # CPU since it will only be run once at the start.
-  with ops.device(variable.device), ops.device("/cpu:0"):
-    restore_op = io_ops.restore_v2(
-        ckpt_file, [tensor_name], [slice_spec], [base_type], name=name)[0]
+  if isinstance(variable, kv_variable_ops.EmbeddingVariable):
+    base_type = variable.dtype.base_dtype
+    with ops.colocate_with(variable):
+      if "/part_" in variable.op.name and "/part_" not in tensor_name:
+        if variable.op.name.split('/')[-1].startswith('part_'):
+          tensor_name = tensor_name + '/' + variable.op.name.split('/')[-1]
+        else:
+          part_index = variable.op.name.find("/part_")
+          for i in range(part_index + 1, len(variable.op.name)):
+            if variable.op.name[i] == "/":
+              break
+          if i == len(variable.op.name) - 1:
+            part_str = variable.op.name[part_index :]
+          else:
+            part_str = variable.op.name[part_index : i]
+          for i in range(len(tensor_name)-1, -1, -1):
+            if tensor_name[i] == "/":
+              break
+          prev_str = tensor_name[:i]
+          next_str = tensor_name[i:]
+          tensor_name = prev_str + part_str + next_str
+      is_partitioned_ev = variable._save_slice_info is not None
+      partition_id = variable._save_slice_info.var_offset[0] if is_partitioned_ev else 0
+      partition_num = variable._save_slice_info.full_shape[0] if is_partitioned_ev else 1
+      rank = variable.initial_value.get_shape().rank - 1
+      variable._initializer_op = gen_kv_variable_ops.kv_resource_import_v2(
+          ckpt_file,
+          variable.handle, variable._primary_handle,
+          variables._try_guard_against_uninitialized_dependencies(variable.name,
+              variable.initial_value),
+          tensor_name,
+          ops.convert_to_tensor(variable.invalid_key),
+          slot_num=variable._slot_num,
+          shape=variable.initial_value.get_shape()[rank:],
+          steps_to_live=variable.steps_to_live,
+          emb_index=variable._emb_index, slot_index=variable._slot_index,
+          block_num=variable.block_num,
+          ht_type=variable._ht_type,
+          ht_partition_num=variable._ht_partition_num,
+          filter_freq = variable._filter_freq,
+          max_freq = 99999,
+          l2_weight_threshold = variable._l2_weight_threshold,
+          max_element_size = variable._max_element_size,
+          false_positive_probability = variable._false_positive_probability,
+          counter_type = variable._counter_type,
+          layout = "",
+          storage_type=variable._storage_type,
+          storage_path=variable._storage_path,
+          storage_size=variable._storage_size,
+          partition_id=partition_id, partition_num=partition_num,
+          default_value_dim=variable._default_value_dim,
+          default_value_no_permission=variable._default_value_no_permission,
+          record_freq=variable._record_freq,
+          record_version=variable._record_version,
+          reset_version=reset_version)
+  else:
+    base_type = variable.dtype.base_dtype
+    # Do not colocate with variable since RestoreV2 op only runs on CPU and
+    # colocation will force variable (and other ops that colocate with variable)
+    # to be on CPU as well. It is okay to place the variable's initializer op on
+    # CPU since it will only be run once at the start.
+    with ops.device(variable.device), ops.device("/cpu:0"):
+      restore_op = io_ops.restore_v2(
+          ckpt_file, [tensor_name], [slice_spec], [base_type], name=name)[0]
 
-    names_to_saveables = saveable_object_util.op_list_to_dict([variable])
-    saveable_objects = []
-    for name, op in names_to_saveables.items():
-      for s in saveable_object_util.saveable_objects_for_op(op, name):
-        saveable_objects.append(s)
+      names_to_saveables = saveable_object_util.op_list_to_dict([variable])
+      saveable_objects = []
+      for name, op in names_to_saveables.items():
+        for s in saveable_object_util.saveable_objects_for_op(op, name):
+          saveable_objects.append(s)
 
-    assert len(saveable_objects) == 1  # Should be only one variable.
-  init_op = saveable_objects[0].restore([restore_op], restored_shapes=None)
+      assert len(saveable_objects) == 1  # Should be only one variable.
+    init_op = saveable_objects[0].restore([restore_op], restored_shapes=None)
 
-  # pylint:disable=protected-access
-  variable._initializer_op = init_op
-  restore_op.set_shape(variable.shape)
-  variable._initial_value = restore_op
+    # pylint:disable=protected-access
+    variable._initializer_op = init_op
+    restore_op.set_shape(variable.shape)
+    variable._initial_value = restore_op
   # pylint:enable=protected-access
 
 
 def _set_variable_or_list_initializer(variable_or_list, ckpt_file,
-                                      tensor_name):
+                                      tensor_name, reset_version=False):
   """Overrides initialization op of given variable or list of variables.
 
   Calls `_set_checkpoint_initializer` for each variable in the given list of
@@ -453,9 +525,9 @@ def _set_variable_or_list_initializer(variable_or_list, ckpt_file,
       elif slice_name != slice_info.full_name:
         raise ValueError("Slices must all be from the same tensor: %s != %s" %
                          (slice_name, slice_info.full_name))
-      _set_checkpoint_initializer(v, ckpt_file, tensor_name, slice_info.spec)
+      _set_checkpoint_initializer(v, ckpt_file, tensor_name, slice_info.spec, reset_version=reset_version)
   else:
-    _set_checkpoint_initializer(variable_or_list, ckpt_file, tensor_name, "")
+    _set_checkpoint_initializer(variable_or_list, ckpt_file, tensor_name, "", reset_version=reset_version)
 
 
 def _is_variable(x):
@@ -472,4 +544,21 @@ def _collect_partitioned_variable(name, all_vars):
       var.append(all_vars[name + "/part_%d" % i])
       i += 1
     return var
+  else:
+    if name is "/":
+      st = 1
+    else:
+      st = 2
+    for i in range(len(name) - st, -1, -1):
+      if name[i] == "/":
+        break
+    prev_str = name[:i]
+    next_str = name[i:]
+    if prev_str + "/part_0" + next_str in all_vars:
+      var = []
+      i = 0
+      while prev_str + "/part_%d" % i + next_str in all_vars:
+        var.append(all_vars[prev_str + "/part_%d" % i + next_str])
+        i += 1
+      return var
   return None

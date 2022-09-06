@@ -86,7 +86,7 @@ REGISTER_KERNEL_BUILDER(Name("Reshape")
 #undef REGISTER_SYCL_KERNEL
 #endif  // TENSORFLOW_USE_SYCL
 
-#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) //|| \
     (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
 // A special GPU kernel for int32.
 // TODO(b/25387198): Also enable int32 in device memory. This kernel

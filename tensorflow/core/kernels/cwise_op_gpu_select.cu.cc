@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
@@ -111,7 +111,7 @@ struct BatchSelectFunctor<GPUDevice, T> {
 template <typename T>
 __global__ void Select4ElementThenScalarFunctorKernel(
     const bool *c, const T *t, const T *e, size_t num, T *o) {
-  CUDA_1D_KERNEL_LOOP(i, num) {
+  GPU_1D_KERNEL_LOOP(i, num) {
     if (c[i]) {
       o[i] = t[0];
     } else {
@@ -123,7 +123,7 @@ __global__ void Select4ElementThenScalarFunctorKernel(
 template <typename T>
 __global__ void Select4ElementElseScalarFunctorKernel(
     const bool *c, const T *t, const T *e, size_t num, T *o) {
-  CUDA_1D_KERNEL_LOOP(i, num) {
+  GPU_1D_KERNEL_LOOP(i, num) {
     if (c[i]) {
       o[i] = t[i];
     } else {
@@ -174,7 +174,7 @@ struct Select4ElementScalarFunctor<GPUDevice, T> {
 template <typename T>
 __global__ void BatchSelect4BroadcastingThenScalarFunctorKernel(
     const bool *c, const T *t, const T *e, size_t batch, size_t batch_size, T *o) {
-  CUDA_1D_KERNEL_LOOP(i, batch * batch_size) {
+  GPU_1D_KERNEL_LOOP(i, batch * batch_size) {
     size_t offset = i / batch_size;
     if (c[offset]) {
       o[i] = t[0];
@@ -187,7 +187,7 @@ __global__ void BatchSelect4BroadcastingThenScalarFunctorKernel(
 template <typename T>
 __global__ void BatchSelect4BroadcastingElseScalarFunctorKernel(
     const bool *c, const T *t, const T *e, size_t batch, size_t batch_size, T *o) {
-  CUDA_1D_KERNEL_LOOP(i, batch * batch_size) {
+  GPU_1D_KERNEL_LOOP(i, batch * batch_size) {
     size_t offset = i / batch_size;
     if (c[offset]) {
       o[i] = t[i];

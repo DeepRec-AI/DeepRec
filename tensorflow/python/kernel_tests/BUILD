@@ -1,6 +1,6 @@
 # Tests of TensorFlow kernels written using the Python API.
 
-load("//tensorflow:tensorflow.bzl", "sycl_py_test", "tf_custom_op_library", "tf_py_test")
+load("//tensorflow:tensorflow.bzl", "tf_custom_op_library", "tf_py_test")
 load("//tensorflow:tensorflow.bzl", "cuda_py_test")
 
 package(
@@ -1056,7 +1056,7 @@ tf_py_test(
     ],
 )
 
-tf_py_test(
+cuda_py_test(
     name = "sparse_to_dense_op_py_test",
     size = "small",
     srcs = ["sparse_to_dense_op_py_test.py"],
@@ -3668,20 +3668,6 @@ cuda_py_test(
     ],
     shard_count = 20,
     xla_enable_strict_auto_jit = True,
-)
-
-sycl_py_test(
-    name = "basic_gpu_test",
-    size = "small",
-    srcs = ["basic_gpu_test.py"],
-    additional_deps = [
-        "//third_party/py/numpy",
-        "//tensorflow/python:array_ops_gen",
-        "//tensorflow/python:client_testlib",
-        "//tensorflow/python:framework_for_generated_wrappers",
-        "//tensorflow/python:math_ops",
-        "//tensorflow/python:math_ops_gen",
-    ],
 )
 
 tf_py_test(

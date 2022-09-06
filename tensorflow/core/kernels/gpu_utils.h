@@ -304,15 +304,17 @@ class AutoTuneExecutionPlanMap {
         for (int i = 0; i < min_score_threshold_; ++i) {
           VLOG(1) << GetActionSummary("promotes", params, plans);
         }
-        UpdateMap(params, min_score_threshold_, 1, plans);
+        // Log the plans before the UpdateMap(), which will move the objects out
+        // of the vector.
         VLOG(1) << GetActionSummary("accepts", params, plans);
+        UpdateMap(params, min_score_threshold_, 1, plans);
       } else {
         int promotes_times = min_score_threshold_ - winner->second.score;
         for (int i = 0; i < promotes_times; ++i) {
-          VLOG(1) << GetActionSummary("promotes", params, iter->second);
+          VLOG(1) << GetActionSummary("promotes", params, winner->second);
         }
         winner->second.score = min_score_threshold_;
-        VLOG(1) << GetActionSummary("accepts", params, iter->second);
+        VLOG(1) << GetActionSummary("accepts", params, winner->second);
       }
     }
     autotune_global_count_++;

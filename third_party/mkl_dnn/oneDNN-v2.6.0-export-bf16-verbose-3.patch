@@ -1,0 +1,471 @@
+diff --git a/include/oneapi/dnnl/dnnl.h b/include/oneapi/dnnl/dnnl.h
+index 2673c6245..4b34d5dd6 100644
+--- a/include/oneapi/dnnl/dnnl.h
++++ b/include/oneapi/dnnl/dnnl.h
+@@ -4171,6 +4171,60 @@ dnnl_status_t DNNL_API dnnl_gemm_s8s8s32(char transa, char transb, char offsetc,
+         dnnl_dim_t lda, int8_t ao, const int8_t *B, dnnl_dim_t ldb, int8_t bo,
+         float beta, int32_t *C, dnnl_dim_t ldc, const int32_t *co);
+ 
++/// Performs bfloat16 matrix-matrix multiply.
++///
++/// The operation is defined as:
++///
++/// `C := alpha * op( A ) * op( B ) + beta * C`
++///
++/// where
++///  - `op( X ) = X` or `op( X ) = X**T`,
++///  - `alpha` and `beta` are scalars, and
++///  - `A`, `B`, and `C` are matrices:
++///     - `op( A )` is an `MxK` matrix,
++///     - `op( B )` is an `KxN` matrix,
++///     - `C` is an `MxN` matrix.
++///
++/// The matrices are assumed to be stored in row-major order (the elements in
++/// each of the matrix rows are contiguous in memory).
++///
++/// @note
++///     This API does not support XERBLA. Instead, unlike the standard BLAS
++///     functions, this one returns a dnnl_status_t value to allow error
++///     handling.
++///
++/// @param transa Transposition flag for matrix A: 'N' or 'n' means A is not
++///     transposed, and 'T' or 't' means that A is transposed.
++/// @param transb Transposition flag for matrix B: 'N' or 'n' means B is not
++///     transposed, and 'T' or 't' means that B is transposed.
++/// @param M The M dimension.
++/// @param N The N dimension.
++/// @param K The K dimension.
++/// @param alpha The alpha parameter that is used to scale the product of
++///     matrices A and B.
++/// @param A A pointer to the A matrix data.
++/// @param lda The leading dimension for the matrix A.
++/// @param B A pointer to the B matrix data.
++/// @param ldb The leading dimension for the matrix B.
++/// @param beta The beta parameter that is used to scale the matrix C.
++/// @param C A pointer to the C matrix data.
++/// @param ldc The leading dimension for the matrix C.
++/// @returns #dnnl_success/#dnnl::status::success on success and a status
++///     describing the error otherwise.
++dnnl_status_t DNNL_API dnnl_gemm_bf16bf16f32(char transa, char transb, dnnl_dim_t M,
++       dnnl_dim_t N, dnnl_dim_t K, float alpha, const dnnl_bfloat16_t *A, dnnl_dim_t lda,
++       const dnnl_bfloat16_t *B, dnnl_dim_t ldb, float beta, float *C, dnnl_dim_t ldc);
++
++void DNNL_API dnnl_cvt_float_to_bfloat16(dnnl_bfloat16_t *out, const float *inp, size_t nelems);
++
++void DNNL_API dnnl_cvt_bfloat16_to_float(float *out, const dnnl_bfloat16_t *inp, size_t nelems);
++
++// performs element-by-element sum of inp and add float arrays and stores
++// result to bfloat16 out array with downconversion
++// out[:] = (dnnl_bfloat16_t)(inp0[:] + inp1[:])
++void DNNL_API dnnl_add_floats_and_cvt_to_bfloat16(
++        dnnl_bfloat16_t *out, const float *inp0, const float *inp1, size_t nelems);
++
+ /// @} dnnl_api_blas
+ 
+ /// @} dnnl_api
+diff --git a/include/oneapi/dnnl/dnnl.hpp b/include/oneapi/dnnl/dnnl.hpp
+index 0a6fa01b2..14f65d673 100644
+--- a/include/oneapi/dnnl/dnnl.hpp
++++ b/include/oneapi/dnnl/dnnl.hpp
+@@ -12994,6 +12994,30 @@ inline status gemm_s8s8s32(char transa, char transb, char offsetc, dnnl_dim_t M,
+             K, alpha, A, lda, ao, B, ldb, bo, beta, C, ldc, co));
+ }
+ 
++/// @copydoc gemm_bf16bf16f32()
++inline status gemm_bf16bf16f32(char transa, char transb, dnnl_dim_t M, dnnl_dim_t N,
++        dnnl_dim_t K, float alpha, const dnnl_bfloat16_t *A, dnnl_dim_t lda,
++        const dnnl_bfloat16_t *B, dnnl_dim_t ldb, float beta, float *C, dnnl_dim_t ldc) {
++    return static_cast<status>(dnnl_gemm_bf16bf16f32(
++            transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc));
++}
++
++/// @copydoc cvt_float_to_bfloat16()
++inline void cvt_float_to_bfloat16(dnnl_bfloat16_t *out, const float *inp, size_t nelems) {
++    dnnl_cvt_float_to_bfloat16(out, inp, nelems);
++}
++
++/// @copydoc cvt_bfloat16_to_float()
++inline void cvt_bfloat16_to_float(float *out, const dnnl_bfloat16_t *inp, size_t nelems) {
++    dnnl_cvt_bfloat16_to_float(out, inp, nelems);
++}
++
++/// @copydoc add_floats_and_cvt_to_bfloat16()
++inline void add_floats_and_cvt_to_bfloat16(
++        dnnl_bfloat16_t *out, const float *inp0, const float *inp1, size_t nelems) {
++    dnnl_add_floats_and_cvt_to_bfloat16(out, inp0, inp1, nelems);
++}
++
+ /// @} dnnl_api_blas
+ 
+ // implementation section
+diff --git a/include/oneapi/dnnl/dnnl_threadpool.h b/include/oneapi/dnnl/dnnl_threadpool.h
+index e21a5a217..5880bc32f 100644
+--- a/include/oneapi/dnnl/dnnl_threadpool.h
++++ b/include/oneapi/dnnl/dnnl_threadpool.h
+@@ -85,6 +85,14 @@ dnnl_status_t DNNL_API dnnl_threadpool_interop_gemm_s8s8s32(char transa,
+         const int8_t *B, dnnl_dim_t ldb, int8_t bo, float beta, int32_t *C,
+         dnnl_dim_t ldc, const int32_t *co, void *threadpool);
+ 
++/// @copydoc dnnl_gemm_bf16bf16f32()
++/// @param threadpool A pointer to a threadpool interface (only when built with
++///     the THREADPOOL CPU runtime).
++dnnl_status_t DNNL_API dnnl_threadpool_interop_gemm_bf16bf16f32(char transa, char transb,
++        dnnl_dim_t M, dnnl_dim_t N, dnnl_dim_t K, float alpha, const bfloat16_t *A,
++        dnnl_dim_t lda, const bfloat16_t *B, dnnl_dim_t ldb, float beta, float *C,
++        dnnl_dim_t ldc, void *threadpool);
++
+ /// @} dnnl_api_threadpool_interop
+ 
+ /// @} dnnl_api_interop
+diff --git a/include/oneapi/dnnl/dnnl_threadpool.hpp b/include/oneapi/dnnl/dnnl_threadpool.hpp
+index 7285ca635..6cae766a6 100644
+--- a/include/oneapi/dnnl/dnnl_threadpool.hpp
++++ b/include/oneapi/dnnl/dnnl_threadpool.hpp
+@@ -100,6 +100,16 @@ inline status gemm_s8s8s32(char transa, char transb, char offsetc, dnnl_dim_t M,
+                     K, alpha, A, lda, ao, B, ldb, bo, beta, C, ldc, co, tp));
+ }
+ 
++/// @copydoc dnnl_gemm_bf16bf16f32_tp()
++inline status gemm_bf16bf16f32(char transa, char transb, dnnl_dim_t M, dnnl_dim_t N,
++        dnnl_dim_t K, float alpha, const bfloat16_t *A, dnnl_dim_t lda,
++        const bfloat16_t *B, dnnl_dim_t ldb, float beta, float *C, dnnl_dim_t ldc,
++        threadpool_iface *tp) {
++    return static_cast<status>(
++            dnnl_threadpool_interop_gemm_bf16bf16f32(
++            transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, tp));
++}
++
+ } // namespace threadpool_interop
+ 
+ /// @} dnnl_api_threadpool_interop
+diff --git a/include/oneapi/dnnl/dnnl_types.h b/include/oneapi/dnnl/dnnl_types.h
+index 372abee64..430c9c5c7 100644
+--- a/include/oneapi/dnnl/dnnl_types.h
++++ b/include/oneapi/dnnl/dnnl_types.h
+@@ -3131,6 +3131,13 @@ typedef enum {
+     dnnl_cpu_isa_prefer_ymm = 0x1,
+ } dnnl_cpu_isa_hints_t;
+ 
++/// @struct bfloat16_t
++/// An opaque structure to describe a memory.
++struct bfloat16_t;
++
++/// A bfloat16_t handle.
++typedef struct bfloat16_t dnnl_bfloat16_t;
++
+ /// @} dnnl_api_service
+ 
+ /// @} dnnl_api
+diff --git a/src/common/bfloat16.cpp b/src/common/bfloat16.cpp
+index 6ad50f084..422fb3c44 100644
+--- a/src/common/bfloat16.cpp
++++ b/src/common/bfloat16.cpp
+@@ -16,14 +16,11 @@
+ 
+ #include "common/bfloat16.hpp"
+ 
+-namespace dnnl {
+-namespace impl {
+-
+ bfloat16_t &bfloat16_t::operator=(float f) {
+ #if DNNL_CPU_RUNTIME != DNNL_RUNTIME_NONE
+     if (try_cvt_float_to_bfloat16(this, &f)) { return *this; }
+ #endif
+-    auto iraw = utils::bit_cast<std::array<uint16_t, 2>>(f);
++    auto iraw = dnnl::impl::utils::bit_cast<std::array<uint16_t, 2>>(f);
+     switch (std::fpclassify(f)) {
+         case FP_SUBNORMAL:
+         case FP_ZERO:
+@@ -41,8 +38,8 @@ bfloat16_t &bfloat16_t::operator=(float f) {
+             // round to nearest even and truncate
+             const uint32_t rounding_bias = 0x00007FFF + (iraw[1] & 0x1);
+             const uint32_t int_raw
+-                    = utils::bit_cast<uint32_t>(f) + rounding_bias;
+-            iraw = utils::bit_cast<std::array<uint16_t, 2>>(int_raw);
++                    = dnnl::impl::utils::bit_cast<uint32_t>(f) + rounding_bias;
++            iraw = dnnl::impl::utils::bit_cast<std::array<uint16_t, 2>>(int_raw);
+             raw_bits_ = iraw[1];
+             break;
+     }
+@@ -52,8 +49,5 @@ bfloat16_t &bfloat16_t::operator=(float f) {
+ 
+ bfloat16_t::operator float() const {
+     std::array<uint16_t, 2> iraw = {{0, raw_bits_}};
+-    return utils::bit_cast<float>(iraw);
++    return dnnl::impl::utils::bit_cast<float>(iraw);
+ }
+-
+-} // namespace impl
+-} // namespace dnnl
+diff --git a/src/common/bfloat16.hpp b/src/common/bfloat16.hpp
+index 20fe0f5b0..1629cf86b 100644
+--- a/src/common/bfloat16.hpp
++++ b/src/common/bfloat16.hpp
+@@ -29,9 +29,6 @@
+ 
+ #include "oneapi/dnnl/dnnl.h"
+ 
+-namespace dnnl {
+-namespace impl {
+-
+ #if DNNL_CPU_RUNTIME != DNNL_RUNTIME_NONE
+ struct bfloat16_t;
+ bool try_cvt_float_to_bfloat16(bfloat16_t *out, const float *inp);
+@@ -48,7 +45,7 @@ struct bfloat16_t {
+                     std::is_integral<IntegerType>::value>::type>
+     bfloat16_t(const IntegerType i)
+         : raw_bits_ {convert_bits_of_normal_or_zero(
+-                utils::bit_cast<uint32_t>(static_cast<float>(i)))} {}
++                dnnl::impl::utils::bit_cast<uint32_t>(static_cast<float>(i)))} {}
+ 
+     bfloat16_t DNNL_API &operator=(float f);
+ 
+@@ -89,7 +86,11 @@ void cvt_bfloat16_to_float(float *out, const bfloat16_t *inp, size_t nelems);
+ void add_floats_and_cvt_to_bfloat16(
+         bfloat16_t *out, const float *inp0, const float *inp1, size_t nelems);
+ 
+-} // namespace impl
+-} // namespace dnnl
++void dnnl_cvt_float_to_bfloat16(bfloat16_t *out, const float *inp, size_t nelems);
++
++void dnnl_cvt_bfloat16_to_float(float *out, const bfloat16_t *inp, size_t nelems);
++
++void dnnl_add_floats_and_cvt_to_bfloat16(
++        bfloat16_t *out, const float *inp0, const float *inp1, size_t nelems);
+ 
+ #endif
+diff --git a/src/common/gemm.cpp b/src/common/gemm.cpp
+index 831b7adc8..90818aa7a 100644
+--- a/src/common/gemm.cpp
++++ b/src/common/gemm.cpp
+@@ -88,7 +88,7 @@ dnnl_status_t dnnl_gemm_s8s8s32(char transa, char transb, char offsetc, dim_t M,
+ #endif
+ }
+ 
+-extern "C" dnnl_status_t DNNL_API dnnl_gemm_bf16bf16f32(char transa,
++dnnl_status_t dnnl_gemm_bf16bf16f32(char transa,
+         char transb, dim_t M, dim_t N, dim_t K, float alpha,
+         const bfloat16_t *A, dim_t lda, const bfloat16_t *B, dim_t ldb,
+         float beta, float *C, dim_t ldc) {
+@@ -143,7 +143,7 @@ dnnl_status_t dnnl_threadpool_interop_gemm_s8s8s32(char transa, char transb,
+     return status;
+ }
+ 
+-extern "C" dnnl_status_t DNNL_API dnnl_threadpool_interop_gemm_bf16bf16f32(
++dnnl_status_t dnnl_threadpool_interop_gemm_bf16bf16f32(
+         char transa, char transb, dim_t M, dim_t N, dim_t K, float alpha,
+         const bfloat16_t *A, dim_t lda, const bfloat16_t *B, dim_t ldb,
+         float beta, float *C, dim_t ldc, void *th) {
+diff --git a/src/cpu/bfloat16.cpp b/src/cpu/bfloat16.cpp
+index 62c75d445..0d01d4788 100644
+--- a/src/cpu/bfloat16.cpp
++++ b/src/cpu/bfloat16.cpp
+@@ -28,8 +28,7 @@
+ #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
+ #endif
+ 
+-namespace dnnl {
+-namespace impl {
++using namespace dnnl::impl;
+ 
+ bool try_cvt_float_to_bfloat16(bfloat16_t *out, const float *inp) {
+ 
+@@ -99,5 +98,15 @@ void add_floats_and_cvt_to_bfloat16(
+         out[i] = inp0[i] + inp1[i];
+ }
+ 
+-} // namespace impl
+-} // namespace dnnl
++void dnnl_cvt_float_to_bfloat16(bfloat16_t *out, const float *inp, size_t nelems) {
++    cvt_float_to_bfloat16(out, inp, nelems);
++}
++
++void dnnl_cvt_bfloat16_to_float(float *out, const bfloat16_t *inp, size_t nelems) {
++    cvt_bfloat16_to_float(out, inp, nelems);
++}
++
++void dnnl_add_floats_and_cvt_to_bfloat16(
++        bfloat16_t *out, const float *inp0, const float *inp1, size_t nelems) {
++    add_floats_and_cvt_to_bfloat16(out, inp0, inp1, nelems);
++}
+\ No newline at end of file
+diff --git a/src/cpu/gemm/gemm.cpp b/src/cpu/gemm/gemm.cpp
+index af699ee0c..116c6dd91 100644
+--- a/src/cpu/gemm/gemm.cpp
++++ b/src/cpu/gemm/gemm.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "oneapi/dnnl/dnnl.h"
+ 
++#include "common/verbose.hpp"
+ #include "common/bfloat16.hpp"
+ #include "common/c_types_map.hpp"
+ #include "common/dnnl_thread.hpp"
+@@ -105,15 +106,33 @@ dnnl_status_t extended_sgemm(const char *transa, const char *transb,
+         bool trB = *transb == 't' || *transb == 'T';
+         CBLAS_TRANSPOSE Cblas_trA = trA ? CblasTrans : CblasNoTrans;
+         CBLAS_TRANSPOSE Cblas_trB = trB ? CblasTrans : CblasNoTrans;
+-        cblas_sgemm(CblasColMajor, Cblas_trA, Cblas_trB, *M, *N, *K, *alpha, A,
+-                *lda, B, *ldb, *beta, C, *ldc);
+-        if (bias) {
+-            // Add bias if necessary (bias is applied to columns of C)
+-            dim_t incx = 1, incy = 1;
+-            parallel_nd(*N, [&](dim_t n) {
++        if (get_verbose() == 3) {
++            double ms = get_msec();
++            cblas_sgemm(CblasColMajor, Cblas_trA, Cblas_trB, *M, *N, *K, *alpha, A,
++                    *lda, B, *ldb, *beta, C, *ldc);
++            if (bias) {
++                // Add bias if necessary (bias is applied to columns of C)
++                dim_t incx = 1, incy = 1;
++                parallel_nd(*N, [&](dim_t n) {
+                 dim_t offset = n * (*ldc);
+                 cblas_saxpy(*M, 1.0, bias, incx, C + offset, incy);
+-            });
++                });
++            }
++            ms = get_msec() - ms;
++            printf("dnnl_verbose,exec,cpu,api,cblas_sgemm,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                    *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++            fflush(0);
++        } else {
++            cblas_sgemm(CblasColMajor, Cblas_trA, Cblas_trB, *M, *N, *K, *alpha, A,
++                    *lda, B, *ldb, *beta, C, *ldc);
++            if (bias) {
++                // Add bias if necessary (bias is applied to columns of C)
++                dim_t incx = 1, incy = 1;
++                parallel_nd(*N, [&](dim_t n) {
++                dim_t offset = n * (*ldc);
++                cblas_saxpy(*M, 1.0, bias, incx, C + offset, incy);
++                });
++            }
+         }
+         msan_unpoison_matrix(C, *M, *N, *ldc, sizeof(*C));
+         return dnnl_success;
+@@ -124,14 +143,37 @@ dnnl_status_t extended_sgemm(const char *transa, const char *transb,
+     if (mayiuse(sse41)) {
+         float *dummy_ao = nullptr;
+         float *dummy_bo = nullptr;
+-        return gemm_driver(transa, transb, bias ? "C" : nullptr, M, N, K, alpha,
+-                A, lda, dummy_ao, B, ldb, dummy_bo, beta, C, ldc, bias,
+-                force_jit_nocopy_gemm);
++        if (get_verbose() == 3) {
++            double ms = get_msec();
++            status = gemm_driver(transa, transb, bias ? "C" : nullptr, M, N, K, alpha, A,
++                    lda, dummy_ao, B, ldb, dummy_bo, beta, C, ldc, bias,
++                    force_jit_nocopy_gemm);
++            ms = get_msec() - ms;
++            printf("dnnl_verbose,exec,cpu,api,sgemm:jit,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                    *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++            fflush(0);
++        } else {
++            status = gemm_driver(transa, transb, bias ? "C" : nullptr, M, N, K, alpha, A,
++                    lda, dummy_ao, B, ldb, dummy_bo, beta, C, ldc, bias,
++                    force_jit_nocopy_gemm);
++        }
++        return status;
+     }
+ #endif
+ 
+-    return ref_gemm<float>(
+-            transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, bias);
++    if (get_verbose() == 3) {
++        double ms = get_msec();
++        status = ref_gemm<float>(
++                transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, bias);
++        ms = get_msec() - ms;
++        printf("dnnl_verbose,exec,cpu,api,ref_sgemm,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++        fflush(0);
++    } else {
++        status = ref_gemm<float>(
++                transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc, bias);
++    }
++    return status;
+ }
+ 
+ // Tries calling Intel MKL cblas_gemm_s8u8s32 if applicable and available
+@@ -240,10 +282,23 @@ dnnl_status_t gemm_bf16bf16f32(const char *transa, const char *transb,
+     bfloat16_t *dummy_bo = nullptr;
+     float *dummy_co = nullptr;
+ 
+-    if (mayiuse(avx512_core))
+-        return gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
+-                (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
+-                ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);
++    if (mayiuse(avx512_core)) {
++        if (get_verbose() == 3) {
++            double ms = get_msec();
++            status = gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
++                    (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
++                    ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);
++            ms = get_msec() - ms;
++            printf("dnnl_verbose,exec,cpu,api,gemm_bf16bf16f32,A%c_B%c,alpha%g,m%ldk%ldn%ld_lda%ldldb%ldldc%ld,%g\n",
++                    *transa, *transb, *alpha, *M, *K, *N, *lda, *ldb, *ldc, ms);
++            fflush(0);
++        } else {
++            status = gemm_driver(transa, transb, dummyOffsetC, M, N, K, alpha,
++                    (const bfloat16_t *)A, lda, dummy_ao, (const bfloat16_t *)B,
++                    ldb, dummy_bo, beta, (float *)C, ldc, dummy_co, false);
++        }
++        return status;
++    }
+ #endif
+ 
+     return dnnl_unimplemented;
+diff --git a/tests/benchdnn/dnnl_common.cpp b/tests/benchdnn/dnnl_common.cpp
+index badcca9aa..ec5466408 100644
+--- a/tests/benchdnn/dnnl_common.cpp
++++ b/tests/benchdnn/dnnl_common.cpp
+@@ -213,7 +213,7 @@ int test_persistent_cache_api(benchdnn_dnnl_wrapper_t<dnnl_primitive_t> &prim,
+ float round_to_nearest_representable(dnnl_data_type_t dt, float value) {
+     switch (dt) {
+         case dnnl_f32: break;
+-        case dnnl_bf16: value = (float)dnnl::impl::bfloat16_t(value); break;
++        case dnnl_bf16: value = (float)bfloat16_t(value); break;
+         case dnnl_f16: value = (float)dnnl::impl::float16_t(value); break;
+         case dnnl_s32:
+         case dnnl_s8:
+diff --git a/tests/benchdnn/dnnl_common.hpp b/tests/benchdnn/dnnl_common.hpp
+index 32e647e78..f3c94bbcc 100644
+--- a/tests/benchdnn/dnnl_common.hpp
++++ b/tests/benchdnn/dnnl_common.hpp
+@@ -66,7 +66,6 @@ int check_primitive_cache(dnnl_primitive_t p);
+     } while (0)
+ 
+ /* aux */
+-using bfloat16_t = dnnl::impl::bfloat16_t;
+ using float16_t = dnnl::impl::float16_t;
+ template <dnnl_data_type_t>
+ struct prec_traits;
+diff --git a/tests/gtests/dnnl_test_common.hpp b/tests/gtests/dnnl_test_common.hpp
+index bb5588209..30392a259 100644
+--- a/tests/gtests/dnnl_test_common.hpp
++++ b/tests/gtests/dnnl_test_common.hpp
+@@ -62,7 +62,6 @@
+ 
+ #define for_ for
+ 
+-using dnnl::impl::bfloat16_t;
+ using dnnl::impl::f16_support::float16_t;
+ 
+ #ifdef DNNL_ENABLE_MEM_DEBUG
+diff --git a/tests/gtests/test_gemm_common.hpp b/tests/gtests/test_gemm_common.hpp
+index ecc0b5af6..aa0b7d3c9 100644
+--- a/tests/gtests/test_gemm_common.hpp
++++ b/tests/gtests/test_gemm_common.hpp
+@@ -63,14 +63,6 @@
+     CPU_INST_TEST_CASE_( \
+             CONCAT_WITH_UNDERSCORE(str, TEST_CASE_NAME_PREFIX), __VA_ARGS__)
+ 
+-// Declare bfloat16 GEMM interfaces for testing
+-extern "C" {
+-dnnl_status_t dnnl_gemm_bf16bf16f32(char transa, char transb, dnnl_dim_t M,
+-        dnnl_dim_t N, dnnl_dim_t K, float alpha, const bfloat16_t *A,
+-        dnnl_dim_t lda, const bfloat16_t *B, dnnl_dim_t ldb, float beta,
+-        float *C, dnnl_dim_t ldc);
+-}
+-
+ // Declare packed GEMM interfaces for testing
+ #include "src/cpu/gemm/gemm_pack.hpp"
+ 

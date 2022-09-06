@@ -31,10 +31,14 @@ limitations under the License.
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/lib/strings/strcat.h"
+#include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/util/sparse/dim_comparator.h"
 #include "tensorflow/core/util/sparse/group_iterator.h"
+#include "tensorflow/stream_executor/lib/statusor.h"
+
+using tensorflow::se::port::StatusOr;
 
 namespace tensorflow {
 namespace sparse {
@@ -243,9 +247,9 @@ class SparseTensor {
   // element of the array representing one dimension. The start is the start
   // index at each dimension and the size is the size at each dimension.
   template <typename T>
-  static SparseTensor Slice(const SparseTensor& tensor,
-                            const gtl::ArraySlice<int64>& start,
-                            const gtl::ArraySlice<int64>& size);
+  static StatusOr<SparseTensor> Slice(const SparseTensor& tensor,
+                                      const gtl::ArraySlice<int64>& start,
+                                      const gtl::ArraySlice<int64>& size);
 
   // Picks out the dimensions according to `dim_indices`.
   std::vector<int64> PickDims(gtl::ArraySlice<int64> dim_indices) const {
@@ -656,9 +660,9 @@ Status SparseTensor::Split(const SparseTensor& input_tensor,
 }
 
 template <typename T>
-SparseTensor SparseTensor::Slice(const SparseTensor& input_tensor,
-                                 const gtl::ArraySlice<int64>& start,
-                                 const gtl::ArraySlice<int64>& size) {
+StatusOr<SparseTensor> SparseTensor::Slice(const SparseTensor& input_tensor,
+                                           const gtl::ArraySlice<int64>& start,
+                                           const gtl::ArraySlice<int64>& size) {
   TensorShape output_shape(input_tensor.shape());
 
   const int dims = input_tensor.dims();
@@ -666,7 +670,7 @@ SparseTensor SparseTensor::Slice(const SparseTensor& input_tensor,
     int64 dim_size = start[dim] + size[dim] < output_shape.dim_size(dim)
                          ? size[dim]
                          : output_shape.dim_size(dim) - start[dim];
-    output_shape.set_dim(dim, dim_size);
+    TF_RETURN_IF_ERROR(output_shape.SetDimWithStatus(dim, dim_size));
   }
 
   auto input_indices_t = input_tensor.indices().matrix<int64>();

@@ -53,7 +53,7 @@ namespace {
     float* output_buffer = new float[rows*embedding_size];
     memset(output_buffer, 0, rows*embedding_size * sizeof(float));
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
     auto avx512_add = [](const float* input, uint64_t input_idx,
                           float* output, uint64_t output_idx, const int64_t num) {
       constexpr size_t float_displacement = 4;
@@ -119,7 +119,7 @@ namespace {
       // add output_buffer to do block addition
       uint64_t output_row = row * embedding_size;
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
       avx512_add(embedding_row, 0, output_buffer, output_row, embedding_size);
 #else
       for (int64_t j = 0; j < embedding_size; ++j) {
@@ -132,7 +132,7 @@ namespace {
         memset(&output_buffer[output_row], 0, embedding_size * sizeof(float));
       }
       else if (row_values[row] % 8 == 0) {
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
         avx512_add(output_buffer, output_row, output, output_row, embedding_size);
 #else
         for (int64_t j = 0; j < embedding_size; ++j) {
@@ -150,7 +150,7 @@ namespace {
         memset(&output[output_row], 0, embedding_size * sizeof(float));
       }
       else {
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
         if (operation == SparseSegmentReductionOperation::kSum) {
           if (row_values[i] < 8) {
             memcpy(&output[output_row], &output_buffer[output_row], embedding_size * sizeof(float));

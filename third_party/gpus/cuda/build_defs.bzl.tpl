@@ -14,7 +14,7 @@ def if_cuda(if_true, if_false = []):
 
 def cuda_default_copts():
     """Default options for all CUDA compilations."""
-    return if_cuda(["-x", "cuda", "-DGOOGLE_CUDA=1"] + %{cuda_extra_copts})
+    return if_cuda(["-x", "cuda", "-DGOOGLE_CUDA=1", "-Xcuda-fatbinary=--compress-all"] + %{cuda_extra_copts})
 
 def cuda_is_configured():
     """Returns true if CUDA was enabled during the configure process."""

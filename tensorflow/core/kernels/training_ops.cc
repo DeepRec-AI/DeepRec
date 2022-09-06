@@ -2624,48 +2624,110 @@ class ApplyFtrlOp : public OpKernel {
   bool use_exclusive_lock_;
 };
 
-#define REGISTER_KERNELS(D, T)                                     \
-  REGISTER_KERNEL_BUILDER(                                         \
-      Name("ApplyFtrl").Device(DEVICE_##D).TypeConstraint<T>("T"), \
-      ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/false>);      \
-  REGISTER_KERNEL_BUILDER(                                         \
-      Name("ResourceApplyFtrl")                                    \
-          .HostMemory("var")                                       \
-          .HostMemory("accum")                                     \
-          .HostMemory("linear")                                    \
-          .Device(DEVICE_##D)                                      \
-          .TypeConstraint<T>("T"),                                 \
-      ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/false>);
+#if GOOGLE_CUDA
+// Forward declarations of the functor specializations for GPU.
+namespace functor{
+#define DECLARE_GPU_SPEC(T) \
+  template <> \
+  void ApplyFtrlV2<GPUDevice, T>::operator()(const GPUDevice& d, typename TTypes<T>::Flat var, \
+					     typename TTypes<T>::Flat accum, \
+					     typename TTypes<T>::Flat linear, \
+					     typename TTypes<T>::ConstFlat grad, \
+					     typename TTypes<T>::ConstScalar lr, \
+					     typename TTypes<T>::ConstScalar l1, \
+					     typename TTypes<T>::ConstScalar l2, \
+					     typename TTypes<T>::ConstScalar l2_shrinkage, \
+					     typename TTypes<T>::ConstScalar lr_power); \
+  template <> \
+  void ApplyFtrl<GPUDevice, T>::operator()(const GPUDevice& d, typename TTypes<T>::Flat var, \
+					   typename TTypes<T>::Flat accum, \
+					   typename TTypes<T>::Flat linear, \
+					   typename TTypes<T>::ConstFlat grad, \
+					   typename TTypes<T>::ConstScalar lr, \
+					   typename TTypes<T>::ConstScalar l1, \
+					   typename TTypes<T>::ConstScalar l2, \
+					   typename TTypes<T>::ConstScalar lr_power); \
+  extern template struct ApplyFtrlV2<GPUDevice, T>; \
+  extern template struct ApplyFtrl<GPUDevice, T>;
+
+  DECLARE_GPU_SPEC(Eigen::half);
+  DECLARE_GPU_SPEC(float);
+  DECLARE_GPU_SPEC(double);
+#undef DECLARE_GPU_SPEC
+} // namespace functor
+  
+#endif // end of GOOGLE_CUDA
+
+  
+#define REGISTER_KERNELS(D, T)						\
+  REGISTER_KERNEL_BUILDER(Name("ApplyFtrl")				\
+			  .Device(DEVICE_##D)				\
+			  .HostMemory("lr")				\
+			  .HostMemory("l1")				\
+			  .HostMemory("l2")				\
+			  .HostMemory("lr_power")			\
+			  .TypeConstraint<T>("T"),			\
+			  ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/false>); \
+  REGISTER_KERNEL_BUILDER(Name("ResourceApplyFtrl")			\
+			  .Device(DEVICE_##D)				\
+			  .HostMemory("lr")				\
+			  .HostMemory("l1")				\
+			  .HostMemory("l2")				\
+			  .HostMemory("lr_power")			\
+			  .TypeConstraint<T>("T"),			\
+			  ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/false>);
+
 #define REGISTER_CPU_KERNELS(T) REGISTER_KERNELS(CPU, T);
-
-TF_CALL_half(REGISTER_CPU_KERNELS);
-TF_CALL_bfloat16(REGISTER_CPU_KERNELS);
-TF_CALL_float(REGISTER_CPU_KERNELS);
-TF_CALL_double(REGISTER_CPU_KERNELS);
-
+  TF_CALL_half(REGISTER_CPU_KERNELS);
+  TF_CALL_bfloat16(REGISTER_CPU_KERNELS);
+  TF_CALL_float(REGISTER_CPU_KERNELS);
+  TF_CALL_double(REGISTER_CPU_KERNELS);
 #undef REGISTER_CPU_KERNELS
+
+#ifdef GOOGLE_CUDA
+#define REGISTER_GPU_KERNELS(T) REGISTER_KERNELS(GPU, T);
+  TF_CALL_half(REGISTER_GPU_KERNELS);
+  TF_CALL_float(REGISTER_GPU_KERNELS);
+  TF_CALL_double(REGISTER_GPU_KERNELS);
+#undef REGISTER_GPU_KERNELS
+#endif // end of GOOGLE_CUDA
+
 #undef REGISTER_KERNELS
 
-#define REGISTER_KERNELS(D, T)                                       \
-  REGISTER_KERNEL_BUILDER(                                           \
-      Name("ApplyFtrlV2").Device(DEVICE_##D).TypeConstraint<T>("T"), \
-      ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/true>);         \
-  REGISTER_KERNEL_BUILDER(                                           \
-      Name("ResourceApplyFtrlV2")                                    \
-          .HostMemory("var")                                         \
-          .HostMemory("accum")                                       \
-          .HostMemory("linear")                                      \
-          .Device(DEVICE_##D)                                        \
-          .TypeConstraint<T>("T"),                                   \
-      ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/true>);
-#define REGISTER_CPU_KERNELS(T) REGISTER_KERNELS(CPU, T);
+#define REGISTER_KERNELS(D, T)						\
+  REGISTER_KERNEL_BUILDER(Name("ApplyFtrlV2")				\
+			  .Device(DEVICE_##D)				\
+			  .HostMemory("lr")				\
+			  .HostMemory("l1")				\
+			  .HostMemory("l2")				\
+			  .HostMemory("l2_shrinkage")			\
+			  .HostMemory("lr_power")			\
+			  .TypeConstraint<T>("T"),			\
+			  ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/true>); \
+  REGISTER_KERNEL_BUILDER(Name("ResourceApplyFtrlV2")			\
+			  .Device(DEVICE_##D)				\
+			  .HostMemory("lr")				\
+			  .HostMemory("l1")				\
+			  .HostMemory("l2")				\
+			  .HostMemory("l2_shrinkage")			\
+			  .TypeConstraint<T>("T"),			\
+			  ApplyFtrlOp<D##Device, T, /*has_l2_shrinkage=*/true>);
 
+#define REGISTER_CPU_KERNELS(T) REGISTER_KERNELS(CPU, T);
 TF_CALL_half(REGISTER_CPU_KERNELS);
 TF_CALL_bfloat16(REGISTER_CPU_KERNELS);
 TF_CALL_float(REGISTER_CPU_KERNELS);
 TF_CALL_double(REGISTER_CPU_KERNELS);
-
 #undef REGISTER_CPU_KERNELS
+
+#ifdef GOOGLE_CUDA
+#define REGISTER_GPU_KERNELS(T) REGISTER_KERNELS(GPU, T);
+  TF_CALL_half(REGISTER_GPU_KERNELS);
+  TF_CALL_float(REGISTER_GPU_KERNELS);
+  TF_CALL_double(REGISTER_GPU_KERNELS);
+#undef REGISTER_GPU_KERNELS
+#endif // end of GOOGLE_CUDA
+
 #undef REGISTER_KERNELS
 
 template <typename Device, typename T, typename Tindex, bool has_l2_shrinkage>

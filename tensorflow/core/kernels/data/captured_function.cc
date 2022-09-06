@@ -92,6 +92,11 @@ class SimpleStepStatsCollector : public StepStatsCollectorInterface {
 
     void SetScheduled(int64 nanos) override {}
 
+
+    void SetActivityID(int64 id) override {}
+    
+    void SetParentID(int64 id) override {}
+
    private:
     int64 start_time_ns_ = 0;
     int64 end_time_ns_ = 0;

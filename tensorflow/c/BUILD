@@ -10,6 +10,11 @@ load(
     "tf_kernel_library",
 )
 load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
+load(
+    "//third_party/mkl:build_defs.bzl",
+    "if_mkl_ml",
+    "mkl_deps",
+)
 
 package(
     licenses = ["notice"],  # Apache 2.0
@@ -309,6 +314,20 @@ tf_cuda_library(
     hdrs = ["checkpoint_reader.h"],
     visibility = ["//visibility:public"],
     deps = [
+        ":tf_status_helper",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core/util/tensor_bundle",
+    ],
+)
+
+tf_cuda_library(
+    name = "quantize_embedding_variable",
+    srcs = ["quantize_embedding_variable.cc"],
+    hdrs = ["quantize_embedding_variable.h"],
+    visibility = ["//visibility:public"],
+    deps = mkl_deps() + [
+        ":tf_datatype",
         ":tf_status_helper",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",

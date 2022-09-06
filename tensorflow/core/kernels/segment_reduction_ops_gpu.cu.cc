@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+#if GOOGLE_CUDA //|| TENSORFLOW_USE_ROCM
 
 #define EIGEN_USE_GPU
 
@@ -135,7 +135,7 @@ __global__ void SparseSegmentSumKernel(const int64 data_sparse_size,
                                        const int32* seg_ids,
                                        T* output) {
 
-  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+  for (int input_index : GpuGridRangeX(data_sparse_size)) {
     const Index sparse_row = input_index / data_inner_dim;
     const Index sparse_offset = input_index % data_inner_dim;
     const Index data_row = indices[sparse_row];
@@ -159,7 +159,7 @@ __global__ void SparseSegmentGradKernel(const int64 data_sparse_size,
                                         const Index* indices,
                                         T* output, const bool is_sqrtn) {
 
-  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+  for (int input_index : GpuGridRangeX(data_sparse_size)) {
     const Index sparse_row = input_index / data_inner_dim;
     const Index sparse_offset = input_index % data_inner_dim;
     const Index data_row = seg_ids[sparse_row];
@@ -181,7 +181,7 @@ __global__ void SparseSegmentLenSumKernel(const int64 num_ids,
                                           const int64 output_row_size,
                                           const Index* seg_ids,
                                           T* seg_lens) {
-  for (int input_index : CudaGridRangeX(num_ids)) {
+  for (int input_index : GpuGridRangeX(num_ids)) {
     const Index output_idx = seg_ids[input_index];
     if (output_idx < 0 || output_idx>=output_row_size) {
       continue;
@@ -195,7 +195,7 @@ __global__ void SparseSegmentMeanKernel(const int64 output_total_size,
                                         const int64 data_inner_dim,
                                         T* output,
                                         const T* seg_lens) {
-  for (int input_index : CudaGridRangeX(output_total_size)) {
+  for (int input_index : GpuGridRangeX(output_total_size)) {
     const Index output_row = input_index / data_inner_dim;
     T count = ldg(seg_lens + output_row);
     output[input_index] /= (count > 0 ? count : 1);
@@ -207,7 +207,7 @@ __global__ void SparseSegmentSqrtNKernel(const int64 output_total_size,
                                          const int64 data_inner_dim,
                                          T* output,
                                          const T* seg_lens) {
-  for (int input_index : CudaGridRangeX(output_total_size)) {
+  for (int input_index : GpuGridRangeX(output_total_size)) {
     const Index output_row = input_index / data_inner_dim;
     T count = ldg(seg_lens + output_row);
     output[input_index] /= std::sqrt(count > 0 ? count : 1);
@@ -222,7 +222,7 @@ __global__ void SparseSegmentGradSqrtNKernel(const int64 data_sparse_size,
                                              const int32* seg_ids,
                                              const Index* indices,
                                              T* output) {
-  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+  for (int input_index : GpuGridRangeX(data_sparse_size)) {
     const Index sparse_row = input_index / data_inner_dim;
     const Index sparse_offset = input_index % data_inner_dim;
     const Index seg_idx = seg_ids[sparse_row];
@@ -244,7 +244,7 @@ __global__ void SparseSegmentGradMeanKernel(const int64 data_sparse_size,
                                             const int32* seg_ids,
                                             const Index* indices,
                                             T* output) {
-  for (int input_index : CudaGridRangeX(data_sparse_size)) {
+  for (int input_index : GpuGridRangeX(data_sparse_size)) {
     const Index sparse_row = input_index / data_inner_dim;
     const Index sparse_offset = input_index % data_inner_dim;
     const Index seg_idx = seg_ids[sparse_row];
@@ -265,7 +265,7 @@ void SetValueDefault<T>::operator()(OpKernelContext* ctx,
                                     Tensor* target,
                                     T default_val) {
   const GPUDevice d = ctx->eigen_device<GPUDevice>();
-  CudaLaunchConfig config = GetCudaLaunchConfig(target->NumElements(), d);
+  GpuLaunchConfig config = GetGpuLaunchConfig(target->NumElements(), d);
   SetToValue<<<config.block_count, config.thread_per_block,
       0, d.stream()>>>(static_cast<int>(target->NumElements()),
       target->flat<T>().data(), default_val);
@@ -323,12 +323,12 @@ void SparseSegmentReduceFunctor<T, Index>::operator()(OpKernelContext* ctx,
   const GPUDevice d = ctx->eigen_device<GPUDevice>();
 
   // initialize output by default value
-  CudaLaunchConfig config = GetCudaLaunchConfig(output_total_size, d);
+  GpuLaunchConfig config = GetGpuLaunchConfig(output_total_size, d);
   SetToValue<<<config.block_count, config.thread_per_block,
       0, d.stream()>>>(static_cast<int>(output_total_size),
       output_flat.data(), T(0.0));
 
-  config = GetCudaLaunchConfig(data_sparse_size, d);
+  config = GetGpuLaunchConfig(data_sparse_size, d);
   // launch a kernel
   SparseSegmentSumKernel<T, Index>
       <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
@@ -340,12 +340,12 @@ void SparseSegmentReduceFunctor<T, Index>::operator()(OpKernelContext* ctx,
                         TensorShape({output_row_size}),
                    &seg_lens));
     auto segment_lens_flat = seg_lens.flat<T>();
-    config = GetCudaLaunchConfig(output_row_size, d);
+    config = GetGpuLaunchConfig(output_row_size, d);
     SetZero<T><<<config.block_count, config.thread_per_block,
       0, d.stream()>>>(static_cast<int>(output_row_size),
       segment_lens_flat.data());
     // launch a kernel to sum the seg_lens for each segment
-    config = GetCudaLaunchConfig(num_ids, d);
+    config = GetGpuLaunchConfig(num_ids, d);
     SparseSegmentLenSumKernel<T, int32>
       <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
           num_ids, output_row_size, segment_flat.data(),
@@ -354,14 +354,14 @@ void SparseSegmentReduceFunctor<T, Index>::operator()(OpKernelContext* ctx,
   // for mean
   if (is_mean) {
     auto segment_lens_flat = seg_lens.flat<T>();
-    config = GetCudaLaunchConfig(output_total_size, d);
+    config = GetGpuLaunchConfig(output_total_size, d);
     SparseSegmentMeanKernel<T, Index>
       <<<config.block_count, config.thread_per_block, 0, d.stream()>>>
       (output_total_size, data_inner_dim, output_flat.data(),
        segment_lens_flat.data());
   } else if (is_sqrtn) {
     auto segment_lens_flat = seg_lens.flat<T>();
-    config = GetCudaLaunchConfig(output_total_size, d);
+    config = GetGpuLaunchConfig(output_total_size, d);
     SparseSegmentSqrtNKernel<T, Index>
       <<<config.block_count, config.thread_per_block, 0, d.stream()>>>
       (output_total_size, data_inner_dim, output_flat.data(),
@@ -394,23 +394,23 @@ void SparseSegmentReduceGradFunctor<T, Index>::operator()(OpKernelContext* ctx,
     const int64 output_row_size = output_total_size/data_inner_dim;
     const GPUDevice d = ctx->eigen_device<GPUDevice>();
     // initialize output by default value
-    CudaLaunchConfig config = GetCudaLaunchConfig(output_total_size, d);
+    GpuLaunchConfig config = GetGpuLaunchConfig(output_total_size, d);
     SetToValue<<<config.block_count, config.thread_per_block,
         0, d.stream()>>>(static_cast<int>(output_total_size),
         output->flat<T>().data(), T(0.0));
     // obtain seg_lens (counts)
-    config = GetCudaLaunchConfig(seg_lens_size, d);
+    config = GetGpuLaunchConfig(seg_lens_size, d);
     SetZero<int32><<<config.block_count, config.thread_per_block,
       0, d.stream()>>>(static_cast<int>(seg_lens_size),
       segment_lens_flat.data());
     // launch a kernel to sum the seg_lens for each segment
-    config = GetCudaLaunchConfig(N, d);
+    config = GetGpuLaunchConfig(N, d);
     SparseSegmentLenSumKernel<int32, SegmentId>
       <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
           N, seg_lens_size, seg_ids->flat<SegmentId>().data(),
           segment_lens_flat.data());
     // launch a kernel to sum up values
-    config = GetCudaLaunchConfig(data_sparse_size, d);
+    config = GetGpuLaunchConfig(data_sparse_size, d);
     SparseSegmentGradKernel<T, Index>
         <<<config.block_count, config.thread_per_block, 0, d.stream()>>>(
             data_sparse_size, output_total_size, data_inner_dim, 

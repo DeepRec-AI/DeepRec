@@ -180,9 +180,11 @@ def validate_synchronization_aggregation_trainable(synchronization, aggregation,
 class InitializerOption(object):
   def __init__(self,
                initializer = None,
-               default_value_dim = 4096):
+               default_value_dim = 4096,
+               default_value_no_permission = .0):
     self.initializer = initializer
     self.default_value_dim  = default_value_dim
+    self.default_value_no_permission = default_value_no_permission
     if default_value_dim <=0:
       print("default value dim must larger than 1, the default value dim is set to default 4096.")
       default_value_dim = 4096
@@ -315,7 +317,8 @@ class EmbeddingVariableConfig(object):
                storage_type=config_pb2.StorageType.DRAM,
                storage_path=None,
                storage_size=None,
-               default_value_dim=4096):
+               default_value_dim=4096,
+               default_value_no_permission=.0):
     self.steps_to_live = steps_to_live
     self.steps_to_live_l2reg = steps_to_live_l2reg
     self.l2reg_theta = l2reg_theta
@@ -337,6 +340,7 @@ class EmbeddingVariableConfig(object):
     self.storage_path = storage_path
     self.storage_size = storage_size
     self.default_value_dim = default_value_dim
+    self.default_value_no_permission = default_value_no_permission
 
   def reveal(self):
     if self.steps_to_live is None:

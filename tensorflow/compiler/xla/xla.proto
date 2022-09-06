@@ -270,7 +270,8 @@ message DebugOptions {
   // reached.
   int32 xla_multiheap_size_constraint_per_heap = 142;
 
-  // Next id: 142
+  // Paths to files with LLVM code.
+  repeated string xla_gpu_llvm_ir_file = 150;
 
   // Persistent compilation cache directory
   string xla_gpu_persistent_cache_dir = 151;

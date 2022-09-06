@@ -292,6 +292,8 @@ class DataFeederTest(test.TestCase):
 
   def test_dask_data_feeder(self):
     if HAS_PANDAS and HAS_DASK:
+      import pandas as pd
+      import dask.dataframe as dd
       x = pd.DataFrame(
           dict(
               a=np.array([.1, .3, .4, .6, .2, .1, .6]),

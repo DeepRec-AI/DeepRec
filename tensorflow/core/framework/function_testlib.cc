@@ -347,8 +347,7 @@ FunctionDef WXPlusB() {
         {"w", "x"},
         {{"T", "$T"},
          {"transpose_a", false},
-         {"transpose_b", false},
-         {"_kernel", "eigen"}}},
+         {"transpose_b", false}}},
        {{"y"}, "Add", {"mm", "b"}, {{"T", "$T"}}}});
 }
 

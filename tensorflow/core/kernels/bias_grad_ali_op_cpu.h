@@ -111,8 +111,7 @@ constexpr int block_size_avx2 = 8;
 
 void OneColumnWiseReduction(const float* A, int m, int n, int lda,
                             float* Y, bool overwrite = true) {
-#if defined(__GNUC__) && (__GNUC__ >6)
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
   if (m >= block_size_avx512) {
     int block_num = m / block_size_avx512;
     int remain_num = m % block_size_avx512;
@@ -128,15 +127,13 @@ void OneColumnWiseReduction(const float* A, int m, int n, int lda,
 
     if (remain_num != 0) {
       int block_end = block_num * block_size_avx512;
-      __mmask16 mask = 0xffff >> (block_size_avx512 - remain_num);
-      pos = const_cast<float*>(A + block_end);
-      val = _mm512_loadu_ps(pos);
-      sum += _mm512_mask_reduce_add_ps(mask, val);
+      for (int i = block_end; i < m; ++i) {
+        sum += A[i];
+      }
     }
     Y[0] = sum;
     return;
   }
-#endif
 #endif
   register float sum = overwrite ? 0 : Y[0];
   for (int i = 0; i < m; ++i) {
@@ -147,8 +144,7 @@ void OneColumnWiseReduction(const float* A, int m, int n, int lda,
 
 void TwoColumnWiseReduction(const float* A, int m, int n, int lda, float* Y,
                             bool overwrite = true) {
-#if defined(__GNUC__) && (__GNUC__ >6)
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
   int total = m * 2;
   if (total >= block_size_avx512) {
     int block_num = total / block_size_avx512;
@@ -170,18 +166,15 @@ void TwoColumnWiseReduction(const float* A, int m, int n, int lda, float* Y,
 
     if (remain_num != 0) {
       int block_end = block_num * block_size_avx512;
-      mask0 = 0x5555 >> (block_size_avx512 - remain_num);
-      mask1 = 0xaaaa >> (block_size_avx512 - remain_num);
-      pos = const_cast<float*>(A + block_end);
-      val = _mm512_loadu_ps(pos);
-      sum0 += _mm512_mask_reduce_add_ps(mask0, val);
-      sum1 += _mm512_mask_reduce_add_ps(mask1, val);
+      for (int i = block_end; i < total; i += 2) {
+        sum0 += A[i];
+        sum1 += A[i+1];
+      }
     }
     Y[0] = sum0;
     Y[1] = sum1;
     return;
   }
-#endif
 #endif
   register float sum0 = overwrite ? 0 : Y[0];
   register float sum1 = overwrite ? 0 : Y[1];
@@ -195,33 +188,24 @@ void TwoColumnWiseReduction(const float* A, int m, int n, int lda, float* Y,
 
 void MultipleColumnWiseReduction(const float* A, int m, int n, int lda,
                                 float* Y, bool overwrite = true) {
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
   if (n >= block_size_avx512) {
     int block_num = n / block_size_avx512;
     int remain_num = n % block_size_avx512;
-    __m512 zero = _mm512_setzero_ps();
     int offset_block_end = block_num * block_size_avx512;
-
-    __mmask16 mask = 0xffff >> (block_size_avx512 - remain_num);
     if (overwrite) {
-      float* pos = Y;
-      for (int j = 0; j < block_num; ++j) {
-        _mm512_storeu_ps(pos, zero);
-        pos += block_size_avx512;
-      }
-
-      if (remain_num != 0) {
-        _mm512_mask_storeu_ps(Y + offset_block_end, mask, zero);
-      }
+      memset(Y, 0, n * sizeof(float));
     }
 
-    __m512 sum, val;
+    __m512 sum;
     register float* pos_A = const_cast<float*>(A);
     register float* pos_Y = const_cast<float*>(Y);
     for (int i = 0; i < m; ++i) {
-      pos_Y = const_cast<float*>(Y);
+      pos_Y = const_cast<float*>(Y); 
+      int offset = i * lda;
+      pos_A = const_cast<float*>(A) + offset;
       for (int j = 0; j < block_num; ++j) {
-        val = _mm512_loadu_ps(pos_A);
+        __m512 val = _mm512_loadu_ps(pos_A);
         sum = _mm512_loadu_ps(pos_Y);
         sum = _mm512_add_ps(sum, val);
         _mm512_storeu_ps(pos_Y, sum);
@@ -230,13 +214,9 @@ void MultipleColumnWiseReduction(const float* A, int m, int n, int lda,
         pos_Y += block_size_avx512;
       }
       if (remain_num != 0) {
-        val = _mm512_mask_loadu_ps(zero, mask, pos_A);
-        sum = _mm512_mask_loadu_ps(zero, mask, pos_Y);
-        sum = _mm512_mask_add_ps(zero, mask, sum, val);
-        _mm512_mask_storeu_ps(pos_Y, mask, sum);
-
-        pos_A += remain_num;
-        pos_Y += remain_num;
+        for (int j = offset_block_end; j < n; ++j) {
+          Y[j] += A[offset + j];
+        }
       }
     }
     return;
@@ -254,7 +234,6 @@ void MultipleColumnWiseReduction(const float* A, int m, int n, int lda,
       Y[j] += A[offset + j];
     }
   }
-  return;
 }
 
 void SumIntoOneRow(const float* A, int m, int n, int lda, float* Y,
@@ -270,7 +249,7 @@ void SumIntoOneRow(const float* A, int m, int n, int lda, float* Y,
   }
 }
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
 void ColumnParallel_512(const CPUDevice& d, float* input_data, float* output_data,
     int sum_size, int channel) {
   int block_num = channel / block_size_avx512;
@@ -296,21 +275,19 @@ void ColumnParallel_512(const CPUDevice& d, float* input_data, float* output_dat
                                   sum_size);
   d.parallelFor(block_num, cost, do_work);
 
-  if (remain_num == 0) {
-    return;
+  if (remain_num != 0) {
+    auto remain_start_pos = block_num * block_size_avx512;
+    auto input_row_pos = remain_start_pos;
+    memcpy((void*)&output_data[remain_start_pos],
+        (void*)&input_data[remain_start_pos], remain_num * sizeof(float));
+    for (int i = 1; i < sum_size; ++i) {
+      input_row_pos += channel;
+      for (int j = 0; j < remain_num; ++j) {
+        output_data[remain_start_pos + j] +=
+          input_data[input_row_pos + j];
+      }
+    }
   }
-  int offset_block_end = block_num * block_size_avx512;
-  __m512 zero = _mm512_setzero_ps();
-  __mmask16 mask = 0xffff >> (block_size_avx512 - remain_num);
-  __m512 sum, val;
-  float* row_pos = const_cast<float*>(input_data + offset_block_end);
-  sum = _mm512_mask_loadu_ps(zero, mask, row_pos);
-  for (int i = 1; i < sum_size; ++i) {
-    row_pos += channel;
-    val = _mm512_mask_loadu_ps(zero, mask, row_pos);
-    sum = _mm512_mask_add_ps(zero, mask, sum, val);
-  }
-  _mm512_mask_storeu_ps(output_data + offset_block_end, mask, sum);
 }
 
 void ColumnParallel_256(const CPUDevice& d, float* input_data, float* output_data,
@@ -338,21 +315,20 @@ void ColumnParallel_256(const CPUDevice& d, float* input_data, float* output_dat
                                   sizeof(float),
                                   sum_size);
   d.parallelFor(block_num, cost, do_work);
-  if (remain_num == 0) {
-    return;
+
+  if (remain_num != 0) {
+    auto remain_start_pos = block_num * block_size_avx2;
+    auto input_row_pos = remain_start_pos;
+    memcpy((void*)&output_data[remain_start_pos],
+        (void*)&input_data[remain_start_pos], remain_num * sizeof(float));
+    for (int i = 1; i < sum_size; ++i) {
+      input_row_pos += channel;
+      for (int j = 0; j < remain_num; ++j) {
+        output_data[remain_start_pos + j] +=
+		input_data[input_row_pos + j];
+      }
+    }
   }
-  int offset_block_end = block_num * block_size_avx2;
-  __m256 zero = _mm256_setzero_ps();
-  __mmask8 mask = 0xff >> (block_size_avx2 - remain_num);
-  __m256 sum, val;
-  float* row_pos = const_cast<float*>(input_data + offset_block_end);
-  sum = _mm256_mask_loadu_ps(zero, mask, row_pos);
-  for (int i = 1; i < sum_size; ++i) {
-    row_pos += channel;
-    val = _mm256_mask_loadu_ps(zero, mask, row_pos);
-    sum = _mm256_mask_add_ps(zero, mask, sum, val);
-  }
-  _mm256_mask_storeu_ps(output_data + offset_block_end, mask, sum);
 }
 #endif
 
@@ -453,7 +429,7 @@ struct BiasGrad2D<CPUDevice, float> {
                   Eigen::DSizes<int, 2>& two_dims,
                   typename TTypes<float>::Flat output) {
     auto thread_num = d.numThreads();
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ >6) && (__AVX512F__)
     if (two_dims[1] >= block_size_avx512 * thread_num) {
       ColumnParallel_512(d, (float*)(input.data()), output.data(),
           two_dims[0], two_dims[1]);

@@ -19,6 +19,7 @@ struct EmbeddingConfig {
   int64 num_counter;
   DataType counter_type;
   int64 default_value_dim;
+  float default_value_no_permission;
   int normal_fix_flag;
   bool record_freq;
   bool record_version;
@@ -30,7 +31,9 @@ struct EmbeddingConfig {
                   float l2_weight_threshold = -1.0, const std::string& layout = "normal",
                   int64 max_element_size = 0, float false_positive_probability = -1.0,
                   DataType counter_type = DT_UINT64,
-                  int64 default_value_dim = 4096, bool record_freq =false,
+                  int64 default_value_dim = 4096,
+                  float default_value_no_permission = .0,
+                  bool record_freq =false,
                   bool record_version=false):
       emb_index(emb_index),
       primary_emb_index(primary_emb_index),
@@ -43,6 +46,7 @@ struct EmbeddingConfig {
       l2_weight_threshold(l2_weight_threshold),
       counter_type(counter_type),
       default_value_dim(default_value_dim),
+      default_value_no_permission(default_value_no_permission),
       normal_fix_flag(0),
       record_freq(record_freq),
       record_version(record_version) {

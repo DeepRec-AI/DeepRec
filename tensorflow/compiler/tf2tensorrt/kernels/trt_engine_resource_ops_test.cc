@@ -23,6 +23,7 @@ limitations under the License.
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_engine_instance.pb.h"  // NOLINT
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_logger.h"
 #include "tensorflow/compiler/tf2tensorrt/utils/trt_lru_cache.h"
+#include "tensorflow/compiler/tf2tensorrt/utils/trt_tensor_proxy.h"
 #include "tensorflow/core/framework/fake_input.h"
 #include "tensorflow/core/framework/node_def_builder.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -52,36 +53,49 @@ class TRTEngineResourceOpsTest : public OpsTestBase {
   TrtUniquePtrType<nvinfer1::ICudaEngine> CreateTRTEngine() {
     TrtUniquePtrType<nvinfer1::IBuilder> builder(
         nvinfer1::createInferBuilder(logger_));
-    TrtUniquePtrType<nvinfer1::INetworkDefinition> network(
+    TrtUniquePtrType<nvinfer1::INetworkDefinition> network;
+#if IS_TRT_VERSION_GE(6, 0, 0, 0)
+    const uint32_t flags = 0U;
+    network =
+        TrtUniquePtrType<nvinfer1::INetworkDefinition>(builder->createNetworkV2(flags));
+#else
+    network = TrtUniquePtrType<nvinfer1::INetworkDefinition>(
         builder->createNetwork());
-
+#endif
     // Add the input.
     nvinfer1::Dims dims;
     dims.nbDims = 1;
     dims.d[0] = 1;
-    nvinfer1::ITensor* input =
+    ITensorProxyPtr input =
         network->addInput("input", nvinfer1::DataType::kFLOAT, dims);
-    EXPECT_NE(nullptr, input);
+    EXPECT_NE(nullptr, input->trt_tensor());
 
     // Add a unary layer.
     nvinfer1::IUnaryLayer* layer =
-        network->addUnary(*input, nvinfer1::UnaryOperation::kEXP);
+        network->addUnary(*input->trt_tensor(), nvinfer1::UnaryOperation::kEXP);
     EXPECT_NE(nullptr, layer);
 
     // Mark the output.
-    nvinfer1::ITensor* output = layer->getOutput(0);
+    ITensorProxyPtr output = layer->getOutput(0);
     output->setName("output");
-    network->markOutput(*output);
+    network->markOutput(*output->trt_tensor());
 
     // Build the engine
     builder->setMaxBatchSize(1);
+#if IS_TRT_VERSION_GE(6, 0, 0, 0)
+  TrtUniquePtrType<nvinfer1::IBuilderConfig> builder_config(builder->createBuilderConfig());
+  builder_config->setMaxWorkspaceSize(1 << 10);
+  TrtUniquePtrType<nvinfer1::ICudaEngine> engine(
+      builder->buildEngineWithConfig(*network, *builder_config));
+#else
     builder->setMaxWorkspaceSize(1 << 10);
     TrtUniquePtrType<nvinfer1::ICudaEngine> engine(
         builder->buildCudaEngine(*network));
+#endif
     EXPECT_NE(nullptr, engine);
     return engine;
   }
-  Logger logger_;
+  Logger& logger_ = *Logger::GetLogger();
 };
 
 TEST_F(TRTEngineResourceOpsTest, Basic) {

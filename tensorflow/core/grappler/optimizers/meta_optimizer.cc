@@ -39,6 +39,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/model_pruner.h"
 #include "tensorflow/core/grappler/optimizers/pin_to_host_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/remapper.h"
+#include "tensorflow/core/grappler/optimizers/concat_cast_fusing.h"
 #include "tensorflow/core/grappler/optimizers/scoped_allocator_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/shape_optimizer.h"
 #include "tensorflow/core/grappler/utils/canonicalizer.h"
@@ -211,6 +212,7 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
                                       cfg_.scoped_allocator_opts()));
   MK_OPT("pin_to_host",
          new PinToHostOptimizer(cfg_.pin_to_host_optimization()));
+  MK_OPT("concat_cast_fusing", new ConcatCastFusing());
 
   return std::unique_ptr<GraphOptimizer>();
 }
@@ -225,7 +227,7 @@ MetaOptimizer::MetaOptimizer(DeviceBase* cpu_device, const ConfigProto& cfg)
          cpu_device_->attributes().device_type() == "CPU");
   auto global_jit_level =
       cfg.graph_options().optimizer_options().global_jit_level();
-  xla_on_ = IsXlaGlobalJitOn(global_jit_level); 
+  xla_on_ = IsXlaGlobalJitOn(global_jit_level);
 }
 
 Status MetaOptimizer::InitializeOptimizers(
@@ -302,6 +304,8 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(MakeUnique<ScopedAllocatorOptimizer>(
         cfg_.scoped_allocator_optimization(), cfg_.scoped_allocator_opts()));
   }
+
+  optimizers->push_back(MakeUnique<ConcatCastFusing>());
   return InitializeCustomGraphOptimizers(std::set<string>(), optimizers);
 }
 

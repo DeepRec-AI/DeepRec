@@ -255,9 +255,10 @@ string GetNodeExecutionRangeMessageImpl(
 }  // namespace detail
 
 string GetThunkExecutionRangeMessage(absl::string_view cluster_name,
-                                     absl::string_view op_name) {
+                                     absl::string_view op_name,
+                                     absl::string_view op_type) {
   cluster_name = cluster_name.substr(0, cluster_name.find("__XlaCompile"));
-  return strings::StrCat(cluster_name, "_1/xla_run/", op_name);
+  return strings::StrCat(op_type, ": ", cluster_name, "_1/xla_run/", op_name);
 }
 
 }  // namespace nvtx

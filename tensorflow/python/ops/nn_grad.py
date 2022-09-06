@@ -27,6 +27,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import nn_ops
+from tensorflow.python.ops import gen_fused_l2_normalize_ops
 
 
 @ops.RegisterGradient("Conv2DBackpropInput")
@@ -1167,3 +1168,27 @@ def _NthElementGrad(op, grad):
   num_selected = array_ops.expand_dims(math_ops.reduce_sum(indicators, -1), -1)
 
   return [math_ops.div(indicators, num_selected) * grad, None]
+
+
+@ops.RegisterGradient("FusedL2Normalize")
+def _FusedL2NormalizeGrad(op, grad):
+  """Return the gradients for FusedL2Normalize"""
+
+  x = op.inputs[0]  # pylint: disable=redefined-builtin
+  axis = op.get_attr("axis")
+  epsilon = op.get_attr("epsilon")
+
+  return gen_fused_l2_normalize_ops.fused_l2_normalize_grad(
+    grad, x, axis=axis, epsilon=epsilon)
+
+@ops.RegisterGradient("FusedLayerNorm")
+def _FusedLayerNormalizeGrad(op, grad, *args):
+  """Return the gradients for FusedLayerNorm"""
+
+  x = op.inputs[0]  # pylint: disable=redefined-builtin
+  mean = op.outputs[1]
+  rvariance = op.outputs[2]
+  gamma = op.inputs[1]
+
+  return gen_nn_ops.fused_layer_norm_grad(
+    grad, x, mean, rvariance, gamma)

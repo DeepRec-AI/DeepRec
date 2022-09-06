@@ -37,6 +37,8 @@ class LocalSessionInstance {
   Version GetVersion() { return version_; }
   void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
+  SignatureDef GetServingSignatureDef();
+  const SignatureInfo* GetSignatureInfo();
 
   Status FullModelUpdate(const Version& version,
                          ModelConfig* model_config);
@@ -45,11 +47,17 @@ class LocalSessionInstance {
  
  private:
   Status ReadModelSignature(ModelConfig* model_config);
+  Status LoadModelFromCheckpoint(ModelConfig* config);
+  Status LoadSavedModel(ModelConfig* config);
 
  private: 
   MetaGraphDef meta_graph_def_;
+
+  // for current serving signature model
   std::pair<std::string, SignatureDef> model_signature_;
   std::string model_json_signature_;
+  SignatureInfo signature_info_;
+
   std::string warmup_file_name_;
 
   ModelSessionMgr* session_mgr_ = nullptr;
@@ -81,6 +89,8 @@ class RemoteSessionInstance {
   Version GetVersion() { return version_; }
   void UpdateVersion(const Version& v) { version_ = v; }
   std::string DebugString();
+  SignatureDef GetServingSignatureDef();
+  const SignatureInfo* GetSignatureInfo();
 
  private:
   Status ReadModelSignature(ModelConfig* model_config);
@@ -91,8 +101,12 @@ class RemoteSessionInstance {
 
  private:
   MetaGraphDef meta_graph_def_;
+
+  // for current serving signature model
   std::pair<std::string, SignatureDef> model_signature_;
   std::string model_json_signature_;
+  SignatureInfo signature_info_;
+
   std::string warmup_file_name_;
 
   ModelSessionMgr* session_mgr_ = nullptr;
@@ -117,6 +131,8 @@ class IModelInstanceMgr {
   virtual Status Rollback() = 0;
 
   virtual std::string DebugString() = 0;
+  virtual SignatureDef GetServingSignatureDef() = 0;
+  virtual const SignatureInfo* GetSignatureInfo() = 0;
 };
 
 class ModelUpdater {
@@ -154,6 +170,8 @@ class LocalSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
   Status Rollback() override;
 
   std::string DebugString() override;
+  SignatureDef GetServingSignatureDef() override;
+  const SignatureInfo* GetSignatureInfo() override;
 
  protected:
   Status FullModelUpdate(const Version& version,
@@ -179,6 +197,8 @@ class RemoteSessionInstanceMgr : public ModelUpdater, public IModelInstanceMgr {
   Status GetServingModelInfo(ServingModelInfo& model_info) override;
   Status Rollback() override;
   std::string DebugString() override;
+  SignatureDef GetServingSignatureDef() override;
+  const SignatureInfo* GetSignatureInfo() override;
 
  protected:
   Status FullModelUpdate(const Version& version,

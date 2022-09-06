@@ -164,6 +164,12 @@ static void AllocateFlags() {
     return true;
   };
 
+  // Custom "sub-parser" lambda for xla_gpu_llvm_ir_file.
+  auto setter_for_xla_gpu_llvm_ir_file = [](string value) {
+    flag_values->add_xla_gpu_llvm_ir_file(value);
+    return true;
+  };
+
   // Custom "sub-parser" lambda for xla_backend_extra_options.
   auto setter_for_xla_backend_extra_options =
       [](string comma_separated_values) {
@@ -362,6 +368,13 @@ static void AllocateFlags() {
                        "module. General workflow. Get the generated module "
                        "ptx from XLA. Modify it. Then pass it back via this "
                        "option."),
+      tensorflow::Flag(
+          "xla_gpu_llvm_ir_file", setter_for_xla_gpu_llvm_ir_file, "",
+          "If non-empty, specifies a file containing textual LLVM IR to use. The "
+          "filename prefix must have the same pattern as LLVM dumped by XLA "
+          "(i.e. module_0001.ir-no-opt.ll -> module_0001.MY_NEW_FILE.ll). This "
+          "allows to match one specific module. General workflow. Get the not "
+          "optimized LLVM IR from XLA, modify it, then pass it back via this option."),
       tensorflow::Flag(
           "xla_test_all_output_layouts",
           bool_setter_for(&DebugOptions::set_xla_test_all_output_layouts),

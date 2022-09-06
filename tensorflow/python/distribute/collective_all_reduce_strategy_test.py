@@ -534,8 +534,8 @@ class LocalCollectiveAllReduceStrategy(
         num_gpus,
         input_fn,
         expected_values,
-        test_reinitialize=use_dataset,
-        ignore_order=not use_dataset)
+        test_reinitialize=False,
+        ignore_order=True)
 
   @combinations.generate(combinations.combine(mode=['graph']))
   def testAllReduceSum(self):
@@ -584,8 +584,9 @@ class LocalCollectiveAllReduceStrategy(
     num_gpus = 2
     if context.num_gpus() < num_gpus:
       self.skipTest('Not enough GPUs')
-    strategy, _, _ = self._get_test_object(None, None, num_gpus=num_gpus)
-    self._test_numpy_dataset(strategy)
+    distribution, target, config = self._get_test_object(None, None, num_gpus=num_gpus)
+    with self.cached_session(config=config, target=target):
+      self._test_numpy_dataset(distribution)
 
 
 if __name__ == '__main__':

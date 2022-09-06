@@ -46,6 +46,7 @@ limitations under the License.
 %include "tensorflow/python/util/kernel_registry.i"
 
 %include "tensorflow/python/util/transform_graph.i"
+%include "tensorflow/python/util/quantize_embedding_variable.i"
 
 %include "tensorflow/python/util/util.i"
 

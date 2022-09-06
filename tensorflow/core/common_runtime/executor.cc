@@ -122,6 +122,16 @@ void SetMemory(NodeExecStatsInterface* stats, OpKernelContext* ctx) {
   stats->SetMemory(ctx);
 }
 
+void SetParentID(NodeExecStatsInterface* stats) {
+  if (!stats) return;
+  stats->SetParentID(tracing::CallingContext::GetCurrentContext());
+}
+
+void SetActivityID(NodeExecStatsInterface* stats) {
+  if (!stats) return;
+  stats->SetActivityID(tracing::CallingContext::GetAndPush());
+}
+
 static const std::string enable_cost_model_env_name =
     "ENABLE_EXECUTE_COST_MODEL";
 
@@ -895,6 +905,8 @@ void ExecutorState<PropagatorStateType>::BatchProcess(std::vector<TaggedNode> no
       params.track_allocations = stats ? stats->TrackAllocations() : false;
       nodestats::SetScheduled(stats, scheduled_nsec);
       nodestats::SetAllStart(stats);
+      nodestats::SetParentID(stats);
+      nodestats::SetActivityID(stats);
     }
 
     if (vlog_) {
@@ -1209,6 +1221,7 @@ bool ExecutorState<PropagatorStateType>::NodeDone(
     TaggedNodeReadyQueue* inline_ready) {
   if (stats) {
     nodestats::SetAllEnd(stats);
+    tracing::CallingContext::Pop();
     DCHECK_NE(stats_collector_, nullptr);
     stats->Done(immutable_state_.params().device->name());
   }

@@ -149,6 +149,7 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("storage_path: string = '.'")
     .Attr("storage_size: list(int) = []")
     .Attr("default_value_dim: int = 4096")
+    .Attr("default_value_no_permission: float = .0")
     .Attr("record_freq: bool = false")
     .Attr("record_version: bool = false")
     .SetShapeFn([](InferenceContext* c) { 
@@ -170,6 +171,7 @@ REGISTER_OP("KvVarIsInitializedOp")
     .Input("resource: resource")
     .Output("is_initialized: bool")
     .Attr("Tkeys: {int64,int32,string}")
+    .Attr("dtype: type = DT_FLOAT")
     .SetShapeFn(tensorflow::shape_inference::ScalarShape)
     .Doc(R"doc(
 Checks whether a resource handle-based variable has been initialized.
@@ -193,6 +195,7 @@ REGISTER_OP("KvVariableShape")
     .Output("output: out_type")
     .Attr("out_type: {int32, int64} = DT_INT32")
     .Attr("Tkeys: {int64,int32,string}")
+    .Attr("dtype: type = DT_FLOAT")
     .SetShapeFn(KvVariableShapeShapeFn)
     .Doc(R"doc(
 Returns the shape of the variable pointed to by `resource`.
@@ -430,8 +433,10 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("storage_path: string = '.'")
     .Attr("storage_size: list(int) = []")
     .Attr("default_value_dim: int = 4096")
+    .Attr("default_value_no_permission: float = .0")
     .Attr("record_freq: bool = false")
     .Attr("record_version: bool = false")
+    .Attr("reset_version: bool = false")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));
@@ -466,10 +471,10 @@ REGISTER_OP("KvResourceExport")
     .Attr("Tvalues: type")
     .SetShapeFn([](InferenceContext* c) {
       ShapeHandle values = c->UnknownShape();
-      TF_RETURN_IF_ERROR(c->WithRankAtLeast(values, 1, &values));
-      ShapeHandle keys = c->UnknownShapeOfRank(2);
-      ShapeHandle versions = c->UnknownShapeOfRank(3);
-      ShapeHandle freqs = c->UnknownShapeOfRank(4);
+      TF_RETURN_IF_ERROR(c->WithRankAtLeast(values, 2, &values));
+      ShapeHandle keys = c->UnknownShapeOfRank(1);
+      ShapeHandle versions = c->UnknownShapeOfRank(1);
+      ShapeHandle freqs = c->UnknownShapeOfRank(1);
       c->set_output(0, keys);
       c->set_output(1, values);
       c->set_output(2, versions);
@@ -485,5 +490,60 @@ values: Tensor of all values in the table. Indexed in parallel with `keys`.
 versions: Vector of all versions present in the table.
 freqs: Vector of all freqs present in the table.
 )doc");
+
+REGISTER_OP("KvResourceGeneratePartitionedTensor")
+    .Input("keys: Tkeys")
+    .Input("values: Tvalues")
+    .Input("versions: int64")
+    .Input("freqs: int64")
+    .Output("partitioned_keys: Tkeys")
+    .Output("partitioned_values: Tvalues")
+    .Output("partitioned_versions: int64")
+    .Output("partitioned_freqs: int64")
+    .Output("partial_offset: int32")
+    .Attr("Tkeys: {int64,int32,string}")
+    .Attr("Tvalues: type")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle partitioned_values = c->UnknownShape();
+      TF_RETURN_IF_ERROR(c->WithRankAtLeast(partitioned_values, 2, &partitioned_values));
+      ShapeHandle partitioned_keys = c->UnknownShapeOfRank(1);
+      ShapeHandle partitioned_versions = c->UnknownShapeOfRank(1);
+      ShapeHandle partitioned_freqs = c->UnknownShapeOfRank(1);
+      ShapeHandle partial_offset = c->UnknownShapeOfRank(1);
+      c->set_output(0, partitioned_keys);
+      c->set_output(1, partitioned_values);
+      c->set_output(2, partitioned_versions);
+      c->set_output(3, partitioned_freqs);
+      c->set_output(4, partial_offset);
+      return Status::OK();
+    })
+    .Doc(R"doc(
+Outputs a partial offset tensor of features.
+
+keys: Vector of all keys present in the table.
+partial_offset: Vector of partial offset used for restore.
+)doc");
+
+REGISTER_OP("EVGetFrequency")
+    .Input("resource_handle: resource")
+    .Input("ids: Tkeys")
+    .Output("output: int64")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("Tvalues: type")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
+REGISTER_OP("EVGetVersion")
+    .Input("resource_handle: resource")
+    .Input("ids: Tkeys")
+    .Output("output: int64")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("Tvalues: type")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
 
 }  // namespace tensorflow

@@ -169,7 +169,7 @@ Status TransposeShapeFn(InferenceContext* c) {
 
     for (int32 i = 0; i < rank; ++i) {
       int64 in_idx = data[i];
-      if (in_idx >= rank) {
+      if (in_idx >= rank || in_idx <= -rank) {
         return errors::InvalidArgument("perm dim ", in_idx,
                                        " is out of range of input rank ", rank);
       }
@@ -588,6 +588,19 @@ REGISTER_OP("ConcatOffset")
       return Status::OK();
     });
 
+REGISTER_OP("FusedConcatCast")
+    .Input("values: N * SrcT")
+    .Input("axis: Tidx")
+    .Output("output: DstT")
+    .Attr("N: int >= 2")
+    .Attr("Tidx: {int32, int64} = DT_INT32")
+    // Attributes for the Cast ------------------------------------ //
+    .Attr("SrcT: type")
+    .Attr("DstT: type")
+    .Attr("Truncate: bool = false")
+    // ---------------------------------------------------------------------- //
+    .SetShapeFn(shape_inference::ConcatV2Shape);
+
 // --------------------------------------------------------------------------
 REGISTER_OP("Split")
     .Input("split_dim: int32")
@@ -704,6 +717,12 @@ REGISTER_OP("SplitV")
           auto size = data[i];
           if (data[i] == -1 && c->ValueKnown(split_dim_size)) {
             size = split_dim_size - total_size;
+          }
+          // If we have a negative known size (either explicit, or computed
+          // via -1), then the split sizes are invalid.
+          if (size < -1 || (size == -1 && c->ValueKnown(split_dim_size))) {
+            return errors::InvalidArgument("Split size at index ", i,
+                                           " must be >= 0. Got: ", size);
           }
           TF_RETURN_IF_ERROR(
               c->ReplaceDim(input, split_dim, c->MakeDim(size), &output_shape));
@@ -1784,9 +1803,19 @@ REGISTER_OP("ReverseSequence")
         return errors::InvalidArgument(
             "batch_dim must be < input rank: ", batch_dim, " vs. ", input_rank);
       }
+
       if (seq_dim >= input_rank) {
         return errors::InvalidArgument(
             "seq_dim must be < input rank: ", seq_dim, " vs. ", input_rank);
+      }
+
+      // To prevent out of bound access when calling c->Dim(input, batch_dim),
+      // batch_dim range [-1 * input rank, input rank) is allowed. However,
+      // the op implementation has a stricter bound for batch_dim requiring >= 0
+      // value. Thus, perform strict check here.
+      if (batch_dim < 0) {
+        return errors::InvalidArgument("batch_dim must be >=0, got ",
+                                       batch_dim);
       }
 
       DimensionHandle batch_dim_dim = c->Dim(input, batch_dim);

@@ -309,6 +309,41 @@ REGISTER_OP("FusedBatchNormGradV3")
     .Attr(GetConvnetDataFormat2D3DAttrString())
     .Attr("is_training: bool = true")
     .SetShapeFn(shape_inference::FusedBatchNormGradShape);
+
+// --------------------------------------------------------------------------
+REGISTER_OP("FusedLayerNorm")
+    .Input("x: T")
+    .Input("gamma: float")
+    .Input("beta: float")
+    .Output("y: T")
+    .Output("mean: float")
+    .Output("rvariance: float")
+    //.Attr("T: {float, bfloat16}")
+    .Attr("T: {float}")
+    .Attr("epsilon: float = 1e-8")
+    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext *c)
+                {
+                    c->set_output(0, c->input(0));
+                    return Status::OK();
+                });
+
+REGISTER_OP("FusedLayerNormGrad")
+    .Input("y_grad: T")
+    .Input("x: T")
+    .Input("mean: float")
+    .Input("rvariance: float")
+    .Input("gamma: float")
+    .Output("x_grad: T")
+    .Output("gamma_grad: float")
+    .Output("beta_grad: float")
+    //.Attr("T: {float, bfloat16}")
+    .Attr("T: {float}")
+    .SetShapeFn([](::tensorflow::shape_inference::InferenceContext *c)
+                {
+                    c->set_output(0, c->input(0));
+                    return Status::OK();
+                });
+
 // --------------------------------------------------------------------------
 
 REGISTER_OP("BiasAdd")

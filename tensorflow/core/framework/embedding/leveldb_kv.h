@@ -94,7 +94,7 @@ class LevelDBKV : public KVInterface<K, V> {
     leveldb::Status s = leveldb::DB::Open(options_, path_, &db_);
     CHECK(s.ok());
     counter_ =  new SizeCounter<K>(8);
-    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(cpu_allocator(), size); };
+    new_value_ptr_fn_ = [] (size_t size) { return new NormalContiguousValuePtr<V>(ev_allocator(), size); };
     total_dims_ = 0;
   }
 
@@ -127,11 +127,13 @@ class LevelDBKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status BatchInsert(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchInsert(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     return BatchCommit(keys, value_ptrs);
   } 
 
-  Status BatchCommit(std::vector<K> keys, std::vector<ValuePtr<V>*> value_ptrs) {
+  Status BatchCommit(const std::vector<K>& keys,
+                     const std::vector<ValuePtr<V>*>& value_ptrs) {
     WriteBatch batch;
     for (int i = 0; i < keys.size(); i++) {
       std::string value_res((char*)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));

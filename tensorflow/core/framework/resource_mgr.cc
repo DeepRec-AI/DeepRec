@@ -37,7 +37,7 @@ ResourceHandle MakeResourceHandle(
     const TypeIndex& type_index,
     const std::vector<DtypeAndPartialTensorShape>& dtypes_and_shapes) {
   ResourceHandle result;
-  result.set_device(device.name());
+  result.set_device(device.physical_name());
   result.set_container(container);
   if (name == ResourceHandle::ANONYMOUS_NAME) {
     result.set_name(strings::StrCat("_AnonymousVar", current_id_.fetch_add(1)));
@@ -64,7 +64,7 @@ Status MakeResourceHandleToOutput(OpKernelContext* context, int output_index,
 namespace internal {
 
 Status ValidateDevice(OpKernelContext* ctx, const ResourceHandle& p) {
-  if (ctx->device()->attributes().name() != p.device()) {
+  if (ctx->device()->physical_name() != p.device()) {
     return errors::InvalidArgument(
         "Trying to access resource ", p.name(), " located in device ",
         p.device(), " from device ", ctx->device()->attributes().name());
@@ -178,7 +178,7 @@ Status ResourceMgr::DoCreate(const string& container, TypeIndex type,
   // key can contain a StringPiece that borrows from the string in the value.
   ResourceAndName resource_and_name(resource, name);
   StringPiece borrowed_name(*resource_and_name.name);
-  Container::value_type key_and_value(Key(type.hash_code(), borrowed_name),
+  Container::value_type key_and_value(Key(type.hash_code(), std::string(borrowed_name.data(), borrowed_name.size())),
                                       std::move(resource_and_name));
 
   if ((*b)->insert(std::move(key_and_value)).second) {
