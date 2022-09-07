@@ -149,6 +149,7 @@ struct GraphOptimizerOption {
   // multi tiered embedding
   embedding::StorageType st = embedding::StorageType::INVALID;
   std::string path;
+  std::vector<int64> size;
 };
 
 struct SrcInfo {
@@ -263,7 +264,8 @@ class SavedModelOptimizer : public GraphOptimizer {
       std::unordered_map<std::string, std::vector<Node*>>& origin_import_nodes,
       std::vector<Node*>& new_kv_import_nodes);
 
-  Status RewriteEmbeddingVariableAttr(embedding::StorageType st, std::string path);
+  Status RewriteEmbeddingVariableAttr(embedding::StorageType st, const std::string& path,
+                                      const std::vector<int64>& size);
 
   Node* storage_pointer_node_ = nullptr;// storage placeholder node
   Node* version_node_ = nullptr; // version placeholder node
