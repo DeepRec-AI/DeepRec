@@ -629,12 +629,10 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
 def _recursive_copy(src_dir, dest_dir):
     """Copy the contents of src_dir into the folder dest_dir.
     Args:
-      src_dir: gsc or local path.
-      dest_dir: gcs or local path.
-    When called, dest_dir should exist.
+      src_dir: hdfs or local path.
+      dest_dir: hdfs or local path.
     """
     for file_name in tf.io.gfile.listdir(src_dir):
-        #   logging.info("file_name: " + file_name)
         old_path = os.path.join(src_dir, file_name)
         new_path = os.path.join(dest_dir, file_name)
 
