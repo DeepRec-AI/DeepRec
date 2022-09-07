@@ -32,6 +32,7 @@ limitations under the License.
 #include "tensorflow/core/common_runtime/executor_factory.h"
 #include "tensorflow/core/common_runtime/function.h"
 #include "tensorflow/core/common_runtime/graph_optimizer.h"
+#include "tensorflow/core/common_runtime/local_device.h"
 #include "tensorflow/core/common_runtime/memory_types.h"
 #include "tensorflow/core/common_runtime/memory_planner.h"
 #include "tensorflow/core/common_runtime/gpu_memory_planner.h"
@@ -319,10 +320,13 @@ class DirectSessionFactory : public SessionFactory {
     }
 #endif // GOOGLE_CUDA
 
+    DeviceGlobalThreadPoolOptions dev_global_tp_opt;
+    dev_global_tp_opt.global_threadpool_num = session_num;
+    dev_global_tp_opt.device_threadpool_index = 0;
     std::vector<std::unique_ptr<Device>> devices;
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
         options, "/job:localhost/replica:0/task:0",
-        &devices, &dev_rmgr_map));
+        &devices, &dev_rmgr_map, dev_global_tp_opt));
 
 #if GOOGLE_CUDA
     if (use_multi_stream) {
@@ -351,9 +355,11 @@ class DirectSessionFactory : public SessionFactory {
 #endif  // TENSORFLOW_USE_NUMA
     session_group->CreateLeaderSession(leader_session);
     for (int i = 1; i < session_num; ++i) {
+      dev_global_tp_opt.device_threadpool_index = i;
       std::vector<std::unique_ptr<Device>> dev;
       TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
-          options, "/job:localhost/replica:0/task:0", &dev, &dev_rmgr_map));
+          options, "/job:localhost/replica:0/task:0", &dev,
+          &dev_rmgr_map, dev_global_tp_opt));
       DeviceMgr* dev_mgr = nullptr;
 #if GOOGLE_CUDA
       if (use_multi_stream) {

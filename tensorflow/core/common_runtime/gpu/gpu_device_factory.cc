@@ -47,10 +47,11 @@ class GPUDevice : public BaseGPUDevice {
             const string& physical_name, Bytes memory_limit,
             const DeviceLocality& locality, TfGpuId tf_gpu_id,
             const string& physical_device_desc, Allocator* gpu_allocator,
-            Allocator* cpu_allocator, const DeviceResourceMgrMap* dev_rmgr_map)
+            Allocator* cpu_allocator, const DeviceResourceMgrMap* dev_rmgr_map,
+            const DeviceGlobalThreadPoolOptions& opt)
       : BaseGPUDevice(options, name, physical_name, memory_limit, locality,
                       tf_gpu_id, physical_device_desc, gpu_allocator, cpu_allocator,
-                      false /* sync every op */, 1 /* max_streams */, dev_rmgr_map) {
+                      false /* sync every op */, 1 /* max_streams */, dev_rmgr_map, opt) {
     if (options.config.has_gpu_options()) {
       force_gpu_compatible_ =
           options.config.gpu_options().force_gpu_compatible();
@@ -91,10 +92,11 @@ class GPUDeviceFactory : public BaseGPUDeviceFactory {
       const SessionOptions& options, const string& name, const string& physical_name,
       Bytes memory_limit, const DeviceLocality& locality, TfGpuId tf_gpu_id,
       const string& physical_device_desc, Allocator* gpu_allocator,
-      Allocator* cpu_allocator, const DeviceResourceMgrMap* dev_rmgr_map) override {
+      Allocator* cpu_allocator, const DeviceResourceMgrMap* dev_rmgr_map,
+      const DeviceGlobalThreadPoolOptions& opt) override {
     return absl::make_unique<GPUDevice>(options, name, physical_name, memory_limit,
                                         locality, tf_gpu_id, physical_device_desc,
-                                        gpu_allocator, cpu_allocator, dev_rmgr_map);
+                                        gpu_allocator, cpu_allocator, dev_rmgr_map, opt);
   }
 };
 
@@ -119,9 +121,10 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
   GPUCompatibleCPUDevice(const SessionOptions& options, const string& name,
                          Bytes memory_limit, const DeviceLocality& locality,
                          Allocator* allocator,
-                         const DeviceResourceMgrMap* dev_rmgr_map)
+                         const DeviceResourceMgrMap* dev_rmgr_map,
+                         const DeviceGlobalThreadPoolOptions& opt)
       : ThreadPoolDevice(options, name, memory_limit,
-                         locality, allocator, dev_rmgr_map),
+                         locality, allocator, dev_rmgr_map, opt),
         numa_node_(locality.numa_node()) {
     if (options.config.has_gpu_options()) {
       force_gpu_compatible_ =
@@ -157,12 +160,14 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
 
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices) override {
-    return CreateDevices(options, name_prefix, devices, nullptr);
+    return CreateDevices(options, name_prefix, devices, nullptr,
+                         DeviceGlobalThreadPoolOptions());
   }
 
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices,
-                       const DeviceResourceMgrMap* dev_rmgr_map) override {
+                       const DeviceResourceMgrMap* dev_rmgr_map,
+                       const DeviceGlobalThreadPoolOptions& opt) override {
     int n = 1;
     auto iter = options.config.device_count().find("CPU");
     if (iter != options.config.device_count().end()) {
@@ -179,7 +184,7 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
       devices->push_back(absl::make_unique<GPUCompatibleCPUDevice>(
           options, name, Bytes(256 << 20), DeviceLocality(),
           ProcessState::singleton()->GetCPUAllocator(numa_node),
-          dev_rmgr_map));
+          dev_rmgr_map, opt));
     }
 
     return Status::OK();

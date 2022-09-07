@@ -29,7 +29,8 @@ class ThreadPoolDevice : public LocalDevice {
                    Allocator* allocator);
   ThreadPoolDevice(const SessionOptions& options, const string& name,
                    Bytes memory_limit, const DeviceLocality& locality,
-                   Allocator* allocator, const DeviceResourceMgrMap* dev_rmgr_map);
+                   Allocator* allocator, const DeviceResourceMgrMap* dev_rmgr_map,
+                   const DeviceGlobalThreadPoolOptions& opt);
   ~ThreadPoolDevice() override;
 
   Allocator* GetAllocator(AllocatorAttributes attr) override;
