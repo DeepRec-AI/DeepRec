@@ -121,6 +121,10 @@ class EmbeddingVar : public ResourceBase {
     return is_initialized_;
   }
 
+  Status LookupKey(K key, ValuePtr<V>** value_ptr) {
+    return storage_manager_->Get(key, value_ptr);
+  }
+
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, bool* is_filter) {
     return filter_->LookupOrCreateKey(key, value_ptr, is_filter);
   }
@@ -157,6 +161,11 @@ class EmbeddingVar : public ResourceBase {
 
   int64 GetFreq(K key) {
     return filter_->GetFreq(key);
+  }
+
+  void Lookup(K key, V* val, V* default_v)  {
+    const V* default_value_ptr = (default_v == nullptr) ? default_value_ : default_v;
+    filter_->Lookup(this, key, val, default_value_ptr, default_value_no_permission_);
   }
 
   void LookupOrCreate(K key, V* val, V* default_v, int count = 1)  {

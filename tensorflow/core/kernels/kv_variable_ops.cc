@@ -50,6 +50,7 @@ namespace tensorflow {
 namespace {
 const int64 kEmbeddingVarUseDB = -214;
 const int64 kInitializableEmbeddingVarUseDB = -215;
+const char* kInferenceMode = "INFERENCE_MODE";
 }
 
 #define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
@@ -438,6 +439,10 @@ template <typename TKey, typename TValue>
 class KvResourceGatherOp : public OpKernel {
  public:
   explicit KvResourceGatherOp(OpKernelConstruction* c) : OpKernel(c) {
+    OP_REQUIRES_OK(c, c->GetAttr("is_inference", &is_inference_));
+    bool is_inference;
+    TF_CHECK_OK(ReadBoolFromEnvVar(kInferenceMode, false, &is_inference));
+    is_inference_ |= is_inference;
     OP_REQUIRES_OK(c,
         c->GetAttr("is_use_default_value_tensor",
           &is_use_default_value_tensor_));
@@ -459,6 +464,17 @@ class KvResourceGatherOp : public OpKernel {
     } else {
       get_count_fn_ = [](const int32* count, int64 index) {
         return 1;
+      };
+    }
+    if (!is_inference_) {
+      lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
+                      TValue* val, TValue* default_v, int count) {
+        ev->LookupOrCreate(key, val, default_v, count);
+      };
+    } else {
+      lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
+                      TValue* val, TValue* default_v, int count) {
+        ev->Lookup(key, val, default_v);
       };
     }
   }
@@ -511,7 +527,7 @@ class KvResourceGatherOp : public OpKernel {
               default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
               ev->ValueLen());
           int32 count = get_count_fn_(counts, i);
-          ev->LookupOrCreate(indices_flat(i),
+          lookup_fn_(ev, indices_flat(i),
               out_base + i * slice_elems, default_v_ptr, count);
         }
       };
@@ -530,9 +546,12 @@ class KvResourceGatherOp : public OpKernel {
 
   private:
     bool is_use_default_value_tensor_;
+    bool is_inference_;
     std::function<
       TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
     std::function<int32(int32*, int64)> get_count_fn_;
+    std::function<void(EmbeddingVar<TKey, TValue>* ev,
+      TKey key, TValue* val, TValue* default_v, int count)> lookup_fn_;
 };
 
 #define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \

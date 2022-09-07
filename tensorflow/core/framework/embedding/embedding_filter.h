@@ -50,6 +50,19 @@ class EmbeddingFilter {
  public:
   virtual void LookupOrCreate(K key, V* val, const V* default_value_ptr,
     ValuePtr<V>** value_ptr, int count, const V* default_value_no_permission) = 0;
+
+  virtual void Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+    const V* default_value_no_permission) {
+    ValuePtr<V>* value_ptr = nullptr;
+    Status s = ev->LookupKey(key, &value_ptr);
+    if (s.ok()) {
+      V* mem_val = ev->LookupPrimaryEmb(value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev->ValueLen());
+    } else {
+      memcpy(val, default_value_no_permission, sizeof(V) * ev->ValueLen());
+    }
+  }
+
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) = 0;
   virtual void CreateGPUBatch(V* val_base, V** default_values, int64 size,
     int64 slice_elems, int64 value_len_, bool* init_flags, V** memcpy_address) = 0;
