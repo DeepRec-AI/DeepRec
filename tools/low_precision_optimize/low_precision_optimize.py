@@ -1,5 +1,4 @@
 import os
-import shutil
 import sys
 import tempfile
 
@@ -509,7 +508,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
                 variable_path, opt_path, names, quant_names, scale_names, tf_dtype
             )
             if variable_path != input_path:
-                shutil.rmtree(variable_path)
+                tf.io.gfile.rmtree(variable_path)
             variable_path = opt_path
     return update_dict, opt_path
 
@@ -601,8 +600,8 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
                 tf.add_to_collection(tf.GraphKeys.ASSET_FILEPATHS, asset_name)
             assets_collection = tf.get_collection(tf.GraphKeys.ASSET_FILEPATHS)
         main_op = sess.graph.get_operation_by_name(init_op.name) if init_op else None
-        if os.path.exists(save_path):
-            shutil.rmtree(save_path)
+        if tf.io.gfile.exists(save_path):
+            tf.io.gfile.rmtree(save_path)
         builder = tf.saved_model.builder.SavedModelBuilder(save_path)
         builder.add_meta_graph_and_variables(
             sess=sess,
@@ -614,10 +613,10 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
         builder.save()
         if len(ev_opt_dict) > 0:
             target_path = f'{save_path}/variables'
-            shutil.rmtree(target_path)
-            shutil.copytree(os.path.dirname(variable_path), target_path)
-            shutil.rmtree(os.path.dirname(variable_path))
-        shutil.rmtree(tmp_path)
+            tf.io.gfile.rmtree(target_path)
+            _recursive_copy(os.path.dirname(variable_path), target_path)
+            tf.io.gfile.rmtree(os.path.dirname(variable_path))
+        tf.io.gfile.rmtree(tmp_path)
 
         print('Optmization Result:')
         for key, value in dense_opt_dict.items():
@@ -626,6 +625,25 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
             print(f'Optimize embedding to {value[-1]}: {key}')
         for key, value in ev_opt_dict.items():
             print(f'Optimize embedding variable to {value[-1]}: {key}')
+            
+def _recursive_copy(src_dir, dest_dir):
+    """Copy the contents of src_dir into the folder dest_dir.
+    Args:
+      src_dir: hdfs or local path.
+      dest_dir: hdfs or local path.
+    """
+    for file_name in tf.io.gfile.listdir(src_dir):
+        old_path = os.path.join(src_dir, file_name)
+        new_path = os.path.join(dest_dir, file_name)
+
+        if tf.io.gfile.isdir(old_path):
+            _recursive_copy(old_path, new_path)
+        elif not tf.io.gfile.exists(new_path):
+            path_par = os.path.dirname(new_path)
+            if not tf.io.gfile.exists(path_par):
+                tf.io.gfile.makedirs(path_par)
+            print(f"copy {old_path} to {new_path}")
+            tf.io.gfile.copy(old_path, new_path, overwrite=True)
 
 
 if __name__ == '__main__':
