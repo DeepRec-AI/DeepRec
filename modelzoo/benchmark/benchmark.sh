@@ -174,8 +174,8 @@ if [[ ! -f $config_file ]];then
 fi
 
 [[ $modelArgs == None ]] && modelArgs=
-[[ $cpus != None ]] && cpu_optional="--cpuset-cpus $cpus"
-[[ $gpus != None ]] && gpu_optional="--gpus $gpus"
+[[ $cpus != 'None' ]] && cpu_optional="--cpuset-cpus $cpus"
+[[ $gpus != 'None' ]] && gpu_optional="--gpus $gpus"
 [ ! -d $log_dir/$currentTime ] && mkdir -p "$log_dir/$currentTime"
 [ ! -d $checkpoint_dir/$currentTime ] && mkdir -p "$checkpoint_dir/$currentTime"
 
