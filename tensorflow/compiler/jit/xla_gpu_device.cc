@@ -58,6 +58,10 @@ class XlaGpuDeviceFactory : public DeviceFactory {
   Status ListPhysicalDevices(std::vector<string>* devices) override;
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices) override;
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix,
+                       std::vector<std::unique_ptr<Device>>* devices,
+                       const DeviceResourceMgrMap* dev_rmgr_map,
+                       const DeviceGlobalThreadPoolOptions& opt) override;
 };
 
 Status XlaGpuDeviceFactory::ListPhysicalDevices(std::vector<string>* devices) {
@@ -84,6 +88,15 @@ Status XlaGpuDeviceFactory::ListPhysicalDevices(std::vector<string>* devices) {
 Status XlaGpuDeviceFactory::CreateDevices(
     const SessionOptions& session_options, const string& name_prefix,
     std::vector<std::unique_ptr<Device>>* devices) {
+  return CreateDevices(session_options, name_prefix, devices, nullptr,
+                       DeviceGlobalThreadPoolOptions());
+}
+
+Status XlaGpuDeviceFactory::CreateDevices(
+    const SessionOptions& session_options, const string& name_prefix,
+    std::vector<std::unique_ptr<Device>>* devices,
+    const DeviceResourceMgrMap* dev_rmgr_map,
+    const DeviceGlobalThreadPoolOptions& opt) {
   XlaOpRegistry::DeviceRegistration registration;
   registration.compilation_device_name = DEVICE_GPU_XLA_JIT;
   registration.autoclustering_policy =
@@ -129,8 +142,14 @@ Status XlaGpuDeviceFactory::CreateDevices(
     options.compilation_device_name = DEVICE_GPU_XLA_JIT;
     options.use_multiple_streams = true;
     options.allowed_devices = gpu_ids;
-    auto device = absl::make_unique<XlaDevice>(session_options, options);
 
+    std::unique_ptr<XlaDevice> device;
+    if (dev_rmgr_map) {
+      device.reset(new XlaDevice(session_options, options,
+                                 dev_rmgr_map, opt));
+    } else {
+      device.reset(new XlaDevice(session_options, options));
+    }
     Status status = device->UseGpuDeviceInfo();
     if (!status.ok()) {
       errors::AppendToMessage(&status, "while setting up ", DEVICE_GPU_XLA_JIT,

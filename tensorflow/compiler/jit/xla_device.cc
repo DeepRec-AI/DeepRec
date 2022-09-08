@@ -222,6 +222,42 @@ XlaDevice::XlaDevice(const SessionOptions& session_options,
   device_to_device_streams_.resize(kNumDeviceToDeviceStreams);
 }
 
+XlaDevice::XlaDevice(const SessionOptions& session_options,
+                     const Options& options,
+                     const DeviceResourceMgrMap* dev_rmgr_map,
+                     const DeviceGlobalThreadPoolOptions& opt)
+    : LocalDevice(session_options,
+                  BuildXlaDeviceAttributes(options.device_name_prefix,
+                                           options.device_name,
+                                           options.device_ordinal),
+                  dev_rmgr_map, opt),
+      xla_metadata_(options.device_ordinal, options.platform,
+                    DeviceType(options.compilation_device_name),
+                    options.shape_representation_fn,
+                    options.padded_shape_fn ? options.padded_shape_fn
+                                            : DefaultPaddedShapeFn,
+                    options.use_multiple_streams),
+      device_ordinal_(options.device_ordinal),
+      jit_device_name_(options.compilation_device_name),
+      platform_(options.platform),
+      intra_op_parallelism_threads_(
+          session_options.config.intra_op_parallelism_threads()),
+      use_multiple_streams_(options.use_multiple_streams),
+      shape_representation_fn_(options.shape_representation_fn),
+      allowed_devices_(options.allowed_devices) {
+  VLOG(1) << "Created XLA device " << options.compilation_device_name << " "
+          << this;
+  thread_pool_.reset(new thread::ThreadPool(session_options.env, "xla_device",
+                                            /*num_threads=*/1));
+
+  // We have multiple device to device streams to allow for some concurrency
+  // between transfers. The particular value of '4' is chosen fairly
+  // arbitrarily. It may be necessary to make this tunable via
+  // XlaDevice::Options.
+  static constexpr int kNumDeviceToDeviceStreams = 4;
+  device_to_device_streams_.resize(kNumDeviceToDeviceStreams);
+}
+
 XlaDevice::~XlaDevice() {
   VLOG(1) << "Destroying XLA device " << jit_device_name_ << " " << this;
   mutex_lock lock(mu_);
