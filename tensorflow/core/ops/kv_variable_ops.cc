@@ -234,6 +234,7 @@ REGISTER_OP("KvResourceGatherV1")
     .Input("counts: counts_type")
     .Attr("validate_indices: bool = true")
     .Attr("is_use_default_value_tensor: bool = false")
+    .Attr("is_inference: bool = false")
     .Output("output: dtype")
     .Attr("dtype: type")
     .Attr("Tkeys: {int64,int32,string}")
@@ -284,6 +285,7 @@ REGISTER_OP("KvResourceGather")
     .Output("output: dtype")
     .Attr("dtype: type")
     .Attr("Tkeys: {int64,int32,string}")
+    .Attr("is_inference: bool = false")
     .SetShapeFn([](InferenceContext* c) {
       ShapeAndType handle_shape_and_type;
       TF_RETURN_IF_ERROR(

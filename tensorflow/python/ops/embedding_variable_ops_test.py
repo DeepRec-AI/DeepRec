@@ -16,6 +16,7 @@ import os
 
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
+from tensorflow.core.framework import attr_value_pb2
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import string_ops
@@ -2235,6 +2236,34 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       self.assertAllEqual(np.array([5,3]), s)
       self.assertAllEqual(np.array([3,1,2,0,2,0,1]), f)
       self.assertAllEqual(np.array([2,0,1,0,2,0,2]), v)
+
+  def testEmbeddingVariableForInference(self):
+    print("testEmbeddingVariableForInference")
+    var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = variables.EmbeddingVariableOption(
+              filter_option=variables.CounterFilter(filter_freq=3),
+              evict_option=variables.GlobalStepEvict(steps_to_live=2))
+            )
+    shape=var.get_dynamic_shape()
+    ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
+    emb = embedding_ops.embedding_lookup(var, ids)
+    # modify graph for infer
+    # emb.op.inputs[0].op.inputs[0].op._set_attr("is_inference", attr_value_pb2.AttrValue(b=True))
+    # set environment
+    os.environ["INFERENCE_MODE"] = "1"
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    init = variables.global_variables_initializer()
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, loss], feed_dict={'ids:0': [1,2,3]})
+      sess.run([emb, loss], feed_dict={'ids:0': [1,3,5]})
+      sess.run([emb, loss], feed_dict={'ids:0': [1,5,7]})
+      s = sess.run(shape)
+      self.assertAllEqual(np.array([0,3]), s)
+    del os.environ["INFERENCE_MODE"]
 
 '''
   @test_util.run_gpu_only

@@ -243,6 +243,18 @@ class StorageManager {
     }
   }
 
+  Status Get(K key, ValuePtr<V>** value_ptr) {
+    Status s;
+    int level = 0;
+    for (; level < hash_table_count_; ++level) {
+      s = kvs_[level].first->Lookup(key, value_ptr);
+      if (s.ok()) {
+        break;
+      }
+    }
+    return s;
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size) {
     bool found = false;
     int level = 0;
