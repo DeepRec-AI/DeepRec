@@ -611,6 +611,8 @@ def main(stock_tf, tf_config=None, server=None):
 
     # Session config
     sess_config = tf.ConfigProto()
+    if tf_config:
+        sess_config.device_filters.append("/job:ps")
     sess_config.inter_op_parallelism_threads = args.inter
     sess_config.intra_op_parallelism_threads = args.intra
 
