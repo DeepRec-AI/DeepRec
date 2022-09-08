@@ -58,10 +58,11 @@ ThreadPoolDevice::ThreadPoolDevice(const SessionOptions& options,
                                    const string& name, Bytes memory_limit,
                                    const DeviceLocality& locality,
                                    Allocator* allocator,
-                                   const DeviceResourceMgrMap* dev_rmgr_map)
+                                   const DeviceResourceMgrMap* dev_rmgr_map,
+                                   const DeviceGlobalThreadPoolOptions& opt)
     : LocalDevice(options, Device::BuildDeviceAttributes(
                                name, DEVICE_CPU, memory_limit, locality),
-                  dev_rmgr_map),
+                  dev_rmgr_map, opt),
       allocator_(allocator),
       scoped_allocator_mgr_(new ScopedAllocatorMgr(name)) {
   Init();

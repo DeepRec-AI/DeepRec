@@ -37,12 +37,14 @@ class ThreadPoolDeviceFactory : public DeviceFactory {
 
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices) override {
-    return CreateDevices(options, name_prefix, devices, nullptr);
+    return CreateDevices(options, name_prefix, devices, nullptr,
+                         DeviceGlobalThreadPoolOptions());
   }
 
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices,
-                       const DeviceResourceMgrMap* dev_rmgr_map) override {
+                       const DeviceResourceMgrMap* dev_rmgr_map,
+                       const DeviceGlobalThreadPoolOptions& opt) override {
     int num_numa_nodes = port::NUMANumNodes();
     int n = 1;
     auto iter = options.config.device_count().find("CPU");
@@ -65,12 +67,12 @@ class ThreadPoolDeviceFactory : public DeviceFactory {
         tpd = absl::make_unique<ThreadPoolDevice>(
             options, name, Bytes(256 << 20), dev_locality,
             ProcessState::singleton()->GetCPUAllocator(numa_node),
-            dev_rmgr_map);
+            dev_rmgr_map, opt);
       } else {
         tpd = absl::make_unique<ThreadPoolDevice>(
             options, name, Bytes(256 << 20), DeviceLocality(),
             ProcessState::singleton()->GetCPUAllocator(port::kNUMANoAffinity),
-            dev_rmgr_map);
+            dev_rmgr_map, opt);
       }
       devices->push_back(std::move(tpd));
     }

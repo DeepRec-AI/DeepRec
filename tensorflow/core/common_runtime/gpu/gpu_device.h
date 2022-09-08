@@ -63,7 +63,8 @@ class BaseGPUDevice : public LocalDevice {
                 const string& physical_device_desc,
                 Allocator* gpu_allocator, Allocator* cpu_allocator,
                 bool sync_every_op, int32 max_streams,
-                const DeviceResourceMgrMap* dev_rmgr_map);
+                const DeviceResourceMgrMap* dev_rmgr_map,
+                const DeviceGlobalThreadPoolOptions& opt);
 
   ~BaseGPUDevice() override;
 
@@ -330,7 +331,8 @@ class BaseGPUDeviceFactory : public DeviceFactory {
                        std::vector<std::unique_ptr<Device>>* devices) override;
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices,
-                       const DeviceResourceMgrMap* dev_rmgr_map) override;
+                       const DeviceResourceMgrMap* dev_rmgr_map,
+                       const DeviceGlobalThreadPoolOptions& opt) override;
 
   struct InterconnectMap {
     // Name of interconnect technology, if known.
@@ -377,7 +379,8 @@ class BaseGPUDeviceFactory : public DeviceFactory {
       const string& name_prefix, TfGpuId tf_gpu_id,
       int64 memory_limit, const DeviceLocality& dev_locality,
       std::vector<std::unique_ptr<Device>>* devices,
-      const DeviceResourceMgrMap* dev_rmgr_map);
+      const DeviceResourceMgrMap* dev_rmgr_map,
+      const DeviceGlobalThreadPoolOptions& opt);
 
   virtual std::unique_ptr<BaseGPUDevice> CreateGPUDevice(
       const SessionOptions& options, const string& name, Bytes memory_limit,
@@ -389,7 +392,8 @@ class BaseGPUDeviceFactory : public DeviceFactory {
       const SessionOptions& options, const string& name, const string& physical_name,
       Bytes memory_limit, const DeviceLocality& locality, TfGpuId tf_gpu_id,
       const string& physical_device_desc, Allocator* gpu_allocator,
-      Allocator* cpu_allocator, const DeviceResourceMgrMap* dev_rmgr_map) = 0;
+      Allocator* cpu_allocator, const DeviceResourceMgrMap* dev_rmgr_map,
+      const DeviceGlobalThreadPoolOptions& opt) = 0;
 
   Status EnablePeerAccess(const std::vector<PlatformGpuId>& visible_gpu_order);
 
