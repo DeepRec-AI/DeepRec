@@ -134,6 +134,9 @@ class XlaDevice : public LocalDevice {
 
   // Creates a new XLA Device.
   XlaDevice(const SessionOptions& session_options, const Options& options);
+  XlaDevice(const SessionOptions& session_options, const Options& options,
+            const DeviceResourceMgrMap* dev_rmgr_map,
+            const DeviceGlobalThreadPoolOptions& opt);
   ~XlaDevice() override;
 
   Allocator* GetAllocator(AllocatorAttributes attr) override

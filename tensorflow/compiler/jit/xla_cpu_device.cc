@@ -33,6 +33,10 @@ class XlaCpuDeviceFactory : public DeviceFactory {
   Status ListPhysicalDevices(std::vector<string>* devices) override;
   Status CreateDevices(const SessionOptions& options, const string& name_prefix,
                        std::vector<std::unique_ptr<Device>>* devices) override;
+  Status CreateDevices(const SessionOptions& options, const string& name_prefix,
+                       std::vector<std::unique_ptr<Device>>* devices,
+                       const DeviceResourceMgrMap* dev_rmgr_map,
+                       const DeviceGlobalThreadPoolOptions& opt) override;
 };
 
 Status XlaCpuDeviceFactory::ListPhysicalDevices(std::vector<string>* devices) {
@@ -44,6 +48,15 @@ Status XlaCpuDeviceFactory::ListPhysicalDevices(std::vector<string>* devices) {
 Status XlaCpuDeviceFactory::CreateDevices(
     const SessionOptions& session_options, const string& name_prefix,
     std::vector<std::unique_ptr<Device>>* devices) {
+  return CreateDevices(session_options, name_prefix, devices,
+                       nullptr, DeviceGlobalThreadPoolOptions());
+}
+
+Status XlaCpuDeviceFactory::CreateDevices(
+    const SessionOptions& session_options, const string& name_prefix,
+    std::vector<std::unique_ptr<Device>>* devices,
+    const DeviceResourceMgrMap* dev_rmgr_map,
+    const DeviceGlobalThreadPoolOptions& opt) {
   XlaDeviceFlags* flags = GetXlaDeviceFlags();
   bool compile_on_demand = flags->tf_xla_compile_on_demand;
 
@@ -78,8 +91,14 @@ Status XlaCpuDeviceFactory::CreateDevices(
   options.device_ordinal = 0;
   options.compilation_device_name = DEVICE_CPU_XLA_JIT;
   options.use_multiple_streams = false;
-  auto device = absl::make_unique<XlaDevice>(session_options, options);
 
+  std::unique_ptr<XlaDevice> device;
+  if (dev_rmgr_map) {
+    device.reset(new XlaDevice(session_options, options,
+                               dev_rmgr_map, opt));
+  } else {
+    device.reset(new XlaDevice(session_options, options));
+  }
   // Setting GpuDeviceInfo because eager runtime relies on the device
   // context in tensorflow_gpu_device_info(). Also,
   // tensorflow_gpu_device_info() == nullptr is used as an IsCPU test.
