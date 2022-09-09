@@ -62,6 +62,22 @@ session_num_per_group：表示session group中创建几个sessions。
 use_per_session_threads：为true表示每个session使用独立的线程池，减少session之间的干扰，建议配置为true。每个session的线程池都是通过tensorflow_intra_op_parallelis和tensorflow_inter_op_parallelism控制大小。
 ```
 
+用户可以为SessionGroup中每个session指定在哪些cpu cores上执行，默认功能关闭，有两种方式开启：
+```
+1.用户手动设置，
+SESSION_GROUP_CPUSET="2-4;5-7;8-10;11-13"
+或者
+SESSION_GROUP_CPUSET="2,3,4;5,6,7;8,9,10;11,12,13"
+表示有4个session，每个session分别指定cpu上执行。
+session0: 2 3 4
+session1: 5 6 7
+session2: 8 9 10
+session3: 11 12 13
+
+2.如果用户不设置环境变量SESSION_GROUP_CPUSET，那么需要设置SET_SESSION_THREAD_POOL_AFFINITY=1，
+这样进程会检测哪些cpu可以被分配，从而分给不同的session。
+```
+
 ## GPU Multi-Stream
 在Inference场景中，用户常使用GPU进行线上服务，来提升计算效率，减小延迟。这里可能会遇到的一个问题是，线上GPU利用率低，造成资源浪费。那么为了利用好GPU资源，我们允许用户使用Multi-streams处理请求，在保证延迟的前提下极大提升QPS。
 
