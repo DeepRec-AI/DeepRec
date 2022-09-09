@@ -159,8 +159,9 @@ string GetRendezvousKey(const string& tensor_name,
 }
 
 // TODO: Any better allocate policy?
-void AllocateVisibleCpusForSession(const std::vector<unsigned>& visible_cpus, int session_num,
-                                   std::vector<std::vector<unsigned> >& visible_cpus_per_session) {
+void AllocateVisibleCpusForSession(
+    const std::vector<unsigned>& visible_cpus, int session_num,
+    std::vector<std::vector<unsigned> >& visible_cpus_per_session) {
   if (session_num > 0) {
     int cpus_count_per_session = visible_cpus.size() / session_num;
     for (int i = 0; i < session_num; ++i) {
@@ -172,6 +173,39 @@ void AllocateVisibleCpusForSession(const std::vector<unsigned>& visible_cpus, in
     }
   } else {
     LOG(FATAL) << "Session num of session group is " << session_num << ", should session_num > 0";
+  }
+}
+
+void ParseSessionGroupCpuset(const std::string& session_group_cpuset,
+                             std::vector<std::vector<unsigned>>& cpus,
+                             int session_num) {
+  std::vector<std::string> strs =
+      str_util::Split(session_group_cpuset, ";");
+  if (session_num != strs.size()) {
+    LOG(FATAL) << "User set session group cpuset num " << strs.size()
+               << " must be equal to session num " << session_num;
+  }
+  // s: 1-10 or 1,2,3,4,5
+  for (auto& s : strs) {
+    std::vector<std::string> tmp;
+    std::vector<unsigned> cpu;
+    if (s.find("-") != std::string::npos) {
+      tmp = str_util::Split(s, "-");
+      if (tmp.size() != 2) {
+        LOG(FATAL) << "Invalid session group cpuset: " << s;
+      }
+      int start = std::stoi(tmp[0]);
+      int end = std::stoi(tmp[1]);
+      for (int i  = start; i <= end; ++i) {
+        cpu.emplace_back(i);
+      }
+    } else if (s.find(",") != std::string::npos) {
+      tmp = str_util::Split(s, ",");
+      for (auto& t : tmp) {
+        cpu.emplace_back(std::stoi(t));
+      }
+    }
+    cpus.emplace_back(cpu);
   }
 }
 
@@ -212,15 +246,10 @@ class DirectSessionFactory : public SessionFactory {
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
         options, "/job:localhost/replica:0/task:0", &devices));
 
-#ifdef TENSORFLOW_USE_NUMA
     std::vector<unsigned> visible_cpus;
     DirectSession* session =
         new DirectSession(options, new DeviceMgr(std::move(devices)),
                           true, this, visible_cpus);
-#else
-    DirectSession* session =
-        new DirectSession(options, new DeviceMgr(std::move(devices)), true, this);
-#endif
     {
       mutex_lock l(sessions_lock_);
       sessions_.push_back(session);
@@ -285,18 +314,46 @@ class DirectSessionFactory : public SessionFactory {
     }
 #endif // GOOGLE_CUDA
 
-#ifdef TENSORFLOW_USE_NUMA
-    int numa_num = port::NUMANumNodes();
-    std::vector<unsigned> visible_cpus;
-    for (int i = 0; i < numa_num; ++i) {
-      std::vector<unsigned> cpus;
-      port::NUMANodeCPUs(i, &cpus);
-      visible_cpus.insert(visible_cpus.end(), cpus.begin(), cpus.end());
-    }
     std::vector<std::vector<unsigned> > visible_cpus_per_session;
-    AllocateVisibleCpusForSession(visible_cpus, session_num,
-                                  visible_cpus_per_session);
+    for (int i = 0; i < session_num; ++i) {
+      visible_cpus_per_session.push_back(std::vector<unsigned>());
+    }
+    // User set session group cpuset,
+    // Usage: "0-10;11-20;21-30" or
+    //        "0,1,2,3;4,5,6,7;8,9,10"
+    std::string session_group_cpuset("");
+    Status s =
+        ReadStringFromEnvVar("SESSION_GROUP_CPUSET", "", &session_group_cpuset);
+    if (!s.ok()) {
+      LOG(FATAL) << "Read SESSION_GROUP_CPUSET failed." << s.error_message();
+    }
+    if (!session_group_cpuset.empty()) {
+      std::vector<std::vector<unsigned> > tmp;
+      ParseSessionGroupCpuset(session_group_cpuset, tmp, session_num);
+      visible_cpus_per_session = tmp;
+    } else {
+#ifdef TENSORFLOW_USE_NUMA
+      bool pin_threadpool_to_cpu_core = false;
+      s = ReadBoolFromEnvVar("SET_SESSION_THREAD_POOL_AFFINITY",
+                             false, &pin_threadpool_to_cpu_core);
+      if (!s.ok()) {
+        LOG(FATAL) << "Read SET_SESSION_THREAD_POOL_AFFINITY failed."
+                   << s.error_message();
+      }
+      if (pin_threadpool_to_cpu_core) {
+        int numa_num = port::NUMANumNodes();
+        std::vector<unsigned> visible_cpus;
+        for (int i = 0; i < numa_num; ++i) {
+          std::vector<unsigned> cpus;
+          port::NUMANodeCPUs(i, &cpus);
+          visible_cpus.insert(visible_cpus.end(), cpus.begin(), cpus.end());
+        }
+        std::vector<std::vector<unsigned> > tmp;
+        AllocateVisibleCpusForSession(visible_cpus, session_num, tmp);
+        visible_cpus_per_session = tmp;
+      }
 #endif  // TENSORFLOW_USE_NUMA
+    }
 
     // Create shared resource for cpu devices
     ResourceMgr* shared_rmgr = new ResourceMgr("localhost");
@@ -323,6 +380,7 @@ class DirectSessionFactory : public SessionFactory {
     DeviceGlobalThreadPoolOptions dev_global_tp_opt;
     dev_global_tp_opt.global_threadpool_num = session_num;
     dev_global_tp_opt.device_threadpool_index = 0;
+    dev_global_tp_opt.cpuset = visible_cpus_per_session[0];
     std::vector<std::unique_ptr<Device>> devices;
     TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
         options, "/job:localhost/replica:0/task:0",
@@ -345,17 +403,13 @@ class DirectSessionFactory : public SessionFactory {
     }
 #endif // GOOGLE_CUDA
 
-#ifdef TENSORFLOW_USE_NUMA
     DirectSession* leader_session =
         new DirectSession(leader_options, device_mgr, true, this,
                           visible_cpus_per_session[0]);
-#else
-    DirectSession* leader_session =
-        new DirectSession(leader_options, device_mgr, true, this);
-#endif  // TENSORFLOW_USE_NUMA
     session_group->CreateLeaderSession(leader_session);
     for (int i = 1; i < session_num; ++i) {
       dev_global_tp_opt.device_threadpool_index = i;
+      dev_global_tp_opt.cpuset = visible_cpus_per_session[i];
       std::vector<std::unique_ptr<Device>> dev;
       TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
           options, "/job:localhost/replica:0/task:0", &dev,
@@ -383,14 +437,9 @@ class DirectSessionFactory : public SessionFactory {
       }
 #endif // GOOGLE_CUDA
 
-#ifdef TENSORFLOW_USE_NUMA
       DirectSession* follower_session =
           new DirectSession(follower_options, dev_mgr, true, this,
                             visible_cpus_per_session[i]);
-#else
-      DirectSession* follower_session =
-          new DirectSession(follower_options, dev_mgr, true, this);
-#endif  // TENSORFLOW_USE_NUMA
       session_group->CreateFollowerSession(follower_session);
       {
         mutex_lock l(sessions_lock_);
@@ -531,12 +580,8 @@ bool DirectSession::ShouldUseRunHandlerPool(
 DirectSession::DirectSession(const SessionOptions& options,
                              const DeviceMgr* device_mgr,
                              bool owd_device_mgr,
-#ifdef TENSORFLOW_USE_NUMA
                              DirectSessionFactory* factory,
                              const std::vector<unsigned>& visible_cpus)
-#else
-                             DirectSessionFactory* const factory)
-#endif
     : options_(options),
       own_device_mgr_(owd_device_mgr),
       device_mgr_(device_mgr),
@@ -572,18 +617,12 @@ DirectSession::DirectSession(const SessionOptions& options,
 
   bool use_cost_model_executor = false;
   bool use_inline_executor = false;
-  bool pin_threadpool_to_cpu_core = false;
   Status s =
       ReadBoolFromEnvVar("USE_COST_MODEL_EXECUTOR", false, &use_cost_model_executor);
   if (!s.ok()) {
     LOG(FATAL) << s.error_message();
   }
   s = ReadBoolFromEnvVar("USE_INLINE_EXECUTOR", false, &use_inline_executor);
-  if (!s.ok()) {
-    LOG(FATAL) << s.error_message();
-  }
-  s = ReadBoolFromEnvVar("SET_SESSION_THREAD_POOL_AFFINITY", false,
-                         &pin_threadpool_to_cpu_core);
   if (!s.ok()) {
     LOG(FATAL) << s.error_message();
   }
@@ -632,22 +671,23 @@ DirectSession::DirectSession(const SessionOptions& options,
     ++devices_added;
   }
 
-#ifdef TENSORFLOW_USE_NUMA
   // thread pool set affinity
-  if (pin_threadpool_to_cpu_core && options_.config.use_per_session_threads()) {
+  if (visible_cpus.size() > 0 &&
+      options_.config.use_per_session_threads()) {
     if (thread_pools_.size() != 1) {
       LOG(FATAL) << "Thread pool num is not 1 with 'use_per_session_threads' option.";
     }
 
+    std::string msg;
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     for(auto c : visible_cpus) {
       CPU_SET(c, &cpuset);
-      LOG(INFO) << "Current DirectSession " << this << " will be pinned to core: " << c;
+      msg = msg + std::to_string(c) + ", ";
     }
+    LOG(INFO) << "Current DirectSession " << this << " will be pinned to core: " << msg;
     thread_pools_[0].first->SetThreadPoolAffinity(cpuset);
   }
-#endif
 }
 
 DirectSession::~DirectSession() {

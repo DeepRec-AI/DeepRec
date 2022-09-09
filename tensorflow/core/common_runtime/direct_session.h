@@ -63,12 +63,8 @@ class DirectSession : public Session {
   // to sessions that are already closed.
   DirectSession(const SessionOptions& options, const DeviceMgr* device_mgr,
                 bool own_device_mgr,
-#ifdef TENSORFLOW_USE_NUMA
                 DirectSessionFactory* factory,
                 const std::vector<unsigned>& visible_cpus);
-#else
-                DirectSessionFactory* factory);
-#endif
 
   ~DirectSession() override;
 
