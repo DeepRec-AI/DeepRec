@@ -463,6 +463,7 @@ class Timeline(object):
     duration = nodestats.all_end_rel_micros
     tid = nodestats.thread_id
     inputs = []
+    args={}
     if is_gputrace:
       # Node names should always have the form 'name:op'.
       fields = node_name.split(':') + ['unknown']
@@ -470,9 +471,15 @@ class Timeline(object):
     elif node_name == 'RecvTensor':
       # RPC tracing does not use the standard timeline_label format.
       op = 'RecvTensor'
+      labels = nodestats.timeline_label.split(';')
+      args['size'] = labels[0]
+      args['rate'] = labels[1]
+      args['tensor name'] = labels[2]
+      args['direction'] = labels[3]
     else:
       _, op, inputs = self._parse_op_label(nodestats.timeline_label)
-    args = {'name': node_name, 'op': op}
+    args['name'] = node_name
+    args['op'] = op
     for i, iname in enumerate(inputs):
       args['input%d' % i] = iname
     self._chrome_trace.emit_region(start, duration, pid, tid, 'Op', op, args)

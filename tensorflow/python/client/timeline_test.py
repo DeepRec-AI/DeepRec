@@ -132,8 +132,8 @@ class TimelineTest(test.TestCase):
     node_stats.node_name = 'RecvTensor'
     node_stats.all_start_micros = 12345
     node_stats.op_end_rel_micros = 42
-    node_stats.timeline_label = ('[1024B] edge_160_conv2/biases/read from '
-                                 '/job:ps/replica:0/task:3/cpu:0 to '
+    node_stats.timeline_label = ('[1024B];[2Mb/s];edge_160_conv2/biases/read;'
+                                 '/job:ps/replica:0/task:3/cpu:0 ==> '
                                  '/job:worker/replica:0/task:0/cpu:0')
     tl = timeline.Timeline(step_stats)
     ctf = tl.generate_chrome_trace_format()
