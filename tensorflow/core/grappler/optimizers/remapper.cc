@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/grappler/optimizers/remapper.h"
+#include "tensorflow/core/graph/mkl_layout_pass_lists.h"
 
 #include "absl/container/flat_hash_set.h"
 #include "tensorflow/core/framework/versions.pb.h"
@@ -2130,7 +2131,8 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
 
       if (!item.optimization_options().is_eager_mode) {
         // Remap Conv2D+BiasAdd+Add+relu into the _FusedConv2D.
-        if (FindContractionWithBiasAndAddActivation(
+        if (MklLayoutPassLists::FindFusedMatMul() &&
+              FindContractionWithBiasAndAddActivation(
                 ctx, i, &contract_with_bias_and_add_activation)) {
           TF_RETURN_IF_ERROR(AddFusedContractionNode(
               &ctx, contract_with_bias_and_add_activation, &invalidated_nodes,
@@ -2138,8 +2140,9 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
           continue;
         }
 
-        // Remap Conv2D+BiasAdd+Add into the _FusedConv2D.
-        if (FindContractionWithBiasAddAndAdd(ctx, i,
+        // // Remap Conv2D+BiasAdd+Add into the _FusedConv2D.
+        if (MklLayoutPassLists::FindFusedMatMul() &&
+              FindContractionWithBiasAddAndAdd(ctx, i,
                                              &contract_with_bias_and_add)) {
           TF_RETURN_IF_ERROR(
               AddFusedContractionNode(&ctx, contract_with_bias_and_add,
@@ -2156,7 +2159,8 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
 
         // MatMul + BiasAdd + Gelu fusion
         std::map<string, int> node_label_to_index;
-        if (FindMatMulWithBiasAndAGelu(&ctx, i, &node_label_to_index,
+        if (MklLayoutPassLists::FindFusedMatMul() &&
+              FindMatMulWithBiasAndAGelu(&ctx, i, &node_label_to_index,
                                        &nodes_to_delete, true)) {
           TF_RETURN_IF_ERROR(AddFusedMatMulWithBiasAndGelu(
               &ctx, node_label_to_index, &invalidated_nodes, true));
@@ -2164,7 +2168,8 @@ Status Remapper::Optimize(Cluster* cluster, const GrapplerItem& item,
         };
 
         // MatMul + BiasAdd + Gelu_erf fusion
-        if (FindMatMulWithBiasAndAGelu(&ctx, i, &node_label_to_index,
+        if (MklLayoutPassLists::FindFusedMatMul() &&
+              FindMatMulWithBiasAndAGelu(&ctx, i, &node_label_to_index,
                                        &nodes_to_delete, false)) {
           TF_RETURN_IF_ERROR(AddFusedMatMulWithBiasAndGelu(
               &ctx, node_label_to_index, &invalidated_nodes, false));
