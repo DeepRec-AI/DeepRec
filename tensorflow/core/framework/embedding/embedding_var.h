@@ -46,6 +46,7 @@ class EmbeddingVar : public ResourceBase {
       name_(name),
       storage_manager_(storage_manager),
       default_value_(nullptr),
+      default_value_no_permission_(nullptr),
       value_len_(0),
       alloc_(alloc),
       emb_config_(emb_cfg) {
@@ -475,7 +476,9 @@ class EmbeddingVar : public ResourceBase {
       }
     }
     TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
-    TypedAllocator::Deallocate(alloc_, default_value_no_permission_, value_len_);
+    if (default_value_no_permission_) {
+      TypedAllocator::Deallocate(alloc_, default_value_no_permission_, value_len_);
+    }
   }
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);
 };

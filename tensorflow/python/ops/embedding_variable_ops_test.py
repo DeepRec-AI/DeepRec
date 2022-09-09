@@ -2265,7 +2265,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       self.assertAllEqual(np.array([0,3]), s)
     del os.environ["INFERENCE_MODE"]
 
-'''
   @test_util.run_gpu_only
   def testEmbeddingVariableForHBMandDRAM(self):
     print("testEmbeddingVariableForHBMandDRAM")
@@ -2299,19 +2298,15 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           embedding_dim = 128,
           initializer=init_ops.ones_initializer(dtypes.float32),
           partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
-          #steps_to_live=5,
           ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.HBM_DRAM)))
       var = variable_scope.get_variable("var_2", shape=[1024, 128], initializer=init_ops.ones_initializer(dtypes.float32))
 
       emb1 = runTestAdagrad(self, emb_var, g)
       emb2 = runTestAdagrad(self, var, g)
-      print(emb1)
-      print(emb2)
 
     for i in range(0, 6):
       for j in range(0, 3):
         self.assertEqual(emb1[i][j], emb2[i][j])
-'''
 
 if __name__ == "__main__":
   googletest.main()
