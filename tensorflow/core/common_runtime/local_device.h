@@ -33,6 +33,9 @@ struct DeviceGlobalThreadPoolOptions {
   int global_threadpool_num = 1;
   // Default all devices use global_threadpool[0]
   int device_threadpool_index = 0;
+  // Pin thread pool to cpu cores,
+  // default we don't pin core.
+  std::vector<unsigned> cpuset;
 };
 
 // This class is shared by ThreadPoolDevice and GPUDevice and

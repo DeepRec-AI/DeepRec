@@ -106,6 +106,10 @@ struct LocalDevice::EigenThreadPoolInfo {
     delete eigen_worker_threads_.workers;
   }
 
+  void SetThreadPoolAffinity(const cpu_set_t& cpuset) {
+    eigen_worker_threads_.workers->SetThreadPoolAffinity(cpuset);
+  }
+
   DeviceBase::CpuWorkerThreads eigen_worker_threads_;
   std::unique_ptr<Eigen::ThreadPoolDevice> eigen_device_;
   std::unique_ptr<EigenAllocator> eigen_allocator_;
@@ -162,6 +166,19 @@ void LocalDevice::Init(const SessionOptions& options,
           global_tp_info_[opt.device_threadpool_index] =
               new LocalDevice::EigenThreadPoolInfo(
                   options, port::kNUMANoAffinity, nullptr);
+          // set threadpool affinity
+          if (opt.cpuset.size() > 0) {
+            std::string msg;
+            cpu_set_t cpuset;
+            CPU_ZERO(&cpuset);
+            for (auto c : opt.cpuset) {
+              CPU_SET(c, &cpuset);
+              msg = msg + std::to_string(c) + ", ";
+            }
+            global_tp_info_[opt.device_threadpool_index]->SetThreadPoolAffinity(cpuset);
+            LOG(INFO) << "Intra thread pool #" << opt.device_threadpool_index
+                      << " will be pinned to cpus: " << msg;
+          }
         }
         tp_info = global_tp_info_[opt.device_threadpool_index];
       } else {
