@@ -218,10 +218,6 @@ class StorageManager {
     return sc_.path;
   }
 
-  int64 GertStorageSize() {
-    return sc_.size;
-  }
-
   bool IsMultiLevel() {
     return is_multi_level_;
   }
