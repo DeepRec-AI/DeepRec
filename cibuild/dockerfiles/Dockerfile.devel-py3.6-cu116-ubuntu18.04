@@ -1,0 +1,19 @@
+FROM alideeprec/deeprec-base:deeprec-base-gpu-py36-cu116-ubuntu18.04
+
+RUN apt-get install -y remotejdk11_linux
+RUN apt-get install -y cryptopp
+RUN apt-get install -y libhdf5-dev
+RUN apt-get install -y libz-dev
+RUN apt-get install -y openjdk-8-jdk
+
+RUN pip install \
+    h5py==2.10.0 && \
+    spicy==0.16.0 && \
+    portpicker==1.4.0 && \
+    sklearn && \
+    tensorflow-estimator==1.15.0 && \
+    pandas && \
+    grpcio==1.47.0 && \
+    grpcio-tools && \
+    pyarrow && \
+    fastparquet
