@@ -343,10 +343,6 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.DebugString();
   }
 
-  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* GetFilter() const {
-    return filter_;
-  }
-
   Status Import(RestoreBuffer& restore_buff,
                 int64 key_num,
                 int bucket_num,
@@ -466,23 +462,10 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
- private:
-  std::string name_;
-  bool is_initialized_ = false;
-
-  mutex mu_;
-
-  V* default_value_;
-  V* default_value_no_permission_;
-  V **buffer1, **buffer2, **buffer3;
-  int64 buffer1_size, buffer2_size, buffer3_size;
-  int64 value_len_;
-  Allocator* alloc_;
-  embedding::StorageManager<K, V>* storage_manager_;
-  EmbeddingConfig emb_config_;
-  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
-  std::function<void(ValuePtr<V>*, int, int64)> add_freq_fn_;
-  std::function<void(ValuePtr<V>*, int64)> update_version_fn_;
+ protected:
+  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* GetFilter() const {
+    return filter_;
+  }
 
   ~EmbeddingVar() override {
     // When dynamic dimension embedding is used,
@@ -515,6 +498,25 @@ class EmbeddingVar : public ResourceBase {
           value_len_);
     }
   }
+
+ private:
+  std::string name_;
+  bool is_initialized_ = false;
+
+  mutex mu_;
+
+  V* default_value_;
+  V* default_value_no_permission_;
+  V **buffer1, **buffer2, **buffer3;
+  int64 buffer1_size, buffer2_size, buffer3_size;
+  int64 value_len_;
+  Allocator* alloc_;
+  embedding::StorageManager<K, V>* storage_manager_;
+  EmbeddingConfig emb_config_;
+  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
+  std::function<void(ValuePtr<V>*, int, int64)> add_freq_fn_;
+  std::function<void(ValuePtr<V>*, int64)> update_version_fn_;
+
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVar);
 };
 
