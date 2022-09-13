@@ -47,6 +47,18 @@ namespace {
 const int THREADNUM = 16;
 const int64 max = 2147483647;
 
+template<class K, class V>
+class TestableEmbeddingVar : public EmbeddingVar<K, V> {
+ public:
+  TestableEmbeddingVar(const string& name,
+                       embedding::StorageManager<K, V>* storage_manager,
+                       EmbeddingConfig emb_cfg = EmbeddingConfig(),
+                       Allocator* alloc = nullptr) : EmbeddingVar<K, V>(
+                         name, storage_manager, emb_cfg, alloc) {}
+
+  using EmbeddingVar<K, V>::GetFilter;
+};
+
 struct ProcMemory {
   long size;      // total program size
   long resident;  // resident set size
@@ -499,10 +511,11 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
   auto storage_manager = new embedding::StorageManager<int64, float>(
                  "EmbeddingVar", embedding::StorageConfig());
   TF_CHECK_OK(storage_manager->Init());
-  EmbeddingVar<int64, float>* var 
-    = new EmbeddingVar<int64, float>("EmbeddingVar",
+  TestableEmbeddingVar<int64, float>* var 
+    = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT64));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
+              "normal", 10, 0.01, DT_UINT64));
 
   var->Init(value, 1);
 
@@ -544,8 +557,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
   }
 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
-  int64* counter = (int64*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+  auto bloom_filter = static_cast<BloomFilter<int64, float,
+       EmbeddingVar<int64, float>>*>(filter);
+  //(int64 *)var->GetBloomCounter(); 
+  int64* counter = (int64*)bloom_filter->GetBloomCounter();
 
   for (auto it: hash_val1) {
     ASSERT_EQ(counter[it], tab[it]);
@@ -570,10 +585,11 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
   auto storage_manager = new embedding::StorageManager<int64, float>(
                  "EmbeddingVar", embedding::StorageConfig());
   TF_CHECK_OK(storage_manager->Init());
-  EmbeddingVar<int64, float>* var 
-    = new EmbeddingVar<int64, float>("EmbeddingVar",
+  TestableEmbeddingVar<int64, float>* var 
+    = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal", 10, 0.01, DT_UINT32));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
+              "normal", 10, 0.01, DT_UINT32));
 
   var->Init(value, 1);
 
@@ -615,8 +631,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
   }
 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
-  int32* counter = (int32*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+  auto bloom_filter = static_cast<BloomFilter<int64, float,
+       EmbeddingVar<int64, float>>*>(filter);
+  //(int64 *)var->GetBloomCounter(); 
+  int32* counter = (int32*)bloom_filter->GetBloomCounter();
 
   for (auto it: hash_val1) {
     ASSERT_EQ(counter[it], tab[it]);
@@ -641,10 +659,11 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
   auto storage_manager = new embedding::StorageManager<int64, float>(
                  "EmbeddingVar", embedding::StorageConfig());
   TF_CHECK_OK(storage_manager->Init());
-  EmbeddingVar<int64, float>* var 
-    = new EmbeddingVar<int64, float>("EmbeddingVar",
+  TestableEmbeddingVar<int64, float>* var 
+    = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_contiguous", 10, 0.01, DT_UINT16));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
+            "normal_contiguous", 10, 0.01, DT_UINT16));
 
   var->Init(value, 1);
 
@@ -687,8 +706,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
 
   //int16* counter = (int16 *)var->GetBloomCounter(); 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
-  int16* counter = (int16*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+  auto bloom_filter = static_cast<BloomFilter<int64, float,
+       EmbeddingVar<int64, float>>*>(filter);
+  //(int64 *)var->GetBloomCounter(); 
+  int16* counter = (int16*)bloom_filter->GetBloomCounter();
 
   for (auto it: hash_val1) {
     ASSERT_EQ(counter[it], tab[it]);
@@ -713,10 +734,11 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
   auto storage_manager = new embedding::StorageManager<int64, float>(
                  "EmbeddingVar", embedding::StorageConfig());
   TF_CHECK_OK(storage_manager->Init());
-  EmbeddingVar<int64, float>* var 
-    = new EmbeddingVar<int64, float>("EmbeddingVar",
+  TestableEmbeddingVar<int64, float>* var 
+    = new TestableEmbeddingVar<int64, float>("EmbeddingVar",
         storage_manager,
-          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0, "normal_contiguous", 10, 0.01, DT_UINT8));
+          EmbeddingConfig(0, 0, 1, 1, "", 5, 3, 99999, -1.0,
+            "normal_contiguous", 10, 0.01, DT_UINT8));
 
   var->Init(value, 1);
 
@@ -758,8 +780,10 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
   }
 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float, EmbeddingVar<int64, float>>*>(filter);
-  int8* counter = (int8*)bloom_filter->GetBloomCounter();//(int64 *)var->GetBloomCounter(); 
+  auto bloom_filter = static_cast<BloomFilter<int64, float,
+       EmbeddingVar<int64, float>>*>(filter);
+  int8* counter = (int8*)bloom_filter->GetBloomCounter();
+  //(int64 *)var->GetBloomCounter(); 
   //int8* counter = (int8 *)var->GetBloomCounter(); 
 
   for (auto it: hash_val1) {
@@ -817,7 +841,9 @@ TEST(EmbeddingVariableTest, TestInsertAndLookup) {
   free(flag);
   std::vector<std::thread> insert_threads(THREADNUM);
   for (size_t i = 0 ; i < THREADNUM; i++) {
-    insert_threads[i] = std::thread(InsertAndLookup, variable, &keys[i*InsertLoops/THREADNUM], InsertLoops/THREADNUM, value_size);
+    insert_threads[i] = std::thread(InsertAndLookup,
+        variable, &keys[i*InsertLoops/THREADNUM],
+        InsertLoops/THREADNUM, value_size);
   }
   for (auto &t : insert_threads) {
     t.join();
@@ -874,8 +900,10 @@ EmbeddingVar<int64, float>* InitEV_Lockless(int64 value_size) {
   return variable;
 }
 
-void MultiLookup(EmbeddingVar<int64, float>* variable, int64 InsertLoop, int thread_num, int i) {
-  for (int64 j = i * InsertLoop/thread_num; j < (i+1)*InsertLoop/thread_num; j++) {
+void MultiLookup(EmbeddingVar<int64, float>* variable,
+    int64 InsertLoop, int thread_num, int i) {
+  for (int64 j = i * InsertLoop/thread_num;
+      j < (i+1)*InsertLoop/thread_num; j++) {
     ValuePtr<float>* value_ptr = nullptr;
     variable->LookupOrCreateKey(j, &value_ptr);
   }
@@ -901,7 +929,8 @@ void BM_MULTIREAD_LOCKLESS(int iters, int thread_num) {
   while(iters--){
     std::vector<std::thread> insert_threads(thread_num);
     for (size_t i = 0 ; i < thread_num; i++) {
-      insert_threads[i] = std::thread(MultiLookup, variable, InsertLoop, thread_num, i);
+      insert_threads[i] = std::thread(MultiLookup,
+          variable, InsertLoop, thread_num, i);
     }
     for (auto &t : insert_threads) {
       t.join();
@@ -910,9 +939,12 @@ void BM_MULTIREAD_LOCKLESS(int iters, int thread_num) {
 
 }
 
-void hybrid_process(EmbeddingVar<int64, float>* variable, int64* keys, int64 InsertLoop, int thread_num, int64 i, int64 value_size) {
+void hybrid_process(EmbeddingVar<int64, float>* variable,
+    int64* keys, int64 InsertLoop, int thread_num,
+    int64 i, int64 value_size) {
   float *val = (float *)malloc(sizeof(float)*(value_size + 1));
-  for (int64 j = i * InsertLoop/thread_num; j < (i+1) * InsertLoop/thread_num; j++) {
+  for (int64 j = i * InsertLoop/thread_num;
+      j < (i+1) * InsertLoop/thread_num; j++) {
     variable->LookupOrCreate(keys[j], val, nullptr);
   }
 }
@@ -936,7 +968,8 @@ void BM_HYBRID_LOCKLESS(int iters, int thread_num) {
   while (iters--) {
     std::vector<std::thread> insert_threads(thread_num);
     for (size_t i = 0 ; i < thread_num; i++) {
-      insert_threads[i] = std::thread(hybrid_process, variable, keys, InsertLoop, thread_num, i, value_size);
+      insert_threads[i] = std::thread(hybrid_process,
+          variable, keys, InsertLoop, thread_num, i, value_size);
     }
     for (auto &t : insert_threads) {
       t.join();
@@ -965,7 +998,8 @@ TEST(EmbeddingVariableTest, TestAllocate) {
   double t1 = 0;
   LOG(INFO) << "memory t0: " << t0;
   for (int64 i = 0; i < 1000; ++i) {
-    float* tensor_val = TypedAllocator::Allocate<float>(ev_allocator(), value_len, AllocationAttributes());
+    float* tensor_val = TypedAllocator::Allocate<float>(
+        ev_allocator(), value_len, AllocationAttributes());
     t1 = getResident()*getpagesize()/1024.0/1024.0;
     memset(tensor_val, 0, sizeof(float) * value_len);
   }
@@ -1031,8 +1065,10 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
   std::vector<int64> size;
   size.emplace_back(1000);
-  auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "EmbeddingVar", embedding::StorageConfig(embedding::LEVELDB, testing::TmpDir(), size, "normal_contiguous"));
+  auto storage_manager =
+    new embedding::StorageManager<int64, float>(
+        "EmbeddingVar", embedding::StorageConfig(
+          embedding::LEVELDB, testing::TmpDir(), size, "normal_contiguous"));
   TF_CHECK_OK(storage_manager->Init());
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
@@ -1050,7 +1086,8 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
 
   for(int64 i = 0; i < 6; i++) {
     key_list.emplace_back(i);
-    ValuePtr<float>* tmp = new NormalContiguousValuePtr<float>(ev_allocator(), 4);
+    ValuePtr<float>* tmp =
+      new NormalContiguousValuePtr<float>(ev_allocator(), 4);
     value_ptr_list.emplace_back(tmp);
   }
 
@@ -1064,14 +1101,16 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
 
 void InsertAndCommit(KVInterface<int64, float>* hashmap) {
   for (int64 i = 0; i< 100; ++i) {
-    const ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(ev_allocator(), 100);
+    const ValuePtr<float>* tmp =
+      new NormalContiguousValuePtr<float>(ev_allocator(), 100);
     hashmap->Insert(i, tmp);
     hashmap->Commit(i, tmp);
   }
 }
 
 TEST(EmbeddingVariableTest, TestSizeDBKV) {
-  KVInterface<int64, float>* hashmap = new LevelDBKV<int64, float>(testing::TmpDir());
+  KVInterface<int64, float>* hashmap =
+    new LevelDBKV<int64, float>(testing::TmpDir());
   hashmap->SetTotalDims(100);
   ASSERT_EQ(hashmap->Size(), 0);
   LOG(INFO) << "hashmap size: " << hashmap->Size();
@@ -1088,12 +1127,12 @@ TEST(EmbeddingVariableTest, TestSizeDBKV) {
 TEST(EmbeddingVariableTest, TestSSDIterator) {
   std::string temp_dir = testing::TmpDir();
   Allocator* alloc = ev_allocator();
-  KVInterface<int64, float>* hashmap = new SSDHashKV<int64, float>(temp_dir, alloc);
+  auto hashmap = new SSDHashKV<int64, float>(temp_dir, alloc);
   hashmap->SetTotalDims(126);
   ASSERT_EQ(hashmap->Size(), 0);
   std::vector<ValuePtr<float>*> value_ptrs;
   for (int64 i = 0; i < 10; ++i) {
-    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(alloc, 126);
+    auto tmp= new NormalContiguousValuePtr<float>(alloc, 126);
     tmp->SetValue((float)i, 126);
     value_ptrs.emplace_back(tmp);
   }
@@ -1115,12 +1154,14 @@ TEST(EmbeddingVariableTest, TestSSDIterator) {
 }
 
 TEST(EmbeddingVariableTest, TestLevelDBIterator) {
-  KVInterface<int64, float>* hashmap = new LevelDBKV<int64, float>(testing::TmpDir());
+  KVInterface<int64, float>* hashmap =
+    new LevelDBKV<int64, float>(testing::TmpDir());
   hashmap->SetTotalDims(126);
   ASSERT_EQ(hashmap->Size(), 0);
   std::vector<ValuePtr<float>*> value_ptrs;
   for (int64 i = 0; i < 10; ++i) {
-    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(ev_allocator(), 126);
+    ValuePtr<float>* tmp =
+      new NormalContiguousValuePtr<float>(ev_allocator(), 126);
     tmp->SetValue((float)i, 126);
     value_ptrs.emplace_back(tmp);
   }
@@ -1188,7 +1229,8 @@ void t1_gpu(KVInterface<int64, float>* hashmap) {
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
 TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
-    KVInterface<int64, float>* hashmap = new LocklessHashMapCPU<int64, float>();
+    KVInterface<int64, float>* hashmap =
+      new LocklessHashMapCPU<int64, float>();
     ASSERT_EQ(hashmap->Size(), 0);
     LOG(INFO) << "hashmap size: " << hashmap->Size();
     auto t = std::thread(t1, hashmap);
@@ -1320,10 +1362,14 @@ void malloc_use_allocator(Allocator* allocator){
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < malloc_size; ++i) {
     int ev_list_size = 32;
-    float* ptr_ = (float *)allocator->AllocateRaw(0, sizeof(float) * ev_list_size);
+    float* ptr_ = (float *)allocator->AllocateRaw(
+        0, sizeof(float) * ev_list_size);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
+  LOG(INFO) << "cost time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 }
 
 TEST(EmbeddingVariableTest, TestEVMalloc) {
@@ -1349,7 +1395,8 @@ TEST(EmbeddingVariableTest, TestCPUMalloc) {
 #if GOOGLE_CUDA
 TEST(EmbeddingVariableTest, TestGPUMalloc) {
   SessionOptions sops;
-  std::unique_ptr<Device> device = DeviceFactory::NewDevice(DEVICE_GPU, sops, "/job:a/replica:0/task:0");
+  std::unique_ptr<Device> device =
+    DeviceFactory::NewDevice(DEVICE_GPU, sops, "/job:a/replica:0/task:0");
   Allocator* gpu_allocator = GPUProcessState::singleton()->GetGPUAllocator(
         GPUOptions(), TfGpuId(0), 1 << 26);
 
@@ -1362,12 +1409,12 @@ TEST(EmbeddingVariableTest, TestGPUMalloc) {
   }
 }
 
-
 TEST(EmbeddingVariableTest, TestCPUGPUMalloc) {
   SessionOptions sops;
-  std::unique_ptr<Device> device = DeviceFactory::NewDevice(DEVICE_GPU, sops, "/job:a/replica:0/task:0");
+  std::unique_ptr<Device> device =
+    DeviceFactory::NewDevice(DEVICE_GPU, sops, "/job:a/replica:0/task:0");
 
-  Allocator* gpu_allocator = GPUProcessState::singleton()->GetGPUAllocator(
+  auto gpu_allocator = GPUProcessState::singleton()->GetGPUAllocator(
         GPUOptions(), TfGpuId(0), 1 << 26);
 
   timespec start;
@@ -1378,28 +1425,38 @@ TEST(EmbeddingVariableTest, TestCPUGPUMalloc) {
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < 1024 * 2; ++i) {
     int ev_list_size = 32;
-    ValuePtr<float>* ptr_ = new NormalGPUValuePtr<float>(gpu_allocator, ev_list_size);
+    ValuePtr<float>* ptr_ =
+      new NormalGPUValuePtr<float>(gpu_allocator, ev_list_size);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
-
+  LOG(INFO) << "cost time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < 1024 * 2; ++i) {
     int ev_list_size = 32;
-    ValuePtr<float>* ptr_ = new NormalValuePtr<float>(cpu_allocator(), ev_list_size);
+    ValuePtr<float>* ptr_ =
+      new NormalValuePtr<float>(cpu_allocator(), ev_list_size);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
-
+  LOG(INFO) << "cost time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < 1; ++i) {
     int ev_list_size = 32 * 1024 * 2;
-    ValuePtr<float>* ptr_ = new NormalGPUValuePtr<float>(gpu_allocator, ev_list_size);
+    ValuePtr<float>* ptr_ =
+      new NormalGPUValuePtr<float>(gpu_allocator, ev_list_size);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
+  LOG(INFO) << "cost time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 }
 #endif //GOOGLE_CUDA
 
@@ -1412,42 +1469,56 @@ void malloc_free_use_allocator(Allocator* allocator){
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < malloc_size; ++i) {
     int ev_list_size = 32;
-    float* ptr_ = (float *)allocator->AllocateRaw(0, sizeof(float) * ev_list_size);
+    float* ptr_ = (float *)allocator->AllocateRaw(
+        0, sizeof(float) * ev_list_size);
     ptrs.push_back(ptr_);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "first time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
+  LOG(INFO) << "first time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (auto iter = ptrs.begin();iter != ptrs.end();iter++) {
     allocator->DeallocateRaw(*iter);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "free time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
+  LOG(INFO) << "free time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 
   clock_gettime(CLOCK_MONOTONIC, &start);
   for (int i = 0; i < malloc_size; ++i) {
     int ev_list_size = 32;
-    float* ptr_ = (float *)allocator->AllocateRaw(0, sizeof(float) * ev_list_size);
+    float* ptr_ = (float *)allocator->AllocateRaw(
+        0, sizeof(float) * ev_list_size);
   }
   clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "second time: " << ((double)(end.tv_sec - start.tv_sec)*1000000000 + end.tv_nsec - start.tv_nsec)/1000000 << "ms";
+  LOG(INFO) << "second time: "
+            << ((double)(end.tv_sec - start.tv_sec) *
+                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
+            << "ms";
 }
 
 TEST(EmbeddingVariableTest, TestEVMallocFree) {
   std::thread th_arr[th_num];
   for (unsigned int i = 0; i < th_num; ++i) {
-    th_arr[i] = std::thread(malloc_free_use_allocator, ev_allocator());
+    th_arr[i] = std::thread(
+        malloc_free_use_allocator, ev_allocator());
   }
   for (unsigned int i = 0; i < th_num; ++i) {
     th_arr[i].join();
   }
 }
 
-void SingleCommit(KVInterface<int64, float>* hashmap, std::vector<int64> keys, int bias) {
+void SingleCommit(KVInterface<int64, float>* hashmap,
+    std::vector<int64> keys, int bias) {
   std::vector<ValuePtr<float>*> value_ptrs;
   for (int64 i = 0; i < keys.size(); ++i) {
-    ValuePtr<float>* tmp= new NormalContiguousValuePtr<float>(cpu_allocator(), 124);
+    ValuePtr<float>* tmp =
+      new NormalContiguousValuePtr<float>(cpu_allocator(), 124);
     tmp->SetValue(float(keys[i] + bias), 124);
     value_ptrs.push_back(tmp);
   }
@@ -1459,12 +1530,12 @@ void SingleCommit(KVInterface<int64, float>* hashmap, std::vector<int64> keys, i
   }
   uint64 end = Env::Default()->NowNanos();
   uint64 result_cost = end - start;
-  //LOG(INFO) << "SingleCommit time: " << result_cost << " ns";
 }
 
 TEST(KVInterfaceTest, TestSSDKVCompaction) {
   std::string temp_dir = testing::TmpDir();
-  KVInterface<int64, float>* hashmap = new SSDHashKV<int64, float>(temp_dir, cpu_allocator());
+  auto hashmap = new SSDHashKV<int64, float>(
+      temp_dir, cpu_allocator());
   hashmap->SetTotalDims(124);
   ASSERT_EQ(hashmap->Size(), 0);
   std::vector<int64> ids;
@@ -1514,9 +1585,6 @@ TEST(KVInterfaceTest, TestSSDKVCompaction) {
     }
   }
 }
-
-
-
 
 } // namespace
 } // namespace embedding
