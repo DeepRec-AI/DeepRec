@@ -31,7 +31,8 @@ class LocklessHashMap : public KVInterface<K, V> {
  public:
   LocklessHashMap() {
     hash_map_.max_load_factor(0.8);
-    hash_map_.set_empty_key_and_value(LocklessHashMap<K, V>::EMPTY_KEY_, nullptr);
+    hash_map_.set_empty_key_and_value(
+        LocklessHashMap<K, V>::EMPTY_KEY_, nullptr);
     hash_map_.set_counternum(16);
     hash_map_.set_deleted_key(LocklessHashMap<K, V>::DELETED_KEY_);
   }
@@ -52,7 +53,8 @@ class LocklessHashMap : public KVInterface<K, V> {
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     auto iter = hash_map_.insert_lockless(
-        std::move(std::pair<K, ValuePtr<V>*>(key, const_cast<ValuePtr<V>*>(value_ptr))));
+        std::move(std::pair<K, ValuePtr<V>*>(key,
+            const_cast<ValuePtr<V>*>(value_ptr))));
     // insert fail, exist key
     if ((*(iter.first)).second != value_ptr){
       return errors::AlreadyExists(
@@ -78,21 +80,22 @@ class LocklessHashMap : public KVInterface<K, V> {
   }
 
   Status BatchCommit(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) {
+      const std::vector<ValuePtr<V>*>& value_ptrs) {
     return Status::OK();
   }
 
-  Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
+  Status GetSnapshot(std::vector<K>* key_list,
+      std::vector<ValuePtr<V>* >* value_ptr_list) {
     std::pair<const K, ValuePtr<V>*> *hash_map_dump;
     int64 bucket_count;
-    std::pair<std::pair<const K, ValuePtr<V>*>*, long unsigned int> it = hash_map_.GetSnapshot();
+    auto it = hash_map_.GetSnapshot();
     hash_map_dump = it.first;
     bucket_count = it.second;
     for (int64 j = 0; j < bucket_count; j++) {
       if (hash_map_dump[j].first != LocklessHashMap<K, V>::EMPTY_KEY_ 
            && hash_map_dump[j].first != LocklessHashMap<K, V>::DELETED_KEY_) {
-        key_list->push_back(hash_map_dump[j].first);
-        value_ptr_list->push_back(hash_map_dump[j].second);
+        key_list->emplace_back(hash_map_dump[j].first);
+        value_ptr_list->emplace_back(hash_map_dump[j].second);
       }
     }
     free(hash_map_dump);
@@ -100,11 +103,11 @@ class LocklessHashMap : public KVInterface<K, V> {
   }
 
   std::string DebugString() const {
-    LOG(INFO) << "map info size:" << Size();
-    LOG(INFO) << "map info bucket_count:" << hash_map_.bucket_count();
-    LOG(INFO) << "map info load_factor:" << hash_map_.load_factor();
-    LOG(INFO) << "map info max_load_factor:" << hash_map_.max_load_factor();
-    LOG(INFO) << "map info min_load_factor:" << hash_map_.min_load_factor();
+    LOG(INFO) << "map info size:" << Size()
+              << "map info bucket_count:" << hash_map_.bucket_count()
+              << "map info load_factor:" << hash_map_.load_factor()
+              << "map info max_load_factor:" << hash_map_.max_load_factor()
+              << "map info min_load_factor:" << hash_map_.min_load_factor();
     return "";
   }
 

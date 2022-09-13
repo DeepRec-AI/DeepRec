@@ -80,7 +80,8 @@ class EmbeddingFilter {
 template<typename K, typename V, typename EV>
 class BloomFilter : public EmbeddingFilter<K, V, EV> {
  public:
-  BloomFilter(const EmbeddingConfig& config, EV* ev, embedding::StorageManager<K, V>* storage_manager) :
+  BloomFilter(const EmbeddingConfig& config, EV* ev,
+      embedding::StorageManager<K, V>* storage_manager) :
       config_(config), ev_(ev), storage_manager_(storage_manager) {
     switch (config_.counter_type){
       case DT_UINT64:
@@ -120,10 +121,12 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   }
 
   void CreateGPUBatch(V* val_base, V** default_values, int64 size,
-    int64 slice_elems, int64 value_len_, bool* init_flags, V** memcpy_address) {
+      int64 slice_elems, int64 value_len_, bool* init_flags,
+      V** memcpy_address) {
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) override {
+  Status LookupOrCreateKey(K key, ValuePtr<V>** val,
+      bool* is_filter) override {
     if (GetFreq(key, *val) >= config_.filter_freq) {
       *is_filter = true;
       return ev_->LookupOrCreateKey(key, val);
@@ -148,7 +151,8 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   int64 GetBloomFreq(K key) {
     std::vector<int64> hash_val;
     for (int64 i = 0; i < config_.kHashFunc; i++) {
-      hash_val.emplace_back(FastHash64(key, seeds_[i]) % config_.num_counter);
+      hash_val.emplace_back(
+          FastHash64(key, seeds_[i]) % config_.num_counter);
     }
     int64 min_freq;
     switch (config_.counter_type){
@@ -211,7 +215,8 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   void SetBloomFreq(K key, int64 freq) {
     std::vector<int64> hash_val;
     for (int64 i = 0; i < config_.kHashFunc; i++) {
-      hash_val.push_back(FastHash64(key, seeds_[i]) % config_.num_counter);
+      hash_val.emplace_back(
+          FastHash64(key, seeds_[i]) % config_.num_counter);
     }
    int64 min_freq;
     switch (config_.counter_type){
@@ -243,7 +248,8 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
     int64* version_buff = (int64*)restore_buff.version_buffer;
     int64* freq_buff = (int64*)restore_buff.freq_buffer;
     for (auto i = 0; i < key_num; ++i) {
-      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      // this can describe by graph(Mod + DynamicPartition),
+      // but memory waste and slow
       if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
         LOG(INFO) << "skip EV key:" << *(key_buff + i);
         continue;
@@ -266,9 +272,11 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
           value_ptr->SetStep(version_buff[i]);
         }
         if (!is_filter){
-          V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
+          V* v = ev_->LookupOrCreateEmb(value_ptr,
+              value_buff + i * ev_->ValueLen());
         } else {
-          V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
+          V* v = ev_->LookupOrCreateEmb(value_ptr,
+              ev_->GetDefaultValue(key_buff[i]));
         }
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }
@@ -280,7 +288,8 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   void AddFreq(K key) {
     std::vector<int64> hash_val;
     for (int64 i = 0; i < config_.kHashFunc; i++) {
-      hash_val.push_back(FastHash64(key, seeds_[i]) % config_.num_counter);
+      hash_val.emplace_back(
+          FastHash64(key, seeds_[i]) % config_.num_counter);
     }
 
     for (auto it : hash_val){
@@ -311,7 +320,8 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   void AddFreq(K key, int64 count) {
     std::vector<int64> hash_val;
     for (int64 i = 0; i < config_.kHashFunc; i++) {
-      hash_val.push_back(FastHash64(key, seeds_[i]) % config_.num_counter);
+      hash_val.emplace_back(
+          FastHash64(key, seeds_[i]) % config_.num_counter);
     }
 
     for (auto it : hash_val){
@@ -342,11 +352,11 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
   void GenerateSeed(int64 kHashFunc) {
     if (kHashFunc < default_seeds.size()) {
       for (int64 i = 0; i < kHashFunc; i++) {
-        seeds_.push_back(default_seeds[i]);
+        seeds_.emplace_back(default_seeds[i]);
       }
-    }else{
+    } else {
       for (int64 i = 0; i < default_seeds.size(); i++) {
-        seeds_.push_back(default_seeds[i]);
+        seeds_.emplace_back(default_seeds[i]);
       }
       int64 last_seed = 98;
       for (int64 i = default_seeds.size(); i < kHashFunc; i++) {
@@ -359,7 +369,7 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
               is_prime = false;
           }
           if (is_prime) {
-            seeds_.push_back(j);
+            seeds_.emplace_back(j);
             last_seed = j;
             break;
           }
@@ -396,12 +406,13 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
     }
   }
 
-
   void CreateGPUBatch(V* val_base, V** default_values, int64 size,
-    int64 slice_elems, int64 value_len_, bool* init_flags, V** memcpy_address) {
+      int64 slice_elems, int64 value_len_, bool* init_flags,
+      V** memcpy_address) {
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) override {
+  Status LookupOrCreateKey(K key, ValuePtr<V>** val,
+      bool* is_filter) override {
     Status s = ev_->LookupOrCreateKey(key, val);
     *is_filter = GetFreq(key, *val) >= config_.filter_freq;
     return s;
@@ -428,7 +439,8 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
     int64* version_buff = (int64*)restore_buff.version_buffer;
     int64* freq_buff = (int64*)restore_buff.freq_buffer;
     for (auto i = 0; i < key_num; ++i) {
-      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      // this can describe by graph(Mod + DynamicPartition),
+      // but memory waste and slow
       if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
         LOG(INFO) << "skip EV key:" << *(key_buff + i);
         continue;
@@ -449,9 +461,11 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
       }
       if (value_ptr->GetFreq() >= config_.filter_freq) {
         if (!is_filter) {
-           V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
+           V* v = ev_->LookupOrCreateEmb(value_ptr,
+               value_buff + i * ev_->ValueLen());
         } else {
-           V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
+           V* v = ev_->LookupOrCreateEmb(value_ptr,
+               ev_->GetDefaultValue(key_buff[i]));
         }
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }
@@ -491,22 +505,31 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     V** dev_default_address = (V**)ev_->GetBuffer2(size);
     bool* dev_init_flags = (bool*)ev_->GetBuffer3(size);
 
-    cudaMemcpy(dev_value_address, memcpy_address, sizeof(V *) * size, cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_default_address, default_values, sizeof(V *) * size, cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_init_flags, init_flags, sizeof(bool) * size, cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_value_address, memcpy_address,
+        sizeof(V *) * size, cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_default_address, default_values,
+        sizeof(V *) * size, cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_init_flags, init_flags,
+        sizeof(bool) * size, cudaMemcpyHostToDevice);
 
     int limit = size;
     int length = value_len;
-    void* args1[] = {(void*)&dev_value_address, (void*)&val_base, (void*)&length,
-                     (void*)&limit, (void*)&dev_default_address, (void*)&dev_init_flags};
-    cudaLaunchKernel((void *)BatchCopy<V>, (limit + block_dim - 1) / block_dim * length,
+    void* args1[] = {(void*)&dev_value_address,
+                     (void*)&val_base,
+                     (void*)&length,
+                     (void*)&limit,
+                     (void*)&dev_default_address,
+                     (void*)&dev_init_flags};
+    cudaLaunchKernel((void *)BatchCopy<V>,
+                     (limit + block_dim - 1) / block_dim * length,
                      block_dim, args1, 0, NULL);
     cudaDeviceSynchronize();
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) override {
+  Status LookupOrCreateKey(K key, ValuePtr<V>** val,
+      bool* is_filter) override {
     *is_filter = true;
     return ev_->LookupOrCreateKey(key, val);
   }
@@ -540,7 +563,8 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
     int64* version_buff = (int64*)restore_buff.version_buffer;
     int64* freq_buff = (int64*)restore_buff.freq_buffer;
     for (auto i = 0; i < key_num; ++i) {
-      // this can describe by graph(Mod + DynamicPartition), but memory waste and slow
+      // this can describe by graph(Mod + DynamicPartition),
+      // but memory waste and slow
       if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
         LOG(INFO) << "skip EV key:" << *(key_buff + i);
         continue;
@@ -555,10 +579,12 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
         value_ptr->SetStep(version_buff[i]);
       }
       if (!is_filter) {
-        V* v = ev_->LookupOrCreateEmb(value_ptr, value_buff + i * ev_->ValueLen());
+        V* v = ev_->LookupOrCreateEmb(value_ptr,
+            value_buff + i * ev_->ValueLen());
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }else {
-        V* v = ev_->LookupOrCreateEmb(value_ptr, ev_->GetDefaultValue(key_buff[i]));
+        V* v = ev_->LookupOrCreateEmb(value_ptr,
+            ev_->GetDefaultValue(key_buff[i]));
         TF_CHECK_OK(ev_->storage_manager()->Commit(key_buff[i], value_ptr));
       }
     }
@@ -575,8 +601,10 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
 class FilterFactory {
  public:
   template<typename K, typename V, typename EV>
-  static EmbeddingFilter<K, V, EV>* CreateFilter(const EmbeddingConfig& config,
-      EV* ev, embedding::StorageManager<K, V>* storage_manager) {
+  static EmbeddingFilter<K, V, EV>* CreateFilter(
+      const EmbeddingConfig& config,
+      EV* ev,
+      embedding::StorageManager<K, V>* storage_manager) {
     if (config.filter_freq > 0) {
       if (config.kHashFunc != 0) {
         return new BloomFilter<K, V, EV>(config, ev, storage_manager);

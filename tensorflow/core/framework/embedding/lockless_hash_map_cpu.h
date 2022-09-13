@@ -52,7 +52,8 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
 
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     auto iter = hash_map_.insert_lockless(
-        std::move(std::pair<K, ValuePtr<V>*>(key, const_cast<ValuePtr<V>*>(value_ptr))));
+        std::move(std::pair<K, ValuePtr<V>*>(key,
+            const_cast<ValuePtr<V>*>(value_ptr))));
     // insert fail, exist key
     if ((*(iter.first)).second != value_ptr){
       return errors::AlreadyExists(
@@ -82,12 +83,14 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   }
 
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
-    ValuePtr<V>* cpu_value_ptr = new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
+    ValuePtr<V>* cpu_value_ptr =
+      new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
     cudaMemcpy((char *)cpu_value_ptr->GetPtr() + sizeof(FixedLengthHeader),
                *(char **)((char*)value_ptr->GetPtr() + sizeof(FixedLengthHeader)),
                total_dims_ * sizeof(V),
                cudaMemcpyDeviceToHost);
-    memcpy((char *)cpu_value_ptr->GetPtr(), (char *)value_ptr->GetPtr(), sizeof(FixedLengthHeader));
+    memcpy((char *)cpu_value_ptr->GetPtr(),
+        (char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader));
     Insert(key, cpu_value_ptr);
     return Status::OK();
   }
@@ -100,31 +103,39 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     V* batch_data_place;
     V* dev_batch_data_place;
     Allocator *allocator = ev_allocator();
-    dev_value_address = (V**)allocator->AllocateRaw(Allocator::kAllocatorAlignment,
-      batch_size * sizeof(V *));
-    dev_batch_data_place = (V*)allocator->AllocateRaw(Allocator::kAllocatorAlignment,
-      sizeof(V) * batch_size * total_dims_);
+    dev_value_address = (V**)allocator->AllocateRaw(
+        Allocator::kAllocatorAlignment, batch_size * sizeof(V *));
+    dev_batch_data_place = (V*)allocator->AllocateRaw(
+        Allocator::kAllocatorAlignment, sizeof(V) * batch_size * total_dims_);
     batch_data_place = (V *)malloc(sizeof(V) * batch_size * total_dims_);
 
     // Copy GPU addresses V*
     for(int i = 0;i < batch_size;++i) {
-      value_address[i] = *(V **)((char *)value_ptrs[i]->GetPtr() + sizeof(FixedLengthHeader));
+      value_address[i] =
+        *(V **)((char*)value_ptrs[i]->GetPtr() + sizeof(FixedLengthHeader));
     }
-    cudaMemcpy(dev_value_address, value_address, sizeof(V *) * batch_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_value_address, value_address,
+        sizeof(V *) * batch_size, cudaMemcpyHostToDevice);
 
     // Launch Kernel,Copy data to continuous place
     int block_dim = 128;
-    void* args[] = { (void*)&dev_value_address, (void*)&dev_batch_data_place, (void*)&total_dims_, (void*)&batch_size};
+    void* args[] = { (void*)&dev_value_address,
+      (void*)&dev_batch_data_place, (void*)&total_dims_,
+      (void*)&batch_size};
 
     cudaDeviceSynchronize();
 
-    cudaMemcpy(batch_data_place, dev_batch_data_place, sizeof(V) * batch_size * total_dims_, cudaMemcpyDeviceToHost);
+    cudaMemcpy(batch_data_place, dev_batch_data_place,
+        sizeof(V) * batch_size * total_dims_, cudaMemcpyDeviceToHost);
 
     // Copy data to ValuePtrs in memory;Insert it into hashmap
     for(int i = 0;i < batch_size;++i) {
-      ValuePtr<V>* cpu_value_ptr = new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
-      memcpy((char *)cpu_value_ptr->GetPtr() + sizeof(FixedLengthHeader), &batch_data_place[i * total_dims_], total_dims_ * sizeof(V));
-      memcpy((char *)cpu_value_ptr->GetPtr(), (char *)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader));
+      ValuePtr<V>* cpu_value_ptr =
+        new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
+      memcpy((char *)cpu_value_ptr->GetPtr() + sizeof(FixedLengthHeader),
+          &batch_data_place[i * total_dims_], total_dims_ * sizeof(V));
+      memcpy((char *)cpu_value_ptr->GetPtr(),
+          (char *)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader));
       Insert(keys[i], cpu_value_ptr);
     }
 
@@ -135,16 +146,18 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
+  Status GetSnapshot(std::vector<K>* key_list,
+      std::vector<ValuePtr<V>* >* value_ptr_list) {
     std::pair<const K, ValuePtr<V>*> *hash_map_dump;
     int64 bucket_count;
-    std::pair<std::pair<const K, ValuePtr<V>*>*, long unsigned int> it = hash_map_.GetSnapshot();
+    auto it = hash_map_.GetSnapshot();
     hash_map_dump = it.first;
     bucket_count = it.second;
     for (int64 j = 0; j < bucket_count; j++) {
-      if (hash_map_dump[j].first != EMPTY_KEY_ && hash_map_dump[j].first != DELETED_KEY_) {
-        key_list->push_back(hash_map_dump[j].first);
-        value_ptr_list->push_back(hash_map_dump[j].second);
+      if (hash_map_dump[j].first != EMPTY_KEY_ &&
+          hash_map_dump[j].first != DELETED_KEY_) {
+        key_list->emplace_back(hash_map_dump[j].first);
+        value_ptr_list->emplace_back(hash_map_dump[j].second);
       }
     }
     free(hash_map_dump);
@@ -152,16 +165,17 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   }
 
   std::string DebugString() const {
-    LOG(INFO) << "map info size:" << Size();
-    LOG(INFO) << "map info bucket_count:" << hash_map_.bucket_count();
-    LOG(INFO) << "map info load_factor:" << hash_map_.load_factor();
-    LOG(INFO) << "map info max_load_factor:" << hash_map_.max_load_factor();
-    LOG(INFO) << "map info min_load_factor:" << hash_map_.min_load_factor();
+    LOG(INFO) << "map info size:" << Size()
+              << "map info bucket_count:" << hash_map_.bucket_count()
+              << "map info load_factor:" << hash_map_.load_factor()
+              << "map info max_load_factor:" << hash_map_.max_load_factor()
+              << "map info min_load_factor:" << hash_map_.min_load_factor();
     return "";
   }
 
  private:
-  typedef google::dense_hash_map_lockless<K, ValuePtr<V>* > LockLessHashMap;
+  typedef google::dense_hash_map_lockless<K, ValuePtr<V>* >
+    LockLessHashMap;
   static const int EMPTY_KEY_ = -1;
   static const int DELETED_KEY_ = -2;
   LockLessHashMap hash_map_;

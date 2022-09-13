@@ -24,12 +24,18 @@ struct EmbeddingConfig {
   bool record_freq;
   bool record_version;
 
-  EmbeddingConfig(int64 emb_index = 0, int64 primary_emb_index = 0,
-                  int64 block_num = 1, int slot_num = 0,
-                  const std::string& name = "", int64 steps_to_live = 0,
-                  int64 filter_freq = 0, int64 max_freq = 999999,
-                  float l2_weight_threshold = -1.0, const std::string& layout = "normal",
-                  int64 max_element_size = 0, float false_positive_probability = -1.0,
+  EmbeddingConfig(int64 emb_index = 0,
+                  int64 primary_emb_index = 0,
+                  int64 block_num = 1,
+                  int slot_num = 0,
+                  const std::string& name = "",
+                  int64 steps_to_live = 0,
+                  int64 filter_freq = 0,
+                  int64 max_freq = 999999,
+                  float l2_weight_threshold = -1.0,
+                  const std::string& layout = "normal",
+                  int64 max_element_size = 0,
+                  float false_positive_probability = -1.0,
                   DataType counter_type = DT_UINT64,
                   int64 default_value_dim = 4096,
                   float default_value_no_permission = .0,
@@ -52,7 +58,8 @@ struct EmbeddingConfig {
       record_version(record_version) {
     if (max_element_size != 0 && false_positive_probability != -1.0){
       kHashFunc = calc_num_hash_func(false_positive_probability);
-      num_counter = calc_num_counter(max_element_size, false_positive_probability);
+      num_counter = calc_num_counter(max_element_size,
+          false_positive_probability);
     } else {
       kHashFunc = 0;
       num_counter = 0;
@@ -62,7 +69,8 @@ struct EmbeddingConfig {
     }
   }
 
-  int64 calc_num_counter(int64 max_element_size, float false_positive_probability) {
+  int64 calc_num_counter(int64 max_element_size,
+      float false_positive_probability) {
     float loghpp = fabs(log(false_positive_probability));
     float factor = log(2) * log(2);
     int64 num_bucket = ceil(loghpp / factor * max_element_size);
@@ -90,7 +98,9 @@ struct EmbeddingConfig {
   }
 
   int64 total_num(int alloc_len) {
-    return block_num * (1 + (1 - normal_fix_flag) * slot_num) * (1 + normal_fix_flag * (alloc_len * (slot_num + 1) - 1));
+    return block_num *
+           (1 + (1 - normal_fix_flag) * slot_num) *
+           (1 + normal_fix_flag * (alloc_len * (slot_num + 1) - 1));
   }
 
   int64 get_filter_freq() {

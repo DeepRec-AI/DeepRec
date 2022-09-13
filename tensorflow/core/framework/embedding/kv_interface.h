@@ -54,7 +54,7 @@ class KVInterface {
   }
   // KV Batch Insert
   virtual Status BatchInsert(const std::vector<K>& keys,
-                             const std::vector<const ValuePtr<V>*>& value_ptrs) {
+      const std::vector<const ValuePtr<V>*>& value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
                       "Unimplemented for BatchInsert in KVInterface.");
   }
@@ -65,7 +65,7 @@ class KVInterface {
   }
 
   virtual Status BatchCommit(const std::vector<K>& keys,
-                             const std::vector<ValuePtr<V>*>& value_ptrs) = 0;
+      const std::vector<ValuePtr<V>*>& value_ptrs) = 0;
 
   // KV Size
   virtual int64 Size() const = 0;
@@ -74,10 +74,12 @@ class KVInterface {
 
   virtual void FreeValuePtr(ValuePtr<V>* value_ptr) {}
 
-  virtual Status Commit(K key, const ValuePtr<V>* value_ptr) {return Status::OK();}
+  virtual Status Commit(K key, const ValuePtr<V>* value_ptr) {
+    return Status::OK();
+  }
 
   virtual Status GetSnapshot(std::vector<K>* key_list,
-                             std::vector<ValuePtr<V>* >* value_ptr_list) = 0;
+      std::vector<ValuePtr<V>* >* value_ptr_list) = 0;
 
   virtual std::string DebugString() const = 0;
 

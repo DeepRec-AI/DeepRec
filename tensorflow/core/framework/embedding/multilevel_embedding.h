@@ -26,9 +26,11 @@ class EmbeddingVar;
 namespace embedding {
 
 struct StorageConfig {
-  StorageConfig() : type(StorageType::INVALID), path(""), layout_type(LayoutType::NORMAL) {
+  StorageConfig() : type(StorageType::INVALID),
+      path(""), layout_type(LayoutType::NORMAL) {
     size = {1<<30,1<<30,1<<30,1<<30};
   }
+
   StorageConfig(StorageType t,
                 const std::string& p,
                 const std::vector<int64>& s,
@@ -40,7 +42,8 @@ struct StorageConfig {
     } else if ("normal_contiguous" == layout){
       layout_type = LayoutType::NORMAL_CONTIGUOUS;
     } else {
-      LOG(WARNING) << "Unknown layout: " << layout << ", use LayoutType::NORMAL by default.";
+      LOG(WARNING) << "Unknown layout: "
+        << layout << ", use LayoutType::NORMAL by default.";
       layout_type = LayoutType::NORMAL;
     }
     size = s;
@@ -97,42 +100,53 @@ class StorageManager {
       Allocator* alloc_ssd;
       case StorageType::DRAM:
         VLOG(1) << "StorageManager::DRAM: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), ev_allocator()));
         break;
       case StorageType::PMEM_MEMKIND:
         VLOG(1) << "StorageManager::PMEM_MEMKIND: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), pmem_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), pmem_allocator()));
         break;
       case StorageType::PMEM_LIBPMEM:
         VLOG(1) << "StorageManager::PMEM_LIBPMEM: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(),
-                                      experimental_pmem_allocator(sc_.path, sc_.size[0])));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(),
+                  experimental_pmem_allocator(sc_.path, sc_.size[0])));
         break;
       case StorageType::LEVELDB:
         VLOG(1) << "StorageManager::LEVELDB: " << name_;
-        kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LevelDBKV<K, V>(sc_.path), ev_allocator()));
         break;
       case StorageType::DRAM_PMEM:
         VLOG(1) << "StorageManager::DRAM_PMEM: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(),
-                                      experimental_pmem_allocator(sc_.path, sc_.size[1])));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(),
+                  experimental_pmem_allocator(sc_.path, sc_.size[1])));
         break;
       case StorageType::DRAM_LEVELDB:
         VLOG(1) << "StorageManager::DRAM_LEVELDB: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
-        kvs_.push_back(std::make_pair(new LevelDBKV<K, V>(sc_.path), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LevelDBKV<K, V>(sc_.path), ev_allocator()));
         break;
       case StorageType::SSDHASH:
         VLOG(1) << "StorageManager::SSDHASH: " << name_;
         alloc_ssd = ev_allocator();
-        kvs_.emplace_back(std::make_pair(new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
+        kvs_.emplace_back(std::make_pair(
+              new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
         break;
       case StorageType::DRAM_SSDHASH:
         VLOG(1) << "StorageManager::DRAM_SSDHASH: " << name_;
         alloc_ssd = ev_allocator();
-        kvs_.emplace_back(std::make_pair(new LocklessHashMap<K, V>(), alloc_ssd));
-        kvs_.emplace_back(std::make_pair(new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), alloc_ssd));
+        kvs_.emplace_back(std::make_pair(
+              new SSDHashKV<K, V>(sc_.path, alloc_ssd), alloc_ssd));
         break;
       case StorageType::HBM_DRAM:
 #if GOOGLE_CUDA
@@ -140,47 +154,57 @@ class StorageManager {
         new_value_ptr_fn_ = [] (Allocator* allocator, size_t size) {
           return new NormalGPUValuePtr<V>(allocator, size); };
         LOG(INFO) << "StorageManager::HBM_DRAM: " << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), alloc_));
-        kvs_.push_back(std::make_pair(new LocklessHashMapCPU<K, V>(), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), alloc_));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMapCPU<K, V>(), ev_allocator()));
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
         break;
       default:
         VLOG(1) << "StorageManager::default" << name_;
-        kvs_.push_back(std::make_pair(new LocklessHashMap<K, V>(), ev_allocator()));
+        kvs_.emplace_back(std::make_pair(
+              new LocklessHashMap<K, V>(), ev_allocator()));
         break;
     }
 
-    if (sc_.type == embedding::DRAM_PMEM || sc_.type == embedding::DRAM_SSDHASH ||
-        sc_.type == embedding::HBM_DRAM || sc_.type == embedding::DRAM_LEVELDB) {
+    if (sc_.type == embedding::DRAM_PMEM ||
+        sc_.type == embedding::DRAM_SSDHASH ||
+        sc_.type == embedding::HBM_DRAM ||
+        sc_.type == embedding::DRAM_LEVELDB) {
       is_multi_level_ = true;
     }
 
     hash_table_count_ = kvs_.size();
     if (hash_table_count_ > 1) {
       cache_ = new LRUCache<K>();
-      eviction_thread_ = Env::Default()->StartThread(ThreadOptions(), "EV_Eviction",
-                                                     [this]() { BatchEviction(); });
-      thread_pool_.reset(new thread::ThreadPool(Env::Default(), ThreadOptions(),
-                                               "MultiLevel_Embedding_Cache", 2,
-                                               /*low_latency_hint=*/false));
+      eviction_thread_ = Env::Default()->StartThread(
+          ThreadOptions(), "EV_Eviction", [this]() { BatchEviction(); });
+      thread_pool_.reset(
+          new thread::ThreadPool(Env::Default(), ThreadOptions(),
+            "MultiLevel_Embedding_Cache", 2, /*low_latency_hint=*/false));
     }
     // DebugString();
-    CHECK(2 >= hash_table_count_) << "Not support multi-level(>2) embedding.";
+    CHECK(2 >= hash_table_count_)
+        << "Not support multi-level(>2) embedding.";
 
     return Status::OK();
   }
 
   void SetAllocLen(int64 value_len, int slot_num){
     while (flag_.test_and_set(std::memory_order_acquire));
-    //The start address of every slot should be aligned to 16 bytes, otherwise a coredump will happen in the ApplyOp.
-    alloc_len_ = (value_len * sizeof(V) % 16 == 0) ?value_len : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
+    // The start address of every slot should be aligned to 16 bytes,
+    // otherwise a coredump will happen in the ApplyOp.
+    alloc_len_ = (value_len * sizeof(V) % 16 == 0) ?
+      value_len : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
     int64 temp = alloc_len_ * slot_num;
     if (temp > total_dims_) {
       total_dims_ = temp;
-      if (sc_.type == StorageType::LEVELDB || sc_.type == StorageType::SSDHASH) {
+      if (sc_.type == StorageType::LEVELDB ||
+          sc_.type == StorageType::SSDHASH) {
         kvs_[0].first->SetTotalDims(total_dims_);
-      } else if (sc_.type == StorageType::DRAM_LEVELDB || sc_.type == StorageType::DRAM_SSDHASH) {
+      } else if (sc_.type == StorageType::DRAM_LEVELDB ||
+          sc_.type == StorageType::DRAM_SSDHASH) {
         kvs_[1].first->SetTotalDims(total_dims_);
       } else if (sc_.type == StorageType::HBM_DRAM) {
         kvs_[1].first->SetTotalDims(total_dims_);
@@ -271,17 +295,15 @@ class StorageManager {
       ValuePtr<V>* gpu_value_ptr = new_value_ptr_fn_(kvs_[0].second, size);
       V* cpu_data_address = (*value_ptr)->GetValue(0, 0);
       V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
-      cudaMemcpy(gpu_data_address, cpu_data_address, size * sizeof(V), cudaMemcpyHostToDevice);
+      cudaMemcpy(gpu_data_address, cpu_data_address,
+          size * sizeof(V), cudaMemcpyHostToDevice);
       *value_ptr = gpu_value_ptr;
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
     }
     if (level || !found) {
       Status s = kvs_[0].first->Insert(key, *value_ptr);
-      if (s.ok()) {
-        // Insert Success
-        return s;
-      } else {
+      if (!s.ok()) {
         // Insert Failed, key already exist
         (*value_ptr)->Destroy(kvs_[0].second);
         delete *value_ptr;
@@ -292,7 +314,8 @@ class StorageManager {
     return Status::OK();
   }
 
-Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyback) {
+  Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
+      size_t size, bool &need_copyback) {
     bool found = false;
     int level = 0;
     need_copyback = false;
@@ -313,10 +336,7 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
     }
     if ( (level || !found ) && !need_copyback) {
       Status s = kvs_[0].first->Insert(key, *value_ptr);
-      if (s.ok()) {
-        // Insert Success
-        return s;
-      } else {
+      if (!s.ok()) {
         // Insert Failed, key already exist
         (*value_ptr)->Destroy(kvs_[0].second);
         delete *value_ptr;
@@ -330,10 +350,9 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
   void CopyBackToGPU(int total, K* keys, int64 size, bool* copyback_flags,
-                     V** memcpy_address, size_t value_len, int *copyback_cursor,
-                     ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
-    V *memcpy_buffer_cpu;
-    memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
+      V** memcpy_address, size_t value_len, int *copyback_cursor,
+      ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
+    auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
     int j = 0;
     for (int i = 0; i < size;i++) {
       if (copyback_flags[i]) {
@@ -344,7 +363,8 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
                sizeof(FixedLengthHeader));
         V* cpu_data_address = memcpy_address[i];
         V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
-        memcpy(memcpy_buffer_cpu + j * value_len, cpu_data_address, value_len * sizeof(V));
+        memcpy(memcpy_buffer_cpu + j * value_len,
+            cpu_data_address, value_len * sizeof(V));
         copyback_cursor[j] = i;
         gpu_value_ptrs[j] = gpu_value_ptr;
         j++;
@@ -353,7 +373,7 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
     }
 
     cudaMemcpy(memcpy_buffer_gpu, memcpy_buffer_cpu,
-               total * value_len * sizeof(V), cudaMemcpyHostToDevice);
+        total * value_len * sizeof(V), cudaMemcpyHostToDevice);
   }
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
@@ -385,11 +405,13 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
     return Status::OK();
   }
 
-  int64 GetSnapshot(std::vector<K>* key_list, std::vector<V* >* value_list,
-                    std::vector<int64>* version_list, std::vector<int64>* freq_list,
-                    const EmbeddingConfig& emb_config,
-                    EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
-                    embedding::Iterator** it) {
+  int64 GetSnapshot(std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
+      embedding::Iterator** it) {
     for (auto kv : kvs_) {
       std::vector<ValuePtr<V>* > value_ptr_list;
       std::vector<K> key_list_tmp;
@@ -401,28 +423,29 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
       for (int64 i = 0; i < key_list_tmp.size(); ++i) {
         V* val = value_ptr_list[i]->GetValue(emb_config.emb_index,
           GetOffset(emb_config.emb_index));
-        V* primary_val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index,
-          GetOffset(emb_config.primary_emb_index));
-        key_list->push_back(key_list_tmp[i]);
+        V* primary_val = value_ptr_list[i]->GetValue(
+            emb_config.primary_emb_index,
+            GetOffset(emb_config.primary_emb_index));
+        key_list->emplace_back(key_list_tmp[i]);
         if (emb_config.filter_freq != 0 || is_multi_level_
             || emb_config.record_freq) {
-            int64 dump_freq = filter->GetFreq(key_list_tmp[i], value_ptr_list[i]);
-            freq_list->push_back(dump_freq);
+            int64 dump_freq = filter->GetFreq(
+                key_list_tmp[i], value_ptr_list[i]);
+            freq_list->emplace_back(dump_freq);
         }
         if (emb_config.steps_to_live != 0 || emb_config.record_version) {
             int64 dump_version = value_ptr_list[i]->GetStep();
-            version_list->push_back(dump_version);
+            version_list->emplace_back(dump_version);
         }
         if (val != nullptr && primary_val != nullptr) {
-          value_list->push_back(val);
+          value_list->emplace_back(val);
         } else if (val == nullptr && primary_val != nullptr) {
           // only forward, no backward
-          value_list->push_back(reinterpret_cast<V*>(-1));
+          value_list->emplace_back(reinterpret_cast<V*>(-1));
         } else {
           // feature filtered
-          value_list->push_back(nullptr);
+          value_list->emplace_back(nullptr);
         }
-        // storage_manager_->FreeValuePtr(value_ptr_list[i]);
       }
     }
     return key_list->size();
@@ -445,7 +468,8 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
           }
           l2_weight *= 0.5;
           if (l2_weight < emb_config.l2_weight_threshold) {
-            to_deleted.push_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+            to_deleted.emplace_back(
+                std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
           }
         }
       }
@@ -472,7 +496,8 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
           value_ptr_list[i]->SetStep(gs);
         } else {
           if (gs - version > steps_to_live) {
-            to_deleted.emplace_back(std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
+            to_deleted.emplace_back(
+                std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
           }
         }
       }
@@ -542,11 +567,8 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
       }
     }
     K evic_ids[EvictionSize];
-    while (true) {
+    while (!shutdown_) {
       mutex_lock l(mu_);
-      if (shutdown_) {
-        break;
-      }
       // add WaitForMilliseconds() for sleep if necessary
       const int kTimeoutMilliseconds = 1;
       WaitForMilliseconds(&l, &shutdown_cv_, kTimeoutMilliseconds);
@@ -572,29 +594,24 @@ Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size, bool &need_copyb
           for (int64 i = 0; i < true_size; ++i) {
             if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
               TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
-              keys.push_back(evic_ids[i]);
-              value_ptrs.push_back(value_ptr);
+              keys.emplace_back(evic_ids[i]);
+              value_ptrs.emplace_back(value_ptr);
             }
           }
 
           BatchCommit(keys, value_ptrs);
-
-          for (int64 i = 0; i < true_size; ++i) {
-            // value_ptrs[i]->Destroy(kvs_[0].second);
-            // delete value_ptrs[i];
-          }
           clock_gettime(CLOCK_MONOTONIC, &end);
           LOG(INFO) << "Total Evict Time: "
-                    << (double)(end.tv_sec - start.tv_sec) * EnvTime::kSecondsToMillis +
-                       (end.tv_nsec - start.tv_nsec) / EnvTime::kMillisToNanos<< "ms";
+                    << (double)(end.tv_sec - start.tv_sec) *
+                       EnvTime::kSecondsToMillis +
+                       (end.tv_nsec - start.tv_nsec) /
+                       EnvTime::kMillisToNanos<< "ms";
         } else {
           for (int64 i = 0; i < true_size; ++i) {
             if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
               TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
               TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
               value_ptr_out_of_date_.emplace_back(value_ptr);
-            } else {
-              // bypass
             }
           }
         }
