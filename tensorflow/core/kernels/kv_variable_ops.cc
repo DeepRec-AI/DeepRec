@@ -514,7 +514,8 @@ class KvResourceGatherOp : public OpKernel {
           errors::InvalidArgument(
               "ev's value_len should same with output's dimension(1)",
               std::to_string(slice_elems), std::to_string(ev->ValueLen())));
-      OP_REQUIRES(c, !ev->IsMultiLevel() || (ev->IsMultiLevel() && ev->CacheSize() >= N),
+      OP_REQUIRES(c, !ev->IsMultiLevel() ||
+          (ev->IsMultiLevel() && ev->CacheSize() >= N),
           errors::InvalidArgument(
               "MultiLevel EV's Cache size ", ev->CacheSize(),
               " should large than IDs in batch ", N));
@@ -639,7 +640,8 @@ class KvResourceGatherGPUOp : public OpKernel {
           errors::InvalidArgument(
               "ev's value_len should same with output's dimension(1)",
               std::to_string(slice_elems), std::to_string(ev->ValueLen())));
-      OP_REQUIRES(c, !ev->IsMultiLevel() || (ev->IsMultiLevel() && ev->CacheSize() >= N),
+      OP_REQUIRES(c, !ev->IsMultiLevel() ||
+          (ev->IsMultiLevel() && ev->CacheSize() >= N),
           errors::InvalidArgument(
               "MultiLevel EV's Cache size ", ev->CacheSize(),
               " should large than IDs in batch ", N));
@@ -652,15 +654,17 @@ class KvResourceGatherGPUOp : public OpKernel {
         TKey* ids = new TKey[indices_size];
         auto do_work = [this, indices_flat,
             out_base, slice_elems, c, ev,
-            default_values, init_flags, copyback_flags, memcpy_address, ids] (int64 start, int64 limit) {
+            default_values, init_flags, copyback_flags,
+                memcpy_address, ids] (int64 start, int64 limit) {
           for (int64 i = start; i < limit; ++i) {
             TValue* default_v;
             default_v = ev->GetDefaultValuePtr() +
-                          ((indices_flat(i)) % ev->GetDefaultValueDim()) * ev->ValueLen();
+              ((indices_flat(i)) % ev->GetDefaultValueDim()) * ev->ValueLen();
             default_values[i] = default_v;
             ids[i] = indices_flat(i);
           }
-          ev->LookupWithFreqBatch(ids, init_flags, copyback_flags, memcpy_address, start, limit);
+          ev->LookupWithFreqBatch(ids, init_flags, copyback_flags,
+              memcpy_address, start, limit);
         };
 
         auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
@@ -669,7 +673,8 @@ class KvResourceGatherGPUOp : public OpKernel {
 
         ev->CopyBackToGPU(ids, indices_size, copyback_flags, memcpy_address);
 
-        ev->CreateGPUBatch(out_base, default_values, indices_size, slice_elems, init_flags, memcpy_address);
+        ev->CreateGPUBatch(out_base, default_values, indices_size,
+            slice_elems, init_flags, memcpy_address);
         delete []init_flags;
         delete []copyback_flags;
         delete []memcpy_address;
@@ -1023,7 +1028,8 @@ class KvResourceImportV2Op: public AsyncOpKernel {
 
       EVRestoreDynamically(
           ev, name_string, partition_id_, partition_num_, context, &reader,
-          "-partition_offset", "-keys", "-values", "-versions", "-freqs", reset_version_);
+          "-partition_offset", "-keys", "-values", "-versions", "-freqs",
+          reset_version_);
       ev->SetInitialized();
       done();
     };
@@ -1261,7 +1267,8 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 template<typename TKey, typename TValue>
 class KvResourceGeneratePartitionedTensorOp : public OpKernel {
  public:
-  explicit KvResourceGeneratePartitionedTensorOp(OpKernelConstruction *ctx) : OpKernel(ctx) {}
+  explicit KvResourceGeneratePartitionedTensorOp(
+      OpKernelConstruction *ctx) : OpKernel(ctx) {}
 
   void Compute(OpKernelContext *ctx) override {
     const Tensor& keys = ctx->input(0);
@@ -1319,7 +1326,8 @@ class KvResourceGeneratePartitionedTensorOp : public OpKernel {
       for (int i = 0; i < index_list_parts[partid].size(); i++) {
         keys_output(total_count) = keys_flat(index_list_parts[partid][i]);
         for (int j = 0; j < values_flat.dimension(1); j++) {
-          val_matrix(total_count, j) = values_flat(index_list_parts[partid][i], j);
+          val_matrix(total_count, j) =
+            values_flat(index_list_parts[partid][i], j);
         }
         total_count++;
       }
@@ -1974,7 +1982,8 @@ class EVGetVersionOp : public OpKernel {
     auto indices_flat = indices.flat<TKey>();
 
     Tensor* output;
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {indices.NumElements()}, &output));
+    OP_REQUIRES_OK(ctx,
+        ctx->allocate_output(0, {indices.NumElements()}, &output));
     for (int i = 0; i < indices.NumElements(); ++i) {
       int64 v = ev->GetVersion(indices_flat(i));
       output->flat<int64>()(i) = v;
