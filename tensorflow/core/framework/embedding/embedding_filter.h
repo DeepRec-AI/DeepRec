@@ -45,6 +45,18 @@ class EmbeddingFilter {
  public:
   virtual void LookupOrCreate(K key, V* val, const V* default_value_ptr,
                                ValuePtr<V>** value_ptr, int count) = 0;
+
+  virtual void Lookup(EV* ev, K key, V* val, const V* default_value_ptr) {
+    ValuePtr<V>* value_ptr = nullptr;
+    Status s = ev->LookupKey(key, &value_ptr);
+    if (s.ok()) {
+      V* mem_val = ev->LookupPrimaryEmb(value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev->ValueLen());
+    } else {
+      memcpy(val, default_value_ptr, sizeof(V) * ev->ValueLen());
+    }
+  }
+
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val, bool* is_filter) = 0;
 
   virtual int64 GetFreq(K key, ValuePtr<V>* value_ptr) = 0;
