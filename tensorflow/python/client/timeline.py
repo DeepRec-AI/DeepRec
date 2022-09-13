@@ -490,6 +490,7 @@ class Timeline(object):
       cct += "<root>"
     # extract info from node name
     inputs = []
+    args = {}
     if is_gputrace:
       # Node names should always have the form 'name:op@@kernel_name'
       fields = node_name.split('@@') + ["unknown"]
@@ -515,9 +516,16 @@ class Timeline(object):
     elif node_name == 'RecvTensor':
       # RPC tracing does not use the standard timeline_label format.
       op = 'RecvTensor'
+      labels = nodestats.timeline_label.split(';')
+      args['size'] = labels[0]
+      args['rate'] = labels[1]
+      args['tensor name'] = labels[2]
+      args['direction'] = labels[3]
     else:
       _, op, inputs = self._parse_op_label(nodestats.timeline_label)
-    args = {'name': node_name, 'op': op, 'calling context': cct}
+    args['name'] = node_name
+    args['op'] = op
+    args['calling context'] = cct
     if kernel_name is not None:
       args['kernel'] = kernel_name
     for i, iname in enumerate(inputs):

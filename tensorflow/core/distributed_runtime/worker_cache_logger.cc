@@ -103,16 +103,16 @@ void WorkerCacheLogger::RecordDataTransfer(int64 step_id, int64 start_usecs,
   ns->set_node_name(transfer_method_name);
   int64 elapsed_usecs = end_usecs - start_usecs;
   if (details.empty()) {
-    auto byte_string = strings::StrCat("[", bytes, "B] ");
+    auto byte_string = strings::StrCat("[", bytes, "B]");
     if (bytes >= 0.1 * 1048576.0) {
-      byte_string = strings::Printf("[%.1fMB] ", bytes / 1048576.0);
+      byte_string = strings::Printf("[%.1fMB]", bytes / 1048576.0);
     }
     float mbs_rate = (8.0 * static_cast<float>(bytes)) / elapsed_usecs;
     auto rate_string = (mbs_rate >= 1000.0)
-                           ? strings::Printf("[%.1fGb/s] ", mbs_rate / 1000.0)
-                           : strings::Printf("[%fMb/s] ", mbs_rate);
-    auto label = strings::StrCat(byte_string, rate_string, tensor_name,
-                                 " from ", src_device, " to ", dst_device);
+                           ? strings::Printf("[%.1fGb/s]", mbs_rate / 1000.0)
+                           : strings::Printf("[%fMb/s]", mbs_rate);
+    auto label = strings::StrCat(byte_string, ";", rate_string, ";", tensor_name,
+                                 ";", src_device, " ==> ", dst_device);
     ns->set_timeline_label(label);
   } else {
     ns->set_timeline_label(details);
