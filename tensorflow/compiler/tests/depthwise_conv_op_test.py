@@ -532,7 +532,7 @@ class DepthwiseConv2DTest(xla_test.XLATestCase):
 
     gpu_value = _GetVal(use_xla=True)
     cpu_value = _GetVal(use_xla=False)
-    self.assertAllClose(cpu_value, gpu_value, rtol=1e-4, atol=1e-4)
+    self.assertAllClose(cpu_value, gpu_value, rtol=1e-4, atol=2e-4)
 
   def testDepthwiseConv2DFilterGradCompare(self):
     for index, (input_size, filter_size, output_size, stride,
