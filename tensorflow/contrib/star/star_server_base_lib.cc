@@ -50,21 +50,23 @@ public:
   std::string GetStarIpPort(const std::string& job_name, int task_index) {
     const auto it_job = grpc_cluster_spec_.find(job_name);
     if (it_job == grpc_cluster_spec_.end()) {
-      LOG(FATAL) << "Job name: " << job_name
+      LOG(FATAL) << "[Distributed] Job name: " << job_name
                  << " does not exist in cluster spec.";
     }
     const std::map<int, std::string>& task_map = it_job->second;
 
     const auto it_task = task_map.find(task_index);
     if (it_task == task_map.end()) {
-      LOG(FATAL) << "Job name: " << job_name << ", task index: " << task_index
+      LOG(FATAL) << "[Distributed] Job name: "
+                 << job_name << ", task index: " << task_index
                  << " does not exist in cluster spec.";
     }
     const std::string& grpc_ip_port = it_task->second;
 
     const auto it_star = endpoint_grpc2star_.find(grpc_ip_port);
     if (it_star == endpoint_grpc2star_.end()) {
-      LOG(FATAL) << "Star ip and port not found for job name: " << job_name
+      LOG(FATAL) << "[Distributed] Star ip and port "
+                 << "not found for job name: " << job_name
                  << "task index: " << task_index << ".";
     }
 
@@ -74,13 +76,14 @@ public:
   int GetLocalStarPort() {
     const auto it = endpoint_grpc2star_.find(local_grpc_ip_port_);
     if (it == endpoint_grpc2star_.end()) {
-      LOG(FATAL) << "Star ip and port not found for job name: " << job_name_
+      LOG(FATAL) << "[Distributed] Star ip and port "
+                 << "not found for job name: " << job_name_
                  << "task index: " << task_index_ << ".";
     }
     const std::string& local_star_ip_port = it->second;
     int local_star_port = -1;
 
-    std::vector<std::string> vec = str_util::Split(local_star_ip_port, ":");
+    const auto& vec = str_util::Split(local_star_ip_port, ":");
     CHECK_EQ(vec.size(), 2);
 
     strings::safe_strto32(vec[1], &local_star_port);
@@ -99,7 +102,7 @@ private:
     task_index_ = server_def.task_index();
 
     for (const auto& job : server_def.cluster().job()) {
-      std::map<int, std::string>& task_map = grpc_cluster_spec_[job.name()];
+      auto& task_map = grpc_cluster_spec_[job.name()];
       for (const auto& task : job.tasks()) {
         task_map[task.first] = task.second;
         if (job.name() == job_name_ && task.first == task_index_) {
@@ -109,7 +112,8 @@ private:
     }
 
     if (local_grpc_ip_port_.empty()) {
-      LOG(FATAL) << "Job name: " << job_name_ << ", task index: " << task_index_
+      LOG(FATAL) << "[Distributed] Job name: " << job_name_
+                 << ", task index: " << task_index_
                  << " not found in cluter spec.";
     }
   }
@@ -120,7 +124,8 @@ private:
     string endpointmap_file = io::JoinPath(endpointmap_path, kEndpointMapFile);
     std::ifstream fin(endpointmap_file, std::ios::in);
     if (!fin.good()) {
-      LOG(FATAL) << "Load endpoint map from " << endpointmap_file << " failed.";
+      LOG(FATAL) << "[Distributed] Load endpoint map from "
+                 << endpointmap_file << " failed.";
     }
 
     string str;
@@ -132,8 +137,12 @@ private:
   }
 
 private:
-  std::map<std::string, std::string> endpoint_grpc2star_;
-  std::map<std::string, std::map<int, std::string> > grpc_cluster_spec_;
+  typedef std::map<std::string, std::string> EndpointMap;
+  typedef std::map<std::string, std::map<int, std::string>>
+    GrpcClusterSpec;
+
+  EndpointMap endpoint_grpc2star_;
+  GrpcClusterSpec  grpc_cluster_spec_;
   std::string job_name_;
   int task_index_;
   std::string local_grpc_ip_port_;
@@ -191,7 +200,8 @@ Status StarServerBase::Init() {
   string default_worker_name;
   if (!DeviceNameUtils::SplitDeviceName(master_env_.local_devices[0]->name(),
         &default_worker_name, &unused)) {
-    return errors::Internal("Could not parse worker name.");
+    return errors::Internal(
+        "[Distributed] Could not parse worker name.");
   }
 
   int requested_port = -1;
@@ -199,33 +209,32 @@ Status StarServerBase::Init() {
     if (job.name() == server_def_.job_name()) {
       auto iter = job.tasks().find(server_def_.task_index());
       if (iter == job.tasks().end()) {
-        return errors::InvalidArgument("Task ", server_def_.task_index(),
-                                       " was not defined in job \"",
-                                       server_def_.job_name(), "\"");
+        return errors::InvalidArgument(
+            "[Distributed] Task ", server_def_.task_index(),
+            " was not defined in job \"",
+            server_def_.job_name(), "\"");
       }
 
-      const std::vector<string> hostname_port =
-        str_util::Split(iter->second, ':');
+      const auto& hostname_port = str_util::Split(iter->second, ':');
 
       if (hostname_port.size() != 2) {
         return errors::InvalidArgument(
-            "Could not parse port for local server from \"", iter->second,
-            "\"");
+            "[Distributed] Could not parse port for local server from \"",
+            iter->second, "\"");
       }
 
       if (!strings::safe_strto32(hostname_port[1], &requested_port)) {
         return errors::InvalidArgument(
-            "Could not parse port for local server from \"", iter->second,
-            "\"");
+            "[Distributed] Could not parse port for local server from \"",
+            iter->second, "\"");
       }
-
       break;
     }
   }
 
   if (requested_port == -1) {
-    return errors::Internal("Job \"", server_def_.job_name(),
-        "\" was not defined in cluster");
+    return errors::Internal("[Distributed] Job \"",
+        server_def_.job_name(), "\" was not defined in cluster");
   }
 
   ::grpc::ServerBuilder builder;
@@ -239,10 +248,12 @@ Status StarServerBase::Init() {
 
   server_ = builder.BuildAndStart();
   if (!server_) {
-    return errors::Unknown("Could not start gRPC server");
+    return errors::Unknown(
+        "[Distributed] Could not start gRPC server");
   }
 
-  LOG(INFO) << "starting grpc server, bind port:" << bound_port_;
+  LOG(INFO) << "[Distributed] Starting grpc server, bind port:"
+            << bound_port_;
 
   WorkerCacheFactoryOptions worker_cache_factory_options(server_def_);
   worker_impl_ = CreateWorker(&worker_env_);
@@ -297,46 +308,54 @@ Status StarServerBase::Init() {
   return Status::OK();
 }
 
-Status StarServerBase::ParseChannelSpec(const WorkerCacheFactoryOptions& options,
-                                        StarChannelSpec* channel_spec) {
+Status StarServerBase::ParseChannelSpec(
+    const WorkerCacheFactoryOptions& options,
+    StarChannelSpec* channel_spec) {
   for (const auto& job : options.cluster_def->job()) {
     std::map<int, string> host_ports;
     for (const auto& task : job.tasks()) {
       string& host_port = host_ports[task.first];
       if (!host_port.empty()) {
-        return errors::InvalidArgument("JobDef for job \"", job.name(),
-                                       "\" specified two addresses for task \"",
-                                       task.first, "\": ", host_port, " and ",
-                                       task.second);
+        return errors::InvalidArgument(
+            "[Distributed] JobDef for job \"",
+            job.name(), "\" specified two addresses for task \"",
+            task.first, "\": ", host_port, " and ", task.second);
       }
-      if (job.name() == *options.job_name && task.first == options.task_index) {
+      if (job.name() == *options.job_name &&
+          task.first == options.task_index) {
         host_port = strings::StrCat("localhost:", star_bound_port_);
       } else {
         host_port = task.second;
         std::string star_host_port;
         int grpc_port = -1;
-        const std::vector<string> vec = str_util::Split(host_port, ':');
+        const auto& vec = str_util::Split(host_port, ':');
         if (vec.size() != 2 ||
             !strings::safe_strto32(vec[1], &grpc_port)) {
-          LOG(ERROR) << "error host port schema " << host_port;
-          return errors::Cancelled("error host port schema ", host_port);
+          LOG(ERROR) << "[Distributed] Error host port schema "
+                     << host_port;
+          return errors::Cancelled(
+              "[Distributed] error host port schema ",
+              host_port);
         }
 
-        star_host_port = star_port_mgr_->GetStarIpPort(job.name(), task.first);
-
-        LOG(INFO) << "host port: " << host_port
-                  << ", remote star host port: " << star_host_port;
+        star_host_port = star_port_mgr_->GetStarIpPort(
+            job.name(), task.first);
+        LOG(INFO) << "[Distributed] host port: "
+                  << host_port << ", remote star host port: "
+                  << star_host_port;
         host_port = star_host_port;
       }
     }
 
-    TF_RETURN_IF_ERROR(channel_spec->AddHostPortsJob(job.name(), host_ports));
+    TF_RETURN_IF_ERROR(
+        channel_spec->AddHostPortsJob(job.name(), host_ports));
   }
 
   return Status::OK();
 }
 
-size_t StarServerBase::ParseServers(const WorkerCacheFactoryOptions& options) {
+size_t StarServerBase::ParseServers(
+    const WorkerCacheFactoryOptions& options) {
   size_t hosts_count = 0;
   for (const auto& job : options.cluster_def->job()) {
     hosts_count += job.tasks().size();
@@ -352,14 +371,17 @@ Status StarServerBase::Start() {
           env_->StartThread(ThreadOptions(), "TF_master_service",
                             [this] { master_service_->HandleRPCsLoop(); }));
       state_ = STARTED;
-      LOG(INFO) << "Started server with target: " << target();
+      LOG(INFO) << "[Distributed] Started server with target: "
+                << target();
       return Status::OK();
     }
     case STARTED:
-      LOG(INFO) << "Server already started (target: " << target() << ")";
+      LOG(INFO) << "[Distributed] Server already started (target: "
+                << target() << ")";
       return Status::OK();
     case STOPPED:
-      return errors::FailedPrecondition("Server has stopped.");
+      return errors::FailedPrecondition(
+          "[Distributed] Server has stopped.");
     default:
       LOG(FATAL);
   }
@@ -373,10 +395,13 @@ Status StarServerBase::Stop() {
       state_ = STOPPED;
       return Status::OK();
     case STARTED:
-      LOG(WARNING) << "Clean shutdown is not currently implemented";
-      return errors::Unimplemented("Clean shutdown is not currently implemented");
+      LOG(WARNING) <<
+        "[Distributed] Clean shutdown is not currently implemented";
+      return errors::Unimplemented(
+          "[Distributed] Clean shutdown is not currently implemented");
     case STOPPED:
-      LOG(INFO) << "Server already stopped (target: " << target() << ")";
+      LOG(INFO) << "[Distributed] Server already stopped (target: "
+                << target() << ")";
       return Status::OK();
     default:
       LOG(FATAL);
@@ -428,32 +453,26 @@ SessionMgr* StarServerBase::CreateSessionMgr(WorkerEnv* env,
         std::function<Status(const ServerDef&,
             WorkerCacheInterface**)> worker_cache_factory) {
   return new SessionMgr(env, default_worker_name,
-      std::unique_ptr<WorkerCacheInterface>(default_worker_cache), worker_cache_factory);
+      std::unique_ptr<WorkerCacheInterface>(default_worker_cache),
+      worker_cache_factory);
 }
 
-StarWorkerService* StarServerBase::CreateWorkerService(StarWorker* worker) {
+StarWorkerService* StarServerBase::CreateWorkerService(
+    StarWorker* worker) {
   return NewStarWorkerService(worker).release();
 }
 
 bool StarServerBase::GetRunGraphModeFlag(const ConfigProto& config) {
-  if (server_def_.protocol() == "star_server") {
-    return true;
-  }
-
   // NOTE(jiankeng.pt): run_graph_mode is only
   // accepted in star_server protocol.
   // We do NOT want to add the run_graph_mode flag in
   // config.proto that will make the api_compatibility_test failed.
   // return config.run_graph_mode();
-  return false;
+  return server_def_.protocol() == "star_server";
 }
 
 bool StarServerBase::GetRunGraphModeFlagLite(const ConfigProto& config) {
-  if (server_def_.protocol() == "star_server_lite") {
-    return true;
-  }
-
-  return false;
+  return server_def_.protocol() == "star_server_lite";
 }
 
 } // namespace tensorflow

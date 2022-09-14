@@ -14,7 +14,8 @@ namespace tensorflow {
 class StarChannelSpec {
 public:
   struct HostPortsJob {
-    HostPortsJob(const std::string& job_id, const std::map<int, std::string>& host_ports)
+    HostPortsJob(const std::string& job_id,
+        const std::map<int, std::string>& host_ports)
         : job_id(job_id), host_ports(host_ports) {}
     const std::string job_id;
     const std::map<int, std::string> host_ports;
@@ -22,10 +23,10 @@ public:
   virtual ~StarChannelSpec() {}
 
   Status AddHostPortsJob(const std::string& job_id,
-                         const std::vector<string>& host_ports);
+      const std::vector<string>& host_ports);
 
   Status AddHostPortsJob(const std::string& job_id,
-                         const std::map<int, std::string>& host_ports);
+      const std::map<int, std::string>& host_ports);
 
   const std::vector<HostPortsJob>& host_ports_jobs() const {
     return host_ports_jobs_;

@@ -34,7 +34,7 @@ std::shared_ptr<WorkerSession> TLSSessionMgr::WorkerSessionForSession(
   std::shared_ptr<WorkerSession> out_session;
   Status s = GetImpl()->WorkerSessionForSession(session, &out_session);
   if (!s.ok()) {
-    LOG(FATAL) << "Get worker session failed.";
+    LOG(FATAL) << "[StarServer] Get worker session failed.";
   }
   return out_session;
 }
