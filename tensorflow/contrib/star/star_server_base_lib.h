@@ -41,9 +41,11 @@ protected:
 
   size_t ParseServers(const WorkerCacheFactoryOptions& options);
 
-  virtual Status StarWorkerCacheFactory(const WorkerCacheFactoryOptions& options,
-                                        WorkerCacheInterface** worker_cache) = 0;
-  virtual void CreateEngine(size_t server_number, const string& job_name) = 0;
+  virtual Status StarWorkerCacheFactory(
+      const WorkerCacheFactoryOptions& options,
+      WorkerCacheInterface** worker_cache) = 0;
+  virtual void CreateEngine(
+      size_t server_number, const string& job_name) = 0;
 
   virtual std::shared_ptr<::grpc::ServerCredentials> GetServerCredentials(
           const ServerDef& server_def) const;
