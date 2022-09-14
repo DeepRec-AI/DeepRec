@@ -24,10 +24,10 @@ alideeprec/deeprec-base:deeprec-base-cpu-py36-ubuntu18.04
 alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
 ```
 
-**GPU(cuda11.0) Dev Docker (with bazel cache)**
+**GPU(cuda11.6) Dev Docker (with bazel cache)**
 
 ```
-alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
+alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
 ```
 
 ## 代码编译

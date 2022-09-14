@@ -3,7 +3,7 @@ name: GPU Unit Tests
 on: workflow_dispatch
 
 env:
-  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py36-cu110-ubuntu18.04
+  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py36-cu116-ubuntu18.04
   JOBNAME: deeprec-ci-gpu-${{ github.run_id }}
   PODNAME: deeprec-ci-gpu-${{ github.run_id }}-chief-0
   BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}

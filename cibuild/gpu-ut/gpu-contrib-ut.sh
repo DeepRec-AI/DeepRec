@@ -72,7 +72,10 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/contrib/layers:rev_block_lib_test "\
 "-//tensorflow/contrib/opt:ggt_test "\
 "-//tensorflow/contrib/opt:matrix_functions_test "\
-"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_test "
+"-//tensorflow/contrib/cudnn_rnn:cudnn_rnn_ops_test "\
+"-//tensorflow/contrib/tensor_forest:scatter_add_ndim_op_test "\
+"-//tensorflow/contrib/boosted_trees/estimator_batch:estimator_test "\
+"-//tensorflow/contrib/boosted_trees/estimator_batch:dnn_tree_combined_estimator_test "
 
 for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2

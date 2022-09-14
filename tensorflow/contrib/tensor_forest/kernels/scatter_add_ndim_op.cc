@@ -108,4 +108,9 @@ class ScatterAddNdim : public OpKernel {
 
 REGISTER_KERNEL_BUILDER(Name("ScatterAddNdim").Device(DEVICE_CPU),
                         ScatterAddNdim);
+#ifdef GOOGLE_CUDA
+REGISTER_KERNEL_BUILDER(Name("ScatterAddNdim").Device(DEVICE_GPU),
+                        ScatterAddNdim);
+#endif
+
 }  // namespace tensorflow

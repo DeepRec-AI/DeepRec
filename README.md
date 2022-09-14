@@ -50,7 +50,7 @@ alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
 **GPU Platform**
 
 ```
-alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
+alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
 ```
 
 ### **How to Build**
