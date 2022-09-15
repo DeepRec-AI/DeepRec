@@ -4168,6 +4168,7 @@ tf_cc_test(
     srcs = [
         "fused_layer_norm/fused_layer_normalize_ops_test.cc",
     ],
+    extra_copts = ["-fexceptions"],
     deps = [
         ":fused_layer_normalize_ops",
         ":ops_testutil",
@@ -5350,6 +5351,7 @@ tf_cc_test(
     name = "embedding_lookup_sparse_pre_op_test",
     size = "small",
     srcs = ["fused_embedding/embedding_lookup_sparse_pre_op_test.cc"],
+    extra_copts = ["-fexceptions"],
     deps = [
         ":fused_embedding_ops",
         ":ops_testutil",
@@ -5371,6 +5373,7 @@ tf_cc_test(
     name = "embedding_lookup_sparse_post_op_test",
     size = "small",
     srcs = ["fused_embedding/embedding_lookup_sparse_post_op_test.cc"],
+    extra_copts = ["-fexceptions"],
     deps = [
         ":fused_embedding_ops",
         ":ops_testutil",
@@ -5392,6 +5395,7 @@ tf_cc_test(
     name = "embedding_lookup_sparse_post_grad_op_test",
     size = "small",
     srcs = ["fused_embedding/embedding_lookup_sparse_post_grad_op_test.cc"],
+    extra_copts = ["-fexceptions"],
     deps = [
         ":fused_embedding_ops",
         ":ops_testutil",
@@ -5423,6 +5427,7 @@ tf_cc_test(
     size = "small",
     srcs = ["fused_l2_normalize/fused_l2_normalize_op_test.cc",
         "fused_l2_normalize/fused_l2_normalize_grad_op_test.cc"],
+    extra_copts = ["-fexceptions"],
     deps = [
         ":fused_l2_normalize_ops",
         ":ops_testutil",

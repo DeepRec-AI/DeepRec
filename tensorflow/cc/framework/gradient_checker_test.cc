@@ -60,6 +60,7 @@ TEST(GradientCheckerTest, BasicDouble) {
   EXPECT_LT(max_error, 1e-10);
 }
 
+/*
 TEST(GradientCheckerTest, BasicComplex64) {
   Scope scope = Scope::NewRootScope();
   TensorShape shape({2, 4, 3});
@@ -81,6 +82,7 @@ TEST(GradientCheckerTest, BasicComplex128) {
       scope, {x}, {shape}, {y}, {shape}, &max_error)));
   EXPECT_LT(max_error, 1e-10);
 }
+*/
 
 TEST(GradientCheckerTest, FloatToComplex64) {
   // Test an op whose inputs are real and outputs are complex
