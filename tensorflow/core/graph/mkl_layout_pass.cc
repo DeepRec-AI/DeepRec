@@ -18,6 +18,7 @@ limitations under the License.
 #ifdef INTEL_MKL
 
 #include "tensorflow/core/graph/mkl_layout_pass.h"
+#include "tensorflow/core/graph/mkl_layout_pass_lists.h"
 
 #include <algorithm>
 #include <functional>
@@ -818,22 +819,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
                       // CheckForOneDNNOp
                       FuseMaxPool3D,
                       CopyAttrsPooling});
-
-    reco_ops_list_ = gtl::FlatSet<string> {
-      "BatchMatMul", "BatchMatMulV2", "BiasAdd", "BiasAddGrad",
-      "_FusedMatMul", "_FusedBatchMatMul", "_FusedBatchMatMulV2",
-      "Identity", "LeakyRelu", "LeakyReluGrad", "MatMul",
-      "Relu", "ReluGrad", "Relu6", "Relu6Grad", "Gelu", "GeluGrad",
-      "Tanh", "TanhGrad", "Reshape"
-    };
-    // Enable "TF_MKL_PRIMITIVE_ONLY_FOR_RECO" by default
-    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=true and reco_ops -> oneDNN replaces eigen ops
-    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=true and not reco_ops -> oneDNN doesn't replace eigen ops
-    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=false and reco_ops -> oneDNN replaces eigen ops
-    // TF_MKL_PRIMITIVE_ONLY_FOR_RECO=false and not reco_ops -> oneDNN replaces eigen ops
-    TF_CHECK_OK(ReadBoolFromEnvVar("TF_MKL_PRIMITIVE_ONLY_FOR_RECO",
-                                   /*default_val=*/true, &enable_reco_ops_list_));
-    VLOG(1) << "MklLayoutRewritePass: TF_MKL_PRIMITIVE_ONLY_FOR_RECO = " << enable_reco_ops_list_;
   }
 
   // Standard interface to run pass
@@ -1058,9 +1043,6 @@ class MklLayoutRewritePass : public GraphOptimizationPass {
 
   /// Maintain structure of constant strings
   static ConstStringsInfo csinfo_;
-
-  gtl::FlatSet<string> reco_ops_list_;
-  bool enable_reco_ops_list_;
 
  private:
   // Is OpDef::ArgDef a list type? It could be N * T or list(type).
@@ -3807,7 +3789,7 @@ MklLayoutRewritePass::CheckForQuantizedNodeRewrite(const Node* n) const {
 }
 
 bool MklLayoutRewritePass::CheckForRecoOpsListNodeRewrite(const Node* n) const {
-  return reco_ops_list_.count(n->type_string());
+  return MklLayoutPassLists::FinalList().count(n->type_string());
 }
 
 const MklLayoutRewritePass::RewriteInfo*
@@ -3859,7 +3841,7 @@ MklLayoutRewritePass::CheckForNodeRewrite(const Node* n) const {
   // We now check if rewrite rule applies for this op. If rewrite rule passes
   // for this op, then we rewrite it to OneDNN op.
   // Find matching RewriteInfo and then check that rewrite rule applies.
-  if (enable_reco_ops_list_ && !CheckForRecoOpsListNodeRewrite(n)) return nullptr;
+  if (!CheckForRecoOpsListNodeRewrite(n)) return nullptr;
   for (auto ri = rinfo_.cbegin(); ri != rinfo_.cend(); ++ri) {
     if (n->type_string().compare(ri->name) == 0 && ri->rewrite_rule(n)) {
       return &*ri;

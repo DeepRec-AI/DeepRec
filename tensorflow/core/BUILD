@@ -3189,6 +3189,7 @@ GRAPH_HDRS = [
     "graph/graph_def_builder_util.h",
     "graph/graph_partition.h",
     "graph/mkl_layout_pass.h",
+    "graph/mkl_layout_pass_lists.h",
     "graph/mkl_tfconversion_pass.h",
     "graph/node_builder.h",
     "graph/optimizer_cse.h",
