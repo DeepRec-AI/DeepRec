@@ -929,7 +929,10 @@ def embedding_column(categorical_column,
     ValueError: if `initializer` is specified and is not callable.
     RuntimeError: If eager execution is enabled.
   """
-  if (dimension is None) or (dimension < 1):
+  if isinstance(categorical_column, MultiHashVariableCategoricalColumn):
+    if not isinstance(dimension, tuple) or len(dimension) != 2:
+      raise ValueError('MultiHashVariable dimension error: {}.'.format(dimension))
+  elif (dimension is None) or (dimension < 1):
     raise ValueError('Invalid dimension {}.'.format(dimension))
   if (ckpt_to_load_from is None) != (tensor_name_in_ckpt is None):
     raise ValueError('Must specify both `ckpt_to_load_from` and '
@@ -2054,6 +2057,7 @@ def categorical_column_with_embedding(key,
                                       ):
   return EmbeddingCategoricalColumn(key, dtype, partition_num, ev_option)
 
+
 @tf_export('feature_column.categorical_column_with_adaptive_embedding')
 def categorical_column_with_adaptive_embedding(key,
                                                hash_bucket_size,
@@ -2066,6 +2070,42 @@ def categorical_column_with_adaptive_embedding(key,
                                             dtype,
                                             partition_num,
                                             ev_option)
+
+
+@tf_export('feature_column.categorical_column_with_multihash')
+def categorical_column_with_multihash(key,
+                                      dims,
+                                      complementary_strategy="Q-R",
+                                      operation="concat",
+                                      dtype=dtypes.int64,
+                                      partition_num=None):
+  """A `CategoricalColumn` with a vocabulary file.
+     ......
+   Args:
+    key: A unique string identifying the input feature. 
+    dims: A list which describe the shape of multi-hash table.
+      If complementary_strategy is "Q-R", the len(dims) must be 2.
+    complementary_strategy: now only can choose "Q-R".
+    operation: the operation for multi-hash table, which in 
+      "add" or "mult" or "concat".
+  """
+  strategy_list = ["Q-R"]
+  op_list = ["add", "mul", "concat"]
+  num_of_partitions = len(dims)
+  if complementary_strategy not in strategy_list:
+    raise ValueError("The strategy %s is not supported" % complementary_strategy)
+  if operation not in op_list: 
+    raise ValueError("The operation %s is not supported" % operation)
+  if complementary_strategy == 'Q-R':
+    if num_of_partitions != 2:
+      raise ValueError("the num_of_partitions must be 2 when using Q-R strategy.")
+  return MultiHashVariableCategoricalColumn(key, dims, 
+                                            num_of_partitions, 
+                                            complementary_strategy,
+                                            operation, 
+                                            dtype,
+                                            partition_num)
+
 
 @tf_export('feature_column.categorical_column_with_hash_bucket')
 def categorical_column_with_hash_bucket(key,
@@ -4237,6 +4277,18 @@ class EmbeddingColumn(
                           _FEATURE_COLUMN_DEPRECATION)
   def _variable_shape(self):
     return self.variable_shape
+  
+  def _output_shape(self, inputs):
+    """Tuple of column output shape"""
+    if isinstance(self.categorical_column, MultiHashVariableCategoricalColumn):
+      batch_size = array_ops.shape(inputs)[0]
+      if self.categorical_column.operation == "concat":
+        num_elements = self.dimension[0] + self.dimension[1]
+      else:
+        num_elements = self.dimension[0]
+      return (batch_size, num_elements)
+    else:
+      return super(EmbeddingColumn, self)._output_shape(inputs)
 
   def create_state(self, state_manager):
     """Creates the embedding lookup variable."""
@@ -4312,6 +4364,22 @@ class EmbeddingColumn(
         max_norm=self.max_norm,
         adaptive_mask_tensor=self.categorical_column.adaptive_mask_tensor)
 
+  def _get_dense_tensor_internal_multihash_helper(self, sparse_tensors,
+                                                  embeddings_q, embeddings_r):
+    if self.categorical_column.complementary_strategy == "Q-R":
+      ids_q, ids_r = sparse_tensors.id_tensor
+      weight_q, weight_r = None, None if sparse_tensors.weight_tensor is None \
+                                      else sparse_tensors.weight_tensor
+      result_q = self._get_dense_tensor_internal_helper(CategoricalColumn.IdWeightPair(ids_q, weight_q),
+                                                        embeddings_q)
+      result_r = self._get_dense_tensor_internal_helper(CategoricalColumn.IdWeightPair(ids_r, weight_r),
+                                                        embeddings_r)
+      if self.categorical_column.operation == "add":
+        return math_ops.add(result_q, result_r)
+      if self.categorical_column.operation == "mul":
+        return math_ops.multiply(result_q, result_r)
+      if self.categorical_column.operation == "concat":
+        return array_ops.concat([result_q, result_r], 1)
 
   def _get_dense_tensor_internal(self, sparse_tensors, state_manager):
     """Private method that follows the signature of get_dense_tensor."""
@@ -4333,6 +4401,7 @@ class EmbeddingColumn(
       weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
     if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn) \
       or isinstance(self.categorical_column, EmbeddingCategoricalColumn) \
+        or isinstance(self.categorical_column, MultiHashVariableCategoricalColumn) \
         or is_sequence_embedding or is_weight_embedding:
       if self.categorical_column.partition_num is None:
         partitioner = None
@@ -4369,6 +4438,26 @@ class EmbeddingColumn(
       )
       return self._get_dense_tensor_internal_helper(sparse_tensors,
                                                     embedding_weights)
+    elif isinstance(self.categorical_column, MultiHashVariableCategoricalColumn):
+      embedding_weights_q = variable_scope.get_variable(
+          name='embedding_weights_q',
+          shape=(self.categorical_column.dims[0], self.dimension[0]),
+          dtype=dtypes.float32,
+          initializer=self.initializer,
+          trainable=self.trainable and trainable,
+          collections=weight_collections,
+          partitioner=partitioner)
+      embedding_weights_r = variable_scope.get_variable(
+          name='embedding_weights_r',
+          shape=(self.categorical_column.dims[1], self.dimension[1]),
+          dtype=dtypes.float32,
+          initializer=self.initializer,
+          trainable=self.trainable and trainable,
+          collections=weight_collections,
+          partitioner=partitioner)
+      return self._get_dense_tensor_internal_multihash_helper(sparse_tensors,
+                                                              embedding_weights_q,
+                                                              embedding_weights_r)
     else:
       embedding_weights = variable_scope.get_variable(
         name='embedding_weights',
@@ -6190,6 +6279,108 @@ class AdaptiveEmbeddingCategoricalColumn(
   def num_buckets(self):
     """Returns number of buckets in this sparse feature."""
     return self.hash_bucket_size
+
+  @property
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _num_buckets(self):
+    return self.num_buckets
+
+  def get_sparse_tensors(self, transformation_cache, state_manager):
+    """See `CategoricalColumn` base class."""
+    return CategoricalColumn.IdWeightPair(
+        transformation_cache.get(self, state_manager), None)
+
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _get_sparse_tensors(self, inputs, weight_collections=None,
+                          trainable=None):
+    del weight_collections
+    del trainable
+    return CategoricalColumn.IdWeightPair(inputs.get(self), None)
+
+  @property
+  def parents(self):
+    """See 'FeatureColumn` base class."""
+    return [self.key]
+
+  def _get_config(self):
+    """See 'FeatureColumn` base class."""
+    config = dict(zip(self._fields, self))
+    config['dtype'] = self.dtype.name
+    return config
+
+  @classmethod
+  def _from_config(cls, config, custom_objects=None, columns_by_name=None):
+    """See 'FeatureColumn` base class."""
+    _check_config_keys(config, cls._fields)
+    kwargs = _standardize_and_copy_config(config)
+    kwargs['dtype'] = dtypes.as_dtype(config['dtype'])
+    return cls(**kwargs)
+
+
+class MultiHashVariableCategoricalColumn(
+    CategoricalColumn,
+    fc_old._CategoricalColumn,  # pylint: disable=protected-access
+    collections.namedtuple('MultiHashVariableCategoricalColumn',
+                           ('key', 'dims', 'num_of_partitions', 
+                            'complementary_strategy', 'operation', 'dtype',
+                            'partition_num'))):
+
+  @property
+  def _is_v2_column(self):
+    return True
+
+  @property
+  def name(self):
+    """See `FeatureColumn` base class."""
+    return self.key
+
+  @property
+  def parse_example_spec(self):
+    """See `FeatureColumn` base class."""
+    return {self.key: parsing_ops.VarLenFeature(self.dtype)}
+
+  @property
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _parse_example_spec(self):
+    return self.parse_example_spec
+
+  def _transform_input_tensor(self, input_tensor):
+    """Transform the values in the feature_column."""
+    if not isinstance(input_tensor, sparse_tensor_lib.SparseTensor):
+      raise ValueError('SparseColumn input must be a SparseTensor.')
+
+    if input_tensor.dtype.is_integer != True:
+      raise ValueError('Input type must be a integer.')
+
+    sparse_id_values = input_tensor.values
+    if self.complementary_strategy == "Q-R":
+      ids_q = math_ops.floordiv(sparse_id_values, self.dims[0])
+      ids_r = math_ops.floormod(sparse_id_values, self.dims[1])
+    sparse_tensor_q = sparse_tensor_lib.SparseTensor(
+        input_tensor.indices, ids_q, input_tensor.dense_shape)
+    sparse_tensor_r = sparse_tensor_lib.SparseTensor(
+        input_tensor.indices, ids_r, input_tensor.dense_shape)
+    return (sparse_tensor_q, sparse_tensor_r)
+
+  def transform_feature(self, transformation_cache, state_manager):
+    """Hashes the values in the feature_column."""
+    input_tensor = _to_sparse_input_and_drop_ignore_values(
+        transformation_cache.get(self.key, state_manager))
+    return self._transform_input_tensor(input_tensor)
+
+  @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
+                          _FEATURE_COLUMN_DEPRECATION)
+  def _transform_feature(self, inputs):
+    input_tensor = _to_sparse_input_and_drop_ignore_values(inputs.get(self.key))
+    return self._transform_input_tensor(input_tensor)
+
+  @property
+  def num_buckets(self):
+    """Returns number of buckets in this sparse feature."""
+    return self.dims
 
   @property
   @deprecation.deprecated(_FEATURE_COLUMN_DEPRECATION_DATE,
