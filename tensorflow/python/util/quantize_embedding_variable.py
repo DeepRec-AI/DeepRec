@@ -15,12 +15,15 @@
 """Exposes the Python wrapper for quantize embedding variable."""
 from __future__ import absolute_import, division, print_function
 
-from tensorflow.python.pywrap_tensorflow import QuantizeEmbeddingVariablesByName
+from tensorflow.python.pywrap_tensorflow import (
+    QuantizeEmbeddingVariablesByName,
+    RemoveVariablesByName,
+)
 from tensorflow.python.util import compat
 
 
 def quantize_by_name(
-    input_prefix, output_prefix, names, quant_names, scale_names, dtype
+    input_prefix, output_prefix, names, quant_names, scale_names, dtype, is_ev
 ):
   """Python wrapper for quantize embedding variable.
 
@@ -31,6 +34,7 @@ def quantize_by_name(
     quant_names: List of quantized tensor names.
     scale_names: List of scale tensor names.
     dtype: tf.bfloat16 or tf.int8
+    is_ev: Boolean. Whether variables are EmbeddingVariable.
   """
   input_prefix = compat.as_bytes(input_prefix)
   output_prefix = compat.as_bytes(output_prefix)
@@ -44,4 +48,19 @@ def quantize_by_name(
       quant_names_string,
       scale_names_string,
       dtype.as_datatype_enum,
+      is_ev,
   )
+
+
+def remove_variables_by_name(input_prefix, output_prefix, names):
+  """Python wrapper for remove variables.
+
+  Args:
+    input_prefix: String. Prefix of input checkpoint.
+    output_prefix: String. Prefix of output checkpoint.
+    names: List of tensor names to be removed.
+  """
+  input_prefix = compat.as_bytes(input_prefix)
+  output_prefix = compat.as_bytes(output_prefix)
+  names_string = compat.as_bytes(",".join(names))
+  RemoveVariablesByName(input_prefix, output_prefix, names_string)

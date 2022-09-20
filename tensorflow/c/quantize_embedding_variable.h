@@ -34,7 +34,10 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
                                  const std::vector<string>& names,
                                  const std::vector<string>& quant_names,
                                  const std::vector<string>& scale_names,
-                                 TF_DataType data_type);
+                                 const TF_DataType data_type, const bool is_ev);
+
+Status RemoveVariable(const string& input_prefix, const string& output_prefix,
+                      const std::vector<string>& names);
 
 }  // namespace checkpoint
 }  // namespace tensorflow
