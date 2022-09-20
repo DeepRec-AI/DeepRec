@@ -13,8 +13,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import tensorflow as tf
-from simple_graph import SimpleGraph, SimpleNode
 from tensorflow.python.framework import tensor_util
+
+from simple_graph import SimpleGraph, SimpleNode
 
 
 # [Basic graph utils]

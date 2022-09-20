@@ -4,15 +4,16 @@ import tempfile
 
 import numpy as np
 import tensorflow as tf
-import tf_graph_transform_utils as util
-from calibrate import non_linear_quant_params_search
-from simple_graph import SimpleGraph, SimpleNode
 from tensorflow.core.framework.tensor_pb2 import TensorProto
 from tensorflow.core.protobuf import meta_graph_pb2
 from tensorflow.python.framework import meta_graph, ops, versions
 from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.saved_model import loader_impl
 from tensorflow.python.util import quantize_embedding_variable
+
+import tf_graph_transform_utils as util
+from calibrate import non_linear_quant_params_search
+from simple_graph import SimpleGraph, SimpleNode
 
 INT8 = 'INT8'
 BF16 = 'BF16'
@@ -42,6 +43,18 @@ ev_attrs = [
     '_storage_type',
 ]
 
+ev_suffix = [
+    'freqs',
+    'freqs_filtered',
+    'keys',
+    'keys_filtered',
+    'partition_filter_offset',
+    'partition_offset',
+    'values',
+    'versions',
+    'versions_filtered',
+]
+
 
 def _ts(name):
     return util.get_canonical_input_name(name)
@@ -63,6 +76,15 @@ def get_variable_by_name(name):
         if var.name == name:
             return var
     return None
+
+
+def get_tf_dtype(dtype):
+    if dtype == INT8:
+        return tf.int8
+    elif dtype in [BF16, FP16]:
+        return tf.bfloat16 if dtype == BF16 else tf.float16
+    else:
+        raise Exception(f'Unsupported data type: {dtype}')
 
 
 def update_op_inputs(graph, rename_dict):
@@ -343,7 +365,7 @@ def update_embedding_vars(session):
     return update_dict
 
 
-def embedding_opt(session, graph_def, opt_config, data_type):
+def embedding_opt(session, graph_def, opt_config, data_type, variable_path):
     simple_graph = SimpleGraph(graph_def)
 
     def _get_gather_pattern():
@@ -369,21 +391,15 @@ def embedding_opt(session, graph_def, opt_config, data_type):
                 graph_def, ptm['embed'], simple_graph
             )
             if opt_dtype == INT8:
-                max_abs_val = np.max(np.abs(fp32_data), axis=0)
-                scale = np.array(max_abs_val / 127.0)
-                int8_data = np.round(fp32_data / scale)
                 int8_name = f'{embed_node.name}/int8_data'
                 int8_var = tf.get_variable(int8_name, fp32_data.shape, tf.int8)
-                session.run(int8_var.assign(int8_data))
                 scale_name = f'{embed_node.name}/int8_scale'
-                scale_var = tf.get_variable(scale_name, scale.shape, tf.float32)
-                session.run(scale_var.assign(scale))
+                scale_var = tf.get_variable(scale_name, int8_var.shape[-1:], tf.float32)
                 update_dict[embed_node.name] = [int8_var, scale_var, opt_dtype]
             elif opt_dtype in [BF16, FP16]:
                 tf_dtype = tf.bfloat16 if opt_dtype == BF16 else tf.float16
                 f16_name = f'{embed_node.name}/{opt_dtype.lower()}_data'
                 f16_var = tf.get_variable(f16_name, fp32_data.shape, tf_dtype)
-                session.run(f16_var.assign(tf.cast(fp32_data, tf_dtype)))
                 update_dict[embed_node.name] = [f16_var, opt_dtype]
             else:
                 raise Exception(f'Unsupported data type: {opt_dtype}')
@@ -404,6 +420,28 @@ def embedding_opt(session, graph_def, opt_config, data_type):
             update_tensor = tf.multiply(update_tensor, scale_var, name=rescale_name)
         update_op_inputs(session.graph, {ptm['gather']: update_tensor})
 
+    # Convert checkpoint
+    for opt_dtype in [INT8, BF16, FP16]:
+        opt_dict = {k: v for k, v in update_dict.items() if v[-1] == opt_dtype}
+        if len(opt_dict) > 0:
+            names = [_nd(key) for key in opt_dict.keys()]
+            quant_vars = [opt_dict[name][0] for name in names]
+            quant_names = [_nd(var.name) for var in quant_vars]
+            if opt_dtype == INT8:
+                scale_names = [_nd(opt_dict[name][1].name) for name in names]
+                scale_vars = [opt_dict[name][1] for name in names]
+            else:
+                scale_names, scale_vars = [], []
+            tmp_path = tempfile.mkdtemp(dir='.')
+            opt_path = f'{tmp_path}/variables'
+            dtype = get_tf_dtype(opt_dtype)
+            quantize_embedding_variable.quantize_by_name(
+                variable_path, opt_path, names, quant_names, scale_names, dtype, False
+            )
+            saver = tf.train.Saver(quant_vars + scale_vars)
+            saver.restore(session, opt_path)
+            tf.io.gfile.rmtree(tmp_path)
+
     return update_dict
 
 
@@ -416,14 +454,6 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
         pl.append(SimpleNode('embed', 'KvVarHandleOp', [], ['gather']))
         pattern_nodes = {node.name: node for node in pl}
         return pattern_nodes, pl[0].name
-
-    def _get_tf_dtype(dtype):
-        if dtype == INT8:
-            return tf.int8
-        elif dtype in [BF16, FP16]:
-            return tf.bfloat16 if dtype == BF16 else tf.float16
-        else:
-            raise Exception(f'Unsupported data type: {dtype}')
 
     update_dict = dict()
     pattern, first_key = _get_gather_pattern()
@@ -441,7 +471,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
             # Add variables
             var = get_variable_by_name(_ts(embed_name))
             embedding_dim = var.shape[0].value
-            value_dtype = _get_tf_dtype(opt_dtype)
+            value_dtype = get_tf_dtype(opt_dtype)
             opt_var = tf.get_embedding_variable(
                 name=f'{embed_name}/{opt_dtype.lower()}_data',
                 embedding_dim=embedding_dim,
@@ -454,24 +484,23 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
             if opt_dtype == INT8:
                 scale_name = f'{embed_name}/int8_scale'
                 scale_var = tf.get_variable(scale_name, [embedding_dim], tf.float32)
-                update_dict[embed_name] = [var, opt_var, scale_var, opt_dtype]
+                update_dict[embed_name] = [opt_var, scale_var, opt_dtype]
             elif opt_dtype in [BF16, FP16]:
-                update_dict[embed_name] = [var, opt_var, opt_dtype]
+                update_dict[embed_name] = [opt_var, opt_dtype]
 
         # Update Graph
         gather_op = session.graph.get_operation_by_name(ptm['gather'])
-        var, opt_var = update_dict[embed_name][0], update_dict[embed_name][1]
         use_default = gather_op.get_attr('is_use_default_value_tensor')
         if use_default:
             init_val = gather_op.inputs[2]
             if opt_dtype == INT8:
-                init_val = tf.divide(init_val, update_dict[embed_name][2])
+                init_val = tf.divide(init_val, update_dict[embed_name][1])
                 init_val = tf.raw_ops.ClipByValue(init_val, -128, 127)
             init_val = tf.cast(init_val, value_dtype)
         else:
             init_val = tf.constant(1, dtype=value_dtype)
         opt_gather = gen_kv_variable_ops.kv_resource_gather(
-            resource=opt_var._handle,
+            resource=update_dict[embed_name][0]._handle,
             indices=gather_op.inputs[1],
             default_value=init_val,
             is_use_default_value_tensor=use_default,
@@ -481,7 +510,7 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
         update_tensor = tf.cast(opt_gather, dtype=tf.float32, name=cast_name)
         if opt_dtype == INT8:
             rescale_name = f'{ptm["gather"]}/rescale'
-            scale_var = update_dict[embed_name][2]
+            scale_var = update_dict[embed_name][1]
             update_tensor = tf.multiply(update_tensor, scale_var, name=rescale_name)
         update_op_inputs(session.graph, {ptm['gather']: update_tensor})
 
@@ -494,23 +523,23 @@ def embedding_var_opt(session, graph_def, opt_config, data_type, variable_path):
         opt_dict = {k: v for k, v in update_dict.items() if v[-1] == opt_dtype}
         if len(opt_dict) > 0:
             names = [_nd(key) for key in opt_dict.keys()]
-            quant_names = [_nd(opt_dict[name][1].name) for name in names]
+            quant_names = [_nd(opt_dict[name][0].name) for name in names]
             if opt_dtype == INT8:
-                scale_names = [_nd(opt_dict[name][2].name) for name in names]
-                scale_variables = [opt_dict[name][2] for name in names]
+                scale_names = [_nd(opt_dict[name][1].name) for name in names]
+                scale_variables = [opt_dict[name][1] for name in names]
                 session.run(tf.variables_initializer(scale_variables))
             else:
                 scale_names = []
             tmp_path = tempfile.mkdtemp(dir='.')
             opt_path = f'{tmp_path}/variables'
-            tf_dtype = _get_tf_dtype(opt_dtype)
+            dtype = get_tf_dtype(opt_dtype)
             quantize_embedding_variable.quantize_by_name(
-                variable_path, opt_path, names, quant_names, scale_names, tf_dtype
+                variable_path, opt_path, names, quant_names, scale_names, dtype, True
             )
             if variable_path != input_path:
-                tf.io.gfile.rmtree(variable_path)
+                tf.io.gfile.rmtree(os.path.dirname(variable_path))
             variable_path = opt_path
-    return update_dict, opt_path
+    return update_dict, variable_path
 
 
 def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=None):
@@ -530,7 +559,10 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
 
         # Embedding & Dense optimization
         dense_opt_dict = dense_opt(sess, frozen_gdef, opt_config, data_type, calib_file)
-        embed_opt_dict = embedding_opt(sess, frozen_gdef, opt_config, data_type)
+        variable_path = f'{model_path}/variables/variables'
+        embed_opt_dict = embedding_opt(
+            sess, frozen_gdef, opt_config, data_type, variable_path
+        )
         ev_dict = update_embedding_vars(sess)
         if len(ev_dict) > 0:
             model_outputs.append(_nd(tf.train.get_global_step().name))
@@ -625,7 +657,72 @@ def optimize(model_path, save_path, opt_config=None, data_type=BF16, calib_file=
             print(f'Optimize embedding to {value[-1]}: {key}')
         for key, value in ev_opt_dict.items():
             print(f'Optimize embedding variable to {value[-1]}: {key}')
-            
+
+
+def convert_ckpt(ckpt_prefix, save_prefix, opt_model_path):
+    opt_variables_path = f'{opt_model_path}/variables/variables'
+    opt_variables = [name for name, _ in tf.train.list_variables(opt_variables_path)]
+    input_variables = [name for name, _ in tf.train.list_variables(ckpt_prefix)]
+    # Find embedding variables
+    v2_quant_dict = {INT8: [], BF16: [], FP16: []}
+    ev_quant_dict = {INT8: [], BF16: [], FP16: []}
+    updated_variables = list(set(opt_variables).difference(set(input_variables)))
+    for var_name in updated_variables:
+        suffix = var_name.split('-')[-1]
+        suffixes = [s for s in ev_suffix if s != 'values']
+        if suffix in suffixes or var_name.endswith('/int8_scale'):
+            continue
+        is_qvar = False
+        for opt_dtype in [INT8, BF16, FP16]:
+            if var_name.endswith(f'/{opt_dtype.lower()}_data'):
+                v2_quant_dict[opt_dtype].append(var_name)
+                is_qvar = True
+            if var_name.endswith(f'/{opt_dtype.lower()}_data-values'):
+                ev_quant_dict[opt_dtype].append(var_name[:-7])
+                is_qvar = True
+        if not is_qvar:
+            print(f'Not found variable: {var_name}')
+    # Update checkpoint
+    variable_path = ckpt_prefix
+    for quant_dict, is_ev in [(v2_quant_dict, False), (ev_quant_dict, True)]:
+        for opt_dtype, quant_names in quant_dict.items():
+            if len(quant_names) == 0:
+                continue
+            len_suffix = len(f'/{opt_dtype.lower()}_data')
+            names = [name[:-len_suffix] for name in quant_names]
+            if opt_dtype == INT8:
+                scale_names = [f'{name}/int8_scale' for name in names]
+            else:
+                scale_names = []
+            tmp_path = tempfile.mkdtemp(dir='.')
+            opt_path = f'{tmp_path}/variables'
+            dtype = get_tf_dtype(opt_dtype)
+            quantize_embedding_variable.quantize_by_name(
+                variable_path, opt_path, names, quant_names, scale_names, dtype, is_ev
+            )
+            if variable_path != ckpt_prefix:
+                tf.io.gfile.rmtree(os.path.dirname(variable_path))
+            variable_path = opt_path
+    # Remove unused variables
+    cur_variables = [name for name, _ in tf.train.list_variables(variable_path)]
+    removed_variables = list(set(cur_variables).difference(set(opt_variables)))
+    save_dir = os.path.dirname(save_prefix)
+    if not tf.io.gfile.exists(save_dir):
+        tf.io.gfile.makedirs(save_dir)
+    quantize_embedding_variable.remove_variables_by_name(
+        variable_path, save_prefix, removed_variables
+    )
+    if variable_path != ckpt_prefix:
+        tf.io.gfile.rmtree(os.path.dirname(variable_path))
+    print('Convert Result:')
+    for opt_dtype, quant_names in v2_quant_dict.items():
+        for name in quant_names:
+            print(f'Convert embedding to {opt_dtype}: {name}')
+    for opt_dtype, quant_names in ev_quant_dict.items():
+        for name in quant_names:
+            print(f'Convert embedding variable to {opt_dtype}: {name}')
+
+
 def _recursive_copy(src_dir, dest_dir):
     """Copy the contents of src_dir into the folder dest_dir.
     Args:

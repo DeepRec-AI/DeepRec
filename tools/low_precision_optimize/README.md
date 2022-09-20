@@ -60,3 +60,17 @@ for i in range(10):
 with open('calib_data.npy', 'wb') as f:
     np.save(f, calib_data)
 ```
+
+## 转换模型参数
+此外，鉴于部分使用场景中存在仅更新模型参数的需求，该工具提供单独量化模型参数的功能，使用方式如下：
+```python
+from low_precision_optimize import convert_ckpt
+
+# 指定输入的待优化参数checkpoint
+ckpt_prefix = 'dlrm/new_variables/variables'
+# 指定输出的优化参数checkpoint
+save_prefix = 'dlrm/opt_variables/variables'
+# 指定前一环节中优化后的saved_model目录
+opt_model_path = 'dlrm/saved_model_opt'
+convert_ckpt(ckpt_prefix, save_prefix, opt_model_path)
+```

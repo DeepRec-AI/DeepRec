@@ -25,16 +25,8 @@ namespace tensorflow {
 namespace checkpoint {
 
 void WriteRestVariables(BundleReader& reader, BundleWriter& writer,
-                        const std::vector<string>& names,
-                        const std::set<string>& ev_suffix) {
-  std::set<string> updated_names;
-  for (int idx = 0; idx < names.size(); ++idx) {
-    updated_names.insert(names[idx] + "-values");
-    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
-      updated_names.insert(names[idx] + *it);
-    }
-  }
-
+                        const std::vector<string>& ignored_names) {
+  std::set<string> excluded_names(ignored_names.cbegin(), ignored_names.cend());
   std::vector<std::string> tensor_names;
   reader.Seek(kHeaderEntryKey);
   reader.Next();
@@ -45,7 +37,7 @@ void WriteRestVariables(BundleReader& reader, BundleWriter& writer,
     Status status;
     DataType dtype;
     TensorShape shape;
-    if (updated_names.count(tensor_name)) continue;
+    if (excluded_names.count(tensor_name)) continue;
     status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
     if (status.ok()) {
       Tensor tensor(dtype, shape);
@@ -53,6 +45,18 @@ void WriteRestVariables(BundleReader& reader, BundleWriter& writer,
       writer.Add(tensor_name, tensor);
     }
   }
+}
+
+void WriteRestVariables(BundleReader& reader, BundleWriter& writer,
+                        const std::vector<string>& ignored_names,
+                        const std::set<string>& ev_suffix) {
+  std::vector<string> ev_names;
+  for (int idx = 0; idx < ignored_names.size(); ++idx) {
+    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
+      ev_names.push_back(ignored_names[idx] + *it);
+    }
+  }
+  WriteRestVariables(reader, writer, ev_names);
 }
 
 void ConvertToBF16Value(const Tensor& in_tensor, const string name,
@@ -120,19 +124,21 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
                                  const std::vector<string>& names,
                                  const std::vector<string>& quant_names,
                                  const std::vector<string>& scale_names,
-                                 TF_DataType data_type) {
+                                 const TF_DataType data_type,
+                                 const bool is_ev) {
   BundleReader reader(Env::Default(), input_prefix);
   BundleWriter writer(Env::Default(), output_prefix);
   const std::set<string> ev_suffix = {
       "-freqs",         "-freqs_filtered",          "-keys",
       "-keys_filtered", "-partition_filter_offset", "-partition_offset",
-      "-versions",      "-versions_filtered"};
+      "-versions",      "-versions_filtered",       "-values"};
 
   for (int idx = 0; idx < names.size(); ++idx) {
     Status status;
     DataType dtype;
     TensorShape shape;
-    string value_name = names[idx] + "-values";
+    string suffix = is_ev ? "-values" : "";
+    string value_name = names[idx] + suffix;
     status = reader.LookupDtypeAndShape(value_name, &dtype, &shape);
     if (!status.ok()) {
       errors::InvalidArgument("Invalid variable name:", value_name);
@@ -141,7 +147,7 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
     status = reader.Lookup(value_name, &in_tensor);
     auto in_data = in_tensor.flat<float>();
 
-    string quant_name = quant_names[idx] + "-values";
+    string quant_name = quant_names[idx] + suffix;
     if (data_type == TF_DataType::TF_BFLOAT16) {
       ConvertToBF16Value(in_tensor, quant_name, writer);
     } else if (data_type == TF_DataType::TF_HALF) {
@@ -151,20 +157,36 @@ Status QuantizeEmbeddingVariable(const string& input_prefix,
     } else {
       errors::InvalidArgument("Unsupported data type:", data_type);
     }
-    for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
-      string tensor_name = names[idx] + *it;
-      status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
-      if (status.ok()) {
-        Tensor tensor(dtype, shape);
-        status = reader.Lookup(tensor_name, &tensor);
+    if (is_ev) {
+      for (auto it = ev_suffix.cbegin(); it != ev_suffix.cend(); ++it) {
+        if (*it == "-values") continue;
+        string tensor_name = names[idx] + *it;
+        status = reader.LookupDtypeAndShape(tensor_name, &dtype, &shape);
         if (status.ok()) {
-          writer.Add(quant_names[idx] + *it, tensor);
+          Tensor tensor(dtype, shape);
+          status = reader.Lookup(tensor_name, &tensor);
+          if (status.ok()) {
+            writer.Add(quant_names[idx] + *it, tensor);
+          }
         }
       }
     }
   }
 
-  WriteRestVariables(reader, writer, names, ev_suffix);
+  if (is_ev) {
+    WriteRestVariables(reader, writer, names, ev_suffix);
+  } else {
+    WriteRestVariables(reader, writer, names);
+  }
+  writer.Finish();
+  return Status::OK();
+}
+
+Status RemoveVariable(const string& input_prefix, const string& output_prefix,
+                      const std::vector<string>& names) {
+  BundleReader reader(Env::Default(), input_prefix);
+  BundleWriter writer(Env::Default(), output_prefix);
+  WriteRestVariables(reader, writer, names);
   writer.Finish();
   return Status::OK();
 }

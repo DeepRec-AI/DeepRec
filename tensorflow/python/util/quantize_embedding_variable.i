@@ -26,13 +26,14 @@ limitations under the License.
 %unignore tensorflow;
 %unignore tensorflow::checkpoint;
 %unignore QuantizeEmbeddingVariablesByName;
+%unignore RemoveVariablesByName;
 
 %{
 void QuantizeEmbeddingVariablesByName(string input_prefix, string output_prefix,
                                       string names_string,
                                       string quant_names_string,
                                       string scale_names_string,
-                                      TF_DataType data_type) {
+                                      TF_DataType data_type, bool is_ev) {
   std::vector<string> names = tensorflow::str_util::Split(names_string, ',');
   std::vector<string> quant_names =
       tensorflow::str_util::Split(quant_names_string, ',');
@@ -40,7 +41,8 @@ void QuantizeEmbeddingVariablesByName(string input_prefix, string output_prefix,
       tensorflow::str_util::Split(scale_names_string, ',');
 
   tensorflow::checkpoint::QuantizeEmbeddingVariable(
-      input_prefix, output_prefix, names, quant_names, scale_names, data_type);
+      input_prefix, output_prefix, names, quant_names, scale_names, data_type,
+      is_ev);
 }
 %}
 
@@ -48,6 +50,17 @@ void QuantizeEmbeddingVariablesByName(string input_prefix, string output_prefix,
                                       string names_string,
                                       string quant_names_string,
                                       string scale_names_string,
-                                      TF_DataType data_type);
+                                      TF_DataType data_type, bool is_ev);
+
+%{
+void RemoveVariablesByName(string input_prefix, string output_prefix,
+                           string names_string) {
+  std::vector<string> names = tensorflow::str_util::Split(names_string, ',');
+  tensorflow::checkpoint::RemoveVariable(input_prefix, output_prefix, names);
+}
+%}
+
+void RemoveVariablesByName(string input_prefix, string output_prefix,
+                           string names_string);
 
 %unignoreall
