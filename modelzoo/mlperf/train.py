@@ -122,32 +122,27 @@ class DLRM_DCN():
                           tf.nn.zero_fraction(value))
         tf.summary.histogram('%s/activation' % tag, value)
 
-    def make_low_rank_cross_net(self, dense_inputs, in_feature):
-        from tensorflow.contrib.layers import xavier_initializer
-        dense_inputs = tf.expand_dims(dense_inputs, axis=2)
+    def _make_low_rank_cross_net(self, dense_inputs, in_feature):
+        dense_inputs = tf.expand_dims(dense_inputs, axis=1)
         layer_input = tf.identity(dense_inputs)
         for layer_id in range(self.dcn_num_layers):
-            W_kernels_l = tf.get_variable(
-                name='low_rank_cross_net_%d_w' % layer_id,
-                dtype=tf.float32,
-                shape=(in_feature, self.dcn_low_rank_dim),
-                initializer=xavier_initializer())
-            V_kernels_l = tf.get_variable(
+            layer_input_v = tf.layers.dense(
+                layer_input,
+                units=self.dcn_low_rank_dim,
+                use_bias=False,
+                kernel_initializer=tf.glorot_uniform_initializer(),
                 name='low_rank_cross_net_%d_v' % layer_id,
-                dtype=tf.float32,
-                shape=(self.dcn_low_rank_dim, in_feature),
-                initializer=xavier_initializer())
-            bias_l = tf.get_variable(
-                name='low_rank_cross_net_%d_bias' % layer_id,
-                dtype=tf.float32,
-                shape=(in_feature, 1),
-                initializer=tf.zeros_initializer())
-            layer_input_w = tf.matmul(
-                W_kernels_l,
-                tf.matmul(V_kernels_l, layer_input),
             )
-            layer_input = dense_inputs * (layer_input_w + bias_l) + layer_input
-        layer_input = tf.squeeze(layer_input, axis=2)
+            layer_input_w = tf.layers.dense(
+                layer_input_v,
+                units=in_feature,
+                use_bias=True,
+                kernel_initializer=tf.glorot_uniform_initializer(),
+                bias_initializer=tf.zeros_initializer(),
+                name='low_rank_cross_net_%d_w' % layer_id,
+            )
+            layer_input = dense_inputs * layer_input_w + layer_input
+        layer_input = tf.squeeze(layer_input, axis=1)
         return layer_input
 
     # create model
@@ -216,7 +211,7 @@ class DLRM_DCN():
                 num_sparse_features = len(self._sparse_column)
                 F, D = mlp_input.shape[1], mlp_input.shape[2]
                 mlp_input = tf.reshape(mlp_input, [-1, F * D])
-                mlp_input = self.make_low_rank_cross_net(mlp_input, (num_sparse_features + 1) * EMBEDDING_DIM)
+                mlp_input = self._make_low_rank_cross_net(mlp_input, (num_sparse_features + 1) * EMBEDDING_DIM)
         elif self.interaction_op == 'cat':
             mlp_input = tf.concat([dense_inputs, sparse_inputs], 1)
 
@@ -656,7 +651,7 @@ def get_arg_parser():
     parser.add_argument('--learning_rate',
                         help='Learning rate for model',
                         type=float,
-                        default=0.01)
+                        default=0.00012)
     parser.add_argument('--save_steps',
                         help='set the number of steps on saving checkpoints',
                         type=int,
