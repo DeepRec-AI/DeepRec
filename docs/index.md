@@ -51,6 +51,7 @@ Auto-Micro-Batch
 Fused-Embedding
 Stage
 Smart-Stage
+Async-Embedding-Stage
 Auto-Fusion
 ```
 
