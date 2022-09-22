@@ -247,7 +247,7 @@ class AsyncEmbeddingStage:
 
             stage_outputs[stage_node.name] = stage_node_outputs
             stage_outputs_consumers[stage_node.name] = stage_node_outputs_consumers
-        with ops.device("/job:worker"):
+        with ops.colocate_with(list(self._stage_nodes.keys())[0]):
             stage_output_result = prefetch.staged(stage_outputs,
                                               num_threads=self._threads_num,
                                               capacity=self._capacity,
