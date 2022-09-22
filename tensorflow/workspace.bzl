@@ -1083,16 +1083,10 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     http_archive(
         name = "arrow",
         build_file = clean_dep("//third_party:arrow.BUILD"),
-        patch_cmds = [
-            # TODO: Remove the fowllowing once arrow issue is resolved.
-            """sed -i.bak 's/type_traits/std::max<int16_t>(sizeof(int16_t), type_traits/g' cpp/src/parquet/column_reader.cc""",
-            """sed -i.bak 's/value_byte_size/value_byte_size)/g' cpp/src/parquet/column_reader.cc""",
-        ],
-        sha256 = "a27971e2a71c412ae43d998b7b6d06201c7a3da382c804dcdc4a8126ccbabe67",
-        strip_prefix = "arrow-apache-arrow-4.0.0",
+        sha256 = "ec3bdae6ccc08de5b5adcf9cbe7cbc085cab0ba06c8e6d3abfc3ed1cd4c1c9a2",
+        strip_prefix = "arrow-apache-arrow-5.0.0",
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/apache/arrow/archive/apache-arrow-4.0.0.tar.gz",
-            "https://github.com/apache/arrow/archive/apache-arrow-4.0.0.tar.gz",
+            "https://github.com/apache/arrow/archive/apache-arrow-5.0.0.tar.gz",
         ],
     )
 
