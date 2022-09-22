@@ -4,9 +4,10 @@
 
 **CPU Base Docker Image**
 
-```
-alideeprec/deeprec-base:deeprec-base-cpu-py36-ubuntu18.04
-```
+| GCC Version | Python Version |                           IMAGE                           |
+|   7.5.0     |    3.6.9       | alideeprec/deeprec-base:deeprec-base-cpu-py36-ubuntu18.04 |
+|   11.2.0    |    3.8.6       | alideeprec/deeprec-base:deeprec-base-cpu-py38-ubuntu22.04 |
+
 
 **GPU Base Docker Image**
 

@@ -1,0 +1,16 @@
+diff --git a/hwloc/topology.c b/hwloc/topology.c
+index 6e51aa4..f2e6ac4 100644
+--- a/hwloc/topology.c
++++ b/hwloc/topology.c
+@@ -41,9 +41,11 @@
+ #include <sys/param.h>
+ #endif
+ 
++#if defined(__GNUC__) && (__GNUC__ <= 10)
+ #ifdef HAVE_SYS_SYSCTL_H
+ #include <sys/sysctl.h>
+ #endif
++#endif
+ 
+ #ifdef HWLOC_WIN_SYS
+ #include <windows.h>

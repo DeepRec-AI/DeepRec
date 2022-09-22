@@ -20,4 +20,4 @@ RUN apt-get update && \
 RUN pip install astor==0.8.1
 RUN pip install numpy==1.16.6
 RUN pip install protobuf==3.17.3
-RUN pip --no-deps keras-preprocessing==1.0.5
+RUN pip install --no-deps keras-preprocessing==1.0.5
