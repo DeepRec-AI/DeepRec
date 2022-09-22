@@ -6102,6 +6102,9 @@ class GraphKeys(object):
   EV_INIT_VAR_OPS = "ev_init_var_ops"
   EV_INIT_SLOT_OPS = "ev_init_slot_ops"
 
+  # Key to collect embedding lookup output result.
+  ASYNC_EMBEDDING_OUTPUT_TENSORS = "async_embedding_output_tensors"
+
   # Key to indicate various ops.
   INIT_OP = "init_op"
   LOCAL_INIT_OP = "local_init_op"

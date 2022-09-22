@@ -82,6 +82,7 @@ def fused_embedding_lookup_sparse(params,
       partitioned_values=partitioned_values,
       combiner=combiner, max_norm=max_norm, default_id=default_id
     )
+  ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, emb_vectors)
   return emb_vectors
 
 

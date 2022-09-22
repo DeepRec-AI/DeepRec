@@ -339,6 +339,7 @@ def _embedding_lookup_and_transform(params,
       if not transform_fn:
         # If transform_fn was provided, the clip_by_norm was done above.
         ret = _clip(ret, ids, max_norm)
+      ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
       return ret
 
 
@@ -672,6 +673,7 @@ def embedding_lookup_sparse(params,
       else:
         assert False, "Unrecognized combiner"
 
+    ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, embeddings)
     return embeddings
 
 @tf_export(v1=["nn.adaptive_embedding_lookup_sparse"])
@@ -1341,6 +1343,7 @@ def safe_embedding_lookup_sparse(embedding_weights,
         tensor_shape.unknown_shape(
             (tensor_shape.Dimension(original_rank_dim) - 1).value).concatenate(
                 result.get_shape()[1:]))
+    ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, final_result)
     return final_result
 
 def fused_safe_embedding_lookup_sparse(embedding_weights,
@@ -1420,6 +1423,7 @@ def fused_safe_embedding_lookup_sparse(embedding_weights,
         tensor_shape.unknown_shape(
             (tensor_shape.Dimension(original_rank_dim) - 1).value).concatenate(
                 result.get_shape()[1:]))
+    ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, final_result)
     return final_result
 
 @tf_export("nn.safe_embedding_lookup_multi_dim")

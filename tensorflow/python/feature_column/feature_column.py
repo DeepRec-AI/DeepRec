@@ -218,6 +218,7 @@ def _internal_input_layer(features,
               scope=variable_scope.get_variable_scope().name)
         if cols_to_output_tensors is not None:
           cols_to_output_tensors[column] = output_tensor
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
     _verify_static_batch_size_equality(output_tensors, ordered_columns)
     return array_ops.concat(output_tensors, -1)
 

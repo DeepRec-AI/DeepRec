@@ -164,8 +164,8 @@ def _input_from_feature_columns(columns_to_tensors,
                              '{}, {}'.format(column.name, e, ee))
         if cols_to_outs is not None:
           cols_to_outs[column] = output_tensors[-1]
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensors[-1])
     return array_ops.concat(output_tensors, output_rank - 1)
-
 
 def input_from_feature_columns(columns_to_tensors,
                                feature_columns,

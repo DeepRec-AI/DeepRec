@@ -186,6 +186,7 @@ def safe_embedding_lookup_sparse(embedding_weights,
     final_result.set_shape(
         tensor_shape.unknown_shape(
             (original_rank_dim - 1).value).concatenate(result.get_shape()[1:]))
+    ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, final_result)
     return final_result
 
 def fused_safe_embedding_lookup_sparse(embedding_weights,
