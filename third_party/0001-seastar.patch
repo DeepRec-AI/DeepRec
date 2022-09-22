@@ -1,0 +1,23 @@
+diff --git a/util/noncopyable_function.hh b/util/noncopyable_function.hh
+index 3928709f..0fb0b189 100644
+--- a/util/noncopyable_function.hh
++++ b/util/noncopyable_function.hh
+@@ -21,6 +21,7 @@
+ 
+ #pragma once
+ 
++#include <cstddef>
+ #include <utility>
+ #include <type_traits>
+ #include <functional>
+diff --git a/core/apply.hh b/core/apply.hh
+index 437166ad..9790d98f 100644
+--- a/core/apply.hh
++++ b/core/apply.hh
+@@ -22,6 +22,7 @@
+ #ifndef APPLY_HH_
+ #define APPLY_HH_
+
++#include <cstddef>
+ #include <tuple>
+ #include <utility>

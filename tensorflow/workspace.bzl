@@ -193,7 +193,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "com_google_absl",
-        patch_file = clean_dep("//third_party:string_view_h.patch"),
+        patch_file = clean_dep("//third_party:0001-abseil.patch"),
         build_file = clean_dep("//third_party:com_google_absl.BUILD"),
         sha256 = "acd93f6baaedc4414ebd08b33bebca7c7a46888916101d8c0b8083573526d070",  # SHARED_ABSL_SHA
         strip_prefix = "abseil-cpp-43ef2148c0936ebf7cb4be6b19927a9d9d145b8f",
@@ -1046,6 +1046,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "seastar_repo",
+        patch_file = clean_dep("//third_party:0001-seastar.patch"),
         sha256 = "bf97d343149f95983317888dd39a3231639f67c39d826413ea226f9c9c5267d4",
         strip_prefix = "seastar-b9357c525a552ad21b5609622c900e0649921712",
         build_file = str(Label("//third_party:seastar.BUILD")),
