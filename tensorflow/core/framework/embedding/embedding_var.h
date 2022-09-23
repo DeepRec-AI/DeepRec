@@ -96,7 +96,7 @@ class EmbeddingVar : public ResourceBase {
         buffer2_size = 0;
         buffer3_size = 0;
         cudaMemcpy(default_value_, &default_tensor_flat(0),
-            default_tensor.TotalBytes(), cudaMemcpyHostToDevice);
+            default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
       } else {
@@ -221,12 +221,55 @@ class EmbeddingVar : public ResourceBase {
 #if !TENSORFLOW_USE_GPU_EV
   void CreateGPUBatch(V* val_base, V** default_values, int64 size,
       int64 slice_elems, bool* init_flags, V** memcpy_address) {
-    for (int i = 0;i < size;i++) {
+    filter_->CreateGPUBatch(val_base, default_values, size,
+        slice_elems, value_len_, init_flags, memcpy_address);
+  }
+
+  void InitailizeEmbeddingOnGPU(K* keys, int64 size, bool* init_flags,
+       V** memcpy_address, V** default_values) {
+    V** dev_default_value_address, **default_value_address;
+    V** dev_value_address, **value_address;
+    bool* dev_init_flags;
+    for (int i = 0; i < size;i++) {
       default_values[i] =
         (default_values[i] == nullptr) ? default_value_ : default_values[i];
     }
-    filter_->CreateGPUBatch(val_base, default_values, size,
-        slice_elems, value_len_, init_flags, memcpy_address);
+    std::vector<int64> init_cursor;
+    for (int i = 0; i < size;i++) {
+      if (init_flags[i]) {
+        init_cursor.emplace_back(i);
+      }
+    }
+    int64 total = init_cursor.size();
+    if (total > 0) {
+      value_address = (V**)malloc(sizeof(V*) * total);
+      default_value_address = (V**)malloc(sizeof(V*) * total);
+      dev_value_address = TypedAllocator::Allocate<V*>(alloc_,
+              total, AllocationAttributes());
+      dev_default_value_address = TypedAllocator::Allocate<V*>(alloc_,
+              total, AllocationAttributes());
+      for (int64 i = 0; i < total; i++) {
+        value_address[i] = memcpy_address[init_cursor[i]];
+        default_value_address[i] = default_values[init_cursor[i]];
+      }
+      cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
+          cudaMemcpyHostToDevice);
+      cudaMemcpy(dev_default_value_address, default_value_address, sizeof(V*) * total,
+          cudaMemcpyHostToDevice);
+      int block_dim = 128;
+      void* args[] = {(void*)&dev_default_value_address,
+                       (void*)&dev_value_address,
+                       (void*)&value_len_,
+                       (void*)&total};
+      cudaLaunchKernel((void *)CopyEmbedding<V>,
+                       (total + block_dim - 1) / block_dim * value_len_,
+                       block_dim, args, 0, NULL);
+      cudaDeviceSynchronize();
+      TypedAllocator::Deallocate(alloc_, dev_value_address, total);
+      TypedAllocator::Deallocate(alloc_, dev_default_value_address, total);
+      free(value_address);
+      free(default_value_address);
+    }
   }
 
   void CopyBackToGPU(K* keys, int64 size, bool* copyback_flags,

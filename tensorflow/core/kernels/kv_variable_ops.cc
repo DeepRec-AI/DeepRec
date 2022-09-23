@@ -671,6 +671,7 @@ class KvResourceGatherGPUOp : public OpKernel {
         Shard(8, worker_threads->workers, indices_size,
             slice_bytes, do_work);
 
+        ev->InitailizeEmbeddingOnGPU(ids, indices_size, init_flags, memcpy_address, default_values);
         ev->CopyBackToGPU(ids, indices_size, copyback_flags, memcpy_address);
 
         ev->CreateGPUBatch(out_base, default_values, indices_size,
@@ -1263,6 +1264,23 @@ class KvResourceExportOp : public OpKernel {
 TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
+
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS(ktype, vtype)                         \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
+                            .Device(DEVICE_GPU)                \
+                            .TypeConstraint<ktype>("Tkeys")    \
+                            .TypeConstraint<vtype>("Tvalues"), \
+                          KvResourceExportOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                       \
+  REGISTER_KERNELS(int32, type)                                \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
 
 template<typename TKey, typename TValue>
 class KvResourceGeneratePartitionedTensorOp : public OpKernel {

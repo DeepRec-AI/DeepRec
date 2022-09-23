@@ -258,13 +258,18 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           bool* init_flags = new bool[N]();
           T** a = new T*[N];
           T** v = new T*[N];
-          auto do_work2 = [var, accum, value_ptrs, init_flags, a, v] (int64 start, int64 limit) {
+          bool* copyback_flags = new bool[N];
+          T** accum_default_values = new T*[N];
+          auto do_work2 = [var, accum, value_ptrs, init_flags, a, v, copyback_flags, accum_default_values] (int64 start, int64 limit) {
             for (int i = start; i < limit; i++) {
               a[i] = accum->LookupOrCreateEmb(value_ptrs[i], init_flags[i]);
               v[i] = var->LookupOrCreateEmb(value_ptrs[i], var->GetDefaultValue(0));
+              copyback_flags[i] = false;
+              accum_default_values[i] = accum->GetDefaultValue(i);
             }
           }; // Get V*
           Shard(worker_threads->num_threads, worker_threads->workers, N, cost, do_work2);
+          accum->InitailizeEmbeddingOnGPU(ids, N, init_flags, a, accum_default_values);
 
           T **dev_a, **dev_v;
           T* default_value = accum->GetDefaultValue(0);
@@ -288,6 +293,8 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           delete[] v;
           delete[] ids;
           delete[] value_ptrs;
+          delete[] init_flags;
+          delete[] copyback_flags;
         } else {
           auto indices_vec = indices.vec<TKey>();
           auto grad_flat = grad.flat_outer_dims<T>();
