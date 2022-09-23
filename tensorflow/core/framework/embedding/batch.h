@@ -20,7 +20,7 @@ __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
     bool* init_flags, V* default_value);
 
 template<class V>
-__global__ void CopyEmbedding(V** batch, V* batch_data_space,
+__global__ void CopyEmbedding(V** batch, V** batch_data_space,
     int total_dims, int limit);
 
 }  // namespace tensorflow

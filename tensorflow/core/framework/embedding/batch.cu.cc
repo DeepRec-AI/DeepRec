@@ -13,10 +13,6 @@ __global__ void BatchCopy(V** batch, V* val_base, int value_len,
   int item_pos = i % value_len;
 
   if (i < limit * value_len) {
-    if (init_flags[item_id]) {
-      *(batch[item_id] + item_pos) =
-        *(default_value[item_id] + item_pos);
-    }
     val_base[i] = *(batch[item_id] + item_pos);
   }
 }
@@ -56,9 +52,6 @@ __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
   int item_pos = i % embedding_dim;
 
   if (i < limit * embedding_dim) {
-    if (init_flags[item_id]) {
-      *(a[item_id] + item_pos) = default_value[item_pos];
-    }
     *(a[item_id] + item_pos) += g[i] * g[i];
     *(v[item_id] + item_pos) -=
         lr * g[i] * rsqrt(*(a[item_id] + item_pos));
@@ -71,22 +64,25 @@ template __global__ void SparseApplyAdagradGPU<double>(
     double**, double**, double*, float, int, long long int, bool*, double*);
 
 template<class V>
-__global__ void CopyEmbedding(V** batch, V* batch_data_space,
+__global__ void CopyEmbedding(V** batch, V** batch_data_space,
     int total_dims, int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
+  int item_id = i / total_dims;
+  int item_pos = i % total_dims;
+
   if (i < limit  * total_dims) {
-    batch_data_space[i] = *(batch[i / total_dims] + i % total_dims);
+    *(batch_data_space[item_id] + item_pos) = *(batch[item_id] + item_pos);
   }
 }
 
 template __global__ void CopyEmbedding<int>(
-    int**, int*, int, int);
+    int**, int**, int, int);
 template __global__ void CopyEmbedding<float>(
-    float**, float*, int, int);
+    float**, float**, int, int);
 template __global__ void CopyEmbedding<double>(
-    double**, double*, int, int);
+    double**, double**, int, int);
 template __global__ void CopyEmbedding<long long>(
-    long long**, long long*, int, int);
+    long long**, long long**, int, int);
 
 }  // namespace tensorflow
 #endif  // TENSORFLOW_USE_GPU_EV
