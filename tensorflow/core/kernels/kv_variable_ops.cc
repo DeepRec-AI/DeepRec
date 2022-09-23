@@ -671,7 +671,9 @@ class KvResourceGatherGPUOp : public OpKernel {
         Shard(8, worker_threads->workers, indices_size,
             slice_bytes, do_work);
 
-        ev->InitailizeEmbeddingOnGPU(ids, indices_size, init_flags, memcpy_address, default_values);
+        ev->InitailizeEmbeddingOnGPU(ids, indices_size,
+                                     init_flags, memcpy_address,
+                                     default_values);
         ev->CopyBackToGPU(ids, indices_size, copyback_flags, memcpy_address);
 
         ev->CreateGPUBatch(out_base, default_values, indices_size,

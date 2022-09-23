@@ -254,8 +254,8 @@ class EmbeddingVar : public ResourceBase {
       }
       cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
           cudaMemcpyHostToDevice);
-      cudaMemcpy(dev_default_value_address, default_value_address, sizeof(V*) * total,
-          cudaMemcpyHostToDevice);
+      cudaMemcpy(dev_default_value_address, default_value_address,
+                 sizeof(V*) * total, cudaMemcpyHostToDevice);
       int block_dim = 128;
       void* args[] = {(void*)&dev_default_value_address,
                        (void*)&dev_value_address,
