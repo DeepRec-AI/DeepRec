@@ -253,23 +253,28 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           };
           const int64 cost = 1000; //very unreliable estimate for cost per step.
           auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
-          Shard(worker_threads->num_threads, worker_threads->workers, N, cost, do_work);
+          Shard(worker_threads->num_threads,
+               worker_threads->workers, N, cost, do_work);
 
           bool* init_flags = new bool[N]();
           T** a = new T*[N];
           T** v = new T*[N];
           bool* copyback_flags = new bool[N];
           T** accum_default_values = new T*[N];
-          auto do_work2 = [var, accum, value_ptrs, init_flags, a, v, copyback_flags, accum_default_values] (int64 start, int64 limit) {
+          auto do_work2 = [var, accum, value_ptrs, init_flags, a, v,
+            copyback_flags, accum_default_values] (int64 start, int64 limit) {
             for (int i = start; i < limit; i++) {
               a[i] = accum->LookupOrCreateEmb(value_ptrs[i], init_flags[i]);
-              v[i] = var->LookupOrCreateEmb(value_ptrs[i], var->GetDefaultValue(0));
+              v[i] = var->LookupOrCreateEmb(value_ptrs[i],
+                                            var->GetDefaultValue(0));
               copyback_flags[i] = false;
               accum_default_values[i] = accum->GetDefaultValue(i);
             }
           }; // Get V*
-          Shard(worker_threads->num_threads, worker_threads->workers, N, cost, do_work2);
-          accum->InitailizeEmbeddingOnGPU(ids, N, init_flags, a, accum_default_values);
+          Shard(worker_threads->num_threads,
+                worker_threads->workers, N, cost, do_work2);
+          accum->InitailizeEmbeddingOnGPU(ids, N, init_flags,
+                                          a, accum_default_values);
 
           T **dev_a, **dev_v;
           T* default_value = accum->GetDefaultValue(0);
@@ -282,11 +287,16 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           CHECK(dev_v);
           cudaMemcpy(dev_a, a, sizeof(T*) * N, cudaMemcpyHostToDevice);
           cudaMemcpy(dev_v, v, sizeof(T*) * N, cudaMemcpyHostToDevice);
-          cudaMemcpy(dev_init_flags, init_flags, sizeof(bool) * N, cudaMemcpyHostToDevice);
+          cudaMemcpy(dev_init_flags,
+                     init_flags, sizeof(bool) * N, cudaMemcpyHostToDevice);
 
-          void* args[] = { (void*)&dev_a, (void*)&dev_v, (void*)&grad_base, (void*)&lr_scalar,
-                           (void*)&embedding_dim, (void*)&N, (void*)&dev_init_flags, (void*)&default_value};
-          cudaLaunchKernel((void *)SparseApplyAdagradGPU<T>, (N + block_dim - 1) / block_dim * embedding_dim, block_dim, args, 0, NULL);
+          void* args[] = { (void*)&dev_a, (void*)&dev_v,
+                           (void*)&grad_base, (void*)&lr_scalar,
+                           (void*)&embedding_dim, (void*)&N,
+                           (void*)&dev_init_flags, (void*)&default_value};
+          cudaLaunchKernel((void *)SparseApplyAdagradGPU<T>,
+                           (N + block_dim - 1) / block_dim * embedding_dim,
+                           block_dim, args, 0, NULL);
           cudaDeviceSynchronize();
 
           delete[] a;
