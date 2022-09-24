@@ -4,46 +4,34 @@
 
 **CPU Base Docker Image**
 
-```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-base-cpu-py36-ubuntu18.04
-```
+| GCC Version | Python Version |                           IMAGE                           |
+| ----------- | -------------- | --------------------------------------------------------- |
+|   7.5.0     |    3.6.9       | alideeprec/deeprec-base:deeprec-base-cpu-py36-ubuntu18.04 |
+|   11.2.0    |    3.8.6       | alideeprec/deeprec-base:deeprec-base-cpu-py38-ubuntu22.04 |
 
-Docker Hub repository
-```
-alideeprec/deeprec-base:deeprec-base-cpu-py36-ubuntu18.04
-```
 
-**GPU(cuda11.0) Base Docker Image**
+**GPU Base Docker Image**
 
-```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-base-gpu-py36-cu110-ubuntu18.04
-```
+| GCC Version | Python Version | CUDA VERSION |                           IMAGE                                 |
+| ----------- | -------------- | ------------ | --------------------------------------------------------------- |
+|    7.5.0    |    3.6.9       | CUDA 11.0.3  | alideeprec/deeprec-base:deeprec-base-gpu-py36-cu110-ubuntu18.04 |
+|    7.5.0    |    3.6.9       | CUDA 11.2.2  | alideeprec/deeprec-base:deeprec-base-gpu-py36-cu112-ubuntu18.04 |
+|    7.5.0    |    3.6.9       | CUDA 11.4.2  | alideeprec/deeprec-base:deeprec-base-gpu-py36-cu114-ubuntu18.04 |
+|    7.5.0    |    3.6.9       | CUDA 11.6.1  | alideeprec/deeprec-base:deeprec-base-gpu-py36-cu116-ubuntu18.04 |
+|    7.5.0    |    3.6.9       | CUDA 11.7.1  | alideeprec/deeprec-base:deeprec-base-gpu-py36-cu117-ubuntu18.04 |
+|    11.2.0   |    3.8.6       | CUDA 11.7.1  | alideeprec/deeprec-base:deeprec-base-gpu-py38-cu117-ubuntu22.04 |
 
-Docker Hub repository
-```
-alideeprec/deeprec-base:deeprec-base-gpu-py36-cu110-ubuntu18.04
-```
 
 **CPU Dev Docker (with bazel cache)**
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-cpu-py36-ubuntu18.04
-```
-
-Docker Hub repository
-```
 alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
 ```
 
-**GPU(cuda11.0) Dev Docker (with bazel cache)**
+**GPU(cuda11.6) Dev Docker (with bazel cache)**
 
 ```
-registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-developer:deeprec-dev-gpu-py36-cu110-ubuntu18.04
-```
-
-Docker Hub repository
-```
-alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
+alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
 ```
 
 ## Estimator代码库及分支
@@ -52,7 +40,7 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu110-ubuntu18.04
 
 代码库：[https://github.com/AlibabaPAI/estimator](https://github.com/AlibabaPAI/estimator)
 
-开发分支：master，最新Release分支：deeprec2206
+开发分支：master，最新Release分支：deeprec2208
 
 ## Estimator编译
 

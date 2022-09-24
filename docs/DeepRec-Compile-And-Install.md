@@ -95,16 +95,16 @@ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x
 
 ## 最新Release镜像
 
-**GPU CUDA11.0镜像**
-
-```
-alideeprec/deeprec-release:deeprec2206-gpu-py36-cu110-ubuntu18.04
-```
-
 **CPU镜像**
 
 ```
-alideeprec/deeprec-release:deeprec2206-cpu-py36-ubuntu18.04
+alideeprec/deeprec-release:deeprec2208-cpu-py36-ubuntu18.04
+```
+
+**GPU CUDA11.6镜像**
+
+```
+alideeprec/deeprec-release:deeprec2208-gpu-py36-cu116-ubuntu18.04
 ```
 
 ## DeepRec Processor编译打包
