@@ -20,17 +20,36 @@
 |    7.5.0    |    3.6.9       | CUDA 11.7.1  | alideeprec/deeprec-base:deeprec-base-gpu-py36-cu117-ubuntu18.04 |
 |    11.2.0   |    3.8.6       | CUDA 11.7.1  | alideeprec/deeprec-base:deeprec-base-gpu-py38-cu117-ubuntu22.04 |
 
+**CPU Dev Docker**
+
+| GCC Version | Python Version |                        IMAGE                        |
+| ----------- | -------------- | --------------------------------------------------- |
+|   7.5.0     |    3.6.9       | alideeprec/deeprec-dev:deeprec-cpu-py36-ubuntu18.04 |
+|   11.2.0    |    3.8.6       | alideeprec/deeprec-dev:deeprec-cpu-py38-ubuntu22.04 |
+
+**GPU Dev Docker**
+
+| GCC Version | Python Version | CUDA VERSION |                         IMAGE                             |
+| ----------- | -------------- | ------------ | --------------------------------------------------------- |
+|    7.5.0    |    3.6.9       | CUDA 11.6.1  | alideeprec/deeprec-dev:deeprec-gpu-py36-cu116-ubuntu18.04 |
+|    11.2.0   |    3.8.6       | CUDA 11.7.1  | alideeprec/deeprec-dev:deeprec-gpu-py38-cu117-ubuntu22.04 |
+
+
 **CPU Dev Docker (with bazel cache)**
 
-```
-alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
-```
+| GCC Version | Python Version |                               IMAGE                              |
+| ----------- | -------------- | ---------------------------------------------------------------- |
+|   7.5.0     |    3.6.9       | alideeprec/deeprec-cicd:deeprec-dev-cpu-cibuild-py36-ubuntu18.04 |
+|   11.2.0    |    3.8.6       | alideeprec/deeprec-cicd:deeprec-dev-cpu-cibuild-py38-ubuntu22.04 |
 
-**GPU(cuda11.6) Dev Docker (with bazel cache)**
 
-```
-alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
-```
+**GPU Dev Docker (with bazel cache)**
+
+| GCC Version | Python Version | CUDA VERSION |                                IMAGE                                   |
+| ----------- | -------------- | ------------ | ---------------------------------------------------------------------- |
+|    7.5.0    |    3.6.9       | CUDA 11.6.1  | alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py36-cu116-ubuntu18.04 |
+|    11.2.0   |    3.8.6       | CUDA 11.7.1  | alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py38-cu117-ubuntu22.04 |
+
 
 ## TFServing代码库及分支
 
