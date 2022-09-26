@@ -1,0 +1,18 @@
+FROM alideeprec/deeprec-base:deeprec-base-cpu-py38-ubuntu22.04
+
+RUN apt-get install -y libhdf5-dev
+RUN apt-get install -y libz-dev
+RUN apt-get install -y openjdk-8-jdk
+
+RUN pip install \
+    numpy==1.19.5 && \
+    h5py==2.10.0 && \
+    spicy==0.16.0 && \
+    portpicker==1.4.0 && \
+    sklearn==0.0 && \
+    tensorflow-estimator==1.15.0 && \
+    grpcio==1.47.0 && \
+    grpcio-tools==1.47.0 && \
+    pyarrow==2.0.0 && \
+    pandas==1.1.5 && \
+    fastparquet==0.6.1
