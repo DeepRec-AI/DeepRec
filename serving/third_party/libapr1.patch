@@ -1872,3 +1872,15 @@ diff -urN include/private/apr_escape_test_char.h libapr/include/private/apr_esca
 +    222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,
 +    222,222,222,222,222,222,222,222,222,222,222,222,222,222,222,222 
 +};
+diff -uprN threadproc/unix/signals.c libapr/threadproc/unix/signals.c
+--- threadproc/unix/signals.c 2018-09-11 05:07:20.000000000 +0800
++++ libapr/threadproc/unix/signals.c 2022-09-27 15:37:33.129063883 +0800
+@@ -116,7 +116,7 @@ void apr_signal_init(apr_pool_t *pglobal
+ }
+ const char *apr_signal_description_get(int signum)
+ {
+-    return (signum >= 0) ? sys_siglist[signum] : "unknown signal (number)";
++    return (signum >= 0) ? strsignal(signum) : "unknown signal (number)";
+ }
+
+ #else /* !(SYS_SIGLIST_DECLARED || HAVE_DECL_SYS_SIGLIST) */
