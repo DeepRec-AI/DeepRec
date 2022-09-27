@@ -45,18 +45,19 @@ class AsyncEmbeddingStage:
         """
         self._threads_num = threads_num
         self._capacity = capacity
-        self._checkpoint_dir = checkpoint_dir
+        self._checkpoint_dir = checkpoint_dir if checkpoint_dir else ""
         self._control_flow_ops = ['Switch', '_SwitchN', 'Merge', '_XlaMerge',
                                   'Enter', 'Exit']
         self._variable_ops = ['Variable', 'VariableV2', 'VarHandleOp',
                               'KvVarHandleOp', 'HashTableV2']
-        self._variable_is_init_ops = ['IsVariableInitialized', 'VarIsInitializedOp']
+        self._variable_is_init_ops = ['IsVariableInitialized',
+                                      'VarIsInitializedOp', 'KvVarIsInitializedOp']
         self._saver_ops = ['SaveV2']
         self._no_data_input_ops = self._variable_ops + ['Placeholder', 'PlaceholderV2', 'Const']
         self._boundary_ops = set()
         for tensor in ops.get_collection(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS):
             self._boundary_ops.add(tensor.op)
-        
+
         self._dump_graph = \
             (os.getenv('ASYNC_EMBEDDING_DUMP_GRAPH', 'false').lower()== 'true')
         self._start_nodes = None
@@ -135,8 +136,6 @@ class AsyncEmbeddingStage:
             visit_stack.append(boundary_node)
             while len(visit_stack) > 0:
                 visit_node = visit_stack.pop()
-                if visit_node in is_visited:
-                    continue
 
                 # check io staged get node is existed or not
                 if (visit_node.type == "TensorBufferTake"):
@@ -147,7 +146,9 @@ class AsyncEmbeddingStage:
                 if visit_node != boundary_node and \
                    visit_node in candidate_boundary_ops:
                     candidate_boundary_ops.remove(visit_node)
-                
+
+                if visit_node in is_visited:
+                    continue
                 is_visited.add(visit_node)
                 if self._is_control_flow_op(visit_node):
                     control_flow_nodes.add(visit_node)
