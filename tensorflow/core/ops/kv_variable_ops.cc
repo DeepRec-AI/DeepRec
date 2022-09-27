@@ -152,7 +152,6 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("default_value_no_permission: float = .0")
     .Attr("record_freq: bool = false")
     .Attr("record_version: bool = false")
-    .Attr("attr_json_str: string = ''")
     .SetShapeFn([](InferenceContext* c) { 
       return Status::OK();
     })
@@ -181,6 +180,13 @@ resource: the input resource handle.
 is_initialized: a scalar boolean which is true if the variable has been
 initialized.
 )doc");
+
+REGISTER_OP("KvResourceInitCacheStrategyOp")
+    .Input("resource: resource")
+    .Attr("cache_strategy: int = 1")
+    .Attr("Tkeys: {int64,int32,string}")
+    .Attr("dtype: {float32, double}")
+    .SetShapeFn([](InferenceContext* c){return Status::OK();});
 
 Status KvVariableShapeShapeFn(InferenceContext* c) {
   auto* handle_data = c->input_handle_shapes_and_types(0);
@@ -440,7 +446,24 @@ REGISTER_OP("KvResourceImportV2")
     .Attr("record_freq: bool = false")
     .Attr("record_version: bool = false")
     .Attr("reset_version: bool = false")
-    .Attr("attr_json_str: string = ''")
+    .SetShapeFn([](InferenceContext* c) {
+          ShapeHandle handle;
+          TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));
+          return Status::OK();
+     })
+    .Doc(R"doc()doc");
+
+REGISTER_OP("KvResourceImportV3")
+    .Input("prefix: string")
+    .Input("resource_self: resource")
+    .Input("tensor_names: string")
+    .Input("empty_key: Tkeys")
+    .Attr("shape: shape")
+    .Attr("partition_id: int = 0")
+    .Attr("partition_num: int = 1")
+    .Attr("Tkeys: {int64,int32}")
+    .Attr("dtype: type")
+    .Attr("reset_version: bool = false")
     .SetShapeFn([](InferenceContext* c) {
           ShapeHandle handle;
           TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));

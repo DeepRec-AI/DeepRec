@@ -29,7 +29,7 @@ struct StorageConfig {
   StorageConfig() : type(StorageType::INVALID),
                     path(""),
                     layout_type(LayoutType::NORMAL),
-                    cache_type(CacheType::LFU) {
+                    cache_strategy(CacheStrategy::LFU) {
     size = {1<<30,1<<30,1<<30,1<<30};
   }
 
@@ -37,9 +37,10 @@ struct StorageConfig {
                 const std::string& p,
                 const std::vector<int64>& s,
                 const std::string& layout,
-                const CacheType cache_type_ = CacheType::LFU) : type(t),
+                const CacheStrategy cache_strategy_ = CacheStrategy::LFU)
+                                      : type(t),
                                         path(p),
-                                        cache_type(cache_type_) {
+                                        cache_strategy(cache_strategy_) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
@@ -57,7 +58,7 @@ struct StorageConfig {
   LayoutType layout_type;
   std::string path;
   std::vector<int64> size;
-  CacheType cache_type;
+  CacheStrategy cache_strategy;
 };
 
 template <class K, class V>
@@ -180,23 +181,7 @@ class StorageManager {
         sc_.type == embedding::DRAM_LEVELDB) {
       is_multi_level_ = true;
     }
-
     hash_table_count_ = kvs_.size();
-    if (hash_table_count_ > 1) {
-      if (sc_.cache_type == CacheType::LRU) {
-        LOG(INFO)<<" Use StorageManager::LRU in multi-tier EV "<< name_;
-        cache_ = new LRUCache<K>();
-      } else {
-        LOG(INFO) << "Use StorageManager::LFU in multi-tier EV " << name_;
-        cache_ = new LFUCache<K>();
-      }
-      eviction_thread_ = Env::Default()->StartThread(
-          ThreadOptions(), "EV_Eviction", [this]() { BatchEviction(); });
-      thread_pool_.reset(
-          new thread::ThreadPool(Env::Default(), ThreadOptions(),
-            "MultiLevel_Embedding_Cache", 2, /*low_latency_hint=*/false));
-    }
-    // DebugString();
     CHECK(2 >= hash_table_count_)
         << "Not support multi-level(>2) embedding.";
 
@@ -228,6 +213,24 @@ class StorageManager {
       }
     }
     flag_.clear(std::memory_order_release);
+  }
+
+  void InitCacheStrategy(embedding::CacheStrategy cache_strategy) {
+    sc_.cache_strategy = cache_strategy;
+    if (hash_table_count_ > 1) {
+      if (sc_.cache_strategy == CacheStrategy::LRU) {
+        LOG(INFO)<<" Use StorageManager::LRU in multi-tier EV "<< name_;
+        cache_ = new LRUCache<K>();
+      } else {
+        LOG(INFO) << "Use StorageManager::LFU in multi-tier EV " << name_;
+        cache_ = new LFUCache<K>();
+      }
+      eviction_thread_ = Env::Default()->StartThread(
+          ThreadOptions(), "EV_Eviction", [this]() { BatchEviction(); });
+      thread_pool_.reset(
+          new thread::ThreadPool(Env::Default(), ThreadOptions(),
+            "MultiLevel_Embedding_Cache", 2, /*low_latency_hint=*/false));
+    }
   }
 
   int64 GetAllocLen(){

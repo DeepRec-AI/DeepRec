@@ -24,8 +24,8 @@ class BatchCache {
     add_to_rank((K*)t.data(), t.NumElements());
   }
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
-  virtual void add_to_rank(const K* batch_ids, const size_t batch_size) = 0;
-  virtual void add_to_rank(const K* batch_ids, const size_t batch_size,
+  virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
+  virtual void add_to_rank(const K* batch_ids, size_t batch_size,
                            const int64* batch_versions,
                            const int64* batch_freqs) = 0;
   virtual size_t size() = 0;
@@ -84,7 +84,7 @@ class LRUCache : public BatchCache<K> {
     return true_size;
   }
 
-  void add_to_rank(const K* batch_ids, const size_t batch_size) {
+  void add_to_rank(const K* batch_ids, size_t batch_size) {
     mutex_lock l(mu_);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];
@@ -110,7 +110,7 @@ class LRUCache : public BatchCache<K> {
     }
   }
 
-  void add_to_rank(const K* batch_ids, const size_t batch_size,
+  void add_to_rank(const K* batch_ids, size_t batch_size,
                     const int64* batch_version,
                     const int64* batch_freqs) {
     //TODO: add to rank accroding to the version of ids
@@ -170,7 +170,7 @@ class LFUCache : public BatchCache<K> {
     return true_size;
   }
 
-  void add_to_rank(const K *batch_ids, const size_t batch_size) {
+  void add_to_rank(const K *batch_ids, size_t batch_size) {
     mutex_lock l(mu_);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];

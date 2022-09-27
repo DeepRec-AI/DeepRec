@@ -385,7 +385,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  int64 Size() const { return hash_map.size_lockless(); }
+  int64 Size() const { return hash_map_.size_lockless(); }
 
   void FreeValuePtr(ValuePtr<V>* value_ptr) {
     delete value_ptr;

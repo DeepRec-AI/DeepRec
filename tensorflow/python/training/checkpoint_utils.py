@@ -24,6 +24,7 @@ import six
 from tensorflow.python import pywrap_tensorflow
 from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import io_ops
 from tensorflow.python.ops import resource_variable_ops
 from tensorflow.python.ops import gen_kv_variable_ops
@@ -442,38 +443,21 @@ def _set_checkpoint_initializer(variable,
       is_partitioned_ev = variable._save_slice_info is not None
       partition_id = variable._save_slice_info.var_offset[0] if is_partitioned_ev else 0
       partition_num = variable._save_slice_info.full_shape[0] if is_partitioned_ev else 1
-      rank = variable.initial_value.get_shape().rank - 1
-      variable._initializer_op = gen_kv_variable_ops.kv_resource_import_v2(
-          ckpt_file,
-          variable.handle, variable._primary_handle,
-          variables._try_guard_against_uninitialized_dependencies(variable.name,
-              variable.initial_value),
-          tensor_name,
-          ops.convert_to_tensor(variable.invalid_key),
-          slot_num=variable._slot_num,
-          shape=variable.initial_value.get_shape()[rank:],
-          steps_to_live=variable.steps_to_live,
-          emb_index=variable._emb_index, slot_index=variable._slot_index,
-          block_num=variable.block_num,
-          ht_type=variable._ht_type,
-          ht_partition_num=variable._ht_partition_num,
-          filter_freq = variable._filter_freq,
-          max_freq = 99999,
-          l2_weight_threshold = variable._l2_weight_threshold,
-          max_element_size = variable._max_element_size,
-          false_positive_probability = variable._false_positive_probability,
-          counter_type = variable._counter_type,
-          layout = "",
-          storage_type=variable._storage_type,
-          storage_path=variable._storage_path,
-          storage_size=variable._storage_size,
-          partition_id=partition_id, partition_num=partition_num,
-          default_value_dim=variable._default_value_dim,
-          default_value_no_permission=variable._default_value_no_permission,
-          record_freq=variable._record_freq,
-          record_version=variable._record_version,
-          reset_version=reset_version,
-          attr_json_str=variable._attr_json_str)
+      with ops.control_dependencies([variable._initializer_op]):
+        rank = variable.initial_value.get_shape().rank - 1
+        restore_op = gen_kv_variable_ops.kv_resource_import_v3(
+            ckpt_file,
+            variable.handle,
+            tensor_name,
+            ops.convert_to_tensor(variable.invalid_key),
+            shape=variable.initial_value.get_shape()[rank:],
+            partition_id=partition_id,
+            partition_num=partition_num,
+            dtype=variable._dtype,
+            reset_version=reset_version
+        )
+        variable._initializer_op = restore_op
+
   else:
     base_type = variable.dtype.base_dtype
     # Do not colocate with variable since RestoreV2 op only runs on CPU and

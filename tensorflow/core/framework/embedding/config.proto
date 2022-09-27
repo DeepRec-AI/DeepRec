@@ -30,7 +30,7 @@ enum SlotType {
   VARIABLE = 1;
 }
 
-enum CacheType {
+enum CacheStrategy {
   LRU = 0;
   LFU = 1;
 }

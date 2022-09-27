@@ -1231,8 +1231,7 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
                  "EmbeddingVar",
                   embedding::StorageConfig(embedding::DRAM_SSDHASH,
                                            testing::TmpDir(),
-                                           size, "normal_contiguous",
-                                           CacheType::LFU, true));
+                                           size, "normal_contiguous"));
   TF_CHECK_OK(storage_manager->Init());
   EmbeddingVar<int64, float>* variable
     = new EmbeddingVar<int64, float>("EmbeddingVar",
@@ -1245,6 +1244,7 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
                           /*max_element_size = */0, /*false_positive_probability = */-1.0,
                           /*counter_type = */DT_UINT64));
   variable->Init(value, 1);
+  variable->InitStorageCacheStrategy(CacheStrategy::LFU);
   RestoreBuffer buf;
   buf.key_buffer = new char[6 * sizeof(int64)];
   buf.version_buffer = new char[6 * sizeof(int64)];

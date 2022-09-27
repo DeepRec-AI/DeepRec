@@ -40,8 +40,6 @@ limitations under the License.
 #include "tensorflow/core/util/util.h"
 #include "tensorflow/core/util/work_sharder.h"
 
-#include <json/reader.h>
-#include <json/value.h>
 #if GOOGLE_CUDA
 #if TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
@@ -175,18 +173,6 @@ class InitializeKvVariableOp : public OpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
 
-    std::string attr_json_str;
-    OP_REQUIRES_OK(c, c->GetAttr("attr_json_str", &attr_json_str));
-    Json::Reader reader;
-    Json::Value val;
-    if (reader.parse(attr_json_str, val)) {
-      storage_cache_strategy_ =
-        static_cast<embedding::CacheType>(
-          val["storage_cache_strategy"].asInt());
-    } else {
-      LOG(FATAL)<<"Parsing attr_json_str of EV failed!";
-    }
-    
     if (filter_freq_ < 0) {
       LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
       filter_freq_ = 0;
@@ -262,8 +248,7 @@ class InitializeKvVariableOp : public OpKernel {
                   new embedding::StorageManager<TKey, TValue>(
                     handle_self.name(),
                     embedding::StorageConfig(
-                      storage_type_, storage_path_, storage_size_, layout_,
-                      storage_cache_strategy_));
+                      storage_type_, storage_path_, storage_size_, layout_));
               Allocator* allocator = context->device()->GetAllocator(AllocatorAttributes());
               TF_CHECK_OK(storage_manager->Init(allocator));
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
@@ -293,8 +278,7 @@ class InitializeKvVariableOp : public OpKernel {
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
-                     storage_path_, storage_size_, layout_,
-                     storage_cache_strategy_));
+                     storage_path_, storage_size_, layout_));
              Allocator* allocator = context->device()->GetAllocator(AllocatorAttributes());
              TF_CHECK_OK(storage_manager->Init(allocator));
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
@@ -359,7 +343,6 @@ class InitializeKvVariableOp : public OpKernel {
   int64 max_element_size_;
   float false_positive_probability_;
   embedding::StorageType storage_type_;
-  embedding::CacheType storage_cache_strategy_;
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
@@ -447,6 +430,51 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
                           .TypeConstraint<ktype>("Tkeys")          \
                           .Device(DEVICE_GPU),                     \
                           KvResourceIsInitializedOp<ktype, vtype>);
+REGISTER_KERNELS(int32, float)
+REGISTER_KERNELS(int64, float)
+#undef REGISTER_KERNELS
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
+
+template <typename TKey, typename TValue>
+class KvResourceInitCacheStrategyOp : public OpKernel {
+ public:
+  explicit KvResourceInitCacheStrategyOp(OpKernelConstruction* c) : OpKernel(c) {
+    OP_REQUIRES_OK(c, c->GetAttr("cache_strategy", &cache_strategy_));
+  }
+
+  void Compute(OpKernelContext* ctx) override {
+    Tensor* output;
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    ev->InitStorageCacheStrategy(static_cast<embedding::CacheStrategy>(cache_strategy_));
+  }
+
+ private:
+  int cache_strategy_;
+};
+
+#define REGISTER_KERNELS(ktype, vtype)                             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")             \
+                          .TypeConstraint<ktype>("Tkeys")          \
+                          .TypeConstraint<vtype>("dtype")          \
+                          .Device(DEVICE_CPU),                     \
+                          KvResourceInitCacheStrategyOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                           \
+  REGISTER_KERNELS(int32, type)                                    \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
+
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS(ktype, vtype)                             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")             \
+                          .TypeConstraint<ktype>("Tkeys")          \
+                          .Device(DEVICE_GPU),                     \
+                          KvResourceInitCacheStrategyOp<ktype, vtype>);
 REGISTER_KERNELS(int32, float)
 REGISTER_KERNELS(int64, float)
 #undef REGISTER_KERNELS
@@ -924,19 +952,6 @@ class KvResourceImportV2Op: public AsyncOpKernel {
     OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
     OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
     OP_REQUIRES_OK(c, c->GetAttr("reset_version", &reset_version_));
-   
-
-    std::string attr_json_str;
-    OP_REQUIRES_OK(c, c->GetAttr("attr_json_str", &attr_json_str));
-    Json::Reader reader;
-    Json::Value val;
-    if (reader.parse(attr_json_str, val)) {
-      storage_cache_strategy_ =
-        static_cast<embedding::CacheType>(
-          val["storage_cache_strategy"].asInt());
-    } else {
-      LOG(FATAL)<<"Parsing attr_json_str of EV failed!";
-    }
 
     if ((filter_freq_ != 0 && max_element_size_ == 0)
          || steps_to_live_ != -1 || record_freq_
@@ -983,8 +998,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
               auto storage_manager =
                 new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(
-                    storage_type_, storage_path_, storage_size_, layout_,
-                    storage_cache_strategy_));
+                    storage_type_, storage_path_, storage_size_, layout_));
               TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
@@ -1015,7 +1029,7 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(
                    storage_type_, storage_path_, storage_size_,
-                   layout_, storage_cache_strategy_));
+                   layout_));
              TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                  storage_manager, EmbeddingConfig(
@@ -1098,7 +1112,6 @@ class KvResourceImportV2Op: public AsyncOpKernel {
   std::string layout_;
   int64 max_freq_;
   embedding::StorageType storage_type_;
-  embedding::CacheType storage_cache_strategy_;
   std::string storage_path_;
   std::vector<int64> storage_size_;
   int64 default_value_dim_;
@@ -1139,6 +1152,109 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
 #undef REGISTER_KERNELS
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
+
+
+template <typename TKey, typename TValue>
+class KvResourceImportV3Op: public AsyncOpKernel {
+ public:
+  explicit KvResourceImportV3Op(OpKernelConstruction* c)
+      : AsyncOpKernel(c) {
+    OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
+    OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
+    OP_REQUIRES(c, shape_.dims() == 1,
+                errors::InvalidArgument("KvVariable dimension must be 1"));
+    OP_REQUIRES_OK(c, c->GetAttr("partition_id", &partition_id_));
+    OP_REQUIRES(c, partition_id_ >= 0,
+                 errors::InvalidArgument(
+                    "partition_id must >= 0, ",
+                    std::to_string(partition_id_)));
+    OP_REQUIRES_OK(c, c->GetAttr("partition_num", &partition_num_));
+    OP_REQUIRES(c, partition_num_ >= 1,
+                 errors::InvalidArgument(
+                    "partition_num must >= 1, ",
+                    std::to_string(partition_num_)));
+    OP_REQUIRES_OK(c, c->GetAttr("reset_version", &reset_version_));
+
+    TF_CHECK_OK(ReadBoolFromEnvVar("TF_ENABLE_EV_ASYNC_RESTORE", true,
+                                   &ev_async_restore_));
+  }
+
+  void ComputeAsync(OpKernelContext* context, DoneCallback done) override {
+    const Tensor& file_name = context->input(0);
+    const std::string file_name_string = file_name.scalar<string>()();
+    const Tensor& name = context->input(2);
+    const std::string name_string = name.scalar<string>()();
+
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(context, LookupResource(context, HandleFromInput(context, 1), &ev));
+
+    core::ScopedUnref unref_me(ev);
+
+    auto do_compute = [this, context, file_name_string, ev,
+         name_string, done] () {
+      BundleReader reader(Env::Default(), file_name_string);
+      auto s = reader.status();
+      if (!s.ok()) {
+        LOG(FATAL) << "Restore EV failure, create BundleReader error:"
+                   << s.ToString();
+      }
+
+      EVRestoreDynamically(
+          ev, name_string, partition_id_, partition_num_, context, &reader,
+          "-partition_offset", "-keys", "-values", "-versions", "-freqs",
+          reset_version_);
+      ev->SetInitialized();
+      done();
+    };
+
+    if (ev_async_restore_) {
+      auto tp = KvRestoreThreadPool::GetInstance();
+      tp->Schedule(do_compute);
+    } else {
+      do_compute();
+    }
+  }
+
+ private:
+  int64 partition_id_;
+  int64 partition_num_;
+  DataType dtype_;
+  TensorShape shape_;
+  bool reset_version_;
+  bool ev_async_restore_;
+};
+
+#define REGISTER_KERNELS(ktype, vtype)                         \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV3")           \
+                            .Device(DEVICE_CPU)                \
+                            .TypeConstraint<ktype>("Tkeys")    \
+                            .TypeConstraint<vtype>("dtype"),   \
+                          KvResourceImportV3Op<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                       \
+  REGISTER_KERNELS(int32, type)                                \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
+
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS(ktype, vtype)                         \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV3")           \
+                            .Device(DEVICE_GPU)                \
+                            .TypeConstraint<ktype>("Tkeys")    \
+                            .TypeConstraint<vtype>("dtype"),   \
+                          KvResourceImportV3Op<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                       \
+  REGISTER_KERNELS(int32, type)                                \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
+TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_KERNELS
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
+
 
 template <typename TKey, typename TValue>
 class KvResourceIncrImportOp: public AsyncOpKernel {

@@ -232,7 +232,7 @@ class StorageOption(object):
                storage_type=None,
                storage_path=None,
                storage_size=[1024*1024*1024],
-               cache_strategy = config_pb2.CacheType.LFU):
+               cache_strategy = config_pb2.CacheStrategy.LFU):
     self.storage_type = storage_type
     self.storage_path = storage_path
     self.storage_size = storage_size
@@ -319,7 +319,7 @@ class EmbeddingVariableConfig(object):
                storage_type=config_pb2.StorageType.DRAM,
                storage_path=None,
                storage_size=None,
-               storage_cache_strategy=config_pb2.CacheType.LFU,
+               storage_cache_strategy=config_pb2.CacheStrategy.LFU,
                default_value_dim=4096,
                default_value_no_permission=.0):
     self.steps_to_live = steps_to_live

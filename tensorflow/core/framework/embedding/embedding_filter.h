@@ -55,8 +55,8 @@ class EmbeddingFilter {
     }
   }
 
-  virtual void UpdateCache(const K* key_buff, const int64 key_num, EV* ev,
-                 const int64* version_buff, const int64* freq_buff) {
+  virtual void UpdateCache(const K* key_buff, int64 key_num, EV* ev,
+      const int64* version_buff, const int64* freq_buff) {
     embedding::BatchCache<K>* cache = ev->Cache();
     if (cache) {
       cache->add_to_rank(key_buff, key_num, version_buff, freq_buff);
