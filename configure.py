@@ -1438,6 +1438,9 @@ def main():
   set_build_var(environ_cp, 'TF_ENABLE_GPU_EV', 'GPU_EV', 'with_gpu_ev_support',
                 False, 'gpu_ev')
 
+  set_build_var(environ_cp, 'TF_NEED_PARQUET_DATASET', 'Parquet Dataset',
+               'with_parquet_dataset_support', True, 'parquet_dataset')
+
   set_action_env_var(
       environ_cp,
       'TF_NEED_OPENCL_SYCL',

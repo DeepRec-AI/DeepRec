@@ -440,6 +440,12 @@ config_setting(
 )
 
 config_setting(
+    name = "with_parquet_dataset_support",
+    values = {"define": "with_parquet_dataset_support=true"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
     name = "with_mpi_support",
     values = {"define": "with_mpi_support=true"},
     visibility = ["//visibility:public"],
