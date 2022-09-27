@@ -50,7 +50,8 @@ class AsyncEmbeddingStage:
                                   'Enter', 'Exit']
         self._variable_ops = ['Variable', 'VariableV2', 'VarHandleOp',
                               'KvVarHandleOp', 'HashTableV2']
-        self._variable_is_init_ops = ['IsVariableInitialized', 'VarIsInitializedOp']
+        self._variable_is_init_ops = ['IsVariableInitialized',
+                                      'VarIsInitializedOp', 'KvVarIsInitializedOp']
         self._saver_ops = ['SaveV2']
         self._no_data_input_ops = self._variable_ops + ['Placeholder', 'PlaceholderV2', 'Const']
         self._boundary_ops = set()
