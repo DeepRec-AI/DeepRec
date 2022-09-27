@@ -29,9 +29,6 @@ limitations under the License.
 #if DEEPREC_ARROW_HDFS
 #include <arrow/filesystem/hdfs.h>
 #endif
-#if DEEPREC_ARROW_S3
-#include <arrow/filesystem/s3fs.h>
-#endif
 
 #define TF_RETURN_IF_ARROW_ERROR(...)              \
   do {                                             \

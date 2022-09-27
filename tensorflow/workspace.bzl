@@ -1083,6 +1083,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     http_archive(
         name = "arrow",
         build_file = clean_dep("//third_party:arrow.BUILD"),
+        patches = ["//third_party:arrow.patch"],
         sha256 = "ec3bdae6ccc08de5b5adcf9cbe7cbc085cab0ba06c8e6d3abfc3ed1cd4c1c9a2",
         strip_prefix = "arrow-apache-arrow-5.0.0",
         urls = [
@@ -1152,61 +1153,6 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         urls = [
             "https://storage.googleapis.com/mirror.tensorflow.org/github.com/miloyip/rapidjson/archive/418331e99f859f00bdc8306f69eba67e8693c55e.tar.gz",
             "https://github.com/miloyip/rapidjson/archive/418331e99f859f00bdc8306f69eba67e8693c55e.tar.gz",
-        ],
-    )
-
-    http_archive(
-        name = "aws_c_common",
-        build_file = clean_dep("//third_party/aws_util:aws_c_common.BUILD"),
-        sha256 = "e9462a141b5db30006704f537d19b92357a59be38d590272e6118976b0356ccd",
-        strip_prefix = "aws-c-common-0.7.4",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/awslabs/aws-c-common/archive/refs/tags/v0.7.4.tar.gz",
-            "https://github.com/awslabs/aws-c-common/archive/refs/tags/v0.7.4.tar.gz",
-        ],
-    )
-
-    http_archive(
-        name = "aws_c_io",
-        build_file = clean_dep("//third_party/aws_util:aws_c_io.BUILD"),
-        sha256 = "b60270d23b6e2f4a5d80e64ca6538ba114cd6044b53752964c940f87e59bf0d9",
-        strip_prefix = "aws-c-io-0.11.2",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/awslabs/aws-c-io/archive/refs/tags/v0.11.2.tar.gz",
-            "https://github.com/awslabs/aws-c-io/archive/refs/tags/v0.11.2.tar.gz",  
-        ],
-    )
-
-    http_archive(
-        name = "aws_c_event_stream",
-        build_file = clean_dep("//third_party/aws_util:aws_c_event_stream.BUILD"),
-        sha256 = "bae0c762b6a4b779a0db0f4730512da6cb500e76681ffdcb9f7286d8e26e547a",
-        strip_prefix = "aws-c-event-stream-0.2.6",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/awslabs/aws-c-event-stream/archive/refs/tags/v0.2.6.tar.gz",
-            "https://github.com/awslabs/aws-c-event-stream/archive/refs/tags/v0.2.6.tar.gz",  
-        ],
-    )
-
-    http_archive(
-        name = "aws_checksums",
-        build_file = clean_dep("//third_party/aws_util:aws_checksums.BUILD"),
-        sha256 = "394723034b81cc7cd528401775bc7aca2b12c7471c92350c80a0e2fb9d2909fe",
-        strip_prefix = "aws-checksums-0.1.12",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/awslabs/aws-checksums/archive/refs/tags/v0.1.12.tar.gz",
-            "https://github.com/awslabs/aws-checksums/archive/refs/tags/v0.1.12.tar.gz",  
-        ],
-    )
-
-    http_archive(
-        name = "aws_c_cal",
-        build_file = clean_dep("//third_party/aws_util:aws_c_cal.BUILD"),
-        sha256 = "40297da04443d4ee2988d1c5fb0dc4a156d0e4cfaf80e6a1df1867452566d540",
-        strip_prefix = "aws-c-cal-0.5.17",
-        urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/awslabs/aws-c-cal/archive/refs/tags/v0.5.17.tar.gz",
-            "https://github.com/awslabs/aws-c-cal/archive/refs/tags/v0.5.17.tar.gz",  
         ],
     )
 

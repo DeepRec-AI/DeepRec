@@ -14,18 +14,18 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/core/kernels/data/arrow_util.h"
 
-#include <unistd.h>
 #include <cstdlib>
 #include <memory>
 #include <numeric>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
 #include "arrow/array.h"
 #include "arrow/util/thread_pool.h"
-#include "tensorflow/core/kernels/data/eigen.h"
 #include "tensorflow/core/framework/allocation_description.pb.h"
+#include "tensorflow/core/kernels/data/eigen.h"
 
 namespace tensorflow {
 namespace data {
@@ -320,19 +320,6 @@ int GetArrowFileBufferSizeFromEnv() {
     std::shared_ptr<::arrow::io::HdfsReadableFile> hdfs_file;
     ARROW_RETURN_NOT_OK(fs->OpenReadable(uri.path(), &hdfs_file));
     *file = hdfs_file;
-    return ::arrow::Status::OK();
-  }
-#endif
-#if DEEPREC_ARROW_S3
-  if (filename.rfind("s3://", 0) == 0 || filename.rfind("oss://", 0) == 0) {
-    ARROW_RETURN_NOT_OK(::arrow::fs::EnsureS3Initialized());
-    ::arrow::internal::Uri uri;
-    ARROW_RETURN_NOT_OK(uri.Parse(filename));
-    std::string path;
-    ARROW_ASSIGN_OR_RAISE(auto options,
-                          ::arrow::fs::S3Options::FromUri(uri, &path));
-    ARROW_ASSIGN_OR_RAISE(auto fs, ::arrow::fs::S3FileSystem::Make(options));
-    ARROW_ASSIGN_OR_RAISE(*file, fs->OpenInputFile(path));
     return ::arrow::Status::OK();
   }
 #endif
