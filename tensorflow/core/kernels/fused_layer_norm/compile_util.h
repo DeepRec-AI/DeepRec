@@ -31,7 +31,7 @@ struct compile_time_for<0> {
   template <typename Lambda, typename... Args>
   inline static void op(const Lambda& function, Args... args) {}
 };
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
 
 template <int BLOCK_NUM>
 inline __m512 reduce_sum_block(const __m512* v) {
@@ -73,5 +73,5 @@ static inline float horizontal_add(__m512 src) {
   return _mm_cvtss_f32(_mm_hadd_ps(r, r));
 }
 
-#endif  //AVX512
+#endif  // #if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
 #endif  // TENSORFLOW_CORE_KERNELS_FUSED_LAYER_NORMALIZE_COMPILE_UTIL_OP_H_
