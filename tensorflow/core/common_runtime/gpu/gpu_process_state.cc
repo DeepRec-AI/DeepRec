@@ -19,6 +19,7 @@ limitations under the License.
 #include <vector>
 
 #include "tensorflow/core/common_runtime/gpu/gpu_bfc_allocator.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_cuda_graph_bfc_allocator.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_cudamalloc_allocator.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_cudamallocasync_allocator.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_debug_allocator.h"
@@ -194,6 +195,12 @@ Allocator* GPUProcessState::GetGPUAllocator(const GPUOptions& options,
       // TODO: **WARNING** probably will not work in a multi-gpu scenario
       gpu_allocator =
           new GpuCudaMallocAsyncAllocator(platform_gpu_id, total_bytes);
+    } else if (options.cuda_graph_mode_compatible()) {
+      LOG(INFO) << "Using CUDA Graph compatible GPUBFCAllocator for GPU: " 
+                << platform_gpu_id;
+      gpu_allocator = 
+          new CudaGraphGPUBFCAllocator(sub_allocator, total_bytes, options,
+                            strings::StrCat("GPU_", tf_gpu_id.value(), "_bfc"));
     }
 
     Allocator* recording_allocator = nullptr;

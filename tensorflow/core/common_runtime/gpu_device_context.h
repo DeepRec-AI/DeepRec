@@ -77,6 +77,39 @@ class GPUDeviceContext : public DeviceContext {
   Status ThenExecute(Device* device, se::Stream* stream,
                      std::function<void()> func) override;
 
+  void StreamUnification() {
+#if TENSORFLOW_USE_ROCM
+        unification_stored_streams_.emplace_back(nccl_stream_);
+        nccl_stream_ = stream_;
+#endif
+        unification_stored_streams_.emplace_back(host_to_device_stream_);
+        host_to_device_stream_ = stream_;
+        unification_stored_streams_.emplace_back(device_to_host_stream_);
+        device_to_host_stream_ = stream_;
+        int d2d_stream_sizes = device_to_device_stream_.size();
+        for (int i = 0; i < d2d_stream_sizes; i++ ) {
+          unification_stored_streams_.emplace_back(device_to_device_stream_[i]);
+          device_to_device_stream_[i] = stream_;
+        }
+  }
+
+  void ResetStreamUnification() {
+#if TENSORFLOW_USE_ROCM
+        nccl_stream_ = unification_stored_streams_.front();
+        unification_stored_streams_.erase(unification_stored_streams_.begin());
+#endif
+        host_to_device_stream_ = unification_stored_streams_.front();
+        unification_stored_streams_.erase(unification_stored_streams_.begin());
+        device_to_host_stream_ = unification_stored_streams_.front();
+        unification_stored_streams_.erase(unification_stored_streams_.begin());
+        int d2d_stream_sizes = device_to_device_stream_.size();
+        for (int i = 0; i < d2d_stream_sizes; i++ ) {
+          device_to_device_stream_[i] = unification_stored_streams_.front();
+          unification_stored_streams_.erase(unification_stored_streams_.begin());
+        }
+        unification_stored_streams_.clear();
+  }
+
  private:
   int stream_id_;
   // The default primary stream to use for this context.
@@ -92,6 +125,7 @@ class GPUDeviceContext : public DeviceContext {
   se::Stream* device_to_host_stream_;
   // Streams to use for copying data between GPUs.
   gtl::InlinedVector<se::Stream*, 4> device_to_device_stream_;
+  std::vector<se::Stream*> unification_stored_streams_;
 };
 
 }  // namespace tensorflow

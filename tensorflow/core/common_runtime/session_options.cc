@@ -21,6 +21,8 @@ namespace tensorflow {
 
 SessionOptions::SessionOptions() : env(Env::Default()) {}
 
+CudaGraphModeSessionOptions::CudaGraphModeSessionOptions() {}
+
 SessionGroupOptions::SessionGroupOptions() : env(Env::Default()) {}
 
 }  // namespace tensorflow

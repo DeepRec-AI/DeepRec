@@ -267,6 +267,10 @@ class BlasSupport {
  public:
   virtual ~BlasSupport() {}
 
+  virtual bool SetWorkspace(Stream *stream, 
+                            void *workspace,
+                            size_t workspaceSizeInBytes) = 0;
+
   // Computes the sum of magnitudes of the vector elements.
   // result <- |Re x(1)| + |Im x(1)| + |Re  x(2)| + |Im  x(2)|+ ... + |Re  x(n)|
   // + |Im x(n)|.
@@ -1552,6 +1556,9 @@ class BlasSupport {
 // Macro used to quickly declare overrides for abstract virtuals in the
 // BlasSupport base class.
 #define TENSORFLOW_STREAM_EXECUTOR_GPU_BLAS_SUPPORT_OVERRIDES                  \
+  bool SetWorkspace(Stream *stream,                                            \
+                    void *workspace,                                           \
+                    size_t workspaceSizeInBytes) override;                     \
   bool DoBlasAsum(Stream *stream, uint64 elem_count,                           \
                   const DeviceMemory<float> &x, int incx,                      \
                   DeviceMemory<float> *result) override;                       \

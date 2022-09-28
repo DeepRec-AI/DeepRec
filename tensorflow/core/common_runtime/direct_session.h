@@ -130,6 +130,9 @@ class DirectSession : public Session {
   ::tensorflow::Status ReleaseCallable(CallableHandle handle) override;
 
   const SessionOptions& options() const { return options_; }
+  bool sync_on_finish() const { return sync_on_finish_; }
+  void set_sync_on_finish(bool flag) { sync_on_finish_ = flag; }
+  static mutex capture_run_mu_;
 
  private:
   // For access to collective_graph_key_.

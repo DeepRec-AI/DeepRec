@@ -505,6 +505,33 @@ Status BaseGPUDevice::Init(const SessionOptions& options) {
   return Status::OK();
 }
 
+void BaseGPUDevice::SetSingleStreamMode() {
+  stream_group_backup_ = streams_.front();
+  single_stream_mode_group_.compute = stream_group_backup_->compute;
+#if TENSORFLOW_USE_ROCM
+  single_stream_mode_group_.nccl = stream_group_backup_->compute;
+#endif
+  single_stream_mode_group_.host_to_device = stream_group_backup_->compute;
+  single_stream_mode_group_.device_to_host = stream_group_backup_->compute;
+  for (int i = 0; i < stream_group_backup_->device_to_device.size(); ++i) {
+    single_stream_mode_group_.device_to_device.push_back(stream_group_backup_->compute);
+  }
+
+  streams_.front() = &single_stream_mode_group_;
+  for (auto ctx : device_contexts_) {
+    ctx->StreamUnification();
+  }
+  is_single_stream_mode_ = true;
+}
+
+void BaseGPUDevice::ResetStreamMode() {
+  streams_.front() = stream_group_backup_;
+  for (auto ctx : device_contexts_) {
+    ctx->ResetStreamUnification();
+  }
+  is_single_stream_mode_ = false;
+}
+
 bool BaseGPUDevice::RequiresRecordingAccessedTensors() const {
   // When there is no more than one stream, we release the tensor reference
   // at the end of the kernel launch, instead of at the end of the kernel
