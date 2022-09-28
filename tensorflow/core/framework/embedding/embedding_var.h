@@ -185,11 +185,11 @@ class EmbeddingVar : public ResourceBase {
     return filter_->GetFreq(key);
   }
 
-  void Lookup(K key, V* val, V* default_v)  {
+  Status Lookup(K key, V* val, V* default_v)  {
     const V* default_value_ptr =
       (default_v == nullptr) ? default_value_ : default_v;
-    filter_->Lookup(this, key, val, default_value_ptr,
-        default_value_no_permission_);
+    return filter_->Lookup(this, key, val, default_value_ptr,
+                           default_value_no_permission_);
   }
 
   void LookupOrCreate(K key, V* val, V* default_v, int count = 1)  {

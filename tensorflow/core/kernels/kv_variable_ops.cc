@@ -516,11 +516,13 @@ class KvResourceGatherOp : public OpKernel {
       lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
                       TValue* val, TValue* default_v, int count) {
         ev->LookupOrCreate(key, val, default_v, count);
+        return Status::OK();
       };
     } else {
       lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
                       TValue* val, TValue* default_v, int count) {
-        ev->Lookup(key, val, default_v);
+        Status s = ev->Lookup(key, val, default_v);
+        return s;
       };
     }
   }
@@ -574,8 +576,8 @@ class KvResourceGatherOp : public OpKernel {
               default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
               ev->ValueLen());
           int32 count = get_count_fn_(counts, i);
-          lookup_fn_(ev, indices_flat(i),
-              out_base + i * slice_elems, default_v_ptr, count);
+          OP_REQUIRES_OK(c, lookup_fn_(ev, indices_flat(i),
+              out_base + i * slice_elems, default_v_ptr, count));
         }
       };
       auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
@@ -598,7 +600,7 @@ class KvResourceGatherOp : public OpKernel {
     std::function<
       TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
     std::function<int32(int32*, int64)> get_count_fn_;
-    std::function<void(EmbeddingVar<TKey, TValue>* ev,
+    std::function<Status(EmbeddingVar<TKey, TValue>* ev,
       TKey key, TValue* val, TValue* default_v, int count)> lookup_fn_;
 };
 

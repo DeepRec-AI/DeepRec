@@ -43,17 +43,8 @@ class EmbeddingFilter {
   virtual void LookupOrCreate(K key, V* val, const V* default_value_ptr,
     ValuePtr<V>** value_ptr, int count, const V* default_value_no_permission) = 0;
 
-  virtual void Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
-    const V* default_value_no_permission) {
-    ValuePtr<V>* value_ptr = nullptr;
-    Status s = ev->LookupKey(key, &value_ptr);
-    if (s.ok()) {
-      V* mem_val = ev->LookupPrimaryEmb(value_ptr);
-      memcpy(val, mem_val, sizeof(V) * ev->ValueLen());
-    } else {
-      memcpy(val, default_value_no_permission, sizeof(V) * ev->ValueLen());
-    }
-  }
+  virtual Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+    const V* default_value_no_permission) = 0;
 
   virtual void UpdateCache(const K* key_buff, int64 key_num, EV* ev,
       const int64* version_buff, const int64* freq_buff) {
@@ -112,6 +103,11 @@ class BloomFilter : public EmbeddingFilter<K, V, EV> {
         bloom_counter_ = (void *)calloc(config_.num_counter, sizeof(long));
     }
     GenerateSeed(config.kHashFunc);
+  }
+
+  Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+      const V* default_value_no_permission) override {
+    return errors::Unimplemented("Can't use CBF filter in EV for inference.");
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
@@ -401,6 +397,11 @@ class CounterFilter : public EmbeddingFilter<K, V, EV> {
        : config_(config), ev_(ev), storage_manager_(storage_manager) {
   }
 
+  Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+      const V* default_value_no_permission) override {
+    return errors::Unimplemented("Can't use counter filter in EV for inference.");
+  }
+
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
                       ValuePtr<V>** value_ptr, int count,
                       const V* default_value_no_permission) override {
@@ -493,6 +494,19 @@ class NullableFilter : public EmbeddingFilter<K, V, EV> {
   NullableFilter(const EmbeddingConfig& config,
       EV* ev, embedding::StorageManager<K, V>* storage_manager)
        : config_(config), ev_(ev), storage_manager_(storage_manager) {
+  }
+
+  Status Lookup(EV* ev, K key, V* val, const V* default_value_ptr,
+      const V* default_value_no_permission) override {
+    ValuePtr<V>* value_ptr = nullptr;
+    Status s = ev->LookupKey(key, &value_ptr);
+    if (s.ok()) {
+      V* mem_val = ev->LookupPrimaryEmb(value_ptr);
+      memcpy(val, mem_val, sizeof(V) * ev->ValueLen());
+    } else {
+      memcpy(val, default_value_no_permission, sizeof(V) * ev->ValueLen());
+    }
+    return Status::OK();
   }
 
   void LookupOrCreate(K key, V* val, const V* default_value_ptr,
