@@ -55,6 +55,26 @@ def write_config():
                     print("Bazel will build with --mkl_threadpool\n")
                     bazel_rc.write("build --define=build_with_mkldnn_threadpool=true\n")
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
+                elif argv == "--noaws":
+                    print("Bazel will build with --noaws\n")
+                    bazel_rc.write("build --define=no_aws_support=true\n")
+                elif argv == "--nogcp":
+                    print("Bazel will build with --nogcp\n")
+                    bazel_rc.write("build --define=no_gcp_support=true\n")
+                elif argv == "--nohdfs":
+                    print("Bazel will build with --nohdfs\n")
+                    bazel_rc.write("build --define=no_hdfs_support=true\n")
+                elif argv == "--nokafka":
+                    print("Bazel will build with --nokafka\n")
+                    bazel_rc.write("build --define=no_kafka_support=true\n")
+                elif argv == "--noignite":
+                    print("Bazel will build with --noignite\n")
+                    bazel_rc.write("build --define=no_ignite_support=true\n")
+                elif argv == "--nonccl":
+                    print("Bazel will build with --nonccl\n")
+                    bazel_rc.write("build --define=no_nccl_support=true\n")
+                else:
+                    print("Bazel will build unknow args.\n")
 
             bazel_rc.write("build -c opt\n")
 
