@@ -68,7 +68,7 @@ class FusedLayerNormOp : public OpKernel {
     const int64 total_unit = (rows + 15) / 16;
     const int64 unit_cost = 16 * cols * 50;  // assume every element consumes 50 cycles
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
     int64 block_num = cols >> 7;
     int64 remainder_128 = cols & 0x7F;
     int64 remainder_16 = remainder_128 & 0x0F;
@@ -88,7 +88,7 @@ class FusedLayerNormOp : public OpKernel {
           if (end_row > rows) {
             end_row = rows;
           }
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
           forward_avx512(input, gamma, beta, output, mean, rvariance, cols, begin_row, end_row, block_num, 
                          remainder_block_num, remainder_block_num_total, remainder_128, remainder_16, one_over_cols);
 #else
@@ -170,7 +170,7 @@ class FusedLayerNormOp : public OpKernel {
     }
   }
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   // AVX512 block size = 8; pack 8 * 16 = 128;
   inline void forward_avx512(const float* input, const float* gamma, const float* beta, float* output, 
                               float* mean, float* rvariance, int64 cols, int64 begin_row, int64 end_row,
@@ -353,7 +353,7 @@ class FusedLayerNormGradOp : public OpKernel {
         *(context->device()->tensorflow_cpu_worker_threads());
     thread::ThreadPool* thread_pool = worker_threads.workers;
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
     const int total_unit = (rows >= 128 ? 8 : (rows + 15) / 16);
     const int64 rows_per_unit = (rows + total_unit - 1) / total_unit; 
     const int64 unit_cost = rows_per_unit * cols * 100;
@@ -386,7 +386,7 @@ class FusedLayerNormGradOp : public OpKernel {
   }
 
  private:
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   void backward(const float* diff, const float* x, const float* mean,
                    const float* rvariance, const float* gamma, float* x_diff,
                    float* gamma_diff, float* beta_diff, int64 cols,
@@ -516,7 +516,7 @@ class FusedLayerNormGradOp : public OpKernel {
   }
 #endif // backward define
 
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   template <int ROWS>
   inline void backward_avx512(const float* y_grad, const float* x,
                               const float* mean, const float* rvariance,
