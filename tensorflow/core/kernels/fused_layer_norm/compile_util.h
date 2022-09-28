@@ -31,7 +31,7 @@ struct compile_time_for<0> {
   template <typename Lambda, typename... Args>
   inline static void op(const Lambda& function, Args... args) {}
 };
-#ifdef __AVX512F__
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
 
 template <int BLOCK_NUM>
 inline __m512 reduce_sum_block(const __m512* v) {
