@@ -106,6 +106,7 @@ class EmbeddingVar : public ResourceBase {
           default_tensor.NumElements() / emb_config_.default_value_dim;
         default_value_ = TypedAllocator::Allocate<V>(alloc_,
             default_tensor.NumElements(), AllocationAttributes());
+
         auto default_tensor_flat = default_tensor.flat<V>();
         memcpy(default_value_, &default_tensor_flat(0),
             default_tensor.TotalBytes());
@@ -168,6 +169,10 @@ class EmbeddingVar : public ResourceBase {
   void BatchCommit(const std::vector<K>& keys,
                    const std::vector<ValuePtr<V>*>& value_ptrs) {
     TF_CHECK_OK(storage_manager_->BatchCommit(keys, value_ptrs));
+  }
+
+  void Eviction(K* evict_ids, int64 evict_size) {
+    TF_CHECK_OK(storage_manager_->Eviction(evict_ids, evict_size));
   }
 
   int64 GetVersion(K key) {
@@ -382,6 +387,10 @@ class EmbeddingVar : public ResourceBase {
       storage_manager_->GetStorageType();
   }
 
+  void InitStorageCacheStrategy(embedding::CacheStrategy cache_strategy) {
+    storage_manager_->InitCacheStrategy(cache_strategy);
+  }
+
   std::string DebugString() const {
     return emb_config_.DebugString();
   }
@@ -535,7 +544,8 @@ class EmbeddingVar : public ResourceBase {
         buffer3 = nullptr;
       }
     }
-    TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
+    TypedAllocator::Deallocate(alloc_, default_value_,
+        value_len_ * emb_config_.default_value_dim);
     if (default_value_no_permission_) {
       TypedAllocator::Deallocate(alloc_, default_value_no_permission_,
           value_len_);

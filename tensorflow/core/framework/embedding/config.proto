@@ -29,3 +29,8 @@ enum SlotType {
   EMBEDDING_VARIABLE = 0;
   VARIABLE = 1;
 }
+
+enum CacheStrategy {
+  LRU = 0;
+  LFU = 1;
+}

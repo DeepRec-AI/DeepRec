@@ -105,7 +105,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
         else:
           filter_strategy = variables.CounterFilter(filter_freq=primary._filter_freq)
       if slot_config.slot_type is config_pb2.SlotType.EMBEDDING_VARIABLE:
-        primary.initializer._set_attr("slot_num", attr_value_pb2.AttrValue(i=slot_config.slot_num))
+        primary._init_op._set_attr("slot_num", attr_value_pb2.AttrValue(i=slot_config.slot_num))
         primary._slot_num = slot_config.slot_num
         emb_index = primary._emb_index
         if primary.block_num > 1:
@@ -125,6 +125,7 @@ def _create_slot_var(primary, val, scope, validate_shape, shape, dtype, slot_con
             storage_type=primary.storage_type,
             storage_path=primary._storage_path,
             storage_size=primary._storage_size,
+            storage_cache_strategy=primary._storage_cache_strategy,
             l2_weight_threshold=primary._l2_weight_threshold,
             filter_strategy=filter_strategy)
         )

@@ -27,14 +27,20 @@ namespace embedding {
 
 struct StorageConfig {
   StorageConfig() : type(StorageType::INVALID),
-      path(""), layout_type(LayoutType::NORMAL) {
+                    path(""),
+                    layout_type(LayoutType::NORMAL),
+                    cache_strategy(CacheStrategy::LFU) {
     size = {1<<30,1<<30,1<<30,1<<30};
   }
 
   StorageConfig(StorageType t,
                 const std::string& p,
                 const std::vector<int64>& s,
-                const std::string& layout) : type(t), path(p) {
+                const std::string& layout,
+                const CacheStrategy cache_strategy_ = CacheStrategy::LFU)
+                                      : type(t),
+                                        path(p),
+                                        cache_strategy(cache_strategy_) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
     } else if ("light" == layout) {
@@ -52,6 +58,7 @@ struct StorageConfig {
   LayoutType layout_type;
   std::string path;
   std::vector<int64> size;
+  CacheStrategy cache_strategy;
 };
 
 template <class K, class V>
@@ -174,17 +181,7 @@ class StorageManager {
         sc_.type == embedding::DRAM_LEVELDB) {
       is_multi_level_ = true;
     }
-
     hash_table_count_ = kvs_.size();
-    if (hash_table_count_ > 1) {
-      cache_ = new LRUCache<K>();
-      eviction_thread_ = Env::Default()->StartThread(
-          ThreadOptions(), "EV_Eviction", [this]() { BatchEviction(); });
-      thread_pool_.reset(
-          new thread::ThreadPool(Env::Default(), ThreadOptions(),
-            "MultiLevel_Embedding_Cache", 2, /*low_latency_hint=*/false));
-    }
-    // DebugString();
     CHECK(2 >= hash_table_count_)
         << "Not support multi-level(>2) embedding.";
 
@@ -218,6 +215,24 @@ class StorageManager {
     flag_.clear(std::memory_order_release);
   }
 
+  void InitCacheStrategy(embedding::CacheStrategy cache_strategy) {
+    sc_.cache_strategy = cache_strategy;
+    if (hash_table_count_ > 1) {
+      if (sc_.cache_strategy == CacheStrategy::LRU) {
+        LOG(INFO)<<" Use StorageManager::LRU in multi-tier EV "<< name_;
+        cache_ = new LRUCache<K>();
+      } else {
+        LOG(INFO) << "Use StorageManager::LFU in multi-tier EV " << name_;
+        cache_ = new LFUCache<K>();
+      }
+      eviction_thread_ = Env::Default()->StartThread(
+          ThreadOptions(), "EV_Eviction", [this]() { BatchEviction(); });
+      thread_pool_.reset(
+          new thread::ThreadPool(Env::Default(), ThreadOptions(),
+            "MultiLevel_Embedding_Cache", 2, /*low_latency_hint=*/false));
+    }
+  }
+
   int64 GetAllocLen(){
     return alloc_len_;
   }
@@ -240,6 +255,10 @@ class StorageManager {
 
   std::string GetStoragePath() {
     return sc_.path;
+  }
+
+  int64 Size(int level){
+    return kvs_[level].first->Size();
   }
 
   bool IsMultiLevel() {
@@ -543,6 +562,19 @@ class StorageManager {
 
   Status Commit(K key, const ValuePtr<V>* value_ptr) {
     TF_CHECK_OK(kvs_[0].first->Commit(key, value_ptr));
+    return Status::OK();
+  }
+
+  Status Eviction(K* evict_ids, int64 evict_size) {
+    ValuePtr<V>* value_ptr;
+    for (int64 i = 0; i < evict_size; ++i) {
+      if (kvs_[0].first->Lookup(evict_ids[i], &value_ptr).ok()) {
+        TF_CHECK_OK(kvs_[1].first->Commit(evict_ids[i], value_ptr));
+        TF_CHECK_OK(kvs_[0].first->Remove(evict_ids[i]));
+        value_ptr->Destroy(kvs_[0].second);
+        delete value_ptr;
+      }
+    }
     return Status::OK();
   }
 
