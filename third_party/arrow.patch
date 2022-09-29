@@ -1,0 +1,38 @@
+diff -uprN cpp/src/arrow/filesystem/api.h arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/api.h
+--- cpp/src/arrow/filesystem/api.h	2021-07-22 20:38:01.000000000 +0800
++++ arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/api.h	2022-09-29 17:54:02.517916929 +0800
+@@ -23,6 +23,3 @@
+ #include "arrow/filesystem/hdfs.h"        // IWYU pragma: export
+ #include "arrow/filesystem/localfs.h"     // IWYU pragma: export
+ #include "arrow/filesystem/mockfs.h"      // IWYU pragma: export
+-#ifdef ARROW_S3
+-#include "arrow/filesystem/s3fs.h"  // IWYU pragma: export
+-#endif
+diff -uprN cpp/src/arrow/filesystem/filesystem.cc arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/filesystem.cc
+--- cpp/src/arrow/filesystem/filesystem.cc	2021-07-22 20:38:01.000000000 +0800
++++ arrow-apache-arrow-5.0.0/cpp/src/arrow/filesystem/filesystem.cc	2022-09-29 17:53:44.388365471 +0800
+@@ -24,9 +24,6 @@
+ #ifdef ARROW_HDFS
+ #include "arrow/filesystem/hdfs.h"
+ #endif
+-#ifdef ARROW_S3
+-#include "arrow/filesystem/s3fs.h"
+-#endif
+ #include "arrow/filesystem/localfs.h"
+ #include "arrow/filesystem/mockfs.h"
+ #include "arrow/filesystem/path_util.h"
+@@ -692,14 +689,7 @@ Result<std::shared_ptr<FileSystem>> File
+ #endif
+   }
+   if (scheme == "s3") {
+-#ifdef ARROW_S3
+-    RETURN_NOT_OK(EnsureS3Initialized());
+-    ARROW_ASSIGN_OR_RAISE(auto options, S3Options::FromUri(uri, out_path));
+-    ARROW_ASSIGN_OR_RAISE(auto s3fs, S3FileSystem::Make(options, io_context));
+-    return s3fs;
+-#else
+     return Status::NotImplemented("Got S3 URI but Arrow compiled without S3 support");
+-#endif
+   }
+ 
+   if (scheme == "mock") {

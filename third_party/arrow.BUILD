@@ -89,6 +89,7 @@ cc_library(
             "cpp/src/**/stream_to_file.cc",
             "cpp/src/arrow/util/bpacking_avx2.cc",
             "cpp/src/arrow/util/bpacking_avx512.cc",
+            "cpp/src/arrow/filesystem/s3fs.cc",
         ],
     ),
     hdrs = [
@@ -106,7 +107,7 @@ cc_library(
         "ARROW_WITH_BZ2",
         "ARROW_STATIC",
         "ARROW_HDFS=ON",
-        "ARROW_S3=ON",
+        "ARROW_S3=OFF",
         "ARROW_EXPORT=",
         "PARQUET_STATIC",
         "PARQUET_EXPORT=",
@@ -116,7 +117,7 @@ cc_library(
     includes = [
         "cpp/src",
         "cpp/src/arrow/vendored/xxhash",
-	"cpp/thirdparty/flatbuffers/include",
+        "cpp/thirdparty/flatbuffers/include",
     ],
     textual_hdrs = [
         "cpp/src/arrow/vendored/xxhash/xxhash.c",
@@ -124,7 +125,6 @@ cc_library(
     deps = [
         ":arrow_format",
         "@boringssl//:crypto",
-        "@aws",
         "@brotli",
         "@bzip2",
         "@double_conversion//:double-conversion",

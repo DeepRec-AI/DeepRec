@@ -1433,7 +1433,6 @@ cc_library(
     }),
     defines = [
         "DEEPREC_ARROW_HDFS",
-        "DEEPREC_ARROW_S3",
         "DEEPREC_ARROW_ZEROCOPY",
     ]
 )
