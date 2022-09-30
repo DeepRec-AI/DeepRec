@@ -225,6 +225,7 @@ Status MakeShapeFromFormat(TensorFormat format, DimensionOrConstant N,
 
 // Shape function for MatMul-like operations.
 Status MatMulShape(shape_inference::InferenceContext* c);
+Status MatMulGradFilterShape(shape_inference::InferenceContext* c);
 
 // Shape function for Batched MatMul-like operations with broadcasting across
 // batch dimensions.
@@ -248,6 +249,9 @@ Status Conv2DShapeWithExplicitPadding(shape_inference::InferenceContext* c);
 // Shape function for Conv2D-like operations that do not support explicit
 // padding.
 Status Conv2DShape(shape_inference::InferenceContext* c);
+
+// Shape function for QuantizedConv2D-like operations
+Status QuantizedConv2DShape(shape_inference::InferenceContext* c);
 
 // Shape function for Conv3D-like operations.
 Status Conv3DShape(shape_inference::InferenceContext* c);
