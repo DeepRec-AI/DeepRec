@@ -20,10 +20,12 @@ from tensorflow.python.framework import errors
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import training_util
 from tensorflow.python.ops import prefetch
+from tensorflow.python.util.tf_export import tf_export
 
 import os
 import re
 
+@tf_export(v1=["async_embedding_mark_node"])
 def async_embedding_mark_node(embedding_tensor):
     """ mark embedding lookup output
     Args: 
@@ -80,6 +82,7 @@ class AsyncEmbeddingStage:
         self._mark_nodes_status()
         self._pick_stage_nodes()
         self._perform_stage()
+        self._place_io_embedding_subgraph_on_cpu(graph)
         self._check_graph()
         self._save_graph(graph, "graph_after_async_embedding")
 
@@ -248,6 +251,7 @@ class AsyncEmbeddingStage:
 
             stage_outputs[stage_node.name] = stage_node_outputs
             stage_outputs_consumers[stage_node.name] = stage_node_outputs_consumers
+
         with ops.colocate_with(list(self._stage_nodes.keys())[0]):
             stage_output_result = prefetch.staged(stage_outputs,
                                               num_threads=self._threads_num,
@@ -381,4 +385,79 @@ class AsyncEmbeddingStage:
         if nodes:
             self._print_ops_path('find node cycle dependent on stage', nodes)
             raise Exception('check graph failed, find node cycle dependent on stage')
+    
+    def _get_op_device_str(self, op):
+        dev_str = op.device
+        if dev_str == None:
+            return ''
+        return dev_str
         
+    def _set_op_device(self, op, dev_str):
+        origin_device = self._get_op_device_str(op)
+        if origin_device == '':
+            device = dev_str
+        else:
+            device = ''
+            # keep 'job/replica/task' info
+            fields = origin_device.strip('/').split('/')
+            for field_ in fields:
+                field = field_.lower()
+                # skip 'device:xxx'
+                if field.find("device:") != -1:
+                    continue
+                else:
+                    device += '/' + field_
+            device += dev_str
+        op._set_device(device)
+        
+    def _place_io_embedding_subgraph_on_cpu(self, graph):
+        dev_str = '/device:CPU:0'
+
+        # 1. collect TensorBufferPut node, TensorBufferGet node,
+        #    TensorBufferCancel node, TensorBufferClosed node
+        stage_put_nodes = set()
+        stage_get_nodes = set()
+        stage_cancel_nodes = set()
+        stage_closed_nodes = set()
+        for node in graph.get_operations():
+            if node.type == 'TensorBufferPut':
+                stage_put_nodes.add(node)
+            elif node.type == 'TensorBufferTake':
+                stage_get_nodes.add(node)
+            elif node.type == 'TensorBufferCancel':
+                stage_cancel_nodes.add(node)
+            elif node.type == 'TensorBufferClosed':
+                stage_closed_nodes.add(node)
+
+        # 2. place stage_get_nodes on cpu
+        for stage_get_node in stage_get_nodes:
+            self._set_op_device(stage_get_node, dev_str)
+
+        # 3. place stage_put_nodes and nodes before stage_put_nodes on cpu
+        for stage_put_node in stage_put_nodes:
+            is_visited = set()
+            visit_stack = []
+            visit_stack.append(stage_put_node)
+            while len(visit_stack) > 0:
+                visit_node = visit_stack.pop()
+
+                if visit_node in is_visited:
+                    continue
+                is_visited.add(visit_node)
+
+                self._set_op_device(visit_node, dev_str)
+
+                for input_tensor in visit_node.inputs:
+                    input_node = input_tensor.op
+                    visit_stack.append(input_node)
+                for control_input_node in visit_node.control_inputs:
+                    visit_stack.append(control_input_node)
+
+        # 4. place stage_cancel_nodes on cpu
+        for stage_cancel_node in stage_cancel_nodes:
+            self._set_op_device(stage_cancel_node, dev_str)
+
+        # 5. place stage_closed_nodes on cpu
+        for stage_closed_node in stage_closed_nodes:
+            self._set_op_device(stage_closed_node, dev_str)
+
