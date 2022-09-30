@@ -265,6 +265,20 @@ CUDABlas::~CUDABlas() {
 #endif
 }
 
+bool CUDABlas::SetWorkspace(Stream* stream, void *workspace, size_t workspaceSizeInBytes) {
+  CHECK(blas_ != nullptr);
+  if (!SetStream(stream)) {
+    return false;
+  }
+  cublasStatus_t ret = cublasSetWorkspace(blas_, workspace, workspaceSizeInBytes);
+  VLOG(2) << "set cublas workspace";
+  if (ret != CUBLAS_STATUS_SUCCESS) {
+    LOG(ERROR) << "failed to set cublas workspace: " << ToString(ret);
+    return false;
+  }
+  return true;
+}
+
 bool CUDABlas::SetStream(Stream *stream) {
   CHECK(stream != nullptr);
   CHECK(AsGpuStreamValue(stream) != nullptr);

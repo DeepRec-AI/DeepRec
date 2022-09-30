@@ -96,6 +96,8 @@ class Device : public DeviceBase {
     op_kernel->Compute(context);
   }
 
+  virtual bool IsSingleStreamMode() { return false; }
+
   // Asynchronous kernel's compute.
   virtual void ComputeAsync(AsyncOpKernel* op_kernel, OpKernelContext* context,
                             AsyncOpKernel::DoneCallback done) {

@@ -86,6 +86,8 @@ limitations under the License.
 
 namespace tensorflow {
 
+mutex DirectSession::capture_run_mu_;
+
 namespace {
 
 auto* direct_session_runs = monitoring::Counter<0>::New(

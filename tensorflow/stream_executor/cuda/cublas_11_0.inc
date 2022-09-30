@@ -50,6 +50,13 @@ cublasStatus_t CUBLASWINAPI cublasGetStream_v2 (cublasHandle_t handle, cudaStrea
   return func_ptr(handle, streamId);
 }
 
+cublasStatus_t CUBLASWINAPI cublasSetWorkspace_v2 (cublasHandle_t handle, void *workspace, size_t workspaceSizeInBytes) {
+  using FuncPtr = cublasStatus_t (CUBLASWINAPI *)(cublasHandle_t, void *, size_t);
+  static auto func_ptr = LoadSymbol<FuncPtr>("cublasSetWorkspace_v2");
+  if (!func_ptr) return GetSymbolNotFoundError();
+  return func_ptr(handle, workspace, workspaceSizeInBytes);
+}
+
 cublasStatus_t CUBLASWINAPI cublasGetPointerMode_v2 (cublasHandle_t handle, cublasPointerMode_t *mode) {
   using FuncPtr = cublasStatus_t (CUBLASWINAPI *)(cublasHandle_t, cublasPointerMode_t *);
   static auto func_ptr = LoadSymbol<FuncPtr>("cublasGetPointerMode_v2");
