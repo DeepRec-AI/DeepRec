@@ -2214,11 +2214,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForInference")
     var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            ev_option = variables.EmbeddingVariableOption(
-              filter_option=variables.CounterFilter(filter_freq=3),
-              evict_option=variables.GlobalStepEvict(steps_to_live=2))
-            )
+            initializer=init_ops.ones_initializer(dtypes.float32))
     shape=var.get_dynamic_shape()
     ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
     emb = embedding_ops.embedding_lookup(var, ids)
