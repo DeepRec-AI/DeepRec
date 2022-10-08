@@ -1,6 +1,6 @@
 # Embedding on PMEM
 ## 将Embedding Variable存到PMEM的好处
-DeepRec拥有超大规模分布式训练能力，支持万亿样本模型训练和千亿Embedding Processing。稀疏模型中90%以上的数据是Embedding Variable，用于具有超>大规模特征的大规模训练。在这种情况下，内存容量成为瓶颈之一。将Embedding Variable存到 PMEM 将带来以下好处：
+DeepRec拥有超大规模分布式训练能力，支持万亿样本模型训练和千亿Embedding Processing。稀疏模型中90%以上的数据是Embedding Variable，用于具有超大规模特征的大规模训练。在这种情况下，内存容量成为瓶颈之一。将Embedding Variable存到 PMEM 将带来以下好处：
 1. 提高大规模分布式训练的内存存储能力；
 2. 降低 TCO；
 ## 将PMEM配置成内存模式来保存Embedding Variable
