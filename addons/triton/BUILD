@@ -14,5 +14,6 @@ cc_library(
         "//tensorflow/core:core",
         "//tensorflow/cc/saved_model:loader",
         "//tensorflow/cc/saved_model:tag_constants",
+        "//tensorflow/c:c_api",
     ],
 )
