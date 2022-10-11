@@ -40,12 +40,12 @@ The following is a brief directory structure and description for this example:
 2.  Create a docker image by DockerFile.   
     Choose DockerFile corresponding to DeepRec(Pending) or Google tensorflow.
     ```
-    docker build -t DeepRec_Model_Zoo_MMOE_training:v1.0 .
+    docker build -t DeepRec_Model_Zoo_PLE_training:v1.0 .
     ```
 
 3.  Run a docker container.
     ```
-    docker run -it DeepRec_Model_Zoo_MMOE_training:v1.0 /bin/bash
+    docker run -it DeepRec_Model_Zoo_PLE_training:v1.0 /bin/bash
     ```
 
 4.  Training.  
@@ -63,7 +63,7 @@ The following is a brief directory structure and description for this example:
       - `--bf16`: Enable DeepRec BF16 feature in DeepRec. Use FP32 by default.
       - `--emb_fusion`: Whether to enable embedding fusion, Default is `True`.
       - `--op_fusion`: Whether to enable Auto graph fusion feature. Default is `True`.
-      - `--optimizer`: Choose the optimizer for deep model from ['adam', 'adamasync', 'adagraddecay', 'adagrad', 'gradientdescent']. Use `adagrad` by default.
+      - `--optimizer`: Choose the optimizer for deep model from ['adam', 'adamasync', 'adagraddecay', 'adagrad', 'gradientdescent']. Use `adam` by default.
       - `--smartstaged`: Whether to enable SmartStaged feature of DeepRec, Default is `True`.
       - `--micro_batch`: Set num for Auto Micro Batch. Default is `0`. (Not really enabled)
       - `--ev`: Whether to enable DeepRec EmbeddingVariable. Default is `False`.
@@ -134,7 +134,7 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
         <td>Globalsetp/Sec</td>
     </tr>
     <tr>
-        <td rowspan="3">MMOE</td>
+        <td rowspan="3">PLE</td>
         <td>Community TensorFlow</td>
         <td>FP32</td>
         <td></td>

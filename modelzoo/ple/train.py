@@ -11,7 +11,6 @@ import json
 
 from tensorflow.python.ops import partitioned_variables
 
-import pdb
 
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -320,7 +319,6 @@ class PLE():
             scope='loss',
             reduction=tf.losses.Reduction.SUM_OVER_BATCH_SIZE)
         print(self.loss)
-        pdb.set_trace()
         tf.summary.scalar('loss', self.loss)
     
     # define optimizer and generate train_op
@@ -367,15 +365,6 @@ class PLE():
         
         tf.summary.scalar('eval_auc1', self.auc1)
         tf.summary.scalar('eval_auc2', self.auc2)
-        
-        # self.acc, self.acc_op = tf.metrics.accuracy(labels=self._label,
-        #                                             predictions=self.output)
-        # self.auc, self.auc_op = tf.metrics.auc(labels=self._label,
-        #                                        predictions=self.probability,
-        #                                        num_thresholds=1000)
-        # tf.summary.scalar('eval_acc', self.acc)
-        # tf.summary.scalar('eval_auc', self.auc)
-
 
 # generate dataset pipline
 def build_model_input(filename, batch_size, num_epochs):
@@ -780,7 +769,7 @@ def get_arg_parser():
     parser.add_argument('--optimizer',
                         type=str, \
                         choices=['adam', 'adamasync', 'adagraddecay', 'adagrad'],
-                        default='adamasync')
+                        default='adam')
     parser.add_argument('--tf', \
                         help='Use TF 1.15.5 API and disable DeepRec feature to run a baseline.',
                         action='store_true')
