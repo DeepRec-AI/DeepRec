@@ -10,10 +10,11 @@ The following is a brief directory structure and description for this example:
 │   └── README.md               # Documentation describing how to prepare dataset
 │   └── script                      # Directory contains scripts to process dataset
 │       ├── data_iterator.py           
-│       ├── generate_voc.py         
-│       ├── local_aggretor.py               
-│       ├── shuffle.py           
-│       └── split_by_user.py
+│       ├── generate_voc.py         # Create a list of features
+│       ├── local_aggretor.py       # Generate sample data     
+│       ├── shuffle.py
+│       ├──process_data.py          # Parse raw json data
+│       └── split_by_user.py        # Divide the dataset
 ├── script                       #  Directory contains scripts to CAN model
 │	├── Dice.py
 │	├── model.py
@@ -65,9 +66,7 @@ paper: [arxiv (to be released)]()
 ​	2.train.
 
 ```
-CUDA_VISIBLE_DEVICES=0 python script/train.py train {model}
-
-model: CAN,Cartesion,PNN, etc. (check the train.py)
+python train.py
 ```
 
 ​	
@@ -76,7 +75,7 @@ model: CAN,Cartesion,PNN, etc. (check the train.py)
 
 ## Dataset
 
-Amazon, Taobao and Avazu dataset is used as benchmark dataset.
+Amazon Dataset Books dataset is used as benchmark dataset.
 
 ### Prepare
 
