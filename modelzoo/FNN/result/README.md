@@ -1,2 +1,2 @@
 # Result
-Evaluation Metrics file are default saved in this folder.
+Checkpoint & timeline file are default saved in this folder.

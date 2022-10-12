@@ -37,7 +37,7 @@ def check_version(version):
                     latest_version = max(latest_version, ver)
                 if latest_version > version:
                     logging.warning(
-                        '\nDeepCTR version {0} detected. Your version is {1}.\nUse `pip install -U deepctr` to upgrade.Changelog: https://github.com/shenweichen/DeepCTR/releases/tag/v{0}'.format(
+                        '\nDeepCTR version {0} detected. Your version is {1}.\nUse `pip install -U script` to upgrade.Changelog: https://github.com/shenweichen/DeepCTR/releases/tag/v{0}'.format(
                             latest_version, version))
         except:
             print("Please check the latest version manually on https://pypi.org/project/deepctr/#history")

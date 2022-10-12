@@ -14,6 +14,33 @@ from .layers.utils import concat_func
 import pandas as pd
 import numpy as np
 
+fi = open('../../deep_ctr_master/data/fm.model.txt','r')
+
+first = True
+feat_weights={}
+k=0
+for line in fi:
+    s = line.strip().split()
+    if first:
+        first = False
+        w_0 = float(s[0])
+        feat_num = int(s[1])
+        k = int(s[2]) + 1 # w and v
+
+    else:
+        feat = int(s[0])
+        weights = [float(s[1 + i]) for i in range(k)]
+        feat_weights[feat] = weights
+
+list1 =[]
+for col,val in feat_weights.items():
+    list1.append(val)
+
+# def my_init(shape,dtype=None):
+#     weight = np.array(list1)
+#
+#     return weight.reshape(shape)
+
 
 DEFAULT_GROUP_NAME = "default_group"
 
@@ -31,7 +58,9 @@ class SparseFeat(namedtuple('SparseFeat',
         if embedding_dim == "auto":
             embedding_dim = 6 * int(pow(vocabulary_size, 0.25))
         if embeddings_initializer is None:
-            embeddings_initializer = RandomNormal(mean=0.0, stddev=0.0001, seed=2020)
+            embeddings_initializer = RandomNormal(mean=0.0, stddev=0.001, seed=2020)
+        # if embeddings_initializer=='fm':
+        #     embeddings_initializer = my_init(shape=(vocabulary_size,embedding_dim))
 
 
 
@@ -161,11 +190,11 @@ def get_linear_logit(features, feature_columns, units=1, use_bias=False, seed=10
     for i in range(len(linear_feature_columns)):
         if isinstance(linear_feature_columns[i], SparseFeat):
             linear_feature_columns[i] = linear_feature_columns[i]._replace(embedding_dim=1,
-                                                                           embeddings_initializer=Zeros())
+                                                                           embeddings_initializer=RandomNormal(mean=0.0, stddev=0.01, seed=2020))
         if isinstance(linear_feature_columns[i], VarLenSparseFeat):
             linear_feature_columns[i] = linear_feature_columns[i]._replace(
                 sparsefeat=linear_feature_columns[i].sparsefeat._replace(embedding_dim=1,
-                                                                         embeddings_initializer=Zeros()))
+                                                                         embeddings_initializer=RandomNormal(mean=0.0, stddev=0.01, seed=2020)))
 
     linear_emb_list = [input_from_feature_columns(features, linear_feature_columns, l2_reg, seed,
                                                   prefix=prefix + str(i))[0] for i in range(units)]

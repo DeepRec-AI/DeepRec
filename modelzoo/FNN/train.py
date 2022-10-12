@@ -1,4 +1,6 @@
 import os
+import sys
+import argparse
 import pandas as pd
 import numpy as np
 import tensorflow as tf
@@ -6,126 +8,194 @@ import pickle as pkl
 import math
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.optimizers import Adam
-from sklearn.metrics import log_loss, roc_auc_score
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler,MultiLabelBinarizer
 from script.models.fnn import FNN
 from script.feature_column import SparseFeat, DenseFeat, get_feature_names,VarLenSparseFeat
-import gc
+import collections
 
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-def split(x):
-    key_ans = x.split(',')
-    for key in key_ans:
-        if key not in key2index:
-            key2index[key] = len(key2index) + 1
-    return list(map(lambda x: key2index[x], key_ans))
+UNSEQ_COLUMNS = ['UID', 'ITEM', 'CATEGORY']
+LABEL_COLUMN = ['CLICKED']
+TRAIN_DATA_COLUMNS = LABEL_COLUMN + UNSEQ_COLUMNS
+
+EMBEDDING_DIM=8
+
+def build_model_input(filename=None,chunkSize=1e6,loop=True):
+    chunks=[]
+    data = pd.read_csv(filename, encoding="utf-8", header=None, names=TRAIN_DATA_COLUMNS, iterator=True)
+    while loop:
+        try:
+            chunk = data.get_chunk(chunkSize)
+            chunks.append(chunk)
+        except StopIteration:
+            loop=False
+    dataset = pd.concat(chunks)
+
+    return dataset
+
+
+
+def build_feature_columns(data_location=None):
+
+    if data_location:
+        uid_file = os.path.join(data_location, 'uid_labelencode.csv')
+        mid_file = os.path.join(data_location, 'mid_labelencode.csv')
+        cat_file = os.path.join(data_location, 'cat_labelencode.csv')
+        if (not os.path.exists(uid_file)) or (not os.path.exists(mid_file)) or (
+                    not os.path.exists(cat_file)):
+            print("uid_labelencode.csv, mid_labelencode.csv or cat_labelencode.csv does not exist in data file.")
+            sys.exit()
+
+        uid_data = pd.read_csv(uid_file,encoding="utf-8")
+        mid_data = pd.read_csv(mid_file,encoding="utf-8")
+        cat_data = pd.read_csv(cat_file,encoding="utf-8")
+
+
+        feature_column=[SparseFeat('UID', vocabulary_size=uid_data['UID'+'_encode'].max() + 1, embedding_dim=EMBEDDING_DIM,embeddings_initializer=None),
+                        SparseFeat('ITEM',vocabulary_size=mid_data['ITEM'+'_encode'].max()+1,embedding_dim=EMBEDDING_DIM,embeddings_initializer=None),
+                        SparseFeat('CATEGORY',vocabulary_size=cat_data['CATEGORY'+'_encode'].max()+1,embedding_dim=EMBEDDING_DIM,embeddings_initializer=None)]
+
+    else:
+        print("data_location does not exist in data file. ")
+        sys.exit()
+
+
+    return feature_column
+
+
+def main(train_data=None,test_data=None,feature_colums=None):
+    feature_names = get_feature_names(feature_colums)
+    model = FNN(feature_colums, feature_colums, dnn_hidden_units=args.dnn_hidden_units,l2_reg_embedding=args.l2_reg_embedding,
+                l2_reg_linear=args.l2_reg_linear,l2_reg_dnn=args.l2_reg_dnn,seed=args.seed,dnn_dropout=args.dnn_dropout,
+                dnn_activation=args.dnn_activation,task=args.task)
+
+    if args.optimizer=='adam':
+        optimizer = Adam(learning_rate=args.learning_rate, amsgrad=False)
+    model.compile(optimizer, loss=args.loss,
+                  metrics=args.metrics)
+    saver = tf.train.Saver()
+    gpu_options = tf.GPUOptions(allow_growth=True)
+    with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
+        if args.training:
+            train_inputs = {name: train_data[name].values for name in feature_names}
+            sess.run(tf.tables_initializer())
+            history = model.fit(train_inputs, train_data[LABEL_COLUMN].values,
+                            batch_size=args.batch_size, epochs=args.epochs,
+                            verbose=args.verbose,validation_split=args.validation_split)
+            saver.save(sess,args.save_path,global_step=args.save_step)
+
+        else:
+            #new_saver = tf.train.import_meta_graph(save_path+'model.ckpt.meta')
+
+            saver.restore(sess, tf.train.latest_checkpoint(args.save_path))
+            test_inputs = {name:test_data[name].values for name in feature_names}
+            pred_ans = model.predict(test_inputs, batch_size=args.batch_size)
+
+
+# Get parse
+def get_arg_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--learning_rate',
+                        help='Learning rate for model',
+                        type=float,
+                        default=0.001)
+    parser.add_argument('--save_path',
+                        help='Full path to model output directory',
+                        required=False,
+                        default='results/')
+    parser.add_argument('--batch_size',
+                        help='Batch size to train. Default is 512',
+                        type=int,
+                        default=512)
+    parser.add_argument('--training',
+                        help='train or eval ',
+                        type=bool,
+                        default=True)
+    parser.add_argument('--epochs',
+                        help='Epoch to train.Default is 50',
+                        type=int,
+                        default=1)
+    parser.add_argument('--save_step',
+                        help='set the number of steps on saving checkpoints',
+                        type=int,
+                        default=1)
+    parser.add_argument('--verbose',
+                        help='set the random seed for tensorflow.',
+                        choices=[0,1,2],
+                        default=2)
+    parser.add_argument('--validation_split',
+                        help='Validation split.',
+                        type=float,
+                        default=0.2)
+    parser.add_argument('--optimizer',
+                        type=str,
+                        default='adam')
+    parser.add_argument('--dnn_hidden_units',
+                        type=tuple,
+                        help='An iterable containing all the features used by deep part of the model.',
+                        default=(256, 128, 64))
+    parser.add_argument('--l2_reg_embedding',
+                        help=' L2 regularizer strength applied to embedding vector.',
+                        type=float,
+                        default=0.00001)
+    parser.add_argument('--l2_reg_linear',
+                        help='L2 regularizer strength applied to linear weight.',
+                        type=float,
+                        default=0.00001)
+    parser.add_argument('--l2_reg_dnn',
+                        help='L2 regularizer strength applied to DNN.',
+                        type=float,
+                        default=0)
+    parser.add_argument('--seed',
+                        help='to use as random seed.',
+                        type=int,
+                        default=1024)
+    parser.add_argument('--dnn_dropout',
+                        help='the probability we will drop out a given DNN coordinate,float in [0,1).',
+                        type=float,
+                        default=0)
+    parser.add_argument('--dnn_activation',
+                        help='Activation function to use in DNN.',
+                        type=str,
+                        default='relu')
+    parser.add_argument('--task',
+                        help='``"binary"`` for  binary logloss or  ``"regression"`` for regression loss.',
+                        type=str,
+                        choices=['binary', 'regression'],
+                        default='binary')
+    parser.add_argument('--loss',
+                        type=str,
+                        default='binary_crossentropy')
+    parser.add_argument('--metrics',
+                        type=list,
+                        default=['binary_crossentropy', 'AUC'])
+
+
+    return parser
+
+
 
 if __name__=="__main__":
-    path = 'data/'
-    datalist = ['1458','2259','2261','2997','3386','all']
+    path = 'dataset'
+    train_path = path+'/local_train_splitByUser_to_labelencode.txt'
+    test_path = path+'/local_test_splitByUser_to_labelencode.txt'
+    feature_colums = build_feature_columns(path)
 
-    for file in datalist:
+    train_data = build_model_input(train_path)
+    test_data = build_model_input(test_path)
 
-        data = pd.read_csv(path+file+'/train.log.txt',encoding="utf-8",
-                           header=0,sep="\t",low_memory=False)
+    feature_names = get_feature_names(feature_colums)
 
-        test_data = pd.read_csv(path+file+'/test.log.txt',encoding="utf-8",
-                           header=0,sep="\t",low_memory=False)
-
-
-        data = data[['click','weekday','hour','useragent','IP','region', 'city', 'adexchange', 'domain', 'slotid','slotwidth',
-                     'slotheight', 'slotvisibility', 'slotformat', 'creative', 'advertiser', 'slotprice']]
-
-        test_data = test_data[['click','weekday','hour','useragent','IP','region', 'city', 'adexchange', 'domain', 'slotid','slotwidth',
-                     'slotheight', 'slotvisibility', 'slotformat', 'creative', 'advertiser', 'slotprice']]
-
-        data['istest']=0
-        test_data['istest']=1
-        df =  pd.concat([data, test_data], axis=0, ignore_index=True)
-        del data, test_data
-        gc.collect()
-
-
-        df.dropna(subset=['click'],inplace=True)
-
-        df['adexchange'].fillna(0,inplace=True)
-        df['adexchange']=df['adexchange'].astype(int)
-
-
-        df.fillna('unknown', inplace=True)
-
-
-        dense_features = ['weekday', 'hour','region','city','adexchange','slotwidth','slotheight',
-                          'advertiser', 'slotprice' ]
-
-
-
-        sparse_features=[]
-
-        target='click'
-        for col in df.columns:
-            if col not in dense_features and col not in ['istest','click']:
-                lbe = LabelEncoder()
-                df[col] = lbe.fit_transform(df[col])
-                df[col]=lbe.fit_transform(df[col])
-                sparse_features.append(col)
-
-        mms = MinMaxScaler(feature_range=(0, 1))
-
-        df[dense_features] = mms.fit_transform(df[dense_features])
-
-
-        fixlen_feature_columns = [SparseFeat(feat, vocabulary_size=df[feat].max() + 1, embedding_dim=11,embeddings_initializer=None)
-                                  for i, feat in enumerate(sparse_features)] + [DenseFeat(feat, 1, )
-                                                                                for feat in dense_features]
-
-        linear_feature_columns = fixlen_feature_columns
-        dnn_feature_columns = fixlen_feature_columns
+    parser = get_arg_parser()
+    args = parser.parse_args()
+    main(train_data,test_data,feature_colums)
 
 
 
 
 
-        feature_names = get_feature_names(linear_feature_columns + dnn_feature_columns)
 
-        # 3.generate train&test input data for model
-        cols = [f for f in df.columns if f not in ['click', 'istest']]
-        train = df[df.istest==0][cols]
-        test = df[df.istest==1][cols]
-
-        train_model_input = {name: train[name] for name in feature_names}
-        test_model_input = {name: test[name] for name in feature_names}
-
-        gpu_options = tf.GPUOptions(allow_growth=True)
-
-
-        model = FNN(linear_feature_columns, dnn_feature_columns,task='binary',dnn_hidden_units=(128, 64, 32))
-
-        adam = Adam(learning_rate=0.001,amsgrad=False)
-
-        model.compile(adam, "binary_crossentropy",
-                      metrics=['binary_crossentropy','AUC'])
-
-        with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
-
-
-            sess.run(tf.tables_initializer())
-            history = model.fit(train_model_input, df[df.istest==0][target].values,
-                            batch_size=128, epochs=50, verbose=2, validation_split=0.2)
-
-            pred_ans = model.predict(test_model_input, batch_size=128)
-
-            test_auc = roc_auc_score(df[df.istest==1][target].values,pred_ans)
-            print('test_auc=',test_auc)
-
-
-            with open('result/result.txt','a+') as tx:
-                print(file+" test LogLoss", round(log_loss(df[df.istest==1][target].values, pred_ans), 4),file=tx)
-                print(file+" test AUC", round(roc_auc_score(df[df.istest==1][target].values, pred_ans), 4),file=tx)
-                print('='*50,file=tx)
 
 
 

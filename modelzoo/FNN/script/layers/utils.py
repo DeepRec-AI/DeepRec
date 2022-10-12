@@ -6,6 +6,7 @@ Author:
 
 """
 import tensorflow as tf
+import numpy as np
 from tensorflow.python.keras.layers import Flatten, Concatenate, Layer, Add
 from tensorflow.python.ops.lookup_ops import TextFileInitializer
 
@@ -188,6 +189,7 @@ class Linear(Layer):
 def concat_func(inputs, axis=-1, mask=False):
     if not mask:
         inputs = list(map(NoMask(), inputs))
+
     if len(inputs) == 1:
         return inputs[0]
     else:

@@ -6,7 +6,18 @@ The following is a brief directory structure and description for this example:
 
 ```
 ├── data                        # Data set directory
+│   ├── prepare_data.sh         # Shell script to download and process dataset
 │   └── README.md              # Documentation describing how to prepare dataset
+│	└──script                   # Directory contains scripts to process dataset
+│       ├──data2labelencode           # Convert data to csv file
+│       ├── generate_neg.py           # Create negative sample
+│       ├── generate_voc.py           # Create a list of features
+│       ├── history_behavior_list.py  # Count user's history behaviors
+│       ├── item_map.py               # Create a map between item id and cate
+│       ├── local_aggretor.py         # Generate sample data
+│       ├── pick2txt.py               # Convert voc's format
+│       ├── process_data.py           # Parse raw json data
+│       └── split_by_user.py          # Divide the dataset
 ├── script                       # model set directory
 │	├── contrib                  #Directory contains rnn
 │	├── estimator                #Directory contains estimator to data
@@ -29,7 +40,7 @@ The following is a brief directory structure and description for this example:
 
 ## Model Structure
 
-Implementation of paper "Deep Learning over Multi-field Categorical Data– A Case Study on User Response  Prediction".
+Implementation of paper "Deep Learning over Multi-field Categorical Data A Case Study on User Response Prediction".
 
 
 
@@ -67,21 +78,8 @@ Implementation of paper "Deep Learning over Multi-field Categorical Data– A Ca
 
 ## Dataset
 
- iPinYou dataset is used as benchmark dataset.
+ Amazon Dataset Books dataset is used as benchmark dataset.
 
 ### Prepare
 
 For details of Data download, see [Data Preparation](https://github.com/Atomu2014/make-ipinyou-data)
-
-### Campaigs
-
-We use campaign 1458 as example here.
-
-```
-make-ipinyou-data/1458$ ls
-featindex.txt  test.log.txt  test.txt  train.log.txt  train.txt
-```
-
-- `train.log.txt` and `test.log.txt` are the formalised string data for each row (record) in train and test. The first column is whether the user click the ad or not.
-- `featindex.txt`maps the features to their indexes. For example, `8:1.1.174.* 76` means that the 8th column in `train.log.txt` with the string `1.1.174.*` maps to feature index `76`.
-- `train.txt` and `test.txt` are the mapped vector data for `train.log.txt` and `test.log.txt`. The format is y:click, and x:features. Such data is in the standard form as introduced in [iPinYou Benchmarking](http://arxiv.org/abs/1407.7073).
