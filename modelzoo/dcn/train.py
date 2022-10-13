@@ -166,10 +166,10 @@ class DCN():
                                    reuse=tf.AUTO_REUSE) as cross_layer_scope:
                 w = tf.get_variable(
                     name=layer_name+'_w',
-                    dtype=tf.float32,
+                    dtype=cross_input.dtype,
                     shape=(last_dim),
                 )
-                b = tf.get_variable(name=layer_name+'_b', dtype=tf.float32, shape=(last_dim))
+                b = tf.get_variable(name=layer_name+'_b', dtype=cross_input.dtype, shape=(last_dim))
                 xw = tf.reduce_sum(x * w, axis=1, keepdims=True)
                 x = tf.math.add(tf.math.add(x0 * xw, b), x)
 
