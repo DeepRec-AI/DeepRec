@@ -2176,5 +2176,60 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_EV_GET_VERSION
 
+template <typename TKey, typename TValue>
+class KvResourceLookupTierOp : public OpKernel {
+ public:
+  explicit KvResourceLookupTierOp(OpKernelConstruction* c) : OpKernel(c) {}
+
+  void Compute(OpKernelContext* ctx) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    const Tensor& indices = ctx->input(1);
+    auto indices_flat = indices.flat<TKey>();
+
+    Tensor* output;
+    OP_REQUIRES_OK(ctx,
+        ctx->allocate_output(0, {indices.NumElements()}, &output));
+    for (int i = 0; i < indices.NumElements(); ++i) {
+      int v = ev->storage_manager()->LookupTier(indices_flat(i));
+      output->flat<int>()(i) = v;
+    }
+  }
+};
+
+#define REGISTER_EV_LOOKUP_TIER(ktype, vtype)                   \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceLookupTier")          \
+                            .Device(DEVICE_CPU)                 \
+                            .TypeConstraint<ktype>("Tkeys")     \
+                            .TypeConstraint<vtype>("dtype"),    \
+                          KvResourceLookupTierOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                        \
+  REGISTER_EV_LOOKUP_TIER(int32, type)                          \
+  REGISTER_EV_LOOKUP_TIER(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_EV_LOOKUP_TIER
+
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+#define REGISTER_EV_LOOKUP_TIER(ktype, vtype)                   \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceLookupTier")          \
+                            .Device(DEVICE_GPU)                 \
+                            .HostMemory("indices")              \
+                            .HostMemory("output")               \
+                            .TypeConstraint<ktype>("Tkeys")     \
+                            .TypeConstraint<vtype>("dtype"),    \
+                          KvResourceLookupTierOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL_INDEX(type)                        \
+  REGISTER_EV_LOOKUP_TIER(int32, type)                          \
+  REGISTER_EV_LOOKUP_TIER(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+#undef REGISTER_EV_LOOKUP_TIER
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
+
 }  // namespace tensorflow
 

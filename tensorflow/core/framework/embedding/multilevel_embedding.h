@@ -282,6 +282,25 @@ class StorageManager {
     }
   }
 
+  int LookupTier(K key) {
+    bool found = false;
+    int level = 0;
+    ValuePtr<V>** val_ptr = nullptr;
+    for (; level < hash_table_count_; ++level) {
+      Status s;
+      s = kvs_[level].first->Contains(key);
+      if (s.ok()) {
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      return level;
+    } else {
+      return -1;
+    }
+  }
+
   Status Get(K key, ValuePtr<V>** value_ptr) {
     Status s;
     int level = 0;

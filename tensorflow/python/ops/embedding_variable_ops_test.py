@@ -10,6 +10,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+from turtle import st
 
 import numpy as np
 import os
@@ -2032,9 +2033,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableForDRAMAndSSD(self):
     print("testEmbeddingVariableForDRAMAndSSD")
     def runTestAdagrad(self, var, g):
-      #ids = array_ops.placeholder(dtypes.int64, name="ids")
-      #emb = embedding_ops.embedding_lookup(var, ids)
-      emb = embedding_ops.embedding_lookup(var, math_ops.cast([1, 2, 3, 4, 5, 6, 7, 8, 9], dtypes.int64))
+      ids = array_ops.placeholder(dtypes.int64, name="ids")
+      emb = embedding_ops.embedding_lookup(var, ids)
       fun = math_ops.multiply(emb, 2.0, name='multiply')
       loss = math_ops.reduce_sum(fun, name='reduce_sum')
       gs = training_util.get_or_create_global_step()
@@ -2042,34 +2042,55 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       g_v = opt.compute_gradients(loss)
       train_op = opt.apply_gradients(g_v)
       init = variables.global_variables_initializer()
+      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+        tires = kv_variable_ops.lookup_tier(emb_var,
+                    math_ops.cast([1,2,3,4,5,6], dtypes.int64))
       with self.test_session(graph=g) as sess:
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
         sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
         sess.run([init])
-        for i in xrange(60):
-          r, _, _ = sess.run([emb, train_op, loss])
-        r = sess.run(emb)
+        sess.run([train_op], {ids:[1,2,3]})
+        sess.run([train_op], {ids:[1,2,4]})
+        sess.run([train_op], {ids:[1,2,2]})
+        sess.run([train_op], {ids:[1,2,5]})
+        if isinstance(var, kv_variable_ops.EmbeddingVariable):
+          result = sess.run(tires)
+          for i in range(0, 6):
+            if i == 2:
+              self.assertEqual(result[i], 1)
+            elif i == 5:
+              self.assertEqual(result[i], -1)
+            else:
+              self.assertEqual(result[i], 0)
+        r1 = sess.run(emb, {ids:[1,2,4,5]})
+        r2 = sess.run(emb, {ids:[3]})
+        r = r1.tolist() + r2.tolist()
         return r
 
     with ops.Graph().as_default() as g, ops.device('/cpu:0'):
       db_directory = self.get_temp_dir()
+      storage_option = variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_SSDHASH,
+                        storage_path=db_directory,
+                        storage_size=[1024])
+      ev_option = variables.EmbeddingVariableOption(
+                                storage_option=storage_option)
       emb_var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 30,
             initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=1),
             steps_to_live=5,
-            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_SSDHASH,
-                                                                                                 storage_path="/tmp/ssd_utpy",
-                                                                                                 storage_size=[5120])))
+            ev_option = ev_option)
       emb1 = runTestAdagrad(self, emb_var, g)
 
     with ops.Graph().as_default() as g:
-      var = variable_scope.get_variable("var_2", shape=[100, 30], initializer=init_ops.ones_initializer(dtypes.float32))
+      var = variable_scope.get_variable("var_2",
+                shape=[100, 30],
+                initializer=init_ops.ones_initializer(dtypes.float32))
       emb2 = runTestAdagrad(self, var, g)
 
-    for i in range(0, 9):
+    for i in range(0, 5):
       for j in range(0, 30):
-        self.assertAllCloseAccordingToType(emb1.tolist()[i][j], emb2.tolist()[i][j])
+        self.assertAllCloseAccordingToType(emb1[i][j], emb2[i][j])
 
   def testEmbeddingVariableForRecordFreq(self):
     print("testEmbeddingVariableForRecordFreq")
@@ -2233,6 +2254,43 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       s = sess.run(shape)
       self.assertAllEqual(np.array([0,3]), s)
     del os.environ["INFERENCE_MODE"]
+
+  def testEmbeddingVariableForLookupTier(self):
+    print("testEmbeddingVariableForLookupTier")
+    db_directory = self.get_temp_dir()
+    storage_opt = variables.StorageOption(
+                          storage_type=config_pb2.StorageType.DRAM_SSDHASH,
+                          storage_path=db_directory,
+                          storage_size=[256])
+    ev_option = variables.EmbeddingVariableOption(storage_option=storage_opt)
+    partitioner = partitioned_variables.fixed_size_partitioner(num_shards=2)
+    emb_var = variable_scope.get_embedding_variable("var_1",
+        embedding_dim = 30,
+        initializer=init_ops.ones_initializer(dtypes.float32),
+        partitioner=partitioner,
+        ev_option = ev_option)
+    ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
+    emb = embedding_ops.embedding_lookup(emb_var, ids)
+    init = variables.global_variables_initializer()
+    tires = kv_variable_ops.lookup_tier(emb_var,
+                math_ops.cast([1,2,3,4,5,6], dtypes.int64))
+
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run(emb, {ids:[1,2,3]})
+      sess.run(emb, {ids:[1,2,4]})
+      sess.run(emb, {ids:[1,2,2]})
+      sess.run(emb, {ids:[1,2,5]})
+      result = sess.run(tires)
+      for i in range(0, 6):
+        if i == 2:
+          self.assertEqual(result[i], 1)
+        elif i == 5:
+          self.assertEqual(result[i], -1)
+        else:
+          self.assertEqual(result[i], 0)
+
+
 
   @test_util.run_gpu_only
   def testEmbeddingVariableForHBMandDRAM(self):

@@ -342,6 +342,16 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
+  Status Contains(K key) {
+    auto iter = hash_map_.find_wait_free(key);
+    if (iter.first == EMPTY_KEY) {
+      return errors::NotFound("Unable to find Key: ", key, " in SSDHashKV.");
+    } else {
+      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
+      return Status::OK();
+    }
+  }
+
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     return Status::OK();
   }
