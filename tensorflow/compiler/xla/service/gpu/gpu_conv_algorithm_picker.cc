@@ -463,6 +463,7 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheCuda(
 
     // Use assignment instead of brace-list to make GCC 4.9 happy.
     RunConvOptions options;
+    options.profile_result = &profile_result;
     options.algo_override = alg;
 
     // Warmup with first run.
@@ -475,7 +476,6 @@ GpuConvAlgorithmPicker::PickBestAlgorithmNoCacheCuda(
     }
 
     // Second run provides reliable timings.
-    options.profile_result = &profile_result;
     launch_status =
         RunGpuConv(instr, absl::MakeSpan(operand_buffers), result_buffer,
                    &scratch_allocator, stream, options);
