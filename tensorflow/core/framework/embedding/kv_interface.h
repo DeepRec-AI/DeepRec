@@ -41,6 +41,7 @@ class KVInterface {
   virtual ~KVInterface() {}
   // KV Lookup
   virtual Status Lookup(K key, ValuePtr<V>** value_ptr) = 0;
+  virtual Status Contains(K key) = 0;
   // KV Insert
   virtual Status Insert(K key, const ValuePtr<V>* value_ptr) = 0;
   // KV Remove

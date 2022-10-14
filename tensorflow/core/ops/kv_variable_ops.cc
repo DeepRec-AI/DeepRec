@@ -573,4 +573,15 @@ REGISTER_OP("EVGetVersion")
     })
     .Doc(R"doc()doc");
 
+REGISTER_OP("KvResourceLookupTier")
+    .Input("resource_handle: resource")
+    .Input("ids: Tkeys")
+    .Output("output: int32")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("dtype: type")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
 }  // namespace tensorflow

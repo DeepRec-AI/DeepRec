@@ -375,7 +375,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           self._slot_num = 0 
         else:
           self._slot_num = evconfig.slot_num
-
         with ops.name_scope("IsInitialized"):
           self._is_initialized_op = (
               gen_kv_variable_ops.kv_var_is_initialized_op(self._handle,
@@ -940,6 +939,32 @@ class DynamicEmbeddingVariable(resource_variable_ops.ResourceVariable):
 
 def _dense_var_to_tensor(var, dtype=None, name=None, as_ref=False):
   return var._dense_var_to_tensor(dtype=dtype, name=name, as_ref=as_ref)  # pylint: disable=protected-access
+
+def lookup_tier(var, ids):
+  if isinstance(var, EmbeddingVariable):
+    return  gen_kv_variable_ops.kv_resource_lookup_tier(var._handle,
+                                            ids,
+                                            dtype=var._dtype)
+  elif isinstance(var, variables.PartitionedVariable):
+    ev_list = list(var)
+    np = len(ev_list)
+    partitioned_result = []
+    original_indices = math_ops.range(array_ops.size(ids))
+    p_assignments = ids % 1000 % np
+    p_assignments = math_ops.cast(p_assignments, dtypes.int32)
+    from tensorflow.python.ops import data_flow_ops
+    gather_ids = data_flow_ops.dynamic_partition(ids, p_assignments, np)
+    pindices = data_flow_ops.dynamic_partition(original_indices,
+                                                 p_assignments, np)
+    for (i, val) in enumerate(ev_list):
+      with ops.colocate_with(val):
+        result =  gen_kv_variable_ops.kv_resource_lookup_tier(val._handle,
+                                            gather_ids[i],
+                                            dtype=var._dtype)
+        partitioned_result.append(result)
+    ret = data_flow_ops.parallel_dynamic_stitch(
+          pindices, partitioned_result)
+    return ret
 
 def identity(var):
   if "GPU" in var.device:

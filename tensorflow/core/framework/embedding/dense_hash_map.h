@@ -58,6 +58,18 @@ class DenseHashMap : public KVInterface<K, V> {
     }
   }
 
+  Status Contains(K key) {
+    int64 l_id = std::abs(key)%partition_num_;
+    spin_rd_lock l(hash_map_[l_id].mu);
+    auto iter = hash_map_[l_id].hash_map.find(key);
+    if (iter == hash_map_[l_id].hash_map.end()) {
+      return errors::NotFound(
+          "Unable to find Key: ", key, " in DenseHashMap.");
+    } else {
+      return Status::OK();
+    }
+  }
+
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     int64 l_id = std::abs(key)%partition_num_;
     spin_wr_lock l(hash_map_[l_id].mu);

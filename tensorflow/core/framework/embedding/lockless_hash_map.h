@@ -51,6 +51,16 @@ class LocklessHashMap : public KVInterface<K, V> {
     }
   }
 
+   Status Contains(K key) {
+    auto iter = hash_map_.find_wait_free(key);
+    if (iter.first == LocklessHashMap<K, V>::EMPTY_KEY_) {
+      return errors::NotFound(
+          "Unable to find Key: ", key, " in LocklessHashMap.");
+    } else {
+      return Status::OK();
+    }
+  }
+
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     auto iter = hash_map_.insert_lockless(
         std::move(std::pair<K, ValuePtr<V>*>(key,

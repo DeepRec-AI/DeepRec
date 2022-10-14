@@ -125,6 +125,19 @@ class LevelDBKV : public KVInterface<K, V> {
     }
   }
 
+  Status Contains(K key) {
+    std::string val_str;
+    leveldb::Slice db_key((char*)(&key), sizeof(void*));
+    leveldb::ReadOptions options;
+    leveldb::Status s = db_->Get(options, db_key, &val_str);
+    if (s.IsNotFound()) {
+      return errors::NotFound(
+          "Unable to find Key: ", key, " in LevelDB.");
+    } else {
+      return Status::OK();
+    }
+  }
+
   Status Insert(K key, const ValuePtr<V>* value_ptr) {
     counter_->add(key, 1);
     return Status::OK();
