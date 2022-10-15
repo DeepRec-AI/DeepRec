@@ -290,6 +290,11 @@ class SSDHashKV : public KVInterface<K, V> {
       } else {
         emb_files_[evict_version_]->Write(write_buffer_,
             buffer_cur_ * val_len_);
+        mutex_lock l(shutdown_mu_);
+        shutdown_ = true;
+        // Need last compaction or not???
+        // CompactionAsync();
+        delete compaction_thread_;
       }
       TF_CHECK_OK(UpdateFlushStatus());
       buffer_cur_ = 0;
@@ -302,11 +307,6 @@ class SSDHashKV : public KVInterface<K, V> {
     }
     delete[] write_buffer_;
     delete[] key_buffer_;
-    if (compaction_thread_) {
-      shutdown_cv_.notify_all();
-      shutdown_ = true;
-      delete compaction_thread_;
-    }
   }
 
   Status UpdateFlushStatus() {
@@ -698,7 +698,13 @@ class SSDHashKV : public KVInterface<K, V> {
       }
     }
     while (!shutdown_) {
-      CompactionAsync();
+      if (shutdown_mu_.try_lock()) {
+        if (!shutdown_) {
+          CompactionAsync();
+        }
+        shutdown_mu_.unlock();
+      }
+      Env::Default()->SleepForMicroseconds(1000);
     }
   }
 
@@ -752,7 +758,7 @@ class SSDHashKV : public KVInterface<K, V> {
   std::map<int64, std::vector<std::pair<K, EmbPosition*>>> evict_file_map_;
 
   Thread* compaction_thread_;
-  condition_variable shutdown_cv_;
+  mutex shutdown_mu_;
   volatile bool shutdown_ = false;
   volatile bool done_ = false;
   // std::atomic_flag flag_ = ATOMIC_FLAG_INIT; unused
