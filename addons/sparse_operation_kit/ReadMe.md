@@ -28,8 +28,8 @@ $ git clone https://github.com/AlibabaPAI/DeepRec.git DeepRec
 ```
 + **install to system path**
 ```shell
+$ cd DeepRec/addons/sparse_operation_kit/
 $ bash request.sh
-$ cd DeepRec/sparse_operation_kit/
 $ mkdir -p build && cd build && cmake .. && make -j && make install
 ```
 
