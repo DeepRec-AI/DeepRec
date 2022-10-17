@@ -13,7 +13,12 @@ Status ProtoBufParser::ParseRequestFromBuf(
     const void* input_data, int input_size, Call& call,
     const SignatureInfo* signature_info) {
   eas::PredictRequest request;
-  request.ParseFromArray(input_data, input_size);
+  bool success = request.ParseFromArray(input_data, input_size);
+  if (!success) {
+    LOG(ERROR) << "Parse request from array failed, input_data: " << input_data
+               << ", input_size: " << input_size;
+    return Status(errors::Code::INVALID_ARGUMENT, "Please check the input data.");
+  }
 
   for (auto& input : request.inputs()) {
     if (signature_info->input_key_idx.find(input.first) ==
@@ -51,7 +56,11 @@ Status ProtoBufParser::ParseResponseToBuf(
       call.response, signature_info);
   *output_size = response.ByteSize();
   *output_data = new char[*output_size];
-  response.SerializeToArray(*output_data, *output_size);
+  bool success = response.SerializeToArray(*output_data, *output_size);
+  if (!success) {
+    LOG(ERROR) << "Parse reponse to array failed. " << response.DebugString();
+    return Status(errors::Code::INTERNAL, "Serialize response to array failed.");
+  }
   return Status::OK();
 }
 
