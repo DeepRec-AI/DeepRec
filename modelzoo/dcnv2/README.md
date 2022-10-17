@@ -16,7 +16,7 @@ The following is a brief directory structure and description for this example:
 ```
 
 ## Content
-- [DCNv2](#dcnv2)
+- [DCN](#dcn)
   - [Content](#content)
   - [Model Structure](#model-structure)
   - [Usage](#usage)
@@ -50,7 +50,7 @@ The following is a brief directory structure and description for this example:
         docker pull alideeprec/deeprec-release-modelzoo:latest
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
         # In docker container
-        cd /root/modelzoo/DIN
+        cd /root/modelzoo/dcnv2
         ```
 
 2.  Training.  

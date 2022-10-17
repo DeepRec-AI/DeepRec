@@ -81,7 +81,7 @@ input:
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
         # In docker container
-        cd /root/modelzoo/BST
+        cd /root/modelzoo/bst
         ```
 
 2.  Training.  

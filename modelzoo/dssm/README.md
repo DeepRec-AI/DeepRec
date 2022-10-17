@@ -74,7 +74,7 @@ input:
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
         # In docker container
-        cd /root/modelzoo/DSSM
+        cd /root/modelzoo/dssm
         ```
 
 2.  Training.  
