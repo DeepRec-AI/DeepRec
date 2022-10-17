@@ -38,16 +38,21 @@ Status Model::Init(const char* model_config) {
 Status Model::Predict(const void* input_data, int input_size,
     void** output_data, int* output_size) {
   Call call;
-  parser_->ParseRequestFromBuf(input_data, input_size, call,
-                               impl_->GetSignatureInfo());
-  auto status = Predict(call.request, call.response);
+  Status status = parser_->ParseRequestFromBuf(
+      input_data, input_size, call,
+      impl_->GetSignatureInfo());
   if (!status.ok()) {
     return status;
   }
 
-  parser_->ParseResponseToBuf(call, output_data, output_size,
-                              impl_->GetSignatureInfo());
-  return Status::OK();
+  status = Predict(call.request, call.response);
+  if (!status.ok()) {
+    return status;
+  }
+
+  status = parser_->ParseResponseToBuf(call, output_data, output_size,
+                                       impl_->GetSignatureInfo());
+  return status;
 }
 
 Status Model::BatchPredict(const void* input_data[], int* input_size,
