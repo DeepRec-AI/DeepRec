@@ -230,7 +230,7 @@ class EmbeddingVar : public ResourceBase {
         slice_elems, value_len_, init_flags, memcpy_address);
   }
 
-  void InitailizeEmbeddingOnGPU(K* keys, int64 size, bool* init_flags,
+  void InitializeEmbeddingOnGPU(K* keys, int64 size, bool* init_flags,
        V** memcpy_address, V** default_values) {
     V** dev_default_value_address, **default_value_address;
     V** dev_value_address, **value_address;
@@ -267,7 +267,7 @@ class EmbeddingVar : public ResourceBase {
                        (void*)&value_len_,
                        (void*)&total};
       cudaLaunchKernel((void *)CopyEmbedding<V>,
-                       (total + block_dim - 1) / block_dim * value_len_,
+                       (total * value_len_ + block_dim - 1) / block_dim,
                        block_dim, args, 0, NULL);
       cudaDeviceSynchronize();
       TypedAllocator::Deallocate(alloc_, dev_value_address, total);

@@ -273,7 +273,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           }; // Get V*
           Shard(worker_threads->num_threads,
                 worker_threads->workers, N, cost, do_work2);
-          accum->InitailizeEmbeddingOnGPU(ids, N, init_flags,
+          accum->InitializeEmbeddingOnGPU(ids, N, init_flags,
                                           a, accum_default_values);
 
           T **dev_a, **dev_v;
