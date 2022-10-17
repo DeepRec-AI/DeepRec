@@ -75,15 +75,10 @@ __global__ void CopyEmbedding(V** batch, V** batch_data_space,
   }
 }
 
-template __global__ void CopyEmbedding<int>(
-    int**, int**, int, int);
-template __global__ void CopyEmbedding<float>(
-    float**, float**, int, int);
-template __global__ void CopyEmbedding<double>(
-    double**, double**, int, int);
-template __global__ void CopyEmbedding<long long>(
-    long long**, long long**, int, int);
-
+#define REGISTER_KERNELS_ALL_INDEX(T) \
+   template __global__ void CopyEmbedding<T>(T**, T**, int, int);
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 }  // namespace tensorflow
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA

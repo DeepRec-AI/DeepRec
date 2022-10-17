@@ -164,7 +164,7 @@ class StorageManager {
         kvs_.emplace_back(std::make_pair(
               new LocklessHashMap<K, V>(), alloc_));
         kvs_.emplace_back(std::make_pair(
-              new LocklessHashMapCPU<K, V>(), ev_allocator()));
+              new LocklessHashMapCPU<K, V>(alloc_), ev_allocator()));
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
         break;

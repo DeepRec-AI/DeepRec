@@ -720,7 +720,7 @@ class KvResourceGatherGPUOp : public OpKernel {
         Shard(8, worker_threads->workers, indices_size,
             slice_bytes, do_work);
 
-        ev->InitailizeEmbeddingOnGPU(ids, indices_size,
+        ev->InitializeEmbeddingOnGPU(ids, indices_size,
                                      init_flags, memcpy_address,
                                      default_values);
         ev->CopyBackToGPU(ids, indices_size, copyback_flags, memcpy_address);
@@ -2217,7 +2217,7 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #define REGISTER_EV_LOOKUP_TIER(ktype, vtype)                   \
   REGISTER_KERNEL_BUILDER(Name("KvResourceLookupTier")          \
                             .Device(DEVICE_GPU)                 \
-                            .HostMemory("indices")              \
+                            .HostMemory("ids")                  \
                             .HostMemory("output")               \
                             .TypeConstraint<ktype>("Tkeys")     \
                             .TypeConstraint<vtype>("dtype"),    \
