@@ -88,7 +88,7 @@ input:                                          |
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
         # In docker container
-        cd /root/modelzoo/WDL
+        cd /root/modelzoo/wide_and_deep
         ```
 
 2.  Training.  

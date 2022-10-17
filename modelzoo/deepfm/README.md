@@ -76,7 +76,7 @@ input:                                  |               |
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
         # In docker container
-        cd /root/modelzoo/DeepFM
+        cd /root/modelzoo/deepfm
         ```
 
 2.  Training.  

@@ -80,27 +80,39 @@ model:                     ┌────┴────┐                    
 ## Usage
 
 ### Stand-alone Training
-1.  Please prepare the [data set](#prepare) first.
+1.  Please prepare the data set and DeepRec env.
+    1.  Manually
+        - Follow [dataset preparation](#prepare) to prepare data set.
+        - Download code by `git clone https://github.com/alibaba/DeepRec`
+        - Follow [How to Build](https://github.com/alibaba/DeepRec#how-to-build) to build DeepRec whl package and install by `pip install $DEEPREC_WHL`.
+    2.  *Docker(Recommended)*
+        ```
+        docker pull alideeprec/deeprec-release-modelzoo:latest
+        docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
-2.  Create a docker image by DockerFile.   
-    Choose DockerFile corresponding to DeepRec(Pending) or Google tensorflow.
-    ```
-    docker build -t DeepRec_Model_Zoo_MMOE_training:v1.0 .
-    ```
+        # In docker container
+        cd /root/modelzoo/mmoe
+        ```
 
-3.  Run a docker container.
+2.  Training.  
     ```
-    docker run -it DeepRec_Model_Zoo_MMOE_training:v1.0 /bin/bash
-    ```
-
-4.  Training.  
-     ```
-    cd /root/
     python train.py
+    
+    # Memory acceleration with jemalloc.
+    # The required ENV `MALLOC_CONF` is already set in the code.
+    LD_PRELOAD=./libjemalloc.so.2.5.1 python train.py
     ```
-    Use argument `--bf16` to enable DeepRec BF16 in deep model.
+    Use argument `--bf16` to enable DeepRec BF16 feature.
     ```
     python train.py --bf16
+
+    # Memory acceleration with jemalloc.
+    # The required ENV `MALLOC_CONF` is already set in the code.
+    LD_PRELOAD=./libjemalloc.so.2.5.1 python train.py --bf16
+    ```
+    In the community tensorflow environment, use argument `--tf` to disable all of DeepRec's feature.
+    ```
+    python train.py --tf
     ```
     Use arguments to set up a custom configuation:
     - DeepRec Features:

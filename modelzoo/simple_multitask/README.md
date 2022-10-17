@@ -14,7 +14,7 @@ The following is a brief directory structure and description for this example:
 ```
 
 ## Content
-- [SimpleMultiTask](#SimpleMultiTask)
+- [SimpleMultiTask](#simplemultitask)
   - [Content](#content)
   - [Model Structure](#model-structure)
   - [Usage](#usage)
@@ -70,7 +70,7 @@ input:
         docker pull alideeprec/deeprec-release-modelzoo:latest
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
         # In docker container
-        cd /root/modelzoo/SimpleMultiTask
+        cd /root/modelzoo/simple_multitask
         ```
 
 2.  Training.
