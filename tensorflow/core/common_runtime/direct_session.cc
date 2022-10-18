@@ -1716,6 +1716,7 @@ Status DirectSession::CreateExecutors(
       *r = new IntraProcessRendezvous(device_mgr);
       return Status::OK();
     };
+    params.run_cost_model_executor = run_cost_model_executor_;
 
     optimizer.Optimize(lib, options_.env, device, &partition_graph,
                        /*shape_map=*/nullptr);
