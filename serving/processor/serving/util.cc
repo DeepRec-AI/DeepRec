@@ -1,3 +1,4 @@
+#include "serving/processor/serving/custom_thread_pool.h"
 #include "serving/processor/serving/util.h"
 #include "serving/processor/framework/graph_optimizer.h"
 
@@ -55,12 +56,14 @@ void AddAssetsTensorsToInputs(const StringPiece export_dir,
   }
 }
 
-Status RunOnce(const RunOptions& run_options,
-               const std::vector<std::pair<string, Tensor>>& inputs,
-               const std::vector<string>& output_tensor_names,
-               const std::vector<string>& target_node_names,
-               std::vector<Tensor>* outputs, RunMetadata* run_metadata,
-               Session* session) {
+Status RunOnce(
+    const RunOptions& run_options,
+    const std::vector<std::pair<string, Tensor>>& inputs,
+    const std::vector<string>& output_tensor_names,
+    const std::vector<string>& target_node_names,
+    std::vector<Tensor>* outputs, RunMetadata* run_metadata,
+    Session* session,
+    thread::ThreadPoolOptions thread_opt = thread::ThreadPoolOptions()) {
   CallableOptions callable_options;
   std::vector<Tensor> feed_tensors;
   *callable_options.mutable_run_options() = run_options;
@@ -80,7 +83,7 @@ Status RunOnce(const RunOptions& run_options,
   Session::CallableHandle callable_handle;
   TF_RETURN_IF_ERROR(session->MakeCallable(callable_options, &callable_handle));
   const Status run_status = session->RunCallable(callable_handle, feed_tensors,
-                                                 outputs, run_metadata);
+                                                 outputs, run_metadata, thread_opt);
   // Be sure to call ReleaseCallable() regardless of the outcome of
   // RunCallable().
   session->ReleaseCallable(callable_handle).IgnoreError();
@@ -103,7 +106,7 @@ Status RunRestoreCheckpoint(
     const StringPiece variable_filename_const_op_name,
     const StringPiece incr_variable_filename_const_op_name,
     const std::vector<AssetFileDef>& asset_file_defs,
-    Session* session) {
+    Session* session, thread::ThreadPoolOptions thread_opt) {
   LOG(INFO) << "Restoring checkpoint.";
   // Find path to variables to be restored in export directory.
   // Add variables to the graph.
@@ -124,7 +127,7 @@ Status RunRestoreCheckpoint(
 
   RunMetadata run_metadata;
   return util::RunOnce(run_options, inputs, {}, {string(restore_op_name)},
-                       nullptr /* outputs */, &run_metadata, session);
+                       nullptr /* outputs */, &run_metadata, session, thread_opt);
 }
 
 Status RunRestore(const RunOptions& run_options, const string& export_dir,

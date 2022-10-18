@@ -31,7 +31,7 @@ Status RunOnce(const RunOptions& run_options,
                const std::vector<string>& output_tensor_names,
                const std::vector<string>& target_node_names,
                std::vector<Tensor>* outputs, RunMetadata* run_metadata,
-               Session* session);
+               Session* session, thread::ThreadPoolOptions thread_opt);
 Status RunRestoreCheckpoint(
     bool restore_incr_checkpoint,
     const RunOptions& run_options,
@@ -42,7 +42,7 @@ Status RunRestoreCheckpoint(
     const StringPiece variable_filename_const_op_name,
     const StringPiece incr_variable_filename_const_op_name,
     const std::vector<AssetFileDef>& asset_file_defs,
-    Session* session);
+    Session* session, thread::ThreadPoolOptions thread_opt);
 
 Status RunRestore(const RunOptions& run_options, const string& export_dir,
                   const StringPiece restore_op_name,
