@@ -86,12 +86,13 @@ class ModelSessionMgr {
   Status CreateModelSession(
       const Version& version, const char* full_ckpt_name,
       const char* incr_ckpt_name, bool is_incr_ckpt,
-      ModelConfig* config);
+      bool is_initialize, ModelConfig* config);
  
   Status CreateModelSession(
       const Version& version, const char* full_ckpt_name,
       const char* incr_ckpt_name, bool is_incr_ckpt,
-      ModelConfig* config, ModelSession** new_model_session);
+      bool is_initialize, ModelConfig* config,
+      ModelSession** new_model_session);
 
   Status CleanupModelSession();
 

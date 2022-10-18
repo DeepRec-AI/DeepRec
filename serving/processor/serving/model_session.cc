@@ -1,4 +1,5 @@
 #include <random>
+#include "serving/processor/serving/custom_thread_pool.h"
 #include "serving/processor/serving/model_session.h"
 #include "serving/processor/serving/model_message.h"
 #include "serving/processor/serving/tracer.h"
@@ -112,6 +113,30 @@ int LockOrWait(int64_t latest_version,
   return 0;
 }
 
+void CreateCustomThreadPool(CustomThreadPoolImpl** tp, mutex& mu,
+                            int num, const std::string& name) {
+  mutex_lock lock(mu);
+  if (!(*tp)) {
+    *tp = new CustomThreadPoolImpl(num, name);
+  }
+}
+
+static CustomThreadPoolImpl* GetModelUpdateInterThreadPool(int num) {
+  static CustomThreadPoolImpl* tp = nullptr;
+  static mutex mu;
+  if (tp) return tp;
+  CreateCustomThreadPool(&tp, mu, num, "user_model_update_inter");
+  return tp;
+}
+
+static CustomThreadPoolImpl* GetModelUpdateIntraThreadPool(int num) {
+  static CustomThreadPoolImpl* tp = nullptr;
+  static mutex mu;
+  if (tp) return tp;
+  CreateCustomThreadPool(&tp, mu, num, "user_model_update_intra");
+  return tp;
+}
+
 } // namespace
 
 ModelSessionMgr::ModelSessionMgr(const MetaGraphDef& meta_graph_def,
@@ -137,6 +162,7 @@ ModelSessionMgr::~ModelSessionMgr() {
 Status ModelSessionMgr::CreateSession(Session** session) {
   TF_RETURN_IF_ERROR(NewSession(*session_options_, session));
   TF_RETURN_IF_ERROR((*session)->Create(meta_graph_def_.graph_def()));
+  asset_file_defs_.clear();
   return util::GetAssetFileDefs(meta_graph_def_, &asset_file_defs_);
 }
 
@@ -145,6 +171,7 @@ Status ModelSessionMgr::CreateSessionGroup(
   TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
                                      session_group, config->session_num));
   TF_RETURN_IF_ERROR((*session_group)->Create(meta_graph_def_.graph_def()));
+  asset_file_defs_.clear();
   return util::GetAssetFileDefs(meta_graph_def_, &asset_file_defs_);
 }
 
@@ -454,11 +481,12 @@ Status ModelSessionMgr::CreateModelSession(
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* full_ckpt_name,
     const char* incr_ckpt_name, bool is_incr_ckpt,
-    ModelConfig* config) {
+    bool is_initialize, ModelConfig* config) {
   ModelSession* new_model_session = nullptr;
   TF_RETURN_IF_ERROR(
       CreateModelSession(version, full_ckpt_name, incr_ckpt_name,
-                         is_incr_ckpt, config, &new_model_session));
+                         is_incr_ckpt, is_initialize, config,
+                         &new_model_session));
   if (!is_incr_ckpt) {
     ResetServingSession(new_model_session);
   }
@@ -469,7 +497,8 @@ Status ModelSessionMgr::CreateModelSession(
 Status ModelSessionMgr::CreateModelSession(
     const Version& version, const char* full_ckpt_name,
     const char* incr_ckpt_name, bool is_incr_ckpt,
-    ModelConfig* config, ModelSession** new_model_session) {
+    bool is_initialize, ModelConfig* config,
+    ModelSession** new_model_session) {
   std::string restore_op_name =
       meta_graph_def_.saver_def().restore_op_name();
   std::string filename_tensor_name =
@@ -488,11 +517,23 @@ Status ModelSessionMgr::CreateModelSession(
     session = session_group->GetLeaderSession();
   }
 
+  thread::ThreadPoolOptions thread_opt = thread::ThreadPoolOptions();
+  if (!is_initialize && config->model_update_intra_threads > 0) {
+    thread_opt.intra_op_threadpool =
+        GetModelUpdateIntraThreadPool(config->model_update_intra_threads);
+  }
+
+  if (!is_initialize && config->model_update_inter_threads > 0) {
+    thread_opt.inter_op_threadpool =
+        GetModelUpdateInterThreadPool(config->model_update_inter_threads);
+  }
+
   TF_RETURN_IF_ERROR(util::RunRestoreCheckpoint(
       is_incr_ckpt, *run_options_, full_ckpt_name,
       incr_ckpt_name, version.savedmodel_dir.c_str(),
       restore_op_name, filename_tensor_name,
-      incr_filename_tensor_name, asset_file_defs_, session));
+      incr_filename_tensor_name, asset_file_defs_, session,
+      thread_opt));
 
   if (util::HasMainOp(meta_graph_def_)) {
     TF_RETURN_IF_ERROR(util::RunMainOp(*run_options_,

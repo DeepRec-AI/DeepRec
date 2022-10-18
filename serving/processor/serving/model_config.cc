@@ -113,6 +113,20 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     (*config)->intra_threads = schedule_threads / 2;
   }
 
+  if (!json_config["model_update_inter_threads"].isNull()) {
+    (*config)->model_update_inter_threads =
+      json_config["model_update_inter_threads"].asInt();
+  } else {
+    (*config)->model_update_inter_threads = 0;
+  }
+
+  if (!json_config["model_update_intra_threads"].isNull()) {
+    (*config)->model_update_intra_threads =
+      json_config["model_update_intra_threads"].asInt();
+  } else {
+    (*config)->model_update_intra_threads = 0;
+  }
+
   if (!json_config["init_timeout_minutes"].isNull()) {
     (*config)->init_timeout_minutes =
       json_config["init_timeout_minutes"].asInt();

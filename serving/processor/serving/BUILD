@@ -42,7 +42,7 @@ cc_library(
 cc_library(
     name = "utils",
     srcs = ["util.cc"],
-    hdrs = ["util.h"],
+    hdrs = ["util.h", "custom_thread_pool.h"],
     deps = [
         "model_message",
         "predict_proto_cc",
@@ -104,7 +104,7 @@ cc_library(
 cc_library(
     name = "model_session",
     srcs = ["model_session.cc"],
-    hdrs = ["model_session.h"],
+    hdrs = ["model_session.h", "custom_thread_pool.h"],
     deps = [
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core:framework",
