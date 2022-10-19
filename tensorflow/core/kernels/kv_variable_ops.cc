@@ -410,6 +410,32 @@ class KvResourceIsInitializedOp : public OpKernel {
   }
 };
 
+#if GOOGLE_CUDA
+#if TENSORFLOW_USE_GPU_EV
+template <typename TKey, typename TValue>
+class KvResourceIsInitializedGPUOp : public OpKernel {
+ public:
+  explicit KvResourceIsInitializedGPUOp(OpKernelConstruction* c) : OpKernel(c) {}
+
+  void Compute(OpKernelContext* ctx) override {
+    Tensor* output;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {}, &output));
+    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
+    bool found;
+    if (LookupResource<EmbeddingVarGPU<TKey, TValue>>(
+          ctx, HandleFromInput(ctx, 0), &ev).ok()) {
+      found = ev->IsInitialized();
+      ev->Unref();
+    } else {
+      found = false;
+    }
+
+    output->flat<bool>()(0) = found;
+  }
+};
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
+
 #define REGISTER_KERNELS(ktype, vtype)                             \
   REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
                           .TypeConstraint<ktype>("Tkeys")          \
@@ -428,12 +454,20 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #define REGISTER_KERNELS(ktype, vtype)                             \
   REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
                           .TypeConstraint<ktype>("Tkeys")          \
-                          .Device(DEVICE_GPU),                     \
+                          .Device(DEVICE_GPU)                      \
+                          .HostMemory("is_initialized"),           \
                           KvResourceIsInitializedOp<ktype, vtype>);
+#else
+#define REGISTER_KERNELS(ktype, vtype)                             \
+  REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
+                          .TypeConstraint<ktype>("Tkeys")          \
+                          .Device(DEVICE_GPU)                      \
+                          .HostMemory("is_initialized"),           \
+                          KvResourceIsInitializedGPUOp<ktype, vtype>);
+#endif  // TENSORFLOW_USE_GPU_EV
 REGISTER_KERNELS(int32, float)
 REGISTER_KERNELS(int64, float)
 #undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 template <typename TKey, typename TValue>
@@ -1758,15 +1792,6 @@ class InitializeKvVariableOpGPU : public OpKernel {
 TF_CALL_float(REGISTER_GPU_KERNELS);
 TF_CALL_double(REGISTER_GPU_KERNELS);
 #undef REGISTER_GPU_KERNELS
-#undef REGISTER_KERNELS
-
-#define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
-                          .TypeConstraint<ktype>("Tkeys")          \
-                          .Device(DEVICE_GPU),                     \
-                          KvResourceIsInitializedOp<ktype, vtype>);
-REGISTER_KERNELS(int32, float)
-REGISTER_KERNELS(int64, float)
 #undef REGISTER_KERNELS
 
 template <typename Device, typename TKey, typename TValue>
