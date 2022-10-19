@@ -292,6 +292,20 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 函数的第二个参数“**model_config**”是一个json格式的配置，有如下字段，也可以参考开源代码文件：**serving/processor/serving/model_config.cc**
 ```json
 {
+# 使用session group，并且设置group中session数量为此值
+"session_num": 2,
+
+# 若使用session group，表示每次session run以何种方式
+# 选择group中的session来执行sess_run。方式包括：
+# "MOD": 根据request所在线程号对session num
+#        取模获取为当前request服务的session num。
+# "RR": 轮询选择group中的session进行服务。
+"select_session_policy": "MOD",
+
+# 在使用session group任务中，true表示group
+# 中每个session都拥有独立的inter/intra线程池。
+"use_per_session_threads": false,
+
 # 是否单线程执行 Session run
 "enable_inline_execute": false
   
@@ -323,6 +337,16 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 
 # DeepRec中intra线程数
 "intra_op_parallelism_threads": 10,
+
+# 用户设置模型更新过程中使用的inter线程数，
+# 若设置此参数则会创建额外inter模型更新线程池。
+# 模型更新默认使用Session自有inter线程池。
+"model_update_inter_threads": 4,
+
+# 用户设置模型更新过程中使用的intra线程数，
+# 若设置此参数则会创建额外intra模型更新线程池。
+# 模型更新默认使用Session自有intra线程池。
+"model_update_intra_threads": 4,
 
 # 默认值(预留参数)
 "init_timeout_minutes": 1,
