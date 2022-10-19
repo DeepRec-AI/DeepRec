@@ -244,7 +244,7 @@ class SSDHashKV : public KVInterface<K, V> {
           &is_async_compaction_));
     if (!is_async_compaction_) {
       LOG(INFO) <<
-        "Use Sync Compactor in SSDHashKV of Multi-tier Embedding Stroage!";
+        "Use Sync Compactor in SSDHashKV of Multi-tier Embedding Storage!";
       compaction_fn_ = [this](){Compaction();}; 
       check_buffer_fn_ = [this](){CheckBuffer();};
       save_kv_fn_ = [this](K key, const ValuePtr<V>* value_ptr,
@@ -253,7 +253,7 @@ class SSDHashKV : public KVInterface<K, V> {
       };
     } else {
       LOG(INFO) <<
-        "Use Async Compactor in SSDHashKV of Multi-tier Embedding Stroage!";
+        "Use Async Compactor in SSDHashKV of Multi-tier Embedding Storage!";
       compaction_fn_ = [](){};
       check_buffer_fn_ = [this](){CheckBufferAsync();};
       save_kv_fn_ = [this](K key, const ValuePtr<V>* value_ptr,

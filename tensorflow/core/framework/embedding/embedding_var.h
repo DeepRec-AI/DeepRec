@@ -31,7 +31,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/framework/embedding/embedding_filter.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
-#include "tensorflow/core/framework/embedding/multilevel_embedding.h"
+#include "tensorflow/core/framework/embedding/storage_manager.h"
 #include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
@@ -418,10 +418,6 @@ class EmbeddingVar : public ResourceBase {
                                          freq_list, emb_config_, filter_, it);
   }
 
-  Status Destroy() {
-    return storage_manager_->Destroy();
-  }
-
   mutex* mu() {
     return &mu_;
   }
@@ -523,7 +519,6 @@ class EmbeddingVar : public ResourceBase {
     // When dynamic dimension embedding is used,
     // there will be more than one primary slot
     if (emb_config_.is_primary() && emb_config_.primary_emb_index == 0) {
-      Destroy();
       delete storage_manager_;
     }
     if (embedding::StorageType::HBM_DRAM ==
