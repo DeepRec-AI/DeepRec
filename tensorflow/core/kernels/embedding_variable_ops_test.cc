@@ -1240,8 +1240,13 @@ void t1_gpu(KVInterface<int64, float>* hashmap) {
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
 TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
+    SessionOptions sops;
+    std::unique_ptr<Device> device =
+      DeviceFactory::NewDevice(DEVICE_GPU, sops, "/job:a/replica:0/task:0");
+    Allocator* gpu_allocator = GPUProcessState::singleton()->GetGPUAllocator(
+        GPUOptions(), TfGpuId(0), 1 << 26);
     KVInterface<int64, float>* hashmap =
-      new LocklessHashMapCPU<int64, float>();
+      new LocklessHashMapCPU<int64, float>(gpu_allocator);
     ASSERT_EQ(hashmap->Size(), 0);
     LOG(INFO) << "hashmap size: " << hashmap->Size();
     auto t = std::thread(t1, hashmap);
