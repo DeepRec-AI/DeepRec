@@ -244,13 +244,14 @@ class InitializeKvVariableOp : public OpKernel {
             context, handle_self, &ev,
             [this, default_values, opname, context,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+              Allocator* gpu_allocator =
+                  context->device()->GetAllocator(AllocatorAttributes());
               auto storage_manager =
                   new embedding::StorageManager<TKey, TValue>(
                     handle_self.name(),
                     embedding::StorageConfig(
-                      storage_type_, storage_path_, storage_size_, layout_));
-              Allocator* allocator = context->device()->GetAllocator(AllocatorAttributes());
-              TF_CHECK_OK(storage_manager->Init(allocator));
+                      storage_type_, storage_path_, storage_size_, layout_),
+                    gpu_allocator);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
                          EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
@@ -262,7 +263,7 @@ class InitializeKvVariableOp : public OpKernel {
                              counter_type_, default_value_dim_,
                              default_value_no_permission_,
                              record_freq_, record_version_),
-                         allocator);
+                         gpu_allocator);
             return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -275,12 +276,11 @@ class InitializeKvVariableOp : public OpKernel {
            [this, default_values, opname,
             handle_primary, context](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
+             Allocator* gpu_allocator = context->device()->GetAllocator(AllocatorAttributes());
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
-                     storage_path_, storage_size_, layout_));
-             Allocator* allocator = context->device()->GetAllocator(AllocatorAttributes());
-             TF_CHECK_OK(storage_manager->Init(allocator));
+                     storage_path_, storage_size_, layout_), gpu_allocator);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         storage_manager,
                         EmbeddingConfig(
@@ -291,7 +291,7 @@ class InitializeKvVariableOp : public OpKernel {
                           l2_weight_threshold_, layout_,
                           max_element_size_, false_positive_probability_,
                           counter_type_, 0, record_freq_, record_version_),
-                        allocator);
+                        gpu_allocator);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -1001,7 +1001,6 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                 new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(
                     storage_type_, storage_path_, storage_size_, layout_));
-              TF_CHECK_OK(storage_manager->Init());
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
                          EmbeddingConfig(
@@ -1032,7 +1031,6 @@ class KvResourceImportV2Op: public AsyncOpKernel {
                  handle_primary.name(), embedding::StorageConfig(
                    storage_type_, storage_path_, storage_size_,
                    layout_));
-             TF_CHECK_OK(storage_manager->Init());
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                  storage_manager, EmbeddingConfig(
                    primary_emb_index + block_num_ * primary_slot_index,
