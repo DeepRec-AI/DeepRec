@@ -455,12 +455,15 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         ops.prepend_name_scope(
             variable_def.initializer_name, import_scope=import_scope))
     cache_op = None
-    for op in self._initializer_op.control_inputs:
-      if op.type == "InitializeKvVariableOp":
-        init_op = op
-        self._init_op = op
-      elif op.type == "KvResourceSetCacheStrategyOp":
-        cache_op = op
+    if self._initializer_op.type == "NoOp":
+      for op in self._initializer_op.control_inputs:
+        if op.type == "InitializeKvVariableOp":
+          init_op = op
+          self._init_op = op
+        elif op.type == "KvResourceSetCacheStrategyOp":
+          cache_op = op
+    elif self._initializer_op.type == "InitializeKvVariableOp":
+      init_op = self._initializer_op
     self._trainable = getattr(variable_def, "trainable", True)
     if variable_def.snapshot_name:
       self._cached_value = g.as_graph_element(
