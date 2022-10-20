@@ -187,8 +187,7 @@ class Scaffold(object):
     self._incr_saver = None
     self._enable_async_embedding = False
     self._async_embedding_checkpoint_dir = None
-    self._async_embedding_threads_num = 1
-    self._async_embedding_capacity = 1
+    self._async_embedding_options = None
 
   def finalize(self):
     """Creates operations if needed and finalizes the graph."""
@@ -253,8 +252,7 @@ class Scaffold(object):
 
     if self._enable_async_embedding:
       async_embedding_stage = async_embedding.AsyncEmbeddingStage(
-        self._async_embedding_threads_num,
-        self._async_embedding_capacity,
+        self._async_embedding_options,
         self._async_embedding_checkpoint_dir)
       async_embedding_stage.stage(ops.get_default_graph())
 
@@ -270,13 +268,8 @@ class Scaffold(object):
     if isinstance(value, str) and len(str.strip(value)) != 0:
       self._async_embedding_checkpoint_dir = value
 
-  def set_async_embedding_capacity(self, value):
-    if isinstance(value, int) and value >= 1:
-      self._async_embedding_capacity = value
-
-  def set_async_embedding_threads_num(self, value):
-    if isinstance(value, int) and value >= 1:
-      self._async_embedding_threads_num = value
+  def set_async_embedding_options(self, value):
+      self._async_embedding_options = value
 
   @property
   def init_fn(self):
@@ -592,8 +585,7 @@ def MonitoredTrainingSession(
     # Get async_embedding parameters from config
     optimizer_options = config.graph_options.optimizer_options
     scaffold.set_enable_async_embedding(optimizer_options.do_async_embedding)
-    scaffold.set_async_embedding_threads_num(optimizer_options.async_embedding_threads_num)
-    scaffold.set_async_embedding_capacity(optimizer_options.async_embedding_capacity)
+    scaffold.set_async_embedding_options(optimizer_options.async_embedding_options)
   scaffold.set_async_embedding_checkpoint_dir(checkpoint_dir)
 
   if worker_context:

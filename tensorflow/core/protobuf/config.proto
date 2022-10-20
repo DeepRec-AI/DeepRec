@@ -206,6 +206,18 @@ message GPUOptions {
   bool cuda_graph_mode_compatible = 10;
 }
 
+// Options passed to the async embedding
+message AsyncEmbeddingOptions {
+  // Prefetch threads num
+  int32 threads_num = 1;
+  // Prefetch buffer size 
+  int32 capacity = 2;
+  // Use stage subgraph thread pool for stage subgraph or not
+  bool use_stage_subgraph_thread_pool = 3;
+  // Id of stage subgraph thread pool to run stage subgraph
+  int32 stage_subgraph_thread_pool_id = 4;
+}
+
 // Options passed to the graph optimizer
 message OptimizerOptions {
   // If true, optimize the graph using common subexpression elimination.
@@ -258,8 +270,7 @@ message OptimizerOptions {
   bool do_smart_stage = 10;
   bool do_smart_stage_gpu = 11;
   bool do_async_embedding = 12;
-  int32 async_embedding_threads_num = 13;
-  int32 async_embedding_capacity = 14;
+  AsyncEmbeddingOptions async_embedding_options = 13;
 }
 
 message GraphOptions {
@@ -382,6 +393,16 @@ message CudaGraphModeOptions {
     int32 batch_size = 2;
     bool allow_fallback = 3;
     bool has_invalid_graph = 4;
+}
+
+// config for stage subgraph thread pools
+message StageSubGraphThreadPoolOptionsProto {
+  // The number of inter op threads in the pool.
+  int32 inter_op_threads_num = 1;
+  // The number of intra op threads in the pool.
+  int32 intra_op_threads_num = 2;
+  // stage_subgraph_thread_pool name
+  string global_name = 3;
 }
 
 // Session configuration parameters.
@@ -594,6 +615,11 @@ message ConfigProto {
 
   // Next: 208
   CudaGraphModeOptions cuda_graph_mode_options = 208;
+
+  // stage subgraph thread pools, session run interface will use user-specified
+  // thread pool in stage subgraph thread pools instead of the default inter and
+  // intra thread pool.
+  repeated StageSubGraphThreadPoolOptionsProto session_stage_subgraph_thread_pool = 209;
 }
 
 // Options for a single Run() call.
@@ -650,6 +676,12 @@ message RunOptions {
   };
 
   Experimental experimental = 8;
+
+  // If use_stage_subgraph_thread_pools is enabled, stage_subgraph_thread_pool_id
+  // is used to specify the index of the stage subgraph thread pool which session
+  // run interface will use.
+  bool use_stage_subgraph_thread_pool = 9;
+  int32 stage_subgraph_thread_pool_id = 10;
 
   reserved 4;
 }

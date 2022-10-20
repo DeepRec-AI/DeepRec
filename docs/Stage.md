@@ -17,6 +17,8 @@
 | feed_generator          | `items`依赖的 feed_dict 的 value 的 generator 对象。Python 中一个 generator 对象是一种通过 yield 产生 list 的方法。通过这个 generator 对象，用户可以使用纯 Python 进行灵活的数据预处理，类似于 tensor_pack，接口与用法见示例。 | None，即 `features`不依赖 feed_dict                    |
 | closed_exception_types  | 被识别为正常退出的异常类型                                   | (`tf.errors.OutOfRangeError`, `errors.CancelledError`) |
 | ignored_exception_types | 被识别可忽略跳过的异常类型                                   | ()                                                     |
+| use_stage_subgraph_thread_pool   | 是否在独立线程池上运行Stage子图，需要先创建独立线程池        | False(可选，若为True则必须先创建独立线程池)            |
+| stage_subgraph_thread_id         | 如果开启了在独立线程池上运行Stage子图，用于指定独立线程池索引，需要先创建独立线程池，并打开use_stage_subgraph_thread_pool选项。 | 0，索引范围为[0, 创建的独立线程池数量-1]               |
 
 Session中加入`tf.make_prefetch_hook()`hook
 
@@ -25,12 +27,23 @@ hooks=[tf.make_prefetch_hook()]
 with tf.train.MonitoredTrainingSession(hooks=hooks, config=sess_config) as sess:
 ```
 
+创建独立线程池（可选）
+
+```python
+sess_config = tf.ConfigProto()
+sess_config.session_stage_subgraph_thread_pool.add() # 增加一个独立线程池
+sess_config.session_stage_subgraph_thread_pool[0].inter_op_threads_num = 8 # 独立线程池中inter线程数量
+sess_config.session_stage_subgraph_thread_pool[0].intra_op_threads_num = 8 # 独立线程池中intra线程数量
+sess_config.session_stage_subgraph_thread_pool[0].global_name = "StageThreadPool_1" # 独立线程池名称
+```
+
 注意事项
 
 - 待异步化的计算应该尽可能少和后续主体计算争抢资源（gpu、cpu、线程池等）
 - `capacity` 更大会消耗更多的内存或显存，同时可能会抢占后续模型训练的 CPU 资源，建议设置为后续计算时间/待异步化时间。可以从 1 开始逐渐向上调整
 - `num_threads` 并不是越大越好，只需要可以让计算和预处理重叠起来即可，数量更大会抢占模型训练的 CPU 资源。计算公式：num_threads >= 预处理时间 / 训练时间，可以从 1 开始向上调整
 - `tf.make_prefetch_hook()`一定要加上，否则会hang住
+- 
 
 ## 代码示例
 
