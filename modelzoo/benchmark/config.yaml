@@ -15,6 +15,10 @@ test_model:
   - mmoe
   - simple_multitask
   - bst
+  - masknet
+  - dcnv2
+  - dcn
+  - ple
   
 #batchsize map<model,batchsize>
 model_batchsize:
@@ -29,6 +33,10 @@ model_batchsize:
   mmoe: 512
   simple_multitask: 512
   bst: 512
+  masknet: 512
+  dcnv2: 512
+  dcn: 512
+  ple: 512
   
 #args for deeprec
 #like --emb_fusion true

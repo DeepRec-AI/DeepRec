@@ -53,7 +53,7 @@ function make_script()
         log_tag=$(echo $paras| sed 's/--/_/g' | sed 's/ //g')
         [[ $paras == "" ]] && log_tag=""
         model_name=$line
-        bs=$(cat config.yaml | shyaml get-value model_batchsize | grep $model_name | awk -F ":" '{print $2}')
+        bs=$(cat config.yaml | shyaml get-value model_batchsize | grep -w $model_name | awk -F ":" '{print $2}')
         echo "echo 'Testing $model_name  $paras ...'" >> $script
         echo "cd /root/modelzoo/$model_name/" >> $script
         [[ ! -d  $checkpoint_dir/$currentTime/${model_name,,}_script$$log_tag ]]\
