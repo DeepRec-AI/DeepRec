@@ -1210,8 +1210,6 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
     ((int64*)buf.freq_buffer)[i-1] = i * 10;
   }
   variable->Import(buf, 6, 1, 0, 1, false);
-  LOG(INFO) << "level 0, Size:" << variable->storage_manager()->Size(0);
-  LOG(INFO) << "level 1, Size:" << variable->storage_manager()->Size(1);
 
   ASSERT_EQ(variable->storage_manager()->Size(0), 4);
   ASSERT_EQ(variable->storage_manager()->Size(1), 2);

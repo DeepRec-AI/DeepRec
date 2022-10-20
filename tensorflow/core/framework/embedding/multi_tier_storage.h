@@ -206,10 +206,6 @@ class MultiTierStorage : public Storage<K, V> {
     return Status::OK();
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
-    return kvs_[0].first->Commit(key, value_ptr);
-  }
-
   Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) override {
     for (auto kv : kvs_) {

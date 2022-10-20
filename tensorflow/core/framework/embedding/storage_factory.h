@@ -47,19 +47,15 @@ class StorageFactory {
         return new PmemLibpmemStorage<K, V>(sc,
             experimental_pmem_allocator(sc.path, sc.size[0]),
             layout_creator);
-      case StorageType::LEVELDB:
-        return new LevelDBStore<K, V>(sc, ev_allocator(),
-            layout_creator);
-      case StorageType::SSDHASH:
-        return new SsdHashStorage<K, V>(sc, ev_allocator(),
-            layout_creator);
       case StorageType::DRAM_PMEM:
         return new DramPmemStorage<K, V>(sc, ev_allocator(),
             experimental_pmem_allocator(sc.path, sc.size[0]),
             layout_creator, name);
+      case StorageType::LEVELDB:
       case StorageType::DRAM_LEVELDB:
         return new DramLevelDBStore<K, V>(sc, ev_allocator(),
             layout_creator, name);
+      case StorageType::SSDHASH:
       case StorageType::DRAM_SSDHASH:
         return new DramSsdHashStorage<K, V>(sc, ev_allocator(),
             layout_creator, name);

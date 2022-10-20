@@ -284,11 +284,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._false_positive_probability = -1.0
       self._counter_type = dtypes.uint64
 
-    multi_level_list = [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSDHASH,
-                        config_pb2.StorageType.DRAM_PMEM, config_pb2.StorageType.DRAM_LEVELDB,
-                        config_pb2.StorageType.DRAM_SSDHASH, config_pb2.StorageType.HBM_DRAM,
-                        config_pb2.StorageType.DRAM_PMEM_SSDHASH, config_pb2.StorageType.HBM_DRAM_SSDHASH]
-      
     self._record_freq = (os.environ.get("TF_RECORD_FREQ", "0") == "1")
     self._record_version = (os.environ.get("TF_RECORD_VERSION", "0") == "1")
     self._l2_weight_threshold = evconfig.l2_weight_threshold
@@ -411,7 +406,19 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     record_version = self._record_version,
                     name=n)
             set_attr_ops = []
-            if self._is_primary:
+
+            def is_multi_tier(storage_type):
+              multi_level_list = [config_pb2.StorageType.LEVELDB,
+                                  config_pb2.StorageType.SSDHASH,
+                                  config_pb2.StorageType.DRAM_PMEM,
+                                  config_pb2.StorageType.DRAM_LEVELDB,
+                                  config_pb2.StorageType.DRAM_SSDHASH,
+                                  config_pb2.StorageType.HBM_DRAM,
+                                  config_pb2.StorageType.DRAM_PMEM_SSDHASH,
+                                  config_pb2.StorageType.HBM_DRAM_SSDHASH]
+              return storage_type in multi_level_list
+
+            if self._is_primary and is_multi_tier(self._storage_type):
               with ops.control_dependencies([self._init_op]):
                 self._set_cache_strategy_op = gen_kv_variable_ops.kv_resource_init_cache_strategy_op(
                   self._handle,

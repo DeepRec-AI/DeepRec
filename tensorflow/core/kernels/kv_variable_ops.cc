@@ -618,11 +618,12 @@ class KvResourceGatherOp : public OpKernel {
       Shard(worker_threads->num_threads,
             worker_threads->workers, indices_size,
             slice_bytes, do_work);
-      embedding::BatchCache<TKey>* cache = ev->Cache();
-      if (cache) {
+
+      if (ev->IsMultiLevel()) {
+        embedding::BatchCache<TKey>* cache = ev->Cache();
         ev->storage_manager()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
-            cache->add_to_rank(indices);
+          cache->add_to_rank(indices);
         });
       }
     }
@@ -784,12 +785,13 @@ class KvResourceGatherGPUOp : public OpKernel {
               worker_threads->workers, indices_size,
               slice_bytes, do_work);
       }
-      ev->storage_manager()->Schedule([ev, indices]() {
-        embedding::BatchCache<TKey>* cache = ev->Cache();
-        if (cache) {
+
+      if (ev->IsMultiLevel()) {
+        ev->storage_manager()->Schedule([ev, indices]() {
+          embedding::BatchCache<TKey>* cache = ev->Cache();
           cache->add_to_rank(indices);
-        }
-      });
+        });
+      }
     }
   }
 

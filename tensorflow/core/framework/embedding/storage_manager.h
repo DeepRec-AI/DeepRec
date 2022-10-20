@@ -162,10 +162,6 @@ class StorageManager {
     return storage_->Cache();
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) {
-    return storage_->Commit(key, value_ptr);
-  }
-
   Status Eviction(K* evict_ids, int64 evict_size) {
     return storage_->Eviction(evict_ids, evict_size);
   }

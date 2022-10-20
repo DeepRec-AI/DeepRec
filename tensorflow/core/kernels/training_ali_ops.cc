@@ -139,7 +139,6 @@ class KvSparseApplyAdagradOp : public OpKernel {
               auto v = var->flat(value_ptr);
               a += g.square();
               v -= g.constant(lr_scalar) * g * a.rsqrt();
-              var->Commit(index, value_ptr);
             }
           }
         };
@@ -324,7 +323,6 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
                 auto v = var->flat(value_ptr);
                 a += g.square();
                 v -= g.constant(lr_scalar) * g * a.rsqrt();
-                var->Commit(index, value_ptr);
               }
             }
           };
@@ -628,8 +626,7 @@ class KvSparseApplyFtrlOp : public OpKernel {
   } else {                                                                     \
     var = var.constant(static_cast<T>(0));                                     \
   }                                                                            \
-  accum += grad.square();                                                      \
-  var_->Commit(index, value_ptr);                                         
+  accum += grad.square();
               if (has_l2_shrinkage) {
                 auto grad_with_shrinkage =
                     grad + static_cast<T>(2) * l2_shrinkage_scalar * var;
@@ -1314,7 +1311,6 @@ class KvSparseApplyAdagradDecayOp : public OpKernel {
               }
               a += g.square();
               v -= g.constant(lr_scalar) * g * a.rsqrt();
-              var->Commit(index, value_ptr);
             }
           }
         };
@@ -1472,7 +1468,6 @@ class KvSparseApplyAdamOp : public OpKernel {
               m_a += (g - m_a) * (static_cast<T>(1) - beta1_scalar);
               v_a += (g.square() - v_a) * (static_cast<T>(1) - beta2_scalar);
               var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar);
-              var->Commit(index, value_ptr);
             }
           }
         }
@@ -2103,7 +2098,6 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
 
               auto v = var->flat(value_ptr);
               v -= m_;
-              var->Commit(index, value_ptr);
             }
           }
         };
@@ -2148,7 +2142,6 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                 m_a = m_a * beta1_scalar + g * (static_cast<T>(1) - beta1_scalar);
                 v_a = v_a * beta2_scalar + g.square() * (static_cast<T>(1) - beta2_scalar);
                 var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar);
-                var->Commit(index, value_ptr);
               }
             }
           }
@@ -2432,7 +2425,6 @@ class KvResourceSparseApplyGradientDescentOp : public OpKernel {
               auto g = grad_flat.template chip<0>(i);
               auto v = var->flat(value_ptr);
               v -= g.constant(lr_scalar) * g;
-              var->Commit(index, value_ptr);
             }
           }
         };
@@ -2596,7 +2588,6 @@ class KvSparseApplyAdamWOp : public OpKernel {
               // v_a = beta2 * v + (1 - beta2) * (g * g)
               v_a += (g.square() - v_a) * (static_cast<T>(1) - beta2_scalar);
               var_i -= (m_a * alpha) / (v_a.sqrt() + epsilon_scalar) + weight_decay_scalar * var_i;
-              var->Commit(index, value_ptr);
             }
           }
         }
