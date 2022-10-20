@@ -127,11 +127,6 @@ class SingleTierStorage : public Storage<K, V> {
     LOG(FATAL) << "Unsupport InitCacheStrategy in SingleTierStorage.";
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
-    LOG(FATAL) << "Unsupport Commit in SingleTierStorage.";
-    return Status::OK();
-  }
-
   Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) override {
     LOG(FATAL) << "Unsupport BatchCommit in Storage:"

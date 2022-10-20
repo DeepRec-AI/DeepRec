@@ -59,7 +59,6 @@ class Storage {
       int64 value_len) = 0;
   virtual Status Shrink(int64 gs, int64 steps_to_live) = 0;
 
-  virtual Status Commit(K key, const ValuePtr<V>* value_ptr) = 0;
   virtual Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) = 0;
 
