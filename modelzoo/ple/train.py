@@ -362,9 +362,15 @@ class PLE():
         self.auc2, self.auc_op2 = tf.metrics.auc(labels=self._label[:,1],
                                                predictions=self.probability[:, 1],
                                                num_thresholds=1000)
+        self.acc1, self.acc_op1 = tf.metrics.accuracy(labels=self._label[:,0],
+                                                    predictions=self.output[:,0])
+        self.acc2, self.acc_op2 = tf.metrics.accuracy(labels=self._label[:,1],
+                                                    predictions=self.output[:,1])
         
         tf.summary.scalar('eval_auc1', self.auc1)
         tf.summary.scalar('eval_auc2', self.auc2)
+        tf.summary.scalar('eval_acc1', self.acc1)
+        tf.summary.scalar('eval_acc2', self.acc2)
 
 # generate dataset pipline
 def build_model_input(filename, batch_size, num_epochs):
@@ -575,11 +581,12 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
                 if (_in % 1000 == 0):
                     print("Evaluation complete:[{}/{}]".format(_in, steps))
             else:
-                eval_auc1, eval_auc2, events = sess.run(
-                    [model.auc_op1, model.auc_op2, merged])
+                eval_auc1, eval_auc2, eval_acc1, eval_acc2, events = sess.run(
+                    [model.auc_op1, model.auc_op2, model.acc_op1, model.acc_op2, merged])
                 writer.add_summary(events, _in)
                 print("Evaluation complete:[{}/{}]".format(_in, steps))
-                print("AUC1 = {}\nAUC2 = {}".format(eval_auc1, eval_auc2))
+                print("ACC1 = {}\nAUC1 = {}".format(eval_acc1, eval_auc1))
+                print("ACC2 = {}\nAUC2 = {}".format(eval_acc2, eval_auc2))
 
 def main(tf_config=None, server=None):
         # check dataset and count data set size
