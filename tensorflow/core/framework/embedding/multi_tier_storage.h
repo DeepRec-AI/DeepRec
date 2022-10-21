@@ -18,7 +18,9 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
 
+#include "tensorflow/core/framework/embedding/globalstep_shrink_policy.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
+#include "tensorflow/core/framework/embedding/l2weight_shrink_policy.h"
 #include "tensorflow/core/framework/embedding/lockless_hash_map.h"
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/framework/embedding/storage.h"
@@ -150,59 +152,19 @@ class MultiTierStorage : public Storage<K, V> {
       int64 value_len) override {
     mutex_lock l(Storage<K, V>::mu_);
     for (auto kv : kvs_) {
-      std::vector<K> key_list;
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      TF_CHECK_OK(kv.first->GetSnapshot(&key_list, &value_ptr_list));
-      std::vector<std::pair<K, ValuePtr<V>* > > to_deleted;
-      for (int64 i = 0; i < key_list.size(); ++i) {
-        V* val = value_ptr_list[i]->GetValue(emb_config.primary_emb_index,
-          Storage<K, V>::GetOffset(emb_config.primary_emb_index));
-        if (val != nullptr) {
-          V l2_weight = (V)0.0;
-          for (int64 j = 0; j < value_len; j++) {
-              l2_weight += val[j] * val[j];
-          }
-          l2_weight *= (V)0.5;
-          if (l2_weight < (V)emb_config.l2_weight_threshold) {
-            to_deleted.emplace_back(
-                std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
-          }
-        }
-      }
-      for (const auto it : to_deleted) {
-        // TODO memory recycle
-        (it.second)->Destroy(kv.second);
-        delete it.second;
-        kv.first->Remove(it.first);
-      }
+      L2WeightShrinkPolicy<K, V> policy(emb_config.primary_emb_index,
+          Storage<K, V>::GetOffset(emb_config.primary_emb_index),
+          kv.first, kv.second);
+      policy.Shrink(value_len, (V)emb_config.l2_weight_threshold);
     }
     return Status::OK();
   }
 
-  Status Shrink(int64 gs, int64 steps_to_live) override {
+  Status Shrink(int64 global_step, int64 steps_to_live) override {
     mutex_lock l(Storage<K, V>::mu_);
     for (auto kv : kvs_) {
-      std::vector<K> key_list;
-      std::vector<ValuePtr<V>*> value_ptr_list;
-      TF_CHECK_OK(kv.first->GetSnapshot(&key_list, &value_ptr_list));
-      std::vector<std::pair<K, ValuePtr<V>*>> to_deleted;
-      for (int64 i = 0; i < key_list.size(); ++i) {
-        int64 version = value_ptr_list[i]->GetStep();
-        if (version == -1) {
-          value_ptr_list[i]->SetStep(gs);
-        } else {
-          if (gs - version > steps_to_live) {
-            to_deleted.emplace_back(
-                std::pair<K, ValuePtr<V>*>(key_list[i], value_ptr_list[i]));
-          }
-        }
-      }
-      for (const auto it : to_deleted) {
-        // TODO memory recycle
-        (it.second)->Destroy(kv.second);
-        delete it.second;
-        kv.first->Remove(it.first);
-      }
+      GlobalStepShrinkPolicy<K, V> policy(kv.first, kv.second);
+      policy.Shrink(global_step, steps_to_live);
     }
     return Status::OK();
   }
