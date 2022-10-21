@@ -3370,6 +3370,7 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/threadpool_device.h",
     "common_runtime/process_state.h",
     "common_runtime/pool_allocator.h",
+    "common_runtime/virtual_threadpool.h",
     "graph/gradients.h",
     "graph/quantize_training.h",
 ] + if_mkl(["graph/mkl_graph_util.h"])
@@ -3449,6 +3450,7 @@ tf_cuda_library(
         "common_runtime/gpu_tensorpool_allocator.cc",
         "common_runtime/threadpool_device.cc",
         "common_runtime/threadpool_device_factory.cc",
+        "common_runtime/virtual_threadpool.cc",
         "graph/gradients.cc",
         "graph/mkl_layout_pass.cc",
         "graph/mkl_tfconversion_pass.cc",

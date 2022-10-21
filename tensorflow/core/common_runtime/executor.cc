@@ -174,6 +174,9 @@ class ExecutorImpl : public Executor {
     TF_RETURN_IF_ERROR(immutable_state_.Initialize());
     kernel_stats_.Initialize(immutable_state_.graph_view(),
                              immutable_state_.graph());
+    if (immutable_state_.params().run_cost_model_executor) {
+      immutable_state_.InitializeScheduleInfo(&kernel_stats_);
+    }
     return Status::OK();
   }
 
@@ -672,6 +675,9 @@ Status ExecutorState<PropagatorStateType>::ProcessSync(
 
   OpKernel* op_kernel = item.kernel;
   Device* device = immutable_state_.params().device;
+  if (item.virtual_device.get() != nullptr) {
+    device = item.virtual_device.get();
+  }
   const bool is_expensive = kernel_stats_->IsExpensive(item);
 
   if (TF_PREDICT_FALSE(MightTrace(item, event_collector_))) {
@@ -895,6 +901,10 @@ void ExecutorState<PropagatorStateType>::BatchProcess(std::vector<TaggedNode> no
     const int id = item.node_id;
 
     propagator_.MaybeMarkStarted(tagged_node);
+
+    if (item.virtual_device.get() != nullptr) {
+      params.device = item.virtual_device.get();
+    }
 
     params.track_allocations = false;
     stats = nullptr;

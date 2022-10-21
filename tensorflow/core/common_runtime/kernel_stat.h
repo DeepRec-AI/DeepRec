@@ -89,6 +89,8 @@ class KernelStats {
         absl::make_unique<std::atomic<int64_t>[]>(gview.num_nodes());
     node_stats_count_ =
         absl::make_unique<std::atomic<int32_t>[]>(gview.num_nodes());
+    task_count_ =
+        absl::make_unique<std::atomic<int32_t>[]>(gview.num_nodes());
     for (int32_t i = 0; i < gview.num_nodes(); ++i) {
       if (gview.node(i)) {
         is_expensive_[i] =
@@ -96,6 +98,7 @@ class KernelStats {
         cost_estimates_[i] = kInitialCostEstimateCycles;
         immutable_avg_cost_[i] = 0;
         node_stats_count_[i] = 0;
+        task_count_[i] = 0;
       }
     }
   }
@@ -215,6 +218,7 @@ class KernelStats {
     }
 
     stat->op_start_time_ = Env::Default()->NowNanos();
+    task_count_[item->node_id] = 0;
   }
 
   void StopCollectOp(const NodeItem* item, KernelStatsInfo* stat) {
@@ -238,12 +242,32 @@ class KernelStats {
 
   }
 
+  void OpScheduleTask(const NodeItem* item) {
+    if (!collect_kernel_stats ||
+        collect_stats_done_ ||
+        !collect_op_cost_) {
+      return;
+    }
+    task_count_[item->node_id]++;
+  }
+
   int64 GetNodeCost(const NodeItem* item) {
     if (item->node_id >= nodes_count_) {
       LOG(WARNING) << "Item node is exceed nodes_count_, "
                    << item->node_id << " VS " << nodes_count_;
     }
     return immutable_avg_cost_[item->node_id];
+  }
+
+  int64 GetIntraCost(const NodeItem* item) {
+    if (item->node_id >= nodes_count_) {
+      LOG(WARNING) << "Item node is exceed nodes_count_, "
+                   << item->node_id << " VS " << nodes_count_;
+    }
+    if (task_count_[item->node_id] == 0) {
+      return immutable_avg_cost_[item->node_id];
+    }
+    return immutable_avg_cost_[item->node_id] / task_count_[item->node_id];
   }
 
   int64 GetOpAccumulativeCost(const NodeItem* item) {
@@ -301,6 +325,9 @@ class KernelStats {
   //   --> D(3) ------------
   // the max total execute time of A is MAX(1+1+1+0, 1+3+0) = 4
   std::vector<int64> immutable_accumulative_cost_;
+
+  // number of tasks scheduled by the operator to the thread pool
+  std::unique_ptr<std::atomic<int32_t>[]> task_count_;
 
   GraphView* gv_ = nullptr; // not owned
   Graph* g_ = nullptr; // not owned
