@@ -3197,6 +3197,7 @@ GRAPH_HDRS = [
     "graph/optimizer_fusion_engine_impl.h",
     "graph/star_server_graph_partition.h",
     "graph/subgraph.h",
+    "graph/stream_subgraph.h",
     "graph/template_base.h",
     "graph/template_logicsum_base.h",
     "graph/template_select_base.h",
@@ -3230,6 +3231,7 @@ tf_cuda_library(
         "graph/star_server_graph_partition.cc",
         "graph/subgraph.cc",
         "graph/validate.cc",
+        "graph/stream_subgraph.cc",
     ],
     hdrs = GRAPH_HDRS,
     deps = [
