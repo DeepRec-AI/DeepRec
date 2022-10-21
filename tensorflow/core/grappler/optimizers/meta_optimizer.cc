@@ -40,6 +40,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/pin_to_host_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/remapper.h"
 #include "tensorflow/core/grappler/optimizers/concat_cast_fusing.h"
+#include "tensorflow/core/grappler/optimizers/multi_stream_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/scoped_allocator_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/shape_optimizer.h"
 #include "tensorflow/core/grappler/utils/canonicalizer.h"
@@ -213,6 +214,8 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
   MK_OPT("pin_to_host",
          new PinToHostOptimizer(cfg_.pin_to_host_optimization()));
   MK_OPT("concat_cast_fusing", new ConcatCastFusing());
+  MK_OPT("use_multi_stream",
+         new MultiStreamOptimizer(cfg_.multi_stream_opts()));
 
   return std::unique_ptr<GraphOptimizer>();
 }
@@ -299,6 +302,10 @@ Status MetaOptimizer::InitializeOptimizers(
   if (cfg_.auto_parallel().enable()) {
     optimizers->push_back(
         MakeUnique<AutoParallel>(cfg_.auto_parallel().num_replicas()));
+  }
+  if (cfg_.use_multi_stream() == RewriterConfig::ON) {
+    optimizers->push_back(MakeUnique<MultiStreamOptimizer>(
+        cfg_.multi_stream_opts()));
   }
   if (cfg_.scoped_allocator_optimization()) {
     optimizers->push_back(MakeUnique<ScopedAllocatorOptimizer>(
@@ -448,6 +455,7 @@ Status MetaOptimizer::OptimizeGraph(Cluster* cluster, const GrapplerItem& item,
 
   GraphOptimizationResult optimization_result(item.id);
   GraphOptimizer* sa_optimizer = nullptr;
+  GraphOptimizer* multi_stream_optimizer = nullptr;
 
   // Constants in the graph are normally compressed after model_pruner.
   // Do it here if model pruner is disabled.
@@ -480,6 +488,11 @@ Status MetaOptimizer::OptimizeGraph(Cluster* cluster, const GrapplerItem& item,
       if (optimizer->name() == "scoped_allocator_optimizer") {
         if (sa_optimizer == nullptr) sa_optimizer = optimizer.get();
         continue;
+      } else if (optimizer->name() == "multi_stream_optimizer") {
+        if (multi_stream_optimizer == nullptr) {
+          multi_stream_optimizer = optimizer.get();
+        }
+        continue;
       }
 
       TF_RETURN_IF_ERROR(RunOptimizer(optimizer.get(), cluster, &optimized_item,
@@ -511,6 +524,12 @@ Status MetaOptimizer::OptimizeGraph(Cluster* cluster, const GrapplerItem& item,
     for (const auto& verifier : post_optimization_verifiers) {
       TF_RETURN_IF_ERROR(verifier->Verify(*optimized_graph));
     }
+  }
+
+  if (multi_stream_optimizer) {
+    TF_RETURN_IF_ERROR(RunOptimizer(multi_stream_optimizer, cluster, &optimized_item,
+                                    optimized_graph, &optimization_result));
+    GRAPPLER_RETURN_IF_DEADLINE_EXCEEDED();
   }
 
   // ScopedAllocatorOptimizer must run last.
@@ -868,6 +887,7 @@ bool MetaOptimizerEnabled(const ConfigProto& cfg) {
          rewrite_cfg.debug_stripper() == RewriterConfig::ON ||
          rewrite_cfg.scoped_allocator_optimization() == RewriterConfig::ON ||
          rewrite_cfg.pin_to_host_optimization() == RewriterConfig::ON ||
+         rewrite_cfg.use_multi_stream() == RewriterConfig::ON ||
          AutoMixedPrecisionEnabled(rewrite_cfg.auto_mixed_precision()) ||
          AutoMixedPrecisionEnabled(rewrite_cfg.auto_mixed_precision_mkl()) ||
          !rewrite_cfg.optimizers().empty() ||
