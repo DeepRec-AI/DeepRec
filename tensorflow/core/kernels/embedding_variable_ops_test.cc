@@ -1198,7 +1198,7 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
                       /*max_element_size = */0, /*false_positive_probability = */-1.0,
                       /*counter_type = */DT_UINT64));
   variable->Init(value, 1);
-  variable->InitStorageCacheStrategy(CacheStrategy::LFU);
+  variable->InitCache(CacheStrategy::LFU);
   RestoreBuffer buf;
   buf.key_buffer = new char[6 * sizeof(int64)];
   buf.version_buffer = new char[6 * sizeof(int64)];

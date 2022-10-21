@@ -382,8 +382,8 @@ class EmbeddingVar : public ResourceBase {
     return embedding::StorageType::HBM_DRAM == storage_type_;
   }
 
-  void InitStorageCacheStrategy(embedding::CacheStrategy cache_strategy) {
-    storage_manager_->InitCacheStrategy(cache_strategy);
+  void InitCache(embedding::CacheStrategy cache_strategy) {
+    storage_manager_->InitCache(cache_strategy);
   }
 
   std::string DebugString() const {
@@ -404,11 +404,7 @@ class EmbeddingVar : public ResourceBase {
                     std::vector<V* >* value_list,
                     std::vector<int64>* version_list,
                     std::vector<int64>* freq_list,
-                    embedding::Iterator** it = nullptr) {
-    // for Interface Compatible
-    // TODO Multi-tiered Embedding should use iterator in 'GetSnapshot' caller
-    embedding::Iterator* _it = nullptr;
-    it = (it == nullptr) ? &_it : it;
+                    embedding::Iterator** it) {
     return storage_manager_->GetSnapshot(key_list, value_list, version_list,
                                          freq_list, emb_config_, filter_, it);
   }

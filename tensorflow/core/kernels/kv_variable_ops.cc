@@ -482,7 +482,7 @@ class KvResourceInitCacheStrategyOp : public OpKernel {
     EmbeddingVar<TKey, TValue>* ev = nullptr;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
     core::ScopedUnref unref_me(ev);
-    ev->InitStorageCacheStrategy(static_cast<embedding::CacheStrategy>(cache_strategy_));
+    ev->InitCache(static_cast<embedding::CacheStrategy>(cache_strategy_));
   }
 
  private:

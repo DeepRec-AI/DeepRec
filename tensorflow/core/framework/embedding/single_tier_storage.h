@@ -57,6 +57,8 @@ class SingleTierStorage : public Storage<K, V> {
     delete kv_;
   }
 
+  TF_DISALLOW_COPY_AND_ASSIGN(SingleTierStorage);
+
   Status Get(K key, ValuePtr<V>** value_ptr) override {
     return kv_->Lookup(key, value_ptr);
   }
@@ -122,9 +124,8 @@ class SingleTierStorage : public Storage<K, V> {
     return nullptr;
   }
 
-  void InitCacheStrategy(
-      embedding::CacheStrategy cache_strategy) override {
-    LOG(FATAL) << "Unsupport InitCacheStrategy in SingleTierStorage.";
+  void InitCache(embedding::CacheStrategy cache_strategy) override {
+    LOG(FATAL) << "Unsupport InitCache in SingleTierStorage.";
   }
 
   Status BatchCommit(const std::vector<K>& keys,
@@ -282,7 +283,10 @@ class DramStorage : public SingleTierStorage<K, V> {
       LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
           sc, alloc, new LocklessHashMap<K, V>(), lc) {
   }
+  ~DramStorage() override {}
  
+  TF_DISALLOW_COPY_AND_ASSIGN(DramStorage);
+
  protected:
   void SetTotalDims(int64 total_dims) override {}
 };
@@ -294,6 +298,9 @@ class PmemMemkindStorage : public SingleTierStorage<K, V> {
       LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
           sc, alloc, new LocklessHashMap<K, V>(), lc) {
   }
+  ~PmemMemkindStorage() override {}
+
+  TF_DISALLOW_COPY_AND_ASSIGN(PmemMemkindStorage);
  
  protected:
   void SetTotalDims(int64 total_dims) override {}
@@ -306,6 +313,9 @@ class PmemLibpmemStorage : public SingleTierStorage<K, V> {
       LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
           sc, alloc, new LocklessHashMap<K, V>(), lc) {
   }
+  ~PmemLibpmemStorage() override {}
+
+  TF_DISALLOW_COPY_AND_ASSIGN(PmemLibpmemStorage);
  
  protected:
   void SetTotalDims(int64 total_dims) override {}
@@ -318,6 +328,9 @@ class LevelDBStore : public SingleTierStorage<K, V> {
       LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
           sc, alloc, new LevelDBKV<K, V>(sc.path), lc) {
   }
+  ~LevelDBStore() override {}
+
+  TF_DISALLOW_COPY_AND_ASSIGN(LevelDBStore);
 
   Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) override {
@@ -337,6 +350,9 @@ class SsdHashStorage : public SingleTierStorage<K, V> {
       LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
           sc, alloc, new SSDHashKV<K, V>(sc.path, alloc), lc) {
   }
+  ~SsdHashStorage() override {}
+
+  TF_DISALLOW_COPY_AND_ASSIGN(SsdHashStorage);
 
   Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) override {
