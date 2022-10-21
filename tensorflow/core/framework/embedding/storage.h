@@ -35,6 +35,7 @@ class Storage {
   explicit Storage(const StorageConfig& storage_config)
       : storage_config_(storage_config) {}
   virtual ~Storage() {}
+  TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
@@ -69,7 +70,7 @@ class Storage {
       int *copyback_cursor, ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) = 0;
 
-  virtual void InitCacheStrategy(
+  virtual void InitCache(
       embedding::CacheStrategy cache_strategy) = 0;
   virtual int64 CacheSize() const = 0;
   virtual BatchCache<K>* Cache() = 0;

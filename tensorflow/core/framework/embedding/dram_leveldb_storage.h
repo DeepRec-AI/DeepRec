@@ -48,6 +48,8 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
         {std::make_pair(dram_kv_, alloc_)});
   }
 
+  TF_DISALLOW_COPY_AND_ASSIGN(DramLevelDBStore);
+
   Status Get(K key, ValuePtr<V>** value_ptr) override {
     Status s = dram_kv_->Lookup(key, value_ptr);
     if (!s.ok()) {

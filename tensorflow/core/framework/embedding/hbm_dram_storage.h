@@ -48,6 +48,8 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
          std::make_pair(dram_kv_, cpu_alloc_)});
   }
 
+  TF_DISALLOW_COPY_AND_ASSIGN(HbmDramStorage);
+
   Status Get(K key, ValuePtr<V>** value_ptr) override {
     Status s = hbm_kv_->Lookup(key, value_ptr);
     if (!s.ok()) {

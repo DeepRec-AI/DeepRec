@@ -48,6 +48,8 @@ class MultiTierStorage : public Storage<K, V> {
     delete cache_;
   }
 
+  TF_DISALLOW_COPY_AND_ASSIGN(MultiTierStorage);
+
   void SetAllocLen(int64 value_len, int slot_num) override {
     while (Storage<K, V>::flag_.test_and_set(std::memory_order_acquire));
     // The start address of every slot should be aligned to 16 bytes,
@@ -74,8 +76,7 @@ class MultiTierStorage : public Storage<K, V> {
     return cache_;
   }
 
-  void InitCacheStrategy(
-      embedding::CacheStrategy cache_strategy) override {
+  void InitCache(embedding::CacheStrategy cache_strategy) override {
     if (cache_strategy == CacheStrategy::LRU) {
       LOG(INFO) << " Use StorageManager::LRU in multi-tier EmbeddingVariable "
                 << name_;

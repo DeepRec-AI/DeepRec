@@ -40,12 +40,14 @@ class StorageManager {
     delete storage_;
   }
 
+  TF_DISALLOW_COPY_AND_ASSIGN(StorageManager);
+
   void SetAllocLen(int64 value_len, int slot_num){
     storage_->SetAllocLen(value_len, slot_num);
   }
 
-  void InitCacheStrategy(embedding::CacheStrategy cache_strategy) {
-    storage_->InitCacheStrategy(cache_strategy);
+  void InitCache(embedding::CacheStrategy cache_strategy) {
+    storage_->InitCache(cache_strategy);
   }
 
   int64 GetAllocLen(){
