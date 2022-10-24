@@ -44,7 +44,6 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
   }
 
   ~DramPmemStorage() override {
-    MultiTierStorage<K, V>::ShutdownEvictionThread();
     MultiTierStorage<K, V>::ReleaseValues(
         {std::make_pair(dram_kv_, dram_alloc_),
          std::make_pair(pmem_kv_, pmem_alloc_)});

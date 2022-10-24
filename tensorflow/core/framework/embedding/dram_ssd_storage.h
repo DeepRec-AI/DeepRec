@@ -43,7 +43,6 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
   }
 
   ~DramSsdHashStorage() override {
-    MultiTierStorage<K, V>::ShutdownEvictionThread();
     MultiTierStorage<K, V>::ReleaseValues(
         {std::make_pair(dram_kv_, alloc_)});
   }

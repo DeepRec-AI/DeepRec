@@ -140,3 +140,7 @@ with tf.Session() as sess:
 - LevelDB：基于LevelDB开发的SSD存储
 - SSDHASH：基于Hash索引的SSD存储，相比LevelDB实现，有更好的性能和内存稳定性。SSDHASH支持同步和异步两种compaction的方式。使用同步compaction时，向SSD写入数据和compaction将会使用同一个线程，异步时则各使用一个线程。
 用户可以通过配置环境变量`TF_SSDHASH_ASYNC_COMPACTION`选择使用哪种compaction方式，当TF_SSDHASH_ASYNC_COMPACTION=1时打开异步compaction功能；设置为0或不设置时使用同步compaction。
+
+## 5.设置淘汰线程数量
+
+为了减少使用多级存储带来的性能开销并且维持系统存储占用量稳定，多级存储会启动后台线程来异步地将数据写入到下级存储中。考虑到在一些场景中(例如在线serving场景)CPU资源紧张，因此多级存储中使用一个统一的线程池来管理系统中所有使用多级存储的EV，用户可以根据实际情况通过配置`TF_MULTI_TIER_EV_EVICTION_THREADS`环境变量来设置线程池中的线程数。
