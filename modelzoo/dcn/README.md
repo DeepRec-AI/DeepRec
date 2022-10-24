@@ -50,7 +50,7 @@ The following is a brief directory structure and description for this example:
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
         # In docker container
-        cd /root/modelzoo/DIN
+        cd /root/modelzoo/dcn
         ```
 
 2.  Training.  

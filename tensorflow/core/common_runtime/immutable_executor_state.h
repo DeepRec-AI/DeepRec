@@ -34,6 +34,9 @@ limitations under the License.
 namespace tensorflow {
 
 class Graph;
+namespace ExecutorInternal {
+class KernelStats;
+} // namespace ExecutorInternal
 
 // Represents the state of an executor (graph and control flow information)
 // that is immutable throughout execution.
@@ -80,6 +83,8 @@ class ImmutableExecutorState {
   ~ImmutableExecutorState();
 
   Status Initialize();
+
+  Status InitializeScheduleInfo(ExecutorInternal::KernelStats* kernel_stats);
 
   // Process all Nodes in the current graph, attempting to infer the
   // memory allocation attributes to be used wherever they may allocate

@@ -19,6 +19,8 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include "tensorflow/core/common_runtime/device.h"
+#include "tensorflow/core/common_runtime/virtual_threadpool.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/lib/core/status.h"
@@ -29,7 +31,6 @@ limitations under the License.
 
 namespace tensorflow {
 
-class Device;
 class Graph;
 class Node;
 class OpKernel;
@@ -110,6 +111,10 @@ struct NodeItem {
   // If non-null, contains an array of num_outputs bools, where the ith bool
   // is true if and only if the ith output is consumed by another node.
   std::unique_ptr<bool[]> outputs_required;
+
+  // virtual threadpool and device to record intra costs
+  std::unique_ptr<VirtualThreadpool> virtual_threadpool;
+  std::unique_ptr<Device> virtual_device;
 
   gtl::MutableArraySlice<EdgeInfo> mutable_output_edges() {
     return gtl::MutableArraySlice<EdgeInfo>(output_edge_base(),

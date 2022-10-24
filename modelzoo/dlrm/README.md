@@ -68,7 +68,7 @@ The triangles represent mlp network. The inputs consists of dense features and s
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
 
         # In docker container
-        cd /root/modelzoo/DLRM
+        cd /root/modelzoo/dlrm
         ```
 
 2.  Training.  

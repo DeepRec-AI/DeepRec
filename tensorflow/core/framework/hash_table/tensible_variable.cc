@@ -169,7 +169,7 @@ void TensibleVariable::ClearIds(
         int64 sz = std::min(size, (i + 1) * segment_size_);
         while (k < sz) {
           if (ids[k] < size_) {
-            void* init_ptr = (void*)(const_cast<char*>(tensor.tensor_data().data()));
+            char* init_ptr = const_cast<char*>(tensor.tensor_data().data());
             memcpy(GetSlice(ids[k]), init_ptr + (k % segment_size_) * slice_size_, slice_size_);
           }
           ++k;

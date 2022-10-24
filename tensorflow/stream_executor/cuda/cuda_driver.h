@@ -42,10 +42,14 @@ static std::string ToString(CUresult result) {
 // unique id is positive, and ids are not repeated within the process.
 class GpuContext {
  public:
-  GpuContext(CUcontext context, int64 id) : context_(context), id_(id) {}
+  GpuContext(CUcontext context, int64 id) : context_(context), id_(id), is_single_stream_mode_(false) {}
 
   CUcontext context() const { return context_; }
   int64 id() const { return id_; }
+
+  void enable_single_stream_mode() { is_single_stream_mode_ = true; }
+  void disable_single_stream_mode() { is_single_stream_mode_ = false; }
+  bool is_single_stream_mode() { return is_single_stream_mode_; }
 
   // Disallow copying and moving.
   GpuContext(GpuContext&&) = delete;
@@ -56,6 +60,7 @@ class GpuContext {
  private:
   CUcontext const context_;
   const int64 id_;
+  bool is_single_stream_mode_;
 };
 
 // Manages the singleton map of contexts that we've created, mapping

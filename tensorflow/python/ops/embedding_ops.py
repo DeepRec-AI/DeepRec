@@ -131,10 +131,14 @@ def _embedding_lookup_and_transform(params,
   from tensorflow.python.ops.hash_table import hash_table
   from tensorflow.python.ops.hash_table import embedding
   if isinstance(params, hash_table.HashTable) or isinstance(params, hash_table.DistributedHashTable):
-    return embedding.embedding_lookup(params, ids, name=name)[0]
+    ret = embedding.embedding_lookup(params, ids, name=name)[0]
+    ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+    return ret
   if isinstance(params, list) and len(params) == 1:
     if isinstance(params[0], hash_table.HashTable) or isinstance(params[0], hash_table.DistributedHashTable):
-      return embedding.embedding_lookup(params[0], ids, name=name)[0]
+      ret = embedding.embedding_lookup(params[0], ids, name=name)[0]
+      ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+      return ret
   if params is None:
     raise ValueError("params must be specified")
   if isinstance(params, (list, tuple)) and not params:
@@ -151,12 +155,17 @@ def _embedding_lookup_and_transform(params,
       result_Q = _embedding_lookup_and_transform(params[0]._val_list[0], ids_Q)
       result_R = _embedding_lookup_and_transform(params[0]._val_list[1], ids_R)
       if params[0].mhvconfig.operation == "add":
-        return math_ops.add(result_Q, result_R)
+        ret = math_ops.add(result_Q, result_R)
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+        return ret
       if params[0].mhvconfig.operation == "mul":
-        return math_ops.multiply(result_Q, result_R)
+        ret = math_ops.multiply(result_Q, result_R)
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+        return ret
       if params[0].mhvconfig.operation == "concat":
-        return array_ops.concat([result_Q, result_R], 1)
-
+        ret = array_ops.concat([result_Q, result_R], 1)
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+        return ret
 
   with ops.name_scope(name, "embedding_lookup", params + [ids]) as name:
     np = len(params)  # Number of partitions
@@ -176,7 +185,9 @@ def _embedding_lookup_and_transform(params,
         embs_nozero = _gather_fae(ids_nozero, blocknums_nozero, embs, params[0])
         indices = math_ops.range(0, array_ops.squeeze(array_ops.shape(ids)), 1)
         indice_cnt = array_ops.expand_dims(array_ops.boolean_mask(indices, math_ops.greater_equal(blocknums, 1)), 1)
-        return array_ops.scatter_nd(indices=indice_cnt, updates=embs_nozero, shape=[array_ops.shape(ids)[0], array_ops.shape(embs_nozero)[1]])
+        ret = array_ops.scatter_nd(indices=indice_cnt, updates=embs_nozero, shape=[array_ops.shape(ids)[0], array_ops.shape(embs_nozero)[1]])
+        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+        return ret
       else:
         with ops.colocate_with(params[0]):
           result = _clip(array_ops.gather(params[0], ids, name=name,
@@ -188,7 +199,9 @@ def _embedding_lookup_and_transform(params,
       # Make sure the final result does not have colocation contraints on the
       # params. Similar to the case np > 1 where parallel_dynamic_stitch is
       # outside the scioe of all with ops.colocate_with(params[p]).
-      return array_ops.identity(result)
+      ret = array_ops.identity(result)
+      ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, ret)
+      return ret
     else:
       # Flatten the ids. There are two cases where we need to do this.
       # - There is more than one params tensor.

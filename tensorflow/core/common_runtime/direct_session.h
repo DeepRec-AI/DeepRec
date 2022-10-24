@@ -52,6 +52,7 @@ class CostModel;
 class DebugGateway;
 class Device;
 class DirectSessionFactory;
+class ResourceMgr;
 
 class DirectSession : public Session {
  public:
@@ -130,6 +131,11 @@ class DirectSession : public Session {
   ::tensorflow::Status ReleaseCallable(CallableHandle handle) override;
 
   const SessionOptions& options() const { return options_; }
+  bool sync_on_finish() const { return sync_on_finish_; }
+  void set_sync_on_finish(bool flag) { sync_on_finish_ = flag; }
+  static mutex capture_run_mu_;
+
+  void SetMultiStreamInfo(int stream_num, ResourceMgr* rmgr);
 
  private:
   // For access to collective_graph_key_.
@@ -429,6 +435,11 @@ class DirectSession : public Session {
 
   // If true, will use cost_model_executor to run the graph.
   bool run_cost_model_executor_ = false;
+
+  // GPU resource shared by all streams
+  bool use_multi_stream_ = false;
+  int multi_stream_num_ = 0;
+  ResourceMgr* multi_stream_shared_rmgr_ = nullptr;
 
   TF_DISALLOW_COPY_AND_ASSIGN(DirectSession);
 

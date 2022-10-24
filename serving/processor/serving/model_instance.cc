@@ -289,19 +289,21 @@ Status LocalSessionInstance::Init(ModelConfig* config,
       session_options_, run_options_);
 
   if (config->enable_incr_model_update) {
-    return LoadModelFromCheckpoint(config);
+    return LoadModelFromCheckpoint(config, true);
   } else {
     return LoadSavedModel(config);
   }
 }
 
 Status LocalSessionInstance::LoadModelFromCheckpoint(
-    ModelConfig* config) {
+    ModelConfig* config, bool is_initialize) {
   // Load full model
   TF_RETURN_IF_ERROR(session_mgr_->CreateModelSession(version_,
       version_.full_ckpt_name.c_str(),
       version_.delta_ckpt_name.c_str(),
-      /*is_incr_ckpt*/false, config));
+      /*is_incr_ckpt*/false,
+      /*is_initialize*/is_initialize,
+      config));
 
   // Load delta model if existed
   if (version_.delta_ckpt_name.empty()) {
@@ -311,7 +313,9 @@ Status LocalSessionInstance::LoadModelFromCheckpoint(
   return session_mgr_->CreateModelSession(version_,
       version_.full_ckpt_name.c_str(),
       version_.delta_ckpt_name.c_str(),
-      /*is_incr_ckpt*/true, config);
+      /*is_incr_ckpt*/true,
+      /*is_initialize*/is_initialize,
+      config);
 }
 
 Status LocalSessionInstance::LoadSavedModel(
@@ -389,7 +393,9 @@ Status LocalSessionInstance::FullModelUpdate(
       session_mgr_->CreateModelSession(version,
           version.full_ckpt_name.c_str(),
           version.delta_ckpt_name.c_str(),
-          /*is_incr_ckpt*/false, model_config,
+          /*is_incr_ckpt*/false,
+          /*is_initialize*/false,
+          model_config,
           &new_model_session));
 
   // warmup model
@@ -407,7 +413,9 @@ Status LocalSessionInstance::DeltaModelUpdate(
       session_mgr_->CreateModelSession(version,
           version.full_ckpt_name.c_str(),
           version.delta_ckpt_name.c_str(),
-          /*is_incr_ckpt*/true, model_config));
+          /*is_incr_ckpt*/true,
+          /*is_initialize*/false,
+          model_config));
 
   // Delta model update: No need to warmup model and
   // reset serving session, we don't create a new session.

@@ -22,6 +22,19 @@ message ScopedAllocatorOptions {
   repeated string enable_op = 1;
 }
 
+enum MultiStreamPartitionPolicy {
+  NO_PARTITION = 0;
+  USER_DEFINED_PARTITION = 1;
+  EMBEDDING_GRAPH_PARTITION = 2;
+  FULL_GRAPH_PARTITION = 3;
+  // other policy
+}
+
+message MultiStreamOptions {
+  int32 multi_stream_num = 1;
+  MultiStreamPartitionPolicy partition_policy = 2;
+}
+
 message RewriterConfig {
   // Graph rewriting is experimental and subject to change, not covered by any
   // API stability guarantees.
@@ -158,6 +171,9 @@ message RewriterConfig {
   bool fail_on_optimizer_errors = 21;
 
   ScopedAllocatorOptions scoped_allocator_opts = 16;
+
+  Toggle use_multi_stream = 26;
+  MultiStreamOptions multi_stream_opts = 27;
 
   // If non-empty, will use this as an alternative way to specify a list of
   // optimizations to turn on and the order of the optimizations (replacing the

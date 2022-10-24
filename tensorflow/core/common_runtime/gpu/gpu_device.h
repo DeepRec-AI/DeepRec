@@ -137,6 +137,14 @@ class BaseGPUDevice : public LocalDevice {
     return streams_.front()->compute->implementation()->GpuStreamMemberHack();
   }
 
+  se::Stream* GetDefaultTFStream() {
+    return streams_.front()->compute;
+  }
+
+  void SetSingleStreamMode();
+  void ResetStreamMode();
+  bool IsSingleStreamMode() override { return is_single_stream_mode_; }
+
  protected:
   Allocator* gpu_allocator_;  // not owned
   Allocator* cpu_allocator_;  // not owned
@@ -158,6 +166,8 @@ class BaseGPUDevice : public LocalDevice {
   class StreamGroupFactory;
 
   gtl::InlinedVector<StreamGroup*, 4> streams_;
+  StreamGroup* stream_group_backup_ = nullptr;
+  StreamGroup single_stream_mode_group_;
   mutex scratch_init_mutex_;
   gtl::InlinedVector<char*, 4> scratch_;
   std::vector<GPUDeviceContext*> device_contexts_;
@@ -171,6 +181,7 @@ class BaseGPUDevice : public LocalDevice {
   std::unique_ptr<GPUKernelTracker> kernel_tracker_;
   int32 pending_cap_ = 0;
   bool timestamped_allocator_ = false;
+  bool is_single_stream_mode_ = false;
 
   // Initialize scractch buffers used by Eigen.
   Status InitScratchBuffers();

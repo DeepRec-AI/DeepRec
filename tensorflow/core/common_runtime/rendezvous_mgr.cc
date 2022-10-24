@@ -103,7 +103,7 @@ void IntraProcessRendezvous::SameWorkerRecvDone(
   attr.set_gpu_compatible(send_args.alloc_attrs.gpu_compatible() ||
                           recv_args.alloc_attrs.gpu_compatible());
   Allocator* out_allocator = dst_device->GetAllocator(attr);
-  bool sync_dst_compute = true;
+  bool sync_dst_compute = (!dst_device->IsSingleStreamMode());
   if (in.dtype() != DT_VARIANT) {
     // Variants are handled by CopyTensor::ViaDMA.
     AllocationAttributes aa;

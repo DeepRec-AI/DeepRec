@@ -181,6 +181,13 @@ is_initialized: a scalar boolean which is true if the variable has been
 initialized.
 )doc");
 
+REGISTER_OP("KvResourceInitCacheStrategyOp")
+    .Input("resource: resource")
+    .Attr("cache_strategy: int = 1")
+    .Attr("Tkeys: {int64,int32,string}")
+    .Attr("dtype: {float32, double}")
+    .SetShapeFn([](InferenceContext* c){return Status::OK();});
+
 Status KvVariableShapeShapeFn(InferenceContext* c) {
   auto* handle_data = c->input_handle_shapes_and_types(0);
   if (handle_data == nullptr || handle_data->empty()) {
@@ -446,6 +453,24 @@ REGISTER_OP("KvResourceImportV2")
      })
     .Doc(R"doc()doc");
 
+REGISTER_OP("KvResourceImportV3")
+    .Input("prefix: string")
+    .Input("resource_self: resource")
+    .Input("tensor_names: string")
+    .Input("empty_key: Tkeys")
+    .Attr("shape: shape")
+    .Attr("partition_id: int = 0")
+    .Attr("partition_num: int = 1")
+    .Attr("Tkeys: {int64,int32}")
+    .Attr("dtype: type")
+    .Attr("reset_version: bool = false")
+    .SetShapeFn([](InferenceContext* c) {
+          ShapeHandle handle;
+          TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &handle));
+          return Status::OK();
+     })
+    .Doc(R"doc()doc");
+
 REGISTER_OP("KvResourceIncrImport")
     .Input("prefix: string")
     .Input("resource_handle: resource")
@@ -543,6 +568,17 @@ REGISTER_OP("EVGetVersion")
     .Output("output: int64")
     .Attr("Tkeys: {int64, int32}")
     .Attr("Tvalues: type")
+    .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
+REGISTER_OP("KvResourceLookupTier")
+    .Input("resource_handle: resource")
+    .Input("ids: Tkeys")
+    .Output("output: int32")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("dtype: type")
     .SetShapeFn([](InferenceContext* c) {
       return Status::OK();
     })

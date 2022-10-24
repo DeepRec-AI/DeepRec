@@ -244,7 +244,7 @@ class SSDHashKV : public KVInterface<K, V> {
           &is_async_compaction_));
     if (!is_async_compaction_) {
       LOG(INFO) <<
-        "Use Sync Compactor in SSDHashKV of Multi-tier Embedding Stroage!";
+        "Use Sync Compactor in SSDHashKV of Multi-tier Embedding Storage!";
       compaction_fn_ = [this](){Compaction();}; 
       check_buffer_fn_ = [this](){CheckBuffer();};
       save_kv_fn_ = [this](K key, const ValuePtr<V>* value_ptr,
@@ -253,7 +253,7 @@ class SSDHashKV : public KVInterface<K, V> {
       };
     } else {
       LOG(INFO) <<
-        "Use Async Compactor in SSDHashKV of Multi-tier Embedding Stroage!";
+        "Use Async Compactor in SSDHashKV of Multi-tier Embedding Storage!";
       compaction_fn_ = [](){};
       check_buffer_fn_ = [this](){CheckBufferAsync();};
       save_kv_fn_ = [this](K key, const ValuePtr<V>* value_ptr,
@@ -290,6 +290,11 @@ class SSDHashKV : public KVInterface<K, V> {
       } else {
         emb_files_[evict_version_]->Write(write_buffer_,
             buffer_cur_ * val_len_);
+        mutex_lock l(shutdown_mu_);
+        shutdown_ = true;
+        // Need last compaction or not???
+        // CompactionAsync();
+        delete compaction_thread_;
       }
       TF_CHECK_OK(UpdateFlushStatus());
       buffer_cur_ = 0;
@@ -302,11 +307,6 @@ class SSDHashKV : public KVInterface<K, V> {
     }
     delete[] write_buffer_;
     delete[] key_buffer_;
-    if (compaction_thread_) {
-      shutdown_cv_.notify_all();
-      shutdown_ = true;
-      delete compaction_thread_;
-    }
   }
 
   Status UpdateFlushStatus() {
@@ -338,6 +338,16 @@ class SSDHashKV : public KVInterface<K, V> {
       }
       *value_ptr = val;
       posi->invalid_ = true;
+      return Status::OK();
+    }
+  }
+
+  Status Contains(K key) {
+    auto iter = hash_map_.find_wait_free(key);
+    if (iter.first == EMPTY_KEY) {
+      return errors::NotFound("Unable to find Key: ", key, " in SSDHashKV.");
+    } else {
+      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
       return Status::OK();
     }
   }
@@ -385,9 +395,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  int64 Size() const {
-    return hash_map_.size();
-  }
+  int64 Size() const { return hash_map_.size_lockless(); }
 
   void FreeValuePtr(ValuePtr<V>* value_ptr) {
     delete value_ptr;
@@ -700,7 +708,13 @@ class SSDHashKV : public KVInterface<K, V> {
       }
     }
     while (!shutdown_) {
-      CompactionAsync();
+      if (shutdown_mu_.try_lock()) {
+        if (!shutdown_) {
+          CompactionAsync();
+        }
+        shutdown_mu_.unlock();
+      }
+      Env::Default()->SleepForMicroseconds(1000);
     }
   }
 
@@ -754,7 +768,7 @@ class SSDHashKV : public KVInterface<K, V> {
   std::map<int64, std::vector<std::pair<K, EmbPosition*>>> evict_file_map_;
 
   Thread* compaction_thread_;
-  condition_variable shutdown_cv_;
+  mutex shutdown_mu_;
   volatile bool shutdown_ = false;
   volatile bool done_ = false;
   // std::atomic_flag flag_ = ATOMIC_FLAG_INIT; unused

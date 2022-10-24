@@ -18,12 +18,13 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_LIB_HASH_HASH_H_
 #define TENSORFLOW_CORE_LIB_HASH_HASH_H_
 
+#include <functional>
 #include <stddef.h>
 #include <stdint.h>
-
-#include <functional>
-#include <immintrin.h>
 #include <string>
+#if defined(__AVX512F__)
+#include <immintrin.h>
+#endif
 
 #include "tensorflow/core/lib/core/stringpiece.h"
 #include "tensorflow/core/platform/types.h"

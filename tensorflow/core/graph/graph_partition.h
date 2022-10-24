@@ -83,27 +83,24 @@ struct PartitionOptions {
   bool tensor_fuse = false;
 };
 
-namespace {
-  // A map used to store memory types for the inputs/outputs of every node.
-  // The key is a pair of ints consisting of a node id and input/output index.
-  // TODO(power): migrate back to std::pair when absl::Hash is fixed for MSVC.
-  struct NodePort {
-    int node_id;
-    int index;
+// A map used to store memory types for the inputs/outputs of every node.
+// The key is a pair of ints consisting of a node id and input/output index.
+// TODO(power): migrate back to std::pair when absl::Hash is fixed for MSVC.
+struct NodePort {
+  int node_id;
+  int index;
 
-    friend bool operator==(const NodePort& x, const NodePort& y) {
-      return x.node_id == y.node_id && x.index == y.index;
-    }
+  friend bool operator==(const NodePort& x, const NodePort& y) {
+    return x.node_id == y.node_id && x.index == y.index;
+  }
 
-    template <typename H>
-    friend H AbslHashValue(H h, const NodePort& c) {
-      return H::combine(std::move(h), c.node_id, c.index);
-    }
-  };
+  template <typename H>
+  friend H AbslHashValue(H h, const NodePort& c) {
+    return H::combine(std::move(h), c.node_id, c.index);
+  }
+};
 
-  typedef absl::flat_hash_map<NodePort, MemoryType> MemoryTypeMap;
-
-} // namespace
+typedef absl::flat_hash_map<NodePort, MemoryType> MemoryTypeMap;
 
 // We collect the following information about the graph before performing
 // graph partitioning.

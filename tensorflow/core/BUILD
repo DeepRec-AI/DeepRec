@@ -3197,6 +3197,7 @@ GRAPH_HDRS = [
     "graph/optimizer_fusion_engine_impl.h",
     "graph/star_server_graph_partition.h",
     "graph/subgraph.h",
+    "graph/stream_subgraph.h",
     "graph/template_base.h",
     "graph/template_logicsum_base.h",
     "graph/template_select_base.h",
@@ -3230,6 +3231,7 @@ tf_cuda_library(
         "graph/star_server_graph_partition.cc",
         "graph/subgraph.cc",
         "graph/validate.cc",
+        "graph/stream_subgraph.cc",
     ],
     hdrs = GRAPH_HDRS,
     deps = [
@@ -3370,6 +3372,7 @@ CORE_CPU_LIB_HEADERS = CORE_CPU_BASE_HDRS + [
     "common_runtime/threadpool_device.h",
     "common_runtime/process_state.h",
     "common_runtime/pool_allocator.h",
+    "common_runtime/virtual_threadpool.h",
     "graph/gradients.h",
     "graph/quantize_training.h",
 ] + if_mkl(["graph/mkl_graph_util.h"])
@@ -3449,6 +3452,7 @@ tf_cuda_library(
         "common_runtime/gpu_tensorpool_allocator.cc",
         "common_runtime/threadpool_device.cc",
         "common_runtime/threadpool_device_factory.cc",
+        "common_runtime/virtual_threadpool.cc",
         "graph/gradients.cc",
         "graph/mkl_layout_pass.cc",
         "graph/mkl_tfconversion_pass.cc",
@@ -3608,6 +3612,42 @@ tf_cuda_library(
     alwayslink = 1,
 )
 
+tf_cuda_library(
+    name = "gpu_cuda_graph_mode_session_internal",
+    srcs = ["common_runtime/gpu/gpu_cuda_graph_mode_session.cc"],
+    hdrs = [
+        "common_runtime/gpu/gpu_cuda_graph_mode_session.h",
+    ],
+    copts = tf_copts() + ["-fexceptions"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":direct_session_internal",
+        ":gpu_cuda_graph_mode_internal",
+    ],
+    alwayslink = 1,
+)
+
+tf_cuda_library(
+    name = "gpu_cuda_graph_mode_internal",
+    srcs = ["common_runtime/gpu/gpu_cuda_graph_mode_context.cc",
+            "common_runtime/gpu/gpu_cuda_graph_mode_validate_pass.cc"],
+    hdrs = [
+        "common_runtime/gpu/gpu_cuda_graph_mode_context.h",
+        "public/session_options.h"
+    ],
+    copts = tf_copts() + ["-fexceptions"],
+    deps = [
+        ":framework",
+        ":framework_internal",
+        ":direct_session_internal",
+        ":gpu_lib",
+        ":gpu_runtime",
+        ":session_options",
+        ":gpu_cuda_graph_bfc_allocator",
+    ],
+    alwayslink = 1,
+)
+
 cc_library(
     name = "example_parser_configuration",
     srcs = ["example/example_parser_configuration.cc"],
@@ -3687,6 +3727,7 @@ cc_library(
 GPU_RUNTIME_HEADERS = [
     "common_runtime/gpu/gpu_adjustable_allocator.h",
     "common_runtime/gpu/gpu_bfc_allocator.h",
+    "common_runtime/gpu/gpu_cuda_graph_bfc_allocator.h",
     "common_runtime/gpu/gpu_cudamalloc_allocator.h",
     "common_runtime/gpu/gpu_cudamallocasync_allocator.h",
     "common_runtime/gpu/gpu_debug_allocator.h",
@@ -3729,6 +3770,7 @@ tf_cuda_library(
         ":framework",
         ":framework_internal",
         ":gpu_bfc_allocator",
+        ":gpu_cuda_graph_bfc_allocator",
         ":gpu_id_impl",
         ":gpu_init_impl",
         ":gpu_lib",
@@ -3774,6 +3816,22 @@ tf_cuda_library(
         ":lib",
         ":lib_internal",
         ":protos_all_cc",
+    ],
+)
+
+tf_cuda_library(
+    name = "gpu_cuda_graph_bfc_allocator",
+    srcs = [
+        "common_runtime/gpu/gpu_cuda_graph_bfc_allocator.cc",
+        "common_runtime/gpu/gpu_cuda_graph_mode_mem.cc",
+    ],
+    hdrs = ["common_runtime/gpu/gpu_cuda_graph_bfc_allocator.h",
+            "common_runtime/gpu/gpu_cuda_graph_mode_mem.h"],
+    features = ["parse_headers"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gpu_bfc_allocator",
+        ":lib",
     ],
 )
 
@@ -5071,6 +5129,47 @@ tf_cuda_cc_test(
         "//tensorflow/core/kernels:identity_n_op",
         "//tensorflow/core/kernels:identity_op",
         "//tensorflow/core/kernels:matmul_op",
+        "//tensorflow/core/kernels:ops_util",
+        "//tensorflow/core/kernels:queue_ops",
+        "//tensorflow/core/kernels:session_ops",
+        "//tensorflow/core/kernels:variable_ops",
+    ] + if_cuda([":cuda"]),
+)
+
+tf_cuda_cc_test(
+    name = "common_runtime_gpu_cuda_graph_mode_session_test",
+    size = "small",
+    srcs = ["common_runtime/gpu/gpu_cuda_graph_mode_session_test.cc"],
+    args = [] + if_cuda(["--heap_check=local"]),  # The GPU tracer leaks memory
+    linkstatic = tf_kernel_tests_linkstatic(),
+    deps = [
+        ":core_cpu",
+        ":core_cpu_internal",
+        ":gpu_cuda_graph_mode_session_internal",
+        ":framework",
+        ":framework_internal",
+        ":lib",
+        ":lib_internal",
+        ":ops",
+        ":protos_all_cc",
+        ":test",
+        ":test_main",
+        ":testlib",
+        "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
+        "//third_party/eigen3",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core/kernels:collective_ops",
+        "//tensorflow/core/kernels:control_flow_ops",
+        "//tensorflow/core/kernels:cwise_op",
+        "//tensorflow/core/kernels:dense_update_ops",
+        "//tensorflow/core/kernels:fifo_queue_op",
+        "//tensorflow/core/kernels:function_ops",
+        "//tensorflow/core/kernels:identity_n_op",
+        "//tensorflow/core/kernels:identity_op",
+        "//tensorflow/core/kernels:matmul_op",
+        "//tensorflow/core/kernels:bias_op",
+        "//tensorflow/core/kernels:snapshot_op",
         "//tensorflow/core/kernels:ops_util",
         "//tensorflow/core/kernels:queue_ops",
         "//tensorflow/core/kernels:session_ops",

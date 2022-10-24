@@ -160,6 +160,9 @@ struct LocalExecutorParams {
   std::function<void(OpKernel*)> delete_kernel;
 
   Executor::RendezvousFactory rendezvous_factory;
+
+  // If true, will use cost_model_executor to run the graph.
+  bool run_cost_model_executor = false;
 };
 
 // Creates an Executor that computes the given "graph".

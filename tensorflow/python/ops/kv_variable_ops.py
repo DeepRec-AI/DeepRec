@@ -32,6 +32,7 @@ from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
 from tensorflow.python.framework import tensor_util
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_array_ops
 from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.ops import math_ops
@@ -176,6 +177,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
   # doesn't call the constructor, so changes here might need to be reflected
   # there.
   # pylint: disable=unused-argument
+
   def _init_from_args(self,
                       initial_value=None,
                       initializer=None,
@@ -282,11 +284,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
       self._false_positive_probability = -1.0
       self._counter_type = dtypes.uint64
 
-    multi_level_list = [config_pb2.StorageType.LEVELDB, config_pb2.StorageType.SSDHASH,
-                        config_pb2.StorageType.DRAM_PMEM, config_pb2.StorageType.DRAM_LEVELDB,
-                        config_pb2.StorageType.DRAM_SSDHASH, config_pb2.StorageType.HBM_DRAM,
-                        config_pb2.StorageType.DRAM_PMEM_SSDHASH, config_pb2.StorageType.HBM_DRAM_SSDHASH]
-      
     self._record_freq = (os.environ.get("TF_RECORD_FREQ", "0") == "1")
     self._record_version = (os.environ.get("TF_RECORD_VERSION", "0") == "1")
     self._l2_weight_threshold = evconfig.l2_weight_threshold
@@ -295,6 +292,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_size = evconfig.storage_size
     self._default_value_dim = evconfig.default_value_dim
     self._default_value_no_permission = evconfig.default_value_no_permission
+    self._storage_cache_strategy = evconfig.storage_cache_strategy
 
     if self._primary is None:
       self._is_primary = True
@@ -372,7 +370,6 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
           self._slot_num = 0 
         else:
           self._slot_num = evconfig.slot_num
-
         with ops.name_scope("IsInitialized"):
           self._is_initialized_op = (
               gen_kv_variable_ops.kv_var_is_initialized_op(self._handle,
@@ -381,8 +378,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
         if initial_value is not None:
           with ops.name_scope("Assign") as n, ops.colocate_with(self._handle):
             with ops.control_dependencies(None if self._is_primary else [self._primary.initializer]):
-              self._initializer_op = (
-                gen_kv_variable_ops.initialize_kv_variable_op(
+              self._init_op = gen_kv_variable_ops.initialize_kv_variable_op(
                     self._handle,
                     self._primary._handle,
                     variables._try_guard_against_uninitialized_dependencies(name, initial_value),
@@ -408,7 +404,32 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     default_value_no_permission = self._default_value_no_permission,
                     record_freq = self._record_freq,
                     record_version = self._record_version,
-                    name=n))
+                    name=n)
+            set_attr_ops = []
+
+            def is_multi_tier(storage_type):
+              multi_level_list = [config_pb2.StorageType.LEVELDB,
+                                  config_pb2.StorageType.SSDHASH,
+                                  config_pb2.StorageType.DRAM_PMEM,
+                                  config_pb2.StorageType.DRAM_LEVELDB,
+                                  config_pb2.StorageType.DRAM_SSDHASH,
+                                  config_pb2.StorageType.HBM_DRAM,
+                                  config_pb2.StorageType.DRAM_PMEM_SSDHASH,
+                                  config_pb2.StorageType.HBM_DRAM_SSDHASH]
+              return storage_type in multi_level_list
+
+            if self._is_primary and is_multi_tier(self._storage_type):
+              with ops.control_dependencies([self._init_op]):
+                self._set_cache_strategy_op = gen_kv_variable_ops.kv_resource_init_cache_strategy_op(
+                  self._handle,
+                  cache_strategy=self._storage_cache_strategy,
+                  Tkeys=self._invalid_key_type,
+                  dtype=self._dtype
+                )
+              set_attr_ops.append(self._set_cache_strategy_op)
+            with ops.control_dependencies(set_attr_ops + [self._init_op]):
+              self._initializer_op = control_flow_ops.no_op()
+        
         self._graph_element = self._handle
         self._cached_value = None
         if not context.executing_eagerly():
@@ -440,6 +461,16 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._initializer_op = g.as_graph_element(
         ops.prepend_name_scope(
             variable_def.initializer_name, import_scope=import_scope))
+    cache_op = None
+    if self._initializer_op.type == "NoOp":
+      for op in self._initializer_op.control_inputs:
+        if op.type == "InitializeKvVariableOp":
+          init_op = op
+          self._init_op = op
+        elif op.type == "KvResourceSetCacheStrategyOp":
+          cache_op = op
+    elif self._initializer_op.type == "InitializeKvVariableOp":
+      init_op = self._initializer_op
     self._trainable = getattr(variable_def, "trainable", True)
     if variable_def.snapshot_name:
       self._cached_value = g.as_graph_element(
@@ -453,8 +484,8 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     else:
       self._save_slice_info = None
     self._caching_device = None
-    self._slot_index = self._initializer_op.get_attr("slot_index")
-    self._block_num = self._initializer_op.get_attr("block_num")
+    self._slot_index = init_op.get_attr("slot_index")
+    self._block_num = init_op.get_attr("block_num")
     primary_name = ""
     primary_name_list = variable_def.variable_name.split("/")
     if self._block_num > 1:
@@ -487,9 +518,9 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                 primary_name, import_scope=import_scope))
     self._dtype = dtypes.as_dtype(self._handle.op.get_attr("dtype"))
     self._invalid_key = -1
-    self._steps_to_live = self._initializer_op.get_attr("steps_to_live")
-    self._ht_type = self._initializer_op.get_attr("ht_type")
-    self._ht_partition_num = self._initializer_op.get_attr("ht_partition_num")
+    self._steps_to_live = init_op.get_attr("steps_to_live")
+    self._ht_type = init_op.get_attr("ht_type")
+    self._ht_partition_num = init_op.get_attr("ht_partition_num")
     self._init_data_source = None
     self._initial_value = ops.convert_to_tensor(
                               [0], name="initial_value", dtype=self._dtype)
@@ -497,21 +528,28 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._graph_element = self._handle
     self._constraint = None
     self._is_sparse=False
-    self._layout = self._initializer_op.get_attr("layout")
-    self._slot_num = self._initializer_op.get_attr("slot_num")
-    self._emb_index = self._initializer_op.get_attr("emb_index")
-    self._filter_freq = self._initializer_op.get_attr("filter_freq")
-    self._l2_weight_threshold = self._initializer_op.get_attr("l2_weight_threshold")
-    self._max_element_size = self._initializer_op.get_attr("max_element_size")
-    self._false_positive_probability = self._initializer_op.get_attr("false_positive_probability")
-    self._counter_type = self._initializer_op.get_attr("counter_type")
-    self._storage_type = self._initializer_op.get_attr("storage_type")
-    self._storage_path = self._initializer_op.get_attr("storage_path")
-    self._storage_size = self._initializer_op.get_attr("storage_size")
-    self._default_value_dim = self._initializer_op.get_attr("default_value_dim")
-    self._default_value_no_permission= self._initializer_op.get_attr("default_value_no_permission")
-    self._record_freq = self._initializer_op.get_attr("record_freq")
-    self._record_version = self._initializer_op.get_attr("record_version")
+    self._layout = init_op.get_attr("layout")
+    self._slot_num = init_op.get_attr("slot_num")
+    self._emb_index = init_op.get_attr("emb_index")
+    self._filter_freq = init_op.get_attr("filter_freq")
+    self._l2_weight_threshold = init_op.get_attr("l2_weight_threshold")
+    self._max_element_size = init_op.get_attr("max_element_size")
+    self._false_positive_probability = init_op.get_attr("false_positive_probability")
+    self._counter_type = init_op.get_attr("counter_type")
+    self._storage_type = init_op.get_attr("storage_type")
+    self._storage_path = init_op.get_attr("storage_path")
+    self._storage_size = init_op.get_attr("storage_size")
+    self._default_value_dim = init_op.get_attr("default_value_dim")
+    self._default_value_no_permission= init_op.get_attr("default_value_no_permission")
+    self._record_freq = init_op.get_attr("record_freq")
+    self._record_version = init_op.get_attr("record_version")
+    self._storage_cache_strategy = config_pb2.CacheStrategy.LFU
+    if cache_op:
+      self._storage_cache_strategy = cache_op.get_attr("cache_strategy")
+    if self._slot_index is 0 and self._emb_index is 0:
+      self._is_primary = True
+    else:
+      self._is_primary = False
 
   # LINT.ThenChange(//tensorflow/python/eager/graph_callable.py)
 
@@ -911,6 +949,32 @@ class DynamicEmbeddingVariable(resource_variable_ops.ResourceVariable):
 
 def _dense_var_to_tensor(var, dtype=None, name=None, as_ref=False):
   return var._dense_var_to_tensor(dtype=dtype, name=name, as_ref=as_ref)  # pylint: disable=protected-access
+
+def lookup_tier(var, ids):
+  if isinstance(var, EmbeddingVariable):
+    return  gen_kv_variable_ops.kv_resource_lookup_tier(var._handle,
+                                            ids,
+                                            dtype=var._dtype)
+  elif isinstance(var, variables.PartitionedVariable):
+    ev_list = list(var)
+    np = len(ev_list)
+    partitioned_result = []
+    original_indices = math_ops.range(array_ops.size(ids))
+    p_assignments = ids % 1000 % np
+    p_assignments = math_ops.cast(p_assignments, dtypes.int32)
+    from tensorflow.python.ops import data_flow_ops
+    gather_ids = data_flow_ops.dynamic_partition(ids, p_assignments, np)
+    pindices = data_flow_ops.dynamic_partition(original_indices,
+                                                 p_assignments, np)
+    for (i, val) in enumerate(ev_list):
+      with ops.colocate_with(val):
+        result =  gen_kv_variable_ops.kv_resource_lookup_tier(val._handle,
+                                            gather_ids[i],
+                                            dtype=var._dtype)
+        partitioned_result.append(result)
+    ret = data_flow_ops.parallel_dynamic_stitch(
+          pindices, partitioned_result)
+    return ret
 
 def identity(var):
   if "GPU" in var.device:

@@ -24,6 +24,7 @@ from tensorflow.python.framework import device as pydev
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import gen_kv_variable_ops
 from tensorflow.python.ops import kv_variable_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -200,34 +201,20 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
       if self.var._init_data_source is not None:
         return self.var.recover_from_init_data_source(self.var._init_data_source, self.partition_id, self.partition_num)
       else:
-        rank = self.op.initial_value.get_shape().rank - 1
-        return gen_kv_variable_ops.kv_resource_import_v2(
-            restored_tensors[0],
-            self.handle_op, self.var._primary_handle,
-            variables._try_guard_against_uninitialized_dependencies(self.name, self.op.initial_value),
-            name_tensor,
-            ops.convert_to_tensor(self.invalid_key),
-            slot_num=self.var._slot_num,
-            shape=self.op.initial_value.get_shape()[rank:], steps_to_live=self.steps_to_live,
-            emb_index=self.var._emb_index, slot_index=self.var._slot_index,
-            block_num=self.var.block_num,
-            ht_type=self.ht_type,
-            ht_partition_num=self.ht_partition_num,
-            filter_freq = self.var._filter_freq,
-            max_freq = 99999,
-            l2_weight_threshold = self.var._l2_weight_threshold,
-            max_element_size = self.var._max_element_size,
-            false_positive_probability = self.var._false_positive_probability,
-            counter_type = self.var._counter_type,
-            layout = "",
-            storage_type=self.var._storage_type,
-            storage_path=self.var._storage_path,
-            storage_size=self.var._storage_size,
-            partition_id=self.partition_id, partition_num=self.partition_num,
-            default_value_dim=self.var._default_value_dim,
-            default_value_no_permission=self.var._default_value_no_permission,
-            record_freq=self.var._record_freq,
-            record_version=self.var._record_version)
+        with ops.control_dependencies([self.var._initializer_op]):
+          rank = self.op.initial_value.get_shape().rank - 1
+          restore_op = gen_kv_variable_ops.kv_resource_import_v3(
+              restored_tensors[0],
+              self.handle_op,
+              name_tensor,
+              ops.convert_to_tensor(self.invalid_key),
+              shape=self.op.initial_value.get_shape()[rank:],
+              partition_id=self.partition_id,
+              partition_num=self.partition_num,
+              dtype=self.var._dtype
+          )
+        return restore_op
+      
 
   def incr_restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access

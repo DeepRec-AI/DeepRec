@@ -47,7 +47,8 @@ class LocalSessionInstance {
  
  private:
   Status ReadModelSignature(ModelConfig* model_config);
-  Status LoadModelFromCheckpoint(ModelConfig* config);
+  Status LoadModelFromCheckpoint(
+      ModelConfig* config, bool is_initialize);
   Status LoadSavedModel(ModelConfig* config);
 
  private: 

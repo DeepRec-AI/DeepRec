@@ -57,6 +57,7 @@ limitations under the License.
 #include "tensorflow/core/graph/graph.h"
 #include "tensorflow/core/graph/graph_constructor.h"
 #include "tensorflow/core/graph/graph_partition.h"
+#include "tensorflow/core/graph/stream_subgraph.h"
 #include "tensorflow/core/graph/subgraph.h"
 #include "tensorflow/core/graph/tensor_id.h"
 #include "tensorflow/core/lib/core/errors.h"
@@ -85,6 +86,8 @@ limitations under the License.
 #include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
+
+mutex DirectSession::capture_run_mu_;
 
 namespace {
 
@@ -243,13 +246,55 @@ class DirectSessionFactory : public SessionFactory {
       EnableCPUAllocatorFullStats(true);
     }
     std::vector<std::unique_ptr<Device>> devices;
-    TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
-        options, "/job:localhost/replica:0/task:0", &devices));
+    // use multi-stream
+    auto rewrite_config =
+        options.config.graph_options().rewrite_options();
+    ResourceMgr* gpu_shared_rmgr = nullptr;
+    if (rewrite_config.use_multi_stream() == RewriterConfig::ON) {
+      int multi_streams_num =
+          rewrite_config.multi_stream_opts().multi_stream_num();
+      ConfigProto* config = const_cast<ConfigProto*>(&options.config);
+      GPUOptions* gpu_options = config->mutable_gpu_options();
+      auto virtual_devices =
+          gpu_options->mutable_experimental()->add_virtual_devices();
+      // will allocate gpu memory for each virtual device later.
+      int32 mem_per_virtual_device = -1;
+      for (int i = 0; i < multi_streams_num; ++i) {
+        virtual_devices->add_memory_limit_mb(-1);
+      }
+
+      // We set allow_growth in multi-stream mode.
+      gpu_options->set_allow_growth(true);
+
+      // Create shared resource for gpu devices
+      DeviceResourceMgrMap dev_rmgr_map;
+      gpu_shared_rmgr = new ResourceMgr("localhost");
+      std::string gpu_dev_prefix("/job:localhost/replica:0/task:0/device:GPU:");
+      for (int i = 0; i < multi_streams_num; ++i) {
+        dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(i)] =
+            gpu_shared_rmgr;
+      }
+
+      DeviceGlobalThreadPoolOptions dev_global_tp_opt;
+      TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
+          options, "/job:localhost/replica:0/task:0",
+          &devices, &dev_rmgr_map, dev_global_tp_opt));
+    } else {
+      TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
+          options, "/job:localhost/replica:0/task:0", &devices));
+    }
 
     std::vector<unsigned> visible_cpus;
     DirectSession* session =
         new DirectSession(options, new DeviceMgr(std::move(devices)),
                           true, this, visible_cpus);
+    // owned gpu_shared_rmgr
+    if (rewrite_config.use_multi_stream() == RewriterConfig::ON) {
+      session->SetMultiStreamInfo(
+          rewrite_config.multi_stream_opts().multi_stream_num(),
+          gpu_shared_rmgr);
+    }
+
     {
       mutex_lock l(sessions_lock_);
       sessions_.push_back(session);
@@ -587,7 +632,9 @@ DirectSession::DirectSession(const SessionOptions& options,
       device_mgr_(device_mgr),
       factory_(factory),
       cancellation_manager_(new CancellationManager()),
-      operation_timeout_in_ms_(options_.config.operation_timeout_in_ms()) {
+      operation_timeout_in_ms_(options_.config.operation_timeout_in_ms()),
+      use_multi_stream_(false), multi_stream_num_(0),
+      multi_stream_shared_rmgr_(nullptr) {
   const int thread_pool_size =
       options_.config.session_inter_op_thread_pool_size();
   if (thread_pool_size > 0) {
@@ -713,6 +760,10 @@ DirectSession::~DirectSession() {
 
   if (own_device_mgr_) {
     delete device_mgr_;
+  }
+
+  if (multi_stream_shared_rmgr_) {
+    delete multi_stream_shared_rmgr_;
   }
 }
 
@@ -1714,6 +1765,7 @@ Status DirectSession::CreateExecutors(
       *r = new IntraProcessRendezvous(device_mgr);
       return Status::OK();
     };
+    params.run_cost_model_executor = run_cost_model_executor_;
 
     optimizer.Optimize(lib, options_.env, device, &partition_graph,
                        /*shape_map=*/nullptr);
@@ -1978,6 +2030,12 @@ Status DirectSession::CreateGraphs(
   };
   popts.flib_def = &client_graph->graph.flib_def();
   popts.control_flow_added = false;
+
+  if (use_multi_stream_) {
+    // Split graph to multi-stream subgraph,
+    // We not do split here, just modify nodes' placement.
+    stream_subgraph::MarkStreamSubGraph(&client_graph->graph, multi_stream_num_);
+  }
 
   std::unordered_map<string, GraphDef> partitions;
   TF_RETURN_IF_ERROR(Partition(popts, &client_graph->graph, &partitions));
@@ -2315,6 +2373,12 @@ DirectSession::Callable::~Callable() {
   // or not).
   executors_and_keys.reset();
   function_info.reset();
+}
+
+void DirectSession::SetMultiStreamInfo(int stream_num, ResourceMgr* rmgr) {
+  use_multi_stream_ = true;
+  multi_stream_num_ = stream_num;
+  multi_stream_shared_rmgr_ = rmgr;
 }
 
 }  // namespace tensorflow

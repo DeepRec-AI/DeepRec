@@ -10,6 +10,13 @@
 ### API说明
 
 ```python
+# If ARROW_NUM_THREADS > 0, specified number of threads will be used.
+# If ARROW_NUM_THREADS = 0, no threads will be used.
+# If ARROW_NUM_THREADS < 0, all threads will be used.
+os.environ['ARROW_NUM_THREADS'] = '2'
+```
+
+```python
 class ParquetDataset(dataset_ops.DatasetV2):
   def __init__(
       self, filenames,
@@ -76,24 +83,7 @@ batch = it.get_next()
 # {'a': tensora, 'c': tensorc}
 ...
 ```
-### 3. Example: Read from files on S3/OSS/HDFS
-
-```bash
-export S3_ENDPOINT=oss-cn-shanghai-internal.aliyuncs.com
-export AWS_ACCESS_KEY_ID=my_id
-export AWS_SECRET_ACCESS_KEY=my_secret
-export S3_ADDRESSING_STYLE=virtual
-```
-
-```{eval-rst}
-.. note::
-   See https://docs.w3cub.com/tensorflow~guide/deploy/s3.html for more
-   information.
-.. note::
-   Set `S3_ADDRESSING_STYLE` to `virtual` to support OSS.
-.. note::
-   Set `S3_USE_HTTPS` to `0` to use `http` for S3 endpoint.
-```
+### 3. Example: Read from files on HDFS
 
 ```python
 import tensorflow as tf
@@ -101,9 +91,7 @@ from tensorflow.python.data.experimental.ops import parquet_dataset_ops
 
 # Read from parquet files on remote services for selected fields.
 ds = parquet_dataset_ops.ParquetDataset(
-    ['s3://path/to/f1.parquet',
-     'oss://path/to/f2.parquet',
-     'hdfs://host:port/path/to/f3.parquet'],
+    ['hdfs://host:port/path/to/f3.parquet'],
     batch_size=1024,
     fields=['a', 'c'])
 ds = ds.prefetch(4)

@@ -20,6 +20,8 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/framework/embedding/batch.h"
+
 
 
 namespace tensorflow {
@@ -29,7 +31,7 @@ namespace embedding {
 template <class K, class V>
 class LocklessHashMapCPU : public KVInterface<K, V> {
  public:
-  LocklessHashMapCPU() {
+  LocklessHashMapCPU(Allocator* gpu_alloc): gpu_alloc_(gpu_alloc) {
     hash_map_.max_load_factor(0.8);
     hash_map_.set_empty_key_and_value(EMPTY_KEY_, nullptr);
     hash_map_.set_counternum(16);
@@ -46,6 +48,16 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
           "Unable to find Key: ", key, " in LocklessHashMap.");
     } else {
       *value_ptr = iter.second;
+      return Status::OK();
+    }
+  }
+
+  Status Contains(K key) {
+    auto iter = hash_map_.find_wait_free(key);
+    if (iter.first == EMPTY_KEY_) {
+      return errors::NotFound(
+          "Unable to find Key: ", key, " in LocklessHashMap.");
+    } else {
       return Status::OK();
     }
   }
@@ -98,16 +110,18 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   Status BatchCommit(const std::vector<K>& keys,
                      const std::vector<ValuePtr<V>*>& value_ptrs) {
     int batch_size = keys.size();
-    V** value_address = (V**)malloc(sizeof(V * ) * batch_size);
+    Allocator* cpu_allocator = ev_allocator();
+    V** value_address = (V **)cpu_allocator->AllocateRaw(
+        Allocator::kAllocatorAlignment, sizeof(V*) * batch_size);
     V** dev_value_address;
     V* batch_data_place;
     V* dev_batch_data_place;
-    Allocator *allocator = ev_allocator();
-    dev_value_address = (V**)allocator->AllocateRaw(
+    dev_value_address = (V**)gpu_alloc_->AllocateRaw(
         Allocator::kAllocatorAlignment, batch_size * sizeof(V *));
-    dev_batch_data_place = (V*)allocator->AllocateRaw(
+    dev_batch_data_place = (V*)gpu_alloc_->AllocateRaw(
         Allocator::kAllocatorAlignment, sizeof(V) * batch_size * total_dims_);
-    batch_data_place = (V *)malloc(sizeof(V) * batch_size * total_dims_);
+    batch_data_place = (V *)cpu_allocator->AllocateRaw(
+        Allocator::kAllocatorAlignment, sizeof(V) * batch_size * total_dims_);
 
     // Copy GPU addresses V*
     for(int i = 0;i < batch_size;++i) {
@@ -119,9 +133,15 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
 
     // Launch Kernel,Copy data to continuous place
     int block_dim = 128;
+    bool* init_flag = nullptr;
+    V** default_value = nullptr;
     void* args[] = { (void*)&dev_value_address,
       (void*)&dev_batch_data_place, (void*)&total_dims_,
-      (void*)&batch_size};
+      (void*)&batch_size, (void*)&default_value, (void *)&init_flag};
+
+    cudaLaunchKernel((void *)BatchCopy<V>,
+                     (batch_size * total_dims_ + block_dim - 1) / block_dim,
+                     block_dim, args, 0, NULL);
 
     cudaDeviceSynchronize();
 
@@ -139,10 +159,12 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
       Insert(keys[i], cpu_value_ptr);
     }
 
-    allocator->DeallocateRaw(dev_value_address);
-    allocator->DeallocateRaw(dev_batch_data_place);
+    gpu_alloc_->DeallocateRaw(dev_value_address);
+    gpu_alloc_->DeallocateRaw(dev_batch_data_place);
 
-    delete []value_address;
+    cpu_allocator->DeallocateRaw(batch_data_place);
+    cpu_allocator->DeallocateRaw(value_address);
+
     return Status::OK();
   }
 
@@ -180,6 +202,7 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   static const int DELETED_KEY_ = -2;
   LockLessHashMap hash_map_;
   int total_dims_;
+  Allocator* gpu_alloc_;
 };
 }  // namespace embedding
 }  // namespace tensorflow

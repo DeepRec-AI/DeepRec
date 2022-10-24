@@ -52,18 +52,10 @@ cc_library(
         "aws-cpp-sdk-core/source/utils/xml/**/*.cpp",
         "aws-cpp-sdk-core/source/utils/crypto/*.cpp",
         "aws-cpp-sdk-core/source/utils/crypto/factory/**/*.cpp",
-        "aws-cpp-sdk-core/source/utils/event/*.cpp",
-        "aws-cpp-sdk-core/source/monitoring/*.cpp",
-        "aws-cpp-sdk-core/source/net/*.cpp",
         "aws-cpp-sdk-kinesis/include/**/*.h",
         "aws-cpp-sdk-kinesis/source/**/*.cpp",
         "aws-cpp-sdk-s3/include/**/*.h",
         "aws-cpp-sdk-s3/source/**/*.cpp",
-        "aws-cpp-sdk-sts/include/**/*.h",
-        "aws-cpp-sdk-sts/source/**/*.cpp",
-        "aws-cpp-sdk-identity-management/include/**/STSAssumeRoleCredentialsProvider.h",
-        "aws-cpp-sdk-identity-management/include/**/IdentityManagment_EXPORTS.h",
-        "aws-cpp-sdk-identity-management/source/**/STSAssumeRoleCredentialsProvider.cpp",
     ]),
     hdrs = [
         "aws-cpp-sdk-core/include/aws/core/SDKConfig.h",
@@ -100,12 +92,9 @@ cc_library(
         "aws-cpp-sdk-core/include/",
         "aws-cpp-sdk-kinesis/include/",
         "aws-cpp-sdk-s3/include/",
-        "aws-cpp-sdk-identity-management/include/",
-        "aws-cpp-sdk-sts/include/",
     ],
     deps = [
         "@curl",
-        "@aws_c_event_stream",
     ],
 )
 

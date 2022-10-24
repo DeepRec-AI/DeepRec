@@ -134,7 +134,9 @@ void GPUUtil::SetProtoFromGPU(const Tensor& tensor, Device* dev,
     return;
   }
   // Wait for the sender's main stream to make sure the data are available.
-  send_device_to_host_stream->ThenWaitFor(send_stream);
+  if (send_device_to_host_stream != send_stream) {
+    send_device_to_host_stream->ThenWaitFor(send_stream);
+  }
 
   // Tensor values need to be copied from GPU to CPU ram so that
   // we can build the protobuf response for a RecvTensor RPC.
@@ -208,7 +210,9 @@ void GPUUtil::DeviceToDeviceCopy(
   }
   // Wait for the main stream on the sender to make sure the result is
   // available.
-  send_device_to_device_stream->ThenWaitFor(send_stream);
+  if (send_device_to_device_stream != send_stream) {
+    send_device_to_device_stream->ThenWaitFor(send_stream);
+  }
 
   const int64 total_bytes = input->TotalBytes();
   if (total_bytes > 0) {
@@ -227,7 +231,9 @@ void GPUUtil::DeviceToDeviceCopy(
     // truly free.
     // TODO(zhengxq): remove this dependency when we switch to a better way
     // to make sure the memory is free.
-    send_device_to_device_stream->ThenWaitFor(recv_stream);
+    if (send_device_to_device_stream != recv_stream) {
+      send_device_to_device_stream->ThenWaitFor(recv_stream);
+    }
 
     VLOG(2) << "src_ptr " << src_ptr << " dst_ptr " << dst_ptr;
     send_device_to_device_stream->ThenMemcpy(&gpu_dst_ptr, gpu_src_ptr,
@@ -275,7 +281,9 @@ void GPUUtil::CopyGPUTensorToCPU(Device* gpu_device,
     return;
   }
   // Wait for the sender's main stream to make sure the data are available.
-  send_device_to_host_stream->ThenWaitFor(send_stream);
+  if (send_device_to_host_stream != send_stream) {
+    send_device_to_host_stream->ThenWaitFor(send_stream);
+  }
 
   const int64 total_bytes = gpu_tensor->TotalBytes();
   if (total_bytes > 0) {
@@ -321,7 +329,9 @@ void GPUUtil::CopyCPUTensorToGPU(const Tensor* cpu_tensor,
   }
   // Wait for the recv-stream to make sure the buffer is truly available.
   if (sync_dst_compute) {
-    recv_host_to_device_stream->ThenWaitFor(recv_stream);
+    if (recv_host_to_device_stream != recv_stream) {
+      recv_host_to_device_stream->ThenWaitFor(recv_stream);
+    }
   }
 
   const int64 total_bytes = cpu_tensor->TotalBytes();

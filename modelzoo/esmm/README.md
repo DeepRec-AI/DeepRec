@@ -14,7 +14,7 @@ The following is a brief directory structure and description for this example:
 ```
 
 ## Content
-- [ESMM](#ESMM)
+- [ESMM](#esmm)
   - [Content](#content)
   - [Model Structure](#model-structure)
   - [Usage](#usage)
@@ -86,7 +86,7 @@ input:
         docker pull alideeprec/deeprec-release-modelzoo:latest
         docker run -it alideeprec/deeprec-release-modelzoo:latest /bin/bash
         # In docker container
-        cd /root/modelzoo/ESMM
+        cd /root/modelzoo/esmm
         ```
 2.  Training.
     ```
