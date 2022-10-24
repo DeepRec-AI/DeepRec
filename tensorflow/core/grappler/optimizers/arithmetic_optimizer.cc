@@ -3222,7 +3222,7 @@ class RemoveStackStridedSliceSameAxis : public ArithmeticOptimizerStage {
 
     int end_index = -1;
     int64 end_value = 0;
-    for (int i = 0; i < slice_end_vec.size(); ++i) {
+    for (size_t i = 0; i < slice_end_vec.size(); ++i) {
       const int64 v = slice_end_vec[i];
       if (v != pack_output_shape.dim_size(i)) {
         if (end_index != -1) {

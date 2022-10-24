@@ -141,7 +141,7 @@ class StorageManager {
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
       const EmbeddingConfig& emb_config,
-      EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
+      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) {
     return storage_->GetSnapshot(key_list, value_list, version_list,
         freq_list, emb_config, filter, it);
