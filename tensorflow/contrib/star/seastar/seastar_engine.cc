@@ -37,26 +37,49 @@ namespace {
       return ip_string;
     }
 
-    // localhost
-    if (vec[0] == "localhost") {
-      return strings::StrCat(string("127.0.0.1:"), vec[1]);
+    addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;     /* ipv4 or ipv6 */
+    hints.ai_socktype = SOCK_STREAM; /* stream socket */
+    hints.ai_flags = AI_PASSIVE;     /* for wildcard IP address */
+
+    addrinfo* addrs = nullptr;
+    int s = getaddrinfo(vec[0].c_str(), nullptr, &hints, &addrs);
+    if (s != 0) {
+      LOG(ERROR) << "getaddrinfo failure, error:" << gai_strerror(s);
     }
 
-    // hostname
-    std::vector<std::string> ips;
-    struct hostent* hent;
-    hent = gethostbyname(vec[0].c_str());
-    if (hent == nullptr) {
-      LOG(FATAL) << "gethostbyname return nullptr, ip: " << vec[0].c_str();
+    /*
+       There are several reasons why the linked list may have more than
+       one addrinfo structure, including: the network host is
+       multihomed, accessible over multiple protocols (e.g., both
+       AF_INET and AF_INET6); or the same service is available from
+       multiple socket types (one SOCK_STREAM address and another
+       SOCK_DGRAM address, for example).
+     */
+    std::vector<std::string> ret_ip;
+    for (auto rp = addrs; rp != nullptr; rp = rp->ai_next) {
+      auto addr = rp->ai_addr;
+      char ip[128];
+      switch(addr->sa_family) {
+        case AF_INET:
+          inet_ntop(AF_INET, &(((struct sockaddr_in *)addr)->sin_addr),
+              ip, 128);
+          LOG(INFO) << "IpV4 address:" << ip;
+          break;
+        case AF_INET6:
+          inet_ntop(AF_INET6, &(((struct sockaddr_in6 *)addr)->sin6_addr),
+              ip, 128);
+          LOG(INFO) << "IpV6 address:" << ip;
+          break;
+        default:
+          LOG(INFO) << "Invalid address.";
+      }
+      ret_ip.emplace_back(ip);
     }
-    for (uint32_t i = 0; hent->h_addr_list[i]; ++i) {
-      std::string ip = inet_ntoa(*(struct in_addr*)(hent->h_addr_list[i]));
-      ips.push_back(ip);
-    }
-    if (ips.size() == 0) {
-      LOG(FATAL) << "Can not parse hostname to ip. " << ip_string;
-    }
-    return strings::StrCat(ips[0], ":", vec[1]);
+    freeaddrinfo(addrs);
+    // Here return only first address.
+    return strings::StrCat(ret_ip[0], ":", vec[1]);;
   }
 
   bool IsWorker(const std::string& name) {
@@ -169,7 +192,8 @@ seastar::channel* SeastarEngine::GetChannel(const std::string& server_ip) {
   string s = HostNameToIp(server_ip);
   auto ch = new seastar::channel(s);
 
-  ch->set_channel_reconnect_func(std::bind(&ConnectAsync, ch, s, core_id, _tag_factory, _client, std::placeholders::_1));
+  ch->set_channel_reconnect_func(std::bind(&ConnectAsync, ch, s, core_id,
+        _tag_factory, _client, std::placeholders::_1));
 
   int retry = 200; //10 second
   while (!_init_ready.load(std::memory_order_relaxed) && retry > 0) {
