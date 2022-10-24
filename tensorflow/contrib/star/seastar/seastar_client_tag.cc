@@ -1,13 +1,22 @@
 #include "tensorflow/contrib/star/seastar/seastar_client_tag.h"
 #include "tensorflow/contrib/star/seastar/seastar_header.h"
+#include "tensorflow/core/util/env_var.h"
 
 namespace tensorflow {
 namespace {
 
-// Default connection timeout is 60s.
-static const size_t kMaxConnectionTimeoutInMS = 60000;
+// Default connection timeout is 120s.
+static const size_t kMaxConnectionTimeoutInMS = 120000;
 static const size_t kUSleepInMS = 100;
 static const size_t kUSleepInUs = 1000 * kUSleepInMS;
+
+int64 GetMaxConnectionTimeout() {
+  int64 max_connection_timeout = kMaxConnectionTimeoutInMS;
+  ReadInt64FromEnvVar("NETWORK_MAX_CONNECTION_TIMEOUT",
+      kMaxConnectionTimeoutInMS, &max_connection_timeout);
+
+  return max_connection_timeout;
+}
 
 std::string GenErrorMsg(bool is_init, bool is_broken, const std::string& addr) {
   std::string msg = "Seastar channel: unknown error. connection is : " + addr;
@@ -82,7 +91,7 @@ void SeastarClientTag::StartReq(seastar::channel* seastar_channel) {
     }
   } else if (!fail_fast_) {
     // Bad case and need retry.
-    int max_retry = kMaxConnectionTimeoutInMS / kUSleepInMS;
+    int max_retry = GetMaxConnectionTimeout() / kUSleepInMS;
     if (timeout_in_ms_ != 0) {
       max_retry = timeout_in_ms_ / kUSleepInMS;
     }
