@@ -108,7 +108,7 @@ class MultiTierStorage : public Storage<K, V> {
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
       const EmbeddingConfig& emb_config,
-      EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
+      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) override {
     for (auto kv : kvs_) {
       std::vector<ValuePtr<V>* > value_ptr_list;

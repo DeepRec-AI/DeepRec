@@ -28,6 +28,9 @@ class ValuePtr;
 template <class K, class V>
 class EmbeddingVar;
 
+template<typename K, typename V, typename EV>
+class FilterPolicy;
+
 namespace embedding {
 template<typename K, typename V>
 class Storage {
@@ -54,7 +57,7 @@ class Storage {
       std::vector<int64>* version_list,
       std::vector<int64>* freq_list,
       const EmbeddingConfig& emb_config,
-      EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter,
+      FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) = 0;
   virtual Status Shrink(const EmbeddingConfig& emb_config,
       int64 value_len) = 0;

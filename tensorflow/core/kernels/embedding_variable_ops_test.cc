@@ -533,7 +533,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt64) {
   }
 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float,
+  auto bloom_filter = static_cast<BloomFilterPolicy<int64, float,
        EmbeddingVar<int64, float>>*>(filter);
   //(int64 *)var->GetBloomCounter(); 
   int64* counter = (int64*)bloom_filter->GetBloomCounter();
@@ -605,7 +605,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt32) {
   }
 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float,
+  auto bloom_filter = static_cast<BloomFilterPolicy<int64, float,
        EmbeddingVar<int64, float>>*>(filter);
   //(int64 *)var->GetBloomCounter(); 
   int32* counter = (int32*)bloom_filter->GetBloomCounter();
@@ -678,7 +678,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt16) {
 
   //int16* counter = (int16 *)var->GetBloomCounter(); 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float,
+  auto bloom_filter = static_cast<BloomFilterPolicy<int64, float,
        EmbeddingVar<int64, float>>*>(filter);
   //(int64 *)var->GetBloomCounter(); 
   int16* counter = (int16*)bloom_filter->GetBloomCounter();
@@ -750,7 +750,7 @@ TEST(EmbeddingVariableTest, TestBloomCounterInt8) {
   }
 
   auto filter = var->GetFilter();
-  auto bloom_filter = static_cast<BloomFilter<int64, float,
+  auto bloom_filter = static_cast<BloomFilterPolicy<int64, float,
        EmbeddingVar<int64, float>>*>(filter);
   int8* counter = (int8*)bloom_filter->GetBloomCounter();
   //(int64 *)var->GetBloomCounter(); 

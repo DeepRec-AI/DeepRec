@@ -29,7 +29,7 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
-#include "tensorflow/core/framework/embedding/embedding_filter.h"
+#include "tensorflow/core/framework/embedding/filter_factory.h"
 #include "tensorflow/core/framework/embedding/embedding_config.h"
 #include "tensorflow/core/framework/embedding/storage_manager.h"
 #include "tensorflow/core/framework/typed_allocator.h"
@@ -501,8 +501,24 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
+  void UpdateCache(const K* key_buff, int64 key_num,
+      const int64* version_buff, const int64* freq_buff) {
+    auto cache = Cache();
+    if (cache) {
+      cache->add_to_rank(key_buff, key_num, version_buff, freq_buff);
+      auto cache_size = CacheSize();
+      if (cache->size() > cache_size) {
+        int64 evict_size = cache->size() - cache_size;
+        K* evict_ids = new K[evict_size];
+        size_t true_size = cache->get_evic_ids(evict_ids, evict_size);
+        Eviction(evict_ids, true_size);
+        delete []evict_ids;
+      }
+    }
+  }
+
  protected:
-  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* GetFilter() const {
+  FilterPolicy<K, V, EmbeddingVar<K, V>>* GetFilter() const {
     return filter_;
   }
 
@@ -556,7 +572,7 @@ class EmbeddingVar : public ResourceBase {
   embedding::StorageManager<K, V>* storage_manager_;
   embedding::StorageType storage_type_;
   EmbeddingConfig emb_config_;
-  EmbeddingFilter<K, V, EmbeddingVar<K, V>>* filter_;
+  FilterPolicy<K, V, EmbeddingVar<K, V>>* filter_;
   std::function<void(ValuePtr<V>*, int, int64)> add_freq_fn_;
   std::function<void(ValuePtr<V>*, int64)> update_version_fn_;
 
