@@ -1213,6 +1213,7 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
 
   ASSERT_EQ(variable->storage_manager()->Size(0), 4);
   ASSERT_EQ(variable->storage_manager()->Size(1), 2);
+  delete storage_manager;
 }
 
 void t1_gpu(KVInterface<int64, float>* hashmap) {

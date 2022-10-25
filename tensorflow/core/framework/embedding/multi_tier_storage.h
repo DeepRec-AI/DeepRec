@@ -18,7 +18,9 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
 
+#include "tensorflow/core/framework/embedding/eviction_manager.h"
 #include "tensorflow/core/framework/embedding/globalstep_shrink_policy.h"
+
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/l2weight_shrink_policy.h"
 #include "tensorflow/core/framework/embedding/lockless_hash_map.h"
@@ -43,7 +45,7 @@ class MultiTierStorage : public Storage<K, V> {
       : Storage<K, V>(sc), name_(name) {}
 
   ~MultiTierStorage() override {
-    delete eviction_thread_;
+    eviction_manager_->DeleteStorage(this);
     for (auto kv : kvs_) {
       delete kv.first;
     }
@@ -88,9 +90,8 @@ class MultiTierStorage : public Storage<K, V> {
                 << name_;
       cache_ = new LFUCache<K>();
     }
-    eviction_thread_ = Env::Default()->StartThread(
-        ThreadOptions(), "EmbeddingVariable_Eviction",
-        [this]() { BatchEviction(); });
+    eviction_manager_ = EvictionManagerCreator::Create<K, V>();
+    eviction_manager_->AddStorage(this);
     thread_pool_.reset(
         new thread::ThreadPool(Env::Default(), ThreadOptions(),
           "MultiTier_Embedding_Cache", 2, /*low_latency_hint=*/false));
@@ -212,6 +213,46 @@ class MultiTierStorage : public Storage<K, V> {
     thread_pool_->Schedule(std::move(fn)); 
   }
 
+  void BatchEviction() {
+    constexpr int EvictionSize = 10000;
+    K evic_ids[EvictionSize];
+    if (!ready_eviction_)
+      return;
+    mutex_lock l(Storage<K, V>::mu_);
+    //Release the memory of invlid valuetprs
+    ReleaseInvalidValuePtr();
+
+    int cache_count = cache_->size();
+    if (cache_count > cache_capacity_) {
+      // eviction
+      int k_size = cache_count - cache_capacity_;
+      k_size = std::min(k_size, EvictionSize);
+      size_t true_size = cache_->get_evic_ids(evic_ids, k_size);
+      ValuePtr<V>* value_ptr;
+      if (Storage<K, V>::storage_config_.type == StorageType::HBM_DRAM) {
+        std::vector<K> keys;
+        std::vector<ValuePtr<V>*> value_ptrs;
+
+        for (int64 i = 0; i < true_size; ++i) {
+          if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
+            TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
+            keys.emplace_back(evic_ids[i]);
+            value_ptrs.emplace_back(value_ptr);
+          }
+        }
+        BatchCommit(keys, value_ptrs);
+      } else {
+        for (int64 i = 0; i < true_size; ++i) {
+          if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
+            TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
+            TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
+            value_ptr_out_of_date_.emplace_back(value_ptr);
+          }
+        }
+      }
+    }
+  }
+
  protected:
   virtual void SetTotalDims(int64 total_dims) = 0;
 
@@ -228,77 +269,13 @@ class MultiTierStorage : public Storage<K, V> {
     }
   }
 
-  void ShutdownEvictionThread() {
-    mutex_lock l(Storage<K, V>::mu_);
-    shutdown_cv_.notify_all();
-    shutdown_ = true;
-  }
-
  private:
-  void BatchEviction() {
-    constexpr int EvictionSize = 10000;
-    if (cache_capacity_ == -1) {
-      while (!ready_eviction_) {
-        // why lock here, volitile is enough..TODO Review
-        // mutex_lock l(mu_);
-        // Sleep 1ms
-        Env::Default()->SleepForMicroseconds(1000);
-      }
+  void ReleaseInvalidValuePtr() {
+    for (int i = 0; i < value_ptr_out_of_date_.size(); i++) {
+      value_ptr_out_of_date_[i]->Destroy(kvs_[0].second);
+      delete value_ptr_out_of_date_[i];
     }
-    K evic_ids[EvictionSize];
-    while (!shutdown_) {
-      mutex_lock l(Storage<K, V>::mu_);
-      if (shutdown_) {
-        return;
-      }
-      // add WaitForMilliseconds() for sleep if necessary
-      const int kTimeoutMilliseconds = 1;
-      WaitForMilliseconds(&l, &shutdown_cv_, kTimeoutMilliseconds);
-      for (int i = 0; i < value_ptr_out_of_date_.size(); i++) {
-        value_ptr_out_of_date_[i]->Destroy(kvs_[0].second);
-        delete value_ptr_out_of_date_[i];
-      }
-      value_ptr_out_of_date_.clear();
-      int cache_count = cache_->size();
-      if (cache_count > cache_capacity_) {
-        // eviction
-        int k_size = cache_count - cache_capacity_;
-        k_size = std::min(k_size, EvictionSize);
-        size_t true_size = cache_->get_evic_ids(evic_ids, k_size);
-        ValuePtr<V>* value_ptr;
-        if (Storage<K, V>::storage_config_.type == StorageType::HBM_DRAM) {
-          std::vector<K> keys;
-          std::vector<ValuePtr<V>*> value_ptrs;
-          timespec start, end;
-
-          clock_gettime(CLOCK_MONOTONIC, &start);
-          for (int64 i = 0; i < true_size; ++i) {
-            if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
-              TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
-              keys.emplace_back(evic_ids[i]);
-              value_ptrs.emplace_back(value_ptr);
-            }
-          }
-
-          BatchCommit(keys, value_ptrs);
-          clock_gettime(CLOCK_MONOTONIC, &end);
-          LOG(INFO) << "Total Evict Time: "
-                    << (double)(end.tv_sec - start.tv_sec) *
-                       EnvTime::kSecondsToMillis +
-                       (end.tv_nsec - start.tv_nsec) /
-                       EnvTime::kMillisToNanos<< "ms";
-        } else {
-          for (int64 i = 0; i < true_size; ++i) {
-            if (kvs_[0].first->Lookup(evic_ids[i], &value_ptr).ok()) {
-              LOG(INFO) << "evic_ids[i]: " << evic_ids[i];
-              TF_CHECK_OK(kvs_[1].first->Commit(evic_ids[i], value_ptr));
-              TF_CHECK_OK(kvs_[0].first->Remove(evic_ids[i]));
-              value_ptr_out_of_date_.emplace_back(value_ptr);
-            }
-          }
-        }
-      }
-    }
+    value_ptr_out_of_date_.clear();
   }
 
  protected:
@@ -306,7 +283,7 @@ class MultiTierStorage : public Storage<K, V> {
   std::vector<ValuePtr<V>*> value_ptr_out_of_date_;
   BatchCache<K>* cache_ = nullptr;
 
-  Thread* eviction_thread_ = nullptr;;
+  EvictionManager<K, V>* eviction_manager_;
   std::unique_ptr<thread::ThreadPool> thread_pool_;
 
   condition_variable shutdown_cv_;

@@ -42,7 +42,6 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
   }
 
   ~HbmDramStorage() override {
-    MultiTierStorage<K, V>::ShutdownEvictionThread();
     MultiTierStorage<K, V>::ReleaseValues(
         {std::make_pair(hbm_kv_, gpu_alloc_),
          std::make_pair(dram_kv_, cpu_alloc_)});

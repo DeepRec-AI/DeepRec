@@ -2259,6 +2259,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableForLookupTier(self):
     print("testEmbeddingVariableForLookupTier")
     os.environ["TF_SSDHASH_ASYNC_COMPACTION"]="0"
+    os.environ["TF_MULTI_TIER_EV_EVICTION_THREADS"]="2"
     db_directory = self.get_temp_dir()
     storage_opt = variables.StorageOption(
                           storage_type=config_pb2.StorageType.DRAM_SSDHASH,
@@ -2293,6 +2294,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         else:
           self.assertEqual(result[i], 0)
     del os.environ["TF_SSDHASH_ASYNC_COMPACTION"]
+    del os.environ["TF_MULTI_TIER_EV_EVICTION_THREADS"]
 
   @test_util.run_gpu_only
   def testEmbeddingVariableForHBMandDRAM(self):
