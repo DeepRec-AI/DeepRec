@@ -37,9 +37,9 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     ssd_kv_ = new SSDHashKV<K, V>(sc.path, alloc_);
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(dram_kv_, alloc_));
+        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(ssd_kv_, alloc_));
+        KVInterfaceDescriptor<K, V>(ssd_kv_, alloc_, ssd_mu_));
   }
 
   ~DramSsdHashStorage() override {
@@ -58,8 +58,8 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) override {
-    need_copyback = false;
+      size_t size, CopyBackFlag &need_copyback) override {
+    need_copyback = NOT_COPYBACK;
     return GetOrCreate(key, value_ptr, size);
   }
 
@@ -97,10 +97,28 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return total_size;
   }
 
+  bool IsUseHbm() override {
+    return false;
+  }
+
+  void iterator_mutex_lock() override {
+    ssd_mu_.lock();
+  }
+
+  void iterator_mutex_unlock() override {
+    ssd_mu_.unlock();
+  }
+
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>*>* value_ptr_list) override {
-    TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
-    TF_CHECK_OK(ssd_kv_->GetSnapshot(key_list, value_ptr_list));
+    {
+      mutex_lock l(dram_mu_);
+      TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
+    {
+      mutex_lock l(ssd_mu_);
+      TF_CHECK_OK(ssd_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
     return Status::OK();
   }
 
@@ -114,6 +132,8 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
   KVInterface<K, V>* ssd_kv_;
   Allocator* alloc_;
   LayoutCreator<V>* layout_creator_;
+  mutex dram_mu_; // must be locked before ssd_mu_ is locked
+  mutex ssd_mu_;
 };
 } // embedding
 } // tensorflow

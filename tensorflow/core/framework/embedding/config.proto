@@ -25,6 +25,12 @@ enum StorageType {
 
 }
 
+enum CopyBackFlag {
+  NOT_COPYBACK = 0;
+  COPYBACK = 1;
+  COPYBACK_AND_DESTROY = 2;
+}
+
 enum SlotType {
   EMBEDDING_VARIABLE = 0;
   VARIABLE = 1;

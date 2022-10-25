@@ -84,8 +84,8 @@ class SingleTierStorage : public Storage<K, V> {
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) override {
-    need_copyback = false;
+      size_t size, CopyBackFlag &need_copyback) override {
+    need_copyback = NOT_COPYBACK;
     return GetOrCreate(key, value_ptr, size);
   }
  
@@ -115,7 +115,7 @@ class SingleTierStorage : public Storage<K, V> {
   }
 
   void CopyBackToGPU(int total, K* keys, int64 size,
-      bool* copyback_flags, V** memcpy_address, size_t value_len,
+      CopyBackFlag* copyback_flags, V** memcpy_address, size_t value_len,
       int *copyback_cursor, ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) override {
     LOG(FATAL) << "Unsupport CopyBackToGPU in SingleTierStorage.";
@@ -223,6 +223,18 @@ class SingleTierStorage : public Storage<K, V> {
 
   bool IsMultiLevel() override {
     return false;
+  }
+
+  bool IsUseHbm() override {
+    return false;
+  }
+
+  void iterator_mutex_lock() override {
+    return;
+  }
+
+  void iterator_mutex_unlock() override {
+    return;
   }
 
   void Schedule(std::function<void()> fn) override {

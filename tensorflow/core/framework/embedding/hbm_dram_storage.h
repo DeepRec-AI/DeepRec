@@ -36,9 +36,10 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     dram_kv_ = new LocklessHashMapCPU<K, V>(gpu_alloc);
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(hbm_kv_, gpu_alloc_));
+        KVInterfaceDescriptor<K, V>(hbm_kv_, gpu_alloc_, hbm_mu_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(dram_kv_, cpu_alloc));
+        KVInterfaceDescriptor<K, V>(dram_kv_, cpu_alloc, dram_mu_));
+
   }
 
   ~HbmDramStorage() override {
@@ -87,15 +88,15 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) override {
-    need_copyback = false;
+      size_t size, CopyBackFlag &need_copyback) override {
+    need_copyback = NOT_COPYBACK;
     Status s = hbm_kv_->Lookup(key, value_ptr);
     if (s.ok()) {
       return s;
     }
     s = dram_kv_->Lookup(key, value_ptr);
     if (s.ok()) {
-      need_copyback = true;
+      need_copyback = COPYBACK;
       return s;
     }
 
@@ -110,7 +111,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return hbm_kv_->Lookup(key, value_ptr);
   }
 
-  void CopyBackToGPU(int total, K* keys, int64 size, bool* copyback_flags,
+  void CopyBackToGPU(int total, K* keys, int64 size, CopyBackFlag* copyback_flags,
       V** memcpy_address, size_t value_len, int *copyback_cursor,
       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu) override {
     auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
@@ -149,10 +150,28 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return total_size;
   }
 
+  bool IsUseHbm() override {
+    return true;
+  }
+
+  void iterator_mutex_lock() override {
+    return;
+  }
+
+  void iterator_mutex_unlock() override {
+    return;
+  }
+
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>* >* value_ptr_list) override {
-    TF_CHECK_OK(hbm_kv_->GetSnapshot(key_list, value_ptr_list));
-    TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
+    {
+      mutex_lock l(hbm_mu_);
+      TF_CHECK_OK(hbm_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
+    {
+      mutex_lock l(dram_mu_);
+      TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
     return Status::OK();
   }
 
@@ -167,6 +186,8 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
   Allocator* gpu_alloc_;
   Allocator* cpu_alloc_;
   LayoutCreator<V>* layout_creator_;
+  mutex hbm_mu_; //must be locked before dram_mu_ is locked;
+  mutex dram_mu_;
 };
 } // embedding
 } // tensorflow

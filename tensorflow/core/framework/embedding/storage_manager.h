@@ -82,6 +82,10 @@ class StorageManager {
     return storage_->IsMultiLevel();
   }
 
+  bool IsUseHbm() {
+    return storage_->IsUseHbm();
+  }
+
   std::string DebugString() const{
     return storage_->DebugString();
   }
@@ -103,14 +107,15 @@ class StorageManager {
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) {
+      size_t size, CopyBackFlag &need_copyback) {
     return storage_->GetOrCreate(key, value_ptr, size, need_copyback);
   }
 
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
-  void CopyBackToGPU(int total, K* keys, int64 size, bool* copyback_flags,
-      V** memcpy_address, size_t value_len, int *copyback_cursor,
+  void CopyBackToGPU(int total, K* keys, int64 size,
+       CopyBackFlag* copyback_flags, V** memcpy_address,
+       size_t value_len, int *copyback_cursor,
       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
     return storage_->CopyBackToGPU(total, keys, size, copyback_flags,
         memcpy_address, value_len, copyback_cursor, gpu_value_ptrs,
@@ -172,7 +177,13 @@ class StorageManager {
     storage_->FreeValuePtr(value_ptr);
   }
 
-  mutex* get_mutex() { return storage_->get_mutex(); }
+  void iterator_mutex_lock() {
+    storage_->iterator_mutex_lock();
+  }
+
+  void iterator_mutex_unlock() {
+    storage_->iterator_mutex_unlock();
+  }
 
  private:
   Storage<K, V>* storage_ = nullptr;

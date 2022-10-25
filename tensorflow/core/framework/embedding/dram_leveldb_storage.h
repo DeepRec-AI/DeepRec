@@ -37,9 +37,9 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
     leveldb_ = new LevelDBKV<K, V>(sc.path);
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(dram_kv_, alloc_));
+        KVInterfaceDescriptor<K, V>(dram_kv_, alloc_, dram_mu_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(leveldb_, alloc_));
+        KVInterfaceDescriptor<K, V>(leveldb_, alloc_, leveldb_mu_));
   }
 
   ~DramLevelDBStore() override {
@@ -58,8 +58,8 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) override {
-    need_copyback = false;
+      size_t size, CopyBackFlag &need_copyback) override {
+    need_copyback = NOT_COPYBACK;
     return GetOrCreate(key, value_ptr, size);
   }
 
@@ -91,6 +91,18 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
     return Status::OK();
   }
 
+  bool IsUseHbm() override {
+    return false;
+  }
+
+  void iterator_mutex_lock() override {
+    leveldb_mu_.lock();
+  }
+
+  void iterator_mutex_unlock() override {
+    leveldb_mu_.unlock();
+  }
+
   int64 Size() const override {
     int64 total_size = dram_kv_->Size();
     total_size += leveldb_->Size();
@@ -99,8 +111,14 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
 
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>*>* value_ptr_list) override {
-    TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
-    TF_CHECK_OK(leveldb_->GetSnapshot(key_list, value_ptr_list));
+    {
+      mutex_lock l(dram_mu_);
+      TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
+    {
+      mutex_lock l(leveldb_mu_);
+      TF_CHECK_OK(leveldb_->GetSnapshot(key_list, value_ptr_list));
+    }
     return Status::OK();
   }
 
@@ -114,6 +132,8 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   KVInterface<K, V>* leveldb_;
   Allocator* alloc_;
   LayoutCreator<V>* layout_creator_;
+  mutex dram_mu_; //must be locked before leveldb_mu_ is locked
+  mutex leveldb_mu_;
 };
 } // embedding
 } // tensorflow
