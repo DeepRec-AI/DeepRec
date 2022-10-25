@@ -2827,10 +2827,6 @@ tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
     srcs = ["kv_variable_ops.cc"],
-    gpu_srcs = [
-        "kv_variable_ops_gpu.cu.cc",
-        "kv_variable_ops_gpu.h",
-    ],
     copts = ["-g"],
     nocopts = "-fno-exceptions",
     deps = [

@@ -23,14 +23,14 @@
 #include <cuda_fp16.h>
 #include <cublas_v2.h>
 #include <unordered_map>
-#include "third_party/cuco_hash_table/cuco/dynamic_map.cuh"
+#include "cuco/dynamic_map.cuh"
 #include "tensorflow/core/framework/op.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/framework/tensor_types.h"
-#include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
+#include "tensorflow/core/framework/embedding/embedding_var.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace cg = cooperative_groups;
@@ -453,6 +453,7 @@ struct KvEmbGetSnapshot<GPUDevice, Key, Value> {
                   cudaStream_t stream) {
   auto const block_size = 256;
   auto const grid_size = num_items;
+  if (grid_size == 0) return;
   TF_CHECK_OK(GpuLaunchKernel(kv_emb_get_snapshot_kernel<Key, Value>,
                               grid_size, block_size, 0, stream,
                               key, val, empty_key_sentinel, dim,

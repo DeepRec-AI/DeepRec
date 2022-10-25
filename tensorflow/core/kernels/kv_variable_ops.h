@@ -32,12 +32,6 @@ limitations under the License.
 #include "tensorflow/core/lib/random/random.h"
 #include "tensorflow/core/lib/random/random_distributions.h"
 #include "tensorflow/core/util/tensor_bundle/tensor_bundle.h"
-#if GOOGLE_CUDA
-#define EIGEN_USE_GPU
-#if TENSORFLOW_USE_GPU_EV
-#include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
-#endif // TENSORFLOW_USE_GPU_EV
-#endif  // GOOGLE_CUDA
 
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
