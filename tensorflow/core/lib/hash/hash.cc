@@ -18,8 +18,9 @@ limitations under the License.
 #include "tensorflow/core/lib/core/raw_coding.h"
 #include "tensorflow/core/platform/macros.h"
 #include "tensorflow/core/platform/types.h"
-
+#if defined(__AVX512F__)
 #include <immintrin.h>
+#endif
 #include <stdlib.h>
 #include <iostream>
 #include <string.h>
