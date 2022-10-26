@@ -15,7 +15,7 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DRAM_SSD_STORAGE_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DRAM_SSD_STORAGE_H_
 
-#include "tensorflow/core/framework/embedding/ssd_hashkv.h"
+#include "tensorflow/core/framework/embedding/ssd_hash_kv.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
 
 namespace tensorflow {

@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -11,7 +11,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-==============================================================================*/
+=======================================================================*/
 
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_KV_INTERFACE_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_KV_INTERFACE_H_
@@ -39,30 +39,32 @@ template <class K, class V>
 class KVInterface {
  public:
   virtual ~KVInterface() {}
-  // KV Lookup
   virtual Status Lookup(K key, ValuePtr<V>** value_ptr) = 0;
   virtual Status Contains(K key) = 0;
-  // KV Insert
   virtual Status Insert(K key, const ValuePtr<V>* value_ptr) = 0;
-  // KV Remove
   virtual Status Remove(K key) = 0;
 
-  // KV Batch Lookup
-  virtual Status BatchLookup(const std::vector<K>& keys,
-                             std::vector<ValuePtr<V>**>* value_ptrs) {
+  virtual Status BatchLookup(const K* keys, size_t size,
+                             ValuePtr<V>** value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
-                      "Unimplemented for BatchLookup in KVInterface.");
+                  "Unimplemented for BatchLookup in KVInterface.");
   }
   // KV Batch Insert
   virtual Status BatchInsert(const std::vector<K>& keys,
-      const std::vector<const ValuePtr<V>*>& value_ptrs) {
+      const std::vector<ValuePtr<V>*>& value_ptrs) {
     return Status(error::Code::UNIMPLEMENTED,
-                      "Unimplemented for BatchInsert in KVInterface.");
+                  "Unimplemented for BatchInsert in KVInterface.");
   }
   // KV Batch Remove
-  virtual Status BatchRemove(const std::vector<K>& keys) {
+  virtual Status BatchRemove(const K* keys, size_t size) {
     return Status(error::Code::UNIMPLEMENTED,
-                      "Unimplemented for BatchRemove in KVInterface.");
+                  "Unimplemented for BatchRemove in KVInterface.");
+  }
+
+  virtual Status BatchLookupOrCreate(const K* keys, size_t size,
+      ValuePtr<V>** value_ptrs) {
+    return Status(error::Code::UNIMPLEMENTED,
+                  "Unimplemented for BatchLookupOrInsert in KVInterface.");
   }
 
   virtual Status BatchCommit(const std::vector<K>& keys,
