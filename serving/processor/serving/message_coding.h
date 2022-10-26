@@ -3,6 +3,7 @@
 
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/lib/core/threadpool.h"
+#include "serving/processor/serving/predict.pb.h"
 
 namespace tensorflow {
 namespace processor {
@@ -18,6 +19,10 @@ class IParser {
   virtual Status ParseRequestFromBuf(
       const void* input_data, int input_size, Call& call,
       const SignatureInfo* info) = 0;
+
+  virtual Status ParseRequest(
+      const eas::PredictRequest& request,
+      const SignatureInfo* signature_info, Call& call) = 0;
 
   virtual Status ParseResponseToBuf(
       const Call& call, void** output_data,
@@ -52,6 +57,10 @@ class ProtoBufParser : public IParser {
       const void* input_data, int input_size,
       Call& call, const SignatureInfo* info) override;
 
+  Status ParseRequest(
+      const eas::PredictRequest& request,
+      const SignatureInfo* signature_info, Call& call) override;
+
   Status ParseResponseToBuf(
       const Call& call, void** output_data,
       int* output_size, const SignatureInfo* info) override;
@@ -80,6 +89,12 @@ class FlatBufferParser : public IParser {
       const void* input_data, int input_size,
       Call& call, const SignatureInfo* info) override {
     // TO be implemented
+    return Status::OK();
+  }
+
+  Status ParseRequest(
+      const eas::PredictRequest& request,
+      const SignatureInfo* signature_info, Call& call) override {
     return Status::OK();
   }
 

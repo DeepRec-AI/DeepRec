@@ -22,6 +22,7 @@ class ModelStore;
 class ModelSession;
 class ModelSessionMgr;
 class IFeatureStoreMgr;
+class IParser;
 
 class LocalSessionInstance {
  public:
@@ -60,6 +61,7 @@ class LocalSessionInstance {
   SignatureInfo signature_info_;
 
   std::string warmup_file_name_;
+  IParser* parser_ = nullptr;
 
   ModelSessionMgr* session_mgr_ = nullptr;
   SessionOptions* session_options_ = nullptr;
@@ -109,6 +111,7 @@ class RemoteSessionInstance {
   SignatureInfo signature_info_;
 
   std::string warmup_file_name_;
+  IParser* parser_ = nullptr;
 
   ModelSessionMgr* session_mgr_ = nullptr;
   SessionOptions* session_options_ = nullptr;
