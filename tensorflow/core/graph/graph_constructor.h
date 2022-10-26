@@ -190,7 +190,10 @@ extern Status ImportGraphDef(const ImportGraphDefOptions& opts,
 extern void CopyGraph(const Graph& src, Graph* dest);
 
 extern void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
-    int32 duplicated_num);
+                        int32 duplicated_num);
+
+void GetDevicePlacementBoundaryNodes(
+    const Graph* dest, std::unordered_set<Node*>& boundary_node_set);
 
 extern void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
                        const std::vector<std::string>& target_nodes, 

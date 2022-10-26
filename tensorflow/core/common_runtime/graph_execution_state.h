@@ -180,6 +180,9 @@ class GraphExecutionState {
                     subgraph::RewriteGraphMetadata* out_rewrite_metadata);
 
   Status PipelineGraph(std::unique_ptr<Graph>* graph, int32 micro_batch_num);
+
+  // Device Placement Graph for Runtime
+  Status DevicePlacementGraph(std::unique_ptr<Graph>* graph);
   // SmartStage Graph for Runtime
   Status SmartStageGraph(std::unique_ptr<Graph>* graph,
                          const std::vector<std::string>& target_nodes,

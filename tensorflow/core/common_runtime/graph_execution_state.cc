@@ -645,6 +645,48 @@ Status GraphExecutionState::PipelineGraph(std::unique_ptr<Graph>* g,
   return Status::OK();
 }
 
+Status GraphExecutionState::DevicePlacementGraph(std::unique_ptr<Graph>* g) {
+  VLOG(2) << "GraphExecutionState::DevicePlacementGraph";
+  Graph *graph = g->get();
+  std::unique_ptr<Graph> device_graph(new Graph(OpRegistry::Global()));
+  CopyGraph(*graph, device_graph.get());
+
+  std::unordered_set<Node *> boundary_node_set;
+  GetDevicePlacementBoundaryNodes(device_graph.get(), boundary_node_set);
+  if (boundary_node_set.empty()) {
+    LOG(FATAL) << "DevicePlacement: Failed to get boundary_node, disable "
+                  "DevicePlacementOptimization";
+    return Status::OK();
+  }
+
+  // Get cpu device name ,there should find only one cpu device.
+  std::vector<Device *> devices = device_set_->devices();
+  std::string cpu_device_name = "";
+  for (auto iter = devices.begin(); iter != devices.end(); iter++) {
+    if ((*iter)->device_type() == "CPU") {
+      cpu_device_name = (*iter)->name();
+    }
+  }
+
+  if (!cpu_device_name.empty()) {
+    auto set_stage_subgraph_node_device = [cpu_device_name](Node *n) {
+      n->set_assigned_device_name(cpu_device_name);
+    };
+    std::vector<Node *> boundary_node_vec;
+    for (const auto node : boundary_node_set) {
+      boundary_node_vec.push_back(node);
+    }
+    ReverseDFSFrom(*device_graph, boundary_node_vec, std::move(set_stage_subgraph_node_device), nullptr);
+  } else {
+    LOG(FATAL) << "DevicePlacement: Failed to get CPU Device, disable "
+                  "DevicePlacementOptimization";
+    return Status::OK();
+  }
+
+  g->swap(device_graph);
+  return Status::OK();
+}
+
 Status GraphExecutionState::SmartStageGraph(std::unique_ptr<Graph>* g,
                                             const std::vector<std::string>& target_nodes,
                                             const bool do_smart_stage_gpu) {
@@ -758,6 +800,11 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   if (micro_batch_num > 1) {
     VLOG(2) << "RUN Graph Optimization: Runtime Pipeline";
     PipelineGraph(&new_graph, micro_batch_num);
+  }
+
+  if (session_optimizer_options.device_placement_optimization()) {
+    VLOG(2) << "RUN Graph Optimization: DevicePlacement";
+    DevicePlacementGraph(&new_graph);
   }
 
   if (session_optimizer_options.do_smart_stage() ||

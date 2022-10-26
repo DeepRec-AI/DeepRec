@@ -1869,6 +1869,52 @@ void ExtendGraph(Graph* dest, std::unordered_set<const Node*> excluded,
   }
 }
 
+void GetDevicePlacementBoundaryNodes(
+    const Graph* dest, std::unordered_set<Node*>& boundary_node_set) {
+  std::queue<const Node *> q;
+  for (Node *n : dest->op_nodes()) {
+    if (n->IsVariable() || n->IsKvVarHandle() || n->IsControlFlow() ||
+        n->type_string() == "VarHandleOp") {
+      q.push(n);
+    }
+  }
+  
+  Node *source_node = dest->source_node();
+
+  // mark compute graph node
+  std::vector<bool> is_var_relate(dest->num_node_ids(), false);
+  while (!q.empty()) {
+    const Node *node = q.front();
+    q.pop();
+    is_var_relate[node->id()] = true;
+    for (const Edge *e: node->out_edges()) {
+      if (!is_var_relate[e->dst()->id()]) {
+	q.push(e->dst());
+      }
+    }
+  }
+
+  std::queue<Node *> queue;
+  std::unordered_set<Node *> has_visit_node;
+  queue.push(source_node);
+  while (!queue.empty()) {
+    Node *n = queue.front();
+    queue.pop();
+    if (has_visit_node.find(n) != has_visit_node.end())
+      continue;
+
+    has_visit_node.insert(n);
+    for (auto edge : n->out_edges()) {
+      Node *dst = edge->dst();
+      if (is_var_relate[dst->id()]) {
+	boundary_node_set.insert(n);
+      } else {
+	queue.push(dst);
+      }
+    }
+  }
+}
+
 void StageGraph(Graph* dest, Node* stage_node, Node* unstage_node,
                 const std::vector<std::string>& target_nodes, 
                 const bool do_smart_stage_gpu,
