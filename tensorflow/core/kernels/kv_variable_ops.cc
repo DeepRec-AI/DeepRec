@@ -22,6 +22,7 @@ limitations under the License.
 #include "tensorflow/core/framework/bounds_check.h"
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
+#include "tensorflow/core/framework/embedding/embedding_var.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/resource_mgr.h"
@@ -39,12 +40,6 @@ limitations under the License.
 #include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/util.h"
 #include "tensorflow/core/util/work_sharder.h"
-
-#if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
-#include "tensorflow/core/kernels/kv_variable_ops_gpu.h"
-#endif // TENSORFLOW_USE_GPU_EV
-#endif  // GOOGLE_CUDA
 
 namespace tensorflow {
 

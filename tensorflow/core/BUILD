@@ -3004,7 +3004,9 @@ tf_cuda_library(
             "util/version_info.cc",
             "util/env_var.cc",
             "framework/embedding/batch.cu.cc",
-            "framework/embedding/batch.h"
+            "framework/embedding/batch.h",
+            "framework/embedding/embedding_var.cu.cc",
+            "framework/embedding/embedding_var.h"
         ],
     ) + select({
         "//tensorflow:windows": [],
@@ -6033,17 +6035,19 @@ cc_library(
 cuda_library(
     name = "embedding_gpu",
     hdrs = [
-        "framework/embedding/batch.h"
+        "framework/embedding/batch.h",
+        "framework/embedding/embedding_var.h"
     ],
     srcs = FRAMEWORK_INTERNAL_PRIVATE_HEADERS + [
-        "framework/embedding/batch.cu.cc"
+        "framework/embedding/batch.cu.cc",
+        "framework/embedding/embedding_var.cu.cc"
     ],
     copts = ["-g"] + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
         + if_cuda(["-DGOOGLE_CUDA=1"]) +
 	select({
         "//conditions:default": [],
         "@local_config_cuda//cuda:using_nvcc": [
-            #"-nvcc_options=relaxed-constexpr",
+            "-nvcc_options=relaxed-constexpr",
             #"-nvcc_options=ftz=true",
         ],
         "@local_config_cuda//cuda:using_clang": [
@@ -6054,5 +6058,11 @@ cuda_library(
     visibility = ["//visibility:public"],
     alwayslink = 1,
     deps = ["//tensorflow/stream_executor/cuda:cudart_stub",
-	    ":stream_executor"]
+	    ":stream_executor",
+        "@sparsehash_c11//:dense_hash_map",
+        "@libcuckoo//:libcuckoo",
+        "@com_github_google_leveldb//:leveldb",
+        ] + select({"//tensorflow:with_gpu_ev_support":
+                 ["@cuCollections//:cuco_hash_table"],
+                 "//conditions:default": []})
 )
