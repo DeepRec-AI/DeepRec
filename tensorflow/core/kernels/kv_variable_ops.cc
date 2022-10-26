@@ -1760,7 +1760,6 @@ class InitializeKvVariableOpGPU : public OpKernel {
  private:
   DataType dtype_;
   DataType counter_type_;
-  embedding::CacheType storage_cache_type_;
   TensorShape shape_;
   int64 steps_to_live_;
   int64 emb_index_;

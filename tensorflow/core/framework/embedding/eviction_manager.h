@@ -100,7 +100,9 @@ class EvictionManager {
     while (CheckStorages()) {
       mutex_lock l(mu_);
       int index = 0;
-      for (auto [storage, storage_item]: storage_table_) {
+      for (auto it : storage_table_) {
+	auto storage = it.first;
+	auto storage_item = it.second;
         volatile bool* occupy_flag = &storage_item->is_occupied;
         if (__sync_bool_compare_and_swap(occupy_flag, false, true)) {
           if (storage_item->is_deleted) {
