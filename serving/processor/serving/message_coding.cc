@@ -9,12 +9,9 @@ ProtoBufParser::ProtoBufParser(int thread_num) {
       thread_num));
 }
 
-Status ProtoBufParser::ParseRequestFromBuf(
-    const void* input_data, int input_size, Call& call,
-    const SignatureInfo* signature_info) {
-  eas::PredictRequest request;
-  request.ParseFromArray(input_data, input_size);
-
+Status ProtoBufParser::ParseRequest(
+    const eas::PredictRequest& request,
+    const SignatureInfo* signature_info, Call& call) {
   for (auto& input : request.inputs()) {
     if (signature_info->input_key_idx.find(input.first) ==
         signature_info->input_key_idx.end()) {
@@ -42,6 +39,20 @@ Status ProtoBufParser::ParseRequestFromBuf(
   }
 
   return Status::OK();
+}
+
+Status ProtoBufParser::ParseRequestFromBuf(
+    const void* input_data, int input_size, Call& call,
+    const SignatureInfo* signature_info) {
+  eas::PredictRequest request;
+  bool success = request.ParseFromArray(input_data, input_size);
+  if (!success) {
+    LOG(ERROR) << "Parse request from array failed, input_data: " << input_data
+               << ", input_size: " << input_size;
+    return Status(errors::Code::INVALID_ARGUMENT, "Please check the input data.");
+  }
+
+  return ParseRequest(request, signature_info, call);
 }
 
 Status ProtoBufParser::ParseResponseToBuf(

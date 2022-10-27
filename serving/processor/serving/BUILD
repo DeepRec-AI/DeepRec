@@ -27,7 +27,8 @@ tf_cc_shared_object(
     srcs = ["processor.cc",
             "processor.h",],
     deps = [
-            "model_serving"],
+            "model_serving",
+           ],
 )
 
 cc_library(
@@ -131,6 +132,23 @@ cc_test(
 )
 
 cc_library(
+    name = "message_coding",
+    srcs = ["message_coding.cc",],
+    hdrs = ["message_coding.h",],
+    deps = [
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:lib",
+        "//serving/processor/framework:model_version",
+        "//serving/processor/storage:model_store",
+        "model_message",
+        "predict_proto_cc",
+        "utils",
+    ],
+)
+
+cc_library(
     name = "model_instance",
     srcs = ["model_instance.cc",],
     hdrs = ["model_instance.h"],
@@ -144,6 +162,7 @@ cc_library(
         "//serving/processor/framework:graph_optimizer",
         "//serving/processor/framework:model_version",
         "//serving/processor/storage:model_store",
+        ":message_coding",
         "model_config",
         "model_partition",
         "model_session",
@@ -156,10 +175,8 @@ cc_library(
 cc_library(
     name = "model_serving",
     srcs = ["model_serving.cc",
-            "message_coding.cc",
             "model_impl.cc",],
     hdrs = ["model_serving.h",
-            "message_coding.h",
             "model_impl.h",],
     deps = [
         "//tensorflow/core:protos_all_cc",
@@ -168,6 +185,7 @@ cc_library(
         "//tensorflow/core:lib",
         "//serving/processor/framework:model_version",
         "//serving/processor/storage:model_store",
+        ":message_coding",
         "model_config",
         "model_session",
         "model_message",
