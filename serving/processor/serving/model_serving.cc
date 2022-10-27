@@ -24,8 +24,7 @@ Status Model::Init(const char* model_config) {
   }
 
   if (!config->warmup_file_name.empty()) {
-    config->warmup_file_name =
-        model_entry_ + config->warmup_file_name;
+    LOG(INFO) << "User set warmup file: " << config->warmup_file_name;
   }
 
   parser_ = ParserFactory::GetInstance(config->serialize_protocol,
