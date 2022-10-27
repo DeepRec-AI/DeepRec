@@ -39,3 +39,20 @@ with tf.train.MonitoredTrainingSession(checkpoint_dir=path,
     print(sess.run([gs, train_op, loss], feed_dict={"ids:0": i%10}))
     time.sleep(1)
 ```
+
+## 模型导出
+在默认情况下，无法将增量checkpoint相关子图导出到SavedModel中，如果用户希望在Serving中通过“增量模型更新”来支持秒级更新，就需要将增量相关子图导出到SavedModel。目前需要使用DeepRec提供的[Estimator](https://github.com/AlibabaPAI/estimator)来导出。
+
+示例代码：
+```python
+estimator.export_saved_model(
+    export_dir_base,
+    serving_input_receiver_fn,
+    ... 
+    save_incr_model=True)
+```
+
+需要注意：
+
+当构图的时候没有增量模型图的时候配置 save_incr_model=True 会报错，所以图中只有全量，save_incr_model只能配置false(default值)。当图中有全量和增量，save_incr_model 配置true，SavedModel图可以加载全量或增量的模型。若将save_incr_model 配置false，SavedModel图只能加载全量的模型。
+
