@@ -269,7 +269,7 @@ class DLRM():
             optimizer = tf.train.GradientDescentOptimizer(
                 learning_rate=self._learning_rate)
         else:
-            raise ValueError("Optimzier type error.")
+            raise ValueError("Optimizer type error.")
 
         self.train_op = optimizer.minimize(
             self.loss, global_step=self.global_step)
@@ -476,12 +476,12 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
             if (_in != steps):
                 sess.run([model.acc_op, model.auc_op])
                 if (_in % 1000 == 0):
-                    print("Evaluation complate:[{}/{}]".format(_in, steps))
+                    print("Evaluation complete:[{}/{}]".format(_in, steps))
             else:
                 eval_acc, eval_auc, events = sess.run(
                     [model.acc_op, model.auc_op, merged])
                 writer.add_summary(events, _in)
-                print("Evaluation complate:[{}/{}]".format(_in, steps))
+                print("Evaluation complete:[{}/{}]".format(_in, steps))
                 print("ACC = {}\nAUC = {}".format(eval_acc, eval_auc))
 
 
