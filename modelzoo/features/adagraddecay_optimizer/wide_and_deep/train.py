@@ -588,7 +588,7 @@ def main(tf_config=None, server=None):
                         sess.run(
                             [model.acc, model.acc_op, model.auc, model.auc_op])
                         if (_in % 1000 == 0):
-                            print("Evaluation complate:[{}/{}]".format(
+                            print("Evaluation complete:[{}/{}]".format(
                                 _in, test_steps))
                     else:
                         _, eval_acc, _, eval_auc, events = sess.run([
@@ -596,7 +596,7 @@ def main(tf_config=None, server=None):
                             merged
                         ])
                         writer.add_summary(events, _in)
-                        print("Evaluation complate:[{}/{}]".format(
+                        print("Evaluation complete:[{}/{}]".format(
                             _in, test_steps))
                         print("ACC = {}\nAUC = {}".format(eval_acc, eval_auc))
 

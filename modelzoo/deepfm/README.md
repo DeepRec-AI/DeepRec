@@ -138,7 +138,7 @@ input:                                  |               |
 ### Distribute Training
 1. Prepare a K8S cluster. [Alibaba Cloud ACK Service(Alibaba Cloud Container Service for Kubernetes)](https://cn.aliyun.com/product/kubernetes) can quickly create a Kubernetes cluster. 
 2. Perpare a shared storage volume. For Alibaba Cloud ACK, [OSS(Object Storage Service)](https://cn.aliyun.com/product/oss) can be used as a shared storage volume.
-3. Create a PVC(PeritetVolumeClaim) named `deeprec` for storage volumn in cluster.
+3. Create a PVC(PersistentVolumeClaim) named `deeprec` for storage volumn in cluster.
 4. Prepare docker image. `alideeprec/deeprec-release-modelzoo:latest` is recommended.
 5. Create a k8s job from `.yaml` to run distributed training.
    ```
