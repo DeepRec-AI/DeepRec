@@ -81,7 +81,7 @@ class EmbeddingVar : public ResourceBase {
     filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(
         emb_config_, this, storage_manager_);
 
-    if (embedding::StorageType::HBM_DRAM == storage_type_) {
+    if (storage_manager_->IsUseHbm()) {
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
       emb_config_.default_value_dim = default_value_dim;
@@ -119,7 +119,8 @@ class EmbeddingVar : public ResourceBase {
             emb_config_.default_value_no_permission);
       }
     }
-    if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType()) {
+    if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType() ||
+        LayoutType::NORMAL_CONTIGUOUS_GPU == storage_manager_->GetLayoutType()) {
       storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
     }
 
@@ -154,7 +155,7 @@ class EmbeddingVar : public ResourceBase {
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr,
-      int64 update_version, bool &need_copyback) {
+      int64 update_version, embedding::CopyBackFlag &need_copyback) {
     Status s = storage_manager_->GetOrCreate(key, value_ptr,
         emb_config_.total_num(storage_manager_->GetAllocLen()), need_copyback);
     TF_CHECK_OK(s);
@@ -201,7 +202,8 @@ class EmbeddingVar : public ResourceBase {
     add_freq_fn_(value_ptr, count, emb_config_.filter_freq);
   }
 
-  void LookupWithFreqBatch(K* keys, bool *init_flags, bool *copyback_flags,
+  void LookupWithFreqBatch(K* keys, bool *init_flags,
+      embedding::CopyBackFlag *copyback_flags,
       V** memcpy_address, int start, int limit) {
     ValuePtr<V>* value_ptr = nullptr;
     for (int i = start; i < limit; i++) {
@@ -213,6 +215,10 @@ class EmbeddingVar : public ResourceBase {
         memcpy_address[i] = value_ptr->GetValue(0,0);
       }
       value_ptr->AddFreq();
+      if (copyback_flags[i] ==
+        embedding::CopyBackFlag::COPYBACK_AND_DESTROY) {
+          delete value_ptr;
+      }
     }
   }
 
@@ -277,7 +283,8 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
-  void CopyBackToGPU(K* keys, int64 size, bool* copyback_flags,
+  void CopyBackToGPU(K* keys, int64 size,
+      embedding::CopyBackFlag* copyback_flags,
       V** memcpy_address) {
     size_t value_len = emb_config_.total_num(storage_manager_->GetAllocLen());
     V* memcpy_buffer_gpu;
@@ -378,8 +385,8 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->IsMultiLevel();
   }
 
-  bool IsHBMDRAM() {
-    return embedding::StorageType::HBM_DRAM == storage_type_;
+  bool IsUseHbm() {
+    return storage_manager_->IsUseHbm();
   }
 
   void InitCache(embedding::CacheStrategy cache_strategy) {

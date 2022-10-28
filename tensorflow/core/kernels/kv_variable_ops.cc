@@ -179,7 +179,12 @@ class InitializeKvVariableOp : public OpKernel {
       if (block_num_ > 1 || (filter_freq_ != 0 && storage_type <= 5)) {
         layout_ = "normal";
       } else {
-        layout_ = "normal_contiguous";
+        if (storage_type == embedding::HBM_DRAM ||
+            storage_type == embedding::HBM_DRAM_SSDHASH) {
+          layout_ = "normal_contiguous_gpu";
+        } else {
+          layout_ = "normal_contiguous";
+        }
       }
     } else {
       layout_ = "light";
@@ -725,9 +730,10 @@ class KvResourceGatherGPUOp : public OpKernel {
               "MultiLevel EV's Cache size ", ev->CacheSize(),
               " should large than IDs in batch ", N));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
-      if (ev->IsHBMDRAM()) {
+      if (ev->IsUseHbm()) {
         bool* init_flags = new bool[indices_size]();
-        bool* copyback_flags = new bool[indices_size]();
+        embedding::CopyBackFlag* copyback_flags =
+            new embedding::CopyBackFlag[indices_size]();
         TValue** memcpy_address = new TValue*[indices_size];
         TValue** default_values = new TValue*[indices_size];
         TKey* ids = new TKey[indices_size];

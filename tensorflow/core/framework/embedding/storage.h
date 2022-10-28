@@ -33,6 +33,20 @@ class FilterPolicy;
 
 namespace embedding {
 template<typename K, typename V>
+struct KVInterfaceDescriptor {
+  KVInterfaceDescriptor(KVInterface<K, V>* kv,
+                    Allocator* allocator,
+                    mutex mu) : kv_(kv),
+                                 allocator_(allocator),
+                                 mu_(mu) {}
+  ~KVInterfaceDescriptor() {}
+
+  KVInterface<K, V>* kv_;
+  Allocator* allocator_;
+  mutex mu_;
+};
+
+template<typename K, typename V>
 class Storage {
  public:
   explicit Storage(const StorageConfig& storage_config)
@@ -45,7 +59,7 @@ class Storage {
   virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) = 0;
   virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) = 0;
+      size_t size, CopyBackFlag &need_copyback) = 0;
   virtual int LookupTier(K key) const = 0;
   virtual Status Remove(K key) = 0;
   virtual int64 Size() const = 0;
@@ -69,7 +83,7 @@ class Storage {
   virtual Status Eviction(K* evict_ids, int64 evict_size) = 0;
 
   virtual void CopyBackToGPU(int total, K* keys, int64 size,
-      bool* copyback_flags, V** memcpy_address, size_t value_len,
+      CopyBackFlag* copyback_flags, V** memcpy_address, size_t value_len,
       int *copyback_cursor, ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) = 0;
 
@@ -77,6 +91,9 @@ class Storage {
   virtual int64 CacheSize() const = 0;
   virtual BatchCache<K>* Cache() = 0;
   virtual bool IsMultiLevel() = 0;
+  virtual bool IsUseHbm() = 0;
+  virtual void iterator_mutex_lock() = 0;
+  virtual void iterator_mutex_unlock() = 0;
   virtual void Schedule(std::function<void()> fn) = 0;
 
   inline mutex* get_mutex() { return &mu_; }

@@ -64,7 +64,8 @@ struct EmbeddingConfig {
       kHashFunc = 0;
       num_counter = 0;
     }
-    if (layout == "normal_contiguous") {
+    if (layout == "normal_contiguous" ||
+        layout == "normal_contiguous_gpu") {
       normal_fix_flag = 1;
     }
   }

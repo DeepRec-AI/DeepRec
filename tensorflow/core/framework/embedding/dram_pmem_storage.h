@@ -38,9 +38,9 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
     pmem_kv_ = new LocklessHashMap<K, V>();
 
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        dram_kv_, dram_alloc_);
+        KVInterfaceDescriptor<K, V>(dram_kv_, dram_alloc_, dram_mu_));
     MultiTierStorage<K, V>::kvs_.emplace_back(
-        std::make_pair(pmem_kv_, pmem_alloc_));
+        KVInterfaceDescriptor<K, V>(pmem_kv_, pmem_alloc_, pmem_mu_));
   }
 
   ~DramPmemStorage() override {
@@ -60,9 +60,13 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
-      size_t size, bool &need_copyback) override {
-    need_copyback = false;
+      size_t size, CopyBackFlag &need_copyback) override {
+    need_copyback = NOT_COPYBACK;
     return GetOrCreate(key, value_ptr, size);
+  }
+
+  bool IsUseHbm() override {
+    return false;
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -101,9 +105,23 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
 
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>* >* value_ptr_list) override {
-    TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
-    TF_CHECK_OK(pmem_kv_->GetSnapshot(key_list, value_ptr_list));
+    {
+      mutex_lock l(dram_mu_);
+      TF_CHECK_OK(dram_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
+    {
+      mutex_lock l(pmem_mu_);
+      TF_CHECK_OK(pmem_kv_->GetSnapshot(key_list, value_ptr_list));
+    }
     return Status::OK();
+  }
+
+  void iterator_mutex_lock() override {
+    return;
+  }
+
+  void iterator_mutex_unlock() override {
+    return;
   }
 
  protected:
@@ -115,6 +133,8 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
   Allocator* dram_alloc_;
   Allocator* pmem_alloc_;
   LayoutCreator<V>* layout_creator_;
+  mutex dram_mu_; // must be locked before pmem_mu_ is locked
+  mutex pmem_mu_;
 };
 } // embedding
 } // tensorflow

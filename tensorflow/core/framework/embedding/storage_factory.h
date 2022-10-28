@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/dram_pmem_storage.h"
 #include "tensorflow/core/framework/embedding/dram_ssd_storage.h"
 #include "tensorflow/core/framework/embedding/hbm_dram_storage.h"
+#include "tensorflow/core/framework/embedding/hbm_dram_ssd_storage.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
 #include "tensorflow/core/framework/embedding/single_tier_storage.h"
 #include "tensorflow/core/framework/embedding/storage_config.h"
@@ -62,11 +63,19 @@ class StorageFactory {
       case StorageType::HBM_DRAM:
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
-        return new HbmDramStorage<K, V>(sc, ev_allocator(),
-            gpu_allocator, layout_creator, name);
+        return new HbmDramStorage<K, V>(sc, gpu_allocator,
+        ev_allocator(), layout_creator, name);
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
         LOG(WARNING) << "Unsupport HBM_DRAM, fallback to DRAM.";
+      case StorageType::HBM_DRAM_SSDHASH:
+#if GOOGLE_CUDA
+#if !TENSORFLOW_USE_GPU_EV
+        return new HbmDramSsdStorage<K, V>(sc, gpu_allocator,
+            ev_allocator(), layout_creator, name);
+#endif  // TENSORFLOW_USE_GPU_EV
+#endif  // GOOGLE_CUDA
+        LOG(WARNING) << "Unsupport HBM_DRAM_SSDHASH, fallback to DRAM.";
       default:
         return new DramStorage<K, V>(sc, ev_allocator(),
             layout_creator);

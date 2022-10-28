@@ -641,8 +641,8 @@ class SSDHashKV : public KVInterface<K, V> {
     int64 n_ids = 0;
     std::vector<int64> invalid_files;
     unsigned int max_key_count = 1 + int(BUFFER_SIZE / val_len_);
-    K id_buffer[max_key_count] = {0};
-    EmbPosition* pos_buffer[max_key_count] = {0};
+    K* id_buffer = new K[max_key_count];
+    EmbPosition** pos_buffer = new EmbPosition*[max_key_count];
     for (auto it : evict_file_map_) {
       EmbFile* file = emb_files_[it.first];
       __sync_fetch_and_sub(&total_app_count_, file->app_invalid_count);
@@ -670,7 +670,9 @@ class SSDHashKV : public KVInterface<K, V> {
     if(!st.ok()) {
       LOG(WARNING)<<"FLUSH ERROR: "<<st.ToString();
     }
+    delete[] id_buffer;
     delete[] compact_buffer;
+    delete[] pos_buffer;
   }
 
   void Compaction() {

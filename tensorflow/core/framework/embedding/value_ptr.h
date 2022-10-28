@@ -20,7 +20,8 @@ enum class LayoutType {
   LIGHT,
   NORMAL,
   LEVELDB,
-  NORMAL_CONTIGUOUS
+  NORMAL_CONTIGUOUS,
+  NORMAL_CONTIGUOUS_GPU
 };
 
 namespace {

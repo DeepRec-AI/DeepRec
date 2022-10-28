@@ -52,6 +52,10 @@ class EvictionManager {
 
   TF_DISALLOW_COPY_AND_ASSIGN(EvictionManager);
 
+  void Schedule(std::function<void()> fn) {
+    thread_pool_->Schedule(std::move(fn)); 
+  }
+
   void AddStorage(MultiTierStorage<K,V>* storage) {
     mutex_lock l(mu_);
     auto ret = storage_table_.emplace(std::make_pair(storage,
@@ -101,8 +105,8 @@ class EvictionManager {
       mutex_lock l(mu_);
       int index = 0;
       for (auto it : storage_table_) {
-	auto storage = it.first;
-	auto storage_item = it.second;
+        auto storage = it.first;
+        auto storage_item = it.second;
         volatile bool* occupy_flag = &storage_item->is_occupied;
         if (__sync_bool_compare_and_swap(occupy_flag, false, true)) {
           if (storage_item->is_deleted) {
@@ -112,7 +116,7 @@ class EvictionManager {
           storage->BatchEviction();
           *occupy_flag = false;
         }
-        //Env::Default()->SleepForMicroseconds(1);
+        Env::Default()->SleepForMicroseconds(1);
       }
     }
     __sync_fetch_and_sub(&num_of_active_threads_, 1);
