@@ -37,6 +37,33 @@ index fb530e6a4..637aac9f9 100644
  
  /** \internal \returns static_cast<TgtType>(a) (coeff-wise) */
  template <typename SrcPacket, typename TgtPacket>
+diff --git a/Eigen/src/Core/arch/NEON/PacketMath.h b/Eigen/src/Core/arch/NEON/PacketMath.h
+index 9124eff..6ff86ba 100644
+--- a/Eigen/src/Core/arch/NEON/PacketMath.h
++++ b/Eigen/src/Core/arch/NEON/PacketMath.h
+@@ -36,22 +36,6 @@ namespace internal {
+ #endif
+ #endif
+
+-template<typename T,int unique_id>
+-struct eigen_packet_wrapper
+-{
+-  operator T&() { return m_val; }
+-  operator const T&() const { return m_val; }
+-  eigen_packet_wrapper() {}
+-  eigen_packet_wrapper(const T &v) : m_val(v) {}
+-  eigen_packet_wrapper& operator=(const T &v)
+-  {
+-    m_val = v;
+-    return *this;
+-  }
+-
+-  T m_val;
+-};
+-
+ #if EIGEN_COMP_MSVC
+
+ // In MSVC's arm_neon.h header file, all NEON vector types
 diff --git a/Eigen/src/Core/arch/AVX/MathFunctions.h b/Eigen/src/Core/arch/AVX/MathFunctions.h
 index c5394430f..b746ff43e 100644
 --- a/Eigen/src/Core/arch/AVX/MathFunctions.h
