@@ -60,12 +60,8 @@ constexpr size_t kPageSize = (1 << 12);    // 4KB page by default
 constexpr size_t kPageShift = 12;
 constexpr size_t kPageCount = kChunkSize / kPageSize;
 
-#if defined __x86_64__
 constexpr int kAddressBits =
   (sizeof(void*) < 8 ? (8 * sizeof(void*)) : 48);
-#else
-constexpr int kAddressBits = 8 * sizeof(void*);
-#endif
 
 class Bin;
 class PageMap {
@@ -543,12 +539,12 @@ class EVAllocator : public Allocator {
 
   size_t AlignedSize(size_t num_bytes) {
     // small allocation no need alignment here.
-    if (num_bytes <= sizeof(__m128)) {
+    if (num_bytes <= 4 * sizeof(float)) {
       return num_bytes;
     }
 
     // Use _mm_load_ps instructions need aligned address.
-    return ALIGNMENT_CEILING(num_bytes, sizeof(__m128));
+    return ALIGNMENT_CEILING(num_bytes, 4 * sizeof(float));
   }
 
  private:

@@ -20,11 +20,11 @@ limitations under the License.
 #include "tensorflow/core/platform/types.h"
 #if defined(__AVX512F__)
 #include <immintrin.h>
+#include <x86intrin.h>
 #endif
 #include <stdlib.h>
 #include <iostream>
 #include <string.h>
-#include <x86intrin.h>
 
 namespace tensorflow {
 
