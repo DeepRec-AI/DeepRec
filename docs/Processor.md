@@ -432,6 +432,51 @@ saved_model:
       | _ _ variables
 ```
 以上述为例，在配置文件中"checkpoint_dir"设置为“/a/b/c/checkpoint_parent_dir/”，"savedmodel_dir"设置为“/a/b/c/saved_model/”
+
+#### Warmup
+EAS中的Warmup是在eas任务启动的时候执行的，对于ODL processor来说，因为在serving过程中也会自动更新模型，所以对于新的模型也需要进行Warmup，所以我们在ODL Processor中提供了Warmup模型的功能。
+```
+{
+...
+"model_config": {
+  ...
+  "warmup_file_name": "/xxx/xxx/warm_up.bin",
+  ...
+}
+...
+}
+```
+Processor目前不支持下载warmup文件，用户有两种方式来进行提供warmup文件。
+
+1.EAS[挂载oss](https://help.aliyun.com/document_detail/413364.html)，示例如下，
+```
+"storage": [
+  {
+    "mount_path": "/data_oss",
+    "oss": {
+      "endpoint": "oss-cn-shanghai-internal.aliyuncs.com",
+      "path": "oss://bucket/"
+    }
+  }
+]
+```
+将oss://bucket/挂载在本地的/data_oss目录上，假设warmup文件在oss中位置是"oss://bucket/1/warmup.bin"，那么在配置文件中需要将warmup_file_name设置成"/data_oss/1/warmup.bin"。
+
+2.如果用户不挂载oss，另一种方式是借助EAS下载的warmup文件，配置如下，
+```
+{
+...
+"model_config": {
+  ...
+  "warmup_file_name": "/home/admin/docker_ml/workspace/model/warm_up.bin",
+  ...
+}
+"warm_up_data_path": "oss://my_oss/1/warm_up.bin",
+...
+}
+```
+首先需要配置EAS的warmup参数"warm_up_data_path": "oss://my_oss/1/warm_up.bin",这样EAS框架会下载这个文件，下载的路径是"/home/admin/docker_ml/workspace/model/warm_up.bin"(不同版本eas可能会变化，需要咨询eas同学)，用户可以设置warmup_file_name为"/home/admin/docker_ml/workspace/model/warm_up.bin"，这样processor也可以找到并且进行后续的warmup。
+
 ## 示例
 End2End的示例详见：serving/processor/tests/end2end/README
 这里提供了一个完整的端到端的示例。
