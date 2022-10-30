@@ -907,7 +907,7 @@ new file mode 100644
 index 0000000..57529db
 --- /dev/null
 +++ b/sparsehash/internal/densehashtable_lockless.h
-@@ -0,0 +1,2010 @@
+@@ -0,0 +1,2016 @@
 +// Copyright (c) 2005, Google Inc.
 +// All rights reserved.
 +//
@@ -1016,7 +1016,9 @@ index 0000000..57529db
 +#include <mutex>
 +#include <sparsehash/internal/hashtable-common.h>
 +#include <sparsehash/internal/libc_allocator_with_realloc.h>
++#if defined(__x86_64__)
 +#include <immintrin.h>
++#endif
 +
 +#include <chrono>
 +
@@ -1609,7 +1611,11 @@ index 0000000..57529db
 +
 +  void set_counternum(size_type counternum){
 +    num_counters = counternum;
++#if defined(__x86_64)
 +    num_elements_array = (size_type*)_mm_malloc(sizeof(size_type)*num_counters,64);
++#else
++	 num_elements_array = (size_type*)aligned_alloc(64,sizeof(size_type)*num_counters);
++#endif
 +    counter_flag = (long*)malloc(sizeof(long)*num_counters);
 +    for(size_type i = 0; i < num_counters; i++){
 +      num_elements_array[i] = 0;
