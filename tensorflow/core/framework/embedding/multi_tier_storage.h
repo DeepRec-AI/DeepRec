@@ -15,7 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_MULTI_TIER_STORAGE_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_MULTI_TIER_STORAGE_H_
 
-#include "tensorflow/core/framework/embedding/cache.h"
+#include "tensorflow/core/framework/embedding/cache_factory.h"
+#include "tensorflow/core/framework/embedding/cache_thread_pool_creator.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
 
 #include "tensorflow/core/framework/embedding/eviction_manager.h"
@@ -81,20 +82,10 @@ class MultiTierStorage : public Storage<K, V> {
   }
 
   void InitCache(embedding::CacheStrategy cache_strategy) override {
-    if (cache_strategy == CacheStrategy::LRU) {
-      LOG(INFO) << " Use StorageManager::LRU in multi-tier EmbeddingVariable "
-                << name_;
-      cache_ = new LRUCache<K>();
-    } else {
-      LOG(INFO) << "Use StorageManager::LFU in multi-tier EmbeddingVariable "
-                << name_;
-      cache_ = new LFUCache<K>();
-    }
+    cache_ = CacheFactory::Create<K>(cache_strategy, name_);
     eviction_manager_ = EvictionManagerCreator::Create<K, V>();
     eviction_manager_->AddStorage(this);
-    thread_pool_.reset(
-        new thread::ThreadPool(Env::Default(), ThreadOptions(),
-          "MultiTier_Embedding_Cache", 2, /*low_latency_hint=*/false));
+    cache_thread_pool_ = CacheThreadPoolCreator::Create();
   }
 
   void CopyBackToGPU(int total, K* keys, int64 size,
@@ -211,7 +202,7 @@ class MultiTierStorage : public Storage<K, V> {
   }
 
   void Schedule(std::function<void()> fn) override {
-    thread_pool_->Schedule(std::move(fn)); 
+    cache_thread_pool_->Schedule(std::move(fn));
   }
 
   virtual void BatchEviction() {
@@ -290,7 +281,7 @@ class MultiTierStorage : public Storage<K, V> {
   BatchCache<K>* cache_ = nullptr;
 
   EvictionManager<K, V>* eviction_manager_;
-  std::unique_ptr<thread::ThreadPool> thread_pool_;
+  thread::ThreadPool* cache_thread_pool_;
 
   condition_variable shutdown_cv_;
   volatile bool shutdown_ = false;
