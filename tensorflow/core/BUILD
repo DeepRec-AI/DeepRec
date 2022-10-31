@@ -3591,6 +3591,7 @@ tf_cuda_library(
     hdrs = [
         "common_runtime/direct_session.h",
         "common_runtime/direct_session_group.h",
+        "common_runtime/custom_thread_pool.h",
         "util/env_var.h",
     ],
     copts = tf_copts(),

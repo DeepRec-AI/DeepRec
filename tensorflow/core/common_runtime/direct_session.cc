@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/common_runtime/direct_session.h"
+#include "tensorflow/core/common_runtime/custom_thread_pool.h"
 
 #include <atomic>
 #include <string>
@@ -141,6 +142,25 @@ Status NewThreadPoolFromThreadPoolOptions(
   *owned = false;
   *pool = mvalue->second;
   return Status::OK();
+}
+
+void NewStageSubGraphThreadPoolFromStageSubGraphThreadPoolOptions(
+    const SessionOptions& sess_options,
+    const StageSubGraphThreadPoolOptionsProto& thread_pool_options,
+    const int pool_number,
+    std::pair<thread::ThreadPoolInterface *, thread::ThreadPoolInterface *>& pool) {  
+  const std::string name_prefix =
+      thread_pool_options.global_name() + "_" + std::to_string(pool_number);
+
+  auto stage_subgraph_inter_op_thread_pool =
+      new CustomThreadPoolImpl(strings::StrCat(name_prefix, "_inter"),
+                               thread_pool_options.inter_op_threads_num());  
+  auto stage_subgraph_intra_op_thread_pool =
+      new CustomThreadPoolImpl(strings::StrCat(name_prefix, "_intra"),
+			       thread_pool_options.intra_op_threads_num());  
+
+  pool.first = stage_subgraph_inter_op_thread_pool;
+  pool.second = stage_subgraph_intra_op_thread_pool; 
 }
 
 thread::ThreadPool* GlobalThreadPool(const SessionOptions& options) {
@@ -662,6 +682,17 @@ DirectSession::DirectSession(const SessionOptions& options,
     MemoryPlannerFactory::GetMemoryPlanner()->SetThreadPool(GlobalThreadPool(options));
   }
 
+  const int stage_subgraph_thread_pool_size =
+    options_.config.session_stage_subgraph_thread_pool_size();
+  for (int i = 0; i < stage_subgraph_thread_pool_size; ++i) {
+    std::pair<thread::ThreadPoolInterface*, thread::ThreadPoolInterface*>
+        pool_interface;
+    NewStageSubGraphThreadPoolFromStageSubGraphThreadPoolOptions(
+        options_, options_.config.session_stage_subgraph_thread_pool(i), i,
+        pool_interface);    
+    stage_subgraph_thread_pools_.emplace_back(pool_interface);    
+  }
+
   bool use_cost_model_executor = false;
   bool use_inline_executor = false;
   Status s =
@@ -753,6 +784,11 @@ DirectSession::~DirectSession() {
   delete cancellation_manager_;
   for (const auto& p_and_owned : thread_pools_) {
     if (p_and_owned.second) delete p_and_owned.first;
+  }
+  
+  for (const auto& p_inter_and_intra : stage_subgraph_thread_pools_) {
+    delete p_inter_and_intra.first;
+    delete p_inter_and_intra.second;
   }
 
   execution_state_.reset(nullptr);
@@ -1016,6 +1052,13 @@ Status DirectSession::RunInternal(
 
   if (run_in_caller_thread_) {
     pool = nullptr;
+  } else if (run_options.use_stage_subgraph_thread_pool()) {
+    auto stage_subgraph_threadpool = dynamic_cast<CustomThreadPoolImpl*>(
+        threadpool_options.inter_op_threadpool);
+    if (stage_subgraph_threadpool == nullptr)
+      return errors::Internal(
+          "Failed to convert stage subgraph inter op threadpool");
+    pool = stage_subgraph_threadpool->get_threadpool();
   } else if (threadpool_options.inter_op_threadpool != nullptr) {
     threadpool_wrapper = absl::make_unique<thread::ThreadPool>(
         threadpool_options.inter_op_threadpool);
@@ -1245,10 +1288,23 @@ Status DirectSession::Run(const RunOptions& run_options,
   if (LogMemory::IsEnabled()) {
     LogMemory::RecordStep(step_id, run_state_args.handle);
   }
-
+  
+  auto thread_pool_options = thread::ThreadPoolOptions();
+  if (run_options.use_stage_subgraph_thread_pool()) {
+    int id = run_options.stage_subgraph_thread_pool_id();
+    if (id < 0 || id >= stage_subgraph_thread_pools_.size())
+      return errors::InvalidArgument(
+          "stage subgraph pool id (" + std::to_string(id) +
+          ") is out of range[0, " +
+          std::to_string(stage_subgraph_thread_pools_.size()) + ")");
+    thread_pool_options.inter_op_threadpool =
+        stage_subgraph_thread_pools_[id].first;
+    thread_pool_options.intra_op_threadpool =
+        stage_subgraph_thread_pools_[id].second;
+  }
   TF_RETURN_IF_ERROR(RunInternal(step_id, run_options, &call_frame,
                                  executors_and_keys, run_metadata,
-                                 thread::ThreadPoolOptions()));
+                                 thread_pool_options));  
 
   // Receive outputs.
   if (outputs) {

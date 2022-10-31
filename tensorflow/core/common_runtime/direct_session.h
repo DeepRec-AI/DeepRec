@@ -1,5 +1,4 @@
 /* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -345,6 +344,13 @@ class DirectSession : public Session {
   // The thread-pools to use for running ops, with a bool indicating if the pool
   // is owned.
   std::vector<std::pair<thread::ThreadPool*, bool>> thread_pools_;
+
+  // The stage subgraph thread pools
+  // first item of pair is inter op thread pools
+  // second item of pair is intra op thread pools
+  std::vector<
+      std::pair<thread::ThreadPoolInterface*, thread::ThreadPoolInterface*>>
+      stage_subgraph_thread_pools_;
 
   Status init_error_;  // Set to an error if construction failed.
 

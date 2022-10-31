@@ -38,16 +38,17 @@ class AsyncEmbeddingStage:
     """ async embedding stage is a helper class to add stage op after embedding
     look up operation, asynchronous embedding lookup and dense compute.
     """
-    def __init__(self, threads_num = 1, capacity=1, checkpoint_dir = None):
+    def __init__(self, options, checkpoint_dir = None):
         """ create async_embedding stage instance
         Args:
-        threads_num: number of async_embedding prefetch threads.
-        capacity: number of async_embedding prefetch buffer size.
+        options: async embedding options.
         checkpoint_dir: path to dump graph.
         """
-        self._threads_num = threads_num
-        self._capacity = capacity
+        self._threads_num = options.threads_num
+        self._capacity = options.capacity
         self._checkpoint_dir = checkpoint_dir if checkpoint_dir else ""
+        self._use_stage_subgraph_thread_pool = options.use_stage_subgraph_thread_pool
+        self._stage_subgraph_thread_pool_id = options.stage_subgraph_thread_pool_id
         self._control_flow_ops = ['Switch', '_SwitchN', 'Merge', '_XlaMerge',
                                   'Enter', 'Exit']
         self._variable_ops = ['Variable', 'VariableV2', 'VarHandleOp',
@@ -253,12 +254,14 @@ class AsyncEmbeddingStage:
             stage_outputs_consumers[stage_node.name] = stage_node_outputs_consumers
 
         with ops.colocate_with(list(self._stage_nodes.keys())[0]):
-            stage_output_result = prefetch.staged(stage_outputs,
-                                              num_threads=self._threads_num,
-                                              capacity=self._capacity,
-                                              timeout_millis=1000*60*60*3,
-                                              closed_exception_types=\
-                                              (errors.OutOfRangeError,))
+            stage_output_result = \
+                prefetch.staged(stage_outputs,
+                                num_threads=self._threads_num,
+                                capacity=self._capacity,
+                                timeout_millis=1000*60*60*3,
+                                closed_exception_types= (errors.OutOfRangeError,),
+                                use_stage_subgraph_thread_pool = self._use_stage_subgraph_thread_pool,
+                                stage_subgraph_thread_pool_id = self._stage_subgraph_thread_pool_id)
 
         need_update_ops = []
         stage_op_parsed = False

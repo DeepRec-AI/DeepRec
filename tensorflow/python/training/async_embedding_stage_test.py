@@ -24,6 +24,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import dtypes
+from tensorflow.core.protobuf import config_pb2
 
 class AsyncEmbeddingStageTest(test.TestCase):
     def testAsyncEmbedding(self):
@@ -55,7 +56,10 @@ class AsyncEmbeddingStageTest(test.TestCase):
         self.assertEqual(stage_put_num, 1)
         self.assertEqual(stage_take_num, 1)
 
-        ae = async_embedding_stage.AsyncEmbeddingStage(1, 1, None)
+        option = config_pb2.AsyncEmbeddingOptions()
+        option.threads_num = 1
+        option.capacity = 2
+        ae = async_embedding_stage.AsyncEmbeddingStage(option, None)
         ae.stage(graph)
 
         stage_put_num = 0

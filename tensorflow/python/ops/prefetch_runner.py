@@ -31,6 +31,7 @@ from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import session_run_hook
+from tensorflow.core.protobuf import config_pb2
 
 class PrefetchRunner(object): # pylint: disable=useless-object-inheritance
   """Prefetch tensors by repeating running given ops.
@@ -106,7 +107,9 @@ class PrefetchRunner(object): # pylint: disable=useless-object-inheritance
       feed_list=None,
       feed_generator=None,
       closed_exception_types=None,
-      ignored_exception_types=None):
+      ignored_exception_types=None,
+      use_stage_subgraph_thread_pool=False,
+      stage_subgraph_thread_pool_id=0):
     """Create a PrefetchRunner.
 
     When you later call the `create_threads()` method, the `PrefetchRunner` will
@@ -127,6 +130,10 @@ class PrefetchRunner(object): # pylint: disable=useless-object-inheritance
         `(tf.errors.OutOfRangeError, StopIteration)`.
       ignored_exception_types: (Optional.) Exception types indicating that the
         prefetching can continue. Defaults to `()`.
+      use_stage_subgraph_thread_pool: (Optional.) Use stage subgraph thread pool
+        to run stage graph or not.
+      stage_subgraph_thread_pool_id: (Optional.) Specifies the stage subgraph
+        thread pool to use when enable use_stage_subgraph_thread_pool. 0 by default.
     """
     try:
       executing_eagerly = context.executing_eagerly()
@@ -157,6 +164,8 @@ class PrefetchRunner(object): # pylint: disable=useless-object-inheritance
     self._lock = threading.Lock()
     self._runs_per_session = weakref.WeakKeyDictionary()
     self._exceptions_raised = []
+    self._use_stage_subgraph_thread_pool = use_stage_subgraph_thread_pool
+    self._stage_subgraph_thread_pool_id = stage_subgraph_thread_pool_id
 
   @property
   def name(self):
@@ -211,13 +220,16 @@ class PrefetchRunner(object): # pylint: disable=useless-object-inheritance
     try:
       sess.run(self._resume_op)
       run_fetch = sess.make_callable(
-          self._fetch_ops[index], self._feed_list)
+          self._fetch_ops[index], self._feed_list, True)
       close = sess.make_callable(self._close_op)
       feed_list = self._feed_list if self._feed_list else []
       if self._feed_generator:
         feed_iterator = self._feed_generator(sess)
       else:
         feed_iterator = itertools.repeat([])
+      run_options = config_pb2.RunOptions()
+      run_options.use_stage_subgraph_thread_pool = self._use_stage_subgraph_thread_pool
+      run_options.stage_subgraph_thread_pool_id = self._stage_subgraph_thread_pool_id
       while True:
         try:
           # Use `next` instead of `for .. in` to reraise exception in generator.
@@ -233,7 +245,7 @@ class PrefetchRunner(object): # pylint: disable=useless-object-inheritance
                 'feed_generator must generate a tuple of {} items, not {} '
                 '({} items)'.format(
                     len(feed_list), feed, len(feed)))
-          run_fetch(*feed)
+          run_fetch(*feed, options=run_options)
         except errors.CancelledError:
           logging.info("Prefetching was cancelled.")
           return
