@@ -4,37 +4,63 @@
 #define EASY_SMP_LOCK               "lock;"
 #define easy_atomic_set(v,i)        ((v) = (i))
 
+#if defined(__x86_64)
+#define cpu_relax() asm volatile("pause\n": : :"memory")
+#else
+#define cpu_relax() asm volatile("yield\n": : :"memory")
+#endif
+
 typedef volatile int64_t easy_atomic_t;
 static __inline__ void easy_atomic_add(easy_atomic_t *v, int64_t i)
 {
+#if defined(__x86_64__)
     __asm__ __volatile__(
         EASY_SMP_LOCK "addq %1,%0"
         : "=m" ((*v)) : "r" (i), "m" ((*v)));
+#else
+    __atomic_add_fetch(v, i, __ATOMIC_SEQ_CST);
+#endif
 }
 static __inline__ int64_t easy_atomic_add_return(easy_atomic_t *value, int64_t i)
 {
     int64_t                 __i = i;
+#if defined(__x86_64__)
     __asm__ __volatile__(
         EASY_SMP_LOCK "xaddq %0, %1;"
         :"=r"(i)
         :"m"(*value), "0"(i));
+#else
+    i = __atomic_fetch_add(value, i, __ATOMIC_SEQ_CST);
+#endif
     return i + __i;
 }
 static __inline__ int64_t easy_atomic_cmp_set(easy_atomic_t *lock, int64_t old, int64_t set)
 {
     uint8_t                 res;
+#if defined(__x86_64__)
     __asm__ volatile (
         EASY_SMP_LOCK "cmpxchgq %3, %1; sete %0"
         : "=a" (res) : "m" (*lock), "a" (old), "r" (set) : "cc", "memory");
+#else
+    res = __atomic_compare_exchange_n(lock, &old, set, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+#endif
     return res;
 }
 static __inline__ void easy_atomic_inc(easy_atomic_t *v)
 {
+#if defined(__x86_64__)
     __asm__ __volatile__(EASY_SMP_LOCK "incq %0" : "=m" (*v) :"m" (*v));
+#else
+    __atomic_add_fetch(v, 1, __ATOMIC_SEQ_CST);
+#endif
 }
 static __inline__ void easy_atomic_dec(easy_atomic_t *v)
 {
+#if defined(__x86_64__)
     __asm__ __volatile__(EASY_SMP_LOCK "decq %0" : "=m" (*v) :"m" (*v));
+#else
+    __atomic_sub_fetch(v, 1, __ATOMIC_SEQ_CST);
+#endif
 }
 
 #define EASY_OK                     0
@@ -72,7 +98,7 @@ static __inline__ int easy_spinrwlock_rdlock(easy_spinrwlock_t *lock)
                     }
                 }
 
-                asm("pause");
+                cpu_relax();
                 loop <<= 1;
             } while (loop < 1024);
 
@@ -105,7 +131,7 @@ static __inline__ int easy_spinrwlock_wrlock(easy_spinrwlock_t *lock)
                     }
                 }
 
-                asm("pause");
+                cpu_relax();
                 loop <<= 1;
             } while (loop < 1024);
 
