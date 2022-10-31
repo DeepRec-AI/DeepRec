@@ -1,3 +1,18 @@
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+=======================================================================*/
+
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LEVELDB_KV_H_
 
@@ -105,11 +120,11 @@ class LevelDBKV : public KVInterface<K, V> {
     total_dims_ = total_dims;
   }
 
-  ~LevelDBKV() {
+  ~LevelDBKV() override {
     delete db_;
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) {
+  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
     std::string val_str;
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::ReadOptions options;
@@ -125,7 +140,7 @@ class LevelDBKV : public KVInterface<K, V> {
     }
   }
 
-  Status Contains(K key) {
+  Status Contains(K key) override {
     std::string val_str;
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::ReadOptions options;
@@ -138,18 +153,18 @@ class LevelDBKV : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) {
+  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
     counter_->add(key, 1);
     return Status::OK();
   }
 
   Status BatchInsert(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) {
+      const std::vector<ValuePtr<V>*>& value_ptrs) override {
     return BatchCommit(keys, value_ptrs);
   } 
 
   Status BatchCommit(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) {
+      const std::vector<ValuePtr<V>*>& value_ptrs) override {
     WriteBatch batch;
     for (int i = 0; i < keys.size(); i++) {
       std::string value_res((char*)value_ptrs[i]->GetPtr(),
@@ -162,7 +177,7 @@ class LevelDBKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) {
+  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
     std::string value_res((char*)value_ptr->GetPtr(),
         sizeof(FixedLengthHeader) + total_dims_ * sizeof(V));
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
@@ -175,7 +190,7 @@ class LevelDBKV : public KVInterface<K, V> {
     }
   }
 
-  Status Remove(K key) {
+  Status Remove(K key) override {
     counter_->sub(key, 1);
     leveldb::Slice db_key((char*)(&key), sizeof(void*));
     leveldb::Status s = db_->Delete(WriteOptions(), db_key);
@@ -188,28 +203,29 @@ class LevelDBKV : public KVInterface<K, V> {
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>* >* value_ptr_list) {
+      std::vector<ValuePtr<V>*>* value_ptr_list) override {
     return Status::OK();
   }
 
-  Iterator* GetIterator() {
+  Iterator* GetIterator() override {
     ReadOptions options;
     options.snapshot = db_->GetSnapshot();
     leveldb::Iterator* it = db_->NewIterator(options);
     return new DBIterator(it);
   }
 
-  int64 Size() const {
+  int64 Size() const override {
     return counter_->size();
   }
 
-  void FreeValuePtr(ValuePtr<V>* value_ptr) {
+  void FreeValuePtr(ValuePtr<V>* value_ptr) override {
     delete value_ptr;
   }
 
-  std::string DebugString() const {
+  std::string DebugString() const override{
     return "";
   }
+
  private:
   DB* db_;
   SizeCounter<K>* counter_;

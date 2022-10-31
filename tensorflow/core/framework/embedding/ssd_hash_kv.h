@@ -1,5 +1,20 @@
-#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASHKV_H_
-#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASHKV_H_
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+=======================================================================*/
+
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASH_KV_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASH_KV_H_
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -267,7 +282,7 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
-  void SetTotalDims(int total_dims) {
+  void SetTotalDims(int total_dims) override {
     total_dims_ = total_dims;
     val_len_ = sizeof(FixedLengthHeader) + total_dims_ * sizeof(V);
     max_app_count_ = BUFFER_SIZE / val_len_;
@@ -277,12 +292,12 @@ class SSDHashKV : public KVInterface<K, V> {
     done_ = true;
   }
 
-  Iterator* GetIterator() {
+  Iterator* GetIterator() override {
     return new SSDIterator<K>(&hash_map_, emb_files_, val_len_,
         write_buffer_);
   }
 
-  ~SSDHashKV() {
+  ~SSDHashKV() override {
     if (buffer_cur_ > 0) {
       if (!is_async_compaction_) {
         emb_files_[current_version_]->Write(write_buffer_,
@@ -322,7 +337,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) {
+  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
     auto iter = hash_map_.find_wait_free(key);
     if (iter.first == EMPTY_KEY) {
       return errors::NotFound("Unable to find Key: ", key, " in SSDHashKV.");
@@ -342,7 +357,7 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
-  Status Contains(K key) {
+  Status Contains(K key) override {
     auto iter = hash_map_.find_wait_free(key);
     if (iter.first == EMPTY_KEY) {
       return errors::NotFound("Unable to find Key: ", key, " in SSDHashKV.");
@@ -352,17 +367,17 @@ class SSDHashKV : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) {
+  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
     return Status::OK();
   }
 
   Status BatchInsert(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) {
+                     const std::vector<ValuePtr<V>*>& value_ptrs) override {
     return BatchCommit(keys, value_ptrs);
   }
 
   Status BatchCommit(const std::vector<K>& keys,
-                     const std::vector<ValuePtr<V>*>& value_ptrs) {
+                     const std::vector<ValuePtr<V>*>& value_ptrs) override {
     compaction_fn_();
     __sync_fetch_and_add(&total_app_count_, keys.size());
     for (int i = 0; i < keys.size(); i++) {
@@ -373,7 +388,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Commit(K key, const ValuePtr<V>* value_ptr) {
+  Status Commit(K key, const ValuePtr<V>* value_ptr) override {
     compaction_fn_();
     __sync_fetch_and_add(&total_app_count_, 1);
     check_buffer_fn_();
@@ -381,7 +396,7 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  Status Remove(K key) {
+  Status Remove(K key) override {
     if (hash_map_.erase_lockless(key)) {
       return Status::OK();
     } else {
@@ -391,13 +406,13 @@ class SSDHashKV : public KVInterface<K, V> {
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-                     std::vector<ValuePtr<V>*>* value_ptr_list) {
+                     std::vector<ValuePtr<V>*>* value_ptr_list) override {
     return Status::OK();
   }
 
-  int64 Size() const { return hash_map_.size_lockless(); }
+  int64 Size() const override { return hash_map_.size_lockless(); }
 
-  void FreeValuePtr(ValuePtr<V>* value_ptr) {
+  void FreeValuePtr(ValuePtr<V>* value_ptr) override {
     delete value_ptr;
   }
 
@@ -783,4 +798,4 @@ class SSDHashKV : public KVInterface<K, V> {
 }  // namespace embedding
 }  // namespace tensorflow
 
-#endif //TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASHKV_H_
+#endif //TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_SSD_HASH_KV_H_

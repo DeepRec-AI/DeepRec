@@ -17,13 +17,11 @@ limitations under the License.
 
 #include "tensorflow/core/framework/embedding/cache.h"
 #include "tensorflow/core/framework/embedding/config.pb.h"
-
+#include "tensorflow/core/framework/embedding/cpu_hash_map_kv.h"
 #include "tensorflow/core/framework/embedding/eviction_manager.h"
 #include "tensorflow/core/framework/embedding/globalstep_shrink_policy.h"
-
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/l2weight_shrink_policy.h"
-#include "tensorflow/core/framework/embedding/lockless_hash_map.h"
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/framework/embedding/storage.h"
 

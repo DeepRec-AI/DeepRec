@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -11,10 +11,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-==============================================================================*/
+=======================================================================*/
 
-#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_H_
-#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_H_
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_CPU_HASH_MAP_KV_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_CPU_HASH_MAP_KV_H_
 
 #include "sparsehash/dense_hash_map_lockless"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
@@ -37,10 +37,9 @@ class LocklessHashMap : public KVInterface<K, V> {
     hash_map_.set_deleted_key(LocklessHashMap<K, V>::DELETED_KEY_);
   }
 
-  ~LocklessHashMap() {
-  }
+  ~LocklessHashMap() override {}
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) {
+  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
     auto iter = hash_map_.find_wait_free(key);
     if (iter.first == LocklessHashMap<K, V>::EMPTY_KEY_) {
       return errors::NotFound(
@@ -51,7 +50,7 @@ class LocklessHashMap : public KVInterface<K, V> {
     }
   }
 
-   Status Contains(K key) {
+  Status Contains(K key) override {
     auto iter = hash_map_.find_wait_free(key);
     if (iter.first == LocklessHashMap<K, V>::EMPTY_KEY_) {
       return errors::NotFound(
@@ -61,7 +60,7 @@ class LocklessHashMap : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) {
+  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
     auto iter = hash_map_.insert_lockless(
         std::move(std::pair<K, ValuePtr<V>*>(key,
             const_cast<ValuePtr<V>*>(value_ptr))));
@@ -75,12 +74,12 @@ class LocklessHashMap : public KVInterface<K, V> {
   } 
 
   // Other Method
-  int64 Size() const {
+  int64 Size() const override {
     return hash_map_.size_lockless();
   }
 
   // Remove KV
-  Status Remove(K key) {
+  Status Remove(K key) override {
     if (hash_map_.erase_lockless(key)) {
       return Status::OK();
     } else {
@@ -90,12 +89,12 @@ class LocklessHashMap : public KVInterface<K, V> {
   }
 
   Status BatchCommit(const std::vector<K>& keys,
-      const std::vector<ValuePtr<V>*>& value_ptrs) {
+      const std::vector<ValuePtr<V>*>& value_ptrs) override {
     return Status::OK();
   }
 
   Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>* >* value_ptr_list) {
+      std::vector<ValuePtr<V>*>* value_ptr_list) override {
     std::pair<const K, ValuePtr<V>*> *hash_map_dump;
     int64 bucket_count;
     auto it = hash_map_.GetSnapshot();
@@ -112,7 +111,7 @@ class LocklessHashMap : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  std::string DebugString() const {
+  std::string DebugString() const override {
     LOG(INFO) << "map info size:" << Size()
               << "map info bucket_count:" << hash_map_.bucket_count()
               << "map info load_factor:" << hash_map_.load_factor()
@@ -122,7 +121,7 @@ class LocklessHashMap : public KVInterface<K, V> {
   }
 
  private:
-  typedef google::dense_hash_map_lockless<K, ValuePtr<V>* > LockLessHashMap;
+  typedef google::dense_hash_map_lockless<K, ValuePtr<V>*> LockLessHashMap;
   static const int EMPTY_KEY_;
   static const int DELETED_KEY_;
   LockLessHashMap hash_map_;
@@ -135,4 +134,4 @@ const int LocklessHashMap<K, V>::DELETED_KEY_ = -2;
 }  // namespace embedding
 }  // namespace tensorflow
 
-#endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_H_
+#endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_CPU_HASH_MAP_KV_H_

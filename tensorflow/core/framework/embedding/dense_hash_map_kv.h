@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -11,10 +11,10 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-==============================================================================*/
+=======================================================================*/
 
-#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_H_
-#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_H_
+#ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_KV_H_
+#define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_KV_H_
 
 #include "sparsehash/dense_hash_map"
 #include "tensorflow/core/framework/typed_allocator.h"
@@ -41,11 +41,11 @@ class DenseHashMap : public KVInterface<K, V> {
     }
   }
 
-  ~DenseHashMap() {
+  ~DenseHashMap() override {
     delete []hash_map_;
   }
 
-  Status Lookup(K key, ValuePtr<V>** value_ptr) {
+  Status Lookup(K key, ValuePtr<V>** value_ptr) override {
     int64 l_id = std::abs(key)%partition_num_;
     spin_rd_lock l(hash_map_[l_id].mu);
     auto iter = hash_map_[l_id].hash_map.find(key);
@@ -58,7 +58,7 @@ class DenseHashMap : public KVInterface<K, V> {
     }
   }
 
-  Status Contains(K key) {
+  Status Contains(K key) override {
     int64 l_id = std::abs(key)%partition_num_;
     spin_rd_lock l(hash_map_[l_id].mu);
     auto iter = hash_map_[l_id].hash_map.find(key);
@@ -70,7 +70,7 @@ class DenseHashMap : public KVInterface<K, V> {
     }
   }
 
-  Status Insert(K key, const ValuePtr<V>* value_ptr) {
+  Status Insert(K key, const ValuePtr<V>* value_ptr) override {
     int64 l_id = std::abs(key)%partition_num_;
     spin_wr_lock l(hash_map_[l_id].mu);
     auto iter = hash_map_[l_id].hash_map.find(key);
@@ -80,13 +80,14 @@ class DenseHashMap : public KVInterface<K, V> {
           "already exists Key: ", key, " in DenseHashMap.");
     } else {
       auto iter = hash_map_[l_id].hash_map.insert(
-        std::move(std::pair<K, ValuePtr<V>*>(key, const_cast<ValuePtr<V>*>(value_ptr))));
+        std::move(std::pair<K, ValuePtr<V>*>(key,
+            const_cast<ValuePtr<V>*>(value_ptr))));
       return Status::OK();
     }
   }
 
   // Other Method
-  int64 Size() const {
+  int64 Size() const override {
     int64 ret = 0;
     for (int i = 0; i< partition_num_; i++) {
       spin_rd_lock l(hash_map_[i].mu);
@@ -96,7 +97,7 @@ class DenseHashMap : public KVInterface<K, V> {
   }
 
   // Remove KV
-  Status Remove(K key) {
+  Status Remove(K key) override {
     int64 l_id = std::abs(key)%partition_num_;
     spin_wr_lock l(hash_map_[l_id].mu);
     if (hash_map_[l_id].hash_map.erase(key)) {
@@ -107,7 +108,8 @@ class DenseHashMap : public KVInterface<K, V> {
     }
   }
 
-  Status GetSnapshot(std::vector<K>* key_list, std::vector<ValuePtr<V>* >* value_ptr_list) {
+  Status GetSnapshot(std::vector<K>* key_list,
+      std::vector<ValuePtr<V>* >* value_ptr_list) override {
     dense_hash_map hash_map_dump[partition_num_];
     for (int i = 0; i< partition_num_; i++) {
       spin_rd_lock l(hash_map_[i].mu);
@@ -122,7 +124,7 @@ class DenseHashMap : public KVInterface<K, V> {
     return Status::OK();
   }
 
-  std::string DebugString() const {
+  std::string DebugString() const override {
     return "";
   }
 
@@ -138,4 +140,4 @@ class DenseHashMap : public KVInterface<K, V> {
 }  // namespace embedding
 }  // namespace tensorflow
 
-#endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_H_
+#endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_DENSE_HASH_MAP_KV_H_
