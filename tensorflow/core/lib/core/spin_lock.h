@@ -7,7 +7,11 @@ namespace {
 #define mem_barrier() asm volatile("": : :"memory")
 
 /* Pause instruction to prevent excess processor bus usage */ 
+#if defined(__x86_64)
 #define cpu_relax() asm volatile("pause\n": : :"memory")
+#else
+#define cpu_relax() asm volatile("yield\n": : :"memory")
+#endif
 
 # define __ASM_FORM(x)  " " #x " "
 # define __ASM_SEL(a,b) __ASM_FORM(a)
@@ -30,10 +34,14 @@ namespace {
 /* Atomic exchange (of various sizes) */
 static inline unsigned long xchg_64(void *ptr, unsigned long x)
 {
+#if defined(__x86_64)
   asm volatile("xchgq %0,%1"
       :"=r" ((unsigned long) x)
       :"m" (*(volatile long *)ptr), "0" ((unsigned long) x)
       :"memory");
+#else
+  x =  __atomic_exchange_n((unsigned long *)ptr, x, __ATOMIC_SEQ_CST);
+#endif
 
   return x;
 }
