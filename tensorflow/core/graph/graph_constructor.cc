@@ -1988,8 +1988,10 @@ void GetStagingEdges(const Graph& dest, const std::unordered_set<Node *>& source
                      std::vector<const Edge*>& edge_vec) {
   std::queue<const Node*> q;
   for (Node* n : dest.op_nodes()) {
-    if (n->IsVariable() || n->IsKvVarHandle() || n->IsPlaceholder() || n->IsControlFlow() ||
-        std::find(target_nodes.begin(), target_nodes.end(), n->name()) != target_nodes.end()) {
+    if (n->IsVariable() || n->IsKvVarHandle() || n->IsPlaceholder() ||
+        n->IsControlFlow() || n->type_string() == "VarHandleOp" ||
+        std::find(target_nodes.begin(), target_nodes.end(), n->name()) !=
+            target_nodes.end()) {
       q.push(n);
     }
   }
