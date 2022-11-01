@@ -368,10 +368,10 @@ Status LocalSessionInstance::Warmup(
   int left_try_count = WARMUP_COUNT;
   while (left_try_count > 0) {
     if (warmup_session) {
-      s = warmup_session->LocalPredict(
+      s = warmup_session->Warmup(
           call.request, call.response);
     } else {
-      s = session_mgr_->LocalPredict(
+      s = session_mgr_->Warmup(
           call.request, call.response);
     }
     if (!s.ok()) return s;
@@ -571,11 +571,11 @@ Status RemoteSessionInstance::Warmup(
   int left_try_count = WARMUP_COUNT;
   while (left_try_count > 0) {
     if (warmup_session) {
-      s = warmup_session->LocalPredict(
-          call.request, call.response);
+      s = warmup_session->Warmup(
+          call.request, call.response, false);
     } else {
-      s = session_mgr_->LocalPredict(
-          call.request, call.response);
+      s = session_mgr_->Warmup(
+          call.request, call.response, false);
     }
     if (!s.ok()) return s;
 
