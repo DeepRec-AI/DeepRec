@@ -18,6 +18,8 @@ limitations under the License.
 
 #include "tensorflow/core/lib/core/threadpool_interface.h"
 #include "tensorflow/core/lib/core/threadpool.h"
+#include "tensorflow/core/lib/core/threadpool_options.h"
+#include "tensorflow/core/public/session_options.h"
 
 namespace tensorflow {
 class CustomThreadPoolImpl : public thread::ThreadPoolInterface {
@@ -29,7 +31,7 @@ class CustomThreadPoolImpl : public thread::ThreadPoolInterface {
   }
 
   explicit CustomThreadPoolImpl(const SessionOptions& options, std::string name,
-                               int num_threads) {
+                                int num_threads) {
     underlying_threadpool_.reset(new thread::ThreadPool(
         options.env, ThreadOptions(), name, num_threads,
         !options.config.experimental().disable_thread_spinning(),

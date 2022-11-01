@@ -1,4 +1,4 @@
-#include "serving/processor/serving/custom_thread_pool.h"
+#include "tensorflow/core/common_runtime/custom_thread_pool.h"
 #include "serving/processor/serving/util.h"
 #include "serving/processor/framework/graph_optimizer.h"
 
