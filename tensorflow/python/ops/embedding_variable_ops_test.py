@@ -2120,5 +2120,31 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for j in range(0, 30):
         self.assertAllCloseAccordingToType(emb1[i][j], emb2[i][j])
 
+  def testEmbeddingVariableForContirbFeatureColumnWithPartitionNum(self):
+    print("testEmbeddingVariableForContirbFeatureColumnWithPartitionNum")
+    checkpoint_directory = self.get_temp_dir()
+    evict = variables.L2WeightEvict(l2_weight_threshold=0.9)
+    columns = feature_column.sparse_column_with_embedding(
+                                        column_name="col_emb",
+                                        dtype=dtypes.int64,
+                                        partition_num = 4)
+    W = feature_column.embedding_column(sparse_id_column=columns,
+            dimension=3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            combiner="mean")
+    ids = {}
+    ids["col_emb"] = sparse_tensor.SparseTensor(
+                      indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]],
+                      values=math_ops.cast([0,0,0,1,1,2], dtypes.int64),
+                      dense_shape=[6, 1])
+    emb= feature_column_ops.input_from_feature_columns(
+           columns_to_tensors=ids, feature_columns=[W])
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v)
+    saver = saver_module.Saver()
+
 if __name__ == "__main__":
   googletest.main()
