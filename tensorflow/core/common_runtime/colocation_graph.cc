@@ -439,6 +439,22 @@ bool Member::MergeSupportedDevices(
   return true;
 }
 
+bool Member::MergeGpuStreamIdx(const Member& other) {
+  if (gpu_stream_idx_ == -1) {
+    gpu_stream_idx_ = other.gpu_stream_idx_;
+  } else if (other.gpu_stream_idx_ != -1 &&
+             other.gpu_stream_idx_ != gpu_stream_idx_) {    
+    return false;
+  }
+
+  return true;
+}
+
+void Member::AssignGpuStreamIdx(Node *node) {
+  if (gpu_stream_idx_ != -1)
+    node->AddAttr("_stream_id", gpu_stream_idx_);
+}
+  
 Status Member::AssignDevice(const Node& node) {
   if (node.assigned_device_name_index() == assigned_device_name_index_) {
     return Status::OK();
@@ -504,7 +520,8 @@ string Member::DebugString() const {
       absl::StrJoin(DeviceTypeAndPriorityToString(supported_device_types_),
                     ", "),
       "] possible_devices_=[",
-      absl::StrJoin(DevicesToString(possible_devices_), ", "), "]");
+      absl::StrJoin(DevicesToString(possible_devices_), ", "),
+      "] gpu_stream_idx_=", gpu_stream_idx_, ")");
 }
 
 DeviceNameUtils::ParsedName Member::GetSoftDeviceName() const {
@@ -922,6 +939,16 @@ Status ColocationGraph::ColocateNodes(const Node& x, int x_root, const Node& y,
         DebugInfo(x_root), DebugInfo(y_root));
   }
 
+  // Merge gpu stream id, and ensure that they are not conflict.
+  if (!new_root_member->MergeGpuStreamIdx(*old_root_member)) {
+    return errors::InvalidArgument(
+        "Cannot colocate nodes ",
+        errors::FormatColocationNodeForError(x.name()), " and ",
+	errors::FormatColocationNodeForError(y.name()),
+	" because those node has different gpu stream id.",
+	DebugInfo(x_root), DebugInfo(y_root));
+  }
+  
   // All error checks are done, merge the colocation graphs.
   Member::Merge(&members_, x_root, y_root, &new_root_member, &old_root_member,
                 /*dry_run=*/false);
@@ -938,6 +965,12 @@ Status ColocationGraph::LimitToAssignedDevice(const Node& node) {
   int root = FindAndUpdateRoot(node.id());
   Member& root_member = members_[root];
   return root_member.AssignDevice(node);
+}
+
+void ColocationGraph::AssignGpuStreamIdx(Node *node) {
+  int root = FindAndUpdateRoot(node->id());
+  Member& root_member = members_[root];
+  root_member.AssignGpuStreamIdx(node);
 }
 
 void ColocationGraph::GetSoftDeviceCandidates(
@@ -1308,6 +1341,14 @@ Status ColocationGraph::InitializeMember(const Node& node, Member* member) {
       }
     }
   }
+
+  // set gpu stream idx, default value is -1, which means multi-stream is disable.
+  const AttrValue *gpu_stream_idx_attr = node.attrs().Find("_stream_id");
+  if (gpu_stream_idx_attr != nullptr) {
+    int gpu_stream_idx = gpu_stream_idx_attr->i();
+    member->SetGpuStreamIdx(gpu_stream_idx);
+  }
+  
   return Status::OK();
 }
 
