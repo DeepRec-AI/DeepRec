@@ -1,5 +1,4 @@
 #include <random>
-#include "serving/processor/serving/custom_thread_pool.h"
 #include "serving/processor/serving/model_session.h"
 #include "serving/processor/serving/model_message.h"
 #include "serving/processor/serving/tracer.h"
@@ -11,6 +10,7 @@
 #include "tensorflow/cc/saved_model/tag_constants.h"
 #include "tensorflow/cc/saved_model/reader.h"
 #include "tensorflow/cc/saved_model/constants.h"
+#include "tensorflow/core/common_runtime/custom_thread_pool.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
 #include "tensorflow/core/lib/random/random.h"
@@ -117,7 +117,7 @@ void CreateCustomThreadPool(CustomThreadPoolImpl** tp, mutex& mu,
                             int num, const std::string& name) {
   mutex_lock lock(mu);
   if (!(*tp)) {
-    *tp = new CustomThreadPoolImpl(num, name);
+    *tp = new CustomThreadPoolImpl(name, num);
   }
 }
 
