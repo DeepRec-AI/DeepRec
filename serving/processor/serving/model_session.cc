@@ -262,6 +262,16 @@ int ModelSession::GetServingSessionId() {
 }
 
 Status ModelSession::Predict(Request& req, Response& resp) {
+  return InternalPredict(req, resp, GetServingSessionId());
+}
+
+Status ModelSession::Predict(Request& req, Response& resp,
+                             int sess_id) {
+  return InternalPredict(req, resp, sess_id);
+}
+
+Status ModelSession::InternalPredict(Request& req, Response& resp,
+                                     int sess_id) {
   if (is_local_) {
     return Status(error::Code::INTERNAL,
         "Local sparse storage, please use LocalPredict.");
@@ -278,17 +288,31 @@ Status ModelSession::Predict(Request& req, Response& resp) {
     // TODO: which session selected to run on, add some policy here
     status = session_group_->Run(run_options, req.inputs,
         req.output_tensor_names, {}, &resp.outputs,
-        &run_metadata, GetServingSessionId());
+        &run_metadata, sess_id);
     Tracer::GetTracer()->GenTimeline(run_metadata);
   } else {
     status = session_group_->Run(req.inputs, req.output_tensor_names,
-        {}, &resp.outputs, GetServingSessionId());
+        {}, &resp.outputs, sess_id);
   }
   --counter_;
   return status;
 }
 
-Status ModelSession::LocalPredict(Request& req, Response& resp) {
+Status ModelSession::LocalPredict(Request& req,
+                                  Response& resp) {
+  return InternalLocalPredict(req, resp,
+      GetServingSessionId());
+}
+
+Status ModelSession::LocalPredict(Request& req,
+                                  Response& resp,
+                                  int sess_id) {
+  return InternalLocalPredict(req, resp, sess_id);
+}
+
+Status ModelSession::InternalLocalPredict(Request& req,
+                                          Response& resp,
+                                          int sess_id) {
   if (!is_local_) {
     return Status(error::Code::INTERNAL,
         "Remote sparse storage, please use Predict.");
@@ -302,14 +326,29 @@ Status ModelSession::LocalPredict(Request& req, Response& resp) {
     // TODO: which session selected to run on, add some policy here
     status = session_group_->Run(run_options, req.inputs,
         req.output_tensor_names, {}, &resp.outputs,
-        &run_metadata, GetServingSessionId());
+        &run_metadata, sess_id);
     Tracer::GetTracer()->GenTimeline(run_metadata); 
   } else {
     status = session_group_->Run(req.inputs, req.output_tensor_names,
-        {}, &resp.outputs, GetServingSessionId());
+        {}, &resp.outputs, sess_id);
   }
   --counter_;
   return status;
+}
+
+Status ModelSession::Warmup(Request& req, Response& resp, bool local) {
+  int N = session_group_->GetSessionNum();
+  for (int i = 0; i < N; ++i) {
+    Status s;
+    if (local) {
+      s = LocalPredict(req, resp, i);
+    } else {
+      s = Predict(req, resp, i);
+    }
+    if (!s.ok()) return s;
+  }
+
+  return Status::OK();
 }
 
 Status ModelSessionMgr::Predict(Request& req, Response& resp) {
@@ -318,6 +357,10 @@ Status ModelSessionMgr::Predict(Request& req, Response& resp) {
 
 Status ModelSessionMgr::LocalPredict(Request& req, Response& resp) {
   return serving_session_->LocalPredict(req, resp);
+}
+
+Status ModelSessionMgr::Warmup(Request& req, Response& resp, bool local) {
+  return serving_session_->Warmup(req, resp, local);
 }
 
 Status ModelSessionMgr::CreateModelSession(
