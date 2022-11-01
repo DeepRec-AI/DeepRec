@@ -271,6 +271,7 @@ message OptimizerOptions {
   bool do_smart_stage_gpu = 11;
   bool do_async_embedding = 12;
   AsyncEmbeddingOptions async_embedding_options = 13;
+  bool embedding_layer_device_placement_optimization = 14;
 }
 
 message GraphOptions {
