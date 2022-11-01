@@ -701,7 +701,8 @@ class BaseSaverBuilder(object):
               # not need it, but we'll try looking it up on MetaGraph restore
               # since it's in a collection.
               params=list(element)
-              if not isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable):
+              if not isinstance(params[0], kv_variable_ops.DynamicEmbeddingVariable) and \
+                 not isinstance(params[0], kv_variable_ops.EmbeddingVariable):
                 element.as_tensor()
       return saver_pb2.SaverDef(
           filename_tensor_name=filename_tensor.name,
