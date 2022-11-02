@@ -693,8 +693,6 @@ tf_cc_shared_object(
         "//tensorflow/cc:scope",
         "//tensorflow/cc/profiler",
         "//tensorflow/core:tensorflow",
-        # Triton dependencies
-        "//triton:triton_tf",
         "//tensorflow/contrib:contrib_kernels",
         "//tensorflow/contrib:contrib_ops_op_lib",
         "//tensorflow/contrib/tensor_forest:stats_ops_lib",
