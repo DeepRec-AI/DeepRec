@@ -89,13 +89,13 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux
 #### Image for CPU
 
 ```
-alideeprec/deeprec-release:deeprec2208-cpu-py36-ubuntu18.04
+alideeprec/deeprec-release:deeprec2208u1-cpu-py36-ubuntu18.04
 ```
 
 #### Image for GPU CUDA11.6
 
 ```
-alideeprec/deeprec-release:deeprec2208-gpu-py36-cu116-ubuntu18.04
+alideeprec/deeprec-release:deeprec2208u1-gpu-py36-cu116-ubuntu18.04
 ```
 
 ***
