@@ -16,6 +16,6 @@ SessionOptions中提供了如下选项：
 
 ```C++
 tensorflow::SessionOptions session_options;
-sess_config.config.mutable_graph_options()->mutable_optimizer_options()->set_device_placement_optimization(true);
+session_options.config.mutable_graph_options()->mutable_optimizer_options()->set_embedding_layer_device_placement_optimization(true);
 ```
 
