@@ -61,12 +61,13 @@ port::StatusOr<StreamExecutor*> ExecutorCache::GetOrCreate(
   std::string key(std::to_string(config.ordinal));
   // Use MPS
   if (config.virtual_ordinal >= 0) {
+    absl::call_once(flag_init, &GetCudaContextsCount,
+        config.ordinal, &cuda_contexts_count);
+
     int mod_virtual_ordinal =
         config.virtual_ordinal % cuda_contexts_count;
     key = std::to_string(config.ordinal) + ":" +
         std::to_string(mod_virtual_ordinal);
-    absl::call_once(flag_init, &GetCudaContextsCount,
-        config.ordinal, &cuda_contexts_count);
   }
   // In the fast path case, the cache already has an entry and we can just
   // return after Get() which only takes a shared lock and not a unique lock.
