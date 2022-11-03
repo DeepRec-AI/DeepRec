@@ -135,7 +135,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         strip_prefix = "cudnn-frontend-0.6.2",
         urls = [
             "https://github.com/NVIDIA/cudnn-frontend/archive/refs/tags/v0.6.2.zip",
-            "https://github.com/AlibabaPAI/cudnn-frontend/archive/refs/tags/v0.6.2.zip",
+            "https://github.com/NVIDIA/cudnn-frontend/archive/refs/tags/v0.6.2.zip",
         ],
     )
 
