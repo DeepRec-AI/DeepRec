@@ -26,6 +26,11 @@ extern const char* const kXlaCompileAttr;  // "_XlaCompile"
 extern const char* const kXlaScopeAttr;    // "_XlaScope"
 extern const char* const kXlaInternalScopeAttr;  // "_XlaInternalScope"
 
+// Name of attribute used to tag operators for graph mode execution 
+extern const char* const kCGModeCompileAttr;  // "_CGModeCompile"
+extern const char* const kCGModeScopeAttr;    // "_CGModeScope"
+extern const char* const kCGModeInternalScopeAttr;  // "_CGModeInternalScope"
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_COMPILER_JIT_DEFS_H_

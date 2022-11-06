@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -60,7 +60,7 @@ void CudaGraphModeContext::Clean() {
 }
 
 Status CudaGraphModeContext::InitDevices(const DeviceMgr* device_mgr,
-                                     Session* sess) {
+                                         Session* sess) {
   sess->LocalDeviceManager(&device_mgr);
   std::vector<Device*> devices = device_mgr->ListDevices();
   bool find_gpu_dev = false;
@@ -93,7 +93,7 @@ Status CudaGraphModeContext::InitDevices(const DeviceMgr* device_mgr,
 }
 
 Status CudaGraphModeContext::InitInputTensors(const GraphDef& graph_def,
-                                          const int batch_size) {
+                                              const int batch_size) {
   for (auto& node : graph_def.node()) {
     if (node.op() == "Placeholder") {
       PartialTensorShape shape = node.attr().at("shape").shape();
@@ -162,7 +162,8 @@ Status CudaGraphModeContext::InitOutputTensors(
   return Status::OK();
 }
 
-Status CudaGraphModeContext::BuildGraph(const GraphDef& graph_def, Session* sess) {
+Status CudaGraphModeContext::BuildGraph(const GraphDef& graph_def,
+                                        Session* sess) {
   TF_RETURN_IF_ERROR(sess->Create(graph_def));
   return Status::OK();
 }
@@ -204,13 +205,13 @@ Status CudaGraphModeContext::CaptureCudaGraph(Session* sess) {
     if (cur_gpu_device_) {
       cur_gpu_device_->SetSingleStreamMode();
     }
+    device_allocator_->EnableCudaGraphModeMem();
     TF_RETURN_IF_ERROR(sess->RunCallable(sess_feed_and_fetch_, input_tensors_,
                                          &(output_tensors_), nullptr));
+    device_allocator_->DisableCudaGraphModeMem();
   }
   {
     tf_shared_lock lock(DirectSession::capture_run_mu_);
-    // enable mem holders for cuda graph
-    device_allocator_->EnableCudaGraphModeMem();
     DirectSession* direct_sess = reinterpret_cast<DirectSession*>(sess);
     bool sync_on_finish = direct_sess->sync_on_finish();
     direct_sess->set_sync_on_finish(false);
@@ -257,8 +258,6 @@ Status CudaGraphModeContext::CaptureCudaGraph(Session* sess) {
     TF_CHECK_CUDA_CALL(cudaStreamCreate(&(compute_stream_)),
                        "cuda stream create error");
     cuda_graph_compute_stream_created_ = true;
-    // disable mem holders for cuda graph
-    device_allocator_->DisableCudaGraphModeMem();
     direct_sess->set_sync_on_finish(sync_on_finish);
     // enabling event polling
     if (cur_gpu_device_) {
@@ -282,8 +281,8 @@ bool CudaGraphModeContext::IsTensorOnDevice(const Tensor* t) {
   return (attributes.type == cudaMemoryTypeDevice);
 }
 
-Status CudaGraphModeContext::SyncData(const Tensor* from, Tensor* to, size_t size,
-                                  cudaStream_t stream) {
+Status CudaGraphModeContext::SyncData(const Tensor* from, Tensor* to,
+                                      size_t size, cudaStream_t stream) {
   if (from->dtype() != to->dtype()) {
     return errors::Internal("cuda input type not consist with input");
   }
@@ -300,7 +299,7 @@ Status CudaGraphModeContext::SyncData(const Tensor* from, Tensor* to, size_t siz
 }
 
 Status CudaGraphModeContext::CheckShape(const PartialTensorShape& fromShape,
-                                    const TensorShape& toShape) {
+                                        const TensorShape& toShape) {
   if (fromShape.dims() != toShape.dims()) {
     return errors::Internal("cuda input dim size not consist with input:",
                             fromShape.dims(), ":", toShape.dims());
@@ -431,4 +430,4 @@ Status CudaGraphModeContext::RunCudaGraph(
   return Status::OK();
 }
 }  // namespace tensorflow
-#endif // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA

@@ -1842,6 +1842,7 @@ tf_cuda_library(
     visibility = ["//visibility:public"],
     deps = [
         ":direct_session_internal",
+        ":gpu_cuda_graph_mode_session_internal",
     ],
     alwayslink = 1,
 )
@@ -5162,6 +5163,8 @@ tf_cuda_cc_test(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "//third_party/eigen3",
+        "//tensorflow/compiler/jit:jit_cuda_graph_mode_passes",
+        "//tensorflow/compiler/jit/kernels:cuda_graph_mode_ops",
         "//tensorflow/cc:cc_ops",
         "//tensorflow/core/kernels:collective_ops",
         "//tensorflow/core/kernels:control_flow_ops",

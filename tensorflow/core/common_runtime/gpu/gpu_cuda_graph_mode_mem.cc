@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,13 +21,12 @@ limitations under the License.
 
 namespace tensorflow {
 
-CudaGraphModeMem::CudaGraphModeMem() : n(0), deallocated_n(0) {}
+CudaGraphModeMem::CudaGraphModeMem() : n(0) {}
 
 CudaGraphModeMem::CudaGraphModeMem(const CudaGraphModeMem& cuda_graph_mode_mem)
     : deallocated_states_(cuda_graph_mode_mem.deallocated_states_),
       mem_sets_(cuda_graph_mode_mem.mem_sets_),
-      n(cuda_graph_mode_mem.n),
-      deallocated_n(cuda_graph_mode_mem.deallocated_n) {}
+      n(cuda_graph_mode_mem.n) {}
 
 CudaGraphModeMem::~CudaGraphModeMem() {}
 
@@ -43,7 +42,6 @@ void CudaGraphModeMem::Add(void* mem, size_t size, bool mem_reuse) {
 void CudaGraphModeMem::MarkDeallocated(void* mem) {
   std::lock_guard<std::mutex> lck(mtx_);
   deallocated_states_[mem] = true;
-  ++deallocated_n;
 }
 
 bool CudaGraphModeMem::ContainMem(void* mem) {
@@ -60,7 +58,6 @@ void* CudaGraphModeMem::GetReuseMem(size_t size) {
     if (x.first >= size && deallocated_states_[x.second] &&
         reuse_states_[x.second]) {
       deallocated_states_[x.second] = false;
-      --deallocated_n;
       return x.second;
     }
   }
@@ -68,8 +65,6 @@ void* CudaGraphModeMem::GetReuseMem(size_t size) {
 }
 
 size_t CudaGraphModeMem::GetAllocatedNum() { return n; }
-
-size_t CudaGraphModeMem::GetDeallocatedNum() { return deallocated_n; }
 
 size_t CudaGraphModeMem::GetAllocatedSize() {
   size_t ret = 0;
@@ -90,4 +85,4 @@ std::unordered_set<void*> CudaGraphModeMem::GetDeallocatedMems() {
 }
 
 }  // namespace tensorflow
-#endif // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA

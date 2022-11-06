@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,8 +23,8 @@ limitations under the License.
 #include <vector>
 
 #include "tensorflow/core/common_runtime/gpu/gpu_bfc_allocator.h"
-#include "tensorflow/core/common_runtime/gpu/gpu_mem_allocator.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_cuda_graph_mode_mem.h"
+#include "tensorflow/core/common_runtime/gpu/gpu_mem_allocator.h"
 #include "tensorflow/core/platform/types.h"
 
 namespace tensorflow {
@@ -33,9 +33,9 @@ namespace tensorflow {
 class CudaGraphGPUBFCAllocator : public GPUBFCAllocator {
  public:
   CudaGraphGPUBFCAllocator(GPUMemAllocator* sub_allocator, size_t total_memory,
-                       const string& name);
+                           const string& name);
   CudaGraphGPUBFCAllocator(GPUMemAllocator* sub_allocator, size_t total_memory,
-                       const GPUOptions& gpu_options, const string& name);
+                           const GPUOptions& gpu_options, const string& name);
   ~CudaGraphGPUBFCAllocator() override;
 
   TF_DISALLOW_COPY_AND_ASSIGN(CudaGraphGPUBFCAllocator);
@@ -55,4 +55,4 @@ class CudaGraphGPUBFCAllocator : public GPUBFCAllocator {
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_COMMON_RUNTIME_CUDA_GRAPH_GPU_GPU_BFC_ALLOCATOR_H_
-#endif // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA

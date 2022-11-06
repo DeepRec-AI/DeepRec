@@ -161,7 +161,11 @@ void Benchmark::Run(const char* pattern) {
 
       int iters;
       double seconds;
-      b->Run(arg.first, arg.second, &iters, &seconds);
+      if (arg.second > 0) {
+        b->RunWithFixedIters(arg.first, arg.second, &iters, &seconds);
+      } else {
+        b->Run(arg.first, arg.second, &iters, &seconds);
+      }
 
       char buf[100];
       std::string full_label = label;
@@ -239,6 +243,39 @@ void Benchmark::Run(int arg1, int arg2, int* run_count, double* run_seconds) {
     iters = std::max<int64>(multiplier * iters, iters + 1);
     iters = std::min(iters, kMaxIters);
   }
+}
+
+void Benchmark::RunWithFixedIters(int arg1, int arg2, int* run_count, double* run_seconds) {
+  env = Env::Default();
+  static const int64 kMinIters = 100;
+  static const int64 kMaxIters = 1000000000;
+  static const double kMinTime = 0.5;
+  int iters = arg2;
+  // warming up
+  if (fn0_) {
+    (*fn0_)(100);
+  } else if (fn1_) {
+    (*fn1_)(100, arg1);
+  } else {
+    (*fn2_)(100, arg1, arg2);
+  }
+  accum_time = 0;
+  start_time = env->NowMicros();
+  bytes_processed = -1;
+  items_processed = -1;
+  label.clear();
+  if (fn0_) {
+    (*fn0_)(iters);
+  } else if (fn1_) {
+    (*fn1_)(iters, arg1);
+  } else {
+    (*fn2_)(iters, arg1, arg2);
+  }
+  StopTiming();
+  const double seconds = accum_time * 1e-6;
+  *run_count = iters;
+  *run_seconds = seconds;
+  return;
 }
 
 // TODO(vrv): Add support for running a subset of benchmarks by having

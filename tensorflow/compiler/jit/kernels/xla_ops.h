@@ -181,6 +181,38 @@ class XlaMergeOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override;
 };
 
+//class CgmodeCompileOp : public OpKernel {
+// public:
+//  explicit CgmodeCompileOp(OpKernelConstruction* ctx);
+//
+//  void Compute(OpKernelContext* ctx) override;
+//
+// private:
+//  // Indexes of compile-time constant inputs
+//  const std::vector<int> constants_;
+//  // Indexes of resource inputs
+//  const std::vector<int> resources_;
+//
+//  const NameAttrList function_;
+//
+//  const bool must_compile_;
+//
+//  // cannot_compile_cluster_ is set to true if XLA returns an Unimplemented
+//  // error when compiling the cluster this _XlaCompile is supposed to compile.
+//  // If `cannot_compile_cluster_` is true then we avoid compiling this cluster
+//  // on any future calls to _XlaCompile.
+//  bool cannot_compile_cluster_ GUARDED_BY(cannot_compile_cluster_mu_) = false;
+//
+//  mutex cannot_compile_cluster_mu_;
+//};
+//
+//class CgmodeRunOp : public OpKernel {
+// public:
+//  explicit CgmodeRunOp(OpKernelConstruction* ctx);
+//
+//  void Compute(OpKernelContext* ctx) override;
+//};
+
 }  // namespace tensorflow
 
 #endif  // TENSORFLOW_COMPILER_JIT_KERNELS_XLA_LAUNCH_OP_H_

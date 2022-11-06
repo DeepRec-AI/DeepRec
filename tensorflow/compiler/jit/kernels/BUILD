@@ -1,4 +1,10 @@
-load("//tensorflow:tensorflow.bzl", "cc_header_only_library", "tf_cc_test")
+load(
+  "//tensorflow:tensorflow.bzl",
+  "tf_cuda_library",
+  "tf_copts",
+  "cc_header_only_library",
+  "tf_cc_test")
+    
 package(
     default_visibility = [
         "//tensorflow/compiler/tf2xla:internal",
@@ -36,6 +42,37 @@ cc_library(
         "//tensorflow/compiler/xla/service:compiler",
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:state_ops_op_lib",
+        "//tensorflow/core:stream_executor_no_cuda",
+        "//tensorflow/core/profiler/lib:traceme",
+        "//tensorflow/stream_executor:tf_allocator_adapter",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/memory",
+    ],
+    alwayslink = 1,
+)
+
+tf_cuda_library(
+    name = "cuda_graph_mode_ops",
+    srcs = [
+        "cuda_graph_mode_ops.cc",
+    ],
+    hdrs = [
+        "cuda_graph_mode_ops.h",
+        "//tensorflow/core:common_runtime/gpu/gpu_cuda_graph_bfc_allocator.h",
+        "//tensorflow/core:common_runtime/gpu/gpu_cuda_graph_mode_mem.h",
+        "//tensorflow/core:common_runtime/gpu/gpu_device.h",
+        "//tensorflow/stream_executor/cuda:cuda_driver.h"
+    ],
+    copts = tf_copts() + ["-fexceptions"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/compiler/jit:common",
+        "//tensorflow/compiler/jit:flags",
+        "//tensorflow/core:core_cpu_internal",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:gpu_runtime",
         "//tensorflow/core:lib",
         "//tensorflow/core:state_ops_op_lib",
         "//tensorflow/core:stream_executor_no_cuda",

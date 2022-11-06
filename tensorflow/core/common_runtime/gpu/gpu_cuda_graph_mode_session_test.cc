@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -331,6 +331,182 @@ node {
   }
 }
 node {
+  name: "dlrm/add/y_1"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_2"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_3"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_4"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_5"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_6"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_7"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
+  name: "dlrm/add/y_8"
+  op: "Const"
+  device: "/device:GPU:0"
+  attr {
+    key: "dtype"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "value"
+    value {
+      tensor {
+        dtype: DT_FLOAT
+        tensor_shape {
+        }
+        float_val: 1.0
+      }
+    }
+  }
+}
+node {
   name: "dlrm/add"
   op: "AddV2"
   input: "emb_input"
@@ -344,9 +520,113 @@ node {
   }
 }
 node {
+  name: "dlrm/add_1"
+  op: "AddV2"
+  input: "dlrm/add"
+  input: "dlrm/add/y_1"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_2"
+  op: "AddV2"
+  input: "dlrm/add_1"
+  input: "dlrm/add/y_2"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_3"
+  op: "AddV2"
+  input: "dlrm/add_2"
+  input: "dlrm/add/y_3"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_4"
+  op: "AddV2"
+  input: "dlrm/add_3"
+  input: "dlrm/add/y_4"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_5"
+  op: "AddV2"
+  input: "dlrm/add_4"
+  input: "dlrm/add/y_5"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_6"
+  op: "AddV2"
+  input: "dlrm/add_5"
+  input: "dlrm/add/y_6"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_7"
+  op: "AddV2"
+  input: "dlrm/add_6"
+  input: "dlrm/add/y_7"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
+  name: "dlrm/add_8"
+  op: "AddV2"
+  input: "dlrm/add_7"
+  input: "dlrm/add/y_8"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+}
+node {
   name: "dlrm/Log"
   op: "Log"
-  input: "dlrm/add"
+  input: "dlrm/add_8"
   device: "/device:GPU:0"
   attr {
     key: "T"
@@ -619,7 +899,507 @@ node {
   name: "dlrm/bot_mlp/bot_mlp_0/MatMul"
   op: "MatMul"
   input: "dlrm/Log"
-  input: "dlrm/bot_mlp_0/kernel/read" 
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_1"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_2"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_1"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_3"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_2"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_4"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_3"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_5"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_4"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_6"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_5"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_7"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_6"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_8"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_7"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_9"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_8"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_10"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_9"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_11"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_10"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_12"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_11"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_13"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_12"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_14"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_13"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_15"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_14"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_16"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_15"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_17"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_16"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_18"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_17"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_19"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_18"
+  input: "dlrm/bot_mlp_0/kernel/read"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "transpose_a"
+    value {
+      b: false
+    }
+  }
+  attr {
+    key: "transpose_b"
+    value {
+      b: false
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/MatMul_20"
+  op: "MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_19"
+  input: "dlrm/bot_mlp_0/kernel/read"
   device: "/device:GPU:0"
   attr {
     key: "T"
@@ -643,7 +1423,216 @@ node {
 node {
   name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd"
   op: "BiasAdd"
-  input: "dlrm/bot_mlp/bot_mlp_0/MatMul"
+  input: "dlrm/bot_mlp/bot_mlp_0/MatMul_20"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_1"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_2"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_1"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_3"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_2"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_4"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_3"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_5"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_4"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_6"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_5"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_7"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_6"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_8"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_7"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_9"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_8"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_10"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_9"
+  input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
+  device: "/device:GPU:0"
+  attr {
+    key: "T"
+    value {
+      type: DT_FLOAT
+    }
+  }
+  attr {
+    key: "data_format"
+    value {
+      s: "NHWC"
+    }
+  }
+}
+node {
+  name: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_11"
+  op: "BiasAdd"
+  input: "dlrm/bot_mlp/bot_mlp_0/BiasAdd_10"
   input: "dlrm/bot_mlp_0/bias/Initializer/random_normal"
   device: "/device:GPU:0"
   attr {
@@ -687,6 +1676,7 @@ void ModifyNodeDevice(GraphDef& graph, const std::string& device) {
 }
 
 TEST_F(CudaGraphModeSessionTest, TestCublas) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -702,9 +1692,11 @@ TEST_F(CudaGraphModeSessionTest, TestCublas) {
     TF_CHECK_OK(new_cuda_graph_mode_session->Create(CreateGraphForCublasGemm()));
     new_cuda_graph_mode_session.reset();
   }
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestSimple) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -728,9 +1720,11 @@ TEST_F(CudaGraphModeSessionTest, TestSimple) {
   EXPECT_FLOAT_EQ(1.0, data[0]);
   EXPECT_FLOAT_EQ(4.84, data[1]);
   EXPECT_FLOAT_EQ(13.69, data[2]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestGPUInput) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -757,9 +1751,11 @@ TEST_F(CudaGraphModeSessionTest, TestGPUInput) {
   EXPECT_FLOAT_EQ(1.0, data[0]);
   EXPECT_FLOAT_EQ(4.84, data[1]);
   EXPECT_FLOAT_EQ(13.69, data[2]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestMultiInputAndOutput) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(2);
@@ -799,9 +1795,11 @@ TEST_F(CudaGraphModeSessionTest, TestMultiInputAndOutput) {
   EXPECT_FLOAT_EQ(20.0, result2[0]);
   EXPECT_FLOAT_EQ(6.0, result1[1]);
   EXPECT_FLOAT_EQ(36.0, result2[1]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestInt32TypeFailed) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -811,9 +1809,11 @@ TEST_F(CudaGraphModeSessionTest, TestInt32TypeFailed) {
   ModifyType(graph, DT_INT32);
   init(options, cuda_graph_mode_session);
   ASSERT_FALSE(cuda_graph_mode_session->Create(graph).ok());
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestInt64Type) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -839,9 +1839,11 @@ TEST_F(CudaGraphModeSessionTest, TestInt64Type) {
   EXPECT_EQ(1, data[0]);
   EXPECT_EQ(4, data[1]);
   EXPECT_EQ(9, data[2]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestShapeUnknownRank) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -850,9 +1852,11 @@ TEST_F(CudaGraphModeSessionTest, TestShapeUnknownRank) {
   GraphDef graph = CreateGraphForYEqualsXSquaredUnknownRank();
   init(options, cuda_graph_mode_session);
   ASSERT_FALSE(cuda_graph_mode_session->Create(graph).ok());
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestRunAndCudaGraphRunParallel) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   SessionOptions options;
   options.config.mutable_gpu_options()->set_force_gpu_compatible(true);
   std::unique_ptr<Session> session(NewSession(options));
@@ -901,9 +1905,11 @@ TEST_F(CudaGraphModeSessionTest, TestRunAndCudaGraphRunParallel) {
   for (auto& thread : threads) {
     thread.join();
   }
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestInputsSizeNotConsist) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(2);
@@ -932,9 +1938,11 @@ TEST_F(CudaGraphModeSessionTest, TestInputsSizeNotConsist) {
   ASSERT_FALSE(
       cuda_graph_mode_session->Run(inputs_map, {"result1", "result2"}, {}, &outputs)
           .ok());
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestLackInput) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(2);
@@ -954,9 +1962,11 @@ TEST_F(CudaGraphModeSessionTest, TestLackInput) {
   ASSERT_FALSE(
       cuda_graph_mode_session->Run(inputs_map, {"result1", "result2"}, {}, &outputs)
           .ok());
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestInputTypeNotConsist) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(2);
@@ -977,9 +1987,11 @@ TEST_F(CudaGraphModeSessionTest, TestInputTypeNotConsist) {
   ASSERT_FALSE(
       cuda_graph_mode_session->Run(inputs_map, {"result1", "result2"}, {}, &outputs)
           .ok());
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 TEST_F(CudaGraphModeSessionTest, TestOutputOnCPU) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
   options.config.mutable_cuda_graph_mode_options()->set_batch_size(3);
@@ -1003,10 +2015,87 @@ TEST_F(CudaGraphModeSessionTest, TestOutputOnCPU) {
   EXPECT_FLOAT_EQ(1.0, data[0]);
   EXPECT_FLOAT_EQ(4.84, data[1]);
   EXPECT_FLOAT_EQ(13.69, data[2]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
+}
+
+TEST_F(CudaGraphModeSessionTest, TestJitSimple) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
+  std::unique_ptr<Session> session;
+  SessionOptions options;
+  options.config.mutable_gpu_options()->set_force_gpu_compatible(true);
+  options.config.mutable_gpu_options()->set_allow_growth(false);
+  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
+      0.9);
+  options.config.mutable_gpu_options()->set_cuda_graph_enable_jit(true);
+  session.reset(NewSession(options));
+  TF_CHECK_OK(session->Create(CreateGraphForYEqualsXSquared()));
+  Tensor input(DT_FLOAT, TensorShape({3}));
+  std::vector<Tensor> outputs;
+  float* data = input.flat<float>().data();
+  data[0] = 1.0f;
+  data[1] = 2.2f;
+  data[2] = 3.7f;
+
+  std::vector<std::pair<std::string, Tensor>> inputs_map;
+  inputs_map.push_back(std::make_pair("x", input));
+  TF_CHECK_OK(session->Run(inputs_map, {"y"}, {}, &outputs));
+  ASSERT_EQ(1, outputs.size());
+  ASSERT_EQ(3, outputs[0].NumElements());
+  auto result = copyFromGPU(outputs[0]);
+  data = result.flat<float>().data();
+  EXPECT_FLOAT_EQ(1.0, data[0]);
+  EXPECT_FLOAT_EQ(4.84, data[1]);
+  EXPECT_FLOAT_EQ(13.69, data[2]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
+}
+
+TEST_F(CudaGraphModeSessionTest, TestJitMultiInputAndOutput) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
+  std::unique_ptr<Session> session;
+  SessionOptions options;
+  options.config.mutable_gpu_options()->set_force_gpu_compatible(true);
+  options.config.mutable_gpu_options()->set_allow_growth(false);
+  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
+      0.9);
+  options.config.mutable_gpu_options()->set_cuda_graph_enable_jit(true);
+  session.reset(NewSession(options));
+  TF_CHECK_OK(session->Create(CreateGraphForXPlusYThenMultiplyByZ()));
+  Tensor x(DT_FLOAT, TensorShape({2}));
+  Tensor y(DT_FLOAT, TensorShape({2}));
+  Tensor z(DT_FLOAT, TensorShape({2}));
+  std::vector<Tensor> outputs;
+  float* dx = x.flat<float>().data();
+  float* dy = y.flat<float>().data();
+  float* dz = z.flat<float>().data();
+  dx[0] = 1.0f;
+  dx[1] = 2.0f;
+  dy[0] = 3.0f;
+  dy[1] = 4.0f;
+  dz[0] = 5.0f;
+  dz[1] = 6.0f;
+  std::vector<std::pair<std::string, Tensor>> inputs_map;
+  inputs_map.push_back(std::make_pair("x", x));
+  inputs_map.push_back(std::make_pair("y", y));
+  inputs_map.push_back(std::make_pair("z", z));
+  TF_CHECK_OK(session->Run(inputs_map, {"result1", "result2"}, {},
+                                      &outputs));
+  ASSERT_EQ(2, outputs.size());
+  ASSERT_EQ(2, outputs[0].NumElements());
+  ASSERT_EQ(2, outputs[1].NumElements());
+  auto out1 = copyFromGPU(outputs[0]);
+  auto out2 = copyFromGPU(outputs[1]);
+  float* result1 = out1.flat<float>().data();
+  float* result2 = out2.flat<float>().data();
+  EXPECT_FLOAT_EQ(4.0, result1[0]);
+  EXPECT_FLOAT_EQ(20.0, result2[0]);
+  EXPECT_FLOAT_EQ(6.0, result1[1]);
+  EXPECT_FLOAT_EQ(36.0, result2[1]);
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
 // cuda graph benchmark
-static void CudaGraphModeRunBenchSimple(int iters, int batch_size) {
+static void CudaGraphSessRunBenchSimple(int iters, int batch_size, int expect_iters) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   testing::StopTiming();
   std::unique_ptr<Session> cuda_graph_mode_session;
   SessionOptions options;
@@ -1042,42 +2131,11 @@ static void CudaGraphModeRunBenchSimple(int iters, int batch_size) {
     TF_CHECK_OK(cuda_graph_mode_session->Run(inputs_map, {"result2"}, {}, &outputs));
   }
   testing::StopTiming();
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
-static void CudaGraphModeRunBenchDLRM(int iters, int batch_size) {
-  testing::StopTiming();
-  std::unique_ptr<Session> cuda_graph_mode_session;
-  SessionOptions options;
-  options.config.mutable_cuda_graph_mode_options()->set_batch_size(batch_size);
-  options.config.mutable_cuda_graph_mode_options()->set_allow_fallback(true);
-  options.config.mutable_cuda_graph_mode_options()->add_output_names(
-      "dlrm/bot_mlp/bot_mlp_0/BiasAdd");
-
-  SessionOptions new_options = options;
-  new_options.config.mutable_gpu_options()->set_force_gpu_compatible(true);
-  new_options.config.mutable_gpu_options()->set_allow_growth(false);
-  new_options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
-      0.9);
-  new_options.config.mutable_gpu_options()->set_cuda_graph_mode_compatible(true);
-  new_options.target = CUDA_GRAPH_MODE_TARGET_NAME;
-  cuda_graph_mode_session.reset(NewSession(new_options));
-  Tensor emb_input(DT_FLOAT, TensorShape({batch_size, 64}));
-  std::vector<Tensor> outputs;
-  RandomInitialize(emb_input);
-  std::vector<std::pair<std::string, Tensor>> inputs_map;
-  inputs_map.push_back(std::make_pair("emb_input", emb_input));
-  testing::UseRealTime();
-  testing::ItemsProcessed(static_cast<int64>(iters) * (batch_size));
-  testing::StartTiming();
-  TF_CHECK_OK(cuda_graph_mode_session->Create(CreateGraphForDLRMBenchmark()));
-  for (int i = 0; i < iters; ++i) {
-    TF_CHECK_OK(cuda_graph_mode_session->Run(
-        inputs_map, {"dlrm/bot_mlp/bot_mlp_0/BiasAdd"}, {}, &outputs));
-  }
-  testing::StopTiming();
-}
-
-static void TFRunBenchSimple(int iters, int batch_size) {
+static void TFRunBenchSimple(int iters, int batch_size, int expect_iters) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   testing::StopTiming();
   std::unique_ptr<Session> session;
   SessionOptions options;
@@ -1106,9 +2164,39 @@ static void TFRunBenchSimple(int iters, int batch_size) {
     TF_CHECK_OK(session->Run(inputs_map, {"result2"}, {}, &outputs));
   }
   testing::StopTiming();
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
-static void TFRunBenchDLRM(int iters, int batch_size) {
+static void CudaGraphJitRunBenchDLRM(int iters, int batch_size, int expect_iters) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
+  testing::StopTiming();
+  std::unique_ptr<Session> session;
+  SessionOptions options;
+  options.config.mutable_gpu_options()->set_force_gpu_compatible(true);
+  options.config.mutable_gpu_options()->set_allow_growth(false);
+  options.config.mutable_gpu_options()->set_per_process_gpu_memory_fraction(
+      0.9);
+  options.config.mutable_gpu_options()->set_cuda_graph_enable_jit(true);
+  session.reset(NewSession(options));
+  Tensor emb_input(DT_FLOAT, TensorShape({batch_size, 64}));
+  std::vector<Tensor> outputs;
+  RandomInitialize(emb_input);
+  std::vector<std::pair<std::string, Tensor>> inputs_map;
+  inputs_map.push_back(std::make_pair("emb_input", emb_input));
+  testing::UseRealTime();
+  testing::ItemsProcessed(static_cast<int64>(iters) * (batch_size));
+  testing::StartTiming();
+  TF_CHECK_OK(session->Create(CreateGraphForDLRMBenchmark()));
+  for (int i = 0; i < iters; ++i) {
+    TF_CHECK_OK(session->Run(inputs_map, {"dlrm/bot_mlp/bot_mlp_0/BiasAdd_11"}, {},
+                             &outputs));
+  }
+  testing::StopTiming();
+  unsetenv("CUDA_VISIBLE_DEVICES");
+}
+
+static void TFRunBenchDLRM(int iters, int batch_size, int expect_iters) {
+  setenv("CUDA_VISIBLE_DEVICES", "0", 1);
   testing::StopTiming();
   std::unique_ptr<Session> session;
   SessionOptions options;
@@ -1128,16 +2216,18 @@ static void TFRunBenchDLRM(int iters, int batch_size) {
   testing::StartTiming();
   TF_CHECK_OK(session->Create(CreateGraphForDLRMBenchmark()));
   for (int i = 0; i < iters; ++i) {
-    TF_CHECK_OK(session->Run(inputs_map, {"dlrm/bot_mlp/bot_mlp_0/BiasAdd"}, {},
+    TF_CHECK_OK(session->Run(inputs_map, {"dlrm/bot_mlp/bot_mlp_0/BiasAdd_11"}, {},
                              &outputs));
   }
   testing::StopTiming();
+  unsetenv("CUDA_VISIBLE_DEVICES");
 }
 
-BENCHMARK(TFRunBenchSimple)->Arg(5)->Arg(10)->Arg(100);
-BENCHMARK(CudaGraphModeRunBenchSimple)->Arg(5)->Arg(10)->Arg(100);
-BENCHMARK(TFRunBenchDLRM)->Arg(5)->Arg(10)->Arg(100);
-BENCHMARK(CudaGraphModeRunBenchDLRM)->Arg(5)->Arg(10)->Arg(100);
+BENCHMARK(TFRunBenchSimple)->ArgPair(100, 10000);
+BENCHMARK(CudaGraphSessRunBenchSimple)->ArgPair(100, 10000);
+
+BENCHMARK(TFRunBenchDLRM)->ArgPair(100, 10000);
+BENCHMARK(CudaGraphJitRunBenchDLRM)->ArgPair(100, 10000);
 
 }  // namespace
 }  // namespace tensorflow
