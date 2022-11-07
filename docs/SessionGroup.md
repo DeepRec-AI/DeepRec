@@ -107,3 +107,38 @@ use_multi_stream=true: 开启multi-stream功能。
 ```
 TF serving用DeepRec提供的代码: [TF serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
 
+#### 3.多卡MPS最佳实践
+用户机器上可能存在多张GPU卡，对于每个serving instance一般只需要使用一个GPU Device，那么用户可能会在物理机器上启动多个不同的serving instance。在这种情况下使用MPS有一些需要注意的问题，具体如下：
+
+1) 需要在物理机器启动mps daemon进程，这样才有机会让所有的任务docker中对于MPS后台进程可见。
+
+```c++
+nvidia-cuda-mps-control -d
+```
+
+2) 启动任务docker时，需要增加--ipc=host，保证在docker中对mps daemon进程可见。同时对于每个docker来说，建议mount指定的GPU Device，如下所示：
+
+```c++
+sudo docker run -it --name docker_name --ipc=host --net=host --gpus='"device=0"' docker_image bash
+```
+
+这样在docker只会可见一张GPU卡，并且逻辑编号为0，那么可以像下面这样执行脚本：
+
+```c++
+CUDA_VISIBLE_DEVICES=0 test.py
+或者
+test.py
+```
+
+如果docker mount了所有的GPU Devices，那么在执行脚本的时候，需要手动指定可见的gpu device来达到隔离的效果。
+
+```c++
+sudo docker run -it --name docker_name --ipc=host --net=host --gpus=all docker_image bash
+
+docker0中:
+CUDA_VISIBLE_DEVICES=0 test.py
+
+docker1中:
+CUDA_VISIBLE_DEVICES=1 test.py
+```
+
