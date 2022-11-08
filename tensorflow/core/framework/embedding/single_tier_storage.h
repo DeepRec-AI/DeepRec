@@ -63,6 +63,21 @@ class SingleTierStorage : public Storage<K, V> {
     return kv_->Lookup(key, value_ptr);
   }
 
+  void Insert(const std::vector<K>& keys,
+              ValuePtr<V>** value_ptrs) override{
+    for (size_t i = 0; i < keys.size(); i++) {
+      do {
+        Status s = kv_->Insert(keys[i], value_ptrs[i]);
+        if (s.ok()) {
+          break;
+        } else {
+          (value_ptrs[i])->Destroy(alloc_);
+          delete value_ptrs[i];
+        }
+      } while (!(kv_->Lookup(keys[i], &value_ptrs[i])).ok());
+    }
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) override {
     Status s = kv_->Lookup(key, value_ptr);

@@ -232,7 +232,13 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
         if (tot_valueptr_list[i] == reinterpret_cast<V*>(-1)) {
             // only forward, no backward, bypass
         } else if (tot_valueptr_list[i] == nullptr) {
-          key_filter_list_parts[partid].push_back(tot_key_list[i]);
+          if (filter_freq) {
+            key_filter_list_parts[partid].push_back(tot_key_list[i]);
+          } else {
+            key_list_parts[partid].push_back(tot_key_list[i]);
+            valueptr_list_parts[partid].push_back(
+                ev->GetDefaultValue(tot_key_list[i]));
+          }
         } else {
           key_list_parts[partid].push_back(tot_key_list[i]);
           valueptr_list_parts[partid].push_back(tot_valueptr_list[i]);

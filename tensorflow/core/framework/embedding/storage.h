@@ -55,6 +55,8 @@ class Storage {
   TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
+  virtual void Insert(const std::vector<K>& keys,
+                        ValuePtr<V>** value_ptrs) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
   virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) = 0;

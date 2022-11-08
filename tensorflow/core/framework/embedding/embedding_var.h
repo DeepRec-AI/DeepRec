@@ -241,12 +241,12 @@ class EmbeddingVar : public ResourceBase {
     V** dev_default_value_address, **default_value_address;
     V** dev_value_address, **value_address;
     bool* dev_init_flags;
-    for (int i = 0; i < size;i++) {
+    for (int i = 0; i < size; i++) {
       default_values[i] =
         (default_values[i] == nullptr) ? default_value_ : default_values[i];
     }
     std::vector<int64> init_cursor;
-    for (int i = 0; i < size;i++) {
+    for (int i = 0; i < size; i++) {
       if (init_flags[i]) {
         init_cursor.emplace_back(i);
       }
@@ -260,7 +260,11 @@ class EmbeddingVar : public ResourceBase {
       dev_default_value_address = TypedAllocator::Allocate<V*>(alloc_,
               total, AllocationAttributes());
       for (int64 i = 0; i < total; i++) {
-        value_address[i] = memcpy_address[init_cursor[i]];
+        ValuePtr<V>* value_ptr =
+            reinterpret_cast<ValuePtr<V>*>(memcpy_address[init_cursor[i]]);
+        value_address[i] = *((V**)((char*)(value_ptr->GetPtr())
+                            + sizeof(FixedLengthHeader)))
+                            + storage_manager_->GetOffset(emb_config_.emb_index);
         default_value_address[i] = default_values[init_cursor[i]];
       }
       cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
@@ -276,6 +280,16 @@ class EmbeddingVar : public ResourceBase {
                        (total * value_len_ + block_dim - 1) / block_dim,
                        block_dim, args, 0, NULL);
       cudaDeviceSynchronize();
+      // Set init meta of ValuePtrs
+      for (int64 i = 0; i < total; i++) {
+        ValuePtr<V>* value_ptr =
+            reinterpret_cast<ValuePtr<V>*>(memcpy_address[init_cursor[i]]);
+        value_ptr->SetInitialized(emb_config_.emb_index);
+        memcpy_address[init_cursor[i]] = value_ptr->GetValue(
+            emb_config_.emb_index,
+            storage_manager_->GetOffset(emb_config_.emb_index));
+      }
+
       TypedAllocator::Deallocate(alloc_, dev_value_address, total);
       TypedAllocator::Deallocate(alloc_, dev_default_value_address, total);
       free(value_address);
@@ -298,19 +312,21 @@ class EmbeddingVar : public ResourceBase {
     int *copyback_cursor = new int[total]();
     ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>* [total];
     cudaMalloc(&memcpy_buffer_gpu, total * value_len * sizeof(V));
-
     storage_manager_->CopyBackToGPU(total, keys, size, copyback_flags, 
         memcpy_address, value_len, copyback_cursor, gpu_value_ptrs,
         memcpy_buffer_gpu);
 
     value_address = (V**)malloc(sizeof(V*) * total);
     cudaMalloc(&dev_value_address, sizeof(V*) * total);
+    std::vector<K> copyback_keys;
 
-    for (int i = 0;i < total;i++) {
+    for (int i = 0; i < total; i++) {
       bool init;
+      gpu_value_ptrs[i]->SetInitialized(emb_config_.emb_index);
       memcpy_address[copyback_cursor[i]] = LookupOrCreateEmb(
           gpu_value_ptrs[i], init);
       value_address[i] = memcpy_address[copyback_cursor[i]];
+      copyback_keys.emplace_back(keys[copyback_cursor[i]]);
     }
 
     cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
@@ -323,6 +339,8 @@ class EmbeddingVar : public ResourceBase {
         (total + block_dim - 1) / block_dim * value_len, block_dim,
         args, 0, NULL);
     cudaDeviceSynchronize();
+
+    storage_manager_->Insert(copyback_keys, gpu_value_ptrs);
 
     cudaFree(dev_value_address);
     cudaFree(memcpy_buffer_gpu);

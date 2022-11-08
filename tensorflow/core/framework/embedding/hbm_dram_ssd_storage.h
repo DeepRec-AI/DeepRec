@@ -73,6 +73,21 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     return s;
   }
 
+  void Insert(const std::vector<K>& keys,
+              ValuePtr<V>** value_ptrs) override{
+    for (size_t i = 0; i < keys.size(); i++) {
+      do {
+        Status s = hbm_kv_->Insert(keys[i], value_ptrs[i]);
+        if (s.ok()) {
+          break;
+        } else {
+          (value_ptrs[i])->Destroy(gpu_alloc_);
+          delete value_ptrs[i];
+        }
+      } while (!(hbm_kv_->Lookup(keys[i], &value_ptrs[i])).ok());
+    }
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) override {
     Status s = hbm_kv_->Lookup(key, value_ptr);
@@ -163,7 +178,6 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
         copyback_cursor[j] = i;
         gpu_value_ptrs[j] = gpu_value_ptr;
         j++;
-        hbm_kv_->Insert(keys[i], gpu_value_ptr);
       }
     }
 
