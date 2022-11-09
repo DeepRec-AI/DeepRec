@@ -76,11 +76,14 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
       return s;
     }
     s = pmem_kv_->Lookup(key, value_ptr);
-    if (s.ok()) {
-      return s;
-    }
 
-    *value_ptr = layout_creator_->Create(dram_alloc_, size);
+    ValuePtr<V>* new_value_ptr = layout_creator_->Create(dram_alloc_, size);
+    if (s.ok()) {
+      memcpy(new_value_ptr->GetPtr(), (*value_ptr)->GetPtr(),
+             sizeof(FixedLengthHeader) + sizeof(V) * size);
+    }
+    *value_ptr = new_value_ptr;
+    
     s = dram_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
       return s;

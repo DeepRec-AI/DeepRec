@@ -212,8 +212,39 @@ class SSDIterator : public Iterator {
               posi->offset_ + value_offset + sizeof(FixedLengthHeader));
     } else {
       memcpy(val, write_buffer_ + posi->buffer_offset_ +
-          value_offset + + sizeof(FixedLengthHeader), dim);
+          value_offset + sizeof(FixedLengthHeader), dim);
     }
+  }
+
+  virtual void Freq(char* val, int64 dim) {
+    int64 f_id = file_id_vec_[curr_file_];
+    EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
+    if (posi->flushed_) {
+      emb_files_[posi->version_]->
+          ReadWithoutMap(val, sizeof(FixedLengthHeader),
+              posi->offset_);
+    } else {
+      memcpy(val, write_buffer_ + posi->buffer_offset_,
+             sizeof(FixedLengthHeader));
+    }
+    *((int64*)val) =
+        reinterpret_cast<FixedLengthHeader*>(val)->GetFreqCounter();
+  }
+
+  virtual void Version(char* val, int64 dim) {
+    int64 f_id = file_id_vec_[curr_file_];
+    EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
+
+    if (posi->flushed_) {
+      emb_files_[posi->version_]->
+	  ReadWithoutMap(val, sizeof(FixedLengthHeader),
+	      posi->offset_);
+    } else {
+      memcpy(val, write_buffer_ + posi->buffer_offset_,
+             sizeof(FixedLengthHeader));
+    }
+    *((int64*)val) = 
+        reinterpret_cast<FixedLengthHeader*>(val)->GetGlobalStep();
   }
 
  private:

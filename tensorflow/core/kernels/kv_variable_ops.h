@@ -347,7 +347,8 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   EVVersionDumpIterator<int64> ev_version_dump_iter(partitioned_tot_version_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-versions", writer, dump_buffer,
       bytes_limit, &ev_version_dump_iter,
-      TensorShape({partitioned_tot_version_list.size()}));
+      TensorShape({partitioned_tot_version_list.size() + iterator_size}),
+      it, -3);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -356,7 +357,8 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   EVFreqDumpIterator<int64> ev_freq_dump_iter(partitioned_tot_freq_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-freqs", writer, dump_buffer,
       bytes_limit, &ev_freq_dump_iter,
-      TensorShape({partitioned_tot_freq_list.size()}));
+      TensorShape({partitioned_tot_freq_list.size() + iterator_size}),
+      it, -2);
   if (!st.ok()) {
     free(dump_buffer);
     return st;

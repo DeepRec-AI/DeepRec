@@ -121,7 +121,9 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
     DumpIterator<T>* dump_iter,
     const TensorShape& dump_tensor_shape,
     embedding::Iterator* it = nullptr,
-    int64 value_offset = -1, // -1: save key, x_offset: save embedding(primary or slot offset)
+    // -1: save key, x_offset: save embedding(primary or slot offset)
+    // -2: save frequency, -3: save version
+    int64 value_offset = -1,
     bool use_shape = true) {
   bool dump_happened = false;
   size_t bytes_written = 0;
@@ -149,7 +151,7 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
   }
   if (it != nullptr) {
     int64 size = 0; 
-    if (value_offset == -1) {
+    if (value_offset < 0) {
       size = sizeof(T);
     } else {
       size = sizeof(T) * dump_tensor_shape.dim_size(1);
@@ -158,8 +160,14 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       int64 dim = 0;
       void* start = nullptr;
-      if (value_offset == -1) {
-        it->Key(val, sizeof(T));
+      if (value_offset < 0) {
+        if (value_offset == -1){
+          it->Key(val, sizeof(T));
+        } else if (value_offset == -2) {
+          it->Freq(val, sizeof(T));
+        } else {
+          it->Version(val, sizeof(T));
+        }
         if (bytes_written + sizeof(T) > bytes_limit) {
           dump_happened = true;
           writer->AppendSegmentData(dump_buffer, bytes_written);

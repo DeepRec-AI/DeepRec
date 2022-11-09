@@ -32,6 +32,8 @@ class Iterator {
   virtual void SeekToFirst() {};
   virtual void Next() {};
   virtual void Key(char* val, int64 dim) {};
+  virtual void Freq(char* val, int64 dim) {};
+  virtual void Version(char* val, int64 dim) {};
   virtual void Value(char* val, int64 dim, int64 value_offset) {};
 };
 
