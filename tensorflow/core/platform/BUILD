@@ -126,10 +126,12 @@ cc_library(
     name = "logging",
     srcs = tf_platform_hdrs(["logging.h"]) + tf_platform_srcs(["logging.cc"]),
     hdrs = ["logging.h"],
+    linkopts = ["-ldl"],
     deps = [
         ":env_time",
         ":macros",
         ":platform",
+        ":stacktrace",
         ":types",
         "//tensorflow/core/platform/default/build_config:base",
     ] + tf_logging_absl_deps(),
