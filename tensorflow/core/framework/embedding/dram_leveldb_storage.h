@@ -70,11 +70,10 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
       return s;
     }
     s = leveldb_->Lookup(key, value_ptr);
-    if (s.ok()) {
-      return s;
+    if (!s.ok()) {
+      *value_ptr = layout_creator_->Create(alloc_, size);
     }
 
-    *value_ptr = layout_creator_->Create(alloc_, size);
     s = dram_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
       return s;

@@ -96,6 +96,18 @@ class DBIterator : public Iterator {
            it_->value().ToString().data() +
                value_offset + sizeof(FixedLengthHeader), dim);
   }
+  virtual void Freq(char* val, int64 dim) {
+    memcpy(val,
+           it_->value().ToString().data(), sizeof(FixedLengthHeader));
+    *((int64*)val) =
+        reinterpret_cast<FixedLengthHeader*>(val)->GetFreqCounter();
+  }
+  virtual void Version(char* val, int64 dim) {
+    memcpy(val,
+           it_->value().ToString().data(), sizeof(FixedLengthHeader));
+    *((int64*)val) =
+        reinterpret_cast<FixedLengthHeader*>(val)->GetGlobalStep();
+  }
  private:
   leveldb::Iterator* it_;
 };

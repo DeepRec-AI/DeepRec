@@ -1785,6 +1785,75 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
       for j in range(0, 30):
         self.assertAllCloseAccordingToType(emb1[i][j], emb2[i][j])
 
+  def testEmbeddingVariableForDRAMAndSSDSaveCkpt(self):
+    print("testEmbeddingVariableForDRAMAndSSD")
+    checkpoint_directory = self.get_temp_dir()
+
+    def runTestAdagrad(self, var, g):
+      ids = array_ops.placeholder(dtypes.int64, name="ids")
+      emb = embedding_ops.embedding_lookup(var, ids)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v, global_step=gs)
+      saver = saver_module.Saver()
+      init = variables.global_variables_initializer()
+      model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+        tires = kv_variable_ops.lookup_tier(emb_var,
+                    math_ops.cast([1,2,3,4,5,6], dtypes.int64))
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run([train_op], {ids:[1,2,3]})
+        sess.run([train_op], {ids:[1,2,4]})
+        sess.run([train_op], {ids:[1,2,2]})
+        sess.run([train_op], {ids:[1,2,5]})
+        sess.run(emb, {ids:[3]})
+        time.sleep(1)
+        result = sess.run(tires)
+        for i in range(0, 6):
+          if i == 3:
+            self.assertEqual(result[i], 1)
+          elif i == 5:
+            self.assertEqual(result[i], -1)
+          else:
+            self.assertEqual(result[i], 0)
+        saver.save(sess, model_path)
+
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-freqs":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertAllEqual(np.array([4, 5, 2, 1, 1]), ckpt_value)
+        if name == "var_1-keys":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertAllEqual(np.array([1, 2, 3, 5, 4]), ckpt_value)
+        if name == "var_1-versions":
+          ckpt_value = checkpoint_utils.load_variable(model_path, name)
+          self.assertAllEqual(np.array([3, 3, 0, 3, 1]), ckpt_value)
+
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+      db_directory = self.get_temp_dir()
+      os.environ["TF_SSDHASH_ASYNC_COMPACTION"]="0"
+      storage_option = variables.StorageOption(
+                        storage_type=config_pb2.StorageType.DRAM_SSDHASH,
+                        storage_path=db_directory,
+                        storage_size=[1024])
+      ev_option = variables.EmbeddingVariableOption(
+                                storage_option=storage_option)
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 30,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            steps_to_live=5,
+            ev_option = ev_option)
+      runTestAdagrad(self, emb_var, g)
+
+    del os.environ["TF_SSDHASH_ASYNC_COMPACTION"]
+
   def testEmbeddingVariableForRecordFreq(self):
     print("testEmbeddingVariableForRecordFreq")
     checkpoint_directory = self.get_temp_dir()

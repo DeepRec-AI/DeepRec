@@ -70,11 +70,9 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
       return s;
     }
     s = ssd_kv_->Lookup(key, value_ptr);
-    if (s.ok()) {
-      return s;
+    if (!s.ok()) {
+      *value_ptr = layout_creator_->Create(alloc_, size);
     }
-
-    *value_ptr = layout_creator_->Create(alloc_, size);
     s = dram_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
       return s;
