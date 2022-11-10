@@ -98,12 +98,20 @@ Status MultiStreamOptimizer::SplitEmbeddingGraph(
   }
   std::unordered_set<std::string> embedding_gather_name_prefix;
   for (const NodeDef& node : optimized_graph->node()) {
-    if (node.op() == "GatherV2") {
+    // Match pattern:
+    // "VariableV2 -> Identity -> GatherV2"
+    // "KvHandle -> ResourceGatherV2"
+    if (node.op() == "GatherV2" || node.op() == "KvResourceGather") {
+      // e.g. the input is a tensor like /xx/xx/reshape:1
+      if (name_to_node.find(node.input()[0]) == name_to_node.end()) {
+        continue;
+      }
       NodeDef* input0 = name_to_node[node.input()[0]];
-      if (input0->op() == "Identity" &&
-          name_to_node[input0->input()[0]]->op() == "VariableV2") {
+      if ((input0->op() == "Identity" &&
+               name_to_node[input0->input()[0]]->op() == "VariableV2") ||
+          input0->op() == "KvVarHandleOp") {
         // "user_define/input_layer/xx_embedding/xx_embedding_weights/embedding_lookup_sparse/GatherV2"
-        // The common embedding prefix is  'user_define/input_layer/xx_embedding'
+        // The common embedding prefix is 'user_define/input_layer/xx_embedding'
         std::vector<StringPiece> tokens = SplitString(node.name(), '/');
         std::string common_prefix("");
         for (int i = 0; i < tokens.size() - 3; ++i) {
@@ -142,6 +150,8 @@ Status MultiStreamOptimizer::SplitEmbeddingGraph(
 Status MultiStreamOptimizer::Optimize(
     Cluster* cluster, const GrapplerItem& item,
     GraphDef* optimized_graph) {
+  *optimized_graph = item.graph;
+
   if (opt_.partition_policy() ==
       MultiStreamPartitionPolicy::NO_PARTITION) {
     // nothing

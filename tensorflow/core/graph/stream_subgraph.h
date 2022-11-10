@@ -17,6 +17,7 @@ limitations under the License.
 #define TENSORFLOW_CORE_GRAPH_STREAM_SUBGRAPH_H_
 
 #include <string>
+#include <vector>
 
 #include "tensorflow/core/framework/device_attributes.pb.h"
 #include "tensorflow/core/graph/graph.h"
@@ -28,7 +29,10 @@ limitations under the License.
 namespace tensorflow {
 namespace stream_subgraph {
 
-void MarkStreamSubGraph(Graph* g, const int num_streams);
+void MarkStreamSubGraph(Graph* g, const MultiStreamOptions& opt);
+
+// Assign embedding graphs stream.
+void MarkEmbeddingGraph(Graph* g, int num_streams);
 
 }  // namespace stream_subgraph
 }  // namespace tensorflow
