@@ -1,0 +1,4 @@
+sphinx
+sphinx_rtd_theme
+myst-parser
+docutils==0.16
