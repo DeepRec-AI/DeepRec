@@ -2093,6 +2093,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             else:
               self.assertEqual(result[i], 0)
 
+        sess.run([train_op], {ids:[3, 5]})
+        sess.run([train_op], {ids:[4]})
         r1 = sess.run(emb, {ids:[1,2,4,5]})
         r2 = sess.run(emb, {ids:[3]})
         r = r1.tolist() + r2.tolist()

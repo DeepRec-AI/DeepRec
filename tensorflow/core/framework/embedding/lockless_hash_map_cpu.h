@@ -90,6 +90,16 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     total_dims_ = total_dims;
   }
 
+  void AppendToValuePtrQueue(ValuePtr<V>* old_value_ptr) {
+    //A parameter that can be adjusted in the future
+    if (value_ptr_out_of_date_.size() > CAP_INVALID_VALUEPTR) {
+      ValuePtr<V>* value_ptr = value_ptr_out_of_date_.front();
+      delete value_ptr;
+      value_ptr_out_of_date_.pop_front();
+    }
+    value_ptr_out_of_date_.emplace_back(old_value_ptr);
+  }
+
   Status Commit(K key, const ValuePtr<V>* value_ptr) override {
     ValuePtr<V>* cpu_value_ptr =
       new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
@@ -99,7 +109,13 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
                cudaMemcpyDeviceToHost);
     memcpy((char *)cpu_value_ptr->GetPtr(),
         (char*)value_ptr->GetPtr(), sizeof(FixedLengthHeader));
-    Insert(key, cpu_value_ptr);
+    auto iter = hash_map_.insert_lockless(std::move(
+        std::pair<K, ValuePtr<V>*>(key,
+            const_cast<ValuePtr<V>*>(cpu_value_ptr))));
+    if ((*(iter.first)).second != cpu_value_ptr) {
+      AppendToValuePtrQueue((*(iter.first)).second);
+      (*(iter.first)).second = cpu_value_ptr;
+    }
     return Status::OK();
   }
 
@@ -145,14 +161,20 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
         sizeof(V) * batch_size * total_dims_, cudaMemcpyDeviceToHost);
 
     // Copy data to ValuePtrs in memory;Insert it into hashmap
-    for(int i = 0;i < batch_size;++i) {
+    for(int i = 0; i < batch_size; ++i) {
       ValuePtr<V>* cpu_value_ptr =
         new NormalContiguousValuePtr<V>(ev_allocator(), total_dims_);
       memcpy((char *)cpu_value_ptr->GetPtr() + sizeof(FixedLengthHeader),
           &batch_data_place[i * total_dims_], total_dims_ * sizeof(V));
       memcpy((char *)cpu_value_ptr->GetPtr(),
           (char *)value_ptrs[i]->GetPtr(), sizeof(FixedLengthHeader));
-      Insert(keys[i], cpu_value_ptr);
+      auto iter = hash_map_.insert_lockless(std::move(
+        std::pair<K, ValuePtr<V>*>(keys[i],
+            const_cast<ValuePtr<V>*>(cpu_value_ptr))));
+      if ((*(iter.first)).second != cpu_value_ptr) {
+        AppendToValuePtrQueue((*(iter.first)).second);
+        (*(iter.first)).second = cpu_value_ptr;
+      }
     }
 
     gpu_alloc_->DeallocateRaw(dev_value_address);
@@ -196,7 +218,9 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     LockLessHashMap;
   static const int EMPTY_KEY_ = -1;
   static const int DELETED_KEY_ = -2;
+  static constexpr int CAP_INVALID_VALUEPTR = 200000;
   LockLessHashMap hash_map_;
+  std::deque<ValuePtr<V>*> value_ptr_out_of_date_;
   int total_dims_;
   Allocator* gpu_alloc_;
 };

@@ -173,6 +173,12 @@ struct FixedLengthHeader {
     global_step = temp;
   }
 
+  inline void SetInitialized(int64 emb_index) {
+    int64 temp = 1;
+    temp = temp << (48 + emb_index);
+    global_step |= temp;
+  }
+
   inline int64 GetFreqCounter() {
     return freq_counter;
   }
@@ -297,6 +303,10 @@ class ValuePtr {
 
   virtual void SetValue(V val, size_t size){
     LOG(FATAL) << "Unsupport SetValue in subclass of ValuePtrBase";
+  }
+
+  virtual void SetInitialized(int64 emb_index) {
+    LOG(FATAL) << "Unsupport SetInitialized in subclass of ValuePtrBase";
   }
 
  protected:
@@ -495,12 +505,9 @@ class NormalGPUValuePtr : public ValuePtr<V> {
       if (bs.test(emb_index)) {
         return *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) + offset;
       }
-      V* tensor_val =
-        *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) + offset;
       need_initialize = 1;
-      int8* m = (int8*)((char*)this->ptr_ + 6);
-      *m |= (1 <<  emb_index);
       this->flag_.clear(std::memory_order_release);
+      return reinterpret_cast<V*>(this);
     }
     return *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) + offset;
   }
@@ -543,6 +550,12 @@ class NormalGPUValuePtr : public ValuePtr<V> {
 
   void AddFreq(int64 count) {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
+  }
+
+  void SetInitialized(int64 emb_index) {
+    while(this->flag_.test_and_set(std::memory_order_acquire));
+    ((FixedLengthHeader*)this->ptr_)->SetInitialized(emb_index);
+    this->flag_.clear(std::memory_order_release);
   }
 
  private:

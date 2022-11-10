@@ -102,6 +102,11 @@ class StorageManager {
     return storage_->Get(key, value_ptr);
   }
 
+  void Insert(const std::vector<K>& keys,
+                ValuePtr<V>** value_ptrs) {
+    storage_->Insert(keys, value_ptrs);
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size) {
     return storage_->GetOrCreate(key, value_ptr, size);
   }
