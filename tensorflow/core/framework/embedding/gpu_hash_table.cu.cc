@@ -15,7 +15,6 @@
  */
 
 #if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
 
 #define EIGEN_USE_GPU
 
@@ -24,13 +23,11 @@
 #include <cublas_v2.h>
 #include <unordered_map>
 #include "cuco/dynamic_map.cuh"
-#include "tensorflow/core/framework/op.h"
-#include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/lib/core/errors.h"
+#include "tensorflow/core/framework/allocator.h"
+#include "tensorflow/core/framework/embedding/gpu_hash_table.h"
+#include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/framework/types.h"
-#include "tensorflow/core/framework/tensor_types.h"
-#include "tensorflow/core/framework/tensor_types.h"
-#include "tensorflow/core/framework/embedding/embedding_var.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
 
 namespace cg = cooperative_groups;
@@ -491,5 +488,4 @@ template struct functor::KvUpdateEmb<GPUDevice, int64, double>;
 
 }  // namespace tensorflow
 
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
