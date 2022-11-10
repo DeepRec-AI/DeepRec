@@ -15,29 +15,32 @@ DeepRec has been deeply cultivated since 2016, which supports core businesses su
 
 ### **Key Features**
 DeepRec has super large-scale distributed training capability, supporting model training of trillion samples and 100 billion Embedding Processing. For sparse model scenarios, in-depth performance optimization has been conducted across CPU and GPU platform. It contains 3 kinds of features to improve usability and performance for super-scale scenarios. 
+
 #### **Sparse Functions**
  - Embedding Variable.
  - Dynamic Dimension Embedding Variable.
  - Adaptive Embedding Variable.
  - Multiple Hash Embedding Variable.
  - Multi-tier Hybrid Embedding Storage
- #### **Performance Optimization**
- - Distributed Training Framework Optimization, such as grpc+seastar, FuseRecv, StarServer, HybridBackend etc.
+
+#### **Performance Optimization**
+ - Asynchronous Distributed Training Framework, such as grpc+seastar, FuseRecv, StarServer etc.
+ - Synchronous Distributed Training Framework (GPU), such as HybridBackend, Sparse Operation Kits (SOK) etc.
  - Runtime Optimization, such as CPU memory allocator (PRMalloc), GPU memory allocator, Cost based and critical path first Executor etc.
+ - Runtime Optimization (GPU), support multiple CUDA compute stream and CUDA Graph.
  - Operator level optimization, such as BF16 mixed precision  optimization, sparse operator optimization and EmbeddingVariable on PMEM and GPU, new hardware feature enabling, etc.
  - Graph level optimization, such as AutoGraphFusion, SmartStage, AutoPipeline, StrutureFeature, MicroBatch etc.
  - Compilation optimization, support BladeDISC, XLA etc.
+
 #### **Deploy and Serving**
  - Incremental model loading and exporting.
  - Super-scale sparse model distributed serving.
  - Multi-tier hybrid storage and multi backend supported.
  - Online deep learning with low latency.
- - High performance processor with SessionGroup supported.
-
+ - High performance inference framework SessionGroup (share-nothing architecture), with multiple threadpool and multiple CUDA stream supported.
 
 ***
 ## **Installation**
-
 
 ### **Prepare for installation**
 
@@ -133,9 +136,10 @@ alideeprec/deeprec-release:deeprec2208u1-gpu-py36-cu116-ubuntu18.04
 | **Linux GPU Stream Executor** | ![GPU Stream Executor Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-stream_executor-unit-test.yaml/badge.svg) |
 | **Linux CPU Serving UT** | ![CPU Serving Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-serving-unit-test.yaml/badge.svg) |
 
-## **User Document (Chinese)**
+## **User Document**
 
-[https://deeprec.rtfd.io](https://deeprec.rtfd.io)
+[Chinese](https://deeprec.readthedocs.io/zh/latest/)
+[English (WIP)](https://deeprec.readthedocs.io/en/latest/)
 
 ## **Contact Us**
 
