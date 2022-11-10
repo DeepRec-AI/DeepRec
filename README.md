@@ -138,8 +138,9 @@ alideeprec/deeprec-release:deeprec2208u1-gpu-py36-cu116-ubuntu18.04
 
 ## **User Document**
 
-[Chinese](https://deeprec.readthedocs.io/zh/latest/)
-[English (WIP)](https://deeprec.readthedocs.io/en/latest/)
+Chinese: [https://deeprec.readthedocs.io/zh/latest/](https://deeprec.readthedocs.io/zh/latest/)
+
+English (WIP): [https://deeprec.readthedocs.io/en/latest/](https://deeprec.readthedocs.io/en/latest/)
 
 ## **Contact Us**
 
