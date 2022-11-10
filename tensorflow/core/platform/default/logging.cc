@@ -16,6 +16,7 @@ limitations under the License.
 #include "tensorflow/core/platform/default/logging.h"
 #include "tensorflow/core/platform/env_time.h"
 #include "tensorflow/core/platform/macros.h"
+#include "tensorflow/core/platform/stacktrace.h"
 
 #if defined(PLATFORM_POSIX_ANDROID)
 #include <android/log.h>
@@ -106,6 +107,9 @@ void LogMessage::GenerateLogMessage() {
 
   fprintf(vlog_file.FilePtr(), "%s.%06d: %c %s:%d] %s\n", time_buffer,
           micros_remainder, "IWEF"[severity_], fname_, line_, str().c_str());
+  if (TF_PREDICT_FALSE(severity_ == FATAL)) {
+    fprintf(vlog_file.FilePtr(), "%s\n", tensorflow::CurrentStackTrace().c_str());
+  }
 }
 #endif
 
