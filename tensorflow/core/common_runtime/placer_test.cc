@@ -368,6 +368,14 @@ INSTANTIATE_TEST_SUITE_P(, SoftPlacementPlacerTest,
                 ->attributes()                                          \
                 .device_type())
 
+#define EXPECT_GPU_STREAM_ID(g, name, expected_stream_id) {		\
+  const AttrValue *gpu_stream_idx_attr =				\
+    GetNodeByName((g), (name))->attrs().Find("_stream_id");		\
+  EXPECT_NE(gpu_stream_idx_attr, nullptr);				\
+  int gpu_stream_idx = gpu_stream_idx_attr->i();			\
+  EXPECT_EQ(expected_stream_id, gpu_stream_idx);			\
+}
+
 #define EXPECT_SAME_TYPE(g, node1, node2)                                \
   EXPECT_EQ(devices_                                                     \
                 .FindDeviceByName(                                       \
@@ -1941,6 +1949,31 @@ TEST_F(PlacerTest, AssignedDeviceOfColocatedNodeIsRespected) {
                         "group of nodes that required incompatible device "
                         "'/job:a/replica:0/task:0/device:FakeCPU:0'"))
       << s.ToString();
+}
+
+TEST_F(PlacerTest, AssignedGpuStreamIdxOfColocatedNode) {
+  /*
+   *    a:RES
+   *      |
+   *    id_a:StreamId=2
+   *      |
+   *     id1
+   *     @loc:id2
+   */
+  GraphDef graph = GDef(
+      {
+	NDef("a", "_Arg", {}, {{"T", DT_RESOURCE}}),
+	NDef("id_a", "Identity", {"a"}, {{"T", DT_RESOURCE}}),
+	NDef("id1", "Identity", {"id_a"},
+	     {{"T", DT_RESOURCE},
+	      {"_class", gtl::ArraySlice<string>({"loc:@id_a"})}}),
+      });
+  Graph g(OpRegistry::Global());
+  TF_ASSERT_OK(BuildGraph(graph, &g));
+  GetNodeByName(g, "id_a")->AddAttr("_stream_id", 2);
+  TF_ASSERT_OK(Place(&g));
+  EXPECT_GPU_STREAM_ID(g, "a", 2);
+  EXPECT_GPU_STREAM_ID(g, "id1", 2);
 }
 
 TEST_P(SoftPlacementPlacerTest,
