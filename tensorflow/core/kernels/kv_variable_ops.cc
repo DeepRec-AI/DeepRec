@@ -1689,25 +1689,23 @@ class InitializeKvVariableOpGPU : public OpKernel {
             context, handle_self, &ev,
             [this, default_values, opname, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              GPUHashTable<TKey, TValue>* ht =
-                new GPUHashTable<TKey, TValue>(-1,
-                    context->get_allocator(AllocatorAttributes()));
+              EmbeddingConfig config(emb_index_ + block_num_ * slot_index_,
+                                     emb_index_,
+                                     block_num_, slot_num_,
+                                     opname + "-primary",
+                                     steps_to_live_, filter_freq_, max_freq_,
+                                     l2_weight_threshold_, layout_,
+                                     max_element_size_,
+                                     false_positive_probability_,
+                                     counter_type_, default_value_dim_);
+              auto alloc = context->get_allocator(AllocatorAttributes());
+              auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                  ht, context->get_allocator(AllocatorAttributes()),
-                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                                  emb_index_,
-                                  block_num_, slot_num_,
-                                  opname + "-primary",
-                                  steps_to_live_, filter_freq_, max_freq_,
-                                  l2_weight_threshold_, layout_,
-                                  max_element_size_,
-                                  false_positive_probability_,
-                                  counter_type_, default_value_dim_));
-            return (*ptr)->Init(default_values, default_value_dim_);
+                  kv, alloc, config);
+              return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
       EmbeddingVarGPU<TKey, TValue>* primary_variable = nullptr;
-
       OP_REQUIRES_OK(
        context,
        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
@@ -1715,23 +1713,21 @@ class InitializeKvVariableOpGPU : public OpKernel {
            [this, default_values, opname, context,
             handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
-             GPUHashTable<TKey, TValue>* ht =
-               new GPUHashTable<TKey, TValue>(-1,
-                   context->get_allocator(AllocatorAttributes()));
+             EmbeddingConfig config(
+                 primary_emb_index + block_num_ * primary_slot_index,
+                 primary_emb_index,
+                 block_num_, slot_num_, opname + "-primary",
+                 steps_to_live_, filter_freq_, max_freq_,
+                 l2_weight_threshold_, layout_,
+                 max_element_size_,
+                 false_positive_probability_,
+                 counter_type_);
+             auto alloc = context->get_allocator(AllocatorAttributes());
+             auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
-                 ht, context->get_allocator(AllocatorAttributes()),
-                 EmbeddingConfig(
-                   primary_emb_index + block_num_ * primary_slot_index,
-                   primary_emb_index,
-                   block_num_, slot_num_, opname + "-primary",
-                   steps_to_live_, filter_freq_, max_freq_,
-                   l2_weight_threshold_, layout_,
-                   max_element_size_,
-                   false_positive_probability_,
-                   counter_type_));
+                 kv, alloc, config);
              return (*ptr)->Init(default_values, default_value_dim_);
            }));
-
 
       OP_REQUIRES_OK(
         context,
@@ -1831,9 +1827,8 @@ class KvResourceGatherOpGPU : public OpKernel {
             "ev's value_len should same with output's dimension(1)",
             std::to_string(slice_elems), std::to_string(ev->ValueLen())));
 
-
       const TKey* key_base = &indices_flat(0);
-      const cudaStream_t& stream = c->eigen_device<Device>().stream();
+      const Device& device = c->eigen_device<Device>();
       if (is_use_default_value_tensor_) {
         Tensor default_values(c->input(2));
         auto default_value_num = default_values.NumElements() / ev->ValueLen();
@@ -1842,11 +1837,11 @@ class KvResourceGatherOpGPU : public OpKernel {
         TValue* default_v_base = &default_values_matrix(0, 0);
         ev->LookupOrCreate(key_base, out_base, default_v_base,
             default_value_num, is_use_default_value_tensor_,
-            indices_size, stream);
+            indices_size, device);
       } else {
         ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(),
             ev->GetDefaultValueDim(), is_use_default_value_tensor_,
-            indices_size, stream);
+            indices_size, device);
       }
     }
   }
@@ -1907,8 +1902,8 @@ class KvResourceExportOpGPU : public OpKernel {
     auto values_flat = values_output_tensor->flat<TValue>();
     TValue* value_base = &values_flat(0);
 
-    const cudaStream_t& stream = ctx->eigen_device<Device>().stream();
-    ev->GetSnapshot(key_base, value_base, stream);
+    auto device = ctx->eigen_device<Device>();
+    ev->GetSnapshot(key_base, value_base, device);
   }
 };
 
@@ -2006,49 +2001,46 @@ class KvResourceImportV2OpGPU: public OpKernel {
             context, handle_self, &ev,
             [this, default_values, opname, context,
              handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              GPUHashTable<TKey, TValue>* ht =
-                new GPUHashTable<TKey, TValue>(-1,
-                    context->get_allocator(AllocatorAttributes()));
+              EmbeddingConfig config(
+                               emb_index_ + block_num_ * slot_index_,
+                               emb_index_,
+                               block_num_, slot_num_,
+                               opname + "-primary",
+                               steps_to_live_, filter_freq_, max_freq_,
+                               l2_weight_threshold_, layout_,
+                               max_element_size_,
+                               false_positive_probability_,
+                               counter_type_, default_value_dim_);
+              auto alloc = context->get_allocator(AllocatorAttributes());
+              auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
               *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                  ht, context->get_allocator(AllocatorAttributes()),
-                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                                  emb_index_,
-                                  block_num_, slot_num_,
-                                  opname + "-primary",
-                                  steps_to_live_, filter_freq_, max_freq_,
-                                  l2_weight_threshold_, layout_,
-                                  max_element_size_,
-                                  false_positive_probability_,
-                                  counter_type_, default_value_dim_));
-            return (*ptr)->Init(default_values, default_value_dim_);
+                  kv, alloc, config);
+              return (*ptr)->Init(default_values, default_value_dim_);
             }));
     } else {
       EmbeddingVarGPU<TKey, TValue>* primary_variable = nullptr;
-
       OP_REQUIRES_OK(
        context,
        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
            context, handle_primary, &primary_variable,
            [this, default_values, opname, context,
             handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
-             int64 primary_slot_index(0), primary_emb_index(0);
-             GPUHashTable<TKey, TValue>* ht =
-               new GPUHashTable<TKey, TValue>(-1,
-                   context->get_allocator(AllocatorAttributes()));
-             *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
-                 ht, context->get_allocator(AllocatorAttributes()),
-                 EmbeddingConfig(
-                   primary_emb_index + block_num_ * primary_slot_index,
-                   primary_emb_index,
-                   block_num_, slot_num_, opname + "-primary",
-                   steps_to_live_, filter_freq_, max_freq_,
-                   l2_weight_threshold_, layout_,
-                   max_element_size_,
-                   false_positive_probability_,
-                   counter_type_));
-             return (*ptr)->Init(default_values, default_value_dim_);
-           }));
-
+              int64 primary_slot_index(0), primary_emb_index(0);
+              EmbeddingConfig config(
+                  primary_emb_index + block_num_ * primary_slot_index,
+                  primary_emb_index,
+                  block_num_, slot_num_, opname + "-primary",
+                  steps_to_live_, filter_freq_, max_freq_,
+                  l2_weight_threshold_, layout_,
+                  max_element_size_,
+                  false_positive_probability_,
+                  counter_type_);
+              auto alloc = context->get_allocator(AllocatorAttributes());
+              auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
+              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
+                  kv, alloc, config);
+              return (*ptr)->Init(default_values, default_value_dim_);
+            }));
 
       OP_REQUIRES_OK(
         context,

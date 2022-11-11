@@ -36,7 +36,7 @@ struct KvSparseApplyAdagrad {
                   const T* grad,
                   T lr,
                   int64 gs,
-                  cudaStream_t stream);
+                  const Device& device);
 };
 
 template <typename Device, typename TKey, typename T>
@@ -54,7 +54,7 @@ struct KvSparseApplyFtrl {
                   T lr_power,
                   bool has_l2_shrinkage,
                   T l2_shrinkage,
-                  cudaStream_t stream);
+                  const Device& device);
 };
 
 template <typename Device, typename T, typename Tindex, typename Tstep>

@@ -425,11 +425,11 @@ class KvSparseApplyAdagradOpGPU : public OpKernel {
         const TKey* key_base = &indices_flat(0);
         const T* grad_base = &grad_flat(0);
         T lr_scalar = lr.scalar<T>()();
-        const cudaStream_t& stream = ctx->eigen_device<Device>().stream();
+        const Device& device = ctx->eigen_device<Device>();
 
         functor::KvSparseApplyAdagrad<Device, TKey, T>()(
             N, ctx->get_allocator(AllocatorAttributes()), var, accum,
-            key_base, grad_base, lr_scalar, gs, stream);
+            key_base, grad_base, lr_scalar, gs, device);
       }
     }
   }
@@ -450,7 +450,7 @@ namespace functor {
       const T* grad,  \
       T lr, \
       int64 gs, \
-      cudaStream_t stream);             \
+      const GPUDevice& device);             \
   extern template struct KvSparseApplyAdagrad<GPUDevice, TKey, T>;
 DECLARE_GPU_SPEC(int32, float);
 DECLARE_GPU_SPEC(int32, double);
@@ -779,12 +779,12 @@ class KvSparseApplyFtrlOpGPU : public OpKernel {
         T lr_power_scalar = lr_power.scalar<T>()();
         const TKey* key_base = &indices_flat(0);
         const T* grad_base = &grad_flat(0);
-        const cudaStream_t& stream = ctx->eigen_device<Device>().stream();
+        const Device& device = ctx->eigen_device<Device>();
 
         functor::KvSparseApplyFtrl<Device, TKey, T>()(
             N, ctx->get_allocator(AllocatorAttributes()), var_, accum_, linear_,
             key_base, grad_base, lr_scalar, l1_scalar, l2_scalar, lr_power_scalar,
-            has_l2_shrinkage, l2_shrinkage_scalar, stream);
+            has_l2_shrinkage, l2_shrinkage_scalar, device);
       }
     }
 
@@ -812,7 +812,7 @@ namespace functor {
       T lr_power, \
       bool has_l2_shrinkage,  \
       T l2_shrinkage, \
-      cudaStream_t stream);             \
+      const GPUDevice& device);             \
   extern template struct KvSparseApplyFtrl<GPUDevice, TKey, T>;
 DECLARE_GPU_SPEC(int32, float);
 DECLARE_GPU_SPEC(int32, double);
