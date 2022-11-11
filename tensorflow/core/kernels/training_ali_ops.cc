@@ -178,6 +178,14 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdagradGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("use_locking", &use_exclusive_lock_));
+    hash_map_.max_load_factor(0.8);
+    hash_map_.set_empty_key_and_value(-1, -1);
+    hash_map_.set_counternum(16);
+    hash_map_.set_deleted_key(-2);
+  }
+
+  ~KvSparseApplyAdagradGPUOp() {
+    delete[] occupy_flag_;
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
@@ -224,6 +232,17 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
     OP_REQUIRES(ctx, inner_dim > 0,
                 errors::InvalidArgument(
                     "Inner dimension should be greater than zero."));
+    int num_threads = ctx->device()
+                         ->tensorflow_cpu_worker_threads()
+                         ->num_threads;
+    if (occupy_flag_ == nullptr) {
+      mutex_lock l(m_init_occupy_flag_);
+      //double check
+      if (occupy_flag_ == nullptr) {
+        occupy_flag_ = new bool[num_threads];
+        memset(occupy_flag_, 0, sizeof(bool) * num_threads);
+      }
+    }
 
     if (N > 0) {
       if (inner_dim > 0) {
@@ -232,20 +251,16 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           auto grad_flat = grad.flat_outer_dims<T>();
           T lr_scalar = lr.scalar<T>()();
           Tstep gs = global_step.scalar<Tstep>()();
-          const TKey* key_base = &indices_flat(0);
           const T* grad_base = &grad_flat(0);
           int block_dim = 128;
           int embedding_dim = var->ValueLen();
-
-          TKey *ids = new TKey[N];
           ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
-          cudaMemcpy(ids, key_base, sizeof(TKey) * N, cudaMemcpyDeviceToHost);
-
-          auto do_work = [var, ids, value_ptrs, gs] (int64 start, int64 limit) {
+          auto do_work = [var, value_ptrs, gs,
+                          indices_flat] (int64 start, int64 limit) {
             ValuePtr<T>* value_ptr = nullptr;
             for (int i = start; i < limit; i++) {
               bool is_filter = false;
-              var->LookupOrCreateKey(ids[i], &value_ptr, &is_filter);
+              var->LookupOrCreateKey(indices_flat(i), &value_ptr, &is_filter);
               value_ptrs[i] = value_ptr;
               var->UpdateVersion(value_ptr, gs);
             }
@@ -254,45 +269,75 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
           Shard(worker_threads->num_threads,
                worker_threads->workers, N, cost, do_work);
-
-          bool* init_flags = new bool[N]();
+          
           T** a = new T*[N];
           T** v = new T*[N];
-          bool* copyback_flags = new bool[N];
-          T** accum_default_values = new T*[N];
-          auto do_work2 = [var, accum, value_ptrs, init_flags, a, v,
-            copyback_flags, accum_default_values] (int64 start, int64 limit) {
+          std::vector<std::list<int64>> init_cursor_list(
+                                            worker_threads->num_threads + 1);
+          int64 main_thread_id = Env::Default()->GetCurrentThreadId();
+          auto do_work2 = [var, accum, value_ptrs, a, v,
+                           &init_cursor_list, this,
+                           main_thread_id, num_threads]
+            (int64 start, int64 limit) {
+            int64 thread_id = Env::Default()->GetCurrentThreadId();
+            int position;
+            auto iter = hash_map_.find_wait_free(thread_id);
+            if (thread_id == main_thread_id) {
+              position = num_threads;
+            } else {
+              auto iter = hash_map_.find_wait_free(thread_id);
+              if (iter.first == -1) {
+              // bind a new thread to a local cursor_list
+                position = thread_id % num_threads;
+                while (!__sync_bool_compare_and_swap(&(occupy_flag_[position]),
+                                                     false, true)) {
+                  position = (position + 1) % num_threads;
+              }
+                hash_map_.insert_lockless(
+                          std::move(std::pair<int64, int>(thread_id, position)));
+              } else {
+                position = iter.second;
+              }
+            }
             for (int i = start; i < limit; i++) {
-              a[i] = accum->LookupOrCreateEmb(value_ptrs[i], init_flags[i]);
+              bool init_flag = false;
+              a[i] = accum->LookupOrCreateEmb(value_ptrs[i], init_flag);
               v[i] = var->LookupOrCreateEmb(value_ptrs[i],
                                             var->GetDefaultValue(0));
-              copyback_flags[i] = false;
-              accum_default_values[i] = accum->GetDefaultValue(i);
+              if (init_flag) {
+                init_cursor_list[position].emplace_back(i);
+              }
             }
           }; // Get V*
           Shard(worker_threads->num_threads,
                 worker_threads->workers, N, cost, do_work2);
-          accum->InitializeEmbeddingOnGPU(ids, N, init_flags,
-                                          a, accum_default_values);
+          for (int i = 1; i < worker_threads->num_threads + 1; i++) {
+            if (init_cursor_list[i].size()>0) {
+              init_cursor_list[0].splice(init_cursor_list[0].end(),
+                                         init_cursor_list[i]);
+            }
+          }
+          std::function<T*(T*, TKey, int64, int64, int64)> get_default_v_fn =
+                [](T* default_v, TKey id,
+                   int64 index, int64 total_dim, int64 len) {
+            return default_v + len * (id % total_dim);
+          };
+          accum->InitializeEmbeddingOnGPU(indices_flat.data(), N,
+                                          init_cursor_list[0],
+                                          a, accum->GetDefaultValuePtr(),
+                                          get_default_v_fn);
 
           T **dev_a, **dev_v;
-          T* default_value = accum->GetDefaultValue(0);
-          bool *dev_init_flags;
-          dev_init_flags = (bool*)var->GetBuffer1(N);
           dev_a = (T**)var->GetBuffer2(N);
           dev_v = (T**)var->GetBuffer3(N);
-          CHECK(dev_init_flags);
           CHECK(dev_a);
           CHECK(dev_v);
           cudaMemcpy(dev_a, a, sizeof(T*) * N, cudaMemcpyHostToDevice);
           cudaMemcpy(dev_v, v, sizeof(T*) * N, cudaMemcpyHostToDevice);
-          cudaMemcpy(dev_init_flags,
-                     init_flags, sizeof(bool) * N, cudaMemcpyHostToDevice);
-
+          
           void* args[] = { (void*)&dev_a, (void*)&dev_v,
                            (void*)&grad_base, (void*)&lr_scalar,
-                           (void*)&embedding_dim, (void*)&N,
-                           (void*)&dev_init_flags, (void*)&default_value};
+                           (void*)&embedding_dim, (void*)&N};
           cudaLaunchKernel((void *)SparseApplyAdagradGPU<T>,
                            (N + block_dim - 1) / block_dim * embedding_dim,
                            block_dim, args, 0, NULL);
@@ -300,10 +345,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
 
           delete[] a;
           delete[] v;
-          delete[] ids;
           delete[] value_ptrs;
-          delete[] init_flags;
-          delete[] copyback_flags;
         } else {
           auto indices_vec = indices.vec<TKey>();
           auto grad_flat = grad.flat_outer_dims<T>();
@@ -336,11 +378,16 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
 
  private:
   bool use_exclusive_lock_;
+  typedef google::dense_hash_map_lockless<int64, int> LockLessHashMap;
+  LockLessHashMap hash_map_;
+  bool* occupy_flag_ = nullptr;
+  mutex m_init_occupy_flag_;
 };
 #define REGISTER_KERNELS(Tindices, T, Tstep)                         \
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagrad")       \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
+                              .HostMemory("indices")                 \
                               .HostMemory("lr")                      \
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \

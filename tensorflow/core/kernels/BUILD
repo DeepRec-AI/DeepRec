@@ -6287,6 +6287,7 @@ tf_kernel_library(
         "training_ali_ops.h"
     ],
     copts = ["-g"],
+    nocopts = "-fno-exceptions",
     deps = [
         ":bounds_check",
         ":training_op_helpers",

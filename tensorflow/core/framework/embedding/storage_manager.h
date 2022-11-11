@@ -117,12 +117,12 @@ class StorageManager {
   }
 
 #if GOOGLE_CUDA
-  void CopyBackToGPU(int total, K* keys, int64 size,
-       CopyBackFlag* copyback_flags, V** memcpy_address,
-       size_t value_len, int *copyback_cursor,
-      ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
-    return storage_->CopyBackToGPU(total, keys, size, copyback_flags,
-        memcpy_address, value_len, copyback_cursor, gpu_value_ptrs,
+  void CopyBackToGPU(int total, const K* keys,
+       const std::list<int64>& copyback_cursor,
+       V** memcpy_address, size_t value_len,
+       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
+    return storage_->CopyBackToGPU(total, keys, copyback_cursor,
+        memcpy_address, value_len, gpu_value_ptrs,
         memcpy_buffer_gpu);
   }
 #endif  // GOOGLE_CUDA
