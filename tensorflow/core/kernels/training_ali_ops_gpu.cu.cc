@@ -100,16 +100,18 @@ struct KvSparseApplyAdagrad<GPUDevice, TKey, T> {
                   const T* grad,
                   T lr,
                   int64 gs,
-                  cudaStream_t stream) {
+                  const GPUDevice& device) {
     int32* item_idxs = TypedAllocator::Allocate<int32>(alloc, num_items, AllocationAttributes());
-    var->LookupOrCreateKey(key_base, item_idxs, num_items, stream, gs);
+    var->LookupOrCreateKey(key_base, item_idxs, num_items, device, gs);
     auto const block_size = 256;
     auto const grid_size = num_items;
+    auto hashtable = var->kv()->HashTable();
     TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_adagrad_kernel<T>,
-                                grid_size, block_size, 0, stream,
-                                item_idxs, var->ValueLen(), var->kv()->d_bank_ptrs, var->kv()->d_existence_flag_ptrs,
+                                grid_size, block_size, 0, device.stream(),
+                                item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
+                                hashtable->d_existence_flag_ptrs,
                                 var->EmbIdx(), accum->EmbIdx(),
-                                var->SlotNum(), var->kv()->initial_bank_size,
+                                var->SlotNum(), hashtable->initial_bank_size,
                                 lr, grad, var->DefaultValuePtr(), accum->DefaultValuePtr(),
                                 var->GetDefaultValueDim(), accum->GetDefaultValueDim()));
     TypedAllocator::Deallocate(alloc, item_idxs, num_items);
@@ -269,16 +271,18 @@ struct KvSparseApplyFtrl<GPUDevice, TKey, T> {
                   T lr_power,
                   bool has_l2_shrinkage,
                   T l2_shrinkage,
-                  cudaStream_t stream) {
+                  const GPUDevice& device) {
     int32* item_idxs = TypedAllocator::Allocate<int32>(alloc, num_items, AllocationAttributes());
-    var->LookupOrCreateKey(key_base, item_idxs, num_items, stream);
+    var->LookupOrCreateKey(key_base, item_idxs, num_items, device);
     auto const block_size = 256;
     auto const grid_size = num_items;
+    auto hashtable = var->kv()->HashTable();
     TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_ftrl_kernel<T>,
-                                grid_size, block_size, (var->ValueLen()) * sizeof(T), stream,
-                                item_idxs, var->ValueLen(), var->kv()->d_bank_ptrs, var->kv()->d_existence_flag_ptrs,
+                                grid_size, block_size, (var->ValueLen()) * sizeof(T), device.stream(),
+                                item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
+                                hashtable->d_existence_flag_ptrs,
                                 var->EmbIdx(), accum->EmbIdx(), linear->EmbIdx(),
-                                var->SlotNum(), var->kv()->initial_bank_size,
+                                var->SlotNum(), hashtable->initial_bank_size,
                                 lr, grad, var->DefaultValuePtr(), accum->DefaultValuePtr(), linear->DefaultValuePtr(),
                                 var->GetDefaultValueDim(), accum->GetDefaultValueDim(), linear->GetDefaultValueDim(),
                                 l1, l2, lr_power, has_l2_shrinkage, l2_shrinkage));
@@ -400,15 +404,16 @@ struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep> {
     if (inner_dim > 0) {
       const int64 global_step = global_step_scalar();
       int32 *item_idxs = TypedAllocator::Allocate<int32>(alloc, N, AllocationAttributes());
-      var->LookupOrCreateKey(indices_vec.data(), item_idxs, N, d.stream(), global_step);
+      var->LookupOrCreateKey(indices_vec.data(), item_idxs, N, d, global_step);
       auto const block_size = 256;
       auto const grid_size = N;
-        TF_CHECK_OK(GpuLaunchKernel(KvSparseApplyAdamAsyncKernel<T>, 
+      auto hashtable = var->kv()->HashTable();
+      TF_CHECK_OK(GpuLaunchKernel(KvSparseApplyAdamAsyncKernel<T>,
                             grid_size, block_size, 0, d.stream(),
-                            item_idxs, var->ValueLen(), var->kv()->d_bank_ptrs,
-                            var->kv()->d_existence_flag_ptrs, var->EmbIdx(),
+                            item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
+                            hashtable->d_existence_flag_ptrs, var->EmbIdx(),
                             v->EmbIdx(), m->EmbIdx(), var->SlotNum(), 
-                            var->kv()->initial_bank_size, beta1_scalar.data(), 
+                            hashtable->initial_bank_size, beta1_scalar.data(),
                             beta2_scalar.data(), beta1_power_scalar.data(), 
                             beta2_power_scalar.data(), epsilon_scalar.data(), 
                             lr_scalar.data(), grad.data(), var->DefaultValuePtr(), 

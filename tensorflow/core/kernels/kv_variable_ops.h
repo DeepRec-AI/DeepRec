@@ -1136,7 +1136,6 @@ Status EVRestoreNoPartitionGPU(EmbeddingVarGPU<K, V>* ev, BundleReader* reader,
   Status st;
   reader->LookupTensorShape(tensor_key, &key_shape);
   reader->LookupTensorShape(tensor_value, &value_shape);
-  const cudaStream_t& stream = context->eigen_device<GPUDevice>().stream();
   bool filter_flag = true;
   bool restore_filter_flag = true;
   st = reader->LookupHeader(tensor_key,
@@ -1159,6 +1158,8 @@ Status EVRestoreNoPartitionGPU(EmbeddingVarGPU<K, V>* ev, BundleReader* reader,
   int64 tot_key_num = key_shape.dim_size(0);
   size_t value_unit_bytes = sizeof(V) *  value_shape.dim_size(1);
   std::string key_str = "|";
+  
+  const GPUDevice& device = context->eigen_device<GPUDevice>();
   while(tot_key_num > 0) {
     size_t read_key_num = std::min(
         std::min(buffer_size / sizeof(K),
@@ -1173,7 +1174,7 @@ Status EVRestoreNoPartitionGPU(EmbeddingVarGPU<K, V>* ev, BundleReader* reader,
       read_key_num = key_bytes_read / sizeof(K);
       VLOG(2) << "restore, read_key_num:" << read_key_num;
 
-      st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false, stream);
+      st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false, device);
       if (!st.ok())
         return st;
       tot_key_num -= read_key_num;
@@ -1225,9 +1226,6 @@ Status EVRestoreDynamicallyGPU(EmbeddingVarGPU<K, V>* ev,
   restore_buff.value_buffer = new char[buffer_size];
   char* part_buffer = new char[buffer_size];
 
-  const cudaStream_t& stream = context->eigen_device<GPUDevice>().stream();
-
-
   for (;  ; orig_partnum++) {
     string part_id = std::to_string(orig_partnum);
     string pre_subname = name_string.substr(0, name_string.find(part_str));
@@ -1277,6 +1275,7 @@ Status EVRestoreDynamicallyGPU(EmbeddingVarGPU<K, V>* ev,
     st = reader->LookupSegment(offset_tensor_name, (kSavedPartitionNum + 1) * sizeof(int32),
         part_buffer, tot_part_bytes_read);
 
+    const GPUDevice& device = context->eigen_device<GPUDevice>();
     for (size_t i = 0; i < loaded_parts.size(); i++) {
       int32* part_offset = (int32*)part_buffer;
       int subpart_id = loaded_parts[i];
@@ -1315,7 +1314,7 @@ Status EVRestoreDynamicallyGPU(EmbeddingVarGPU<K, V>* ev,
           read_key_num = key_bytes_read / sizeof(K);
           VLOG(2) << "restore, read_key_num:" << read_key_num;
           st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
-              partition_id, partition_num, false, stream);
+              partition_id, partition_num, false, device);
           if (!st.ok()) {
             LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
           }
