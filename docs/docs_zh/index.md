@@ -63,7 +63,7 @@ CPU-Memory-Optimization
 GPU-Memory-Optimization
 GPU-Virtual-Memory
 Executor-Optimization
-MultiStream
+GPU-MultiStream
 ```
 
 ```{toctree}
@@ -125,5 +125,5 @@ XLA
 
 Processor
 SessionGroup
-Embedding-Layer-Device-Placement
+Device-Placement
 ```

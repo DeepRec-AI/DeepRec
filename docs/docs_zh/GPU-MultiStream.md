@@ -1,14 +1,14 @@
-#	MultiStream
+#	GPU MultiStream
 
 ## 背景
 
 在训练场景中，往往使用GPU对计算进行加速。由于不同的计算kernel只在同一个stream上提交，在某些模型下可能出现执行并发度不足，GPU利用率低的问题。为此，我们提供了GPU MultiStream 优化功能。
 
-MultiStream用户功能提供了多个GPU Stream，并且内置了多种图划分规则，用户亦可手动指定分图。该功能可以使没有数据相关性的子图提交到不同GPU Stream上执行，实现子图级执行并发，从而提高GPU利用率。
+GPU MultiStream功能提供了多个GPU Stream，并且内置了多种图划分规则，用户亦可手动指定分图。该功能可以使没有数据相关性的子图提交到不同GPU Stream上执行，实现子图级执行并发，从而提高GPU利用率。
 
 ## 用户接口
 
-本功能在`tf.ConfigProto`中提供了如下接口用于开启MultiStream。
+本功能在`tf.ConfigProto`中提供了如下接口用于开启GPU MultiStream。
 
 ```python
 import tensorflow as tf
@@ -108,7 +108,7 @@ with tf.Session(config=sess_config) as sess:
 
 ## 开启GPU MPS
 
-本优化中依赖GPU MPS（Multi-Process Service) 优化。需要按以下步骤开启GPU MPS。
+本优化可使用GPU MPS（Multi-Process Service)。可以按以下步骤开启GPU MPS。
 
 1. 宿主机 GPU MPS后台服务进程启动
 
