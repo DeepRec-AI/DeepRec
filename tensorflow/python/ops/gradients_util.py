@@ -699,8 +699,14 @@ def _GradientsHelper(ys,
               if grad_fn:
                 # If grad_fn was found, do not use SymbolicGradient even for
                 # functions.
-                in_grads = _MaybeCompile(grad_scope, op, func_call,
-                                         lambda: grad_fn(op, *out_grads))
+                try:
+                  gpu_stream_idx = op.get_attr('_stream_id')
+                  with ops.stream(gpu_stream_idx):
+                    in_grads = _MaybeCompile(grad_scope, op, func_call,
+                                             lambda: grad_fn(op, *out_grads))
+                except ValueError:
+                  in_grads = _MaybeCompile(grad_scope, op, func_call,
+                                           lambda: grad_fn(op, *out_grads))
               else:
                 # For function call ops, we add a 'SymbolicGradient'
                 # node to the graph to compute gradients.

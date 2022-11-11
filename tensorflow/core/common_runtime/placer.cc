@@ -127,6 +127,7 @@ Status Placer::Run() {
     // place nodes that are already placed.
     if (node->has_assigned_device_name()) {
       TF_RETURN_IF_ERROR(colocation_graph.LimitToAssignedDevice(*node));
+      colocation_graph.AssignGpuStreamIdx(node);
       LogDeviceAssignment(node, log_device_placement_);
       continue;
     }
@@ -185,6 +186,7 @@ Status Placer::Run() {
 
     TF_RETURN_IF_ERROR(AssignAndLog(assigned_device, node, &colocation_graph,
                                     log_device_placement_));
+    colocation_graph.AssignGpuStreamIdx(node);
   }
 
   // Perform a second pass assignment for those nodes explicitly
@@ -225,6 +227,7 @@ Status Placer::Run() {
 
     TF_RETURN_IF_ERROR(AssignAndLog(assigned_device, node, &colocation_graph,
                                     log_device_placement_));
+    colocation_graph.AssignGpuStreamIdx(node);    
   }
 
   if (VLOG_IS_ON(3)) {

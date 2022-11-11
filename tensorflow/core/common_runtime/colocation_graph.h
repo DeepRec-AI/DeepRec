@@ -103,6 +103,14 @@ class Member {
   // cleared if resource device has them set.
   DeviceNameUtils::ParsedName GetPreferredSoftDeviceName() const;
 
+  void SetGpuStreamIdx(int gpu_stream_idx) {
+    gpu_stream_idx_ = gpu_stream_idx;
+  }
+
+  bool MergeGpuStreamIdx(const Member& other);
+
+  void AssignGpuStreamIdx(Node *node);
+
   string DebugString() const;
 
  private:
@@ -188,6 +196,12 @@ class Member {
   // and all of its children can be assigned.
   // `possible_devices` is empty if they have not yet been computed.
   std::vector<Device*> possible_devices_;
+
+  // The merged form of gpu stream id assigned for this node, with those of all
+  // of its children.
+  // This filed is used to raise errors due to unsatisfiable constraints.
+  // default value is -1, which means gpu multi-stream is disable.
+  int gpu_stream_idx_ = -1;
 };
 
 // This class maintains the connected components of a colocation
@@ -227,6 +241,10 @@ class ColocationGraph {
   // explicit restriction, heuristics can choose a different possible device
   // for other nodes in the group.
   Status LimitToAssignedDevice(const Node& node);
+
+  // Assign Gpu Stream Idx to `node`, nodes which is in the same
+  // colocation group will be assigned to the same gpu_stream_idx.
+  void AssignGpuStreamIdx(Node *node);
 
   // Returns the root node of the disjoint tree to which the node with the
   // given id is connected.

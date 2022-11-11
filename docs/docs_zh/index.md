@@ -63,6 +63,7 @@ CPU-Memory-Optimization
 GPU-Memory-Optimization
 GPU-Virtual-Memory
 Executor-Optimization
+MultiStream
 ```
 
 ```{toctree}

@@ -2837,6 +2837,10 @@ class Graph(object):
     # In TF2.x or after switch_to_thread_local(),
     # self._thread_local._device_function_stack is used instead.
     self._graph_device_function_stack = traceable_stack.TraceableStack()
+    # GPU Stream that will be applied to choose a device
+    # In TF2.x or after switch_to_thread_local(),
+    # self._thread_local._gpu_stream_stack is used instead.
+    self._graph_gpu_stream_stack = traceable_stack.TraceableStack()
     # Default original_op applied to new ops.
     self._default_original_op = None
     # Current control flow context. It could be either CondContext or
@@ -3498,6 +3502,7 @@ class Graph(object):
 
     if compute_device:
       self._apply_device_functions(op)
+      self._apply_gpu_stream(op)
 
     # Snapshot the colocation stack metadata before we might generate error
     # messages using it.  Note that this snapshot depends on the actual stack
@@ -3514,6 +3519,12 @@ class Graph(object):
           # pylint: disable=protected-access
           op._set_device(colocation_op.device)
           # pylint: enable=protected-access
+        try:
+          stream_idx = colocation_op.get_attr("_stream_id")
+          stream_idx_attr = attr_value_pb2.AttrValue(i=stream_idx)
+          op._set_attr("_stream_id", stream_idx_attr)
+        except ValueError:
+          pass
 
       all_colocation_groups = sorted(set(all_colocation_groups))
       # pylint: disable=protected-access
@@ -4409,6 +4420,40 @@ class Graph(object):
     op._device_code_locations = self._snapshot_device_function_stack_metadata()
     # pylint: enable=protected-access
 
+  @tf_contextlib.contextmanager
+  def stream(self, stream_idx=0):
+    """Returns a context manager that specifies the default gpu stream to use.
+
+    Args:
+      stream_idx: The index of gpu stream to use in the context.
+
+    Yields:
+      A context manager that specifies the default gpu stream to use for newly
+      created ops.
+
+    Raise:
+      RuntimeError: If device scopes are not properly nested.
+    """
+    self._gpu_stream_stack.push_obj(stream_idx, offset=2)
+    old_top_of_stack = self._gpu_stream_stack.peek_top_obj()
+    try:
+      yield
+    finally:
+      new_top_of_stack = self._gpu_stream_stack.peek_top_obj()
+      if old_top_of_stack is not new_top_of_stack:
+        raise RuntimeError("Exiting stream scope without proper scope nesting.")
+      self._gpu_stream_stack.pop_obj()
+
+  def _apply_gpu_stream(self, op):
+    """Applies the current gpu stream stack to the given operation."""
+    # Apply any gpu stream in LIFO order.  We apply here because the result can
+    # depend on the Operation's signature, which is computed in the Operation
+    # constructor.
+    if len(self._gpu_stream_stack) > 0:
+      stream_idx = self._gpu_stream_stack.peek_top_obj()
+      stream_idx_attr = attr_value_pb2.AttrValue(i=stream_idx)
+      op._set_attr("_stream_id", stream_idx_attr)
+  
   # pylint: disable=g-doc-return-or-yield
   @tf_contextlib.contextmanager
   def container(self, container_name):
@@ -4980,6 +5025,18 @@ class Graph(object):
       self._graph_device_function_stack = device_function_stack
 
   @property
+  def _gpu_stream_stack(self):
+    if self._stack_state_is_thread_local:
+      # This may be called from a thread where device_function_stack doesn't yet
+      # exit.
+      if not hasattr(self._thread_local, "_gpu_stream_stack"):
+        stack_copy_for_this_thread = self._graph_gpu_stream_stack.copy()
+        self._thread_local._gpu_stream_stack = stack_copy_for_this_thread
+      return self._thread_local._gpu_stream_stack
+    else:
+      return self._graph_gpu_stream_stack
+  
+  @property
   def _colocation_stack(self):
     """Return thread-local copy of colocation stack."""
     if self._stack_state_is_thread_local:
@@ -5182,6 +5239,20 @@ def device_v2(device_name):
     raise RuntimeError("tf.device does not support functions.")
   return device(device_name)
 
+@tf_export(v1=["stream"])
+def stream(stream_idx=0):
+  """Wrapper for `Graph.stream()` using the default graph.
+
+  See `tf.Graph.stream` for more details.
+
+  Args:
+    stream_idx: The index of gpu stream to use in the context.
+
+  Returns:
+    A context manager that specifies the default gpu stream to use for newly
+    created ops.  
+  """
+  return get_default_graph().stream(stream_idx)
 
 @tf_export(v1=["container"])
 def container(container_name):
