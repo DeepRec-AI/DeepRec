@@ -2090,7 +2090,8 @@ Status DirectSession::CreateGraphs(
   if (use_multi_stream_) {
     // Split graph to multi-stream subgraph,
     // We not do split here, just modify nodes' placement.
-    stream_subgraph::MarkStreamSubGraph(&client_graph->graph, multi_stream_num_);
+    stream_subgraph::MarkStreamSubGraph(&client_graph->graph,
+        options_.config.graph_options().rewrite_options().multi_stream_opts());
   }
 
   std::unordered_map<string, GraphDef> partitions;
