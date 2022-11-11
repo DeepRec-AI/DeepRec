@@ -1701,6 +1701,16 @@ class DeviceTest(test_util.TensorFlowTestCase):
              device: "/job:ps" }
     """, gd)
 
+class GpuStreamIdTest(test_util.TensorFlowTestCase):
+  def testSetGpuStreamId(self):
+    g = ops.Graph()
+    with g.stream(2):
+      op = g.create_op("FloatOutput", [], [dtypes.float32])
+    try:
+      stream_id = op.get_attr("_stream_id")
+      self.assertEqual(2, stream_id)
+    except ValueError:
+      self.fail("failed to get attribute `_stream_id`")
 
 class MultithreadedGraphStateTest(test_util.TensorFlowTestCase):
 
