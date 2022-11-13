@@ -168,7 +168,7 @@ void TensorPoolAllocator::DeallocateRaw(void* ptr) {
   auto light_header = GetLightHeader(ptr);
   if (light_header != nullptr) {
     auto header_size = light_header->header_size;
-    auto raw_ptr = ptr - header_size;
+    auto raw_ptr = static_cast<char*>(ptr) - header_size;
     // LightHeader not record allocation size
     // Free interface ignore the freed num_bytes
     sub_allocator_->Free(raw_ptr, 0);
@@ -238,7 +238,7 @@ TensorPoolAllocator::Buffer::Buffer(size_t len, size_t chunk_size,
     size_t alignment, SubAllocator* sub_allocator) {
   auto rounded_bytes = RoundedBytes(chunk_size, alignment);
   auto buffer_size = rounded_bytes * len;
-  auto p = sub_allocator->Alloc(alignment, buffer_size);
+  auto p = static_cast<char*>(sub_allocator->Alloc(alignment, buffer_size));
   begin_ = p;
   end_ = p + buffer_size;
 

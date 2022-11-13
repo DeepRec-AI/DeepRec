@@ -320,7 +320,7 @@ class LightValuePtr : public ValuePtr<V> {
   LightValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*)malloc(
         sizeof(LightHeader) + sizeof(int64) * size);
-    memset(this->ptr_ + sizeof(LightHeader), 0, sizeof(int64) * size);
+    memset(static_cast<char*>(this->ptr_) + sizeof(LightHeader), 0, sizeof(int64) * size);
     new ((char*)this->ptr_) LightHeader();
   }
 
@@ -334,7 +334,7 @@ class NormalValuePtr : public ValuePtr<V> {
  public:
   NormalValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(NormalHeader) + sizeof(int64) * size);
-    memset(this->ptr_ + sizeof(NormalHeader), 0, sizeof(int64) * size);
+    memset(static_cast<char*>(this->ptr_) + sizeof(NormalHeader), 0, sizeof(int64) * size);
     new ((char*)this->ptr_) NormalHeader();
   }
 
@@ -379,7 +379,7 @@ class NormalContiguousValuePtr : public ValuePtr<V>{
    NormalContiguousValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = allocator->AllocateRaw(Allocator::kAllocatorAlignment,
       sizeof(FixedLengthHeader) + sizeof(V) * size);
-    memset(this->ptr_ + sizeof(FixedLengthHeader), 0, sizeof(V) * size);
+    memset(static_cast<char*>(this->ptr_) + sizeof(FixedLengthHeader), 0, sizeof(V) * size);
     new ((char*)this->ptr_) FixedLengthHeader();
    }
 
