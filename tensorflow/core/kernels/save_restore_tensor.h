@@ -156,7 +156,10 @@ Status SaveTensorWithFixedBuffer(const string& tensor_name,
     } else {
       size = sizeof(T) * dump_tensor_shape.dim_size(1);
     }
-    char val[size] = {0};
+    char val[size];
+    for(int i=0; i < size; ++i) {
+      val[i] = 0;
+    }
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       int64 dim = 0;
       void* start = nullptr;
