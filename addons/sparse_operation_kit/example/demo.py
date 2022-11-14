@@ -23,7 +23,7 @@ indices = tf.SparseTensor(
   values=tf.convert_to_tensor([1, 1, 3, 4, 5], dtype=tf.int64),
   dense_shape=[2, 3]
 )
-emb = sok.lookup_sparse([var], [indices], hotness=[3], combiners=['sum'])
+emb = sok.lookup_sparse([var], [indices], combiners=['sum'])
 fun = tf.multiply(emb, 2.0, name='multiply')
 loss = tf.reduce_sum(fun, name='reduce_sum')
 opt = tf.train.AdagradOptimizer(0.1)

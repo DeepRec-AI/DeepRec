@@ -77,6 +77,10 @@ There are 2 additional steps to use SOK embedding lookup with `Embedding Variabl
 git clone --recursive https://github.com/alibaba/DeepRec.git /DeepRec
 ```
 2. Build DeepRec from source code. You can follow the instruction in [DeepRec Build](https://deeprec.readthedocs.io/zh/latest/DeepRec-Compile-And-Install.html).
+3. Enter HugeCTR and do initialization
+```bash
+cd /DeepRec/addons/sparse_operation_kit/hugectr/ && git submodule update --init --recursive && cd sparse_operation_kit && mkdir build && cd build
+```
 3. Build and install SOK. You need to specify ${DeepRecBuild}, which is the directory that you store the DeepRec building intermidia results.
 ```
 DeepRecBuild=${DeepRecBuild} cmake -DENABLE_DEEPREC=ON -DSM=75 .. && make -j && make install;
@@ -84,7 +88,7 @@ export PYTHONPATH=/DeepRec/addons/sparse_operation_kit/hugectr/sparse_operation_
 ```
 4. Run utest.
 ```
-cd /DeepRec/addons/sparse_operation_kit/adapter && horovodrun -np ${NUM_GPU} -H localhost:${NUM_GPU} python3 embedding_var_lookup_utest.py
+cd /DeepRec/addons/sparse_operation_kit/python && horovodrun -np ${NUM_GPU} -H localhost:${NUM_GPU} python3 embedding_var_lookup_utest.py
 ```
 ## Benchmark
 1. Download Kaggle Display Advertising Challenge Dataset (Criteo Dataset) from https://storage.googleapis.com/dataset-uploader/criteo-kaggle/large_version/train.csv
