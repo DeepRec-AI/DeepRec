@@ -117,7 +117,6 @@ class StorageManager {
   }
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
   void CopyBackToGPU(int total, K* keys, int64 size,
        CopyBackFlag* copyback_flags, V** memcpy_address,
        size_t value_len, int *copyback_cursor,
@@ -126,7 +125,6 @@ class StorageManager {
         memcpy_address, value_len, copyback_cursor, gpu_value_ptrs,
         memcpy_buffer_gpu);
   }
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
   Status Remove(K key) {

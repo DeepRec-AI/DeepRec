@@ -2,7 +2,6 @@
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_HBM_DRAM_SSD_STORAGE_H_
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/framework/embedding/lockless_hash_map_cpu.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
 
@@ -324,6 +323,5 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
 } // embedding
 } // tensorflow
 
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 #endif // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_HBM_DRAM_SSD_STORAGE_H_
