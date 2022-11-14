@@ -4443,6 +4443,7 @@ tf_cc_tests(
         "graph/optimizer_cse_test.cc",
 	"graph/optimizer_fusion_engine_test.cc",
         "graph/star_server_graph_partition_test.cc",
+        "graph/stream_subgraph_test.cc",
         "graph/subgraph_test.cc",
         "graph/tensor_id_test.cc",
         "graph/validate_test.cc",
