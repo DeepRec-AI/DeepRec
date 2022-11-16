@@ -99,7 +99,7 @@ void GPUTensorPoolAllocator::Init() {
                  << max_alignment << ", " << big_bytes_ << ")";
     }
     if (big_bytes_ > 0) {
-      big_mem_end_ = big_mem_begin_ + big_bytes_;
+      big_mem_end_ = static_cast<char*>(big_mem_begin_) + big_bytes_;
     } else {
       big_mem_end_ = nullptr;
     }
@@ -113,7 +113,7 @@ void GPUTensorPoolAllocator::Init() {
         auto offset = bin_to_offset[rit->first];
         bin = new Bin(bin_info->BlockSize(), bin_info->ChunkSize(),
             bin_info->Alignment(), bin_info->VBlocks(),
-            this, big_mem_begin_ + offset);
+            this, static_cast<char*>(big_mem_begin_) + offset);
         offset_to_bin_[offset] = bin;
       } else if (bin_info->VBlocks().size() > 0) {
         bin = new Bin(bin_info->BlockSize(), bin_info->ChunkSize(),
@@ -132,7 +132,7 @@ void GPUTensorPoolAllocator::Init() {
         auto offset = bin_to_offset[(*it)->BinIndex()];
         bin = new Bin((*it)->BlockSize(), (*it)->ChunkSize(),
             (*it)->Alignment(), (*it)->VBlocks(),
-            this, big_mem_begin_ + offset);
+            this, static_cast<char*>(big_mem_begin_) + offset);
         offset_to_bin_[offset] = bin;
       } else if ((*it)->VBlocks().size() > 0) {
         bin = new Bin((*it)->BlockSize(), (*it)->ChunkSize(),
@@ -162,7 +162,7 @@ void GPUTensorPoolAllocator::Init() {
                  << max_alignment << ", " << small_bytes_ << ")";
     }
     if (small_bytes_ > 0) {
-      small_mem_end_ = small_mem_begin_ + small_bytes_;
+      small_mem_end_ = static_cast<char*>(small_mem_begin_) + small_bytes_;
     } else {
       small_mem_end_ = nullptr;
     }
@@ -172,7 +172,7 @@ void GPUTensorPoolAllocator::Init() {
       if (b->BlockSize() > 0) {
         auto offset = bin_to_offset[b->BinIndex()];
         bin = new SmallBin(b->BlockSize(), b->ChunkSize(),
-                           b->Alignment(), small_mem_begin_ + offset);
+                           b->Alignment(), static_cast<char*>(small_mem_begin_) + offset);
         offset_to_small_bin_[offset] = bin;
       }
       small_bins_[b->BinIndex()] = bin;
@@ -285,13 +285,13 @@ GPUTensorPoolAllocator::SmallBin::SmallBin(size_t len,
   auto buffer_size = rounded_bytes * len;
   begin_ = begin;
   if (begin != nullptr) {
-    end_ = begin + buffer_size;
+    end_ = static_cast<char*>(begin) + buffer_size;
   } else {
     end_ = nullptr;
   }
 
   for (auto i = 0; i < len; ++i) {
-    buffer_.emplace(begin + rounded_bytes *i);
+    buffer_.emplace(static_cast<char*>(begin) + rounded_bytes *i);
   }
 }
 
@@ -348,13 +348,13 @@ GPUTensorPoolAllocator::Buffer::Buffer(size_t len, size_t chunk_size,
   auto buffer_size = rounded_bytes * len;
   begin_ = begin;
   if (begin != nullptr) {
-    end_ = begin + buffer_size;
+    end_ = static_cast<char*>(begin) + buffer_size;
   } else {
     end_ = nullptr;
   }
 
   for (auto i = 0; i < len; ++i) {
-    buffer_.emplace(begin + rounded_bytes *i);
+    buffer_.emplace(static_cast<char*>(begin) + rounded_bytes *i);
   }
 }
 
