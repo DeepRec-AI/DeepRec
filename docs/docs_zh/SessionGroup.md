@@ -41,6 +41,16 @@ status = session_group_->Run(run_options, req.inputs,
 ```
 参考代码: [Processor](https://github.com/alibaba/DeepRec/blob/main/serving/processor/serving/model_session.cc#L308)
 
+用户在processor上使用session_group，只需要在配置文件中增加如下字段：
+```c++
+"model_config": {
+  "session_num": 2,
+  "use_per_session_threads": true,
+  ...
+}
+```
+更多参数详见：[processor配置参数](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
+
 ### 2.通过SavedModelBundle进行serving场景
 TFServing使用的是SavedModelBundle进行serving的，相关的代码修改参考：[SessionGroup](https://github.com/AlibabaPAI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217)，推荐直接使用我们提供的TFServing代码。
 
