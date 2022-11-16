@@ -204,6 +204,7 @@ message GPUOptions {
   // https://www.tensorflow.org/guide/version_compat.
   Experimental experimental = 9;
   bool cuda_graph_mode_compatible = 10;
+  bool cuda_graph_enable_jit = 11;
 }
 
 // Options passed to the async embedding

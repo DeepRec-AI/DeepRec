@@ -182,6 +182,7 @@ class BaseGPUDevice : public LocalDevice {
   int32 pending_cap_ = 0;
   bool timestamped_allocator_ = false;
   bool is_single_stream_mode_ = false;
+  void* cuda_graph_cublas_workspace_ = nullptr;
 
   // Initialize scractch buffers used by Eigen.
   Status InitScratchBuffers();

@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,6 +25,9 @@ namespace tensorflow {
 class ValidateCudaGraphModePass : public GraphOptimizationPass {
  public:
   Status Run(const GraphOptimizationPassOptions& options) override {
+    if (options.session_options->config.gpu_options().cuda_graph_enable_jit()) {
+      return Status::OK();
+    }
     bool has_invalid_graph = false;
     if (options.graph == nullptr) {
       return Status::OK();

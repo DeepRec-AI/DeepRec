@@ -114,4 +114,38 @@ particluar when an XLA cluster has int32 outputs. The _XlaMerge up does not
 have a value_index output that identifies the chosen input.
 )");
 
+REGISTER_OP("_CgmodeCompile")
+    .Input("args: Targs")
+    .Attr("Targs: list(type) >= 0")
+    .Output("key: string")
+    .Output("compilation_successful: bool")
+    .Attr("function: func")
+    // The compilation cache is stateful.
+    .SetIsStateful()
+    .Doc(R"(CUDA Graph Compile Op. For use by the CUDA Graph JIT only.
+
+Pre-compile a subgraph into a cuda graph executable
+
+key: A key that can be used to look up the local executable compiled by the
+   node and associated metadata.
+
+compilation_successful: If the `must_compile` attr is false the _CgmodeCompile op
+   can decide not to compile the clusters based on some profitability
+   heuristics.  In that case `compilation_successful` is false if _CgmodeCompile
+   chose not to compile the cluster.
+)");
+
+REGISTER_OP("_CgmodeRun")
+    .Input("args: Targs")
+    .Attr("Targs: list(type) >= 0")
+    .Output("results: Tresults")
+    .Attr("Tresults: list(type) >= 0")
+    .Input("key: string")
+    // CUDA Graph random-number generation ops are stateful.
+    .SetIsStateful()
+    .Doc(R"(CUDA Graph Run Op. For use by the CUDA Graph JIT only.
+
+Executes a TensorFlow function previously compiled into a cuda graph executable by an
+_CgmodeCompile op.
+)");
 }  // namespace tensorflow

@@ -669,6 +669,7 @@ REGISTER_KERNEL_BUILDER(Name("_XlaCompile")
                             .HostMemory("resources"),
                         XlaCompileOp);
 
+
 REGISTER_KERNEL_BUILDER(Name("_XlaRun").Device(DEVICE_CPU), XlaRunOp);
 REGISTER_KERNEL_BUILDER(Name("_XlaRun").Device(DEVICE_GPU).HostMemory("key"),
                         XlaRunOp);

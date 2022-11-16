@@ -1,4 +1,4 @@
-/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2022 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -34,7 +34,13 @@ void CudaGraphGPUBFCAllocator::DisableCudaGraphModeMem() {
   enable_cuda_graph_capture_ = false;
 }
 
-CudaGraphGPUBFCAllocator::~CudaGraphGPUBFCAllocator() { enable_cuda_graph_capture_ = false; }
+CudaGraphGPUBFCAllocator::~CudaGraphGPUBFCAllocator() {
+  std::unordered_set<void*> remained_mems =
+      cuda_graph_mode_mem_->GetDeallocatedMems();
+  for (auto e : remained_mems) {
+    GPUBFCAllocator::DeallocateRaw(e);
+  }
+}
 
 void* CudaGraphGPUBFCAllocator::AllocateRaw(
     size_t alignment, size_t num_bytes,
@@ -60,7 +66,7 @@ void* CudaGraphGPUBFCAllocator::AllocateRaw(
 }
 
 void CudaGraphGPUBFCAllocator::DeallocateRaw(void* ptr) {
-  if (enable_cuda_graph_capture_ && cuda_graph_mode_mem_.get() != nullptr &&
+  if (cuda_graph_mode_mem_.get() != nullptr &&
       cuda_graph_mode_mem_->ContainMem(ptr)) {
     cuda_graph_mode_mem_->MarkDeallocated(ptr);
     return;
@@ -68,19 +74,20 @@ void CudaGraphGPUBFCAllocator::DeallocateRaw(void* ptr) {
   GPUBFCAllocator::DeallocateRaw(ptr);
 }
 
-CudaGraphGPUBFCAllocator::CudaGraphGPUBFCAllocator(GPUMemAllocator* sub_allocator,
-                                           size_t total_memory,
-                                           const string& name)
-    : CudaGraphGPUBFCAllocator(sub_allocator, total_memory, GPUOptions(), name) {
-  cuda_graph_mode_mem_ = std::unique_ptr<CudaGraphModeMem>(new CudaGraphModeMem());
+CudaGraphGPUBFCAllocator::CudaGraphGPUBFCAllocator(
+    GPUMemAllocator* sub_allocator, size_t total_memory, const string& name)
+    : CudaGraphGPUBFCAllocator(sub_allocator, total_memory, GPUOptions(),
+                               name) {
+  cuda_graph_mode_mem_ =
+      std::unique_ptr<CudaGraphModeMem>(new CudaGraphModeMem());
 }
 
-CudaGraphGPUBFCAllocator::CudaGraphGPUBFCAllocator(GPUMemAllocator* sub_allocator,
-                                           size_t total_memory,
-                                           const GPUOptions& gpu_options,
-                                           const string& name)
+CudaGraphGPUBFCAllocator::CudaGraphGPUBFCAllocator(
+    GPUMemAllocator* sub_allocator, size_t total_memory,
+    const GPUOptions& gpu_options, const string& name)
     : GPUBFCAllocator(sub_allocator, total_memory, gpu_options, name) {
-  cuda_graph_mode_mem_ = std::unique_ptr<CudaGraphModeMem>(new CudaGraphModeMem());
+  cuda_graph_mode_mem_ =
+      std::unique_ptr<CudaGraphModeMem>(new CudaGraphModeMem());
 }
 }  // namespace tensorflow
-#endif // GOOGLE_CUDA
+#endif  // GOOGLE_CUDA

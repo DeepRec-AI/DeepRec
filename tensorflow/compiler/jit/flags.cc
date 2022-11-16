@@ -27,11 +27,13 @@ namespace {
 
 BuildXlaOpsPassFlags* build_ops_flags;
 MarkForCompilationPassFlags* mark_for_compilation_flags;
+MarkForCudaGraphModePassFlags* mark_for_cuda_graph_mode_flags;
 XlaDeviceFlags* device_flags;
 XlaOpsCommonFlags* ops_flags;
 IntroduceFloatingPointJitterPassFlags* jitter_flags;
 
 std::vector<Flag>* flag_list;
+std::vector<Flag>* cgmode_flag_list;
 std::once_flag flags_init;
 
 bool SetterForXlaAutoJitFlag(const string& value) {
@@ -76,7 +78,7 @@ void AppendMarkForCompilationPassFlagsInternal(std::vector<Flag>* flag_list) {
            "GPU devices.  0 = use ConfigProto setting; -1 = off; 1 = on for "
            "things very likely to be improved; 2 = on for everything; "
            "(experimental) fusible = only for Tensorflow operations that XLA "
-	   "knows how to fuse.  "
+           "knows how to fuse.  "
            "If set to single-gpu(<N>) then this resolves to <N> for single-GPU "
            "graphs (graphs that have at least one node placed on a GPU and no "
            "more than one GPU is in use through the entire graph) and 0 "
@@ -89,22 +91,23 @@ void AppendMarkForCompilationPassFlagsInternal(std::vector<Flag>* flag_list) {
       Flag("tf_xla_max_cluster_size",
            &mark_for_compilation_flags->tf_xla_max_cluster_size,
            "Maximum number of operators in an XLA compilation."),
-      Flag("tf_xla_ops_to_cluster",
-           &mark_for_compilation_flags->tf_xla_ops_to_cluster,
-	   "(experimental) "
-           "Limit the operations clustered by XLA to these operations. "
-           "If multiple, separate them with commas. Shortcuts: "
-           " PW: All point-wise operations."
-           " RED: All reduction operations."
-           " MISC: Mixed operations."
-           " PWRED: TF operations that get converted to PW+RED operation in XLA."
-           " REDUCEWINDOW: TF operations like MaxPool/AvgPool that get "
-           "converted to ReduceWindow in XLA."
-           " REDUCEWINDOWPW: Operation that get converted to ReduceWindow + PW "
-           "(LRN, LRNGrad)."
-           " BN: TF FusedBatchNorm* operations."
-           " FUSIBLE: All TF operations that XLA can fuse (All the above). "
-           "You can also put any TF operation name, e.g. 'FUSIBLE,MatMul'."),
+      Flag(
+          "tf_xla_ops_to_cluster",
+          &mark_for_compilation_flags->tf_xla_ops_to_cluster,
+          "(experimental) "
+          "Limit the operations clustered by XLA to these operations. "
+          "If multiple, separate them with commas. Shortcuts: "
+          " PW: All point-wise operations."
+          " RED: All reduction operations."
+          " MISC: Mixed operations."
+          " PWRED: TF operations that get converted to PW+RED operation in XLA."
+          " REDUCEWINDOW: TF operations like MaxPool/AvgPool that get "
+          "converted to ReduceWindow in XLA."
+          " REDUCEWINDOWPW: Operation that get converted to ReduceWindow + PW "
+          "(LRN, LRNGrad)."
+          " BN: TF FusedBatchNorm* operations."
+          " FUSIBLE: All TF operations that XLA can fuse (All the above). "
+          "You can also put any TF operation name, e.g. 'FUSIBLE,MatMul'."),
       Flag("tf_xla_clustering_debug",
            &mark_for_compilation_flags->tf_xla_clustering_debug,
            "Dump graphs during XLA compilation."),
@@ -125,6 +128,54 @@ void AppendMarkForCompilationPassFlagsInternal(std::vector<Flag>* flag_list) {
                 ->tf_xla_disable_resource_variable_safety_checks_for_debugging,
            "Disable resource variables related safety checks when clustering "
            "(this is unsound).")};
+  flag_list->insert(flag_list->end(), new_flags.begin(), new_flags.end());
+}
+
+void AppendMarkForCudaGraphModePassFlagsInternal(std::vector<Flag>* flag_list) {
+  std::vector<Flag> new_flags = {
+      Flag("tf_cgmode_min_cluster_size",
+           &mark_for_cuda_graph_mode_flags->tf_cgmode_min_cluster_size,
+           "Minimum number of operators in an XLA compilation. Ignored for "
+           "operators placed on an XLA device or operators explicitly marked "
+           "for compilation."),
+      Flag("tf_cgmode_max_cluster_size",
+           &mark_for_cuda_graph_mode_flags->tf_cgmode_max_cluster_size,
+           "Maximum number of operators in an XLA compilation."),
+      Flag(
+          "tf_cgmode_ops_to_cluster",
+          &mark_for_cuda_graph_mode_flags->tf_cgmode_ops_to_cluster,
+          "(experimental) "
+          "Limit the operations clustered by XLA to these operations. "
+          "If multiple, separate them with commas. Shortcuts: "
+          " PW: All point-wise operations."
+          " RED: All reduction operations."
+          " MISC: Mixed operations."
+          " PWRED: TF operations that get converted to PW+RED operation in XLA."
+          " REDUCEWINDOW: TF operations like MaxPool/AvgPool that get "
+          "converted to ReduceWindow in XLA."
+          " REDUCEWINDOWPW: Operation that get converted to ReduceWindow + PW "
+          "(LRN, LRNGrad)."
+          " BN: TF FusedBatchNorm* operations."
+          " FUSIBLE: All TF operations that XLA can fuse (All the above). "
+          "You can also put any TF operation name, e.g. 'FUSIBLE,MatMul'."),
+      Flag("tf_cgmode_clustering_debug",
+           &mark_for_cuda_graph_mode_flags->tf_cgmode_clustering_debug,
+           "Dump graphs during compilation."),
+      Flag("tf_cgmode_clustering_fuel",
+           &mark_for_cuda_graph_mode_flags->tf_cgmode_clustering_fuel,
+           "Places an artificial limit on the number of ops marked as "
+           "eligible for clustering."),
+      Flag("tf_cgmode_disable_deadness_safety_checks_for_debugging",
+           &mark_for_cuda_graph_mode_flags
+                ->tf_cgmode_disable_deadness_safety_checks_for_debugging,
+           "Disable deadness related safety checks when clustering (this is "
+           "unsound)."),
+      Flag(
+          "tf_cgmode_disable_resource_variable_safety_checks_for_debugging",
+          &mark_for_cuda_graph_mode_flags
+               ->tf_cgmode_disable_resource_variable_safety_checks_for_debugging,
+          "Disable resource variables related safety checks when clustering "
+          "(this is unsound).")};
   flag_list->insert(flag_list->end(), new_flags.begin(), new_flags.end());
 }
 
@@ -152,6 +203,23 @@ void AllocateAndParseFlags() {
       ->tf_xla_disable_deadness_safety_checks_for_debugging = false;
   mark_for_compilation_flags
       ->tf_xla_disable_resource_variable_safety_checks_for_debugging = false;
+
+  mark_for_cuda_graph_mode_flags = new MarkForCudaGraphModePassFlags;
+  mark_for_cuda_graph_mode_flags->cuda_graph_mode_auto_jit_flag
+      .optimization_level_single_gpu = 0;
+  mark_for_cuda_graph_mode_flags->cuda_graph_mode_auto_jit_flag
+      .optimization_level_general = 0;
+  mark_for_cuda_graph_mode_flags->tf_cgmode_min_cluster_size = 3;
+  mark_for_cuda_graph_mode_flags->tf_cgmode_max_cluster_size =
+      std::numeric_limits<int32>::max();
+  mark_for_cuda_graph_mode_flags->tf_cgmode_clustering_debug = false;
+  mark_for_cuda_graph_mode_flags->tf_cgmode_clustering_fuel =
+      std::numeric_limits<int64>::max();
+  mark_for_cuda_graph_mode_flags
+      ->tf_cgmode_disable_deadness_safety_checks_for_debugging = false;
+  mark_for_cuda_graph_mode_flags
+      ->tf_cgmode_disable_resource_variable_safety_checks_for_debugging = false;
+  mark_for_cuda_graph_mode_flags->tf_cgmode_ops_to_cluster = "";
 
   device_flags = new XlaDeviceFlags;
   device_flags->tf_xla_compile_on_demand = false;
@@ -193,8 +261,7 @@ void AllocateAndParseFlags() {
 
        Flag("tf_xla_always_defer_compilation",
             &ops_flags->tf_xla_always_defer_compilation, ""),
-       Flag("tf_xla_async_compilation",
-            &ops_flags->tf_xla_async_compilation,
+       Flag("tf_xla_async_compilation", &ops_flags->tf_xla_async_compilation,
             "When lazy compilation is enabled, asynchronous compilation starts"
             "the cluster compilation in the background, and the fallback path"
             "is executed until the compilation has finished"),
@@ -208,8 +275,11 @@ void AllocateAndParseFlags() {
             "The amount of jitter to introduce.  This amount is added to each "
             "element in the tensors named in `tensor_names.")});
 
+  cgmode_flag_list = new std::vector<Flag>();
   AppendMarkForCompilationPassFlagsInternal(flag_list);
   xla::ParseFlagsFromEnvAndDieIfUnknown("TF_XLA_FLAGS", *flag_list);
+  AppendMarkForCudaGraphModePassFlagsInternal(cgmode_flag_list);
+  xla::ParseFlagsFromEnvAndDieIfUnknown("TF_CGMODE_FLAGS", *cgmode_flag_list);
 }
 
 }  // namespace
@@ -227,6 +297,11 @@ BuildXlaOpsPassFlags* GetBuildXlaOpsPassFlags() {
 MarkForCompilationPassFlags* GetMarkForCompilationPassFlags() {
   std::call_once(flags_init, &AllocateAndParseFlags);
   return mark_for_compilation_flags;
+}
+
+MarkForCudaGraphModePassFlags* GetMarkForCudaGraphModePassFlags() {
+  std::call_once(flags_init, &AllocateAndParseFlags);
+  return mark_for_cuda_graph_mode_flags;
 }
 
 XlaDeviceFlags* GetXlaDeviceFlags() {

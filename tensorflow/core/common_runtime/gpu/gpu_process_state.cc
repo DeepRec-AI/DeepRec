@@ -195,7 +195,8 @@ Allocator* GPUProcessState::GetGPUAllocator(const GPUOptions& options,
       // TODO: **WARNING** probably will not work in a multi-gpu scenario
       gpu_allocator =
           new GpuCudaMallocAsyncAllocator(platform_gpu_id, total_bytes);
-    } else if (options.cuda_graph_mode_compatible()) {
+    } else if (options.cuda_graph_mode_compatible() || 
+               options.cuda_graph_enable_jit()) {
       LOG(INFO) << "Using CUDA Graph compatible GPUBFCAllocator for GPU: " 
                 << platform_gpu_id;
       gpu_allocator = 

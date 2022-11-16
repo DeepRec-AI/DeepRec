@@ -28,6 +28,7 @@ limitations under the License.
 #include <string.h>
 
 #include <algorithm>
+#include <cuda_runtime.h>
 #include <list>
 #include <map>
 #include <tuple>
@@ -358,6 +359,13 @@ BaseGPUDevice::~BaseGPUDevice() {
   delete gpu_device_info_;
   for (auto sb : scratch_) gpu_allocator_->DeallocateRaw(sb);
   for (auto ctx : device_contexts_) ctx->Unref();
+  if (cuda_graph_cublas_workspace_ != nullptr) {
+    cudaError_t e_cu_free_cublas_worksapce = cudaFree(cuda_graph_cublas_workspace_);
+    if (e_cu_free_cublas_worksapce != cudaSuccess) {
+      LOG(ERROR) << std::string("free cuBLAS workspace failed ")
+                 << cudaGetErrorString(e_cu_free_cublas_worksapce);
+    }
+  }
 }
 
 // This should be idempotent if already initialized.
@@ -501,7 +509,18 @@ Status BaseGPUDevice::Init(const SessionOptions& options) {
       return errors::InvalidArgument(error_message);
     }
   }
-
+  if ((options.config.gpu_options().cuda_graph_mode_compatible() ||
+      options.config.gpu_options().cuda_graph_enable_jit())
+      && cuda_graph_cublas_workspace_ == nullptr) {
+    int num_bytes = 1 << 22;
+    cudaError_t e_cu_malloc_cublas = cudaMalloc(&cuda_graph_cublas_workspace_, num_bytes);
+    if (e_cu_malloc_cublas != cudaSuccess) {
+      return errors::Internal("malloc buffer for cublas workspace failed");
+    }
+    se::Stream* default_stream = streams_.front()->compute;
+    default_stream->parent()->AsBlas()->SetWorkspace(
+        default_stream, cuda_graph_cublas_workspace_, num_bytes);
+  }
   return Status::OK();
 }
 
