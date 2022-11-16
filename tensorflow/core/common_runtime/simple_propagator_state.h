@@ -125,7 +125,7 @@ class SimplePropagatorState {
     // object access that will establish the happens-before relation between
     // the write to input_tensors_ in `PropagateOutputs()` and the read in
     // `PrepareInputs()`.
-    CHECK_EQ(pending_[tagged_node.node_item->node_id], 0);
+    CHECK_EQ(pending_[tagged_node.node_item->node->id()], 0);
 #endif  // defined(THREAD_SANITIZER) || defined(DEBUG)
     return input_tensors_.data() + tagged_node.node_item->input_start;
   }
@@ -143,7 +143,7 @@ class SimplePropagatorState {
     // optional debugging support.
     if (TF_PREDICT_FALSE(vlog_) && VLOG_IS_ON(1)) {
       mutex_lock l(mu_);
-      (*active_)[tagged_node.node_item->node_id] = true;
+      (*active_)[tagged_node.node_item->node->id()] = true;
     }
   }
   void MaybeMarkCompleted(const TaggedNode& tagged_node) {
@@ -151,7 +151,7 @@ class SimplePropagatorState {
     // optional debugging support.
     if (TF_PREDICT_FALSE(vlog_) && VLOG_IS_ON(1)) {
       mutex_lock l(mu_);
-      (*active_)[tagged_node.node_item->node_id] = false;
+      (*active_)[tagged_node.node_item->node->id()] = false;
     }
   }
 

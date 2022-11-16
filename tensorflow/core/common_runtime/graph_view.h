@@ -58,8 +58,7 @@ struct ControlEdgeInfo {
 //
 // Each NodeItem is an element of exactly one GraphView.
 struct NodeItem {
-  // The index of this node's item in its GraphView.
-  int node_id = -1;
+  const Node* node = nullptr;
 
   // Cached attributes of this node for fast lookup.
   bool kernel_is_async : 1;     // True iff kernel->AsAsync() != nullptr

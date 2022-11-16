@@ -447,6 +447,10 @@ class DirectSession : public Session {
   int multi_stream_num_ = 0;
   ResourceMgr* multi_stream_shared_rmgr_ = nullptr;
 
+  // User decide whether use compute stream as copy stream
+  // by set environment 'MERGE_COMPUTE_COPY_STREAM'
+  bool merge_compute_and_copy_stream_ = false;
+
   TF_DISALLOW_COPY_AND_ASSIGN(DirectSession);
 
   // EXPERIMENTAL: debugger (tfdbg) related

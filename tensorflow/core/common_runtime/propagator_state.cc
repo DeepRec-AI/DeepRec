@@ -183,7 +183,7 @@ void PropagatorState::DumpIterationState(const FrameState* frame,
   // Dump any waiting nodes that are holding on to tensors.
   for (const NodeItem* node : *nodes) {
     PendingCounts::Handle pending_id =
-        immutable_state_.pending_ids()[node->node_id];
+        immutable_state_.pending_ids()[node->node->id()];
     if (iteration->node_state(pending_id) == PendingCounts::PENDING_NOTREADY ||
         iteration->node_state(pending_id) == PendingCounts::PENDING_READY) {
       DumpPendingNodeState(*node, iteration->input_tensors, false);
@@ -192,7 +192,7 @@ void PropagatorState::DumpIterationState(const FrameState* frame,
   // Then the active nodes.
   for (const NodeItem* node : *nodes) {
     PendingCounts::Handle pending_id =
-        immutable_state_.pending_ids()[node->node_id];
+        immutable_state_.pending_ids()[node->node->id()];
     if (iteration->node_state(pending_id) == PendingCounts::STARTED) {
       DumpActiveNodeState(*node, iteration->input_tensors);
     }

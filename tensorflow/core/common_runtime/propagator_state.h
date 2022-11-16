@@ -462,7 +462,7 @@ class PropagatorState {
     if (TF_PREDICT_FALSE(vlog_) && VLOG_IS_ON(1)) {
       mutex_lock l(tagged_node.input_frame->mu);
       tagged_node.input_iter->mark_started(
-          immutable_state_.pending_ids()[tagged_node.node_item->node_id]);
+          immutable_state_.pending_ids()[tagged_node.node_item->node->id()]);
     }
   }
 
@@ -472,7 +472,7 @@ class PropagatorState {
     if (TF_PREDICT_FALSE(vlog_) && VLOG_IS_ON(1)) {
       mutex_lock l(tagged_node.input_frame->mu);
       tagged_node.input_iter->mark_completed(
-          immutable_state_.pending_ids()[tagged_node.node_item->node_id]);
+          immutable_state_.pending_ids()[tagged_node.node_item->node->id()]);
     }
   }
 

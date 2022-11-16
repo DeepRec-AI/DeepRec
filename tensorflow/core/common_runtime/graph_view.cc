@@ -36,7 +36,7 @@ limitations under the License.
 namespace tensorflow {
 
 string NodeItem::DebugString() const {
-  string ret = strings::StrCat("{name:'", kernel->name(), "' id:", node_id);
+  string ret = strings::StrCat("{name:'", kernel->name(), "' id:", node->id());
   if (is_source) {
     strings::StrAppend(&ret, " source}");
   } else {

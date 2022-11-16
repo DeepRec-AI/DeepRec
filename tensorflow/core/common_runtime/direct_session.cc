@@ -766,6 +766,10 @@ DirectSession::DirectSession(const SessionOptions& options,
     LOG(INFO) << "Current DirectSession " << this << " will be pinned to core: " << msg;
     thread_pools_[0].first->SetThreadPoolAffinity(cpuset);
   }
+
+  tensorflow::ReadBoolFromEnvVar("MERGE_COMPUTE_COPY_STREAM",
+                                 /*default_val=*/false,
+                                 &merge_compute_and_copy_stream_);
 }
 
 DirectSession::~DirectSession() {
@@ -961,8 +965,16 @@ Status DirectSession::RunInternal(
 
   // Start parallel Executors.
   const size_t num_executors = executors_and_keys->items.size();
+  // ref_send_inputs will be filled during execute graph.
+  std::vector<TensorReference*> ref_send_inputs;
   ExecutorBarrier* barrier = new ExecutorBarrier(
-      num_executors, run_state.rendez, [&run_state](const Status& ret) {
+      num_executors, run_state.rendez,
+      [&run_state, &ref_send_inputs](const Status& ret) {
+        VLOG(2) << "To unref buffer size: " << ref_send_inputs.size();
+        for (auto& ref : ref_send_inputs) {
+          ref->Unref();
+        }
+        ref_send_inputs.clear();
         {
           mutex_lock l(run_state.mu_);
           run_state.status.Update(ret);
@@ -993,6 +1005,10 @@ Status DirectSession::RunInternal(
   } else {
     args.executor_policy = ExecutorPolicy::USE_NORMAL_EXECUTOR;
   }
+
+  args.ref_send_inputs_mu_ptr = std::make_unique<mutex>();
+  args.ref_send_inputs_ptr = &ref_send_inputs;
+  args.merge_compute_and_copy_stream = merge_compute_and_copy_stream_;
 
   const bool do_trace = (run_options.trace_level() > RunOptions::NO_TRACE);
 

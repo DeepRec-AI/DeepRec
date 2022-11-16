@@ -126,7 +126,7 @@ Status ImmutableExecutorState::Initialize() {
     FrameInfo* frame_info = EnsureFrameInfo(frame_name);
 
     NodeItem* item = gview_.node(id);
-    item->node_id = id;
+    item->node = n;
 
     item->input_start = frame_info->total_inputs;
     frame_info->total_inputs += n->num_inputs();
