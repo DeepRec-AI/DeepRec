@@ -3345,9 +3345,13 @@ class UniqueNodes {
  private:
   uint64 ComputeSignature(const NodeDef& node);
   bool SameNode(const NodeDef& node1, const NodeDef& node2) const;
+  bool IsExcludeAttribute(const std::string& attr_name) const;
 
   absl::flat_hash_map<uint64, std::vector<NodeDef*>> rep_;
   absl::flat_hash_map<const NodeDef*, uint64> memoized_signatures_;
+  std::unordered_set<std::string> exclude_attrs_ = {
+    "_stream_id"
+  };
 };
 
 uint64 UniqueNodes::ComputeSignature(const NodeDef& node) {
@@ -3364,6 +3368,9 @@ uint64 UniqueNodes::ComputeSignature(const NodeDef& node) {
     h = Hash64CombineUnordered(std::hash<int>()(input_tensor.index()), h);
   }
   for (const auto& attr : node.attr()) {
+    // exclue 'stream_id' attribute
+    if (IsExcludeAttribute(attr.first))
+      continue;
     h = Hash64CombineUnordered(Hash64(attr.first), h);
     h = Hash64CombineUnordered(FastAttrValueHash(attr.second), h);
   }
@@ -3384,7 +3391,21 @@ bool UniqueNodes::SameNode(const NodeDef& node1, const NodeDef& node2) const {
   if (node1.input_size() != node2.input_size()) {
     return false;
   }
-  if (node1.attr_size() != node2.attr_size()) {
+
+  int node1_attr_size = node1.attr_size();
+  int node2_attr_size = node2.attr_size();
+  // exclude 'stream_id' attribute
+  for (const auto& attr : node1.attr()) {
+    if (IsExcludeAttribute(attr.first)) {
+      node1_attr_size -= 1;
+    }
+  }
+  for (const auto& attr : node2.attr()) {
+    if (IsExcludeAttribute(attr.first)) {
+      node2_attr_size -= 1;
+    }
+  }
+  if (node1_attr_size != node2_attr_size) {
     return false;
   }
 
@@ -3397,12 +3418,22 @@ bool UniqueNodes::SameNode(const NodeDef& node1, const NodeDef& node2) const {
 
   // Compare attributes.
   for (const auto& attr1 : node1.attr()) {
+    // exclude 'stream_id' attribute
+    if (IsExcludeAttribute(attr1.first))
+      continue;
     auto it = node2.attr().find(attr1.first);
     if (it == node2.attr().end()) return false;
     if (!FastAreAttrValuesEqual(attr1.second, it->second)) return false;
   }
 
   return true;
+}
+
+bool UniqueNodes::IsExcludeAttribute(const std::string& attr_name) const {
+  if (exclude_attrs_.find(attr_name) != exclude_attrs_.end())
+    return true;
+
+  return false;
 }
 
 bool ArithmeticOptimizer::CanDedup(const NodeDef& node) const {
