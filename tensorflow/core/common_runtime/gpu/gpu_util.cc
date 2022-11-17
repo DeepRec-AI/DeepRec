@@ -36,6 +36,7 @@ limitations under the License.
 #include "tensorflow/core/platform/stream_executor.h"
 #include "tensorflow/core/platform/tensor_coding.h"
 #include "tensorflow/core/platform/tracing.h"
+#include "tensorflow/core/util/env_var.h"
 #include "tensorflow/core/util/util.h"
 
 // IMPLEMENTATION NOTE:
@@ -110,6 +111,23 @@ void* GetBase(const Tensor* src) {
 }
 
 void* GetBase(Tensor* dst) { return DMAHelper::base(dst); }
+
+/*static*/
+bool GPUUtil::MergeComputeAndCopyStream() {
+  static bool merge = false;
+  static bool check_setting = true;
+  if (check_setting) {
+    static mutex mu;
+    mutex_lock l(mu);
+    if (check_setting) {
+      tensorflow::ReadBoolFromEnvVar("MERGE_COMPUTE_COPY_STREAM",
+                                     /*default_val=*/false, &merge);
+      check_setting = false;
+    }
+  }
+
+  return merge;
+}
 
 /*static*/
 void GPUUtil::SetProtoFromGPU(const Tensor& tensor, Device* dev,
@@ -273,16 +291,22 @@ void GPUUtil::CopyGPUTensorToCPU(Device* gpu_device,
     return;
   }
 
-  auto send_device_to_host_stream =
-      static_cast<const GPUDeviceContext*>(device_context)
-          ->device_to_host_stream();
-  if (send_device_to_host_stream == nullptr) {
-    done(errors::Internal("No send gpu copy-out-stream is available."));
-    return;
-  }
-  // Wait for the sender's main stream to make sure the data are available.
-  if (send_device_to_host_stream != send_stream) {
-    send_device_to_host_stream->ThenWaitFor(send_stream);
+  se::Stream* send_device_to_host_stream = nullptr;
+  if (MergeComputeAndCopyStream()) {
+    send_device_to_host_stream = send_stream;
+  } else {
+    send_device_to_host_stream =
+        static_cast<const GPUDeviceContext*>(device_context)
+            ->device_to_host_stream();
+    if (send_device_to_host_stream == nullptr) {
+      done(errors::Internal("No send gpu copy-out-stream is available."));
+      return;
+    }
+
+    // Wait for the sender's main stream to make sure the data are available.
+    if (send_device_to_host_stream != send_stream) {
+      send_device_to_host_stream->ThenWaitFor(send_stream);
+    }
   }
 
   const int64 total_bytes = gpu_tensor->TotalBytes();
@@ -320,17 +344,22 @@ void GPUUtil::CopyCPUTensorToGPU(const Tensor* cpu_tensor,
     return;
   }
 
-  auto recv_host_to_device_stream =
-      static_cast<const GPUDeviceContext*>(device_context)
-          ->host_to_device_stream();
-  if (recv_host_to_device_stream == nullptr) {
-    done(errors::Internal("No send gpu copy-out-stream is available."));
-    return;
-  }
-  // Wait for the recv-stream to make sure the buffer is truly available.
-  if (sync_dst_compute) {
-    if (recv_host_to_device_stream != recv_stream) {
-      recv_host_to_device_stream->ThenWaitFor(recv_stream);
+  se::Stream* recv_host_to_device_stream = nullptr;
+  if (MergeComputeAndCopyStream()) {
+    recv_host_to_device_stream = recv_stream;
+  } else {
+    recv_host_to_device_stream =
+        static_cast<const GPUDeviceContext*>(device_context)
+            ->host_to_device_stream();
+    if (recv_host_to_device_stream == nullptr) {
+      done(errors::Internal("No send gpu copy-out-stream is available."));
+      return;
+    }
+    // Wait for the recv-stream to make sure the buffer is truly available.
+    if (sync_dst_compute) {
+      if (recv_host_to_device_stream != recv_stream) {
+        recv_host_to_device_stream->ThenWaitFor(recv_stream);
+      }
     }
   }
 
@@ -342,17 +371,22 @@ void GPUUtil::CopyCPUTensorToGPU(const Tensor* cpu_tensor,
     DeviceMemoryBase gpu_dst_ptr(dst_ptr, total_bytes);
     recv_host_to_device_stream->ThenMemcpy(&gpu_dst_ptr, src_ptr, total_bytes);
   }
-  // Use of cpu_tensor may outlive stack scope, so keep a ref.
-  TensorReference input_ref(*cpu_tensor);
-  dev_info->event_mgr->ThenExecute(
-      recv_host_to_device_stream,
-      [recv_host_to_device_stream, done, input_ref]() {
-        input_ref.Unref();
-        if (!recv_host_to_device_stream->ok()) {
-          LOG(FATAL) << "CPU->GPU Memcpy failed";
-        }
-        done(Status::OK());
-      });
+
+  if (MergeComputeAndCopyStream()) {
+    done(Status::OK());
+  } else {
+    // Use of cpu_tensor may outlive stack scope, so keep a ref.
+    TensorReference input_ref(*cpu_tensor);
+    dev_info->event_mgr->ThenExecute(
+        recv_host_to_device_stream,
+        [recv_host_to_device_stream, done, input_ref]() {
+          input_ref.Unref();
+          if (!recv_host_to_device_stream->ok()) {
+            LOG(FATAL) << "CPU->GPU Memcpy failed";
+          }
+          done(Status::OK());
+        });
+  }
 }
 
 Status GPUUtil::Sync(Device* gpu_device) {

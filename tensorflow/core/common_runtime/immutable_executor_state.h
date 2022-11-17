@@ -103,7 +103,7 @@ class ImmutableExecutorState {
 
   const FrameInfo& get_enter_frame_info(const NodeItem& node_item) const {
     DCHECK(node_item.is_enter);
-    return *enter_frame_info_[node_item.node_id];
+    return *enter_frame_info_[node_item.node->id()];
   }
 
   bool requires_control_flow_support() const { return requires_control_flow_; }

@@ -395,6 +395,11 @@ class ExecutorState {
   bool finish_when_deferred_ops_done_ TF_GUARDED_BY(num_deferred_ops_mu_) =
       false;
 
+  // Ref Tensors of input of send op
+  mutex* ref_send_inputs_mu_ptr_;
+  std::vector<TensorReference*>* ref_send_inputs_ptr_;
+  bool merge_compute_and_copy_stream_;
+
   mutex mu_;
   Status status_ TF_GUARDED_BY(mu_);
 };
@@ -489,8 +494,8 @@ struct SortTaggedNode {
   SortTaggedNode(const std::vector<int64>* immutable_accumulative_cost) :
       immutable_accumulative_cost_(immutable_accumulative_cost) {}
   bool operator()(const TaggedNode& n1, const TaggedNode& n2) {
-    return (*immutable_accumulative_cost_)[n1.get_node_item().node_id] >
-        (*immutable_accumulative_cost_)[n2.get_node_item().node_id];
+    return (*immutable_accumulative_cost_)[n1.get_node_item().node->id()] >
+        (*immutable_accumulative_cost_)[n2.get_node_item().node->id()];
   }
   const std::vector<int64>* immutable_accumulative_cost_;
 };
@@ -537,7 +542,10 @@ ExecutorState<PropagatorStateType>::ExecutorState(
       sync_on_finish_(args.sync_on_finish),
       executor_policy_(args.executor_policy),
       propagator_(immutable_state, step_id_, vlog_),
-      num_outstanding_ops_(0) {
+      num_outstanding_ops_(0),
+      ref_send_inputs_mu_ptr_(args.ref_send_inputs_mu_ptr.get()),
+      ref_send_inputs_ptr_(args.ref_send_inputs_ptr),
+      merge_compute_and_copy_stream_(args.merge_compute_and_copy_stream) {
   // TODO: FIXME Consider function lib executor later
   //if (args.cost_runner == nullptr) {
   //  LOG(FATAL) << "cost_runner is nullptr, please check the args.";
@@ -668,16 +676,31 @@ Status ExecutorState<PropagatorStateType>::ProcessSync(
     NodeExecStatsInterface* stats) {
   Status s;
   OpKernelContext ctx(params, item.num_outputs);
-  nodestats::SetOpStart(stats);
-
-  ExecutorInternal::KernelStatsInfo kernel_stat_buffer;
-  kernel_stats_->StartCollectOp(&item, &kernel_stat_buffer);
-
   OpKernel* op_kernel = item.kernel;
   Device* device = immutable_state_.params().device;
   if (item.virtual_device.get() != nullptr) {
     device = item.virtual_device.get();
   }
+
+  if (merge_compute_and_copy_stream_ &&
+      (op_kernel->type_string() == "_HostSend" ||
+       (op_kernel->type_string() == "_Send" &&
+        device->parsed_name().type == "CPU")) &&
+      item.node->attrs().Find("recv_device")->s().find("GPU") != string::npos &&
+      (*params->inputs)[0].tensor->NumElements() > 0) {
+    CHECK(item.num_inputs == 1);  // send op allow one tensor
+    TensorReference* ref = new TensorReference(*((*params->inputs)[0].tensor));
+    {
+      mutex_lock l(*ref_send_inputs_mu_ptr_);
+      ref_send_inputs_ptr_->push_back(std::move(ref));
+    }
+  }
+
+  nodestats::SetOpStart(stats);
+
+  ExecutorInternal::KernelStatsInfo kernel_stat_buffer;
+  kernel_stats_->StartCollectOp(&item, &kernel_stat_buffer);
+
   const bool is_expensive = kernel_stats_->IsExpensive(item);
 
   if (TF_PREDICT_FALSE(MightTrace(item, event_collector_))) {
@@ -748,7 +771,7 @@ void ExecutorState<PropagatorStateType>::ProcessAsync(
     Status s = ProcessOutputs(*state->item, &state->ctx, outputs.data(), stats);
     nodestats::SetMemory(stats, &state->ctx);
     if (vlog_) {
-      VLOG(2) << "Async kernel done: " << state->item->node_id << " step "
+      VLOG(2) << "Async kernel done: " << state->item->node->id() << " step "
               << step_id_ << " " << SummarizeNodeDef(state->item->kernel->def())
               << (state->tagged_node.get_is_dead() ? " is dead" : "")
               << " device: " << device->name();
@@ -898,7 +921,7 @@ void ExecutorState<PropagatorStateType>::BatchProcess(std::vector<TaggedNode> no
     tagged_node = inline_ready.front();
     inline_ready.pop_front();
     const NodeItem& item = tagged_node.get_node_item();
-    const int id = item.node_id;
+    const int id = item.node->id();
 
     propagator_.MaybeMarkStarted(tagged_node);
 

@@ -698,17 +698,42 @@ Status BaseGPUDevice::MaybeCopyTensorToGPU(
       return err;
     }
 
-    StatusCallback wrapped_done = std::bind(
-        [to, copy](StatusCallback done_,
-                   // Begin unbound arguments.
-                   const Status& s) {
-          if (s.ok()) {
-            *to = std::move(*copy);
-          }
-          delete copy;
-          done_(s);
-        },
-        std::move(done), std::placeholders::_1);
+    StatusCallback wrapped_done;
+    if (GPUUtil::MergeComputeAndCopyStream()) {
+      TensorReference input_ref(from);
+      auto recv_host_to_device_stream = device_contexts_[0]->stream();
+      auto event_mgr = em_;
+      wrapped_done = std::bind(
+          [to, copy, recv_host_to_device_stream, event_mgr, input_ref](
+              StatusCallback done_,
+              // Begin unbound arguments.
+              const Status& s) {
+            event_mgr->ThenExecute(
+                recv_host_to_device_stream,
+                [to, copy, recv_host_to_device_stream, done_, &s, input_ref]() {
+                  input_ref.Unref();
+                  if (!recv_host_to_device_stream->ok()) {
+                    LOG(FATAL) << "CPU->GPU Memcpy failed";
+                  }
+                  *to = std::move(*copy);
+                  delete copy;
+                  done_(s);
+                });
+          },
+          std::move(done), std::placeholders::_1);
+    } else {
+      wrapped_done = std::bind(
+          [to, copy](StatusCallback done_,
+                     // Begin unbound arguments.
+                     const Status& s) {
+            if (s.ok()) {
+              *to = std::move(*copy);
+            }
+            delete copy;
+            done_(s);
+          },
+          std::move(done), std::placeholders::_1);
+    }
 
     tracing::ScopedAnnotation annotation("MakeTensorFromProto");
     device_contexts_[0]->CopyCPUTensorToDevice(

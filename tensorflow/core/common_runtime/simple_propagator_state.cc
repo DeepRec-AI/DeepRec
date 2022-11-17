@@ -107,13 +107,13 @@ void SimplePropagatorState::DumpState() {
   mutex_lock l(mu_);
   // Dump any waiting nodes that are holding on to tensors.
   for (const NodeItem* node : *nodes_) {
-    if (pending_[node->node_id]) {
+    if (pending_[node->node->id()]) {
       DumpPendingNodeState(*node, input_tensors_.data(), false);
     }
   }
   // Then the active nodes.
   for (const NodeItem* node : *nodes_) {
-    if ((*active_)[node->node_id]) {
+    if ((*active_)[node->node->id()]) {
       DumpActiveNodeState(*node, input_tensors_.data());
     }
   }

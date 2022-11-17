@@ -105,6 +105,10 @@ class GPUUtil {
                                      const Tensor* src_gpu_tensor,
                                      Tensor* dst_gpu_tensor,
                                      StatusCallback done);
+
+  // User decide whether use compute stream as copy stream
+  // by set environment 'MERGE_COMPUTE_COPY_STREAM'
+  static bool MergeComputeAndCopyStream();
 };
 
 }  // namespace tensorflow
