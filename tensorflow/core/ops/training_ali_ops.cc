@@ -91,22 +91,24 @@ static Status KvResourceApplyAdagradShapeFn(InferenceContext* c, bool sparse) {
   return Status::OK();
 }
 
-REGISTER_OP("KvResourceSparseApplyAdagrad")
-    .Input("var: resource")
-    .Input("accum: resource")
-    .Input("lr: T")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("global_step: Tstep")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64}")
-    .Attr("Tstep: {int32, int64}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvResourceApplyAdagradShapeFn(c, true /* sparse */);
-    })
-    .Doc(R"doc(
-)doc");
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("accum: resource")                  \
+    .Input("lr: T")                            \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("global_step: Tstep")               \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64}")          \
+    .Attr("Tstep: {int32, int64}")             \
+    .Attr("use_locking: bool = false")         \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvResourceApplyAdagradShapeFn(c, true /* sparse */); \
+    })                                         \
+    .Doc(R"doc()doc")
+REGISTER_OP_BY_NAME("KvResourceSparseApplyAdagrad");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyAdagrad");
 
 static Status KvResourceApplyFtrlShapeFn(InferenceContext* c, bool sparse) {
   ShapeHandle unused;
@@ -126,42 +128,49 @@ static Status KvResourceApplyFtrlShapeFn(InferenceContext* c, bool sparse) {
   return Status::OK();
 }
 
-REGISTER_OP("KvResourceSparseApplyFtrl")
-    .Input("var: resource")
-    .Input("accum: resource")
-    .Input("linear: resource")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("lr: T")
-    .Input("l1: T")
-    .Input("l2: T")
-    .Input("lr_power: T")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64, string}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvResourceApplyFtrlShapeFn(c, true /* sparse */);
-    })
-    .Doc(R"doc(
-)doc");
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("accum: resource")                  \
+    .Input("linear: resource")                 \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("lr: T")                            \
+    .Input("l1: T")                            \
+    .Input("l2: T")                            \
+    .Input("lr_power: T")                      \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64, string}")  \
+    .Attr("use_locking: bool = false")         \
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvResourceApplyFtrlShapeFn(c, true /* sparse */);\
+    })                                         \
+    .Doc(R"doc()doc")
+REGISTER_OP_BY_NAME("KvResourceSparseApplyFtrl");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyFtrl");
 
-REGISTER_OP("KvResourceSparseApplyFtrlV2")
-    .Input("var: resource")
-    .Input("accum: resource")
-    .Input("linear: resource")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("lr: T")
-    .Input("l1: T")
-    .Input("l2: T")
-    .Input("l2_shrinkage: T")
-    .Input("lr_power: T")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64, string}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvResourceApplyFtrlShapeFn(c, true /* sparse */);
-    });
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("accum: resource")                  \
+    .Input("linear: resource")                 \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("lr: T")                            \
+    .Input("l1: T")                            \
+    .Input("l2: T")                            \
+    .Input("l2_shrinkage: T")                  \
+    .Input("lr_power: T")                      \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64, string}")  \
+    .Attr("use_locking: bool = false")         \
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvResourceApplyFtrlShapeFn(c, true /* sparse */);\
+    })
+REGISTER_OP_BY_NAME("KvResourceSparseApplyFtrlV2");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyFtrlV2");
 
 static Status ApplyAdagradDecayShapeFn(InferenceContext* c, bool sparse) {
   ShapeHandle unused;
@@ -283,26 +292,29 @@ static Status KvApplyAdagradDecayShapeFn(InferenceContext* c, bool sparse) {
   return Status::OK();
 }
 
-REGISTER_OP("KvResourceSparseApplyAdagradDecay")
-    .Input("var: resource")
-    .Input("accum: resource")
-    .Input("accum_decay_power: resource")
-    .Input("lr: T")
-    .Input("accum_decay_step: Tstep")
-    .Input("accum_decay_rate: T")
-    .Input("accum_baseline: T")
-    .Input("global_step: Tstep")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64}")
-    .Attr("Tstep: {int32, int64}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvApplyAdagradDecayShapeFn(c, true /* sparse */);
-    })
-    .Doc(R"doc(
-)doc");
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("accum: resource")                  \
+    .Input("accum_decay_power: resource")      \
+    .Input("lr: T")                            \
+    .Input("accum_decay_step: Tstep")          \
+    .Input("accum_decay_rate: T")              \
+    .Input("accum_baseline: T")                \
+    .Input("global_step: Tstep")               \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64}")          \
+    .Attr("Tstep: {int32, int64}")             \
+    .Attr("use_locking: bool = false")         \
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvApplyAdagradDecayShapeFn(c, true /* sparse */);\
+    })                                         \
+    .Doc(R"doc()doc")
+REGISTER_OP_BY_NAME("KvResourceSparseApplyAdagradDecay");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyAdagradDecay");
 
 static Status ApplyAdamAsyncShapeFn(InferenceContext* c, bool sparse) {
   ShapeHandle unused;
@@ -420,28 +432,31 @@ static Status KvResourceApplyAdamShapeFn(InferenceContext* c, bool sparse) {
   return Status::OK();
 }
 
-REGISTER_OP("KvResourceSparseApplyAdam")
-    .Input("var: resource")
-    .Input("m: resource")
-    .Input("v: resource")
-    .Input("beta1_power: T")
-    .Input("beta2_power: T")
-    .Input("lr: T")
-    .Input("beta1: T")
-    .Input("beta2: T")
-    .Input("epsilon: T")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("global_step: Tstep")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64, string}")
-    .Attr("Tstep: {int32, int64}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvResourceApplyAdamShapeFn(c, true /* sparse */);
-    })
-    .Doc(R"doc(
-)doc");
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("m: resource")                      \
+    .Input("v: resource")                      \
+    .Input("beta1_power: T")                   \
+    .Input("beta2_power: T")                   \
+    .Input("lr: T")                            \
+    .Input("beta1: T")                         \
+    .Input("beta2: T")                         \
+    .Input("epsilon: T")                       \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("global_step: Tstep")               \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64, string}")  \
+    .Attr("Tstep: {int32, int64}")             \
+    .Attr("use_locking: bool = false")         \
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvResourceApplyAdamShapeFn(c, true /* sparse */);\
+    })                                         \
+    .Doc(R"doc()doc")
+REGISTER_OP_BY_NAME("KvResourceSparseApplyAdam");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyAdam");
 
 static Status KvApplyAdamAsyncShapeFn(InferenceContext* c, bool sparse) {
   ShapeHandle unused;
@@ -462,27 +477,31 @@ static Status KvApplyAdamAsyncShapeFn(InferenceContext* c, bool sparse) {
   return Status::OK();
 }
 
-REGISTER_OP("KvResourceSparseApplyAdamAsync")
-    .Input("var: resource")
-    .Input("m: resource")
-    .Input("v: resource")
-    .Input("beta1_power: resource")
-    .Input("beta2_power: resource")
-    .Input("lr: T")
-    .Input("beta1: T")
-    .Input("beta2: T")
-    .Input("epsilon: T")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("global_step: Tstep")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64}")
-    .Attr("Tstep: {int32, int64}")
-    .Attr("use_locking: bool = false")
-    .Attr("apply_sparse_rmsprop: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvApplyAdamAsyncShapeFn(c, true /* sparse */);
-    });
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("m: resource")                      \
+    .Input("v: resource")                      \
+    .Input("beta1_power: resource")            \
+    .Input("beta2_power: resource")            \
+    .Input("lr: T")                            \
+    .Input("beta1: T")                         \
+    .Input("beta2: T")                         \
+    .Input("epsilon: T")                       \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("global_step: Tstep")               \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64}")          \
+    .Attr("Tstep: {int32, int64}")             \
+    .Attr("use_locking: bool = false")         \
+    .Attr("apply_sparse_rmsprop: bool = false")\
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvApplyAdamAsyncShapeFn(c, true /* sparse */);\
+    })
+REGISTER_OP_BY_NAME("KvResourceSparseApplyAdamAsync");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyAdamAsync");
 
 static Status KvApplyGradientDescentShapeFn(InferenceContext* c) {
   ShapeHandle unused;
@@ -495,40 +514,47 @@ static Status KvApplyGradientDescentShapeFn(InferenceContext* c) {
   return Status::OK();
 }
 
-REGISTER_OP("KvResourceSparseApplyGradientDescent")
-    .Input("var: resource")
-    .Input("alpha: T")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("global_step: Tstep")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64}")
-    .Attr("Tstep: {int32, int64}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn(KvApplyGradientDescentShapeFn);
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("alpha: T")                         \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("global_step: Tstep")               \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64}")          \
+    .Attr("Tstep: {int32, int64}")             \
+    .Attr("use_locking: bool = false")         \
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn(KvApplyGradientDescentShapeFn)
+REGISTER_OP_BY_NAME("KvResourceSparseApplyGradientDescent");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyGradientDescent");
 
-REGISTER_OP("KvResourceSparseApplyAdamW")
-    .Input("var: resource")
-    .Input("m: resource")
-    .Input("v: resource")
-    .Input("beta1_power: T")
-    .Input("beta2_power: T")
-    .Input("lr: T")
-    .Input("beta1: T")
-    .Input("beta2: T")
-    .Input("epsilon: T")
-    .Input("grad: T")
-    .Input("indices: Tindices")
-    .Input("global_step: Tstep")
-    .Input("weight_decay: T")
-    .Attr("T: numbertype")
-    .Attr("Tindices: {int32, int64, string}")
-    .Attr("Tstep: {int32, int64}")
-    .Attr("use_locking: bool = false")
-    .SetShapeFn([](InferenceContext* c) {
-      return KvResourceApplyAdamShapeFn(c, true /* sparse */);
-    })
-    .Doc(R"doc(
-)doc");
+#define REGISTER_OP_BY_NAME(name)              \
+REGISTER_OP(name)                              \
+    .Input("var: resource")                    \
+    .Input("m: resource")                      \
+    .Input("v: resource")                      \
+    .Input("beta1_power: T")                   \
+    .Input("beta2_power: T")                   \
+    .Input("lr: T")                            \
+    .Input("beta1: T")                         \
+    .Input("beta2: T")                         \
+    .Input("epsilon: T")                       \
+    .Input("grad: T")                          \
+    .Input("indices: Tindices")                \
+    .Input("global_step: Tstep")               \
+    .Input("weight_decay: T")                  \
+    .Attr("T: numbertype")                     \
+    .Attr("Tindices: {int32, int64, string}")  \
+    .Attr("Tstep: {int32, int64}")             \
+    .Attr("use_locking: bool = false")         \
+    .Attr("indices_as_pointer: bool = false")  \
+    .SetShapeFn([](InferenceContext* c) {      \
+      return KvResourceApplyAdamShapeFn(c, true /* sparse */);\
+    })                                         \
+    .Doc(R"doc()doc")
+REGISTER_OP_BY_NAME("KvResourceSparseApplyAdamW");
+REGISTER_OP_BY_NAME("_OPT_KvResourceSparseApplyAdamW");
 
 }  // namespace tensorflow

@@ -516,6 +516,77 @@ REGISTER_KERNELS(int64, float)
 #endif  // GOOGLE_CUDA
 
 template <typename TKey, typename TValue>
+class KvResourceLookupIDOp : public OpKernel {
+ public:
+  explicit KvResourceLookupIDOp(OpKernelConstruction* c) : OpKernel(c) {
+  }
+
+  void Compute(OpKernelContext* c) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    const Tensor& indices = c->input(1);
+    const int64 N = indices.NumElements();
+
+    TensorShape result_shape = indices.shape();
+
+    Tensor* out = nullptr;
+    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
+
+    if (N > 0) {
+      auto out_flat = out->flat<int64>();
+      int64* out_base = &out_flat(0);
+
+      auto indices_flat = indices.flat<TKey>();
+      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
+      auto do_work = [this, indices_flat,
+           out_base, ev] (int64 start, int64 limit) {
+        for (int64 i = start; i < limit; ++i) {
+          ValuePtr<TValue>* value_ptr;
+          bool is_filter = false;
+          ev->LookupOrCreateKey(indices_flat(i), &value_ptr, &is_filter, false);
+          *(out_base + i) = (int64)value_ptr;
+        }
+      };
+
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      Shard(worker_threads->num_threads, worker_threads->workers, indices_size,
+          100, do_work);
+
+      if (ev->IsMultiLevel()) {
+        ev->storage_manager()->Schedule([ev, indices]() {
+          embedding::BatchCache<TKey>* cache = ev->Cache();
+          if (cache) {
+            cache->add_to_rank(indices);
+          }
+        });
+      }
+    }
+  }
+};
+
+#define REGISTER_LOOKUP_FULL(dev, ktype, vtype)                   \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceLookupID")         \
+                              .Device(DEVICE_##dev)               \
+                              .HostMemory("resource")             \
+                              .HostMemory("indices")              \
+                              .TypeConstraint<vtype>("dtype")     \
+                              .TypeConstraint<ktype>("Tkeys"),    \
+                          KvResourceLookupIDOp<ktype, vtype>)
+
+#define REGISTER_LOOKUP_ALL_INDICES(dev, type)                    \
+  REGISTER_LOOKUP_FULL(dev, int32, type);                         \
+  REGISTER_LOOKUP_FULL(dev, int64, type)
+
+#define REGISTER_LOOKUP_CPU(type) REGISTER_LOOKUP_ALL_INDICES(CPU, type)
+
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_LOOKUP_CPU)
+
+#undef REGISTER_LOOKUP_CPU
+#undef REGISTER_LOOKUP_ALL_INDICES
+#undef REGISTER_LOOKUP_FULL
+
+template <typename TKey, typename TValue>
 class KvResourceGatherOp : public OpKernel {
  public:
   explicit KvResourceGatherOp(OpKernelConstruction* c) : OpKernel(c) {
@@ -649,6 +720,136 @@ class KvResourceGatherOp : public OpKernel {
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceGatherOp<ktype, vtype>)
+
+#define REGISTER_GATHER_ALL_INDICES(type)                         \
+  REGISTER_GATHER_FULL(CPU, int32, type);                         \
+  REGISTER_GATHER_FULL(CPU, int64, type)
+
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_GATHER_ALL_INDICES)
+#undef REGISTER_GATHER_ALL_INDICES
+#undef REGISTER_GATHER_FULL
+
+template <typename TKey, typename TValue>
+class KvResourceCollectEmbeddingOp : public OpKernel {
+ public:
+  explicit KvResourceCollectEmbeddingOp(OpKernelConstruction* c) : OpKernel(c) {
+    OP_REQUIRES_OK(c,
+        c->GetAttr("is_use_default_value_tensor",
+          &is_use_default_value_tensor_));
+    if (is_use_default_value_tensor_) {
+      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
+                            int64 total_dim, int64 len) {
+        return default_v + len * index;
+      };
+    } else {
+      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
+                            int64 total_dim, int64 len) {
+        return default_v + len * (id % total_dim) ;
+      };
+    }
+    if (c->num_inputs() == 5) {
+      get_count_fn_ = [](const int32* count, int64 index) {
+        return count[index];
+      };
+    } else {
+      get_count_fn_ = [](const int32* count, int64 index) {
+        return 1;
+      };
+    }
+    lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
+                    TValue* val, TValue* default_v, int count) {
+      if (key) {
+        TValue* mem_val = ev->LookupOrCreateEmb((ValuePtr<TValue>*)key, default_v);
+        memcpy(val, mem_val, sizeof(TValue) * ev->ValueLen());
+      } else {
+        memcpy(val, default_v, sizeof(TValue) * ev->ValueLen());
+      }
+      return Status::OK();
+    };
+  }
+
+  void Compute(OpKernelContext* c) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    const Tensor& indices = c->input(1);
+    const Tensor& pointer = c->input(2);
+    const int64 N = indices.NumElements();
+
+    TensorShape result_shape = indices.shape();
+    TensorShape value_shape({ev->ValueLen()});
+    result_shape.AppendShape(value_shape);
+
+    Tensor* out = nullptr;
+    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
+
+    int32* counts = nullptr;
+    if (c->num_inputs() == 5)
+      counts = (int32*)c->input(4).data();
+
+    if (N > 0) {
+      auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
+      TValue* out_base = &out_flat(0, 0);
+
+      auto indices_flat = indices.flat<TKey>();
+      auto pointer_flat = pointer.flat<int64>();
+      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
+      const int64 slice_elems = out_flat.dimension(1);
+      TValue* default_v = nullptr;
+      if (is_use_default_value_tensor_) {
+        default_v = (TValue*)c->input(3).data();
+      } else {
+        default_v = ev->GetDefaultValuePtr();
+      }
+      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
+          errors::InvalidArgument(
+              "ev's value_len should same with output's dimension(1)",
+              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
+      OP_REQUIRES(c, !ev->IsMultiLevel() ||
+          (ev->IsMultiLevel() && ev->CacheSize() >= N),
+          errors::InvalidArgument(
+              "MultiLevel EV's Cache size ", ev->CacheSize(),
+              " should large than IDs in batch ", N));
+      const size_t slice_bytes = slice_elems * sizeof(TValue);
+      auto do_work = [this, indices_flat, pointer_flat,
+           out_base, slice_elems, c, default_v, ev, counts] (
+               int64 start, int64 limit) {
+        for (int64 i = start; i < limit; ++i) {
+          TValue* default_v_ptr = get_default_v_fn_(
+              default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
+              ev->ValueLen());
+          int32 count = get_count_fn_(counts, i);
+          OP_REQUIRES_OK(c, lookup_fn_(ev, pointer_flat(i),
+              out_base + i * slice_elems, default_v_ptr, count));
+        }
+      };
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      Shard(worker_threads->num_threads,
+            worker_threads->workers, indices_size,
+            slice_bytes, do_work);
+    }
+  }
+
+  private:
+    bool is_use_default_value_tensor_;
+    std::function<
+      TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
+    std::function<int32(int32*, int64)> get_count_fn_;
+    std::function<Status(EmbeddingVar<TKey, TValue>* ev,
+      TKey key, TValue* val, TValue* default_v, int count)> lookup_fn_;
+};
+
+#define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceCollectEmbedding") \
+                              .Device(DEVICE_##dev)               \
+                              .HostMemory("resource")             \
+                              .HostMemory("indices")              \
+                              .HostMemory("pointer")              \
+                              .HostMemory("default_value")        \
+                              .HostMemory("output")               \
+                              .TypeConstraint<vtype>("dtype")     \
+                              .TypeConstraint<ktype>("Tkeys"),    \
+                          KvResourceCollectEmbeddingOp<ktype, vtype>)
 
 #define REGISTER_GATHER_ALL_INDICES(type)                         \
   REGISTER_GATHER_FULL(CPU, int32, type);                         \
