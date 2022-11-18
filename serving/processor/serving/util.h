@@ -12,8 +12,8 @@
 #include "tensorflow/cc/saved_model/constants.h"
 #include "tensorflow/core/platform/protobuf_internal.h"
 #include "tensorflow/core/lib/io/path.h"
+#include "tensorflow/core/lib/core/threadpool_options.h"
 #include "tensorflow/core/util/tensor_bundle/naming.h"
-
 
 namespace tensorflow {
 namespace processor {
@@ -31,7 +31,8 @@ Status RunOnce(const RunOptions& run_options,
                const std::vector<string>& output_tensor_names,
                const std::vector<string>& target_node_names,
                std::vector<Tensor>* outputs, RunMetadata* run_metadata,
-               Session* session, thread::ThreadPoolOptions thread_opt);
+               Session* session,
+               thread::ThreadPoolOptions thread_opt = thread::ThreadPoolOptions());
 Status RunRestoreCheckpoint(
     bool restore_incr_checkpoint,
     const RunOptions& run_options,
