@@ -63,7 +63,7 @@ Status RunOnce(
     const std::vector<string>& target_node_names,
     std::vector<Tensor>* outputs, RunMetadata* run_metadata,
     Session* session,
-    thread::ThreadPoolOptions thread_opt = thread::ThreadPoolOptions()) {
+    thread::ThreadPoolOptions thread_opt) {
   CallableOptions callable_options;
   std::vector<Tensor> feed_tensors;
   *callable_options.mutable_run_options() = run_options;
