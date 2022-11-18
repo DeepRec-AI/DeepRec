@@ -38,7 +38,7 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
 
 代码库：[https://github.com/AlibabaPAI/serving](https://github.com/AlibabaPAI/serving)
 
-开发分支：master，最新Release分支：deeprec2208
+开发分支：master，最新Release分支：deeprec2210
 
 ## TFServing编译&打包
 
