@@ -40,7 +40,7 @@ alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
 
 代码库：[https://github.com/AlibabaPAI/estimator](https://github.com/AlibabaPAI/estimator)
 
-开发分支：master，最新Release分支：deeprec2208
+开发分支：master，最新Release分支：deeprec2210
 
 ## Estimator编译
 
