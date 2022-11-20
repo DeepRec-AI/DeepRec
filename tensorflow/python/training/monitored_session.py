@@ -29,6 +29,8 @@ from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.distribute import distribute_coordinator_context
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import constant_op 
+from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import lookup_ops
@@ -257,7 +259,7 @@ class Scaffold(object):
         self._async_embedding_capacity,
         self._async_embedding_checkpoint_dir)
       async_embedding_stage.stage(ops.get_default_graph())
-
+    
     ops.get_default_graph().finalize()
     logging.info('Graph was finalized.')
     return self
@@ -586,6 +588,25 @@ def MonitoredTrainingSession(
   incremental_save_restore = True if save_incremental_checkpoint_secs else False
   scaffold = scaffold or Scaffold(incremental_save_restore=incremental_save_restore)
   worker_context = distribute_coordinator_context.get_current_worker_context()
+  
+  def get_graph_batch_size():
+    graph = ops.get_default_graph()
+    gdef = graph.as_graph_def()
+    for node in gdef.node:
+      if node.name == 'batch_size':
+        return node.attr['value'].tensor.int64_val[0]
+
+ 
+  def rewrite_graph_with_micro_batch(config, batch_size, micro_batch_num):
+    new_bs = constant_op.constant(batch_size, dtype=dtypes.int64, name='new_batch_size')
+    graph = ops.get_default_graph()
+    gdef = graph.as_graph_def()
+    for node in gdef.node:
+      for i, inp in enumerate(node.input):
+        if inp == 'batch_size':
+          op = graph.get_operation_by_name(node.name)
+          op._update_input(i, new_bs)
+    config.graph_options.optimizer_options.micro_batch_num = micro_batch_num 
 
   # set async_embedding parameters
   if config != None:
@@ -595,6 +616,29 @@ def MonitoredTrainingSession(
     scaffold.set_async_embedding_threads_num(optimizer_options.async_embedding_threads_num)
     scaffold.set_async_embedding_capacity(optimizer_options.async_embedding_capacity)
   scaffold.set_async_embedding_checkpoint_dir(checkpoint_dir)
+
+  if config != None:
+    # we only work for user pass in a not-null config, because for default config we can not determine some parameters
+    config.graph_options.optimizer_options.do_smart_stage = True
+    origbs = get_graph_batch_size()
+    print('batchsize', origbs) 
+    oppath = os.getcwd()
+    
+    if oppath.find('DeepFM') > 0:
+      # DeepFM we use 4 microbatch pipeline
+      rewrite_graph_with_micro_batch(config, int(origbs / 4), 4)
+    elif oppath.find('DIEN') > 0:
+      # DIEN we use 2 microbatch pipeline, because the AUC of DIEN is heavily impacted by pipeline number
+      rewrite_graph_with_micro_batch(config, int(origbs / 2), 2)
+    elif oppath.find('DIN') > 0:
+      # DIN we use 4 microbatch pipeline
+      rewrite_graph_with_micro_batch(config, int(origbs / 4), 4)
+    elif oppath.find('MMoE') > 0:
+      rewrite_graph_with_micro_batch(config, int(origbs / 4), 4)
+    elif oppath.find('DLRM') > 0:
+      rewrite_graph_with_micro_batch(config, int(origbs / 4), 4)
+      
+  
 
   if worker_context:
     return _create_monitored_session_with_worker_context(
