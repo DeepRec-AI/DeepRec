@@ -34,6 +34,14 @@ GPUcudaMallocAllocator::GPUcudaMallocAllocator(Allocator* allocator,
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
 }
 
+GPUcudaMallocAllocator::GPUcudaMallocAllocator(Allocator* allocator,
+                                               PlatformGpuId platform_gpu_id,
+                                               TfGpuId tf_gpu_id)
+    : base_allocator_(allocator) {
+  stream_exec_ =
+      GpuIdUtil::ExecutorForTfGpuId(platform_gpu_id, tf_gpu_id).ValueOrDie();
+}
+
 GPUcudaMallocAllocator::~GPUcudaMallocAllocator() { delete base_allocator_; }
 
 void* GPUcudaMallocAllocator::AllocateRaw(size_t alignment, size_t num_bytes) {

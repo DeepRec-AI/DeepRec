@@ -33,6 +33,9 @@ class GPUcudaMallocAllocator : public Allocator {
  public:
   explicit GPUcudaMallocAllocator(Allocator* allocator,
                                   PlatformGpuId platform_gpu_id);
+  explicit GPUcudaMallocAllocator(Allocator* allocator,
+                                  PlatformGpuId platform_gpu_id,
+                                  TfGpuId tf_gpu_id);
   ~GPUcudaMallocAllocator() override;
   string Name() override { return "gpu_debug"; }
   void* AllocateRaw(size_t alignment, size_t num_bytes) override;
