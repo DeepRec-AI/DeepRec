@@ -1416,47 +1416,24 @@ TEST(EmbeddingVariableTest, TestCPUGPUMalloc) {
 
   auto gpu_allocator = GPUProcessState::singleton()->GetGPUAllocator(
         GPUOptions(), TfGpuId(0), 1 << 26);
-
-  timespec start;
-  timespec end;
-
-  ValuePtr<float>* ptr_1 = new NormalGPUValuePtr<float>(gpu_allocator, 32);
-
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  for (int i = 0; i < 1024 * 2; ++i) {
-    int ev_list_size = 32;
-    ValuePtr<float>* ptr_ =
-      new NormalGPUValuePtr<float>(gpu_allocator, ev_list_size);
-  }
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: "
-            << ((double)(end.tv_sec - start.tv_sec) *
-                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
-            << "ms";
-
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  for (int i = 0; i < 1024 * 2; ++i) {
-    int ev_list_size = 32;
-    ValuePtr<float>* ptr_ =
-      new NormalValuePtr<float>(cpu_allocator(), ev_list_size);
-  }
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: "
-            << ((double)(end.tv_sec - start.tv_sec) *
-                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
-            << "ms";
-
-  clock_gettime(CLOCK_MONOTONIC, &start);
-  for (int i = 0; i < 1; ++i) {
-    int ev_list_size = 32 * 1024 * 2;
-    ValuePtr<float>* ptr_ =
-      new NormalGPUValuePtr<float>(gpu_allocator, ev_list_size);
-  }
-  clock_gettime(CLOCK_MONOTONIC, &end);
-  LOG(INFO) << "cost time: "
-            << ((double)(end.tv_sec - start.tv_sec) *
-                1000000000 + end.tv_nsec - start.tv_nsec) / 1000000
-            << "ms";
+  auto mem_pool = new EmbeddingMemoryPool<float>(gpu_allocator, 256, 1024);
+  float* ptr_1 = mem_pool->Allocate();
+  float* ptr_2 = mem_pool->Allocate();
+  ValuePtr<float>* value_ptr1 = new NormalGPUValuePtr<float>(gpu_allocator, 256);
+  ValuePtr<float>* value_ptr2 = new NormalGPUValuePtr<float>(gpu_allocator, 256);
+  value_ptr1->SetPtr(ptr_1);
+  value_ptr2->SetPtr(ptr_2);
+  value_ptr1->SetInitialized(0);
+  value_ptr2->SetInitialized(0);
+  std::vector<ValuePtr<float>*> value_ptrs;
+  value_ptrs.emplace_back(value_ptr1);
+  mem_pool->Deallocate(value_ptrs);
+  value_ptrs.clear();
+  value_ptrs.emplace_back(value_ptr2);
+  mem_pool->Deallocate(value_ptrs);
+  float* ptr_3 = mem_pool->Allocate();
+  ASSERT_EQ(ptr_1, ptr_3);
+  delete mem_pool;
 }
 #endif //GOOGLE_CUDA
 

@@ -42,9 +42,8 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
   }
 
   ~HbmDramStorage() override {
-    MultiTierStorage<K, V>::ReleaseValues(
-        {std::make_pair(hbm_kv_, gpu_alloc_),
-         std::make_pair(dram_kv_, cpu_alloc_)});
+    ReleaseValues({std::make_pair(hbm_kv_, gpu_alloc_),
+                   std::make_pair(dram_kv_, cpu_alloc_)});
   }
 
   TF_DISALLOW_COPY_AND_ASSIGN(HbmDramStorage);
@@ -82,6 +81,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     if (s.ok()) {
       // copy dram value to hbm
       auto gpu_value_ptr = layout_creator_->Create(gpu_alloc_, size);
+      gpu_value_ptr->SetPtr(mem_pool_->Allocate());
       V* cpu_data_address = (*value_ptr)->GetValue(0, 0);
       V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
       cudaMemcpy(gpu_data_address, cpu_data_address,
@@ -91,6 +91,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     }
 
     *value_ptr = layout_creator_->Create(gpu_alloc_, size);
+    (*value_ptr)->SetPtr(mem_pool_->Allocate());
     s = hbm_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
       return s;
@@ -132,8 +133,14 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
     int64 i = 0;
     auto it = copyback_cursor.cbegin();
+    V* dev_value_address = (V*)gpu_alloc_->AllocateRaw(
+                               Allocator::kAllocatorAlignment,
+                               total * value_len
+                                   * sizeof(V));
     for ( ; it != copyback_cursor.cend(); ++it, ++i) {
-      ValuePtr<V>* gpu_value_ptr = layout_creator_->Create(gpu_alloc_, value_len);
+      ValuePtr<V>* gpu_value_ptr =
+          layout_creator_->Create(gpu_alloc_, value_len);
+      gpu_value_ptr->SetPtr(dev_value_address + i * value_len);
       //Copy Header Info
       int64 j = *it;
       memcpy((char *)gpu_value_ptr->GetPtr(),
@@ -187,6 +194,71 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return Status::OK();
   }
 
+  void CreateMemoryPool(Allocator* alloc,
+                        int64 value_len,
+                        int64 block_size) override {
+    mem_pool_ = new EmbeddingMemoryPool<V>(alloc, value_len, block_size);
+  }
+
+  void AllocateMemory(
+      const std::vector<ValuePtr<V>*>& value_ptr_list) override {
+    for (auto it : value_ptr_list) {
+      it->SetPtr(mem_pool_->Allocate());
+    }
+  }
+
+  void ReleaseValues(
+      const std::vector<std::pair<KVInterface<K, V>*,
+                        Allocator*>>& kvs) {
+    for (int i = 0; i < kvs.size(); i++) {
+      std::vector<K> key_list;
+      std::vector<ValuePtr<V>*> value_ptr_list;
+      kvs[i].first->GetSnapshot(&key_list, &value_ptr_list);
+      if (i == 0) {
+        delete mem_pool_;
+      }
+      for (auto value_ptr : value_ptr_list) {
+        if (i != 0)
+          value_ptr->Destroy(kvs[i].second);
+        delete value_ptr;
+      } 
+    }
+  }
+
+  void BatchEviction() override {
+    constexpr int EvictionSize = 10000;
+    K evic_ids[EvictionSize];
+    if (!MultiTierStorage<K, V>::ready_eviction_) {
+      return;
+    }
+    mutex_lock l(hbm_mu_);
+    mutex_lock l1(dram_mu_);
+
+    int64 cache_count = MultiTierStorage<K, V>::cache_->size();
+    if (cache_count > MultiTierStorage<K, V>::cache_capacity_) {
+      // eviction
+      int k_size = cache_count - MultiTierStorage<K, V>::cache_capacity_;
+      k_size = std::min(k_size, EvictionSize);
+      size_t true_size =
+          MultiTierStorage<K, V>::cache_->get_evic_ids(evic_ids, k_size);
+      ValuePtr<V>* value_ptr;
+      std::vector<K> keys;
+      std::vector<ValuePtr<V>*> value_ptrs;
+
+      for (int64 i = 0; i < true_size; ++i) {
+        if (hbm_kv_->Lookup(evic_ids[i], &value_ptr).ok()) {
+          keys.emplace_back(evic_ids[i]);
+          value_ptrs.emplace_back(value_ptr);
+        }
+      }
+      dram_kv_->BatchCommit(keys, value_ptrs);
+      mem_pool_->Deallocate(value_ptrs);
+      for (auto it : keys) {
+        TF_CHECK_OK(hbm_kv_->Remove(it));
+      }
+    }
+  }
+
  protected:
   void SetTotalDims(int64 total_dims) override {
     dram_kv_->SetTotalDims(total_dims);
@@ -195,6 +267,7 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
  private:
   KVInterface<K, V>* hbm_kv_;
   KVInterface<K, V>* dram_kv_;
+  EmbeddingMemoryPool<V>* mem_pool_;
   Allocator* gpu_alloc_;
   Allocator* cpu_alloc_;
   LayoutCreator<V>* layout_creator_;

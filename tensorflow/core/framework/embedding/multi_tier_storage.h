@@ -200,6 +200,17 @@ class MultiTierStorage : public Storage<K, V> {
     return true;
   }
 
+  void CreateMemoryPool(Allocator* alloc,
+                        int64 value_len,
+                        int64 block_size) override {
+    return;
+  }
+
+  void AllocateMemory(
+      const std::vector<ValuePtr<V>*>& value_ptr_list) override {
+    return;
+  }
+
   void Schedule(std::function<void()> fn) override {
     cache_thread_pool_->Schedule(std::move(fn));
   }

@@ -81,12 +81,17 @@ class EmbeddingVar : public ResourceBase {
     storage_type_ = storage_manager_->GetStorageType();
     filter_ = FilterFactory::CreateFilter<K, V, EmbeddingVar<K, V>>(
         emb_config_, this, storage_manager_);
+    emb_config_.default_value_dim = default_value_dim;
+    value_len_ =
+        default_tensor.NumElements() / emb_config_.default_value_dim;
+
+    if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType() ||
+        LayoutType::NORMAL_CONTIGUOUS_GPU == storage_manager_->GetLayoutType()) {
+      storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
+    }
 
     if (storage_manager_->IsUseHbm()) {
 #if GOOGLE_CUDA
-      emb_config_.default_value_dim = default_value_dim;
-      value_len_ =
-        default_tensor.NumElements() / emb_config_.default_value_dim;
       default_value_ = TypedAllocator::Allocate<V>(alloc_,
           default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
@@ -98,12 +103,14 @@ class EmbeddingVar : public ResourceBase {
       buffer3_size_ = 0;
       cudaMemcpy(default_value_, &default_tensor_flat(0),
           default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
+      storage_manager_->
+          CreateMemoryPool(alloc_,
+                           emb_config_.total_num(
+                               storage_manager_->GetAllocLen()),
+                           1024 * 1024);
 #endif  // GOOGLE_CUDA
     } else {
       alloc_ = ev_allocator();
-      emb_config_.default_value_dim = default_value_dim;
-      value_len_ =
-        default_tensor.NumElements() / emb_config_.default_value_dim;
       default_value_ = TypedAllocator::Allocate<V>(alloc_,
           default_tensor.NumElements(), AllocationAttributes());
 
@@ -117,10 +124,6 @@ class EmbeddingVar : public ResourceBase {
         default_value_no_permission_[i] = static_cast<V>(
             emb_config_.default_value_no_permission);
       }
-    }
-    if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType() ||
-        LayoutType::NORMAL_CONTIGUOUS_GPU == storage_manager_->GetLayoutType()) {
-      storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
     }
 
     return Status::OK();
@@ -300,6 +303,7 @@ class EmbeddingVar : public ResourceBase {
             emb_config_.emb_index,
             storage_manager_->GetOffset(emb_config_.emb_index));
       }
+
       TypedAllocator::Deallocate(alloc_, dev_value_address, total);
       TypedAllocator::Deallocate(alloc_, dev_default_value_address, total);
       free(value_address);
@@ -316,17 +320,19 @@ class EmbeddingVar : public ResourceBase {
     if (copyback_cursor.size() > 0) {
       int64 total = copyback_cursor.size();
       ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>* [total];
-      cudaMalloc(&memcpy_buffer_gpu, total * value_len * sizeof(V));
+      memcpy_buffer_gpu = (V*)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+          total * value_len * sizeof(V));
       storage_manager_->CopyBackToGPU(total, keys, copyback_cursor,
           memcpy_address, value_len, gpu_value_ptrs,
           memcpy_buffer_gpu);
 
       value_address = (V**)malloc(sizeof(V*) * total);
-      cudaMalloc(&dev_value_address, sizeof(V*) * total);
+      dev_value_address = (V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+          sizeof(V*) * total);
       std::vector<K> copyback_keys;
       int64 i = 0;
-      for (auto it = copyback_cursor.cbegin();
-           it != copyback_cursor.cend(); ++it) {
+      auto it = copyback_cursor.cbegin();
+      for (; it != copyback_cursor.cend(); ++it, ++i) {
         bool init;
         // Get the curosr
         int64 cursor = *it & 0x0fffffffffffffff;
@@ -335,7 +341,6 @@ class EmbeddingVar : public ResourceBase {
             gpu_value_ptrs[i], init);
         value_address[i] = memcpy_address[cursor];
         copyback_keys.emplace_back(keys[cursor]);
-        ++i;
       }
 
       cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
@@ -350,11 +355,22 @@ class EmbeddingVar : public ResourceBase {
       cudaDeviceSynchronize();
 
       storage_manager_->Insert(copyback_keys, gpu_value_ptrs);
-
-      cudaFree(dev_value_address);
-      cudaFree(memcpy_buffer_gpu);
+      alloc_->DeallocateRaw(dev_value_address);
+      alloc_->DeallocateRaw(memcpy_buffer_gpu);
       delete []gpu_value_ptrs;
     }
+  }
+
+  void AllocateMemory(V** memcpy_address,
+                      const std::list<int64>& init_cursor) {
+    std::vector<ValuePtr<V>*> value_ptr_list;
+    for (auto it = init_cursor.cbegin();
+      it != init_cursor.cend(); ++it) {
+      ValuePtr<V>* value_ptr =
+          reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
+      value_ptr_list.emplace_back(value_ptr);
+    }
+    storage_manager_->AllocateMemory(value_ptr_list);
   }
 #endif  // GOOGLE_CUDA
 
@@ -490,6 +506,10 @@ class EmbeddingVar : public ResourceBase {
 
   Allocator* GetAllocator() {
     return alloc_;
+  }
+
+  int64 GetAllocLen() {
+    return emb_config_.total_num(storage_manager_->GetAllocLen());
   }
 
   V** GetBuffer1(int64 size) {

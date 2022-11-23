@@ -125,6 +125,16 @@ class StorageManager {
         memcpy_address, value_len, gpu_value_ptrs,
         memcpy_buffer_gpu);
   }
+
+  void CreateMemoryPool(Allocator* alloc,
+                        int64 value_len,
+                        int64 block_size) {
+    storage_->CreateMemoryPool(alloc, value_len, block_size);
+  }
+
+  void AllocateMemory(const std::vector<ValuePtr<V>*>& value_ptr_list) {
+    storage_->AllocateMemory(value_ptr_list);
+  }
 #endif  // GOOGLE_CUDA
 
   Status Remove(K key) {
