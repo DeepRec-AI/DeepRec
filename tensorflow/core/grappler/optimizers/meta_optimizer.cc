@@ -41,6 +41,7 @@ limitations under the License.
 #include "tensorflow/core/grappler/optimizers/remapper.h"
 #include "tensorflow/core/grappler/optimizers/concat_cast_fusing.h"
 #include "tensorflow/core/grappler/optimizers/multi_stream_optimizer.h"
+#include "tensorflow/core/grappler/optimizers/dice_fusion.h"
 #include "tensorflow/core/grappler/optimizers/scoped_allocator_optimizer.h"
 #include "tensorflow/core/grappler/optimizers/shape_optimizer.h"
 #include "tensorflow/core/grappler/utils/canonicalizer.h"
@@ -178,6 +179,14 @@ bool MemoryOptimizerEnabled(
   return mem_opt_type != RewriterConfig::NO_MEM_OPT;
 }
 
+// A helper function to decide whether to enable the dice fusion optimizer.
+bool DiceFusionEnabled() {
+  bool is_enabled = true;
+  TF_CHECK_OK(ReadBoolFromEnvVar("TF_DICE_FUSION",
+                                 /*default_val=*/true, &is_enabled));
+  return is_enabled;
+}
+
 }  // namespace
 
 #define MK_OPT(NAME, VALUE) \
@@ -213,6 +222,7 @@ std::unique_ptr<GraphOptimizer> MetaOptimizer::MakeNewOptimizer(
                                       cfg_.scoped_allocator_opts()));
   MK_OPT("pin_to_host",
          new PinToHostOptimizer(cfg_.pin_to_host_optimization()));
+  MK_OPT("dice_fusion", new DiceFusion());
   MK_OPT("concat_cast_fusing", new ConcatCastFusing());
   MK_OPT("use_multi_stream",
          new MultiStreamOptimizer(cfg_.multi_stream_opts()));
@@ -235,6 +245,10 @@ MetaOptimizer::MetaOptimizer(DeviceBase* cpu_device, const ConfigProto& cfg)
 
 Status MetaOptimizer::InitializeOptimizers(
     std::vector<std::unique_ptr<GraphOptimizer>>* optimizers) const {
+  if (DiceFusionEnabled()) {
+    optimizers->push_back(MakeUnique<DiceFusion>());
+  }
+
   if (cfg_.disable_meta_optimizer()) {
     return Status::OK();
   }
@@ -311,6 +325,8 @@ Status MetaOptimizer::InitializeOptimizers(
     optimizers->push_back(MakeUnique<ScopedAllocatorOptimizer>(
         cfg_.scoped_allocator_optimization(), cfg_.scoped_allocator_opts()));
   }
+
+  // optimizers->push_back(MakeUnique<DiceFusion>());
 
   optimizers->push_back(MakeUnique<ConcatCastFusing>());
   return InitializeCustomGraphOptimizers(std::set<string>(), optimizers);

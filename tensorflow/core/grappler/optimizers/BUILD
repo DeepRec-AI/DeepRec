@@ -591,6 +591,7 @@ cc_library(
         ":arithmetic_optimizer",
         ":auto_mixed_precision",
         ":auto_parallel",
+        ":dice_fusion",
         ":concat_cast_fusing",
         ":constant_folding",
         ":custom_graph_optimizer_registry",
@@ -1237,3 +1238,30 @@ tf_cc_test(
         "//tensorflow/core/grappler/utils:grappler_test",
     ],
 )
+
+cc_library(
+    name = "dice_fusion",
+    srcs = ["dice_fusion.cc"],
+    hdrs = ["dice_fusion.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":graph_optimizer",
+        "//tensorflow/core/grappler/costs:graph_properties",
+        "//tensorflow/core/grappler/utils:graph_view",
+    ],
+)
+
+tf_cc_test(
+    name = "dice_fusion_test",
+    srcs = ["dice_fusion_test.cc"],
+    deps = [
+        ":dice_fusion",
+        "//tensorflow/cc:array_ops_internal",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:client_session",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+        "//tensorflow/core/grappler/utils:grappler_test",
+    ],
+)
+
