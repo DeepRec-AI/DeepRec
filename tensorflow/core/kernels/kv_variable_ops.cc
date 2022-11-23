@@ -799,10 +799,11 @@ class KvResourceGatherGPUOp : public OpKernel {
           }
         }
 
+        ev->AllocateMemory(memcpy_address, init_cursor_list[0]);
+
         ev->InitializeEmbeddingOnGPU(indices_flat.data(), indices_size,
                                      init_cursor_list[0], memcpy_address,
                                      default_v, get_default_v_fn_);
-
         ev->CopyBackToGPU(indices_flat.data(),
                           copyback_cursor_list[0], memcpy_address);
 

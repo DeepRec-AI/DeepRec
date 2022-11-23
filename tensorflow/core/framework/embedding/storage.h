@@ -20,6 +20,7 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/lib/core/status.h"
+#include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
 
 namespace tensorflow {
 template <class V>
@@ -98,7 +99,12 @@ class Storage {
   virtual void iterator_mutex_lock() = 0;
   virtual void iterator_mutex_unlock() = 0;
   virtual void Schedule(std::function<void()> fn) = 0;
-
+  virtual void CreateMemoryPool(Allocator* alloc,
+                                int64 value_len,
+                                int64 block_size) = 0;
+  virtual void AllocateMemory(
+      const std::vector<ValuePtr<V>*>& value_ptr_list) = 0;
+ 
   inline mutex* get_mutex() { return &mu_; }
   inline int64 GetAllocLen() { return alloc_len_; }
   inline int64 GetOffset(int64 index) { return alloc_len_ * index; }

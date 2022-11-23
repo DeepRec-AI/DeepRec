@@ -306,6 +306,10 @@ class ValuePtr {
     LOG(FATAL) << "Unsupport SetInitialized in subclass of ValuePtrBase";
   }
 
+  virtual void SetPtr(V* ptr) {
+    LOG(FATAL) << "Unsupport SetInitialized in subclass of ValuePtrBase";
+  }
+
  protected:
   void* ptr_;
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
@@ -458,9 +462,6 @@ class NormalGPUValuePtr : public ValuePtr<V> {
   NormalGPUValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(FixedLengthHeader) + sizeof(V *));
     alloc_ = allocator;
-    *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) =
-      (V*)allocator->AllocateRaw(
-          Allocator::kAllocatorAlignment, sizeof(V) * size);
     new ((char*)this->ptr_) FixedLengthHeader();
   }
 
@@ -519,8 +520,7 @@ class NormalGPUValuePtr : public ValuePtr<V> {
   }
 
   virtual void Destroy(Allocator* allocator) {
-    alloc_->DeallocateRaw(
-        *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)));
+    return;
   }
 
   int64 GetStep() {
@@ -545,6 +545,10 @@ class NormalGPUValuePtr : public ValuePtr<V> {
 
   void AddFreq(int64 count) {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
+  }
+
+  void SetPtr(V* ptr) {
+    *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) = ptr;
   }
 
   void SetInitialized(int64 emb_index) {
