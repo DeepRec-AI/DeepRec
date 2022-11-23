@@ -191,14 +191,6 @@ http_archive(
 )
 
 http_archive(
-    name = "systemtap-sdt",
-    build_file = "//third_party:systemtap-sdt.BUILD",
-    sha256 = "0984ebe3162274988252ec35074021dc1e8420d87a8b35f437578562fce08781",
-    strip_prefix = "systemtap-4.2",
-    urls = ["https://sourceware.org/systemtap/ftp/releases/systemtap-4.2.tar.gz"],
-)
-
-http_archive(
     name = "uuid",
     build_file = "//third_party:uuid.BUILD",
     sha256 = "37ac05d82c6410d89bc05d43cee101fefc8fe6cf6090b3ce7a1409a6f35db606",
