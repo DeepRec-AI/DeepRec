@@ -82,6 +82,14 @@ GPUDebugAllocator::GPUDebugAllocator(Allocator* allocator,
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
 }
 
+GPUDebugAllocator::GPUDebugAllocator(Allocator* allocator,
+                                     PlatformGpuId platform_gpu_id,
+                                     TfGpuId tf_gpu_id)
+    : base_allocator_(allocator) {
+  stream_exec_ =
+      GpuIdUtil::ExecutorForTfGpuId(platform_gpu_id, tf_gpu_id).ValueOrDie();
+}
+
 GPUDebugAllocator::~GPUDebugAllocator() { delete base_allocator_; }
 
 void* GPUDebugAllocator::AllocateRaw(size_t alignment, size_t num_bytes) {
@@ -158,6 +166,14 @@ GPUNanResetAllocator::GPUNanResetAllocator(Allocator* allocator,
     : base_allocator_(allocator) {
   stream_exec_ =
       GpuIdUtil::ExecutorForPlatformGpuId(platform_gpu_id).ValueOrDie();
+}
+
+GPUNanResetAllocator::GPUNanResetAllocator(Allocator* allocator,
+                                           PlatformGpuId platform_gpu_id,
+                                           TfGpuId tf_gpu_id)
+    : base_allocator_(allocator) {
+  stream_exec_ =
+      GpuIdUtil::ExecutorForTfGpuId(platform_gpu_id, tf_gpu_id).ValueOrDie();
 }
 
 GPUNanResetAllocator::~GPUNanResetAllocator() { delete base_allocator_; }
