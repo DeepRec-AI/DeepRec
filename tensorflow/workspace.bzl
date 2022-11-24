@@ -468,7 +468,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     new_git_repository(
         name = "systemtap-sdt",
-        remote = "https://sourceware.org/git/systemtap.git",
+        remote = "https://gitlab.com/fche/systemtap.git",
         commit = "044a0640985ef007c0b2fb6eaf660d9d51800cda",
         build_file = str(Label("//third_party:systemtap-sdt.BUILD")),
     )
