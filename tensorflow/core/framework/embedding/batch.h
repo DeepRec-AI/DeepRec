@@ -21,7 +21,7 @@ namespace tensorflow {
 
 template<class V>
 __global__ void BatchCopy(V** batch, V* val_base, int value_len,
-    int limit, V** default_value, bool* init_flags);
+    int limit);
 
 template<class V>
 __global__ void BatchUnpack(V** dev_value_address, V* memcpy_buffer_gpu,
@@ -29,8 +29,7 @@ __global__ void BatchUnpack(V** dev_value_address, V* memcpy_buffer_gpu,
 
 template<class V>
 __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
-    int embedding_dim, long long int limit,
-    bool* init_flags, V* default_value);
+    int embedding_dim, long long int limit);
 
 template<class V>
 __global__ void CopyEmbedding(V** batch, V** batch_data_space,

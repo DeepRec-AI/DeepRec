@@ -201,22 +201,36 @@ class EmbeddingVar : public ResourceBase {
     add_freq_fn_(value_ptr, count, emb_config_.filter_freq);
   }
 
-  void LookupWithFreqBatch(K* keys, bool *init_flags,
-      embedding::CopyBackFlag *copyback_flags,
-      V** memcpy_address, int start, int limit) {
+  void LookupWithFreqBatch(const K* keys,
+      V** memcpy_address, int64 start, int64 limit,
+      std::list<int64>& init_cursor,
+      std::list<int64>& copyback_cursor) {
     ValuePtr<V>* value_ptr = nullptr;
-    for (int i = start; i < limit; i++) {
-      TF_CHECK_OK(LookupOrCreateKey(keys[i], &value_ptr, -1, copyback_flags[i]));
-      if (!copyback_flags[i]) {
-        memcpy_address[i] = LookupOrCreateEmb(value_ptr, init_flags[i]);
+    for (int64 i = start; i < limit; i++) {
+      embedding::CopyBackFlag copyback_flag =
+          embedding::CopyBackFlag::NOT_COPYBACK;
+      bool init_flag = false;
+      TF_CHECK_OK(LookupOrCreateKey(keys[i], &value_ptr, -1, copyback_flag));
+      value_ptr->AddFreq();
+      if (!copyback_flag) {
+        memcpy_address[i] = LookupOrCreateEmb(value_ptr, init_flag); 
       } else {
         //memcpy_address[i] = LookupOrCreateEmb(value_ptr, init_flags[i]);
         memcpy_address[i] = value_ptr->GetValue(0,0);
-      }
-      value_ptr->AddFreq();
-      if (copyback_flags[i] ==
-        embedding::CopyBackFlag::COPYBACK_AND_DESTROY) {
+        if (copyback_flag ==
+          embedding::CopyBackFlag::COPYBACK_AND_DESTROY) {
           delete value_ptr;
+          // If the 64th bit of cursor is set to 1,
+          // the corresponding valueptr need to be deleted later.
+          int64 tmp = 1;
+          tmp = tmp << 63;
+          copyback_cursor.emplace_back(i | tmp);
+        } else {
+          copyback_cursor.emplace_back(i);
+        }   
+      }
+      if (init_flag) {
+        init_cursor.emplace_back(i);
       }
     }
   }
@@ -228,42 +242,40 @@ class EmbeddingVar : public ResourceBase {
   }
 
 #if GOOGLE_CUDA
-  void CreateGPUBatch(V* val_base, V** default_values, int64 size,
-      int64 slice_elems, bool* init_flags, V** memcpy_address) {
-    filter_->CreateGPUBatch(val_base, default_values, size,
-        slice_elems, value_len_, init_flags, memcpy_address);
+  void CreateGPUBatch(V* val_base, int64 size,
+      int64 slice_elems, V** memcpy_address) {
+    filter_->CreateGPUBatch(val_base, size,
+        slice_elems, value_len_, memcpy_address);
   }
 
-  void InitializeEmbeddingOnGPU(K* keys, int64 size, bool* init_flags,
-       V** memcpy_address, V** default_values) {
+  void InitializeEmbeddingOnGPU(const K* keys, int64 size,
+       const std::list<int64>& init_cursor,
+       V** memcpy_address, V* default_values,
+       std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn) {
     V** dev_default_value_address, **default_value_address;
     V** dev_value_address, **value_address;
-    bool* dev_init_flags;
-    for (int i = 0; i < size; i++) {
-      default_values[i] =
-        (default_values[i] == nullptr) ? default_value_ : default_values[i];
-    }
-    std::vector<int64> init_cursor;
-    for (int i = 0; i < size; i++) {
-      if (init_flags[i]) {
-        init_cursor.emplace_back(i);
-      }
-    }
-    int64 total = init_cursor.size();
-    if (total > 0) {
+    if (init_cursor.size() > 0) {
+      int64 total = init_cursor.size();
       value_address = (V**)malloc(sizeof(V*) * total);
       default_value_address = (V**)malloc(sizeof(V*) * total);
       dev_value_address = TypedAllocator::Allocate<V*>(alloc_,
               total, AllocationAttributes());
       dev_default_value_address = TypedAllocator::Allocate<V*>(alloc_,
               total, AllocationAttributes());
-      for (int64 i = 0; i < total; i++) {
+      int64 i = 0;
+      auto it = init_cursor.cbegin();
+      for ( ; it != init_cursor.cend(); ++it, ++i) {
         ValuePtr<V>* value_ptr =
-            reinterpret_cast<ValuePtr<V>*>(memcpy_address[init_cursor[i]]);
+            reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
         value_address[i] = *((V**)((char*)(value_ptr->GetPtr())
                             + sizeof(FixedLengthHeader)))
                             + storage_manager_->GetOffset(emb_config_.emb_index);
-        default_value_address[i] = default_values[init_cursor[i]];
+        default_value_address[i] = get_default_v_fn(
+                                       default_values,
+                                       keys[*it],
+                                       *it,
+                                       GetDefaultValueDim(),
+                                       ValueLen());
       }
       cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
           cudaMemcpyHostToDevice);
@@ -279,15 +291,15 @@ class EmbeddingVar : public ResourceBase {
                        block_dim, args, 0, NULL);
       cudaDeviceSynchronize();
       // Set init meta of ValuePtrs
-      for (int64 i = 0; i < total; i++) {
+      for (auto it = init_cursor.cbegin();
+          it != init_cursor.cend(); ++it) {
         ValuePtr<V>* value_ptr =
-            reinterpret_cast<ValuePtr<V>*>(memcpy_address[init_cursor[i]]);
+            reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
         value_ptr->SetInitialized(emb_config_.emb_index);
-        memcpy_address[init_cursor[i]] = value_ptr->GetValue(
+        memcpy_address[*it] = value_ptr->GetValue(
             emb_config_.emb_index,
             storage_manager_->GetOffset(emb_config_.emb_index));
       }
-
       TypedAllocator::Deallocate(alloc_, dev_value_address, total);
       TypedAllocator::Deallocate(alloc_, dev_default_value_address, total);
       free(value_address);
@@ -295,55 +307,54 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
-  void CopyBackToGPU(K* keys, int64 size,
-      embedding::CopyBackFlag* copyback_flags,
+  void CopyBackToGPU(const K* keys,
+      const std::list<int64>& copyback_cursor,
       V** memcpy_address) {
     size_t value_len = emb_config_.total_num(storage_manager_->GetAllocLen());
     V* memcpy_buffer_gpu;
     V** dev_value_address, **value_address;
-    int total = 0;
-    for (int i = 0; i < size;i++) {
-      if (copyback_flags[i]) {
-        total++;
+    if (copyback_cursor.size() > 0) {
+      int64 total = copyback_cursor.size();
+      ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>* [total];
+      cudaMalloc(&memcpy_buffer_gpu, total * value_len * sizeof(V));
+      storage_manager_->CopyBackToGPU(total, keys, copyback_cursor,
+          memcpy_address, value_len, gpu_value_ptrs,
+          memcpy_buffer_gpu);
+
+      value_address = (V**)malloc(sizeof(V*) * total);
+      cudaMalloc(&dev_value_address, sizeof(V*) * total);
+      std::vector<K> copyback_keys;
+      int64 i = 0;
+      for (auto it = copyback_cursor.cbegin();
+           it != copyback_cursor.cend(); ++it) {
+        bool init;
+        // Get the curosr
+        int64 cursor = *it & 0x0fffffffffffffff;
+        gpu_value_ptrs[i]->SetInitialized(emb_config_.emb_index);
+        memcpy_address[cursor] = LookupOrCreateEmb(
+            gpu_value_ptrs[i], init);
+        value_address[i] = memcpy_address[cursor];
+        copyback_keys.emplace_back(keys[cursor]);
+        ++i;
       }
+
+      cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
+          cudaMemcpyHostToDevice);
+      int block_dim = 128;
+      void* args[] = { (void*)&dev_value_address,
+        (void*)&memcpy_buffer_gpu, (void*)&value_len, (void*)&total};
+
+      cudaLaunchKernel((void *)BatchUnpack<V>,
+          (total + block_dim - 1) / block_dim * value_len, block_dim,
+          args, 0, NULL);
+      cudaDeviceSynchronize();
+
+      storage_manager_->Insert(copyback_keys, gpu_value_ptrs);
+
+      cudaFree(dev_value_address);
+      cudaFree(memcpy_buffer_gpu);
+      delete []gpu_value_ptrs;
     }
-    int *copyback_cursor = new int[total]();
-    ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>* [total];
-    cudaMalloc(&memcpy_buffer_gpu, total * value_len * sizeof(V));
-    storage_manager_->CopyBackToGPU(total, keys, size, copyback_flags, 
-        memcpy_address, value_len, copyback_cursor, gpu_value_ptrs,
-        memcpy_buffer_gpu);
-
-    value_address = (V**)malloc(sizeof(V*) * total);
-    cudaMalloc(&dev_value_address, sizeof(V*) * total);
-    std::vector<K> copyback_keys;
-
-    for (int i = 0; i < total; i++) {
-      bool init;
-      gpu_value_ptrs[i]->SetInitialized(emb_config_.emb_index);
-      memcpy_address[copyback_cursor[i]] = LookupOrCreateEmb(
-          gpu_value_ptrs[i], init);
-      value_address[i] = memcpy_address[copyback_cursor[i]];
-      copyback_keys.emplace_back(keys[copyback_cursor[i]]);
-    }
-
-    cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
-        cudaMemcpyHostToDevice);
-    int block_dim = 128;
-    void* args[] = { (void*)&dev_value_address,
-      (void*)&memcpy_buffer_gpu, (void*)&value_len, (void*)&total};
-
-    cudaLaunchKernel((void *)BatchUnpack<V>,
-        (total + block_dim - 1) / block_dim * value_len, block_dim,
-        args, 0, NULL);
-    cudaDeviceSynchronize();
-
-    storage_manager_->Insert(copyback_keys, gpu_value_ptrs);
-
-    cudaFree(dev_value_address);
-    cudaFree(memcpy_buffer_gpu);
-    delete []copyback_cursor;
-    delete []gpu_value_ptrs;
   }
 #endif  // GOOGLE_CUDA
 

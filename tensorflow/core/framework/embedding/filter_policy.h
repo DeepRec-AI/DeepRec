@@ -46,9 +46,9 @@ class FilterPolicy {
 
   virtual Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) = 0;
-  virtual void CreateGPUBatch(V* val_base, V** default_values,
+  virtual void CreateGPUBatch(V* val_base,
       int64 size, int64 slice_elems, int64 value_len_,
-      bool* init_flags, V** memcpy_address) = 0;
+      V** memcpy_address) = 0;
 
   virtual int64 GetFreq(K key, ValuePtr<V>* value_ptr) = 0;
   virtual int64 GetFreq(K key) = 0;

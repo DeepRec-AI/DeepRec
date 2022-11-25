@@ -21,7 +21,7 @@ limitations under the License.
 namespace tensorflow {
 template<class V>
 __global__ void BatchCopy(V** batch, V* val_base, int value_len,
-    int limit, V** default_value, bool* init_flags) {
+    int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int item_id = i / value_len;
   int item_pos = i % value_len;
@@ -32,7 +32,7 @@ __global__ void BatchCopy(V** batch, V* val_base, int value_len,
 }
 
 #define REGISTER_KERNELS_ALL_INDEX(T) \
-   template __global__ void BatchCopy<T>(T**, T*, int, int, T**, bool*);
+   template __global__ void BatchCopy<T>(T**, T*, int, int);
 TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 
@@ -59,8 +59,7 @@ template __global__ void BatchUnpack<long long>(
 
 template<class V>
 __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
-    int embedding_dim, long long int limit, bool* init_flags,
-    V* default_value) {
+    int embedding_dim, long long int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int item_id = i / embedding_dim;
   int item_pos = i % embedding_dim;
@@ -73,9 +72,9 @@ __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
 }
 
 template __global__ void SparseApplyAdagradGPU<float>(
-    float**, float**, float*, float, int, long long int, bool*, float*);
+    float**, float**, float*, float, int, long long int);
 template __global__ void SparseApplyAdagradGPU<double>(
-    double**, double**, double*, float, int, long long int, bool*, double*);
+    double**, double**, double*, float, int, long long int);
 
 template<class V>
 __global__ void CopyEmbedding(V** batch, V** batch_data_space,

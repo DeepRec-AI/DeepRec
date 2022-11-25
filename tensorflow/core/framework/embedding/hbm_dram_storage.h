@@ -125,26 +125,25 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return hbm_kv_->Lookup(key, value_ptr);
   }
 
-  void CopyBackToGPU(int total, K* keys, int64 size, CopyBackFlag* copyback_flags,
-      V** memcpy_address, size_t value_len, int *copyback_cursor,
+  void CopyBackToGPU(int total, const K* keys,
+      const std::list<int64>& copyback_cursor,
+      V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu) override {
     auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
-    int j = 0;
-    for (int i = 0; i < size;i++) {
-      if (copyback_flags[i]) {
-        ValuePtr<V>* gpu_value_ptr = layout_creator_->Create(gpu_alloc_, size);
-        //Copy Header Info
-        memcpy((char *)gpu_value_ptr->GetPtr(),
-               (char *)memcpy_address[i] - sizeof(FixedLengthHeader),
-               sizeof(FixedLengthHeader));
-        V* cpu_data_address = memcpy_address[i];
-        V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
-        memcpy(memcpy_buffer_cpu + j * value_len,
+    int64 i = 0;
+    auto it = copyback_cursor.cbegin();
+    for ( ; it != copyback_cursor.cend(); ++it, ++i) {
+      ValuePtr<V>* gpu_value_ptr = layout_creator_->Create(gpu_alloc_, value_len);
+      //Copy Header Info
+      int64 j = *it;
+      memcpy((char *)gpu_value_ptr->GetPtr(),
+             (char *)memcpy_address[j] - sizeof(FixedLengthHeader),
+             sizeof(FixedLengthHeader));
+      V* cpu_data_address = memcpy_address[j];
+      V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
+      memcpy(memcpy_buffer_cpu + i * value_len,
             cpu_data_address, value_len * sizeof(V));
-        copyback_cursor[j] = i;
-        gpu_value_ptrs[j] = gpu_value_ptr;
-        j++;
-      }
+      gpu_value_ptrs[i] = gpu_value_ptr;
     }
 
     cudaMemcpy(memcpy_buffer_gpu, memcpy_buffer_cpu,

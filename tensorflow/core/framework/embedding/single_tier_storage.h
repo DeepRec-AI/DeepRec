@@ -127,9 +127,10 @@ class SingleTierStorage : public Storage<K, V> {
     return (s.ok()) ? 0 : -1;
   }
 
-  void CopyBackToGPU(int total, K* keys, int64 size,
-      CopyBackFlag* copyback_flags, V** memcpy_address, size_t value_len,
-      int *copyback_cursor, ValuePtr<V> **gpu_value_ptrs,
+  void CopyBackToGPU(int total, const K* keys,
+      const std::list<int64>& copyback_cursor,
+      V** memcpy_address, size_t value_len,
+      ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) override {
     LOG(FATAL) << "Unsupport CopyBackToGPU in SingleTierStorage.";
   };

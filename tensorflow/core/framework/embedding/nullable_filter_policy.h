@@ -56,29 +56,19 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
     memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
   }
 
-  void CreateGPUBatch(V* val_base, V** default_values, int64 size,
-    int64 slice_elems, int64 value_len, bool* init_flags, V** memcpy_address) {
+  void CreateGPUBatch(V* val_base, int64 size,
+    int64 slice_elems, int64 value_len, V** memcpy_address) {
 #if GOOGLE_CUDA
     int block_dim = 128;
     V** dev_value_address = (V**)ev_->GetBuffer1(size);
-    V** dev_default_address = (V**)ev_->GetBuffer2(size);
-    bool* dev_init_flags = (bool*)ev_->GetBuffer3(size);
-
     cudaMemcpy(dev_value_address, memcpy_address,
         sizeof(V *) * size, cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_default_address, default_values,
-        sizeof(V *) * size, cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_init_flags, init_flags,
-        sizeof(bool) * size, cudaMemcpyHostToDevice);
-
     int limit = size;
     int length = value_len;
     void* args1[] = {(void*)&dev_value_address,
                      (void*)&val_base,
                      (void*)&length,
-                     (void*)&limit,
-                     (void*)&dev_default_address,
-                     (void*)&dev_init_flags};
+                     (void*)&limit};
     cudaLaunchKernel((void *)BatchCopy<V>,
                      (limit + block_dim - 1) / block_dim * length,
                      block_dim, args1, 0, NULL);

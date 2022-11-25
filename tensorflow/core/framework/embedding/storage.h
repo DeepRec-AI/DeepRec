@@ -84,9 +84,10 @@ class Storage {
 
   virtual Status Eviction(K* evict_ids, int64 evict_size) = 0;
 
-  virtual void CopyBackToGPU(int total, K* keys, int64 size,
-      CopyBackFlag* copyback_flags, V** memcpy_address, size_t value_len,
-      int *copyback_cursor, ValuePtr<V> **gpu_value_ptrs,
+  virtual void CopyBackToGPU(int total, const K* keys,
+      const std::list<int64>& copyback_cursor,
+      V** memcpy_address, size_t value_len,
+      ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) = 0;
 
   virtual void InitCache(embedding::CacheStrategy cache_strategy) = 0;

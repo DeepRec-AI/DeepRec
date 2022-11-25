@@ -145,11 +145,9 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
 
     // Launch Kernel,Copy data to continuous place
     int block_dim = 128;
-    bool* init_flag = nullptr;
-    V** default_value = nullptr;
     void* args[] = { (void*)&dev_value_address,
       (void*)&dev_batch_data_place, (void*)&total_dims_,
-      (void*)&batch_size, (void*)&default_value, (void *)&init_flag};
+      (void*)&batch_size};
 
     cudaLaunchKernel((void *)BatchCopy<V>,
                      (batch_size * total_dims_ + block_dim - 1) / block_dim,
