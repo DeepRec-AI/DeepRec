@@ -30,7 +30,9 @@ class _HostConstantOp : public OpKernel {
   explicit _HostConstantOp(OpKernelConstruction* ctx);
   void Compute(OpKernelContext* ctx) override;
   bool IsExpensive() override { return false; }
+#ifndef TF_API_COMPATIBLE_1150
   const Tensor* const_tensor() const override { return &tensor_; }
+#endif
   ~_HostConstantOp() override {}
 
  private:

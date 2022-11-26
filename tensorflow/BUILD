@@ -457,6 +457,12 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+config_setting(
+    name = "with_api_compatible",
+    values = {"define": "with_api_compatible=true"},
+    visibility = ["//visibility:public"],
+)
+
 # This flag is set from the configure step when the user selects with nGraph option.
 # By default it should be false
 config_setting(

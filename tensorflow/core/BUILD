@@ -128,6 +128,7 @@ load(
     "tf_additional_numa_deps",
     "tf_additional_numa_lib_defines",
     "tf_additional_star_lib_defines",
+    "tf_additional_api_compatible_defines",
     "tf_additional_pmem_lib_defines",
     "tf_additional_gpu_ev_lib_defines",
     "tf_additional_test_deps",
