@@ -620,6 +620,11 @@ def MonitoredTrainingSession(
   if config != None:
     # we only work for user pass in a not-null config, because for default config we can not determine some parameters
     config.graph_options.optimizer_options.do_smart_stage = True
+    config.graph_options.optimizer_options.do_op_fusion = True
+    os.environ['TF DISABLE EV ALLOCATOR'] = '1'
+    os.environ['ENABLE_MEMORY_OPTIMIZATION'] = '0'
+    
+    '''
     origbs = get_graph_batch_size()
     print('batchsize', origbs) 
     oppath = os.getcwd()
@@ -637,7 +642,7 @@ def MonitoredTrainingSession(
       rewrite_graph_with_micro_batch(config, int(origbs / 4), 4)
     elif oppath.find('DLRM') > 0:
       rewrite_graph_with_micro_batch(config, int(origbs / 4), 4)
-      
+    '''   
   
 
   if worker_context:
