@@ -60,6 +60,11 @@ port::StatusOr<StreamExecutor*> ExecutorCache::GetOrCreate(
 
   std::string key(std::to_string(config.ordinal));
   // Use MPS
+  // config.virtual_ordinal equal tf_gpu_id,
+  // Executor key is config.ordinal:config.virtual_ordinal
+  // For example: 0 -> 0,1
+  //              1 -> 2,3,4
+  // The executor keys are: 0:0, 0:1, 1:2, 1:3, 1:4
   if (config.virtual_ordinal >= 0) {
     absl::call_once(flag_init, &GetCudaContextsCount,
         config.ordinal, &cuda_contexts_count);

@@ -85,6 +85,10 @@ limitations under the License.
 #include "tensorflow/core/protobuf/config.pb.h"
 #include "tensorflow/core/util/device_name_utils.h"
 #include "tensorflow/core/util/env_var.h"
+#if GOOGLE_CUDA
+#include "tensorflow/core/common_runtime/gpu/gpu_init.h"
+#include "tensorflow/stream_executor/platform.h"
+#endif
 
 namespace tensorflow {
 
@@ -232,6 +236,20 @@ void ParseSessionGroupCpuset(const std::string& session_group_cpuset,
   }
 }
 
+int VisibleDeviceCount(const string& visible_device_list) {
+#if GOOGLE_CUDA
+  if (visible_device_list.empty()) {
+    return GPUMachineManager()->VisibleDeviceCount();
+  }
+
+  const std::vector<string> order_str =
+      str_util::Split(visible_device_list, ',');
+  return order_str.size();
+#else
+  return 0;
+#endif
+}
+
 }  // namespace
 
 class DirectSessionFactory : public SessionFactory {
@@ -271,6 +289,7 @@ class DirectSessionFactory : public SessionFactory {
         options.config.graph_options().rewrite_options();
     ResourceMgr* gpu_shared_rmgr = nullptr;
     if (rewrite_config.use_multi_stream() == RewriterConfig::ON) {
+#if GOOGLE_CUDA
       int multi_streams_num =
           rewrite_config.multi_stream_opts().multi_stream_num();
       ConfigProto* config = const_cast<ConfigProto*>(&options.config);
@@ -299,6 +318,7 @@ class DirectSessionFactory : public SessionFactory {
       TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
           options, "/job:localhost/replica:0/task:0",
           &devices, &dev_rmgr_map, dev_global_tp_opt));
+#endif
     } else {
       TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
           options, "/job:localhost/replica:0/task:0", &devices));
@@ -308,12 +328,15 @@ class DirectSessionFactory : public SessionFactory {
     DirectSession* session =
         new DirectSession(options, new DeviceMgr(std::move(devices)),
                           true, this, visible_cpus);
+
+#if GOOGLE_CUDA
     // owned gpu_shared_rmgr
     if (rewrite_config.use_multi_stream() == RewriterConfig::ON) {
       session->SetMultiStreamInfo(
           rewrite_config.multi_stream_opts().multi_stream_num(),
           gpu_shared_rmgr);
     }
+#endif
 
     {
       mutex_lock l(sessions_lock_);
@@ -361,12 +384,20 @@ class DirectSessionFactory : public SessionFactory {
       int multi_streams_num = session_num;
       ConfigProto* config = const_cast<ConfigProto*>(&options.config);
       GPUOptions* gpu_options = config->mutable_gpu_options();
+      int visible_gpu_count =
+          VisibleDeviceCount(gpu_options->visible_device_list());
       auto virtual_devices =
           gpu_options->mutable_experimental()->add_virtual_devices();
       // will allocate gpu memory for each virtual device later.
       int32 mem_per_virtual_device = -1;
       for (int i = 0; i < multi_streams_num; ++i) {
         virtual_devices->add_memory_limit_mb(-1);
+      }
+      // Now per session_group per gpu, maybe changed in the future.
+      // Handle other gpu virtual devices.
+      for (int i = 1; i < visible_gpu_count; ++i) {
+        auto tmp = gpu_options->mutable_experimental()->add_virtual_devices();
+        //tmp->add_memory_limit_mb(-1);
       }
 
       // We set allow_growth in multi-stream mode.
