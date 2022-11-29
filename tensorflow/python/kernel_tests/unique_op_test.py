@@ -36,7 +36,7 @@ class UniqueTest(test.TestCase):
 
   def testInt32(self):
     x = np.random.randint(0, high=1000, size=700000)
-    with self.cached_session() as sess:
+    with self.cached_session(use_gpu=True) as sess:
       y, idx = array_ops.unique(x)
       tf_y, tf_idx = sess.run([y, idx])
 
@@ -47,7 +47,7 @@ class UniqueTest(test.TestCase):
 
   def testInt32OutIdxInt64(self):
     x = np.random.randint(2, high=1000, size=700000)
-    with self.cached_session() as sess:
+    with self.cached_session(use_gpu=True) as sess:
       y, idx = array_ops.unique(x, out_idx=dtypes.int64)
       tf_y, tf_idx = sess.run([y, idx])
 
@@ -60,7 +60,7 @@ class UniqueTest(test.TestCase):
     np.random.seed(0)
     x = np.random.randint(-1000000000, high=1000000000, size=1000000,
       dtype=np.int64)
-    with self.cached_session() as sess:
+    with self.cached_session(use_gpu=True) as sess:
       y, idx = array_ops.unique(x, out_idx=dtypes.int64)
       tf_y, tf_idx = sess.run([y, idx])
 
@@ -73,7 +73,7 @@ class UniqueTest(test.TestCase):
     np.random.seed(0)
     x = np.random.randint(-1000000000, high=1000000000, size=1000000,
       dtype=np.int64)
-    with self.cached_session() as sess:
+    with self.cached_session(use_gpu=True) as sess:
       y, idx = array_ops.unique(x, out_idx=dtypes.int32)
       tf_y, tf_idx = sess.run([y, idx])
 
