@@ -106,8 +106,11 @@ struct MarkForCudaGraphModePassFlags {
   // Maximum number of operators in an XLA compilation.
   int32 tf_cgmode_max_cluster_size;
 
-  // If non-empty, limit XLA clustering to the following TF operations.
+  // If non-empty, limit Cgmode clustering to the following TF operations.
   string tf_cgmode_ops_to_cluster;
+
+  // If non-empty, excluding Cgmode clustering to the following TF operations.
+  string tf_cgmode_exclude_ops_to_cluster;
 
   // Dump graphs during XLA compilation.
   bool tf_cgmode_clustering_debug;

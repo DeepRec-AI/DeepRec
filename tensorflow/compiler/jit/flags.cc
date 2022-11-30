@@ -158,6 +158,23 @@ void AppendMarkForCudaGraphModePassFlagsInternal(std::vector<Flag>* flag_list) {
           " BN: TF FusedBatchNorm* operations."
           " FUSIBLE: All TF operations that XLA can fuse (All the above). "
           "You can also put any TF operation name, e.g. 'FUSIBLE,MatMul'."),
+      Flag(
+          "tf_cgmode_exclude_ops_to_cluster",
+          &mark_for_cuda_graph_mode_flags->tf_cgmode_exclude_ops_to_cluster,
+          "(experimental) "
+          "exclude the operations clustered by Cgmode to these operations. "
+          "If multiple, separate them with commas. Shortcuts: "
+          " PW: All point-wise operations."
+          " RED: All reduction operations."
+          " MISC: Mixed operations."
+          " PWRED: TF operations that get converted to PW+RED operation in XLA."
+          " REDUCEWINDOW: TF operations like MaxPool/AvgPool that get "
+          "converted to ReduceWindow in XLA."
+          " REDUCEWINDOWPW: Operation that get converted to ReduceWindow + PW "
+          "(LRN, LRNGrad)."
+          " BN: TF FusedBatchNorm* operations."
+          " FUSIBLE: All TF operations that XLA can fuse (All the above). "
+          "You can also put any TF operation name, e.g. 'FUSIBLE,MatMul'."),
       Flag("tf_cgmode_clustering_debug",
            &mark_for_cuda_graph_mode_flags->tf_cgmode_clustering_debug,
            "Dump graphs during compilation."),
@@ -220,6 +237,7 @@ void AllocateAndParseFlags() {
   mark_for_cuda_graph_mode_flags
       ->tf_cgmode_disable_resource_variable_safety_checks_for_debugging = false;
   mark_for_cuda_graph_mode_flags->tf_cgmode_ops_to_cluster = "";
+  mark_for_cuda_graph_mode_flags->tf_cgmode_exclude_ops_to_cluster = "DEFAULT";
 
   device_flags = new XlaDeviceFlags;
   device_flags->tf_xla_compile_on_demand = false;

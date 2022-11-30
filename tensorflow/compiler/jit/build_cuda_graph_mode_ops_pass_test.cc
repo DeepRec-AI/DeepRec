@@ -128,34 +128,5 @@ FunctionDefLibrary CreateFunctionDefLibWithConstFunction(const string& name) {
   *fdef_lib.add_function() = std::move(func);
   return fdef_lib;
 }
-
-TEST_F(BuildCgmodeOpsTest, OnDevice) {
-  const char* kCgmodeDeviceName = "/job:worker/replica:0/task:0/device:GPU:0";
-  Scope root =
-      Scope::NewRootScope().WithDevice(kCgmodeDeviceName).ExitOnError();
-
-  FunctionDefLibrary fdef_lib =
-      CreateFunctionDefLibWithConstFunction("cluster_0");
-  TF_ASSERT_OK(root.graph()->AddFunctionLibrary(fdef_lib));
-
-  Node* call;
-  TF_ASSERT_OK(MakeCgmodeCompiledKernel(root.graph(), "cluster_0", "C", &call));
-  call->set_requested_device(kCgmodeDeviceName);
-  TF_ASSERT_OK(root.DoShapeInference(call));
-
-  Node* write_op = MakeWrite(root, Output(call), "write_result");
-
-  std::unique_ptr<Graph> graph;
-  TF_ASSERT_OK(BuildCgmodeOps(root, fdef_lib, &graph));
-
-  auto cgmode_op =
-      NodeWith(Op("_CgmodeRun"), Inputs(Out(NodeWith(Op("_CgmodeCompile")))));
-  auto assign_var =
-      NodeWith(Op("AssignVariableOp"), Inputs(Out(NodeWith()), Out(cgmode_op)));
-
-  Node* write_op_new = FindNodeByName(graph.get(), write_op->name());
-  ASSERT_NE(write_op_new, nullptr);
-  EXPECT_THAT(write_op_new, assign_var);
-}
 }  // namespace cugraphtest
 }  // namespace tensorflow

@@ -120,6 +120,48 @@ absl::flat_hash_map<string, std::vector<string>>* GetCgmodeWhitelistTable() {
   // clang-format on
   return result;
 }
+
+absl::flat_hash_map<string, std::vector<string>>* GetCgmodeBlacklistTable() {
+  // Table format: category name: {list of TF operations in that category}
+  static absl::flat_hash_map<string, std::vector<string>>* result =
+      new absl::flat_hash_map<string, std::vector<string>>{
+          // Unary
+          {"DEFAULT",
+            // clang-format off
+            {"Where", "Unique", "SparseSegmentSum", "SparseFillEmptyRows",
+             "SparseReshape", "Relu", "BiasAdd"}},
+          {"EXTENDED",
+           // clang-format off
+     {"StridedSlice", "Unique", "SparseToDense", "ExpandDims",
+       "GatherV2", "ConcatV2", "BroadcastTo", "Concat", "ConcatV2",
+       "Fill", "Switch", "_SwitchN", "RefSwitch",
+       "Merge", "RefMerge",
+       "Enter", "RefEnter",
+       "Exit", "RefExit",
+       "NextIteration", "RefNextIteration",
+       "ClipByValue", "CopyHost", "DebugIdentity", "DebugNanCount",
+       "DebugNumericSummary", "_Arg",
+       "_ListToArray", "_ArrayToList", "RemoteCall",
+       "Const", "HostConst", "Identity", "RefIdentity", "StopGradient",
+       "PlaceholderWithDefault", "_ParallelConcatUpdate",
+       "KvResourceGather", "KvResourceGatherV1", "KvVariableShape",
+       "KvResourceExport",
+       "KvResourceLookupTier",
+       "Pack", "Pad", "PadV2", "Max", "Min", "Sum", "Reshape", "Shape",
+       "VariableShape", "DestroyResourceOp", "AssignVariableOp",
+       "AssignAddVariableOp", "AssignSubVariableOp", "VarIsInitializedOp",
+       "ResourceGather", "ResourceGatherNd", "ResourceScatterUpdate",
+       "Reverse", "ReverseV2",
+       "SparseSegmentMeanGrad", "SparseSegmentSqrtNGrad",
+       "Range", "LinSpace", "ShapeN", "Rank", "Size",
+       "Squeeze", "EnsureShape", "Slice", "SplitV", "StackPush",
+       "StackPushV2", "StackPop", "StackPopV2", "StackClose",
+       "StackCloseV2", "StridedSliceGrad", "StridedSliceAssign",
+       "ResourceStridedSliceAssign", "TensorStridedSliceUpdate",
+       "Unpack"}}};
+  // clang-format on
+  return result;
+}
 namespace {
 using DeadnessPredicate = DeadnessAnalysis::DeadnessPredicate;
 using jit::DeviceId;
@@ -330,9 +372,15 @@ class MarkForCudaGraphModePassImpl {
 
   Status DumpDebugInfo();
 
+  bool IsCompilationCandidate(Node* n) const {
+    return compilation_candidates_.find(n) != compilation_candidates_.end();
+  }
+
   // Tries to contract the edge from cluster `from` to cluster `to`.  Returns
   // true if successful.
   StatusOr<bool> TryToContractEdge(Cluster* from, Cluster* to);
+
+  Status FindCompilationCandidates();
 
   // Populates `clusters_`.
   Status BuildInitialClusterSet();
@@ -634,20 +682,318 @@ Status IgnoreResourceOpForSafetyAnalysis(
   return Status::OK();
 }
 
-StatusOr<bool> MarkForCudaGraphModePassImpl::Initialize() {
-  TF_RET_CHECK(!initialized_ && !edges_contracted_ && !clusters_created_);
-  initialized_ = true;
+StatusOr<bool> IsIdentityDrivingConstsInLoop(Node* node) {
+  if (!node->IsIdentity()) {
+    return false;
+  }
 
+  // Check if the Identity is driven by a Switch on its true path.
+  auto it = absl::c_find_if(node->in_edges(), [](const Edge* e) {
+    return e->src()->IsSwitch() && e->src_output() == 1;
+  });
+  if (it == node->in_edges().end()) {
+    return false;
+  }
+  const Node* switch_node = (*it)->src();
+
+  // Check if the Switch is driven by LoopCond.
+  const Node* maybe_loop_cond;
+  TF_RETURN_IF_ERROR(switch_node->input_node(1, &maybe_loop_cond));
+  if (!maybe_loop_cond->IsLoopCond()) {
+    return false;
+  }
+
+  // Check if the Identity is driving any const nodes through a control edge.
+  bool driving_any_consts =
+      absl::c_any_of(node->out_edges(), [](const Edge* e) {
+        return e->dst()->IsConstant() && e->IsControlEdge();
+      });
+  if (!driving_any_consts) {
+    return false;
+  }
+
+  return true;
+}
+
+absl::flat_hash_set<string> GetOrCreateWhitelist() {
+  absl::flat_hash_map<string, std::vector<string>>* whitelist_table =
+    tensorflow::GetCgmodeWhitelistTable();
+  MarkForCudaGraphModePassFlags* flags = GetMarkForCudaGraphModePassFlags();
+  absl::flat_hash_set<string> whitelist;
+
+  for (auto s : absl::StrSplit(flags->tf_cgmode_ops_to_cluster, ",")) {
+    if (whitelist_table->contains(s)) {
+      auto v = whitelist_table->at(s);
+      whitelist.insert(v.begin(), v.end());
+    } else if (!s.empty()) {
+      whitelist.insert(string(s));
+    }
+  }
+
+  if (VLOG_IS_ON(2) && !whitelist.empty()) {
+    std::vector<string> vwhitelist(whitelist.begin(), whitelist.end());
+    absl::c_sort(vwhitelist);
+    VLOG(2) << "CUDA Graph clustering will only consider the following TF "
+               "operations: "
+            << absl::StrJoin(vwhitelist, " ");
+  }
+
+  return whitelist;
+}
+
+absl::flat_hash_set<string> GetOrCreateBlacklist() {
+  absl::flat_hash_map<string, std::vector<string>>* blacklist_table =
+    tensorflow::GetCgmodeBlacklistTable();
+  MarkForCudaGraphModePassFlags* flags = GetMarkForCudaGraphModePassFlags();
+  absl::flat_hash_set<string> blacklist;
+
+  for (auto s : absl::StrSplit(flags->tf_cgmode_exclude_ops_to_cluster, ",")) {
+    if (blacklist_table->contains(s)) {
+      auto v = blacklist_table->at(s);
+      blacklist.insert(v.begin(), v.end());
+    } else if (!s.empty()) {
+      blacklist.insert(string(s));
+    }
+  }
+
+  if (VLOG_IS_ON(2) && !blacklist.empty()) {
+    std::vector<string> vblacklist(blacklist.begin(), blacklist.end());
+    absl::c_sort(vblacklist);
+    VLOG(2) << "CUDA Graph clustering will execlude following TF "
+               "operations: "
+            << absl::StrJoin(vblacklist, " ");
+  }
+
+  return blacklist;
+}
+
+bool HasInputOrOutputOnHost(Graph* g, const Node* node, const DeviceType& device_type) {
+  // validate the input/outputs of a node
+  MemoryTypeVector input_mvec;
+  MemoryTypeVector output_mvec;
+  if (!MemoryTypesForNode(g->op_registry(), device_type,
+                          node->def(), &input_mvec, &output_mvec)
+           .ok()) {
+    return true;
+  }
+
+  bool has_host_inputs = false;
+  for (int i = 0; i < input_mvec.size(); i++) {
+    if (input_mvec[i] == HOST_MEMORY) {
+      has_host_inputs = true;
+      break;
+    }
+  }
+  if (has_host_inputs) {
+    VLOG(1) << "Rejecting TF operation: " << node->def().op()
+            << " because of host inputs";
+    return true;
+  }
+
+  bool has_host_outputs = false;
+  for (int i = 0; i < output_mvec.size(); i++) {
+    if (output_mvec[i] == HOST_MEMORY) {
+      has_host_outputs = true;
+      break;
+    }
+  }
+
+  if (has_host_outputs) {
+    VLOG(1) << "Rejecting TF operation: " << node->def().op()
+            << " because of host outputs";
+    return true;
+  }
+  return false;
+}
+
+Status MarkForCudaGraphModePassImpl::FindCompilationCandidates() {
+  OptimizerOptions opts;
+  std::unique_ptr<ProcessFunctionLibraryRuntime> pflr(
+      new ProcessFunctionLibraryRuntime(nullptr, env_, TF_GRAPH_DEF_VERSION,
+                                        flib_def_, opts));
+  FunctionLibraryRuntime* lib_runtime =
+      pflr->GetFLR(ProcessFunctionLibraryRuntime::kDefaultFLRDevice);
+  std::vector<bool> compile_time_const_nodes(graph_->num_node_ids(), false);
+  TF_RETURN_IF_ERROR(BackwardsConstAnalysis(
+      *graph_, /*compile_time_const_arg_indices=*/nullptr,
+      &compile_time_const_nodes, lib_runtime));
+  // Iterate over nodes in sorted order so that compiler fuel is deterministic.
+  // We can't simply pass op_nodes().begin() and op_nodes().end to the
+  // std::vector constructor because they're not proper iterators, with
+  // iterator_traits defined and so on.
   std::vector<Node*> sorted_nodes;
   for (Node* node : graph_->op_nodes()) {
     sorted_nodes.push_back(node);
   }
   std::sort(sorted_nodes.begin(), sorted_nodes.end(), NodeComparatorID());
-  for (Node* node : sorted_nodes) {
-    compilation_candidates_.insert(node);
+
+  if (*debug_options_.fuel >= std::numeric_limits<int64>::max() / 2) {
+    // The assumption is that if fuel started out as INT64_MAX, it will forever
+    // stay greater than INT64_MAX / 2.
+    VLOG(2) << "Starting fuel: infinity";
+  } else {
+    VLOG(2) << "Starting fuel: " << *debug_options_.fuel;
   }
+
+  VLOG(2) << "sorted_nodes.size() = " << sorted_nodes.size();
+
+  auto whitelist = GetOrCreateWhitelist();
+  auto blacklist = GetOrCreateBlacklist();
+
+  for (Node* node : sorted_nodes) {
+    if (*debug_options_.fuel <= 0) {
+      VLOG(1)
+          << "Hit fuel limit; not marking any remaining ops as clusterable.";
+      break;
+    }
+
+    TF_ASSIGN_OR_RETURN(
+        const DeviceType& device_type,
+        device_info_cache_.GetDeviceTypeFor(node->assigned_device_name()));
+    VLOG(4) << "Device type for " << node->name() << ": "
+            << device_type.type_string();
+
+    if (!IsGpuOp(node) || HasInputOrOutputOnHost(graph_, node, device_type)) {
+      continue;
+    }
+
+    bool has_invalid_args = false;
+    for (const Node* in : node->in_nodes()) {
+      if (!IsGpuOp(in) || in->IsVariable() || in->IsKvVarHandle() ||
+          HasInputOrOutputOnHost(graph_, in, device_type)){
+        has_invalid_args = true;
+        break;
+      }
+    }
+    if (has_invalid_args) {
+      continue;
+    }
+
+    bool has_invalid_rets = false;
+    for (const Node* out : node->out_nodes()) {
+      if (!IsGpuOp(out) || out->IsVariable() || out->IsKvVarHandle() ||
+          HasInputOrOutputOnHost(graph_, out, device_type)){
+        has_invalid_rets = true;
+        break;
+      }
+    }
+    if (has_invalid_rets) {
+      continue;
+    }
+
+    if (whitelist.size() > 0 && !whitelist.contains(node->def().op())) {
+      VLOG(1) << "Rejecting TF operation " << node->def().op()
+              << " as it is not listed in --tf_cgmode_ops_to_cluster.";
+      continue;
+    }
+
+    if (blacklist.size() > 0 && blacklist.contains(node->def().op())) {
+      VLOG(1) << "Rejecting TF operation " << node->def().op()
+              << " as it is listed in --tf_cgmode_exclude_ops_to_cluster.";
+      VLOG(1) << node->DebugString();
+      continue;
+    }
+
+    if (compile_time_const_nodes[node->id()]) {
+      const OpDef* op_def;
+      TF_RETURN_IF_ERROR(
+          graph_->op_registry()->LookUpOpDef(node->type_string(), &op_def));
+      if (op_def->is_stateful()) {
+        // It is easiest to demonstrate the problem we're trying to solve with
+        // an example.  Say we have this graph:
+        //
+        //   shape = RandomUniformInt();
+        //   reshape = Reshape(input, shape)
+        //
+        // Both RandomUniformInt and Reshape are compilable by XLA so, absent
+        // any other reason, we will try to put both shape and reshape in the
+        // same cluster.  However, since XLA only supports statically shaped
+        // values, it will expect to be able to constant fold `shape` to get a
+        // static shape for `reshape`.  This is a problem because side-effecting
+        // ops like RandomUniformInt() cannot be constant folded.  We fix this
+        // by putting `shape` and `reshape` in different clusters, which results
+        // in us recompiling `reshape`'s cluster for every new value of `shape`,
+        // making `reshape` statically sized within each compilation.  We
+        // simplify the solution even further by disallowing operations like
+        // `shape` from being part of *any* non-trivial cluster.  They're either
+        // not compiled by XLA altogether or, if assigned to an XLA_* device
+        // with "must compile" semantics, compiled into a trivial single-op
+        // cluster.  This approach leaves some room for improvement, and we can
+        // consider implementing a more aggressive data-flow-analysis based
+        // solution in the future if needed.
+        //
+        // One ugly problem we have to contend with: certain sets of ops *have*
+        // to be in the same cluster because values flowing between them have
+        // types that can't be live-in or live-out of a cluster.  These ops are:
+        //
+        //  - TensorArray ops operating on the same TensorArray instance.
+        //  - Stack ops operating on the same Stack instance.
+        //
+        // To work around this we avoid isolating these specific ops.  Because
+        // of this concession it is unsound to auto-cluster them because then
+        // we'd create clusters we could not compile (because we can't constant
+        // fold, say, a TensorArrayRead or a StackPopV2).  But we don't
+        // auto-cluster these operations today so we're good for now.
+        const XlaResourceOpInfo* op_info =
+            GetResourceOpInfoForOp(node->type_string());
+        bool is_tensor_array_or_stack_op =
+            op_info && op_info->resource_kind() != XlaResourceKind::kVariable;
+        if (!is_tensor_array_or_stack_op) {
+          VLOG(2) << "Isolating " << node->name()
+                  << ": must-be-constant stateful op";
+          continue;
+        }
+      }
+    }
+
+    // This is a heuristic to avoid creating dependency between while loop
+    // condition and body computations.  Dependency between them can be created
+    // if a special Identity node in the following pattern is clustered in.
+    // That is, an Identity node in the loop cond computation is used to drive
+    // const nodes consumed by the loop body.  If this Identity node goes into
+    // the same cluster with nodes from the loop body, extra dependency is
+    // created between the loop cond and body computations and it hinders the
+    // progression of the loop cond computation at runtime with significant
+    // overhead.  Specifically, we look for the below pattern and do not cluster
+    // in this Identity to avoid the described issue.  Since Identity has low
+    // execution cost in native TF, the fact that this heuristic gives up these
+    // special Identity nodes as candidates should not harm any performance.  If
+    // other considerations emerge in the future, we can revisit the heuristic
+    // and only disallow these Identities to go into the cluster with nodes from
+    // the loop body but still consider them candidates.
+    //
+    // LoopCond ->
+    // Merge    -> Switch -> Identity -> i++ -> ... -> NextIteration
+    //                               ..> Const -> LoopBody
+    //                            (control edge)
+    TF_ASSIGN_OR_RETURN(bool is_identity_driving_consts_in_loop,
+                        IsIdentityDrivingConstsInLoop(node));
+    if (is_identity_driving_consts_in_loop) {
+      VLOG(2) << "Rejecting " << node->name()
+              << ": including it can create dependencies between while loop "
+                 "condition and body computations with runtime overhead.";
+      continue;
+    }
+
+    compilation_candidates_.insert(node);
+    --(*debug_options_.fuel);
+  }
+
   VLOG(2) << "compilation_candidates_.size() = "
           << compilation_candidates_.size();
+  return Status::OK();
+}
+
+StatusOr<bool> MarkForCudaGraphModePassImpl::Initialize() {
+  TF_RET_CHECK(!initialized_ && !edges_contracted_ && !clusters_created_);
+  initialized_ = true;
+
+  TF_RETURN_IF_ERROR(FindCompilationCandidates());
+
+  if (compilation_candidates_.empty()) {
+    VLOG(2) << "No compilable candidates";
+    return false;
+  }
 
   TF_ASSIGN_OR_RETURN(bool cycle_detection_graph_ok,
                       CreateCycleDetectionGraph(graph_, &cycles_graph_));
@@ -1052,36 +1398,7 @@ Status MarkForCudaGraphModePassImpl::BuildInitialClusterSet() {
 
   cluster_for_node_.resize(graph_->num_node_ids());
   for (Node* node : graph_->nodes()) {
-    // adopt a blacklist here to prevent erroneous compilation.
-    if (node->IsSource() || node->IsSink() || node->IsArg() ||
-        node->IsRetval() || node->IsRunGraph() || node->IsSend() ||
-        node->IsHostSend() || node->IsVariable() || node->IsRecv() ||
-        node->IsHostRecv() || node->IsFuseRecv() || node->IsHostFuseRecv() ||
-        node->IsStage() || node->IsUnstage() || node->IsSwitch() ||
-        node->IsNextIteration() || node->IsMerge() || node->IsEnter() ||
-        node->IsExit() || node->IsLoopCond() || node->IsControlTrigger() ||
-        node->IsGetSessionHandle() || node->IsGetSessionTensor() ||
-        node->IsDeleteSessionTensor() || node->IsControlFlow() ||
-        node->IsScopedAllocator() || node->IsCollective() ||
-        node->IsMetadata() || node->IsFakeParam() ||
-        node->IsPartitionedCall() || node->IsKvVarHandle() ||
-        node->IsApplyFtrlOps() || node->IsSparseApplyFtrlOps() ||
-        node->IsPlaceholder() || node->type_string() == "NoOp" ||
-        node->type_string() == "Reshape" ||
-        node->type_string() == "VarHandleOp" ||
-        node->type_string() == "AssignVariableOp" ||
-        node->type_string() == "RestoreV2" || node->type_string() == "All" ||
-        node->type_string() == "Tile" || node->type_string() == "Sum" ||
-        node->type_string() == "Cast" || node->type_string() == "Slice" ||
-        node->type_string() == "StridedSlice" ||
-        node->type_string() == "Where" || node->type_string() == "Unique" ||
-        node->type_string() == "OneHot" ||
-        node->type_string() == "SparseReshape" ||
-        node->type_string() == "SparseToDense" ||
-        node->type_string() == "GatherV2" || node->type_string() == "Pack" ||
-        node->type_string() == "ConcatV2" ||
-        node->type_string() == "SparseFillEmptyRows" ||
-        node->type_string() == "SparseSegmentSum") {
+    if (!IsCompilationCandidate(node)) {
       cluster_for_node_[node->id()].Get() = nullptr;
       continue;
     }
@@ -1098,63 +1415,6 @@ Status MarkForCudaGraphModePassImpl::BuildInitialClusterSet() {
           deadness_analysis_->GetPredicateFor(node, Graph::kControlSlot));
     }
 
-    // only process gpu ops
-    if (!IsGpuOp(node)) {
-      cluster_for_node_[node->id()].Get() = nullptr;
-      continue;
-    }
-    // exclude all ops whose inputs/outputs are on CPU
-    // because rendezvous cannot be processed within a function body now
-    bool has_invalid_args = false;
-    for (const Node* in : node->in_nodes()) {
-      if (!IsGpuOp(in) || in->IsVariable() || in->IsKvVarHandle()) {
-        has_invalid_args = true;
-        break;
-      }
-    }
-    if (has_invalid_args) {
-      cluster_for_node_[node->id()].Get() = nullptr;
-      continue;
-    }
-
-    bool has_invalid_rets = false;
-    for (const Node* out : node->out_nodes()) {
-      if (!IsGpuOp(out) || out->IsVariable() || out->IsKvVarHandle()) {
-        has_invalid_rets = true;
-        break;
-      }
-    }
-    if (has_invalid_rets) {
-      cluster_for_node_[node->id()].Get() = nullptr;
-      continue;
-    }
-
-    absl::flat_hash_map<string, std::vector<string>>* whitelist_table =
-        tensorflow::GetCgmodeWhitelistTable();
-
-    MarkForCudaGraphModePassFlags* flags = GetMarkForCudaGraphModePassFlags();
-    absl::flat_hash_set<string> whitelist;
-    for (auto s : absl::StrSplit(flags->tf_cgmode_ops_to_cluster, ",")) {
-      if (whitelist_table->contains(s)) {
-        auto v = whitelist_table->at(s);
-        whitelist.insert(v.begin(), v.end());
-      } else if (!s.empty()) {
-        whitelist.insert(string(s));
-      }
-    }
-    if (VLOG_IS_ON(2) && !whitelist.empty()) {
-      std::vector<string> vwhitelist(whitelist.begin(), whitelist.end());
-      absl::c_sort(vwhitelist);
-      VLOG(2) << "CUDA Graph clustering will only consider the following TF "
-                 "operations: "
-              << absl::StrJoin(vwhitelist, " ");
-    }
-    if (whitelist.size() > 0 && !whitelist.contains(node->def().op())) {
-      VLOG(1) << "Rejecting TF operation " << node->def().op()
-              << " as it is not listed in --tf_cgmode_ops_to_cluster.";
-      cluster_for_node_[node->id()].Get() = nullptr;
-      continue;
-    }
 
     // TODO: make device cache working on grah mode
     const string& device_name_str = !node->assigned_device_name().empty()
@@ -1207,38 +1467,9 @@ Status MarkForCudaGraphModePassImpl::BuildInitialClusterSet() {
   return Status::OK();
 }
 
-StatusOr<bool> IsIdentityDrivingConstsInLoop(Node* node) {
-  if (!node->IsIdentity()) {
-    return false;
-  }
 
-  // Check if the Identity is driven by a Switch on its true path.
-  auto it = absl::c_find_if(node->in_edges(), [](const Edge* e) {
-    return e->src()->IsSwitch() && e->src_output() == 1;
-  });
-  if (it == node->in_edges().end()) {
-    return false;
-  }
-  const Node* switch_node = (*it)->src();
 
-  // Check if the Switch is driven by LoopCond.
-  const Node* maybe_loop_cond;
-  TF_RETURN_IF_ERROR(switch_node->input_node(1, &maybe_loop_cond));
-  if (!maybe_loop_cond->IsLoopCond()) {
-    return false;
-  }
 
-  // Check if the Identity is driving any const nodes through a control edge.
-  bool driving_any_consts =
-      absl::c_any_of(node->out_edges(), [](const Edge* e) {
-        return e->dst()->IsConstant() && e->IsControlEdge();
-      });
-  if (!driving_any_consts) {
-    return false;
-  }
-
-  return true;
-}
 
 bool MarkForCudaGraphModePassImpl::LogNotContractableAndReturnFalse(
     Cluster* from, Cluster* to, absl::string_view reason) {

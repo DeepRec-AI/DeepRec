@@ -93,12 +93,12 @@ TEST(CudaGraphModeCompilationTest, Chains) {
     GraphDefBuilder builder(GraphDefBuilder::kFailImmediately);
     Node* a =
         ops::SourceOp("UncompilableNullary", builder.opts().WithName("A"));
-    Node* b = ops::UnaryOp("Relu", a, builder.opts().WithName("B"));
-    Node* c = ops::UnaryOp("Relu", b, builder.opts().WithName("C"));
+    Node* b = ops::UnaryOp("Elu", a, builder.opts().WithName("B"));
+    Node* c = ops::UnaryOp("Elu", b, builder.opts().WithName("C"));
     Node* d =
         ops::UnaryOp("UncompilableUnary", c, builder.opts().WithName("D"));
-    Node* e = ops::UnaryOp("Relu", d, builder.opts().WithName("E"));
-    ops::UnaryOp("Relu", e, builder.opts().WithName("F"));
+    Node* e = ops::UnaryOp("Elu", d, builder.opts().WithName("E"));
+    ops::UnaryOp("Elu", e, builder.opts().WithName("F"));
     TF_EXPECT_OK(GraphDefBuilderToGraph(builder, graph.get()));
   }
 

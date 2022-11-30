@@ -73,8 +73,8 @@ class ValidateCudaGraphModePass : public GraphOptimizationPass {
   }
 };
 
-REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_PLACEMENT, 0,
-                      ValidateCudaGraphModePass);
+//REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_PLACEMENT, 0,
+//                      ValidateCudaGraphModePass);
 
 }  // namespace tensorflow
 
