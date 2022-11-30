@@ -29,7 +29,9 @@ class ConstantOp : public OpKernel {
   explicit ConstantOp(OpKernelConstruction* ctx);
   void Compute(OpKernelContext* ctx) override;
   bool IsExpensive() override { return false; }
+#ifndef TF_API_COMPATIBLE_1150
   const Tensor* const_tensor() const override { return &tensor_; }
+#endif
   ~ConstantOp() override;
 
  private:

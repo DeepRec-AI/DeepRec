@@ -1441,6 +1441,10 @@ def main():
   set_build_var(environ_cp, 'TF_NEED_PARQUET_DATASET', 'Parquet Dataset',
                'with_parquet_dataset_support', True, 'parquet_dataset')
 
+  set_build_var(environ_cp, 'TF_EANBLE_API_COMPATIBLE_1150',
+                'API COMPATIBLE WITH TF 1150', 'with_api_compatible',
+                False, 'api_compatible')
+
   set_action_env_var(
       environ_cp,
       'TF_NEED_OPENCL_SYCL',

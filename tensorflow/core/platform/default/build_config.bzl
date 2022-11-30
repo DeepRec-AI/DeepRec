@@ -768,6 +768,12 @@ def tf_additional_star_lib_defines():
         "//conditions:default": [],
     })
 
+def tf_additional_api_compatible_defines():
+    return select({
+        "//tensorflow:with_api_compatible": ["TF_API_COMPATIBLE_1150"],
+        "//conditions:default": [],
+    })
+
 def tf_additional_pmem_lib_defines():
     return select({
         "//tensorflow:with_pmem_support": ["TENSORFLOW_USE_PMEM"],

@@ -147,7 +147,11 @@ Status ImmutableExecutorState::Initialize() {
         break;
       }
     }
+#ifndef TF_API_COMPATIBLE_1150
     const Tensor* const_tensor = item->kernel->const_tensor();
+#else
+    const Tensor* const_tensor = nullptr;
+#endif
     if (const_tensor) {
       // Hold onto a shallow copy of the constant tensor in `*this` so that the
       // reference count does not drop to 1. This prevents the constant tensor

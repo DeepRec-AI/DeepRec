@@ -146,8 +146,10 @@ class OpKernel {
                           kOpIsExpensiveThresholdCycles);
   }
 
+#ifndef TF_API_COMPATIBLE_1150
   // Returns a pointer to the tensor stored inside constant ops.
   virtual const Tensor* const_tensor() const { return nullptr; }
+#endif
 
   // Updates the dynamic cost estimate, which is used to determine whether this
   // op is expensive. The new cost estimate is a weighted average of the old
