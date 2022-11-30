@@ -798,16 +798,24 @@ class KvResourceGatherGPUOp : public OpKernel {
                                            copyback_cursor_list[i]);
           }
         }
+        //Pointers in memcpy_address here will 
+        //be cast to ValuePtr<Tvalue>* in this funcation.
+        ev->AllocateMemoryForNewFeatures(
+            memcpy_address,
+            init_cursor_list[0]);
 
-        ev->AllocateMemory(memcpy_address, init_cursor_list[0]);
+        ev->SetDefaultValueOfNewFeatures(
+            indices_flat.data(), indices_size,
+            init_cursor_list[0], memcpy_address,
+            default_v, get_default_v_fn_);
 
-        ev->InitializeEmbeddingOnGPU(indices_flat.data(), indices_size,
-                                     init_cursor_list[0], memcpy_address,
-                                     default_v, get_default_v_fn_);
-        ev->CopyBackToGPU(indices_flat.data(),
-                          copyback_cursor_list[0], memcpy_address);
+        ev->CopyEmbeddingsFromCPUToGPU(
+            indices_flat.data(),
+            copyback_cursor_list[0],
+            memcpy_address);
 
-        ev->CreateGPUBatch(out_base, indices_size,
+        ev->CopyEmbeddingsToBuffer(
+            out_base, indices_size,
             slice_elems, memcpy_address);
         delete []memcpy_address;
       } else {

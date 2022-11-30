@@ -85,7 +85,8 @@ class Storage {
 
   virtual Status Eviction(K* evict_ids, int64 evict_size) = 0;
 
-  virtual void CopyBackToGPU(int total, const K* keys,
+  virtual void CopyEmbeddingsFromCPUToGPU(
+      int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
@@ -99,10 +100,11 @@ class Storage {
   virtual void iterator_mutex_lock() = 0;
   virtual void iterator_mutex_unlock() = 0;
   virtual void Schedule(std::function<void()> fn) = 0;
-  virtual void CreateMemoryPool(Allocator* alloc,
-                                int64 value_len,
-                                int64 block_size) = 0;
-  virtual void AllocateMemory(
+  virtual void CreateEmbeddingMemoryPool(
+      Allocator* alloc,
+      int64 value_len,
+      int64 block_size) = 0;
+  virtual void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) = 0;
  
   inline mutex* get_mutex() { return &mu_; }

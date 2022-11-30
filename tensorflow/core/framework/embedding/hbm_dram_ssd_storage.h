@@ -109,7 +109,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     }
 
     *value_ptr = layout_creator_->Create(gpu_alloc_, size);
-    (*value_ptr)->SetPtr(mem_pool_->Allocate());
+    (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
     s = hbm_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
       return s;
@@ -154,19 +154,21 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     dram_cache_ = new LRUCache<K>();
   }
 
-  void CopyBackToGPU(int total, const K* keys,
+  void CopyEmbeddingsFromCPUToGPU(
+      int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu) override {
     auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
-    V* dev_value_address = (V*)gpu_alloc_->AllocateRaw(
-                               Allocator::kAllocatorAlignment,
-                               total * value_len
-                                   * sizeof(V));
+    V* dev_value_address =
+        (V*)gpu_alloc_->AllocateRaw(
+            Allocator::kAllocatorAlignment,
+            total * value_len * sizeof(V));
     int64 i = 0;
     auto it = copyback_cursor.cbegin();
     for ( ; it != copyback_cursor.cend(); ++it, ++i) {
-      ValuePtr<V>* gpu_value_ptr = layout_creator_->Create(gpu_alloc_, value_len);
+      ValuePtr<V>* gpu_value_ptr =
+          layout_creator_->Create(gpu_alloc_, value_len);
       gpu_value_ptr->SetPtr(dev_value_address + i * value_len);
       //Get cursor and destroy flag
       int64 j = *it & 0x0fffffffffffffff;
@@ -234,14 +236,14 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
   }
 
   void ReleaseValues(
-      const std::vector<std::pair<KVInterface<K, V>*,
-                        Allocator*>>& kvs) {
+      const std::vector<
+          std::pair<KVInterface<K, V>*, Allocator*>>& kvs) {
     for (int i = 0; i < kvs.size(); i++) {
       std::vector<K> key_list;
       std::vector<ValuePtr<V>*> value_ptr_list;
       kvs[i].first->GetSnapshot(&key_list, &value_ptr_list);
       if (i == 0) {
-        delete mem_pool_;
+        delete embedding_mem_pool_;
       }
       for (auto value_ptr : value_ptr_list) {
         if (i != 0)
@@ -305,7 +307,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
         }
       }
       dram_kv_->BatchCommit(keys, value_ptrs);
-      mem_pool_->Deallocate(value_ptrs);
+      embedding_mem_pool_->Deallocate(value_ptrs);
       for (auto it : keys) {
         TF_CHECK_OK(hbm_kv_->Remove(it));
       }
@@ -317,16 +319,18 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     }
   }
 
-  void CreateMemoryPool(Allocator* alloc,
-                        int64 value_len,
-                        int64 block_size) override {
-    mem_pool_ = new EmbeddingMemoryPool<V>(alloc, value_len, block_size);
+  void CreateEmbeddingMemoryPool(
+      Allocator* alloc,
+      int64 value_len,
+      int64 block_size) override {
+    embedding_mem_pool_ =
+        new EmbeddingMemoryPool<V>(alloc, value_len, block_size);
   }
 
-  void AllocateMemory(
+  void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) override {
     for (auto it : value_ptr_list) {
-      it->SetPtr(mem_pool_->Allocate());
+      it->SetPtr(embedding_mem_pool_->Allocate());
     }
   }
 
@@ -338,7 +342,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
 
   ValuePtr<V>* CopyToGpuValuePtr(ValuePtr<V>* cpu_ptr, int64 size) {
     auto gpu_value_ptr = layout_creator_->Create(gpu_alloc_, size);
-    gpu_value_ptr->SetPtr(mem_pool_->Allocate());
+    gpu_value_ptr->SetPtr(embedding_mem_pool_->Allocate());
     V* cpu_data_address = cpu_ptr->GetValue(0, 0);
     V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
     cudaMemcpy(gpu_data_address, cpu_data_address,
@@ -350,7 +354,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
   KVInterface<K, V>* hbm_kv_;
   KVInterface<K, V>* dram_kv_;
   KVInterface<K, V>* ssd_kv_;
-  EmbeddingMemoryPool<V>* mem_pool_;
+  EmbeddingMemoryPool<V>* embedding_mem_pool_;
   Allocator* gpu_alloc_;
   Allocator* cpu_alloc_;
   LayoutCreator<V>* layout_creator_;

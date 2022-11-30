@@ -117,23 +117,28 @@ class StorageManager {
   }
 
 #if GOOGLE_CUDA
-  void CopyBackToGPU(int total, const K* keys,
-       const std::list<int64>& copyback_cursor,
-       V** memcpy_address, size_t value_len,
-       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu){
-    return storage_->CopyBackToGPU(total, keys, copyback_cursor,
+  void CopyEmbeddingsFromCPUToGPU(
+      int total, const K* keys,
+      const std::list<int64>& copyback_cursor,
+      V** memcpy_address, size_t value_len,
+      ValuePtr<V> **gpu_value_ptrs,
+      V* memcpy_buffer_gpu){
+    return storage_->CopyEmbeddingsFromCPUToGPU(
+        total, keys, copyback_cursor,
         memcpy_address, value_len, gpu_value_ptrs,
         memcpy_buffer_gpu);
   }
 
-  void CreateMemoryPool(Allocator* alloc,
-                        int64 value_len,
-                        int64 block_size) {
-    storage_->CreateMemoryPool(alloc, value_len, block_size);
+  void CreateEmbeddingMemoryPool(
+      Allocator* alloc,
+      int64 value_len,
+      int64 block_size) {
+    storage_->CreateEmbeddingMemoryPool(alloc, value_len, block_size);
   }
 
-  void AllocateMemory(const std::vector<ValuePtr<V>*>& value_ptr_list) {
-    storage_->AllocateMemory(value_ptr_list);
+  void AllocateMemoryForNewFeatures(
+      const std::vector<ValuePtr<V>*>& value_ptr_list) {
+    storage_->AllocateMemoryForNewFeatures(value_ptr_list);
   }
 #endif  // GOOGLE_CUDA
 

@@ -104,10 +104,11 @@ class EmbeddingVar : public ResourceBase {
       cudaMemcpy(default_value_, &default_tensor_flat(0),
           default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
       storage_manager_->
-          CreateMemoryPool(alloc_,
-                           emb_config_.total_num(
-                               storage_manager_->GetAllocLen()),
-                           1024 * 1024);
+          CreateEmbeddingMemoryPool(
+              alloc_,
+              emb_config_.total_num(
+                  storage_manager_->GetAllocLen()),
+              1024 * 1024);
 #endif  // GOOGLE_CUDA
     } else {
       alloc_ = ev_allocator();
@@ -245,16 +246,19 @@ class EmbeddingVar : public ResourceBase {
   }
 
 #if GOOGLE_CUDA
-  void CreateGPUBatch(V* val_base, int64 size,
+  void CopyEmbeddingsToBuffer(
+      V* val_base, int64 size,
       int64 slice_elems, V** memcpy_address) {
-    filter_->CreateGPUBatch(val_base, size,
-        slice_elems, value_len_, memcpy_address);
+    filter_->CopyEmbeddingsToBuffer(
+        val_base, size, slice_elems,
+        value_len_, memcpy_address);
   }
 
-  void InitializeEmbeddingOnGPU(const K* keys, int64 size,
-       const std::list<int64>& init_cursor,
-       V** memcpy_address, V* default_values,
-       std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn) {
+  void SetDefaultValueOfNewFeatures(
+      const K* keys, int64 size,
+      const std::list<int64>& init_cursor,
+      V** memcpy_address, V* default_values,
+      std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn) {
     V** dev_default_value_address, **default_value_address;
     V** dev_value_address, **value_address;
     if (init_cursor.size() > 0) {
@@ -311,7 +315,8 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
-  void CopyBackToGPU(const K* keys,
+  void CopyEmbeddingsFromCPUToGPU(
+      const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address) {
     size_t value_len = emb_config_.total_num(storage_manager_->GetAllocLen());
@@ -320,14 +325,17 @@ class EmbeddingVar : public ResourceBase {
     if (copyback_cursor.size() > 0) {
       int64 total = copyback_cursor.size();
       ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>* [total];
-      memcpy_buffer_gpu = (V*)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+      memcpy_buffer_gpu = (V*)alloc_->AllocateRaw(
+          Allocator::kAllocatorAlignment,
           total * value_len * sizeof(V));
-      storage_manager_->CopyBackToGPU(total, keys, copyback_cursor,
+      storage_manager_->CopyEmbeddingsFromCPUToGPU(
+          total, keys, copyback_cursor,
           memcpy_address, value_len, gpu_value_ptrs,
           memcpy_buffer_gpu);
 
       value_address = (V**)malloc(sizeof(V*) * total);
-      dev_value_address = (V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
+      dev_value_address = (V**)alloc_->AllocateRaw(
+          Allocator::kAllocatorAlignment,
           sizeof(V*) * total);
       std::vector<K> copyback_keys;
       int64 i = 0;
@@ -343,14 +351,21 @@ class EmbeddingVar : public ResourceBase {
         copyback_keys.emplace_back(keys[cursor]);
       }
 
-      cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
-          cudaMemcpyHostToDevice);
+      cudaMemcpy(dev_value_address,
+                 value_address,
+                 sizeof(V*) * total,
+                 cudaMemcpyHostToDevice);
       int block_dim = 128;
-      void* args[] = { (void*)&dev_value_address,
-        (void*)&memcpy_buffer_gpu, (void*)&value_len, (void*)&total};
+      void* args[] = {
+          (void*)&dev_value_address,
+          (void*)&memcpy_buffer_gpu,
+          (void*)&value_len,
+          (void*)&total};
 
-      cudaLaunchKernel((void *)BatchUnpack<V>,
-          (total + block_dim - 1) / block_dim * value_len, block_dim,
+      cudaLaunchKernel(
+          (void *)BatchUnpack<V>,
+          (total + block_dim - 1) / block_dim * value_len,
+          block_dim,
           args, 0, NULL);
       cudaDeviceSynchronize();
 
@@ -361,8 +376,9 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
-  void AllocateMemory(V** memcpy_address,
-                      const std::list<int64>& init_cursor) {
+  void AllocateMemoryForNewFeatures(
+      V** memcpy_address,
+      const std::list<int64>& init_cursor) {
     std::vector<ValuePtr<V>*> value_ptr_list;
     for (auto it = init_cursor.cbegin();
       it != init_cursor.cend(); ++it) {
@@ -370,7 +386,7 @@ class EmbeddingVar : public ResourceBase {
           reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
       value_ptr_list.emplace_back(value_ptr);
     }
-    storage_manager_->AllocateMemory(value_ptr_list);
+    storage_manager_->AllocateMemoryForNewFeatures(value_ptr_list);
   }
 #endif  // GOOGLE_CUDA
 

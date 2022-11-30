@@ -127,12 +127,13 @@ class SingleTierStorage : public Storage<K, V> {
     return (s.ok()) ? 0 : -1;
   }
 
-  void CopyBackToGPU(int total, const K* keys,
+  void CopyEmbeddingsFromCPUToGPU(
+      int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) override {
-    LOG(FATAL) << "Unsupport CopyBackToGPU in SingleTierStorage.";
+    LOG(FATAL) << "Unsupport CopyEmbeddingsFromCPUToGPU in SingleTierStorage.";
   };
 
   BatchCache<K>* Cache() override {
@@ -156,13 +157,14 @@ class SingleTierStorage : public Storage<K, V> {
     return Status::OK();
   }
 
-  void CreateMemoryPool(Allocator* alloc,
-                        int64 value_len,
-                        int64 block_size) override {
+  void CreateEmbeddingMemoryPool(
+      Allocator* alloc,
+      int64 value_len,
+      int64 block_size) override {
     return;
   }
 
-  void AllocateMemory(
+  void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) override {
     return;
   }

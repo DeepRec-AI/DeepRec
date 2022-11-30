@@ -86,12 +86,13 @@ class MultiTierStorage : public Storage<K, V> {
     cache_thread_pool_ = CacheThreadPoolCreator::Create();
   }
 
-  void CopyBackToGPU(int total, const K* keys,
+  void CopyEmbeddingsFromCPUToGPU(
+      int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) override {
-    LOG(FATAL) << "Unsupport CopyBackToGPU in MultiTierStorage.";
+    LOG(FATAL) << "Unsupport CopyEmbeddingsFromCPUToGPU in MultiTierStorage.";
   };
 
   int64 GetSnapshot(std::vector<K>* key_list,
@@ -200,13 +201,14 @@ class MultiTierStorage : public Storage<K, V> {
     return true;
   }
 
-  void CreateMemoryPool(Allocator* alloc,
-                        int64 value_len,
-                        int64 block_size) override {
+  void CreateEmbeddingMemoryPool(
+      Allocator* alloc,
+      int64 value_len,
+      int64 block_size) override {
     return;
   }
 
-  void AllocateMemory(
+  void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) override {
     return;
   }
