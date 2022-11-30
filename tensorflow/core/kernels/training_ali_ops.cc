@@ -322,10 +322,11 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
                    int64 index, int64 total_dim, int64 len) {
             return default_v + len * (id % total_dim);
           };
-          accum->InitializeEmbeddingOnGPU(indices_flat.data(), N,
-                                          init_cursor_list[0],
-                                          a, accum->GetDefaultValuePtr(),
-                                          get_default_v_fn);
+          accum->SetDefaultValueOfNewFeatures(
+              indices_flat.data(), N,
+              init_cursor_list[0],
+              a, accum->GetDefaultValuePtr(),
+              get_default_v_fn);
 
           T **dev_a, **dev_v;
           dev_a = (T**)var->GetBuffer2(N);

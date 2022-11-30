@@ -56,8 +56,10 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
     memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
   }
 
-  void CreateGPUBatch(V* val_base, int64 size,
-    int64 slice_elems, int64 value_len, V** memcpy_address) {
+  void CopyEmbeddingsToBuffer(
+      V* val_base, int64 size,
+      int64 slice_elems, int64 value_len,
+      V** memcpy_address) {
 #if GOOGLE_CUDA
     int block_dim = 128;
     V** dev_value_address = (V**)ev_->GetBuffer1(size);

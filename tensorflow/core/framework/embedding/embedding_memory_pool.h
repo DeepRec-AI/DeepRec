@@ -25,11 +25,12 @@ namespace embedding {
 template<typename V>
 class EmbeddingMemoryPool {
  public:
-  explicit EmbeddingMemoryPool(Allocator* alloc,
-                               int64 value_len,
-                               int64 block_size): alloc_(alloc),
-                                                  value_len_(value_len),
-                                                  block_size_(block_size) {
+  explicit EmbeddingMemoryPool(
+      Allocator* alloc,
+      int64 value_len,
+      int64 block_size): alloc_(alloc),
+                         value_len_(value_len),
+                         block_size_(block_size) {
     embs_per_block_ = block_size_ / (sizeof(V) * value_len_);
     CreateBlock();
   }
@@ -68,9 +69,10 @@ class EmbeddingMemoryPool {
 
  private:
   void CreateBlock() {
-    V* dev_addr = (V*)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
-                                          sizeof(V) * value_len_
-                                          * embs_per_block_);
+    V* dev_addr =
+        (V*)alloc_->AllocateRaw(
+            Allocator::kAllocatorAlignment,
+            sizeof(V) * value_len_ * embs_per_block_);
     block_list_.emplace_back(dev_addr);
     for (int64 i = 0; i < embs_per_block_; i++) {
       free_ptr_queue_.emplace_back(dev_addr + i * value_len_);

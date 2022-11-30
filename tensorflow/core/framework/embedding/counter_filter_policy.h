@@ -51,8 +51,9 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  void CreateGPUBatch(V* val_base, int64 size,
-      int64 slice_elems, int64 value_len_,
+  void CopyEmbeddingsToBuffer(
+      V* val_base, int64 size,
+      int64 slice_elems, int64 value_len,
       V** memcpy_address) {
   }
 
