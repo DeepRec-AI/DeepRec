@@ -118,6 +118,73 @@ EmbeddingVariableInputLockHolder<K, V> MaybeLockEmbeddingVariableInputMutexesInO
   return EmbeddingVariableInputLockHolder<K, V>(std::move(vars), std::move(locks));
 }
 
+// Allocate a copy id for each thread
+class ThreadCopyIdAllocator {
+ public:
+  ThreadCopyIdAllocator(int num_threads): num_worker_threads_(num_threads) {
+    is_occupy_flag_ = new bool[num_worker_threads_];
+    memset(is_occupy_flag_, 0, sizeof(bool) * num_worker_threads_);
+
+    thread_copy_map_.max_load_factor(0.8);
+    thread_copy_map_.set_empty_key_and_value(-1, -1);
+    thread_copy_map_.set_counternum(16);
+    thread_copy_map_.set_deleted_key(-2);
+  }
+
+  ~ThreadCopyIdAllocator() {
+    delete[] is_occupy_flag_;
+  }
+
+  int64 GetCopyIdOfThread(int64 main_thread_id) {
+    int64 thread_id = Env::Default()->GetCurrentThreadId();
+    auto thread_copy_iter = thread_copy_map_.find_wait_free(thread_id);
+    if (thread_id == main_thread_id) {
+      return num_worker_threads_;
+    } else {
+      if (thread_copy_iter.first == -1) {
+        // bind a new thread to a local cursor_list
+        int copy_id = thread_id % num_worker_threads_;
+        while (!__sync_bool_compare_and_swap(
+            &(is_occupy_flag_[copy_id]), false, true)) {
+          copy_id = (copy_id + 1) % num_worker_threads_;
+        }
+        thread_copy_map_.insert_lockless(
+            std::move(std::pair<int64, int>(thread_id, copy_id)));
+        return copy_id;
+      } else {
+          return thread_copy_iter.second;
+      }
+    }
+  }
+
+ private:
+  int num_worker_threads_;
+  bool* is_occupy_flag_ = nullptr;
+  typedef google::dense_hash_map_lockless<int64, int> LockLessHashMap;
+  LockLessHashMap thread_copy_map_;
+};
+
+template<class K, class V, class Tstep>
+void LookupKeyAndSetVersion(
+    OpKernelContext* ctx, EmbeddingVar<K, V>* var,
+    ValuePtr<V>** value_ptrs, Tstep gs, const K* indices,
+    const int64 task_size) {
+  auto lookup_key_and_set_version_fn = [var, value_ptrs, gs,
+                  indices] (int64 start, int64 limit) {
+    ValuePtr<V>* value_ptr = nullptr;
+    for (int i = start; i < limit; i++) {
+      bool is_filter = false;
+      var->LookupOrCreateKey(indices[i], &value_ptr, &is_filter);
+      value_ptrs[i] = value_ptr;
+      var->UpdateVersion(value_ptr, gs);
+    }
+  };
+  const int64 unit_cost = 1000; //very unreliable estimate for cost per step.
+  auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
+  Shard(worker_threads->num_threads,
+        worker_threads->workers, task_size, unit_cost,
+        lookup_key_and_set_version_fn);
+}
 }  // end namespace tensorflow
 
 #endif  // TENSORFLOW_CORE_KERNELS_TRAINING_ALI_OP_HELPERS_H_

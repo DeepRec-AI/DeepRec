@@ -62,7 +62,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
       V** memcpy_address) {
 #if GOOGLE_CUDA
     int block_dim = 128;
-    V** dev_value_address = (V**)ev_->GetBuffer1(size);
+    V** dev_value_address = (V**)ev_->GetBuffer(size);
     cudaMemcpy(dev_value_address, memcpy_address,
         sizeof(V *) * size, cudaMemcpyHostToDevice);
     int limit = size;

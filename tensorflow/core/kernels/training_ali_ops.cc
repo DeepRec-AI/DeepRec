@@ -178,24 +178,95 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdagradGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
     OP_REQUIRES_OK(ctx, ctx->GetAttr("use_locking", &use_exclusive_lock_));
-    hash_map_.max_load_factor(0.8);
-    hash_map_.set_empty_key_and_value(-1, -1);
-    hash_map_.set_counternum(16);
-    hash_map_.set_deleted_key(-2);
+
+    int num_worker_threads = ctx->device()
+                             ->tensorflow_cpu_worker_threads()
+                             ->num_threads;
+    thread_copy_id_alloc_ = new ThreadCopyIdAllocator(num_worker_threads);
+
+    get_default_v_fn_ =
+        [](T* default_v, TKey id,
+          int64 index, int64 total_dim, int64 len) {
+      return default_v + len * (id % total_dim);
+    };
   }
 
   ~KvSparseApplyAdagradGPUOp() {
-    delete[] occupy_flag_;
+    delete thread_copy_id_alloc_;
+  }
+
+  void LookupEmbeddingPointers(
+      OpKernelContext* ctx, EmbeddingVar<TKey, T>* var,
+      EmbeddingVar<TKey, T>* accum, ValuePtr<T>** value_ptrs,
+      std::vector<std::list<int64>>& init_cursor_list,
+      T** v, T**a, const int64 task_size) {
+    int64 main_thread_id = Env::Default()->GetCurrentThreadId();
+    auto do_work_get_ptrs =
+        [var, accum, value_ptrs, a, v,
+         &init_cursor_list, this,
+         main_thread_id] (int64 start, int64 limit) {
+      int copy_id =
+          thread_copy_id_alloc_->GetCopyIdOfThread(main_thread_id);
+      for (int i = start; i < limit; i++) {
+        bool is_need_set_default_value = false;
+        a[i] = accum->LookupOrCreateEmb(
+            value_ptrs[i], is_need_set_default_value);
+        v[i] = var->LookupOrCreateEmb(
+            value_ptrs[i], var->GetDefaultValue(0));
+        if (is_need_set_default_value) {
+          init_cursor_list[copy_id].emplace_back(i);
+        }
+      }
+    };
+    const int64 unit_cost = 1000;
+    auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
+    Shard(worker_threads->num_threads,
+          worker_threads->workers,
+          task_size, unit_cost, do_work_get_ptrs);
+
+    // Merge copies of init_cursor_list
+    for (int i = 1; i < (worker_threads->num_threads + 1); i++) {
+      if (init_cursor_list[i].size() > 0) {
+        init_cursor_list[0].splice(init_cursor_list[0].end(),
+                                   init_cursor_list[i]);
+      }
+    }
+  }
+
+  void ApplyGradients(
+      EmbeddingVar<TKey, T>* var,
+      EmbeddingVar<TKey, T>* accum, T** v, T**a,
+      T lr_scalar, const T* grad_base,
+      const int64 task_size) {
+    // Send pointers of embeddings to GPU
+    T **dev_a, **dev_v;
+    dev_a = (T**)accum->GetBuffer(task_size);
+    dev_v = (T**)var->GetBuffer(task_size);
+    CHECK(dev_a);
+    CHECK(dev_v);
+    cudaMemcpy(dev_a, a, sizeof(T*) * task_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_v, v, sizeof(T*) * task_size, cudaMemcpyHostToDevice);
+
+    int block_size = 128;
+    int embedding_dim = var->ValueLen();
+    void* args[] = {(void*)&dev_a, (void*)&dev_v,
+                    (void*)&grad_base, (void*)&lr_scalar,
+                    (void*)&embedding_dim, (void*)&task_size};
+
+    cudaLaunchKernel((void *)SparseApplyAdagradGPU<T>,
+                     (task_size + block_size - 1) / block_size * embedding_dim,
+                     block_size, args, 0, nullptr);
+    cudaDeviceSynchronize();
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
     auto locks =
         MaybeLockEmbeddingVariableInputMutexesInOrder<TKey, T>(ctx, use_exclusive_lock_, {0, 1});
 
-    EmbeddingVar<TKey, T>* var = NULL;
+    EmbeddingVar<TKey, T>* var = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
     core::ScopedUnref unref_var(var);
-    EmbeddingVar<TKey, T>* accum = NULL;
+    EmbeddingVar<TKey, T>* accum = nullptr;
     OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum));
     core::ScopedUnref unref_accum(accum);
 
@@ -232,157 +303,54 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
     OP_REQUIRES(ctx, inner_dim > 0,
                 errors::InvalidArgument(
                     "Inner dimension should be greater than zero."));
-    int num_threads = ctx->device()
-                         ->tensorflow_cpu_worker_threads()
-                         ->num_threads;
-    if (occupy_flag_ == nullptr) {
-      mutex_lock l(m_init_occupy_flag_);
-      //double check
-      if (occupy_flag_ == nullptr) {
-        occupy_flag_ = new bool[num_threads];
-        memset(occupy_flag_, 0, sizeof(bool) * num_threads);
-      }
-    }
 
     if (N > 0) {
       if (inner_dim > 0) {
-        if (var->IsUseHbm()) {
-          auto indices_flat = indices.flat<TKey>();
-          auto grad_flat = grad.flat_outer_dims<T>();
-          T lr_scalar = lr.scalar<T>()();
-          Tstep gs = global_step.scalar<Tstep>()();
-          const T* grad_base = &grad_flat(0);
-          int block_dim = 128;
-          int embedding_dim = var->ValueLen();
-          ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
-          auto do_work = [var, value_ptrs, gs,
-                          indices_flat] (int64 start, int64 limit) {
-            ValuePtr<T>* value_ptr = nullptr;
-            for (int i = start; i < limit; i++) {
-              bool is_filter = false;
-              var->LookupOrCreateKey(indices_flat(i), &value_ptr, &is_filter);
-              value_ptrs[i] = value_ptr;
-              var->UpdateVersion(value_ptr, gs);
-            }
-          };
-          const int64 cost = 1000; //very unreliable estimate for cost per step.
-          auto worker_threads = ctx->device()->tensorflow_cpu_worker_threads();
-          Shard(worker_threads->num_threads,
-               worker_threads->workers, N, cost, do_work);
-          
-          T** a = new T*[N];
-          T** v = new T*[N];
-          std::vector<std::list<int64>> init_cursor_list(
-                                            worker_threads->num_threads + 1);
-          int64 main_thread_id = Env::Default()->GetCurrentThreadId();
-          auto do_work2 = [var, accum, value_ptrs, a, v,
-                           &init_cursor_list, this,
-                           main_thread_id, num_threads]
-            (int64 start, int64 limit) {
-            int64 thread_id = Env::Default()->GetCurrentThreadId();
-            int position;
-            auto iter = hash_map_.find_wait_free(thread_id);
-            if (thread_id == main_thread_id) {
-              position = num_threads;
-            } else {
-              auto iter = hash_map_.find_wait_free(thread_id);
-              if (iter.first == -1) {
-              // bind a new thread to a local cursor_list
-                position = thread_id % num_threads;
-                while (!__sync_bool_compare_and_swap(&(occupy_flag_[position]),
-                                                     false, true)) {
-                  position = (position + 1) % num_threads;
-              }
-                hash_map_.insert_lockless(
-                          std::move(std::pair<int64, int>(thread_id, position)));
-              } else {
-                position = iter.second;
-              }
-            }
-            for (int i = start; i < limit; i++) {
-              bool init_flag = false;
-              a[i] = accum->LookupOrCreateEmb(value_ptrs[i], init_flag);
-              v[i] = var->LookupOrCreateEmb(value_ptrs[i],
-                                            var->GetDefaultValue(0));
-              if (init_flag) {
-                init_cursor_list[position].emplace_back(i);
-              }
-            }
-          }; // Get V*
-          Shard(worker_threads->num_threads,
-                worker_threads->workers, N, cost, do_work2);
-          for (int i = 1; i < worker_threads->num_threads + 1; i++) {
-            if (init_cursor_list[i].size()>0) {
-              init_cursor_list[0].splice(init_cursor_list[0].end(),
-                                         init_cursor_list[i]);
-            }
-          }
-          std::function<T*(T*, TKey, int64, int64, int64)> get_default_v_fn =
-                [](T* default_v, TKey id,
-                   int64 index, int64 total_dim, int64 len) {
-            return default_v + len * (id % total_dim);
-          };
-          accum->SetDefaultValueOfNewFeatures(
-              indices_flat.data(), N,
-              init_cursor_list[0],
-              a, accum->GetDefaultValuePtr(),
-              get_default_v_fn);
+        auto indices_flat = indices.flat<TKey>();
+        auto grad_flat = grad.flat_outer_dims<T>();
+        Tstep gs = global_step.scalar<Tstep>()();
+        ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
+        T lr_scalar = lr.scalar<T>()();
 
-          T **dev_a, **dev_v;
-          dev_a = (T**)var->GetBuffer2(N);
-          dev_v = (T**)var->GetBuffer3(N);
-          CHECK(dev_a);
-          CHECK(dev_v);
-          cudaMemcpy(dev_a, a, sizeof(T*) * N, cudaMemcpyHostToDevice);
-          cudaMemcpy(dev_v, v, sizeof(T*) * N, cudaMemcpyHostToDevice);
-          
-          void* args[] = { (void*)&dev_a, (void*)&dev_v,
-                           (void*)&grad_base, (void*)&lr_scalar,
-                           (void*)&embedding_dim, (void*)&N};
-          cudaLaunchKernel((void *)SparseApplyAdagradGPU<T>,
-                           (N + block_dim - 1) / block_dim * embedding_dim,
-                           block_dim, args, 0, NULL);
-          cudaDeviceSynchronize();
+        // Lookup ValuePtrs of ids and set version of each id  in parallel
+        LookupKeyAndSetVersion(ctx, var, value_ptrs,
+                               gs, indices_flat.data(), N);
 
-          delete[] a;
-          delete[] v;
-          delete[] value_ptrs;
-        } else {
-          auto indices_vec = indices.vec<TKey>();
-          auto grad_flat = grad.flat_outer_dims<T>();
-          T lr_scalar = lr.scalar<T>()();
-          Tstep gs = global_step.scalar<Tstep>()();
-          auto do_work = [this, ctx, &indices_vec, var, accum, &grad_flat,
-              &gs, &lr_scalar] (int64 start_i, int64 limit_i) {
-            for (int64 i = start_i; i < limit_i; i++) {
-              const TKey index = indices_vec(i);
-              ValuePtr<T>* value_ptr = nullptr;
-              bool is_filter = false;
-              OP_REQUIRES_OK(ctx, var->LookupOrCreateKey(index, &value_ptr, &is_filter));
-              var->UpdateVersion(value_ptr, gs);
-              if (is_filter) {
-                auto a = accum->flat(value_ptr);
-                auto g = grad_flat.template chip<0>(i);
-                auto v = var->flat(value_ptr);
-                a += g.square();
-                v -= g.constant(lr_scalar) * g * a.rsqrt();
-              }
-            }
-          };
-          const int64 cost = 1000; //very unreliable estimate for cost per step.
-          auto worker_threads = *(ctx->device()->tensorflow_cpu_worker_threads());
-          Shard(worker_threads.num_threads, worker_threads.workers, N, cost, do_work);
-        } // IsHBM_DRAM
+        // Get pointers to embeddings and
+        // check which ids need to be initialized
+        T** a = new T*[N];
+        T** v = new T*[N];
+        int num_worker_threads = ctx->device()
+                          ->tensorflow_cpu_worker_threads()
+                          ->num_threads;
+        std::vector<std::list<int64>> init_cursor_list(
+                                          num_worker_threads + 1);
+        LookupEmbeddingPointers(ctx, var, accum,
+                                value_ptrs, init_cursor_list,
+                                v, a, N);
+
+        accum->SetDefaultValueOfNewFeatures(
+            indices_flat.data(), N,
+            init_cursor_list[0],
+            a, accum->GetDefaultValuePtr(),
+            get_default_v_fn_);
+
+        ApplyGradients(
+            var, accum, v, a,
+            lr_scalar,
+            &grad_flat(0), N);
+
+        delete[] a;
+        delete[] v;
+        delete[] value_ptrs;
       }
     }
   }
 
  private:
   bool use_exclusive_lock_;
-  typedef google::dense_hash_map_lockless<int64, int> LockLessHashMap;
-  LockLessHashMap hash_map_;
-  bool* occupy_flag_ = nullptr;
-  mutex m_init_occupy_flag_;
+  ThreadCopyIdAllocator* thread_copy_id_alloc_ = nullptr;
+  std::function<T*(T*, TKey, int64, int64, int64)> get_default_v_fn_;
 };
 #define REGISTER_KERNELS(Tindices, T, Tstep)                         \
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagrad")       \

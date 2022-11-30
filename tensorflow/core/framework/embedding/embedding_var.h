@@ -95,12 +95,8 @@ class EmbeddingVar : public ResourceBase {
       default_value_ = TypedAllocator::Allocate<V>(alloc_,
           default_tensor.NumElements(), AllocationAttributes());
       auto default_tensor_flat = default_tensor.flat<V>();
-      buffer1_ = nullptr;
-      buffer2_ = nullptr;
-      buffer3_ = nullptr;
-      buffer1_size_ = 0;
-      buffer2_size_ = 0;
-      buffer3_size_ = 0;
+      dev_addr_buffer_ = nullptr;
+      dev_addr_buffer_size_ = 0;
       cudaMemcpy(default_value_, &default_tensor_flat(0),
           default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
       storage_manager_->
@@ -528,45 +524,19 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.total_num(storage_manager_->GetAllocLen());
   }
 
-  V** GetBuffer1(int64 size) {
-    if (buffer1_size_ >= size) {
-      return buffer1_;
+  V** GetBuffer(int64 size) {
+    if (dev_addr_buffer_size_ >= size) {
+      return dev_addr_buffer_;
     } else{
-      if (buffer1_size_ != 0) {
-        alloc_->DeallocateRaw(buffer1_);
+      if (dev_addr_buffer_size_ != 0) {
+        alloc_->DeallocateRaw(dev_addr_buffer_);
       }
-      buffer1_ = (V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
-        size * sizeof(V*));
-      buffer1_size_ = size;
-      return buffer1_;
-    }
-  }
-
-  V** GetBuffer2(int64 size) {
-    if (buffer2_size_ >= size) {
-      return buffer2_;
-    } else {
-      if (buffer2_size_ != 0) {
-        alloc_->DeallocateRaw(buffer2_);
-      }
-      buffer2_ =(V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
-        size * sizeof(V*));
-      buffer2_size_ = size;
-      return buffer2_;
-    }
-  }
-
-  V** GetBuffer3(int64 size) {
-    if (buffer3_size_ >= size) {
-      return buffer3_;
-    } else {
-      if (buffer3_size_ != 0) {
-        alloc_->DeallocateRaw(buffer3_);
-      }
-      buffer3_ = (V**)alloc_->AllocateRaw(Allocator::kAllocatorAlignment,
-        size * sizeof(V*));
-      buffer3_size_ = size;
-      return buffer3_;
+      dev_addr_buffer_ =
+          (V**)alloc_->AllocateRaw(
+              Allocator::kAllocatorAlignment,
+              size * sizeof(V*));
+      dev_addr_buffer_size_ = size;
+      return dev_addr_buffer_;
     }
   }
 
@@ -598,21 +568,7 @@ class EmbeddingVar : public ResourceBase {
       delete storage_manager_;
     }
     if (embedding::StorageType::HBM_DRAM == storage_type_) {
-      buffer1_size_ = 0;
-      buffer2_size_ = 0;
-      buffer3_size_ = 0;
-      if (buffer1_ != nullptr) {
-        alloc_->DeallocateRaw(buffer1_);
-        buffer1_ = nullptr;
-      }
-      if (buffer2_ != nullptr) {
-        alloc_->DeallocateRaw(buffer2_);
-        buffer2_ = nullptr;
-      }
-      if (buffer3_ != nullptr) {
-        alloc_->DeallocateRaw(buffer3_);
-        buffer3_ = nullptr;
-      }
+      alloc_->DeallocateRaw(dev_addr_buffer_);
     }
     TypedAllocator::Deallocate(alloc_, default_value_,
         value_len_ * emb_config_.default_value_dim);
@@ -630,12 +586,8 @@ class EmbeddingVar : public ResourceBase {
 
   V* default_value_;
   V* default_value_no_permission_;
-  V** buffer1_;
-  V** buffer2_;
-  V** buffer3_;
-  int64 buffer1_size_;
-  int64 buffer2_size_;
-  int64 buffer3_size_;
+  V** dev_addr_buffer_;
+  int64 dev_addr_buffer_size_;
   int64 value_len_;
   Allocator* alloc_;
   embedding::StorageManager<K, V>* storage_manager_;
