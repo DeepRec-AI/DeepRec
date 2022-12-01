@@ -67,6 +67,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
     functor::KvLookupInsertKey<Eigen::GpuDevice, K, V>()(
         keys, item_idxs, n, hash_table_, hash_table_->start_idx,
         device.stream());
+    return Status::OK();
   }
 
   Status BatchLookupOrCreate(const K* keys, V* val, V* default_v,
@@ -82,6 +83,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
         (config_.block_num * (1 + config_.slot_num)),
         hash_table_->initial_bank_size, device.stream());
     TypedAllocator::Deallocate(alloc_, item_idxs, n);
+    return Status::OK();
   }
 
   void GetSnapshot(K* keys, V* values, const Eigen::GpuDevice& device) {
@@ -228,7 +230,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
   }
 
  private:
-  void Resize(size_t hint) {
+  void Resize(int hint) {
     while (hint > 0) {
       for (int i = 0; i < (config_.block_num *
             (1 + config_.slot_num)); ++i) {
