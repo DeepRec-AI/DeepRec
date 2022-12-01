@@ -62,45 +62,88 @@ TensorProto GetRandomInt32TensorProtoWithRepeat(int dim, int repeat,
   return tensor_proto;
 }
 
-static void BM_Unique_INT32(int iters, int dim, int max_int) {
-  testing::StopTiming();
-  Graph* g = new Graph(OpRegistry::Global());
+#define BM_Unique_INT32_DEV(DEVICE)                                           \
+  static void BM_Unique_INT32_##DEVICE(int iters, int dim, int max_int) {     \
+    testing::StopTiming();                                                    \
+    Graph* g = new Graph(OpRegistry::Global());                               \
+                                                                              \
+    Tensor input(DT_INT32, TensorShape({dim}));                               \
+    CHECK(input.FromProto(GetRandomInt32TensorProto(dim, max_int)));          \
+                                                                              \
+    Node* node;                                                               \
+    TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Unique")                        \
+                    .Input(test::graph::Constant(g, input))                   \
+                    .Attr("T", DT_INT32)                                      \
+                    .Finalize(g, &node));                                     \
+                                                                              \
+    testing::BytesProcessed(static_cast<int64>(iters) * dim * sizeof(int32)); \
+    testing::UseRealTime();                                                   \
+    testing::StartTiming();                                                   \
+    test::Benchmark(#DEVICE, g).Run(iters);                                   \
+  }									\
+  BENCHMARK(BM_Unique_INT32_##DEVICE)					\
+  ->ArgPair(32, 1024 * 1024);						\
+  ->ArgPair(256, 1024 * 1024)						\
+  ->ArgPair(1024, 1024 * 1024)						\
+  ->ArgPair(4 * 1024, 1024 * 1024)					\
+  ->ArgPair(16 * 1024, 1024 * 1024)					\
+  ->ArgPair(64 * 1024, 1024 * 1024)					\
+  ->ArgPair(1024 * 1024, 1024 * 1024)					\
+  ->ArgPair(4 * 1024 * 1024, 1024 * 1024)				\
+  ->ArgPair(32, 64 * 1024 * 1024)					\
+  ->ArgPair(256, 64 * 1024 * 1024)					\
+  ->ArgPair(1024, 64 * 1024 * 1024)					\
+  ->ArgPair(4 * 1024, 64 * 1024 * 1024)					\
+  ->ArgPair(16 * 1024, 64 * 1024 * 1024)				\
+  ->ArgPair(64 * 1024, 64 * 1024 * 1024)				\
+  ->ArgPair(1024 * 1024, 64 * 1024 * 1024)				\
+  ->ArgPair(4 * 1024 * 1024, 64 * 1024 * 1024);
 
-  Tensor input(DT_INT32, TensorShape({dim}));
-  CHECK(input.FromProto(GetRandomInt32TensorProto(dim, max_int)));
-
-  Node* node;
-  TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Unique")
-                  .Input(test::graph::Constant(g, input))
-                  .Attr("T", DT_INT32)
-                  .Finalize(g, &node));
-
-  testing::BytesProcessed(static_cast<int64>(iters) * dim * sizeof(int32));
-  testing::UseRealTime();
-  testing::StartTiming();
-  test::Benchmark("cpu", g).Run(iters);
-}
-
-static void BM_Unique_INT32_Repeat(int iters, int dim, int max_int) {
-  testing::StopTiming();
-  Graph* g = new Graph(OpRegistry::Global());
-
-  Tensor input(DT_INT32, TensorShape({dim * 200}));
-  CHECK(
-      input.FromProto(GetRandomInt32TensorProtoWithRepeat(dim, 200, max_int)));
-
-  Node* node;
-  TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Unique")
-                  .Input(test::graph::Constant(g, input))
-                  .Attr("T", DT_INT32)
-                  .Finalize(g, &node));
-
-  testing::BytesProcessed(static_cast<int64>(iters) * dim * 200 *
-                          sizeof(int32));
-  testing::UseRealTime();
-  testing::StartTiming();
-  test::Benchmark("cpu", g).Run(iters);
-}
+#define BM_Unique_INT32_Repeat_DEV(DEVICE)				\
+  static void BM_Unique_INT32_Repeat_##DEVICE(				\
+	   int iters, int dim, int max_int) {				\
+    testing::StopTiming();						\
+    Graph* g = new Graph(OpRegistry::Global());				\
+									\
+    Tensor input(DT_INT32, TensorShape({dim * 200}));			\
+    CHECK(input.FromProto(						\
+	   GetRandomInt32TensorProtoWithRepeat(dim, 200, max_int)));	\
+									\
+    Node* node;								\
+    TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Unique")			\
+		.Input(test::graph::Constant(g, input))			\
+		.Attr("T", DT_INT32)					\
+		.Finalize(g, &node));					\
+									\
+    testing::BytesProcessed(static_cast<int64>(iters) * dim * 200 *	\
+			    sizeof(int32));				\
+    testing::UseRealTime();						\
+    testing::StartTiming();						\
+    test::Benchmark(#DEVICE, g).Run(iters);				\
+  }									\
+  BENCHMARK(BM_Unique_INT32_Repeat_##DEVICE)				\
+  ->ArgPair(32, 1024 * 1024);						\
+  ->ArgPair(256, 1024 * 1024)						\
+  ->ArgPair(1024, 1024 * 1024)						\
+  ->ArgPair(4 * 1024, 1024 * 1024)					\
+  ->ArgPair(16 * 1024, 1024 * 1024)					\
+  ->ArgPair(64 * 1024, 1024 * 1024)					\
+  ->ArgPair(1024 * 1024, 1024 * 1024)					\
+  ->ArgPair(4 * 1024 * 1024, 1024 * 1024)				\
+  ->ArgPair(32, 32 * 1024 * 1024)					\
+  ->ArgPair(256, 32 * 1024 * 1024)					\
+  ->ArgPair(1024, 32 * 1024 * 1024)					\
+  ->ArgPair(4 * 1024, 32 * 1024 * 1024)					\
+  ->ArgPair(16 * 1024, 32 * 1024 * 1024)				\
+  ->ArgPair(64 * 1024, 32 * 1024 * 1024)				\
+  ->ArgPair(1024 * 1024, 32 * 1024 * 1024)				\
+  ->ArgPair(32, 64 * 1024 * 1024)					\
+  ->ArgPair(256, 64 * 1024 * 1024)					\
+  ->ArgPair(1024, 64 * 1024 * 1024)					\
+  ->ArgPair(4 * 1024, 64 * 1024 * 1024)					\
+  ->ArgPair(16 * 1024, 64 * 1024 * 1024)				\
+  ->ArgPair(64 * 1024, 64 * 1024 * 1024)				\
+  ->ArgPair(1024 * 1024, 64 * 1024 * 1024);
 
 TensorProto GetRandomStringsTensorProto(int dim, int max_str_len) {
   TensorProto tensor_proto;
@@ -119,75 +162,42 @@ TensorProto GetRandomStringsTensorProto(int dim, int max_str_len) {
   return tensor_proto;
 }
 
-static void BM_Unique_STRING(int iters, int dim) {
-  testing::StopTiming();
-  Graph* g = new Graph(OpRegistry::Global());
+#define BM_Unique_STRING_DEV(DEVICE)                                      \
+  static void BM_Unique_STRING_##DEVICE(int iters, int dim) {             \
+    testing::StopTiming();                                                \
+    Graph* g = new Graph(OpRegistry::Global());                           \
+                                                                          \
+    Tensor input(DT_STRING, TensorShape({dim}));                          \
+    CHECK(input.FromProto(GetRandomStringsTensorProto(dim, kMaxStrLen))); \
+                                                                          \
+    Node* node;                                                           \
+    TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Unique")                    \
+                    .Input(test::graph::Constant(g, input))               \
+                    .Attr("T", DT_STRING)                                 \
+                    .Finalize(g, &node));                                 \
+                                                                          \
+    testing::BytesProcessed(static_cast<int64>(iters) * dim *             \
+                            sizeof(tstring));                             \
+    testing::UseRealTime();                                               \
+    testing::StartTiming();                                               \
+    test::Benchmark(#DEVICE, g).Run(iters);                               \
+  }                                                                       \
+  BENCHMARK(BM_Unique_STRING_##DEVICE)                                    \
+  ->Arg(32);								\
+  ->Arg(256)								\
+  ->Arg(1024)								\
+  ->Arg(4 * 1024)							\
+  ->Arg(16 * 1024)							\
+  ->Arg(64 * 1024)							\
+  ->Arg(256 * 1024);
 
-  Tensor input(DT_STRING, TensorShape({dim}));
-  CHECK(input.FromProto(GetRandomStringsTensorProto(dim, kMaxStrLen)));
+BM_Unique_INT32_DEV(cpu);
+BM_Unique_INT32_Repeat_DEV(cpu);
+BM_Unique_STRING_DEV(cpu);
 
-  Node* node;
-  TF_CHECK_OK(NodeBuilder(g->NewName("n"), "Unique")
-                  .Input(test::graph::Constant(g, input))
-                  .Attr("T", DT_STRING)
-                  .Finalize(g, &node));
-
-  testing::BytesProcessed(static_cast<int64>(iters) * dim * sizeof(tstring));
-  testing::UseRealTime();
-  testing::StartTiming();
-  test::Benchmark("cpu", g).Run(iters);
-}
-
-BENCHMARK(BM_Unique_INT32)
-    ->ArgPair(32, 1024 * 1024)
-    ->ArgPair(256, 1024 * 1024)
-    ->ArgPair(1024, 1024 * 1024)
-    ->ArgPair(4 * 1024, 1024 * 1024)
-    ->ArgPair(16 * 1024, 1024 * 1024)
-    ->ArgPair(64 * 1024, 1024 * 1024)
-    ->ArgPair(1024 * 1024, 1024 * 1024)
-    ->ArgPair(4 * 1024 * 1024, 1024 * 1024)
-    ->ArgPair(32, 64 * 1024 * 1024)
-    ->ArgPair(256, 64 * 1024 * 1024)
-    ->ArgPair(1024, 64 * 1024 * 1024)
-    ->ArgPair(4 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(16 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(64 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(1024 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(4 * 1024 * 1024, 64 * 1024 * 1024);
-
-BENCHMARK(BM_Unique_INT32_Repeat)
-    ->ArgPair(32, 1024 * 1024)
-    ->ArgPair(256, 1024 * 1024)
-    ->ArgPair(1024, 1024 * 1024)
-    ->ArgPair(4 * 1024, 1024 * 1024)
-    ->ArgPair(16 * 1024, 1024 * 1024)
-    ->ArgPair(64 * 1024, 1024 * 1024)
-    ->ArgPair(1024 * 1024, 1024 * 1024)
-    ->ArgPair(4 * 1024 * 1024, 1024 * 1024)
-    ->ArgPair(32, 32 * 1024 * 1024)
-    ->ArgPair(256, 32 * 1024 * 1024)
-    ->ArgPair(1024, 32 * 1024 * 1024)
-    ->ArgPair(4 * 1024, 32 * 1024 * 1024)
-    ->ArgPair(16 * 1024, 32 * 1024 * 1024)
-    ->ArgPair(64 * 1024, 32 * 1024 * 1024)
-    ->ArgPair(1024 * 1024, 32 * 1024 * 1024)
-    ->ArgPair(32, 64 * 1024 * 1024)
-    ->ArgPair(256, 64 * 1024 * 1024)
-    ->ArgPair(1024, 64 * 1024 * 1024)
-    ->ArgPair(4 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(16 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(64 * 1024, 64 * 1024 * 1024)
-    ->ArgPair(1024 * 1024, 64 * 1024 * 1024);
-
-BENCHMARK(BM_Unique_STRING)
-    ->Arg(32)
-    ->Arg(256)
-    ->Arg(1024)
-    ->Arg(4 * 1024)
-    ->Arg(16 * 1024)
-    ->Arg(64 * 1024)
-    ->Arg(256 * 1024);
-
+#ifdef GOOGLE_CUDA
+BM_Unique_INT32_DEV(gpu);
+BM_Unique_INT32_Repeat_DEV(gpu);  
+#endif  // end of GOOGLE_CUDA
 }  // namespace
 }  // namespace tensorflow

@@ -2254,7 +2254,7 @@ tf_cc_test(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "unique_op_test",
     size = "small",
     srcs = ["unique_op_test.cc"],
@@ -2262,6 +2262,7 @@ tf_cc_test(
         ":ops_testutil",
         ":ops_util",
         ":unique_ali_op",
+        ":host_constant_op",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
@@ -8942,16 +8943,18 @@ tf_kernel_library(
 
 tf_kernel_library(
     name = "unique_ali_op",
-    prefix = "unique_ali_op",
+    srcs = ["unique_ali_op.cc"],
+    hdrs = ["unique_ali_op_util.h",
+            "task_runner.h",],
+    gpu_srcs = [
+        "unique_ali_op_gpu.cu.cc",
+    ],
     copts = ["-fexceptions"],
     nocopts = "-fno-exceptions",
-    hdrs = [
-        "task_runner.h",
-    ],
     deps = ARRAY_DEPS + [
         "@com_google_absl//absl/container:flat_hash_map",
         "@sparsehash_c11//:dense_hash_map",
-    ],
+    ] + if_cuda([":cuda_solvers", "@cub_archive//:cub",])
 )
 
 tf_kernel_library(
