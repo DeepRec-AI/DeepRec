@@ -38,7 +38,7 @@ class CgmodeCompileOp : public OpKernel {
   void Compute(OpKernelContext* ctx) override;
 
  private:
-  void Compile(OpKernelContext* ctx, tstring& compiled_key);
+  Status Compile(OpKernelContext* ctx, tstring& compiled_key);
 
   const NameAttrList function_;
 
@@ -51,7 +51,6 @@ class CgmodeCompileOp : public OpKernel {
   cudaGraphExec_t cuda_graph_exec_ = nullptr;
 
   bool is_compiled_;
-  bool is_out_shape_static_;
   static mutex compile_mu_;
 };
 

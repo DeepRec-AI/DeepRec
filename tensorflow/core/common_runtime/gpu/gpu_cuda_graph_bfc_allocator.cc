@@ -24,13 +24,6 @@ void CudaGraphGPUBFCAllocator::EnableCudaGraphModeMem() {
 }
 
 void CudaGraphGPUBFCAllocator::DisableCudaGraphModeMem() {
-  if (cuda_graph_mode_mem_->GetAllocatedNum() == 0) {
-    VLOG(2) << "No mem is held by allocator " << Name()
-            << ", make sure nothing is allocated by it.";
-  } else {
-    VLOG(2) << cuda_graph_mode_mem_->GetAllocatedNum()
-            << " mems are held by allocator " << Name() << ".";
-  }
   enable_cuda_graph_capture_ = false;
 }
 
@@ -78,8 +71,6 @@ CudaGraphGPUBFCAllocator::CudaGraphGPUBFCAllocator(
     GPUMemAllocator* sub_allocator, size_t total_memory, const string& name)
     : CudaGraphGPUBFCAllocator(sub_allocator, total_memory, GPUOptions(),
                                name) {
-  cuda_graph_mode_mem_ =
-      std::unique_ptr<CudaGraphModeMem>(new CudaGraphModeMem());
 }
 
 CudaGraphGPUBFCAllocator::CudaGraphGPUBFCAllocator(

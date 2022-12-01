@@ -70,11 +70,9 @@ class CgmodeExecutableClosure {
   explicit CgmodeExecutableClosure(const NameAttrList func,
                                    cudaGraphExec_t cuda_graph_exec,
                                    std::vector<Tensor> args,
-                                   std::vector<Tensor> rets,
-                                   bool is_out_shape_static)
+                                   std::vector<Tensor> rets)
       : func_(func),
-        cuda_graph_exec_(cuda_graph_exec),
-        is_out_shape_static_(is_out_shape_static) {
+        cuda_graph_exec_(cuda_graph_exec) {
     args_.reset(new gtl::InlinedVector<Tensor, 4>());
     rets_.reset(new gtl::InlinedVector<Tensor, 4>());
     for (auto e : args) {
@@ -89,7 +87,6 @@ class CgmodeExecutableClosure {
   CgmodeExecutableClosure& operator=(CgmodeExecutableClosure&&) = default;
 
   NameAttrList func() const { return func_; }
-  bool is_out_shape_static() const { return is_out_shape_static_; }
   cudaGraphExec_t cuda_graph_exec() { return cuda_graph_exec_; }
   gtl::InlinedVector<Tensor, 4>* args() { return args_.get(); }
   gtl::InlinedVector<Tensor, 4>* rets() { return rets_.get(); }
@@ -97,7 +94,6 @@ class CgmodeExecutableClosure {
  private:
   const NameAttrList func_;
   cudaGraphExec_t cuda_graph_exec_;
-  bool is_out_shape_static_;
   std::unique_ptr<gtl::InlinedVector<Tensor, 4>> args_;
   std::unique_ptr<gtl::InlinedVector<Tensor, 4>> rets_;
   TF_DISALLOW_COPY_AND_ASSIGN(CgmodeExecutableClosure);
@@ -157,27 +153,27 @@ CgmodeCompileOp::CgmodeCompileOp(OpKernelConstruction* ctx)
   env_ = ctx->env();
   flib_ = ctx->function_library();
   is_compiled_ = false;
-  is_out_shape_static_ = true;
 }
 
-void CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
+Status CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
   auto gpu_device = dynamic_cast<BaseGPUDevice*>(ctx->device());
   CudaGraphGPUBFCAllocator* device_allocator =
       reinterpret_cast<CudaGraphGPUBFCAllocator*>(
           gpu_device->GetAllocator(AllocatorAttributes()));
-  OP_REQUIRES(ctx, gpu_device, errors::Internal("BaseGPUDevice not found"));
+  if (gpu_device == nullptr) {
+    return errors::Internal("BaseGPUDevice not found");
+  } 
   se::Stream* default_stream = gpu_device->GetDefaultTFStream();
-  stream_executor::gpu::GpuContext* gpu_ctx =
-      reinterpret_cast<stream_executor::gpu::GpuContext*>(
-          default_stream->parent()->implementation()->GpuContextHack());
   cudaStream_t cu_stream;
   cu_stream = *(static_cast<cudaStream_t*>(gpu_device->GetStream()));
-  // enable cuda graph mode
-  gpu_device->SetSingleStreamMode();
-  gpu_ctx->enable_single_stream_mode();
 
   FunctionLibraryRuntime::Handle handle;
-  flib_->Instantiate(function_.name(), AttrSlice(&function_.attr()), &handle);
+  Status s_flib_instantiate = flib_->Instantiate(
+    function_.name(), AttrSlice(&function_.attr()), &handle);
+  if (!s_flib_instantiate.ok()) {
+    return s_flib_instantiate;
+  }
+
   const FunctionBody* fbody;
   fbody = flib_->GetFunctionBody(handle);
   VLOG(1) << "CgmodeCompileOp function def: " << DebugString(fbody->fdef);
@@ -187,12 +183,16 @@ void CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
   AllocatorAttributes attr;
   attr.set_gpu_compatible(true);
   for (int i = 0; i < ctx->num_inputs(); i++) {
+    // validate the original input is on device
     PersistentTensor arg_persistent;
     Tensor* out_tensor = nullptr;
-    OP_REQUIRES_OK(ctx, ctx->allocate_persistent(
-                            ctx->input(i).dtype(), ctx->input(i).shape(),
+    OP_REQUIRES_OK_RETURN(ctx, errors::Internal("Failed to allocate persistent memory"),
+                          ctx->allocate_persistent(ctx->input(i).dtype(), ctx->input(i).shape(),
                             &arg_persistent, &out_tensor, attr));
     persist_args_.emplace_back(arg_persistent);
+    cudaError_t e_cu_copy = cudaMemcpyAsync(
+        out_tensor->data(), ctx->input(i).data(),
+        ctx->input(i).TotalBytes(), cudaMemcpyDefault, cu_stream);
     in.emplace_back(*out_tensor);
   }
 
@@ -206,8 +206,11 @@ void CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
                done_dry_run.Notify();
              });
   done_dry_run.WaitForNotification();
-  OP_REQUIRES(ctx, s_dry_run.ok(),
-              errors::Internal("CgmodeCompile failed" + s_dry_run.ToString()));
+  cudaStreamSynchronize(cu_stream);
+  if (!s_dry_run.ok()) {
+    return errors::Internal("CgmodeCompile failed" + s_dry_run.ToString());
+  }
+
   device_allocator->DisableCudaGraphModeMem();
   Status s_compile;
   Notification done_compile;
@@ -216,9 +219,10 @@ void CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
   cudaError_t e_cu_capture_begin =
       cudaStreamBeginCapture(cu_stream, cudaStreamCaptureModeThreadLocal);
 
-  OP_REQUIRES(ctx, e_cu_capture_begin == cudaSuccess,
-              errors::Internal(std::string("cuda graph begin capture failed ") +
-                               cudaGetErrorString(e_cu_capture_begin)));
+  if (e_cu_capture_begin != cudaSuccess) {
+    return errors::Internal(std::string("cuda graph begin capture failed ") +
+                               cudaGetErrorString(e_cu_capture_begin));
+  }
 
   flib_->Run(opts, handle, in, &out,
              [&s_compile, &done_compile](const Status& s) {
@@ -226,38 +230,35 @@ void CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
                done_compile.Notify();
              });
   done_compile.WaitForNotification();
-  OP_REQUIRES(ctx, s_compile.ok(),
-              errors::Internal("CgmodeCompile failed" + s_compile.ToString()));
+  if (!s_compile.ok()) {
+    return errors::Internal("CgmodeCompile failed" + s_compile.ToString());
+  }
 
   cudaError_t e_cu_capture_end =
       cudaStreamEndCapture(cu_stream, &cuda_graph_obj_);
-  OP_REQUIRES(ctx, e_cu_capture_end == cudaSuccess,
-              errors::Internal(std::string("cuda graph end capture failed ") +
-                               cudaGetErrorString(e_cu_capture_end)));
+  if (e_cu_capture_end != cudaSuccess) {
+    return errors::Internal(std::string("cuda graph end capture failed ") +
+                               cudaGetErrorString(e_cu_capture_end));
+  }
 
   if (cuda_graph_exec_ != nullptr) {
     cudaError_t e_cu_destroy_graph_exec =
         cudaGraphExecDestroy(cuda_graph_exec_);
     if (e_cu_destroy_graph_exec != cudaSuccess) {
-      LOG(ERROR) << std::string("destroy cuda graph exec failed ")
-                 << cudaGetErrorString(e_cu_destroy_graph_exec);
+      return errors::Internal(std::string("destroy cuda graph exec failed ") +
+                                cudaGetErrorString(e_cu_destroy_graph_exec));
     }
     cuda_graph_exec_ = nullptr;
   }
   cudaError_t e_cu_instantiate =
       cudaGraphInstantiate(&cuda_graph_exec_, cuda_graph_obj_, NULL, NULL, 0);
-  OP_REQUIRES(ctx, e_cu_instantiate == cudaSuccess,
-              errors::Internal(
+  if (e_cu_instantiate != cudaSuccess) {
+    return errors::Internal(
                   std::string("cuda graph create execute instance failed ") +
-                  cudaGetErrorString(e_cu_instantiate)));
-
-  gpu_device->ResetStreamMode();
-  gpu_ctx->disable_single_stream_mode();
+                  cudaGetErrorString(e_cu_instantiate));
+  }
 
   for (int i = 0; i < out.size(); i++) {
-    if (out[i].shape() != out_dry_run[i].shape()) {
-      is_out_shape_static_ = false;
-    }
     persist_rets_.emplace_back(PersistentTensor(out[i]));
   }
 
@@ -273,36 +274,35 @@ void CgmodeCompileOp::Compile(OpKernelContext* ctx, tstring& compiled_key) {
 
   compiled_key = CgmodeExecutableClosureStore::Global()->Produce(
       CgmodeExecutableClosure(function_, cuda_graph_exec_, cuda_graph_args,
-                              cuda_graph_rets, is_out_shape_static_));
+                              cuda_graph_rets));
   cudaError_t e_cu_destroy_graph = cudaGraphDestroy(cuda_graph_obj_);
-  OP_REQUIRES(ctx, e_cu_destroy_graph == cudaSuccess,
-              errors::Internal(std::string("destroy cuda graph failed ") +
-                               cudaGetErrorString(e_cu_destroy_graph)));
+  if (e_cu_destroy_graph != cudaSuccess) {
+    return errors::Internal(std::string("destroy cuda graph failed ") +
+                               cudaGetErrorString(e_cu_destroy_graph));
+  }
   is_compiled_ = true;
+  return Status::OK();
 }
 
 void CgmodeCompileOp::Compute(OpKernelContext* ctx) {
   tf_shared_lock lock(CgmodeCompileOp::compile_mu_);
-  bool do_recompile = false;
+  bool has_dynamic_input_shape = false;
   if (persist_args_.size() > 0 && persist_args_.size() == ctx->num_inputs()) {
     for (int i = 0; i < persist_args_.size(); i++) {
       if (persist_args_[i].AccessTensor(ctx)->shape() !=
           ctx->input(i).shape()) {
-        do_recompile = true;
-        VLOG(2) << "A recompile is triggered";
+        has_dynamic_input_shape = true;
+        VLOG(2) << "Detect a dynamic input shape";
         break;
       }
     }
   }
 
   CgmodeExecutableClosureStore::KeyT key;
-  if (!is_compiled_ || do_recompile) {
-    if (do_recompile) {
-      persist_args_.clear();
-      persist_rets_.clear();
-    }
-    Compile(ctx, key);
-  } else {
+  Status compile_succeed;
+  if (!is_compiled_ && !has_dynamic_input_shape) {
+    compile_succeed = Compile(ctx, key);
+  } else if (!has_dynamic_input_shape) {
     std::vector<Tensor> cuda_graph_args;
     std::vector<Tensor> cuda_graph_rets;
 
@@ -315,7 +315,15 @@ void CgmodeCompileOp::Compute(OpKernelContext* ctx) {
 
     key = CgmodeExecutableClosureStore::Global()->Produce(
         CgmodeExecutableClosure(function_, cuda_graph_exec_, cuda_graph_args,
-                                cuda_graph_rets, is_out_shape_static_));
+                                cuda_graph_rets));
+    compile_succeed = Status::OK();
+  } else {
+    compile_succeed = errors::Internal("dynamic input shape");
+  }
+
+  if (!compile_succeed.ok()) {
+    LOG(WARNING) << std::string("CUDA Graph compilation failed because of ")
+      + compile_succeed.ToString() + std::string(" fallback to TF execution");
   }
 
   AllocatorAttributes host_alloc_attrs;
@@ -327,7 +335,7 @@ void CgmodeCompileOp::Compute(OpKernelContext* ctx) {
   compilation_key.flat<tstring>()(0) = key;
 
   Tensor compilation_successful(cpu_allocator, DT_BOOL, TensorShape({}));
-  compilation_successful.flat<bool>()(0) = true;
+  compilation_successful.flat<bool>()(0) = compile_succeed.ok();
 
   ctx->set_output(0, compilation_key);
   ctx->set_output(1, compilation_successful);
@@ -359,14 +367,8 @@ void CgmodeRunOp::Compute(OpKernelContext* ctx) {
   gtl::InlinedVector<Tensor, 4>* cuda_graph_rets = closure.rets();
   cuda_graph_exec_ = closure.cuda_graph_exec();
   const NameAttrList func = closure.func();
-  bool is_out_shape_static = closure.is_out_shape_static();
-  if (!is_out_shape_static) {
-    FallbackToTF(ctx, func);
-    return;
-  }
 
   auto gpu_device = dynamic_cast<BaseGPUDevice*>(ctx->device());
-  OP_REQUIRES(ctx, gpu_device, errors::Internal("BaseGPUDevice not found"));
   cudaStream_t cu_stream =
       *(static_cast<cudaStream_t*>(gpu_device->GetStream()));
 
@@ -374,30 +376,38 @@ void CgmodeRunOp::Compute(OpKernelContext* ctx) {
     cudaError_t e_cu_copy = cudaMemcpyAsync(
         cuda_graph_args->at(i).data(), ctx->input(i).data(),
         ctx->input(i).TotalBytes(), cudaMemcpyDefault, cu_stream);
-    OP_REQUIRES(ctx, e_cu_copy == cudaSuccess,
-                errors::Internal(std::string("async copy args failed ") +
-                                 cudaGetErrorString(e_cu_copy)));
+    if (e_cu_copy != cudaSuccess) {
+      LOG(WARNING) << std::string("async copy args failed ") + 
+                      cudaGetErrorString(e_cu_copy) +
+                      std::string(" fallback to TF execution");
+      FallbackToTF(ctx, func);
+      return;
+    }
   }
 
   cudaError_t e_cu_launch_graph =
       cudaGraphLaunch(closure.cuda_graph_exec(), cu_stream);
-  if (e_cu_launch_graph == cudaSuccess) {
-    for (int i = 0; i < ctx->num_outputs(); i++) {
-      Tensor* output = nullptr;
-      OP_REQUIRES_OK(ctx, ctx->allocate_output(
-                              i, cuda_graph_rets->at(i).shape(), &output));
-      cudaMemcpyAsync(output->data(), cuda_graph_rets->at(i).data(),
-                      cuda_graph_rets->at(i).TotalBytes(), cudaMemcpyDefault,
-                      cu_stream);
-    }
-    cudaStreamSynchronize(cu_stream);
-  } else {
+  if (e_cu_launch_graph != cudaSuccess) {
+    LOG(WARNING) << std::string("CUDA Graph execution failed ") +
+                    cudaGetErrorString(e_cu_launch_graph) +
+                    std::string(" fallback to TF execution");
     FallbackToTF(ctx, func);
+    return;
   }
+
+  for (int i = 0; i < ctx->num_outputs(); i++) {
+    Tensor* output = nullptr;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(
+                            i, cuda_graph_rets->at(i).shape(), &output));
+    cudaMemcpyAsync(output->data(), cuda_graph_rets->at(i).data(),
+                    cuda_graph_rets->at(i).TotalBytes(), cudaMemcpyDefault,
+                    cu_stream);
+  }
+  cudaStreamSynchronize(cu_stream);
 }
 
 void CgmodeRunOp::FallbackToTF(OpKernelContext* ctx, const NameAttrList func) {
-  VLOG(2) << "Fallback to run TF subgraph when CUDA Graph execution fails";
+  VLOG(1) << "Fallback to run TF subgraph when CUDA Graph execution fails";
   FunctionLibraryRuntime::Handle handle;
   flib_->Instantiate(func.name(), AttrSlice(&func.attr()), &handle);
   const FunctionBody* fbody;

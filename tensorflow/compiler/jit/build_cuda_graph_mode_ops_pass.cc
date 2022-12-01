@@ -92,8 +92,7 @@ Operation DataToControl(const Scope& scope, Output data) {
 // Replaces each outgoing edge from `old_node` with a merge node that merges in
 // the corresponding output from `new_node`.
 void MergeOutgoingDataEdges(const Scope& s, Node* old_node, Node* new_node,
-                            absl::string_view cluster_name,
-                            const DebuggingOpts& debugging_opts) {
+                            absl::string_view cluster_name) {
   if (!s.status().ok()) {
     return;
   }
@@ -109,31 +108,6 @@ void MergeOutgoingDataEdges(const Scope& s, Node* old_node, Node* new_node,
     Output merged_output = merged_outputs[oidx];
     if (merged_output.node() == nullptr) {
       Output new_output(new_node, oidx);
-      if (debugging_opts.print_outputs) {
-        string cpu_device = "/job:localhost/replica:0/task:0/device:CPU:0";
-        ops::Print print_op(s.WithOpName("print_", oidx)
-                                .WithDevice(cpu_device)
-                                .WithAssignedDevice(cpu_device),
-                            new_output, {new_output},
-                            ops::Print::Attrs{}
-                                .Message(absl::StrCat("output ", oidx, " from ",
-                                                      old_node->name(), " is "))
-                                .FirstN(1000)
-                                .Summarize(-1));
-        new_output = print_op;
-      }
-
-      if (debugging_opts.check_output_numerics &&
-          DataTypeIsFloating(new_output.type())) {
-        ops::CheckNumerics check_numerics_op(
-            s.WithOpName("check_output_", oidx)
-                .WithDevice(new_node->requested_device())
-                .WithAssignedDevice(new_node->assigned_device_name()),
-            new_output,
-            absl::StrCat("CheckNumerics failed for output ", oidx, "(",
-                         new_output.name(), ") from cluster ", cluster_name));
-        new_output = check_numerics_op;
-      }
 
       ops::_XlaMerge xla_merge_op(s.WithOpName("merge_oidx_", oidx),
                                   Output(old_node, oidx), new_output);
@@ -368,15 +342,33 @@ Status ReplaceNodeWithCgmodeCompileAndCgmodeRun(
 
   std::vector<Output> cgmode_run_args = GetCgmodeRunArgs(root, cluster_info);
 
+  ops::Switch s(root.WithOpName("predicated_compilation_key"),
+                cgmode_compile.key, cgmode_compile.compilation_successful);
+  Output predicated_compilation_key = s.output_true;
+  Output inverse_predicated_compilation_key = s.output_false;
+
+
   // "Strict" compilation:  every _CgmodeCompile invocation must compile the
   // cluster.
   ops::_CgmodeRun cgmode_run(root.WithOpName("cgmode_run"), cgmode_run_args,
-                             cgmode_compile.key, n->output_types());
+                             predicated_compilation_key, n->output_types());
 
-  MoveOutgoingEdges(g, /*old_node=*/n,
-                    /*new_node=*/cgmode_run.operation.node());
-  g->RemoveNode(n);
+  MergeOutgoingControlEdges(root, /*old_node=*/n,
+                            /*new_node=*/cgmode_run.operation.node());
 
+  MergeOutgoingDataEdges(root, /*old_node=*/n,
+                         /*new_node=*/cgmode_run.operation.node(),
+                         cluster_info.function.name());
+
+  TF_RETURN_IF_ERROR(root.status());
+
+  RemoveAllIncomingControlEdges(g, n);
+  g->AddControlEdge(
+      DataToControl(root, inverse_predicated_compilation_key).node(), n);
+  n->ClearAttr(kCgmodeCompiledAttr);
+
+  TF_RETURN_IF_ERROR(ReplaceFunctionCallWithPartitionedCall(
+      options, flib_def, n, g, cluster_info.function, root));
   return Status::OK();
 }
 }  // namespace
