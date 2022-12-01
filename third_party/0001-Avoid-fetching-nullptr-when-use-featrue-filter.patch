@@ -1,4 +1,4 @@
-From 80bd59cdd6c3c0a3fc9a512e97529a9f2c6883a6 Mon Sep 17 00:00:00 2001
+From 14afd33845f0b4dcc9353e849fae883efe969c6a Mon Sep 17 00:00:00 2001
 From: lxy268263 <lxy268263@alibaba-inc.com>
 Date: Tue, 13 Jul 2021 16:20:45 +0800
 Subject: [PATCH] Avoid fetching nullptr when use featrue filter.
@@ -7,12 +7,12 @@ Subject: [PATCH] Avoid fetching nullptr when use featrue filter.
  Makefile                                      |   13 +-
  sparsehash/dense_hash_map_lockless            |  447 ++++
  sparsehash/dense_hash_set_lockless            |  381 ++++
- sparsehash/internal/densehashtable_lockless.h | 2010 +++++++++++++++++
+ sparsehash/internal/densehashtable_lockless.h | 2021 +++++++++++++++++
  sparsehash/traits                             |   10 +-
  tests/bench_lockless.cc                       | 1466 ++++++++++++
  tests/dense_hash_map_unittests.cc             |  137 +-
  tests/rwlock.h                                |  224 ++
- 8 files changed, 4670 insertions(+), 18 deletions(-)
+ 8 files changed, 4681 insertions(+), 18 deletions(-)
  create mode 100644 sparsehash/dense_hash_map_lockless
  create mode 100644 sparsehash/dense_hash_set_lockless
  create mode 100644 sparsehash/internal/densehashtable_lockless.h
@@ -904,10 +904,10 @@ index 0000000..5287d11
 +}  // namespace google
 diff --git a/sparsehash/internal/densehashtable_lockless.h b/sparsehash/internal/densehashtable_lockless.h
 new file mode 100644
-index 0000000..57529db
+index 0000000..31e3a35
 --- /dev/null
 +++ b/sparsehash/internal/densehashtable_lockless.h
-@@ -0,0 +1,2016 @@
+@@ -0,0 +1,2021 @@
 +// Copyright (c) 2005, Google Inc.
 +// All rights reserved.
 +//
@@ -2062,8 +2062,13 @@ index 0000000..57529db
 +      }
 +      ++num_probes;  // we're doing another probe
 +      bucknum = (bucknum + JUMP_(key, num_probes)) & bucket_count_minus_one;
-+      if(num_probes == tmp_pointer->num_buckets_)
-+        return std::pair<size_type, size_type>(ILLEGAL_BUCKET, bucknum);  
++      if (num_probes == tmp_pointer->num_buckets_) {
++        if (insert_pos == ILLEGAL_BUCKET) {
++          return std::pair<size_type, size_type>(ILLEGAL_BUCKET, bucknum);
++        } else {
++          return std::pair<size_type, size_type>(ILLEGAL_BUCKET, insert_pos);
++        }
++      }
 +    }
 +  }
 +  template <typename K>
@@ -4578,7 +4583,7 @@ index 7c4b3c1..37560c1 100644
 +}
 diff --git a/tests/rwlock.h b/tests/rwlock.h
 new file mode 100644
-index 0000000..59ef9b2
+index 0000000..25e8e93
 --- /dev/null
 +++ b/tests/rwlock.h
 @@ -0,0 +1,224 @@
@@ -4808,5 +4813,5 @@ index 0000000..59ef9b2
 +};
 \ No newline at end of file
 -- 
-2.23.0
+2.32.0.3.g01195cf9f
 
