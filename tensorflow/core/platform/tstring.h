@@ -173,6 +173,12 @@ class tstring {
     return *this;
   }
 
+#ifndef TF_API_COMPATIBLE_1150
+  void swap(tstring& str) {
+    std::swap(str_, str.str_);
+  }
+#endif
+
   friend const tstring operator+(const tstring& a, const tstring& b);
   friend bool operator==(const char* a, const tstring& b);
   friend bool operator==(const std::string& a, const tstring& b);
