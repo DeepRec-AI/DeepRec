@@ -15,6 +15,7 @@ limitations under the License.
 
 #include <atomic>
 #include <list>
+#include <vector>
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/allocator_registry.h"
 #include "tensorflow/core/framework/tracking_allocator.h"
@@ -24,6 +25,11 @@ limitations under the License.
 #include "tensorflow/core/platform/mem.h"
 #include "tensorflow/core/platform/mutex.h"
 #include "tensorflow/core/platform/types.h"
+
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
+
+#define ARENA_ARRAY_SIZE 1024
 
 namespace tensorflow {
 
@@ -40,6 +46,12 @@ static const double kTotalAllocationWarningThreshold = 0.5;
 
 // Individual allocations large than this amount will trigger a warning.
 static const double kLargeAllocationWarningThreshold = 0.1;
+
+// The max num of ptr that ThreadLocalBin can cache.
+static const int kThreadLocalBinMaxPtrNum = 16;
+
+static const int kThreadLocalBinExchangeMaxPtrNum = \
+  kThreadLocalBinMaxPtrNum >> 1;
 
 // Cache first invocation to port::AvailableRam, as it can be expensive.
 static int64_t LargeAllocationWarningBytes() {
@@ -242,21 +254,8 @@ class Bin {
     }
   }
 
-  void* Allocate() {
-    void* ptr = nullptr;
-    if (free_list_.TryPop(&ptr)) {
-      return ptr;
-    }
-
-    ptr = current_chunk_->Allocate();
-    if (ptr == nullptr) {
-      current_chunk_ = CreateChunk();
-      ptr = current_chunk_->Allocate();
-    }
-    return ptr;
-  }
-
   size_t BatchAllocate(size_t num, void** ret) {
+    mutex_lock l(mu_);
     auto allocated = free_list_.PopBatch(num, ret);
     auto remains = num - allocated;
     if (remains == 0) {
@@ -293,8 +292,9 @@ class Bin {
     return num - (remains - allocated);
   }
 
-  void Deallocate(void* ptr) {
-    free_list_.Push(ptr);
+  void BatchDeallocate(std::vector<void *> &ptrs) {
+    mutex_lock l(mu_);
+    free_list_.PushBatch(ptrs.size(), ptrs.data());
   }
 
   size_t BinSize() const {
@@ -309,82 +309,209 @@ class Bin {
   }
 
  private:
+  mutex mu_;  
   size_t bin_size_;
-  PageMap* page_map_ = nullptr;
-  Chunk* current_chunk_ = nullptr;
+  PageMap* page_map_ = nullptr GUARDED_BY(mu_);
+  Chunk* current_chunk_ = nullptr GUARDED_BY(mu_);
 
-  FreeList free_list_;
-  std::vector<Chunk*> chunks_;
+  FreeList free_list_ GUARDED_BY(mu_);
+  std::vector<Chunk*> chunks_ GUARDED_BY(mu_);
 };
 
-// Thread local arena
-class ThreadLocalArena {
+class Arena {
  public:
-  ThreadLocalArena(PageMap* pm) : page_map_(pm) {}
+  Arena(PageMap* pm) : page_map_(pm) {}
 
-  ~ThreadLocalArena() {
+  ~Arena() {
     for (auto it = bins_.begin(); it != bins_.end(); ++it) {
       delete it->second;
     }
     bins_.clear();
   }
 
-  void* Allocate(size_t num_bytes) {
-    auto it = bins_.find(num_bytes);
-    if (it != bins_.end()) {
-      return it->second->Allocate();
+  size_t BatchAllocate(size_t num, size_t bin_size, void** ret) {
+    Bin *bin = nullptr;
+    {
+      mutex_lock l(mu_);
+      auto it = bins_.find(bin_size);
+      if (it == bins_.end()) {
+	bin = new Bin(bin_size, page_map_);
+	bins_.emplace(bin_size, bin);
+      } else {
+	bin = it->second;
+      }
     }
-    auto b = new Bin(num_bytes, page_map_);
-    bins_.emplace(num_bytes, b);
-    return b->Allocate();
+    
+    return bin->BatchAllocate(num, ret);
   }
 
-  size_t BatchAllocate(size_t num, size_t num_bytes, void** ret) {
-    auto it = bins_.find(num_bytes);
-    if (it != bins_.end()) {
-      return it->second->BatchAllocate(num, ret);
+  void BatchDeallocate(size_t bin_size, std::vector<void*>& ptrs) {
+    Bin *bin = nullptr;
+    {
+      mutex_lock l(mu_);
+      auto it = bins_.find(bin_size);
+      if (it == bins_.end()) {
+	bin = new Bin(bin_size, page_map_);
+	bins_.emplace(bin_size, bin);
+      } else {
+	bin = it->second;
+      }
     }
-    auto b = new Bin(num_bytes, page_map_);
-    bins_.emplace(num_bytes, b);
-    return b->BatchAllocate(num, ret);
-  }
-
-  void Deallocate(size_t num_bytes, void* ptr) {
-    auto it = bins_.find(num_bytes);
-    if (it != bins_.end()) {
-      return it->second->Deallocate(ptr);
-    }
-    auto b = new Bin(num_bytes, page_map_);
-    bins_.emplace(num_bytes, b);
-    return b->Deallocate(ptr);
+    
+    return bin->BatchDeallocate(ptrs);
   }
 
  private:
-  std::unordered_map<size_t, Bin*> bins_;
+  mutex mu_;
+  std::unordered_map<size_t, Bin*> bins_ GUARDED_BY(mu_);
   PageMap* page_map_ = nullptr;
+};
+
+class ThreadLocalBin {
+ public:
+  ThreadLocalBin(size_t t_bin_size, PageMap *pm, Arena *arena) :
+    t_bin_size_(t_bin_size), page_map_(pm), arena_(arena) {}
+
+  ~ThreadLocalBin() {
+    FlushBackToArena(list_.size());
+  }
+
+  void *Allocate() {
+    void *ret = nullptr;
+
+    if (list_.empty()) {
+      std::vector<void *> ptrs(kThreadLocalBinExchangeMaxPtrNum, nullptr);
+      int ptrs_num = arena_->BatchAllocate(kThreadLocalBinExchangeMaxPtrNum,
+                                           t_bin_size_, ptrs.data());
+      for (int i = 0; i < ptrs_num; i++) {
+	list_.push_front(ptrs[i]);
+      }
+    }
+
+    if (likely(!list_.empty())) {
+      ret = list_.back();
+      list_.pop_back();
+    }
+    
+    return ret;
+  }
+
+  size_t BatchAllocate(size_t num, void **ret) {
+    if (list_.size() >= num) {
+      for (int i = 0; i < num; i++) {
+	ret[i] = list_.back();
+	list_.pop_back();
+      }
+      return num;
+    }
+
+    return arena_->BatchAllocate(num, t_bin_size_, ret);
+  }
+
+  void Deallocate(void *ptr) {
+    list_.push_front(ptr);
+
+    if (unlikely(list_.size() > kThreadLocalBinMaxPtrNum)) {
+      FlushBackToArena(kThreadLocalBinExchangeMaxPtrNum);
+    }
+  }
+
+private:
+  void FlushBackToArena(int num) {
+    std::unordered_map<Bin*, std::vector<void *>> bin_ptr_map;
+    for (int i = 0; i < num; i++) {
+      void *ptr = list_.back();
+      list_.pop_back();
+      Bin *bin = page_map_->GetBin(ptr);
+      bin_ptr_map[bin].push_back(ptr);
+    }
+
+    for (auto iter = bin_ptr_map.begin(); iter != bin_ptr_map.end(); ++iter) {
+      (iter->first)->BatchDeallocate(iter->second);
+    }
+  }
+
+private:
+  size_t t_bin_size_;
+  PageMap *page_map_ = nullptr; // not owned
+  Arena *arena_ = nullptr; // not owned
+  std::list<void *> list_;
+};
+
+class ThreadLocalCache {
+ public:
+  ThreadLocalCache(PageMap* pm, Arena* arena) : page_map_(pm), arena_(arena) {}
+  
+  ~ThreadLocalCache() {
+    for (auto it = t_bins_.begin(); it != t_bins_.end(); ++it) {
+      delete it->second;
+    }
+    t_bins_.clear();
+  }
+
+  void *Allocate(size_t num_bytes) {
+    auto it = t_bins_.find(num_bytes);
+    if (it != t_bins_.end()) {
+      return it->second->Allocate();
+    }
+    auto b = new ThreadLocalBin(num_bytes, page_map_, arena_);
+    t_bins_.emplace(num_bytes, b);
+    return b->Allocate();
+  }
+
+  size_t BatchAllocate(size_t num, size_t num_bytes, void **ret) {
+    auto it = t_bins_.find(num_bytes);
+    if (it != t_bins_.end()) {
+      return it->second->BatchAllocate(num, ret);
+    }
+    auto b = new ThreadLocalBin(num_bytes, page_map_, arena_);
+    t_bins_.emplace(num_bytes, b);
+    return b->BatchAllocate(num, ret);
+  }
+
+  void Deallocate(size_t num_bytes, void *ptr) {
+    auto it = t_bins_.find(num_bytes);
+    if (it != t_bins_.end()) {
+      return it->second->Deallocate(ptr);
+    }
+    auto b = new ThreadLocalBin(num_bytes, page_map_, arena_);
+    t_bins_.emplace(num_bytes, b);
+    b->Deallocate(ptr);
+  }
+
+ private:
+  PageMap * page_map_ = nullptr; // not owned
+  Arena * arena_ = nullptr; // not owned
+  std::unordered_map<size_t, ThreadLocalBin*> t_bins_;
 };
 
 class EVAllocatorImpl {
  public:
   EVAllocatorImpl() {
-    pthread_key_create(&key_, nullptr);
+    pthread_key_create(&key_, ThreadLocalCacheCleanup);
     page_map_ = new PageMap();
+    arenas_ = new std::vector<Arena>(ARENA_ARRAY_SIZE, page_map_);
+    arena_cur_index = 0;
+    
   }
 
   ~EVAllocatorImpl() {
     pthread_key_delete(key_);
+    delete arenas_;
+    delete page_map_;
   }
 
   void* Allocate(size_t num_bytes) {
-    return GetArena()->Allocate(num_bytes);
+    
+    return GetThreadLocalCache()->Allocate(num_bytes);
   }
 
   size_t BatchAllocate(size_t num, size_t num_bytes, void** ret) {
-    return GetArena()->BatchAllocate(num, num_bytes, ret);
+    return GetThreadLocalCache()->BatchAllocate(num, num_bytes, ret);
   }
 
   void Deallocate(void* ptr) {
-    GetArena()->Deallocate(AllocatedSize(ptr), ptr);
+    GetThreadLocalCache()->Deallocate(AllocatedSize(ptr), ptr);
   }
 
   size_t AllocatedSize(const void* ptr) const {
@@ -396,19 +523,39 @@ class EVAllocatorImpl {
   }
 
  private:
-  ThreadLocalArena* GetArena() {
-    ThreadLocalArena* arena =
-      static_cast<ThreadLocalArena*>(pthread_getspecific(key_));
-    if (arena == nullptr) {
-      arena = new ThreadLocalArena(page_map_);
-      pthread_setspecific(key_, arena);
+  ThreadLocalCache* GetThreadLocalCache() {
+    ThreadLocalCache* tCache =
+      static_cast<ThreadLocalCache*>(pthread_getspecific(key_));
+    if (tCache == nullptr) {
+      Arena *arena = GetNewArena();
+      tCache = new ThreadLocalCache(page_map_, arena);
+      pthread_setspecific(key_, tCache);
     }
-    return arena;
+    return tCache;
+  }
+
+  Arena *GetNewArena() {
+    Arena *ret = nullptr;
+    {
+      mutex_lock l(mu_arena_index_);
+      ret = &((*arenas_)[arena_cur_index]);
+      arena_cur_index = (arena_cur_index + 1) % ARENA_ARRAY_SIZE;
+    }
+
+    return ret;
+  }
+
+  static void ThreadLocalCacheCleanup(void *ptr) {
+    auto t_ptr = (ThreadLocalCache *)ptr;
+    delete t_ptr;
   }
 
  private:
   pthread_key_t key_;
+  mutex mu_arena_index_;
   PageMap* page_map_ = nullptr;
+  std::vector<Arena> *arenas_ = nullptr;
+  int arena_cur_index GUARDED_BY(mu_arena_index_);
 };
 
 class EVAllocator : public Allocator {
