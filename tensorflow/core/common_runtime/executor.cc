@@ -397,7 +397,7 @@ class ExecutorState {
 
   // Ref Tensors of input of send op
   mutex* ref_send_inputs_mu_ptr_;
-  std::vector<TensorReference*>* ref_send_inputs_ptr_;
+  std::vector<std::unique_ptr<TensorReference>>* ref_send_inputs_ptr_;
   bool merge_compute_and_copy_stream_;
 
   mutex mu_;
@@ -689,10 +689,10 @@ Status ExecutorState<PropagatorStateType>::ProcessSync(
       item.node->attrs().Find("recv_device")->s().find("GPU") != string::npos &&
       (*params->inputs)[0].tensor->NumElements() > 0) {
     CHECK(item.num_inputs == 1);  // send op allow one tensor
-    TensorReference* ref = new TensorReference(*((*params->inputs)[0].tensor));
     {
       mutex_lock l(*ref_send_inputs_mu_ptr_);
-      ref_send_inputs_ptr_->push_back(std::move(ref));
+      ref_send_inputs_ptr_->push_back(
+          absl::make_unique<TensorReference>(*((*params->inputs)[0].tensor)));
     }
   }
 

@@ -125,7 +125,7 @@ class Executor {
     // store refs to cpu tensors that will be sent to gpu,
     // and release them when the session run finishes.
     std::unique_ptr<mutex> ref_send_inputs_mu_ptr;
-    std::vector<TensorReference*>* ref_send_inputs_ptr = nullptr;
+    std::vector<std::unique_ptr<TensorReference>>* ref_send_inputs_ptr = nullptr;
     bool merge_compute_and_copy_stream = false;
   };
   typedef std::function<void(const Status&)> DoneCallback;
