@@ -997,7 +997,7 @@ Status DirectSession::RunInternal(
   // Start parallel Executors.
   const size_t num_executors = executors_and_keys->items.size();
   // ref_send_inputs will be filled during execute graph.
-  std::vector<TensorReference*> ref_send_inputs;
+  std::vector<std::unique_ptr<TensorReference>> ref_send_inputs;
   ExecutorBarrier* barrier = new ExecutorBarrier(
       num_executors, run_state.rendez,
       [&run_state, &ref_send_inputs](const Status& ret) {
