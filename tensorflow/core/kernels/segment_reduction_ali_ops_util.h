@@ -97,9 +97,9 @@ class SparseSegmentReduction {
       // We mannually set start_pos of first thread and end_pos of last thread,
       // which could make sure that unsorted ids would be checked out.
       int64 start_pos =
-          start == 0 ? 0 : FirstGreatEqual(segment_vec, start, 0, num_indices);
+          start == 0 ? 0 : FirstGreatEqual<Tsegment>(segment_vec, start, 0, num_indices);
       const int64 end_pos =
-          end == output_rows ? num_indices : FirstGreatEqual(segment_vec, end,
+          end == output_rows ? num_indices : FirstGreatEqual<Tsegment>(segment_vec, end,
                                                              0, num_indices);
       OP_REQUIRES(context, start_pos <= end_pos,
                   errors::InvalidArgument("segment ids are not increasing"));
