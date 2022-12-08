@@ -17,47 +17,47 @@
 #include "tensorflow/core/util/work_sharder.h"
 
 namespace tensorflow {
-template<typename Device, typename T>
+template <typename Device, typename T, typename Tindex, typename Tsegment>
 class SparseSegmentReduction {
  public:
   explicit SparseSegmentReduction(bool is_mean, bool is_sqrtn,
-                                  bool has_num_segments,
-                                  T default_value)
-    : is_mean_(is_mean), is_sqrtn_(is_sqrtn),
-      has_num_segments_(has_num_segments),
-      default_value_(default_value) {}
+                                  bool has_num_segments, T default_value)
+      : is_mean_(is_mean),
+        is_sqrtn_(is_sqrtn),
+        has_num_segments_(has_num_segments),
+        default_value_(default_value) {}
 
   void Reduce(OpKernelContext* context, const Tensor& input,
-      const Tensor& indices, const Tensor& segment_ids,
-      const Tensor& num_segments, const AllocatorAttributes& attr,
-      Tensor* output) {
-    Index output_rows = -1;
+              const Tensor& indices, const Tensor& segment_ids,
+              const Tensor& num_segments, const AllocatorAttributes& attr,
+              Tensor* output) {
+    Tindex output_rows = -1;
     if (has_num_segments_) {
       OP_REQUIRES(
           context, num_segments.shape().dims() == 0,
           errors::InvalidArgument("num_segments should be a scalar, not shape ",
-            num_segments.shape().DebugString()));
+                                  num_segments.shape().DebugString()));
       output_rows = internal::SubtleMustCopy(num_segments.scalar<int32>()());
       OP_REQUIRES(context, output_rows >= 0,
-          errors::InvalidArgument("segment ids must be >= 0"));
+                  errors::InvalidArgument("segment ids must be >= 0"));
     }
 
     OP_REQUIRES(context, TensorShapeUtils::IsVector(indices.shape()),
-        errors::InvalidArgument("indices should be a vector."));
+                errors::InvalidArgument("indices should be a vector."));
     OP_REQUIRES(context, TensorShapeUtils::IsVector(segment_ids.shape()),
-        errors::InvalidArgument("segment_ids should be a vector."));
+                errors::InvalidArgument("segment_ids should be a vector."));
     const int64 num_indices = indices.NumElements();
     OP_REQUIRES(context, num_indices == segment_ids.NumElements(),
-        errors::InvalidArgument(
-          "segment_ids and indices should have same size."));
+                errors::InvalidArgument(
+                    "segment_ids and indices should have same size."));
 
     auto input_flat = input.flat_outer_dims<T>();
     const int64 num_col = input_flat.dimension(1);
-    const auto segment_vec = segment_ids.vec<OutputRow>();
+    const auto segment_vec = segment_ids.vec<Tsegment>();
 
     // Note that the current implementation assumes that segment_vec values are
     // sorted.
-    const OutputRow last_segment_id_plus_one =
+    const Tsegment last_segment_id_plus_one =
         num_indices > 0
             ? internal::SubtleMustCopy(segment_vec(num_indices - 1)) + 1
             : 0;
@@ -76,8 +76,9 @@ class SparseSegmentReduction {
 
     // Note that we do not initialize the output buffer with a default value, so
     // we need to explicitly set missing indices to the default value.
-    OP_REQUIRES_OK(context, context->allocate_temp(input.dtype(), output_shape,
-        output, attr));
+    OP_REQUIRES_OK(
+        context,
+        context->allocate_temp(input.dtype(), output_shape, output, attr));
     if (num_indices == 0) {
       if (output_rows > 0) {
         output->flat_outer_dims<T>().setConstant(default_value_);
@@ -88,23 +89,22 @@ class SparseSegmentReduction {
                 errors::InvalidArgument("segment ids must be >= 0"));
     auto output_flat = output->flat_outer_dims<T>();
 
-    const auto indices_vec = indices.vec<Index>();
-    auto work = [this, &context,
-                 &output_flat, &input_flat, &indices_vec, &segment_vec,
-                 num_col, num_indices, output_rows](int64 start, int64 end) {
-      OutputRow uninitialized_index = start;
+    const auto indices_vec = indices.vec<Tindex>();
+    auto work = [this, &context, &output_flat, &input_flat, &indices_vec,
+                 &segment_vec, num_col, num_indices,
+                 output_rows](int64 start, int64 end) {
+      Tsegment uninitialized_index = start;
       // We mannually set start_pos of first thread and end_pos of last thread,
       // which could make sure that unsorted ids would be checked out.
       int64 start_pos =
-          start == 0 ? 0 : FirstGreatEqual(segment_vec, start, 0, num_indices);
+          start == 0 ? 0 : FirstGreatEqual<Tsegment>(segment_vec, start, 0, num_indices);
       const int64 end_pos =
-          end == output_rows
-              ? num_indices
-              : FirstGreatEqual(segment_vec, end, 0, num_indices);
+          end == output_rows ? num_indices : FirstGreatEqual<Tsegment>(segment_vec, end,
+                                                                       0, num_indices);
       OP_REQUIRES(context, start_pos <= end_pos,
                   errors::InvalidArgument("segment ids are not increasing"));
 
-      OutputRow out_index; 
+      Tsegment out_index;
       bool do_work;
       if (start_pos == num_indices) {
         do_work = false;
@@ -117,7 +117,7 @@ class SparseSegmentReduction {
         // We initialize next_index to 0 to avoid "warning: 'next_index' may be
         // used uninitialized in this function" in the Mac build (since the
         // compiler isn't smart enough to realize the code is safe).
-        OutputRow next_index = 0;
+        Tsegment next_index = 0;
         if (cur_pos < end_pos) {
           next_index = internal::SubtleMustCopy(segment_vec(cur_pos));
           if (out_index == next_index) {
@@ -126,7 +126,8 @@ class SparseSegmentReduction {
           }
           // We have a new segment here.  Verify that the segment ids are
           // growing.
-          OP_REQUIRES(context, out_index < next_index,
+          OP_REQUIRES(
+              context, out_index < next_index,
               errors::InvalidArgument("segment ids are not increasing"));
         }
         OP_REQUIRES(
@@ -139,15 +140,15 @@ class SparseSegmentReduction {
         if (out_index > uninitialized_index) {
           Eigen::DSizes<Eigen::DenseIndex, 2> gap_slice_shape(
               out_index - uninitialized_index, num_col);
-          Eigen::
-              TensorMap<Eigen::Tensor<T, 2, Eigen::RowMajor>, Eigen::Unaligned>
+          Eigen::TensorMap<Eigen::Tensor<T, 2, Eigen::RowMajor>,
+                           Eigen::Unaligned>
               gap_slice(&output_flat(uninitialized_index, 0), gap_slice_shape);
           gap_slice.setConstant(default_value_);
         }
 
         auto out = output_flat.template chip<0>(out_index);
-        const int bad_offset = Reduce(input_flat, indices_vec,
-                                      start_pos, cur_pos - start_pos, out);
+        const int bad_offset = Reduce<Tindex>(
+            input_flat, indices_vec, start_pos, cur_pos - start_pos, out);
         OP_REQUIRES(context, bad_offset < 0,
                     errors::InvalidArgument(
                         "Bad: indices[", start_pos + bad_offset,
@@ -177,11 +178,9 @@ class SparseSegmentReduction {
   }
 
  private:
-  typedef int32 Index;
-  typedef int32 OutputRow;
-
-  int64 FirstGreatEqual(const typename TTypes<OutputRow>::ConstVec& segment_vec,
-                        OutputRow idx, int64 lb, int64 rb) {
+  template <typename Segment>
+  int64 FirstGreatEqual(const typename TTypes<Segment>::ConstVec& segment_vec,
+                        Segment idx, int64 lb, int64 rb) {
     if (lb == rb) return lb;
     int64 mid = (lb + rb) / 2;
     if (segment_vec(mid) < idx) {
@@ -190,6 +189,7 @@ class SparseSegmentReduction {
     return FirstGreatEqual(segment_vec, idx, lb, mid);
   }
 
+  template <typename Index>
   int64 Reduce(const typename TTypes<T>::ConstMatrix& input_flat,
                const typename TTypes<Index>::ConstVec& indices_vec, int64 start,
                int64 num,
@@ -325,33 +325,32 @@ class SparseSegmentReduction {
 
 class SparseSegmentReductionGrad {
  public:
-  explicit SparseSegmentReductionGrad(bool is_sqrtn)
-    : is_sqrtn_(is_sqrtn) {}
+  explicit SparseSegmentReductionGrad(bool is_sqrtn) : is_sqrtn_(is_sqrtn) {}
 
-  template<typename T>
+  template <typename T, typename Tindex, typename SegmentId>
   void ReduceGrad(OpKernelContext* context, const Tensor& input,
-      const Tensor& indices, const Tensor& segment_ids,
-      const Tensor& output_dim0, Tensor& output) {
+                  const Tensor& indices, const Tensor& segment_ids,
+                  const Tensor& output_dim0, Tensor& output) {
     const int64 N = indices.NumElements();
     OP_REQUIRES(context, N == segment_ids.NumElements(),
                 errors::InvalidArgument(
                     "segment_ids and indices should have same size."));
-    typedef int32 SegmentId;
     const SegmentId M =
         internal::SubtleMustCopy(output_dim0.scalar<SegmentId>()());
 
     auto input_flat = input.flat_outer_dims<T>();
     const int64 num_col = input_flat.dimension(1);
-    typedef int32 Index;
-    const auto indices_vec = indices.vec<Index>();
+
+    const auto indices_vec = indices.vec<Tindex>();
     const auto segment_vec = segment_ids.vec<SegmentId>();
 
     TensorShape output_shape = input.shape();
     output_shape.set_dim(0, M);
 
     const AllocatorAttributes alloc_attr = context->output_alloc_attr(0);
-    OP_REQUIRES_OK(context, context->allocate_temp(input.dtype(), output_shape,
-        &output, alloc_attr));
+    OP_REQUIRES_OK(context,
+                   context->allocate_temp(input.dtype(), output_shape, &output,
+                                          alloc_attr));
     if (M == 0 || N == 0) return;
 
     // Note that similar to SparseSegmentMean, we assume that segment_vec is
@@ -366,8 +365,8 @@ class SparseSegmentReductionGrad {
     const bool cnt_layout_by_n = (N <= num_segments);
     std::vector<int> counting(cnt_layout_by_n ? N : num_segments);
 
-    auto do_scan = [&context, &segment_vec, &counting, N,
-                    num_segments, cnt_layout_by_n](int64 start, int64 end) {
+    auto do_scan = [&context, &segment_vec, &counting, N, num_segments,
+                    cnt_layout_by_n](int64 start, int64 end) {
       int64 start_pos = start;
       if (start > 0) {
         const SegmentId old_idx =
@@ -399,14 +398,14 @@ class SparseSegmentReductionGrad {
         start_pos = cur_pos;
       }
     };
-    
+
     auto worker_threads = context->device()->tensorflow_cpu_worker_threads();
     Shard(worker_threads->num_threads - 1, worker_threads->workers, N,
           1 /* cost */, do_scan);
     if (!context->status().ok()) return;
 
-    auto do_write = [this, &context, &output_flat, &input_flat,
-                     &indices_vec, &segment_vec, &counting, M, N, num_col,
+    auto do_write = [this, &context, &output_flat, &input_flat, &indices_vec,
+                     &segment_vec, &counting, M, N, num_col,
                      cnt_layout_by_n](int64 start, int64 end) {
       // NOTE(zycao): For outputs with high density, zero setting operations
       // could be considered after all fillings having been done in order to
@@ -421,7 +420,7 @@ class SparseSegmentReductionGrad {
       // decreasing some calculations.
       std::vector<bool> is_modified(end - start, false);
       for (int64 i = 0; i < N; ++i) {
-        const Index output_idx = internal::SubtleMustCopy(indices_vec(i));
+        const Tindex output_idx = internal::SubtleMustCopy(indices_vec(i));
         OP_REQUIRES(context, FastBoundsCheck(output_idx, M),
                     errors::InvalidArgument("Index ", output_idx,
                                             " out of range [0, ", M, ")."));
@@ -440,9 +439,9 @@ class SparseSegmentReductionGrad {
           }
           continue;
         }
-        const T scale = is_sqrtn_
-            ? static_cast<T>(1.0 / sqrt(static_cast<double>(iscale)))
-            : static_cast<T>(1.0 / static_cast<double>(iscale));
+        const T scale =
+            is_sqrtn_ ? static_cast<T>(1.0 / sqrt(static_cast<double>(iscale)))
+                      : static_cast<T>(1.0 / static_cast<double>(iscale));
         if (is_modified[output_idx - start]) {
           output_flat.template chip<0>(output_idx) +=
               input_flat.template chip<0>(in_idx) * scale;
@@ -461,7 +460,6 @@ class SparseSegmentReductionGrad {
   const bool is_sqrtn_;
 };
 
-} // namespace tensorflow
+}  // namespace tensorflow
 
-#endif // TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_ALI_OPS_UTIL_H_
-
+#endif  // TENSORFLOW_CORE_KERNELS_SEGMENT_REDUCTION_ALI_OPS_UTIL_H_

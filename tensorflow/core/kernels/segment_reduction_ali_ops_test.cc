@@ -1,11 +1,8 @@
 /* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -40,10 +37,10 @@ namespace tensorflow {
 
 class SparseSegmentMeanTest : public OpsTestBase {
  protected:
-  void CreateOp(DataType dtype) {
+  void CreateOp(DataType dtype, DataType indices_dtype) {
     TF_ASSERT_OK(NodeDefBuilder("op", "SparseSegmentMean")
                      .Input(FakeInput(dtype))
-                     .Input(FakeInput(DT_INT32))
+                     .Input(FakeInput(indices_dtype))
                      .Input(FakeInput(DT_INT32))
                      .Finalize(node_def()));
   }
@@ -109,7 +106,7 @@ TEST_F(SparseSegmentSumTest, gpu_float32) {
 #endif
 
 TEST_F(SparseSegmentMeanTest, Normal_float32) {
-  CreateOp(DT_FLOAT);
+  CreateOp(DT_FLOAT, DT_INT32);
   TF_ASSERT_OK(InitOp());
   std::vector<float> input(262144 * 6);
   std::vector<int32> indices(131072);
@@ -170,7 +167,7 @@ TEST_F(SparseSegmentSqrtNTest, Normal_float32) {
 
 #if GOOGLE_CUDA
 TEST_F(SparseSegmentMeanTest, gpu_float32) {
-  CreateOp(DT_FLOAT);
+  CreateOp(DT_FLOAT, DT_INT32);
   SetDevice(DEVICE_GPU,
                 std::unique_ptr<tensorflow::Device>(DeviceFactory::NewDevice(
                     "GPU", {}, "/job:a/replica:0/task:0")));
@@ -240,8 +237,38 @@ TEST_F(SparseSegmentSqrtNTest, gpu_float32) {
 }
 #endif
 
-TEST_F(SparseSegmentMeanTest, Normal_double64) {
-  CreateOp(DT_DOUBLE);
+TEST_F(SparseSegmentMeanTest, Normal_double64_int64) {
+  CreateOp(DT_DOUBLE, DT_INT64);
+  TF_ASSERT_OK(InitOp());
+  std::vector<double> input(262144 * 6);
+  std::vector<int64> indices(131072);
+  std::vector<int32> segment_ids(131072);
+  std::vector<double> out(65536 * 6);
+  for (int i = 0; i < 262144 * 6; ++i) {
+    input[i] = static_cast<double>(i / 6);
+  }
+  for (int i = 0; i < 131072; ++i) {
+    indices[i] = i * 2;
+    segment_ids[i] = i / 2;
+  }
+  for (int i = 0; i < 65536 * 6; ++i) {
+    out[i] = static_cast<double>((i / 6) * 4 + (i / 6) * 4 + 2) / 2.0;
+  }
+
+  // input
+  AddInputFromArray<double>(TensorShape({262144, 6}), input);
+  AddInputFromArray<int32>(TensorShape({131072}), indices);
+  AddInputFromArray<int32>(TensorShape({131072}), segment_ids);
+
+  TF_ASSERT_OK(RunOpKernel());
+
+  Tensor expected(DT_DOUBLE, TensorShape{65536, 6});
+  test::FillValues<double>(&expected, out);
+  test::ExpectTensorEqual<double>(expected, *GetOutput(0));
+}
+
+TEST_F(SparseSegmentMeanTest, Normal_double64_int32) {
+  CreateOp(DT_DOUBLE, DT_INT32);
   TF_ASSERT_OK(InitOp());
   std::vector<double> input(262144 * 6);
   std::vector<int32> indices(131072);
