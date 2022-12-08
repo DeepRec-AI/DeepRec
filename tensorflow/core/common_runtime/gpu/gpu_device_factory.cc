@@ -41,6 +41,11 @@ class GPUDevice : public BaseGPUDevice {
       force_gpu_compatible_ =
           options.config.gpu_options().force_gpu_compatible();
     }
+    int64 num_host_allocator;
+    TF_CHECK_OK(tensorflow::ReadInt64FromEnvVar("NUM_HOST_ALLOCATOR",
+                                               /*default_val=*/1,
+                                               &num_host_allocator));
+    host_id_ = gpu_id() % num_host_allocator;
   }
 
   GPUDevice(const SessionOptions& options, const string& name,
@@ -63,7 +68,7 @@ class GPUDevice : public BaseGPUDevice {
     if (attr.on_host()) {
       if (attr.gpu_compatible() || force_gpu_compatible_) {
         GPUProcessState* ps = GPUProcessState::singleton();
-        return ps->GetGpuHostAllocator(0);
+        return ps->GetGpuHostAllocator(host_id_);
       } else {
         return cpu_allocator_;
       }
@@ -74,6 +79,7 @@ class GPUDevice : public BaseGPUDevice {
 
  private:
   bool force_gpu_compatible_ = false;
+  int host_id_ = 0;
 };
 
 class GPUDeviceFactory : public BaseGPUDeviceFactory {
@@ -110,9 +116,10 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
  public:
   GPUCompatibleCPUDevice(const SessionOptions& options, const string& name,
                          Bytes memory_limit, const DeviceLocality& locality,
-                         Allocator* allocator)
+                         Allocator* allocator, int host_id)
       : ThreadPoolDevice(options, name, memory_limit, locality, allocator),
-        numa_node_(locality.numa_node()) {
+        numa_node_(locality.numa_node()),
+        host_id_(host_id) {
     if (options.config.has_gpu_options()) {
       force_gpu_compatible_ =
           options.config.gpu_options().force_gpu_compatible();
@@ -120,12 +127,13 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
   }
   GPUCompatibleCPUDevice(const SessionOptions& options, const string& name,
                          Bytes memory_limit, const DeviceLocality& locality,
-                         Allocator* allocator,
+                         Allocator* allocator, int host_id,
                          const DeviceResourceMgrMap* dev_rmgr_map,
                          const DeviceGlobalThreadPoolOptions& opt)
       : ThreadPoolDevice(options, name, memory_limit,
                          locality, allocator, dev_rmgr_map, opt),
-        numa_node_(locality.numa_node()) {
+        numa_node_(locality.numa_node()),
+        host_id_(host_id) {
     if (options.config.has_gpu_options()) {
       force_gpu_compatible_ =
           options.config.gpu_options().force_gpu_compatible();
@@ -137,7 +145,7 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
   Allocator* GetAllocator(AllocatorAttributes attr) override {
     GPUProcessState* ps = GPUProcessState::singleton();
     if (attr.gpu_compatible() || force_gpu_compatible_) {
-      return ps->GetGpuHostAllocator(numa_node_);
+      return ps->GetGpuHostAllocator(host_id_);
     } else {
       // Call the parent's implementation.
       return ThreadPoolDevice::GetAllocator(attr);
@@ -147,6 +155,7 @@ class GPUCompatibleCPUDevice : public ThreadPoolDevice {
  private:
   bool force_gpu_compatible_ = false;
   int numa_node_ = port::kNUMANoAffinity;
+  int host_id_ = 0;
 };
 
 // The associated factory.
@@ -176,15 +185,21 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
     int num_numa_nodes = options.config.experimental().use_numa_affinity()
                              ? port::NUMANumNodes()
                              : 1;
+    int64 num_host_allocator;
+    TF_CHECK_OK(tensorflow::ReadInt64FromEnvVar("NUM_HOST_ALLOCATOR",
+                                               /*default_val=*/1,
+                                               &num_host_allocator));
     for (int i = 0; i < n; i++) {
-      string name = strings::StrCat(name_prefix, "/device:CPU:", i);
       int numa_node = i % num_numa_nodes;
       DeviceLocality locality;
       locality.set_numa_node(numa_node);
-      devices->push_back(absl::make_unique<GPUCompatibleCPUDevice>(
-          options, name, Bytes(256 << 20), DeviceLocality(),
-          ProcessState::singleton()->GetCPUAllocator(numa_node),
-          dev_rmgr_map, opt));
+      for (int j = 0; j < num_host_allocator; j++) {
+        string name = strings::StrCat(name_prefix, "/device:CPU:", i*num_host_allocator+j);
+        devices->push_back(absl::make_unique<GPUCompatibleCPUDevice>(
+            options, name, Bytes(256 << 20), DeviceLocality(),
+            ProcessState::singleton()->GetCPUAllocator(numa_node), i*num_host_allocator+j,
+            dev_rmgr_map, opt));
+      }
     }
 
     return Status::OK();
