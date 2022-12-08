@@ -84,7 +84,7 @@ class KVInterface {
   }
 
   virtual Status GetSnapshot(std::vector<K>* key_list,
-      std::vector<ValuePtr<V>* >* value_ptr_list) = 0;
+      std::vector<ValuePtr<V>*>* value_ptr_list) = 0;
 
   virtual std::string DebugString() const = 0;
 

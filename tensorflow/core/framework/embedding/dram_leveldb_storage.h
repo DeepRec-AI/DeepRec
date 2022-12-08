@@ -58,7 +58,7 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   void Insert(const std::vector<K>& keys,
-              ValuePtr<V>** value_ptrs) override{
+              ValuePtr<V>** value_ptrs) override {
     for (size_t i = 0; i < keys.size(); i++) {
       do {
         Status s = dram_kv_->Insert(keys[i], value_ptrs[i]);
@@ -70,6 +70,20 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
         }
       } while (!(dram_kv_->Lookup(keys[i], &value_ptrs[i])).ok());
     }
+  }
+
+  void Insert(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    do {
+      *value_ptr = layout_creator_->Create(alloc_, alloc_len);
+      Status s = dram_kv_->Insert(key, *value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        (*value_ptr)->Destroy(alloc_);
+        delete *value_ptr;
+      }
+    } while (!(dram_kv_->Lookup(key, value_ptr)).ok());
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -106,6 +120,12 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
   }
 
   bool IsUseHbm() override {
+    return false;
+  }
+
+  bool IsUsePersistentStorage() override {
+    /*The return value is set to false temporarily,
+      because the corresponding interface is not implemented.*/
     return false;
   }
 

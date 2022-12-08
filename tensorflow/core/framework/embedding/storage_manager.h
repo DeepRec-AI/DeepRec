@@ -54,6 +54,10 @@ class StorageManager {
     return storage_->GetAllocLen();
   }
 
+  int64 ComputeAllocLen(int64 value_len) {
+    return storage_->ComputeAllocLen(value_len);
+  }
+
   int64 GetOffset(int64 index) {
     return storage_->GetOffset(index);
   }
@@ -86,6 +90,10 @@ class StorageManager {
     return storage_->IsUseHbm();
   }
 
+  bool IsUsePersistentStorage() {
+    return storage_->IsUsePersistentStorage();
+  }
+
   std::string DebugString() const{
     return storage_->DebugString();
   }
@@ -100,6 +108,10 @@ class StorageManager {
 
   Status Get(K key, ValuePtr<V>** value_ptr) {
     return storage_->Get(key, value_ptr);
+  }
+
+  void Insert(K key, ValuePtr<V>** value_ptr, int64 alloc_len) {
+    storage_->Insert(key, value_ptr, alloc_len);
   }
 
   void Insert(const std::vector<K>& keys,
@@ -168,6 +180,33 @@ class StorageManager {
       embedding::Iterator** it) {
     return storage_->GetSnapshot(key_list, value_list, version_list,
         freq_list, emb_config, filter, it);
+  }
+
+  int64 GetSnapshotWithoutFetchPersistentEmb(
+      std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      SsdRecordDescriptor<K>* ssd_rec_desc) {
+    return storage_->
+        GetSnapshotWithoutFetchPersistentEmb(
+            key_list, value_list, version_list,
+            freq_list, emb_config, ssd_rec_desc);
+  }
+
+  void RestoreSsdHashmap(
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) {
+    storage_->RestoreSsdHashmap(
+        key_list, key_file_id_list,
+        key_offset_list, num_of_keys,
+        file_list, invalid_record_count_list,
+        record_count_list, num_of_files,
+        ssd_emb_file_name);
   }
 
   Status Shrink(const EmbeddingConfig& emb_config, int64 value_len) {

@@ -29,6 +29,9 @@ class ValuePtr;
 template <class K, class V>
 class EmbeddingVar;
 
+template <class K>
+struct SsdRecordDescriptor;
+
 template<typename K, typename V, typename EV>
 class FilterPolicy;
 
@@ -56,6 +59,7 @@ class Storage {
   TF_DISALLOW_COPY_AND_ASSIGN(Storage);
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
+  virtual void Insert(K key, ValuePtr<V>** value_ptr, int64 alloc_len) = 0;
   virtual void Insert(const std::vector<K>& keys,
                         ValuePtr<V>** value_ptrs) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
@@ -76,6 +80,19 @@ class Storage {
       const EmbeddingConfig& emb_config,
       FilterPolicy<K, V, EmbeddingVar<K, V>>* filter,
       embedding::Iterator** it) = 0;
+  virtual int64 GetSnapshotWithoutFetchPersistentEmb(
+      std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      SsdRecordDescriptor<K>* ssd_rec_desc) = 0;
+  virtual void RestoreSsdHashmap(
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) = 0;
   virtual Status Shrink(const EmbeddingConfig& emb_config,
       int64 value_len) = 0;
   virtual Status Shrink(int64 gs, int64 steps_to_live) = 0;
@@ -97,6 +114,7 @@ class Storage {
   virtual BatchCache<K>* Cache() = 0;
   virtual bool IsMultiLevel() = 0;
   virtual bool IsUseHbm() = 0;
+  virtual bool IsUsePersistentStorage() = 0;
   virtual void iterator_mutex_lock() = 0;
   virtual void iterator_mutex_unlock() = 0;
   virtual void Schedule(std::function<void()> fn) = 0;
@@ -111,6 +129,11 @@ class Storage {
   inline int64 GetAllocLen() { return alloc_len_; }
   inline int64 GetOffset(int64 index) { return alloc_len_ * index; }
   inline int64 GetTotalDims() { return total_dims_; }
+  inline int64 ComputeAllocLen(int64 value_len) {
+    return (value_len * sizeof(V) % 16 == 0)
+        ? value_len
+        : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
+  }
   inline LayoutType GetLayoutType() { return storage_config_.layout_type; }
   inline embedding::StorageType GetStorageType() { return storage_config_.type; }
   inline std::string GetStoragePath() { return storage_config_.path; }
@@ -122,13 +145,6 @@ class Storage {
                           " storage type: ", storage_config_.type,
                           " storage path: ", storage_config_.path,
                           " storage capacity: ", storage_config_.size);
-  }
-
- protected:
-  inline int64 ComputeAllocLen(int64 value_len) {
-    return (value_len * sizeof(V) % 16 == 0) 
-        ? value_len
-        : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
   }
 
  protected:

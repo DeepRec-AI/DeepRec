@@ -71,6 +71,20 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     }
   }
 
+  void Insert(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    do {
+      *value_ptr = layout_creator_->Create(gpu_alloc_, alloc_len);
+      Status s = hbm_kv_->Insert(key, *value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        (*value_ptr)->Destroy(gpu_alloc_);
+        delete *value_ptr;
+      }
+    } while (!(hbm_kv_->Lookup(key, value_ptr)).ok());
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) override {
     Status s = hbm_kv_->Lookup(key, value_ptr);
@@ -91,13 +105,12 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     }
 
     *value_ptr = layout_creator_->Create(gpu_alloc_, size);
-    (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
     s = hbm_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
+      (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
       return s;
     }
     // Insert Failed, key already exist
-    (*value_ptr)->Destroy(gpu_alloc_);
     delete *value_ptr;
     return hbm_kv_->Lookup(key, value_ptr);
   }
@@ -172,6 +185,10 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
 
   bool IsUseHbm() override {
     return true;
+  }
+
+  bool IsUsePersistentStorage() override {
+    return false;
   }
 
   void iterator_mutex_lock() override {

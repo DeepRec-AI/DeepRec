@@ -149,6 +149,11 @@ class EmbeddingVar : public ResourceBase {
     return s;
   }
 
+  void CreateKey(K key, ValuePtr<V>** value_ptr) {
+    storage_manager_->Insert(key, value_ptr,
+        emb_config_.total_num(storage_manager_->GetAllocLen()));
+  }
+
   void UpdateVersion(ValuePtr<V>* value_ptr, int64 gs) {
     update_version_fn_(value_ptr, gs);
   }
@@ -443,6 +448,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->IsUseHbm();
   }
 
+  bool IsUsePersistentStorage() {
+    return storage_manager_->IsUsePersistentStorage();
+  }
+
   void InitCache(embedding::CacheStrategy cache_strategy) {
     storage_manager_->InitCache(cache_strategy);
   }
@@ -461,13 +470,91 @@ class EmbeddingVar : public ResourceBase {
         partition_id, partition_num, is_filter);
   }
 
+  void RestoreSsdHashmap(
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) {
+    storage_manager_->
+        RestoreSsdHashmap(
+            key_list, key_file_id_list,
+            key_offset_list, num_of_keys,
+            file_list, invalid_record_count_list,
+            record_count_list, num_of_files,
+            ssd_emb_file_name);
+  }
+
+  void LoadSsdData(
+      const string& old_file_prefix,
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys) {
+    int64 alloc_len = storage_manager_->ComputeAllocLen(value_len_);
+    for (int64 i = 0; i < num_of_keys; i++) {
+      ValuePtr<V>* value_ptr = nullptr;
+      LookupOrCreateKey(key_list[i], &value_ptr);
+
+      int64 file_id = key_file_id_list[i];
+      int64 key_offset = key_offset_list[i];
+      // Read data from embedding files on SSD. Data are stored in
+      // NormalContiguousValuePtr temporarily.
+      std::stringstream ss;
+      ss <<old_file_prefix << "/" << file_id << ".emb";
+      int fd = open(ss.str().data(), O_RDONLY);
+      char* file_addr =
+          (char*)mmap(nullptr,
+                      sizeof(FixedLengthHeader)
+                          + alloc_len * sizeof(V)
+                          * (emb_config_.slot_num + 1)
+                          + key_offset,
+                      PROT_READ,
+                      MAP_PRIVATE, fd, 0);
+
+      NormalContiguousValuePtr<V> tmp_value_ptr(alloc_,
+          alloc_len * (emb_config_.slot_num + 1));
+      void* ptr = tmp_value_ptr.GetPtr();
+      memcpy(ptr, file_addr + key_offset,
+             sizeof(FixedLengthHeader)
+                 + alloc_len * sizeof(V) * (emb_config_.slot_num + 1));
+      munmap(file_addr,
+             sizeof(FixedLengthHeader)
+                 + alloc_len * sizeof(V)
+                 * (emb_config_.slot_num + 1)
+                 + key_offset);
+      close(fd);
+      //Copy Data to ValuePtr, data of slots are set by primary here.
+      for (int j = 0; j < emb_config_.slot_num + 1; j++) {
+        V* value = tmp_value_ptr.GetValue(j, alloc_len * j);
+        if (value != nullptr) {
+          value_ptr->GetOrAllocate(alloc_, value_len_, value,
+              j, alloc_len * j);
+        }
+      }
+      value_ptr->SetFreq(tmp_value_ptr.GetFreq());
+      value_ptr->SetStep(tmp_value_ptr.GetStep());
+    }
+  }
+
   int64 GetSnapshot(std::vector<K>* key_list,
                     std::vector<V* >* value_list,
                     std::vector<int64>* version_list,
                     std::vector<int64>* freq_list,
                     embedding::Iterator** it) {
-    return storage_manager_->GetSnapshot(key_list, value_list, version_list,
-                                         freq_list, emb_config_, filter_, it);
+    return storage_manager_->GetSnapshot(
+        key_list, value_list, version_list,
+        freq_list, emb_config_, filter_, it);
+  }
+
+  int64 GetSnapshotWithoutFetchPersistentEmb(
+      std::vector<K>* key_list,
+      std::vector<V*>* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      SsdRecordDescriptor<K>* ssd_rec_desc) {
+    return storage_manager_->
+        GetSnapshotWithoutFetchPersistentEmb(
+            key_list, value_list, version_list,
+            freq_list, emb_config_, ssd_rec_desc);
   }
 
   mutex* mu() {

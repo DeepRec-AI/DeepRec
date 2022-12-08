@@ -1290,6 +1290,26 @@ class KvResourceImportV3Op: public AsyncOpKernel {
                    << s.ToString();
       }
 
+      std::string name_string_temp(name_string);
+      std::string new_str = "_";
+      int64 pos = name_string_temp.find("/");
+      while (pos != std::string::npos) {
+        name_string_temp.replace(pos, 1, new_str.data(), 1);
+        pos = name_string_temp.find("/");
+      }
+      std::string ssd_record_file_name =
+          file_name_string + "-" + name_string_temp + "-ssd_record";
+      //TODO: support change the partition number
+      if (Env::Default()->FileExists(ssd_record_file_name + ".index").ok()) {
+        std::string ssd_emb_file_name =
+            file_name_string + "-" + name_string_temp + "-emb_files";
+        if (ev->IsUsePersistentStorage()) {
+          RestoreSsdRecord(ev, ssd_record_file_name, ssd_emb_file_name);
+        } else {
+          LoadSsdData(ev, ssd_record_file_name, ssd_emb_file_name);
+        }
+      }
+
       EVRestoreDynamically(
           ev, name_string, partition_id_, partition_num_, context, &reader,
           "-partition_offset", "-keys", "-values", "-versions", "-freqs",

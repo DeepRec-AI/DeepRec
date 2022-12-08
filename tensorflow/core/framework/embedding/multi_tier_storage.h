@@ -36,6 +36,9 @@ class ValuePtr;
 template<typename K, typename V>
 class EmbeddingVar;
 
+template <class K>
+struct SsdRecordDescriptor;
+
 namespace embedding {
 template<typename K, typename V>
 class MultiTierStorage : public Storage<K, V> {
@@ -95,6 +98,48 @@ class MultiTierStorage : public Storage<K, V> {
     LOG(FATAL) << "Unsupport CopyEmbeddingsFromCPUToGPU in MultiTierStorage.";
   };
 
+  void SetListsForCheckpoint(
+      const std::vector<K>& input_key_list,
+      const std::vector<ValuePtr<V>*>& input_value_ptr_list,
+      const EmbeddingConfig& emb_config,
+      std::vector<K>* output_key_list,
+      std::vector<V*>* output_value_list,
+      std::vector<int64>* output_version_list,
+      std::vector<int64>* output_freq_list) {
+    for (int64 i = 0; i < input_key_list.size(); ++i) {
+      output_key_list->emplace_back(input_key_list[i]);
+
+      //NormalContiguousValuePtr is used, GetFreq() is valid.
+      int64 dump_freq = input_value_ptr_list[i]->GetFreq();
+      output_freq_list->emplace_back(dump_freq);
+
+      if (emb_config.steps_to_live != 0 || emb_config.record_version) {
+        int64 dump_version = input_value_ptr_list[i]->GetStep();
+        output_version_list->emplace_back(dump_version);
+      }
+
+      V* val = input_value_ptr_list[i]->GetValue(emb_config.emb_index,
+          Storage<K, V>::GetOffset(emb_config.emb_index));
+      V* primary_val = input_value_ptr_list[i]->GetValue(
+          emb_config.primary_emb_index,
+          Storage<K, V>::GetOffset(emb_config.primary_emb_index));
+      /* Classify features into 3 categories:
+        1. filtered
+        2. not involved in backward
+        3. normal
+      */
+      if (primary_val == nullptr) {
+        output_value_list->emplace_back(nullptr);
+      } else {
+        if (val == nullptr) {
+          output_value_list->emplace_back(reinterpret_cast<V*>(-1));
+        } else {
+          output_value_list->emplace_back(val);
+        }
+      }
+    }
+  }
+
   int64 GetSnapshot(std::vector<K>* key_list,
       std::vector<V* >* value_list,
       std::vector<int64>* version_list,
@@ -111,34 +156,35 @@ class MultiTierStorage : public Storage<K, V> {
         *it = kv.kv_->GetIterator();
         continue;
       }
-      for (int64 i = 0; i < key_list_tmp.size(); ++i) {
-        V* val = value_ptr_list[i]->GetValue(emb_config.emb_index,
-          Storage<K, V>::GetOffset(emb_config.emb_index));
-        V* primary_val = value_ptr_list[i]->GetValue(
-            emb_config.primary_emb_index,
-            Storage<K, V>::GetOffset(emb_config.primary_emb_index));
-        key_list->emplace_back(key_list_tmp[i]);
-
-        int64 dump_freq = filter->GetFreq(
-            key_list_tmp[i], value_ptr_list[i]);
-        freq_list->emplace_back(dump_freq);
-
-        if (emb_config.steps_to_live != 0 || emb_config.record_version) {
-          int64 dump_version = value_ptr_list[i]->GetStep();
-          version_list->emplace_back(dump_version);
-        }
-        if (val != nullptr && primary_val != nullptr) {
-          value_list->emplace_back(val);
-        } else if (val == nullptr && primary_val != nullptr) {
-          // only forward, no backward
-          value_list->emplace_back(reinterpret_cast<V*>(-1));
-        } else {
-          // feature filtered
-          value_list->emplace_back(nullptr);
-        }
-      }
+      SetListsForCheckpoint(
+          key_list_tmp, value_ptr_list, emb_config,
+          key_list, value_list, version_list, freq_list);
     }
     return key_list->size();
+  }
+
+  virtual int64 GetSnapshotWithoutFetchPersistentEmb(
+      std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      SsdRecordDescriptor<K>* ssd_rec_desc) override {
+    LOG(FATAL)<<"The Storage dosen't use presisten memory"
+              <<" or this storage hasn't suppported"
+              <<" GetSnapshotWithoutFetchPersistentEmb yet";
+    return -1;
+  }
+
+  void RestoreSsdHashmap(
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) override {
+    LOG(FATAL)<<"The Storage dosen't have ssd storage"
+              <<" or this storage hasn't suppported"
+              <<" RestoreSsdHashmap yet";
   }
 
   Status Shrink(const EmbeddingConfig& emb_config,

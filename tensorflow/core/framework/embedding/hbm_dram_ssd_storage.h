@@ -72,7 +72,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
   }
 
   void Insert(const std::vector<K>& keys,
-              ValuePtr<V>** value_ptrs) override{
+              ValuePtr<V>** value_ptrs) override {
     for (size_t i = 0; i < keys.size(); i++) {
       do {
         Status s = hbm_kv_->Insert(keys[i], value_ptrs[i]);
@@ -84,6 +84,20 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
         }
       } while (!(hbm_kv_->Lookup(keys[i], &value_ptrs[i])).ok());
     }
+  }
+
+  void Insert(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    do {
+      *value_ptr = layout_creator_->Create(gpu_alloc_, alloc_len);
+      Status s = hbm_kv_->Insert(key, *value_ptr);
+      if (s.ok()) {
+        (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
+        break;
+      } else {
+        delete *value_ptr;
+      }
+    } while (!(hbm_kv_->Lookup(key, value_ptr)).ok());
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -109,13 +123,12 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     }
 
     *value_ptr = layout_creator_->Create(gpu_alloc_, size);
-    (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
     s = hbm_kv_->Insert(key, *value_ptr);
     if (s.ok()) {
+      (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
       return s;
     }
     // Insert Failed, key already exist
-    (*value_ptr)->Destroy(gpu_alloc_);
     delete *value_ptr;
     return hbm_kv_->Lookup(key, value_ptr);
   }
@@ -208,6 +221,12 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
 
   bool IsUseHbm() override {
     return true;
+  }
+
+  bool IsUsePersistentStorage() override {
+    /*The return value is set to false temporarily,
+      because the corresponding interface is not implemented.*/
+    return false;
   }
 
   void iterator_mutex_lock() override {
