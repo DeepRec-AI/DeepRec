@@ -726,10 +726,6 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   // Assigned per gpu device to a session when use multi-stream in SessionGroup mode.
   // The device name is listed in config.per_session_devices.
   Device* default_local_device = nullptr;
-  int64 num_host_allocator;
-  TF_CHECK_OK(tensorflow::ReadInt64FromEnvVar("NUM_HOST_ALLOCATOR",
-                                              /*default_val=*/1,
-                                              &num_host_allocator));
   DeviceSet devices;
   if (session_options_->config.per_session_devices_size() > 0) {
     const auto& dname = session_options_->config.per_session_devices(0);
@@ -741,18 +737,16 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
         break;
       }
     }
-    if (num_host_allocator > 1 && session_options_->config.per_session_devices_size() > 1) {
-      const auto& dname = session_options_->config.per_session_devices(1);
-      for (auto& d : device_set_->devices()) {
-        if (d->name() == dname) {
-          devices.AddDevice(d);
-          break;
-        }
+    const auto& dname1 = session_options_->config.per_session_devices(1);
+    for (auto& d : device_set_->devices()) {
+      if (d->name() == dname1) {
+        devices.AddDevice(d);
+        break;
       }
     }
   }
 
-  Placer placer(new_graph.get(), "", flib_def_.get(), num_host_allocator > 1 ? &devices : device_set_,
+  Placer placer(new_graph.get(), "", flib_def_.get(), &devices,
                 default_local_device,
                 session_options_ == nullptr ||
                     session_options_->config.allow_soft_placement(),

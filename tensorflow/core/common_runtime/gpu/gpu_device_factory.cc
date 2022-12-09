@@ -41,11 +41,6 @@ class GPUDevice : public BaseGPUDevice {
       force_gpu_compatible_ =
           options.config.gpu_options().force_gpu_compatible();
     }
-    int64 num_host_allocator;
-    TF_CHECK_OK(tensorflow::ReadInt64FromEnvVar("NUM_HOST_ALLOCATOR",
-                                               /*default_val=*/1,
-                                               &num_host_allocator));
-    host_id_ = gpu_id() % num_host_allocator;
   }
 
   GPUDevice(const SessionOptions& options, const string& name,
@@ -68,7 +63,7 @@ class GPUDevice : public BaseGPUDevice {
     if (attr.on_host()) {
       if (attr.gpu_compatible() || force_gpu_compatible_) {
         GPUProcessState* ps = GPUProcessState::singleton();
-        return ps->GetGpuHostAllocator(host_id_);
+        return ps->GetGpuHostAllocator(gpu_id());
       } else {
         return cpu_allocator_;
       }
@@ -79,7 +74,6 @@ class GPUDevice : public BaseGPUDevice {
 
  private:
   bool force_gpu_compatible_ = false;
-  int host_id_ = 0;
 };
 
 class GPUDeviceFactory : public BaseGPUDeviceFactory {
@@ -185,19 +179,22 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
     int num_numa_nodes = options.config.experimental().use_numa_affinity()
                              ? port::NUMANumNodes()
                              : 1;
-    int64 num_host_allocator;
-    TF_CHECK_OK(tensorflow::ReadInt64FromEnvVar("NUM_HOST_ALLOCATOR",
-                                               /*default_val=*/1,
-                                               &num_host_allocator));
+    int sess_num = 1;
+    for (auto& item : dev_rmgr_map->device_rmgr_map) {
+      int sess_idx = std::stoi(item.first.substr(item.first.rfind(":")+1));
+      if (sess_idx >= sess_num) {
+        sess_num = sess_idx + 1;
+      }
+    }
     for (int i = 0; i < n; i++) {
       int numa_node = i % num_numa_nodes;
       DeviceLocality locality;
       locality.set_numa_node(numa_node);
-      for (int j = 0; j < num_host_allocator; j++) {
-        string name = strings::StrCat(name_prefix, "/device:CPU:", i*num_host_allocator+j);
+      for (int j = 0; j < sess_num; j++) {
+        string name = strings::StrCat(name_prefix, "/device:CPU:", i*sess_num+j);
         devices->push_back(absl::make_unique<GPUCompatibleCPUDevice>(
             options, name, Bytes(256 << 20), DeviceLocality(),
-            ProcessState::singleton()->GetCPUAllocator(numa_node), i*num_host_allocator+j,
+            ProcessState::singleton()->GetCPUAllocator(numa_node), i*sess_num+j,
             dev_rmgr_map, opt));
       }
     }
