@@ -746,7 +746,9 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
     }
   }
 
-  Placer placer(new_graph.get(), "", flib_def_.get(), &devices,
+  Placer placer(new_graph.get(), "", flib_def_.get(),
+                session_options_->config.per_session_devices_size() > 0 ?
+                    &devices : device_set_,
                 default_local_device,
                 session_options_ == nullptr ||
                     session_options_->config.allow_soft_placement(),
