@@ -1,3 +1,5 @@
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
+
 #include "tensorflow/cc/ops/standard_ops.h"
 #include "tensorflow/core/common_runtime/kernel_benchmark_testlib.h"
 #include "tensorflow/core/framework/fake_input.h"
@@ -86,14 +88,14 @@ static Graph* Dice(int rows, int cols) {
   return g;
 }
 
-#define BM_DICE(ROWS, COLS, NTH)                                     \
-  static void BM_DICE##_##ROWS##_##COLS##_##NTH##_CPU(int iters) {   \
-    testing::UseRealTime();                                                 \
-    testing::ItemsProcessed(static_cast<int64>(iters) * ROWS * COLS * 3);   \
-    SessionOptions opts;                                                    \
-    opts.config.set_intra_op_parallelism_threads(NTH);                      \
-    test::Benchmark("cpu", Dice(ROWS, COLS), &opts).Run(iters); \
-  }                                                                         \
+#define BM_DICE(ROWS, COLS, NTH)                                          \
+  static void BM_DICE##_##ROWS##_##COLS##_##NTH##_CPU(int iters) {        \
+    testing::UseRealTime();                                               \
+    testing::ItemsProcessed(static_cast<int64>(iters) * ROWS * COLS * 3); \
+    SessionOptions opts;                                                  \
+    opts.config.set_intra_op_parallelism_threads(NTH);                    \
+    test::Benchmark("cpu", Dice(ROWS, COLS), &opts).Run(iters);           \
+  }                                                                       \
   BENCHMARK(BM_DICE##_##ROWS##_##COLS##_##NTH##_CPU);
 
 #define BM_DICE_NTH(ROWS, COLS) \
@@ -129,3 +131,5 @@ BM_DICE_NTH(500, 100);
 
 }  // namespace
 }  // namespace tensorflow
+
+#endif  // AVX512F
