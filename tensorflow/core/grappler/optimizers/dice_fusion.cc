@@ -268,6 +268,7 @@ string get_node_by_tensor(string tensor_name) {
 
 Status DiceFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
                             GraphDef* output) {
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
   Status status;
   *output = item.graph;
   utils::MutableGraphView graph_view(output, &status);
@@ -293,7 +294,7 @@ Status DiceFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
 
       std::vector<int> dead_nodes = {
           base.sub_1_id, base.sub_2_id, base.sigmoid_id, base.mul_1_id,
-          base.mul_2_id, base.mul_3_id, base.mul_4_id, base.sub_2_input_id};
+          base.mul_2_id, base.mul_3_id, base.mul_4_id,   base.sub_2_input_id};
       for (auto& id : dead_nodes) nodes_to_delete[id] = true;
       invalidated_nodes[base.add_id] = true;
 
@@ -354,6 +355,7 @@ Status DiceFusion::Optimize(Cluster* cluster, const GrapplerItem& item,
   *output = *graph_view.graph();
 
   VLOG(3) << "After Dice fusion rewrites: " << output->DebugString();
+#endif // AVX512F
 
   return Status::OK();
 }

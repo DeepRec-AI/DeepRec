@@ -1,3 +1,5 @@
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
+
 #define EIGEN_USE_THREADS
 
 #include "compile_util.h"
@@ -161,3 +163,5 @@ class DiceOp : public OpKernel {
 REGISTER_KERNEL_BUILDER(
     Name("Dice").Device(DEVICE_CPU).TypeConstraint<float>("T"), DiceOp<float>);
 }  // namespace tensorflow
+
+#endif  // AVX512F

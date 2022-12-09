@@ -1,3 +1,5 @@
+#if defined(__GNUC__) && (__GNUC__ > 6) && (__AVX512F__)
+
 #ifndef TENSORFLOW_CORE_KERNELS_DICE_COMPILE_UTIL_OP_H_
 #define TENSORFLOW_CORE_KERNELS_DICE_COMPILE_UTIL_OP_H_
 
@@ -95,3 +97,5 @@ inline __m512 compute_px(__m512& exp_t, __m512& gamma) {
 }
 
 #endif  // TENSORFLOW_CORE_KERNELS_DICE_COMPILE_UTIL_OP_H_
+
+#endif  // AVX512F
