@@ -238,6 +238,11 @@ class ArithmeticOptimizerTest : public GrapplerTest {
     DisableAllStages(optimizer);
     optimizer->options_.remove_stack_strided_slice_same_axis = true;
   }
+
+  void EnableOnlySimplifyEmbeddingLookup(ArithmeticOptimizer* optimizer) {
+    DisableAllStages(optimizer);
+    optimizer->options_.simplify_embedding_lookup = true;
+  }
 };
 
 }  // end namespace grappler
