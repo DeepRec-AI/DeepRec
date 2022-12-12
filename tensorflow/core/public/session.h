@@ -305,7 +305,7 @@ Status NewSession(const SessionOptions& options, Session** out_session);
 
 Status NewSessionGroup(const SessionOptions& options,
                        SessionGroup** out_session_group,
-                       int session_num = 1);
+                       const SessionGroupMetadata& metadata);
 
 /// \brief Resets resource containers associated with a target.
 ///

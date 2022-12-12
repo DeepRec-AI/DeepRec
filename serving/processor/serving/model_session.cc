@@ -168,8 +168,12 @@ Status ModelSessionMgr::CreateSession(Session** session) {
 
 Status ModelSessionMgr::CreateSessionGroup(
     SessionGroup** session_group, ModelConfig* config) {
+  SessionGroupMetadata metadata;
+  metadata.session_num = config->session_num;
+  metadata.model_id = 0;
+  metadata.streams_vec.emplace_back(config->session_num);
   TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
-                                     session_group, config->session_num));
+                                     session_group, metadata));
   TF_RETURN_IF_ERROR((*session_group)->Create(meta_graph_def_.graph_def()));
   asset_file_defs_.clear();
   return util::GetAssetFileDefs(meta_graph_def_, &asset_file_defs_);

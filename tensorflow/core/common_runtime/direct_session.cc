@@ -348,7 +348,8 @@ class DirectSessionFactory : public SessionFactory {
 
   Status NewSessionGroup(const SessionOptions& options,
                          SessionGroup** out_session_group,
-                         int session_num = 1) {
+                         const SessionGroupMetadata& metadata) {
+    int session_num = metadata.session_num;
     if (session_num < 1) {
       return errors::InvalidArgument(
           "Must specify session_num of NewSessionGroup");
@@ -380,22 +381,45 @@ class DirectSessionFactory : public SessionFactory {
     // Each virtual gpu device will be assigned to one session,
     // and every virtual device has a independent stream.
     bool use_multi_stream = options.config.use_per_session_stream();
+    int base_index = 0;
     if (use_multi_stream) {
+      // Allow load multi-models
+      int multi_model_count = metadata.streams_vec.size();
+      // Current model id in multi-models
+      int model_id = metadata.model_id;
+      if (session_num != metadata.streams_vec[model_id]) {
+        LOG(FATAL) << "session_num don't match streams_vec["
+                   << model_id << "], " << session_num <<  " VS "
+                   << metadata.streams_vec[model_id];
+      }
       int multi_streams_num = session_num;
+
       ConfigProto* config = const_cast<ConfigProto*>(&options.config);
       GPUOptions* gpu_options = config->mutable_gpu_options();
       int visible_gpu_count =
           VisibleDeviceCount(gpu_options->visible_device_list());
-      auto virtual_devices =
-          gpu_options->mutable_experimental()->add_virtual_devices();
-      // will allocate gpu memory for each virtual device later.
-      int32 mem_per_virtual_device = -1;
-      for (int i = 0; i < multi_streams_num; ++i) {
-        virtual_devices->add_memory_limit_mb(-1);
+      // Now we only support per session_group per gpu
+      if (visible_gpu_count < multi_model_count) {
+        LOG(FATAL) << "Now we only support per model(session_group) per gpu, "
+                   << "please ensure that the num of GPU is not less than models count."
+                   << " visible_gpu_count=" << visible_gpu_count
+                   << " VS " << "multi_model_count=" << multi_model_count;
+      }
+
+      for (int c = 0; c < multi_model_count; ++c) {
+        if (c < model_id) {
+          base_index += metadata.streams_vec[c];
+        }
+        auto virtual_devices =
+            gpu_options->mutable_experimental()->add_virtual_devices();
+        // will allocate gpu memory for each virtual device later.
+        for (int i = 0; i < metadata.streams_vec[c]; ++i) {
+          virtual_devices->add_memory_limit_mb(-1);
+        }
       }
       // Now per session_group per gpu, maybe changed in the future.
       // Handle other gpu virtual devices.
-      for (int i = 1; i < visible_gpu_count; ++i) {
+      for (int i = multi_model_count; i < visible_gpu_count; ++i) {
         auto tmp = gpu_options->mutable_experimental()->add_virtual_devices();
         //tmp->add_memory_limit_mb(-1);
       }
@@ -467,7 +491,7 @@ class DirectSessionFactory : public SessionFactory {
       gpu_shared_rmgr = new ResourceMgr("localhost");
       std::string gpu_dev_prefix("/job:localhost/replica:0/task:0/device:GPU:");
       for (int i = 0; i < session_num; ++i) {
-        dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(i)] =
+        dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(base_index+i)] =
             gpu_shared_rmgr;
         if (i > 0) {
           dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:CPU:"+std::to_string(i)] = shared_rmgr;
@@ -490,7 +514,7 @@ class DirectSessionFactory : public SessionFactory {
 
 #if GOOGLE_CUDA
     if (use_multi_stream) {
-      RemoveUselessDevice(devices, 0);
+      RemoveUselessDevice(devices, base_index);
     }
 #endif // GOOGLE_CUDA
     DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
@@ -501,9 +525,10 @@ class DirectSessionFactory : public SessionFactory {
 #if GOOGLE_CUDA
     if (use_multi_stream) {
       leader_options.config.add_per_session_devices(
-          "/job:localhost/replica:0/task:0/device:GPU:0");
-      leader_options.config.add_per_session_devices(
           "/job:localhost/replica:0/task:0/device:CPU:0");
+      leader_options.config.add_per_session_devices(
+          "/job:localhost/replica:0/task:0/device:GPU:" +
+          std::to_string(base_index));
     }
 #endif // GOOGLE_CUDA
 
@@ -521,7 +546,7 @@ class DirectSessionFactory : public SessionFactory {
       DeviceMgr* dev_mgr = nullptr;
 #if GOOGLE_CUDA
       if (use_multi_stream) {
-        RemoveUselessDevice(dev, i);
+        RemoveUselessDevice(dev, base_index+i);
         dev_mgr = new DeviceMgr(std::move(dev));
       } else {
         // Use the same deivce as leader session, this can't get
@@ -537,9 +562,10 @@ class DirectSessionFactory : public SessionFactory {
 #if GOOGLE_CUDA
       if (use_multi_stream) {
         follower_options.config.add_per_session_devices(
-            "/job:localhost/replica:0/task:0/device:GPU:"+std::to_string(i));
-        follower_options.config.add_per_session_devices(
             "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
+        follower_options.config.add_per_session_devices(
+            "/job:localhost/replica:0/task:0/device:GPU:" +
+            std::to_string(base_index+i));
       }
 #endif // GOOGLE_CUDA
 

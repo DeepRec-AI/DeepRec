@@ -103,7 +103,7 @@ Status NewSession(const SessionOptions& options, Session** out_session) {
 
 Status NewSessionGroup(const SessionOptions& options,
                        SessionGroup** out_session_group,
-                       int session_num) {
+                       const SessionGroupMetadata& metadata) {
   SessionFactory* factory;
   Status s = SessionFactory::GetFactory(options, &factory);
   if (!s.ok()) {
@@ -116,7 +116,7 @@ Status NewSessionGroup(const SessionOptions& options,
   // currently a no-op.
   session_created->GetCell()->Set(true);
   monitoring::StartExporter();
-  s = factory->NewSessionGroup(options, out_session_group, session_num);
+  s = factory->NewSessionGroup(options, out_session_group, metadata);
   if (!s.ok()) {
     *out_session_group = nullptr;
   }
