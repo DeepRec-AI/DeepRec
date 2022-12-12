@@ -180,10 +180,12 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
                              ? port::NUMANumNodes()
                              : 1;
     int sess_num = 1;
-    for (auto& item : dev_rmgr_map->device_rmgr_map) {
-      int sess_idx = std::stoi(item.first.substr(item.first.rfind(":")+1));
-      if (sess_idx >= sess_num) {
-        sess_num = sess_idx + 1;
+    if (dev_rmgr_map) {
+      for (auto& item : dev_rmgr_map->device_rmgr_map) {
+        int sess_idx = std::stoi(item.first.substr(item.first.rfind(":")+1));
+        if (sess_idx >= sess_num) {
+          sess_num = sess_idx + 1;
+        }
       }
     }
     for (int i = 0; i < n; i++) {
