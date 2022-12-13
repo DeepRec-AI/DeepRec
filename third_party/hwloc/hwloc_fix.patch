@@ -6,7 +6,7 @@ index 6e51aa4..f2e6ac4 100644
  #include <sys/param.h>
  #endif
  
-+#if defined(__GNUC__) && (__GNUC__ <= 10)
++#if defined(__GNUC__) && (__GNUC__ <= 9)
  #ifdef HAVE_SYS_SYSCTL_H
  #include <sys/sysctl.h>
  #endif
