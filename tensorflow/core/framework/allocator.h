@@ -354,6 +354,8 @@ Allocator* pmem_allocator();
 
 Allocator* ev_allocator();
 
+Allocator* gpu_ev_allocator();
+
 // If use experimental libpmem based PMEM allocator, please call this function
 Allocator* experimental_pmem_allocator(const std::string& pmem_path, size_t allocator_size);
 

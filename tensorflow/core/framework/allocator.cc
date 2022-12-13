@@ -127,6 +127,17 @@ Allocator* ev_allocator() {
   return ev_alloc;
 }
 
+Allocator* gpu_ev_allocator() {
+  static Allocator* ev_alloc =
+      AllocatorFactoryRegistry::singleton()->GetGPUEVAllocator();  
+
+  if (ev_alloc && cpu_allocator_collect_full_stats &&
+      !ev_alloc->TracksAllocationSizes()) {
+    ev_alloc = new TrackingAllocator(ev_alloc, true);
+  }
+  return ev_alloc;
+}
+
 SubAllocator::SubAllocator(const std::vector<Visitor>& alloc_visitors,
                            const std::vector<Visitor>& free_visitors)
     : alloc_visitors_(alloc_visitors), free_visitors_(free_visitors) {}
