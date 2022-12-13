@@ -290,7 +290,7 @@ Allocator* GPUProcessState::GetGpuHostAllocator(int numa_node) {
       return gpu_host_allocators_[0].recording_allocator.get();
     }
     if (static_cast<int>(gpu_host_allocators_.size()) > numa_node) {
-      return gpu_host_allocators_[0].allocator.get();
+      return gpu_host_allocators_[numa_node].allocator.get();
     }
   }
 
@@ -361,7 +361,7 @@ Allocator* GPUProcessState::GetGpuHostAllocator(int numa_node) {
   if (process_state_->ProcessState::FLAGS_brain_gpu_record_mem_types) {
     return gpu_host_allocators_[0].recording_allocator.get();
   } else {
-    return gpu_host_allocators_[0].allocator.get();
+    return gpu_host_allocators_[numa_node].allocator.get();
   }
 }
 

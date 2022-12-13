@@ -469,6 +469,12 @@ class DirectSessionFactory : public SessionFactory {
       for (int i = 0; i < session_num; ++i) {
         dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(i)] =
             gpu_shared_rmgr;
+        if (i > 0) {
+          dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:CPU:"+std::to_string(i)] = shared_rmgr;
+          dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:cpu:"+std::to_string(i)] = shared_rmgr;
+          dev_rmgr_map.device_rmgr_map["/device:CPU:"+std::to_string(i)] = shared_rmgr;
+          dev_rmgr_map.device_rmgr_map["/device:cpu:"+std::to_string(i)] = shared_rmgr;
+        }
       }
     }
 #endif // GOOGLE_CUDA
@@ -496,6 +502,8 @@ class DirectSessionFactory : public SessionFactory {
     if (use_multi_stream) {
       leader_options.config.add_per_session_devices(
           "/job:localhost/replica:0/task:0/device:GPU:0");
+      leader_options.config.add_per_session_devices(
+          "/job:localhost/replica:0/task:0/device:CPU:0");
     }
 #endif // GOOGLE_CUDA
 
@@ -530,6 +538,8 @@ class DirectSessionFactory : public SessionFactory {
       if (use_multi_stream) {
         follower_options.config.add_per_session_devices(
             "/job:localhost/replica:0/task:0/device:GPU:"+std::to_string(i));
+        follower_options.config.add_per_session_devices(
+            "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
       }
 #endif // GOOGLE_CUDA
 
