@@ -41,18 +41,28 @@ def read_parquet(
 
 ### 参数说明
 
-- filenames: A 0-D or 1-D `tf.string` tensor containing one or more filenames.
+- filenames: A 0-D or 1-D `tf.string` tensor, `string`, list or tuple of `string`, `DataSet` containing one or more filenames.
+
 - batch_size: (Optional.) Maxium number of samples in an output batch.
+
 - fields: (Optional.) List of DataFrame fields.
+
 - partition_count: (Optional.) Count of row group partitions.
+
 - partition_index: (Optional.) Index of row group partitions.
+
 - drop_remainder: (Optional.) If True, only keep batches with exactly `batch_size` samples.
+
 - num_parallel_reads: (Optional.) A `tf.int64` scalar representing the number of files to read in parallel. Defaults to reading files sequentially.
+
 - num_sequential_reads: (Optional.) A `tf.int64` scalar representing the number of batches to read in sequential. Defaults to 1.
+
+> 注：当filenames参数的类型为Tensor或DataSet时，必须传入fields，且fileds参数必须是DataFrame类型的list或tuple。而当filenames的类型为string，或者string类型的list或tuple时，fields可以传入string类型的list或tuple。
 
 ## 使用示例
 
 ### 1. Example: Read from one file on local filesystem
+
 ```python
 import tensorflow as tf
 from tensorflow.python.data.experimental.ops import parquet_dataset_ops
@@ -65,7 +75,9 @@ it = tf.data.make_one_shot_iterator(ds)
 batch = it.get_next()
 # {'a': tensora, 'c': tensorc}
 ```
+
 ### 2. Example: Read from filenames dataset
+
 ```python
 import tensorflow as tf
 from tensorflow.python.data.experimental.ops import parquet_dataset_ops
@@ -83,6 +95,7 @@ batch = it.get_next()
 # {'a': tensora, 'c': tensorc}
 ...
 ```
+
 ### 3. Example: Read from files on HDFS
 
 ```python
