@@ -53,6 +53,7 @@ def write_config():
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
                 elif argv == "--mkl_threadpool":
                     print("Bazel will build with --mkl_threadpool\n")
+                    bazel_rc.write("build --define=build_with_mkl_opensource=true\n")
                     bazel_rc.write("build --define=build_with_mkldnn_threadpool=true\n")
                     bazel_rc.write("build --define=build_with_mkl=true --define=enable_mkl=true\n")
 
