@@ -148,7 +148,7 @@ Status LoadMetaGraphIntoSessionGroup(const MetaGraphDef& meta_graph_def,
   opt.env = session_options.env;
   opt.target = session_options.target;
   opt.config = session_options.config;
-  TF_RETURN_IF_ERROR(NewSessionGroup(opt, &sg, session_options.session_num));
+  TF_RETURN_IF_ERROR(NewSessionGroup(opt, &sg, session_options.metadata));
   session_group->reset(sg);
   TF_RETURN_IF_ERROR(ValidateSavedTensors(meta_graph_def.graph_def()));
   return (*session_group)->Create(meta_graph_def.graph_def());

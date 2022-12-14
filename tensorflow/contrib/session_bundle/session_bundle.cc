@@ -70,7 +70,7 @@ Status CreateSessionGroupFromGraphDef(const SessionGroupOptions& options,
   opt.env = options.env;
   opt.target = options.target;
   opt.config = options.config;
-  TF_RETURN_IF_ERROR(NewSessionGroup(opt, &sg, options.session_num));
+  TF_RETURN_IF_ERROR(NewSessionGroup(opt, &sg, options.metadata));
   session_group->reset(sg);
   (*session_group)->Create(graph);
 }

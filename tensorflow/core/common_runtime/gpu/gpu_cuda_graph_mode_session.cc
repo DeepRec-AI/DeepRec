@@ -51,7 +51,7 @@ class CudaGraphModeSessionFactory : public SessionFactory {
 
   Status NewSessionGroup(const SessionOptions& options,
                          SessionGroup** out_session_group,
-                         int session_num = 1) override {
+                         const SessionGroupMetadata& metadata) override {
     return errors::Internal(
         "NewSessionGroup method not implemented in GraphModeSessionFactory.");
   }

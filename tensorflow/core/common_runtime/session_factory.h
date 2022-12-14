@@ -28,6 +28,7 @@ namespace tensorflow {
 class Session;
 class SessionGroup;
 struct SessionOptions;
+struct SessionGroupMetadata;
 
 class SessionFactory {
  public:
@@ -39,7 +40,7 @@ class SessionFactory {
 
   virtual Status NewSessionGroup(const SessionOptions& options,
                                  SessionGroup** out_session_group,
-                                 int session_num) = 0;
+                                 const SessionGroupMetadata& metadata) = 0;
 
   virtual bool AcceptsOptions(const SessionOptions& options) = 0;
 

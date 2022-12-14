@@ -66,9 +66,20 @@ struct CudaGraphModeSessionOptions: SessionOptions {
   CudaGraphModeSessionOptions();
 };
 
-struct SessionGroupOptions {
+struct SessionGroupMetadata {
   // default 1
   int session_num = 1;
+  // default 0
+  int model_id = 0;
+  // Multi-stream: streams vector, [2, 4, ....]
+  // gpu0: 2 streams
+  // gpu1: 4 streams
+  // ....
+  std::vector<int> streams_vec;
+};
+
+struct SessionGroupOptions {
+  SessionGroupMetadata metadata;
   Env* env;
   string target;
   ConfigProto config;

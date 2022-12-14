@@ -55,7 +55,7 @@ class FakeSessionFactory : public SessionFactory {
 
   Status NewSessionGroup(const SessionOptions& options,
                          SessionGroup** out_session_group,
-                         int session_num = 1) {
+                         const SessionGroupMetadata& metadata) {
     return errors::Internal(
         "NewSessionGroup method not implemented in GrpcSessionFactory.");
   }
