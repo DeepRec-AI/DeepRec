@@ -162,6 +162,30 @@ Allocator* AllocatorFactoryRegistry::GetEVAllocator() {
   }
 }
 
+Allocator* AllocatorFactoryRegistry::GetGPUEVAllocator() {
+  mutex_lock l(mu_);
+  first_alloc_made_ = true;
+  FactoryEntry* best_entry = nullptr;
+  for (auto& entry : factories_) {
+    if (best_entry == nullptr) {
+      best_entry = &entry;
+    } else if (entry.name == "GPUEVAllocator") {
+      best_entry = &entry;
+      break;
+    }
+  }
+
+  if (best_entry) {
+    if (!best_entry->allocator) {
+      best_entry->allocator.reset(best_entry->factory->CreateGPUEVAllocator());
+    }
+    return best_entry->allocator.get();
+  } else {
+    LOG(FATAL) << "No registered GPU EV AllocatorFactory";
+    return nullptr;
+  }
+}
+
 SubAllocator* AllocatorFactoryRegistry::GetSubAllocator(int numa_node) {
   mutex_lock l(mu_);
   first_alloc_made_ = true;

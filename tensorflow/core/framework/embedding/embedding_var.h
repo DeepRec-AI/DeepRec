@@ -616,8 +616,10 @@ class EmbeddingVarGPU : public ResourceBase {
       kv_(kv),
       default_value_(nullptr),
       value_len_(0),
-      alloc_(alloc),
-      emb_config_(emb_cfg) {}
+      emb_config_(emb_cfg) {
+    alloc_ =
+        DisableGPUEVAllocatorFromEnvironment() ? alloc : gpu_ev_allocator();
+  }
 
   Status Init() {
     if (kv_ == nullptr) {
@@ -731,6 +733,14 @@ class EmbeddingVarGPU : public ResourceBase {
         partition_id, partition_num, is_filter, device);
   }
 
+ private: 
+  bool DisableGPUEVAllocatorFromEnvironment() {
+    bool disable_gpu_ev_allocator = false;
+    ReadBoolFromEnvVar("TF_DISABLE_GPU_EV_ALLOCATOR", true,
+		       &disable_gpu_ev_allocator);
+    return disable_gpu_ev_allocator;
+  }
+  
  private:
   ~EmbeddingVarGPU() override {
     delete kv_;
