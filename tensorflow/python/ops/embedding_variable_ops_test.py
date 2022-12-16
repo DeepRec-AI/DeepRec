@@ -60,10 +60,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testSaveVersionWithGlobalStepEviction(self):
     print("testSaveVersionWithGlobalStepEviction")
     checkpoint_directory = self.get_temp_dir()
-    var = variable_scope.get_embedding_variable("var_1",
-                                        embedding_dim=6,
-                                        initializer=init_ops.ones_initializer,
-                                        steps_to_live = 5)
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+                                          embedding_dim=6,
+                                          initializer=init_ops.ones_initializer,
+                                          steps_to_live = 5)
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([5], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -165,10 +166,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForLookupInt64(self):
     print("testEmbeddingVariableForLookupInt64")
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,-7], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -241,9 +243,10 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForGetShape(self):
     print("testEmbeddingVariableForGetShape")
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32))
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
     shape = var.total_count()
     init = variables.global_variables_initializer()
@@ -364,12 +367,13 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableForSaveAndRestore(self):
     print("testEmbeddingVariableForSaveAndRestore")
     checkpoint_directory = self.get_temp_dir()
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
-            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
-                                                                                                 storage_path='/tmp/leveldb/')))
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+              ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                   storage_path='/tmp/leveldb/')))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
     saver = saver_module.Saver(sharded=True)
     init = variables.global_variables_initializer()
@@ -407,8 +411,9 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
                       indices=[[0,0],[1,0],[2,0],[3,0],[4,0],[5,0]],
                       values=math_ops.cast([0,0,0,1,1,2], dtypes.int64),
                       dense_shape=[6, 1])
-    emb= feature_column_ops.input_from_feature_columns(
-           columns_to_tensors=ids, feature_columns=[W])
+    with ops.device("/cpu:0"):
+      emb= feature_column_ops.input_from_feature_columns(
+             columns_to_tensors=ids, feature_columns=[W])
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
     opt = ftrl.FtrlOptimizer(0.1, l1_regularization_strength=2.0, l2_regularization_strength=0.00001)
@@ -439,10 +444,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     print("testEmbeddingVariableForL2FeatureEviction")
     checkpoint_directory = self.get_temp_dir()
     evict = variables.L2WeightEvict(l2_weight_threshold=0.9)
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            ev_option = variables.EmbeddingVariableOption(evict_option=evict))
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(evict_option=evict))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,0,0,1,1,2], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -563,10 +569,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForShrinkNone(self):
       print("testEmbeddingVariableForShrink")
-      var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            steps_to_live = 5,
-            initializer=init_ops.ones_initializer(dtypes.float32))
+      with ops.device("/cpu:0"):
+        var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              steps_to_live = 5,
+              initializer=init_ops.ones_initializer(dtypes.float32))
       ids = array_ops.placeholder(dtype=dtypes.int64, name='ids')
       emb = embedding_ops.embedding_lookup(var, ids)
       fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1189,12 +1196,13 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
         return r
-    emb_var = variable_scope.get_embedding_variable("var_1",
-          embedding_dim = 3,
-          initializer=init_ops.ones_initializer(dtypes.float32),
-          partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
-    var = variable_scope.get_variable("var_2", shape=[8, 3],
-          initializer=init_ops.ones_initializer(dtypes.float32))
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=2))
+      var = variable_scope.get_variable("var_2", shape=[8, 3],
+            initializer=init_ops.ones_initializer(dtypes.float32))
     emb1 = runTestAdamAsync(self, emb_var)
     emb2 = runTestAdamAsync(self, var)
 
@@ -1224,10 +1232,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
         return r
-    emb_var = variable_scope.get_embedding_variable("var_1", embedding_dim=3,
-          initializer=init_ops.ones_initializer(dtypes.float32),
-          partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-    var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1", embedding_dim=3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+      var = variable_scope.get_variable("var_2", shape=[100, 3], initializer=init_ops.ones_initializer(dtypes.float32))
     emb1 = runTestAdam(self, emb_var)
     emb2 = runTestAdam(self, var)
 
@@ -1333,11 +1342,12 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableForHTPartitionNum(self):
     print("testEmbeddingVariableForHTPartitionNum")
     ev_option = variables.EmbeddingVariableOption(ht_partition_num=20)
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
-            ev_option=ev_option)
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+              ev_option=ev_option)
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,-7], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -1647,10 +1657,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     db_directory = self.get_temp_dir()
     evict = variables.L2WeightEvict(l2_weight_threshold=0.9)
     storage_option = variables.StorageOption(storage_type=config_pb2.StorageType.DRAM)
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            ev_option = variables.EmbeddingVariableOption(evict_option=evict, storage_option=storage_option))
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(evict_option=evict, storage_option=storage_option))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,0,0,1,1,2], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -1774,7 +1785,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
             ev_option = ev_option)
       emb1 = runTestAdagrad(self, emb_var, g)
 
-    with ops.Graph().as_default() as g:
+    with ops.Graph().as_default() as g, ops.device("/cpu:0"):
       var = variable_scope.get_variable("var_2",
                 shape=[100, 30],
                 initializer=init_ops.ones_initializer(dtypes.float32))
@@ -1861,9 +1872,10 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     checkpoint_directory = self.get_temp_dir()
     os.environ["TF_RECORD_FREQ"] = "1"
     os.environ["TF_RECORD_VERSION"] = "1"
-    emb_var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32))
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32))
     emb = embedding_ops.embedding_lookup(emb_var,
             math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
@@ -1900,10 +1912,11 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     checkpoint_directory = self.get_temp_dir()
     os.environ["TF_RECORD_FREQ"] = "1"
     os.environ["TF_RECORD_VERSION"] = "1"
-    emb_var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
     emb = embedding_ops.embedding_lookup(emb_var,  math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -1934,15 +1947,16 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForDefaultValueNoPermission(self):
     print("testEmbeddingVariableForDefaultValueNoPermission")
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            ev_option = variables.EmbeddingVariableOption(
-                          filter_option=variables.CounterFilter(filter_freq=3),
-                          init_option=variables.InitializerOption(
-                            initializer=init_ops.zeros_initializer(dtypes.float32),
-                            default_value_no_permission=.2)),
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              ev_option = variables.EmbeddingVariableOption(
+                            filter_option=variables.CounterFilter(filter_freq=3),
+                            init_option=variables.InitializerOption(
+                              initializer=init_ops.zeros_initializer(dtypes.float32),
+                              default_value_no_permission=.2)),
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
     emb = embedding_ops.embedding_lookup(var, math_ops.cast([1], dtypes.int64))
     fun = math_ops.multiply(emb, 2.0, name='multiply')
     loss = math_ops.reduce_sum(fun, name='reduce_sum')
@@ -1966,13 +1980,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForGetFrequencyAndVersion(self):
     print("testEmbeddingVariableForGetFrequencyAndVersion")
-    var = variable_scope.get_embedding_variable("var_1",
-            embedding_dim = 3,
-            initializer=init_ops.ones_initializer(dtypes.float32),
-            ev_option = variables.EmbeddingVariableOption(
-              filter_option=variables.CounterFilter(filter_freq=3),
-              evict_option=variables.GlobalStepEvict(steps_to_live=2))
-            )
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(
+                filter_option=variables.CounterFilter(filter_freq=3),
+                evict_option=variables.GlobalStepEvict(steps_to_live=2))
+              )
     shape=var.get_dynamic_shape()
     frequency=var.get_frequency(math_ops.cast([1,2,3,4,5,6,7], dtypes.int64))
     version=var.get_version(math_ops.cast([1,2,3,4,5,6,7], dtypes.int64))
@@ -2129,6 +2144,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableForHBMDRAMAndSSD(self):
     db_directory = self.get_temp_dir()
     print("testEmbeddingVariableForHBMDRAMAndSSD")
+    os.environ["TF_SSDHASH_ASYNC_COMPACTION"]="0"
     def runTestAdagrad(self, var, g):
       ids = array_ops.placeholder(dtypes.int64, name="ids")
       emb = embedding_ops.embedding_lookup(var, ids)
@@ -2218,6 +2234,35 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     g_v = opt.compute_gradients(loss)
     train_op = opt.apply_gradients(g_v)
     saver = saver_module.Saver()
+
+  def testSaveV3(self):
+    print("testSaveV3")
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("emb_var", 10)
+      var = variable_scope.get_variable("var", [10, 10])
+    emb1 = embedding_ops.embedding_lookup(emb_var, math_ops.cast([1,2,3], dtypes.int64))
+    emb2 = embedding_ops.embedding_lookup(var, math_ops.cast([1,2,3], dtypes.int64))
+    emb = emb1 + emb2
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, global_step=gs)
+    init = variables.global_variables_initializer()
+    saver = saver = saver_module.Saver()
+    checkpoint_directory = self.get_temp_dir()
+    model_path = os.path.join(checkpoint_directory, "model.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([train_op])
+      sess.run([train_op])
+      saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        ckpt_value = checkpoint_utils.load_variable(model_path, name)
+        print(name, shape, ckpt_value)
+    with self.test_session() as sess:
+      saver.restore(sess, model_path)
 
 if __name__ == "__main__":
   googletest.main()

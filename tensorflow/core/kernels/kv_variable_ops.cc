@@ -41,7 +41,17 @@ limitations under the License.
 #include "tensorflow/core/util/util.h"
 #include "tensorflow/core/util/work_sharder.h"
 
+#if GOOGLE_CUDA
+#include "tensorflow/core/kernels/gpu_device_array.h"
+#include "tensorflow/core/platform/stream_executor.h"
+#endif //GOOGLE_CUDA
+
 namespace tensorflow {
+
+#if GOOGLE_CUDA
+using se::DeviceMemoryBase;
+using se::Stream;
+#endif //GOOGLE_CUDA
 
 namespace {
 const int64 kEmbeddingVarUseDB = -214;
@@ -70,6 +80,46 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
 
 #undef REGISTER_KERNELS_ALL
 #undef REGISTER_KV_VAR_HANDLE
+
+
+template <typename TKey, typename TValue>
+class KvResourceLookupResourceOp : public OpKernel {
+ public:
+  explicit KvResourceLookupResourceOp(OpKernelConstruction* c) : OpKernel(c) {}
+
+  void Compute(OpKernelContext* ctx) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(ctx,
+                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
+    Tensor* output;
+    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {1}, &output));
+    auto output_scalar = output->scalar<int64>();
+    output_scalar() = (int64)ev;
+  }
+};
+
+#define REGISTER_KV_LOOKUP_RESOURCE(dev, ktype, vtype)                 \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceLookupResource")             \
+                          .Device(DEVICE_##dev)                        \
+                          .TypeConstraint<ktype>("Tkeys")              \
+                          .TypeConstraint<vtype>("dtype"),             \
+                          KvResourceLookupResourceOp<ktype, vtype>);
+#define REGISTER_KERNELS_ALL(dev, type)                                \
+  REGISTER_KV_LOOKUP_RESOURCE(dev, int32, type)                        \
+  REGISTER_KV_LOOKUP_RESOURCE(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
+
+#if GOOGLE_CUDA
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
+#endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KV_LOOKUP_RESOURCE
+
 
 template <typename T, typename TKey, typename TValue>
 class KvVariableShapeOp : public OpKernel {
@@ -169,6 +219,21 @@ class InitializeKvVariableOp : public OpKernel {
     int64 storage_type = 0;
     OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
     storage_type_ = static_cast<embedding::StorageType>(storage_type);
+    auto device_type_str = c->device_type().type_string();
+    if (storage_type_ == embedding::DEFAULT) {
+      if (device_type_str == "CPU") {
+        storage_type_ = embedding::DRAM;
+      } else {
+        storage_type_ = embedding::HBM;
+      }
+    }
+
+    bool if_op_on_gpu = (device_type_str == "GPU");
+    bool if_embedding_on_hbm = (storage_type == embedding::HBM ||
+                                storage_type == embedding::HBM_DRAM ||
+                                storage_type == embedding::HBM_DRAM_SSDHASH);
+    OP_REQUIRES(c, if_op_on_gpu == if_embedding_on_hbm,
+        errors::InvalidArgument("Storage of EV and device of Op mismatch."));
 
     OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
     OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
@@ -931,15 +996,25 @@ class KvResourceGatherGPUOp : public OpKernel {
               ev->GetDefaultValueDim(), is_use_default_value_tensor_,
               indices_size, device);
         }
-      } else if (ev->IsUseHbm()) {
+      } else {
         TValue** memcpy_address = new TValue*[indices_size];
+        TKey* indices_host = new TKey[N];
+        volatile bool is_cpu_indices_ready = false;
+        //Copy ids from GPU to CPU for CPU Lookup.
+        auto stream = c->op_device_context()->stream();
+        se::DeviceMemoryBase gpu_src(
+            const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
+        stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
+        c->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
+            stream, [&is_cpu_indices_ready]() {is_cpu_indices_ready = true;});
+        while(!is_cpu_indices_ready) {}
         auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
         std::vector<std::list<int64>> init_cursor_list(
                                           worker_threads->num_threads + 1);
         std::vector<std::list<int64>> copyback_cursor_list(
                                           worker_threads->num_threads + 1);
         int64 main_thread_id = Env::Default()->GetCurrentThreadId();
-        auto do_work = [this, indices_flat,
+        auto do_work = [this, indices_host,
             out_base, slice_elems, c, ev,
             memcpy_address, &init_cursor_list,
             &copyback_cursor_list, main_thread_id,
@@ -963,7 +1038,7 @@ class KvResourceGatherGPUOp : public OpKernel {
               position = iter.second;
             }
           }
-          ev->LookupWithFreqBatch(indices_flat.data(), memcpy_address,
+          ev->LookupWithFreqBatch(indices_host, memcpy_address,
                                   start, limit, init_cursor_list[position],
                                   copyback_cursor_list[position]);
         };
@@ -986,12 +1061,12 @@ class KvResourceGatherGPUOp : public OpKernel {
             init_cursor_list[0]);
 
         ev->SetDefaultValueOfNewFeatures(
-            indices_flat.data(), indices_size,
+            indices_host, indices_size,
             init_cursor_list[0], memcpy_address,
             default_v, get_default_v_fn_);
 
         ev->CopyEmbeddingsFromCPUToGPU(
-            indices_flat.data(),
+            indices_host,
             copyback_cursor_list[0],
             memcpy_address);
 
@@ -999,30 +1074,14 @@ class KvResourceGatherGPUOp : public OpKernel {
             out_base, indices_size,
             slice_elems, memcpy_address);
         delete []memcpy_address;
-      } else {
-        auto do_work = [this, indices_flat,
-             out_base, slice_elems, c, default_v, ev, counts] (
-                 int64 start, int64 limit) {
-          for (int64 i = start; i < limit; ++i) {
-            TValue* default_v_ptr = get_default_v_fn_(
-                default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
-                ev->ValueLen());
-            int32 count = get_count_fn_(counts, i);
-            ev->LookupOrCreate(indices_flat(i),
-                out_base + i * slice_elems, default_v_ptr, count);
-          }
-        };
-        auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-        Shard(worker_threads->num_threads,
-              worker_threads->workers, indices_size,
-              slice_bytes, do_work);
-      }
 
-      if (ev->IsMultiLevel()) {
-        ev->storage_manager()->Schedule([ev, indices]() {
-          embedding::BatchCache<TKey>* cache = ev->Cache();
-          cache->add_to_rank(indices);
-        });
+        if (ev->IsMultiLevel()) {
+          ev->storage_manager()->Schedule([ev, indices_host, N]() {
+            embedding::BatchCache<TKey>* cache = ev->Cache();
+            cache->add_to_rank(indices_host, N);
+            delete []indices_host;
+          });
+        }
       }
     }
   }

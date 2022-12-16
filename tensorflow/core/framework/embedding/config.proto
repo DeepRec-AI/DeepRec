@@ -4,7 +4,7 @@ package tensorflow.embedding;
 
 enum StorageType {
   // none
-  INVALID = 0;
+  DEFAULT = 0;
 
   // one level
   DRAM = 1;

@@ -399,7 +399,7 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
   if (!json_config["ev_storage_type"].isNull()) {
     auto st = json_config["ev_storage_type"].asInt();
     switch (st) {
-      case embedding::StorageType::INVALID:
+      case embedding::StorageType::DEFAULT:
         break;
       case embedding::StorageType::DRAM:
         (*config)->storage_type = embedding::StorageType::DRAM;

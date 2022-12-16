@@ -49,8 +49,8 @@ bool IsHandle(const ResourceHandle& handle) {
 // Shared validations of the inputs to the SaveV2 and RestoreV2 ops.
 void ValidateInputs(bool is_save_op, OpKernelContext* context,
                     const Tensor& prefix, const Tensor& tensor_names,
-                    const Tensor& shape_and_slices) {
-  const int kFixedInputs = 3;  // Prefix, tensor names, shape_and_slices.
+                    const Tensor& shape_and_slices,
+                    const int kFixedInputs) {
   const int num_tensors = static_cast<int>(tensor_names.NumElements());
   OP_REQUIRES(
       context, prefix.NumElements() == 1,
@@ -146,11 +146,11 @@ class SaveV2 : public OpKernel {
     const Tensor& prefix = context->input(0);
     const Tensor& tensor_names = context->input(1);
     const Tensor& shape_and_slices = context->input(2);
+    const int kFixedInputs = 3;  // Prefix, tensor names, shape_and_slices.
     ValidateInputs(true /* is save op */, context, prefix, tensor_names,
-                   shape_and_slices);
+                   shape_and_slices, kFixedInputs);
     if (!context->status().ok()) return;
 
-    const int kFixedInputs = 3;  // Prefix, tensor names, shape_and_slices.
     const int num_tensors = static_cast<int>(tensor_names.NumElements());
     const string& prefix_string = prefix.scalar<tstring>()();
     const auto& tensor_names_flat = tensor_names.flat<tstring>();
@@ -276,6 +276,197 @@ class SaveV2 : public OpKernel {
   bool has_ev_;
 };
 REGISTER_KERNEL_BUILDER(Name("SaveV2").Device(DEVICE_CPU), SaveV2);
+
+class SaveV3 : public OpKernel {
+ public:
+  explicit SaveV3(OpKernelConstruction* context) : OpKernel(context) {
+    OP_REQUIRES_OK(context, context->GetAttr("dtypes", &tensor_types_));
+    OP_REQUIRES_OK(context, context->GetAttr("ev_key_types", &ev_key_types_));
+    OP_REQUIRES_OK(context, context->GetAttr("has_ev", &has_ev_));
+  }
+
+  template <typename TKey, typename TValue>
+  void DumpEvWithGlobalStep(
+      OpKernelContext* context,
+      const string& tensor_name,
+      EmbeddingVar<TKey, TValue>* ev,
+      BundleWriter& writer,
+      DataType global_step_type) {
+    if (global_step_type == DT_INT32) {
+      DumpEv<TKey, TValue, int32>(context, ev, tensor_name, writer);
+    } else {
+      DumpEv<TKey, TValue, int64>(context, ev, tensor_name, writer);
+    }
+  }
+
+  template <typename TKey, typename TValue, typename TGlobalStep>
+  void DumpEv(
+      OpKernelContext* context,
+      EmbeddingVar<TKey, TValue>* variable,
+      const string& tensor_name, BundleWriter& writer) {
+    const Tensor& global_step = context->input(5);
+    Tensor part_offset_tensor;
+    context->allocate_temp(DT_INT32,
+                           TensorShape({kSavedPartitionNum + 1}),
+                           &part_offset_tensor);
+    TGlobalStep global_step_scalar = global_step.scalar<TGlobalStep>()();
+    core::ScopedUnref s(variable);
+    if(variable->GetL2WeightThreshold() != -1.0)
+      OP_REQUIRES_OK(context, variable->Shrink());
+    else
+      OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+    const Tensor& prefix = context->input(0);
+    const string& prefix_string = prefix.scalar<tstring>()();
+    OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,
+          &writer, &part_offset_tensor, prefix_string));
+  }
+
+  void Compute(OpKernelContext* context) override {
+    const Tensor& prefix = context->input(0);
+    const Tensor& tensor_names = context->input(1);
+    const Tensor& shape_and_slices = context->input(2);
+    const Tensor& ev_names = context->input(3);
+    const Tensor& ev_resources = context->input(4);
+    const int kFixedInputs = 5;
+    ValidateInputs(true /* is save op */, context, prefix, tensor_names,
+                   shape_and_slices, kFixedInputs);
+    if (!context->status().ok()) return;
+    // Prefix, tensor names, shape_and_slices, ev names, ev resources.
+    const int num_tensors = static_cast<int>(tensor_names.NumElements());
+    const int num_ev = static_cast<int>(ev_names.NumElements());
+    const string& prefix_string = prefix.scalar<tstring>()();
+    const auto& tensor_names_flat = tensor_names.flat<tstring>();
+    const auto& ev_names_flat = ev_names.flat<tstring>();
+    const auto& ev_resources_flat = ev_resources.flat<int64>();
+    const auto& shape_and_slices_flat = shape_and_slices.flat<tstring>();
+
+    BundleWriter writer(Env::Default(), prefix_string);
+    OP_REQUIRES_OK(context, writer.status());
+    VLOG(1) << "BundleWriter, prefix_string: " << prefix_string;
+
+    int start_index = 0;
+    if (has_ev_) {
+      start_index = 1;
+    }
+
+    for (int i = 0; i < num_ev; i++) {
+      const string& ev_name = ev_names_flat(i);
+      if (ev_key_types_[i] == DT_INT32) {
+        EmbeddingVar<int32, float>* ev =
+            reinterpret_cast<
+                EmbeddingVar<int32, float>*>(ev_resources_flat(i));
+        DumpEvWithGlobalStep(
+            context, ev_name, ev, writer, tensor_types_[0]);
+      } else if (ev_key_types_[i] == DT_INT64) {
+        EmbeddingVar<int64, float>* ev =
+            reinterpret_cast<
+                EmbeddingVar<int64, float>*>(ev_resources_flat(i));
+        DumpEvWithGlobalStep(
+            context, ev_name, ev, writer, tensor_types_[0]);
+      }
+    }
+
+    for (int i = start_index; i < num_tensors; ++i) {
+      const string& tensor_name = tensor_names_flat(i);
+      if (tensor_types_[i] == DT_RESOURCE) {
+        auto& handle = HandleFromInput(context, i + kFixedInputs);
+        if (IsHandle<HashTableResource>(handle)) {
+          auto handles =
+              context->input(i + kFixedInputs).flat<ResourceHandle>();
+          int tensible_size = handles.size() - 1;
+          std::vector<core::ScopedUnref> unrefs;
+          HashTable* hashtable;
+          std::vector<TensibleVariable*> tensibles;
+
+          HashTableResource* htr;
+          OP_REQUIRES_OK(context,
+              LookupResource(context, handles(0), &htr));
+          unrefs.emplace_back(htr);
+          hashtable = htr->Internal();
+
+          for (int j = 0; j < tensible_size; j++) {
+            TensibleVariableResource* tvr;
+            OP_REQUIRES_OK(context,
+                LookupResource(context, handles(j + 1), &tvr));
+            unrefs.emplace_back(tvr);
+            tensibles.push_back(tvr->Internal());
+          }
+
+          string shape_spec = shape_and_slices_flat(i);
+          TensorShape shape;
+          TensorSlice slice(1);
+          TensorShape slice_shape;
+
+          OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
+              shape_spec, &shape, &slice, &slice_shape));
+
+          std::vector<string> names_lst = str_util::Split(tensor_name, '|');
+          for (auto&& name : names_lst) {
+            std::vector<string> tensor_name_x =
+                str_util::Split(name, ';');
+            OP_REQUIRES(context, tensor_name_x.size() == tensible_size + 1,
+                errors::InvalidArgument("save tensor name error", tensor_name));
+            string table_name = tensor_name_x[0];
+            std::vector<string> tensible_name(
+                tensor_name_x.begin() + 1, tensor_name_x.end());
+            OP_REQUIRES_OK(context, SaveHashTable(
+                  &writer, hashtable, tensibles, table_name, tensible_name,
+                  slice.start(0), slice.length(0), slice_shape.dim_size(0)));
+          }
+        } else if (IsHandle<HashTableAdmitStrategyResource>(handle)) {
+          HashTableAdmitStrategyResource* resource;
+          OP_REQUIRES_OK(context,
+              LookupResource(context,
+                HandleFromInput(context, i + kFixedInputs), &resource));
+          HashTableAdmitStrategy* strategy = resource->Internal();
+          BloomFilterAdmitStrategy* bf =
+            dynamic_cast<BloomFilterAdmitStrategy*>(strategy);
+          CHECK(bf != nullptr) << "Cannot save Non-BloomFilterAdmitStrategy!";
+
+          string shape_spec = shape_and_slices_flat(i);
+          TensorShape shape;
+          TensorSlice slice(1);
+          TensorShape slice_shape;
+          OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
+              shape_spec, &shape, &slice, &slice_shape));
+
+          OP_REQUIRES_OK(context, SaveBloomFilter(
+              &writer, bf, tensor_name, slice.start(0),
+              slice.length(0), slice_shape.dim_size(0)));
+        }
+      } else {
+        const Tensor& tensor = context->input(i + kFixedInputs);
+
+        if (!shape_and_slices_flat(i).empty()) {
+          const string& shape_spec = shape_and_slices_flat(i);
+          TensorShape shape;
+          TensorSlice slice(tensor.dims());
+          TensorShape slice_shape;
+
+          OP_REQUIRES_OK(context, checkpoint::ParseShapeAndSlice(
+                             shape_spec, &shape, &slice, &slice_shape));
+          OP_REQUIRES(context, slice_shape.IsSameSize(tensor.shape()),
+              errors::InvalidArgument("Slice in shape_and_slice "
+                                      "specification does not match the "
+                                      "shape of the tensor to  save: ",
+                                      shape_spec, ", tensor: ",
+                                      tensor.shape().DebugString()));
+
+          OP_REQUIRES_OK(context,
+                         writer.AddSlice(tensor_name, shape, slice, tensor));
+        } else {
+          OP_REQUIRES_OK(context, writer.Add(tensor_name, tensor));
+        }
+      }
+    }
+    OP_REQUIRES_OK(context, writer.Finish());
+  }
+ private:
+  DataTypeVector tensor_types_;
+  DataTypeVector ev_key_types_;
+  bool has_ev_;
+};
+REGISTER_KERNEL_BUILDER(Name("SaveV3").Device(DEVICE_CPU), SaveV3);
 
 // Restores a list of named tensors from a tensor bundle (V2 checkpoint format).
 class RestoreHashTableOp : public AsyncOpKernel {
@@ -439,7 +630,8 @@ class RestoreV2 : public OpKernel {
                                         " tensor names, but ", dtypes_.size(),
                                         " expected dtypes."));
     ValidateInputs(false /* not save op */, context, prefix, tensor_names,
-                   shape_and_slices);
+                   shape_and_slices,
+                   3 /*Prefix, tensor names, shape_and_slices.*/);
     if (!context->status().ok()) return;
 
     const string& prefix_string = prefix.scalar<tstring>()();

@@ -147,7 +147,7 @@ struct GraphOptimizerOption {
   int shard_instance_count = 0;
 
   // multi tiered embedding
-  embedding::StorageType st = embedding::StorageType::INVALID;
+  embedding::StorageType st = embedding::StorageType::DEFAULT;
   std::string path;
   std::vector<int64> size;
 };

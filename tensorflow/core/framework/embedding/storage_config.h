@@ -21,7 +21,7 @@ limitations under the License.
 namespace tensorflow {
 namespace embedding {
 struct StorageConfig {
-  StorageConfig() : type(StorageType::INVALID),
+  StorageConfig() : type(StorageType::DEFAULT),
                     path(""),
                     layout_type(LayoutType::NORMAL),
                     cache_strategy(CacheStrategy::LFU) {

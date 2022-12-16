@@ -70,13 +70,11 @@ class StorageFactory {
         return new HbmDramStorage<K, V>(sc, gpu_allocator,
         ev_allocator(), layout_creator, name);
 #endif  // GOOGLE_CUDA
-        LOG(WARNING) << "Unsupport HBM_DRAM, fallback to DRAM.";
       case StorageType::HBM_DRAM_SSDHASH:
 #if GOOGLE_CUDA
         return new HbmDramSsdStorage<K, V>(sc, gpu_allocator,
             ev_allocator(), layout_creator, name);
 #endif  // GOOGLE_CUDA
-        LOG(WARNING) << "Unsupport HBM_DRAM_SSDHASH, fallback to DRAM.";
       default:
         return new DramStorage<K, V>(sc, ev_allocator(),
             layout_creator);
