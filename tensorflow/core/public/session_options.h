@@ -76,6 +76,12 @@ struct SessionGroupMetadata {
   // gpu1: 4 streams
   // ....
   std::vector<int> streams_vec;
+  // Pin cpu cores
+  // "1,2;3,4;5,6"
+  // Pin core 1,2 to session0
+  // Pin core 3,4 to session1
+  // Pin core 5,6 to session2
+  std::string cpusets;
 };
 
 struct SessionGroupOptions {
