@@ -1591,6 +1591,7 @@ def main():
         'adding "--config=<>" to your build command. See .bazelrc for more '
         'details.')
   config_info_line('mkl_threadpool', 'Build with oneDNN support.')
+  config_info_line('mkl_aarch64', 'Build with oneDNN support for aarch64.')
   config_info_line('monolithic', 'Config for mostly static monolithic build.')
   config_info_line('gdr', 'Build with GDR support.')
   config_info_line('verbs', 'Build with libverbs support.')
