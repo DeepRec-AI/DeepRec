@@ -152,3 +152,80 @@ docker1中:
 CUDA_VISIBLE_DEVICES=1 test.py
 ```
 
+## 多模型服务
+SessionGroup支持多模型服务，目前在[TF_serving](https://github.com/AlibabaPAI/serving)上已经支持，后续会在DeepRec processor上支持上相应的功能。对于多模型服务，用户可以对于每个模型服务配置独立的参数，包括不同的模型session group中使用几个session，指定gpu卡，指定线程池等等，从而在框架，资源上进行隔离。
+
+对于GPU任务，目前每个模型只能指定一张GPU卡，所以用户在启动任务时，需要注意GPU资源的划分。
+
+启动多模型服务命令如下：
+```c++
+CUDA_VISIBLE_DEVICES=0,1 ENABLE_MPS=0 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
+```
+上述命令中最重要的是两个配置文件，
+
+model_config_file:
+```
+model_config_list:{
+    config:{
+      name:"pb1",
+      base_path:"/data/workspace/serving-model/multi_wdl_model/pb1",
+      model_platform:"tensorflow",
+      model_id: 0
+    },
+    config:{
+      name:"pb2",
+      base_path:"/data/workspace/serving-model/multi_wdl_model/pb2",
+      model_platform:"tensorflow",
+      model_id: 1
+    },
+}
+```
+对于每个模型需要配一个对应的config模块，
+* name表示模型服务名称，client端request访问时，需要填充对应的服务名称`request.model_spec.name = 'pb1'`。
+* base_path表示模型所在路径。
+* model_platform： 默认tensorflow。
+* model_id：给每个模型一个编号，从0开始。
+
+
+platform_config_file:
+```
+platform_configs {
+  key: "tensorflow"
+  value {
+    source_adapter_config {
+      [type.googleapis.com/tensorflow.serving.SavedModelBundleV2SourceAdapterConfig] {
+        legacy_config {
+          model_session_config {
+            session_config {
+              gpu_options {
+                allow_growth: true
+              }
+              intra_op_parallelism_threads: 8
+              inter_op_parallelism_threads: 8
+              use_per_session_threads: true
+              use_per_session_stream: true
+            }
+            session_num: 2
+            cpusets: "1,2;5,6"
+          }
+          model_session_config {
+            session_config {
+              gpu_options {
+                allow_growth: true
+              }
+              intra_op_parallelism_threads: 16
+              inter_op_parallelism_threads: 16
+              use_per_session_threads: true
+              use_per_session_stream: true
+            }
+            session_num: 4
+            cpusets: "20,21;23,24;26,27;29,30"
+          }
+        }
+      }
+    }
+  }
+}
+```
+key和上面model_platform字段一样，默认tensorflow。对于每个模型需要配置一个model_session_config，包含session的一些配置。model_session_config最终是一个数组，那么model_session_config[0]即代表model_0的配置，以此类推。
+
