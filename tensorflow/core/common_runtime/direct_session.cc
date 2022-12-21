@@ -527,10 +527,10 @@ class DirectSessionFactory : public SessionFactory {
 #if GOOGLE_CUDA
     if (use_multi_stream) {
       leader_options.config.add_per_session_devices(
-          "/job:localhost/replica:0/task:0/device:CPU:0");
-      leader_options.config.add_per_session_devices(
           "/job:localhost/replica:0/task:0/device:GPU:" +
           std::to_string(base_index));
+      leader_options.config.add_per_session_devices(
+          "/job:localhost/replica:0/task:0/device:CPU:0");
     }
 #endif // GOOGLE_CUDA
 
@@ -564,10 +564,10 @@ class DirectSessionFactory : public SessionFactory {
 #if GOOGLE_CUDA
       if (use_multi_stream) {
         follower_options.config.add_per_session_devices(
-            "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
-        follower_options.config.add_per_session_devices(
             "/job:localhost/replica:0/task:0/device:GPU:" +
             std::to_string(base_index+i));
+        follower_options.config.add_per_session_devices(
+            "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
       }
 #endif // GOOGLE_CUDA
 
