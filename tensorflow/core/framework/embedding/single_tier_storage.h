@@ -98,6 +98,11 @@ class SingleTierStorage : public Storage<K, V> {
     } while (!(kv_->Lookup(key, value_ptr)).ok());
   }
 
+  void InsertToDram(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    LOG(FATAL)<<"InsertToDram in SingleTierStorage shouldn't be called";
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) override {
     Status s = kv_->Lookup(key, value_ptr);
@@ -189,6 +194,12 @@ class SingleTierStorage : public Storage<K, V> {
     return;
   }
 
+  void AllocateMemoryForNewFeatures(
+      ValuePtr<V>** value_ptr_list,
+      int64 num_of_value_ptrs) override {
+    return;
+  }
+
   Status GetSnapshot(std::vector<K>* key_list,
       std::vector<ValuePtr<V>*>* value_ptr_list) override {
     return kv_->GetSnapshot(key_list, value_ptr_list);
@@ -257,6 +268,10 @@ class SingleTierStorage : public Storage<K, V> {
       int64* record_count_list, int64 num_of_files,
       const std::string& ssd_emb_file_name) override {
     LOG(FATAL)<<"The Storage dosen't have ssd storage.";
+  }
+
+  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) {
+    LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
   }
 
   Status Shrink(const EmbeddingConfig& emb_config,

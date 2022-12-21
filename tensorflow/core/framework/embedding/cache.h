@@ -24,6 +24,9 @@ class BatchCache {
     add_to_rank((K*)t.data(), t.NumElements());
   }
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
+  virtual size_t get_cached_ids(K* cached_ids, size_t k_size,
+                                int64* cached_versions,
+                                int64* cached_freqs) = 0;
   virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
   virtual void add_to_rank(const K* batch_ids, size_t batch_size,
                            const int64* batch_versions,
@@ -82,6 +85,18 @@ class LRUCache : public BatchCache<K> {
     evic_node->next = tail;
     tail->pre = evic_node;
     return true_size;
+  }
+
+  size_t get_cached_ids(K* cached_ids, size_t k_size,
+                        int64* cached_versions,
+                        int64* cached_freqs) override {
+    mutex_lock l(mu_);
+    LRUNode* it = head->next;
+    size_t i;
+    for (i = 0; i < k_size && it != tail; i++, it = it->next) {
+      cached_ids[i] = it->id;
+    }
+    return i;
   }
 
   void add_to_rank(const K* batch_ids, size_t batch_size) {
@@ -143,6 +158,31 @@ class LFUCache : public BatchCache<K> {
   size_t size() {
     mutex_lock l(mu_);
     return key_table.size();
+  }
+
+  size_t get_cached_ids(K* cached_ids, size_t k_size,
+                        int64* cached_versions,
+                        int64* cached_freqs) override {
+    mutex_lock l(mu_);
+    size_t i;
+    size_t curr_freq = max_freq;
+    auto it = freq_table[max_freq - 1].first->begin();
+    while (i < k_size && curr_freq >= min_freq) {
+      cached_ids[i] = (*it).key;
+      cached_freqs[i] = (*it).freq;
+      i++;
+      it++;
+      if (it == freq_table[curr_freq - 1].first->end()) {
+        do {
+          curr_freq--;
+        } while (freq_table[curr_freq - 1].second == 0
+            && curr_freq >= min_freq);
+        if (curr_freq >= min_freq) {
+          it = freq_table[curr_freq - 1].first->begin();
+        }
+      }
+    }
+    return i;
   }
 
   size_t get_evic_ids(K *evic_ids, size_t k_size) {

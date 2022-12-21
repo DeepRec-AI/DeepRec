@@ -33,7 +33,9 @@ __global__ void BatchCopy(V** batch, V* val_base, int value_len,
 
 #define REGISTER_KERNELS_ALL_INDEX(T) \
    template __global__ void BatchCopy<T>(T**, T*, int, int);
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_int32(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_int64(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 
 template<class V>
@@ -50,7 +52,7 @@ __global__ void BatchUnpack(V** dev_value_address,
 
 #define REGISTER_KERNELS_ALL_INDEX(T)                       \
   template __global__ void BatchUnpack<T>(T**, T*, int, int);
-TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_int32(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_int64(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
@@ -94,7 +96,7 @@ __global__ void CopyEmbedding(V** batch, V** batch_data_space,
 
 #define REGISTER_KERNELS_ALL_INDEX(T) \
    template __global__ void CopyEmbedding<T>(T**, T**, int, int);
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_FLOAT_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 }  // namespace tensorflow
 #endif  // GOOGLE_CUDA

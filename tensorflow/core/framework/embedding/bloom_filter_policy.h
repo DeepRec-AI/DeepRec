@@ -240,9 +240,20 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
         }
       }
     }
-    if (ev_->IsMultiLevel()) {
+    if (ev_->IsMultiLevel() && !ev_->IsUseHbm() && config_.is_primary()) {
       ev_->UpdateCache(key_buff, key_num, version_buff, freq_buff);
     }
+    return Status::OK();
+  }
+
+  Status ImportToDram(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter,
+                V* default_values) override {
+    LOG(FATAL)<<"BloomFilter dosen't support ImportToDRAM";
     return Status::OK();
   }
 

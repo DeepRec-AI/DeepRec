@@ -136,8 +136,49 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
             ev_->GetDefaultValue(key_buff[i]));
       }
     }
-    if (ev_->IsMultiLevel() && config_.is_primary()) {
+    if (ev_->IsMultiLevel() && !ev_->IsUseHbm() && config_.is_primary()) {
       ev_->UpdateCache(key_buff, key_num, version_buff, freq_buff);
+    }
+    return Status::OK();
+  }
+
+  Status ImportToDram(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter,
+                V* default_values) override {
+    K* key_buff = (K*)restore_buff.key_buffer;
+    V* value_buff = (V*)restore_buff.value_buffer;
+    int64* version_buff = (int64*)restore_buff.version_buffer;
+    int64* freq_buff = (int64*)restore_buff.freq_buffer;
+    for (auto i = 0; i < key_num; ++i) {
+      // this can describe by graph(Mod + DynamicPartition),
+      // but memory waste and slow
+      if (*(key_buff + i) % bucket_num % partition_num != partition_id) {
+        LOG(INFO) << "skip EV key:" << *(key_buff + i);
+        continue;
+      }
+      ValuePtr<V>* value_ptr = nullptr;
+      ev_->CreateKeyOnDram(key_buff[i], &value_ptr);
+      if (config_.filter_freq !=0 || ev_->IsMultiLevel()
+          || config_.record_freq) {
+        value_ptr->SetFreq(freq_buff[i]);
+      }
+      if (config_.steps_to_live != 0 || config_.record_version) {
+        value_ptr->SetStep(version_buff[i]);
+      }
+      if (!is_filter) {
+        V* v = ev_->LookupOrCreateEmb(value_ptr,
+            value_buff + i * ev_->ValueLen(), ev_allocator());
+      }else {
+        V* v = ev_->LookupOrCreateEmb(value_ptr,
+            default_values +
+                (key_buff[i] % config_.default_value_dim)
+                * ev_->ValueLen(),
+            ev_allocator());
+      }
     }
     return Status::OK();
   }

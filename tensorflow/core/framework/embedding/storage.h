@@ -64,6 +64,8 @@ class Storage {
 
   virtual Status Get(K key, ValuePtr<V>** value_ptr) = 0;
   virtual void Insert(K key, ValuePtr<V>** value_ptr, int64 alloc_len) = 0;
+  virtual void InsertToDram(K key, ValuePtr<V>** value_ptr,
+                            int64 alloc_len) = 0;
   virtual void Insert(const std::vector<K>& keys,
                         ValuePtr<V>** value_ptrs) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
@@ -139,6 +141,10 @@ class Storage {
       int64 block_size) = 0;
   virtual void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) = 0;
+  virtual void AllocateMemoryForNewFeatures(
+      ValuePtr<V>** value_ptr_list, int64 num_of_value_ptrs) = 0;
+  virtual void ImportToHbm(K* ids, int64 size, int64 value_len,
+                           int64 emb_index) = 0;
  
   inline mutex* get_mutex() { return &mu_; }
   inline int64 GetAllocLen() { return alloc_len_; }
@@ -152,6 +158,8 @@ class Storage {
   inline LayoutType GetLayoutType() { return storage_config_.layout_type; }
   inline embedding::StorageType GetStorageType() { return storage_config_.type; }
   inline std::string GetStoragePath() { return storage_config_.path; }
+  inline embedding::CacheStrategy
+      CacheStrategy() { return storage_config_.cache_strategy; }
 
   inline std::string DebugString() const {
     return strings::StrCat("class type: ", typeid(this).name(),

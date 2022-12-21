@@ -37,7 +37,7 @@ namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
 namespace {
-  const int kSavedPartitionNum = 1000;
+  extern const int kSavedPartitionNum = 1000;
 }
 
 template<class T>
@@ -326,10 +326,16 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
 
   VLOG(1) << "EV:" << tensor_key << ", save size:" << num_of_keys;
   int64 iterator_size = 0;
+  int64 filter_iterator_size = 0;
   if (it != nullptr) {
+    it->SwitchToAdmitFeatures();
     ev->storage_manager()->iterator_mutex_lock();
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
       ++iterator_size;
+    }
+    it->SwitchToFilteredFeatures();
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      ++filter_iterator_size;
     }
   }
 
@@ -453,9 +459,15 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
     part_filter_offset[partid + 1] = part_filter_offset[partid] + key_filter_list.size();
   }
   // TODO: DB iterator not support partition_offset
+  if (it != nullptr) {
+    it->SetPartOffset((int32*)part_offset_tensor->data());
+  }
   writer->Add(tensor_key + "-partition_offset", *part_offset_tensor);
   for(int i = 0; i <  kSavedPartitionNum + 1; i++) {
     part_offset_flat(i) = part_filter_offset[i];
+  }
+  if (it != nullptr) {
+    it->SetPartFilterOffset((int32*)part_offset_tensor->data());
   }
   writer->Add(tensor_key + "-partition_filter_offset", *part_offset_tensor);
 
@@ -468,7 +480,9 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
   size_t bytes_limit = 8 << 20;
   char* dump_buffer = (char*)malloc(sizeof(char) * bytes_limit);
   Status st;
-
+  if (it != nullptr) {
+    it->SwitchToAdmitFeatures();
+  }
   EVKeyDumpIterator<K> ev_key_dump_iter(partitioned_tot_key_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-keys", writer, dump_buffer,
                                  bytes_limit, &ev_key_dump_iter,
@@ -508,11 +522,14 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
     free(dump_buffer);
     return st;
   }
-
+  if (it != nullptr) {
+    it->SwitchToFilteredFeatures();
+  }
   EVKeyDumpIterator<K> ev_key_filter_dump_iter(partitioned_tot_key_filter_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-keys_filtered",
       writer, dump_buffer, bytes_limit, &ev_key_filter_dump_iter,
-      TensorShape({partitioned_tot_key_filter_list.size()}));
+      TensorShape({partitioned_tot_key_filter_list.size()
+          + filter_iterator_size}), it);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -522,7 +539,8 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
       partitioned_tot_version_filter_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-versions_filtered",
       writer, dump_buffer, bytes_limit, &ev_version_filter_dump_iter,
-      TensorShape({partitioned_tot_version_filter_list.size()}));
+      TensorShape({partitioned_tot_version_filter_list.size()
+          + filter_iterator_size}), it, -3);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -532,7 +550,8 @@ Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
       partitioned_tot_freq_filter_list);
   st = SaveTensorWithFixedBuffer(tensor_key + "-freqs_filtered",
       writer, dump_buffer, bytes_limit, &ev_freq_filter_dump_iter,
-      TensorShape({partitioned_tot_freq_filter_list.size()}));
+      TensorShape({partitioned_tot_freq_filter_list.size()
+          + filter_iterator_size}), it, -2);
   if (!st.ok()) {
     free(dump_buffer);
     return st;
@@ -557,6 +576,12 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     int64 partition_id = 0, int64 partition_num = 1, bool reset_version = false) {
   string curr_partid_str = std::to_string(partition_id);
   bool filter_flag = true;
+  embedding::BatchCache<K>* cache_for_restore_hbm = nullptr;
+  if (ev->IsMultiLevel() && ev->IsUseHbm()) {
+    auto cache_strategy = ev->storage_manager()->CacheStrategy();
+    cache_for_restore_hbm = embedding::CacheFactory::Create<K>(
+        cache_strategy, "hbm_restore_cache for " + name_string);
+  }
   for (int i = 0; i < orig_partnum; i++) {
     string part_id = std::to_string(i);
     string pre_subname =
@@ -672,12 +697,37 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
         VLOG(2) << "repartition, read_key_num:" << read_key_num;
         st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
             partition_id, partition_num, false);
+        if (cache_for_restore_hbm) {
+          cache_for_restore_hbm->add_to_rank(
+              (K*)restore_buff.key_buffer, read_key_num,
+              (int64*)restore_buff.version_buffer,
+              (int64*)restore_buff.freq_buffer);
+        }
         if (!st.ok()) {
           return st;
         }
         tot_key_num -= read_key_num;
       }
     }
+  }
+  if (cache_for_restore_hbm) {
+    int64 cache_capacity = ev->CacheSize();
+    int64 num_of_hbm_ids =
+        std::min(cache_capacity, (int64)cache_for_restore_hbm->size());
+    K* hbm_ids = new K[num_of_hbm_ids];
+    int64* hbm_freqs = new int64[num_of_hbm_ids];
+    int64* hbm_versions = nullptr;
+    cache_for_restore_hbm->get_cached_ids(
+        hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+    ev->ImportToHbm(hbm_ids, num_of_hbm_ids);
+    ev->storage_manager()->Schedule([ev, hbm_ids, num_of_hbm_ids,
+                                     hbm_versions, hbm_freqs]() {
+      embedding::BatchCache<K>* cache = ev->Cache();
+      cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+      delete[] hbm_ids;
+      delete[] hbm_freqs;
+    });
+    delete cache_for_restore_hbm;
   }
   return Status::OK();
 }
@@ -775,6 +825,12 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
   if (!st.ok() && st.code() != error::NOT_FOUND){
     return st;
   }
+  embedding::BatchCache<K>* cache_for_restore_hbm = nullptr;
+  if (ev->IsMultiLevel() && ev->IsUseHbm()) {
+    auto cache_strategy = ev->storage_manager()->CacheStrategy();
+    cache_for_restore_hbm = embedding::CacheFactory::Create<K>(
+        cache_strategy, "hbm_restore_cache for " + tensor_key);
+  }
 
   size_t buffer_size = 8 << 20;
   RestoreBuffer restore_buff;
@@ -833,6 +889,12 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
       VLOG(2) << "restore, read_key_num:" << read_key_num;
 
       st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false);
+      if (cache_for_restore_hbm) {
+        cache_for_restore_hbm->add_to_rank(
+            (K*)restore_buff.key_buffer, read_key_num,
+            (int64*)restore_buff.version_buffer,
+            (int64*)restore_buff.freq_buffer);
+      }
       if (!st.ok())
         return st;
       tot_key_num -= read_key_num;
@@ -864,13 +926,39 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
         VLOG(2) << "restore, read_key_num:" << read_key_num;
 
         st = ev->Import(restore_buff, read_key_num, 1, 0, 1, true);
+        if (cache_for_restore_hbm) {
+          cache_for_restore_hbm->add_to_rank(
+              (K*)restore_buff.key_buffer, read_key_num,
+              (int64*)restore_buff.version_buffer,
+              (int64*)restore_buff.freq_buffer);
+        }
         if (!st.ok())
           return st;
         tot_key_filter_num -= read_key_num;
       }
     }
   }
-  
+
+  if (cache_for_restore_hbm) {
+    int64 cache_capacity = ev->CacheSize();
+    int64 num_of_hbm_ids =
+        std::min(cache_capacity, (int64)cache_for_restore_hbm->size());
+    K* hbm_ids = new K[num_of_hbm_ids];
+    int64* hbm_freqs = new int64[num_of_hbm_ids];
+    int64* hbm_versions = nullptr;
+    cache_for_restore_hbm->get_cached_ids(
+        hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+    ev->ImportToHbm(hbm_ids, num_of_hbm_ids);
+    ev->storage_manager()->Schedule([ev, hbm_ids, num_of_hbm_ids,
+                                     hbm_versions, hbm_freqs]() {
+      embedding::BatchCache<K>* cache = ev->Cache();
+      cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+      delete[] hbm_ids;
+      delete[] hbm_freqs;
+    });
+    delete cache_for_restore_hbm;
+  }
+
   return Status::OK();
 }
 
@@ -976,6 +1064,13 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     VLOG(1) << "new form:" << name_string
             << ", partition_id:" << partition_id
             << ", partition_num:" << partition_num;
+
+    embedding::BatchCache<K>* cache_for_restore_hbm = nullptr;
+    if (ev->IsMultiLevel() && ev->IsUseHbm()) {
+      auto cache_strategy = ev->storage_manager()->CacheStrategy();
+      cache_for_restore_hbm = embedding::CacheFactory::Create<K>(
+          cache_strategy, "hbm_restore_cache for " + name_string);
+    }
 
     int orig_partnum = 0;
     size_t buffer_size = 8 << 20;
@@ -1107,15 +1202,13 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
       if (!st.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
       }
-      Tensor part_offset_tensor;
-      st = context->allocate_temp(part_offset_type,
-          part_offset_shape, &part_offset_tensor);
+      Tensor part_offset_tensor(cpu_allocator(),
+          part_offset_type, part_offset_shape);
       if (!st.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
       }
-      Tensor part_filter_offset_tensor;
-      st = context->allocate_temp(part_filter_offset_type,
-          part_filter_offset_shape, &part_filter_offset_tensor);
+      Tensor part_filter_offset_tensor(cpu_allocator(),
+          part_offset_type, part_offset_shape);
       if (!st.ok()) {
         LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
       }
@@ -1202,6 +1295,12 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
             VLOG(2) << "restore, read_key_num:" << read_key_num;
             st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
                 partition_id, partition_num, false);
+            if (cache_for_restore_hbm) {
+              cache_for_restore_hbm->add_to_rank(
+                  (K*)restore_buff.key_buffer, read_key_num,
+                  (int64*)restore_buff.version_buffer,
+                  (int64*)restore_buff.freq_buffer);
+            }
             if (!st.ok()) {
               LOG(FATAL) <<  "EV restoring fail:" << st.ToString();
             }
@@ -1249,6 +1348,12 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
               VLOG(2) << "restore, read_key_num:" << read_key_num;
               st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
                   partition_id, partition_num, true);
+              if (cache_for_restore_hbm) {
+                cache_for_restore_hbm->add_to_rank(
+                    (K*)restore_buff.key_buffer, read_key_num,
+                    (int64*)restore_buff.version_buffer,
+                    (int64*)restore_buff.freq_buffer);
+              }
               if (!st.ok())
                return st;
               tot_key_filter_num -= read_key_num;
@@ -1256,6 +1361,26 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
           }
         }
       }
+    }
+
+    if (cache_for_restore_hbm) {
+      int64 cache_capacity = ev->CacheSize();
+      int64 num_of_hbm_ids =
+          std::min(cache_capacity, (int64)cache_for_restore_hbm->size());
+      K* hbm_ids = new K[num_of_hbm_ids];
+      int64* hbm_freqs = new int64[num_of_hbm_ids];
+      int64* hbm_versions = nullptr;
+      cache_for_restore_hbm->get_cached_ids(
+          hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+      ev->ImportToHbm(hbm_ids, num_of_hbm_ids);
+      ev->storage_manager()->Schedule([ev, hbm_ids, num_of_hbm_ids,
+                                       hbm_versions, hbm_freqs]() {
+        embedding::BatchCache<K>* cache = ev->Cache();
+        cache->add_to_rank(hbm_ids, num_of_hbm_ids, hbm_versions, hbm_freqs);
+        delete[] hbm_ids;
+        delete[] hbm_freqs;
+      });
+      delete cache_for_restore_hbm;
     }
   }
   return Status::OK();

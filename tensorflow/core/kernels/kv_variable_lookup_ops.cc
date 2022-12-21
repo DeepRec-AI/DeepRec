@@ -76,6 +76,7 @@ class KvResourceLookupResourceOp : public OpKernel {
 #define REGISTER_KV_LOOKUP_RESOURCE(dev, ktype, vtype)                 \
   REGISTER_KERNEL_BUILDER(Name("KvResourceLookupResource")             \
                           .Device(DEVICE_##dev)                        \
+                          .HostMemory("output")                        \
                           .TypeConstraint<ktype>("Tkeys")              \
                           .TypeConstraint<vtype>("dtype"),             \
                           KvResourceLookupResourceOp<ktype, vtype>);
