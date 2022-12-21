@@ -442,9 +442,10 @@ class DirectSessionFactory : public SessionFactory {
     // Usage: "0-10;11-20;21-30" or
     //        "0,1,2,3;4,5,6,7;8,9,10"
     std::string session_group_cpuset = metadata.cpusets;
+    Status s;
     if (session_group_cpuset.empty()) {
-      Status s =
-          ReadStringFromEnvVar("SESSION_GROUP_CPUSET", "", &session_group_cpuset);
+      s = ReadStringFromEnvVar("SESSION_GROUP_CPUSET",
+                               "", &session_group_cpuset);
       if (!s.ok()) {
         LOG(ERROR) << "Read SESSION_GROUP_CPUSET failed." << s.error_message();
       }
