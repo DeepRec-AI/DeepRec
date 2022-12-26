@@ -168,6 +168,30 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     )
 
     tf_http_archive(
+        name = "mkl_dnn_acl_compatible",
+        build_file = "//third_party/mkl_dnn:mkldnn_acl.BUILD",
+        patch_file = clean_dep("//third_party/mkl_dnn:onednn-acl.patch"),
+        sha256 = "5f7fd92e2d0bf83580656695d4404e2cd1390ecad36496fd8ba10b5adc905f70",
+        strip_prefix = "oneDNN-2.1",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/oneapi-src/oneDNN/archive/v2.1.tar.gz",
+            "https://github.com/oneapi-src/oneDNN/archive/v2.1.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
+        name = "compute_library",
+        sha256 = "cdb3d8a7ab7ea13f0df207a20657f2827ac631c24aa0e8487bacf97697237bdf",
+        strip_prefix = "ComputeLibrary-21.02",
+        build_file = "//third_party/compute_library:BUILD",
+        patch_file = "//third_party/compute_library:compute_library.patch",
+        urls = [
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/ARM-software/ComputeLibrary/archive/v21.02.tar.gz",
+            "https://github.com/ARM-software/ComputeLibrary/archive/v21.02.tar.gz",
+        ],
+    )
+
+    tf_http_archive(
         name = "sparsehash_c11",
         patch_file = clean_dep("//third_party:0001-Avoid-fetching-nullptr-when-use-featrue-filter.patch"),
         build_file = clean_dep("//third_party:sparsehash_c11.BUILD"),
