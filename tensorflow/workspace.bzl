@@ -1054,12 +1054,12 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "seastar_repo",
         patch_file = clean_dep("//third_party:0001-seastar.patch"),
-        sha256 = "d4ba77e7e1347b19306c1ca601e9b101838bdd67f3109957146992ee13bb244e",
-        strip_prefix = "seastar-f5d1fbfe578a1b22f855d68e5aab0fe145215298",
+        sha256 = "c57f9b50c91200b74e60907c6595d31da20ccc9dfe9935d23cd2f11a996d410b",
+        strip_prefix = "seastar-2f0de60d31d75f9048cec0901a961f3fc7ed04ec",
         build_file = str(Label("//third_party:seastar.BUILD")),
         urls = [
-            "https://github.com/AlibabaPAI/seastar/archive/f5d1fbfe578a1b22f855d68e5aab0fe145215298.tar.gz",
-            "https://github.com/AlibabaPAI/seastar/archive/f5d1fbfe578a1b22f855d68e5aab0fe145215298.tar.gz",
+            "https://github.com/AlibabaPAI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
+            "https://github.com/AlibabaPAI/seastar/archive/2f0de60d31d75f9048cec0901a961f3fc7ed04ec.tar.gz",
         ],
     )
 
