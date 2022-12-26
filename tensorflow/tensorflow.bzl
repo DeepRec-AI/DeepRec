@@ -45,6 +45,7 @@ load(
     "//third_party/mkl_dnn:build_defs.bzl",
     "if_mkl_open_source_only",
     "if_mkldnn_threadpool",
+    "if_mkldnn_aarch64_acl",
 )
 load(
     "//third_party/ngraph:build_defs.bzl",
@@ -298,6 +299,7 @@ def tf_copts(
         if_mkl_open_source_only(["-DINTEL_MKL_DNN_ONLY"]) +
         if_mkldnn_threadpool(["-DENABLE_DNNL_THREADPOOL"]) +
         if_enable_mkl(["-DENABLE_MKL"]) +
+        if_mkldnn_aarch64_acl(["-DENABLE_MKL", "-DENABLE_ONEDNN_OPENMP"]) +
         if_ngraph(["-DINTEL_NGRAPH=1"]) +
         if_android_arm(["-mfpu=neon"]) +
         if_linux_x86_64(["-msse3"]) +

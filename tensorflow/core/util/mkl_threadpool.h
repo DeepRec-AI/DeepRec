@@ -143,6 +143,7 @@ struct MklDnnThreadPool : public threadpool_iface {
 struct MklDnnThreadPool {
   MklDnnThreadPool() = default;
   MklDnnThreadPool(OpKernelContext* ctx) {}
+  MklDnnThreadPool(OpKernelContext* ctx, int num_threads) {}
 };
 
 #endif  // ENABLE_DNNL_THREADPOOL
