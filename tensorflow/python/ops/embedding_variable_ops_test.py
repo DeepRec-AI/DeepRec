@@ -889,7 +889,8 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
   def testEmbeddingVariableForAdamFilter(self):
     print("testEmbeddingVariableForAdamFilter")
-    var = variable_scope.get_embedding_variable("var_1",
+    with ops.device("/cpu:0"):
+      var = variable_scope.get_embedding_variable("var_1",
             embedding_dim = 3,
             ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)),
             initializer=init_ops.ones_initializer(dtypes.float32),
@@ -1161,13 +1162,14 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
         r, _, _ = sess.run([emb, train_op,loss])
         r, _, _ = sess.run([emb, train_op,loss])
         return r
-    emb_var = variable_scope.get_embedding_variable("var_1",
-          embedding_dim = 3,
-          initializer=init_ops.ones_initializer(dtypes.float32),
-          partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
-    var = variable_scope.get_variable("var_2", shape=[8, 3], initializer=init_ops.ones_initializer(dtypes.float32))
-    emb1 = runTestAdam(self, emb_var)
-    emb2 = runTestAdam(self, var)
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 3,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4))
+      var = variable_scope.get_variable("var_2", shape=[8, 3], initializer=init_ops.ones_initializer(dtypes.float32))
+      emb1 = runTestAdam(self, emb_var)
+      emb2 = runTestAdam(self, var)
 
     print(emb1.tolist())
     print(emb2.tolist())
@@ -2240,7 +2242,6 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
         if isinstance(var, kv_variable_ops.EmbeddingVariable):
           result = sess.run(tires)
-          print(result)
           for i in range(0, 6):
             if i == 2:
               self.assertEqual(result[i], 2)
