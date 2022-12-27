@@ -306,6 +306,14 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 # 中每个session都拥有独立的inter/intra线程池。
 "use_per_session_threads": false,
 
+# 用户可以为session group中每个session设置
+# 不同的cpu core，格式如下：
+# "0-10;11-20" 表示两个session分别绑定0~10cores以及11～20cores。
+# 或者
+# "0,1,2,3;4,5,6,7" 表示两个session分别绑0～3cores以及4～7cores。
+# 不同的session cpu cores之间通过';'隔开。
+"cpusets": "123;4-6",
+
 # 是否单线程执行 Session run
 "enable_inline_execute": false
   

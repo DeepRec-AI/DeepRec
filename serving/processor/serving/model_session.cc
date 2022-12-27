@@ -172,6 +172,7 @@ Status ModelSessionMgr::CreateSessionGroup(
   metadata.session_num = config->session_num;
   metadata.model_id = 0;
   metadata.streams_vec.emplace_back(config->session_num);
+  metadata.cpusets = config->cpusets;
   TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
                                      session_group, metadata));
   TF_RETURN_IF_ERROR((*session_group)->Create(meta_graph_def_.graph_def()));
