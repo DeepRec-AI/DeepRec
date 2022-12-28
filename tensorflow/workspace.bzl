@@ -547,7 +547,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         system_build_file = clean_dep("//third_party/systemlibs:pcre.BUILD"),
         urls = [
             "https://storage.googleapis.com/mirror.tensorflow.org/ftp.exim.org/pub/pcre/pcre-8.44.tar.gz",
-            "https://ftp.exim.org/pub/pcre/pcre-8.44.tar.gz",
+            "https://sourceforge.net/projects/pcre/files/pcre/8.44/pcre-8.44.tar.gz",
         ],
     )
 
