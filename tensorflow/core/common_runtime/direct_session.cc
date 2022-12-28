@@ -547,18 +547,22 @@ class DirectSessionFactory : public SessionFactory {
           options, "/job:localhost/replica:0/task:0", &dev,
           &dev_rmgr_map, dev_global_tp_opt));
       DeviceMgr* dev_mgr = nullptr;
+      bool owned_device_mgr = true;
 #if GOOGLE_CUDA
       if (use_multi_stream) {
         RemoveUselessDevice(dev, base_index+i);
         dev_mgr = new DeviceMgr(std::move(dev));
+        owned_device_mgr = true;
       } else {
         // Use the same deivce as leader session, this can't get
         // good performance, so user should set use_multi_stream true
         // in session group mode.
         dev_mgr = device_mgr;
+        owned_device_mgr = false;
       }
 #else
       dev_mgr = new DeviceMgr(std::move(dev));
+      owned_device_mgr = true;
 #endif // GOOGLE_CUDA
 
       SessionOptions follower_options = options;
@@ -573,8 +577,8 @@ class DirectSessionFactory : public SessionFactory {
 #endif // GOOGLE_CUDA
 
       DirectSession* follower_session =
-          new DirectSession(follower_options, dev_mgr, true, this,
-                            visible_cpus_per_session[i]);
+          new DirectSession(follower_options, dev_mgr, owned_device_mgr,
+                            this, visible_cpus_per_session[i]);
       session_group->CreateFollowerSession(follower_session);
       {
         mutex_lock l(sessions_lock_);
