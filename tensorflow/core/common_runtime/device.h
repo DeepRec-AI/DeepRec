@@ -198,9 +198,13 @@ class Device : public DeviceBase {
       DeviceType device, Bytes memory_limit,
       const DeviceLocality& locality,
       const string& physical_device_desc);
- 
+
   // Clears the resource manager associated with this device.
-  void ClearResourceMgr() { rmgr_->Clear(); }
+  void ClearResourceMgr() {
+    if (owned_rmgr_) {
+      rmgr_->Clear();
+    }
+  }
 
   virtual bool IsLocal() const { return true; }
 
