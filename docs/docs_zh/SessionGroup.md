@@ -153,7 +153,8 @@ CUDA_VISIBLE_DEVICES=1 test.py
 ```
 
 ## 多模型服务
-SessionGroup支持多模型服务，目前在[TF_serving](https://github.com/AlibabaPAI/serving)上已经支持，后续会在DeepRec processor上支持上相应的功能。对于多模型服务，用户可以对于每个模型服务配置独立的参数，包括不同的模型session group中使用几个session，指定gpu卡，指定线程池等等，从而在框架，资源上进行隔离。
+### TF Serving
+SessionGroup支持多模型服务，在[TF_serving](https://github.com/AlibabaPAI/serving)上已经支持。对于多模型服务，用户可以对于每个模型服务配置独立的参数，包括不同的模型session group中使用几个session，指定gpu卡，指定线程池等等，从而在框架，资源上进行隔离。
 
 对于GPU任务，目前每个模型只能指定一张GPU卡，所以用户在启动任务时，需要注意GPU资源的划分。
 
@@ -229,3 +230,118 @@ platform_configs {
 ```
 key和上面model_platform字段一样，默认tensorflow。对于每个模型需要配置一个model_session_config，包含session的一些配置。model_session_config最终是一个数组，那么model_session_config[0]即代表model_0的配置，以此类推。
 
+
+Client端发送请求示例：
+```
+CUDA_VISIBLE_DEVICES=1,3 ENABLE_MPS=0 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/xxx/model_config_file --platform_config_file=/xxx/platform_config_file
+```
+
+### EAS+Processor
+多模型请求的分发需要EAS框架支持，Processor目前仅支持CPU任务(GPU待支持)，我们可以为不同的模型服务配置不同的cpu资源，线程池等，配置文件如下：
+```
+{
+  "platform": "local",
+  "engine": "python",
+  "language_type": "PYTHON",
+  "name": "pttest",
+  "models": [
+    {
+      "model_path": "https://tf115test.oss-cn-hangzhou.aliyuncs.com/test/libserving_processor_1226_debug3.tar.gz",
+      "model_entry": "",
+      "name": "model1",
+      "processor": "tensorflow",
+      "uncompress": true,
+      "model_config": {
+        "session_num": 2,
+        "use_per_session_threads": true,
+        "cpusets": "1,2,3;4,5,6",
+        "omp_num_threads": 24,
+        "kmp_blocktime": 0,
+        "feature_store_type": "memory",
+        "serialize_protocol": "protobuf",
+        "inter_op_parallelism_threads": 24,
+        "intra_op_parallelism_threads": 24,
+        "init_timeout_minutes": 1,
+        "signature_name": "serving_default",
+        "model_store_type": "local",
+        "checkpoint_dir": "/data/workspace/ckpt/",
+        "savedmodel_dir": "/data/workspace/pb/",
+        "oss_access_id": "",
+        "oss_access_key": "",
+        "oss_endpoint": "oss-cn-shanghai.aliyuncs.com"
+      }
+    },
+    {
+      "model_path": "https://tf115test.oss-cn-hangzhou.aliyuncs.com/test/libserving_processor_1226_debug3.tar.gz",
+      "model_entry": "",
+      "name": "model2",
+      "processor": "tensorflow",
+      "uncompress": true,
+      "model_config": {
+        "session_num": 4,
+        "use_per_session_threads": true,
+        "cpusets": "7-9;10-12;13-15;16-18",
+        "omp_num_threads": 24,
+        "kmp_blocktime": 0,
+        "feature_store_type": "memory",
+        "serialize_protocol": "protobuf",
+        "inter_op_parallelism_threads": 24,
+        "intra_op_parallelism_threads": 24,
+        "init_timeout_minutes": 1,
+        "signature_name": "serving_default",
+        "model_store_type": "local",
+        "checkpoint_dir": "/data/workspace/ckpt2/",
+        "savedmodel_dir": "/data/workspace/pb2/",
+        "oss_access_id": "",
+        "oss_access_key": "",
+        "oss_endpoint": "oss-cn-shanghai.aliyuncs.com"
+      }
+    }
+  ],
+  "processors": [
+    {
+      "name": "tensorflow",
+      "processor_path": "https://tf115test.oss-cn-hangzhou.aliyuncs.com/test/libserving_processor_1226_debug3.tar.gz",
+      "processor_entry": "libserving_processor.so",
+      "processor_type": "cpp"
+    }
+  ],
+  "metadata":{
+    "cpu":32,
+    "eas":{
+      "enabled_model_verification":false,
+      "scheduler":{
+        "enable_cpuset": false
+      }
+    },
+    "gpu":0,
+    "instance":1,
+    "memory":40960,
+    "rpc":{
+      "io_threads":10,
+      "worker_threads":20,
+      "enable_jemalloc":true
+    }
+  },
+}
+```
+上面配置文件和单模型下的区别在于多了“models”和“processors”字段。
+
+“processors”字段是一个list，用户可以配置多个processor，在models中对于不同的模型可以配置不同的processor。
+
+“models”字段是一个list，用户可以配置多个模型服务，每个模型服务都有单独的配置，主要是“model_config”字段，更详细的字段介绍见：[model config](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
+
+用户Client请求示例：
+```
+client = PredictClient('127.0.0.1:8080', 'pttest/model1')
+#client = PredictClient('127.0.0.1:8080', 'pttest/model2')
+client.init()
+
+pb_string = open("./warm_up.bin", "rb").read()
+request = TFRequest()
+request.request_data.ParseFromString(pb_string)
+request.add_fetch("dinfm/din_out/Sigmoid:0")
+
+resp = client.predict(request)
+```
+在构建PredictClient时需要在url增加模型名称，如"pttest/model1"。

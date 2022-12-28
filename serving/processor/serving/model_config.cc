@@ -54,6 +54,14 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
 
   *config = new ModelConfig;
 
+  // User set session group cpuset,
+  // Usage: "0-10;11-20;21-30" or
+  //        "0,1,2,3;4,5,6,7;8,9,10"
+  if (!json_config["cpusets"].isNull()) {
+    (*config)->cpusets =
+      json_config["cpusets"].asString();
+  }
+
   if (!json_config["session_num"].isNull()) {
     (*config)->session_num =
       json_config["session_num"].asInt();

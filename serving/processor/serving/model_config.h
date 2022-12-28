@@ -23,6 +23,7 @@ struct ModelConfig {
   int intra_threads = 1;
   int model_update_inter_threads = 0;
   int model_update_intra_threads = 0;
+  std::string cpusets;
 
   // Embedding Config
   std::string feature_store_type;
