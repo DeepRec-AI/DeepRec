@@ -40,6 +40,24 @@ namespace tensorflow {
 template <class V>
 class ValuePtr;
 
+template <class K>
+struct SsdRecordDescriptor {
+  //prefix of embedding file
+  tstring file_prefix;
+  //keys in ssd storage
+  std::vector<K> key_list;
+  //file ids of features
+  std::vector<int64> key_file_id_list;
+  //offsets in the file of features
+  std::vector<int64> key_offset_list;
+   //files in ssd storage
+  std::vector<int64> file_list;
+  //number of invalid records in the file
+  std::vector<int64> invalid_record_count_list;
+  //number of records in the file
+  std::vector<int64> record_count_list;
+};
+
 namespace embedding {
 class EmbPosition {
  public:
@@ -75,13 +93,30 @@ class EmbFile {
   : version_(ver),
     file_size_(buffer_size),
     app_count_(0),
-    app_invalid_count(0),
+    app_invalid_count_(0),
     is_deleted_(false) {
     std::stringstream ss;
     ss << std::setw(4) << std::setfill('0') << ver << ".emb";
     filepath_ = path + ss.str();
     fs_.open(filepath_,
-            std::ios::app | std::ios::in | std::ios::out | std::ios::binary);
+             std::ios::app |
+             std::ios::in  |
+             std::ios::out |
+             std::ios::binary);
+    fd_ = open(filepath_.data(), O_RDONLY);
+    CHECK(fs_.good());
+  }
+
+  void Reopen() {
+    if (fs_.is_open()) {
+      fs_.close();
+    }
+    close(fd_);
+    fs_.open(filepath_,
+             std::ios::app |
+             std::ios::in  |
+             std::ios::out |
+             std::ios::binary);
     fd_ = open(filepath_.data(), O_RDONLY);
     CHECK(fs_.good());
   }
@@ -136,7 +171,7 @@ class EmbFile {
 
  public:
   size_t app_count_;
-  size_t app_invalid_count;
+  size_t app_invalid_count_;
   size_t version_;
   int64 file_size_;
   int fd_;
@@ -159,15 +194,13 @@ class SSDIterator : public Iterator {
         write_buffer_(write_buffer) {
     for (auto it : *hash_map) {
       EmbPosition* posi = it.second;
-      if (!posi->invalid_) {
-        auto iter = file_map_.find(posi->version_);
-        if (iter == file_map_.end()) {
-          std::vector<std::pair<K, EmbPosition*>> tmp;
-          file_map_[posi->version_] = tmp;
-          file_id_vec_.emplace_back(posi->version_);
-        }
-        file_map_[posi->version_].emplace_back(it);
+      auto iter = file_map_.find(posi->version_);
+      if (iter == file_map_.end()) {
+        std::vector<std::pair<K, EmbPosition*>> tmp;
+        file_map_[posi->version_] = tmp;
+        file_id_vec_.emplace_back(posi->version_);
       }
+      file_map_[posi->version_].emplace_back(it);
     }
   }
 
@@ -245,6 +278,21 @@ class SSDIterator : public Iterator {
     }
     *((int64*)val) = 
         reinterpret_cast<FixedLengthHeader*>(val)->GetGlobalStep();
+  }
+
+  virtual K Key() {
+    int64 f_id = file_id_vec_[curr_file_];
+    return (file_map_[f_id])[curr_vec_].first;
+  }
+
+  virtual int64 FileId() {
+    return file_id_vec_[curr_file_];
+  }
+
+  virtual int64 Offset() {
+    int64 f_id = file_id_vec_[curr_file_];
+    EmbPosition* posi = (file_map_[f_id])[curr_vec_].second;
+    return posi->offset_;
   }
 
  private:
@@ -328,6 +376,46 @@ class SSDHashKV : public KVInterface<K, V> {
         write_buffer_);
   }
 
+  void SetSsdRecordDescriptor(SsdRecordDescriptor<K>* ssd_rec_desc) {
+    mutex_lock l(compact_save_mu_);
+    auto ssd_iter =
+        reinterpret_cast<SSDIterator<K>*>(GetIterator());
+    for (ssd_iter->SeekToFirst(); ssd_iter->Valid(); ssd_iter->Next()) {
+      ssd_rec_desc->key_list.emplace_back(ssd_iter->Key());
+      ssd_rec_desc->key_file_id_list.emplace_back(ssd_iter->FileId());
+      ssd_rec_desc->key_offset_list.emplace_back(ssd_iter->Offset());
+    }
+    ssd_rec_desc->file_prefix = path_;
+
+    for (auto file: emb_files_) {
+      if (file->is_deleted_)
+        continue;
+      ssd_rec_desc->file_list.emplace_back(file->version_);
+      ssd_rec_desc->invalid_record_count_list.emplace_back(
+          file->app_invalid_count_);
+      ssd_rec_desc->record_count_list.emplace_back(
+          file->app_count_);
+    }
+
+    if (buffer_cur_ > 0) {
+      if (!is_async_compaction_) {
+        emb_files_[current_version_]->Write(write_buffer_,
+            buffer_cur_ * val_len_);
+        emb_files_[current_version_]->Flush();
+        ++current_version_;
+        CreateFile(current_version_);
+      } else {
+        emb_files_[evict_version_]->Write(write_buffer_,
+            buffer_cur_ * val_len_);
+        emb_files_[evict_version_]->Flush();
+        evict_version_ = ++current_version_;
+        CreateFile(evict_version_);
+      }
+      current_offset_ = 0;
+      buffer_cur_ = 0;
+    }
+  }
+
   ~SSDHashKV() override {
     if (buffer_cur_ > 0) {
       if (!is_async_compaction_) {
@@ -342,7 +430,6 @@ class SSDHashKV : public KVInterface<K, V> {
         // CompactionAsync();
         delete compaction_thread_;
       }
-      TF_CHECK_OK(UpdateFlushStatus());
       buffer_cur_ = 0;
     }
     for (auto it : emb_files_) {
@@ -441,6 +528,65 @@ class SSDHashKV : public KVInterface<K, V> {
     return Status::OK();
   }
 
+  Status GetSnapshot(
+      std::vector<K>* key_list,
+      std::vector<EmbFile*>* file_list) {
+    int64 bucket_count;
+    auto it = hash_map_.GetSnapshot();
+    auto hash_map_dump = it.first;
+    bucket_count = it.second;
+    for (int64 j = 0; j < bucket_count; j++) {
+      if (hash_map_dump[j].first != LocklessHashMap<K, V>::EMPTY_KEY_
+          && hash_map_dump[j].first != LocklessHashMap<K, V>::DELETED_KEY_) {
+        key_list->emplace_back(hash_map_dump[j].first);
+        file_list->emplace_back(hash_map_dump[j].second);
+      }
+    }
+    //Free the memory of snapshot allocated by hash map.
+    free(hash_map_dump);
+    return Status::OK();
+  }
+
+  void Import(K* key_list, int64* key_file_id_list,
+              int64* key_offset_list, int64 num_of_keys,
+              std::map<int64, int64>& file_id_map) {
+    for (int i = 0; i < num_of_keys; i++) {
+      int64 old_file_id = key_file_id_list[i];
+      int64 new_file_id = file_id_map[old_file_id];
+      EmbPosition* ep =
+          new EmbPosition(key_offset_list[i],
+                          new_file_id,
+                          0, true);
+      hash_map_.insert_lockless(std::move(
+          std::pair<K, EmbPosition*>(
+              key_list[i], const_cast<EmbPosition*>(ep))));
+    }
+  }
+
+  void CopyEmbFilesFromCkpt(
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& old_file_prefix) {
+    //delete the file created by constructor
+    emb_files_[0]->DeleteFile();
+    delete emb_files_[0];
+    emb_files_.erase(emb_files_.begin());
+    for (int64 i = 0; i < num_of_files; i++) {
+      std::stringstream ss;
+      ss << old_file_prefix << "/" << file_list[i] << ".emb";
+      std::string old_file_path = ss.str();
+      EmbFile* f = new EmbFile(path_, current_version_, BUFFER_SIZE);
+      ++current_version_;
+      Env::Default()->CopyFile(old_file_path, f->filepath_);
+      f->Reopen();
+      f->app_count_ = record_count_list[i];
+      f->app_invalid_count_ = invalid_record_count_list[i];
+      emb_files_.emplace_back(f);
+      total_app_count_ += record_count_list[i];
+    }
+    CreateFile(current_version_);
+  }
+
   int64 Size() const override { return hash_map_.size_lockless(); }
 
   void FreeValuePtr(ValuePtr<V>* value_ptr) override {
@@ -450,7 +596,6 @@ class SSDHashKV : public KVInterface<K, V> {
  private:
   void WriteFile(size_t version, size_t curr_buffer_offset) {
     emb_files_[version]->Write(write_buffer_, curr_buffer_offset);
-    emb_files_[version]->app_count_ += buffer_cur_;
     emb_files_[version]->Flush();
   }
 
@@ -486,11 +631,11 @@ class SSDHashKV : public KVInterface<K, V> {
             &((*(iter.first)).second), pos_buffer[i], ep);
         if (!flag) {
            __sync_fetch_and_add(
-               &emb_files_[compaction_version_]->app_invalid_count, 1);
+               &emb_files_[compaction_version_]->app_invalid_count_, 1);
           if (emb_files_[compaction_version_]->app_count_ >=
-                emb_files_[compaction_version_]->app_invalid_count &&
-            emb_files_[compaction_version_]->app_count_ / 3 <
-                emb_files_[compaction_version_]->app_invalid_count) {
+              emb_files_[compaction_version_]->app_invalid_count_ &&
+              emb_files_[compaction_version_]->app_count_ / 3 <
+              emb_files_[compaction_version_]->app_invalid_count_) {
             evict_file_set_.insert_lockless(compaction_version_);
           }
           delete ep;
@@ -572,18 +717,19 @@ class SSDHashKV : public KVInterface<K, V> {
 
     auto iter = hash_map_.insert_lockless(std::move(
         std::pair<K, EmbPosition*>(key, const_cast<EmbPosition*>(ep))));
+    emb_files_[ep->version_]->app_count_++;
 
     if ((*(iter.first)).second != ep) {
       EmbPosition* old_posi = (*(iter.first)).second;
       int64 version = old_posi->version_;
       if (!is_compaction) {
-        emb_files_[version]->app_invalid_count++;
+        emb_files_[version]->app_invalid_count_++;
         //A parameter that can be adjusted in the future
         if (version != current_version_ &&
             (emb_files_[version]->app_count_ >=
-              emb_files_[version]->app_invalid_count) &&
+             emb_files_[version]->app_invalid_count_) &&
             (emb_files_[version]->app_count_ / 3 <
-              emb_files_[version]->app_invalid_count))
+             emb_files_[version]->app_invalid_count_))
           evict_file_set_.insert_lockless(version);
       }
       UpdatePosition(&((*(iter.first)).second), old_posi, ep);
@@ -599,6 +745,7 @@ class SSDHashKV : public KVInterface<K, V> {
     AppendToWriteBuffer(curr_buffer_offset, key, value_ptr);
     auto iter = hash_map_.insert_lockless(std::move(
         std::pair<K, EmbPosition*>(key, const_cast<EmbPosition*>(ep))));
+    emb_files_[ep->version_]->app_count_++;
 
     if ((*(iter.first)).second != ep) {
       bool flag = false;
@@ -610,13 +757,13 @@ class SSDHashKV : public KVInterface<K, V> {
 
       if (!is_compaction) {
         int version = old_posi->version_;
-        __sync_fetch_and_add(&emb_files_[version]->app_invalid_count, 1);
+        __sync_fetch_and_add(&emb_files_[version]->app_invalid_count_, 1);
         //A parameter that can be adjusted in the future
         if (version != evict_version_ &&
             emb_files_[version]->app_count_ >=
-            emb_files_[version]->app_invalid_count &&
+            emb_files_[version]->app_invalid_count_ &&
             emb_files_[version]->app_count_ / 3 <
-            emb_files_[version]->app_invalid_count) {
+            emb_files_[version]->app_invalid_count_) {
           evict_file_set_.insert_lockless(version);
         }
       }
@@ -668,7 +815,7 @@ class SSDHashKV : public KVInterface<K, V> {
     ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
     for (auto it : evict_file_map_) {
       EmbFile* file = emb_files_[it.first];
-      total_app_count_ -= file->app_invalid_count;
+      total_app_count_ -= file->app_invalid_count_;
       file->Map();
       for (auto it_vec : it.second) {
         EmbPosition* posi = it_vec.second;
@@ -691,7 +838,7 @@ class SSDHashKV : public KVInterface<K, V> {
     EmbPosition** pos_buffer = new EmbPosition*[max_key_count];
     for (auto it : evict_file_map_) {
       EmbFile* file = emb_files_[it.first];
-      __sync_fetch_and_sub(&total_app_count_, file->app_invalid_count);
+      __sync_fetch_and_sub(&total_app_count_, file->app_invalid_count_);
       file->Map();
       for (auto it_vec : it.second) {
         EmbPosition* posi = it_vec.second;
@@ -758,6 +905,7 @@ class SSDHashKV : public KVInterface<K, V> {
     while (!shutdown_) {
       if (shutdown_mu_.try_lock()) {
         if (!shutdown_) {
+          mutex_lock l(compact_save_mu_);
           CompactionAsync();
         }
         shutdown_mu_.unlock();
@@ -802,6 +950,9 @@ class SSDHashKV : public KVInterface<K, V> {
   typedef google::dense_hash_map_lockless<K, EmbPosition*> LockLessHashMap;
   LockLessHashMap hash_map_;
   mutex mu_;
+  mutex shutdown_mu_;
+  mutex compact_save_mu_;
+
 
   static constexpr int EMPTY_KEY = -1;
   static constexpr int CAP_INVALID_POS = 200000;
@@ -816,7 +967,6 @@ class SSDHashKV : public KVInterface<K, V> {
   std::map<int64, std::vector<std::pair<K, EmbPosition*>>> evict_file_map_;
 
   Thread* compaction_thread_;
-  mutex shutdown_mu_;
   volatile bool shutdown_ = false;
   volatile bool done_ = false;
   // std::atomic_flag flag_ = ATOMIC_FLAG_INIT; unused

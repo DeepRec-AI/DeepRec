@@ -171,21 +171,160 @@ Status GetInputEmbeddingVar(OpKernelContext* ctx, int input,
   }
 }
 
+template <class K>
+void DumpSsdIndexMeta(
+    SsdRecordDescriptor<K>& ssd_rec_desc,
+    const std::string& prefix,
+    const std::string& var_name) {
+  std::fstream fs;
+  std::string var_name_temp(var_name);
+  std::string new_str = "_";
+  int64 pos = var_name_temp.find("/");
+  while (pos != std::string::npos) {
+    var_name_temp.replace(pos, 1, new_str.data(), 1);
+    pos =var_name_temp.find("/");
+  }
+
+  std::string ssd_record_path =
+      prefix + "-" + var_name_temp + "-ssd_record";
+
+  BundleWriter ssd_record_writer(Env::Default(),
+                                 ssd_record_path);
+  typedef EVFreqDumpIterator<int64> Int64DataDumpIterator;
+  typedef EVFreqDumpIterator<uint8> StringDumpIterator;
+  size_t bytes_limit = 8 << 20;
+  char* dump_buffer = new char[bytes_limit];
+
+  int64 num_of_keys = ssd_rec_desc.key_list.size();
+  EVKeyDumpIterator<K> keys_iter(ssd_rec_desc.key_list);
+  SaveTensorWithFixedBuffer(
+      "keys",
+      &ssd_record_writer, dump_buffer,
+      bytes_limit, &keys_iter,
+      TensorShape({num_of_keys}));
+
+  Int64DataDumpIterator key_file_id_iter(ssd_rec_desc.key_file_id_list);
+  SaveTensorWithFixedBuffer(
+      "keys_file_id",
+      &ssd_record_writer, dump_buffer,
+      bytes_limit, &key_file_id_iter,
+      TensorShape({num_of_keys}));
+
+  Int64DataDumpIterator key_offset_iter(ssd_rec_desc.key_offset_list);
+  SaveTensorWithFixedBuffer(
+      "keys_offset",
+      &ssd_record_writer, dump_buffer,
+      bytes_limit, &key_offset_iter,
+      TensorShape({num_of_keys}));
+
+  int64 num_of_files = ssd_rec_desc.file_list.size();
+  Int64DataDumpIterator files_iter(ssd_rec_desc.file_list);
+  SaveTensorWithFixedBuffer(
+      "files",
+      &ssd_record_writer, dump_buffer,
+      bytes_limit, &files_iter,
+      TensorShape({num_of_files}));
+
+  Int64DataDumpIterator
+      invalid_record_count_iter(ssd_rec_desc.invalid_record_count_list);
+  SaveTensorWithFixedBuffer(
+      "invalid_record_count",
+      &ssd_record_writer, dump_buffer,
+      bytes_limit, &invalid_record_count_iter,
+      TensorShape({num_of_files}));
+
+  Int64DataDumpIterator
+      record_count_iter(ssd_rec_desc.record_count_list);
+  SaveTensorWithFixedBuffer(
+      "record_count",
+      &ssd_record_writer, dump_buffer,
+      bytes_limit, &record_count_iter,
+      TensorShape({num_of_files}));
+
+  ssd_record_writer.Finish();
+  delete[] dump_buffer;
+}
+
+template<class K>
+void CopyEmbeddingfilesToCkptDir(
+    const SsdRecordDescriptor<K>& ssd_rec_desc,
+    const std::string& prefix,
+    const std::string& var_name) {
+  std::string var_name_temp(var_name);
+  std::string new_str = "_";
+  int64 pos = var_name_temp.find("/");
+  while (pos != std::string::npos) {
+    var_name_temp.replace(pos, 1, new_str.data(), 1);
+    pos =var_name_temp.find("/");
+  }
+
+  std::string embedding_folder_path =
+      prefix + "-" + var_name_temp + "-emb_files/";
+  Status s = Env::Default()->CreateDir(embedding_folder_path);
+  if (errors::IsAlreadyExists(s)) {
+    int64 undeleted_files, undeleted_dirs;
+    Env::Default()->
+        DeleteRecursively(embedding_folder_path,
+                          &undeleted_files,
+                          &undeleted_dirs);
+    Env::Default()->CreateDir(embedding_folder_path);
+  }
+
+  for (int64 i = 0; i < ssd_rec_desc.file_list.size(); i++) {
+    int64 file_id = ssd_rec_desc.file_list[i];
+    std::stringstream old_ss;
+    old_ss << std::setw(4) << std::setfill('0') << file_id << ".emb";
+    std::string file_path = ssd_rec_desc.file_prefix + old_ss.str();
+    std::string file_name = file_path.substr(file_path.rfind("/"));
+    std::stringstream new_ss;
+    new_ss << file_id << ".emb";
+    std::string new_file_path = embedding_folder_path + new_ss.str();
+    Status s = Env::Default()->CopyFile(file_path, new_file_path);
+    if (!s.ok()) {
+      LOG(FATAL)<<"Copy file "<<file_path<<" failed!";
+    }
+  }
+}
+
 template <class K, class V>
 Status DumpEmbeddingValues(EmbeddingVar<K, V>* ev,
     const string& tensor_key, BundleWriter* writer,
-    Tensor* part_offset_tensor) {
+    Tensor* part_offset_tensor,
+    const std::string& prefix = "") {
   std::vector<K> tot_key_list;
-  std::vector<V* > tot_valueptr_list;
+  std::vector<V*> tot_valueptr_list;
   std::vector<int64> tot_version_list;
   std::vector<int64> tot_freq_list;
   std::vector<K> tot_key_filter_list;
   std::vector<int64> tot_freq_filter_list;
   std::vector<int64> tot_version_filter_list;
   embedding::Iterator* it = nullptr;
-  int64 total_size = ev->GetSnapshot(&tot_key_list,
-      &tot_valueptr_list, &tot_version_list, &tot_freq_list, &it);
-  VLOG(1) << "EV:" << tensor_key << ", save size:" << total_size;
+  int64 num_of_keys = 0;
+  //For the time being, only ev which uses SSD for storage,
+  //ev->IsUsePersistentStorage() will get true.
+  if (ev->IsUsePersistentStorage()) {
+    SsdRecordDescriptor<K> ssd_rec_desc;
+    num_of_keys =
+        ev->GetSnapshotWithoutFetchPersistentEmb(
+            &tot_key_list,
+            &tot_valueptr_list,
+            &tot_version_list,
+            &tot_freq_list,
+            &ssd_rec_desc);
+    bool is_primary = (ev->GetEmbeddingIndex() == 0);
+    if (is_primary) {
+      DumpSsdIndexMeta(ssd_rec_desc, prefix, tensor_key);
+      CopyEmbeddingfilesToCkptDir(ssd_rec_desc, prefix, tensor_key);
+    }
+  } else {
+    num_of_keys = ev->GetSnapshot(
+        &tot_key_list,
+        &tot_valueptr_list,
+        &tot_version_list,
+        &tot_freq_list, &it);
+  }
+
+  VLOG(1) << "EV:" << tensor_key << ", save size:" << num_of_keys;
   int64 iterator_size = 0;
   if (it != nullptr) {
     ev->storage_manager()->iterator_mutex_lock();
@@ -1124,6 +1263,105 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
   }
   return Status::OK();
 }
+
+
+template<class K>
+int64 ReadRecord(
+    BundleReader* reader,
+    const string& record_key,
+    K** buffer) {
+  TensorShape shape;
+  Status st;
+  reader->LookupTensorShape(record_key, &shape);
+  st = reader->LookupHeader(record_key,
+      sizeof(K) * shape.dim_size(0));
+  if (!st.ok()) {
+    LOG(FATAL)<<"Restore record "<<record_key<<" failed";
+  }
+  size_t bytes_read = 0;
+  *buffer = new K[shape.dim_size(0)];
+  reader->LookupSegment(
+      record_key, sizeof(K) * shape.dim_size(0),
+      (char*)*buffer, bytes_read);
+  delete[] buffer;
+  return shape.dim_size(0);
+}
+
+template<class K, class V>
+void RestoreSsdRecord(
+    EmbeddingVar<K, V>* ev,
+    const std::string& ssd_record_file_name,
+    const std::string& ssd_emb_file_name) {
+  BundleReader ssd_record_reader(Env::Default(),
+                                 ssd_record_file_name);
+  //Read the data of embedding files
+  int64* file_list = nullptr;
+  int64 num_of_files =
+      ReadRecord(&ssd_record_reader, "files", &file_list);
+
+  int64* invalid_record_count_list = nullptr;
+  ReadRecord(&ssd_record_reader,
+             "invalid_record_count",
+             &invalid_record_count_list);
+
+  int64* record_count_list = nullptr;
+  ReadRecord(&ssd_record_reader,
+             "record_count",
+             &record_count_list);
+
+  //Read the data of keys
+  K* key_list = nullptr;
+  int64 num_of_keys =
+      ReadRecord(&ssd_record_reader, "keys", &key_list);
+
+  int64* key_file_id_list = nullptr;
+  ReadRecord(&ssd_record_reader, "keys_file_id", &key_file_id_list);
+
+  int64* key_offset_list = nullptr;
+  ReadRecord(&ssd_record_reader, "keys_offset", &key_offset_list);
+
+  //Import the meta of keys to SSDHashKV
+  ev->RestoreSsdHashmap(key_list, key_file_id_list,
+                        key_offset_list, num_of_keys,
+                        file_list, invalid_record_count_list,
+                        record_count_list, num_of_files,
+                        ssd_emb_file_name);
+  delete[] key_list;
+  delete[] key_file_id_list;
+  delete[] key_offset_list;
+  delete[] file_list;
+  delete[] invalid_record_count_list;
+  delete[] record_count_list;
+}
+
+template<class K, class V>
+void LoadSsdData(
+    EmbeddingVar<K, V>* ev,
+    const std::string& ssd_record_file_name,
+    const std::string& ssd_emb_file_name) {
+  BundleReader ssd_record_reader(Env::Default(),
+                                 ssd_record_file_name);
+  std::string record_key;
+
+  K* key_list = nullptr;
+  int64 num_of_keys =
+      ReadRecord(&ssd_record_reader, "keys", &key_list);
+
+  int64* key_file_id_list = nullptr;
+  ReadRecord(&ssd_record_reader, "keys_file_id", &key_file_id_list);
+
+  int64* key_offset_list = nullptr;
+  ReadRecord(&ssd_record_reader, "keys_offset", &key_offset_list);
+
+  //Load keys and embedding data on ssd
+  ev->LoadSsdData(ssd_emb_file_name, key_list,
+                  key_file_id_list, key_offset_list,
+                  num_of_keys);
+  delete[] key_list;
+  delete[] key_file_id_list;
+  delete[] key_offset_list;
+}
+
 #if GOOGLE_CUDA
 #if TENSORFLOW_USE_GPU_EV
 template<typename K, typename V>

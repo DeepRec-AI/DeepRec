@@ -92,7 +92,7 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
         continue;
       }
       ValuePtr<V>* value_ptr = nullptr;
-      TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
+      ev_->CreateKey(key_buff[i], &value_ptr);
       if (!is_filter) {
         if (freq_buff[i] >= config_.filter_freq) {
           value_ptr->SetFreq(freq_buff[i]);

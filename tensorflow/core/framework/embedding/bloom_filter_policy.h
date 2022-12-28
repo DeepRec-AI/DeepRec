@@ -228,7 +228,7 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
         SetBloomFreq(key_buff[i], freq_buff[i]);
       }
       if (new_freq >= config_.filter_freq){
-        TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
+        ev_->CreateKey(key_buff[i], &value_ptr);
         if (config_.steps_to_live != 0 || config_.record_version) {
           value_ptr->SetStep(version_buff[i]);
         }

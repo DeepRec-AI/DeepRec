@@ -58,7 +58,7 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
   }
 
   void Insert(const std::vector<K>& keys,
-              ValuePtr<V>** value_ptrs) override{
+              ValuePtr<V>** value_ptrs) override {
     for (size_t i = 0; i < keys.size(); i++) {
       do {
         Status s = dram_kv_->Insert(keys[i], value_ptrs[i]);
@@ -70,6 +70,20 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
         }
       } while (!(dram_kv_->Lookup(keys[i], &value_ptrs[i])).ok());
     }
+  }
+
+  void Insert(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    do {
+      *value_ptr = layout_creator_->Create(alloc_, alloc_len);
+      Status s = dram_kv_->Insert(key, *value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        (*value_ptr)->Destroy(alloc_);
+        delete *value_ptr;
+      }
+    } while (!(dram_kv_->Lookup(key, value_ptr)).ok());
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -114,6 +128,10 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return false;
   }
 
+  bool IsUsePersistentStorage() override {
+    return true;
+  }
+
   void iterator_mutex_lock() override {
     ssd_mu_.lock();
   }
@@ -135,6 +153,51 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return Status::OK();
   }
 
+  int64 GetSnapshotWithoutFetchPersistentEmb(
+      std::vector<K>* key_list,
+      std::vector<V*>* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      SsdRecordDescriptor<K>* ssd_rec_desc) override {
+    {
+      mutex_lock l(dram_mu_);
+      std::vector<ValuePtr<V>*> value_ptr_list;
+      std::vector<K> temp_key_list;
+      TF_CHECK_OK(dram_kv_->GetSnapshot(&temp_key_list, &value_ptr_list));
+      MultiTierStorage<K, V>::SetListsForCheckpoint(
+          temp_key_list, value_ptr_list, emb_config,
+          key_list, value_list, version_list,
+          freq_list);
+    }
+    {
+      mutex_lock l(ssd_mu_);
+      ssd_kv_->SetSsdRecordDescriptor(ssd_rec_desc);
+    }
+    return key_list->size() + ssd_rec_desc->key_list.size();
+  }
+
+  void RestoreSsdHashmap(
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) override {
+    std::map<int64, int64> file_id_map;
+    for (int64 i = 0; i < num_of_files; i++) {
+      file_id_map[file_list[i]] = i;
+    }
+
+    ssd_kv_->CopyEmbFilesFromCkpt(
+        file_list, invalid_record_count_list,
+        record_count_list, num_of_files,
+        ssd_emb_file_name);
+
+    ssd_kv_->Import(key_list, key_file_id_list,
+                    key_offset_list, num_of_keys,
+                    file_id_map);
+  }
+
  protected:
   void SetTotalDims(int64 total_dims) override {
     ssd_kv_->SetTotalDims(total_dims);
@@ -142,7 +205,7 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
 
  private:
   KVInterface<K, V>* dram_kv_;
-  KVInterface<K, V>* ssd_kv_;
+  SSDHashKV<K, V>* ssd_kv_;
   Allocator* alloc_;
   LayoutCreator<V>* layout_creator_;
   mutex dram_mu_; // must be locked before ssd_mu_ is locked

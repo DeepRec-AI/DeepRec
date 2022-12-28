@@ -120,7 +120,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
         continue;
       }
       ValuePtr<V>* value_ptr = nullptr;
-      TF_CHECK_OK(ev_->LookupOrCreateKey(key_buff[i], &value_ptr));
+      ev_->CreateKey(key_buff[i], &value_ptr);
       if (config_.filter_freq !=0 || ev_->IsMultiLevel()
           || config_.record_freq) {
         value_ptr->SetFreq(freq_buff[i]);
@@ -136,7 +136,7 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
             ev_->GetDefaultValue(key_buff[i]));
       }
     }
-    if (ev_->IsMultiLevel()) {
+    if (ev_->IsMultiLevel() && config_.is_primary()) {
       ev_->UpdateCache(key_buff, key_num, version_buff, freq_buff);
     }
     return Status::OK();

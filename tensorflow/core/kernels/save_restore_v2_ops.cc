@@ -136,8 +136,10 @@ class SaveV2 : public OpKernel {
       OP_REQUIRES_OK(context, variable->Shrink());
     else
       OP_REQUIRES_OK(context, variable->Shrink(global_step_scalar));
+    const Tensor& prefix = context->input(0);
+    const string& prefix_string = prefix.scalar<tstring>()();
     OP_REQUIRES_OK(context, DumpEmbeddingValues(variable, tensor_name,
-          &writer, &part_offset_tensor));
+        &writer, &part_offset_tensor, prefix_string));
   }
 
   void Compute(OpKernelContext* context) override {

@@ -276,9 +276,7 @@ class ValuePtr {
     return 0;
   }
 
-  virtual void SetStep(int64 gs) {
-    LOG(FATAL) << "Unsupport GlobalStep in subclass of ValuePtrBase";
-  }
+  virtual void SetStep(int64 gs) {}
 
   // Frequency Counter
   virtual int64 GetFreq() {
@@ -286,9 +284,7 @@ class ValuePtr {
     return 0;
   }
 
-  virtual void SetFreq(int64 freq) {
-    LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";
-  }
+  virtual void SetFreq(int64 freq) {}
 
   virtual void AddFreq() {
     LOG(FATAL) << "Unsupport FreqCounter in subclass of ValuePtrBase";

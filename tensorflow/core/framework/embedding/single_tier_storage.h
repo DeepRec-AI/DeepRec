@@ -35,6 +35,9 @@ class ValuePtr;
 template <class K, class V>
 class EmbeddingVar;
 
+template <class K>
+struct SsdRecordDescriptor;
+
 namespace embedding {
 template<typename K, typename V>
 class SingleTierStorage : public Storage<K, V> {
@@ -76,6 +79,20 @@ class SingleTierStorage : public Storage<K, V> {
         }
       } while (!(kv_->Lookup(keys[i], &value_ptrs[i])).ok());
     }
+  }
+
+  void Insert(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    do {
+      *value_ptr = layout_creator_->Create(alloc_, alloc_len);
+      Status s = kv_->Insert(key, *value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        (*value_ptr)->Destroy(alloc_);
+        delete *value_ptr;
+      }
+    } while (!(kv_->Lookup(key, value_ptr)).ok());
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -217,6 +234,28 @@ class SingleTierStorage : public Storage<K, V> {
     return key_list->size();
   }
 
+  int64 GetSnapshotWithoutFetchPersistentEmb(
+      std::vector<K>* key_list,
+      std::vector<V* >* value_list,
+      std::vector<int64>* version_list,
+      std::vector<int64>* freq_list,
+      const EmbeddingConfig& emb_config,
+      SsdRecordDescriptor<K>* ssd_rec_desc) override {
+    LOG(FATAL)<<"The Storage dosen't use presisten memory"
+              <<" or this storage hasn't suppported "
+              <<" GetSnapshotWithoutFetchPersistentEmb yet";
+    return -1;
+  }
+
+  void RestoreSsdHashmap(
+      K* key_list, int64* key_file_id_list,
+      int64* key_offset_list, int64 num_of_keys,
+      int64* file_list, int64* invalid_record_count_list,
+      int64* record_count_list, int64 num_of_files,
+      const std::string& ssd_emb_file_name) override {
+    LOG(FATAL)<<"The Storage dosen't have ssd storage.";
+  }
+
   Status Shrink(const EmbeddingConfig& emb_config,
       int64 value_len) override {
     mutex_lock l(Storage<K, V>::mu_);
@@ -253,6 +292,10 @@ class SingleTierStorage : public Storage<K, V> {
   }
 
   bool IsUseHbm() override {
+    return false;
+  }
+
+  bool IsUsePersistentStorage() override {
     return false;
   }
 
