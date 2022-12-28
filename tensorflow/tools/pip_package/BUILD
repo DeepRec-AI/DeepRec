@@ -300,3 +300,16 @@ genrule(
     }),
     visibility = ["//visibility:public"],
 )
+
+sh_binary(
+    name = "build_sok",
+    srcs = [
+        "build_sok.sh"
+    ],
+    data = [
+        "@cuCollections//:cuco_hash_table",
+        "@sparsehash_c11//:dense_hash_map",
+        "@com_github_google_leveldb//:leveldb",
+        "@hugectr//:hugectr",
+    ]
+)

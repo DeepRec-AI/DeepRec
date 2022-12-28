@@ -8,12 +8,10 @@ This doc introduces how to use [SparseOperationKit(SOK)](https://nvidia-merlin.g
 ```
 def lookup_sparse(params,
                   indices,
-                  hotness,
                   combiners)
 ```
 * `params`: list of variables. Each variable should be created by `tf.get_embedding_variable`
 * `indices`: list of tf.SparseTensor. The indices/keys to lookup.
-* `hotness`: list of integer. The max hotness of each indices.
 * `combiners`: list of string. The combiner type. Can be `mean` or `sum`
 
 ## User Example
@@ -46,7 +44,7 @@ indices = tf.SparseTensor(
   dense_shape=[2, 3]
 )
 # 3. Use sok lookup_sparse
-emb = sok.lookup_sparse([var], [indices], hotness=[3], combiners=['sum'])
+emb = sok.lookup_sparse([var], [indices], combiners=['sum'])
 fun = tf.multiply(emb, 2.0, name='multiply')
 loss = tf.reduce_sum(fun, name='reduce_sum')
 opt = tf.train.AdagradOptimizer(0.1)
@@ -74,17 +72,12 @@ There are 2 additional steps to use SOK embedding lookup with `Embedding Variabl
 ## Build and Run Utest
 1. Clone Deeprec
 ```
-git clone --recursive https://github.com/alibaba/DeepRec.git /DeepRec
+git clone https://github.com/alibaba/DeepRec.git /DeepRec
 ```
-2. Build DeepRec from source code. You can follow the instruction in [DeepRec Build](https://deeprec.readthedocs.io/zh/latest/DeepRec-Compile-And-Install.html).
-3. Enter HugeCTR and do initialization
+2. Build DeepRec from source code. You can follow the instruction in [DeepRec Build](https://deeprec.readthedocs.io/zh/latest/DeepRec-Compile-And-Install.html). You should configure GPUEV support.
+3. Build SOK
 ```bash
-cd /DeepRec/addons/sparse_operation_kit/hugectr/ && git submodule update --init --recursive && cd sparse_operation_kit && mkdir build && cd build
-```
-3. Build and install SOK. You need to specify ${DeepRecBuild}, which is the directory that you store the DeepRec building intermidia results.
-```
-DeepRecBuild=${DeepRecBuild} cmake -DENABLE_DEEPREC=ON -DSM=75 .. && make -j && make install;
-export PYTHONPATH=/DeepRec/addons/sparse_operation_kit/hugectr/sparse_operation_kit
+bazel --output_base /tmp build -j 16  -c opt --config=opt  //tensorflow/tools/pip_package:build_sok && ./bazel-bin/tensorflow/tools/pip_package/build_sok
 ```
 4. Run utest.
 ```

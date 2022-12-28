@@ -176,7 +176,7 @@ def transform_categorical(feature):
     if args.sok:
         hotness = [1 for _ in range(len(CATEGORICAL_COLUMNS))]
         combiners = ['sum' for _ in range(len(CATEGORICAL_COLUMNS))]
-        deep_features = sok.lookup_sparse(variables, indices, hotness, combiners)
+        deep_features = sok.lookup_sparse(variables, indices, combiners)
     else:
         deep_features = []
         for ind, var in zip(indices, variables):
