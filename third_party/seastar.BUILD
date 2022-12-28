@@ -58,7 +58,6 @@ cc_library(
         "@boost//:system",
         "@boost//:thread",
         "@boost//:variant",
-        "@systemtap-sdt",
         "@xfs",
         "@lz4",
         "@libaio",
