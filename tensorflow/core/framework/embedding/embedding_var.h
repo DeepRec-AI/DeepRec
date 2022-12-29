@@ -485,6 +485,8 @@ class EmbeddingVar : public ResourceBase {
   Status Shrink(int64 gs) {
     if (emb_config_.steps_to_live > 0) {
       return storage_manager_->Shrink(gs, emb_config_.steps_to_live);
+    } else {
+      return Status::OK();
     }
   }
 
