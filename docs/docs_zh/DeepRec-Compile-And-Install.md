@@ -120,8 +120,14 @@ alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04
 ./configure serving --mkl
 ./configure serving --mkl_open_source_v1_only
 ./configure serving --mkl_threadpool
-./configure serving --mkl --cuda ...
 ```
+
+编译GPU版本
+```
+./configure serving --mkl --cuda
+./configure serving --mkl --cuda_alios
+```
+
 更多细节请查看: serving/configure.py
 
 编译processor库，会生成libserving_processor.so，用户可以加载该so，并且调用示例中的serving API进行predict

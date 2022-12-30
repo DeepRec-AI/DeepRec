@@ -28,7 +28,10 @@ tf_cc_shared_object(
             "processor.h",],
     deps = [
             "model_serving",
-           ],
+           ] + select({
+               "//conditions:default": [],
+               "//tensorflow:using_cuda_serving":
+                   ["@local_config_cuda//cuda:cudart"]}),
 )
 
 cc_library(

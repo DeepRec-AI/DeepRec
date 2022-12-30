@@ -350,6 +350,13 @@ config_setting(
 )
 
 config_setting(
+    name = "using_cuda_serving",
+    define_values = {
+        "using_cuda_serving": "true",
+    },
+)
+
+config_setting(
     name = "using_cuda_clang",
     define_values = {
         "using_cuda_clang": "true",
