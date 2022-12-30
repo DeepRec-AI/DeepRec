@@ -23,7 +23,7 @@ on:
       - '*.md'
 
 env:
-  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py36-cu116-ubuntu18.04
+  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py38-cu116-ubuntu20.04
   JOBNAME: deeprec-ci-gpu-${{ github.run_id }}
 
 jobs:
