@@ -25,15 +25,19 @@
 
 **CPU Dev Docker (with bazel cache)**
 
-```
-alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
-```
+| GCC Version | Python Version |                           IMAGE                           |
+| ----------- | -------------- | --------------------------------------------------------- |
+|   7.5.0     |    3.6.9       | alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04 |
+|   9.4.0     |    3.8.10      | alideeprec/deeprec-build:deeprec-dev-cpu-py38-ubuntu20.04 |
+
 
 **GPU(cuda11.6) Dev Docker (with bazel cache)**
 
-```
-alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
-```
+| GCC Version | Python Version | CUDA VERSION |                           IMAGE                                 |
+| ----------- | -------------- | ------------ | --------------------------------------------------------------- |
+|    7.5.0    |    3.6.9       | CUDA 11.6.1  | alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04 |
+|    9.4.0    |    3.8.10      | CUDA 11.6.2  | alideeprec/deeprec-build:deeprec-dev-gpu-py38-cu116-ubuntu20.04 |
+
 
 ## 代码编译
 
