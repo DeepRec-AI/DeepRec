@@ -26,6 +26,7 @@
 
 **CPU Dev Docker (with bazel cache)**
 
+| GCC Version | Python Version |                           IMAGE                           |
 | ----------- | -------------- | --------------------------------------------------------- |
 |   7.5.0     |    3.6.9       | alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04 |
 |   9.4.0     |    3.8.10      | alideeprec/deeprec-build:deeprec-dev-cpu-py38-ubuntu20.04 |
