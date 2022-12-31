@@ -3,7 +3,7 @@ name: CPU Unit Tests
 on: workflow_dispatch
 
 env:
-  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-cpu-cibuild-py36-ubuntu18.04
+  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-cpu-cibuild-py38-ubuntu20.04
   JOBNAME: deeprec-ci-cpu-${{ github.run_id }}
   PODNAME: deeprec-ci-cpu-${{ github.run_id }}-chief-0
   BAZEL_CACHE: ${{ secrets.BAZEL_CACHE }}
