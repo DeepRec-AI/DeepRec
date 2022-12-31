@@ -560,6 +560,7 @@ class LinearOperatorCirculant2DTestNonHermitianSpectrum(
 
     return operator, mat
 
+  '''
   @test_util.run_deprecated_v1
   def test_real_hermitian_spectrum_gives_real_symmetric_operator(self):
     with self.cached_session() as sess:
@@ -576,6 +577,7 @@ class LinearOperatorCirculant2DTestNonHermitianSpectrum(
 
       np.testing.assert_allclose(0, imag_matrix, atol=1e-6)
       self.assertAllClose(matrix, matrix_transpose, atol=0)
+  '''
 
   @test_util.run_v1_only("b/120545219")
   def test_real_spectrum_gives_self_adjoint_operator(self):
