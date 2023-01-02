@@ -19,7 +19,8 @@ struct IndicePair {
 
 enum Part_Strategy {
   MOD,
-  DIV
+  DIV,
+  DIV_EV
 };
 
 typedef void (*PARTITIONALGO)(
@@ -78,6 +79,15 @@ inline void GetPartitionIndex<Part_Strategy::DIV>(
             (originId - extras) % idsPerPartition;
 #endif
 }
+
+template <>
+inline void GetPartitionIndex<Part_Strategy::DIV_EV>(
+                        const int64_t* id_table, const int64_t numPartitions,
+                        const int64_t idsPerPartition, const int64_t extras,
+                        const int64_t originId, int64_t* segment, int64_t* newId) {
+  *segment = originId < 0 ? *segment : 0;
+  *newId = originId;
+}
 }
 
 typedef Eigen::ThreadPoolDevice CPUDevice;
@@ -99,6 +109,8 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
       partition_strategy_ = GetPartitionIndex<Part_Strategy::DIV>;
     } else if (partition_strategy_str_ == "mod") {
       partition_strategy_ = GetPartitionIndex<Part_Strategy::MOD>;
+    } else if (partition_strategy_str_ == "div_ev") {
+      partition_strategy_ = GetPartitionIndex<Part_Strategy::DIV_EV>;
     } else {
       OP_REQUIRES(ctx, false,
         errors::InvalidArgument("Not support partition_strategy type. ", partition_strategy_));
@@ -136,9 +148,9 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
       partition_total_sizes_ += shape.flat<int64>().data()[0];
     }
 
-    // fixme(marvin): show error info when got fake input.
-    OP_REQUIRES(ctx, partition_total_sizes_ != 1,
-        errors::InvalidArgument("Not support EV yet"));
+    if (partition_total_sizes_ == 1) {
+      partition_strategy_ = GetPartitionIndex<Part_Strategy::DIV_EV>;
+    }
 
     // 1.1 define output tensors
     OpOutputList partitioned_values;
@@ -294,10 +306,8 @@ class FusedEmbeddingSparsePreLookUpCPU : public OpKernel {
   std::string partition_strategy_str_;
 };
 
-REGISTER_KERNEL_BUILDER(                  \
-    Name("FusedEmbeddingSparsePreLookUp") \
-    .Device(DEVICE_CPU)                   \
-    .HostMemory("partition_shapes")       \
-    .HostMemory("sp_dense_shape"),        \
+REGISTER_KERNEL_BUILDER(                     \
+    Name("FusedEmbeddingSparsePreLookUp")    \
+    .Device(DEVICE_CPU),                     \
     FusedEmbeddingSparsePreLookUpCPU);
 }  // namespace tensorflow
