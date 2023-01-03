@@ -70,6 +70,7 @@ cc_library(
         ],
     ),
     copts = [
+        "-fopenmp",
         "-fexceptions",
         "-UUSE_MKL",
         "-UUSE_CBLAS",

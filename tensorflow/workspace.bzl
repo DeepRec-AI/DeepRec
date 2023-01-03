@@ -170,7 +170,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "mkl_dnn_acl_compatible",
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn_acl.BUILD"),
-        # patch_file = clean_dep("//third_party/mkl_dnn:onednn-acl.patch"),
+        patch_file = clean_dep("//third_party/mkl_dnn:onednn-acl-bf16.patch"),
         sha256 = "a7f2a4d80d5406d156dfc1d7b27d10b0af5ed061cf0b6197d3d12cddc6790fcb",
         strip_prefix = "oneDNN-2.4",
         urls = [
@@ -181,13 +181,13 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "compute_library",
-        sha256 = "1c62d41be62c14c8ff196d6aaa9f9efe0597b82a923350d922e8cde217dd1d86",
-        strip_prefix = "ComputeLibrary-21.08",
-        build_file = "//third_party/compute_library:BUILD",
-        patch_file = "//third_party/compute_library:compute_library.patch",
+        sha256 = "8322ed2e135999569082a95e7fbb2fa87786ffb1c67935b3ef71e00b53f2c887",
+        strip_prefix = "ComputeLibrary-21.11",
+        build_file = clean_dep("//third_party/compute_library:BUILD"),
+        patch_file = clean_dep("//third_party/compute_library:compute_library.patch"),
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/ARM-software/ComputeLibrary/archive/v21.08.tar.gz",
-            "https://github.com/ARM-software/ComputeLibrary/archive/v21.08.tar.gz",
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/ARM-software/ComputeLibrary/archive/v21.11.tar.gz",
+            "https://github.com/ARM-software/ComputeLibrary/archive/v21.11.tar.gz",
         ],
     )
 
