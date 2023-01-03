@@ -60,6 +60,107 @@ class FusedEmbeddingSparsePreLookUpOpTest : public OpsTestBase {
   }
 };
 
+TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Ev_Int64) {
+  MakeOpAndSetDevice(Device::CPU, 1, false, false, -1);
+  // partition_shapes 0
+  AddInputFromArray<int64>(TensorShape({2}), {1, 1});
+  // sp_values
+  AddInputFromArray<int64>(TensorShape({12}),
+                           {1, 5, 3, 6, 12, 14,
+                           15, 0, 5, 5, 11, 7});
+  // sp_indices
+  AddInputFromArray<int64>(TensorShape({12, 2}),
+                           {2,  3, 4,  6, 1, 6, 12, 12, 12, 12, 11, 5,
+                            15, 0, 11, 6, 7, 9, 11, 8,  12, 13, 13, 0});
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {16, 16});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+  {
+    Tensor expected_values(allocator(), DT_INT64, TensorShape({12}));
+    test::FillValues<int64>(&expected_values, {1, 5, 3, 6, 12, 14,
+                                              15, 0, 5, 5, 11, 7});
+    test::ExpectTensorEqual<int64>(expected_values, *GetOutput(0));
+
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({12, 2}));
+    test::FillValues<int64>(&expected_indices,
+                           {2,  3, 4,  6, 1, 6, 12, 12, 12, 12, 11, 5,
+                            15, 0, 11, 6, 7, 9, 11, 8,  12, 13, 13, 0});
+    test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(1));
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Ev_Fill_Empty) {
+  MakeOpAndSetDevice(Device::CPU, 1, true, false, -1);
+  // partition_shapes 0
+  AddInputFromArray<int64>(TensorShape({2}), {1, 1});
+
+  // sp_values
+  AddInputFromArray<int64>(TensorShape({10}),
+                           {0, 4, 3, -2, 5,
+                           -3, -4, 9, -6, 2});
+
+  // sp_indices
+  AddInputFromArray<int64>(
+      TensorShape({10, 2}),
+      {0, 0, 0, 4, 1, 2, 3, 0, 3, 4,
+       4, 0, 5, 2, 6, 0, 6, 1, 6, 7});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {7, 8});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+
+  {
+    Tensor expected_values(allocator(), DT_INT64, TensorShape({11}));
+    test::FillValues<int64>(&expected_values, {0, 4, 3, -2, 5,
+                                              -3, -4, 9, -6, 2, 0});
+    test::ExpectTensorEqual<int64>(expected_values, *GetOutput(0));
+
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({11, 2}));
+    test::FillValues<int64>(&expected_indices, {0, 0, 0, 4, 1, 2, 3, 0, 3, 4,
+                                                4, 0, 5, 2, 6, 0, 6, 1, 6, 7, 2, 0});
+    test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(1));
+  }
+}
+
+TEST_F(FusedEmbeddingSparsePreLookUpOpTest,
+       Ev_Fill_Empty_Prune_Invalid) {
+  MakeOpAndSetDevice(Device::CPU, 1, true, true, -1);
+  // partition_shapes 0
+  AddInputFromArray<int64>(TensorShape({2}), {1, 1});
+
+  // sp_values
+  AddInputFromArray<int64>(TensorShape({10}),
+                           {0, 4, 3, -2, 5,
+                           -3, -4, 9, -6, 2});
+
+  // sp_indices
+  AddInputFromArray<int64>(
+      TensorShape({10, 2}),
+      {0, 0, 0, 4, 1, 2, 3, 0, 3, 4,
+       4, 0, 5, 2, 6, 0, 6, 1, 6, 7});
+
+  // sp_dense_shape
+  AddInputFromArray<int64>(TensorShape({2}), {7, 8});
+
+  TF_ASSERT_OK(RunOpKernel());
+  TF_EXPECT_OK(device_->Sync());
+  {
+    Tensor expected_values(allocator(), DT_INT64, TensorShape({9}));
+    test::FillValues<int64>(&expected_values, {0, 4, 3, 5, 9, 2, 0, 0, 0});
+    test::ExpectTensorEqual<int64>(expected_values, *GetOutput(0));
+
+    Tensor expected_indices(allocator(), DT_INT64, TensorShape({9, 2}));
+    test::FillValues<int64>(&expected_indices,
+                            {0, 0, 0, 4, 1, 2, 3, 4, 6, 0,
+                             6, 7, 2, 0, 4, 0, 5, 0});
+    test::ExpectTensorEqual<int64>(expected_indices, *GetOutput(1));
+  }
+}
+
 TEST_F(FusedEmbeddingSparsePreLookUpOpTest, Partition3_Int64) {
   MakeOpAndSetDevice(Device::CPU, 3, false, false, -1);
   // partition_shapes 0
