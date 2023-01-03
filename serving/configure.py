@@ -34,7 +34,7 @@ def write_config():
                 if argv == "--cuda":
                     print("Bazel will build with --cuda")
                     bazel_rc.write('build --define using_cuda_serving=true\n')
-                    bazel_rc.write('build --action_env TF_CUDA_VERSION="11.0"\n')
+                    bazel_rc.write('build --action_env TF_CUDA_VERSION="11.6"\n')
                     bazel_rc.write('build --action_env TF_CUDNN_VERSION="8"\n')
                     bazel_rc.write('build --action_env TF_NCCL_VERSION="2"\n')
                     bazel_rc.write('build --action_env TF_CUDA_PATHS="/usr/local/cuda,/usr,/home/pai"\n')
