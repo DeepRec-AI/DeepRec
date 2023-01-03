@@ -31,9 +31,9 @@ RUN apt-get update && \
 
 #install python
 WORKDIR /home/workdir     
-RUN wget https://www.python.org/ftp/python/3.8.6/Python-3.8.6.tgz \
-    && tar -xzvf Python-3.8.6.tgz \
-    && cd Python-3.8.6 \
+RUN wget https://www.python.org/ftp/python/3.8.10/Python-3.8.10.tgz \
+    && tar -xzvf Python-3.8.10.tgz \
+    && cd Python-3.8.10 \
     && ./configure --prefix=/usr/local/python3 --enable-optimizations \
     && make -j96 \
     && make install 
@@ -55,14 +55,3 @@ RUN pip install \
     protobuf==3.17.3 && \
     pip install --no-deps \
     keras-preprocessing==1.0.5
-
-# install bazel
-WORKDIR /home/workdir
-
-ARG BAZEL_VERSION=0.26.1
-
-RUN wget  -O /home/workdir/installer.sh https://github.com/bazelbuild/bazel/releases/download/${BAZEL_VERSION}/bazel-${BAZEL_VERSION}-installer-linux-x86_64.sh \
-    && wget -O /home/workdir/LICENSE.txt "https://raw.githubusercontent.com/bazelbuild/bazel/master/LICENSE"  \
-    && chmod +x /home/workdir/installer.sh \
-    && /home/workdir/installer.sh \
-    && rm -rf /home/workdir
