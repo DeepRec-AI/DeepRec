@@ -15,6 +15,15 @@ DeepRec has been deeply cultivated since 2016, which supports core businesses su
 # Getting started
 
 # Features
+
+```{toctree}
+:maxdepth: 2
+:caption: Build & Install
+DeepRec-Compile-And-Install
+Estimator-Compile-And-Install
+TFServing-Compile-And-Install
+```
+
 ```{toctree}
 :maxdepth: 2
 :caption: Operator & Hardware Acceleration
