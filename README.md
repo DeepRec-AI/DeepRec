@@ -47,13 +47,13 @@ DeepRec has super large-scale distributed training capability, supporting model 
 **CPU Platform**
 
 ``````
-alideeprec/deeprec-build:deeprec-dev-cpu-py36-ubuntu18.04
+alideeprec/deeprec-build:deeprec-dev-cpu-py38-ubuntu20.04
 ``````
 
 **GPU Platform**
 
 ```
-alideeprec/deeprec-build:deeprec-dev-gpu-py36-cu116-ubuntu18.04
+alideeprec/deeprec-build:deeprec-dev-gpu-py38-cu116-ubuntu20.04
 ```
 
 ### **How to Build**
@@ -84,7 +84,7 @@ $ ./bazel-bin/tensorflow/tools/pip_package/build_pip_package /tmp/tensorflow_pkg
 ```
 ### **Install whl package**
 ```
-$ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
+$ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux_x86_64.whl
 ```
 
 ### **Latest Release Images**
@@ -95,7 +95,7 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux
 alideeprec/deeprec-release:deeprec2210-cpu-py36-ubuntu18.04
 ```
 
-#### Image for GPU CUDA11.6
+#### Image for GPU CUDA 11.6.2
 
 ```
 alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04
