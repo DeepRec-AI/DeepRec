@@ -168,13 +168,13 @@ template<class K, class V, class Tstep>
 void LookupKeyAndSetVersion(
     OpKernelContext* ctx, EmbeddingVar<K, V>* var,
     ValuePtr<V>** value_ptrs, Tstep gs, const K* indices,
-    const int64 task_size) {
+    const int64 task_size, bool indices_as_pointer) {
   auto lookup_key_and_set_version_fn = [var, value_ptrs, gs,
-                  indices] (int64 start, int64 limit) {
+                  indices, indices_as_pointer] (int64 start, int64 limit) {
     ValuePtr<V>* value_ptr = nullptr;
     for (int i = start; i < limit; i++) {
       bool is_filter = false;
-      var->LookupOrCreateKey(indices[i], &value_ptr, &is_filter);
+      var->LookupOrCreateKey(indices[i], &value_ptr, &is_filter, indices_as_pointer);
       value_ptrs[i] = value_ptr;
       var->UpdateVersion(value_ptr, gs);
     }

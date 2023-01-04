@@ -3462,6 +3462,7 @@ tf_cuda_library(
         "graph/mkl_layout_pass.cc",
         "graph/mkl_tfconversion_pass.cc",
         "graph/quantize_training.cc",
+        "graph/embedding_pass.cc",
         "public/session.h",
         "public/session_options.h",
         "public/version.h",

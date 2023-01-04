@@ -183,6 +183,16 @@ class Node {
            type_string() == "ResourceSparseApplyFtrlV2" ||
            type_string() == "KvResourceSparseApplyFtrlV2";
   }
+  bool IsKvSparseApply() const {
+    return type_string() == "KvResourceSparseApplyAdagrad" ||
+           type_string() == "KvResourceSparseApplyAdagradDecay" ||
+           type_string() == "KvResourceSparseApplyAdam" ||
+           type_string() == "KvResourceSparseApplyAdamAsync" ||
+           type_string() == "KvResourceSparseApplyFtrl" ||
+           type_string() == "KvResourceSparseApplyFtrlV2" ||
+           type_string() == "KvResourceSparseApplyGradientDescent" ||
+           type_string() == "KvResourceSparseApplyAdamW";
+  }
   bool IsPlaceholder() const { return type_string() == "Placeholder"; }
   bool IsSwitch() const { return class_ == NC_SWITCH; }
   bool IsMerge() const { return class_ == NC_MERGE; }

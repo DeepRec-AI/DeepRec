@@ -138,8 +138,15 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->Get(key, value_ptr);
   }
 
-  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr, bool* is_filter) {
-    return filter_->LookupOrCreateKey(key, value_ptr, is_filter);
+  Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr,
+                           bool* is_filter, bool indices_as_pointer) {
+    if (indices_as_pointer) {
+      *value_ptr = (ValuePtr<V>*)key;
+      *is_filter = (*value_ptr != nullptr);
+      return Status::OK();
+    } else {
+      return filter_->LookupOrCreateKey(key, value_ptr, is_filter);
+    }
   }
 
   Status LookupOrCreateKey(K key, ValuePtr<V>** value_ptr) {

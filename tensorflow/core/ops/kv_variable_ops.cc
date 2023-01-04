@@ -234,6 +234,29 @@ ignore_lookup_error: whether to ignore the error when the resource
   doesn't exist.
 )");
 
+REGISTER_OP("_OPT_KvResourceLookupID")
+    .Input("resource: resource")
+    .Input("indices: Tkeys")
+    .Output("pointer: int64")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64, int32}")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeAndType handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(
+          c->WithRankAtLeast(handle_shape_and_type.shape, 1, &unused));
+
+      ShapeHandle indices_shape = c->input(1);
+      c->set_output(0, indices_shape);
+      return Status::OK();
+    })
+    .Doc(R"doc(
+Lookup the `pointer` from the variable pointed to by `resource` according to `indices`.
+)doc");
+
 REGISTER_OP("KvResourceGatherV1")
     .Input("resource: resource")
     .Input("indices: Tkeys")
@@ -329,6 +352,34 @@ Produces an output tensor with shape `indices.shape + params.shape[1:]` where:
 ```
 
 )doc");
+
+REGISTER_OP("_OPT_KvResourceCollectEmbedding")
+    .Input("resource: resource")
+    .Input("indices: Tkeys")
+    .Input("pointer: int64")
+    .Input("default_value: dtype")
+    .Attr("is_use_default_value_tensor: bool = false")
+    .Attr("validate_indices: bool = true")
+    .Output("output: dtype")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64, int32}")
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeAndType handle_shape_and_type;
+      TF_RETURN_IF_ERROR(
+          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+
+      ShapeHandle unused;
+      TF_RETURN_IF_ERROR(
+          c->WithRankAtLeast(handle_shape_and_type.shape, 1, &unused));
+      ShapeHandle params_subshape;
+	  params_subshape = handle_shape_and_type.shape;
+      ShapeHandle indices_shape = c->input(1);
+      ShapeHandle out;
+      TF_RETURN_IF_ERROR(c->Concatenate(indices_shape, params_subshape, &out));
+      c->set_output(0, out);
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
 
 REGISTER_OP("KvResourceScatterAdd")
     .Input("resource: resource")
