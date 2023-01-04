@@ -839,7 +839,9 @@ class EmbeddingVarGPU : public ResourceBase {
   
  private:
   ~EmbeddingVarGPU() override {
-    delete kv_;
+    if (emb_config_.is_primary() && emb_config_.primary_emb_index == 0) {
+      delete kv_;
+    }
     TypedAllocator::Deallocate(alloc_, default_value_, value_len_);
   }
   TF_DISALLOW_COPY_AND_ASSIGN(EmbeddingVarGPU);
