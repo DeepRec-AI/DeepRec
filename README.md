@@ -111,6 +111,7 @@ alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04
 | **Linux CPU** | ![CPU Build](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-build-wheel.yaml/badge.svg) |
 | **Linux GPU** | ![GPU Build](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-build-wheel.yaml/badge.svg) |
 | **Linux CPU Serving** | ![CPU Serving Build](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-build-serving.yaml/badge.svg) |
+| **Linux GPU Serving** | ![GPU Serving Build](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-build-serving-gpu.yaml/badge.svg) |
 
 ### Official Unit Tests
 
@@ -135,6 +136,7 @@ alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04
 | **Linux GPU Python** | ![GPU Python Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-python-unit-test.yaml/badge.svg) |
 | **Linux GPU Stream Executor** | ![GPU Stream Executor Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cuda11.2-cibuild-stream_executor-unit-test.yaml/badge.svg) |
 | **Linux CPU Serving UT** | ![CPU Serving Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-serving-unit-test.yaml/badge.svg) |
+| **Linux GPU Serving UT** | ![GPU Serving Unit Tests](https://github.com/alibaba/DeepRec/actions/workflows/ubuntu18.04-py3.6-cibuild-serving-unit-test-gpu.yaml/badge.svg) |
 
 ## **User Document**
 

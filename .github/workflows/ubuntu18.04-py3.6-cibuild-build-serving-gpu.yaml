@@ -1,0 +1,55 @@
+name: GPU Build Serving
+
+on: 
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - 'modelzoo/**'
+      - 'sparse_operation_kit/**'
+      - 'triton/**'
+      - '*.md'
+  pull_request_review:
+    types: [submitted]
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - 'modelzoo/**'
+      - 'sparse_operation_kit/**'
+      - 'triton/**'
+      - '*.md'
+
+env:
+  IMAGE: alideeprec/deeprec-cicd:deeprec-dev-gpu-cibuild-py38-cu116-ubuntu20.04
+  JOBNAME: deeprec-ci-gpu-${{ github.run_id }}
+
+jobs:
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') }}
+    runs-on: [self-hosted, gpu]
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v2
+
+    - name: Pull Image And Start Container
+      if: ${{ success() }}
+      run:
+        cibuild/pull_image_and_start_container.sh gpu ${IMAGE} ${JOBNAME}
+
+    - name: Upload Source
+      if: ${{ success() }}
+      run:
+        cibuild/upload.sh ${JOBNAME} ../cibuild /mnt
+
+    - name: Build Serving
+      if: ${{ success() }}
+      run:
+        docker exec ${JOBNAME} /mnt/cibuild/serving-gpu.sh /mnt
+
+    - name:  Remove Container
+      if: ${{ always() }}
+      run: 
+        cibuild/remove_container.sh ${JOBNAME}
