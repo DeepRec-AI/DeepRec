@@ -26,6 +26,7 @@
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/embedding/gpu_hash_table.h"
+#include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/framework/types.h"
 #include "tensorflow/core/util/gpu_kernel_helper.h"
@@ -108,10 +109,11 @@ int32 GPUHashTable<K, V>::Size() {
   return hash_table->map_.get_size();
 }
 
-template class GPUHashTable<int32, float>;
-template class GPUHashTable<int32, double>;
-template class GPUHashTable<int64, float>;
-template class GPUHashTable<int64, double>;
+#define REGISTER_ALL_TYPE(type)             \
+  template class GPUHashTable<int32, type>; \
+  template class GPUHashTable<int64, type>;
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
 
 namespace functor {
 using atomicT = cuda::atomic<std::size_t, cuda::thread_scope_device>;
@@ -461,30 +463,19 @@ struct KvEmbGetSnapshot<GPUDevice, Key, Value> {
 
 } // namespace functor
 
-template struct functor::KvLookupInsertKey<GPUDevice, int32, float>;
-template struct functor::KvLookupInsertKey<GPUDevice, int32, double>;
-template struct functor::KvLookupInsertKey<GPUDevice, int64, float>;
-template struct functor::KvLookupInsertKey<GPUDevice, int64, double>;
-
-template struct functor::KvLookupCreateEmb<GPUDevice, int32, float>;
-template struct functor::KvLookupCreateEmb<GPUDevice, int32, double>;
-template struct functor::KvLookupCreateEmb<GPUDevice, int64, float>;
-template struct functor::KvLookupCreateEmb<GPUDevice, int64, double>;
-
-template struct functor::KvKeyGetSnapshot<GPUDevice, int32, float>;
-template struct functor::KvKeyGetSnapshot<GPUDevice, int32, double>;
-template struct functor::KvKeyGetSnapshot<GPUDevice, int64, float>;
-template struct functor::KvKeyGetSnapshot<GPUDevice, int64, double>;
-
-template struct functor::KvEmbGetSnapshot<GPUDevice, int32, float>;
-template struct functor::KvEmbGetSnapshot<GPUDevice, int32, double>;
-template struct functor::KvEmbGetSnapshot<GPUDevice, int64, float>;
-template struct functor::KvEmbGetSnapshot<GPUDevice, int64, double>;
-
-template struct functor::KvUpdateEmb<GPUDevice, int32, float>;
-template struct functor::KvUpdateEmb<GPUDevice, int32, double>;
-template struct functor::KvUpdateEmb<GPUDevice, int64, float>;
-template struct functor::KvUpdateEmb<GPUDevice, int64, double>;
+#define REGISTER_ALL_TYPE(type)                                       \
+  template struct functor::KvLookupInsertKey<GPUDevice, int32, type>; \
+  template struct functor::KvLookupInsertKey<GPUDevice, int64, type>; \
+  template struct functor::KvLookupCreateEmb<GPUDevice, int32, type>; \
+  template struct functor::KvLookupCreateEmb<GPUDevice, int64, type>; \
+  template struct functor::KvKeyGetSnapshot<GPUDevice, int32, type>;  \
+  template struct functor::KvKeyGetSnapshot<GPUDevice, int64, type>;  \
+  template struct functor::KvEmbGetSnapshot<GPUDevice, int32, type>;  \
+  template struct functor::KvEmbGetSnapshot<GPUDevice, int64, type>;  \
+  template struct functor::KvUpdateEmb<GPUDevice, int32, type>;       \
+  template struct functor::KvUpdateEmb<GPUDevice, int64, type>;
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
 
 }  // namespace tensorflow
 

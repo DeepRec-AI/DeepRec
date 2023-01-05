@@ -60,6 +60,11 @@ class StorageFactory {
       case StorageType::DRAM_SSDHASH:
         return new DramSsdHashStorage<K, V>(sc, ev_allocator(),
             layout_creator, name);
+      case StorageType::HBM:
+#if GOOGLE_CUDA
+        return new HbmStorage<K, V>(sc, gpu_allocator,
+            layout_creator);
+#endif  // GOOGLE_CUDA
       case StorageType::HBM_DRAM:
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV

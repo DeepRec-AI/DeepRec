@@ -19,6 +19,9 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/config.pb.h"
 #include "tensorflow/core/framework/embedding/cpu_hash_map_kv.h"
 #include "tensorflow/core/framework/embedding/globalstep_shrink_policy.h"
+#if GOOGLE_CUDA
+#include "tensorflow/core/framework/embedding/gpu_hash_map_kv.h"
+#endif // GOOGLE_CUDA
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/l2weight_shrink_policy.h"
 #include "tensorflow/core/framework/embedding/layout_creator.h"
@@ -334,6 +337,23 @@ class DramStorage : public SingleTierStorage<K, V> {
  protected:
   void SetTotalDims(int64 total_dims) override {}
 };
+
+#if GOOGLE_CUDA
+template<typename K, typename V>
+class HbmStorage : public SingleTierStorage<K, V> {
+ public:
+  HbmStorage(const StorageConfig& sc, Allocator* alloc,
+      LayoutCreator<V>* lc) : SingleTierStorage<K, V>(
+          sc, alloc, new GPUHashMapKV<K, V>(sc.embedding_config, alloc), lc) {
+  }
+  ~HbmStorage() override {}
+
+  TF_DISALLOW_COPY_AND_ASSIGN(HbmStorage);
+
+ protected:
+  void SetTotalDims(int64 total_dims) override {}
+};
+#endif // GOOGLE_CUDA
 
 template<typename K, typename V>
 class PmemMemkindStorage : public SingleTierStorage<K, V> {

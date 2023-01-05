@@ -246,23 +246,26 @@ class InitializeKvVariableOp : public OpKernel {
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               Allocator* gpu_allocator =
                   context->device()->GetAllocator(AllocatorAttributes());
+              auto embedding_config = EmbeddingConfig(
+                  emb_index_ + block_num_ * slot_index_,
+                  emb_index_, block_num_, slot_num_,
+                  opname + "-primary", steps_to_live_,
+                  filter_freq_, max_freq_,
+                  l2_weight_threshold_, layout_,
+                  max_element_size_, false_positive_probability_,
+                  counter_type_, default_value_dim_,
+                  default_value_no_permission_,
+                  record_freq_, record_version_);
               auto storage_manager =
                   new embedding::StorageManager<TKey, TValue>(
                     handle_self.name(),
                     embedding::StorageConfig(
-                      storage_type_, storage_path_, storage_size_, layout_),
+                      storage_type_, storage_path_, storage_size_, layout_,
+                      embedding_config),
                     gpu_allocator);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                             emb_index_, block_num_, slot_num_,
-                             opname + "-primary", steps_to_live_,
-                             filter_freq_, max_freq_,
-                             l2_weight_threshold_, layout_,
-                             max_element_size_, false_positive_probability_,
-                             counter_type_, default_value_dim_,
-                             default_value_no_permission_,
-                             record_freq_, record_version_),
+                         embedding_config,
                          gpu_allocator);
             return Status::OK();
             }));
@@ -277,20 +280,22 @@ class InitializeKvVariableOp : public OpKernel {
             handle_primary, context](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              Allocator* gpu_allocator = context->device()->GetAllocator(AllocatorAttributes());
+             auto embedding_config = EmbeddingConfig(
+                 primary_emb_index + block_num_ * primary_slot_index,
+                 primary_emb_index,
+                 block_num_, slot_num_, opname + "-primary",
+                 steps_to_live_, filter_freq_, max_freq_,
+                 l2_weight_threshold_, layout_,
+                 max_element_size_, false_positive_probability_,
+                 counter_type_, 0, record_freq_, record_version_);
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
-                     storage_path_, storage_size_, layout_), gpu_allocator);
+                     storage_path_, storage_size_, layout_, embedding_config),
+                     gpu_allocator);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         storage_manager,
-                        EmbeddingConfig(
-                          primary_emb_index + block_num_ * primary_slot_index,
-                          primary_emb_index,
-                          block_num_, slot_num_, opname + "-primary",
-                          steps_to_live_, filter_freq_, max_freq_,
-                          l2_weight_threshold_, layout_,
-                          max_element_size_, false_positive_probability_,
-                          counter_type_, 0, record_freq_, record_version_),
+                        embedding_config,
                         gpu_allocator);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
@@ -409,7 +414,7 @@ class KvResourceIsInitializedOp : public OpKernel {
     output->flat<bool>()(0) = found;
   }
 };
-
+/*
 #if GOOGLE_CUDA
 #if TENSORFLOW_USE_GPU_EV
 template <typename TKey, typename TValue>
@@ -435,7 +440,7 @@ class KvResourceIsInitializedGPUOp : public OpKernel {
 };
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
-
+*/
 #define REGISTER_KERNELS(ktype, vtype)                             \
   REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
                           .TypeConstraint<ktype>("Tkeys")          \
@@ -465,8 +470,11 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
                           .HostMemory("is_initialized"),           \
                           KvResourceIsInitializedGPUOp<ktype, vtype>);
 #endif  // TENSORFLOW_USE_GPU_EV
-REGISTER_KERNELS(int32, float)
-REGISTER_KERNELS(int64, float)
+#define REGISTER_KERNELS_ALL_INDEX(type)                           \
+  REGISTER_KERNELS(int32, type)                                    \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 #endif  // GOOGLE_CUDA
 
@@ -490,7 +498,7 @@ class KvResourceInitCacheStrategyOp : public OpKernel {
 };
 
 #define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")    \
                           .TypeConstraint<ktype>("Tkeys")          \
                           .TypeConstraint<vtype>("dtype")          \
                           .Device(DEVICE_CPU),                     \
@@ -505,12 +513,15 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
 #define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")             \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")    \
                           .TypeConstraint<ktype>("Tkeys")          \
                           .Device(DEVICE_GPU),                     \
                           KvResourceInitCacheStrategyOp<ktype, vtype>);
-REGISTER_KERNELS(int32, float)
-REGISTER_KERNELS(int64, float)
+#define REGISTER_KERNELS_ALL_INDEX(type)                           \
+  REGISTER_KERNELS(int32, type)                                    \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 #endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
@@ -1289,23 +1300,25 @@ class KvResourceImportV2Op: public AsyncOpKernel {
             context, handle_self, &ev,
             [this, default_values, opname,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+             auto embedding_config = EmbeddingConfig(
+                 emb_index_ + block_num_ * slot_index_,
+                 emb_index_,
+                 block_num_, slot_num_, opname + "-primary",
+                 steps_to_live_, filter_freq_,
+                 max_freq_, l2_weight_threshold_,
+                 layout_,  max_element_size_,
+                 false_positive_probability_,
+                 counter_type_, default_value_dim_,
+                 default_value_no_permission_,
+                 record_freq_, record_version_);
               auto storage_manager =
                 new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(
-                    storage_type_, storage_path_, storage_size_, layout_));
+                    storage_type_, storage_path_, storage_size_, layout_,
+                    embedding_config));
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         EmbeddingConfig(
-                           emb_index_ + block_num_ * slot_index_,
-                           emb_index_,
-                           block_num_, slot_num_, opname + "-primary",
-                           steps_to_live_, filter_freq_,
-                           max_freq_, l2_weight_threshold_,
-                           layout_,  max_element_size_,
-                           false_positive_probability_,
-                           counter_type_, default_value_dim_,
-                           default_value_no_permission_,
-                           record_freq_, record_version_));
+                         embedding_config);
              return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -1318,20 +1331,21 @@ class KvResourceImportV2Op: public AsyncOpKernel {
            [this, default_values, opname,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
+             auto embedding_config = EmbeddingConfig(
+                 primary_emb_index + block_num_ * primary_slot_index,
+                 primary_emb_index, block_num_, slot_num_,
+                 opname + "-primary", steps_to_live_, filter_freq_,
+                 max_freq_, l2_weight_threshold_,
+                 layout_,  max_element_size_,
+                 false_positive_probability_,
+                 counter_type_, 0, record_freq_, record_version_);
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(
                    storage_type_, storage_path_, storage_size_,
-                   layout_));
+                   layout_, embedding_config));
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                 storage_manager, EmbeddingConfig(
-                   primary_emb_index + block_num_ * primary_slot_index,
-                   primary_emb_index, block_num_, slot_num_,
-                   opname + "-primary", steps_to_live_, filter_freq_,
-                   max_freq_, l2_weight_threshold_,
-                   layout_,  max_element_size_,
-                   false_positive_probability_,
-                   counter_type_, 0, record_freq_, record_version_));
+                 storage_manager, embedding_config);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));

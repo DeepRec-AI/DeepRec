@@ -38,6 +38,10 @@ limitations under the License.
 namespace tensorflow {
 
 template <class K, class V>
+class EmbeddingVarInterface : public ResourceBase {
+};
+
+template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:
   EmbeddingVar(const string& name,
