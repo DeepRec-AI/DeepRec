@@ -15,8 +15,8 @@
 
 namespace tensorflow {
 namespace {
-  const static int WORKER_DEFAULT_CORE_NUM = 16;
-  const static int PS_DEFAULT_CORE_NUM = 16;
+  const static int WORKER_DEFAULT_CORE_NUM = 2;
+  const static int PS_DEFAULT_CORE_NUM = 8;
   const static int kWaitTimeInUs = 50000;
 
   // valid ipv4
