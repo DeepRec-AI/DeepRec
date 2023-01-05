@@ -103,7 +103,6 @@ class EvictionManager {
   void EvictionLoop() {
     while (CheckStorages()) {
       mutex_lock l(mu_);
-      int index = 0;
       for (auto it : storage_table_) {
         auto storage = it.first;
         auto storage_item = it.second;
