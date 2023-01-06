@@ -1,9 +1,9 @@
 # GRPC++
 ## 简介
 在大规模训练场景下，用户使用大量worker和ps，导致训练任务通信，数据拷贝等带来很大的开销。原生Tensorflow使用GRPC作为通信协议，在大规模场景下难以满足用户需求的训练性能。
-​
 
 针对上述问题，DeepRec提供了GRPC++支持更大规模的训练任务。通过Sharing Nothing架构、BusyPolling机制、用户态零拷贝、Send/Recv融合等多种优化实现，极大的降低了E2E的通信延时，数倍的提高了Server的吞吐能力，从而可以在DeepRec上支持更大的训练规模和更优的训练性能，在一些典型的业务场景上相比较原生的Tensorflow大幅提升了性能。
+
 ## 接口介绍
 为了方便用户使用，开启GRPC++功能和使用GRPC一样简单，只需要配置`Protocol`字段即可。
 在一些场景下，特别是Send/Recv算子特别多时，将Send/Recv算子fuse起来提升性能，具体的是通过在`config`中配置`tensor_fuse`字段来启动此功能，**默认不开启此功能**。
