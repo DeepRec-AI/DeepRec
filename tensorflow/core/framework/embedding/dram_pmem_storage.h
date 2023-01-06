@@ -98,6 +98,10 @@ class DramPmemStorage : public MultiTierStorage<K, V> {
     return false;
   }
 
+  bool IsSingleHbm() override {
+    return false;
+  }
+
   bool IsUsePersistentStorage() override {
     /*The return value is set to false temporarily,
       because the corresponding interface is not implemented.*/

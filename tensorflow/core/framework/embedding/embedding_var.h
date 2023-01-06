@@ -110,6 +110,15 @@ class EmbeddingVar : public ResourceBase {
                   storage_manager_->GetAllocLen()),
               1024 * 1024);
 #endif  // GOOGLE_CUDA
+    } else if (storage_manager_->IsSingleHbm()) {
+#if GOOGLE_CUDA
+      storage_manager_->SetValueLen(value_len_);
+      default_value_ = TypedAllocator::Allocate<V>(
+          alloc_, default_tensor.NumElements(), AllocationAttributes());
+      auto default_tensor_flat = default_tensor.flat<V>();
+      cudaMemcpy(default_value_, &default_tensor_flat(0),
+          default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
+#endif  // GOOGLE_CUDA
     } else {
       alloc_ = ev_allocator();
       default_value_ = TypedAllocator::Allocate<V>(alloc_,
@@ -459,6 +468,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->IsUseHbm();
   }
 
+  bool IsSingleHbm() {
+    return storage_manager_->IsSingleHbm();
+  }
+
   bool IsUsePersistentStorage() {
     return storage_manager_->IsUsePersistentStorage();
   }
@@ -655,6 +668,15 @@ class EmbeddingVar : public ResourceBase {
       }
     }
   }
+
+//#if GOOGLE_CUDA
+  void LookupOrCreate(const K* key, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) {
+    storage_manager_->BatchLookupOrCreate(key, val, default_v, default_v_num,
+        is_use_default_value_tensor, n, device);
+  }
+//#endif // GOOGLE_CUDA
 
  protected:
   FilterPolicy<K, V, EmbeddingVar<K, V>>* GetFilter() const {

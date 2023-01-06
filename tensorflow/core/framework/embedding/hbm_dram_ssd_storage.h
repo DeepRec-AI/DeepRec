@@ -223,6 +223,10 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     return true;
   }
 
+  bool IsSingleHbm() override {
+    return false;
+  }
+
   bool IsUsePersistentStorage() override {
     /*The return value is set to false temporarily,
       because the corresponding interface is not implemented.*/

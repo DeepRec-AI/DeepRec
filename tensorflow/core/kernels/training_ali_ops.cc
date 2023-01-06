@@ -36,9 +36,9 @@ limitations under the License.
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
+//#if TENSORFLOW_USE_GPU_EV
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
-#endif  // TENSORFLOW_USE_GPU_EV
+//#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -180,7 +180,7 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #if GOOGLE_CUDA
 #if !TENSORFLOW_USE_GPU_EV
-template <typename TKey, typename T, typename Tstep, bool indices_as_pointer>
+template <typename Device, typename TKey, typename T, typename Tstep, bool indices_as_pointer>
 class KvSparseApplyAdagradGPUOp : public OpKernel {
  public:
   explicit KvSparseApplyAdagradGPUOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -316,41 +316,51 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
         auto indices_flat = indices.flat<TKey>();
         auto grad_flat = grad.flat_outer_dims<T>();
         Tstep gs = global_step.scalar<Tstep>()();
-        ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
         T lr_scalar = lr.scalar<T>()();
+        if (var->IsSingleHbm()) {
+          const TKey* key_base = &indices_flat(0);
+          const T* grad_base = &grad_flat(0);
+          const Device& device = ctx->eigen_device<Device>();
 
-        // Lookup ValuePtrs of ids and set version of each id  in parallel
-        LookupKeyAndSetVersion(ctx, var, value_ptrs,
-                               gs, indices_flat.data(), N,
-                               indices_as_pointer);
+          functor::KvSparseApplyAdagrad<Device, TKey, T>()(
+              N, ctx->get_allocator(AllocatorAttributes()), var, accum,
+              key_base, grad_base, lr_scalar, gs, device);
+        } else {
+          ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
 
-        // Get pointers to embeddings and
-        // check which ids need to be initialized
-        T** a = new T*[N];
-        T** v = new T*[N];
-        int num_worker_threads = ctx->device()
-                          ->tensorflow_cpu_worker_threads()
-                          ->num_threads;
-        std::vector<std::list<int64>> init_cursor_list(
-                                          num_worker_threads + 1);
-        LookupEmbeddingPointers(ctx, var, accum,
-                                value_ptrs, init_cursor_list,
-                                v, a, N);
+          // Lookup ValuePtrs of ids and set version of each id  in parallel
+          LookupKeyAndSetVersion(ctx, var, value_ptrs,
+                                 gs, indices_flat.data(), N,
+                                 indices_as_pointer);
 
-        accum->SetDefaultValueOfNewFeatures(
-            indices_flat.data(), N,
-            init_cursor_list[0],
-            a, accum->GetDefaultValuePtr(),
-            get_default_v_fn_);
+          // Get pointers to embeddings and
+          // check which ids need to be initialized
+          T** a = new T*[N];
+          T** v = new T*[N];
+          int num_worker_threads = ctx->device()
+                            ->tensorflow_cpu_worker_threads()
+                            ->num_threads;
+          std::vector<std::list<int64>> init_cursor_list(
+                                            num_worker_threads + 1);
+          LookupEmbeddingPointers(ctx, var, accum,
+                                  value_ptrs, init_cursor_list,
+                                  v, a, N);
 
-        ApplyGradients(
-            var, accum, v, a,
-            lr_scalar,
-            &grad_flat(0), N);
+          accum->SetDefaultValueOfNewFeatures(
+              indices_flat.data(), N,
+              init_cursor_list[0],
+              a, accum->GetDefaultValuePtr(),
+              get_default_v_fn_);
 
-        delete[] a;
-        delete[] v;
-        delete[] value_ptrs;
+          ApplyGradients(
+              var, accum, v, a,
+              lr_scalar,
+              &grad_flat(0), N);
+
+          delete[] a;
+          delete[] v;
+          delete[] value_ptrs;
+        }
       }
     }
   }
@@ -360,6 +370,28 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
   ThreadCopyIdAllocator* thread_copy_id_alloc_ = nullptr;
   std::function<T*(T*, TKey, int64, int64, int64)> get_default_v_fn_;
 };
+
+namespace functor {
+#define DECLARE_GPU_SPEC(TKey, T)                             \
+  template <>                                           \
+  void KvSparseApplyAdagrad<GPUDevice, TKey, T>::operator()(  \
+      int32 num_items,  \
+      Allocator* alloc, \
+      EmbeddingVar<TKey, T>* var,  \
+      EmbeddingVar<TKey, T>* accum,  \
+      const TKey* key_base, \
+      const T* grad,  \
+      T lr, \
+      int64 gs, \
+      const GPUDevice& device);             \
+  extern template struct KvSparseApplyAdagrad<GPUDevice, TKey, T>;
+DECLARE_GPU_SPEC(int32, float);
+DECLARE_GPU_SPEC(int32, double);
+DECLARE_GPU_SPEC(int64, float);
+DECLARE_GPU_SPEC(int64, double);
+#undef DECLARE_GPU_SPEC
+}  // namespace functor
+
 #define REGISTER_KERNELS(Tindices, T, Tstep)                         \
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagrad")       \
                               .Device(DEVICE_GPU)                    \
@@ -369,7 +401,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradGPUOp<Tindices, T, Tstep, false>);\
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, false>);\
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagrad")  \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
@@ -377,7 +409,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \
                               .TypeConstraint<Tstep>("Tstep"),       \
-                          KvSparseApplyAdagradGPUOp<Tindices, T, Tstep, true>);
+                          KvSparseApplyAdagradGPUOp<GPUDevice, Tindices, T, Tstep, true>);
 #define REGISTER_GPU_KERNELS(T)        \
   REGISTER_KERNELS(int32, T, int32);   \
   REGISTER_KERNELS(int64, T, int32);   \

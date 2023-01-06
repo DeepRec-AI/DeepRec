@@ -298,6 +298,10 @@ class SingleTierStorage : public Storage<K, V> {
     return false;
   }
 
+  bool IsSingleHbm() override {
+    return false;
+  }
+
   bool IsUsePersistentStorage() override {
     return false;
   }
@@ -349,6 +353,17 @@ class HbmStorage : public SingleTierStorage<K, V> {
   ~HbmStorage() override {}
 
   TF_DISALLOW_COPY_AND_ASSIGN(HbmStorage);
+
+  bool IsSingleHbm() override {
+    return true;
+  }
+
+  void BatchLookupOrCreate(const K* key, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) {
+    SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(key, val, default_v, default_v_num,
+        is_use_default_value_tensor, n, device);
+  }
 
  protected:
   void SetTotalDims(int64 total_dims) override {}

@@ -90,6 +90,12 @@ class KVInterface {
 
   virtual Iterator* GetIterator() { return nullptr; }
 
+  virtual Status BatchLookupOrCreate(const K* keys, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) {
+    return Status::OK();
+  }
+
 };
 
 }  // namespace embedding

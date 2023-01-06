@@ -43,7 +43,7 @@ __device__ Eigen::half impl_rsqrt(Eigen::half x) {
   return __float2half(rsqrt(__half2float(x)));
 }
 
-#if TENSORFLOW_USE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 template <typename Value>
 __global__ void kv_sparse_apply_adagrad_kernel(int32* item_idxs,
                                                int64 dim,
@@ -94,8 +94,8 @@ template <typename TKey, typename T>
 struct KvSparseApplyAdagrad<GPUDevice, TKey, T> {
   void operator()(int32 num_items,
                   Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
+                  EmbeddingVar<TKey, T>* var,
+                  EmbeddingVar<TKey, T>* accum,
                   const TKey* key_base,
                   const T* grad,
                   T lr,
@@ -260,9 +260,9 @@ template <typename TKey, typename T>
 struct KvSparseApplyFtrl<GPUDevice, TKey, T> {
   void operator()(int32 num_items,
                   Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
-                  EmbeddingVarGPU<TKey, T>* linear,
+                  EmbeddingVar<TKey, T>* var,
+                  EmbeddingVar<TKey, T>* accum,
+                  EmbeddingVar<TKey, T>* linear,
                   const TKey* key_base,
                   const T* grad,
                   T lr,
@@ -384,9 +384,9 @@ __global__ void KvSparseApplyAdamAsyncKernel(int32 *item_idxs,
 template <typename T, typename Tindex, typename Tstep>
 struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep> {
   Status operator()(const GPUDevice &d,
-                    EmbeddingVarGPU<Tindex, T> *var, 
-                    EmbeddingVarGPU<Tindex, T> *m, 
-                    EmbeddingVarGPU<Tindex, T> *v, 
+                    EmbeddingVar<Tindex, T> *var, 
+                    EmbeddingVar<Tindex, T> *m, 
+                    EmbeddingVar<Tindex, T> *v, 
                     typename TTypes<T>::Scalar beta1_power_scalar, 
                     typename TTypes<T>::Scalar beta2_power_scalar, 
                     typename TTypes<Tindex>::ConstVec indices_vec, 
@@ -589,7 +589,7 @@ struct SparseApplyAdamAsync<GPUDevice, T, Tindex> {
 
 }  // namespace functor
 
-#if TENSORFLOW_USE_GPU_EV
+#if !TENSORFLOW_USE_GPU_EV
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, float>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, double>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, float>;

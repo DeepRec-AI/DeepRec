@@ -46,6 +46,10 @@ class StorageManager {
     storage_->SetAllocLen(value_len, slot_num);
   }
 
+  void SetValueLen(int64 value_len){
+    storage_->SetValueLen(value_len);
+  }
+
   void InitCache(embedding::CacheStrategy cache_strategy) {
     storage_->InitCache(cache_strategy);
   }
@@ -88,6 +92,10 @@ class StorageManager {
 
   bool IsUseHbm() {
     return storage_->IsUseHbm();
+  }
+
+  bool IsSingleHbm() {
+    return storage_->IsSingleHbm();
   }
 
   bool IsUsePersistentStorage() {
@@ -151,6 +159,13 @@ class StorageManager {
   void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) {
     storage_->AllocateMemoryForNewFeatures(value_ptr_list);
+  }
+
+  void BatchLookupOrCreate(const K* key, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) {
+    storage_->BatchLookupOrCreate(key, val, default_v, default_v_num,
+        is_use_default_value_tensor, n, device);
   }
 #endif  // GOOGLE_CUDA
 

@@ -63,6 +63,7 @@ class Storage {
   virtual void Insert(const std::vector<K>& keys,
                         ValuePtr<V>** value_ptrs) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
+  virtual void SetValueLen(int64 value_len) {}
   virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
       size_t size) = 0;
   virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -109,11 +110,16 @@ class Storage {
       ValuePtr<V> **gpu_value_ptrs,
       V* memcpy_buffer_gpu) = 0;
 
+  virtual void BatchLookupOrCreate(const K* key, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) {};
+
   virtual void InitCache(embedding::CacheStrategy cache_strategy) = 0;
   virtual int64 CacheSize() const = 0;
   virtual BatchCache<K>* Cache() = 0;
   virtual bool IsMultiLevel() = 0;
   virtual bool IsUseHbm() = 0;
+  virtual bool IsSingleHbm() = 0;
   virtual bool IsUsePersistentStorage() = 0;
   virtual void iterator_mutex_lock() = 0;
   virtual void iterator_mutex_unlock() = 0;

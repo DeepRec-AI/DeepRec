@@ -128,6 +128,10 @@ class DramSsdHashStorage : public MultiTierStorage<K, V> {
     return false;
   }
 
+  bool IsSingleHbm() override {
+    return false;
+  }
+
   bool IsUsePersistentStorage() override {
     return true;
   }
