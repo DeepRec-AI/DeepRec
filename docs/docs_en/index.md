@@ -29,6 +29,31 @@ TFServing-Compile-And-Install
 :caption: Distributed Training
 
 GRPC++
+StarServer
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Graph Optimization
+
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Runtime Optimization
+
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Model Save & Restore
+
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Optimizer
+
 ```
 
 ```{toctree}
@@ -44,4 +69,16 @@ Operator-Optimization
 :caption: Model Quantification
 
 BFloat16
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Dataset and Processing
+
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Compiler
+
 ```

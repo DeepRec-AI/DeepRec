@@ -1,20 +1,20 @@
-# GRPC++
-## Introduction
-In a large-scale training scenario, users use a large number of workers and ps, resulting in high overhead communication. Tensorflow uses GRPC as a communication protocol, and it is difficult to meet large-scale scenarios (over hundreds or thousands of workers).
+# StarServer
 
-To solve above issues, DeepRec provides GRPC++ to support larger-scale training tasks. Based on Sharing-Nothing architecture, BusyPolling, zero copy, Send/Recv Fusion and so on, GRPC++ could greatly improve communication performance and provide much better performance compared with GRPC. GRPC++ supports larger training scale and better training performance, and improves the performance serveral times in some typical business scenarios compared with GRPC.
+## Introduction
+
+In large-scale job (hundreds or even thousands of workers), some problems in the TensorFlow are exposed, such as inefficient thread pool scheduling, lock overhead on multiple critical paths, inefficient execution engine, The overhead caused by frequent rpc and low memory usage efficiency, etc.
+
+In order to solve the problems encountered by users in large-scale scenarios, we provide the StarServer. In StarServer we optimize graph, threadpool, executor, and memory optimization. Change the send/recv semantics in TensorFlow to pull/push semantics, and support this semantics in subgraph division. At the same time, the lock free in the process of graph execution is supported, which greatly improves the concurrent execution efficiency. StarServer perform better than grpc/grpc++ in larger scale job (with thousands of workers). In StarServer we optimizes the runtime of ParameterServer with share-nothing architecture and lock-free graph execution.
 
 ## User API
 
-Enabling the GRPC++ is as simple as using GRPC, only need to configure the `Protocol` field.
-In some scenarios, especially when there are a lot of Send/Recv operators, configure the `tensor_fuse` field in `config` to enable Send/Recv Ops fusion to avoid too many small packets. **tensor_fuse is disabled by default.**
+Enabling the StarServer is as simple as using GRPC, only need to configure the `Protocol` field.
 
-_tensor_fuse could be used with GRPC as well, which also could brings performance improvement._
+In DeepRec there are two StarServer implementation, the `protocol` are `"star_server"` and `"star_server_lite"`. Difference between the two protocol is `"star_server_lite"` use more aggressive graph partition strategy which would bring better performance but probabaly fails in some graph with RNN structure. We suggest `"star_server"` which could support all scenarios.
 
+### Configure StarServer
 
-### Configure GRPC++
-
-We use seastar as communication framework in GRPC++, and also keep GRPC used by MasterSession. So when enable GRPC++, need to configure another set of ports for seastar. Configure .endpoint_map (filename) in execution directory, content as follows:
+We use seastar as communication framework in StarServer, and also keep GRPC used by MasterSession. So when enable StarServer, need to configure another set of ports for seastar. Configure .endpoint_map (filename) in execution directory, content as follows:
 
 ```
 127.0.0.1:3333=127.0.0.1:5555
@@ -25,35 +25,35 @@ We use seastar as communication framework in GRPC++, and also keep GRPC used by 
 
 For example, 127.0.0.1:3333 is worker 0 GRPC port, and 127.0.0.1:5555 is worker 0 seastar ports.
 
-
 ### MonitoredTrainingSession
+
 ```python
 cluster = tf.train.ClusterSpec({"ps": ps_hosts, "worker": worker_hosts})
 
 server = tf.train.Server(cluster,
                          job_name=FLAGS.job_name,
                          task_index=FLAGS.task_index,
-                         protocol="grpc++")
+                         protocol="star_server")
 ...
 
 with tf.train.MonitoredTrainingSession(
     master=target,
-    config=tf.ConfigProto(tensor_fuse=True, # Enable Send/Recv Ops Fusion
-                          ...),
     ) as mon_sess:
   ...
 ```
+
 ### Estimator
-Use GRPC++ in Estimator, Need to setup RunConfig with `protocol="grpc++"`:
+
+Use StarServer in Estimator, Need to setup RunConfig with `protocol="star_server"`:
+
 ```python
 session_config = tf.ConfigProto(
-    tensor_fuse=True, # Enable Send/Recv Ops Fusion
     inter_op_parallelism_threads=16,
     intra_op_parallelism_threads=16)
 
 run_config = tf.estimator.RunConfig(model_dir=model_dir, 
                                     save_summary_steps=train_save_summary_steps,
-                                    protocol="grpc++",
+                                    protocol="star_server",
                                     session_config=session_config)
 
 ...
@@ -61,13 +61,15 @@ run_config = tf.estimator.RunConfig(model_dir=model_dir,
 classifier = tf.estimator.Estimator(
     model_fn=model_fn,
     params={...},
-    config=run_config) # run_config
+    config=run_config) # 配置 run_config
 ```
 _Should not use ParameterServerStrategy, which is not supported by GRPC++._
 
 ## Best Practise
 
-In GRPC++, We provide list of enviroments to tune performance.
+We suggest worker/ps number should be 8:1-10:1 which means 100 workers with 10 ParameterServer when use StarServer. Because StarServer provide powerful ParameterServer, which could support more workers. Besides, we provide list of enviroments to tune performance.
+
+
 ```python
 os.environ['WORKER_ENABLE_POLLING'] = "False"
 os.environ['PS_ENABLE_POLLING'] = "False"

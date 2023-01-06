@@ -1,16 +1,15 @@
 # StarServer
 ## 简介
 随着业务的发展，用户数据量激增，算法模型加宽加深，用户的PS任务规模也随之增大。在超大规模任务场景下(几百甚至上千worker)，原生tensorflow框架中的一些问题被暴露出来，譬如低效的线程池调度，多处关键路径上的锁开销，低效的执行引擎，频繁的rpc带来的开销以及内存使用效率低等等。
-​
 
 为了解决用户在超大规模场景下遇到的问题，我们提供了StarServer功能，StarServer对于tensorflow做了全方位的优化，包括graph，线程，executor以及内存等优化。将原有tensorflow中send/recv语义修改为pull/push语义，并且在子图划分上支持了该语义。同时实现了图执行过程中的lock free，大大提高的并发执行子图的效率。StarServer在更大规模的扩展性和性能上优于grpc/grpc++，某些模型是可以成倍的提升性能。StarServer的设计上对PS的runtime进行了优化，整个ps端的图执行实现了无锁化的执行。
+
 ## 接口介绍
 使用StarServer和GRPC一样，通过简单的配置`protocol`即可。
 DeepRec目前支持两个版本的StarServer实现，对应的`protocol`分别是`"star_server"`和`"star_server_lite"`，这两种实现的区别是，`"star_server_lite"`在分图优化上的算法更激进，对于复杂的graph可能会出现分图错误问题，`"star_server"`使用了比较稳健的分图算法。当然`"star_server_lite"`相对`"star_server"`在性能上是有优势的，用户可以按需使用。
 
-
 ### Configure StarServer
-StarServer使用了seastar做为底层的通信库，同时保留了GRPC的接口连接（用于MasterSession），这样需要为seastar配置一组ports。使用GRPC++需要在执行目录下配置.endpoint_map文件，格式如下：
+StarServer使用了seastar做为底层的通信库，同时保留了GRPC的接口连接（用于MasterSession），这样需要为seastar配置一组ports。使用StarServer需要在执行目录下配置.endpoint_map文件，格式如下：
 
 ```
 127.0.0.1:3333=127.0.0.1:5555
