@@ -25,26 +25,27 @@ def get_embedding_variable(name,
                            key_dtype=dtypes.int64,
                            value_dtype=None,
                            initializer=None,
-                           regularizer=None,
                            trainable=True,
                            collections=None,
-                           caching_device=None,
                            partitioner=None,
-                           validate_shape=True,
                            custom_getter=None,
-                           constraint=None,
-                           init_data_source=None,
                            ev_option = tf.EmbeddingVariableOption()):
 ```
 
 - `name`: EmbeddingVariable名称
-- `embedding_dim`: embedding之后的维度, eg: 8, 64
+- `embedding_dim`: embedding参数的维度
 - `key_dtype`: lookup时key的类型，默认值为int64，允许的值为int64和int32
 - `value_dtype`: embedding vector的类型，目前仅限于float
 - `initializer`: embedding vector初始化值，可以传入的参数为Initializer或list
 - `trainable`: 是否被添加到GraphKeys.TRAINABLE_VARIABLES的collection
+- `collections`: 一个记录了collection的keys的列表，该Variable会被加入到列表中的collection，默认为[GraphKeys.GLOBAL_VARIABLES]
 - `partitioner`: 分区函数
-- `ev_opt`: 一些基于EV的功能参数配置
+- `custom_getter`: 一个可调用的对象，将true getter作为它的第一个参数传入，并且允许重写内部的get_variable方法。应符合def custom_getter(getter, *args, **kwargs)的形式。也可以通过def custom_getter(getter, name, *args, **kwargs)的形式直接访问get_variable中的所有参数。下面是一个简单的通过custom_getter使用修改的名字创建variable的例子：
+```python
+def custom_getter(getter, name, *args, **kwargs):
+  return getter(name + '_suffix', *args, **kwargs)
+```
+- `ev_option`: 一些基于EV的功能参数配置
 
 通过`tf.feature_column`使用Embedding Variable功能的API：
 ```python
