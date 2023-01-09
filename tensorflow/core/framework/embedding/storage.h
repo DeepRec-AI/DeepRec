@@ -36,6 +36,9 @@ template<typename K, typename V, typename EV>
 class FilterPolicy;
 
 namespace embedding {
+template <class K, class V>
+class GPUHashTable;
+
 template<typename K, typename V>
 struct KVInterfaceDescriptor {
   KVInterfaceDescriptor(KVInterface<K, V>* kv,
@@ -112,7 +115,9 @@ class Storage {
 
   virtual void BatchLookupOrCreate(const K* key, V* val, V* default_v,
       int32 default_v_num, bool is_use_default_value_tensor,
-      size_t n, const Eigen::GpuDevice& device) {};
+      size_t n, const Eigen::GpuDevice& device) {}
+  virtual void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
+      const Eigen::GpuDevice& device) {}
 
   virtual void InitCache(embedding::CacheStrategy cache_strategy) = 0;
   virtual int64 CacheSize() const = 0;
@@ -151,6 +156,10 @@ class Storage {
                           " storage type: ", storage_config_.type,
                           " storage path: ", storage_config_.path,
                           " storage capacity: ", storage_config_.size);
+  }
+
+  GPUHashTable<K, V>* HashTable() {
+    return nullptr;
   }
 
  protected:

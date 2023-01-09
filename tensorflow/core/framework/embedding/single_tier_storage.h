@@ -365,6 +365,15 @@ class HbmStorage : public SingleTierStorage<K, V> {
         is_use_default_value_tensor, n, device);
   }
 
+  void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
+      const Eigen::GpuDevice& device) {
+    SingleTierStorage<K, V>::kv_->BatchLookupOrCreateKeys(key, n, item_idxs, device);
+  }
+
+  embedding::GPUHashTable<K, V>* HashTable() {
+    return SingleTierStorage<K, V>::kv_->HashTable();
+  }
+
  protected:
   void SetTotalDims(int64 total_dims) override {}
 };

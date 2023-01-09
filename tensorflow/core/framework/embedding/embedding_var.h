@@ -36,11 +36,12 @@ limitations under the License.
 #include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
-
+/*
+namespace embedding {
 template <class K, class V>
-class EmbeddingVarInterface : public ResourceBase {
-};
-
+class GPUHashTable;
+}
+*/
 template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:
@@ -613,14 +614,6 @@ class EmbeddingVar : public ResourceBase {
     return default_value_ + (key % emb_config_.default_value_dim) * value_len_;
   }
 
-  void SetSlotNum(int64 slot_num) {
-    emb_config_.slot_num = slot_num;
-  }
-
-  int64 GetSlotNum() {
-    return emb_config_.slot_num;
-  }
-
   embedding::BatchCache<K>* Cache() {
     return storage_manager_->Cache();
   }
@@ -640,7 +633,7 @@ class EmbeddingVar : public ResourceBase {
   V** GetBuffer(int64 size) {
     if (dev_addr_buffer_size_ >= size) {
       return dev_addr_buffer_;
-    } else{
+    } else {
       if (dev_addr_buffer_size_ != 0) {
         alloc_->DeallocateRaw(dev_addr_buffer_);
       }
@@ -677,6 +670,23 @@ class EmbeddingVar : public ResourceBase {
         is_use_default_value_tensor, n, device);
   }
 //#endif // GOOGLE_CUDA
+
+  void LookupOrCreateKey(const K* key, int32* item_idxs, size_t n,
+      const Eigen::GpuDevice& device, int64 update_version = -1) {
+    storage_manager_->BatchLookupOrCreateKeys(key, item_idxs, n, device);
+  }
+
+  int32 SlotNum() {
+    return (emb_config_.block_num * (1 + emb_config_.slot_num));
+  }
+
+  int32 EmbIdx() {
+    return emb_config_.emb_index;
+  }
+
+  embedding::GPUHashTable<K, V>* HashTable() {
+    return storage_manager_->HashTable();
+  }
 
  protected:
   FilterPolicy<K, V, EmbeddingVar<K, V>>* GetFilter() const {

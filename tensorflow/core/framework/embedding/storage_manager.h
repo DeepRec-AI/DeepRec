@@ -28,6 +28,9 @@ class EmbeddingVar;
 
 namespace embedding {
 template <class K, class V>
+class GPUHashTable;
+
+template <class K, class V>
 class StorageManager {
  public:
   StorageManager(const string& name,
@@ -167,6 +170,11 @@ class StorageManager {
     storage_->BatchLookupOrCreate(key, val, default_v, default_v_num,
         is_use_default_value_tensor, n, device);
   }
+
+  void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
+      const Eigen::GpuDevice& device) {
+    storage_->BatchLookupOrCreateKeys(key, item_idxs, n, device);
+  }
 #endif  // GOOGLE_CUDA
 
   Status Remove(K key) {
@@ -255,6 +263,10 @@ class StorageManager {
 
   void iterator_mutex_unlock() {
     storage_->iterator_mutex_unlock();
+  }
+
+  GPUHashTable<K, V>* HashTable() {
+    return storage_->HashTable();
   }
 
  private:

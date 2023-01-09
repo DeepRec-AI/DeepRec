@@ -30,8 +30,8 @@ template <typename Device, typename TKey, typename T>
 struct KvSparseApplyAdagrad {
   void operator()(int32 num_items,
                   Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
+                  EmbeddingVar<TKey, T>* var,
+                  EmbeddingVar<TKey, T>* accum,
                   const TKey* key_base,
                   const T* grad,
                   T lr,
@@ -43,9 +43,9 @@ template <typename Device, typename TKey, typename T>
 struct KvSparseApplyFtrl {
   void operator()(int32 num_items,
                   Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
-                  EmbeddingVarGPU<TKey, T>* linear,
+                  EmbeddingVar<TKey, T>* var,
+                  EmbeddingVar<TKey, T>* accum,
+                  EmbeddingVar<TKey, T>* linear,
                   const TKey* key_base,
                   const T* grad,
                   T lr,
@@ -60,9 +60,9 @@ struct KvSparseApplyFtrl {
 template <typename Device, typename T, typename Tindex, typename Tstep>
 struct KvSparseApplyAdamAsync {
   Status operator()(const Device &d, 
-                    EmbeddingVarGPU<Tindex, T> *var,
-                    EmbeddingVarGPU<Tindex, T> *m,
-                    EmbeddingVarGPU<Tindex, T> *v,
+                    EmbeddingVar<Tindex, T> *var,
+                    EmbeddingVar<Tindex, T> *m,
+                    EmbeddingVar<Tindex, T> *v,
                     typename TTypes<T>::Scalar beta1_power_scalar,
                     typename TTypes<T>::Scalar beta2_power_scalar, 
                     typename TTypes<Tindex>::ConstVec indices_vec,

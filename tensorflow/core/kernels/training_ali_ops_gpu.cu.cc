@@ -16,6 +16,7 @@ limitations under the License.
 #if GOOGLE_CUDA
 #define EIGEN_USE_GPU
 
+#include "tensorflow/core/framework/embedding/gpu_hash_table.h"
 #include "tensorflow/core/framework/register_types.h"
 #include "tensorflow/core/kernels/training_ali_ops.h"
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
@@ -105,14 +106,29 @@ struct KvSparseApplyAdagrad<GPUDevice, TKey, T> {
     var->LookupOrCreateKey(key_base, item_idxs, num_items, device, gs);
     auto const block_size = 256;
     auto const grid_size = num_items;
-    auto hashtable = var->kv()->HashTable();
+    embedding::GPUHashTable<TKey, T>* hashtable = var->HashTable();
+    var->HashTable();
+    var->HashTable()->Size();
+
+    kv_sparse_apply_adagrad_kernel<T>;
+    grid_size, block_size, 0, device.stream();
+    item_idxs;
+var->ValueLen();
+hashtable->Size();
+hashtable->d_bank_ptrs;
+    hashtable->d_existence_flag_ptrs;
+    var->EmbIdx(), accum->EmbIdx();
+    var->SlotNum(), hashtable->initial_bank_size;
+    lr, grad, var->GetDefaultValuePtr(), accum->GetDefaultValuePtr();
+    var->GetDefaultValueDim(), accum->GetDefaultValueDim();
+
     TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_adagrad_kernel<T>,
                                 grid_size, block_size, 0, device.stream(),
                                 item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
                                 hashtable->d_existence_flag_ptrs,
                                 var->EmbIdx(), accum->EmbIdx(),
                                 var->SlotNum(), hashtable->initial_bank_size,
-                                lr, grad, var->DefaultValuePtr(), accum->DefaultValuePtr(),
+                                lr, grad, var->GetDefaultValuePtr(), accum->GetDefaultValuePtr(),
                                 var->GetDefaultValueDim(), accum->GetDefaultValueDim()));
     TypedAllocator::Deallocate(alloc, item_idxs, num_items);
   }
@@ -276,14 +292,14 @@ struct KvSparseApplyFtrl<GPUDevice, TKey, T> {
     var->LookupOrCreateKey(key_base, item_idxs, num_items, device);
     auto const block_size = 256;
     auto const grid_size = num_items;
-    auto hashtable = var->kv()->HashTable();
+    auto hashtable = var->HashTable();
     TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_ftrl_kernel<T>,
                                 grid_size, block_size, (var->ValueLen()) * sizeof(T), device.stream(),
                                 item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
                                 hashtable->d_existence_flag_ptrs,
                                 var->EmbIdx(), accum->EmbIdx(), linear->EmbIdx(),
                                 var->SlotNum(), hashtable->initial_bank_size,
-                                lr, grad, var->DefaultValuePtr(), accum->DefaultValuePtr(), linear->DefaultValuePtr(),
+                                lr, grad, var->GetDefaultValuePtr(), accum->GetDefaultValuePtr(), linear->GetDefaultValuePtr(),
                                 var->GetDefaultValueDim(), accum->GetDefaultValueDim(), linear->GetDefaultValueDim(),
                                 l1, l2, lr_power, has_l2_shrinkage, l2_shrinkage));
     TypedAllocator::Deallocate(alloc, item_idxs, num_items);
@@ -407,18 +423,18 @@ struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep> {
       var->LookupOrCreateKey(indices_vec.data(), item_idxs, N, d, global_step);
       auto const block_size = 256;
       auto const grid_size = N;
-      auto hashtable = var->kv()->HashTable();
+      auto hashtable = var->HashTable();
       TF_CHECK_OK(GpuLaunchKernel(KvSparseApplyAdamAsyncKernel<T>,
                             grid_size, block_size, 0, d.stream(),
                             item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
                             hashtable->d_existence_flag_ptrs, var->EmbIdx(),
-                            v->EmbIdx(), m->EmbIdx(), var->SlotNum(), 
+                            v->EmbIdx(), m->EmbIdx(), var->SlotNum(),
                             hashtable->initial_bank_size, beta1_scalar.data(),
-                            beta2_scalar.data(), beta1_power_scalar.data(), 
-                            beta2_power_scalar.data(), epsilon_scalar.data(), 
-                            lr_scalar.data(), grad.data(), var->DefaultValuePtr(), 
-                            v->DefaultValuePtr(), m->DefaultValuePtr(), 
-                            var->GetDefaultValueDim(), v->GetDefaultValueDim(), 
+                            beta2_scalar.data(), beta1_power_scalar.data(),
+                            beta2_power_scalar.data(), epsilon_scalar.data(),
+                            lr_scalar.data(), grad.data(), var->GetDefaultValuePtr(),
+                            v->GetDefaultValuePtr(), m->GetDefaultValuePtr(),
+                            var->GetDefaultValueDim(), v->GetDefaultValueDim(),
                             m->GetDefaultValueDim(), apply_sparse_rmsprop));
       TypedAllocator::Deallocate(alloc, item_idxs, N);
     }
@@ -590,10 +606,18 @@ struct SparseApplyAdamAsync<GPUDevice, T, Tindex> {
 }  // namespace functor
 
 #if !TENSORFLOW_USE_GPU_EV
+/*
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, float>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, double>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, float>;
 template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, double>;
+*/
+#define REGISTER_ALL_TYPE(type)                                       \
+  template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, type>; \
+  template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
+
 template struct functor::KvSparseApplyFtrl<GPUDevice, int32, float>;
 template struct functor::KvSparseApplyFtrl<GPUDevice, int32, double>;
 template struct functor::KvSparseApplyFtrl<GPUDevice, int64, float>;
