@@ -23,25 +23,26 @@ def get_embedding_variable(name,
                            key_dtype=dtypes.int64,
                            value_dtype=None,
                            initializer=None,
-                           regularizer=None,
                            trainable=True,
                            collections=None,
-                           caching_device=None,
                            partitioner=None,
-                           validate_shape=True,
                            custom_getter=None,
-                           constraint=None,
-                           init_data_source=None,
                            ev_option = tf.EmbeddingVariableOption()):
 ```
 
 - `name`: name of EmbeddingVariable
-- `embedding_dim`: dim of each embedding, e.g. 8, 64
+- `embedding_dim`: the dim of each embedding.
 - `key_dtype`: data type of the key used to lookup embedding, default is int64, allowed values are int64 and int32
 - `value_dtype`: the data type of embedding parameters, currently limited to float 
 - `initializer`: initial value of embedding parameters, initializer and list can be passed in
 - `trainable`: whether to be added to the GraphKeys.TRAINABLE_VARIABLES collection
-- `partitioner`: partition function
+- `collections`: list of graph collections keys to add the Variable to. Defaults to [GraphKeys.GLOBAL_VARIABLES]
+- `partitioner`: optional callable that accepts a fully defined TensorShape and dtype of the Variable to be created, and returns a list of partitions for each axis (currently only one axis can be partitioned)
+- `custom_getter`: callable that takes as a first argument the true getter, and allows overwriting the internal get_variable method. The signature of custom_getter should match that of this method, but the most future-proof version will allow for changes: def custom_getter(getter, *args, **kwargs). Direct access to all get_variable parameters is also allowed: def custom_getter(getter, name, *args, **kwargs). A simple identity custom getter that simply creates variables with modified names is:
+```python
+def custom_getter(getter, name, *args, **kwargs):
+  return getter(name + '_suffix', *args, **kwargs)
+```
 - `ev_option`: options of EmbeddingVariabe, e.g. options of feature filter and options of multi-tier storage
 
 **Create EmbeddingVariable with `tf.feature_colum` API**
