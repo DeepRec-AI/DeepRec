@@ -35,6 +35,9 @@ struct SsdRecordDescriptor;
 template<typename K, typename V, typename EV>
 class FilterPolicy;
 
+template <class K, class V>
+class GPUHashTable;
+
 namespace embedding {
 
 template<typename K, typename V>

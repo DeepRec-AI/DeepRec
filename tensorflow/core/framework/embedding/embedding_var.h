@@ -36,12 +36,10 @@ limitations under the License.
 #include "tensorflow/core/framework/typed_allocator.h"
 
 namespace tensorflow {
-/*
-namespace embedding {
+
 template <class K, class V>
 class GPUHashTable;
-}
-*/
+
 template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:

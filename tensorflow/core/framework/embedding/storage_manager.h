@@ -26,6 +26,9 @@ class ValuePtr;
 template <class K, class V>
 class EmbeddingVar;
 
+template <class K, class V>
+class GPUHashTable;
+
 namespace embedding {
 
 template <class K, class V>
