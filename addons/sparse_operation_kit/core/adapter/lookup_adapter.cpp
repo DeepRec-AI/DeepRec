@@ -66,10 +66,11 @@ void EmbeddingVarGPUAdapter<KeyType, DType>::lookup(
     OP_REQUIRES_OK(ctx_, ctx_->allocate_temp(DT_FLOAT, {ev_size * num}, &evs));
     tmp_ev_list_.push_back(evs);
 
+    const auto& device = ctx_->eigen_device<Eigen::GpuDevice>();
     auto var = vars_[id_space_[i]];
     var->LookupOrCreate(input + id_space_offset_[i], evs.flat<DType>().data(),
                         var->GetDefaultValuePtr(), var->GetDefaultValueDim(),
-                        true, num, stream_);
+                        true, num, device);
     for (size_t i_ev = 0; i_ev < num; ++i_ev) {
       lookup_res.push_back(evs.flat<DType>().data() + i_ev * ev_size);
     }

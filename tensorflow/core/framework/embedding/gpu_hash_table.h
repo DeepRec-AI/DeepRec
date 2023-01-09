@@ -16,7 +16,6 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_GPU_HASH_TABLE_H_
 
 #if GOOGLE_CUDA
-#include "cuco/allocator.hpp"
 #include <cuda/std/atomic>
 #include "tensorflow/core/framework/typed_allocator.h"
 #include "tensorflow/core/lib/core/status.h"

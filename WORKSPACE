@@ -310,3 +310,11 @@ http_archive(
     ],
 )
 
+http_archive(
+    name = "hugectr",
+    build_file = "//third_party:hugectr.BUILD",
+    strip_prefix = "HugeCTR-4.3",
+    urls = [
+        "https://github.com/NVIDIA-Merlin/HugeCTR/archive/refs/tags/v4.3.tar.gz",
+    ],
+)
