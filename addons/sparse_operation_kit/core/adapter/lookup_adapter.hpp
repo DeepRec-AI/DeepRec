@@ -32,7 +32,6 @@ limitations under the License.
 // clang-format on
 
 #ifdef GOOGLE_CUDA
-#ifdef TENSORFLOW_USE_GPU_EV
 
 namespace tensorflow {
 
@@ -64,5 +63,4 @@ class EmbeddingVarGPUAdapter : public ::embedding::ILookup {
 };
 
 }  // namespace tensorflow
-#endif
 #endif

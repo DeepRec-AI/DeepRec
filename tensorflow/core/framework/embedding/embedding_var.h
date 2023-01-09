@@ -660,14 +660,12 @@ class EmbeddingVar : public ResourceBase {
     }
   }
 
-//#if GOOGLE_CUDA
   void LookupOrCreate(const K* key, V* val, V* default_v,
       int32 default_v_num, bool is_use_default_value_tensor,
       size_t n, const Eigen::GpuDevice& device) {
     storage_manager_->BatchLookupOrCreate(key, val, default_v, default_v_num,
         is_use_default_value_tensor, n, device);
   }
-//#endif // GOOGLE_CUDA
 
   void LookupOrCreateKey(const K* key, int32* item_idxs, size_t n,
       const Eigen::GpuDevice& device, int64 update_version = -1) {

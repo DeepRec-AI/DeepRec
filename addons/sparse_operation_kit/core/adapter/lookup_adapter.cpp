@@ -18,7 +18,6 @@ limitations under the License.
 #include "common/check.h"
 
 #ifdef GOOGLE_CUDA
-#ifdef TENSORFLOW_USE_GPU_EV
 
 namespace tensorflow {
 
@@ -87,5 +86,4 @@ template class EmbeddingVarGPUAdapter<int32, float>;
 template class EmbeddingVarGPUAdapter<int64, float>;
 // template class EmbeddingVarGPUAdapter<int64_t, __half>;
 }  // namespace tensorflow
-#endif
 #endif
