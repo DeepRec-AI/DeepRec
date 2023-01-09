@@ -530,7 +530,7 @@ def _collect_partitioned_variable(name, all_vars):
       i += 1
     return var
   else:
-    if name is "/":
+    if name == "/":
       st = 1
     else:
       st = 2

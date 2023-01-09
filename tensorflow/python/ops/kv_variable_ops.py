@@ -507,7 +507,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
             ops.prepend_name_scope(
                 primary_name, import_scope=import_scope))
     else:
-      if self._slot_index is 0:
+      if self._slot_index == 0:
         self._primary_handle = self._handle
       else:
         for val in primary_name_list[:-1]:
@@ -546,7 +546,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._storage_cache_strategy = config_pb2.CacheStrategy.LFU
     if cache_op:
       self._storage_cache_strategy = cache_op.get_attr("cache_strategy")
-    if self._slot_index is 0 and self._emb_index is 0:
+    if self._slot_index == 0 and self._emb_index == 0:
       self._is_primary = True
     else:
       self._is_primary = False
