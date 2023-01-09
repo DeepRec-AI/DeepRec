@@ -44,7 +44,6 @@ __device__ Eigen::half impl_rsqrt(Eigen::half x) {
   return __float2half(rsqrt(__half2float(x)));
 }
 
-#if !TENSORFLOW_USE_GPU_EV
 template <typename Value>
 __global__ void kv_sparse_apply_adagrad_kernel(int32* item_idxs,
                                                int64 dim,
@@ -106,22 +105,7 @@ struct KvSparseApplyAdagrad<GPUDevice, TKey, T> {
     var->LookupOrCreateKey(key_base, item_idxs, num_items, device, gs);
     auto const block_size = 256;
     auto const grid_size = num_items;
-    embedding::GPUHashTable<TKey, T>* hashtable = var->HashTable();
-    var->HashTable();
-    var->HashTable()->Size();
-
-    kv_sparse_apply_adagrad_kernel<T>;
-    grid_size, block_size, 0, device.stream();
-    item_idxs;
-var->ValueLen();
-hashtable->Size();
-hashtable->d_bank_ptrs;
-    hashtable->d_existence_flag_ptrs;
-    var->EmbIdx(), accum->EmbIdx();
-    var->SlotNum(), hashtable->initial_bank_size;
-    lr, grad, var->GetDefaultValuePtr(), accum->GetDefaultValuePtr();
-    var->GetDefaultValueDim(), accum->GetDefaultValueDim();
-
+    GPUHashTable<TKey, T>* hashtable = var->HashTable();
     TF_CHECK_OK(GpuLaunchKernel(kv_sparse_apply_adagrad_kernel<T>,
                                 grid_size, block_size, 0, device.stream(),
                                 item_idxs, var->ValueLen(), hashtable->d_bank_ptrs,
@@ -448,8 +432,6 @@ struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep> {
 }
 };
 
-#endif // TENSORFLOW_USE_GPU_EV
-
 template <typename T>
 __global__ __launch_bounds__(1024) void ApplyAdamAsyncKernel(
                             T *var, T *m, T *v, T *beta1_power, T *beta2_power, 
@@ -605,44 +587,39 @@ struct SparseApplyAdamAsync<GPUDevice, T, Tindex> {
 
 }  // namespace functor
 
-#if !TENSORFLOW_USE_GPU_EV
-/*
-template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, float>;
-template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, double>;
-template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, float>;
-template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, double>;
-*/
-#define REGISTER_ALL_TYPE(type)                                       \
+#define REGISTER_ALL_TYPE(type)                                          \
   template struct functor::KvSparseApplyAdagrad<GPUDevice, int32, type>; \
   template struct functor::KvSparseApplyAdagrad<GPUDevice, int64, type>;
 TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
 #undef REGISTER_ALL_TYPE
 
-template struct functor::KvSparseApplyFtrl<GPUDevice, int32, float>;
-template struct functor::KvSparseApplyFtrl<GPUDevice, int32, double>;
-template struct functor::KvSparseApplyFtrl<GPUDevice, int64, float>;
-template struct functor::KvSparseApplyFtrl<GPUDevice, int64, double>;
-#define EXPLICITLY_INSTANTIATE_FUNCTOR(T) \
-  template struct functor::KvSparseApplyAdamAsync<GPUDevice, T, int32, int32>; \
-  template struct functor::KvSparseApplyAdamAsync<GPUDevice, T, int32, int64>; \
-  template struct functor::KvSparseApplyAdamAsync<GPUDevice, T, int64, int32>; \
-  template struct functor::KvSparseApplyAdamAsync<GPUDevice, T, int64, int64>;
-EXPLICITLY_INSTANTIATE_FUNCTOR(float);
-EXPLICITLY_INSTANTIATE_FUNCTOR(double);
-#undef EXPLICITLY_INSTANTIATE_FUNCTOR
-#endif // TENSORFLOW_USE_GPU_EV
+#define REGISTER_ALL_TYPE(type)                                          \
+template struct functor::KvSparseApplyFtrl<GPUDevice, int32, type>;      \
+template struct functor::KvSparseApplyFtrl<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
 
-template struct functor::ApplyAdamAsync<GPUDevice, Eigen::half>;
-template struct functor::ApplyAdamAsync<GPUDevice, float>;
-template struct functor::ApplyAdamAsync<GPUDevice, double>;
+#define REGISTER_ALL_TYPE(type)                                                   \
+  template struct functor::KvSparseApplyAdamAsync<GPUDevice, type, int32, int32>; \
+  template struct functor::KvSparseApplyAdamAsync<GPUDevice, type, int32, int64>; \
+  template struct functor::KvSparseApplyAdamAsync<GPUDevice, type, int64, int32>; \
+  template struct functor::KvSparseApplyAdamAsync<GPUDevice, type, int64, int64>;
+TF_CALL_float(REGISTER_ALL_TYPE);
+TF_CALL_double(REGISTER_ALL_TYPE);
+#undef REGISTER_ALL_TYPE
 
-#define EXPLICITLY_INSTANTIATE_FUNCTOR(T) \
-  template struct functor::SparseApplyAdamAsync<GPUDevice, T, int32>; \
-  template struct functor::SparseApplyAdamAsync<GPUDevice, T, int64>;
-EXPLICITLY_INSTANTIATE_FUNCTOR(Eigen::half);
-EXPLICITLY_INSTANTIATE_FUNCTOR(float);
-EXPLICITLY_INSTANTIATE_FUNCTOR(double);
-#undef EXPLICITLY_INSTANTIATE_FUNCTOR
+#define REGISTER_ALL_TYPE(type)                                         \
+  template struct functor::ApplyAdamAsync<GPUDevice, type>;
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_ALL_TYPE);
+#undef REGISTER_ALL_TYPE
+
+#define REGISTER_ALL_TYPE(type)                                          \
+  template struct functor::SparseApplyAdamAsync<GPUDevice, type, int32>; \
+  template struct functor::SparseApplyAdamAsync<GPUDevice, type, int64>;
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_ALL_TYPE);
+#undef REGISTER_ALL_TYPE
 
 }  // end namespace tensorflow
 #endif  // GOOGLE_CUDA

@@ -684,7 +684,7 @@ class EmbeddingVar : public ResourceBase {
     return emb_config_.emb_index;
   }
 
-  embedding::GPUHashTable<K, V>* HashTable() {
+  GPUHashTable<K, V>* HashTable() {
     return storage_manager_->HashTable();
   }
 

@@ -95,6 +95,10 @@ class KVInterface {
       size_t n, const Eigen::GpuDevice& device) {
     return Status::OK();
   }
+  virtual Status BatchLookupOrCreateKeys(const K* keys, size_t n,
+      int32* item_idxs, const Eigen::GpuDevice& device) {
+    return Status::OK();
+  }
 
 };
 

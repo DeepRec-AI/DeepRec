@@ -17,7 +17,6 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_TRAINING_ALI_OPS_GPU_H_
 
 #if GOOGLE_CUDA
-//#if TENSORFLOW_USE_GPU_EV
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/platform/types.h"
@@ -77,7 +76,6 @@ struct KvSparseApplyAdamAsync {
 };
 }  // end namespace functor
 }  // end namespace tensorflow
-//#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_KERNELS_TRAINING_ALI_OPS_GPU_H_

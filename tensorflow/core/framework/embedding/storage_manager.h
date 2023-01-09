@@ -27,8 +27,6 @@ template <class K, class V>
 class EmbeddingVar;
 
 namespace embedding {
-template <class K, class V>
-class GPUHashTable;
 
 template <class K, class V>
 class StorageManager {

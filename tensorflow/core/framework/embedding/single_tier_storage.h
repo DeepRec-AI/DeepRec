@@ -370,7 +370,7 @@ class HbmStorage : public SingleTierStorage<K, V> {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreateKeys(key, n, item_idxs, device);
   }
 
-  embedding::GPUHashTable<K, V>* HashTable() {
+  GPUHashTable<K, V>* HashTable() {
     return SingleTierStorage<K, V>::kv_->HashTable();
   }
 

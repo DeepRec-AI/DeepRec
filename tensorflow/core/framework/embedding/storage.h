@@ -36,8 +36,6 @@ template<typename K, typename V, typename EV>
 class FilterPolicy;
 
 namespace embedding {
-template <class K, class V>
-class GPUHashTable;
 
 template<typename K, typename V>
 struct KVInterfaceDescriptor {
