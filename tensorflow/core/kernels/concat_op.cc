@@ -491,7 +491,7 @@ class FusedConcatCastOp : public OpKernel {
         for (int64_t i = 0; i < inputs_flat_dim0; ++i) {
           for (int64_t j = 0; j < N; ++j) {
             auto size = sizes[j];
-#if INTEL_MKL
+#if defined(INTEL_MKL) && !defined(DNNL_AARCH64_USE_ACL)
             castElements(out_ptr, input_pointers[j], size);
 #else
             for (int64_t s = 0; s < size; ++s) {
@@ -529,7 +529,7 @@ class FusedConcatCastOp : public OpKernel {
               }
               size = std::min(size, out_end - out);
               if (size <= 0) break;
-#if INTEL_MKL
+#if defined(INTEL_MKL) && !defined(DNNL_AARCH64_USE_ACL)
               castElements(out, data_ptr, size);
 #else
               for (int64_t s = 0; s < size; ++s) {
@@ -572,7 +572,7 @@ class FusedConcatCastOp : public OpKernel {
   }
 
  private:
-#if INTEL_MKL
+#if defined(INTEL_MKL) && !defined(DNNL_AARCH64_USE_ACL)
   static void castElements(Eigen::bfloat16* dst, const float* src, ptrdiff_t size) {
     dnnl::cvt_float_to_bfloat16((dnnl_bfloat16_t *)dst, (const float *)src, size);
   }
