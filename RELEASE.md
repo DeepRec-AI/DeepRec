@@ -1,3 +1,361 @@
+
+# Release r1.15.5-deeprec2210
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Support HBM-DRAM-SSD storage in EmbeddingVariable multi-tier storage.
+- Support multi-tier EmbeddingVariable initialized based on frequency when restore model.
+- Support to lookup location of ids of EmbeddingVariable.
+- Support kv_initialized_op for GPU Embedding Variable.
+- Support restore compatibility of EmbeddingVariable using init_from_proto.
+- Improve performance of apply/gather ops for EmbeddingVariable.
+- Add Eviction Manager in EmbeddingVariable Multi-tier storage.
+- Add unified thread pool for cache of Multi-tier storage in EmbeddingVariable.
+- Save frequencies and versions of features in SSDHash and LevelDB storage of EmbeddingVariable.
+- Avoid invalid eviction use HBM-DRAM storage of EmbeddingVariable.
+- Preventing from accessing uninitialized data use EmbeddingVariable.
+
+### **Graph & Grappler Optimization**
+
+- Optimize Async EmbeddingLookup by placement optimization.
+- Place VarHandlerOp to Compute main graph for SmartStage.
+- Support independent thread pool for stage subgraph to avoid thread contention.
+- Implement device placement optimization.
+
+### **Runtime Optimization**
+
+- Support CUDA Graph execution by adding CUDA Graph mode session.
+- Support CUDA Graph execution in JIT mode.
+- Support intra task cost estimate in CostModel in Executor.
+- Support tf.stream and tf.colocate python API for CUDA multi-stream.
+- Support embedding subgraphs partition policy when use CUDA multi-stream.
+- Optimize CUDA multi-stream by merging copy stream into compute stream.
+
+### **Ops & Hardware Acceleration**
+
+- Add a list of Quantized* and _MklQuantized* ops.
+- Implement GPU version of SparseFillEmptyRows.
+- Implement c version of spin_lock to support multi-architectures.
+- Upgrade the OneDNN version to v2.7.
+
+### **Distributed**
+
+- Support distributed training use SOK based on EmbeddingVariable.
+- Add NETWORK_MAX_CONNECTION_TIMEOUT to support connection timeout configurable in StarServer.
+- Upgrade the SOK version to v4.2.
+
+### **IO**
+
+- Add TF_NEED_PARQUET_DATASET to enable ParquetDataset.
+
+### **Serving**
+
+- Optimize embedding lookup performance by disable feature filter when serving.
+- Optimize error code for user when parse request or response failed.
+- Support independent update model threadpool to avoid performance jitter.
+
+### **ModelZoo**
+
+- Add MaskNet Model.
+- Add PLE Model.
+- Support variable type BF16 in DCN model.
+
+### **BugFix**
+
+- Fix tf.nn.embedding_lookup interface bug and session hang bug when enabling async embedding.
+- Fix warmup failed bug when user set warmup file path.
+- Fix build failure in ev_allocator.cc and hash.cc on ARM.
+- Fix build failure in arrow when build on ARM
+- Fix redefined error in NEON header file for ARM.
+- Fix _mm_malloc build failure in sparsehash on ARM.
+- Fix warmup failed bug when use session_group.
+- Fix build save graph bug when creating partitioned EmbeddingVariable in feature_column API.
+- Fix the colocation error when using EmbeddingVariable in distribution.
+- Fix HostNameToIp fails by replacing gethostbyname by getaddrinfo in StarServer.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2210-cpu-py36-ubuntu18.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04`
+
+### **Thanks to our Contributors**
+Duyi-Wang, Locke, shijieliu, Honglin Zhu, chenxujun, GosTraight2020, LALBJ, Nanno
+
+# Release r1.15.5-deeprec2208u1
+
+## **Major Features and Improvements**
+
+### **BugFix**
+
+- Fix a list of Quantized* and _MklQuantized* ops not found issue.
+- Fix build save graph bug when creating partitioned EmbeddingVariable in feature_column API.
+- Fix warmup failed bug when user set warmup file path.
+- Fix warmup failed bug when use session_group.
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2208u1-cpu-py36-ubuntu18.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2208u1-gpu-py36-cu116-ubuntu18.04`
+
+# Release r1.15.5-deeprec2208
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Multi-tier of EmbeddingVariable support HBM, add async compactor in SSDHashKV.
+- Support tf.feature_column.shard_embedding_columns, SequenceCategoricalColumn and WeightedCategoricalColumn API for EmbeddingVariable.
+- Support save and restore checkpoint of GPU EmbeddingVariable.
+- Support EmbeddingVariable OpKernel with REAL_NUMBER_TYPES.
+- Support user defined default_value for feature filter.
+- Support feature column API for MultiHash.
+
+### **Graph & Grappler Optimization**
+
+- Add FP32 fused l2 normalize op and grad op and tf.nn.fused_layer_normalize API.
+- Add Concat+Cast fusion ops.
+- Optimize SmartStage performance on GPU.
+- Add macro to control to optimize mkl_layout_pass.
+- Support asynchronous embedding lookup.
+
+### **Runtime Optimization**
+
+- CPUAllocator, avoid multiple threads cleanup at the same time.
+- Support independent intra threadpool for each session and intra threadpool be pinned to cpuset.
+- Support multi-stream with virtual device.
+
+### **Ops & Hardware Acceleration**
+
+- Implement ApplyFtrl, ResourceApplyFtrl, ApplyFtrlV2 and ResourceApplyFtrlV2 GPU kernels.
+- Optimize BatchMatmul GPU kernel.
+- Integrate cuBLASlt into backend and use BlasLtMatmul in batch_matmul_op.
+- Support GPU fusion of matmal+bias+(activation).
+- Merge NV-TF r1.15.5+22.06.
+
+### **Optimizer**
+- Support AdamW optimizer for EmbeddingVariable.
+
+### **Model Save/Restore**
+
+- Support asynchronously restore EmbeddingVariable from checkpoint.
+- Support EmbeddingVariable in init_from_checkpoint.
+
+### **Serving**
+
+- Add go/java/python client SDK and demo.
+- Support GPU multi-streams in SessionGroup.
+- Support independent inter thread pool for each session in SessionGroup.
+- Support multi-tiered Embedding.
+- Support immutable EmbeddingVariable.
+
+### **Quantization**
+
+- Add low precision optimization tool, support BF16, FP16, INT8 for savedmodel and checkpoint.
+- Add embedding variable quantization.
+
+### **ModelZoo**
+
+- Optimize DIN's BF16 performance.
+- Add DCN & DCNv2 models and MLPerf recommendation benchmark.
+
+### **Profiler**
+
+- Add detail information for RecvTensor in timeline.
+
+### **Dockerfile**
+
+- Add ubuntu 22.04 dockerfile and images with gcc11.2 and python3.8.6.
+- Add cuda11.2, cuda11.4, cuda11.6, cuda11.7 docker images and use cuda 11.6 as default GPU image.
+
+### **Environment & Build**
+
+- Update default TF_CUDA_COMPUTE_CAPABILITIES to 6.0,6.1,7.0,7.5,8.0.
+- Upgrade bazel version to 0.26.1.
+- Support for building DeepRec on ROCm2.10.0.
+
+### **BugFix**
+
+- Fix build failures with gcc11 & gcc12.
+- StarServer, remove user packet split to avoid multiple user packet out-of-order issue.
+- Fix the 'NodeIsInGpu is not declare' issue.
+- Fix the placement bug of worker devices when distributed training in Modelzoo.
+- Fix out of range issue for BiasAddGrad op when enable AVX512.
+- Avoid loading invalid model when model update in serving.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2208-cpu-py36-ubuntu18.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2208-gpu-py36-cu116-ubuntu18.04`
+
+# Release r1.15.5-deeprec2206
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Multi-tier of EmbeddingVariable, add SSD_HashKV which is better performance than LevelDB.
+- Support GPU EmbeddingVariable which gather/apply ops place on GPU.
+- Add user API to record frequence and version for EmbeddingVariable.
+
+### **Graph Optimization**
+
+- Add Embedding Fusion ops for CPU/GPU.
+- Optimize SmartStage performance on GPU.
+
+### **Runtime Optimization**
+
+- Executor, support cost-based and critical path ops first.
+- GPUAllocator, support CUDA malloc async allocator.  (need to use >= CUDA 11.2)
+- CPUAllocator, automatically memory allocation policy generation.
+- PMEMAllocator, optimize allocator and add statistic.
+
+### **Ops & Hardware Acceleration**
+
+- Implement SparseReshape, SparseApplyAdam, SparseApplyAdagrad, SparseApplyFtrl, ApplyAdamAsync, SparseApplyAdamAsync, KvSparseApplyAdamAsync GPU kernels.
+- Optimize UnSortedSegment on CPU.
+- Upgrade OneDNN to v2.6.
+
+### **IO & Dataset**
+
+- ParquetDataset, add parquet dataset which could reduce storage and improve performance.
+
+### **Model Save/Restore**
+
+- Asynchronous restore EmbeddingVariable from checkpoint.
+
+### **Serving**
+
+- SessionGroup, highly improve QPS and RT in inference.
+
+### **ModelZoo**
+
+- Add models SimpleMultiTask, ESSM, DBMTL, MMoE, BST.
+
+### **Profiler**
+
+- Support for mapping of operators and real thread ids in timeline.
+
+### **BugFix**
+
+- Fix EmbeddingVariable core when EmbeddingVariable only has primary embedding value.
+- Fix abnormal behavior in L2-norm calculation.
+- Fix save checkpoint issue when use LevelDB in EmbeddingVariable.
+- Fix delete old checkpoint failure when use incremental checkpoint.
+- Fix build failure with CUDA 11.6.
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2206-cpu-py36-ubuntu18.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2206-gpu-py36-cu110-ubuntu18.04`
+
+# Release r1.15.5-deeprec2204u1
+
+## **Major Features and Improvements**
+
+### **BugFix**
+
+- Fix saving checkpoint issue when use EmbeddingVariable. (https://github.com/alibaba/DeepRec/issues/167)
+- Fix inputs from different frames issue when use auto graph fusion. (https://github.com/alibaba/DeepRec/issues/144)
+- Fix embedding_lookup_sparse graph issue.
+
+## **Release Images**
+
+### **CPU Image**
+
+`alideeprec/deeprec-release:deeprec2204u1-cpu-py36-ubuntu18.04`
+
+### **GPU Image**
+
+`alideeprec/deeprec-release:deeprec2204u1-gpu-py36-cu110-ubuntu18.04`
+
+# Release r1.15.5-deeprec2204
+
+## **Major Features and Improvements**
+
+### **Embedding**
+
+- Support hybrid storage of EmbeddingVariable (DRAM, PMEM, LevelDB)
+- Support memory-continuous storage of multi-slot EmbeddingVariable.
+- Optimize beta1_power and beta2_power slots of EmbeddingVariable.
+- Support restore frequency of features in EmbeddingVariable.
+
+### **Distributed Training**
+
+- Integrate SOK in DeepRec.
+
+### **Graph Optimization**
+
+- Auto Graph Fusion, support float32/int32/int64 type for select fusion.
+- SmartStage, fix graph contains circle bug when enable SmartStage optimization.
+
+### **Runtime Optimization**
+
+- GPUTensorPoolAllocator, which reduce GPU memory usage and improve performance.
+- PMEMAllocator, support allocation in persistent memory. 
+
+### **Optimizer**
+
+- Optimize AdamOptimizer performance.
+
+### **Op & Hardware Acceleration**
+
+- Change fused MatMul layout type and number thread for small size inputs.
+
+### **IO & Dataset**
+
+- KafkaGroupIODataset, support consumer rebalance.
+
+### **Model Save/Restore**
+
+- Support dump incremental graph info.
+
+### **Serving**
+
+- Add serving module (ODL processor), which support Online Deep Learning (ODL).
+
+More details of features: [https://deeprec.readthedocs.io/zh/latest/](url)
+
+## **Release Images**
+
+### **CPU Image**
+
+`registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-cpu-py36-ubuntu18.04`
+
+### **GPU Image**
+
+`registry.cn-shanghai.aliyuncs.com/pai-dlc-share/deeprec-training:deeprec2204-gpu-py36-cu110-ubuntu18.04`
+
+### Known Issue
+Some user report issue when use Embedding Variable, such as https://github.com/alibaba/DeepRec/issues/167. The bug is fixed in r1.15.5-deeprec2204u1.
+
 # Release r1.15.5-deeprec2201
 
 This is the first release of DeepRec. DeepRec has super large-scale distributed training capability, supporting model training of trillion samples and 100 billion Embedding Processing. For sparse model scenarios, in-depth performance optimization has been conducted across CPU and GPU platform.
