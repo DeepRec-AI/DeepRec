@@ -30,6 +30,7 @@ TFServing-Compile-And-Install
 
 GRPC++
 StarServer
+SOK
 ```
 
 ```{toctree}
