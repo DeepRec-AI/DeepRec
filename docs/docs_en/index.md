@@ -35,7 +35,7 @@ StarServer
 ```{toctree}
 :maxdepth: 2
 :caption: Graph Optimization
-
+Fused-Embedding
 ```
 
 ```{toctree}
@@ -62,6 +62,7 @@ StarServer
 
 oneDNN
 Operator-Optimization
+NVIDIA-TF32
 ```
 
 ```{toctree}
