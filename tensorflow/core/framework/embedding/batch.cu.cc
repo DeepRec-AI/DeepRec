@@ -48,14 +48,12 @@ __global__ void BatchUnpack(V** dev_value_address,
   }
 }
 
-template __global__ void BatchUnpack<int>(
-    int**, int*, int, int);
-template __global__ void BatchUnpack<float>(
-    float**, float*, int, int);
-template __global__ void BatchUnpack<double>(
-    double**, double*, int, int);
-template __global__ void BatchUnpack<long long>(
-    long long**, long long*, int, int);
+#define REGISTER_KERNELS_ALL_INDEX(T)                       \
+  template __global__ void BatchUnpack<T>(T**, T*, int, int);
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_int32(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_int64(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
 
 template<class V>
 __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
@@ -71,10 +69,16 @@ __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, float lr,
   }
 }
 
-template __global__ void SparseApplyAdagradGPU<float>(
-    float**, float**, float*, float, int, long long int);
-template __global__ void SparseApplyAdagradGPU<double>(
-    double**, double**, double*, float, int, long long int);
+#define REGISTER_KERNELS_ALL_INDEX(T)                \
+  template __global__ void SparseApplyAdagradGPU<T>( \
+    T**, T**, T*, float, int, long long int);
+TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
+TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
+#undef REGISTER_KERNELS_ALL_INDEX
+// template __global__ void SparseApplyAdagradGPU<float>(
+//     float**, float**, float*, float, int, long long int);
+// template __global__ void SparseApplyAdagradGPU<double>(
+//     double**, double**, double*, float, int, long long int);
 
 template<class V>
 __global__ void CopyEmbedding(V** batch, V** batch_data_space,

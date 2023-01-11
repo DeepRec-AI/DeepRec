@@ -370,17 +370,17 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
 
 namespace functor {
 #define DECLARE_GPU_SPEC(TKey, T)                             \
-  template <>                                           \
+  template <>                                                 \
   void KvSparseApplyAdagrad<GPUDevice, TKey, T>::operator()(  \
-      int32 num_items,  \
-      Allocator* alloc, \
-      EmbeddingVar<TKey, T>* var,  \
-      EmbeddingVar<TKey, T>* accum,  \
-      const TKey* key_base, \
-      const T* grad,  \
-      T lr, \
-      int64 gs, \
-      const GPUDevice& device);             \
+      int32 num_items,                                        \
+      Allocator* alloc,                                       \
+      EmbeddingVar<TKey, T>* var,                             \
+      EmbeddingVar<TKey, T>* accum,                           \
+      const TKey* key_base,                                   \
+      const T* grad,                                          \
+      T lr,                                                   \
+      int64 gs,                                               \
+      const GPUDevice& device);                               \
   extern template struct KvSparseApplyAdagrad<GPUDevice, TKey, T>;
 DECLARE_GPU_SPEC(int32, float);
 DECLARE_GPU_SPEC(int32, double);
