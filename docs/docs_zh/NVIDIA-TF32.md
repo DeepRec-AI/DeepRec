@@ -12,14 +12,12 @@ TensorFloat-32，是 Nvidia 在 Ampere 架构的 GPU 上推出的专门运用于
 前置条件：
 
 1. 矩阵乘法及卷积相关运算，且输入数据类型为 FP32，才可以使用 TF32 作为 TensorCore 的中间计算类型。
-1. Ampere 架构的 GPU
-
-
+2. Ampere 架构的 GPU
 
 通常情况下使用 TF32，都是由 cuBlas，cuDNN 等 Nvidia 的计算库来在内部进行调用的。因此无论您上层的深度学习框架使用的是什么，请确保：
 
-1.  cuBLAS >= 11.0
-1. cuDNN >= 8.0
+1. cuBLAS >= 11.0
+2. cuDNN >= 8.0
 
 
 

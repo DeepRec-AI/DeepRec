@@ -2,12 +2,15 @@
 
 ## 介绍
 
-DeepRec 及 TensorFlow 原生的 embedding lookup 相关 API，如 safe_embedding_lookup_sparse，会创建比较多的 op，因此在 GPU 上执行时容易出现 kernel launch bound 的问题。因此，Embedding子图Fusion功能提供了一组接口，并提供了一组fusion ops，通过Fusion的Op，减少需要 launch 的 kernel 数量，并提供高性能的实现，达到在 GPU 上加速执行的目的。
+DeepRec 及 TensorFlow 原生的 embedding lookup 相关 API，如 `safe_embedding_lookup_sparse`，会创建比较多的 op，因此在 GPU 上执行时容易出现 kernel launch bound 的问题。因此，Embedding子图Fusion功能提供了一组接口，并提供了一组fusion ops，通过Fusion的Op，减少需要 launch 的 kernel 数量，并提供高性能的实现，达到在 GPU 上加速执行的目的。
+
 ## FeatureColumn接口
-用户 FeatureColumn作为接口。embedding_column 会返回一个 EmbeddingColumn 的类实例，常用的 EmbeddingColumn 有：
+
+
+用户使用 FeatureColumn作为接口。embedding_column 会返回一个 EmbeddingColumn 的类实例，常用的 EmbeddingColumn 有：
 
 1. `tensorflow/python/feature_column/feature_column_v2.py` 的 `EmbeddingColumn` 
-1. `tensorflow/contrib/layers/python/layers/feature_column.py` 的 `_EmbeddingColumn`
+2. `tensorflow/contrib/layers/python/layers/feature_column.py` 的 `_EmbeddingColumn`
 
 然后一般会通过 `tf.feature_column.input_layer` 或 `tf.feature_column_ops.input_from_feature_columns` 等高级接口，将此实例传入，建立 lookup 相关计算图。
 因此，Embedding子图Fusion功能给上述的 `EmbeddingColumn` 类都添加了 `do_fusion` 属性，默认为 `False`，用户在使用时，可以显示的设置为 `True`，让 embedding lookup 过程使用 fused ops。
@@ -27,7 +30,6 @@ W = tf.feature_column.embedding_column(categorical_column=columns,
 ids={}
 ids["col_emb"] = tf.SparseTensor(indices=[[0,0],[1,1],[2,2],[3,3],[4,4]], values=tf.cast([1,2,3,4,5], tf.dtypes.int64), dense_shape=[5, 4])
 
-# 传入设置了 use_fused_lookup 的 EmbeddingColumn 实例
 emb = tf.feature_column.input_layer(ids, [W])
 fun = tf.multiply(emb, 2.0, name='multiply')
 loss = tf.reduce_sum(fun, name='reduce_sum')
@@ -117,10 +119,10 @@ def fused_embedding_lookup_sparse(params,
 - `blocknums`: DynamicEmbeddingVariable 使用的参数。
 ## 注意事项
 
-1. 目前 Embedding子图Fusion当前支持 Nvidia GPU 上执行。相应的 `tf.Variable` 和 `EmbeddingVariable` 及其他算子可以在 CPU 上。其中CPU版本的Embedding Fusion子图功能正在代码开发中。
-1. 目前不支持设置权重 `sparse_weights`。
-1. partition_strategy 目前只支持 div ，且在 axis = 0 上对 embedding tensor 做切分。且如果 embedding tensor 是 EmbeddingVariable 的话，目前只能是单个完整的 ev，还不支持对 ev 进行 partition 的查找模式。
-1. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
+1. 目前 GPU Embedding 子图 Fusion 当前支持 Nvidia GPU 上执行。相应的 `tf.Variable` 和 `EmbeddingVariable` 及其他算子可以在 CPU 上。
+2. 目前不支持设置权重 `sparse_weights`。
+3. partition_strategy 目前只支持 div ，且在 axis = 0 上对 embedding tensor 做切分。且如果 embedding tensor 是 EmbeddingVariable 的话，目前只能是单个完整的 ev，还不支持对 ev 进行 partition 的查找模式。
+4. 目前不支持动态弹性维度、Multi-Hash Variable、AdaptiveEmbedding功能，后续会逐步支持。
 ## Op 介绍及计算图
 新增了 Fused Embedding 相关算子:
 
