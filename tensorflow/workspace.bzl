@@ -130,7 +130,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "cudnn_frontend_archive",
         build_file = clean_dep("//third_party:cudnn_frontend.BUILD"),
-        patch_file = clean_dep("//third_party:cudnn_frontend_header_fix.patch"),
+        patch_file = [clean_dep("//third_party:cudnn_frontend_header_fix.patch")],
         sha256 = "314569f65d5c7d05fb7e90157a838549db3e2cfb464c80a6a399b39a004690fa",
         strip_prefix = "cudnn-frontend-0.6.2",
         urls = [
@@ -158,7 +158,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "mkl_dnn_v1",
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn_v1.BUILD"),
-        patch_file = clean_dep("//third_party/mkl_dnn:oneDNN-v2.7.1-export-bf16-fp16-verbose-3.patch"),
+        patch_file = [clean_dep("//third_party/mkl_dnn:oneDNN-v2.7.1-export-bf16-fp16-verbose-3.patch")],
         sha256 = "dc2b9bc851cd8d5a6c4622f7dc215bdb6b32349962875f8bf55cceed45a4c449",
         strip_prefix = "oneDNN-2.7.1",
         urls = [
@@ -192,7 +192,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "sparsehash_c11",
-        patch_file = clean_dep("//third_party:0001-Avoid-fetching-nullptr-when-use-featrue-filter.patch"),
+        patch_file = [clean_dep("//third_party:0001-Avoid-fetching-nullptr-when-use-featrue-filter.patch")],
         build_file = clean_dep("//third_party:sparsehash_c11.BUILD"),
         sha256 = "d4a43cad1e27646ff0ef3a8ce3e18540dbcb1fdec6cc1d1cb9b5095a9ca2a755",
         strip_prefix = "sparsehash-c11-2.11.1",
@@ -204,7 +204,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "cuCollections",
-        patch_file = clean_dep("//third_party:0001-cuco-modification-for-deeprec.patch"),
+        patch_file = [clean_dep("//third_party:0001-cuco-modification-for-deeprec.patch")],
         build_file = clean_dep("//third_party:cuco.BUILD"),
         sha256 = "c5c77a1f96b439b67280e86483ce8d5994aa4d14b7627b1d3bd7880be6be23fa",
         strip_prefix = "cuCollections-193de1aa74f5721717f991ca757dc610c852bb17",
@@ -216,7 +216,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "com_google_absl",
-        patch_file = clean_dep("//third_party:0001-abseil.patch"),
+        patch_file = [clean_dep("//third_party:0001-abseil.patch")],
         build_file = clean_dep("//third_party:com_google_absl.BUILD"),
         sha256 = "acd93f6baaedc4414ebd08b33bebca7c7a46888916101d8c0b8083573526d070",  # SHARED_ABSL_SHA
         strip_prefix = "abseil-cpp-43ef2148c0936ebf7cb4be6b19927a9d9d145b8f",
@@ -229,7 +229,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "eigen_archive",
         build_file = clean_dep("//third_party:eigen.BUILD"),
-        patch_file = clean_dep("//third_party/eigen3:eigen.patch"),
+        patch_file = [clean_dep("//third_party/eigen3:eigen.patch")],
         sha256 = "2f046557f4093becf51b44c6339873c18e2f1ea55c4b3f3a08b7d15a1d9c6e5b",  # SHARED_EIGEN_SHA
         strip_prefix = "eigen-4fd5d1477b221fc7daf2b7f1c7e4ee4f04ceaced",
         urls = [
@@ -321,7 +321,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "png_archive",
         build_file = clean_dep("//third_party:png.BUILD"),
-        patch_file = clean_dep("//third_party:png_fix_rpi.patch"),
+        patch_file = [clean_dep("//third_party:png_fix_rpi.patch")],
         sha256 = "ca74a0dace179a8422187671aee97dd3892b53e168627145271cad5b5ac81307",
         strip_prefix = "libpng-1.6.37",
         system_build_file = clean_dep("//third_party/systemlibs:png.BUILD"),
@@ -346,7 +346,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "gif_archive",
         build_file = clean_dep("//third_party:gif.BUILD"),
-        patch_file = clean_dep("//third_party:gif_fix_strtok_r.patch"),
+        patch_file = [clean_dep("//third_party:gif_fix_strtok_r.patch")],
         sha256 = "31da5562f44c5f15d63340a09a4fd62b48c45620cd302f77a6d9acf0077879bd",
         strip_prefix = "giflib-5.2.1",
         system_build_file = clean_dep("//third_party/systemlibs:gif.BUILD"),
@@ -514,7 +514,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "com_google_protobuf",
-        patch_file = clean_dep(PROTOBUF_PATCH),
+        patch_file = [clean_dep(PROTOBUF_PATCH)],
         sha256 = PROTOBUF_SHA256,
         strip_prefix = PROTOBUF_STRIP_PREFIX,
         system_build_file = clean_dep("//third_party/systemlibs:protobuf.BUILD"),
@@ -595,7 +595,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     # WARNING: make sure ncteisen@ and vpai@ are cc-ed on any CL to change the below rule
     tf_http_archive(
         name = "grpc",
-        patch_file = clean_dep("//third_party:grpc_gettid.patch"),
+        patch_file = [clean_dep("//third_party:grpc_gettid.patch")],
         sha256 = "67a6c26db56f345f7cee846e681db2c23f919eba46dd639b09462d1b6203d28c",
         strip_prefix = "grpc-4566c2a29ebec0835643b972eb99f4306c4234a3",
         system_build_file = clean_dep("//third_party/systemlibs:grpc.BUILD"),
@@ -672,7 +672,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "boringssl",
-        patch_file = clean_dep("//third_party:0001-boringssl.patch"),
+        patch_file = [clean_dep("//third_party:0001-boringssl.patch")],
         sha256 = "1188e29000013ed6517168600fc35a010d58c5d321846d6a6dfee74e4c788b45",
         strip_prefix = "boringssl-7f634429a04abc48e2eb041c81c5235816c96514",
         system_build_file = clean_dep("//third_party/systemlibs:boringssl.BUILD"),
@@ -719,7 +719,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "nccl_archive",
         build_file = clean_dep("//third_party:nccl/archive.BUILD"),
-        patch_file = clean_dep("//third_party/nccl:archive.patch"),
+        patch_file = [clean_dep("//third_party/nccl:archive.patch")],
         sha256 = "9a7633e224982e2b60fa6b397d895d20d6b7498e3e02f46f98a5a4e187c5a44c",
         strip_prefix = "nccl-0ceaec9cee96ae7658aa45686853286651f36384",
         urls = [
@@ -1069,7 +1069,7 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
 
     tf_http_archive(
         name = "seastar_repo",
-        patch_file = clean_dep("//third_party:0001-seastar.patch"),
+        patch_file = [clean_dep("//third_party:0001-seastar.patch")],
         sha256 = "c57f9b50c91200b74e60907c6595d31da20ccc9dfe9935d23cd2f11a996d410b",
         strip_prefix = "seastar-2f0de60d31d75f9048cec0901a961f3fc7ed04ec",
         build_file = str(Label("//third_party:seastar.BUILD")),
