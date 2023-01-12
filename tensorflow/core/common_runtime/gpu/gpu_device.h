@@ -110,6 +110,11 @@ class BaseGPUDevice : public LocalDevice {
     return platform_gpu_id.value();
   }
 
+  // Returns the tf gpu id of this device.
+  int tf_gpu_id() const {
+    return tf_gpu_id_.value();
+  }
+
   // The executor that provides control for the device; e.g., for CUDA this
   // corresponds to the cuda context.
   se::StreamExecutor* executor() const { return executor_; }
