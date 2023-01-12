@@ -183,7 +183,10 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
         sha256 = "11244b05259fb1c4af7384d0c3391aeaddec8aac144774207582db4842726540",
         strip_prefix = "ComputeLibrary-22.02",
         build_file = clean_dep("//third_party/compute_library:BUILD"),
-        patch_file = clean_dep("//third_party/compute_library:compute_library.patch"),
+        patch_file = [
+            clean_dep("//third_party/compute_library:compute_library.patch"), 
+            clean_dep("//third_party/compute_library:activation_func_correct_args.patch")
+        ],
         urls = [
             "https://storage.googleapis.com/mirror.tensorflow.org/github.com/ARM-software/ComputeLibrary/archive/v22.02.tar.gz",
             "https://github.com/ARM-software/ComputeLibrary/archive/v22.02.tar.gz",
