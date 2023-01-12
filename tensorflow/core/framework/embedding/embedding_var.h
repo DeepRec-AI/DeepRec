@@ -38,6 +38,9 @@ limitations under the License.
 namespace tensorflow {
 
 template <class K, class V>
+class GPUHashTable;
+
+template <class K, class V>
 class EmbeddingVar : public ResourceBase {
  public:
   EmbeddingVar(const string& name,
@@ -105,6 +108,15 @@ class EmbeddingVar : public ResourceBase {
               emb_config_.total_num(
                   storage_manager_->GetAllocLen()),
               1024 * 1024);
+#endif  // GOOGLE_CUDA
+    } else if (storage_manager_->IsSingleHbm()) {
+#if GOOGLE_CUDA
+      storage_manager_->SetValueLen(value_len_);
+      default_value_ = TypedAllocator::Allocate<V>(
+          alloc_, default_tensor.NumElements(), AllocationAttributes());
+      auto default_tensor_flat = default_tensor.flat<V>();
+      cudaMemcpy(default_value_, &default_tensor_flat(0),
+          default_tensor.TotalBytes(), cudaMemcpyDeviceToDevice);
 #endif  // GOOGLE_CUDA
     } else {
       alloc_ = ev_allocator();
@@ -455,6 +467,10 @@ class EmbeddingVar : public ResourceBase {
     return storage_manager_->IsUseHbm();
   }
 
+  bool IsSingleHbm() {
+    return storage_manager_->IsSingleHbm();
+  }
+
   bool IsUsePersistentStorage() {
     return storage_manager_->IsUsePersistentStorage();
   }
@@ -596,14 +612,6 @@ class EmbeddingVar : public ResourceBase {
     return default_value_ + (key % emb_config_.default_value_dim) * value_len_;
   }
 
-  void SetSlotNum(int64 slot_num) {
-    emb_config_.slot_num = slot_num;
-  }
-
-  int64 GetSlotNum() {
-    return emb_config_.slot_num;
-  }
-
   embedding::BatchCache<K>* Cache() {
     return storage_manager_->Cache();
   }
@@ -623,7 +631,7 @@ class EmbeddingVar : public ResourceBase {
   V** GetBuffer(int64 size) {
     if (dev_addr_buffer_size_ >= size) {
       return dev_addr_buffer_;
-    } else{
+    } else {
       if (dev_addr_buffer_size_ != 0) {
         alloc_->DeallocateRaw(dev_addr_buffer_);
       }
@@ -650,6 +658,30 @@ class EmbeddingVar : public ResourceBase {
         delete []evict_ids;
       }
     }
+  }
+
+  void LookupOrCreate(const K* key, V* val, V* default_v,
+      int32 default_v_num, bool is_use_default_value_tensor,
+      size_t n, const Eigen::GpuDevice& device) {
+    storage_manager_->BatchLookupOrCreate(key, val, default_v, default_v_num,
+        is_use_default_value_tensor, n, device);
+  }
+
+  void LookupOrCreateKey(const K* key, int32* item_idxs, size_t n,
+      const Eigen::GpuDevice& device, int64 update_version = -1) {
+    storage_manager_->BatchLookupOrCreateKeys(key, item_idxs, n, device);
+  }
+
+  int32 SlotNum() {
+    return (emb_config_.block_num * (1 + emb_config_.slot_num));
+  }
+
+  int32 EmbIdx() {
+    return emb_config_.emb_index;
+  }
+
+  GPUHashTable<K, V>* HashTable() {
+    return storage_manager_->HashTable();
   }
 
  protected:

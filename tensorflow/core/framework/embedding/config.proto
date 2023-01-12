@@ -12,6 +12,7 @@ enum StorageType {
   PMEM_LIBPMEM = 3;
   SSDHASH = 4;
   LEVELDB = 5;
+  HBM = 6;
 
   // two level
   DRAM_PMEM = 11;

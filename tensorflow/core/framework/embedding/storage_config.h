@@ -32,9 +32,11 @@ struct StorageConfig {
                 const std::string& p,
                 const std::vector<int64>& s,
                 const std::string& layout,
+                const EmbeddingConfig& ec,
                 const CacheStrategy cache_strategy_ = CacheStrategy::LFU)
                                       : type(t),
                                         path(p),
+                                        embedding_config(ec),
                                         cache_strategy(cache_strategy_) {
     if ("normal" == layout) {
       layout_type = LayoutType::NORMAL;
@@ -56,6 +58,7 @@ struct StorageConfig {
   std::string path;
   std::vector<int64> size;
   CacheStrategy cache_strategy;
+  EmbeddingConfig embedding_config;
 };
 } // namespace embedding
 } // namespace tensorflow

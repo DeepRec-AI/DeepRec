@@ -130,7 +130,6 @@ load(
     "tf_additional_star_lib_defines",
     "tf_additional_api_compatible_defines",
     "tf_additional_pmem_lib_defines",
-    "tf_additional_gpu_ev_lib_defines",
     "tf_additional_test_deps",
     "tf_additional_verbs_lib_defines",
     "tf_grpc_service_all",
@@ -2525,8 +2524,7 @@ LIB_INTERNAL_DEFINES = (
     tf_additional_gdr_lib_defines() +
     tf_additional_numa_lib_defines() +
     tf_additional_star_lib_defines() +
-    tf_additional_pmem_lib_defines() +
-    tf_additional_gpu_ev_lib_defines()
+    tf_additional_pmem_lib_defines()
 )
 
 cc_library(

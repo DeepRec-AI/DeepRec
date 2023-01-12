@@ -17,7 +17,6 @@ limitations under the License.
 #define TENSORFLOW_CORE_KERNELS_TRAINING_ALI_OPS_GPU_H_
 
 #if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
 #include "tensorflow/core/framework/tensor_types.h"
 #include "tensorflow/core/platform/types.h"
@@ -30,8 +29,8 @@ template <typename Device, typename TKey, typename T>
 struct KvSparseApplyAdagrad {
   void operator()(int32 num_items,
                   Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
+                  EmbeddingVar<TKey, T>* var,
+                  EmbeddingVar<TKey, T>* accum,
                   const TKey* key_base,
                   const T* grad,
                   T lr,
@@ -43,9 +42,9 @@ template <typename Device, typename TKey, typename T>
 struct KvSparseApplyFtrl {
   void operator()(int32 num_items,
                   Allocator* alloc,
-                  EmbeddingVarGPU<TKey, T>* var,
-                  EmbeddingVarGPU<TKey, T>* accum,
-                  EmbeddingVarGPU<TKey, T>* linear,
+                  EmbeddingVar<TKey, T>* var,
+                  EmbeddingVar<TKey, T>* accum,
+                  EmbeddingVar<TKey, T>* linear,
                   const TKey* key_base,
                   const T* grad,
                   T lr,
@@ -60,9 +59,9 @@ struct KvSparseApplyFtrl {
 template <typename Device, typename T, typename Tindex, typename Tstep>
 struct KvSparseApplyAdamAsync {
   Status operator()(const Device &d, 
-                    EmbeddingVarGPU<Tindex, T> *var,
-                    EmbeddingVarGPU<Tindex, T> *m,
-                    EmbeddingVarGPU<Tindex, T> *v,
+                    EmbeddingVar<Tindex, T> *var,
+                    EmbeddingVar<Tindex, T> *m,
+                    EmbeddingVar<Tindex, T> *v,
                     typename TTypes<T>::Scalar beta1_power_scalar,
                     typename TTypes<T>::Scalar beta2_power_scalar, 
                     typename TTypes<Tindex>::ConstVec indices_vec,
@@ -77,7 +76,6 @@ struct KvSparseApplyAdamAsync {
 };
 }  // end namespace functor
 }  // end namespace tensorflow
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 #endif  // TENSORFLOW_CORE_KERNELS_TRAINING_ALI_OPS_GPU_H_

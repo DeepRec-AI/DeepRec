@@ -187,6 +187,10 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return true;
   }
 
+  bool IsSingleHbm() override {
+    return false;
+  }
+
   bool IsUsePersistentStorage() override {
     return false;
   }

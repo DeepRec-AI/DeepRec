@@ -1016,7 +1016,7 @@ index 0000000..31e3a35
 +#include <mutex>
 +#include <sparsehash/internal/hashtable-common.h>
 +#include <sparsehash/internal/libc_allocator_with_realloc.h>
-+#if defined(__x86_64__)
++#if defined(__x86_64__) && defined(__AVX512F__)
 +#include <immintrin.h>
 +#endif
 +

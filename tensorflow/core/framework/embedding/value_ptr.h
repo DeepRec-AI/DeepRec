@@ -340,32 +340,26 @@ class NormalValuePtr : public ValuePtr<V> {
   }
 
   int64 GetStep() {
-    MetaHeader* meta = (MetaHeader*)this->ptr_;
     return ((NormalHeader*)this->ptr_)->GetGlobalStep();
   }
 
   void SetStep(int64 gs) {
-    MetaHeader* meta = (MetaHeader*)this->ptr_;
     ((NormalHeader*)this->ptr_)->SetGlobalStep(gs);
   }
 
   int64 GetFreq() {
-    MetaHeader* meta = (MetaHeader*)this->ptr_;
     return ((NormalHeader*)this->ptr_)->GetFreqCounter();
   }
 
   void SetFreq(int64 freq) {
-    MetaHeader* meta = (MetaHeader*)this->ptr_;
     ((NormalHeader*)this->ptr_)->SetFreqCounter(freq);
   }
 
   void AddFreq() {
-    MetaHeader* meta = (MetaHeader*)this->ptr_;
     return ((NormalHeader*)this->ptr_)->AddFreq();
   }
 
   void AddFreq(int count) {
-    MetaHeader* meta = (MetaHeader*)this->ptr_;
     return ((NormalHeader*)this->ptr_)->AddFreq(count);
   }
 };

@@ -49,32 +49,27 @@ const int64 kInitializableEmbeddingVarUseDB = -215;
 const char* kInferenceMode = "INFERENCE_MODE";
 }
 
-#define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
+#define REGISTER_KV_VAR_HANDLE(dev, ktype, vtype)                      \
   REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
-                          .Device(DEVICE_CPU)                          \
+                          .Device(DEVICE_##dev)                        \
                           .TypeConstraint<ktype>("Tkeys")              \
                           .TypeConstraint<vtype>("dtype"),             \
                           ResourceHandleOp<EmbeddingVar<ktype, vtype>>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                               \
-  REGISTER_KV_VAR_HANDLE(int32, type)                                  \
-  REGISTER_KV_VAR_HANDLE(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KV_VAR_HANDLE
+#define REGISTER_KERNELS_ALL(dev, type)                                \
+  REGISTER_KV_VAR_HANDLE(dev, int32, type)                             \
+  REGISTER_KV_VAR_HANDLE(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
-  REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
-                          .Device(DEVICE_GPU)                          \
-                          .TypeConstraint<ktype>("Tkeys")              \
-                          .TypeConstraint<vtype>("dtype"),             \
-                          ResourceHandleOp<EmbeddingVar<ktype, vtype>>);
-REGISTER_KV_VAR_HANDLE(int32, float)
-REGISTER_KV_VAR_HANDLE(int64, float)
-#undef REGISTER_KV_VAR_HANDLE
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KV_VAR_HANDLE
 
 template <typename T, typename TKey, typename TValue>
 class KvVariableShapeOp : public OpKernel {
@@ -95,20 +90,29 @@ class KvVariableShapeOp : public OpKernel {
   }
 };
 
-#define REGISTER_KERNELS(type, ktype, vtype)                          \
+#define REGISTER_KERNELS(dev, type, ktype, vtype)                     \
   REGISTER_KERNEL_BUILDER(                                            \
-      Name("KvVariableShape").Device(DEVICE_CPU)                      \
+      Name("KvVariableShape").Device(DEVICE_##dev)                    \
                              .TypeConstraint<type>("out_type")        \
                              .TypeConstraint<ktype>("Tkeys")          \
                              .TypeConstraint<vtype>("dtype"),         \
                              KvVariableShapeOp<type, ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                              \
-  REGISTER_KERNELS(int32, int32, type)                                \
-  REGISTER_KERNELS(int32, int64, type)                                \
-  REGISTER_KERNELS(int64, int32, type)                                \
-  REGISTER_KERNELS(int64, int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
+#define REGISTER_KERNELS_ALL(dev, type)                               \
+  REGISTER_KERNELS(dev, int32, int32, type)                           \
+  REGISTER_KERNELS(dev, int32, int64, type)                           \
+  REGISTER_KERNELS(dev, int64, int32, type)                           \
+  REGISTER_KERNELS(dev, int64, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
+
+#if GOOGLE_CUDA
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
+#endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
 #undef REGISTER_KERNELS
 
 class DestroyKvResourceOp : public OpKernel {
@@ -246,23 +250,26 @@ class InitializeKvVariableOp : public OpKernel {
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               Allocator* gpu_allocator =
                   context->device()->GetAllocator(AllocatorAttributes());
+              auto embedding_config = EmbeddingConfig(
+                  emb_index_ + block_num_ * slot_index_,
+                  emb_index_, block_num_, slot_num_,
+                  opname + "-primary", steps_to_live_,
+                  filter_freq_, max_freq_,
+                  l2_weight_threshold_, layout_,
+                  max_element_size_, false_positive_probability_,
+                  counter_type_, default_value_dim_,
+                  default_value_no_permission_,
+                  record_freq_, record_version_);
               auto storage_manager =
                   new embedding::StorageManager<TKey, TValue>(
                     handle_self.name(),
                     embedding::StorageConfig(
-                      storage_type_, storage_path_, storage_size_, layout_),
+                      storage_type_, storage_path_, storage_size_, layout_,
+                      embedding_config),
                     gpu_allocator);
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                             emb_index_, block_num_, slot_num_,
-                             opname + "-primary", steps_to_live_,
-                             filter_freq_, max_freq_,
-                             l2_weight_threshold_, layout_,
-                             max_element_size_, false_positive_probability_,
-                             counter_type_, default_value_dim_,
-                             default_value_no_permission_,
-                             record_freq_, record_version_),
+                         embedding_config,
                          gpu_allocator);
             return Status::OK();
             }));
@@ -277,20 +284,22 @@ class InitializeKvVariableOp : public OpKernel {
             handle_primary, context](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              Allocator* gpu_allocator = context->device()->GetAllocator(AllocatorAttributes());
+             auto embedding_config = EmbeddingConfig(
+                 primary_emb_index + block_num_ * primary_slot_index,
+                 primary_emb_index,
+                 block_num_, slot_num_, opname + "-primary",
+                 steps_to_live_, filter_freq_, max_freq_,
+                 l2_weight_threshold_, layout_,
+                 max_element_size_, false_positive_probability_,
+                 counter_type_, 0, record_freq_, record_version_);
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(storage_type_,
-                     storage_path_, storage_size_, layout_), gpu_allocator);
+                     storage_path_, storage_size_, layout_, embedding_config),
+                     gpu_allocator);
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
                         storage_manager,
-                        EmbeddingConfig(
-                          primary_emb_index + block_num_ * primary_slot_index,
-                          primary_emb_index,
-                          block_num_, slot_num_, opname + "-primary",
-                          steps_to_live_, filter_freq_, max_freq_,
-                          l2_weight_threshold_, layout_,
-                          max_element_size_, false_positive_probability_,
-                          counter_type_, 0, record_freq_, record_version_),
+                        embedding_config,
                         gpu_allocator);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
@@ -365,27 +374,23 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
 #define REGISTER_KERNELS(ktype, vtype)                               \
   REGISTER_KERNEL_BUILDER(Name("InitializeKvVariableOp")             \
                               .Device(DEVICE_GPU)                    \
-                              .HostMemory("resource_self")           \
-                              .HostMemory("resource_primary")        \
-                              .HostMemory("value")                   \
-                              .HostMemory("empty_key")               \
                               .TypeConstraint<ktype>("Tkeys")        \
                               .TypeConstraint<vtype>("dtype"),       \
                           InitializeKvVariableOp<ktype, vtype>);
+                              //.HostMemory("resource_self")           \
+                              //.HostMemory("resource_primary")        \
+                              //.HostMemory("value")                   \
+                              //.HostMemory("empty_key")               \
 
-#define REGISTER_GPU_KERNELS(T)        \
-  REGISTER_KERNELS(int32, T);          \
-  REGISTER_KERNELS(int64, T);
-
-TF_CALL_float(REGISTER_GPU_KERNELS);
-TF_CALL_double(REGISTER_GPU_KERNELS);
+#define REGISTER_GPU_KERNELS(type)        \
+  REGISTER_KERNELS(int32, type);          \
+  REGISTER_KERNELS(int64, type);
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_GPU_KERNELS);
 #undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 template <typename TKey, typename TValue>
@@ -409,66 +414,27 @@ class KvResourceIsInitializedOp : public OpKernel {
     output->flat<bool>()(0) = found;
   }
 };
-
-#if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
-template <typename TKey, typename TValue>
-class KvResourceIsInitializedGPUOp : public OpKernel {
- public:
-  explicit KvResourceIsInitializedGPUOp(OpKernelConstruction* c) : OpKernel(c) {}
-
-  void Compute(OpKernelContext* ctx) override {
-    Tensor* output;
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {}, &output));
-    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
-    bool found;
-    if (LookupResource<EmbeddingVarGPU<TKey, TValue>>(
-          ctx, HandleFromInput(ctx, 0), &ev).ok()) {
-      found = ev->IsInitialized();
-      ev->Unref();
-    } else {
-      found = false;
-    }
-
-    output->flat<bool>()(0) = found;
-  }
-};
-#endif  // TENSORFLOW_USE_GPU_EV
-#endif  // GOOGLE_CUDA
-
-#define REGISTER_KERNELS(ktype, vtype)                             \
+#define REGISTER_KERNELS(dev, ktype, vtype)                        \
   REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
                           .TypeConstraint<ktype>("Tkeys")          \
                           .TypeConstraint<vtype>("dtype")          \
-                          .Device(DEVICE_CPU),                     \
+                          .Device(DEVICE_##dev),                   \
                           KvResourceIsInitializedOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                           \
-  REGISTER_KERNELS(int32, type)                                    \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_ALL(dev, type)                            \
+  REGISTER_KERNELS(dev, int32, type)                               \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
-                          .TypeConstraint<ktype>("Tkeys")          \
-                          .Device(DEVICE_GPU)                      \
-                          .HostMemory("is_initialized"),           \
-                          KvResourceIsInitializedOp<ktype, vtype>);
-#else
-#define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
-                          .TypeConstraint<ktype>("Tkeys")          \
-                          .Device(DEVICE_GPU)                      \
-                          .HostMemory("is_initialized"),           \
-                          KvResourceIsInitializedGPUOp<ktype, vtype>);
-#endif  // TENSORFLOW_USE_GPU_EV
-REGISTER_KERNELS(int32, float)
-REGISTER_KERNELS(int64, float)
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class KvResourceInitCacheStrategyOp : public OpKernel {
@@ -489,31 +455,27 @@ class KvResourceInitCacheStrategyOp : public OpKernel {
   int cache_strategy_;
 };
 
-#define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")             \
+#define REGISTER_KERNELS(dev, ktype, vtype)                        \
+  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")    \
                           .TypeConstraint<ktype>("Tkeys")          \
                           .TypeConstraint<vtype>("dtype")          \
-                          .Device(DEVICE_CPU),                     \
+                          .Device(DEVICE_##dev),                   \
                           KvResourceInitCacheStrategyOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                           \
-  REGISTER_KERNELS(int32, type)                                    \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_ALL(dev, type)                            \
+  REGISTER_KERNELS(dev, int32, type)                               \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KERNELS(ktype, vtype)                             \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceInitCacheStrategyOp")             \
-                          .TypeConstraint<ktype>("Tkeys")          \
-                          .Device(DEVICE_GPU),                     \
-                          KvResourceInitCacheStrategyOp<ktype, vtype>);
-REGISTER_KERNELS(int32, float)
-REGISTER_KERNELS(int64, float)
-#undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class KvResourceLookupIDOp : public OpKernel {
@@ -565,7 +527,7 @@ class KvResourceLookupIDOp : public OpKernel {
   }
 };
 
-#define REGISTER_LOOKUP_FULL(dev, ktype, vtype)                   \
+#define REGISTER_KERNELS(dev, ktype, vtype)                       \
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceLookupID")         \
                               .Device(DEVICE_##dev)               \
                               .HostMemory("resource")             \
@@ -573,18 +535,152 @@ class KvResourceLookupIDOp : public OpKernel {
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceLookupIDOp<ktype, vtype>)
+#define REGISTER_KERNELS_ALL(dev, type)                           \
+  REGISTER_KERNELS(dev, int32, type);                             \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
-#define REGISTER_LOOKUP_ALL_INDICES(dev, type)                    \
-  REGISTER_LOOKUP_FULL(dev, int32, type);                         \
-  REGISTER_LOOKUP_FULL(dev, int64, type)
+#if GOOGLE_CUDA
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
+#endif  // GOOGLE_CUDA
 
-#define REGISTER_LOOKUP_CPU(type) REGISTER_LOOKUP_ALL_INDICES(CPU, type)
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_LOOKUP_CPU)
+template <typename TKey, typename TValue>
+class KvResourceCollectEmbeddingOp : public OpKernel {
+ public:
+  explicit KvResourceCollectEmbeddingOp(OpKernelConstruction* c) : OpKernel(c) {
+    OP_REQUIRES_OK(c,
+        c->GetAttr("is_use_default_value_tensor",
+          &is_use_default_value_tensor_));
+    if (is_use_default_value_tensor_) {
+      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
+                            int64 total_dim, int64 len) {
+        return default_v + len * index;
+      };
+    } else {
+      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
+                            int64 total_dim, int64 len) {
+        return default_v + len * (id % total_dim) ;
+      };
+    }
+    if (c->num_inputs() == 5) {
+      get_count_fn_ = [](const int32* count, int64 index) {
+        return count[index];
+      };
+    } else {
+      get_count_fn_ = [](const int32* count, int64 index) {
+        return 1;
+      };
+    }
+    lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
+                    TValue* val, TValue* default_v, int count) {
+      if (key) {
+        TValue* mem_val = ev->LookupOrCreateEmb((ValuePtr<TValue>*)key, default_v);
+        memcpy(val, mem_val, sizeof(TValue) * ev->ValueLen());
+      } else {
+        memcpy(val, default_v, sizeof(TValue) * ev->ValueLen());
+      }
+      return Status::OK();
+    };
+  }
 
-#undef REGISTER_LOOKUP_CPU
-#undef REGISTER_LOOKUP_ALL_INDICES
-#undef REGISTER_LOOKUP_FULL
+  void Compute(OpKernelContext* c) override {
+    EmbeddingVar<TKey, TValue>* ev = nullptr;
+    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
+    core::ScopedUnref unref_me(ev);
+    const Tensor& indices = c->input(1);
+    const Tensor& pointer = c->input(2);
+    const int64 N = indices.NumElements();
+
+    TensorShape result_shape = indices.shape();
+    TensorShape value_shape({ev->ValueLen()});
+    result_shape.AppendShape(value_shape);
+
+    Tensor* out = nullptr;
+    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
+
+    int32* counts = nullptr;
+    if (c->num_inputs() == 5)
+      counts = (int32*)c->input(4).data();
+
+    if (N > 0) {
+      auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
+      TValue* out_base = &out_flat(0, 0);
+
+      auto indices_flat = indices.flat<TKey>();
+      auto pointer_flat = pointer.flat<int64>();
+      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
+      const int64 slice_elems = out_flat.dimension(1);
+      TValue* default_v = nullptr;
+      if (is_use_default_value_tensor_) {
+        default_v = (TValue*)c->input(3).data();
+      } else {
+        default_v = ev->GetDefaultValuePtr();
+      }
+      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
+          errors::InvalidArgument(
+              "ev's value_len should same with output's dimension(1)",
+              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
+      OP_REQUIRES(c, !ev->IsMultiLevel() ||
+          (ev->IsMultiLevel() && ev->CacheSize() >= N),
+          errors::InvalidArgument(
+              "MultiLevel EV's Cache size ", ev->CacheSize(),
+              " should large than IDs in batch ", N));
+      const size_t slice_bytes = slice_elems * sizeof(TValue);
+      auto do_work = [this, indices_flat, pointer_flat,
+           out_base, slice_elems, c, default_v, ev, counts] (
+               int64 start, int64 limit) {
+        for (int64 i = start; i < limit; ++i) {
+          TValue* default_v_ptr = get_default_v_fn_(
+              default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
+              ev->ValueLen());
+          int32 count = get_count_fn_(counts, i);
+          OP_REQUIRES_OK(c, lookup_fn_(ev, pointer_flat(i),
+              out_base + i * slice_elems, default_v_ptr, count));
+        }
+      };
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      Shard(worker_threads->num_threads,
+            worker_threads->workers, indices_size,
+            slice_bytes, do_work);
+    }
+  }
+
+  private:
+    bool is_use_default_value_tensor_;
+    std::function<
+      TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
+    std::function<int32(int32*, int64)> get_count_fn_;
+    std::function<Status(EmbeddingVar<TKey, TValue>* ev,
+      TKey key, TValue* val, TValue* default_v, int count)> lookup_fn_;
+};
+
+#define REGISTER_KERNELS(dev, ktype, vtype)                       \
+  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceCollectEmbedding") \
+                              .Device(DEVICE_##dev)               \
+                              .HostMemory("resource")             \
+                              .HostMemory("indices")              \
+                              .HostMemory("pointer")              \
+                              .HostMemory("default_value")        \
+                              .HostMemory("output")               \
+                              .TypeConstraint<vtype>("dtype")     \
+                              .TypeConstraint<ktype>("Tkeys"),    \
+                          KvResourceCollectEmbeddingOp<ktype, vtype>)
+
+#define REGISTER_KERNELS_ALL(dev, type)                           \
+  REGISTER_KERNELS(dev, int32, type);                             \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class KvResourceGatherOp : public OpKernel {
@@ -710,7 +806,7 @@ class KvResourceGatherOp : public OpKernel {
       TKey key, TValue* val, TValue* default_v, int count)> lookup_fn_;
 };
 
-#define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
+#define REGISTER_KERNELS(dev, ktype, vtype)                       \
   REGISTER_KERNEL_BUILDER(Name("KvResourceGather")                \
                               .Device(DEVICE_##dev)               \
                               .HostMemory("resource")             \
@@ -721,147 +817,16 @@ class KvResourceGatherOp : public OpKernel {
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceGatherOp<ktype, vtype>)
 
-#define REGISTER_GATHER_ALL_INDICES(type)                         \
-  REGISTER_GATHER_FULL(CPU, int32, type);                         \
-  REGISTER_GATHER_FULL(CPU, int64, type)
+#define REGISTER_KERNELS_ALL_INDICES(type)                        \
+  REGISTER_KERNELS(CPU, int32, type);                             \
+  REGISTER_KERNELS(CPU, int64, type)
 
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_GATHER_ALL_INDICES)
-#undef REGISTER_GATHER_ALL_INDICES
-#undef REGISTER_GATHER_FULL
-
-template <typename TKey, typename TValue>
-class KvResourceCollectEmbeddingOp : public OpKernel {
- public:
-  explicit KvResourceCollectEmbeddingOp(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c,
-        c->GetAttr("is_use_default_value_tensor",
-          &is_use_default_value_tensor_));
-    if (is_use_default_value_tensor_) {
-      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
-                            int64 total_dim, int64 len) {
-        return default_v + len * index;
-      };
-    } else {
-      get_default_v_fn_ = [](TValue* default_v, TKey id, int64 index,
-                            int64 total_dim, int64 len) {
-        return default_v + len * (id % total_dim) ;
-      };
-    }
-    if (c->num_inputs() == 5) {
-      get_count_fn_ = [](const int32* count, int64 index) {
-        return count[index];
-      };
-    } else {
-      get_count_fn_ = [](const int32* count, int64 index) {
-        return 1;
-      };
-    }
-    lookup_fn_ = [](EmbeddingVar<TKey, TValue>* ev, TKey key,
-                    TValue* val, TValue* default_v, int count) {
-      if (key) {
-        TValue* mem_val = ev->LookupOrCreateEmb((ValuePtr<TValue>*)key, default_v);
-        memcpy(val, mem_val, sizeof(TValue) * ev->ValueLen());
-      } else {
-        memcpy(val, default_v, sizeof(TValue) * ev->ValueLen());
-      }
-      return Status::OK();
-    };
-  }
-
-  void Compute(OpKernelContext* c) override {
-    EmbeddingVar<TKey, TValue>* ev = nullptr;
-    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
-    core::ScopedUnref unref_me(ev);
-    const Tensor& indices = c->input(1);
-    const Tensor& pointer = c->input(2);
-    const int64 N = indices.NumElements();
-
-    TensorShape result_shape = indices.shape();
-    TensorShape value_shape({ev->ValueLen()});
-    result_shape.AppendShape(value_shape);
-
-    Tensor* out = nullptr;
-    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
-
-    int32* counts = nullptr;
-    if (c->num_inputs() == 5)
-      counts = (int32*)c->input(4).data();
-
-    if (N > 0) {
-      auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
-      TValue* out_base = &out_flat(0, 0);
-
-      auto indices_flat = indices.flat<TKey>();
-      auto pointer_flat = pointer.flat<int64>();
-      const int64 indices_size = static_cast<int64>(indices_flat.dimension(0));
-      const int64 slice_elems = out_flat.dimension(1);
-      TValue* default_v = nullptr;
-      if (is_use_default_value_tensor_) {
-        default_v = (TValue*)c->input(3).data();
-      } else {
-        default_v = ev->GetDefaultValuePtr();
-      }
-      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
-          errors::InvalidArgument(
-              "ev's value_len should same with output's dimension(1)",
-              std::to_string(slice_elems), std::to_string(ev->ValueLen())));
-      OP_REQUIRES(c, !ev->IsMultiLevel() ||
-          (ev->IsMultiLevel() && ev->CacheSize() >= N),
-          errors::InvalidArgument(
-              "MultiLevel EV's Cache size ", ev->CacheSize(),
-              " should large than IDs in batch ", N));
-      const size_t slice_bytes = slice_elems * sizeof(TValue);
-      auto do_work = [this, indices_flat, pointer_flat,
-           out_base, slice_elems, c, default_v, ev, counts] (
-               int64 start, int64 limit) {
-        for (int64 i = start; i < limit; ++i) {
-          TValue* default_v_ptr = get_default_v_fn_(
-              default_v, indices_flat(i), i, ev->GetDefaultValueDim(),
-              ev->ValueLen());
-          int32 count = get_count_fn_(counts, i);
-          OP_REQUIRES_OK(c, lookup_fn_(ev, pointer_flat(i),
-              out_base + i * slice_elems, default_v_ptr, count));
-        }
-      };
-      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
-      Shard(worker_threads->num_threads,
-            worker_threads->workers, indices_size,
-            slice_bytes, do_work);
-    }
-  }
-
-  private:
-    bool is_use_default_value_tensor_;
-    std::function<
-      TValue*(TValue*, TKey, int64, int64, int64)> get_default_v_fn_;
-    std::function<int32(int32*, int64)> get_count_fn_;
-    std::function<Status(EmbeddingVar<TKey, TValue>* ev,
-      TKey key, TValue* val, TValue* default_v, int count)> lookup_fn_;
-};
-
-#define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
-  REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceCollectEmbedding") \
-                              .Device(DEVICE_##dev)               \
-                              .HostMemory("resource")             \
-                              .HostMemory("indices")              \
-                              .HostMemory("pointer")              \
-                              .HostMemory("default_value")        \
-                              .HostMemory("output")               \
-                              .TypeConstraint<vtype>("dtype")     \
-                              .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceCollectEmbeddingOp<ktype, vtype>)
-
-#define REGISTER_GATHER_ALL_INDICES(type)                         \
-  REGISTER_GATHER_FULL(CPU, int32, type);                         \
-  REGISTER_GATHER_FULL(CPU, int64, type)
-
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_GATHER_ALL_INDICES)
-#undef REGISTER_GATHER_ALL_INDICES
-#undef REGISTER_GATHER_FULL
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDICES)
+#undef REGISTER_KERNELS_ALL_INDICES
+#undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-template <typename TKey, typename TValue>
+template <typename Device, typename TKey, typename TValue>
 class KvResourceGatherGPUOp : public OpKernel {
  public:
   explicit KvResourceGatherGPUOp(OpKernelConstruction* c) : OpKernel(c) {
@@ -951,7 +916,24 @@ class KvResourceGatherGPUOp : public OpKernel {
               "MultiLevel EV's Cache size ", ev->CacheSize(),
               " should large than IDs in batch ", N));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
-      if (ev->IsUseHbm()) {
+      if (ev->IsSingleHbm()) {
+        const TKey* key_base = &indices_flat(0);
+        const Device& device = c->eigen_device<Device>();
+        if (is_use_default_value_tensor_) {
+          Tensor default_values(c->input(2));
+          auto default_value_num = default_values.NumElements() / ev->ValueLen();
+          auto default_values_matrix = default_values.shaped<TValue, 2>(
+              {default_value_num, ev->ValueLen()});
+          TValue* default_v_base = &default_values_matrix(0, 0);
+          ev->LookupOrCreate(key_base, out_base, default_v_base,
+              default_value_num, is_use_default_value_tensor_,
+              indices_size, device);
+        } else {
+          ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(),
+              ev->GetDefaultValueDim(), is_use_default_value_tensor_,
+              indices_size, device);
+        }
+      } else if (ev->IsUseHbm()) {
         TValue** memcpy_address = new TValue*[indices_size];
         auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
         std::vector<std::list<int64>> init_cursor_list(
@@ -1058,28 +1040,27 @@ class KvResourceGatherGPUOp : public OpKernel {
     mutex m_init_occupy_flag_;
 };
 
-#define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
+#define REGISTER_KERNELS(dev, ktype, vtype)                       \
   REGISTER_KERNEL_BUILDER(Name("KvResourceGather")                \
                               .Device(DEVICE_##dev)               \
                               .HostMemory("resource")             \
-                              .HostMemory("indices")              \
-                              .HostMemory("default_value")        \
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceGatherGPUOp<ktype, vtype>)
-#define REGISTER_GATHER_ALL_INDICES(dev, type) \
-  REGISTER_GATHER_FULL(dev, int32, type);      \
-  REGISTER_GATHER_FULL(dev, int64, type)
-#define REGISTER_GATHER_GPU(type) REGISTER_GATHER_ALL_INDICES(GPU, type)
-TF_CALL_float(REGISTER_GATHER_GPU);
-TF_CALL_double(REGISTER_GATHER_GPU);
-#undef REGISTER_GATHER_GPU
-#undef REGISTER_GATHER_ALL_INDICES
-#undef REGISTER_GATHER_FULL
-#endif  // TENSORFLOW_USE_GPU_EV
+                          KvResourceGatherGPUOp<GPUDevice, ktype, vtype>)
+                              //.HostMemory("indices")              \
+                              //.HostMemory("default_value")        \
+
+#define REGISTER_KERNELS_ALL(dev, type)                           \
+  REGISTER_KERNELS(dev, int32, type);                             \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU);
+#undef REGISTER_KERNELS_GPU
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 #endif  // GOOGLE_CUDA
 
-#define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
+#define REGISTER_KERNELS(dev, ktype, vtype)                       \
   REGISTER_KERNEL_BUILDER(Name("KvResourceGatherV1")              \
                               .Device(DEVICE_##dev)               \
                               .HostMemory("resource")             \
@@ -1091,86 +1072,14 @@ TF_CALL_double(REGISTER_GATHER_GPU);
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceGatherOp<ktype, vtype>)
 
-#define REGISTER_GATHER_ALL_INDICES(type)                         \
-  REGISTER_GATHER_FULL(CPU, int32, type);                         \
-  REGISTER_GATHER_FULL(CPU, int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_GATHER_ALL_INDICES)
-#undef REGISTER_GATHER_ALL_INDICES
-#undef REGISTER_GATHER_FULL
-/*
-// Op that outputs tensors of all keys and all values.
-template <typename TKey, typename TValue>
-class KvResourceImportOp : public OpKernel {
- public:
-  explicit KvResourceImportOp(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
-    OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
-    OP_REQUIRES(c, shape_.dims() == 1,
-                errors::InvalidArgument("KvVariable dimension must be 1"));
-    OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
-    OP_REQUIRES(c, steps_to_live_ >= 0,
-                 errors::InvalidArgument(
-                    "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
-    OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
-    OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
-  }
-
-  void Compute(OpKernelContext* context) override {
-    OP_REQUIRES(context, dtype_ == context->input(1).dtype(),
-                errors::InvalidArgument(
-                    "Variable and value dtypes don't match; respectively, ",
-                    dtype_, " and ", context->input(1).dtype()));
-    EmbeddingVar<TKey, TValue>* variable = nullptr;
-    const Tensor& default_values = context->input(1);
-    OP_REQUIRES_OK(
-        context,
-        LookupOrCreateResource<EmbeddingVar<TKey, TValue>>(
-            context, HandleFromInput(context, 0), &variable,
-            [this, default_values](EmbeddingVar<TKey, TValue>** ptr) {
-              auto ht = KVFactory<TKey, TValue>::CreateKV(
-                  ht_type_, ht_partition_num_);
-              *ptr = new EmbeddingVar<TKey, TValue>("EmbeddingVar",
-                       new HashMap<TKey, TValue>(
-                         ht, cpu_allocator()),
-                         steps_to_live_);
-              return (*ptr)->Init(default_values);
-            }));
-    core::ScopedUnref unref_me(variable);
-
-    HashMap<TKey, TValue>* hashmap = variable->hashmap();
-    const Tensor& keys = context->input(3);
-    const Tensor& values = context->input(4);
-    const Tensor& versions = context->input(5);
-    LOG(INFO) <<  "EV:"
-              << HandleFromInput(context, 0).name()
-              << ", Import Size:"
-              <<  keys.dim_size(0);
-    OP_REQUIRES_OK(context, hashmap->Import(keys, values, versions));
-    variable->SetInitialized();
-  }
-
- private:
-  DataType dtype_;
-  TensorShape shape_;
-  int64 steps_to_live_;
-  std::string ht_type_;
-  int64 ht_partition_num_;
-};
-
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceImport")             \
-                            .Device(DEVICE_CPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("dtype"),   \
-                          KvResourceImportOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_ALL_TYPES(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
+#define REGISTER_KERNELS_ALL(dev, type)                           \
+  REGISTER_KERNELS(dev, int32, type);                             \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
+#undef REGISTER_KERNELS_ALL
 #undef REGISTER_KERNELS
-*/
 
 constexpr int64 DEFAULT_RESTORE_THREAD_NUM = 4;
 
@@ -1289,23 +1198,25 @@ class KvResourceImportV2Op: public AsyncOpKernel {
             context, handle_self, &ev,
             [this, default_values, opname,
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
+             auto embedding_config = EmbeddingConfig(
+                 emb_index_ + block_num_ * slot_index_,
+                 emb_index_,
+                 block_num_, slot_num_, opname + "-primary",
+                 steps_to_live_, filter_freq_,
+                 max_freq_, l2_weight_threshold_,
+                 layout_,  max_element_size_,
+                 false_positive_probability_,
+                 counter_type_, default_value_dim_,
+                 default_value_no_permission_,
+                 record_freq_, record_version_);
               auto storage_manager =
                 new embedding::StorageManager<TKey, TValue>(
                   handle_self.name(), embedding::StorageConfig(
-                    storage_type_, storage_path_, storage_size_, layout_));
+                    storage_type_, storage_path_, storage_size_, layout_,
+                    embedding_config));
               *ptr = new EmbeddingVar<TKey, TValue>(handle_self.name(),
                          storage_manager,
-                         EmbeddingConfig(
-                           emb_index_ + block_num_ * slot_index_,
-                           emb_index_,
-                           block_num_, slot_num_, opname + "-primary",
-                           steps_to_live_, filter_freq_,
-                           max_freq_, l2_weight_threshold_,
-                           layout_,  max_element_size_,
-                           false_positive_probability_,
-                           counter_type_, default_value_dim_,
-                           default_value_no_permission_,
-                           record_freq_, record_version_));
+                         embedding_config);
              return Status::OK();
             }));
       ev->Init(default_values, default_value_dim_);
@@ -1318,20 +1229,21 @@ class KvResourceImportV2Op: public AsyncOpKernel {
            [this, default_values, opname,
             handle_primary](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
+             auto embedding_config = EmbeddingConfig(
+                 primary_emb_index + block_num_ * primary_slot_index,
+                 primary_emb_index, block_num_, slot_num_,
+                 opname + "-primary", steps_to_live_, filter_freq_,
+                 max_freq_, l2_weight_threshold_,
+                 layout_,  max_element_size_,
+                 false_positive_probability_,
+                 counter_type_, 0, record_freq_, record_version_);
              auto storage_manager =
                new embedding::StorageManager<TKey, TValue>(
                  handle_primary.name(), embedding::StorageConfig(
                    storage_type_, storage_path_, storage_size_,
-                   layout_));
+                   layout_, embedding_config));
              *ptr = new EmbeddingVar<TKey, TValue>(handle_primary.name(),
-                 storage_manager, EmbeddingConfig(
-                   primary_emb_index + block_num_ * primary_slot_index,
-                   primary_emb_index, block_num_, slot_num_,
-                   opname + "-primary", steps_to_live_, filter_freq_,
-                   max_freq_, l2_weight_threshold_,
-                   layout_,  max_element_size_,
-                   false_positive_probability_,
-                   counter_type_, 0, record_freq_, record_version_));
+                 storage_manager, embedding_config);
             // default_values is slot value, should not to initialize primary value
             return Status::OK();
            }));
@@ -1414,37 +1326,27 @@ class KvResourceImportV2Op: public AsyncOpKernel {
   bool ev_async_restore_;
 };
 
-#define REGISTER_KERNELS(ktype, vtype)                         \
+#define REGISTER_KERNELS(dev, ktype, vtype)                    \
   REGISTER_KERNEL_BUILDER(Name("KvResourceImportV2")           \
-                            .Device(DEVICE_CPU)                \
+                            .Device(DEVICE_##dev)              \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
                           KvResourceImportV2Op<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_ALL(dev, type)                        \
+  REGISTER_KERNELS(dev, int32, type)                           \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV2")           \
-                            .Device(DEVICE_GPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("dtype"),   \
-                          KvResourceImportV2Op<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
 
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class KvResourceImportV3Op: public AsyncOpKernel {
@@ -1536,37 +1438,27 @@ class KvResourceImportV3Op: public AsyncOpKernel {
   bool ev_async_restore_;
 };
 
-#define REGISTER_KERNELS(ktype, vtype)                         \
+#define REGISTER_KERNELS(dev, ktype, vtype)                    \
   REGISTER_KERNEL_BUILDER(Name("KvResourceImportV3")           \
-                            .Device(DEVICE_CPU)                \
+                            .Device(DEVICE_##dev)              \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
                           KvResourceImportV3Op<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_ALL(dev, type)                        \
+  REGISTER_KERNELS(dev, int32, type)                           \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV3")           \
-                            .Device(DEVICE_GPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("dtype"),   \
-                          KvResourceImportV3Op<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
 
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class KvResourceIncrImportOp: public AsyncOpKernel {
@@ -1626,36 +1518,27 @@ class KvResourceIncrImportOp: public AsyncOpKernel {
 };
 
 
-#define REGISTER_KERNELS(ktype, vtype)                         \
+#define REGISTER_KERNELS(dev, ktype, vtype)                    \
   REGISTER_KERNEL_BUILDER(Name("KvResourceIncrImport")         \
-                            .Device(DEVICE_CPU)                \
+                            .Device(DEVICE_##dev)              \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
                           KvResourceIncrImportOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_ALL(dev, type)                        \
+  REGISTER_KERNELS(dev, int32, type)                           \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceIncrImport")         \
-                            .Device(DEVICE_GPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("dtype"),   \
-                          KvResourceIncrImportOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 // Op that outputs tensors of all keys and all values.
 template<typename TKey, typename TValue>
@@ -1715,35 +1598,27 @@ class KvResourceExportOp : public OpKernel {
   }
 };
 
-#define REGISTER_KERNELS(ktype, vtype)                         \
+#define REGISTER_KERNELS(dev, ktype, vtype)                    \
   REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
-                            .Device(DEVICE_CPU)                \
+                            .Device(DEVICE_##dev)              \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("Tvalues"), \
                           KvResourceExportOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
+#define REGISTER_KERNELS_ALL(dev, type)                        \
+  REGISTER_KERNELS(dev, int32, type)                           \
+  REGISTER_KERNELS(dev, int64, type)
+#define REGISTER_KERNELS_CPU(type) REGISTER_KERNELS_ALL(CPU, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_CPU)
+#undef REGISTER_KERNELS_CPU
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
-                            .Device(DEVICE_GPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("Tvalues"), \
-                          KvResourceExportOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_GPU(type) REGISTER_KERNELS_ALL(GPU, type)
+TF_CALL_GPU_NUMBER_TYPES(REGISTER_KERNELS_GPU)
+#undef REGISTER_KERNELS_GPU
 #endif  // GOOGLE_CUDA
+
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template<typename TKey, typename TValue>
 class KvResourceGeneratePartitionedTensorOp : public OpKernel {
@@ -1832,571 +1707,6 @@ REGISTER_KERNELS_ALL_INDEX(float);
 #undef REGISTER_KERNELS_ALL_INDEX
 #undef REGISTER_KERNELS
 
-
-#if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
-#define REGISTER_KV_VAR_HANDLE(ktype, vtype)                           \
-  REGISTER_KERNEL_BUILDER(Name("KvVarHandleOp")                        \
-                          .Device(DEVICE_GPU)                          \
-                          .TypeConstraint<ktype>("Tkeys")              \
-                          .TypeConstraint<vtype>("dtype"),             \
-                          ResourceHandleOp<EmbeddingVarGPU<ktype, vtype>>);
-REGISTER_KV_VAR_HANDLE(int32, float)
-REGISTER_KV_VAR_HANDLE(int64, float)
-#undef REGISTER_KV_VAR_HANDLE
-
-template <typename T, typename TKey, typename TValue>
-class KvVariableShapeOpGPU : public OpKernel {
- public:
-  explicit KvVariableShapeOpGPU(OpKernelConstruction* c) : OpKernel(c) {}
-
-  void Compute(OpKernelContext* ctx) override {
-    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
-    OP_REQUIRES_OK(ctx,
-                   LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
-    core::ScopedUnref unref_me(ev);
-    TensorShape shape({ev->Size(), ev->ValueLen()});
-    Tensor* output;
-    OP_REQUIRES_OK(ctx, ctx->allocate_output(0, {shape.dims()}, &output));
-    for (int i = 0; i < shape.dims(); ++i) {
-      output->flat<T>()(i) = shape.dim_size(i);
-    }
-  }
-};
-
-#define REGISTER_KV_VARIABLE_SHAPE(type, ktype, vtype)                \
-  REGISTER_KERNEL_BUILDER(                                            \
-      Name("KvVariableShape").Device(DEVICE_GPU)                      \
-                             .TypeConstraint<type>("out_type")        \
-                             .TypeConstraint<ktype>("Tkeys")          \
-                             .HostMemory("output"),                   \
-                             KvVariableShapeOpGPU<type, ktype, vtype>);
-REGISTER_KV_VARIABLE_SHAPE(int32, int32, float)
-REGISTER_KV_VARIABLE_SHAPE(int32, int64, float)
-REGISTER_KV_VARIABLE_SHAPE(int64, int32, float)
-REGISTER_KV_VARIABLE_SHAPE(int64, int64, float)
-#undef REGISTER_KV_VARIABLE_SHAPE
-
-REGISTER_KERNEL_BUILDER(Name("DestroyKvResourceOp").Device(DEVICE_GPU),
-                        DestroyKvResourceOp);
-
-template <typename TKey, typename TValue>
-class InitializeKvVariableOpGPU : public OpKernel {
- public:
-  explicit InitializeKvVariableOpGPU(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
-    OP_REQUIRES_OK(c, c->GetAttr("counter_type", &counter_type_));
-    OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
-    OP_REQUIRES(c, shape_.dims() == 1,
-                errors::InvalidArgument("KvVariable dimension must be 1"));
-
-     // get ev emb_index
-    OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
-     // get ev block_num
-    OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
-     // get ev slot_index
-    OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
-          &false_positive_probability_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
-          &l2_weight_threshold_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
-
-    OP_REQUIRES_OK(c, c->GetAttr("default_value_dim", &default_value_dim_));
-
-    int64 storage_type = 0;
-    OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
-    storage_type_ = static_cast<embedding::StorageType>(storage_type);
-
-    OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
-
-    if (filter_freq_ < 0) {
-      LOG(INFO) << "filter_freq < 0 is invalid, feature filter is disabled.";
-      filter_freq_ = 0;
-    }
-
-    if (steps_to_live_ == kEmbeddingVarUseDB ||
-        steps_to_live_ == kInitializableEmbeddingVarUseDB) {
-      LOG(INFO) << "hashmap use db";
-      //use_db_ = true;
-    } else {
-      OP_REQUIRES(c, steps_to_live_ >= 0,
-          errors::InvalidArgument(
-            "steps_to_live must >= 0, ", std::to_string(steps_to_live_)));
-    }
-    OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
-    OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
-  }
-
-  void Compute(OpKernelContext* context) override {
-    const Tensor& default_values = context->input(2);
-
-    OP_REQUIRES(context, dtype_ == default_values.dtype(),
-                errors::InvalidArgument(
-                    "Variable and value dtypes don't match; respectively, ",
-                    dtype_, " and ", default_values.dtype()));
-
-    ResourceHandle handle_self = HandleFromInput(context, 0);
-    ResourceHandle handle_primary = HandleFromInput(context, 1);
-    std::string opname = handle_self.name();
-
-    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
-
-    if (handle_self.name() == handle_primary.name() &&
-        handle_self.container() == handle_primary.container()) {
-
-      OP_REQUIRES_OK(
-        context,
-        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
-            context, handle_self, &ev,
-            [this, default_values, opname, context,
-             handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              EmbeddingConfig config(emb_index_ + block_num_ * slot_index_,
-                                     emb_index_,
-                                     block_num_, slot_num_,
-                                     opname + "-primary",
-                                     steps_to_live_, filter_freq_, max_freq_,
-                                     l2_weight_threshold_, layout_,
-                                     max_element_size_,
-                                     false_positive_probability_,
-                                     counter_type_, default_value_dim_);
-              auto alloc = context->get_allocator(AllocatorAttributes());
-              auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
-              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                  kv, alloc, config);
-              return (*ptr)->Init(default_values, default_value_dim_);
-            }));
-    } else {
-      EmbeddingVarGPU<TKey, TValue>* primary_variable = nullptr;
-      OP_REQUIRES_OK(
-       context,
-       LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
-           context, handle_primary, &primary_variable,
-           [this, default_values, opname, context,
-            handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
-             int64 primary_slot_index(0), primary_emb_index(0);
-             EmbeddingConfig config(
-                 primary_emb_index + block_num_ * primary_slot_index,
-                 primary_emb_index,
-                 block_num_, slot_num_, opname + "-primary",
-                 steps_to_live_, filter_freq_, max_freq_,
-                 l2_weight_threshold_, layout_,
-                 max_element_size_,
-                 false_positive_probability_,
-                 counter_type_);
-             auto alloc = context->get_allocator(AllocatorAttributes());
-             auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
-             *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
-                 kv, alloc, config);
-             return (*ptr)->Init(default_values, default_value_dim_);
-           }));
-
-      OP_REQUIRES_OK(
-        context,
-        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
-            context, handle_self, &ev,
-            [this, default_values, opname, primary_variable, context,
-             handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                  primary_variable->kv(),
-                  context->get_allocator(AllocatorAttributes()),
-                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                    emb_index_,
-                    block_num_, slot_num_, opname,
-                    steps_to_live_, 0,
-                    max_freq_, l2_weight_threshold_,
-                    layout_, 0, -1.0, counter_type_, default_value_dim_));
-             return (*ptr)->Init(default_values, default_value_dim_);
-            }));
-      core::ScopedUnref unref_me(primary_variable);
-    }
-    core::ScopedUnref unref_me(ev);
-    if (steps_to_live_ != kEmbeddingVarUseDB) {
-      ev->SetInitialized();
-    }
-  }
-
- private:
-  DataType dtype_;
-  DataType counter_type_;
-  TensorShape shape_;
-  int64 steps_to_live_;
-  int64 emb_index_;
-  int64 block_num_;
-  int64 slot_index_;
-  int64 slot_num_;
-  std::string ht_type_;
-  int64 ht_partition_num_;
-  int64 filter_freq_;
-  int64 max_freq_;
-  float l2_weight_threshold_;
-  std::string layout_;
-  int64 max_element_size_;
-  float false_positive_probability_;
-  embedding::StorageType storage_type_;
-  std::string storage_path_;
-  int64 default_value_dim_;
-};
-
-#define REGISTER_KERNELS(ktype, vtype)                               \
-  REGISTER_KERNEL_BUILDER(Name("InitializeKvVariableOp")             \
-                              .Device(DEVICE_GPU)                    \
-                              .TypeConstraint<ktype>("Tkeys")        \
-                              .TypeConstraint<vtype>("dtype"),       \
-                          InitializeKvVariableOpGPU<ktype, vtype>);
-#define REGISTER_GPU_KERNELS(T)        \
-  REGISTER_KERNELS(int32, T);     \
-  REGISTER_KERNELS(int64, T);
-TF_CALL_float(REGISTER_GPU_KERNELS);
-TF_CALL_double(REGISTER_GPU_KERNELS);
-#undef REGISTER_GPU_KERNELS
-#undef REGISTER_KERNELS
-
-template <typename Device, typename TKey, typename TValue>
-class KvResourceGatherOpGPU : public OpKernel {
- public:
-  explicit KvResourceGatherOpGPU(OpKernelConstruction* c) : OpKernel(c) {
-    OP_REQUIRES_OK(c,
-        c->GetAttr("is_use_default_value_tensor",
-          &is_use_default_value_tensor_));
-  }
-
-  void Compute(OpKernelContext* c) override {
-    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
-    OP_REQUIRES_OK(c, LookupResource(c, HandleFromInput(c, 0), &ev));
-    core::ScopedUnref unref_me(ev);
-
-    const Tensor& indices = c->input(1);
-    const int64 N = indices.NumElements();
-
-    TensorShape result_shape = indices.shape();
-    TensorShape value_shape({ev->ValueLen()});
-    result_shape.AppendShape(value_shape);
-
-    Tensor* out = nullptr;
-    OP_REQUIRES_OK(c, c->allocate_output(0, result_shape, &out));
-
-    if (N > 0) {
-      auto out_flat = out->shaped<TValue, 2>({N, out->NumElements() / N});
-      TValue* out_base = &out_flat(0, 0);
-
-      auto indices_flat = indices.flat<TKey>();
-      const int64 indices_size = static_cast<int64>(
-          indices_flat.dimension(0));
-      const int64 slice_elems = out_flat.dimension(1);
-      OP_REQUIRES(c, ev->ValueLen() == slice_elems,
-          errors::InvalidArgument(
-            "ev's value_len should same with output's dimension(1)",
-            std::to_string(slice_elems), std::to_string(ev->ValueLen())));
-
-      const TKey* key_base = &indices_flat(0);
-      const Device& device = c->eigen_device<Device>();
-      if (is_use_default_value_tensor_) {
-        Tensor default_values(c->input(2));
-        auto default_value_num = default_values.NumElements() / ev->ValueLen();
-        auto default_values_matrix = default_values.shaped<TValue, 2>(
-            {default_value_num, ev->ValueLen()});     
-        TValue* default_v_base = &default_values_matrix(0, 0);
-        ev->LookupOrCreate(key_base, out_base, default_v_base,
-            default_value_num, is_use_default_value_tensor_,
-            indices_size, device);
-      } else {
-        ev->LookupOrCreate(key_base, out_base, ev->GetDefaultValuePtr(),
-            ev->GetDefaultValueDim(), is_use_default_value_tensor_,
-            indices_size, device);
-      }
-    }
-  }
-
-  private:
-    bool is_use_default_value_tensor_;
-};
-
-#define REGISTER_GATHER_FULL(dev, ktype, vtype)                   \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceGather")                \
-                              .Device(DEVICE_##dev)               \
-                              .HostMemory("resource")             \
-                              .TypeConstraint<vtype>("dtype")     \
-                              .TypeConstraint<ktype>("Tkeys"),    \
-                          KvResourceGatherOpGPU<GPUDevice, ktype, vtype>)
-#define REGISTER_GATHER_ALL_INDICES(dev, type) \
-  REGISTER_GATHER_FULL(dev, int32, type);      \
-  REGISTER_GATHER_FULL(dev, int64, type)
-#define REGISTER_GATHER_GPU(type) REGISTER_GATHER_ALL_INDICES(GPU, type)
-TF_CALL_float(REGISTER_GATHER_GPU);
-TF_CALL_double(REGISTER_GATHER_GPU);
-#undef REGISTER_GATHER_GPU
-#undef REGISTER_GATHER_ALL_INDICES
-#undef REGISTER_GATHER_FULL
-
-template<typename Device, typename TKey, typename TValue>
-class KvResourceExportOpGPU : public OpKernel {
- public:
-  explicit KvResourceExportOpGPU(OpKernelConstruction *ctx) : OpKernel(ctx) {}
-
-  void Compute(OpKernelContext *ctx) override {
-    EmbeddingVarGPU<TKey, TValue> *ev = nullptr;
-    OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
-    core::ScopedUnref unref_me(ev);
-    int64 total_size = ev->Size();
-
-    // Create an output tensor
-    Tensor *keys_output_tensor = NULL;
-    Tensor *values_output_tensor = NULL;
-    Tensor *versions_output_tensor = NULL;
-    Tensor *freq_output_tensor = NULL;
-
-    OP_REQUIRES_OK(ctx,
-        ctx->allocate_output(0, TensorShape({total_size}),
-          &keys_output_tensor));
-    OP_REQUIRES_OK(ctx,
-        ctx->allocate_output(1, TensorShape({total_size, ev->ValueLen()}),
-          &values_output_tensor));
-    OP_REQUIRES_OK(ctx,
-        ctx->allocate_output(2, TensorShape({0}),
-          &versions_output_tensor));
-    OP_REQUIRES_OK(ctx,
-        ctx->allocate_output(3, TensorShape({0}),
-          &freq_output_tensor));
-
-    auto keys_flat = keys_output_tensor->flat<TKey>();
-    TKey* key_base = &keys_flat(0);
-    auto values_flat = values_output_tensor->flat<TValue>();
-    TValue* value_base = &values_flat(0);
-
-    auto device = ctx->eigen_device<Device>();
-    ev->GetSnapshot(key_base, value_base, device);
-  }
-};
-
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceExport")             \
-                            .Device(DEVICE_GPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("Tvalues") \
-                            .HostMemory("keys")                \
-                            .HostMemory("values")              \
-                            .HostMemory("versions")            \
-                            .HostMemory("freqs"),              \
-                          KvResourceExportOpGPU<GPUDevice, ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-
-REGISTER_KERNELS_ALL_INDEX(float);
-
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-
-template <typename TKey, typename TValue>
-class KvResourceImportV2OpGPU: public OpKernel {
- public:
-  explicit KvResourceImportV2OpGPU(OpKernelConstruction* c)
-      : OpKernel(c) {
-    OP_REQUIRES_OK(c, c->GetAttr("dtype", &dtype_));
-    OP_REQUIRES_OK(c, c->GetAttr("counter_type", &counter_type_));
-    OP_REQUIRES_OK(c, c->GetAttr("shape", &shape_));
-    OP_REQUIRES(c, shape_.dims() == 1,
-                errors::InvalidArgument("KvVariable dimension must be 1"));
-    OP_REQUIRES_OK(c, c->GetAttr("steps_to_live", &steps_to_live_));
-    OP_REQUIRES(c, steps_to_live_ >= 0,
-                 errors::InvalidArgument(
-                    "steps_to_live must >= 0, ",
-                    std::to_string(steps_to_live_)));
-    OP_REQUIRES_OK(c, c->GetAttr("partition_id", &partition_id_));
-    OP_REQUIRES(c, partition_id_ >= 0,
-                 errors::InvalidArgument(
-                    "partition_id must >= 0, ",
-                    std::to_string(partition_id_)));
-    OP_REQUIRES_OK(c, c->GetAttr("partition_num", &partition_num_));
-    OP_REQUIRES(c, partition_num_ >= 1,
-                 errors::InvalidArgument(
-                    "partition_num must >= 1, ",
-                    std::to_string(partition_num_)));
-    //OP_REQUIRES_OK(c, c->GetAttr("restore_versions", &restore_versions_));
-    OP_REQUIRES_OK(c, c->GetAttr("ht_type", &ht_type_));
-    OP_REQUIRES_OK(c, c->GetAttr("ht_partition_num", &ht_partition_num_));
-    OP_REQUIRES_OK(c, c->GetAttr("emb_index", &emb_index_));
-    OP_REQUIRES_OK(c, c->GetAttr("slot_index", &slot_index_));
-    OP_REQUIRES_OK(c, c->GetAttr("filter_freq", &filter_freq_));
-    OP_REQUIRES_OK(c, c->GetAttr("block_num", &block_num_));
-    OP_REQUIRES_OK(c, c->GetAttr("max_element_size", &max_element_size_));
-    OP_REQUIRES_OK(c, c->GetAttr("false_positive_probability",
-          &false_positive_probability_));
-    OP_REQUIRES_OK(c, c->GetAttr("l2_weight_threshold",
-          &l2_weight_threshold_));
-    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
-    OP_REQUIRES_OK(c, c->GetAttr("max_freq", &max_freq_));
-    OP_REQUIRES_OK(c, c->GetAttr("default_value_dim",
-          &default_value_dim_));
-    OP_REQUIRES_OK(c, c->GetAttr("slot_num", &slot_num_));
-    int64 storage_type = 0;
-    OP_REQUIRES_OK(c, c->GetAttr("storage_type", &storage_type));
-    storage_type_ = static_cast<embedding::StorageType>(storage_type);
-
-    OP_REQUIRES_OK(c, c->GetAttr("storage_path", &storage_path_));
-    OP_REQUIRES_OK(c, c->GetAttr("storage_size", &storage_size_));
-    OP_REQUIRES_OK(c, c->GetAttr("record_freq", &record_freq_));
-    OP_REQUIRES_OK(c, c->GetAttr("record_version", &record_version_));
-  }
-
-  void Compute(OpKernelContext* context) override {
-    const Tensor& file_name = context->input(0);
-    const std::string file_name_string = file_name.scalar<string>()();
-    const Tensor& name = context->input(4);
-    const std::string name_string = name.scalar<string>()();
-    const Tensor& default_values = context->input(3);
-    OP_REQUIRES(context, dtype_ == default_values.dtype(),
-        errors::InvalidArgument(
-          "Variable and ddd value dtypes don't match; respectively, ",
-          dtype_, " and ", default_values.dtype()));
-
-    ResourceHandle handle_self = HandleFromInput(context, 1);
-    ResourceHandle handle_primary = HandleFromInput(context, 2);
-    std::string opname = handle_self.name();
-    EmbeddingVarGPU<TKey, TValue>* ev = nullptr;
-    if (handle_self.name() == handle_primary.name() &&
-        handle_self.container() == handle_primary.container()) {
-      OP_REQUIRES_OK(
-        context,
-        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
-            context, handle_self, &ev,
-            [this, default_values, opname, context,
-             handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              EmbeddingConfig config(
-                               emb_index_ + block_num_ * slot_index_,
-                               emb_index_,
-                               block_num_, slot_num_,
-                               opname + "-primary",
-                               steps_to_live_, filter_freq_, max_freq_,
-                               l2_weight_threshold_, layout_,
-                               max_element_size_,
-                               false_positive_probability_,
-                               counter_type_, default_value_dim_);
-              auto alloc = context->get_allocator(AllocatorAttributes());
-              auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
-              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                  kv, alloc, config);
-              return (*ptr)->Init(default_values, default_value_dim_);
-            }));
-    } else {
-      EmbeddingVarGPU<TKey, TValue>* primary_variable = nullptr;
-      OP_REQUIRES_OK(
-       context,
-       LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
-           context, handle_primary, &primary_variable,
-           [this, default_values, opname, context,
-            handle_primary](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              int64 primary_slot_index(0), primary_emb_index(0);
-              EmbeddingConfig config(
-                  primary_emb_index + block_num_ * primary_slot_index,
-                  primary_emb_index,
-                  block_num_, slot_num_, opname + "-primary",
-                  steps_to_live_, filter_freq_, max_freq_,
-                  l2_weight_threshold_, layout_,
-                  max_element_size_,
-                  false_positive_probability_,
-                  counter_type_);
-              auto alloc = context->get_allocator(AllocatorAttributes());
-              auto kv = new embedding::GPUHashMapKV<TKey, TValue>(config, alloc);
-              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_primary.name(),
-                  kv, alloc, config);
-              return (*ptr)->Init(default_values, default_value_dim_);
-            }));
-
-      OP_REQUIRES_OK(
-        context,
-        LookupOrCreateResource<EmbeddingVarGPU<TKey, TValue>>(
-            context, handle_self, &ev,
-            [this, default_values, opname, primary_variable, context,
-             handle_self](EmbeddingVarGPU<TKey, TValue>** ptr) {
-              *ptr = new EmbeddingVarGPU<TKey, TValue>(handle_self.name(),
-                  primary_variable->kv(),
-                  context->get_allocator(AllocatorAttributes()),
-                  EmbeddingConfig(emb_index_ + block_num_ * slot_index_,
-                    emb_index_,
-                    block_num_, slot_num_, opname,
-                    steps_to_live_, 0,
-                    max_freq_, l2_weight_threshold_,
-                    layout_, 0, -1.0, counter_type_, default_value_dim_));
-             return (*ptr)->Init(default_values, default_value_dim_);
-            }));
-      core::ScopedUnref unref_me(primary_variable);
-    }
-    core::ScopedUnref unref_me(ev);
-
-    BundleReader reader(Env::Default(), file_name_string);
-    auto s = reader.status();
-    if (!s.ok()) {
-      LOG(FATAL) << "Restore EV failure, create BundleReader error:"
-                 << s.ToString();
-    }
-
-    EVRestoreDynamicallyGPU(
-        ev, name_string, partition_id_, partition_num_, context, &reader,
-        "-partition_offset", "-keys", "-values", "-versions", "-freqs");
-    ev->SetInitialized();
-  }
-
- private:
-  int64 partition_id_;
-  int64 partition_num_;
-  DataType dtype_;
-  DataType counter_type_;
-  int64 max_element_size_;
-  float false_positive_probability_;
-  TensorShape shape_;
-  int64 steps_to_live_;
-  bool restore_versions_;
-  string ht_type_;
-  int64 ht_partition_num_;
-  int64 emb_index_;
-  int64 slot_index_;
-  int64 block_num_;
-  int64 slot_num_;
-  int64 filter_freq_;
-  float l2_weight_threshold_;
-  std::string layout_;
-  int64 max_freq_;
-  embedding::StorageType storage_type_;
-  std::string storage_path_;
-  std::vector<int64> storage_size_;
-  int64 default_value_dim_;
-  bool record_freq_;
-  bool record_version_;
-};
-
-#define REGISTER_KERNELS(ktype, vtype)                         \
-  REGISTER_KERNEL_BUILDER(Name("KvResourceImportV2")           \
-                            .Device(DEVICE_GPU)                \
-                            .TypeConstraint<ktype>("Tkeys")    \
-                            .TypeConstraint<vtype>("dtype"),   \
-                          KvResourceImportV2OpGPU<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                       \
-  REGISTER_KERNELS(int32, type)                                \
-  REGISTER_KERNELS(int64, type)
-TF_CALL_float(REGISTER_KERNELS_ALL_INDEX);
-TF_CALL_double(REGISTER_KERNELS_ALL_INDEX);
-//TF_CALL_QUANTIZED_TYPES(REGISTER_KERNELS_ALL_INDEX);
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_KERNELS
-
-#endif  // TENSORFLOW_USE_GPU_EV
-#endif  // GOOGLE_CUDA
-
 template <typename TKey, typename TValue>
 class EVGetFrequencyOp : public OpKernel {
  public:
@@ -2419,18 +1729,18 @@ class EVGetFrequencyOp : public OpKernel {
   }
 };
 
-#define REGISTER_EV_GET_FREQUENCY(ktype, vtype)                 \
+#define REGISTER_KERNELS(ktype, vtype)                          \
   REGISTER_KERNEL_BUILDER(Name("EVGetFrequency")                \
                             .Device(DEVICE_CPU)                 \
                             .TypeConstraint<ktype>("Tkeys")     \
                             .TypeConstraint<vtype>("Tvalues"),  \
                           EVGetFrequencyOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                        \
-  REGISTER_EV_GET_FREQUENCY(int32, type)                        \
-  REGISTER_EV_GET_FREQUENCY(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_EV_GET_FREQUENCY
+#define REGISTER_KERNELS_ALL(type)                              \
+  REGISTER_KERNELS(int32, type)                                 \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL)
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class EVGetVersionOp : public OpKernel {
@@ -2455,18 +1765,18 @@ class EVGetVersionOp : public OpKernel {
   }
 };
 
-#define REGISTER_EV_GET_VERSION(ktype, vtype)                   \
+#define REGISTER_KERNELS(ktype, vtype)                          \
   REGISTER_KERNEL_BUILDER(Name("EVGetVersion")                  \
                             .Device(DEVICE_CPU)                 \
                             .TypeConstraint<ktype>("Tkeys")     \
                             .TypeConstraint<vtype>("Tvalues"),  \
                           EVGetVersionOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                        \
-  REGISTER_EV_GET_VERSION(int32, type)                          \
-  REGISTER_EV_GET_VERSION(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_EV_GET_VERSION
+#define REGISTER_KERNELS_ALL(type)                              \
+  REGISTER_KERNELS(int32, type)                                 \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL)
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 template <typename TKey, typename TValue>
 class KvResourceLookupTierOp : public OpKernel {
@@ -2491,22 +1801,21 @@ class KvResourceLookupTierOp : public OpKernel {
   }
 };
 
-#define REGISTER_EV_LOOKUP_TIER(ktype, vtype)                   \
+#define REGISTER_KERNELS(ktype, vtype)                          \
   REGISTER_KERNEL_BUILDER(Name("KvResourceLookupTier")          \
                             .Device(DEVICE_CPU)                 \
                             .TypeConstraint<ktype>("Tkeys")     \
                             .TypeConstraint<vtype>("dtype"),    \
                           KvResourceLookupTierOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                        \
-  REGISTER_EV_LOOKUP_TIER(int32, type)                          \
-  REGISTER_EV_LOOKUP_TIER(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_EV_LOOKUP_TIER
+#define REGISTER_KERNELS_ALL(type)                              \
+  REGISTER_KERNELS(int32, type)                                 \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL)
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
-#define REGISTER_EV_LOOKUP_TIER(ktype, vtype)                   \
+#define REGISTER_KERNELS(ktype, vtype)                          \
   REGISTER_KERNEL_BUILDER(Name("KvResourceLookupTier")          \
                             .Device(DEVICE_GPU)                 \
                             .HostMemory("ids")                  \
@@ -2514,13 +1823,12 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
                             .TypeConstraint<ktype>("Tkeys")     \
                             .TypeConstraint<vtype>("dtype"),    \
                           KvResourceLookupTierOp<ktype, vtype>);
-#define REGISTER_KERNELS_ALL_INDEX(type)                        \
-  REGISTER_EV_LOOKUP_TIER(int32, type)                          \
-  REGISTER_EV_LOOKUP_TIER(int64, type)
-TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
-#undef REGISTER_KERNELS_ALL_INDEX
-#undef REGISTER_EV_LOOKUP_TIER
-#endif  // TENSORFLOW_USE_GPU_EV
+#define REGISTER_KERNELS_ALL(type)                              \
+  REGISTER_KERNELS(int32, type)                                 \
+  REGISTER_KERNELS(int64, type)
+TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL)
+#undef REGISTER_KERNELS_ALL
+#undef REGISTER_KERNELS
 #endif  // GOOGLE_CUDA
 
 }  // namespace tensorflow

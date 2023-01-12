@@ -1223,7 +1223,6 @@ void t1_gpu(KVInterface<int64, float>* hashmap) {
 }
 
 #if GOOGLE_CUDA
-#if !TENSORFLOW_USE_GPU_EV
 TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
     SessionOptions sops;
     std::unique_ptr<Device> device =
@@ -1243,7 +1242,6 @@ TEST(EmbeddingVariableTest,TestRemoveLocklessCPU) {
     ASSERT_EQ(hashmap->Size(), 98);
     LOG(INFO) << "2 size:" << hashmap->Size();
 }
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
 
 /*void CommitGPU(KVInterface<int64, float>* hashmap) {
