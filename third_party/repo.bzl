@@ -62,10 +62,13 @@ def _repos_are_siblings():
 
 # Apply a patch_file to the repository root directory
 # Runs 'patch -p1' on both Windows and Unix.
-def _apply_patch(ctx, patch_file):
-    patch_command = ["patch", "-p1", "-d", ctx.path("."), "-i", ctx.path(patch_file)]
-    cmd = _wrap_bash_cmd(ctx, patch_command)
-    _execute_and_check_ret_code(ctx, cmd)
+def _apply_patch(ctx, patch_files):
+    for patch_file in patch_files:
+        patch_file = ctx.path(Label(patch_file)) if patch_file else None
+        if patch_file:
+            patch_command = ["patch", "-p1", "-d", ctx.path("."), "-i", ctx.path(patch_file)]
+            cmd = _wrap_bash_cmd(ctx, patch_command)
+            _execute_and_check_ret_code(ctx, cmd)
 
 def _apply_delete(ctx, paths):
     for path in paths:
@@ -143,7 +146,7 @@ tf_http_archive = repository_rule(
         "strip_prefix": attr.string(),
         "type": attr.string(),
         "delete": attr.string_list(),
-        "patch_file": attr.label(),
+        "patch_file": attr.string_list(),
         "build_file": attr.label(),
         "system_build_file": attr.label(),
         "system_link_files": attr.string_dict(),
@@ -230,7 +233,7 @@ third_party_http_archive = repository_rule(
         "delete": attr.string_list(),
         "build_file": attr.string(mandatory = True),
         "system_build_file": attr.string(mandatory = False),
-        "patch_file": attr.label(),
+        "patch_file": attr.string_list(),
         "link_files": attr.string_dict(),
         "system_link_files": attr.string_dict(),
     },
