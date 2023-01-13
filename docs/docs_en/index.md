@@ -43,6 +43,11 @@ Fused-Embedding
 :maxdepth: 2
 :caption: Runtime Optimization
 
+CPU-Memory-Optimization
+GPU-Memory-Optimization
+GPU-Virtual-Memory
+Executor-Optimization
+GPU-MultiStream
 ```
 
 ```{toctree}
