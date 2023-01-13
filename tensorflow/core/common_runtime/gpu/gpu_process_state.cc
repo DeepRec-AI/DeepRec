@@ -365,6 +365,109 @@ Allocator* GPUProcessState::GetGpuHostAllocator(int numa_node) {
   }
 }
 
+Allocator* GPUProcessState::GetGpuHostAllocator(int numa_node, int device_id) {
+  CHECK(process_state_);
+  if (!HasGPUDevice() ||
+      !process_state_->ProcessState::FLAGS_brain_mem_reg_gpu_dma) {
+    return process_state_->GetCPUAllocator(numa_node);
+  }
+  if (numa_node == port::kNUMANoAffinity) {
+    numa_node = 0;
+  }
+  
+  CHECK_GE(device_id, 0);
+
+  {
+    // Here we optimize the most common use case where
+    // gpu_per_device_host_allocators_ have already been populated
+    // and since we're only reading these vectors,
+    // we can get by with a shared lock. In the slower case,
+    // we take a unique lock and populate these vectors.
+    tf_shared_lock lock(mu_);
+    if (process_state_->ProcessState::FLAGS_brain_gpu_record_mem_types &&
+        !gpu_per_device_host_allocators_.empty() &&
+        gpu_per_device_host_allocators_[0].recording_allocator != nullptr) {
+      return gpu_per_device_host_allocators_[0].recording_allocator.get();
+    }
+    if (gpu_per_device_host_allocators_.size() > device_id &&
+	gpu_per_device_host_allocators_[device_id].allocator != nullptr) {
+      return gpu_per_device_host_allocators_[device_id].allocator.get();
+    }
+  }
+
+  int device_id_tmp = device_id;
+  if (process_state_->ProcessState::FLAGS_brain_gpu_record_mem_types) {
+    device_id_tmp = 0;
+  }
+  
+  mutex_lock lock(mu_);
+  se::StreamExecutor *se = \
+    GpuIdUtil::ExecutorForTfGpuId(TfGpuId(device_id_tmp)).ValueOrDie();
+  CHECK_NE(nullptr, se);
+
+  if (gpu_per_device_host_allocators_.size() <= device_id_tmp ||
+      gpu_per_device_host_allocators_[device_id_tmp].allocator == nullptr) {
+    while (gpu_per_device_host_allocators_.size() <= device_id_tmp) {
+      gpu_per_device_host_allocators_.push_back({});
+    }
+    
+    while (gpu_per_device_host_alloc_visitors_.size() <= device_id_tmp) {
+      gpu_per_device_host_alloc_visitors_.push_back({});
+    }
+    while (gpu_per_device_host_free_visitors_.size() <= device_id_tmp) {
+      gpu_per_device_host_free_visitors_.push_back({});
+    }
+
+    SubAllocator *sub_allocator = \
+      new GpuHostAllocator(se, numa_node,
+			   gpu_per_device_host_alloc_visitors_[device_id_tmp],
+			   gpu_per_device_host_free_visitors_[device_id_tmp]);
+
+    int64 gpu_host_mem_limit_in_mb = -1;
+    Status status = ReadInt64FromEnvVar("TF_GPU_HOST_MEM_LIMIT_IN_MB",
+                                        1LL << 16 /*64GB max by default*/,
+                                        &gpu_host_mem_limit_in_mb);
+    if (!status.ok()) {
+      LOG(ERROR) << "GetGpuHostAllocator: " << status.error_message();
+    }
+    int64 gpu_host_mem_limit = gpu_host_mem_limit_in_mb * (1LL << 20);
+
+    Allocator* allocator = new BFCAllocator(
+        sub_allocator, gpu_host_mem_limit, true /*allow_growth*/,
+        strings::StrCat("GPUHost_", device_id_tmp, "_bfc") /*name*/);
+
+    if (LogMemory::IsEnabled() && !allocator->TracksAllocationSizes()) {
+      // Wrap the allocator to track allocation ids for better logging
+      // at the cost of performance.
+      allocator = new TrackingAllocator(allocator, true);
+    }
+    
+    AllocatorParts &allocator_parts = gpu_per_device_host_allocators_[device_id_tmp];
+    if (allocator_parts.allocator == nullptr) {
+      allocator_parts = {std::unique_ptr<Allocator>(allocator),
+                         std::unique_ptr<SharedCounter>(nullptr), nullptr,
+                         sub_allocator, std::unique_ptr<Allocator>(nullptr)};
+    }
+    if (process_state_->ProcessState::FLAGS_brain_gpu_record_mem_types) {
+      ProcessState::MemDesc md;
+      md.loc = ProcessState::MemDesc::CPU;
+      md.dev_index = 0;
+      md.gpu_registered = true;
+      md.nic_registered = false;
+      allocator_parts.recording_allocator.reset(
+          new internal::RecordingAllocator(&process_state_->mem_desc_map_, 
+                                           allocator_parts.allocator.get(), md, 
+                                           &mu_));
+    }
+  }
+
+  if (process_state_->ProcessState::FLAGS_brain_gpu_record_mem_types) {    
+    return gpu_per_device_host_allocators_[0].recording_allocator.get();
+  } else {
+    return gpu_per_device_host_allocators_[device_id_tmp].allocator.get();
+  }
+}
+
 void GPUProcessState::AddGPUAllocVisitor(int bus_id,
                                          const SubAllocator::Visitor& visitor) {
 #if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
@@ -396,6 +499,21 @@ void GPUProcessState::AddGpuHostAllocVisitor(
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 }
 
+void GPUProcessState::AddGpuHostAllocVisitorByDeviceId(
+    int device_id, const SubAllocator::Visitor& visitor) {  
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
+  mutex_lock lock(mu_);
+  CHECK(gpu_per_device_host_allocators_.empty())  // Crash OK
+      << "AddGpuHostAllocVisitorByDeviceId must be called before "
+         "first call to GetGpuHostAllocator.";
+  while (device_id >= gpu_per_device_host_alloc_visitors_.size()) {
+    gpu_per_device_host_alloc_visitors_.push_back(std::vector<SubAllocator::Visitor>());
+  }
+  gpu_per_device_host_alloc_visitors_[device_id].push_back(visitor);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+}
+
 void GPUProcessState::AddGpuHostFreeVisitor(
     int numa_node, const SubAllocator::Visitor& visitor) {
 #if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
@@ -408,6 +526,21 @@ void GPUProcessState::AddGpuHostFreeVisitor(
     gpu_host_free_visitors_.push_back(std::vector<SubAllocator::Visitor>());
   }
   gpu_host_free_visitors_[numa_node].push_back(visitor);
+#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+}
+
+void GPUProcessState::AddGpuHostFreeVisitorByDeviceId(
+    int device_id, const SubAllocator::Visitor& visitor) {
+#if (defined(GOOGLE_CUDA) && GOOGLE_CUDA) || \
+    (defined(TENSORFLOW_USE_ROCM) && TENSORFLOW_USE_ROCM)
+  mutex_lock lock(mu_);
+  CHECK(gpu_per_device_host_allocators_.empty())  // Crash OK
+      << "AddGpuHostFreeVisitorByDeviceId must be called before "
+         "first call to GetGpuHostAllocator.";
+  while (device_id >= gpu_per_device_host_free_visitors_.size()) {
+    gpu_per_device_host_free_visitors_.push_back(std::vector<SubAllocator::Visitor>());
+  }
+  gpu_per_device_host_free_visitors_[device_id].push_back(visitor);
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 }
 

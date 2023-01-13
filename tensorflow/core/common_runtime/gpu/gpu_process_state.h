@@ -85,6 +85,7 @@ class GPUProcessState {
                                      TfGpuId tf_gpu_id, size_t total_bytes);
 
   virtual Allocator* GetGpuHostAllocator(int numa_node);
+  virtual Allocator* GetGpuHostAllocator(int numa_node, int device_id);  
 
   // Registers a Visitor to be invoked on new chunks of memory allocated by the
   // SubAllocator of every GPU proximate to the specified bus.  The AllocVisitor
@@ -102,11 +103,15 @@ class GPUProcessState {
   // the SubAllocator of the GpuHostAllocator for the given numa_node.
   virtual void AddGpuHostAllocVisitor(int numa_node,
                                       const SubAllocator::Visitor& visitor);
+  virtual void AddGpuHostAllocVisitorByDeviceId(int device_id,
+				      const SubAllocator::Visitor& visitor);
 
   // Registers a Visitor to be invoked on each chunk handed back for freeing to
   // the SubAllocator of the GpuHostAllocator for the given numa_node.
   virtual void AddGpuHostFreeVisitor(int numa_node,
                                      const SubAllocator::Visitor& visitor);
+  virtual void AddGpuHostFreeVisitorByDeviceId(int device_id,
+				     const SubAllocator::Visitor& visitor);
 
   // Returns bus_id for the given GPU id.
   virtual int BusIdForGPU(TfGpuId tf_gpu_id);
@@ -150,6 +155,12 @@ class GPUProcessState {
       GUARDED_BY(mu_);
   std::vector<std::vector<SubAllocator::Visitor>> gpu_host_free_visitors_
       GUARDED_BY(mu_);
+  
+  std::vector<AllocatorParts> gpu_per_device_host_allocators_ GUARDED_BY(mu_);
+  std::vector<std::vector<SubAllocator::Visitor>> gpu_per_device_host_alloc_visitors_
+      GUARDED_BY(mu_);
+  std::vector<std::vector<SubAllocator::Visitor>> gpu_per_device_host_free_visitors_
+      GUARDED_BY(mu_);  
 };
 
 }  // namespace tensorflow
