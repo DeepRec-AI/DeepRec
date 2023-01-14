@@ -57,6 +57,7 @@ struct MklDnnMatMulFwdParams {
   MEMORY_FORMAT weight_format;
   MEMORY_FORMAT dst_format;
   string dtypes = string("");
+  bool const_weight;
 #ifdef DNNL_AARCH64_USE_ACL
   void* weight_address = nullptr;
 #endif
@@ -70,14 +71,16 @@ struct MklDnnMatMulFwdParams {
                         memory::dims bias_dims, memory::dims dst_dims,
                         MEMORY_FORMAT src_format = MEMORY_FORMAT::any,
                         MEMORY_FORMAT weight_format = MEMORY_FORMAT::any,
-                        MEMORY_FORMAT dst_format = MEMORY_FORMAT::any)
+                        MEMORY_FORMAT dst_format = MEMORY_FORMAT::any,
+                        bool const_weight = false)
       : src_dims(src_dims),
         weight_dims(weight_dims),
         bias_dims(bias_dims),
         dst_dims(dst_dims),
         src_format(src_format),
         weight_format(weight_format),
-        dst_format(dst_format) {}
+        dst_format(dst_format) {},
+        const_weight(const_weight) {}
 };
 
 // With quantization, input, weight, bias, and output can have different types.
@@ -202,7 +205,8 @@ class MklDnnMatMulFwdPrimitive : public MklPrimitive {
                                             MEMORY_FORMAT::any));
     // Create an inner-product.
     context_.fwd_desc.reset(new inner_product_forward::desc(
-        prop_kind::forward_inference, *context_.src_md, *context_.weight_md,
+        matmul_fwd_params.const_weight ? prop_kind::forward_inference : prop_kind::forward_training,
+        *context_.src_md, *context_.weight_md,
         *context_.bias_md, *context_.dst_md));
     context_.fwd_pd.reset(new inner_product_forward::primitive_desc(
         *context_.fwd_desc, cpu_engine_));
