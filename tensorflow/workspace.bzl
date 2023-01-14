@@ -170,26 +170,25 @@ def tf_repositories(path_prefix = "", tf_repo_name = ""):
     tf_http_archive(
         name = "mkl_dnn_acl_compatible",
         build_file = clean_dep("//third_party/mkl_dnn:mkldnn_acl.BUILD"),
-        sha256 = "9695640f55acd833ddcef4776af15e03446c4655f9296e5074b1b178dd7a4fb2",
-        strip_prefix = "oneDNN-2.6",
+        sha256 = "fc2b617ec8dbe907bb10853ea47c46f7acd8817bc4012748623d911aca43afbb",
+        strip_prefix = "oneDNN-2.7",
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/oneapi-src/oneDNN/archive/v2.6.tar.gz",
-            "https://github.com/oneapi-src/oneDNN/archive/v2.6.tar.gz",
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/oneapi-src/oneDNN/archive/v2.7.tar.gz",
+            "https://github.com/oneapi-src/oneDNN/archive/v2.7.tar.gz",
         ],
     )
 
     tf_http_archive(
         name = "compute_library",
-        sha256 = "11244b05259fb1c4af7384d0c3391aeaddec8aac144774207582db4842726540",
-        strip_prefix = "ComputeLibrary-22.02",
+        sha256 = "ac2ce7b5636e99f175b084362f83fe24d72e6ceb0bd62ee5866772f7355d024d",
+        strip_prefix = "ComputeLibrary-22.08",
         build_file = clean_dep("//third_party/compute_library:BUILD"),
         patch_file = [
             clean_dep("//third_party/compute_library:compute_library.patch"), 
-            clean_dep("//third_party/compute_library:activation_func_correct_args.patch")
         ],
         urls = [
-            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/ARM-software/ComputeLibrary/archive/v22.02.tar.gz",
-            "https://github.com/ARM-software/ComputeLibrary/archive/v22.02.tar.gz",
+            "https://storage.googleapis.com/mirror.tensorflow.org/github.com/ARM-software/ComputeLibrary/archive/v22.08.tar.gz",
+            "https://github.com/ARM-software/ComputeLibrary/archive/v22.08.tar.gz",
         ],
     )
 
