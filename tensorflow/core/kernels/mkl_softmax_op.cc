@@ -27,6 +27,9 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_types.h"
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/tensor_format.h"
+#ifdef DNNL_AARCH64_USE_ACL
+#include "tensorflow/core/platform/mutex.h"
+#endif
 
 using dnnl::prop_kind;
 using dnnl::softmax_forward;
@@ -39,7 +42,9 @@ class MklSoftmaxParams {
   memory::dims src_dims;
   MKL_TENSOR_FORMAT src_fmt;
   int axis;
-
+#ifdef DNNL_AARCH64_USE_ACL
+  int aarch64_counter;
+#endif
   MklSoftmaxParams(memory::dims src_dims, MKL_TENSOR_FORMAT src_fmt, int axis)
       : src_dims(src_dims), src_fmt(src_fmt), axis(axis) {}
 };
@@ -59,6 +64,9 @@ class MklSoftmaxPrimitive : public MklPrimitive {
   //   dst_data:  output data buffer of dst
   void Execute(const T* src_data, T* dst_data,
                std::shared_ptr<stream> fwd_cpu_stream) {
+#ifdef DNNL_AARCH64_USE_ACL
+    mutex_lock lock(primitive_execution_mu_);
+#endif
 #ifdef ENABLE_DNNL_THREADPOOL
     context_.src_mem->set_data_handle(
         static_cast<void*>(const_cast<T*>(src_data)), *fwd_cpu_stream);
@@ -138,6 +146,9 @@ class MklSoftmaxPrimitive : public MklPrimitive {
   }
 
   struct SoftmaxFwdContext context_;
+#ifdef DNNL_AARCH64_USE_ACL
+  mutex primitive_execution_mu_;
+#endif
 };
 
 template <typename T>
@@ -173,7 +184,9 @@ class MklSoftmaxPrimitiveFactory : public MklPrimitiveFactory<T> {
     key_creator.AddAsKey(fwdParams.src_dims);
     key_creator.AddAsKey<int>(static_cast<int>(fwdParams.src_fmt));
     key_creator.AddAsKey<int>(fwdParams.axis);
-
+#ifdef DNNL_AARCH64_USE_ACL
+    key_creator.AddAsKey(fwdParams.aarch64_counter);
+#endif
     return key_creator.GetKey();
   }
 
@@ -269,6 +282,15 @@ class MklSoftmaxOp : public OpKernel {
 
       // Get a softmax fwd primitive from primitive pool.
       MklSoftmaxParams fwdParams(src_dims, src_fmt, axis);
+#ifdef DNNL_AARCH64_USE_ACL
+      // ACL does not support reuse of primitives with different data.
+      // For softmax, the previous approach (PR #47775) of using Tensor
+      // addresses does not work, as the addresses are re-used in matmul with
+      // different data The counter ensures we still benefit from caching via
+      // SetSoftmaxFwd().
+      fwdParams.aarch64_counter =
+          MklSoftmaxPrimitiveFactory<T>::IncrementCounter();
+#endif
       MklSoftmaxPrimitive<T>* softmax_fwd =
           MklSoftmaxPrimitiveFactory<T>::Get(fwdParams);
 

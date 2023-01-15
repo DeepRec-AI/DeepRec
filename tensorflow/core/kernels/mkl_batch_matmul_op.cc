@@ -156,7 +156,8 @@ class BatchMatMulMkl : public OpKernel {
     // does not work, as the addresses are re-used in matmul with different data
     // The counter  ensure we still benefit from caching via SetMklMatmul().
     static int counter = 1;
-    params->aarch64_counter = counter++;
+    params->aarch64_counter =
+      MklMatMulPrimitiveFactory<Scalar>::IncrementCounter();
 #endif
 
     if (alpha_ != 1.0f)
