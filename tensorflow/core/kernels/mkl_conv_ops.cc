@@ -47,6 +47,9 @@ limitations under the License.
 #include "tensorflow/core/util/mkl_util.h"
 #include "tensorflow/core/util/padding.h"
 #include "tensorflow/core/util/tensor_format.h"
+#ifdef DNNL_AARCH64_USE_ACL
+#include "tensorflow/core/platform/mutex.h"
+#endif
 
 using dnnl::convolution_forward;
 using dnnl::prop_kind;
@@ -113,6 +116,12 @@ class MklConvFwdPrimitive : public MklPrimitive {
   void Execute(const Tinput* src_data, const Tfilter* filter_data,
                const Tbias* bias_data, const Toutput* dst_data,
                std::shared_ptr<stream> fwd_stream) {
+#ifdef DNNL_AARCH64_USE_ACL
+    // When we are using single global cache then in this case we can have
+    // multiple threads running the same primitive that we created so this
+    // should happen under the lock.
+    mutex_lock lock(primitive_execution_mu_);
+#endif
     // TODO: Create a common function and avoid the duplicate code
 #ifdef ENABLE_DNNL_THREADPOOL
     context_.src_mem->set_data_handle(
@@ -306,6 +315,11 @@ class MklConvFwdPrimitive : public MklPrimitive {
   }
 
   struct ConvFwdContext context_;
+  
+#ifdef DNNL_AARCH64_USE_ACL
+  // Guards Execution()
+  mutex primitive_execution_mu_;
+#endif
 };
 
 // TODO(nhasabni): We should not require passing a type to MklPrimitiveFactory.
