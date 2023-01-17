@@ -1,4 +1,4 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2021 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@ limitations under the License.
 
 #ifdef GOOGLE_CUDA
 #include <cuda_runtime.h>
-#include "ev_allocator.h"
+#include "tensorflow/core/framework/ev_allocator.h"
 
 namespace tensorflow {
 
@@ -49,9 +49,8 @@ void PageMap<GPUChunk>::Init() {
 
 class GPUEVAllocator : public EVAllocator<GPUChunk> {
 public:
-  GPUEVAllocator() {}
-
-  ~GPUEVAllocator() override {}
+  GPUEVAllocator() = default;
+  ~GPUEVAllocator() override = default;
 
   string Name() override { return "gpu_ev_allocator"; }
 };
@@ -81,6 +80,7 @@ private:
     void Free(void *ptr, size_t num_bytes) override {
       gpu_ev_allocator_->DeallocateRaw(ptr);
     }
+
   private:
     GPUEVAllocator* gpu_ev_allocator_;
   };
