@@ -557,7 +557,6 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     int64 partition_id = 0, int64 partition_num = 1, bool reset_version = false) {
   string curr_partid_str = std::to_string(partition_id);
   bool filter_flag = true;
-  bool restore_filter_flag = true;
   for (int i = 0; i < orig_partnum; i++) {
     string part_id = std::to_string(i);
     string pre_subname =
@@ -1221,8 +1220,6 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
           int64 freq_filter_part_offset = subpart_filter_offset * sizeof(int64);
           int64 tot_key_filter_num =
             part_filter_offset_flat(subpart_id + 1) - subpart_filter_offset;
-          int64 tot_key_filter_bytes_read(0), tot_version_filter_bytes_read(0),
-                tot_freq_filter_bytes_read(0);
           size_t key_filter_bytes_read = 0;
           size_t version_filter_bytes_read = 0;
           size_t freq_filter_bytes_read = 0;

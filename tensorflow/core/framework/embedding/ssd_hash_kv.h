@@ -480,7 +480,6 @@ class SSDHashKV : public KVInterface<K, V> {
     if (iter.first == EMPTY_KEY) {
       return errors::NotFound("Unable to find Key: ", key, " in SSDHashKV.");
     } else {
-      ValuePtr<V>* val = new_value_ptr_fn_(total_dims_);
       return Status::OK();
     }
   }

@@ -225,7 +225,7 @@ class GPUHashMapKV : public KVInterface<K, V> {
     return nullptr;
   }
 
-  GPUHashTable<K, V>* HashTable() {
+  GPUHashTable<K, V>* HashTable() override {
     return hash_table_;
   }
 
