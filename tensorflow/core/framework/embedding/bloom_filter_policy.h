@@ -179,7 +179,6 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
       hash_val.emplace_back(
           FastHash64(key, seeds_[i]) % config_.num_counter);
     }
-   int64 min_freq;
     switch (config_.counter_type){
       case DT_UINT64:
         SetMinFreq<uint64>(hash_val, freq);

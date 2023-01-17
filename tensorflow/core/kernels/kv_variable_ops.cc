@@ -250,6 +250,7 @@ class InitializeKvVariableOp : public OpKernel {
              handle_self](EmbeddingVar<TKey, TValue>** ptr) {
               Allocator* gpu_allocator =
                   context->device()->GetAllocator(AllocatorAttributes());
+                  //context->get_allocator(AllocatorAttributes());
               auto embedding_config = EmbeddingConfig(
                   emb_index_ + block_num_ * slot_index_,
                   emb_index_, block_num_, slot_num_,
@@ -284,6 +285,7 @@ class InitializeKvVariableOp : public OpKernel {
             handle_primary, context](EmbeddingVar<TKey, TValue>** ptr) {
              int64 primary_slot_index(0), primary_emb_index(0);
              Allocator* gpu_allocator = context->device()->GetAllocator(AllocatorAttributes());
+             //Allocator* gpu_allocator = context->get_allocator(AllocatorAttributes());
              auto embedding_config = EmbeddingConfig(
                  primary_emb_index + block_num_ * primary_slot_index,
                  primary_emb_index,
@@ -380,10 +382,6 @@ TF_CALL_REAL_NUMBER_TYPES(REGISTER_KERNELS_ALL_INDEX)
                               .TypeConstraint<ktype>("Tkeys")        \
                               .TypeConstraint<vtype>("dtype"),       \
                           InitializeKvVariableOp<ktype, vtype>);
-                              //.HostMemory("resource_self")           \
-                              //.HostMemory("resource_primary")        \
-                              //.HostMemory("value")                   \
-                              //.HostMemory("empty_key")               \
 
 #define REGISTER_GPU_KERNELS(type)        \
   REGISTER_KERNELS(int32, type);          \
@@ -444,7 +442,6 @@ class KvResourceInitCacheStrategyOp : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override {
-    Tensor* output;
     EmbeddingVar<TKey, TValue>* ev = nullptr;
     OP_REQUIRES_OK(ctx, LookupResource(ctx, HandleFromInput(ctx, 0), &ev));
     core::ScopedUnref unref_me(ev);
@@ -1043,12 +1040,9 @@ class KvResourceGatherGPUOp : public OpKernel {
 #define REGISTER_KERNELS(dev, ktype, vtype)                       \
   REGISTER_KERNEL_BUILDER(Name("KvResourceGather")                \
                               .Device(DEVICE_##dev)               \
-                              .HostMemory("resource")             \
                               .TypeConstraint<vtype>("dtype")     \
                               .TypeConstraint<ktype>("Tkeys"),    \
                           KvResourceGatherGPUOp<GPUDevice, ktype, vtype>)
-                              //.HostMemory("indices")              \
-                              //.HostMemory("default_value")        \
 
 #define REGISTER_KERNELS_ALL(dev, type)                           \
   REGISTER_KERNELS(dev, int32, type);                             \

@@ -393,7 +393,6 @@ DECLARE_GPU_SPEC(int64, double);
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdagrad")       \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
-                              .HostMemory("indices")                 \
                               .HostMemory("lr")                      \
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \

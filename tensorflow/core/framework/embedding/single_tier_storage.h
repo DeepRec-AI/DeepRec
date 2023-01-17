@@ -358,19 +358,23 @@ class HbmStorage : public SingleTierStorage<K, V> {
     return true;
   }
 
+  void SetValueLen(int64 value_len) override {
+    SingleTierStorage<K, V>::kv_->SetValueLen(value_len);
+  }
+
   void BatchLookupOrCreate(const K* key, V* val, V* default_v,
       int32 default_v_num, bool is_use_default_value_tensor,
-      size_t n, const Eigen::GpuDevice& device) {
+      size_t n, const Eigen::GpuDevice& device) override {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreate(key, val, default_v, default_v_num,
         is_use_default_value_tensor, n, device);
   }
 
   void BatchLookupOrCreateKeys(const K* key, int32* item_idxs, size_t n,
-      const Eigen::GpuDevice& device) {
+      const Eigen::GpuDevice& device) override {
     SingleTierStorage<K, V>::kv_->BatchLookupOrCreateKeys(key, n, item_idxs, device);
   }
 
-  GPUHashTable<K, V>* HashTable() {
+  GPUHashTable<K, V>* HashTable() override {
     return SingleTierStorage<K, V>::kv_->HashTable();
   }
 

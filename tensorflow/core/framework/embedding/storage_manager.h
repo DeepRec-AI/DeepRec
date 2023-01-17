@@ -50,7 +50,7 @@ class StorageManager {
     storage_->SetAllocLen(value_len, slot_num);
   }
 
-  void SetValueLen(int64 value_len){
+  void SetValueLen(int64 value_len) {
     storage_->SetValueLen(value_len);
   }
 
