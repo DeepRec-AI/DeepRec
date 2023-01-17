@@ -634,10 +634,9 @@ TF_CALL_float(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
-/*
+
 #if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
-template <typename Device, typename TKey, typename T, bool has_l2_shrinkage>
+template <typename Device, typename TKey, typename T, bool has_l2_shrinkage, bool indices_as_pointer>
 class KvSparseApplyFtrlOpGPU : public OpKernel {
  public:
   explicit KvSparseApplyFtrlOpGPU(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -645,12 +644,12 @@ class KvSparseApplyFtrlOpGPU : public OpKernel {
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
-    EmbeddingVarGPU<TKey, T>* var_ = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 0, &var_));
-    EmbeddingVarGPU<TKey, T>* accum_ = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 1, &accum_));
-    EmbeddingVarGPU<TKey, T>* linear_ = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 2, &linear_));
+    EmbeddingVar<TKey, T>* var_ = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var_));
+    EmbeddingVar<TKey, T>* accum_ = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &accum_));
+    EmbeddingVar<TKey, T>* linear_ = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &linear_));
 
     const Tensor& grad = ctx->input(3);
     const Tensor& indices = ctx->input(4);
@@ -747,23 +746,23 @@ class KvSparseApplyFtrlOpGPU : public OpKernel {
 };
 
 namespace functor {
-#define DECLARE_GPU_SPEC(TKey, T)                             \
-  template <>                                           \
-  void KvSparseApplyFtrl<GPUDevice, TKey, T>::operator()(  \
-      int32 num_items,  \
-      Allocator* alloc, \
-      EmbeddingVarGPU<TKey, T>* var,  \
-      EmbeddingVarGPU<TKey, T>* accum,  \
-      EmbeddingVarGPU<TKey, T>* linear, \
-      const TKey* key_base, \
-      const T* grad,  \
-      T lr, \
-      T l1, \
-      T l2, \
-      T lr_power, \
-      bool has_l2_shrinkage,  \
-      T l2_shrinkage, \
-      const GPUDevice& device);             \
+#define DECLARE_GPU_SPEC(TKey, T)                                          \
+  template <>                                                              \
+  void KvSparseApplyFtrl<GPUDevice, TKey, T>::operator()(                  \
+      int32 num_items,                                                     \
+      Allocator* alloc,                                                    \
+      EmbeddingVar<TKey, T>* var,                                          \
+      EmbeddingVar<TKey, T>* accum,                                        \
+      EmbeddingVar<TKey, T>* linear,                                       \
+      const TKey* key_base,                                                \
+      const T* grad,                                                       \
+      T lr,                                                                \
+      T l1,                                                                \
+      T l2,                                                                \
+      T lr_power,                                                          \
+      bool has_l2_shrinkage,                                               \
+      T l2_shrinkage,                                                      \
+      const GPUDevice& device);                                            \
   extern template struct KvSparseApplyFtrl<GPUDevice, TKey, T>;
 DECLARE_GPU_SPEC(int32, float);
 DECLARE_GPU_SPEC(int32, double);
@@ -772,49 +771,46 @@ DECLARE_GPU_SPEC(int64, double);
 #undef DECLARE_GPU_SPEC
 }  // namespace functor
 
-#define REGISTER_KERNELS(Tindices, T)                                         \
-  REGISTER_KERNEL_BUILDER(                                                    \
-      Name("KvResourceSparseApplyFtrl")                                       \
-          .Device(DEVICE_GPU)                                                 \
-          .TypeConstraint<T>("T")                                             \
-          .HostMemory("lr")                                                   \
-          .HostMemory("l1")                                                   \
-          .HostMemory("l2")                                                   \
-          .HostMemory("lr_power")                                             \
-          .TypeConstraint<Tindices>("Tindices"),                              \
-      KvSparseApplyFtrlOpGPU<GPUDevice, Tindices, T, false>);
-#define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(int64, T);   \
+#define REGISTER_KERNELS(Tindices, T)                                      \
+  REGISTER_KERNEL_BUILDER(                                                 \
+      Name("KvResourceSparseApplyFtrl")                                    \
+          .Device(DEVICE_GPU)                                              \
+          .TypeConstraint<T>("T")                                          \
+          .HostMemory("lr")                                                \
+          .HostMemory("l1")                                                \
+          .HostMemory("l2")                                                \
+          .HostMemory("lr_power")                                          \
+          .TypeConstraint<Tindices>("Tindices"),                           \
+      KvSparseApplyFtrlOpGPU<GPUDevice, Tindices, T, false, false>);
+#define REGISTER_GPU_KERNELS(T)                                            \
+  REGISTER_KERNELS(int64, T);                                              \
   REGISTER_KERNELS(int32, T);
-
-TF_CALL_float(REGISTER_CPU_KERNELS);
-
-#undef REGISTER_CPU_KERNELS
+TF_CALL_float(REGISTER_GPU_KERNELS);
+TF_CALL_double(REGISTER_GPU_KERNELS);
+#undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
 
-#define REGISTER_KERNELS(Tindices, T)                                        \
-  REGISTER_KERNEL_BUILDER(                                                   \
-      Name("KvResourceSparseApplyFtrlV2")                                    \
-          .Device(DEVICE_GPU)                                                \
-          .TypeConstraint<T>("T")                                            \
-          .HostMemory("lr")                                                  \
-          .HostMemory("l1")                                                  \
-          .HostMemory("l2")                                                  \
-          .HostMemory("lr_power")                                            \
-          .HostMemory("l2_shrinkage")                                        \
-          .TypeConstraint<Tindices>("Tindices"),                             \
-      KvSparseApplyFtrlOpGPU<GPUDevice, Tindices, T, true>);
-#define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(int64, T);   \
+#define REGISTER_KERNELS(Tindices, T)                                      \
+  REGISTER_KERNEL_BUILDER(                                                 \
+      Name("KvResourceSparseApplyFtrlV2")                                  \
+          .Device(DEVICE_GPU)                                              \
+          .TypeConstraint<T>("T")                                          \
+          .HostMemory("lr")                                                \
+          .HostMemory("l1")                                                \
+          .HostMemory("l2")                                                \
+          .HostMemory("lr_power")                                          \
+          .HostMemory("l2_shrinkage")                                      \
+          .TypeConstraint<Tindices>("Tindices"),                           \
+      KvSparseApplyFtrlOpGPU<GPUDevice, Tindices, T, true, false>);
+#define REGISTER_GPU_KERNELS(T)                                            \
+  REGISTER_KERNELS(int64, T);                                              \
   REGISTER_KERNELS(int32, T);
-
-TF_CALL_float(REGISTER_CPU_KERNELS);
-
-#undef REGISTER_CPU_KERNELS
+TF_CALL_float(REGISTER_GPU_KERNELS);
+TF_CALL_double(REGISTER_GPU_KERNELS);
+#undef REGISTER_GPU_KERNELS
 #undef REGISTER_KERNELS
-#endif  // TENSORFLOW_USE_GPU_EV
 #endif  // GOOGLE_CUDA
-*/
+
 // Note, this op works on cpu only.
 template <typename Device, typename T, typename Tstep>
 class ApplyAdagradDecayOp : public OpKernel {
@@ -1879,7 +1875,7 @@ class SparseApplyAdamAsyncOp : public OpKernel {
   bool apply_sparse_rmsprop_;
 };
 
-#define REGISTER_KERNELS(D, T, Tindices)                                      \
+#define REGISTER_KERNELS(D, T, Tindices)                                   \
   REGISTER_KERNEL_BUILDER(Name("SparseApplyAdamAsync")                     \
                               .Device(DEVICE_##D)                          \
                               .TypeConstraint<T>("T")                      \
@@ -1890,8 +1886,8 @@ class SparseApplyAdamAsyncOp : public OpKernel {
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices"),       \
                           SparseApplyAdamAsyncOp<D##Device, T, Tindices>);
-#define REGISTER_CPU_KERNELS(T) \
-  REGISTER_KERNELS(CPU, T, int32);   \
+#define REGISTER_CPU_KERNELS(T)                                            \
+  REGISTER_KERNELS(CPU, T, int32);                                         \
   REGISTER_KERNELS(CPU, T, int64);
 
 TF_CALL_half(REGISTER_CPU_KERNELS);
@@ -1904,20 +1900,20 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // Forward declarations of the functor specializations for GPU.
 namespace functor {
-#define DECLARE_GPU_SPEC(T, Tindex) \
-  template <> \
-  Status SparseApplyAdamAsync<GPUDevice, T, Tindex>::operator()(const GPUDevice &d, \
-                  typename TTypes<T>::Matrix var, \
-                  typename TTypes<T>::Matrix m, typename TTypes<T>::Matrix v, \
-                  typename TTypes<T>::Scalar beta1_power, \
-                  typename TTypes<T>::Scalar beta2_power, \
-                  typename TTypes<T>::ConstScalar lr, \
-                  typename TTypes<T>::ConstScalar beta1, \
-                  typename TTypes<T>::ConstScalar beta2, \
-                  typename TTypes<T>::ConstScalar epsilon, \
-                  typename TTypes<T>::ConstMatrix grad, \
-                  typename TTypes<Tindex>::ConstVec indices_vec, \
-                  bool apply_sparse_rmsprop, int64 inner_dim); \
+#define DECLARE_GPU_SPEC(T, Tindex)                                                \
+  template <>                                                                      \
+  Status SparseApplyAdamAsync<GPUDevice, T, Tindex>::operator()(const GPUDevice &d,\
+                  typename TTypes<T>::Matrix var,                                  \
+                  typename TTypes<T>::Matrix m, typename TTypes<T>::Matrix v,      \
+                  typename TTypes<T>::Scalar beta1_power,                          \
+                  typename TTypes<T>::Scalar beta2_power,                          \
+                  typename TTypes<T>::ConstScalar lr,                              \
+                  typename TTypes<T>::ConstScalar beta1,                           \
+                  typename TTypes<T>::ConstScalar beta2,                           \
+                  typename TTypes<T>::ConstScalar epsilon,                         \
+                  typename TTypes<T>::ConstMatrix grad,                            \
+                  typename TTypes<Tindex>::ConstVec indices_vec,                   \
+                  bool apply_sparse_rmsprop, int64 inner_dim);                     \
   extern template struct SparseApplyAdamAsync<GPUDevice, T, Tindex>;
 
 DECLARE_GPU_SPEC(Eigen::half, int32);
@@ -1929,8 +1925,8 @@ DECLARE_GPU_SPEC(double, int64);
 #undef DECLARE_GPU_SPEC
 } // end of namespace functor
 
-#define REGISTER_GPU_KERNEL(T) \
-  REGISTER_KERNELS(GPU, T, int32); \
+#define REGISTER_GPU_KERNEL(T)                                                     \
+  REGISTER_KERNELS(GPU, T, int32);                                                 \
   REGISTER_KERNELS(GPU, T, int64);
 
 TF_CALL_half(REGISTER_GPU_KERNEL);
@@ -2148,7 +2144,7 @@ class KvSparseApplyAdamAsyncOp : public OpKernel {
                               .TypeConstraint<Tstep>("Tstep"),             \
                           KvSparseApplyAdamAsyncOp<D##Device, T, Tindices, Tstep, true>);
 
-#define REGISTER_CPU_KERNELS(T)        \
+#define REGISTER_CPU_KERNELS(T)             \
   REGISTER_KERNELS(CPU, T, int32, int32);   \
   REGISTER_KERNELS(CPU, T, int64, int32);   \
   REGISTER_KERNELS(CPU, T, int32, int64);   \
@@ -2161,10 +2157,9 @@ TF_CALL_double(REGISTER_CPU_KERNELS);
 
 #undef REGISTER_CPU_KERNELS
 #undef REGISTER_KERNELS
-/*
+
 #if GOOGLE_CUDA
-#if TENSORFLOW_USE_GPU_EV
-template <typename Device, typename T, typename Tindex, typename Tstep>
+template <typename Device, typename T, typename Tindex, typename Tstep, bool indices_as_pointer>
 class KvSparseApplyAdamAsyncOpGPU : public OpKernel {
  public:
   explicit KvSparseApplyAdamAsyncOpGPU(OpKernelConstruction* ctx) : OpKernel(ctx) {
@@ -2175,16 +2170,16 @@ class KvSparseApplyAdamAsyncOpGPU : public OpKernel {
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
     auto locks = MaybeLockEmbeddingVariableInputMutexesInOrder<Tindex, T>(
       ctx, use_exclusive_lock_, {0, 1, 2, 3, 4});
-    EmbeddingVarGPU<Tindex, T>* var = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 0, &var));
+    EmbeddingVar<Tindex, T>* var = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 0, &var));
     core::ScopedUnref unref_var(var);
 
-    EmbeddingVarGPU<Tindex, T>* m = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 1, &m));
+    EmbeddingVar<Tindex, T>* m = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 1, &m));
     core::ScopedUnref unref_m(m);
 
-    EmbeddingVarGPU<Tindex, T>* v = nullptr;
-    OP_REQUIRES_OK(ctx, GetInputEmbeddingVarGPU(ctx, 2, &v));
+    EmbeddingVar<Tindex, T>* v = nullptr;
+    OP_REQUIRES_OK(ctx, GetInputEmbeddingVar(ctx, 2, &v));
     core::ScopedUnref unref_v(v);
 
     Tensor beta1_power;
@@ -2272,42 +2267,42 @@ class KvSparseApplyAdamAsyncOpGPU : public OpKernel {
   bool apply_sparse_rmsprop_;
 };
 
-#define REGISTER_KERNELS(D, T, Tindices, Tstep)                             \
+#define REGISTER_KERNELS(D, T, Tindices, Tstep)                            \
   REGISTER_KERNEL_BUILDER(Name("KvResourceSparseApplyAdamAsync")           \
                               .Device(DEVICE_##D)                          \
                               .HostMemory("global_step")                   \
                               .TypeConstraint<T>("T")                      \
                               .TypeConstraint<Tindices>("Tindices")        \
                               .TypeConstraint<Tstep>("Tstep"),             \
-                          KvSparseApplyAdamAsyncOpGPU<D##Device, T, Tindices, Tstep>);
+                          KvSparseApplyAdamAsyncOpGPU<D##Device, T, Tindices, Tstep, false>);
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 // Forward declarations of the functor specializations for GPU.
 namespace functor {
-#define DECLARE_GPU_SPEC(T, Tindex, Tstep) \
-  template <> \
-  Status KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep>::operator()( \
-                    const GPUDevice &d, \
-                    EmbeddingVarGPU<Tindex, T> *var, \
-                    EmbeddingVarGPU<Tindex, T> *m, \
-                    EmbeddingVarGPU<Tindex, T> *v, \
-                    typename TTypes<T>::Scalar beta1_power_scalar, \
-                    typename TTypes<T>::Scalar beta2_power_scalar, \
-                    typename TTypes<Tindex>::ConstVec indices_vec, \
-                    typename TTypes<T>::ConstMatrix grad, \
-                    typename TTypes<T>::ConstScalar lr_scalar, \
-                    typename TTypes<T>::ConstScalar beta1_scalar, \
-                    typename TTypes<T>::ConstScalar beta2_scalar, \
-                    typename TTypes<T>::ConstScalar epsilon_scalar, \
-                    typename TTypes<Tstep>::ConstScalar global_step_scalar, \
-                    bool apply_sparse_rmsprop, const int64 inner_dim, \
-                    Allocator *alloc); \
+#define DECLARE_GPU_SPEC(T, Tindex, Tstep)                                 \
+  template <>                                                              \
+  Status KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep>::operator()(  \
+                    const GPUDevice &d,                                    \
+                    EmbeddingVar<Tindex, T> *var,                          \
+                    EmbeddingVar<Tindex, T> *m,                            \
+                    EmbeddingVar<Tindex, T> *v,                            \
+                    typename TTypes<T>::Scalar beta1_power_scalar,         \
+                    typename TTypes<T>::Scalar beta2_power_scalar,         \
+                    typename TTypes<Tindex>::ConstVec indices_vec,         \
+                    typename TTypes<T>::ConstMatrix grad,                  \
+                    typename TTypes<T>::ConstScalar lr_scalar,             \
+                    typename TTypes<T>::ConstScalar beta1_scalar,          \
+                    typename TTypes<T>::ConstScalar beta2_scalar,          \
+                    typename TTypes<T>::ConstScalar epsilon_scalar,        \
+                    typename TTypes<Tstep>::ConstScalar global_step_scalar,\
+                    bool apply_sparse_rmsprop, const int64 inner_dim,      \
+                    Allocator *alloc);                                     \
   extern template struct KvSparseApplyAdamAsync<GPUDevice, T, Tindex, Tstep>;
 
-#define DECLARE_GPU_SPEC_TYPE(T) \
-  DECLARE_GPU_SPEC(T, int32, int32); \
-  DECLARE_GPU_SPEC(T, int32, int64); \
-  DECLARE_GPU_SPEC(T, int64, int32); \
+#define DECLARE_GPU_SPEC_TYPE(T)                                           \
+  DECLARE_GPU_SPEC(T, int32, int32);                                       \
+  DECLARE_GPU_SPEC(T, int32, int64);                                       \
+  DECLARE_GPU_SPEC(T, int64, int32);                                       \
   DECLARE_GPU_SPEC(T, int64, int64);
 
 DECLARE_GPU_SPEC_TYPE(float);
@@ -2317,10 +2312,10 @@ DECLARE_GPU_SPEC_TYPE(double);
 #undef DECLARE_GPU_SPEC
 } // end of namespace functor
 
-#define REGISTER_GPU_KERNEL(T) \
-  REGISTER_KERNELS(GPU, T, int32, int32); \
-  REGISTER_KERNELS(GPU, T, int32, int64); \
-  REGISTER_KERNELS(GPU, T, int64, int32); \
+#define REGISTER_GPU_KERNEL(T)                                             \
+  REGISTER_KERNELS(GPU, T, int32, int32);                                  \
+  REGISTER_KERNELS(GPU, T, int32, int64);                                  \
+  REGISTER_KERNELS(GPU, T, int64, int32);                                  \
   REGISTER_KERNELS(GPU, T, int64, int64);
 
 TF_CALL_float(REGISTER_GPU_KERNEL);
@@ -2330,9 +2325,8 @@ TF_CALL_double(REGISTER_GPU_KERNEL);
 #endif // End of GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #undef REGISTER_KERNELS
 
-#endif // TENSORFLOW_USE_GPU_EV
 #endif // GOOGLE_CUDA
-*/
+
 template <typename T, typename Tindex, typename Tstep, bool indices_as_pointer>
 class KvResourceSparseApplyGradientDescentOp : public OpKernel {
  public:

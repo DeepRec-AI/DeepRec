@@ -95,7 +95,8 @@ class KvVariableShapeOp : public OpKernel {
       Name("KvVariableShape").Device(DEVICE_##dev)                    \
                              .TypeConstraint<type>("out_type")        \
                              .TypeConstraint<ktype>("Tkeys")          \
-                             .TypeConstraint<vtype>("dtype"),         \
+                             .TypeConstraint<vtype>("dtype")          \
+                             .HostMemory("output"),                   \
                              KvVariableShapeOp<type, ktype, vtype>);
 #define REGISTER_KERNELS_ALL(dev, type)                               \
   REGISTER_KERNELS(dev, int32, int32, type)                           \

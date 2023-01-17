@@ -107,8 +107,6 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/python/keras:convolutional_test "\
 "-//tensorflow/python/keras:lstm_v2_test "\
 "-//tensorflow/python/keras:lstm_v2_test_gpu "\
-"-//tensorflow/python:embedding_variable_ops_gpu_test "\
-"-//tensorflow/python:embedding_variable_ops_gpu_test_gpu "\
 "-//tensorflow/python/kernel_tests:normalize_op_test "\
 "-//tensorflow/python/kernel_tests:svd_op_test "
 
