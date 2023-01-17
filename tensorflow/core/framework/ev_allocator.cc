@@ -1,4 +1,4 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2021 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include "tensorflow/core/platform/mem.h"
-#include "ev_allocator.h"
+#include "tensorflow/core/framework/ev_allocator.h"
 
 namespace tensorflow {
 
@@ -61,8 +61,8 @@ void PageMap<CPUChunk>::Init() {
 
 class CPUEVAllocator : public EVAllocator<CPUChunk> {
 public:
-  CPUEVAllocator() {}
-  ~CPUEVAllocator() {}
+  CPUEVAllocator() = default;
+  ~CPUEVAllocator() override = default;
 
   string Name() override { return "ev_allocator"; }
 
@@ -176,6 +176,7 @@ class EVAllocatorFactory : public AllocatorFactory {
     void Free(void* ptr, size_t num_bytes) override {
       ev_allocator_->DeallocateRaw(ptr);
     }
+
    private:
     CPUEVAllocator* ev_allocator_;
   };

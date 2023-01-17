@@ -1,4 +1,4 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2021 The DeepRec Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -67,7 +67,7 @@ template<typename ChunkType>
 class PageMap {
  public:
   PageMap() : root_{}, bytes_used_(0), page_shift_(0), npages_(0), bits_(0),
-	      root_bits_(0), root_length_(0){}
+    root_bits_(0), root_length_(0){}
   
   ~PageMap() {
     delete root_;
@@ -201,7 +201,7 @@ class Chunk {
     GetMemBlock();
     if (start_ == nullptr) {
       LOG(FATAL) << "OOM, can't create new Chunk for EVAllocator, "
-		 << "please check free memory.";
+                 << "please check free memory.";
     }
     pm->SetBin(start_, bin);
     current_ = start_;
@@ -348,10 +348,10 @@ class Arena {
       mutex_lock l(mu_);
       auto it = bins_.find(bin_size);
       if (it == bins_.end()) {
-	bin = new Bin<ChunkType>(bin_size, page_map_);
-	bins_.emplace(bin_size, bin);
+        bin = new Bin<ChunkType>(bin_size, page_map_);
+        bins_.emplace(bin_size, bin);
       } else {
-	bin = it->second;
+        bin = it->second;
       }
     }
     
@@ -364,10 +364,10 @@ class Arena {
       mutex_lock l(mu_);
       auto it = bins_.find(bin_size);
       if (it == bins_.end()) {
-	bin = new Bin<ChunkType>(bin_size, page_map_);
-	bins_.emplace(bin_size, bin);
+        bin = new Bin<ChunkType>(bin_size, page_map_);
+        bins_.emplace(bin_size, bin);
       } else {
-	bin = it->second;
+        bin = it->second;
       }
     }
     
@@ -400,7 +400,7 @@ class ThreadLocalBin {
       int ptrs_num = arena_->BatchAllocate(kThreadLocalBinExchangeMaxPtrNum,
                                            t_bin_size_, ptrs.data());
       for (int i = 0; i < ptrs_num; i++) {
-	list_.push_front(ptrs[i]);
+        list_.push_front(ptrs[i]);
       }
     }
 
@@ -415,8 +415,8 @@ class ThreadLocalBin {
   size_t BatchAllocate(size_t num, void **ret) {
     if (list_.size() >= num) {
       for (int i = 0; i < num; i++) {
-	ret[i] = list_.back();
-	list_.pop_back();
+        ret[i] = list_.back();
+        list_.pop_back();
       }
       return num;
     }
@@ -586,7 +586,7 @@ class EVAllocator : public Allocator {
       : single_allocation_warning_count_(0),
         total_allocation_warning_count_(0) {}
 
-  ~EVAllocator() override {}
+  ~EVAllocator() override = default;
 
   string Name() override { return ""; }
 
