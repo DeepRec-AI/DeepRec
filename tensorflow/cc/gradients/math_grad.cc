@@ -16,7 +16,9 @@ limitations under the License.
 #define _USE_MATH_DEFINES
 #include <cmath>
 
+#include "tensorflow/cc/ops/array_ops.h"
 #include "tensorflow/cc/ops/array_ops_internal.h"
+#include "tensorflow/cc/ops/math_ops.h"
 #include "tensorflow/cc/ops/math_ops_internal.h"
 #include "tensorflow/cc/ops/standard_ops.h"
 
@@ -1247,6 +1249,101 @@ Status SelectV2Grad(const Scope& scope, const Operation& op,
 }
 
 REGISTER_GRADIENT_OP("SelectV2", SelectV2Grad);
+
+// Helper function for unsorted segment ops.
+// Returns 'ids' with negative elements replaced by 0.
+Output GetZeroClippedIndices(const Scope& scope, const Output& ids) {
+  return Maximum(scope, ids, ZerosLike(scope, ids));
+}
+
+// Helper function for unsorted segment ops.
+// Returns a mask of where 'ids' are positive, reshaped so that it will be
+// broadcastable to the result shape of gathering params by ids.
+Output GetIsPositive(const Scope& scope, const Output& params,
+                     const Output& ids) {
+  Output is_positive = GreaterEqual(scope, ids, ZerosLike(scope, ids));
+  // tf.where(condition, x, y) requires condition to have the same shape as x
+  // and y.
+  Output is_positive_shape = Shape(scope, is_positive);
+  Output ones =
+      Tile(scope, Const(scope, {1}), Subtract(scope, Rank(scope, params), {1}));
+  auto broadcastable_shape = Concat(scope, {is_positive_shape, ones},
+                                    /*axis=*/0);
+  is_positive = Reshape(scope, is_positive, broadcastable_shape);
+  is_positive = LogicalAnd(scope, is_positive, OnesLike(scope, is_positive));
+  return is_positive;
+}
+
+// Helper function for unsorted segment ops.
+// Gathers params for positive segment ids and gathers 0 for inputs with
+// negative segment id.
+Output GatherDropNegatives(const Scope& scope, const Output& params,
+                           Output& zero_clipped_indices, Output& is_positive) {
+  auto gathered = Gather(scope, params, zero_clipped_indices);
+  // Replace gathered params of negative indices with 0.
+  auto zero_slice = ZerosLike(scope, gathered);
+  return SelectV2(scope, is_positive, gathered, zero_slice);
+}
+
+Status UnsortedSegmentMinOrMaxGrad(const Scope& scope, const Operation& op,
+                                   const std::vector<Output>& grad_inputs,
+                                   std::vector<Output>* grad_outputs) {
+  if (op.num_inputs() != 3) {
+    return errors::InvalidArgument("UnsortedSegmentMax requires 3 arguments");
+  }
+
+  if (grad_inputs.size() != 1) {
+    return errors::InvalidArgument(
+        "UnsortedSegmentMax grad requires 1 grad input");
+  }
+
+  auto grad = grad_inputs[0];
+  // Get the number of selected (minimum or maximum) elements in each segment.
+  auto zero_clipped_indices = GetZeroClippedIndices(scope, op.input(1));
+  auto is_positive = GetIsPositive(scope, op.output(0), op.input(1));
+  Output gathered_outputs = GatherDropNegatives(
+      scope, op.output(0), zero_clipped_indices, is_positive);
+  Output is_selected = Equal(scope, op.input(0), gathered_outputs);
+  is_selected = LogicalAnd(scope, is_selected, is_positive);
+  auto num_selected = UnsortedSegmentSum(
+      scope, Cast(scope, is_selected, grad.type()), op.input(1), op.input(2));
+  // Compute the gradient for each segment.The gradient for the ith segment is
+  // divided evenly among the selected elements in that segment.
+  auto weighted_grads = Div(scope, grad, num_selected);
+  auto gathered_grads = GatherDropNegatives(scope, weighted_grads,
+                                            zero_clipped_indices, is_positive);
+  auto zeros = ZerosLike(scope, gathered_grads);
+  grad_outputs->push_back(SelectV2(scope, is_selected, gathered_grads, zeros));
+  grad_outputs->push_back(NoGradient());
+  grad_outputs->push_back(NoGradient());
+  return scope.status();
+}
+
+REGISTER_GRADIENT_OP("UnsortedSegmentMax", UnsortedSegmentMinOrMaxGrad);
+REGISTER_GRADIENT_OP("UnsortedSegmentMin", UnsortedSegmentMinOrMaxGrad);
+
+Status UnsortedSegmentSumGrad(const Scope& scope, const Operation& op,
+                              const std::vector<Output>& grad_inputs,
+                              std::vector<Output>* grad_outputs) {
+  if (op.num_inputs() != 3) {
+    return errors::InvalidArgument("UnsortedSegmentSum requires 3 arguments");
+  }
+
+  if (grad_inputs.size() != 1) {
+    return errors::InvalidArgument(
+        "UnsortedSegmentSum grad requires 1 grad input");
+  }
+
+  auto zero_clipped_indices = GetZeroClippedIndices(scope, op.input(1));
+  auto is_positive = GetIsPositive(scope, grad_inputs[0], op.input(1));
+  grad_outputs->push_back(GatherDropNegatives(
+      scope, grad_inputs[0], zero_clipped_indices, is_positive));
+  grad_outputs->push_back(NoGradient());
+  grad_outputs->push_back(NoGradient());
+  return scope.status();
+}
+
+REGISTER_GRADIENT_OP("UnsortedSegmentSum", UnsortedSegmentSumGrad);
 
 }  // anonymous namespace
 }  // namespace ops
