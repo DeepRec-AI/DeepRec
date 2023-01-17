@@ -1173,6 +1173,25 @@ Status CastGrad(const Scope& scope, const Operation& op,
 }
 REGISTER_GRADIENT_OP("Cast", CastGrad);
 
+Status SelectGrad(const Scope& scope, const Operation& op,
+                  const std::vector<Output>& grad_inputs,
+                  std::vector<Output>* grad_outputs) {
+  if (op.num_inputs() != 3) {
+    return errors::InvalidArgument("Select requires 3 arguments");
+  }
+  if (grad_inputs.size() != 1) {
+    return errors::InvalidArgument("Select grad requires 1 grad input");
+  }
+
+  auto c = op.input(0);
+  auto zeros = ZerosLike(scope, grad_inputs[0]);
+  grad_outputs->push_back(NoGradient());  // Condition
+  grad_outputs->push_back(Where3(scope, c, grad_inputs[0], zeros));
+  grad_outputs->push_back(Where3(scope, c, zeros, grad_inputs[0]));
+  return scope.status();
+}
+REGISTER_GRADIENT_OP("Select", SelectGrad);
+
 }  // anonymous namespace
 }  // namespace ops
 }  // namespace tensorflow
