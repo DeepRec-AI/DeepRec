@@ -782,10 +782,10 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
       ReadStringFromEnvVar("TARGET_NODES_NAME", "", &tn);
       std::vector<std::string> target_nodes;
       for (std::string s : str_util::Split(tn, ';')) {
-	target_nodes.push_back(s.substr(0, s.find_last_of(':')));
+        target_nodes.push_back(s.substr(0, s.find_last_of(':')));
       }
-      SmartStageGraph(&new_graph, target_nodes, 
-		      session_optimizer_options.do_smart_stage_gpu());
+      SmartStageGraph(&new_graph, target_nodes,
+          session_optimizer_options.do_smart_stage_gpu());
     }
   }
 
