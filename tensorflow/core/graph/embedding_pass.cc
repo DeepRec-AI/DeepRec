@@ -33,16 +33,21 @@ void VLogGraphDebugString(Graph* g) {
 
 class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPass {
  public:
+  EmbeddingForwardBackwardJointOptimizationPass() : GraphOptimizationPass() {
+    tensorflow::ReadBoolFromEnvVar("TF_EMBEDDING_FBJ_OPT",
+                                   /*default_val=*/false, &embedding_fbj_opt_);
+    if (!embedding_fbj_opt_) {
+      VLOG(2) << "Graph Optimization Pass TF_EMBEDDING_FBJ_OPT is off.";
+    } else {
+      VLOG(2) << "Graph Optimization Pass TF_EMBEDDING_FBJ_OPT is on.";
+    }
+  }
+
   Status Run(const GraphOptimizationPassOptions& options) override {
-    bool embedding_fbj_opt = false;
-    TF_CHECK_OK(
-        tensorflow::ReadBoolFromEnvVar("TF_EMBEDDING_FBJ_OPT",
-                                       /*default_val=*/false, &embedding_fbj_opt));
-    if (!embedding_fbj_opt) {
-      LOG(INFO) << "TF_EMBEDDING_FBJ_OPT off.";
+    if (!embedding_fbj_opt_) {
       return Status::OK();
     }
-    LOG(INFO) << "TF_EMBEDDING_FBJ_OPT on.";
+
     if (options.graph == nullptr) {
       // TODO(apassos) returning OK feels weird here as we can't do anything
       // without a graph, but some tests require this.
@@ -198,7 +203,10 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
     return Status::OK();
   }
 
+ private:
+  bool embedding_fbj_opt_ = false;
 };
+
 REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_REWRITE_FOR_EXEC, 0,
                       EmbeddingForwardBackwardJointOptimizationPass);
 
