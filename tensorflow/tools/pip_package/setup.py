@@ -47,7 +47,7 @@ DOCLINES = __doc__.split('\n')
 # result for pip.
 # Also update tensorflow/tensorflow.bzl and
 # tensorflow/core/public/version.h
-_VERSION = '1.15.5+deeprec2210'
+_VERSION = '1.15.5+deeprec2212'
 
 REQUIRED_PACKAGES = [
     'absl-py >= 0.9.0',
