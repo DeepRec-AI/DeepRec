@@ -96,7 +96,7 @@ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_
 ## 安装Whl包
 
 ```bash
-pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
+pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux_x86_64.whl
 ```
 
 ## 最新Release镜像
@@ -104,13 +104,13 @@ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x
 **CPU镜像**
 
 ```
-alideeprec/deeprec-release:deeprec2210-cpu-py36-ubuntu18.04
+alideeprec/deeprec-release:deeprec2212-cpu-py38-ubuntu20.04
 ```
 
 **GPU CUDA11.6镜像**
 
 ```
-alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04
+alideeprec/deeprec-release:deeprec2212-gpu-py38-cu116-ubuntu20.04
 ```
 
 ## DeepRec Processor编译打包
