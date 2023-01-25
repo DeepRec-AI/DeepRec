@@ -97,7 +97,7 @@ bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_
 ## Install Package
 
 ```bash
-pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x86_64.whl
+pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux_x86_64.whl
 ```
 
 ## Latest Release Images
@@ -105,11 +105,11 @@ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp36-cp36m-linux_x
 **CPU Image**
 
 ```
-alideeprec/deeprec-release:deeprec2210-cpu-py36-ubuntu18.04
+alideeprec/deeprec-release:deeprec2212-cpu-py38-ubuntu20.04
 ```
 
 **GPU Image with CUDA 11.6**
 
 ```
-alideeprec/deeprec-release:deeprec2210-gpu-py36-cu116-ubuntu18.04
+alideeprec/deeprec-release:deeprec2212-gpu-py38-cu116-ubuntu20.04
 ```
