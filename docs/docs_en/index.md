@@ -26,6 +26,14 @@ TFServing-Compile-And-Install
 
 ```{toctree}
 :maxdepth: 2
+:caption: Sparse Features
+
+Embedding-Variable
+Feature-Filter
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: Distributed Training
 
 GRPC++
