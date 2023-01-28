@@ -94,5 +94,6 @@ BFloat16
 :maxdepth: 2
 :caption: Inference optimization
 
+Processor
 SessionGroup
 ```
