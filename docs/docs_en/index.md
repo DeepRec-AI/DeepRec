@@ -58,6 +58,8 @@ GPU-MultiStream
 ```{toctree}
 :maxdepth: 2
 :caption: Optimizer
+
+AdamAsync-Optimizer
 ```
 
 ```{toctree}
