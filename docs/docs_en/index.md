@@ -80,8 +80,9 @@ BFloat16
 :maxdepth: 2
 :caption: Dataset and Processing
 
-
 WorkQueue
+KafkaDataset
+KafkaGroupIODataset
 ```
 
 ```{toctree}
