@@ -88,6 +88,7 @@ BFloat16
 :maxdepth: 2
 :caption: Compiler
 
+XLA
 ```
 
 ```{toctree}
