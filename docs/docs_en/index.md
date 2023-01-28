@@ -60,6 +60,7 @@ GPU-MultiStream
 :caption: Optimizer
 
 AdamAsync-Optimizer
+AdamW-Optimizer
 ```
 
 ```{toctree}
