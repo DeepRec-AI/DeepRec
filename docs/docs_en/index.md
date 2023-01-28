@@ -90,6 +90,7 @@ ParquetDataset
 :maxdepth: 2
 :caption: Compiler
 
+BladeDISC
 XLA
 ```
 
