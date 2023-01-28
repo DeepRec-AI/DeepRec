@@ -89,3 +89,10 @@ BFloat16
 :caption: Compiler
 
 ```
+
+```{toctree}
+:maxdepth: 2
+:caption: Inference optimization
+
+SessionGroup
+```
