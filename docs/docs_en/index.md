@@ -53,13 +53,11 @@ GPU-MultiStream
 ```{toctree}
 :maxdepth: 2
 :caption: Model Save & Restore
-
 ```
 
 ```{toctree}
 :maxdepth: 2
 :caption: Optimizer
-
 ```
 
 ```{toctree}
@@ -82,6 +80,8 @@ BFloat16
 :maxdepth: 2
 :caption: Dataset and Processing
 
+
+WorkQueue
 ```
 
 ```{toctree}
