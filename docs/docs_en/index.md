@@ -83,6 +83,7 @@ BFloat16
 WorkQueue
 KafkaDataset
 KafkaGroupIODataset
+ParquetDataset
 ```
 
 ```{toctree}
