@@ -45,6 +45,8 @@ SOK
 :maxdepth: 2
 :caption: Graph Optimization
 Fused-Embedding
+Stage
+Smart-Stage
 ```
 
 ```{toctree}
