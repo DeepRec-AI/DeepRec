@@ -62,6 +62,7 @@ GPU-MultiStream
 :maxdepth: 2
 :caption: Model Save & Restore
 
+Incremental-Checkpoint
 Embedding-Variable-Export-Format
 ```
 
