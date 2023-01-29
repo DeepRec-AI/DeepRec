@@ -118,9 +118,9 @@ with tf.Session() as sess:
 ## 4. 支持的存储类型
 计划支持的存储类型包括：
 
-- HBM
-- DRAM （已支持）
-- HBM_DRAM
+- HBM（已支持）
+- DRAM（已支持）
+- HBM_DRAM（已支持）
 - HBM_DRAM_PMEM
 - HBM_DRAM_LEVELDB
 - HBM_DRAM_SSDHASH 
@@ -131,6 +131,10 @@ with tf.Session() as sess:
 - DRAM_SSDHASH （已支持）
 - DRAM_PMEM_LEVELDB 
 - DRAM_PMEM_SSDHASH
+
+注：
+1. EmbeddingVariable相关Op的device 与 Embedding多级存储首级类型必须一致，否则运行时报错。GPU op要求首级为HBM，CPU op要求首级为DRAM。
+2. EmbeddingVariable的HBM单级实现目前暂时只支持部分基础功能。对于特征淘汰、特征准入、特征统计等功能暂未支持。对应的优化器现在提供了Adagrad以及FtrlOptimizer的支持。
 
 以下是各种存储介质的说明：
 

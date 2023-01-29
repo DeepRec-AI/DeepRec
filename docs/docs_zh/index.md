@@ -30,7 +30,6 @@ Feature-Filter
 Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
-Embedding-Variable-GPU
 Multi-tier-Embedding-Storage
 ```
 
