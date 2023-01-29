@@ -2002,7 +2002,9 @@ void GetStagingEdges(const Graph& dest, const std::unordered_set<Node *>& source
     q.pop();
     is_var_relate[node->id()] = true;
     for (const Edge* e : node->out_edges()) {
-      if (!is_var_relate[e->dst()->id()]) {
+      if (e->dst()->type_string() == "_OPT_KvResourceLookupID") {
+        continue;
+      } else if (!is_var_relate[e->dst()->id()]) {
         q.push(e->dst());
       }
     }

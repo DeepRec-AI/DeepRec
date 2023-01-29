@@ -112,6 +112,22 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
     return Status::OK();
   }
 
+  Status GetApplyOpNode(Node* unique, Node** apply_node) {
+    for (const Edge *edge : unique->out_edges()) {
+      if (0 != edge->src_output()) {
+        continue;
+      }
+      if (edge->dst()->IsKvSparseApply()) {
+        *apply_node = edge->dst();
+      } else if (edge->dst()->IsMetadata()) {
+        // ignore Shape/Size/Rank Op
+      } else {
+        return errors::Unknown("Operation not match.");
+      }
+    }
+    return Status::OK();
+  }
+
   Status FindEdgeAndNode(Node* gather_indices_node,
                          Edge** gather_edge,
                          Edge** apply_edge,
@@ -127,21 +143,17 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
       } else if (0 == e->src_output() && e->dst()->IsKvSparseApply()) {
         *apply_node = e->dst();
         *apply_edge = const_cast<Edge*>(e);
-      } else if (0 == e->src_output() && e->dst()->type_string() == "Unique") {
-        Node* unique = e->dst();
-        for (const Edge *edge : unique->out_edges()) {
-          if (0 != edge->src_output()) {
-            continue;
-          }
-          if (edge->dst()->IsKvSparseApply()) {
-            *apply_node = edge->dst();
+      } else if (0 == e->src_output() && e->dst()->type_string() == "Reshape") {
+        Node* reshape = e->dst();
+        for (const Edge *e : reshape->out_edges()) {
+          if (0 == e->src_output() && e->dst()->type_string() == "Unique") {
+            TF_RETURN_IF_ERROR(GetApplyOpNode(e->dst(), apply_node));
             *apply_edge = const_cast<Edge*>(e);
-          } else if (edge->dst()->IsMetadata()) {
-            // ignore Shape/Size/Rank Op
-          } else {
-            return errors::Unknown("Operation not match.");
           }
         }
+      } else if (0 == e->src_output() && e->dst()->type_string() == "Unique") {
+        TF_RETURN_IF_ERROR(GetApplyOpNode(e->dst(), apply_node));
+        *apply_edge = const_cast<Edge*>(e);
       }
     }
     if (*gather_edge && *apply_edge && *apply_node) {
@@ -207,8 +219,8 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
   bool embedding_fbj_opt_ = false;
 };
 
-REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_REWRITE_FOR_EXEC, 0,
-                      EmbeddingForwardBackwardJointOptimizationPass);
+// REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_REWRITE_FOR_EXEC, 0,
+//                       EmbeddingForwardBackwardJointOptimizationPass);
 
 }  // namespace
 }  // namespace tensorflow
