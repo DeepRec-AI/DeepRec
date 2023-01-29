@@ -29,6 +29,7 @@ TFServing-Compile-And-Install
 :caption: Sparse Features
 
 Embedding-Variable
+Feature-Eviction
 Feature-Filter
 Adaptive-Embedding
 ```
