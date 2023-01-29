@@ -30,6 +30,7 @@ TFServing-Compile-And-Install
 
 Embedding-Variable
 Feature-Filter
+Adaptive-Embedding
 ```
 
 ```{toctree}
