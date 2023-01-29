@@ -1,10 +1,10 @@
 # Adaptive Embedding
-## 背景
-在无冲突的Embedding中，如果稀疏特征非常多，会导致EmbeddingVariable（以下简称EV）占用非常大的空间，一方面在训练的时候对PS内存造成较大的压力，另一方面模型线上服务的时候会删减模型，通常的手段为通过一个静态filter过滤特征，这种过滤规则过于生硬，没有很好的考虑动态学习中的Embedding，不可避免的会对最终学习的结果产生影响。同时，由于特征的出现的频度不同，而EV由于无冲突对于所有的特征都一律从initializer设定的初始值（一般设为0）开始学起，那么对于出现不怎么多的特征，会学的很慢；同时对于一些出现频次从低到高的特征，也需要逐渐学习到一个较好的状态，不能共享别的特征的学习结果。这也是EV本身的完全无冲突的思想造成的。
-## 功能说明
-使用静态Variable和动态EV共同存储稀疏模型，对于新加入的特征存于可冲突的静态Variable，对于出现频率较高的特征存于无冲突的EV，Embedding迁移到EV可以复用在静态Variable的学习结果，极大的降低模型大小。
-## 用户接口
-adaptive embedding功能需要用户通过feature_column API使用
+## Introduction
+If there are many sparse features, it will cause EmbeddingVariable (abbreviate as EV) to occupy lots of memory. On the one hand, it will put a lot of pressure on PS memory during training. On the other hand, when the model is served online, the model needs to be shrunk. The usual method is to filter features through a static filter. However, this filtering rule is too rigid, and the embedding in dynamic learning is not well considered, which will inevitably affect the final accuracy. Moreover, due to the different frequencies of features, and EV starts to learn all features from the initial value set by the initializer (generally set to 0), it will learn very slowly for features that do not appear very much. For some features with low to high frequency of occurrence, it is also necessary to gradually learn to a better state, and the learning results of other features cannot be shared. This is caused by the conflict-free thinking of EV.
+
+Adaptive Embedding uses a static Variable and a dynamic EV to store sparse features together. For low-frequency features, it is stored in conflictable static Variable, and for features with high frequency, it is stored in non-conflicting EV. Migrating embedding to EV can reuse the learning results in the static Variable, which greatly reduces the model size.
+## API
+Adaptive Embedding needs to be used through the feature_column API
 ```python
 def categorical_column_with_adaptive_embedding(key,
                                                hash_bucket_size,
@@ -12,13 +12,13 @@ def categorical_column_with_adaptive_embedding(key,
                                                partition_num=None,
                                                ev_option=variables.EmbeddingVariableOption())
 
-# key, feature_column 名称
-# hash_bucket_size, 静态Variable第一维度大小
-# dtype, 稀疏特征类型, 默认为string
-# partition_num, EV partition数量, 默认不分片
-# ev_option, EV配置信息
+# key, name of feature_column
+# hash_bucket_size, the first dimension of static Variable
+# dtype, data type of sparse features
+# partition_num, partition number of EV, no partition by default
+# ev_option, configuration of EV
 ```
-## 代码示例
+## Example
 ```python
 import tensorflow as tf
 
