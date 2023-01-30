@@ -75,6 +75,7 @@ Embedding-Variable-Export-Format
 :caption: Optimizer
 
 AdamAsync-Optimizer
+AdagradDecay-Optimizer
 AdamW-Optimizer
 ```
 
