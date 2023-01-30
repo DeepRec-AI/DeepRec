@@ -145,7 +145,7 @@ REGISTER_OP("InitializeKvVariableOp")
     .Attr("false_positive_probability: float = -1.0")
     .Attr("l2_weight_threshold: float =-1.0")
     .Attr("layout: string = 'normal'")
-    .Attr("storage_type: int = 1")
+    .Attr("storage_type: int = 0")
     .Attr("storage_path: string = '.'")
     .Attr("storage_size: list(int) = []")
     .Attr("default_value_dim: int = 4096")
@@ -631,6 +631,17 @@ REGISTER_OP("KvResourceLookupTier")
     .Attr("Tkeys: {int64, int32}")
     .Attr("dtype: type")
     .SetShapeFn([](InferenceContext* c) {
+      return Status::OK();
+    })
+    .Doc(R"doc()doc");
+
+REGISTER_OP("KvResourceLookupResource")
+    .Input("resource_handle: resource")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("dtype: type = DT_FLOAT")
+    .Output("output: int64")
+    .SetShapeFn([](InferenceContext* c) {
+      c->set_output(0, c->Scalar());
       return Status::OK();
     })
     .Doc(R"doc()doc");

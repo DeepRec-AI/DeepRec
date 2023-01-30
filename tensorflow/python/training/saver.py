@@ -216,6 +216,8 @@ class BaseSaverBuilder(object):
     tensors = []
     tensor_slices = []
     ev_key_types = []
+    ev_resources = []
+    ev_names = []
     has_ev = False
     for saveable in saveables:
       if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
@@ -227,16 +229,9 @@ class BaseSaverBuilder(object):
 
     for saveable in saveables:
       if isinstance(saveable, BaseSaverBuilder.EmbeddingVariableSaveable):
-        if "GPU" in saveable.var.device:
-          for spec in saveable.specs:
-            tensor_names.append(spec.name)
-            tensors.append(spec.tensor)
-            tensor_slices.append(spec.slice_spec)
-        else:
-          tensor_names.append(saveable.name)
-          tensors.append(saveable.handle_op)
-          tensor_slices.append("")
-          ev_key_types.append(saveable.key_type)
+        ev_names.append(saveable.name)
+        ev_resources.append(saveable.resource)
+        ev_key_types.append(saveable.key_type)
         continue
       for spec in saveable.specs:
         tensor_names.append(spec.name)
@@ -251,8 +246,9 @@ class BaseSaverBuilder(object):
     elif self._write_version == saver_pb2.SaverDef.V2:
       # "filename_tensor" is interpreted *NOT AS A FILENAME*, but as a prefix
       # of a V2 checkpoint: e.g. "/fs/train/ckpt-<step>/tmp/worker<i>-<step>".
-      return io_ops.save_v2(filename_tensor, tensor_names, tensor_slices,
-                            tensors, ev_key_types, has_ev)
+      return io_ops.save_v3(filename_tensor, tensor_names, tensor_slices,
+                            ev_names, ev_resources, tensors,
+                            ev_key_types, has_ev)
     else:
       raise RuntimeError("Unexpected write_version: " + self._write_version)
 

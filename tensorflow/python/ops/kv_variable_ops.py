@@ -976,15 +976,11 @@ def lookup_tier(var, ids):
           pindices, partitioned_result)
     return ret
 
-def identity(var):
-  if "GPU" in var.device:
-    with ops.device(var.device):
-      keys, values, versions, freqs =  gen_kv_variable_ops.kv_resource_export(var._handle, Tkeys=var._invalid_key_type, Tvalues=var.dtype)
-    part_keys, part_values, part_version, part_freqs, part_offset = \
-          gen_kv_variable_ops.kv_resource_generate_partitioned_tensor(keys, values, versions, freqs)
-    return [part_keys, part_values, part_version, part_freqs, part_offset]
-  else:
-    return var.handle
+def lookup_resource(var):
+  return gen_kv_variable_ops.kv_resource_lookup_resource(
+      var.handle,
+      Tkeys=var._invalid_key_type,
+      dtype=var._dtype)
 
 
 # Register a conversion function which reads the value of the variable,

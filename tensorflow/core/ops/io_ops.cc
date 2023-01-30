@@ -85,6 +85,37 @@ REGISTER_OP("SaveV2")
       return Status::OK();
     });
 
+REGISTER_OP("SaveV3")
+    .Input("prefix: string")
+    .Input("tensor_names: string")
+    .Input("shape_and_slices: string")
+    .Input("ev_names: string")
+    .Input("ev_resources: int64")
+    .Input("tensors: dtypes")
+    .Attr("dtypes: list(type)")
+    .Attr("ev_key_types: list(type) = []")
+    .Attr("has_ev: bool = false")
+    .SetIsStateful()
+    .SetShapeFn([](InferenceContext* c) {
+      ShapeHandle unused;
+      ShapeHandle s;
+      DimensionHandle unused_dim;
+
+      // Validate prefix.
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 0, &unused));
+
+      // Validate tensor_names and shapes_and_slices.
+      for (int i = 1; i <= 2; ++i) {
+        TF_RETURN_IF_ERROR(c->WithRank(c->input(i), 1, &s));
+        TF_RETURN_IF_ERROR(
+            c->WithValue(c->Dim(s, 0), c->num_inputs() - 5, &unused_dim));
+      }
+
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 1, &s));
+      TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 1, &s));
+      return Status::OK();
+    });
+
 REGISTER_OP("RestoreV2")
     .Input("prefix: string")
     .Input("tensor_names: string")

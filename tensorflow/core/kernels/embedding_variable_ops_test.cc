@@ -28,6 +28,7 @@
 #include "tensorflow/core/platform/test.h"
 #include "tensorflow/core/util/tensor_slice_reader_cache.h"
 #if GOOGLE_CUDA
+#define EIGEN_USE_GPU
 #include "tensorflow/core/common_runtime/gpu/gpu_device.h"
 #include "tensorflow/core/common_runtime/gpu/gpu_process_state.h"
 #endif //GOOGLE_CUDA
@@ -1024,19 +1025,22 @@ TEST(EmbeddingVariableTest, TestBatchCommitofDBKV) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
   std::vector<int64> size;
   size.emplace_back(1000);
+  auto emb_config = EmbeddingConfig(
+      /*emb_index = */0, /*primary_emb_index = */0,
+      /*block_num = */1, /*slot_num = */0,
+      /*name = */"", /*steps_to_live = */0,
+      /*filter_freq = */0, /*max_freq = */999999,
+      /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
+      /*max_element_size = */0, /*false_positive_probability = */-1.0,
+      /*counter_type = */DT_UINT64);
   auto storage_manager =
     new embedding::StorageManager<int64, float>(
         "EmbeddingVar", embedding::StorageConfig(
-          embedding::LEVELDB, testing::TmpDir(), size, "normal_contiguous"));
+        embedding::LEVELDB, testing::TmpDir(), size,
+        "normal_contiguous", emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
       storage_manager,
-      EmbeddingConfig(/*emb_index = */0, /*primary_emb_index = */0,
-                      /*block_num = */1, /*slot_num = */0,
-                      /*name = */"", /*steps_to_live = */0,
-                      /*filter_freq = */0, /*max_freq = */999999,
-                      /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
-                      /*max_element_size = */0, /*false_positive_probability = */-1.0,
-                      /*counter_type = */DT_UINT64));
+      emb_config);
   variable->Init(value, 1);
   std::vector<ValuePtr<float>*> value_ptr_list;
   std::vector<int64> key_list;
@@ -1183,20 +1187,22 @@ TEST(EmbeddingVariableTest, TestCacheRestore) {
   float* fill_v = (float*)malloc(value_size * sizeof(float));
   std::vector<int64> size;
   size.emplace_back(64);
+  auto emb_config = EmbeddingConfig(
+      /*emb_index = */0, /*primary_emb_index = */0,
+      /*block_num = */1, /*slot_num = */0,
+      /*name = */"", /*steps_to_live = */0,
+      /*filter_freq = */0, /*max_freq = */999999,
+      /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
+      /*max_element_size = */0, /*false_positive_probability = */-1.0,
+      /*counter_type = */DT_UINT64);
   auto storage_manager = new embedding::StorageManager<int64, float>(
-                 "EmbeddingVar",
-                  embedding::StorageConfig(embedding::DRAM_SSDHASH,
-                                           testing::TmpDir(),
-                                           size, "normal_contiguous"));
+      "EmbeddingVar",
+      embedding::StorageConfig(embedding::DRAM_SSDHASH,
+      testing::TmpDir(),
+      size, "normal_contiguous",
+      emb_config));
   auto variable = new EmbeddingVar<int64, float>("EmbeddingVar",
-      storage_manager,
-      EmbeddingConfig(/*emb_index = */0, /*primary_emb_index = */0,
-                      /*block_num = */1, /*slot_num = */0,
-                      /*name = */"", /*steps_to_live = */0,
-                      /*filter_freq = */0, /*max_freq = */999999,
-                      /*l2_weight_threshold = */-1.0, /*layout = */"normal_contiguous",
-                      /*max_element_size = */0, /*false_positive_probability = */-1.0,
-                      /*counter_type = */DT_UINT64));
+      storage_manager, emb_config);
   variable->Init(value, 1);
   variable->InitCache(CacheStrategy::LFU);
   RestoreBuffer buf;

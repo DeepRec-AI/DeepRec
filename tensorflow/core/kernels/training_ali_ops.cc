@@ -36,7 +36,9 @@ limitations under the License.
 #endif  // TENSORFLOW_USE_SYCL
 
 #if GOOGLE_CUDA
+#include "tensorflow/core/kernels/gpu_device_array.h"
 #include "tensorflow/core/kernels/training_ali_ops_gpu.h"
+#include "tensorflow/core/platform/stream_executor.h"
 #endif  // GOOGLE_CUDA
 
 namespace tensorflow {
@@ -324,10 +326,20 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
               key_base, grad_base, lr_scalar, gs, device);
         } else {
           ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
-
+          TKey* indices_host = new TKey[N];
+          volatile bool is_cpu_indices_ready = false;
+          //Copy ids from GPU to CPU for CPU Lookup.
+          auto stream = ctx->op_device_context()->stream();
+          se::DeviceMemoryBase gpu_src(
+              const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
+          stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
+          ctx->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
+              stream,
+              [&is_cpu_indices_ready]() {is_cpu_indices_ready = true;});
+          while(!is_cpu_indices_ready) {}
           // Lookup ValuePtrs of ids and set version of each id  in parallel
           LookupKeyAndSetVersion(ctx, var, value_ptrs,
-                                 gs, indices_flat.data(), N,
+                                 gs, indices_host, N,
                                  indices_as_pointer);
 
           // Get pointers to embeddings and
@@ -344,7 +356,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
                                   v, a, N);
 
           accum->SetDefaultValueOfNewFeatures(
-              indices_flat.data(), N,
+              indices_host, N,
               init_cursor_list[0],
               a, accum->GetDefaultValuePtr(),
               get_default_v_fn_);
@@ -357,6 +369,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
           delete[] a;
           delete[] v;
           delete[] value_ptrs;
+          delete[] indices_host;
         }
       }
     }

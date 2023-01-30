@@ -61,7 +61,7 @@ struct ModelConfig {
   bool use_per_session_threads = false;
 
   // EmbeddingVariable Config
-  embedding::StorageType storage_type = embedding::StorageType::INVALID;
+  embedding::StorageType storage_type = embedding::StorageType::DEFAULT;
   std::string storage_path;
   std::vector<int64> storage_size;
 };

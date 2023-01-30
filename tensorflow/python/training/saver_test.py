@@ -184,12 +184,12 @@ class SaverTest(test.TestCase):
     saver_module.Saver({"v0": v}).build()
     save_op = None
     for op in ops_lib.get_default_graph().get_operations():
-      if op.type == "SaveV2":
+      if op.type == "SaveV3":
         save_op = op
         break
     assert save_op is not None
-    for save_inp in save_op.inputs[3:]:
-      # Input to SaveV2 op is placed on CPU of the same device as the Variable.
+    for save_inp in save_op.inputs[5:]:
+      # Input to SaveV3 op is placed on CPU of the same device as the Variable.
       self.assertEqual("/job:ps/device:CPU:0", save_inp.device)
 
   def testResourceVariableReadOpsAddedDeterministically(self):
@@ -1890,8 +1890,8 @@ class MetaGraphTest(test.TestCase):
       self.assertEqual(1, len(savers.value))
 
       # Verifies that saver0 graph nodes are omitted from the saver1 export
-      self.assertEqual(33, len(meta_graph_def0.graph_def.node))
-      self.assertEqual(21, len(meta_graph_def1.graph_def.node))
+      self.assertEqual(37, len(meta_graph_def0.graph_def.node))
+      self.assertEqual(23, len(meta_graph_def1.graph_def.node))
 
   @test_util.run_deprecated_v1
   def testBinaryAndTextFormat(self):
@@ -2209,7 +2209,7 @@ class MetaGraphTest(test.TestCase):
       else:
         self.assertEqual(ops, [
             "Add", "Assign", "Const", "Identity", "NoOp",
-            "PlaceholderWithDefault", "RestoreV2", "SaveV2", "Sub", "VariableV2"
+            "PlaceholderWithDefault", "RestoreV2", "SaveV3", "Sub", "VariableV2"
         ])
 
       # Test calling stripped_op_list_for_graph directly
