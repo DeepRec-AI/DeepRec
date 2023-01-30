@@ -2827,7 +2827,9 @@ tf_kernel_library(
 tf_kernel_library(
     name = "kv_variable_ops",
     hdrs = ["kv_variable_ops.h"],
-    srcs = ["kv_variable_ops.cc"],
+    srcs = ["kv_variable_ops.cc",
+            "kv_variable_lookup_ops.cc",
+            "kv_variable_save_restore_ops.cc"],
     copts = ["-g"],
     nocopts = "-fno-exceptions",
     deps = [

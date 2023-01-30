@@ -569,39 +569,6 @@ versions: Vector of all versions present in the table.
 freqs: Vector of all freqs present in the table.
 )doc");
 
-REGISTER_OP("KvResourceGeneratePartitionedTensor")
-    .Input("keys: Tkeys")
-    .Input("values: Tvalues")
-    .Input("versions: int64")
-    .Input("freqs: int64")
-    .Output("partitioned_keys: Tkeys")
-    .Output("partitioned_values: Tvalues")
-    .Output("partitioned_versions: int64")
-    .Output("partitioned_freqs: int64")
-    .Output("partial_offset: int32")
-    .Attr("Tkeys: {int64, int32}")
-    .Attr("Tvalues: type")
-    .SetShapeFn([](InferenceContext* c) {
-      ShapeHandle partitioned_values = c->UnknownShape();
-      TF_RETURN_IF_ERROR(c->WithRankAtLeast(partitioned_values, 2, &partitioned_values));
-      ShapeHandle partitioned_keys = c->UnknownShapeOfRank(1);
-      ShapeHandle partitioned_versions = c->UnknownShapeOfRank(1);
-      ShapeHandle partitioned_freqs = c->UnknownShapeOfRank(1);
-      ShapeHandle partial_offset = c->UnknownShapeOfRank(1);
-      c->set_output(0, partitioned_keys);
-      c->set_output(1, partitioned_values);
-      c->set_output(2, partitioned_versions);
-      c->set_output(3, partitioned_freqs);
-      c->set_output(4, partial_offset);
-      return Status::OK();
-    })
-    .Doc(R"doc(
-Outputs a partial offset tensor of features.
-
-keys: Vector of all keys present in the table.
-partial_offset: Vector of partial offset used for restore.
-)doc");
-
 REGISTER_OP("EVGetFrequency")
     .Input("resource_handle: resource")
     .Input("ids: Tkeys")
