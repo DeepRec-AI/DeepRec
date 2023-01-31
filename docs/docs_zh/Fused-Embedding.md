@@ -1,4 +1,4 @@
-# Embedding子图Fusion用户文档
+# Embedding子图Fusion
 
 ## 介绍
 

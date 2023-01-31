@@ -1,7 +1,8 @@
-# Auto Graph Fusion用户文档
+# Auto Graph Fusion
+
 ## 功能介绍
+
 DeepRec中提供了AutoGraphFusion功能，该功能提供了内置的一组子图匹配模版（子图->Macro Op)，当用户图中存在某个模版的匹配，在图优化阶段会自动替换该模版对应的Macro Op。该功能正在不断完善中，会增加更多的子图模版及对应的Macro Op实现。通过该功能，能够一方面避免对用户代码的修改，自动实现调用Macro Op的能力；另一方面方面也能够提高某些跨高层接口子图的优化能力。
-​
 
 Auto Graph Fusion主要包含两部分功能：
 
