@@ -32,6 +32,7 @@ Embedding-Variable
 Feature-Eviction
 Feature-Filter
 Adaptive-Embedding
+Multi-Hash-Variable
 ```
 
 ```{toctree}
