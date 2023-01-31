@@ -1,4 +1,4 @@
-# Embedding Subgraph Fusion Doc
+# Embedding Subgraph Fusion
 
 ## Introduction
 
