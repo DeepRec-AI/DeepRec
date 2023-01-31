@@ -365,7 +365,7 @@ class BatchNormalizationTest(test.TestCase):
       self._test_inference(
           x_shape, dtype, [1], np.float32, use_gpu=False, data_format='NHWC')
       self._test_inference(
-          x_shape, dtype, [131], np.float32, use_gpu=False, data_format='NCHW')
+          x_shape, dtype, [1], np.float32, use_gpu=False, data_format='NCHW')
 
   def testInferenceShape2(self):
     x_shape = [1, 1, 6, 2]
@@ -718,10 +718,10 @@ class BatchNormalizationTest(test.TestCase):
           err_tolerance=err_tolerance)
       self._test_grad_grad(
           shape,
-          dtype, [shape[1]],
+          dtype, [features_nchw],
           np.float32,
           use_gpu=False,
-          data_format='NCHW',
+          data_format=data_format_nchw,
           is_training=is_training,
           err_tolerance=err_tolerance)
 
