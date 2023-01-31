@@ -50,6 +50,7 @@ SOK
 Fused-Embedding
 Stage
 Smart-Stage
+Async-Embedding-Stage
 ```
 
 ```{toctree}
