@@ -15,6 +15,7 @@
 # =============================================================================
 
 set -eo pipefail
+N_GPUS=$(nvidia-smi --query-gpu=gpu_name --format=csv,noheader | wc -l)
 
 export TF_CUDA_COMPUTE_CAPABILITIES="7.5,8.0"
 export TF_NEED_TENSORRT=0
@@ -24,6 +25,7 @@ export TF_NEED_OPENCL=0
 export TF_NEED_OPENCL_SYCL=0
 export TF_ENABLE_XLA=1
 export TF_NEED_MPI=0
+export TF_GPU_COUNT=${N_GPUS}
 
 DESTDIR=$1
 
@@ -42,6 +44,7 @@ for i in $(seq 1 3); do
     [ $i -gt 1 ] && echo "WARNING: cmd execution failed, will retry in $((i-1)) times later" && sleep 2
     ret=0
     bazel test -c opt --config=cuda --verbose_failures \
+    --test_env=TF_GPU_COUNT \
     --run_under=//tensorflow/tools/ci_build/gpu_build:parallel_gpu_execute  \
     --test_timeout="600,900,1200,3600" --local_test_jobs=5 --test_output=errors \
     -- $TF_BUILD_BAZEL_TARGET && break || ret=$?
