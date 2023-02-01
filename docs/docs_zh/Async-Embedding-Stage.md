@@ -47,24 +47,22 @@ sess_config.graph_options.optimizer_options.async_embedding_options.stage_subgra
 
 其中：
 
-| 配置选项                                      | 含义                                                         | 默认值                                           |
-| --------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------ |
-| do_async_embedding                            | Async Embedding开关                                          | False（关闭）                                    |
-| async_embedding_options.threads_num           | 异步化执行embedding lookup子图线程数                         | 0 （需手动指定）                                 |
-| async_embedding_options.capacity              | 缓存异步化执行embedding lookup子图结果的最大个数             | 0 （需手动指定）                                 |
-| async_embedding_options.use_stage_subgraph_thread_pool | 是否使用独立线程池运行embedding lookup子图，需要先创建独立线程池。 | False(可选，若为True则必须先创建独立线程池)      |
+| 配置选项                                                   | 含义                                                                                                                   | 默认值                           |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| do_async_embedding                                     | Async Embedding开关                                                                                                    | False（关闭）                     |
+| async_embedding_options.threads_num                    | 异步化执行embedding lookup子图线程数                                                                                           | 0 （需手动指定）                     |
+| async_embedding_options.capacity                       | 缓存异步化执行embedding lookup子图结果的最大个数                                                                                     | 0 （需手动指定）                     |
+| async_embedding_options.use_stage_subgraph_thread_pool | 是否使用独立线程池运行embedding lookup子图，需要先创建独立线程池。                                                                            | False(可选，若为True则必须先创建独立线程池)   |
 | async_embedding_options.stage_subgraph_thread_pool_id  | 如果启用独立线程池运行embedding lookup子图，该选项用于指定独立线程池索引，需要先创建独立线程池，并打开async_embedding_options.use_stage_subgraph_thread_pool选项。 | 0，(可选，索引范围为[0, 创建的独立线程池数量-1]) |
 
 **注意事项**
 
 1. `async_embedding_threads_num` 并不是越大越好，只需要可以让计算主图部分不必等待embedding lookup子图的结果即可，数量更大会抢占模型训练的计算资源，同时也会占用更多的通信带宽。建议按下述公式设置，可以从1开始向上调整。
-   $$
-   async\_embedding\_threads\_num >= Embedding\ lookup\ 子图执行耗时 / 计算主图执行耗时
-   $$
+   ![](./Async-Embedding-Stage/1.png)
 
 2. `async_embedding_capacity` 更大会消耗更多的内存或缓存。同时也会造成缓存的embedding lookup子图结果与从PS端获取的最新结果有较大差异，造成训练收敛慢。建议设置为`async_embedding_threads_num` 的大小，可以从1开始向上调整。
 
-2. 独立线程池功能可以使不同的Stage子图运行在不同的线程池中，避免与计算主图和其他子图竞争默认线程池。关于如何创建独立线程池，可以参见[流水线Stage](./Stage.md) 一节。
+3. 独立线程池功能可以使不同的Stage子图运行在不同的线程池中，避免与计算主图和其他子图竞争默认线程池。关于如何创建独立线程池，可以参见[流水线Stage](./Stage.md) 一节。
 
 ## CPU集群性能对比
 
@@ -72,24 +70,23 @@ sess_config.graph_options.optimizer_options.async_embedding_options.stage_subgra
 
 集群配置如下表所示。
 
-| 项目     | 说明                                                 |
-| -------- | ---------------------------------------------------- |
-| CPU      | Intel Xeon Platinum (Cooper Lake) 8369        96核心 |
-| MEM      | 192 GiB                                              |
-| 网络带宽 | 32 Gbps                                              |
+| 项目   | 说明                                                 |
+| ---- | -------------------------------------------------- |
+| CPU  | Intel Xeon Platinum (Cooper Lake) 8369        96核心 |
+| MEM  | 192 GiB                                            |
+| 网络带宽 | 32 Gbps                                            |
 
 训练配置
 
-| 项目          | 说明 |
-| ------------- | ---- |
-| PS 数量       | 8    |
-| worker数量    | 30   |
-| PS 核心数     | 15   |
-| worker 核心数 | 10   |
+| 项目         | 说明  |
+| ---------- | --- |
+| PS 数量      | 8   |
+| worker数量   | 30  |
+| PS 核心数     | 15  |
+| worker 核心数 | 10  |
 
 模型性能
 
-| 模型 | baseline性能（global steps/sec） | async embedding功能性能（global steps/sec） | 加速比 |
-| ---- | -------------------------------- | ------------------------------------------- | ------ |
-| DLRM | 1008.6968                        | 1197.932                                    | 1.1876 |
-
+| 模型   | baseline性能（global steps/sec） | async embedding功能性能（global steps/sec） | 加速比    |
+| ---- | ---------------------------- | ------------------------------------- | ------ |
+| DLRM | 1008.6968                    | 1197.932                              | 1.1876 |
