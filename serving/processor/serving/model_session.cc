@@ -169,9 +169,9 @@ Status ModelSessionMgr::CreateSession(Session** session) {
 Status ModelSessionMgr::CreateSessionGroup(
     SessionGroup** session_group, ModelConfig* config) {
   SessionGroupMetadata metadata;
-  metadata.session_num = config->session_num;
+  metadata.session_count = config->session_num;
   metadata.model_id = 0;
-  metadata.streams_vec.emplace_back(config->session_num);
+  // TODO: add gpu_ids here
   metadata.cpusets = config->cpusets;
   TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
                                      session_group, metadata));
@@ -277,7 +277,7 @@ ModelSession::~ModelSession() {
 }
 
 Session* ModelSession::GetSession() {
-  return session_group_->GetLeaderSession();
+  return session_group_->GetLeaderSessions()[0];
 }
 
 int ModelSession::GetServingSessionId() {
@@ -416,7 +416,7 @@ Status ModelSessionMgr::CreateModelSession(
   SessionGroup* session_group = nullptr;
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSessionGroup(&session_group, config));
-  session = session_group->GetLeaderSession();
+  session = session_group->GetLeaderSessions()[0];
 
   Version real_version = version;
   Status status;
@@ -503,7 +503,7 @@ Status ModelSessionMgr::CreateModelSession(
   SessionGroup* session_group = nullptr;
   Session* session = nullptr;
   TF_RETURN_IF_ERROR(CreateSessionGroup(&session_group, config));
-  session = session_group->GetLeaderSession();
+  session = session_group->GetLeaderSessions()[0];
   TF_RETURN_IF_ERROR(util::ValidateSavedTensors(meta_graph_def_.graph_def()));
 
   TF_RETURN_IF_ERROR(
@@ -562,7 +562,7 @@ Status ModelSessionMgr::CreateModelSession(
         meta_graph_def_.incr_saver_def().restore_op_name();
   } else {
     TF_RETURN_IF_ERROR(CreateSessionGroup(&session_group, config));
-    session = session_group->GetLeaderSession();
+    session = session_group->GetLeaderSessions()[0];
   }
 
   thread::ThreadPoolOptions thread_opt = thread::ThreadPoolOptions();

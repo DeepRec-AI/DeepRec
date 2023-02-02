@@ -275,9 +275,10 @@ class SessionGroup {
   virtual ~SessionGroup() {}
   virtual Status Close() = 0;
   virtual int32_t GetSessionNum() const = 0;
+  virtual Status CreateSession(Session* session) = 0;
   virtual Status CreateLeaderSession(Session* leader_session) = 0;
   virtual Status CreateFollowerSession(Session* follower_session) = 0;
-  virtual Session* GetLeaderSession() = 0;
+  virtual std::vector<Session*> GetLeaderSessions() = 0;
   virtual Status Create(const GraphDef& graph) = 0;
   virtual Status Run(
       const std::vector<std::pair<string, Tensor> >& inputs,

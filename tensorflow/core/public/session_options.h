@@ -68,14 +68,22 @@ struct CudaGraphModeSessionOptions: SessionOptions {
 
 struct SessionGroupMetadata {
   // default 1
-  int session_num = 1;
+  // CPU job: total session count of this session_group.
+  // GPU job: session count on each GPU device,
+  //          total session count determined by gpu_ids size.
+  int session_count = 1;
   // default 0
   int model_id = 0;
-  // Multi-stream: streams vector, [2, 4, ....]
-  // gpu0: 2 streams
-  // gpu1: 4 streams
-  // ....
-  std::vector<int> streams_vec;
+  // Now session_group support multi-gpus.
+  // gpu_ids: TF gpu ids which current session_group run on.
+  // By default session_group will use all visiable gpus.
+  // e.g. VisibleDeviceCount=4,
+  // tf_gpu_ids is a non-empty subset of {0,1,2,3}.
+  // {0}, {1} ... {1,3} ... {0,1,2,3}
+  //
+  // Notice: Each gpu will create session_count streams/sessions.
+  // total_session_count = gpu_ids.size() * session_count
+  std::vector<size_t> gpu_ids;
   // Pin cpu cores
   // "1,2;3,4;5,6"
   // Pin core 1,2 to session0

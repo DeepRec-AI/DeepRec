@@ -250,6 +250,14 @@ int VisibleDeviceCount(const string& visible_device_list) {
 #endif
 }
 
+int VisibleDeviceCount() {
+#if GOOGLE_CUDA
+  return GPUMachineManager()->VisibleDeviceCount();
+#else
+  return 0;
+#endif
+}
+
 }  // namespace
 
 class DirectSessionFactory : public SessionFactory {
@@ -349,7 +357,7 @@ class DirectSessionFactory : public SessionFactory {
   Status NewSessionGroup(const SessionOptions& options,
                          SessionGroup** out_session_group,
                          const SessionGroupMetadata& metadata) {
-    int session_num = metadata.session_num;
+    int session_num = metadata.session_count;
     if (session_num < 1) {
       return errors::InvalidArgument(
           "Must specify session_num of NewSessionGroup");
@@ -382,47 +390,68 @@ class DirectSessionFactory : public SessionFactory {
     // and every virtual device has a independent stream.
     bool use_multi_stream = options.config.use_per_session_stream();
     int base_index = 0;
+    std::vector<size_t> sorted_gpu_ids;
+    // Visiable gpu ids: 0,1,2...
+    int visible_gpu_count = VisibleDeviceCount();
+    int stream_num_per_device = session_num;
     if (use_multi_stream) {
-      // Allow load multi-models
-      int multi_model_count = metadata.streams_vec.size();
       // Current model id in multi-models
       int model_id = metadata.model_id;
-      if (session_num != metadata.streams_vec[model_id]) {
-        LOG(FATAL) << "session_num don't match streams_vec["
-                   << model_id << "], " << session_num <<  " VS "
-                   << metadata.streams_vec[model_id];
+      // If user not set gpu id list, session group will
+      // use all visiable gpus.
+      auto user_set_gpu_ids = metadata.gpu_ids;
+      if (user_set_gpu_ids.empty()) {
+        LOG(WARNING) << "User not set gpu id list for session_group, "
+                     << "default we will use all visiable gpus.";
+        user_set_gpu_ids.resize(visible_gpu_count);
+        int idx = 0;
+        std::generate(user_set_gpu_ids.begin(), user_set_gpu_ids.end(),
+                      [&idx] { return idx++; });
+      } else {
+        for (auto gpu_id : user_set_gpu_ids) {
+          if (gpu_id >= visible_gpu_count) {
+            std::string debug_ids("");
+            for (int i = 0; i < visible_gpu_count; ++i) {
+              debug_ids += std::to_string(i);
+              debug_ids += ",";
+            }
+            LOG(FATAL) << "Invalid gpu id " << gpu_id
+                       << ", visiable gpu ids: " << debug_ids;
+          }
+        }
       }
-      int multi_streams_num = session_num;
 
+      sorted_gpu_ids = user_set_gpu_ids;
+      std::sort(sorted_gpu_ids.begin(), sorted_gpu_ids.end());
       ConfigProto* config = const_cast<ConfigProto*>(&options.config);
       GPUOptions* gpu_options = config->mutable_gpu_options();
-      int visible_gpu_count =
-          VisibleDeviceCount(gpu_options->visible_device_list());
-      // Now we only support per session_group per gpu
-      if (visible_gpu_count < multi_model_count) {
-        LOG(FATAL) << "Now we only support per model(session_group) per gpu, "
-                   << "please ensure that the num of GPU is not less than models count."
-                   << " visible_gpu_count=" << visible_gpu_count
-                   << " VS " << "multi_model_count=" << multi_model_count;
-      }
-
-      for (int c = 0; c < multi_model_count; ++c) {
-        if (c < model_id) {
-          base_index += metadata.streams_vec[c];
-        }
+      int curr_idx = 0;
+      for (int id = 0; id < visible_gpu_count; ++id) {
         auto virtual_devices =
             gpu_options->mutable_experimental()->add_virtual_devices();
-        // will allocate gpu memory for each virtual device later.
-        for (int i = 0; i < metadata.streams_vec[c]; ++i) {
+        if (id == sorted_gpu_ids[curr_idx]) {
+          ++curr_idx;
+          for (int i = 0; i < stream_num_per_device; ++i) {
+            virtual_devices->add_memory_limit_mb(-1);
+          }
+        } else {
           virtual_devices->add_memory_limit_mb(-1);
         }
       }
-      // Now per session_group per gpu, maybe changed in the future.
-      // Handle other gpu virtual devices.
-      for (int i = multi_model_count; i < visible_gpu_count; ++i) {
-        auto tmp = gpu_options->mutable_experimental()->add_virtual_devices();
-        //tmp->add_memory_limit_mb(-1);
+      if (curr_idx != sorted_gpu_ids.size()) {
+        std::string debug_ids("");
+        for (auto id : sorted_gpu_ids) {
+          debug_ids += std::to_string(id);
+          debug_ids += ",";
+        }
+        LOG(FATAL) << "Invalid gpu ids, curr_idx=" << curr_idx
+                   << ", sorted_gpu_ids size=" << sorted_gpu_ids.size()
+                   << ", visible_gpu_count=" << visible_gpu_count
+                   << ", user set gpu ids is " << debug_ids;
       }
+
+      // total session count
+      session_num = stream_num_per_device * user_set_gpu_ids.size();
 
       // We set allow_growth in multi-stream mode.
       gpu_options->set_allow_growth(true);
@@ -487,59 +516,58 @@ class DirectSessionFactory : public SessionFactory {
     dev_rmgr_map.device_rmgr_map["/device:CPU:0"] = shared_rmgr;
     dev_rmgr_map.device_rmgr_map["/device:cpu:0"] = shared_rmgr;
 
-    ResourceMgr* gpu_shared_rmgr = nullptr;
+    std::vector<ResourceMgr*> gpu_shared_rmgrs;
 #if GOOGLE_CUDA
-    if (use_multi_stream) {
-      // Create shared resource for gpu devices
-      gpu_shared_rmgr = new ResourceMgr("localhost");
+    int curr_idx = 0;
+    int dev_id = 0;
+    int curr_session_id = 0;
+    // hold virtual_gpu_id for each session
+    std::vector<int> session_to_device_id;
+    for (int id = 0; id < visible_gpu_count; ++id) {
       std::string gpu_dev_prefix("/job:localhost/replica:0/task:0/device:GPU:");
-      for (int i = 0; i < session_num; ++i) {
-        dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(base_index+i)] =
-            gpu_shared_rmgr;
-        if (i > 0) {
-          dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:CPU:"+std::to_string(i)] = shared_rmgr;
-          dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:cpu:"+std::to_string(i)] = shared_rmgr;
-          dev_rmgr_map.device_rmgr_map["/device:CPU:"+std::to_string(i)] = shared_rmgr;
-          dev_rmgr_map.device_rmgr_map["/device:cpu:"+std::to_string(i)] = shared_rmgr;
+      // current session group use #id gpu.
+      if (id == sorted_gpu_ids[curr_idx]) {
+        // each gpu will create stream_num_per_device virtual devices.
+        // virtual devices on the same physical gpu will share gpu ResourceMgr.
+        ResourceMgr* gpu_shared_rmgr = new ResourceMgr("localhost");
+        gpu_shared_rmgrs.emplace_back(gpu_shared_rmgr);
+        for (int i = 0; i < stream_num_per_device; ++i) {
+          dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(dev_id)] =
+              gpu_shared_rmgr;
+          // gpu host allocator
+          {
+            std::string sid = std::to_string(curr_session_id);
+            dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:CPU:"+sid] = shared_rmgr;
+            dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:cpu:"+sid] = shared_rmgr;
+            dev_rmgr_map.device_rmgr_map["/device:CPU:"+sid] = shared_rmgr;
+            dev_rmgr_map.device_rmgr_map["/device:cpu:"+sid] = shared_rmgr;
+          }
+          session_to_device_id.emplace_back(dev_id);
+          ++dev_id;
+          ++curr_session_id;
         }
+        ++curr_idx;
+      } else {
+        // placeholder for non-used gpu.
+        // please check virtual devices setting above.
+        ++dev_id;
       }
     }
-#endif // GOOGLE_CUDA
+#endif
+
+
+#if GOOGLE_CUDA
+    SessionGroup* session_group =
+      new DirectSessionGroup(shared_rmgr, gpu_shared_rmgrs,
+          session_num, stream_num_per_device);
+#else
+    SessionGroup* session_group =
+      new DirectSessionGroup(shared_rmgr, nullptr);
+#endif
 
     DeviceGlobalThreadPoolOptions dev_global_tp_opt;
     dev_global_tp_opt.global_threadpool_num = session_num;
-    dev_global_tp_opt.device_threadpool_index = 0;
-    dev_global_tp_opt.cpuset = visible_cpus_per_session[0];
-    std::vector<std::unique_ptr<Device>> devices;
-    TF_RETURN_IF_ERROR(DeviceFactory::AddDevices(
-        options, "/job:localhost/replica:0/task:0",
-        &devices, &dev_rmgr_map, dev_global_tp_opt));
-
-#if GOOGLE_CUDA
-    if (use_multi_stream) {
-      RemoveUselessDevice(devices, base_index);
-    }
-#endif // GOOGLE_CUDA
-    DeviceMgr* device_mgr = new DeviceMgr(std::move(devices));
-
-    SessionGroup* session_group =
-        new DirectSessionGroup(shared_rmgr, gpu_shared_rmgr);
-    SessionOptions leader_options = options;
-#if GOOGLE_CUDA
-    if (use_multi_stream) {
-      leader_options.config.add_per_session_devices(
-          "/job:localhost/replica:0/task:0/device:GPU:" +
-          std::to_string(base_index));
-      leader_options.config.add_per_session_devices(
-          "/job:localhost/replica:0/task:0/device:CPU:0");
-    }
-#endif // GOOGLE_CUDA
-
-    DirectSession* leader_session =
-        new DirectSession(leader_options, device_mgr, true, this,
-                          visible_cpus_per_session[0]);
-    session_group->CreateLeaderSession(leader_session);
-    for (int i = 1; i < session_num; ++i) {
+    for (int i = 0; i < session_num; ++i) {
       dev_global_tp_opt.device_threadpool_index = i;
       dev_global_tp_opt.cpuset = visible_cpus_per_session[i];
       std::vector<std::unique_ptr<Device>> dev;
@@ -550,13 +578,14 @@ class DirectSessionFactory : public SessionFactory {
       bool owned_device_mgr = true;
 #if GOOGLE_CUDA
       if (use_multi_stream) {
-        RemoveUselessDevice(dev, base_index+i);
+        RemoveUselessDevice(dev, session_to_device_id[i]);
         dev_mgr = new DeviceMgr(std::move(dev));
         owned_device_mgr = true;
       } else {
         // Use the same deivce as leader session, this can't get
         // good performance, so user should set use_multi_stream true
         // in session group mode.
+        static DeviceMgr* device_mgr = new DeviceMgr(std::move(dev));
         dev_mgr = device_mgr;
         owned_device_mgr = false;
       }
@@ -565,30 +594,31 @@ class DirectSessionFactory : public SessionFactory {
       owned_device_mgr = true;
 #endif // GOOGLE_CUDA
 
-      SessionOptions follower_options = options;
+      SessionOptions curr_options = options;
 #if GOOGLE_CUDA
       if (use_multi_stream) {
-        follower_options.config.add_per_session_devices(
+        curr_options.config.add_per_session_devices(
             "/job:localhost/replica:0/task:0/device:GPU:" +
-            std::to_string(base_index+i));
-        follower_options.config.add_per_session_devices(
+            std::to_string(session_to_device_id[i]));
+        curr_options.config.add_per_session_devices(
             "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
       }
 #endif // GOOGLE_CUDA
 
-      DirectSession* follower_session =
-          new DirectSession(follower_options, dev_mgr, owned_device_mgr,
+      DirectSession* sess =
+          new DirectSession(curr_options, dev_mgr, owned_device_mgr,
                             this, visible_cpus_per_session[i]);
-      session_group->CreateFollowerSession(follower_session);
+      session_group->CreateSession(sess);
       {
         mutex_lock l(sessions_lock_);
-        sessions_.push_back(follower_session);
+        sessions_.push_back(sess);
       }
     }
 
     {
       mutex_lock l(sessions_lock_);
-      sessions_.push_back(leader_session);
+      // keep leader session after follower session.
+      std::reverse(sessions_.begin(), sessions_.end());
     }
     *out_session_group = session_group;
 

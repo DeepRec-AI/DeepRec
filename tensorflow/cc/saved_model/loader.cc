@@ -435,11 +435,15 @@ Status LoadSavedModelInternal(const SessionGroupOptions& session_options,
   std::vector<AssetFileDef> asset_file_defs;
   TF_RETURN_IF_ERROR(
       GetAssetFileDefs(bundle->meta_graph_def, &asset_file_defs));
-  TF_RETURN_IF_ERROR(
-      RunRestore(run_options, export_dir,
-                 bundle->meta_graph_def.saver_def().restore_op_name(),
-                 bundle->meta_graph_def.saver_def().filename_tensor_name(),
-                 asset_file_defs, bundle->session_group->GetLeaderSession()));
+  LOG(INFO) << "LoadSavedModel session count: "
+            << bundle->session_group->GetLeaderSessions().size();
+  for (auto sess : bundle->session_group->GetLeaderSessions()) {
+    TF_RETURN_IF_ERROR(
+        RunRestore(run_options, export_dir,
+                   bundle->meta_graph_def.saver_def().restore_op_name(),
+                   bundle->meta_graph_def.saver_def().filename_tensor_name(),
+                   asset_file_defs, sess));
+  }
   // Record walltime spent in restoring graph from disk, but postpone metric
   // increments until graph init finishes.
   const uint64 restore_graph_walltime =
@@ -449,9 +453,10 @@ Status LoadSavedModelInternal(const SessionGroupOptions& session_options,
   string init_op_name;
   TF_RETURN_IF_ERROR(
       GetInitOp(export_dir, bundle->meta_graph_def, &init_op_name));
-  TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, bundle->meta_graph_def,
-                               asset_file_defs, bundle->session_group->GetLeaderSession(),
-                               init_op_name));
+  for (auto sess : bundle->session_group->GetLeaderSessions()) {
+    TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, bundle->meta_graph_def,
+                                 asset_file_defs, sess, init_op_name));
+  }
   load_latency_by_stage->GetCell(export_dir, "restore_graph")
       ->Add(restore_graph_walltime);
   // Record wall time spent in init op.

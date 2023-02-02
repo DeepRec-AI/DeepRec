@@ -285,11 +285,15 @@ Status LoadSessionBundleFromPathUsingRunOptionsInternal(
     }
   }
 
-  TF_RETURN_IF_ERROR(
-      RunRestoreOp(run_options, export_dir, asset_files,
-                   bundle->meta_graph_def.saver_def().restore_op_name(),
-                   bundle->meta_graph_def.saver_def().filename_tensor_name(),
-                   bundle->session_group->GetLeaderSession()));
+  LOG(INFO) << "LoadSessionBundle session count: "
+            << bundle->session_group->GetLeaderSessions().size();
+  for (auto sess : bundle->session_group->GetLeaderSessions()) {
+    TF_RETURN_IF_ERROR(
+        RunRestoreOp(run_options, export_dir, asset_files,
+                     bundle->meta_graph_def.saver_def().restore_op_name(),
+                     bundle->meta_graph_def.saver_def().filename_tensor_name(),
+                     sess));
+  }
 
   const auto init_op_it = collection_def_map.find(kInitOpKey);
   if (init_op_it != collection_def_map.end()) {
@@ -297,9 +301,11 @@ Status LoadSessionBundleFromPathUsingRunOptionsInternal(
       return errors::FailedPrecondition(strings::StrCat(
           "Expected exactly one serving init op in : ", export_dir));
     }
-    TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, asset_files,
-                                 init_op_it->second.node_list().value(0),
-                                 bundle->session_group->GetLeaderSession()));
+    for (auto sess : bundle->session_group->GetLeaderSessions()) {
+      TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, asset_files,
+                                   init_op_it->second.node_list().value(0),
+                                   sess));
+    }
   }
 
   return Status::OK();
