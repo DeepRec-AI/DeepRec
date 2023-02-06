@@ -19,20 +19,42 @@ limitations under the License.
 namespace tensorflow {
 
 DirectSessionGroup::DirectSessionGroup()
-    : cpu_shared_resource_mgr_(nullptr),
-      gpu_shared_resource_mgr_(nullptr) {}
+    : cpu_shared_resource_mgr_(nullptr) {
+  leader_session_ids_.emplace_back(0);
+}
 
-DirectSessionGroup::DirectSessionGroup(ResourceMgr* cpu_mgr, ResourceMgr* gpu_mgr)
-    : cpu_shared_resource_mgr_(cpu_mgr),
-      gpu_shared_resource_mgr_(gpu_mgr) {}
+DirectSessionGroup::DirectSessionGroup(
+    ResourceMgr* cpu_mgr, ResourceMgr* gpu_mgr)
+    : cpu_shared_resource_mgr_(cpu_mgr) {
+  gpu_shared_resource_mgrs_.emplace_back(gpu_mgr);
+  leader_session_ids_.emplace_back(0);
+}
+
+DirectSessionGroup::DirectSessionGroup(
+    ResourceMgr* cpu_mgr, std::vector<ResourceMgr*> gpu_mgrs,
+    int total_sess_count, int sess_count_per_device)
+    : cpu_shared_resource_mgr_(cpu_mgr) {
+  gpu_shared_resource_mgrs_ = gpu_mgrs;
+  if (gpu_mgrs.size() * sess_count_per_device !=
+      total_sess_count) {
+    LOG(FATAL) << "Create DirectSessionGroup failed, gpu_mgrs.size="
+               << gpu_mgrs.size() << ", sess_count_per_device="
+               << sess_count_per_device << ", total_sess_count="
+               << total_sess_count;
+  }
+  for (int i = 0; i < total_sess_count; i+=sess_count_per_device) {
+    leader_session_ids_.emplace_back(i);
+  }
+}
+
 
 DirectSessionGroup::~DirectSessionGroup() {
   if (cpu_shared_resource_mgr_) {
     delete cpu_shared_resource_mgr_;
   }
 
-  if (gpu_shared_resource_mgr_) {
-    delete gpu_shared_resource_mgr_;
+  for (auto mgr : gpu_shared_resource_mgrs_) {
+    delete mgr;
   }
 }
 
@@ -76,8 +98,20 @@ Status DirectSessionGroup::CreateFollowerSession(Session* follower_session) {
   return Status::OK();
 }
 
-Session* DirectSessionGroup::GetLeaderSession() {
-  return sessions_[0].get();
+Status DirectSessionGroup::CreateSession(Session* session) {
+  std::unique_ptr<Session> tmp;
+  tmp.reset(session);
+  sessions_.emplace_back(std::move(tmp));
+  ++session_num_;
+  return Status::OK();
+}
+
+std::vector<Session*> DirectSessionGroup::GetLeaderSessions() {
+  std::vector<Session*> sess;
+  for (auto idx : leader_session_ids_) {
+    sess.emplace_back(sessions_[idx].get());
+  }
+  return sess;
 }
 
 Status DirectSessionGroup::Create(const GraphDef& graph) {

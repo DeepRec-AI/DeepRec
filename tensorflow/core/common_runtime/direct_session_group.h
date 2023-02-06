@@ -29,12 +29,17 @@ class DirectSessionGroup : public SessionGroup {
  public:
   DirectSessionGroup();
   DirectSessionGroup(ResourceMgr* cpu_mgr, ResourceMgr* gpu_mgr);
+  DirectSessionGroup(
+      ResourceMgr* cpu_mgr, std::vector<ResourceMgr*> gpu_mgrs,
+      int total_sess_count, int sess_count_per_device);
+
   virtual ~DirectSessionGroup();
   virtual Status Close() override;
   virtual int32_t GetSessionNum() const override;
+  virtual Status CreateSession(Session* session) override;
   virtual Status CreateLeaderSession(Session* leader_session) override;
   virtual Status CreateFollowerSession(Session* follower_session) override;
-  virtual Session* GetLeaderSession() override;
+  virtual std::vector<Session*> GetLeaderSessions() override;
   virtual Status Create(const GraphDef& graph) override;
   virtual Status Run(
       const std::vector<std::pair<string, Tensor> >& inputs,
@@ -57,9 +62,12 @@ class DirectSessionGroup : public SessionGroup {
   // will reuse leader's resource.
   std::vector<std::unique_ptr<Session>> sessions_;
   int32_t session_num_ = 0;
+  std::vector<int32_t> leader_session_ids_;
   std::atomic<int64_t> serving_index_{0};
   ResourceMgr* cpu_shared_resource_mgr_ = nullptr;
-  ResourceMgr* gpu_shared_resource_mgr_ = nullptr;
+  // session support multi-gpus, streams on same gpu will share resource,
+  // so session_group maybe create multi resource here.
+  std::vector<ResourceMgr*> gpu_shared_resource_mgrs_;
 
   Status GetServingSessionId(int32_t* serving_id, int32_t hint_id = -1) {
     if (session_num_ < 1) {
