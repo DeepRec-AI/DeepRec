@@ -206,7 +206,7 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
       EmbeddingVar<TKey, T>* accum, ValuePtr<T>** value_ptrs,
       std::vector<std::list<int64>>& init_cursor_list,
       T** v, T**a, const int64 task_size) {
-    int64 main_thread_id = Env::Default()->GetCurrentThreadId();
+    uint64 main_thread_id = Env::Default()->GetCurrentThreadId();
     auto do_work_get_ptrs =
         [var, accum, value_ptrs, a, v,
          &init_cursor_list, this,
