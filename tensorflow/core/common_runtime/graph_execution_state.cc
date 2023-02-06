@@ -816,16 +816,6 @@ Status GraphExecutionState::SmartStageGraph(std::unique_ptr<Graph>* g,
     VLOG(2) << "GraphExecutionState::SmartStageGraph";
     Graph* graph = g->get();
 
-    // Embedding ForwardBackward Joint Optimization, should before smart-stage
-    bool embedding_fbj_opt = false;
-    TF_CHECK_OK(
-        tensorflow::ReadBoolFromEnvVar("TF_EMBEDDING_FBJ_OPT",
-                                       /*default_val=*/false, &embedding_fbj_opt));
-    if (embedding_fbj_opt) {
-      LOG(INFO) << "TF_EMBEDDING_FBJ_OPT on.";
-      EmbeddingForwardBackwardJointOptimize(graph);
-    }
-
     std::unique_ptr<Graph> staged_graph(new Graph(OpRegistry::Global()));
     CopyGraph(*graph, staged_graph.get());
     std::map<std::string, Node*> stage_node_map;
@@ -945,6 +935,16 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
   if (micro_batch_num > 1) {
     VLOG(2) << "RUN Graph Optimization: Runtime Pipeline";
     PipelineGraph(&new_graph, micro_batch_num);
+  }
+
+  // Embedding ForwardBackward Joint Optimization, should before smart-stage
+  bool embedding_fbj_opt = false;
+  TF_CHECK_OK(
+      tensorflow::ReadBoolFromEnvVar("TF_EMBEDDING_FBJ_OPT",
+                                     /*default_val=*/false, &embedding_fbj_opt));
+  if (embedding_fbj_opt) {
+    LOG(INFO) << "TF_EMBEDDING_FBJ_OPT on.";
+    EmbeddingForwardBackwardJointOptimize(new_graph.get());
   }
 
   if (session_optimizer_options.do_smart_stage() ||
