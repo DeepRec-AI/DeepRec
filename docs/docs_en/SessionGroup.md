@@ -6,36 +6,10 @@ In the current recommendation inference scenario, the user always used the tenso
 By using SessionGroup, it can solve the problem of large memory usage but low model CPU usage, greatly improve resource utilization, and greatly improve QPS under the premise of ensuring latency. In addition, multiple sessions in SessionGroup can also be executed concurrently in GPU scenarios, which greatly improves the utilization efficiency of GPUs.
 
 ## Usage
-If users use tensorflow_serving for services, they can use the code we provide: [AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec), here has already provided the function of accessing SessionGroup. You can also use the [Processor](https://github.com/alibaba/DeepRec/tree/main/serving) code provided by us. Processor does not provide an RPC service framework and needs to be improved by the user to access its own RPC framework.
+If users use tensorflow_serving for services, they can use the code we provide: [AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec), here has already provided the function of accessing SessionGroup. You can also use the [Processor](https://github.com/alibaba/DeepRec/tree/main/serving) code provided by us. Processor does not provide an RPC service framework, you can use our RPC framework [PAI-EAS](https://www.aliyun.com/activity/bigdata/pai/eas) or yours.
 
-If the user is using their serving framework, the modifications that need to be made are as follows.
-
-### 1. Use EAS processor(or self-defined processor)
-In the Inference scenario, if the user directly uses self-defined processor for serving, you can refer to the following methods to use SessionGroup.
-
-#### NewSessionGroup API
-If you manually create a serving framework implemented by Session::Run, then modify NewSession API in the serving framework to NewSessionGroup. 
-session_num specifies how many sessions are created in the SessionGroup, user can judge how many sessions need to be created by evaluating the CPU utilization of the current single session. For example, if the current maximum CPU utilization of a single session is 20%, it is recommended that users configure 5 sessions.
-
-```c++
-
-TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
-    session_group, session_num));
-TF_RETURN_IF_ERROR((*session_group)->Create(meta_graph_def_.graph_def()));
-
-```
-Reference Code: [Processor](https://github.com/alibaba/DeepRec/blob/main/serving/processor/serving/model_session.cc#L143)
-
-#### SessionGroup Run API
-
-The Session::Run API used by users can be directly replaced by SessionGroup::Run.
-```c++
-status = session_group_->Run(run_options, req.inputs,
-    req.output_tensor_names, {}, &resp.outputs, &run_metadata);
-
-```
-Reference Code: [Processor](https://github.com/alibaba/DeepRec/blob/main/serving/processor/serving/model_session.cc#L308)
-
+### 1.Processor + EAS
+#### CPU Task
 If users use session_group on EAS processor, they only need to add the following fields in the configuration file:
 ```c++
 "model_config": {
@@ -46,15 +20,14 @@ If users use session_group on EAS processor, they only need to add the following
 ```
 More parameters see: [processor configuration parameters](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
 
-### 2.Using SessionGroup in tensorflow_serving
-We already support SessionGroup in tensorflow_serving, related code modification reference: [SessionGroup](https://github.com/AlibabaPAI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217), it is recommended to use the tensorflow_serving code provided by us directly.
-
-#### Usage
+### 2.Tensorflow serving
+Our offered tensorflow_serving now do serving via SavedModelBundle. We already support SessionGroup in tensorflow_serving, related code modification reference: [SessionGroup](https://github.com/AlibabaPAI/serving/commit/8b92300da84652f00f13fd20f5df0656cfa26217), it is recommended to use the tensorflow_serving code provided by us directly.
 
 tensorflow_serving repo that supports SessionGroup: [AlibabaPAI/serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
 
 Compilation documentation see: [TFServing compilation](https://deeprec.readthedocs.io/zh/latest/TFServing-Compile-And-Install.html)
 
+#### CPU Task
 Run command:
 ```c++
 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=16 --tensorflow_inter_op_parallelism=16 --use_per_session_threads=true --session_num_per_group=4 --model_base_path=/xxx/pb
@@ -83,21 +56,22 @@ session3: 11 12 13
 DeepRec will detect which CPUs can be allocated, and then allocate CPU cores to different sessions according to the distribution of CPUs on NUMA nodes.
 ```
 
-## GPU Multi-Stream
-In Inference scenarios, users often use GPUs for online services to improve computing efficiency and reduce latency. One problem that may be encountered here is that the online GPU utilization rate is low, resulting in a waste of resources. Then, to make good use of GPU resources, we allow users to use Multi-streams to process requests, which greatly improves QPS while ensuring latency.
+These options can be used in GPU task.
+
+#### GPU Task
+In Inference scenarios, users often use GPUs for online services to improve computing efficiency and reduce latency. One problem that may be encountered here is that the online GPU utilization rate is low, resulting in a waste of resources. Then, to make good use of GPU resources, we recommend users to use Multi-streams to process requests, which greatly improves QPS while ensuring latency.
 
 At present inference scenarios, the multi-streams function is bound to the SessionGroup function. For the usage of SessionGroup, see the previous link. In the future, we will directly support the multi-streams function on DirectSession.
 
-### Usage
 The specific usage is the same as that of SessionGroup, and the following modifications need to be made on this basis.
 
-#### 1.Docker startup configuration
-This function uses GPU MPS (Multi-Process Service) optimization, which requires the background MPS service process to be started in the docker container.
+##### 1.Docker startup configuration
+This function uses GPU MPS (Multi-Process Service) optimization(optional, recommended to enable), which requires the background MPS service process to be started in the docker container.
 ```c++
 nvidia-cuda-mps-control -d
 ```
 
-#### 2.Startup command
+##### 2.Startup command
 Currently taking Tensorflow_serving as an example (it will be necessary to add other framework usage methods later), the following parameters need to be added when starting the server.
 
 ```c++
@@ -109,9 +83,28 @@ use_per_session_threads=true: Each session configures the thread pool separately
 session_num_per_group=4: Indicates the number of sessions configured by the session group.
 use_multi_stream=true: Enable the multi-stream function.
 ```
-The tensorflow_serving code modified by DeepRec is as follows:: [TF serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
 
-#### 3.Best practice for using MPS with multiple GPU cards
+##### 3.Multi-GPU
+If the user does not specify CUDA_VISIBLE_DEVICES=0 and there are multiple GPUs on the machine, the session group will use all GPUs by default. Assuming there are 2 GPUs, and session_num_per_group=4 is set, then the session group will create 4 streams on each GPU, because currently a stream corresponds to a session, so there are a total of 2*4=8 sessions in the current session group. The model parameters required by these sessions on the CPU are all shared. For the model parameters of the place on the GPU, if the stream associated with the session is on the same GPU, then the GPU parameters are shared between these sessions, otherwise the sessions don't share GPU parameters.
+
+Users can specify which physical GPUs are assigned to a session group,
+```
+--gpu_ids_list=0,2
+```
+The option above indicate that GPUs 0 and 2 are assigned to the current session group. It should be noted that the GPU number here does not correspond to the number seen by nvidia-smi, but the number seen by deeprec.
+
+For example, suppose there are 4 GPUs on the physical machine, and the numbers are 0, 1, 2, 3. If the user set nothing, then the numbers 0, 1, 2, 3 and the physical GPU numbers seen in deeprec are the same. If the user sets CUDA_VISIBLE_DEVICES=3,2,1,0, then the physical GPU numbers corresponding to the numbers 0,1,2,3 seen in deeprec are 3,2,1,0 respectively.
+
+The corresponding relationship above does not affect the actual use. Users only need to care about how many physical GPUs deeprec can actually see. Assuming that 3 GPUs can be seen, then the visible numbers of deeprec are 0, 1, and 2.
+
+The option --gpu_ids_list=0,2 means that the user can use GPUs 0 and 2. If the number of GPUs visible to the process is less than 3 (0,1,2), an error will be reported.
+
+Startup command:
+```
+ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --gpu_ids_list=0,2  --model_base_path=/xx/xx/pb/
+```
+
+##### 4.Best practice for using MPS with multiple GPU
 There may be multiple GPUs on the user machine, and generally only one GPU Device is required for each serving instance, so the user may start multiple different serving instances on the physical machine. There are some issues to be aware of when using MPS in this situation, as follows:
 
 1) The MPS daemon process needs to be started on the physical machine so that all tasks in docker can be managed by the MPS background process.
@@ -146,17 +139,43 @@ docker1 task:
 CUDA_VISIBLE_DEVICES=1 test.py
 ```
 
+The tensorflow_serving code modified by DeepRec is as follows:: [TF serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
+
+### 3.Use user-defined framework
+If users want to implement the session group function into their own framework, they can refer to the code implementation in the processor below.
+
+#### Create SessionGroup
+If you manually create a serving framework implemented by Session::Run, then modify NewSession API in the serving framework to NewSessionGroup. 
+session_num specifies how many sessions are created in the SessionGroup, user can judge how many sessions need to be created by evaluating the CPU utilization of the current single session. For example, if the current maximum CPU utilization of a single session is 20%, it is recommended that users configure 5 sessions.
+
+```c++
+TF_RETURN_IF_ERROR(NewSessionGroup(*session_options_,
+    session_group, session_num));
+TF_RETURN_IF_ERROR((*session_group)->Create(meta_graph_def_.graph_def()));
+```
+Reference Code: [Processor](https://github.com/alibaba/DeepRec/blob/main/serving/processor/serving/model_session.cc#L143)
+
+#### SessionGroup Run API
+The Session::Run API used by users can be directly replaced by SessionGroup::Run.
+```c++
+status = session_group_->Run(run_options, req.inputs,
+    req.output_tensor_names, {}, &resp.outputs, &run_metadata);
+```
+Reference Code: [Processor](https://github.com/alibaba/DeepRec/blob/main/serving/processor/serving/model_session.cc#L308)
+
 ## Multi-model service
 ### TF Serving
 SessionGroup supports multi-model services, which have been supported on [TF_serving](https://github.com/AlibabaPAI/serving). For multi-model services, users can configure independent parameters for each model service, including the number of sessions in session groups in different model services, specifying GPUs, thread pools, etc., so as to isolate frameworks and resources.
 
-For GPU tasks, currently each model can only specify one GPU, so users need to pay attention to the division of GPU resources when starting tasks.
+For GPU tasks, the session group can specify one or more GPUs, so users need to pay attention to the division of GPU resources when starting multi-model tasks.
 
 The command to start the multi-model service is as follows:
 ```c++
-CUDA_VISIBLE_DEVICES=0,1 ENABLE_MPS=0 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
+ENABLE_MPS=0 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
 ```
 The following are the two most important configuration files in the command,
+
+Assuming that there are 4 GPU devices on the machine, the configuration is as follows:
 
 model_config_file:
 ```
@@ -202,6 +221,7 @@ platform_configs {
             }
             session_num: 2
             cpusets: "1,2;5,6"
+            gpu_ids: [0,1]
           }
           model_session_config {
             session_config {
@@ -213,8 +233,9 @@ platform_configs {
               use_per_session_threads: true
               use_per_session_stream: true
             }
-            session_num: 4
+            session_num: 2
             cpusets: "20,21;23,24;26,27;29,30"
+            gpu_ids: [2,3]
           }
         }
       }
@@ -224,6 +245,21 @@ platform_configs {
 ```
 The key is the same as the model_platform field above, and the default value is ‘tensorFlow’. For each model service, a model_session_config needs to be configured, including some configurations of the session. model_session_config is finally an array, then model_session_config[0] represents the configuration of model_0 service, and so on.
 
+Note the gpu_ids parameter above, indicating which GPUs are used by each session group. Assume here that there are 4 GPUs on the machine, then use gpu-0, gpu1 and gpu-2, gpu-3 on the two session groups respectively. Special attention needs to be paid. At this time, the total number of sessions in the session group is session_num*gpu_ids.size, that is, 4 sessions.
+
+Server example:
+```
+CUDA_VISIBLE_DEVICES=1,3 ENABLE_MPS=0 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/xxx/model_config_file --platform_config_file=/xxx/platform_config_file
+```
+
+Client example:
+```
+...
+request = predict_pb2.PredictRequest()
+request.model_spec.name = 'pb2' # set model name here, like 'pb1', 'pb2' ...
+request.model_spec.signature_name = 'serving_default'
+...
+```
 
 ### EAS+Processor
 The distribution of multi-model requests requires the support of the EAS framework. We can configure different cpu resources, thread pools, etc. for different model services. The configuration files are as follows:
