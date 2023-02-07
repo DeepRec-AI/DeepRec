@@ -482,5 +482,72 @@ class EmbeddingVariableGpuTest(test_util.TensorFlowTestCase):
         for j in range(0, 6):
           self.assertAllClose(emb1.tolist()[i][j], emb2.tolist()[i][j])
 
+  def testGPUFbjOpt(self):
+    print("testGPUFbjOpt")
+    os.environ["TF_EMBEDDING_FBJ_OPT"] = "True"
+    def runTestAdagrad(self, var, g):
+      ids = array_ops.placeholder(dtypes.int64, name="ids")
+      emb = embedding_ops.embedding_lookup(var, ids)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v)
+      init = variables.global_variables_initializer()
+      if isinstance(var, kv_variable_ops.EmbeddingVariable):
+        tires = kv_variable_ops.lookup_tier(emb_var,
+                    math_ops.cast([1,2,3,4,5,6], dtypes.int64))
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run([train_op], {ids:[1,2,3]})
+        sess.run([train_op], {ids:[1,2,4]})
+        sess.run([train_op], {ids:[1,2,2]})
+        sess.run([train_op], {ids:[1,2,5]})
+
+        if isinstance(var, kv_variable_ops.EmbeddingVariable):
+          result = sess.run(tires)
+          for i in range(0, 6):
+            if i == 2:
+              self.assertEqual(result[i], 1)
+            elif i == 5:
+              self.assertEqual(result[i], -1)
+            else:
+              self.assertEqual(result[i], 0)
+
+        sess.run([train_op], {ids:[3, 5]})
+        sess.run([train_op], {ids:[4]})
+        r1 = sess.run(emb, {ids:[1,2,4,5]})
+        r2 = sess.run(emb, {ids:[3]})
+        r = r1.tolist() + r2.tolist()
+        return r
+
+    with ops.Graph().as_default() as g, ops.device('/gpu:0'):
+      storage_option = variables.StorageOption(
+                        storage_type=config_pb2.StorageType.HBM_DRAM,
+                        storage_size=[1024])
+      ev_option = variables.EmbeddingVariableOption(
+                                storage_option=storage_option)
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 30,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            steps_to_live=5,
+            ev_option = ev_option)
+      emb1 = runTestAdagrad(self, emb_var, g)
+
+    with ops.Graph().as_default() as g:
+      var = variable_scope.get_variable("var_2",
+                shape=[100, 30],
+                initializer=init_ops.ones_initializer(dtypes.float32))
+      emb2 = runTestAdagrad(self, var, g)
+
+    for i in range(0, 5):
+      for j in range(0, 30):
+        self.assertAllCloseAccordingToType(emb1[i][j], emb2[i][j])
+
+    del os.environ["TF_EMBEDDING_FBJ_OPT"]
+
 if __name__ == "__main__":
   googletest.main()

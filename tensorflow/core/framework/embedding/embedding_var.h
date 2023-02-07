@@ -238,29 +238,27 @@ class EmbeddingVar : public ResourceBase {
     for (int64 i = start; i < limit; i++) {
       embedding::CopyBackFlag copyback_flag =
           embedding::CopyBackFlag::NOT_COPYBACK;
-      bool init_flag = false;
       TF_CHECK_OK(LookupOrCreateKey(keys[i], &value_ptr, -1, copyback_flag));
       value_ptr->AddFreq();
-      if (!copyback_flag) {
-        memcpy_address[i] = LookupOrCreateEmb(value_ptr, init_flag); 
-      } else {
-        //memcpy_address[i] = LookupOrCreateEmb(value_ptr, init_flags[i]);
-        memcpy_address[i] = value_ptr->GetValue(0,0);
-        if (copyback_flag ==
-          embedding::CopyBackFlag::COPYBACK_AND_DESTROY) {
-          delete value_ptr;
-          // If the 64th bit of cursor is set to 1,
-          // the corresponding valueptr need to be deleted later.
-          int64 tmp = 1;
-          tmp = tmp << 63;
-          copyback_cursor.emplace_back(i | tmp);
-        } else {
-          copyback_cursor.emplace_back(i);
-        }   
-      }
-      if (init_flag) {
-        init_cursor.emplace_back(i);
-      }
+      memcpy_address[i] = GetAddressOfGpuValuePtr(value_ptr, i, copyback_flag,
+          init_cursor, copyback_cursor);
+    }
+  }
+
+  void LookupWithFreqBatch(const K* keys,
+      V** memcpy_address, int64 start, int64 limit,
+      std::list<int64>& init_cursor,
+      std::list<int64>& copyback_cursor,
+      int64* output_value_ptrs) {
+    ValuePtr<V>* value_ptr = nullptr;
+    for (int64 i = start; i < limit; i++) {
+      embedding::CopyBackFlag copyback_flag =
+          embedding::CopyBackFlag::NOT_COPYBACK;
+      TF_CHECK_OK(LookupOrCreateKey(keys[i], &value_ptr, -1, copyback_flag));
+      value_ptr->AddFreq();
+      output_value_ptrs[i] = (int64)value_ptr;
+      memcpy_address[i] = GetAddressOfGpuValuePtr(value_ptr, i, copyback_flag,
+          init_cursor, copyback_cursor);
     }
   }
 
@@ -343,7 +341,8 @@ class EmbeddingVar : public ResourceBase {
   void CopyEmbeddingsFromCPUToGPU(
       const K* keys,
       const std::list<int64>& copyback_cursor,
-      V** memcpy_address) {
+      V** memcpy_address,
+      int64* output_value_ptrs = nullptr) {
     size_t value_len = emb_config_.total_num(storage_manager_->GetAllocLen());
     V* memcpy_buffer_gpu;
     V** dev_value_address, **value_address;
@@ -395,6 +394,13 @@ class EmbeddingVar : public ResourceBase {
       cudaDeviceSynchronize();
 
       storage_manager_->Insert(copyback_keys, gpu_value_ptrs);
+      if (output_value_ptrs != nullptr) {
+        auto it = copyback_cursor.cbegin();
+        for (int64 i = 0; it != copyback_cursor.cend(); ++it, ++i) {
+          int64 cursor = *it & 0x0fffffffffffffff;
+          output_value_ptrs[cursor] = (int64)gpu_value_ptrs[i];
+        }
+      }
       alloc_->DeallocateRaw(dev_value_address);
       alloc_->DeallocateRaw(memcpy_buffer_gpu);
       delete []gpu_value_ptrs;
@@ -742,6 +748,35 @@ class EmbeddingVar : public ResourceBase {
   }
 
  private:
+  V* GetAddressOfGpuValuePtr(ValuePtr<V>* value_ptr,
+      int64 index,
+      bool copyback_flag,
+      std::list<int64>& init_cursor,
+      std::list<int64>& copyback_cursor) {
+    V* mem_addr = nullptr;
+    bool init_flag = false;
+    if (!copyback_flag) {
+      mem_addr = LookupOrCreateEmb(value_ptr, init_flag);
+    } else {
+      mem_addr = value_ptr->GetValue(0,0);
+      if (copyback_flag ==
+          embedding::CopyBackFlag::COPYBACK_AND_DESTROY) {
+        delete value_ptr;
+        // If the 64th bit of cursor is set to 1,
+        // the corresponding valueptr need to be deleted later.
+        int64 tmp = 1;
+        tmp = tmp << 63;
+        copyback_cursor.emplace_back(index | tmp);
+      } else {
+        copyback_cursor.emplace_back(index);
+      }
+    }
+    if (init_flag) {
+      init_cursor.emplace_back(index);
+    }
+    return mem_addr;
+  }
+
   std::string name_;
   bool is_initialized_ = false;
 
