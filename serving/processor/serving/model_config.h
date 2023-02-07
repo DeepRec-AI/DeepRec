@@ -56,6 +56,8 @@ struct ModelConfig {
   // "RR": Round-Robin policy, threads will use all sessions in Round-Robin way
   // "MOD": Thread select session according unique id, uid % session_num
   std::string select_session_policy = "MOD";
+  // GPU(s) used by current session group.
+  std::vector<size_t> gpu_ids;
 
   // session use self-owned thread pool
   bool use_per_session_threads = false;

@@ -198,7 +198,7 @@ class TestableModelSessionMgr : public ModelSessionMgr {
   }
 
   size_t GetModelSessionSize() {
-    if (serving_session_ != nullptr) {
+    if (serving_model_session_ != nullptr) {
       return sessions_.size() + 1;
     } else {
       return sessions_.size();
@@ -213,7 +213,7 @@ class TestableModelSessionMgr : public ModelSessionMgr {
   }
 
   void* GetServingSession() {
-    return serving_session_->GetSession();
+    return serving_model_session_->GetLeaderSessions()[0];
   }
 
   Status RunRestoreOps(
