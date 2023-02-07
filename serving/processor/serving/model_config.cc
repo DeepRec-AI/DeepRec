@@ -34,6 +34,18 @@ Status AddOSSAccessPrefix(std::string& dir,
                         tmp.substr(offset));
   return Status::OK();
 }
+
+void ParseGPUIds(const std::string& gpu_ids_list,
+                 std::vector<size_t>* gpu_ids) {
+  if (!gpu_ids_list.empty()) {
+    std::vector<string> ids =
+        str_util::Split(gpu_ids_list, ',');
+    for (auto id : ids) {
+      gpu_ids->emplace_back(std::stoi(id));
+    }
+  }
+}
+
 }
 
 Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config) {
@@ -67,6 +79,12 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
       json_config["session_num"].asInt();
   } else {
     (*config)->session_num = 1;
+  }
+
+  if (!json_config["gpu_ids_list"].isNull()) {
+    std::string gpu_ids_list =
+      json_config["gpu_ids_list"].asString();
+    ParseGPUIds(gpu_ids_list, &((*config)->gpu_ids));
   }
 
   (*config)->select_session_policy = "MOD";

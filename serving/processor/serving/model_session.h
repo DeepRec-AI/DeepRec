@@ -38,7 +38,7 @@ struct ModelSession {
   Status LocalPredict(Request& req, Response& resp, int sess_id);
   Version GetVersion() {return version_;}
   void UpdateVersion(const Version& v) { version_ = v; }
-  Session* GetSession();
+  std::vector<Session*> GetLeaderSessions();
   Status Warmup(Request& req, Response& resp, bool local=true);
 
   SessionGroup* session_group_ = nullptr;
@@ -122,7 +122,7 @@ class ModelSessionMgr {
   void ClearLoop();
 
  protected:
-  ModelSession* serving_session_ = nullptr;
+  ModelSession* serving_model_session_ = nullptr;
 
   MetaGraphDef meta_graph_def_;
   SessionOptions* session_options_;
