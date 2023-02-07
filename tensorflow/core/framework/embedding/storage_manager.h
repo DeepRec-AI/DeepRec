@@ -126,6 +126,10 @@ class StorageManager {
     storage_->Insert(key, value_ptr, alloc_len);
   }
 
+  void InsertToDram(K key, ValuePtr<V>** value_ptr, int64 alloc_len) {
+    storage_->InsertToDram(key, value_ptr, alloc_len);
+  }
+
   void Insert(const std::vector<K>& keys,
                 ValuePtr<V>** value_ptrs) {
     storage_->Insert(keys, value_ptrs);
@@ -163,6 +167,12 @@ class StorageManager {
   void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) {
     storage_->AllocateMemoryForNewFeatures(value_ptr_list);
+  }
+
+  void AllocateMemoryForNewFeatures(
+     ValuePtr<V>** value_ptr_list,
+     int64 num_of_value_ptrs) {
+    storage_->AllocateMemoryForNewFeatures(value_ptr_list, num_of_value_ptrs);
   }
 
   void BatchLookupOrCreate(const K* key, V* val, V* default_v,
@@ -233,6 +243,10 @@ class StorageManager {
         ssd_emb_file_name);
   }
 
+  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) {
+    storage_->ImportToHbm(ids, size, value_len, emb_index);
+  }
+
   Status Shrink(const EmbeddingConfig& emb_config, int64 value_len) {
     return storage_->Shrink(emb_config, value_len);
   }
@@ -248,6 +262,10 @@ class StorageManager {
 
   BatchCache<K>* Cache() {
     return storage_->Cache();
+  }
+
+  embedding::CacheStrategy CacheStrategy() {
+    return storage_->CacheStrategy();
   }
 
   Status Eviction(K* evict_ids, int64 evict_size) {

@@ -403,6 +403,9 @@ class KvResourceImportV3Op: public AsyncOpKernel {
 #define REGISTER_KERNELS(dev, ktype, vtype)                    \
   REGISTER_KERNEL_BUILDER(Name("KvResourceImportV3")           \
                             .Device(DEVICE_##dev)              \
+                            .HostMemory("prefix")              \
+                            .HostMemory("tensor_names")        \
+                            .HostMemory("empty_key")           \
                             .TypeConstraint<ktype>("Tkeys")    \
                             .TypeConstraint<vtype>("dtype"),   \
                           KvResourceImportV3Op<ktype, vtype>);

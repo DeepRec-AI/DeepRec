@@ -173,6 +173,11 @@ class EmbeddingVar : public ResourceBase {
         emb_config_.total_num(storage_manager_->GetAllocLen()));
   }
 
+  void CreateKeyOnDram(K key, ValuePtr<V>** value_ptr) {
+    storage_manager_->InsertToDram(key, value_ptr,
+        emb_config_.total_num(storage_manager_->GetAllocLen()));
+  }
+
   void UpdateVersion(ValuePtr<V>* value_ptr, int64 gs) {
     update_version_fn_(value_ptr, gs);
   }
@@ -416,6 +421,13 @@ class EmbeddingVar : public ResourceBase {
           emb_config_.emb_index));
   }
 
+  V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, const V* default_v,
+                       Allocator* alloc) {
+    return value_ptr->GetOrAllocate(alloc, value_len_, default_v,
+        emb_config_.emb_index, storage_manager_->GetOffset(
+            emb_config_.emb_index));
+  }
+
   V* LookupOrCreateEmb(ValuePtr<V>* value_ptr, bool &need_initialize) {
     return value_ptr->GetOrAllocate(alloc_, value_len_, nullptr,
         emb_config_.emb_index,
@@ -489,8 +501,29 @@ class EmbeddingVar : public ResourceBase {
                 int64 partition_id,
                 int64 partition_num,
                 bool is_filter) {
-    return filter_->Import(restore_buff, key_num, bucket_num,
-        partition_id, partition_num, is_filter);
+    if (IsMultiLevel() && IsUseHbm()) {
+#if GOOGLE_CUDA
+      V* default_value_host = nullptr;
+      if (is_filter) {
+        default_value_host = new V[emb_config_.default_value_dim * value_len_];
+        cudaMemcpy(default_value_host, default_value_,
+                   sizeof(V) * emb_config_.default_value_dim * value_len_,
+                   cudaMemcpyDeviceToHost);
+      }
+      Status s = filter_->ImportToDram(restore_buff, key_num, bucket_num,
+          partition_id, partition_num, is_filter, default_value_host);
+      delete[] default_value_host;
+      return s;
+#endif //GOOGLE_CUDA
+    } else {
+      return filter_->Import(restore_buff, key_num, bucket_num,
+          partition_id, partition_num, is_filter);
+    }
+  }
+
+  void ImportToHbm(K* ids, int64 size) {
+    storage_manager_->ImportToHbm(ids, size,
+        value_len_, emb_config_.emb_index);
   }
 
   void RestoreSsdHashmap(
@@ -654,7 +687,9 @@ class EmbeddingVar : public ResourceBase {
         int64 evict_size = cache->size() - cache_size;
         K* evict_ids = new K[evict_size];
         size_t true_size = cache->get_evic_ids(evict_ids, evict_size);
-        Eviction(evict_ids, true_size);
+        if (!IsUseHbm()) {
+          Eviction(evict_ids, true_size);
+        }
         delete []evict_ids;
       }
     }

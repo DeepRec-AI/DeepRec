@@ -67,6 +67,10 @@ class EmbeddingMemoryPool {
     }
   }
 
+  void Deallocate(V* ptr) {
+    free_ptr_queue_.emplace_back(ptr);
+  }
+
  private:
   void CreateBlock() {
     V* dev_addr =

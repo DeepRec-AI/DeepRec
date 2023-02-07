@@ -1867,6 +1867,76 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
 
     del os.environ["TF_SSDHASH_ASYNC_COMPACTION"]
 
+  @test_util.run_gpu_only
+  def testEmbeddingVariableForHBMandDRAMSaveCkpt(self):
+    print("testEmbeddingVariableForHBMandDRAMSaveCkpt")
+    checkpoint_directory = self.get_temp_dir()
+    def runTestAdagrad(self, var, g):
+      ids = array_ops.placeholder(dtypes.int64, name="ids")
+      emb = embedding_ops.embedding_lookup(var, ids)
+      fun = math_ops.multiply(emb, 2.0, name='multiply')
+      loss = math_ops.reduce_sum(fun, name='reduce_sum')
+      gs = training_util.get_or_create_global_step()
+      opt = adagrad.AdagradOptimizer(0.1)
+      g_v = opt.compute_gradients(loss)
+      train_op = opt.apply_gradients(g_v, global_step=gs)
+      saver = saver_module.Saver()
+      init = variables.global_variables_initializer()
+      model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+      tires = kv_variable_ops.lookup_tier(emb_var,
+                  math_ops.cast([0,1,2,3,4,5,6,7,8,9,10,11], dtypes.int64))
+      with self.test_session(graph=g) as sess:
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+        sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+        sess.run([init])
+        sess.run([train_op], {ids:[0,1,2,3,4,5]})
+        sess.run([train_op], {ids:[6,7,8,9,10,11]})
+        sess.run([train_op], {ids:[0,1,2,3,4,5]})
+        result = sess.run(tires)
+        for i in range(0, 12):
+          if i in range(0, 6):
+            self.assertEqual(result[i], 0)
+          else:
+            self.assertEqual(result[i], 1)
+        saver.save(sess, model_path)
+        for name, shape in checkpoint_utils.list_variables(model_path):
+          if name == "var_1-keys" or name == "var_1/Adagrad-keys":
+            self.assertEqual(shape[0], 12)
+            keys = checkpoint_utils.load_variable(model_path, name)
+            self.assertAllEqual(np.array([0,1,2,3,4,5,6,7,8,9,10,11]), keys)    
+          if name == "var_1-freqs" or name == "var_1/Adagrad-freqs":
+            freqs = checkpoint_utils.load_variable(model_path, name)
+            self.assertAllEqual(np.array([2,2,2,2,2,2,1,1,1,1,1,1]), freqs)
+          if name == "var_1/Adagrad-values":
+            values = checkpoint_utils.load_variable(model_path, name)
+            for i in range(0, shape[0]):
+              for j in range(0, shape[1]):
+                if i < 6:
+                  self.assertAlmostEqual(values[i][j], 8.1, delta=1e-05)
+                else:
+                  self.assertAlmostEqual(values[i][j], 4.1, delta=1e-05)
+          if name == "var_1-values":
+            values = checkpoint_utils.load_variable(model_path, name)
+            for i in range(0, shape[0]):
+              for j in range(0, shape[1]):
+                if i < 6:
+                  self.assertAlmostEqual(values[i][j], 0.8309542, delta=1e-05)
+                else:
+                  self.assertAlmostEqual(values[i][j], 0.90122706, delta=1e-05)
+
+    with ops.Graph().as_default() as g, ops.device('/gpu:0'):
+      storage_option = variables.StorageOption(
+                        storage_type=config_pb2.StorageType.HBM_DRAM,
+                        storage_size=[1024 * 6])
+      ev_option = variables.EmbeddingVariableOption(
+                                storage_option=storage_option)
+      emb_var = variable_scope.get_embedding_variable("var_1",
+            embedding_dim = 128,
+            initializer=init_ops.ones_initializer(dtypes.float32),
+            ev_option = ev_option)
+      runTestAdagrad(self, emb_var, g)
+  
   def testEmbeddingVariableForRecordFreq(self):
     print("testEmbeddingVariableForRecordFreq")
     checkpoint_directory = self.get_temp_dir()

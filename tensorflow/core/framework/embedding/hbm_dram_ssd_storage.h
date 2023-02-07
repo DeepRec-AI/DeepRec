@@ -92,12 +92,25 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
       *value_ptr = layout_creator_->Create(gpu_alloc_, alloc_len);
       Status s = hbm_kv_->Insert(key, *value_ptr);
       if (s.ok()) {
-        (*value_ptr)->SetPtr(embedding_mem_pool_->Allocate());
         break;
       } else {
         delete *value_ptr;
       }
     } while (!(hbm_kv_->Lookup(key, value_ptr)).ok());
+  }
+
+  void InsertToDram(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    do {
+      *value_ptr = layout_creator_->Create(ev_allocator(), alloc_len);
+      Status s = dram_kv_->Insert(key, *value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        (*value_ptr)->Destroy(ev_allocator());
+        delete *value_ptr;
+      }
+    } while (!(dram_kv_->Lookup(key, value_ptr)).ok());
   }
 
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -167,42 +180,122 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
     dram_cache_ = new LRUCache<K>();
   }
 
+  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) override {
+    V* memcpy_buffer_cpu = new V[size * value_len];
+    V** value_address = new V*[size];
+    V* memcpy_buffer_gpu =
+        (V*)gpu_alloc_->AllocateRaw(
+            Allocator::kAllocatorAlignment,
+            size * value_len * sizeof(V));
+    V* dev_value_address =
+        (V*)gpu_alloc_->AllocateRaw(
+            Allocator::kAllocatorAlignment,
+            size * sizeof(V*));
+    ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>*[size];
+    ValuePtr<V>** cpu_value_ptrs = new ValuePtr<V>*[size];
+    {
+      //Mutex with other Import Ops
+      mutex_lock l(memory_pool_mu_);
+      for (int64 i = 0; i < size; i++) {
+        dram_kv_->Lookup(ids[i], &cpu_value_ptrs[i]);
+        gpu_value_ptrs[i] = layout_creator_->Create(gpu_alloc_, value_len);
+        V* val_ptr = embedding_mem_pool_->Allocate();
+        gpu_value_ptrs[i]->SetPtr(val_ptr);
+        memcpy((char *)gpu_value_ptrs[i]->GetPtr(),
+               (char *)cpu_value_ptrs[i]->GetPtr(),
+               sizeof(FixedLengthHeader));
+      }
+    }
+    //Split from above for loop for minize the cost of mutex lock
+    //TODO: Speed up with intra parallelism
+    std::vector<ValuePtr<V>*> invalid_value_ptrs;
+    for (int64 i = 0; i < size; i++) {
+      memcpy(memcpy_buffer_cpu + i * value_len,
+          cpu_value_ptrs[i]->GetValue(emb_index,
+              Storage<K, V>::GetOffset(emb_index)), value_len * sizeof(V));
+      Status s = hbm_kv_->Insert(ids[i], gpu_value_ptrs[i]);
+      if (!s.ok()) {
+        invalid_value_ptrs.emplace_back(gpu_value_ptrs[i]);
+        hbm_kv_->Lookup(ids[i], &gpu_value_ptrs[i]);
+      }
+      gpu_value_ptrs[i]->SetInitialized(emb_index);
+      value_address[i] = gpu_value_ptrs[i]->GetValue(
+          emb_index, Storage<K, V>::GetOffset(emb_index));
+    }
+    cudaMemcpy(memcpy_buffer_gpu, memcpy_buffer_cpu,
+        size * value_len * sizeof(V), cudaMemcpyHostToDevice);
+    cudaMemcpy(dev_value_address, value_address,
+        size * sizeof(V*), cudaMemcpyHostToDevice);
+    {
+      mutex_lock l(memory_pool_mu_);
+      embedding_mem_pool_->Deallocate(invalid_value_ptrs);
+    }
+    int block_dim = 128;
+      void* args[] = {
+          (void*)&dev_value_address,
+          (void*)&memcpy_buffer_gpu,
+          (void*)&value_len,
+          (void*)&size};
+
+    cudaLaunchKernel(
+          (void *)BatchUnpack<V>,
+          (size + block_dim - 1) / block_dim * value_len,
+          block_dim,
+          args, 0, NULL);
+    cudaDeviceSynchronize();
+
+    delete[] memcpy_buffer_cpu;
+    delete[] cpu_value_ptrs;
+    delete[] gpu_value_ptrs;
+    delete[] value_address;
+    gpu_alloc_->DeallocateRaw(dev_value_address);
+    gpu_alloc_->DeallocateRaw(memcpy_buffer_gpu);
+  }
+
   void CopyEmbeddingsFromCPUToGPU(
       int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu) override {
     auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
-    V* dev_value_address =
-        (V*)gpu_alloc_->AllocateRaw(
-            Allocator::kAllocatorAlignment,
-            total * value_len * sizeof(V));
+    int64* memory_index = new int64[total];
     int64 i = 0;
     auto it = copyback_cursor.cbegin();
-    for ( ; it != copyback_cursor.cend(); ++it, ++i) {
-      ValuePtr<V>* gpu_value_ptr =
-          layout_creator_->Create(gpu_alloc_, value_len);
-      gpu_value_ptr->SetPtr(dev_value_address + i * value_len);
-      //Get cursor and destroy flag
-      int64 j = *it & 0x0fffffffffffffff;
-      bool destroy_flag = (*it >> 63) & 0x1;
-      //Copy Header Info
-      memcpy((char *)gpu_value_ptr->GetPtr(),
-             (char *)memcpy_address[j] - sizeof(FixedLengthHeader),
-             sizeof(FixedLengthHeader));
-      V* cpu_data_address = memcpy_address[j];
-      V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
+    {
+      //Mutex with eviction thread
+      mutex_lock l(memory_pool_mu_);
+      for ( ; it != copyback_cursor.cend(); ++it, ++i) {
+        int64 j = *it & 0x0fffffffffffffff;
+        memory_index[i] = *it;
+        ValuePtr<V>* gpu_value_ptr =
+            layout_creator_->Create(gpu_alloc_, value_len);
+        V* val_ptr = embedding_mem_pool_->Allocate();
+        bool flag = gpu_value_ptr->SetPtr(val_ptr);
+        if (!flag) {
+          embedding_mem_pool_->Deallocate(val_ptr);
+        }
+        memcpy((char *)gpu_value_ptr->GetPtr(),
+               (char *)memcpy_address[j] - sizeof(FixedLengthHeader),
+               sizeof(FixedLengthHeader));
+        V* gpu_data_address = gpu_value_ptr->GetValue(0, 0);
+        gpu_value_ptrs[i] = gpu_value_ptr;
+      }
+    }
+
+    for (int i = 0; i < total; i++) {
+      int64 j = memory_index[i] & 0x0fffffffffffffff;
+      bool destroy_flag = (memory_index[i] >> 63) & 0x1;
       memcpy(memcpy_buffer_cpu + i * value_len,
-            cpu_data_address, value_len * sizeof(V));
+             memcpy_address[j], value_len * sizeof(V));
       if (destroy_flag) {
         cpu_alloc_->DeallocateRaw((char *)memcpy_address[j]
                                    - sizeof(FixedLengthHeader));
       }
-      gpu_value_ptrs[i] = gpu_value_ptr;
     }
-
     cudaMemcpy(memcpy_buffer_gpu, memcpy_buffer_cpu,
         total * value_len * sizeof(V), cudaMemcpyHostToDevice);
+    free(memcpy_buffer_cpu);
+    delete[] memory_index;
   }
 
   Status Remove(K key) override {
@@ -330,7 +423,11 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
         }
       }
       dram_kv_->BatchCommit(keys, value_ptrs);
-      embedding_mem_pool_->Deallocate(value_ptrs);
+      {
+        //Mutex with main thread
+        mutex_lock l_mem(memory_pool_mu_);
+        embedding_mem_pool_->Deallocate(value_ptrs);
+      }
       for (auto it : keys) {
         TF_CHECK_OK(hbm_kv_->Remove(it));
       }
@@ -352,8 +449,28 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
 
   void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) override {
+    //Mutex with eviction thread
+    mutex_lock l(memory_pool_mu_);
     for (auto it : value_ptr_list) {
-      it->SetPtr(embedding_mem_pool_->Allocate());
+      V* val_ptr = embedding_mem_pool_->Allocate();
+      bool flag = it->SetPtr(val_ptr);
+      if (!flag) {
+        embedding_mem_pool_->Deallocate(val_ptr);
+      }
+    }
+  }
+
+  void AllocateMemoryForNewFeatures(
+     ValuePtr<V>** value_ptr_list,
+     int64 num_of_value_ptrs) override {
+    //Mutex with other ImportOps
+    mutex_lock l(memory_pool_mu_);
+    for (int64 i = 0; i < num_of_value_ptrs; i++) {
+      V* val_ptr = embedding_mem_pool_->Allocate();
+      bool flag = value_ptr_list[i]->SetPtr(val_ptr);
+      if (!flag) {
+        embedding_mem_pool_->Deallocate(val_ptr);
+      }
     }
   }
 
@@ -387,6 +504,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
   mutex hbm_mu_; //must be locked before dram_mu_ and ssd_mu_ are locked;
   mutex dram_mu_; //must be locked after ssd_mu_ is locked;
   mutex ssd_mu_;
+  mutex memory_pool_mu_; //ensure thread safety of embedding_mem_pool_
 };
 } // embedding
 } // tensorflow

@@ -33,11 +33,15 @@ class Iterator {
   virtual ~Iterator() {};
   virtual bool Valid() {return true;};
   virtual void SeekToFirst() {};
+  virtual void SwitchToFilteredFeatures() {};
+  virtual void SwitchToAdmitFeatures() {};
   virtual void Next() {};
   virtual void Key(char* val, int64 dim) {};
   virtual void Freq(char* val, int64 dim) {};
   virtual void Version(char* val, int64 dim) {};
   virtual void Value(char* val, int64 dim, int64 value_offset) {};
+  virtual void SetPartOffset(int32* part_offet_ptr) {};
+  virtual void SetPartFilterOffset(int32* part_offet_ptr) {};
 };
 
 template <class K, class V>

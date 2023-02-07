@@ -59,6 +59,13 @@ class FilterPolicy {
     int64 partition_id,
     int64 partition_num,
     bool is_filter) = 0;
+  virtual Status ImportToDram(RestoreBuffer& restore_buff,
+                int64 key_num,
+                int bucket_num,
+                int64 partition_id,
+                int64 partition_num,
+                bool is_filter,
+                V* default_values) = 0;
 };
 } // tensorflow
 

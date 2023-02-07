@@ -1161,6 +1161,63 @@ TEST(EmbeddingVariableTest, TestLRUCache) {
   }
 }
 
+TEST(EmbeddingVariableTest, TestLRUCacheGetCachedIds) {
+  BatchCache<int64>* cache = new LRUCache<int64>();
+  int num_ids = 30;
+  int num_access = 100;
+  int num_evict = 15;
+  int num_cache = 20;
+  int64 ids[num_access] = {0};
+  int64 evict_ids[num_evict] = {0};
+  for (int i = 0; i < num_access; i++){
+    ids[i] = i % num_ids;
+  }
+  cache->add_to_rank(ids, num_access);
+  ASSERT_EQ(cache->size(), num_ids);
+  int64* cached_ids = new int64[num_cache];
+  int64* cached_freqs = new int64[num_cache];
+  int64 true_size = 
+      cache->get_cached_ids(cached_ids, num_cache, nullptr, cached_freqs);
+  ASSERT_EQ(true_size, 20);
+  cache->get_evic_ids(evict_ids, num_evict);
+  ASSERT_EQ(cache->size(), 15);
+  true_size =
+      cache->get_cached_ids(cached_ids, num_cache, nullptr, cached_freqs);
+  ASSERT_EQ(true_size, 15);
+  delete cache;
+  delete[] cached_ids;
+  delete[] cached_freqs;
+}
+
+TEST(EmbeddingVariableTest, TestLFUCacheGetCachedIds) {
+  BatchCache<int64>* cache = new LFUCache<int64>();
+  int num_ids = 30;
+  int num_access = 100;
+  int num_evict = 15;
+  int num_cache = 20;
+  int64 ids[num_access] = {0};
+  int64 evict_ids[num_evict] = {0};
+  for (int i = 0; i < num_access; i++){
+    ids[i] = i % num_ids;
+  }
+  cache->add_to_rank(ids, num_access);
+  ASSERT_EQ(cache->size(), num_ids);
+  int64* cached_ids = new int64[num_cache];
+  int64* cached_freqs = new int64[num_cache];
+  int64 true_size = 
+      cache->get_cached_ids(cached_ids, num_cache, nullptr, cached_freqs);
+  ASSERT_EQ(true_size, 20);
+  cache->get_evic_ids(evict_ids, num_evict);
+  ASSERT_EQ(cache->size(), 15);
+  true_size =
+      cache->get_cached_ids(cached_ids, num_cache, nullptr, cached_freqs);
+  ASSERT_EQ(true_size, 15);
+  delete cache;
+  delete[] cached_ids;
+  delete[] cached_freqs;
+}
+
+
 TEST(EmbeddingVariableTest, TestLFUCache) {
   BatchCache<int64>* cache = new LFUCache<int64>();
   int num_ids = 30;

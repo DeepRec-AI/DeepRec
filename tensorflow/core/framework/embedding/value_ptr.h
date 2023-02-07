@@ -302,8 +302,9 @@ class ValuePtr {
     LOG(FATAL) << "Unsupport SetInitialized in subclass of ValuePtrBase";
   }
 
-  virtual void SetPtr(V* ptr) {
+  virtual bool SetPtr(V* ptr) {
     LOG(FATAL) << "Unsupport SetInitialized in subclass of ValuePtrBase";
+    return false;
   }
 
  protected:
@@ -451,6 +452,7 @@ class NormalGPUValuePtr : public ValuePtr<V> {
  public:
   NormalGPUValuePtr(Allocator* allocator, size_t size) {
     this->ptr_ = (void*) malloc(sizeof(FixedLengthHeader) + sizeof(V *));
+    *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) = nullptr;
     alloc_ = allocator;
     new ((char*)this->ptr_) FixedLengthHeader();
   }
@@ -537,8 +539,17 @@ class NormalGPUValuePtr : public ValuePtr<V> {
     ((FixedLengthHeader*)this->ptr_)->AddFreq(count);
   }
 
-  void SetPtr(V* ptr) {
-    *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) = ptr;
+  bool SetPtr(V* ptr) {
+    while(this->flag_.test_and_set(std::memory_order_acquire));
+    V* value_ptr = *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader));
+    if (value_ptr == nullptr) {
+      *(V**)((char *)this->ptr_ + sizeof(FixedLengthHeader)) = ptr;
+      this->flag_.clear(std::memory_order_release);
+      return true;
+    } else {
+      this->flag_.clear(std::memory_order_release);
+      return false;
+    }
   }
 
   void SetInitialized(int64 emb_index) {

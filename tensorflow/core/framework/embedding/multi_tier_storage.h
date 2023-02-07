@@ -82,6 +82,11 @@ class MultiTierStorage : public Storage<K, V> {
     return cache_;
   }
 
+  void InsertToDram(K key, ValuePtr<V>** value_ptr,
+              int64 alloc_len) override {
+    LOG(FATAL)<<"InsertToDram in MultiTierStorage shouldn't be called";
+  }
+
   void InitCache(embedding::CacheStrategy cache_strategy) override {
     cache_ = CacheFactory::Create<K>(cache_strategy, name_);
     eviction_manager_ = EvictionManagerCreator::Create<K, V>();
@@ -187,6 +192,10 @@ class MultiTierStorage : public Storage<K, V> {
               <<" RestoreSsdHashmap yet";
   }
 
+  void ImportToHbm(K* ids, int64 size, int64 value_len, int64 emb_index) override {
+    LOG(FATAL)<<"This Storage dosen't have a HBM storage.";
+  }
+
   Status Shrink(const EmbeddingConfig& emb_config,
       int64 value_len) override {
     for (auto kv : kvs_) {
@@ -256,6 +265,12 @@ class MultiTierStorage : public Storage<K, V> {
 
   void AllocateMemoryForNewFeatures(
       const std::vector<ValuePtr<V>*>& value_ptr_list) override {
+    return;
+  }
+
+  void AllocateMemoryForNewFeatures(
+      ValuePtr<V>** value_ptr_list,
+      int64 num_of_value_ptrs) override {
     return;
   }
 
