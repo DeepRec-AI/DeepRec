@@ -88,10 +88,12 @@ nvidia-cuda-mps-control -d
 Currently taking Tensorflow_serving as an example (it will be necessary to add other framework usage methods later), the following parameters need to be added when starting the server.
 
 ```c++
-CUDA_VISIBLE_DEVICES=0  ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --model_base_path=/xx/xx/pb/
+CUDA_VISIBLE_DEVICES=0  ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --model_base_path=/xx/xx/pb/
 
 ENABLE_MPS=1: Turn on MPS (it is generally recommended to turn on).
 CONTEXTS_COUNT_PER_GPU=4: Configure cuda contexts count for each physical GPU, the default is 4.
+MERGE_COMPUTE_COPY_STREAM: The calculation operator and the copy operator use the
+                           same stream to reduce waiting between different streams.
 use_per_session_threads=true: Each session configures the thread pool separately.
 session_num_per_group=4: Indicates the number of sessions configured by the session group.
 use_multi_stream=true: Enable the multi-stream function.
@@ -116,6 +118,7 @@ Startup command:
 ```
 ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --gpu_ids_list=0,2  --model_base_path=/xx/xx/pb/
 ```
+For a detailed explanation of the above environment variables, see: [Startup parameters](https://deeprec.readthedocs.io/en/latest/SessionGroup.html#startup-command)
 
 ##### 4.Best practice for using MPS with multiple GPU
 There may be multiple GPUs on the user machine, and generally only one GPU Device is required for each serving instance, so the user may start multiple different serving instances on the physical machine. There are some issues to be aware of when using MPS in this situation, as follows:
@@ -184,8 +187,10 @@ For GPU tasks, the session group can specify one or more GPUs, so users need to 
 
 The command to start the multi-model service is as follows:
 ```c++
-ENABLE_MPS=0 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
+ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
 ```
+For a detailed explanation of the above environment variables, see: [Startup parameters](https://deeprec.readthedocs.io/en/latest/SessionGroup.html#startup-command)
+
 The following are the two most important configuration files in the command,
 
 Assuming that there are 4 GPU devices on the machine, the configuration is as follows:
@@ -262,8 +267,9 @@ Note the gpu_ids parameter above, indicating which GPUs are used by each session
 
 Server example:
 ```
-CUDA_VISIBLE_DEVICES=1,3 ENABLE_MPS=0 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/xxx/model_config_file --platform_config_file=/xxx/platform_config_file
+CUDA_VISIBLE_DEVICES=1,3 ENABLE_MPS=1 MERGE_COMPUTE_COPY_STREAM=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/xxx/model_config_file --platform_config_file=/xxx/platform_config_file
 ```
+For a detailed explanation of the above environment variables, see: [Startup parameters](https://deeprec.readthedocs.io/en/latest/SessionGroup.html#startup-command)
 
 Client example:
 ```
