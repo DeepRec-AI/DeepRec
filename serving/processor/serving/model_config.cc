@@ -87,6 +87,12 @@ Status ModelConfigFactory::Create(const char* model_config, ModelConfig** config
     ParseGPUIds(gpu_ids_list, &((*config)->gpu_ids));
   }
 
+  bool use_multi_stream = false;
+  if (!json_config["use_multi_stream"].isNull()) {
+    use_multi_stream = json_config["use_multi_stream"].asBool();
+  }
+  (*config)->use_multi_stream = use_multi_stream;
+
   (*config)->select_session_policy = "MOD";
   if (!json_config["select_session_policy"].isNull()) {
     (*config)->select_session_policy =

@@ -645,6 +645,7 @@ LocalSessionInstanceMgr::LocalSessionInstanceMgr(ModelConfig* config)
   session_options_->config.set_inter_op_parallelism_threads(config->inter_threads);
   session_options_->config.set_intra_op_parallelism_threads(config->intra_threads);
   session_options_->config.set_use_per_session_threads(config->use_per_session_threads);
+  session_options_->config.set_use_per_session_stream(config->use_multi_stream);
   //session_options_->config.mutable_gpu_options()->set_allocator_type("CPU");
   run_options_ = new RunOptions();
 }

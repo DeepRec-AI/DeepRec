@@ -128,8 +128,8 @@ alideeprec/deeprec-release:deeprec2212-gpu-py38-cu116-ubuntu20.04
 
 编译GPU版本
 ```
-./configure serving --mkl --cuda
-./configure serving --mkl --cuda_alios
+./configure serving --cuda
+./configure serving --cuda_alios
 ```
 
 更多细节请查看: serving/configure.py

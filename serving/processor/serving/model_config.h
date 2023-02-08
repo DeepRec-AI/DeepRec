@@ -58,6 +58,7 @@ struct ModelConfig {
   std::string select_session_policy = "MOD";
   // GPU(s) used by current session group.
   std::vector<size_t> gpu_ids;
+  bool use_multi_stream = false;
 
   // session use self-owned thread pool
   bool use_per_session_threads = false;

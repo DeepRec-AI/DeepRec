@@ -314,8 +314,20 @@ void* initialize(const char* model_entry, const char* model_config, int* state);
 # 不同的session cpu cores之间通过';'隔开。
 "cpusets": "123;4-6",
 
+# 如果使用GPU，用户可以通过参数设置当前session group
+# 使用哪些物理GPU，如下表示使用0号和2号GPU。
+# 需要注意此处编号不一定和nvidia-smi出来的编号是一致的。
+# 例如用户设置CUDA_VISIBLE_DEVICES=3,2,1,0，
+# 那么deeprec中看到的编号0,1,2,3对应的物理GPU是3,2,1,0。
+# 用户其实不需要关心具体是哪张卡，只需要保证deeprec
+# 中可见几张GPU，然后做相应的设置即可。
+"gpu_ids_list": "0,2",
+
+# 在GPU任务中，是否使用multi-stream
+"use_multi_stream": false,
+
 # 是否单线程执行 Session run
-"enable_inline_execute": false
+"enable_inline_execute": false,
   
 # 默认值(参数和MKL性能有关，需要调试)
 "omp_num_threads": 4,

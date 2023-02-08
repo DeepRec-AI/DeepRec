@@ -316,8 +316,22 @@ The second argument "**model_config**" of the initialize function is a content i
 # Different session cpu cores are separated by ';'.
 "cpusets": "123;4-6",
 
+# Users can set which physical GPUs are used by the current
+# session group through options, as shown below to use GPU 0 and GPU 2.
+# It should be noted that the GPU number here may not
+# the same as the number from nvidia-smi.
+# For example, if the user sets CUDA_VISIBLE_DEVICES=3,2,1,0,
+# then the numbers 0,1,2,3 seen in deeprec correspond to physical GPUs 3,2,1,0.
+# The user does not need to care about the specific GPU,
+# but only needs to know the number of visible GPUs in deeprec,
+# and then make corresponding settings.
+"gpu_ids_list": "0,2",
+
+# whether to use multi-stream In GPU tasks
+"use_multi_stream": false,
+
 # Whether to execute Session run in a single thread
-"enable_inline_execute": false
+"enable_inline_execute": false,
   
 # The default value is 4 (parameters are related to MKL performance and need to be debugged)
 "omp_num_threads": 4,
