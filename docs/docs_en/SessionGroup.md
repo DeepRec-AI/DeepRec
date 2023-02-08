@@ -18,6 +18,19 @@ If users use session_group on EAS processor, they only need to add the following
   ...
 }
 ```
+
+#### GPU Task
+For GPU tasks, the following configurations are required:
+```c++
+"model_config": {
+  "session_num": 2,
+  "use_per_session_threads": true,
+  "gpu_ids_list": "0,2",
+  "use_multi_stream": true,
+  ...
+}
+```
+
 More parameters see: [processor configuration parameters](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
 
 ### 2.Tensorflow serving

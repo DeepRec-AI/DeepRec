@@ -22,6 +22,18 @@ SessionGroup功能提供了可以配置一组Session，并且将Request通过Rou
   ...
 }
 ```
+
+#### GPU任务
+对于GPU任务，需要做以下一些配置：
+```c++
+"model_config": {
+  "session_num": 2,
+  "use_per_session_threads": true,
+  "gpu_ids_list": "0,2",
+  "use_multi_stream": true,
+  ...
+}
+```
 更多参数详见：[processor配置参数](https://deeprec.readthedocs.io/zh/latest/Processor.html#id5)
 
 ### 2.Tensorflow serving
