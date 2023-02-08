@@ -91,10 +91,11 @@ nvidia-cuda-mps-control -d
 这里以Tensorflow serving为例(后续补充其他使用方式)，在启动server时需要增加下列参数，
 
 ```c++
-CUDA_VISIBLE_DEVICES=0  ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --model_base_path=/xx/xx/pb/
+CUDA_VISIBLE_DEVICES=0  ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --model_base_path=/xx/xx/pb/
 
 ENABLE_MPS=1: 开启MPS(一般都建议开启)。
 CONTEXTS_COUNT_PER_GPU=4: 每个物理GPU配置几组cuda context，默认是4。
+MERGE_COMPUTE_COPY_STREAM=1: 表示计算和拷贝使用相同的stream，减少不同stream之间的等待。
 use_per_session_threads=true: 每个session单独配置线程池。
 session_num_per_group=4: session group中配置几个session。
 use_multi_stream=true: 开启multi-stream功能。
@@ -119,7 +120,7 @@ use_multi_stream=true: 开启multi-stream功能。
 ```
 ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --tensorflow_intra_op_parallelism=8 --tensorflow_inter_op_parallelism=8 --use_per_session_threads=true  --session_num_per_group=4 --use_multi_stream=true --allow_gpu_mem_growth=true --gpu_ids_list=0,2  --model_base_path=/xx/xx/pb/
 ```
-
+上面环境变量详细解释见: [启动参数](https://deeprec.readthedocs.io/zh/latest/SessionGroup.html#id5)
 TF serving用DeepRec提供的代码: [TF serving](https://github.com/AlibabaPAI/serving/commits/deeprec)
 
 ##### 4.多卡MPS最佳实践
@@ -188,8 +189,10 @@ SessionGroup支持多模型服务，在[TF_serving](https://github.com/AlibabaPA
 
 启动多模型服务命令如下：
 ```c++
-ENABLE_MPS=0 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
+ENABLE_MPS=1 CONTEXTS_COUNT_PER_GPU=4 MERGE_COMPUTE_COPY_STREAM=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/data/workspace/serving-model/multi_wdl_model/models.config --platform_config_file=/data/workspace/serving-model/multi_wdl_model/platform_config_file
 ```
+上面环境变量详细解释见:[启动参数](https://deeprec.readthedocs.io/zh/latest/SessionGroup.html#id5)
+
 上述命令中最重要的是两个配置文件，
 
 假设机器上有4张GPU设备，那么配置如下：
@@ -266,8 +269,9 @@ key和上面model_platform字段一样，默认tensorflow。对于每个模型�
 
 Server端示例：
 ```
-CUDA_VISIBLE_DEVICES=1,3 ENABLE_MPS=0 MERGE_COMPUTE_COPY_STREAM=0 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/xxx/model_config_file --platform_config_file=/xxx/platform_config_file
+CUDA_VISIBLE_DEVICES=1,3 ENABLE_MPS=1 MERGE_COMPUTE_COPY_STREAM=1 bazel-bin/tensorflow_serving/model_servers/tensorflow_model_server --rest_api_port=8888 --use_session_group=true --model_config_file=/xxx/model_config_file --platform_config_file=/xxx/platform_config_file
 ```
+上面环境变量详细解释见: [启动参数](https://deeprec.readthedocs.io/zh/latest/SessionGroup.html#id5)
 
 Client端示例：
 ```
