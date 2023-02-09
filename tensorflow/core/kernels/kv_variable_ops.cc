@@ -431,6 +431,7 @@ class KvResourceIsInitializedOp : public OpKernel {
   REGISTER_KERNEL_BUILDER(Name("KvVarIsInitializedOp")             \
                           .TypeConstraint<ktype>("Tkeys")          \
                           .TypeConstraint<vtype>("dtype")          \
+                          .HostMemory("is_initialized")            \
                           .Device(DEVICE_##dev),                   \
                           KvResourceIsInitializedOp<ktype, vtype>);
 #define REGISTER_KERNELS_ALL(dev, type)                            \
