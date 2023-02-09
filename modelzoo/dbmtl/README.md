@@ -115,6 +115,7 @@ Context     │      │────►│                  │                 
       - `--multihash`: Whether to enable Multi-Hash Variable. Default is `False`. (Not really enabled)
       - `--incremental_ckpt`: Set time of save Incremental Checkpoint. Default is `0`.
       - `--workqueue`: Whether to enable WorkQueue. Default is `False`.
+      - `--parquet_dataset`: Whether to enable ParquetDataset. Default is `True`.
     - Basic Settings:
       - `--data_location`: Full path of train & eval data. Default is `./data`.
       - `--steps`: Set the number of steps on train dataset. When default(`0`) is used, the number of steps is computed based on dataset size and number of epochs equals 1000.
@@ -204,8 +205,14 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
 ## Dataset
 Taobao dataset from [EasyRec](https://github.com/AlibabaPAI/EasyRec) is used.
 ### Prepare
+We provide the dataset in two formats:
+1. **CSV Format**
 Put data file **taobao_train_data & taobao_test_data** into ./data/    
 For details of Data download, see [EasyRec](https://github.com/AlibabaPAI/EasyRec/#GetStarted)
+2. **Parquet Format**
+Put data file **taobao_train_data.parquet & taobao_test_data.parquet** into ./data/
+These files are available at [Modelzoo-Data](https://github.com/AlibabaPAI/Modelzoo-Data)
+
 
 ### Fields
 The dataset contains 20 columns, details as follow:
