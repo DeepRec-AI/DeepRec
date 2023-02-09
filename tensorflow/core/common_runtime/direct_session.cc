@@ -518,6 +518,10 @@ class DirectSessionFactory : public SessionFactory {
 
     std::vector<ResourceMgr*> gpu_shared_rmgrs;
 #if GOOGLE_CUDA
+    bool use_per_session_host_allocator = false;
+    TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("PER_SESSION_HOSTALLOC",
+                                               /*default_val=*/false,
+                                               &use_per_session_host_allocator));
     int curr_idx = 0;
     int dev_id = 0;
     int curr_session_id = 0;
@@ -535,7 +539,7 @@ class DirectSessionFactory : public SessionFactory {
           dev_rmgr_map.device_rmgr_map[gpu_dev_prefix+std::to_string(dev_id)] =
               gpu_shared_rmgr;
           // gpu host allocator
-          {
+          if (use_per_session_host_allocator) {
             std::string sid = std::to_string(curr_session_id);
             dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:CPU:"+sid] = shared_rmgr;
             dev_rmgr_map.device_rmgr_map[dev_prefix+"/device:cpu:"+sid] = shared_rmgr;
@@ -600,8 +604,13 @@ class DirectSessionFactory : public SessionFactory {
         curr_options.config.add_per_session_devices(
             "/job:localhost/replica:0/task:0/device:GPU:" +
             std::to_string(session_to_device_id[i]));
-        curr_options.config.add_per_session_devices(
-            "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
+        if (use_per_session_host_allocator) {
+          curr_options.config.add_per_session_devices(
+              "/job:localhost/replica:0/task:0/device:CPU:"+std::to_string(i));
+        } else {
+          curr_options.config.add_per_session_devices(
+              "/job:localhost/replica:0/task:0/device:CPU:0");
+        }
       }
 #endif // GOOGLE_CUDA
 
