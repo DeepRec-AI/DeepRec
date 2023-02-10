@@ -53,6 +53,7 @@ Stage
 Smart-Stage
 Async-Embedding-Stage
 Auto-Fusion
+Sample-awared-Graph-Compression
 ```
 
 ```{toctree}

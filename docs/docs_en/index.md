@@ -37,6 +37,7 @@ SOK
 :maxdepth: 2
 :caption: Graph Optimization
 Fused-Embedding
+Sample-awared-Graph-Compression
 ```
 
 ```{toctree}
