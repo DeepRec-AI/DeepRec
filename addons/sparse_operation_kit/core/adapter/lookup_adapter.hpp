@@ -42,7 +42,7 @@ class EmbeddingVarGPUAdapter : public ::embedding::ILookup {
 
   void set(
       OpKernelContext* ctx,
-      std::vector<core::RefCountPtr<EmbeddingVarGPU<KeyType, DType>>>& vars,
+      std::vector<core::RefCountPtr<EmbeddingVar<KeyType, DType>>>& vars,
       const std::vector<int>& ev_size_per_lookup, cudaStream_t stream);
 
   void lookup(const ::core::Tensor& keys, size_t num_keys,
@@ -53,7 +53,7 @@ class EmbeddingVarGPUAdapter : public ::embedding::ILookup {
   void clear_tmp_ev_list() { tmp_ev_list_.clear(); }
 
  private:
-  std::vector<EmbeddingVarGPU<KeyType, DType>*> vars_;
+  std::vector<EmbeddingVar<KeyType, DType>*> vars_;
   std::vector<uint32_t> id_space_offset_;
   std::vector<int> id_space_;
   cudaStream_t stream_;

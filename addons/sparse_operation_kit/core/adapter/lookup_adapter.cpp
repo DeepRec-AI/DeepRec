@@ -24,7 +24,7 @@ namespace tensorflow {
 template <typename KeyType, typename DType>
 void EmbeddingVarGPUAdapter<KeyType, DType>::set(
     OpKernelContext* ctx,
-    std::vector<core::RefCountPtr<EmbeddingVarGPU<KeyType, DType>>>& vars,
+    std::vector<core::RefCountPtr<EmbeddingVar<KeyType, DType>>>& vars,
     const std::vector<int>& ev_size_per_lookup, cudaStream_t stream) {
   vars_.resize(vars.size());
   for (int i = 0; i < vars.size(); ++i) {
