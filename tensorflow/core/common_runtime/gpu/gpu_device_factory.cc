@@ -199,8 +199,12 @@ class GPUCompatibleCPUDeviceFactory : public DeviceFactory {
     int num_numa_nodes = options.config.experimental().use_numa_affinity()
                              ? port::NUMANumNodes()
                              : 1;
+    bool use_per_session_host_allocator = false;
+    TF_CHECK_OK(tensorflow::ReadBoolFromEnvVar("PER_SESSION_HOSTALLOC",
+                                               /*default_val=*/false,
+                                               &use_per_session_host_allocator));
     int sess_num = 1;
-    if (dev_rmgr_map) {
+    if (use_per_session_host_allocator && dev_rmgr_map) {
       for (auto& item : dev_rmgr_map->device_rmgr_map) {
         int sess_idx = std::stoi(item.first.substr(item.first.rfind(":")+1));
         if (sess_idx >= sess_num) {
