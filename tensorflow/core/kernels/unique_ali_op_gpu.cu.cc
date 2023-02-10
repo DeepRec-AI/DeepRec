@@ -39,6 +39,17 @@ limitations under the License.
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
+// Returns true iff index is at the end of a segment (which is equivalent to the
+// beginning of the next segment).
+template <typename TKey, typename TIndex>
+struct SegmentIndicatorFunctor {
+  const TKey *__restrict__ sorted_input_ptr_;
+  SegmentIndicatorFunctor(const TKey *sorted_input_ptr) : sorted_input_ptr_(sorted_input_ptr) {}
+  __device__ bool operator()(const TIndex &i) const {
+    return i > 0 && sorted_input_ptr_[i] != sorted_input_ptr_[i - 1];
+  }
+};
+
 template <typename TIndex>
 __global__ void RangeInitKernel(const TIndex start, const TIndex delta,
                                 const int64 size, TIndex* out) {  
@@ -117,11 +128,11 @@ void CompareAdjacent(const GPUDevice& d, const T* in, const int64 size,
       in, size, out);
 }
 template <typename T, typename TIndex>
-class UniqueAliV2GpuOp : public OpKernel {
+class UniqueAliV2GpuOp : public AsyncOpKernel {
  public:
-  explicit UniqueAliV2GpuOp(OpKernelConstruction* ctx) : OpKernel(ctx) {
+  explicit UniqueAliV2GpuOp(OpKernelConstruction* ctx) : AsyncOpKernel(ctx) {
   }
-  void Compute(OpKernelContext* ctx) override {
+  void ComputeAsync(OpKernelContext* ctx, DoneCallback done) override {
     const Tensor& input_tensor = ctx->input(0);
     const T* keys = input_tensor.flat<T>().data();
     
@@ -139,22 +150,23 @@ class UniqueAliV2GpuOp : public OpKernel {
       return Status::OK();
     };
     if (N == 0) {
-      OP_REQUIRES_OK(ctx, allocate_output(0));
+      OP_REQUIRES_OK_ASYNC(ctx, allocate_output(0), done);
+      done();
       return;
     }
     
     Tensor keys_sort_tensor;
     Tensor indicies_sort_tensor;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<T>::value, {N},
-                                           &keys_sort_tensor));
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
-                                           &indicies_sort_tensor));
+    OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_temp(DataTypeToEnum<T>::value, {N},
+                                           &keys_sort_tensor), done);
+    OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
+                                           &indicies_sort_tensor), done);
     T* keys_sort = keys_sort_tensor.flat<T>().data();
     TIndex* indicies_sort = indicies_sort_tensor.flat<TIndex>().data();
     
     Tensor indices_in_tensor;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
-                                           &indices_in_tensor));
+    OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
+                                           &indices_in_tensor), done);
     TIndex* indices_in = indices_in_tensor.flat<TIndex>().data();
     RangeInit(device, (TIndex)0, (TIndex)1, N, indices_in);
     
@@ -171,11 +183,11 @@ class UniqueAliV2GpuOp : public OpKernel {
       cub::DeviceRadixSort::SortPairs(NULL, temp_storage_bytes, keys_u_in,
                                       keys_u_sort, indices_in, indicies_sort, N,
                                       0, sizeof(T) * 8, cu_stream);
-      OP_REQUIRES_OK(
+      OP_REQUIRES_OK_ASYNC(
           ctx,
           ctx->allocate_temp(
               DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
-              &cub_temp_storage));
+              &cub_temp_storage), done);
       cub::DeviceRadixSort::SortPairs(cub_temp_storage.flat<int8>().data(),
                                       temp_storage_bytes, keys_u_in,
                                       keys_u_sort, indices_in, indicies_sort, N,
@@ -183,56 +195,55 @@ class UniqueAliV2GpuOp : public OpKernel {
     }
     
     Tensor output_indices_tensor;
-    OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
-                                           &output_indices_tensor));
+    OP_REQUIRES_OK_ASYNC(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
+                                           &output_indices_tensor), done);
     TIndex* output_indices = output_indices_tensor.flat<TIndex>().data();
     
     {
-      Tensor output_indices_in_tensor;
-      OP_REQUIRES_OK(ctx, ctx->allocate_temp(DataTypeToEnum<TIndex>::value, {N},
-                                             &output_indices_in_tensor));      
-      TIndex* output_indices_in = output_indices_in_tensor.flat<TIndex>().data();
-      CompareAdjacent(device, keys_sort, N, output_indices_in);
+      cub::TransformInputIterator<TIndex, SegmentIndicatorFunctor<T, TIndex>,
+                                cub::CountingInputIterator<TIndex>>
+        segment_indicator_iter(0, {keys_sort});
       Tensor cub_temp_storage;
       size_t temp_storage_bytes = 0;
-      cub::DeviceScan::InclusiveSum(NULL, temp_storage_bytes, output_indices_in,
+      cub::DeviceScan::InclusiveSum(NULL, temp_storage_bytes, segment_indicator_iter,
                                     output_indices, N, cu_stream);
-      OP_REQUIRES_OK(
+      OP_REQUIRES_OK_ASYNC(
           ctx,
           ctx->allocate_temp(
               DT_INT8, TensorShape({static_cast<int64>(temp_storage_bytes)}),
-              &cub_temp_storage));
+              &cub_temp_storage), done);
       cub::DeviceScan::InclusiveSum(cub_temp_storage.flat<int8>().data(),
-                                    temp_storage_bytes, output_indices_in,
+                                    temp_storage_bytes, segment_indicator_iter,
                                     output_indices, N, cu_stream);
     }
     auto* stream = ctx->op_device_context()->stream();
-    OP_REQUIRES(ctx, stream, errors::Internal("No GPU stream available."));
-    TIndex N_out;
+    OP_REQUIRES_ASYNC(ctx, stream, errors::Internal("No GPU stream available."), done);
+    ScratchSpace<TIndex> N_out(ctx, 1, /*on_host=*/true);
     se::DeviceMemoryBase wrapped_num_out(output_indices + (N - 1),
                                          sizeof(TIndex));
     TensorReference ref_output_indices(output_indices_tensor);
-    OP_REQUIRES(ctx,
-                stream->ThenMemcpy(&N_out, wrapped_num_out, sizeof(TIndex)).ok(),
-                errors::Internal("Failed to launch copy from device to host."));
+    OP_REQUIRES_ASYNC(ctx,
+                stream->ThenMemcpy(N_out.mutable_data(), wrapped_num_out, sizeof(TIndex)).ok(),
+                errors::Internal("Failed to launch copy from device to host."), done);
     ctx->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
         stream, [ref_output_indices]() { ref_output_indices.Unref(); });
     stream->BlockHostUntilDone();
-    N_out += 1;
-    OP_REQUIRES_OK(ctx, allocate_output(N_out));
+    int64_t uniq_size = (*N_out.data()) + 1;
+    OP_REQUIRES_OK_ASYNC(ctx, allocate_output(uniq_size), done);
     T* output = output_tensor->flat<T>().data();
     TIndex* idx = idx_tensor->flat<TIndex>().data();
     MoveValues(device, indicies_sort, output_indices, N, idx);
     MoveSparseValues(device, output_indices, indicies_sort, keys, N, output);
+    done();
   }
 };
 
 #define REGISTER_UNIQUE_ALI_V2_GPU_KERNEL(T, TIndex)			\
   REGISTER_KERNEL_BUILDER(Name("Unique")				\
-			  .Device(DEVICE_GPU)				\
-			  .TypeConstraint<T>("T")			\
-			  .TypeConstraint<TIndex>("out_idx"),		\
-			  UniqueAliV2GpuOp<T, TIndex>)
+                          .Device(DEVICE_GPU)				\
+                          .TypeConstraint<T>("T")			\
+                          .TypeConstraint<TIndex>("out_idx"),		\
+                          UniqueAliV2GpuOp<T, TIndex>)
 #define REGISTER_UNIQUE_ALI_V2_GPU(T)		\
   REGISTER_UNIQUE_ALI_V2_GPU_KERNEL(T, int32);	\
   REGISTER_UNIQUE_ALI_V2_GPU_KERNEL(T, int64)
