@@ -86,10 +86,10 @@ TEST(CCOpTest, CompositeOp) {
 
 TEST(CCOpTest, MultiOutput) {
   Scope root = Scope::NewRootScope();
-  auto u = Unique(root, {1, 2, 2, 4, 3, 2});
+  auto u = Unique(root, {1, 2, 2, 3, 4, 2});
   std::vector<Tensor> outputs;
   test::GetTensors(root, {u.y, u.idx}, &outputs);
-  test::ExpectTensorEqual<int>(outputs[0], test::AsTensor<int>({1, 2, 4, 3}));
+  test::ExpectTensorEqual<int>(outputs[0], test::AsTensor<int>({1, 2, 3, 4}));
   test::ExpectTensorEqual<int>(outputs[1],
                                test::AsTensor<int>({0, 1, 1, 2, 3, 1}));
 }
