@@ -74,6 +74,51 @@ struct KvSparseApplyAdamAsync {
                     bool apply_sparse_rmsprop, const int64 inner_dim, 
                     Allocator *alloc);
 };
+
+template <typename Device, typename TKey, typename T>
+struct KvSparseApplyAdagradHbm {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_a, T**dev_v, const T* grad_base,
+                  T lr_scalar, int64 task_size,
+                  const Device& device);
+};
+
+template <typename Device, typename TKey, typename T>
+struct KvSparseApplyAdamHbm {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T alpha,
+                  T beta1, T beta2, T epsilon, int64 task_size,
+                  const Device& device);
+};
+
+template <typename Device, typename TKey, typename T>
+struct KvSparseApplyAdamAsyncHbm {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T lr, T beta1,
+                  T beta2, T epsilon, T* beta1_power_ptr,
+                  T* beta2_power_ptr, int64 task_size,
+                  const Device& device);
+};
+
+template <typename Device, typename TKey, typename T>
+struct KvSparseApplyAdamAsyncSparseRmspropHbm {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T lr, T beta1,
+                  T beta2, T epsilon, int64 task_size,
+                  const Device& device);
+};
+
+template <typename Device, typename TKey, typename T>
+struct KvSparseApplyAdamWHbm {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T lr, T beta1,
+                  T beta2, T epsilon, T weight_decay,
+                  int64 task_size, const Device& device);
+};
 }  // end namespace functor
 }  // end namespace tensorflow
 #endif  // GOOGLE_CUDA

@@ -56,28 +56,6 @@ class NullableFilterPolicy : public FilterPolicy<K, V, EV> {
     memcpy(val, mem_val, sizeof(V) * ev_->ValueLen());
   }
 
-  void CopyEmbeddingsToBuffer(
-      V* val_base, int64 size,
-      int64 slice_elems, int64 value_len,
-      V** memcpy_address) {
-#if GOOGLE_CUDA
-    int block_dim = 128;
-    V** dev_value_address = (V**)ev_->GetBuffer(size);
-    cudaMemcpy(dev_value_address, memcpy_address,
-        sizeof(V *) * size, cudaMemcpyHostToDevice);
-    int limit = size;
-    int length = value_len;
-    void* args1[] = {(void*)&dev_value_address,
-                     (void*)&val_base,
-                     (void*)&length,
-                     (void*)&limit};
-    cudaLaunchKernel((void *)BatchCopy<V>,
-                     (limit + block_dim - 1) / block_dim * length,
-                     block_dim, args1, 0, NULL);
-    cudaDeviceSynchronize();
-#endif  // GOOGLE_CUDA
-  }
-
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) override {
     *is_filter = true;

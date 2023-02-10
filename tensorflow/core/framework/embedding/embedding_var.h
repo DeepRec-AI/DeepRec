@@ -37,6 +37,11 @@ limitations under the License.
 
 namespace tensorflow {
 
+#if GOOGLE_CUDA
+  void SyncWithEventMgr(se::Stream* stream,
+      EventMgr* event_mgr);
+#endif //GOOGLE_CUDA
+
 template <class K, class V>
 class GPUHashTable;
 
@@ -271,141 +276,29 @@ class EmbeddingVar : public ResourceBase {
 #if GOOGLE_CUDA
   void CopyEmbeddingsToBuffer(
       V* val_base, int64 size,
-      int64 slice_elems, V** memcpy_address) {
-    filter_->CopyEmbeddingsToBuffer(
-        val_base, size, slice_elems,
-        value_len_, memcpy_address);
-  }
+      int64 slice_elems, V** memcpy_address,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device);
 
   void SetDefaultValueOfNewFeatures(
       const K* keys, int64 size,
       const std::list<int64>& init_cursor,
       V** memcpy_address, V* default_values,
-      std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn) {
-    V** dev_default_value_address, **default_value_address;
-    V** dev_value_address, **value_address;
-    if (init_cursor.size() > 0) {
-      int64 total = init_cursor.size();
-      value_address = (V**)malloc(sizeof(V*) * total);
-      default_value_address = (V**)malloc(sizeof(V*) * total);
-      dev_value_address = TypedAllocator::Allocate<V*>(alloc_,
-              total, AllocationAttributes());
-      dev_default_value_address = TypedAllocator::Allocate<V*>(alloc_,
-              total, AllocationAttributes());
-      int64 i = 0;
-      auto it = init_cursor.cbegin();
-      for ( ; it != init_cursor.cend(); ++it, ++i) {
-        ValuePtr<V>* value_ptr =
-            reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
-        value_address[i] = *((V**)((char*)(value_ptr->GetPtr())
-                            + sizeof(FixedLengthHeader)))
-                            + storage_manager_->GetOffset(emb_config_.emb_index);
-        default_value_address[i] = get_default_v_fn(
-                                       default_values,
-                                       keys[*it],
-                                       *it,
-                                       GetDefaultValueDim(),
-                                       ValueLen());
-      }
-      cudaMemcpy(dev_value_address, value_address, sizeof(V*) * total,
-          cudaMemcpyHostToDevice);
-      cudaMemcpy(dev_default_value_address, default_value_address,
-                 sizeof(V*) * total, cudaMemcpyHostToDevice);
-      int block_dim = 128;
-      void* args[] = {(void*)&dev_default_value_address,
-                       (void*)&dev_value_address,
-                       (void*)&value_len_,
-                       (void*)&total};
-      cudaLaunchKernel((void *)CopyEmbedding<V>,
-                       (total * value_len_ + block_dim - 1) / block_dim,
-                       block_dim, args, 0, NULL);
-      cudaDeviceSynchronize();
-      // Set init meta of ValuePtrs
-      for (auto it = init_cursor.cbegin();
-          it != init_cursor.cend(); ++it) {
-        ValuePtr<V>* value_ptr =
-            reinterpret_cast<ValuePtr<V>*>(memcpy_address[*it]);
-        value_ptr->SetInitialized(emb_config_.emb_index);
-        memcpy_address[*it] = value_ptr->GetValue(
-            emb_config_.emb_index,
-            storage_manager_->GetOffset(emb_config_.emb_index));
-      }
-
-      TypedAllocator::Deallocate(alloc_, dev_value_address, total);
-      TypedAllocator::Deallocate(alloc_, dev_default_value_address, total);
-      free(value_address);
-      free(default_value_address);
-    }
-  }
+      std::function<V*(V*, K, int64, int64, int64)> get_default_v_fn,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device);
 
   void CopyEmbeddingsFromCPUToGPU(
       const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address,
-      int64* output_value_ptrs = nullptr) {
-    size_t value_len = emb_config_.total_num(storage_manager_->GetAllocLen());
-    V* memcpy_buffer_gpu;
-    V** dev_value_address, **value_address;
-    if (copyback_cursor.size() > 0) {
-      int64 total = copyback_cursor.size();
-      ValuePtr<V>** gpu_value_ptrs = new ValuePtr<V>* [total];
-      memcpy_buffer_gpu = (V*)alloc_->AllocateRaw(
-          Allocator::kAllocatorAlignment,
-          total * value_len * sizeof(V));
-      storage_manager_->CopyEmbeddingsFromCPUToGPU(
-          total, keys, copyback_cursor,
-          memcpy_address, value_len, gpu_value_ptrs,
-          memcpy_buffer_gpu);
-
-      value_address = (V**)malloc(sizeof(V*) * total);
-      dev_value_address = (V**)alloc_->AllocateRaw(
-          Allocator::kAllocatorAlignment,
-          sizeof(V*) * total);
-      std::vector<K> copyback_keys;
-      int64 i = 0;
-      auto it = copyback_cursor.cbegin();
-      for (; it != copyback_cursor.cend(); ++it, ++i) {
-        bool init;
-        // Get the curosr
-        int64 cursor = *it & 0x0fffffffffffffff;
-        gpu_value_ptrs[i]->SetInitialized(emb_config_.emb_index);
-        memcpy_address[cursor] = LookupOrCreateEmb(
-            gpu_value_ptrs[i], init);
-        value_address[i] = memcpy_address[cursor];
-        copyback_keys.emplace_back(keys[cursor]);
-      }
-
-      cudaMemcpy(dev_value_address,
-                 value_address,
-                 sizeof(V*) * total,
-                 cudaMemcpyHostToDevice);
-      int block_dim = 128;
-      void* args[] = {
-          (void*)&dev_value_address,
-          (void*)&memcpy_buffer_gpu,
-          (void*)&value_len,
-          (void*)&total};
-
-      cudaLaunchKernel(
-          (void *)BatchUnpack<V>,
-          (total + block_dim - 1) / block_dim * value_len,
-          block_dim,
-          args, 0, NULL);
-      cudaDeviceSynchronize();
-
-      storage_manager_->Insert(copyback_keys, gpu_value_ptrs);
-      if (output_value_ptrs != nullptr) {
-        auto it = copyback_cursor.cbegin();
-        for (int64 i = 0; it != copyback_cursor.cend(); ++it, ++i) {
-          int64 cursor = *it & 0x0fffffffffffffff;
-          output_value_ptrs[cursor] = (int64)gpu_value_ptrs[i];
-        }
-      }
-      alloc_->DeallocateRaw(dev_value_address);
-      alloc_->DeallocateRaw(memcpy_buffer_gpu);
-      delete []gpu_value_ptrs;
-    }
-  }
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device,
+      const DeviceBase::CpuWorkerThreads* worker_threads,
+      int64* output_value_ptrs = nullptr);
 
   void AllocateMemoryForNewFeatures(
       V** memcpy_address,

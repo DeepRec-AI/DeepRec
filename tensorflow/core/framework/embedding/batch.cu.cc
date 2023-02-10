@@ -58,7 +58,7 @@ TF_CALL_int64(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 
 template<class V>
-__global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, V lr,
+__global__ void SparseApplyAdagradGPU(V** a, V** v, const V* g, V lr,
     int embedding_dim, long long int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int item_id = i / embedding_dim;
@@ -73,14 +73,14 @@ __global__ void SparseApplyAdagradGPU(V** a, V** v, V* g, V lr,
 
 #define REGISTER_KERNELS_ALL_INDEX(T)                \
   template __global__ void SparseApplyAdagradGPU<T>( \
-    T**, T**, T*, T, int, long long int);
+    T**, T**, const T*, T, int, long long int);
 TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
 #undef REGISTER_KERNELS_ALL_INDEX
 
 template<class V>
 __global__ void SparseApplyAdamGPU(V** var, V** m, V** v,
-    V* g, V alpha, V beta1, V beta2, V epsilon,
+    const V* g, V alpha, V beta1, V beta2, V epsilon,
     int embedding_dim, long long int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int item_id = i / embedding_dim;
@@ -99,7 +99,7 @@ __global__ void SparseApplyAdamGPU(V** var, V** m, V** v,
 
 #define REGISTER_KERNELS_ALL_INDEX(T)                \
   template __global__ void SparseApplyAdamGPU<T>( \
-    T**, T**, T**, T*, T, \
+    T**, T**, T**, const T*, T, \
     T, T, T, int, long long int);
 TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
@@ -108,7 +108,7 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
 template<class V>
 __global__ void SparseApplyAdamAsyncGPU(
     V** var, V** m, V** v,
-    V* g, V lr, V beta1, V beta2, V epsilon,
+    const V* g, V lr, V beta1, V beta2, V epsilon,
     V* beta1_power_ptr, V* beta2_power_ptr,
     int embedding_dim, long long int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
@@ -139,7 +139,7 @@ __global__ void SparseApplyAdamAsyncGPU(
 
 #define REGISTER_KERNELS_ALL_INDEX(T)                \
   template __global__ void SparseApplyAdamAsyncGPU<T>( \
-    T**, T**, T**, T*, T, \
+    T**, T**, T**, const T*, T, \
     T, T, T, T*, T*, int, long long int);
 TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
@@ -148,7 +148,7 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
 template<class V>
 __global__ void SparseApplyAdamAsyncSparseRmspropGPU(
     V** var, V** m, V** v,
-    V* g, V lr, V beta1, V beta2, V epsilon,
+    const V* g, V lr, V beta1, V beta2, V epsilon,
     int embedding_dim, long long int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int item_id = i / embedding_dim;
@@ -166,7 +166,7 @@ __global__ void SparseApplyAdamAsyncSparseRmspropGPU(
 
 #define REGISTER_KERNELS_ALL_INDEX(T)                \
   template __global__ void SparseApplyAdamAsyncSparseRmspropGPU<T>( \
-    T**, T**, T**, T*, T, \
+    T**, T**, T**, const T*, T, \
     T, T, T, int, long long int);
 TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
@@ -174,7 +174,7 @@ TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)
 
 template<class V>
 __global__ void SparseApplyAdamWGPU(V** var, V** m, V** v,
-    V* g, V alpha, V beta1, V beta2, V epsilon,
+    const V* g, V alpha, V beta1, V beta2, V epsilon,
     V weight_decay, int embedding_dim, long long int limit) {
   int i = blockDim.x * blockIdx.x + threadIdx.x;
   int item_id = i / embedding_dim;
@@ -194,7 +194,7 @@ __global__ void SparseApplyAdamWGPU(V** var, V** m, V** v,
 
 #define REGISTER_KERNELS_ALL_INDEX(T)                \
   template __global__ void SparseApplyAdamWGPU<T>( \
-    T**, T**, T**, T*, T, \
+    T**, T**, T**, const T*, T, \
     T, T, T, T, int, long long int);
 TF_CALL_float(REGISTER_KERNELS_ALL_INDEX)
 TF_CALL_double(REGISTER_KERNELS_ALL_INDEX)

@@ -3006,7 +3006,8 @@ tf_cuda_library(
             "framework/embedding/batch.cu.cc",
             "framework/embedding/batch.h",
             "framework/embedding/gpu_hash_table.cu.cc",
-            "framework/embedding/gpu_hash_table.h"
+            "framework/embedding/gpu_hash_table.h",
+            "framework/embedding/embedding_var.cu.cc"
         ],
     ) + select({
         "//tensorflow:windows": [],
@@ -6045,7 +6046,7 @@ cuda_library(
     ],
     srcs = FRAMEWORK_INTERNAL_PRIVATE_HEADERS + [
         "framework/embedding/batch.cu.cc",
-        "framework/embedding/gpu_hash_table.cu.cc"
+        "framework/embedding/gpu_hash_table.cu.cc",
     ],
     copts = ["-g"] + if_cuda(["-DNV_CUDNN_DISABLE_EXCEPTION"])
         + if_cuda(["-DGOOGLE_CUDA=1"]) +

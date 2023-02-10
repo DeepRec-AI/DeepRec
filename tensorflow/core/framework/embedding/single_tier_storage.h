@@ -69,21 +69,6 @@ class SingleTierStorage : public Storage<K, V> {
     return kv_->Lookup(key, value_ptr);
   }
 
-  void Insert(const std::vector<K>& keys,
-              ValuePtr<V>** value_ptrs) override{
-    for (size_t i = 0; i < keys.size(); i++) {
-      do {
-        Status s = kv_->Insert(keys[i], value_ptrs[i]);
-        if (s.ok()) {
-          break;
-        } else {
-          (value_ptrs[i])->Destroy(alloc_);
-          delete value_ptrs[i];
-        }
-      } while (!(kv_->Lookup(keys[i], &value_ptrs[i])).ok());
-    }
-  }
-
   void Insert(K key, ValuePtr<V>** value_ptr,
               int64 alloc_len) override {
     do {
@@ -96,6 +81,10 @@ class SingleTierStorage : public Storage<K, V> {
         delete *value_ptr;
       }
     } while (!(kv_->Lookup(key, value_ptr)).ok());
+  }
+
+  void Insert(K key, ValuePtr<V>* value_ptr) override {
+    LOG(FATAL)<<"Unsupport Insert(K, ValuePtr<V>*) in SingleTireStorage.";
   }
 
   void InsertToDram(K key, ValuePtr<V>** value_ptr,
@@ -157,7 +146,10 @@ class SingleTierStorage : public Storage<K, V> {
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
-      V* memcpy_buffer_gpu) override {
+      V* memcpy_buffer_gpu,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const DeviceBase::CpuWorkerThreads* worker_threads) override {
     LOG(FATAL) << "Unsupport CopyEmbeddingsFromCPUToGPU in SingleTierStorage.";
   };
 

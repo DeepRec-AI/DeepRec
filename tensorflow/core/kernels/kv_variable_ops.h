@@ -36,10 +36,6 @@ limitations under the License.
 namespace tensorflow {
 using GPUDevice = Eigen::GpuDevice;
 
-namespace {
-  extern const int kSavedPartitionNum = 1000;
-}
-
 template<class T>
 class EVKeyDumpIterator: public  DumpIterator<T> {
  public:

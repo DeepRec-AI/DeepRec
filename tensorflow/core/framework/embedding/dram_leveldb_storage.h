@@ -57,19 +57,8 @@ class DramLevelDBStore : public MultiTierStorage<K, V> {
     return s;
   }
 
-  void Insert(const std::vector<K>& keys,
-              ValuePtr<V>** value_ptrs) override {
-    for (size_t i = 0; i < keys.size(); i++) {
-      do {
-        Status s = dram_kv_->Insert(keys[i], value_ptrs[i]);
-        if (s.ok()) {
-          break;
-        } else {
-          (value_ptrs[i])->Destroy(alloc_);
-          delete value_ptrs[i];
-        }
-      } while (!(dram_kv_->Lookup(keys[i], &value_ptrs[i])).ok());
-    }
+  void Insert(K key, ValuePtr<V>* value_ptr) override {
+    LOG(FATAL)<<"Unsupport Insert(K, ValuePtr<V>*) in DramLevelDBStore.";
   }
 
   void Insert(K key, ValuePtr<V>** value_ptr,

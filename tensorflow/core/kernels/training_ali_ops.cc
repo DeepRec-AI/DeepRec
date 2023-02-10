@@ -243,26 +243,25 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
       EmbeddingVar<TKey, T>* var,
       EmbeddingVar<TKey, T>* accum, T** v, T**a,
       T lr_scalar, const T* grad_base,
-      const int64 task_size) {
+      const int64 task_size,
+      se::Stream* stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device) {
     // Send pointers of embeddings to GPU
-    T **dev_a, **dev_v;
-    dev_a = (T**)accum->GetBuffer(task_size);
-    dev_v = (T**)var->GetBuffer(task_size);
+    T** dev_v = (T**)var->GetBuffer(task_size * 2);
+    T** dev_a = dev_v + task_size;
     CHECK(dev_a);
     CHECK(dev_v);
-    cudaMemcpy(dev_a, a, sizeof(T*) * task_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_v, v, sizeof(T*) * task_size, cudaMemcpyHostToDevice);
+    DeviceMemoryBase dev_v_ptr(dev_v, sizeof(T*) * task_size * 2);
+    stream->ThenMemcpy(&dev_v_ptr, v, sizeof(T*) * task_size * 2);
 
     int block_size = 128;
     int embedding_dim = var->ValueLen();
-    void* args[] = {(void*)&dev_a, (void*)&dev_v,
-                    (void*)&grad_base, (void*)&lr_scalar,
-                    (void*)&embedding_dim, (void*)&task_size};
-
-    cudaLaunchKernel((void *)SparseApplyAdagradGPU<T>,
-                     (task_size + block_size - 1) / block_size * embedding_dim,
-                     block_size, args, 0, nullptr);
-    cudaDeviceSynchronize();
+    functor::KvSparseApplyAdagradHbm<GPUDevice, TKey, T>()(
+            block_size, embedding_dim,
+            dev_a, dev_v, grad_base,
+            lr_scalar, task_size, gpu_device);
+    SyncWithEventMgr(stream, event_mgr);
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
@@ -326,17 +325,19 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
               key_base, grad_base, lr_scalar, gs, device);
         } else {
           ValuePtr<T>** value_ptrs = new ValuePtr<T>*[N];
-          TKey* indices_host = new TKey[N];
-          volatile bool is_cpu_indices_ready = false;
+          TKey* indices_host = nullptr;
           //Copy ids from GPU to CPU for CPU Lookup.
           auto stream = ctx->op_device_context()->stream();
-          se::DeviceMemoryBase gpu_src(
-              const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
-          stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
-          ctx->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
-              stream,
-              [&is_cpu_indices_ready]() {is_cpu_indices_ready = true;});
-          while(!is_cpu_indices_ready) {}
+          auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
+          if (!indices_as_pointer) {
+            indices_host = new TKey[N];
+            se::DeviceMemoryBase gpu_src(
+                const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
+            stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
+            SyncWithEventMgr(stream, event_mgr);
+          } else {
+            indices_host = const_cast<TKey*>(&indices_flat(0));
+          }
           // Lookup ValuePtrs of ids and set version of each id  in parallel
           LookupKeyAndSetVersion(ctx, var, value_ptrs,
                                  gs, indices_host, N,
@@ -344,8 +345,8 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
 
           // Get pointers to embeddings and
           // check which ids need to be initialized
-          T** a = new T*[N];
-          T** v = new T*[N];
+          T** v = new T*[N * 2];
+          T** a = v + N;
           int num_worker_threads = ctx->device()
                             ->tensorflow_cpu_worker_threads()
                             ->num_threads;
@@ -359,17 +360,21 @@ class KvSparseApplyAdagradGPUOp : public OpKernel {
               indices_host, N,
               init_cursor_list[0],
               a, accum->GetDefaultValuePtr(),
-              get_default_v_fn_);
+              get_default_v_fn_, stream,
+              event_mgr, ctx->eigen_device<GPUDevice>());
 
           ApplyGradients(
               var, accum, v, a,
               lr_scalar,
-              &grad_flat(0), N);
+              &grad_flat(0), N,
+              stream, event_mgr,
+              ctx->eigen_device<GPUDevice>());
 
-          delete[] a;
           delete[] v;
           delete[] value_ptrs;
-          delete[] indices_host;
+          if (!indices_as_pointer) {
+            delete[] indices_host;
+          }
         }
       }
     }
@@ -414,6 +419,7 @@ DECLARE_GPU_SPEC(int64, double);
   REGISTER_KERNEL_BUILDER(Name("_OPT_KvResourceSparseApplyAdagrad")  \
                               .Device(DEVICE_GPU)                    \
                               .TypeConstraint<T>("T")                \
+                              .HostMemory("indices")                 \
                               .HostMemory("lr")                      \
                               .HostMemory("global_step")             \
                               .TypeConstraint<Tindices>("Tindices")  \
@@ -1546,25 +1552,20 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
       T** var_ptr, T** m_ptr, T** v_ptr,
       T alpha, T beta1, T beta2,
       T epsilon, const T* grad_base,
-      const int64 task_size) {
+      const int64 task_size,
+      se::Stream* stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device) {
     // Send pointers of embeddings to GPU
-    T **dev_var_ptr, **dev_m_ptr, **dev_v_ptr;
-    dev_var_ptr = (T**)var->GetBuffer(task_size);
-    dev_m_ptr = (T**)m->GetBuffer(task_size);
-    dev_v_ptr = (T**)v->GetBuffer(task_size);
+    T** dev_var_ptr = (T**)var->GetBuffer(task_size * 3);
+    T** dev_m_ptr = dev_var_ptr + task_size;
+    T** dev_v_ptr = dev_m_ptr + task_size;
     CHECK(dev_var_ptr);
     CHECK(dev_m_ptr);
     CHECK(dev_v_ptr);
 
-    cudaMemcpy(dev_var_ptr, var_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_m_ptr, m_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_v_ptr, v_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
+    DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
+    stream->ThenMemcpy(&dst_ptr, var_ptr, sizeof(T*) * task_size * 3);
 
     int block_size = 128;
     int embedding_dim = var->ValueLen();
@@ -1574,11 +1575,12 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                     (void*)&epsilon, (void*)&embedding_dim,
                     (void*)&task_size};
 
-    cudaLaunchKernel(
-        (void *)SparseApplyAdamGPU<T>,
-        (task_size + block_size - 1) / block_size * embedding_dim,
-        block_size, args, 0, nullptr);
-    cudaDeviceSynchronize();
+    functor::KvSparseApplyAdamHbm<GPUDevice, Tindex, T>()(
+        block_size, embedding_dim,
+        dev_var_ptr, dev_m_ptr, dev_v_ptr, grad_base,
+        alpha, beta1, beta2, epsilon,
+        task_size, gpu_device);
+    SyncWithEventMgr(stream, event_mgr);
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
@@ -1684,9 +1686,9 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
 
         // Get pointers to embeddings and
         // check which ids need to be initialized
-        T** m_ptr = new T*[N];
-        T** v_ptr = new T*[N];
-        T** var_ptr = new T*[N];
+        T** var_ptr = new T*[N * 3];
+        T** m_ptr = var_ptr + N;
+        T** v_ptr = m_ptr + N;
         int num_worker_threads = ctx->device()
                                  ->tensorflow_cpu_worker_threads()
                                  ->num_threads;
@@ -1696,27 +1698,32 @@ class KvSparseApplyAdamGPUOp : public OpKernel {
                                 value_ptrs, init_cursor_list,
                                 var_ptr, m_ptr, v_ptr, N);
 
+        auto stream = ctx->op_device_context()->stream();
+        auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
+
         m->SetDefaultValueOfNewFeatures(
             indices_flat.data(), N,
             init_cursor_list[0],
             m_ptr, m->GetDefaultValuePtr(),
-            get_default_v_fn_);
+            get_default_v_fn_, stream,
+            event_mgr, ctx->eigen_gpu_device());
 
         v->SetDefaultValueOfNewFeatures(
             indices_flat.data(), N,
             init_cursor_list[0],
             v_ptr, v->GetDefaultValuePtr(),
-            get_default_v_fn_);
+            get_default_v_fn_, stream,
+            event_mgr, ctx->eigen_gpu_device());
 
         ApplyGradients(
             var, m, v, var_ptr,
             m_ptr, v_ptr, alpha,
             beta1_scalar, beta2_scalar,
-            epsilon_scalar, &grad_flat(0), N);
+            epsilon_scalar, &grad_flat(0), N,
+            stream, event_mgr,
+            ctx->eigen_gpu_device());
 
         delete[] var_ptr;
-        delete[] m_ptr;
-        delete[] v_ptr;
         delete[] value_ptrs;
       }
     }
@@ -2536,56 +2543,42 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
       typename TTypes<T>::Scalar beta1_power_scalar,
       typename TTypes<T>::Scalar beta2_power_scalar,
       const T* grad_base,
-      const int64 task_size) {
+      const int64 task_size,
+      se::Stream* stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device) {
     // Send pointers of embeddings to GPU
-    T **dev_var_ptr, **dev_m_ptr, **dev_v_ptr;
-    dev_var_ptr = (T**)var->GetBuffer(task_size);
-    dev_m_ptr = (T**)m->GetBuffer(task_size);
-    dev_v_ptr = (T**)v->GetBuffer(task_size);
+    T** dev_var_ptr = (T**)var->GetBuffer(task_size * 3);
+    T** dev_m_ptr = dev_var_ptr + task_size;
+    T** dev_v_ptr = dev_m_ptr + task_size;
     CHECK(dev_var_ptr);
     CHECK(dev_m_ptr);
     CHECK(dev_v_ptr);
 
-    cudaMemcpy(dev_var_ptr, var_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_m_ptr, m_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_v_ptr, v_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
+    DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
+    stream->ThenMemcpy(&dst_ptr, var_ptr, sizeof(T*) * task_size * 3);
 
     int block_size = 128;
     int embedding_dim = var->ValueLen();
     T* beta1_power_ptr = beta1_power_scalar.data();
     T* beta2_power_ptr = beta2_power_scalar.data();
     if (apply_sparse_rmsprop_) {
-      void* args[] = {(void*)&dev_var_ptr, (void*)&dev_m_ptr,
-                      (void*)&dev_v_ptr, (void*)&grad_base,
-                      (void*)&lr, (void*)&beta1, (void*)&beta2,
-                      (void*)&epsilon, (void*)&embedding_dim,
-                      (void*)&task_size};
-
-      cudaLaunchKernel(
-          (void *)SparseApplyAdamAsyncSparseRmspropGPU<T>,
-          (task_size + block_size - 1) / block_size * embedding_dim,
-          block_size, args, 0, nullptr);
-      cudaDeviceSynchronize();
+      functor::KvSparseApplyAdamAsyncSparseRmspropHbm<GPUDevice, Tindex, T>()(
+          block_size, embedding_dim,
+          dev_var_ptr, dev_m_ptr, dev_v_ptr,
+          grad_base, lr, beta1,
+          beta2, epsilon, task_size,
+          gpu_device);
     } else {
-      void* args[] = {(void*)&dev_var_ptr, (void*)&dev_m_ptr,
-                      (void*)&dev_v_ptr, (void*)&grad_base,
-                      (void*)&lr, (void*)&beta1, (void*)&beta2,
-                      (void*)&epsilon, (void*)&beta1_power_ptr,
-                      (void*)&beta2_power_ptr,
-                      (void*)&embedding_dim, (void*)&task_size};
-
-      cudaLaunchKernel(
-          (void *)SparseApplyAdamAsyncGPU<T>,
-          (task_size + block_size - 1) / block_size * embedding_dim,
-          block_size, args, 0, nullptr);
-      cudaDeviceSynchronize();
+     functor::KvSparseApplyAdamAsyncHbm<GPUDevice, Tindex, T>()(
+          block_size, embedding_dim,
+          dev_var_ptr, dev_m_ptr, dev_v_ptr,
+          grad_base, lr, beta1,
+          beta2, epsilon, beta1_power_ptr,
+          beta2_power_ptr, task_size,
+          gpu_device);
     }
+    SyncWithEventMgr(stream, event_mgr);
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
@@ -2698,13 +2691,11 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
         volatile bool is_cpu_indices_ready = false;
         //Copy ids from GPU to CPU for CPU Lookup.
         auto stream = ctx->op_device_context()->stream();
+        auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
         se::DeviceMemoryBase gpu_src(
             const_cast<Tindex*>(indices_vec.data()), N * sizeof(Tindex));
         stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(Tindex));
-        ctx->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
-            stream,
-            [&is_cpu_indices_ready]() {is_cpu_indices_ready = true;});
-        while(!is_cpu_indices_ready) {}
+        SyncWithEventMgr(stream, event_mgr);
         // Lookup ValuePtrs of ids and set version of each id  in parallel
         LookupKeyAndSetVersion(ctx, var, value_ptrs,
                                gs, indices_host, N,
@@ -2712,9 +2703,9 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
 
         // Get pointers to embeddings and
         // check which ids need to be initialized
-        T** m_ptr = new T*[N];
-        T** v_ptr = new T*[N];
-        T** var_ptr = new T*[N];
+        T** var_ptr = new T*[N * 3];
+        T** m_ptr = var_ptr + N;
+        T** v_ptr = m_ptr + N;
         int num_worker_threads = ctx->device()
                                  ->tensorflow_cpu_worker_threads()
                                  ->num_threads;
@@ -2728,13 +2719,15 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
             indices_host, N,
             init_cursor_list[0],
             m_ptr, m->GetDefaultValuePtr(),
-            get_default_v_fn_);
+            get_default_v_fn_, stream,
+            event_mgr, ctx->eigen_device<GPUDevice>());
 
         v->SetDefaultValueOfNewFeatures(
             indices_host, N,
             init_cursor_list[0],
             v_ptr, v->GetDefaultValuePtr(),
-            get_default_v_fn_);
+            get_default_v_fn_, stream,
+            event_mgr, ctx->eigen_device<GPUDevice>());
 
         ApplyGradients(
             var, m, v, var_ptr,
@@ -2743,10 +2736,10 @@ class KvSparseApplyAdamAsyncGPUOp : public OpKernel {
             epsilon_scalar, lr_scalar,
             beta1_power_scalar,
             beta2_power_scalar,
-            &grad_flat(0), N);
-        
-        delete[] m_ptr;
-        delete[] v_ptr;
+            &grad_flat(0), N,
+            stream, event_mgr,
+            ctx->eigen_device<GPUDevice>());
+
         delete[] var_ptr;
         delete[] value_ptrs;
         delete[] indices_host;
@@ -3186,39 +3179,29 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
       T alpha, T beta1, T beta2,
       T epsilon, T weight_decay,
       const T* grad_base,
-      const int64 task_size) {
+      const int64 task_size,
+      se::Stream* stream,
+      EventMgr* event_mgr,
+      const Eigen::GpuDevice& gpu_device) {
     // Send pointers of embeddings to GPU
-    T **dev_var_ptr, **dev_m_ptr, **dev_v_ptr;
-    dev_var_ptr = (T**)var->GetBuffer(task_size);
-    dev_m_ptr = (T**)m->GetBuffer(task_size);
-    dev_v_ptr = (T**)v->GetBuffer(task_size);
+    T** dev_var_ptr = (T**)var->GetBuffer(task_size * 3);
+    T** dev_m_ptr = dev_var_ptr + task_size;
+    T** dev_v_ptr = dev_m_ptr + task_size;
     CHECK(dev_var_ptr);
     CHECK(dev_m_ptr);
     CHECK(dev_v_ptr);
 
-    cudaMemcpy(dev_var_ptr, var_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_m_ptr, m_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(dev_v_ptr, v_ptr,
-               sizeof(T*) * task_size,
-               cudaMemcpyHostToDevice);
+    DeviceMemoryBase dst_ptr(dev_var_ptr, sizeof(T*) * task_size * 3);
+    stream->ThenMemcpy(&dst_ptr, var_ptr, sizeof(T*) * task_size * 3);
 
     int block_size = 128;
     int embedding_dim = var->ValueLen();
-    void* args[] = {(void*)&dev_var_ptr, (void*)&dev_m_ptr,
-                    (void*)&dev_v_ptr, (void*)&grad_base,
-                    (void*)&alpha, (void*)&beta1, (void*)&beta2,
-                    (void*)&epsilon, (void*)&weight_decay,
-                    (void*)&embedding_dim, (void*)&task_size};
-
-    cudaLaunchKernel(
-        (void *)SparseApplyAdamWGPU<T>,
-        (task_size + block_size - 1) / block_size * embedding_dim,
-        block_size, args, 0, nullptr);
-    cudaDeviceSynchronize();
+    functor::KvSparseApplyAdamWHbm<GPUDevice, Tindex, T>()(
+            block_size, embedding_dim,
+            dev_var_ptr, dev_m_ptr, dev_v_ptr, grad_base,
+            alpha, beta1, beta2, epsilon, weight_decay,
+            task_size, gpu_device);
+    SyncWithEventMgr(stream, event_mgr);
   }
 
   void Compute(OpKernelContext* ctx) override NO_THREAD_SAFETY_ANALYSIS {
@@ -3326,9 +3309,9 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
 
         // Get pointers to embeddings and
         // check which ids need to be initialized
-        T** m_ptr = new T*[N];
-        T** v_ptr = new T*[N];
-        T** var_ptr = new T*[N];
+        T** var_ptr = new T*[N * 3];
+        T** m_ptr = var_ptr + N;
+        T** v_ptr = m_ptr + N;
         int num_worker_threads = ctx->device()
                                  ->tensorflow_cpu_worker_threads()
                                  ->num_threads;
@@ -3338,28 +3321,33 @@ class KvSparseApplyAdamWGPUOp : public OpKernel {
                                 value_ptrs, init_cursor_list,
                                 var_ptr, m_ptr, v_ptr, N);
 
+        auto stream = ctx->op_device_context()->stream();
+        auto event_mgr = ctx->device()->tensorflow_gpu_device_info()->event_mgr;
+
         m->SetDefaultValueOfNewFeatures(
             indices_flat.data(), N,
             init_cursor_list[0],
             m_ptr, m->GetDefaultValuePtr(),
-            get_default_v_fn_);
+            get_default_v_fn_, stream,
+            event_mgr, ctx->eigen_gpu_device());
 
         v->SetDefaultValueOfNewFeatures(
             indices_flat.data(), N,
             init_cursor_list[0],
             v_ptr, v->GetDefaultValuePtr(),
-            get_default_v_fn_);
+            get_default_v_fn_, stream,
+            event_mgr, ctx->eigen_gpu_device());
 
         ApplyGradients(
             var, m, v, var_ptr,
             m_ptr, v_ptr, alpha,
             beta1_scalar, beta2_scalar,
             epsilon_scalar, weight_decay_scalar,
-            &grad_flat(0), N);
+            &grad_flat(0), N,
+            stream, event_mgr,
+            ctx->eigen_gpu_device());
 
         delete[] var_ptr;
-        delete[] m_ptr;
-        delete[] v_ptr;
         delete[] value_ptrs;
       }
     }

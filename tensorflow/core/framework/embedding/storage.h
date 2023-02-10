@@ -21,8 +21,12 @@ limitations under the License.
 #include "tensorflow/core/framework/embedding/storage_config.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/framework/embedding/embedding_memory_pool.h"
+#include "tensorflow/core/util/work_sharder.h"
 
 namespace tensorflow {
+
+const int kSavedPartitionNum = 1000;
+
 template <class V>
 class ValuePtr;
 
@@ -66,8 +70,7 @@ class Storage {
   virtual void Insert(K key, ValuePtr<V>** value_ptr, int64 alloc_len) = 0;
   virtual void InsertToDram(K key, ValuePtr<V>** value_ptr,
                             int64 alloc_len) = 0;
-  virtual void Insert(const std::vector<K>& keys,
-                        ValuePtr<V>** value_ptrs) = 0;
+  virtual void Insert(K key, ValuePtr<V>* value_ptr) = 0;
   virtual void SetAllocLen(int64 value_len, int slot_num) = 0;
   virtual void SetValueLen(int64 value_len) {}
   virtual Status GetOrCreate(K key, ValuePtr<V>** value_ptr,
@@ -114,7 +117,10 @@ class Storage {
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
-      V* memcpy_buffer_gpu) = 0;
+      V* memcpy_buffer_gpu,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const DeviceBase::CpuWorkerThreads* worker_threads) = 0;
 
   virtual void BatchLookupOrCreate(const K* key, V* val, V* default_v,
       int32 default_v_num, bool is_use_default_value_tensor,
@@ -168,6 +174,13 @@ class Storage {
                           " storage type: ", storage_config_.type,
                           " storage path: ", storage_config_.path,
                           " storage capacity: ", storage_config_.size);
+  }
+
+  inline void Insert(const std::vector<K>& keys,
+                     ValuePtr<V>** value_ptrs) {
+    for (size_t i = 0; i < keys.size(); i++) {
+      Insert(keys[i], value_ptrs[i]);
+    }
   }
 
  protected:

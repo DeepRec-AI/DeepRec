@@ -16,13 +16,21 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_HBM_DRAM_STORAGE_H_
 
 #if GOOGLE_CUDA
+#define EIGEN_USE_GPU
 #include "tensorflow/core/framework/embedding/lockless_hash_map_cpu.h"
 #include "tensorflow/core/framework/embedding/multi_tier_storage.h"
 #include "tensorflow/core/framework/embedding/hbm_storage_iterator.h"
+#include "tensorflow/core/kernels/gpu_device_array.h"
+#include "tensorflow/core/platform/stream_executor.h"
 
 namespace tensorflow {
+using se::DeviceMemoryBase;
+using se::Stream;
+
 template <class V>
 class ValuePtr;
+
+void SyncWithEventMgr(se::Stream* stream, EventMgr* event_mgr);
 
 namespace embedding {
 template<typename K, typename V>
@@ -57,19 +65,16 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
     return s;
   }
 
-  void Insert(const std::vector<K>& keys,
-              ValuePtr<V>** value_ptrs) override {
-    for (size_t i = 0; i < keys.size(); i++) {
-      do {
-        Status s = hbm_kv_->Insert(keys[i], value_ptrs[i]);
-        if (s.ok()) {
-          break;
-        } else {
-          (value_ptrs[i])->Destroy(gpu_alloc_);
-          delete value_ptrs[i];
-        }
-      } while (!(hbm_kv_->Lookup(keys[i], &value_ptrs[i])).ok());
-    }
+  void Insert(K key, ValuePtr<V>* value_ptr) override {
+    do {
+      Status s = hbm_kv_->Insert(key, value_ptr);
+      if (s.ok()) {
+        break;
+      } else {
+        value_ptr->Destroy(gpu_alloc_);
+        delete value_ptr;
+      }
+    } while (!(hbm_kv_->Lookup(key, &value_ptr)).ok());
   }
 
   void Insert(K key, ValuePtr<V>** value_ptr,
@@ -230,8 +235,12 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
       int total, const K* keys,
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
-      ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu) override {
-    auto memcpy_buffer_cpu = (V*)malloc(total * value_len * sizeof(V));
+      ValuePtr<V> **gpu_value_ptrs, V* memcpy_buffer_gpu,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const DeviceBase::CpuWorkerThreads* worker_threads) override {
+    auto memcpy_buffer_cpu = TypedAllocator::Allocate<V>(cpu_allocator(),
+        total * value_len, AllocationAttributes());
     int64* memory_index = new int64[total];
     int64 i = 0;
     auto it = copyback_cursor.cbegin();
@@ -256,16 +265,24 @@ class HbmDramStorage : public MultiTierStorage<K, V> {
       }
     }
     //Split from above for loop for minize the cost of mutex lock
-    //TODO: Speed up with intra parallelism
-    for (int i = 0; i < total; i++) {
-      int j = memory_index[i];
-      memcpy(memcpy_buffer_cpu + i * value_len,
-             memcpy_address[j], value_len * sizeof(V));
-    }
-
-    cudaMemcpy(memcpy_buffer_gpu, memcpy_buffer_cpu,
-        total * value_len * sizeof(V), cudaMemcpyHostToDevice);
-    free(memcpy_buffer_cpu);
+    auto do_work = [memory_index, memcpy_address,
+                    memcpy_buffer_cpu, gpu_value_ptrs,
+                    value_len, this] (int64 start, int64 limit) {
+      for (int i = start; i < limit; i++) {
+        int j = memory_index[i];
+        memcpy(memcpy_buffer_cpu + i * value_len,
+               memcpy_address[j], value_len * sizeof(V));
+      }
+    };
+    Shard(worker_threads->num_threads, worker_threads->workers, total,
+          1000, do_work);
+    DeviceMemoryBase gpu_dst_ptr(
+        memcpy_buffer_gpu, total * value_len * sizeof(V));
+    compute_stream->ThenMemcpy(
+        &gpu_dst_ptr, memcpy_buffer_cpu, total * value_len * sizeof(V));
+    SyncWithEventMgr(compute_stream, event_mgr);
+    TypedAllocator::Deallocate(
+        cpu_allocator(), memcpy_buffer_cpu, total * value_len);
     delete[] memory_index;
   }
 
