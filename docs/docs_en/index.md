@@ -52,6 +52,7 @@ Fused-Embedding
 Stage
 Smart-Stage
 Async-Embedding-Stage
+Sample-awared-Graph-Compression
 ```
 
 ```{toctree}
