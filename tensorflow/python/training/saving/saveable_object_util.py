@@ -187,7 +187,8 @@ class EmbeddingVariableSaveable(saveable_object.SaveableObject):
 
   def restore(self, restored_tensors, unused_restored_shapes):
     # pylint: disable=protected-access
-    name_tensor = ops.convert_to_tensor(self.name)
+    with ops.device("/cpu:0"):
+      name_tensor = ops.convert_to_tensor(self.name)
     with ops.colocate_with(self.handle_op):
       handle_name = ops.name_from_scope_name(self.name)
       is_partitioned_ev = not isinstance(self.var._save_slice_info, str)

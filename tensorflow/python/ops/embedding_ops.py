@@ -24,6 +24,7 @@ from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import sparse_tensor
 from tensorflow.python.framework import tensor_shape
+from tensorflow.python.framework import group_embedding_ops_utils
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import check_ops
 from tensorflow.python.ops import clip_ops
@@ -1646,6 +1647,74 @@ def safe_adaptive_embedding_lookup_sparse(hash_embedding_weights,
     final_result.set_shape(tensor_shape.unknown_shape(
         (original_rank_dim - 1).value).concatenate(result.get_shape()[1:]))
     return final_result
+
+@tf_export("nn.group_embedding_lookup_sparse")
+def group_embedding_lookup_sparse(params,
+                                  sp_ids,
+                                  combiners,
+                                  partition_strategy="mod",
+                                  name=None):
+  """
+    This interface is designed for fused multiple embedding lookup.
+
+    Args:
+      params: list, tuple
+              a list or tuple of trainable *Variable* or *EmbeddingVariable*.
+      sp_ids: list, tuple
+              a list or tuple of tf.SparseTensor or tf.RaggedTensor.
+              btw RaggedTensor is preferred.
+      combiners: list, tuple
+              a list or tuple of string to specify the combiner of each embedding lookup, 
+              supported args is *sum* or *mean*
+      name: The operations name
+
+    Returns
+    -------
+    emb_vec: list
+            a list of tf.Tensor(the results of lookup).
+  """
+  ##TODO(jqh): support calculate sp_weights in this API
+  if combiners is None:
+    logging.warn("The default value of combiner will change from \"mean\" "
+                 "to \"sqrtn\" after 2016/11/01.")
+    combiners = ["mean"] * len(params)
+  if not isinstance(combiners, list):
+    combiners = [combiners]
+  for combiner in combiners:
+    if combiner not in ("mean", "sum"):
+      raise ValueError("combiners must be one of 'mean', 'sum'")
+  
+  if params is None:
+    raise ValueError("params must be specified")
+  if not isinstance(params, list):
+    params = [params]
+  
+  if len(combiners) != len(sp_ids):
+    raise ValueError("len of combiners must be equal to len of sp_ids")
+  if len(combiners) != len(params):
+    raise ValueError("len of combiners must be equal to len of params")
+
+  ## Currently not doing unique
+  fusion_type = group_embedding_ops_utils.get_group_lookup_fusion_type()
+  if fusion_type == group_embedding_ops_utils.FUSIONTYPE.COLLECTIVE:
+    for index, param in enumerate(params):
+      if isinstance(param, variables.PartitionedVariable):
+        raise TypeError("PartitionedVariable not support in 'group_embedding_lookup_sparse'")
+      param.target_gpu = -1
+
+    try:
+      from sparse_operation_kit import experiment as sok
+    except:
+      raise ImportError("sparse_operation_kit is not found while "
+                        "group_embedding fusion_type is given `collective`")
+    with ops.name_scope(name, "group_embedding_lookup",
+                        params + sp_ids) as name_scope:
+      emb_vec = sok.lookup_sparse(params, sp_ids, combiners)
+
+  elif fusion_type == group_embedding_ops_utils.FUSIONTYPE.UNKNOWN:
+    raise ValueError("Unrecognized fusion_type, expected collective, given{}".format(fusion_type))
+
+  return emb_vec
 
 def _prune_invalid_ids(sparse_ids, sparse_weights):
   """Prune invalid IDs (< 0) from the input ids and weights."""

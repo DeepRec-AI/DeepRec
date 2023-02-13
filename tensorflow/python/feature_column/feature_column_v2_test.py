@@ -8535,6 +8535,7 @@ class EmbeddingColumnTest(test.TestCase):
         'trainable': True,
         'coalesced_scope': None,
         'do_fusion': False,
+        'group_name': '',
     }, config)
 
     custom_objects = {'TruncatedNormal': init_ops.TruncatedNormal}
@@ -8590,6 +8591,7 @@ class EmbeddingColumnTest(test.TestCase):
         'trainable': True,
         'coalesced_scope': None,
         'do_fusion': False,
+        'group_name': '',
     }, config)
 
     custom_objects = {

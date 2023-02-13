@@ -13,7 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 """This API defines FeatureColumn abstraction.
-
 FeatureColumns provide a high level abstraction for ingesting and representing
 features. FeatureColumns are also the primary way of encoding features for
 canned `tf.estimator.Estimator`s.
@@ -139,6 +138,7 @@ import json
 from tensorflow.python.eager import context
 from tensorflow.python.feature_column import feature_column as fc_old
 from tensorflow.python.feature_column import utils as fc_utils
+from tensorflow.python.feature_column import group_embedding_column
 from tensorflow.python.feature_column import coalesced_utils
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
@@ -945,6 +945,8 @@ def embedding_column(categorical_column,
   if initializer is None:
     initializer = init_ops.truncated_normal_initializer(
         mean=0.0, stddev=1 / math.sqrt(dimension))
+  fused_scope = group_embedding_column._current_group_embedding_scope()
+  group_name = fused_scope.name if fused_scope is not None else ''
   if coalesced_scope is None:
     coalesced_scope = current_coalesced_scope()
   column = EmbeddingColumn(
@@ -957,7 +959,10 @@ def embedding_column(categorical_column,
       max_norm=max_norm,
       trainable=trainable,
       coalesced_scope=coalesced_scope,
-      do_fusion=do_fusion)
+      do_fusion=do_fusion,
+      group_name=group_name)
+  if fused_scope:
+    fused_scope.add_column(column)
   if coalesced_scope:
     coalesced_scope.add_column(column)
     coalesced_utils.add_embedding_signature(
@@ -1288,6 +1293,8 @@ def shared_embedding_column(categorical_column,
   num_buckets = categorical_column.num_buckets
   if coalesced_scope is None:
     coalesced_scope = current_coalesced_scope()
+  fused_scope = group_embedding_column._current_group_embedding_scope()
+  group_name = fused_scope.name if fused_scope is not None else ''
   column = SharedEmbeddingColumnV2(
       categorical_column=categorical_column,
       dimension=dimension,
@@ -1299,7 +1306,10 @@ def shared_embedding_column(categorical_column,
       max_norm=max_norm,
       trainable=trainable,
       coalesced_scope=coalesced_scope,
-      do_fusion=do_fusion)
+      do_fusion=do_fusion,
+      group_name=group_name)
+  if fused_scope:
+    fused_scope.add_column(column)
   if coalesced_scope:
     coalesced_scope.add_column(column)
     coalesced_utils.add_embedding_signature(
@@ -1565,6 +1575,8 @@ def shared_embedding_columns_v2(categorical_columns,
     shared_embedding_collection_name = '_'.join(c.name for c in sorted_columns)
     shared_embedding_collection_name += '_shared_embedding'
 
+  fused_scope = group_embedding_column._current_group_embedding_scope()
+  group_name = fused_scope.name if fused_scope is not None else ''
   if coalesced_scope is None:
     coalesced_scope = current_coalesced_scope()
   column_creator = SharedEmbeddingColumnCreator(
@@ -1576,7 +1588,10 @@ def shared_embedding_columns_v2(categorical_columns,
     result_column = column_creator(categorical_column=column,
                                    combiner=combiner,
                                    max_norm=max_norm,
-                                   coalesced_scope=coalesced_scope)
+                                   coalesced_scope=coalesced_scope,
+                                   group_name=group_name)
+    if fused_scope:
+      fused_scope.add_column(result_column)
     if coalesced_scope:
       coalesced_scope.add_column(result_column)
       coalesced_utils.add_embedding_signature(
@@ -4198,6 +4213,50 @@ class CutoffCategoricalColumn(
     kwargs['reverse'] = config['reverse']
     return cls(**kwargs)
 
+@tf_export('feature_column.group_embedding_column_scope')
+@contextlib.contextmanager
+def group_embedding_column_scope(name=''):
+  global_group_embedding_scope = group_embedding_column._global_group_embedding_scope_list()
+  group_id = group_embedding_column._current_group_id()
+  if name == '':
+    name = "group_embedding_column_scope_{}".format(group_id)
+    group_id +=1
+  else:
+     name = "group_embedding_column_scope_{}".format(name)
+  fusion_embedding_scope = GroupEmbeddingScope(name)
+  global_group_embedding_scope.append(fusion_embedding_scope)
+  yield global_group_embedding_scope 
+
+class GroupEmbeddingScope(group_embedding_column.GroupEmbeddingScopeBase):
+  def __init__(self, name=None):
+    super(GroupEmbeddingScope, self).__init__(name=name)
+
+  def add_column(self, embedding_column):
+    VALID_EMBEDDING_COLUMN_TYPES = (
+      EmbeddingColumn, SharedEmbeddingColumn, SharedEmbeddingColumnV2,
+    )
+    if not isinstance(embedding_column, VALID_EMBEDDING_COLUMN_TYPES):
+      raise ValueError("column must be one of EmbeddingColumns, ",
+                      "given {}".format(embedding_column))
+    self.embedding_columns.append(embedding_column)
+  
+  def _get_dense_tensor(self, inputs, weight_collections=None, trainable=None):
+    with ops.name_scope(self.name):
+      embedding_weights = []
+      sp_ids = []
+      combiners = []
+      output_tensors = []
+      for index, ec in enumerate(self.embedding_columns):
+        sp_id = ec.categorical_column._get_sparse_tensors(
+            inputs, weight_collections, trainable).id_tensor
+        sp_ids.append(sp_id)
+        combiners.append(ec.combiner)
+        embedding_weight = ec.create_embedding(weight_collections, trainable)
+        embedding_weights.append(embedding_weight)
+ 
+      output_tensors.extend(embedding_ops.group_embedding_lookup_sparse(
+                                embedding_weights, sp_ids, combiners))
+      return output_tensors
 
 class EmbeddingColumn(
     DenseColumn,
@@ -4208,7 +4267,7 @@ class EmbeddingColumn(
         'EmbeddingColumn',
         ('categorical_column', 'dimension', 'combiner', 'initializer',
          'ckpt_to_load_from', 'tensor_name_in_ckpt', 'max_norm', 'trainable',
-         'coalesced_scope', 'do_fusion'))):
+         'coalesced_scope', 'do_fusion', 'group_name'))):
   """See `embedding_column`."""
 
   def __new__(
@@ -4222,13 +4281,14 @@ class EmbeddingColumn(
       max_norm,
       trainable,
       coalesced_scope=None,
-      do_fusion=False):
+      do_fusion=False,
+      group_name=''):
     """Create feature column in compatible way."""
     return super(EmbeddingColumn, cls).__new__(
         cls, categorical_column, dimension, combiner, initializer,
         ckpt_to_load_from, tensor_name_in_ckpt, max_norm, trainable,
         coalesced_scope=coalesced_scope,
-        do_fusion=do_fusion)
+        do_fusion=do_fusion, group_name=group_name)
 
   @property
   def _is_v2_column(self):
@@ -4469,6 +4529,51 @@ class EmbeddingColumn(
       return self._get_dense_tensor_internal_helper(sparse_tensors,
                                                     embedding_weights)
 
+  def create_embedding(self, weight_collections, trainable):
+    """Private method that follows the signature of _get_dense_tensor."""
+    embedding_shape = (self.categorical_column._num_buckets, self.dimension)  # pylint: disable=protected-access
+    is_sequence_embedding = isinstance(self.categorical_column, SequenceCategoricalColumn) \
+                              and isinstance(self.categorical_column.categorical_column, EmbeddingCategoricalColumn)
+    is_weight_embedding = isinstance(self.categorical_column, WeightedCategoricalColumn) \
+                              and isinstance(self.categorical_column.categorical_column, EmbeddingCategoricalColumn)
+    if (weight_collections and
+        ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections):
+      weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
+    if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn) \
+      or isinstance(self.categorical_column, EmbeddingCategoricalColumn) \
+        or isinstance(self.categorical_column, MultiHashVariableCategoricalColumn) \
+        or is_sequence_embedding or is_weight_embedding:
+      if self.categorical_column.partition_num is None:
+        partitioner = None
+      else:
+        partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+    if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn):
+      raise TypeError("AdaptiveEmbeddingCategoricalColumn currently not supported")
+      
+    elif isinstance(self.categorical_column, EmbeddingCategoricalColumn) \
+      or is_sequence_embedding or is_weight_embedding:
+      embedding_weights = variable_scope.get_embedding_variable_internal(
+        name='%s_embedding_weights' % self.name,
+        embedding_dim=self.dimension,
+        initializer=self.initializer,
+        trainable=self.trainable and trainable,
+        collections=weight_collections,
+        partitioner=partitioner,
+        ev_option=self.categorical_column.ev_option
+      )
+      return embedding_weights
+    elif isinstance(self.categorical_column, MultiHashVariableCategoricalColumn):
+      raise TypeError("MultiHashVariableCategoricalColumn currently not supported")
+    else:
+      embedding_weights = variable_scope.get_variable(
+        name='embedding_weights',
+        shape=embedding_shape,
+        dtype=dtypes.float32,
+        initializer=self.initializer,
+        trainable=self.trainable and trainable,
+        collections=weight_collections)
+      return embedding_weights
+
   def get_dense_tensor(self, transformation_cache, state_manager):
     """Returns tensor after doing the embedding lookup.
 
@@ -4609,7 +4714,7 @@ class SharedEmbeddingColumnV2(
         'SharedEmbeddingColumnV2',
         ('categorical_column', 'dimension', 'shared_name','combiner',
          'initializer', 'ckpt_to_load_from', 'tensor_name_in_ckpt',
-         'max_norm', 'trainable', 'coalesced_scope', 'do_fusion'))):
+         'max_norm', 'trainable', 'coalesced_scope', 'do_fusion', 'group_name'))):
   """See `shared_embedding_column`."""
 
   def __new__(
@@ -4624,12 +4729,13 @@ class SharedEmbeddingColumnV2(
       max_norm,
       trainable,
       coalesced_scope=None,
-      do_fusion=False):
+      do_fusion=False,
+      group_name=''):
     """Create feature column in compatible way."""
     return super(SharedEmbeddingColumnV2, cls).__new__(
         cls, categorical_column, dimension, shared_name, combiner, initializer,
         ckpt_to_load_from, tensor_name_in_ckpt, max_norm, trainable,
-        coalesced_scope=coalesced_scope, do_fusion=do_fusion)
+        coalesced_scope=coalesced_scope, do_fusion=do_fusion, group_name=group_name)
 
   @property
   def _is_v2_column(self):
@@ -4730,6 +4836,20 @@ class SharedEmbeddingColumnV2(
         ops.add_to_collection(self.embedding_name,
                               embedding_weights)
 
+  def create_embedding(self, weight_collections, trainable):
+    embedding_shape = (self.categorical_column._num_buckets, self.dimension)  # pylint: disable=protected-access
+    if (weight_collections and
+        ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections):
+      weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
+      embedding_weights = variable_scope.get_variable(
+          name='%_embedding_weights' % self.shared_name,
+          shape=embedding_shape,
+          dtype=dtypes.float32,
+          initializer=self.initializer,
+          trainable=self.trainable and trainable,
+          collections=weight_collections)
+    return embedding_weights
+
   def _get_dense_tensor_internal_helper(self, sparse_tensors,
                                         embedding_weights):
     sparse_ids = sparse_tensors.id_tensor
@@ -4770,17 +4890,7 @@ class SharedEmbeddingColumnV2(
   def _old_get_dense_tensor_internal(self, sparse_tensors, weight_collections,
                                      trainable):
     """Private method that follows the signature of _get_dense_tensor."""
-    embedding_shape = (self.categorical_column._num_buckets, self.dimension)  # pylint: disable=protected-access
-    if (weight_collections and
-        ops.GraphKeys.GLOBAL_VARIABLES not in weight_collections):
-      weight_collections.append(ops.GraphKeys.GLOBAL_VARIABLES)
-    embedding_weights = variable_scope.get_variable(
-        name='embedding_weights',
-        shape=embedding_shape,
-        dtype=dtypes.float32,
-        initializer=self.initializer,
-        trainable=self.trainable and trainable,
-        collections=weight_collections)
+    embedding_weights = self.create_embedding(weight_collections, trainable)
     return self._get_dense_tensor_internal_helper(sparse_tensors,
                                                   embedding_weights)
 
@@ -5220,12 +5330,14 @@ class SharedEmbeddingColumnCreator(tracking.AutoTrackable):
                categorical_column,
                combiner,
                max_norm,
-               coalesced_scope=None):
+               coalesced_scope=None,
+               group_name=''):
     return SharedEmbeddingColumn(categorical_column,
                                  self,
                                  combiner,
                                  max_norm,
-                                 coalesced_scope)
+                                 coalesced_scope,
+                                 group_name)
 
   @property
   def embedding_weights(self):
@@ -5265,7 +5377,7 @@ class SharedEmbeddingColumn(
     collections.namedtuple(
         'SharedEmbeddingColumn',
         ('categorical_column', 'shared_embedding_column_creator', 'combiner',
-         'max_norm', 'coalesced_scope'))):
+         'max_norm', 'coalesced_scope', 'group_name'))):
   """See `embedding_column`."""
 
   def __new__(
@@ -5274,12 +5386,13 @@ class SharedEmbeddingColumn(
       shared_embedding_column_creator,
       combiner,
       max_norm,
-      coalesced_scope=None):
+      coalesced_scope=None,
+      group_name=''):
     """Create feature column in compatible way."""
     return super(SharedEmbeddingColumn, cls).__new__(
         cls, categorical_column, shared_embedding_column_creator,
         combiner, max_norm,
-        coalesced_scope=coalesced_scope)
+        coalesced_scope=coalesced_scope, group_name=group_name)
 
   @property
   def _is_v2_column(self):
@@ -5334,6 +5447,12 @@ class SharedEmbeddingColumn(
         self)
     else:
       super(SharedEmbeddingColumn, self).create_state(state_manager)
+
+  def create_embedding(self, weight_collections=None, trainable=None):
+    del weight_collections
+    del trainable
+    embedding_weights = self.shared_embedding_column_creator.embedding_weights
+    return embedding_weights
 
   def _get_dense_tensor_internal(self, transformation_cache, state_manager):
     """Private method that follows the signature of _get_dense_tensor."""

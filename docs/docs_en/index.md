@@ -26,13 +26,14 @@ TFServing-Compile-And-Install
 
 ```{toctree}
 :maxdepth: 2
-:caption: Sparse Features
+:caption: Embedding
 
 Embedding-Variable
 Feature-Eviction
 Feature-Filter
 Adaptive-Embedding
 Multi-Hash-Variable
+Group-Embedding
 ```
 
 ```{toctree}
