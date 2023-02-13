@@ -314,6 +314,8 @@ http_archive(
     name = "hugectr",
     build_file = "//third_party:hugectr.BUILD",
     strip_prefix = "HugeCTR-4.3",
+    patch_args = ["-p1"],
+    patches = ["//third_party:HugeCTR.patch"],
     urls = [
         "https://github.com/NVIDIA-Merlin/HugeCTR/archive/refs/tags/v4.3.tar.gz",
     ],

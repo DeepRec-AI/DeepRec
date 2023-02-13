@@ -951,6 +951,7 @@ py_library(
         ":type_spec",
         ":util",
         ":versions",
+        ":group_embedding_ops_utils",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/eager:context",
         "//tensorflow/python/eager:core",
@@ -964,6 +965,16 @@ py_library(
     name = "op_callbacks",
     srcs = ["framework/op_callbacks.py"],
     srcs_version = "PY2AND3",
+)
+
+py_library(
+    name = "group_embedding_ops_utils",
+    srcs = ["framework/group_embedding_ops_utils.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":pywrap_tensorflow",
+        "//tensorflow/core:protos_all_py",
+    ],
 )
 
 cuda_py_test(

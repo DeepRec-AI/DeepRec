@@ -168,6 +168,7 @@ from tensorflow.python.training import checkpoint_utils
 from tensorflow.python.util import nest
 from tensorflow.python.util.tf_export import tf_export
 from tensorflow.python.util.compat import collections_abc
+from tensorflow.python.feature_column import group_embedding_column as gec
 
 
 def _internal_input_layer(features,
@@ -199,6 +200,9 @@ def _internal_input_layer(features,
     output_tensors = []
     ordered_columns = []
     for column in sorted(feature_columns, key=lambda x: x.name):
+      group_name = getattr(column, 'group_name', '')
+      if group_name != '':
+        continue
       ordered_columns.append(column)
       with variable_scope.variable_scope(
           None, default_name=column._var_scope_name):  # pylint: disable=protected-access
@@ -220,9 +224,14 @@ def _internal_input_layer(features,
         if cols_to_output_tensors is not None:
           cols_to_output_tensors[column] = output_tensor
         ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
+    
+    for fused_scope in gec._global_group_embedding_scope_list():
+      output_tensors.extend(fused_scope._get_dense_tensor(
+                                builder, weight_collections, trainable))
+      ordered_columns.append(fused_scope.embedding_columns)
     _verify_static_batch_size_equality(output_tensors, ordered_columns)
     return array_ops.concat(output_tensors, -1)
-
+    
   # If we're constructing from the `make_template`, that by default adds a
   # variable scope with the name of the layer. In that case, we dont want to
   # add another `variable_scope` as that would break checkpoints.
@@ -232,7 +241,6 @@ def _internal_input_layer(features,
     with variable_scope.variable_scope(
         scope, default_name='input_layer', values=features.values()):
       return _get_logits()
-
 
 @tf_export(v1=['feature_column.input_layer'])
 def input_layer(features,

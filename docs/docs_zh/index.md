@@ -22,7 +22,7 @@ TFServing-Compile-And-Install
 
 ```{toctree}
 :maxdepth: 2
-:caption: 稀疏功能
+:caption: Embedding
 
 Embedding-Variable
 Feature-Eviction
@@ -31,6 +31,7 @@ Dynamic-dimension-Embedding-Variable
 Adaptive-Embedding
 Multi-Hash-Variable
 Multi-tier-Embedding-Storage
+Group-Embedding
 ```
 
 ```{toctree}

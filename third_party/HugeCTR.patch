@@ -1,0 +1,75 @@
+From 142012f744a0f67a79b54cad3a716397c046174c Mon Sep 17 00:00:00 2001
+From: Mesilenceki <silenceki@hotmail.com>
+Date: Mon, 13 Feb 2023 15:59:30 +0800
+Subject: [PATCH] DeepRec patch
+
+---
+ HugeCTR/core/core.hpp                           |  1 +
+ .../lookup/kernels/embedding_collection.cc      |  2 +-
+ .../lookup/kernels/embedding_collection.cc.rej  | 17 +++++++++++++++++
+ .../src/optimizer/prepare_functions.cu          |  1 +
+ 4 files changed, 20 insertions(+), 1 deletion(-)
+ create mode 100644 sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej
+
+diff --git a/HugeCTR/core/core.hpp b/HugeCTR/core/core.hpp
+index 2cc02640..e389dbdf 100644
+--- a/HugeCTR/core/core.hpp
++++ b/HugeCTR/core/core.hpp
+@@ -19,6 +19,7 @@
+ #include <nccl.h>
+ 
+ #include <memory>
++#include <string>
+ 
+ #include "macro.hpp"
+ 
+diff --git a/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc
+index 1e956ac6..7ffed375 100644
+--- a/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc
++++ b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc
+@@ -752,7 +752,7 @@ namespace tensorflow {
+ template <typename KeyType, typename OffsetType, typename DType>
+ class LookupForwardEmbeddingVarGPUOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
+  private:
+-  using VarType = EmbeddingVarGPU<KeyType, float>;
++  using VarType = EmbeddingVar<KeyType, float>;
+   EmbeddingVarGPUAdapter<KeyType, float> adapter_;
+ 
+  public:
+diff --git a/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej
+new file mode 100644
+index 00000000..97b2bb3e
+--- /dev/null
++++ b/sparse_operation_kit/experiment/lookup/kernels/embedding_collection.cc.rej
+@@ -0,0 +1,17 @@
++***************
++*** 752,758 ****
++  template <typename KeyType, typename OffsetType, typename DType>
++  class LookupForwardEmbeddingVarGPUOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
++   private:
++-   using VarType = EmbeddingVarGPU<KeyType, float>;
++    EmbeddingVarGPUAdapter<KeyType, float> adapter_;
++  
++   public:
++--- 752,758 ----
++  template <typename KeyType, typename OffsetType, typename DType>
++  class LookupForwardEmbeddingVarGPUOp : public EmbeddingCollectionBase<KeyType, OffsetType, DType> {
++   private:
+++   using VarType = EmbeddingVar<KeyType, float>;
++    EmbeddingVarGPUAdapter<KeyType, float> adapter_;
++  
++   public:
+diff --git a/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu b/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu
+index afe4881b..67f3e1b4 100644
+--- a/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu
++++ b/sparse_operation_kit/kit_cc/kit_cc_infra/src/optimizer/prepare_functions.cu
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include <algorithm>
++#include <cstdint>
+ 
+ #include "optimizer/prepare_functions.h"
+ 
+-- 
+2.37.1 (Apple Git-137.1)
