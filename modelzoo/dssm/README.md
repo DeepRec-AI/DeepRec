@@ -113,7 +113,8 @@ input:
       - `--dynamic_ev`: Whether to enable Dynamic-dimension Embedding Variable. Default to False.(Not really enabled)
       - `--incremental_ckpt`: Set time of save Incremental Checkpoint. Default 0 to close.
       - `--workqueue`: Whether to enable Work Queue. Default to False.
-      - `--protocol`: Set the protocol ['grpc', 'grpc++', 'star_server'] used when starting server in distributed training. Default to grpc. 
+      - `--protocol`: Set the protocol ['grpc', 'grpc++', 'star_server'] used when starting server in distributed training. Default to grpc.
+      - `--parquet_dataset`: Whether to enable ParquetDataset. Default is `True`. 
     - Basic Settings:
       - `--data_location`: Full path of train & eval data, default to `./data`.
       - `--steps`: Set the number of steps on train dataset. Default will be set to 1000 epoch.
@@ -249,8 +250,14 @@ The benchmark is performed on the [Alibaba Cloud ACK Service(Alibaba Cloud Conta
 ## Dataset
 Taobao dataset from [EasyRec](https://github.com/AlibabaPAI/EasyRec) is used.
 ### Prepare
+We provide the dataset in two formats:
+1. **CSV Format**
 Put data file **taobao_train_data & taobao_test_data** into ./data/    
 For details of Data download, see [EasyRec](https://github.com/AlibabaPAI/EasyRec/#GetStarted)
+2. **Parquet Format**
+Put data file **taobao_train_data.parquet & taobao_test_data.parquet** into ./data/
+These files are available at [Modelzoo-Data](https://github.com/AlibabaPAI/Modelzoo-Data)
+
 
 ### Fields
 The dataset contains 20 columns, details as follow:

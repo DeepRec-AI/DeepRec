@@ -324,6 +324,15 @@ def build_model_input(filename, batch_size, num_epochs):
         features = all_columns
         return features, label
 
+    def parse_parquet(value):
+        tf.logging.info('Parsing {}'.format(filename))
+        labels = []
+        for i in range(0, len(LABEL_COLUMNS)):
+            labels.append(value.pop(LABEL_COLUMNS[i]))
+        label = tf.stack(labels, axis=1)
+        features = value
+        return features, label
+
     '''Work Queue Feature'''
     if args.workqueue and not args.tf:
         from tensorflow.python.ops.work_queue import WorkQueue
@@ -334,12 +343,21 @@ def build_model_input(filename, batch_size, num_epochs):
     else:
         files = filename
     # Extract lines from input files using the Dataset API.
-    dataset = tf.data.TextLineDataset(files)
-    dataset = dataset.shuffle(buffer_size=20000,
-                              seed=args.seed)  # set seed for reproducing
-    dataset = dataset.repeat(num_epochs)
-    dataset = dataset.batch(batch_size)
-    dataset = dataset.map(parse_csv, num_parallel_calls=28)
+    if args.parquet_dataset:
+        from tensorflow.python.data.experimental.ops import parquet_dataset_ops
+        dataset = parquet_dataset_ops.ParquetDataset(files, batch_size=batch_size)
+        dataset = dataset.shuffle(buffer_size=20000,
+                                  seed=args.seed)  # fix seed for reproducing
+        dataset = dataset.repeat(num_epochs)
+        dataset = dataset.map(parse_parquet, num_parallel_calls=28)
+    else:
+        dataset = tf.data.TextLineDataset(files)
+        dataset = dataset.shuffle(buffer_size=20000,
+                                  seed=args.seed)  # set seed for reproducing
+        dataset = dataset.repeat(num_epochs)
+        dataset = dataset.batch(batch_size)
+        dataset = dataset.map(parse_csv, num_parallel_calls=28)
+        
     dataset = dataset.prefetch(2)
     return dataset
 
@@ -524,14 +542,23 @@ def eval(sess_config, input_hooks, model, data_init_op, steps, checkpoint_dir):
 def main(tf_config=None, server=None):
     # check dataset and count data set size
     print("Checking dataset...")
-    train_file = os.path.join(args.data_location, 'taobao_train_data')
-    test_file = os.path.join(args.data_location, 'taobao_test_data')
-
+    train_file = args.data_location + '/taobao_train_data'
+    test_file = args.data_location + '/taobao_test_data'
+    if args.parquet_dataset:
+        train_file += '.parquet'
+        test_file += '.parquet'
     if (not os.path.exists(train_file)) or (not os.path.exists(test_file)):
         print("Dataset does not exist in the given data_location.")
         sys.exit()
-    no_of_training_examples = sum(1 for line in open(train_file))
-    no_of_test_examples = sum(1 for line in open(test_file))
+    no_of_training_examples = 0
+    no_of_test_examples = 0
+    if args.parquet_dataset:
+        import pyarrow.parquet as pq
+        no_of_training_examples = pq.read_table(train_file).num_rows
+        no_of_test_examples = pq.read_table(test_file).num_rows
+    else:
+        no_of_training_examples = sum(1 for line in open(train_file))
+        no_of_test_examples = sum(1 for line in open(test_file))
     print("Number of training dataset is {}".format(no_of_training_examples))
     print("Number of test dataset is {}".format(no_of_test_examples))
 
@@ -565,8 +592,10 @@ def main(tf_config=None, server=None):
     train_dataset = build_model_input(train_file, batch_size, no_of_epochs)
     test_dataset = build_model_input(test_file, batch_size, 1)
 
-    iterator = tf.data.Iterator.from_structure(train_dataset.output_types,
-                                               test_dataset.output_shapes)
+    dataset_output_types = tf.data.get_output_types(train_dataset)
+    dataset_output_shapes = tf.data.get_output_shapes(test_dataset)
+    iterator = tf.data.Iterator.from_structure(dataset_output_types,
+                                               dataset_output_shapes)
     next_element = iterator.get_next()
 
     train_init_op = iterator.make_initializer(train_dataset)
@@ -761,6 +790,10 @@ def get_arg_parser():
                         help='Whether to enable Work Queue. Default to False.',
                         type=boolean_string,
                         default=False)
+    parser.add_argument("--parquet_dataset", \
+                        help='Whether to enable Parquet DataSet. Defualt to True.',
+                        type=boolean_string,
+                        default=True)
     return parser
 
 # parse distributed training configuration and generate cluster information

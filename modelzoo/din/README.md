@@ -98,6 +98,7 @@ The following is a brief directory structure and description for this example:
       - `--incremental_ckpt`: Set time of save Incremental Checkpoint. Default 0 to close.
       - `--workqueue`: Whether to enable Work Queue. Default to False.
       - `--protocol`: Set the protocol ['grpc', 'grpc++', 'star_server'] used when starting server in distributed training. Default to grpc. 
+      - `--parquet_dataset`: Whether to enable Parquet Dataset. Default is `True`.
     - Basic Settings:
       - `--data_location`: Full path of train & eval data, default to `./data`.
       - `--steps`: Set the number of steps on train dataset. Default will be set to 1 epoch.
@@ -234,8 +235,13 @@ The benchmark is performed on the [Alibaba Cloud ACK Service(Alibaba Cloud Conta
 ## Dataset
 Amazon Dataset Books dataset is used as benchmark dataset.
 ### Prepare
+We provide the dataset in two formats:
+1. **CSV Format**
 Put data file into ./data/    
 For details of Data download, see [Data Preparation](data/README.md)
+2. **Parquet Format**
+Put data file into ./data/
+These files are available at [Modelzoo-Data](https://github.com/AlibabaPAI/Modelzoo-Data)
 
 ### Fields
 - cat_voc.pkl: Contain a list of book categories.
