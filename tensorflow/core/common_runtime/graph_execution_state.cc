@@ -737,11 +737,13 @@ Status GraphExecutionState::InitBaseGraph(std::unique_ptr<Graph>&& new_graph) {
         break;
       }
     }
-    const auto& dname1 = session_options_->config.per_session_devices(1);
-    for (auto& d : device_set_->devices()) {
-      if (d->name() == dname1) {
-        devices.AddDevice(d);
-        break;
+    if (session_options_->config.per_session_devices_size() > 1) {
+      const auto& dname1 = session_options_->config.per_session_devices(1);
+      for (auto& d : device_set_->devices()) {
+        if (d->name() == dname1) {
+          devices.AddDevice(d);
+          break;
+        }
       }
     }
   }
