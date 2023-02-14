@@ -12,14 +12,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include <unordered_set>
+#include "tensorflow/core/framework/common_shape_fns.h"
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "tensorflow/core/framework/attr_value.pb.h"
-#include "tensorflow/core/framework/common_shape_fns.h"
 #include "tensorflow/core/framework/shape_inference.h"
 #include "tensorflow/core/lib/core/errors.h"
 #include "tensorflow/core/lib/gtl/inlined_vector.h"
@@ -1136,7 +1136,12 @@ Status FusedBatchNormShape(shape_inference::InferenceContext* c) {
 
   bool is_training;
   TF_RETURN_IF_ERROR(c->GetAttr("is_training", &is_training));
-  int number_inputs = (is_training) ? 3 : 5;
+
+  float exponential_avg_factor;
+  if (!c->GetAttr("exponential_avg_factor", &exponential_avg_factor).ok()) {
+    exponential_avg_factor = 1.0f;  // default value
+  }
+  int number_inputs = (is_training && exponential_avg_factor == 1.0f) ? 3 : 5;
 
   int channel_dim_index = GetTensorFeatureDimIndex(rank, data_format); 
   DimensionHandle channel_dim = c->Dim(x, channel_dim_index);
@@ -1226,16 +1231,8 @@ Status FusedBatchNormGradShape(shape_inference::InferenceContext* c) {
   c->set_output(0, x_backprop);
   c->set_output(1, c->Vector(channel_dim));
   c->set_output(2, c->Vector(channel_dim));
-  // Set the correct shapes for reserve_spaces
-  // so that gradients can be performed when
-  // the op is in a symbolic condition.
-  if (is_training) {
-    c->set_output(3, c->Vector(0));
-    c->set_output(4, c->Vector(0));
-  } else {
-    c->set_output(3, c->Vector(channel_dim));
-    c->set_output(4, c->Vector(channel_dim));
-  }
+  c->set_output(3, c->Vector(0));
+  c->set_output(4, c->Vector(0));
   return Status::OK();
 }
 
@@ -2122,7 +2119,7 @@ Status SparseReduceShapeFn(InferenceContext* c) {
     auto axes_vec = axes_tensor->flat<int32>();
 
     int64 ndims = shape_vec.size();
-    std::unordered_set<int64> axes;
+    absl::flat_hash_set<int64> axes;
     if (ndims == 0)
       return errors::InvalidArgument(
           "Number of dims in shape tensor must not be 0");
