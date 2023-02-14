@@ -4506,7 +4506,7 @@ cuda_py_test(
         ":nn_grad",
         "//third_party/py/numpy",
     ],
-    shard_count = 16,
+    shard_count = 24,
     tags = ["no_rocm"],
     xla_enable_strict_auto_jit = True,
 )
