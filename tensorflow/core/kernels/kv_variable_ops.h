@@ -157,6 +157,12 @@ class EVOffsetDumpIterator: public  DumpIterator<T> {
   int64 keys_idx_;
 };
 
+struct TmpValueBuffer {
+  char* tmp_value_buffer = nullptr;
+
+  ~TmpValueBuffer() { delete tmp_value_buffer; }
+};
+
 template <class K, class V>
 Status GetInputEmbeddingVar(OpKernelContext* ctx, int input,
                             EmbeddingVar<K, V>** var) {
@@ -655,6 +661,9 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     restore_buff.value_buffer = new char[buffer_size];
     restore_buff.version_buffer = new char[buffer_size];
     restore_buff.freq_buffer = new char[buffer_size];
+    int64 newDim = ev->ValueLen();
+    size_t value_unit_bytes_new = sizeof(V) * newDim;
+    int64 idx = 0;
 
     size_t key_bytes_read = 0;
     size_t value_bytes_read = 0;
@@ -666,6 +675,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     while(tot_key_num > 0) {
       size_t read_key_num = std::min(std::min(buffer_size / sizeof(K),
             buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
+      read_key_num = std::min(read_key_num, buffer_size / value_unit_bytes_new);
       read_key_num = std::min((int64)read_key_num, tot_key_num);
       reader->LookupSegment(tensor_key, read_key_num * sizeof(K),
           restore_buff.key_buffer, key_bytes_read);
@@ -700,6 +710,33 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
       if (key_bytes_read > 0) {
         read_key_num = key_bytes_read / sizeof(K);
         VLOG(2) << "repartition, read_key_num:" << read_key_num;
+        if (value_shape.dim_size(1) != newDim) {
+          VLOG(2) << "restore, read_value_reshape dim: from "
+                  << value_shape.dim_size(1) << " to " << newDim;
+          if (read_key_num * value_unit_bytes != value_bytes_read) {
+            return tensorflow::errors::FailedPrecondition(
+                "Expected read_key_num * value_unit_bytes == value_bytes_read, "
+                "but got read_key_num * value_unit_bytes != value_bytes_read!");
+          }
+
+          TmpValueBuffer tmp_buffer;
+          tmp_buffer.tmp_value_buffer = new char[buffer_size];
+          size_t read_once = std::min(value_unit_bytes, value_unit_bytes_new);
+          for (int i = 0; i < read_key_num; ++i) {
+            memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new,
+                   restore_buff.value_buffer + i * value_unit_bytes, read_once);
+            if (value_shape.dim_size(1) >= newDim) continue;
+            auto p = ev->GetDefaultValue(idx);
+            ++idx;
+            memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new +
+                       value_unit_bytes,
+                   p + value_unit_bytes,
+                   value_unit_bytes_new - value_unit_bytes);
+          }
+          auto tmp = tmp_buffer.tmp_value_buffer;
+          tmp_buffer.tmp_value_buffer = restore_buff.value_buffer;
+          restore_buff.value_buffer = tmp;
+        }
         st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
             partition_id, partition_num, false);
         if (cache_for_restore_hbm) {
@@ -843,6 +880,9 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
   restore_buff.value_buffer = new char[buffer_size];
   restore_buff.version_buffer = new char[buffer_size];
   restore_buff.freq_buffer = new char[buffer_size];
+  int64 newDim = ev->ValueLen();
+  size_t value_unit_bytes_new = sizeof(V) * newDim;
+  int64 idx = 0;
 
   size_t key_bytes_read = 0;
   size_t value_bytes_read = 0;
@@ -859,6 +899,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
     size_t read_key_num = std::min(
         std::min(buffer_size / sizeof(K),
           buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
+    read_key_num = std::min(read_key_num, buffer_size / value_unit_bytes_new);
     read_key_num = std::min((int64)read_key_num, tot_key_num);
     reader->LookupSegment(tensor_key, read_key_num * sizeof(K),
         restore_buff.key_buffer, key_bytes_read);
@@ -893,6 +934,32 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
       read_key_num = key_bytes_read / sizeof(K);
       VLOG(2) << "restore, read_key_num:" << read_key_num;
 
+      if (value_shape.dim_size(1) != newDim) {
+        VLOG(2) << "restore, read_value_reshape dim: from "
+                << value_shape.dim_size(1) << " to " << newDim;
+        if (read_key_num * value_unit_bytes != value_bytes_read) {
+          return tensorflow::errors::FailedPrecondition(
+              "Expected read_key_num * value_unit_bytes == value_bytes_read, "
+              "but got read_key_num * value_unit_bytes != value_bytes_read!");
+        }
+
+        TmpValueBuffer tmp_buffer;
+        tmp_buffer.tmp_value_buffer = new char[buffer_size];
+        size_t read_once = std::min(value_unit_bytes, value_unit_bytes_new);
+        for (int i = 0; i < read_key_num; ++i) {
+          memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new,
+                 restore_buff.value_buffer + i * value_unit_bytes, read_once);
+          if (value_shape.dim_size(1) >= newDim) continue;
+          auto p = ev->GetDefaultValue(idx);
+          ++idx;
+          memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new +
+                     value_unit_bytes,
+                 p + value_unit_bytes, value_unit_bytes_new - value_unit_bytes);
+        }
+        auto tmp = tmp_buffer.tmp_value_buffer;
+        tmp_buffer.tmp_value_buffer = restore_buff.value_buffer;
+        restore_buff.value_buffer = tmp;
+      }
       st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false);
       if (cache_for_restore_hbm) {
         cache_for_restore_hbm->add_to_rank(
@@ -1084,6 +1151,9 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     restore_buff.value_buffer = new char[buffer_size];
     restore_buff.version_buffer = new char[buffer_size];
     restore_buff.freq_buffer = new char[buffer_size];
+    int64 newDim = ev->ValueLen();
+    size_t value_unit_bytes_new = sizeof(V) * newDim;
+    int64 idx = 0;
 
     for (;  ; orig_partnum++) {
       string part_id = std::to_string(orig_partnum);
@@ -1257,6 +1327,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
         while(tot_key_num > 0) {
           size_t read_key_num = std::min(std::min(buffer_size / sizeof(K),
                 buffer_size / value_unit_bytes), buffer_size / sizeof(int64));
+          read_key_num = std::min(read_key_num, buffer_size / value_unit_bytes_new);
           read_key_num = std::min((int64)read_key_num, tot_key_num);
           reader->LookupSegmentOffset(tensor_key,
               key_part_offset + tot_key_bytes_read, read_key_num * sizeof(K),
@@ -1298,6 +1369,37 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
           if (key_bytes_read > 0) {
             read_key_num = key_bytes_read / sizeof(K);
             VLOG(2) << "restore, read_key_num:" << read_key_num;
+            if (value_shape.dim_size(1) != newDim) {
+              VLOG(2) << "restore, read_value_reshape dim: from "
+                      << value_shape.dim_size(1) << " to " << newDim;
+              if (read_key_num * value_unit_bytes != value_bytes_read) {
+                return tensorflow::errors::FailedPrecondition(
+                    "Expected read_key_num * value_unit_bytes == "
+                    "value_bytes_read, but got read_key_num * value_unit_bytes "
+                    "!= value_bytes_read!");
+              }
+
+              TmpValueBuffer tmp_buffer;
+              tmp_buffer.tmp_value_buffer = new char[buffer_size];
+              size_t read_once =
+                  std::min(value_unit_bytes, value_unit_bytes_new);
+              for (int i = 0; i < read_key_num; ++i) {
+                memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new,
+                       restore_buff.value_buffer + i * value_unit_bytes,
+                       read_once);
+                if (value_shape.dim_size(1) >= newDim) continue;
+                auto p = ev->GetDefaultValue(idx);
+                ++idx;
+                memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new +
+                           value_unit_bytes,
+                       p + value_unit_bytes,
+                       value_unit_bytes_new - value_unit_bytes);
+              }
+              auto tmp = tmp_buffer.tmp_value_buffer;
+              tmp_buffer.tmp_value_buffer = restore_buff.value_buffer;
+              restore_buff.value_buffer = tmp;
+            }
+
             st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
                 partition_id, partition_num, false);
             if (cache_for_restore_hbm) {

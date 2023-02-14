@@ -2371,5 +2371,80 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           self.assertEqual(0, shape[0])
     del os.environ["TF_EV_SAVE_FILTERED_FEATURES"]
 
+  def testEmbeddingVariableCustomDimForSaveAndRestore(self):
+    print("testEmbeddingVariableCustomForSaveAndRestore")
+    checkpoint_directory = self.get_temp_dir()
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+        var = variable_scope.get_embedding_variable("var_1",
+                embedding_dim = 3,
+                ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                     storage_path='/tmp/leveldb/')))
+
+        var2 = variable_scope.get_embedding_variable("var_2",
+            embedding_dim = 3,
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                 storage_path='/tmp/leveldb/')))
+        
+        emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        saver = saver_module.Saver(sharded=True)
+        init = variables.global_variables_initializer()
+        graph = ops.get_default_graph()
+        with self.test_session() as sess:
+          sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_VAR_OPS))
+          sess.run(ops.get_collection(ops.GraphKeys.EV_INIT_SLOT_OPS))
+          sess.run([init])
+          emb_ori = sess.run(emb)
+          emb_ori_2 = sess.run(emb2)
+          save_path = saver.save(sess, os.path.join(checkpoint_directory, "model.ckpt"), global_step=12345)
+          print(save_path)
+          for name, shape in checkpoint_utils.list_variables(checkpoint_directory):
+            print('loading... ', name, shape)
+
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+        var = variable_scope.get_embedding_variable("var_1",
+                embedding_dim = 6,
+                ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                     storage_path='/tmp/leveldb/')))
+
+        var2 = variable_scope.get_embedding_variable("var_2",
+            embedding_dim = 5,
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                 storage_path='/tmp/leveldb/')))
+        emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        saver = saver_module.Saver([var,var2],sharded=True)
+        graph = ops.get_default_graph()
+        with self.test_session(graph = graph) as sess:
+          saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
+          emb_val = sess.run(emb)
+          emb_val_2 = sess.run(emb2)
+          self.assertAllEqual(emb_ori, emb_val[:,0:3])
+          self.assertAllEqual(emb_ori_2, emb_val_2[:,0:3])
+          
+    with ops.Graph().as_default() as g, ops.device('/cpu:0'):
+        var = variable_scope.get_embedding_variable("var_1",
+                embedding_dim = 2,
+                ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                     storage_path='/tmp/leveldb/')))
+
+        var2 = variable_scope.get_embedding_variable("var_2",
+            embedding_dim = 2,
+            partitioner=partitioned_variables.fixed_size_partitioner(num_shards=4),
+            ev_option = variables.EmbeddingVariableOption(storage_option=variables.StorageOption(storage_type=config_pb2.StorageType.DRAM_LEVELDB,
+                                                                                                 storage_path='/tmp/leveldb/')))
+        emb = embedding_ops.embedding_lookup(var, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        emb2 = embedding_ops.embedding_lookup(var2, math_ops.cast([0,1,2,5,6,7], dtypes.int64))
+        saver = saver_module.Saver([var,var2],sharded=True)
+        graph = ops.get_default_graph()
+        with self.test_session(graph = graph) as sess:
+          saver.restore(sess, os.path.join(checkpoint_directory, "model.ckpt-12345"))
+          emb_val = sess.run(emb)
+          emb_val_2 = sess.run(emb2)
+          self.assertAllEqual(emb_ori[:,0:2], emb_val)
+          self.assertAllEqual(emb_ori_2[:,0:2], emb_val_2)
+
 if __name__ == "__main__":
   googletest.main()
