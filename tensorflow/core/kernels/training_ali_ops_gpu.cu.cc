@@ -118,6 +118,92 @@ struct KvSparseApplyAdagrad<GPUDevice, TKey, T> {
   }
 };
 
+template <typename TKey, typename T>
+struct KvSparseApplyAdagradHbm<GPUDevice, TKey, T> {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_a, T**dev_v, const T* grad_base,
+                  T lr_scalar, int64 task_size,
+                  const GPUDevice& device) {
+    TF_CHECK_OK(GpuLaunchKernel(
+        SparseApplyAdagradGPU<T>,
+        (task_size + block_size - 1) / block_size * embedding_dim,
+        block_size, 0, device.stream(),
+        dev_a, dev_v, grad_base, lr_scalar,
+        embedding_dim, task_size));
+  }
+};
+
+template <typename TKey, typename T>
+struct KvSparseApplyAdamHbm<GPUDevice, TKey, T> {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T alpha,
+                  T beta1, T beta2, T epsilon, int64 task_size,
+                  const GPUDevice& device) {
+    TF_CHECK_OK(GpuLaunchKernel(
+        SparseApplyAdamGPU<T>,
+        (task_size + block_size - 1) / block_size * embedding_dim,
+        block_size, 0, device.stream(),
+        dev_var, dev_m, dev_v, grad_base,
+        alpha, beta1, beta2, epsilon,
+        embedding_dim, task_size));
+  }
+};
+
+template <typename TKey, typename T>
+struct KvSparseApplyAdamAsyncHbm<GPUDevice, TKey, T> {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T lr, T beta1,
+                  T beta2, T epsilon, T* beta1_power_ptr,
+                  T* beta2_power_ptr, int64 task_size,
+                  const GPUDevice& device) {
+    TF_CHECK_OK(GpuLaunchKernel(
+        SparseApplyAdamAsyncGPU<T>,
+        (task_size + block_size - 1) / block_size * embedding_dim,
+        block_size, 0, device.stream(),
+        dev_var, dev_m, dev_v, grad_base,
+        lr, beta1, beta2, epsilon,
+        beta1_power_ptr, beta2_power_ptr,
+        embedding_dim, task_size));
+  }
+};
+
+template <typename TKey, typename T>
+struct KvSparseApplyAdamAsyncSparseRmspropHbm<GPUDevice, TKey, T> {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T lr, T beta1,
+                  T beta2, T epsilon, int64 task_size,
+                  const GPUDevice& device) {
+    TF_CHECK_OK(GpuLaunchKernel(
+        SparseApplyAdamAsyncSparseRmspropGPU<T>,
+        (task_size + block_size - 1) / block_size * embedding_dim,
+        block_size, 0, device.stream(),
+        dev_var, dev_m, dev_v, grad_base,
+        lr, beta1, beta2, epsilon,
+        embedding_dim, task_size));
+  }
+};
+
+template <typename TKey, typename T>
+struct KvSparseApplyAdamWHbm<GPUDevice, TKey, T> {
+  void operator()(int block_size, int embedding_dim,
+                  T** dev_var, T** dev_m, T** dev_v,
+                  const T* grad_base, T lr, T beta1,
+                  T beta2, T epsilon, T weight_decay,
+                  int64 task_size, const GPUDevice& device) {
+    TF_CHECK_OK(GpuLaunchKernel(
+        SparseApplyAdamWGPU<T>,
+        (task_size + block_size - 1) / block_size * embedding_dim,
+        block_size, 0, device.stream(),
+        dev_var, dev_m, dev_v, grad_base,
+        lr, beta1, beta2, epsilon,
+        weight_decay, embedding_dim,
+        task_size));
+  }
+};
+
 #define FINAL_MASK 0xffffffff
 
 template <typename T>
@@ -619,6 +705,41 @@ TF_CALL_GPU_NUMBER_TYPES(REGISTER_ALL_TYPE);
   template struct functor::SparseApplyAdamAsync<GPUDevice, type, int32>; \
   template struct functor::SparseApplyAdamAsync<GPUDevice, type, int64>;
 TF_CALL_GPU_NUMBER_TYPES(REGISTER_ALL_TYPE);
+#undef REGISTER_ALL_TYPE
+
+#define REGISTER_ALL_TYPE(type)                                          \
+template struct functor::KvSparseApplyAdagradHbm<GPUDevice, int32, type>;      \
+template struct functor::KvSparseApplyAdagradHbm<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
+
+#define REGISTER_ALL_TYPE(type)                                          \
+template struct functor::KvSparseApplyAdamHbm<GPUDevice, int32, type>;      \
+template struct functor::KvSparseApplyAdamHbm<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
+
+#define REGISTER_ALL_TYPE(type)                                          \
+template struct functor::KvSparseApplyAdamAsyncHbm<GPUDevice, int32, type>;      \
+template struct functor::KvSparseApplyAdamAsyncHbm<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
+
+#define REGISTER_ALL_TYPE(type)                                          \
+template struct functor::KvSparseApplyAdamAsyncSparseRmspropHbm<GPUDevice, int32, type>;      \
+template struct functor::KvSparseApplyAdamAsyncSparseRmspropHbm<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
+#undef REGISTER_ALL_TYPE
+
+#define REGISTER_ALL_TYPE(type)                                          \
+template struct functor::KvSparseApplyAdamWHbm<GPUDevice, int32, type>;      \
+template struct functor::KvSparseApplyAdamWHbm<GPUDevice, int64, type>;
+TF_CALL_float(REGISTER_ALL_TYPE)
+TF_CALL_double(REGISTER_ALL_TYPE)
 #undef REGISTER_ALL_TYPE
 
 }  // end namespace tensorflow

@@ -16,11 +16,8 @@ limitations under the License.
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_HBM_STORAGE_ITERATOR_H_
 
 #if GOOGLE_CUDA
+#include "tensorflow/core/framework/embedding/storage.h"
 namespace tensorflow {
-
-namespace {
-  extern const int kSavedPartitionNum;
-}
 
 template <class V>
 class ValuePtr;

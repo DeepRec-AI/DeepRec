@@ -15,14 +15,21 @@ limitations under the License.
 
 #ifndef TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_CPU_H_
 #define TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_CPU_H_
+#if GOOGLE_CUDA
+#define EIGEN_USE_GPU
 
 #include "sparsehash/dense_hash_map_lockless"
+#include "tensorflow/core/framework/embedding/batch.h"
 #include "tensorflow/core/framework/embedding/kv_interface.h"
 #include "tensorflow/core/framework/embedding/value_ptr.h"
+#include "tensorflow/core/kernels/gpu_device_array.h"
 #include "tensorflow/core/lib/core/status.h"
-#include "tensorflow/core/framework/embedding/batch.h"
+#include "tensorflow/core/platform/stream_executor.h"
 
 namespace tensorflow {
+using se::DeviceMemoryBase;
+using se::Stream;
+
 namespace embedding {
 
 template <class K, class V>
@@ -33,9 +40,12 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     hash_map_.set_empty_key_and_value(EMPTY_KEY_, nullptr);
     hash_map_.set_counternum(16);
     hash_map_.set_deleted_key(DELETED_KEY_);
+    cudaEventCreate(&is_finish_);
   }
 
-  ~LocklessHashMapCPU() override {}
+  ~LocklessHashMapCPU() override {
+    cudaEventDestroy(is_finish_);
+  }
 
   Status Lookup(K key, ValuePtr<V>** value_ptr) override {
     auto iter = hash_map_.find_wait_free(key);
@@ -129,7 +139,7 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     V* batch_data_place;
     V* dev_batch_data_place;
     dev_value_address = (V**)gpu_alloc_->AllocateRaw(
-        Allocator::kAllocatorAlignment, batch_size * sizeof(V *));
+        Allocator::kAllocatorAlignment, batch_size * sizeof(V*));
     dev_batch_data_place = (V*)gpu_alloc_->AllocateRaw(
         Allocator::kAllocatorAlignment, sizeof(V) * batch_size * total_dims_);
     batch_data_place = (V *)cpu_allocator->AllocateRaw(
@@ -140,23 +150,27 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
       value_address[i] =
         *(V **)((char*)value_ptrs[i]->GetPtr() + sizeof(FixedLengthHeader));
     }
-    cudaMemcpy(dev_value_address, value_address,
-        sizeof(V *) * batch_size, cudaMemcpyHostToDevice);
+
+    cudaMemcpyAsync(dev_value_address, value_address,
+                    sizeof(V*) * batch_size,
+                    cudaMemcpyHostToDevice);
 
     // Launch Kernel,Copy data to continuous place
     int block_dim = 128;
     void* args[] = { (void*)&dev_value_address,
-      (void*)&dev_batch_data_place, (void*)&total_dims_,
-      (void*)&batch_size};
+        (void*)&dev_batch_data_place, (void*)&total_dims_,
+        (void*)&batch_size};
 
     cudaLaunchKernel((void *)BatchCopy<V>,
                      (batch_size * total_dims_ + block_dim - 1) / block_dim,
                      block_dim, args, 0, NULL);
 
-    cudaDeviceSynchronize();
+    cudaMemcpyAsync(batch_data_place, dev_batch_data_place,
+                    sizeof(V) * batch_size * total_dims_,
+                    cudaMemcpyDeviceToHost);
 
-    cudaMemcpy(batch_data_place, dev_batch_data_place,
-        sizeof(V) * batch_size * total_dims_, cudaMemcpyDeviceToHost);
+    cudaEventRecord(is_finish_);
+    cudaEventSynchronize(is_finish_);
 
     // Copy data to ValuePtrs in memory;Insert it into hashmap
     for(int i = 0; i < batch_size; ++i) {
@@ -221,8 +235,10 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   std::deque<ValuePtr<V>*> value_ptr_out_of_date_;
   int total_dims_;
   Allocator* gpu_alloc_;
+  cudaEvent_t is_finish_;
 };
 }  // namespace embedding
 }  // namespace tensorflow
 
+#endif //GOOGLE_CUDA
 #endif  // TENSORFLOW_CORE_FRAMEWORK_EMBEDDING_LOCKLESS_HASH_MAP_CPU_H_

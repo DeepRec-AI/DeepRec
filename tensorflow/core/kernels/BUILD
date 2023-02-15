@@ -12,6 +12,7 @@ load(
     "tf_cc_tests",
     "tf_copts",
     "tf_cuda_library",
+    "cuda_library",
     "tf_kernel_library",
     "tf_mkl_kernel_library",
     "tf_opts_nortti_if_android",
@@ -2841,6 +2842,7 @@ tf_kernel_library(
         ":state",
         ":training_op_helpers",
         ":variable_ops",
+        ":embedding_var_cu_cc",
         "//tensorflow/core:embedding_gpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
@@ -2853,6 +2855,32 @@ tf_kernel_library(
     ] + select({"//tensorflow:with_gpu_ev_support":
                  ["@cuCollections//:cuco_hash_table"],
                  "//conditions:default": []}),
+)
+
+cuda_library(
+    name = "embedding_var_cu_cc",
+    hdrs = [
+        "//tensorflow/core:common_runtime/gpu/gpu_event_mgr.h"
+    ],
+    srcs = [
+        "//tensorflow/core:framework/embedding/embedding_var.cu.cc"
+    ],
+    copts = ["-g"]
+        + if_cuda(["-DGOOGLE_CUDA=1"]) +
+        select({
+        "//conditions:default": [],
+        "@local_config_cuda//cuda:using_nvcc": [
+            "-nvcc_options=relaxed-constexpr",
+        ],
+        "@local_config_cuda//cuda:using_clang": [
+            "-fcuda-flush-denormals-to-zero",
+        ],
+        }),
+    nocopts = "-fno-exceptions",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tensorflow/core:stream_executor",
+        "//tensorflow/core/kernels:gpu_device_array"] + ["//third_party/eigen3"]
 )
 
 tf_kernel_library(

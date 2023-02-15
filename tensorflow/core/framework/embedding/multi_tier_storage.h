@@ -99,7 +99,10 @@ class MultiTierStorage : public Storage<K, V> {
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
-      V* memcpy_buffer_gpu) override {
+      V* memcpy_buffer_gpu,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const DeviceBase::CpuWorkerThreads* worker_threads) override {
     LOG(FATAL) << "Unsupport CopyEmbeddingsFromCPUToGPU in MultiTierStorage.";
   };
 

@@ -135,6 +135,10 @@ class StorageManager {
     storage_->Insert(keys, value_ptrs);
   }
 
+  void Insert(const K key, ValuePtr<V>* value_ptr) {
+    storage_->Insert(key, value_ptr);
+  }
+
   Status GetOrCreate(K key, ValuePtr<V>** value_ptr, size_t size) {
     return storage_->GetOrCreate(key, value_ptr, size);
   }
@@ -150,11 +154,15 @@ class StorageManager {
       const std::list<int64>& copyback_cursor,
       V** memcpy_address, size_t value_len,
       ValuePtr<V> **gpu_value_ptrs,
-      V* memcpy_buffer_gpu){
+      V* memcpy_buffer_gpu,
+      se::Stream* compute_stream,
+      EventMgr* event_mgr,
+      const DeviceBase::CpuWorkerThreads* worker_threads){
     return storage_->CopyEmbeddingsFromCPUToGPU(
         total, keys, copyback_cursor,
         memcpy_address, value_len, gpu_value_ptrs,
-        memcpy_buffer_gpu);
+        memcpy_buffer_gpu, compute_stream,
+        event_mgr, worker_threads);
   }
 
   void CreateEmbeddingMemoryPool(

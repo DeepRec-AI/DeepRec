@@ -80,12 +80,6 @@ class BloomFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  void CopyEmbeddingsToBuffer(
-      V* val_base, int64 size,
-      int64 slice_elems, int64 value_len,
-      V** memcpy_address) {
-  }
-
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) override {
     if (GetFreq(key, *val) >= config_.filter_freq) {

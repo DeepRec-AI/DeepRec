@@ -51,12 +51,6 @@ class CounterFilterPolicy : public FilterPolicy<K, V, EV> {
     }
   }
 
-  void CopyEmbeddingsToBuffer(
-      V* val_base, int64 size,
-      int64 slice_elems, int64 value_len,
-      V** memcpy_address) {
-  }
-
   Status LookupOrCreateKey(K key, ValuePtr<V>** val,
       bool* is_filter) override {
     Status s = ev_->LookupOrCreateKey(key, val);

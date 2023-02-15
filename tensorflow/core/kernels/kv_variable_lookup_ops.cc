@@ -264,6 +264,9 @@ class KvResourceLookupIDGPUOp : public OpKernel {
       }
       //Pointers in memcpy_address here will
       //be cast to ValuePtr<Tvalue>* in this funcation.
+      auto stream = c->op_device_context()->stream();
+      auto event_mgr = c->device()->tensorflow_gpu_device_info()->event_mgr;
+
       ev->AllocateMemoryForNewFeatures(
           memcpy_address,
           init_cursor_list[0]);
@@ -277,23 +280,18 @@ class KvResourceLookupIDGPUOp : public OpKernel {
       ev->SetDefaultValueOfNewFeatures(
           indices_flat.data(), indices_size,
           init_cursor_list[0], memcpy_address,
-          default_v, get_default_v_fn);
+          default_v, get_default_v_fn,
+          stream, event_mgr,
+          c->eigen_gpu_device());
 
       ev->CopyEmbeddingsFromCPUToGPU(
           indices_flat.data(),
           copyback_cursor_list[0],
-          memcpy_address, out_base);
+          memcpy_address, stream,
+          event_mgr, c->eigen_gpu_device(),
+          worker_threads, out_base);
 
       delete[] memcpy_address;
-
-      if (ev->IsMultiLevel()) {
-        ev->storage_manager()->Schedule([ev, indices]() {
-          embedding::BatchCache<TKey>* cache = ev->Cache();
-          if (cache) {
-            cache->add_to_rank(indices);
-          }
-        });
-      }
     }
   }
 
@@ -542,16 +540,34 @@ class KvResourceCollectEmbeddingGPUOp : public OpKernel {
               " should large than IDs in batch ", N));
       const size_t slice_bytes = slice_elems * sizeof(TValue);
       TValue** memcpy_address = new TValue*[indices_size];
-      for (int64 i = 0; i < indices_size; i++) {
-        ValuePtr<TValue>* value_ptr = (ValuePtr<TValue>*)pointer_flat(i);
-        memcpy_address[i] = value_ptr->GetValue(0, 0);
-      }
+      auto do_work = [pointer_flat, memcpy_address] (int64 start, int64 limit) {
+        for (int64 i = start; i < limit; i++) {
+          ValuePtr<TValue>* value_ptr = (ValuePtr<TValue>*)pointer_flat(i);
+          memcpy_address[i] = value_ptr->GetValue(0, 0);
+        }
+      };
+      auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
+      Shard(worker_threads->num_threads,
+            worker_threads->workers, indices_size,
+            slice_bytes, do_work);
 
+      auto stream = c->op_device_context()->stream();
+      auto event_mgr = c->device()->tensorflow_gpu_device_info()->event_mgr;
       ev->CopyEmbeddingsToBuffer(
           out_base, indices_size,
-          slice_elems, memcpy_address);
+          slice_elems, memcpy_address,
+          stream, event_mgr,
+          c->eigen_gpu_device());
 
       delete[] memcpy_address;
+      if (ev->IsMultiLevel()) {
+        ev->storage_manager()->Schedule([ev, indices]() {
+          embedding::BatchCache<TKey>* cache = ev->Cache();
+          if (cache) {
+            cache->add_to_rank(indices);
+          }
+        });
+      }
     }
   }
 
@@ -834,15 +850,13 @@ class KvResourceGatherGPUOp : public OpKernel {
       } else {
         TValue** memcpy_address = new TValue*[indices_size];
         TKey* indices_host = new TKey[N];
-        volatile bool is_cpu_indices_ready = false;
         //Copy ids from GPU to CPU for CPU Lookup.
         auto stream = c->op_device_context()->stream();
+        auto event_mgr = c->device()->tensorflow_gpu_device_info()->event_mgr;
         se::DeviceMemoryBase gpu_src(
             const_cast<TKey*>(&indices_flat(0)), N * sizeof(TKey));
         stream->ThenMemcpy(indices_host, gpu_src, N * sizeof(TKey));
-        c->device()->tensorflow_gpu_device_info()->event_mgr->ThenExecute(
-            stream, [&is_cpu_indices_ready]() {is_cpu_indices_ready = true;});
-        while(!is_cpu_indices_ready) {}
+        SyncWithEventMgr(stream, event_mgr);
         auto worker_threads = c->device()->tensorflow_cpu_worker_threads();
         std::vector<std::list<int64>> init_cursor_list(
                                           worker_threads->num_threads + 1);
@@ -906,16 +920,23 @@ class KvResourceGatherGPUOp : public OpKernel {
         ev->SetDefaultValueOfNewFeatures(
             indices_host, indices_size,
             init_cursor_list[0], memcpy_address,
-            default_v, get_default_v_fn_);
+            default_v, get_default_v_fn_,
+            stream, event_mgr,
+            c->eigen_gpu_device());
 
         ev->CopyEmbeddingsFromCPUToGPU(
             indices_host,
             copyback_cursor_list[0],
-            memcpy_address);
+            memcpy_address,
+            stream, event_mgr,
+            c->eigen_gpu_device(),
+            worker_threads);
 
         ev->CopyEmbeddingsToBuffer(
             out_base, indices_size,
-            slice_elems, memcpy_address);
+            slice_elems, memcpy_address,
+            stream, event_mgr,
+            c->eigen_gpu_device());
         delete []memcpy_address;
 
         if (ev->IsMultiLevel()) {
