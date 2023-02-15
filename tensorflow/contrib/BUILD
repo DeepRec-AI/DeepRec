@@ -96,7 +96,6 @@ py_library(
         "//tensorflow/contrib/staging",
         "//tensorflow/contrib/stat_summarizer:stat_summarizer_py",
         "//tensorflow/contrib/stateless",
-        "//tensorflow/contrib/structured_model",
         "//tensorflow/contrib/summary:summary",
         "//tensorflow/contrib/tensor_forest:init_py",
         "//tensorflow/contrib/tensorboard",

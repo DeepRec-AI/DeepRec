@@ -246,10 +246,6 @@ class Scaffold(object):
       self._saver.build()
       self._incr_saver = incr_saver._get_incremental_saver(self._incremental_save_restore, self._saver)
 
-    from tensorflow.contrib.structured_model.python import core
-    if core.get_structured_model():
-      core.get_structured_model().graph_transform()
-
     if self._enable_async_embedding:
       async_embedding_stage = async_embedding.AsyncEmbeddingStage(
         self._async_embedding_options,
