@@ -87,7 +87,6 @@ from tensorflow.contrib import sparsemax
 from tensorflow.contrib import staging
 from tensorflow.contrib import stat_summarizer
 from tensorflow.contrib import stateless
-from tensorflow.contrib import structured_model
 from tensorflow.contrib import tensor_forest
 from tensorflow.contrib import tensorboard
 from tensorflow.contrib import testing

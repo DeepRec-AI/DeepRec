@@ -385,10 +385,6 @@ class Optimizer(
     # allow creation per-replica optimizers however, because the
     # compute_gradients()->apply_gradients() sequence is safe.
 
-    from tensorflow.contrib.structured_model.python import core
-    if core.get_structured_model():
-      core.get_structured_model().graph_transform()
-
   def get_name(self):
     return self._name
 
