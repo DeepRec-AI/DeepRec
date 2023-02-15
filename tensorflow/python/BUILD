@@ -163,6 +163,7 @@ py_library(
         ":weights_broadcast_ops",
         ":while_v2",
         ":work_queue",
+        ":graph_optimizer",
         "//tensorflow/core:protos_all_py",
         "//tensorflow/python/compat",
         "//tensorflow/python/compat:v2_compat",
@@ -197,6 +198,19 @@ py_library(
 )
 
 tf_py_build_info_genrule()
+
+py_library(
+    name = "graph_optimizer",
+    srcs = ["graph_optimizer/sample_awared_graph_compression.py",
+           ],
+    srcs_version = "PY2AND3",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lib",
+        ":pywrap_tensorflow",
+        ":util",
+    ],
+)
 
 py_library(
     name = "platform",

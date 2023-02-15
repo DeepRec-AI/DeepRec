@@ -105,6 +105,7 @@ from tensorflow.python.summary import summary
 from tensorflow.python.tpu import api
 from tensorflow.python.user_ops import user_ops
 from tensorflow.python.util import compat
+from tensorflow.python.graph_optimizer import sample_awared_graph_compression
 
 # Import audio ops to make sure the ops are registered.
 from tensorflow.python.ops import gen_audio_ops as _
