@@ -53,6 +53,12 @@
 bazel build -c opt tensorflow_serving/...
 ```
 
+**编译开启OneDNN + Eigen Threadpool工作线程池版本（CPU）**
+
+```bash
+bazel build -c opt --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true tensorflow_serving/...
+```
+
 **代码编译-GPU版本**
 
 ```bash
