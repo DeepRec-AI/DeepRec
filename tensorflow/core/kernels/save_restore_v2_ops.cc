@@ -171,7 +171,8 @@ class SaveV2 : public OpKernel {
       const string& tensor_name = tensor_names_flat(i);
       if (tensor_types_[i] == DT_RESOURCE) {
         auto& handle = HandleFromInput(context, i + kFixedInputs);
-        if (IsHandle<EmbeddingVar<int64, float>>(handle)) {
+        if (IsHandle<EmbeddingVar<int64, float>>(handle) ||
+            IsHandle<EmbeddingVar<int32, float>>(handle)) {
           if (ev_key_types_[start_ev_key_index] == DT_INT32) {
             DumpEvWithGlobalStep<int32, float>(context,
                 i + kFixedInputs, tensor_name, writer, tensor_types_[0]);
