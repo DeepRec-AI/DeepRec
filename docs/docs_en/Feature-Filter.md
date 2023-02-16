@@ -89,3 +89,7 @@ For an EmbeddingVariable, it will be divided into 9 parts when it is stored in c
 - `var-partition_filter_offset`: Parameters for restoring filtered features
 
 Users can collect information about filtered features by reading data with `_filtered` suffix.
+
+**Whether to save information of filtered features**
+
+Users sometimes don‘t need to save the information of filtered features when saving the ckpt (for example, the information of filtered features is not needed during serving). Users can set the environment variable `TF_EV_SAVE_FILTERED_FEATURES` to `False` to not save the information of the filtered features, thus reducing the size of the checkpoint.

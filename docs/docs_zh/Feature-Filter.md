@@ -88,3 +88,7 @@ for name, shape in checkpoint_utils.list_variables("xxxxx.ckpt"):
 - `var-partition_filter_offset`:用于恢复未准入特征的参数
 
 用户通过读取filtered相关的参数就可以收集未准入特征的信息。
+
+**是否保存未准入特征的相关信息**
+
+用户有时在保存ckpt时不需要保存未准入特征的信息（例如未准入特征的信息在推理时是不需要的，因此可以不保存）。用户可以通过配置`TF_EV_SAVE_FILTERED_FEATURES`环境变量为`False`来设置不保存未准入特征的相关信息，从而减少checkpoint的大小。

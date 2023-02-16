@@ -2336,5 +2336,40 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
     with self.test_session() as sess:
       saver.restore(sess, model_path)
 
+  def testEmbeddingVariableForNotSaveUnfilterFeature(self):
+    print("testEmbeddingVariableForNotSaveUnfilterFeature")
+    checkpoint_directory = self.get_temp_dir()
+    os.environ["TF_EV_SAVE_FILTERED_FEATURES"] = "False"
+    with ops.device("/cpu:0"):
+      emb_var = variable_scope.get_embedding_variable("var_1",
+              embedding_dim = 3,
+              initializer=init_ops.ones_initializer(dtypes.float32),
+              ev_option = variables.EmbeddingVariableOption(filter_option=variables.CounterFilter(filter_freq=3)))
+    emb = embedding_ops.embedding_lookup(emb_var,  math_ops.cast([1, 1, 1, 2, 2, 3], dtypes.int64))
+    fun = math_ops.multiply(emb, 2.0, name='multiply')
+    loss = math_ops.reduce_sum(fun, name='reduce_sum')
+    gs = training_util.get_or_create_global_step()
+    opt = adagrad.AdagradOptimizer(0.1)
+    g_v = opt.compute_gradients(loss)
+    train_op = opt.apply_gradients(g_v, gs)
+    saver = saver_module.Saver()
+    init = variables.global_variables_initializer()
+    model_path = os.path.join(checkpoint_directory,
+                              "model1.ckpt")
+    with self.test_session() as sess:
+      sess.run([init])
+      sess.run([emb, train_op])
+      save_path = saver.save(sess, model_path)
+      for name, shape in checkpoint_utils.list_variables(model_path):
+        if name == "var_1-keys":
+          keys = checkpoint_utils.load_variable(model_path, name)
+          self.assertEqual(1, len(keys))
+          self.assertEqual(1, keys[0])
+        if name == "var_1-keys_filtered" or \
+           name == "var_1-versions_filtered" or \
+           name == "var_1-freqs_filtered":
+          self.assertEqual(0, shape[0])
+    del os.environ["TF_EV_SAVE_FILTERED_FEATURES"]
+
 if __name__ == "__main__":
   googletest.main()
