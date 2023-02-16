@@ -112,7 +112,7 @@ class EmbeddingVar : public ResourceBase {
               alloc_,
               emb_config_.total_num(
                   storage_manager_->GetAllocLen()),
-              1024 * 1024);
+              1024 * 1024 * 64);
 #endif  // GOOGLE_CUDA
     } else if (storage_manager_->IsSingleHbm()) {
 #if GOOGLE_CUDA

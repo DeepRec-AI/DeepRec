@@ -520,7 +520,7 @@ class HbmDramSsdStorage : public MultiTierStorage<K, V> {
   LayoutCreator<V>* layout_creator_;
   BatchCache<K>* dram_cache_;
   int64 dram_capacity_;
-  std::vector<ValuePtr<V>*> dram_value_ptr_out_of_date_;
+  std::deque<ValuePtr<V>*> dram_value_ptr_out_of_date_;
   mutex hbm_mu_; //must be locked before dram_mu_ and ssd_mu_ are locked;
   mutex dram_mu_; //must be locked after ssd_mu_ is locked;
   mutex ssd_mu_;

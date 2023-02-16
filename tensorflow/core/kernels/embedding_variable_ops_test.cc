@@ -1142,6 +1142,49 @@ TEST(EmbeddingVariableTest, TestLevelDBIterator) {
   }
 }
 
+TEST(EmbeddingVariableTest, TestLRUCachePrefetch) {
+  BatchCache<int64>* cache = new LRUCache<int64>();
+  int num_ids = 5;
+  std::vector<int64> prefetch_ids;
+  int index = 0;
+  int64 true_evict_size;
+  int64* evict_ids = new int64[num_ids];
+  std::vector<int64> access_seq;
+  for(int i = 1; i <= num_ids; i++) {
+    for (int j = 0; j < i; j++) {
+      prefetch_ids.emplace_back(i);
+    }
+  }
+  cache->add_to_prefetch_list(prefetch_ids.data(), prefetch_ids.size());
+  ASSERT_EQ(cache->size(), 0);
+  true_evict_size = cache->get_evic_ids(evict_ids, num_ids);
+  ASSERT_EQ(true_evict_size, 0);
+  for (int i = 1; i <= 2; i++) {
+    for (int j = 0; j < i; j++) {
+      access_seq.emplace_back(i);
+    }
+  }
+  cache->add_to_cache(access_seq.data(), access_seq.size());
+  ASSERT_EQ(cache->size(), 2);
+  true_evict_size = cache->get_evic_ids(evict_ids, num_ids);
+  ASSERT_EQ(true_evict_size, 2);
+  access_seq.clear();
+  for (int i = 5; i >= 3; i--) {
+    for (int j = 0; j < i; j++) {
+      access_seq.emplace_back(i);
+    }
+  }
+  cache->add_to_cache(access_seq.data(), access_seq.size());
+  ASSERT_EQ(cache->size(), 3);
+  true_evict_size = cache->get_evic_ids(evict_ids, 2);
+  ASSERT_EQ(evict_ids[0], 5);
+  ASSERT_EQ(evict_ids[1], 4);
+  ASSERT_EQ(cache->size(), 1);
+
+  delete cache;
+  delete[] evict_ids;
+}
+
 TEST(EmbeddingVariableTest, TestLRUCache) {
   BatchCache<int64>* cache = new LRUCache<int64>();
   int num_ids = 30;
@@ -1215,6 +1258,49 @@ TEST(EmbeddingVariableTest, TestLFUCacheGetCachedIds) {
   delete cache;
   delete[] cached_ids;
   delete[] cached_freqs;
+}
+
+TEST(EmbeddingVariableTest, TestLFUCachePrefetch) {
+  BatchCache<int64>* cache = new LFUCache<int64>();
+  int num_ids = 5;
+  std::vector<int64> prefetch_ids;
+  int index = 0;
+  int64 true_evict_size;
+  int64* evict_ids = new int64[num_ids];
+  std::vector<int64> access_seq;
+  for(int i = 1; i <= num_ids; i++) {
+    for (int j = 0; j < i; j++) {
+      prefetch_ids.emplace_back(i);
+    }
+  }
+  cache->add_to_prefetch_list(prefetch_ids.data(), prefetch_ids.size());
+  ASSERT_EQ(cache->size(), 0);
+  true_evict_size = cache->get_evic_ids(evict_ids, num_ids);
+  ASSERT_EQ(true_evict_size, 0);
+  for (int i = 1; i <= 2; i++) {
+    for (int j = 0; j < i; j++) {
+      access_seq.emplace_back(i);
+    }
+  }
+  cache->add_to_cache(access_seq.data(), access_seq.size());
+  ASSERT_EQ(cache->size(), 2);
+  true_evict_size = cache->get_evic_ids(evict_ids, num_ids);
+  ASSERT_EQ(true_evict_size, 2);
+  access_seq.clear();
+  for (int i = 5; i >= 3; i--) {
+    for (int j = 0; j < i; j++) {
+      access_seq.emplace_back(i);
+    }
+  }
+  cache->add_to_cache(access_seq.data(), access_seq.size());
+  ASSERT_EQ(cache->size(), 3);
+  true_evict_size = cache->get_evic_ids(evict_ids, 2);
+  ASSERT_EQ(evict_ids[0], 3);
+  ASSERT_EQ(evict_ids[1], 4);
+  ASSERT_EQ(cache->size(), 1);
+
+  delete cache;
+  delete[] evict_ids;
 }
 
 
