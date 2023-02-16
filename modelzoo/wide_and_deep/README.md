@@ -269,10 +269,10 @@ Train & eval dataset using ***Kaggle Display Advertising Challenge Dataset (Crit
 We provide the dataset in two formats:
 1. **CSV Format**
 Put data file **train.csv & eval.csv** into ./data/    
-For details of Data download, see [Data Preparation](data/README.md)
+For details of Data download, see [Data Preparation](data/README.md).
 2. **Parquet Format**
 Put data file **train.parquet & eval.parquet** into ./data/
-These files are available at [Modelzoo-Data](https://github.com/AlibabaPAI/Modelzoo-Data)
+These files are available at [Criteo Parquet Dataset](https://github.com/AlibabaPAI/Modelzoo-Data/tree/main/parquet_dataset/dcn_criteo).
 
 ### Fields
 Total 40 columns:  

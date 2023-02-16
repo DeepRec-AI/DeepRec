@@ -238,10 +238,10 @@ Amazon Dataset Books dataset is used as benchmark dataset.
 We provide the dataset in two formats:
 1. **CSV Format**
 Put data file into ./data/    
-For details of Data download, see [Data Preparation](data/README.md)
+For details of Data download, see [Data Preparation](data/README.md).
 2. **Parquet Format**
 Put data file into ./data/
-These files are available at [Modelzoo-Data](https://github.com/AlibabaPAI/Modelzoo-Data)
+These files are available at [Amazon Parquet Dataset](https://github.com/AlibabaPAI/Modelzoo-Data/tree/main/parquet_dataset/dien_amazon_dataset_books).
 
 ### Fields
 - cat_voc.pkl: Contain a list of book categories.
