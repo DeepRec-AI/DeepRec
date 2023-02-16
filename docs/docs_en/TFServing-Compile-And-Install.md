@@ -53,6 +53,12 @@ Develop Branch: master, Latest Release Branch: deeprec2212
 bazel build -c opt tensorflow_serving/...
 ```
 
+**Build CPU Package Builder with OneDNN + Eigen Threadpool**
+
+```bash
+bazel build  -c opt --config=mkl_threadpool --define build_with_mkl_dnn_v1_only=true tensorflow_serving/...
+```
+
 **Build Package Builder-GPU**
 
 ```bash
