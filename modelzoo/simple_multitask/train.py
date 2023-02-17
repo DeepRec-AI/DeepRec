@@ -246,8 +246,9 @@ def build_model_input(filename, batch_size, num_epochs, seed, stock_tf, workqueu
     if args.parquet_dataset:
         from tensorflow.python.data.experimental.ops import parquet_dataset_ops
         dataset = parquet_dataset_ops.ParquetDataset(files, batch_size=batch_size)
-        dataset = dataset.shuffle(buffer_size=40000,
-                                  seed=seed)  # fix seed for reproducing
+        if args.parquet_dataset_shuffle:
+            dataset = dataset.shuffle(buffer_size=40000,
+                                      seed=seed)  # fix seed for reproducing
         dataset = dataset.repeat(num_epochs)
         dataset = dataset.map(parse_parquet, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     else:
@@ -705,6 +706,10 @@ def get_arg_parser():
                         help='Whether to enable Parquet DataSet. Defualt to True.',
                         type=boolean_string,
                         default=True)
+    parser.add_argument("--parquet_dataset_shuffle", \
+                        help='Whether to enable shuffle operation for Parquet Dataset. Default to False.',
+                        type=boolean_string,
+                        default=False)
     return parser
 
 # Parse distributed training configuration and generate cluster information
