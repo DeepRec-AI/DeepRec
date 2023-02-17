@@ -41,7 +41,7 @@ string AllocatorStats::DebugString() const {
 
 bool DisableEVAllocatorFromEnvironment() {
   bool disable_ev_allocator = false;
-  ReadBoolFromEnvVar("TF_DISABLE_EV_ALLOCATOR", true,
+  ReadBoolFromEnvVar("TF_DISABLE_EV_ALLOCATOR", false,
       &disable_ev_allocator);
   return disable_ev_allocator;
 }
