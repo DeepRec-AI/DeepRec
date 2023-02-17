@@ -92,6 +92,7 @@ The following is a brief directory structure and description for this example:
       - `--workqueue`: Whether to enable Work Queue. Default to False.
       - `--protocol`: Set the protocol ['grpc', 'grpc++', 'star_server'] used when starting server in distributed training. Default to grpc. 
       - `--parquet_dataset`: Whether to enable ParquetDataset. Default is `True`.
+      - `--parquet_dataset_shuffle`: Whether to enable shuffle operation for Parquet Dataset. Default to `False`.
     - Basic Settings:
       - `--data_location`: Full path of train & eval data, default to `./data`.
       - `--steps`: Set the number of steps on train dataset. Default will be set to 1 epoch.

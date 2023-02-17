@@ -125,6 +125,7 @@ input:
       - `--incremental_ckpt`: Set time of save Incremental Checkpoint. Default is `0`.
       - `--workqueue`: Whether to enable WorkQueue. Default is `False`.
       - `--parquet_dataset`: Whether to enable ParquetDataset. Default is `True`.
+      - `--parquet_dataset_shuffle`: Whether to enable shuffle operation for Parquet Dataset. Default to `False`.
     - Basic Settings:
       - `--data_location`: Full path of train & eval data. Default is `./data`.
       - `--steps`: Set the number of steps on train dataset. When default(`0`) is used, the number of steps is computed based on dataset size and number of epochs equals 1000.
