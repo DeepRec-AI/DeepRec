@@ -173,15 +173,15 @@ The benchmark is performed on the [Alibaba Cloud ECS general purpose instance fa
 - Community TensorFlow version is v1.15.5.
 
 ## Dataset
-Taobao dataset from [EasyRec](https://github.com/AlibabaPAI/EasyRec) is used.
+Train & eval dataset using ***Taobao dataset***.
 ### Prepare
 We provide the dataset in two formats:
 1. **CSV Format**
-Put data file **taobao_train_data & taobao_test_data** into ./data/    
-For details of Data download, see [EasyRec](https://github.com/AlibabaPAI/EasyRec/#GetStarted)
+Put data file **taobao_train_data & taobao_test_data** into ./data/
+These files are available at [Taobao CSV Dataset](https://github.com/AlibabaPAI/Modelzoo-Data/tree/main/csv/taobao).
 2. **Parquet Format**
 Put data file **taobao_train_data.parquet & taobao_test_data.parquet** into ./data/
-These files are available at [Modelzoo-Data](https://github.com/AlibabaPAI/Modelzoo-Data)
+These files are available at [Taobao Parquet Dataset](https://github.com/AlibabaPAI/Modelzoo-Data/tree/main/parquet_dataset/dbmtl_taobao).
 
 ### Fields
 The dataset contains 20 columns, details as follow:
