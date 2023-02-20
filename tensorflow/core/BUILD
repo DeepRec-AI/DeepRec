@@ -3768,7 +3768,8 @@ tf_cuda_library(
         "common_runtime/gpu/gpu_util.cc",
         "common_runtime/gpu/gpu_vmem_allocator.cc",
         "common_runtime/gpu/gpu_util_platform_specific.cc",
-        "common_runtime/gpu/gpu_embedding_layer_device_placement_pass.cc"
+        "common_runtime/gpu/gpu_embedding_layer_device_placement_pass.cc",
+        "common_runtime/gpu/gpu_stage_multi_stream_pass.cc"
     ],
     hdrs = GPU_RUNTIME_HEADERS,
     copts = tf_copts(),

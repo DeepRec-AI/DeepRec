@@ -273,6 +273,7 @@ message OptimizerOptions {
   bool do_async_embedding = 12;
   AsyncEmbeddingOptions async_embedding_options = 13;
   bool embedding_layer_device_placement_optimization = 14;
+  bool stage_multi_stream = 15;
 }
 
 message GraphOptions {

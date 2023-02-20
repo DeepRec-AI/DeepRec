@@ -18,7 +18,8 @@
 | closed_exception_types  | 被识别为正常退出的异常类型                                   | (`tf.errors.OutOfRangeError`, `errors.CancelledError`) |
 | ignored_exception_types | 被识别可忽略跳过的异常类型                                   | ()                                                     |
 | use_stage_subgraph_thread_pool   | 是否在独立线程池上运行Stage子图，需要先创建独立线程池        | False(可选，若为True则必须先创建独立线程池)            |
-| stage_subgraph_thread_id         | 如果开启了在独立线程池上运行Stage子图，用于指定独立线程池索引，需要先创建独立线程池，并打开use_stage_subgraph_thread_pool选项。 | 0，索引范围为[0, 创建的独立线程池数量-1]               |
+| stage_subgraph_thread_pool_id         | 如果开启了在独立线程池上运行Stage子图，用于指定独立线程池索引，需要先创建独立线程池，并打开use_stage_subgraph_thread_pool选项。 | 0，索引范围为[0, 创建的独立线程池数量-1]               |
+| stage_subgraph_stream_id | GPU Multi-Stream 场景下, stage子图执行使用的gpu stream的索引         | 0(可选，0表示stage子图共享计算主图使用的gpu stream, 索引范围为[0, gpu stream总数-1]) |
 
 Session中加入`tf.make_prefetch_hook()`hook
 
@@ -27,7 +28,7 @@ hooks=[tf.make_prefetch_hook()]
 with tf.train.MonitoredTrainingSession(hooks=hooks, config=sess_config) as sess:
 ```
 
-创建独立线程池（可选）
+- 创建独立线程池（可选）
 
 ```python
 sess_config = tf.ConfigProto()
@@ -37,7 +38,16 @@ sess_config.session_stage_subgraph_thread_pool[0].intra_op_threads_num = 8 # 独
 sess_config.session_stage_subgraph_thread_pool[0].global_name = "StageThreadPool_1" # 独立线程池名称
 ```
 
-注意事项
+- GPU Multi-Stream Stage(可选)
+```python
+sess_config = tf.ConfigProto()
+sess_config.graph_options.rewrite_options.use_multi_stream = (rewriter_config_pb2.RewriterConfig.ON) # 开启 DeepRec 的GPU Multi-Stream功能
+sess_config.graph_options.rewrite_options.multi_stream_opts.multi_stream_num = 2 # 设定可用的stream数量, 其中0号stream提供给计算主图使用
+sess_config.graph_options.optimizer_options.stage_multi_stream = True # 开启Stage功能Multi-Stream支持
+```
+> GPU Multi-Stream Stage功能还可以通过开启GPU MPS来实现更好的性能, 请见[GPU-MultiStream](./GPU-MultiStream.md).
+
+**注意事项**
 
 - 待异步化的计算应该尽可能少和后续主体计算争抢资源（gpu、cpu、线程池等）
 - `capacity` 更大会消耗更多的内存或显存，同时可能会抢占后续模型训练的 CPU 资源，建议设置为后续计算时间/待异步化时间。可以从 1 开始逐渐向上调整

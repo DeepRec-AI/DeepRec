@@ -64,6 +64,7 @@ def staged(
     ignored_exception_types=None,
     use_stage_subgraph_thread_pool=False,
     stage_subgraph_thread_pool_id = 0,
+    stage_subgraph_stream_id = 0,
     name=None):
   """Prefetch samples.
 
@@ -89,6 +90,8 @@ def staged(
       to run stage graph or not.
     stage_subgraph_thread_pool_id: (Optional.) Specifies the stage subgraph
       thread pool to use when enable use_stage_subgraph_thread_pool. 0 by default.
+    stage_subgraph_stream_id: (Optional.) Specifies which stream to use for the
+      Stage subgraph. The default value is 0.
     name: (Optional.) Name of prefetching operations.
 
   Returns:
@@ -124,11 +127,22 @@ def staged(
 
   with ops.name_scope(name):
     with ops.device(local_device):
-      fetch_tensors = gen_tensor_buffer_ops.tensor_buffer_put(
+      # only set stream id when stage_subgraph_id > 0,
+      # because stream 0 is used by default.
+      if (stage_subgraph_stream_id > 0):
+        with ops.stream(stage_subgraph_stream_id):
+          fetch_tensors = gen_tensor_buffer_ops.tensor_buffer_put(
+            tensors,
+            timeout_millis=timeout_millis,
+            shared_name=name,
+            shared_capacity=capacity)
+      else:
+        fetch_tensors = gen_tensor_buffer_ops.tensor_buffer_put(
           tensors,
           timeout_millis=timeout_millis,
           shared_name=name,
           shared_capacity=capacity)
+
       cancel_fetching = gen_tensor_buffer_ops.tensor_buffer_cancel(
           shared_name=name,
           shared_capacity=capacity)
