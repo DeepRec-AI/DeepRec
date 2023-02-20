@@ -651,6 +651,8 @@ def enable_group_embedding(fusion_type="collective"):
       raise ImportError("While param `fusion_type` in enable_group_embedding"
                         "is given `collective`, sok module initialize error,"
                         "please double check")
+  elif fusion_type == "localized":
+    group_embedding_ops_utils.set_group_lookup_fusion_type(fusion_type)
   else:
     raise ValueError("param `fusion_type` is given {}, Currently only support \
                      `collective`".format(fusion_type))

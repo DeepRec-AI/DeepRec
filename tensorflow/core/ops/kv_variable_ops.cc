@@ -29,8 +29,9 @@ namespace tensorflow {
 namespace {
 
 Status ValidateVariableResourceHandle(InferenceContext* c,
+                                      int input_indice,
                                       ShapeAndType* shape_and_type) {
-  auto* handle_data = c->input_handle_shapes_and_types(0);
+  auto* handle_data = c->input_handle_shapes_and_types(input_indice);
   if (handle_data == nullptr || handle_data->empty()) {
     shape_and_type->shape = c->UnknownShape();
     shape_and_type->dtype = DT_INVALID;
@@ -51,14 +52,14 @@ Status ValidateVariableResourceHandle(InferenceContext* c,
 
 Status ReadVariableShapeFn(InferenceContext* c) {
   ShapeAndType shape_and_type;
-  TF_RETURN_IF_ERROR(ValidateVariableResourceHandle(c, &shape_and_type));
+  TF_RETURN_IF_ERROR(ValidateVariableResourceHandle(c, 0, &shape_and_type));
   c->set_output(0, shape_and_type.shape);
   return Status::OK();
 }
 
 Status CreateAssignShapeFn(InferenceContext* c) {
   ShapeAndType handle_shape_and_type;
-  TF_RETURN_IF_ERROR(ValidateVariableResourceHandle(c, &handle_shape_and_type));
+  TF_RETURN_IF_ERROR(ValidateVariableResourceHandle(c, 0, &handle_shape_and_type));
 
   ShapeHandle value_shape = c->input(1);
   ShapeHandle unused;
@@ -243,7 +244,7 @@ REGISTER_OP("_OPT_KvResourceLookupID")
     .SetShapeFn([](InferenceContext* c) {
       ShapeAndType handle_shape_and_type;
       TF_RETURN_IF_ERROR(
-          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+          ValidateVariableResourceHandle(c, 0, &handle_shape_and_type));
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
@@ -272,7 +273,7 @@ REGISTER_OP("KvResourceGatherV1")
     .SetShapeFn([](InferenceContext* c) {
       ShapeAndType handle_shape_and_type;
       TF_RETURN_IF_ERROR(
-          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+          ValidateVariableResourceHandle(c, 0, &handle_shape_and_type));
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
@@ -319,7 +320,7 @@ REGISTER_OP("KvResourceGather")
     .SetShapeFn([](InferenceContext* c) {
       ShapeAndType handle_shape_and_type;
       TF_RETURN_IF_ERROR(
-          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+          ValidateVariableResourceHandle(c, 0, &handle_shape_and_type));
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
@@ -353,6 +354,138 @@ Produces an output tensor with shape `indices.shape + params.shape[1:]` where:
 
 )doc");
 
+REGISTER_OP("MultiKvResourceGather")
+    .Input("resource: num_lookups * resource")
+    .Input("sp_values: num_lookups * Tkeys")
+    .Input("sp_indices: num_lookups * int64")
+    .Input("dense_shape: num_lookups * int64")
+    .Input("default_value: dtype")
+    .Attr("is_use_default_value_tensor: bool = false")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
+    .Attr("dimension: int")
+    .Output("output: num_lookups * dtype")
+    .Output("sp_values_offset: num_lookups * int32")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("max_norm: float = -1.0")
+    .Attr("num_lookups: int >= 1")
+    .SetShapeFn([](InferenceContext* c) {
+      int num_lookups = c->num_outputs()/2;
+      for (int i = 0; i < num_lookups; ++i) {
+        ShapeAndType handle_shape_and_type;
+        TF_RETURN_IF_ERROR(
+            ValidateVariableResourceHandle(c, i, &handle_shape_and_type));
+
+        ShapeHandle unused;
+        TF_RETURN_IF_ERROR(
+            c->WithRankAtLeast(handle_shape_and_type.shape, 1, &unused));
+        ShapeHandle params_subshape;
+        params_subshape = handle_shape_and_type.shape;
+
+        ShapeHandle indices_shape = c->input(num_lookups+i);
+        ShapeHandle out;
+        TF_RETURN_IF_ERROR(c->Concatenate(indices_shape, params_subshape, &out));
+        c->set_output(i, out);
+      }
+      
+      return Status::OK();
+    })
+    .Doc(R"doc(
+Gather slices from the variable pointed to by `resource` according to `indices`.
+
+`indices` must be an integer tensor of any dimension (usually 0-D or 1-D).
+Produces an output tensor with shape `indices.shape + params.shape[1:]` where:
+
+```python
+    # Scalar indices
+    output[:, ..., :] = params[indices, :, ... :]
+
+    # Vector indices
+    output[i, :, ..., :] = params[indices[i], :, ... :]
+
+    # Higher rank indices
+    output[i, ..., j, :, ... :] = params[indices[i, ..., j], :, ..., :]
+```
+
+)doc");
+
+REGISTER_OP("MultiKvResourceGatherGrad")
+    .Input("grads: num_lookups * dtype")
+    .Input("embedding_resources: num_lookups * resource")
+    .Input("sp_values: num_lookups * Tkeys")
+    .Input("sp_values_offset: num_lookups * int32")
+    .Output("nnz_grads: num_lookups * dtype")
+    .Attr("dimension: int")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
+    .Attr("num_lookups: int >=1")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("max_norm: float = -1.0")
+    .SetShapeFn([](InferenceContext* ctx) {
+      int num_lookups = ctx->num_outputs();
+      for (int i = 0; i < num_lookups; ++i) {
+        ShapeHandle top_grad_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &top_grad_shape));
+        DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
+        ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
+      }
+      return Status::OK();
+    });
+
+REGISTER_OP("MultiEmbeddingSparseLookUp")
+    .Input("emb_variables: num_lookups * dtype")
+    .Input("sp_values: num_lookups * Tkeys")
+    .Input("sp_indices: num_lookups * int64")
+    .Input("dense_shape: num_lookups * int64")
+    .Output("output: num_lookups * dtype")
+    .Output("sp_values_offset: num_lookups * int32")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
+    .Attr("dimension: int")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("max_norm: float = -1.0")
+    .Attr("num_lookups: int >= 1")
+    .SetShapeFn([](InferenceContext* ctx) {
+      int num_lookups = ctx->num_outputs() / 2;
+      for (int i = 0; i < num_lookups; ++i) {
+        ShapeHandle temp;
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(num_lookups+i), 1, &temp));
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(2*num_lookups+i), 2, &temp));
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(3*num_lookups+i), 1, &temp));
+        ShapeHandle emb_var_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRankAtLeast(ctx->input(i), 1, &emb_var_shape));
+        DimensionHandle emb_vec_size_dim = ctx->Dim(emb_var_shape, 1);
+        DimensionHandle batch_dim = ctx->UnknownDim();
+        ShapeHandle output_shape = ctx->MakeShape({batch_dim, emb_vec_size_dim});
+        ctx->set_output(i, output_shape);
+      }
+
+      return Status::OK();
+    });
+
+REGISTER_OP("MultiEmbeddingSparseLookUpGrad")
+    .Input("grads: num_lookups * float32")
+    .Input("embedding_variables: num_lookups * dtype")
+    .Input("sp_values: num_lookups * Tkeys")
+    .Input("sp_values_offset: num_lookups * int32")
+    .Output("nnz_grads: num_lookups * float32")
+    .Attr("dimension: int")
+    .Attr("combiner: {'sqrtn', 'mean', 'sum'}")
+    .Attr("num_lookups: int >=1")
+    .Attr("dtype: type")
+    .Attr("Tkeys: {int64, int32}")
+    .Attr("max_norm: float = -1.0")
+    .SetShapeFn([](InferenceContext* ctx) {
+      int num_lookups = ctx->num_outputs();
+      for (int i = 0; i < num_lookups; ++i) {
+        ShapeHandle top_grad_shape;
+        TF_RETURN_IF_ERROR(ctx->WithRank(ctx->input(i), 2, &top_grad_shape));
+        DimensionHandle emb_vec_size_dim = ctx->Dim(top_grad_shape, 1);
+        ctx->set_output(0, ctx->MakeShape({ctx->UnknownDim(), emb_vec_size_dim}));
+      }
+      return Status::OK();
+    });
+
 REGISTER_OP("_OPT_KvResourceCollectEmbedding")
     .Input("resource: resource")
     .Input("indices: Tkeys")
@@ -366,7 +499,7 @@ REGISTER_OP("_OPT_KvResourceCollectEmbedding")
     .SetShapeFn([](InferenceContext* c) {
       ShapeAndType handle_shape_and_type;
       TF_RETURN_IF_ERROR(
-          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+          ValidateVariableResourceHandle(c, 0, &handle_shape_and_type));
 
       ShapeHandle unused;
       TF_RETURN_IF_ERROR(
@@ -390,7 +523,7 @@ REGISTER_OP("KvResourceScatterAdd")
     .SetShapeFn([](InferenceContext* c) {
       ShapeAndType handle_shape_and_type;
       TF_RETURN_IF_ERROR(
-          ValidateVariableResourceHandle(c, &handle_shape_and_type));
+          ValidateVariableResourceHandle(c, 0, &handle_shape_and_type));
       ShapeHandle var_shape = handle_shape_and_type.shape;
       ShapeHandle indices_shape = c->input(1);
 
