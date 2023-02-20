@@ -1378,9 +1378,16 @@ Status DirectSession::Run(const RunOptions& run_options,
   run_state_args.collective_graph_key =
       run_options.experimental().collective_graph_key();
 
-  TF_RETURN_IF_ERROR(GetOrCreateExecutors(input_tensor_names, output_names,
-                                          target_nodes, &executors_and_keys,
-                                          &run_state_args));
+  if (run_metadata && !run_metadata->graph_signature().empty()) {
+    TF_RETURN_IF_ERROR(GetOrCreateExecutors(input_tensor_names, output_names,
+                                            target_nodes, &executors_and_keys,
+                                            &run_state_args, run_metadata->graph_signature()));
+  } else {
+    TF_RETURN_IF_ERROR(GetOrCreateExecutors(input_tensor_names, output_names,
+                                            target_nodes, &executors_and_keys,
+                                            &run_state_args));
+  }
+
   {
     mutex_lock l(collective_graph_key_lock_);
     collective_graph_key_ = executors_and_keys->collective_graph_key;
@@ -2017,6 +2024,16 @@ Status DirectSession::GetOrCreateExecutors(
     gtl::ArraySlice<string> inputs, gtl::ArraySlice<string> outputs,
     gtl::ArraySlice<string> target_nodes, ExecutorsAndKeys** executors_and_keys,
     RunStateArgs* run_state_args) {
+  return GetOrCreateExecutors(inputs, outputs, target_nodes,
+                              executors_and_keys, run_state_args, "");
+}
+
+Status DirectSession::GetOrCreateExecutors(
+    gtl::ArraySlice<string> inputs, gtl::ArraySlice<string> outputs,
+    gtl::ArraySlice<string> target_nodes,
+    ExecutorsAndKeys** executors_and_keys,
+    RunStateArgs* run_state_args,
+    const std::string& graph_signature) {
   int64 handle_name_counter_value = -1;
   if (LogMemory::IsEnabled() || run_state_args->is_partial_run) {
     handle_name_counter_value = handle_name_counter_.fetch_add(1);
@@ -2028,11 +2045,19 @@ Status DirectSession::GetOrCreateExecutors(
         run_state_args->debug_options.debug_tensor_watch_opts());
   }
 
-  // Fast lookup path, no sorting.
-  const string key = strings::StrCat(
-      absl::StrJoin(inputs, ","), "->", absl::StrJoin(outputs, ","), "/",
-      absl::StrJoin(target_nodes, ","), "/", run_state_args->is_partial_run,
-      "/", debug_tensor_watches_summary);
+  static int64 executors_idx = 0;
+  std::string key("");
+  if (graph_signature.empty()) {
+    // Fast lookup path, no sorting.
+    key = strings::StrCat(
+        absl::StrJoin(inputs, ","), "->", absl::StrJoin(outputs, ","), "/",
+        absl::StrJoin(target_nodes, ","), "/", run_state_args->is_partial_run,
+        "/", debug_tensor_watches_summary);
+  } else {
+    // Fast lookup path with graph signature.
+    key = graph_signature;
+  }
+
   // Set the handle, if it's needed to log memory or for partial run.
   if (handle_name_counter_value >= 0) {
     run_state_args->handle =
@@ -2079,7 +2104,11 @@ Status DirectSession::GetOrCreateExecutors(
     if (it != executors_.end()) {
       *executors_and_keys = it->second.get();
       // Insert this under the original key.
-      executors_.emplace(key, it->second);
+      auto insert_key_status = executors_.emplace(key, it->second);
+      if (insert_key_status.second) {
+        LOG(INFO) << "Add new unsort key to executors_ map: " << executors_idx++
+                  << ", key: " << key << ", this: " << this;
+      }
       return Status::OK();
     }
   }
@@ -2120,8 +2149,12 @@ Status DirectSession::GetOrCreateExecutors(
 
   // Insert the value under the original key, so the fast path lookup will work
   // if the user uses the same order of inputs, outputs, and targets again.
-  executors_.emplace(key, insert_result.first->second);
+  auto insert_key_status = executors_.emplace(key, insert_result.first->second);
   *executors_and_keys = insert_result.first->second.get();
+  if (insert_key_status.second) {
+    LOG(INFO) << "Add new unsort key to executors_ map: " << executors_idx++
+              << ", key: " << key << ", this: " << this;
+  }
 
   return Status::OK();
 }
