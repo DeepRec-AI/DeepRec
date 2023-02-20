@@ -89,6 +89,9 @@ $ pip3 install /tmp/tensorflow_pkg/tensorflow-1.15.5+${version}-cp38-cp38m-linux
 
 ### **Latest Release Images**
 
+XXXXXXXXXXXx
+
+
 #### Image for CPU
 
 ```
