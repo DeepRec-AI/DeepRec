@@ -238,6 +238,12 @@ class DirectSession : public Session {
       gtl::ArraySlice<string> target_nodes,
       ExecutorsAndKeys** executors_and_keys, RunStateArgs* run_state_args);
 
+  ::tensorflow::Status GetOrCreateExecutors(
+      gtl::ArraySlice<string> inputs, gtl::ArraySlice<string> outputs,
+      gtl::ArraySlice<string> target_nodes,
+      ExecutorsAndKeys** executors_and_keys, RunStateArgs* run_state_args,
+      const std::string& graph_signature);
+
   // Creates a set of executors to run the subgraph defined by
   // `callable_options`.
   ::tensorflow::Status CreateExecutors(
