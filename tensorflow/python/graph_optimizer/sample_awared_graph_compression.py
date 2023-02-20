@@ -25,7 +25,7 @@ def get_sample_awared_graph():
 @tf_export('graph_optimizer.enable_sample_awared_graph_compression')
 def enable_sample_awared_graph_compression(user_tensors, item_tensors, item_size):
   global _sample_awared_graph
-  _sample_awared_graph = SampleAwaredGraph(user_tensors, item_tensors, item_seq_length)
+  _sample_awared_graph = SampleAwaredGraph(user_tensors, item_tensors, item_size)
 
 def find_boundery_tensors(user_ops, item_ops):
   queue_item = collections.deque()
@@ -93,45 +93,29 @@ def add_tile_op(boundery_tensor_sets, item_seq_length, user_sets, seq_mask_resha
     # only add tiles for those with batched tensors (dynamic shaped [?, ...])
     # as some constant operations, such as reshape, should not be tiled
     if len(t.get_shape().as_list()) > 0 and not t.get_shape().as_list()[0]:
-      logging.info("add_tile_op [%d]: %s, %s", tiled_num, t, t.consumers())
-      user_expand = array_ops.expand_dims(t, 1)
-      tile_shape = array_ops.concat([[1], item_seq_length, [1 for i in range(len(t.get_shape()[1:]))]], axis=0)
-      user_tiled = array_ops.tile(user_expand, tile_shape)
-      reshape_shape = [-1]
-      if len(user_tiled.get_shape()) > 2:
-        user_tiled_shape = array_ops.shape(user_tiled)
-        reshape_shape = array_ops.concat([math_ops.reduce_prod(user_tiled_shape[:2],keepdims=True), user_tiled_shape[2:]], 0)
-      seq_user_input = array_ops.reshape(user_tiled, reshape_shape)
-      if seq_mask_reshaped:
-        seq_user_input = array_ops.boolean_mask(seq_user_input, seq_mask_reshaped)
-      
-      t_ops = copy.copy(t.consumers())
-      for op in t_ops:
-        if not is_shape_op(op):
-          if op is user_expand.op or op in user_sets:
-            continue
-        for index, input_t in enumerate(op.inputs):
-          if input_t is t:
-            op._update_input(index, seq_user_input)
-            logging.info("add_tile_op detail: %s, %s, %s", op, index, seq_user_input)
-      tiled_num += 1
+      with ops.colocate_with(t.op):
+        logging.info("add_tile_op [%d]: %s, %s", tiled_num, t, t.consumers())
+        user_expand = array_ops.expand_dims(t, 1)
+        tile_shape = array_ops.concat([[1], item_seq_length, [1 for i in range(len(t.get_shape()[1:]))]], axis=0)
+        user_tiled = array_ops.tile(user_expand, tile_shape)
+        reshape_shape = [-1]
+        if len(user_tiled.get_shape()) > 2:
+          user_tiled_shape = array_ops.shape(user_tiled)
+          reshape_shape = array_ops.concat([math_ops.reduce_prod(user_tiled_shape[:2],keepdims=True), user_tiled_shape[2:]], 0)
+        seq_user_input = array_ops.reshape(user_tiled, reshape_shape)
+        if seq_mask_reshaped:
+          seq_user_input = array_ops.boolean_mask(seq_user_input, seq_mask_reshaped)
+        t_ops = copy.copy(t.consumers())
+        for op in t_ops:
+          if not is_shape_op(op):
+            if op is user_expand.op or op in user_sets:
+              continue
+          for index, input_t in enumerate(op.inputs):
+            if input_t is t:
+              op._update_input(index, seq_user_input)
+              logging.info("add_tile_op detail: %s, %s, %s", op, index, seq_user_input)
+        tiled_num += 1
   logging.info("add_tile_op: total %d", tiled_num)
-
-def add_split_op_v2(item_tensor):
-  if not item_tensor.consumers():
-    return
-  t = item_tensor
-  logging.info("add_split_op: %s, %s", t, t.consumers())
-  t_ops = copy.copy(t.consumers())
-  seq_item = string_ops.string_split_v2(t, '')
-  seq_item = sparse_ops.sparse_tensor_to_dense(seq_item)
-  # Flatten the items [user_batch * item_pack_size]
-  seq_item = array_ops.reshape(seq_item, [-1])
-  for op in t_ops:
-    for index, input_t in enumerate(op.inputs):
-      if input_t is t:
-        op._update_input(index, seq_item)
-        logging.info("add_split_op detail: %s, %s, %s", op, index, seq_item)
 
 class SampleAwaredGraph(object):
   # user_tensors: list of common tensor
@@ -192,7 +176,3 @@ class SampleAwaredGraph(object):
         user_ops=user_ops,
         item_ops=item_ops)
     add_tile_op(boundery_tensor_sets, self.item_seq_length, user_op_sets)
-
-    # subGraph_2
-    # for t in self.item_tensors:
-    #   add_split_op_v2(t)
