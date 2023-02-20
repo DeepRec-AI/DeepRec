@@ -453,9 +453,11 @@ Status LoadSavedModelInternal(const SessionGroupOptions& session_options,
   string init_op_name;
   TF_RETURN_IF_ERROR(
       GetInitOp(export_dir, bundle->meta_graph_def, &init_op_name));
-  for (auto sess : bundle->session_group->GetLeaderSessions()) {
+  auto sess_num = bundle->session_group->GetSessionNum();
+  for (int i = 0; i < sess_num; ++i) {
     TF_RETURN_IF_ERROR(RunInitOp(run_options, export_dir, bundle->meta_graph_def,
-                                 asset_file_defs, sess, init_op_name));
+                                 asset_file_defs, bundle->session_group->GetSession(i),
+                                 init_op_name));
   }
   load_latency_by_stage->GetCell(export_dir, "restore_graph")
       ->Add(restore_graph_walltime);
