@@ -18,7 +18,8 @@ A TensorFlow training task is usually composed of sample data reading and graph 
 | closed_exception_types  | Exception types recognized as graceful exits                                  | (`tf.errors.OutOfRangeError`, `errors.CancelledError`) |
 | ignored_exception_types | Exception types that are recognized to be ignored and skipped                                   | ()                                                     |
 | use_stage_subgraph_thread_pool   | Whether to run the Stage subgraph on an independent thread pool, you need to create an independent thread pool first        | False(Optional, if it is True, a separate thread pool must be created first)            |
-| stage_subgraph_thread_id         | If you enable the stage subgraph to run on the independent thread pool to specify the independent thread pool index, you need to create an independent thread pool first, and enable the use_stage_subgraph_thread_pool option. | 0, The index range is [0, the number of independent thread pools created - 1]               |
+| stage_subgraph_thread_pool_id         | If you enable the stage subgraph to run on the independent thread pool to specify the independent thread pool index, you need to create an independent thread pool first, and enable the use_stage_subgraph_thread_pool option. | 0, The index range is [0, the number of independent thread pools created - 1]               |
+| stage_subgraph_stream_id | In the GPU Multi-Stream scenario, the index of gpu stream used by stage subgraph          | 0 (optional, 0 means that the stage subgraph shares the gpu stream used by the main graph, the index range is [0, total number of GPU streams -1]) |
 
 Adds `tf.make_prefetch_hook()`hook when create session.
 
@@ -27,7 +28,7 @@ hooks=[tf.make_prefetch_hook()]
 with tf.train.MonitoredTrainingSession(hooks=hooks, config=sess_config) as sess:
 ```
 
-Create a separate thread pool (optional)
+- Create a separate thread pool (optional)
 
 ```python
 sess_config = tf.ConfigProto()
@@ -37,7 +38,17 @@ sess_config.session_stage_subgraph_thread_pool[0].intra_op_threads_num = 8 # int
 sess_config.session_stage_subgraph_thread_pool[0].global_name = "StageThreadPool_1" # thread pool name
 ```
 
-attention:
+- GPU Multi-Stream Stage (optional)
+
+```python
+sess_config = tf.ConfigProto()
+sess_config.graph_options.rewrite_options.use_multi_stream = (rewriter_config_pb2.RewriterConfig.ON) # enable DeepRec GPU Multi-Stream
+sess_config.graph_options.rewrite_options.multi_stream_opts.multi_stream_num = 2 # The number of gpu streams, stream 0 is used by the main graph
+sess_config.graph_options.optimizer_options.stage_multi_stream = True # enable GPU Multi-Stream Stage
+```
+> GPU Mulit-Stream Stage can achieve better performance by enabling GPU MPS, please refer to  [GPU-MultiStream](./GPU-MultiStream.md).
+
+**Attention:**
 
 - Computations to be asynchronous should compete with subsequent main computations for resources as little as possible (gpu, cpu, thread pool, etc.)
 - A larger `capacity` will consume more memory or video memory, and may occupy CPU resources for subsequent model training. It is recommended to set it to follow-up calculation time/waiting for asynchronization time. It can be adjusted gradually upwards starting from 1.
