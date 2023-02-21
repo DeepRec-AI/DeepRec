@@ -2852,9 +2852,8 @@ tf_kernel_library(
         "@sparsehash_c11//:dense_hash_map",
         "@libcuckoo//:libcuckoo",
         "@com_github_google_leveldb//:leveldb",
-    ] + select({"//tensorflow:with_gpu_ev_support":
-                 ["@cuCollections//:cuco_hash_table"],
-                 "//conditions:default": []}),
+        "@cuCollections//:cuco_hash_table"
+    ],
 )
 
 cuda_library(
@@ -5346,6 +5345,47 @@ tf_kernel_library(
     name = "sendrecv_ops",
     prefix = "sendrecv_ops",
     deps = REQUIRED_DEPS,
+)
+
+tf_kernel_library(
+    name = "group_embedding_ops",
+    gpu_srcs = ["group_lookup_forward.cu.cc",
+                "group_lookup_backward.cu.cc",],
+    deps = ["//third_party/eigen3",
+            "//tensorflow/core/kernels:gpu_device_array",
+            ":training_op_helpers",
+            ":variable_ops",
+            "//tensorflow/core:embedding_gpu",
+            "@sparsehash_c11//:dense_hash_map",
+            "@libcuckoo//:libcuckoo",
+            "@com_github_google_leveldb//:leveldb",] + DYNAMIC_DEPS + mkl_deps() +
+           if_cuda(["@cub_archive//:cub",
+                    ":fused_embedding_common_cuh",
+                    "@cuCollections//:cuco_hash_table"]),
+)
+
+tf_cuda_cc_test(
+    name = "group_embedding_ops_test",
+    size = "small",
+    srcs = ["group_lookup_ops_test.cc"],
+    tags = tf_cuda_tests_tags(),
+    extra_copts = ["-fexceptions", "-g"],
+    deps = [
+        ":group_embedding_ops",
+        ":kv_variable_ops",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:framework_internal",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:tensorflow",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
 )
 
 tf_cc_test(

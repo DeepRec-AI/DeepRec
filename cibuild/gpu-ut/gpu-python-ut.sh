@@ -66,6 +66,7 @@ export TF_BUILD_BAZEL_TARGET="$TF_ALL_TARGETS "\
 "-//tensorflow/python/eager:remote_test_gpu "\
 "-//tensorflow/python/eager:def_function_xla_test_gpu "\
 "-//tensorflow/python:embedding_variable_ops_test "\
+"-//tensorflow/python:group_embedding_lookup_ops_test "\
 "-//tensorflow/python/keras/distribute:multi_worker_fault_tolerance_test "\
 "-//tensorflow/python/keras:callbacks_test "\
 "-//tensorflow/python/keras:core_test "\

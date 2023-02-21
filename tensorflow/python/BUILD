@@ -3509,7 +3509,8 @@ py_library(
 
 py_library(
     name = "kv_variable_ops",
-    srcs = ["ops/kv_variable_ops.py"],
+    srcs = ["ops/kv_variable_ops.py",
+            "ops/group_embedding_lookup.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":array_ops",
@@ -6692,6 +6693,23 @@ cuda_py_test(
     name = "embedding_variable_ops_gpu_test",
     size = "small",
     srcs = ["ops/embedding_variable_ops_gpu_test.py"],
+    tags = ["no_windows"],
+    additional_deps = [
+        ":client_testlib",
+        ":framework_for_generated_wrappers",
+        ":partitioned_variables",
+        ":variable_scope",
+        ":embedding_ops",
+        ":state_ops",
+        "//tensorflow/contrib/layers:layers_py",
+        "//third_party/py/numpy",
+    ],
+)
+
+cuda_py_test(
+    name = "group_embedding_lookup_ops_test",
+    size = "small",
+    srcs = ["ops/group_embedding_lookup_ops_test.py"],
     tags = ["no_windows"],
     additional_deps = [
         ":client_testlib",

@@ -18,7 +18,10 @@ bazel --output_base /tmp build -j 16  -c opt --config=opt  //tensorflow/tools/pi
 
 ### 用户接口
 1. 首先，使用Group Embedding的接口需要开启设置`tf.config.experimental.enable_group_embedding()`
-参数配置: ```fusion_type="collective"```,该模式会完成horovod模块以及SOK相关依赖的初始化。
+参数配置: 
+- ```fusion_type="collective"```,该模式推荐用于单机多卡的训练，会完成horovod模块以及SOK相关依赖的初始化。
+- ```fusion_type="localized"```,该模式推荐用于单机单卡的训练，不依赖任何模块
+  **提示**：上述两个模式在使用接口上唯一的区别是`collective`的sp_id适合RaggedTensor的输入，`localized`适合SparseTensor的输入
 
 2. 我们支持两个层面的API，分别为底层API `tf.nn.group_embedding_lookup_sparse` 和基于feature_column的API `tf.feature_column.group_embedding_column_scope` 。
 
@@ -33,7 +36,7 @@ def group_embedding_lookup_sparse(params,
                                   name=None):
 ```
 
-- `params` : List, 该参数可以接收一个或者多个EmbeddingVariable
+- `params` : List, 该参数可以接收一个或者多个EmbeddingVariable或者是原生Tensorflow Variable
 - `sp_ids` : List | Tuple , SparseTensor ，values是用于查找的ID 长度必须和params保持一致
 - `combiners` : List | Tuple 查找完得到的embedding tensor聚合的方式，支持 `mean` 和 `sum`
 - `partition_strategy` : str 目前暂时不支持
@@ -158,7 +161,7 @@ with tf.Session(config=sess_config) as sess:
 **Benchmarks**
 
 我们用DCNv2模型测试了GroupEmbedding的性能， 训练的数据集是Critro，batch_size大小为512.
-
+**collective**
 | API | Global-step/s | Note |
 | ------ | ---------------------- | ---- |
 | tf.nn.group_embedding_lookup_sparse            | 85.3 (+/- 0.1)  | 1 card |
@@ -167,3 +170,6 @@ with tf.Session(config=sess_config) as sess:
 | tf.feature_column.group_embedding_column_scope | 79.7 (+/- 0.1)  | 1 card |
 | tf.feature_column.group_embedding_column_scope | 152.2 (+/- 0.2) | 2 card |
 | tf.feature_column.group_embedding_column_scope | 272 (+/- 0.4)   | 4 card |
+
+**localized**
+| tf.nn.group_embedding_lookup_sparse(Variable)  | 153.2 (+/- 0.1)  | 1 card |

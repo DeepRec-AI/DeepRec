@@ -16,7 +16,11 @@ bazel --output_base /tmp build -j 16  -c opt --config=opt  //tensorflow/tools/pi
 
 ### User API
 1. Before using Group Embedding API, you need to enable the setting`tf.config.experimental.enable_group_embedding()`
-parameters setting: ```fusion_type="collective"```. This mode will complete the initialization of the horovod module and SOK-related dependencies.
+parameters setting: 
+- ```fusion_type="collective"```. This mode will complete the initialization of the horovod module and SOK-related dependencies and is recommended to be used in single worker multi card Training.
+- ```fusion_type="localized"```. This mode is recommended to be used in single worker single card Training.
+
+  **Note**: The only difference between the above two modes in the use interface is that the sp_id of `collective` is suitable for the input of RaggedTensor while `localized` is suitable for the input of SparseTensor
 
 2. We support two levels of API.The one is`tf.nn.group_embedding_lookup_sparse` and the other is `tf.feature_column.group_embedding_column_scope` which is based on feature_column API.
 
@@ -31,7 +35,7 @@ def group_embedding_lookup_sparse(params,
                                   name=None):
 ```
 
-- `params` : List, This parameter could receive one or more EmbeddingVariables.
+- `params` : List, This parameter could receive one or more EmbeddingVariables or native Tensorflow Variable.
 - `sp_ids` : List | Tuple , SparseTensor sp_ids ​​is the ID used for EmbeddingLookup, the length must be consistent with params.
 - `combiners` : List | Tuple，The pooling method of embedding values.Currently support `mean` and `sum`.
 - `partition_strategy` : str，Currently not supported.
@@ -157,6 +161,7 @@ More detailed usage of group embedding lookup please refer to modelzoo[DCNv2模�
 
 We evaluate performance with DCNv2 model. The training dataset is Criteo and the batch_size is 512.
 
+collective
 | API | Global-step/s | Note |
 | ------ | ---------------------- | ---- |
 | tf.nn.group_embedding_lookup_sparse            | 85.3 (+/- 0.1)  | 1 card |
@@ -165,3 +170,6 @@ We evaluate performance with DCNv2 model. The training dataset is Criteo and the
 | tf.feature_column.group_embedding_column_scope | 79.7 (+/- 0.1)  | 1 card |
 | tf.feature_column.group_embedding_column_scope | 152.2 (+/- 0.2) | 2 card |
 | tf.feature_column.group_embedding_column_scope | 272 (+/- 0.4)   | 4 card |
+
+localized
+| tf.nn.group_embedding_lookup_sparse(Variable)  | 153.2 (+/- 0.1)  | 1 card |

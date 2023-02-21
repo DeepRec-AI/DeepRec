@@ -1638,6 +1638,7 @@ cc_library(
         "//tensorflow/core/kernels:function_ops",
         "//tensorflow/core/kernels:functional_ops",
         "//tensorflow/core/kernels:fused_embedding_ops",
+        "//tensorflow/core/kernels:group_embedding_ops",
         "//tensorflow/core/kernels/data:parquet_dataset_ops",
         "//tensorflow/core/kernels:fused_l2_normalize_ops",
         "//tensorflow/core/kernels:fused_layer_normalize_ops",

@@ -435,12 +435,6 @@ config_setting(
 )
 
 config_setting(
-    name = "with_gpu_ev_support",
-    values = {"define": "with_gpu_ev_support=true"},
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
     name = "with_pmem_support",
     values = {"define": "with_pmem_support=true"},
     visibility = ["//visibility:public"],
