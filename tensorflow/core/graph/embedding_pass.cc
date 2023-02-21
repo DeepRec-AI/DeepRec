@@ -31,6 +31,7 @@ void VLogGraphDebugString(Graph* g) {
   VLOG(1) << "Grpah: " << graph_def.DebugString();
 }
 
+// Embedding ForwardBackward Joint Optimization, should before smart-stage
 class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPass {
  public:
   EmbeddingForwardBackwardJointOptimizationPass() : GraphOptimizationPass() {
@@ -219,8 +220,8 @@ class EmbeddingForwardBackwardJointOptimizationPass : public GraphOptimizationPa
   bool embedding_fbj_opt_ = false;
 };
 
-// REGISTER_OPTIMIZATION(OptimizationPassRegistry::POST_REWRITE_FOR_EXEC, 0,
-//                       EmbeddingForwardBackwardJointOptimizationPass);
+REGISTER_OPTIMIZATION(OptimizationPassRegistry::PRE_PLACEMENT, 23,
+                      EmbeddingForwardBackwardJointOptimizationPass);
 
 }  // namespace
 }  // namespace tensorflow

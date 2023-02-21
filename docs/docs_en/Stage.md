@@ -42,7 +42,7 @@ sess_config.session_stage_subgraph_thread_pool[0].global_name = "StageThreadPool
 
 ```python
 sess_config = tf.ConfigProto()
-sess_config.graph_options.rewrite_options.use_multi_stream = (rewriter_config_pb2.RewriterConfig.ON) # enable DeepRec GPU Multi-Stream
+sess_config.graph_options.rewrite_options.use_multi_stream = (rewriter_config_pb2.RewriterConfig.ON) # enable GPU Multi-Stream
 sess_config.graph_options.rewrite_options.multi_stream_opts.multi_stream_num = 2 # The number of gpu streams, stream 0 is used by the main graph
 sess_config.graph_options.optimizer_options.stage_multi_stream = True # enable GPU Multi-Stream Stage
 ```
