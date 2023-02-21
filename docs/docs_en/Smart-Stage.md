@@ -79,7 +79,7 @@ The Aliyun ECS instance is ecs.hfg7.8xlarge
 |      |      case       | global steps/sec |
 | :--: | :-------------: | :--------------: |
 | DLRM | w/o smart stage |  201 (baseline)  |
-| DLRM | w/o smart stage |  212 (+ 1.05x)   |
+| DLRM | w/  smart stage |  212 (+ 1.05x)   |
 
 - GPU scenario
 
