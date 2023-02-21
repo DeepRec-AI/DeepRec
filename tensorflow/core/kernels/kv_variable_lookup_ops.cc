@@ -138,7 +138,7 @@ class KvResourceLookupIDOp : public OpKernel {
         ev->storage_manager()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           if (cache) {
-            cache->add_to_rank(indices);
+            cache->add_to_prefetch_list(indices);
           }
         });
       }
@@ -291,6 +291,14 @@ class KvResourceLookupIDGPUOp : public OpKernel {
           event_mgr, c->eigen_gpu_device(),
           worker_threads, out_base);
 
+      if (ev->IsMultiLevel()) {
+        ev->storage_manager()->Schedule([ev, indices]() {
+          embedding::BatchCache<TKey>* cache = ev->Cache();
+          if (cache) {
+            cache->add_to_prefetch_list(indices);
+          }
+        });
+      }
       delete[] memcpy_address;
     }
   }
@@ -420,6 +428,14 @@ class KvResourceCollectEmbeddingOp : public OpKernel {
       Shard(worker_threads->num_threads,
             worker_threads->workers, indices_size,
             slice_bytes, do_work);
+      if (ev->IsMultiLevel()) {
+        ev->storage_manager()->Schedule([ev, indices]() {
+          embedding::BatchCache<TKey>* cache = ev->Cache();
+          if (cache) {
+            cache->add_to_cache(indices);
+          }
+        });
+      }
     }
   }
 
@@ -564,7 +580,7 @@ class KvResourceCollectEmbeddingGPUOp : public OpKernel {
         ev->storage_manager()->Schedule([ev, indices]() {
           embedding::BatchCache<TKey>* cache = ev->Cache();
           if (cache) {
-            cache->add_to_rank(indices);
+            cache->add_to_cache(indices);
           }
         });
       }

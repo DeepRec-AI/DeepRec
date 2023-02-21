@@ -23,14 +23,27 @@ class BatchCache {
   void add_to_rank(const Tensor& t) {
     add_to_rank((K*)t.data(), t.NumElements());
   }
+  void add_to_prefetch_list(const Tensor& t) {
+    add_to_prefetch_list((K*)t.data(), t.NumElements());
+  }
+  void add_to_cache(const Tensor& t) {
+    add_to_cache((K*)t.data(), t.NumElements());
+  }
+
   virtual size_t get_evic_ids(K* evic_ids, size_t k_size) = 0;
   virtual size_t get_cached_ids(K* cached_ids, size_t k_size,
                                 int64* cached_versions,
                                 int64* cached_freqs) = 0;
-  virtual void add_to_rank(const K* batch_ids, size_t batch_size) = 0;
+  virtual void add_to_rank(const K* batch_ids, size_t batch_size,
+                           bool use_locking=true) = 0;
   virtual void add_to_rank(const K* batch_ids, size_t batch_size,
                            const int64* batch_versions,
-                           const int64* batch_freqs) = 0;
+                           const int64* batch_freqs,
+                           bool use_locking=true) = 0;
+  virtual void add_to_prefetch_list(
+      const K* batch_ids, size_t batch_size) = 0;
+  virtual void add_to_cache(
+      const K* batch_ids, size_t batch_size) = 0;
   virtual size_t size() = 0;
   virtual void reset_status() {
      num_hit = 0;
@@ -45,10 +58,70 @@ class BatchCache {
                           " %, visit_count = ", num_hit + num_miss,
                            ", hit_count = ", num_hit);
   }
+  virtual mutex_lock maybe_lock_cache(
+      mutex& mu, mutex& temp_mu,bool use_locking) {
+    if (use_locking) {
+      mutex_lock l(mu);
+      return l;
+    } else {
+      mutex_lock l(temp_mu);
+      return l;
+    }
+  }
 
  protected:
   int64 num_hit;
   int64 num_miss;
+};
+
+template<class K>
+class PrefetchNode {
+ public:
+  explicit PrefetchNode(): key_(-1), ref_count_(1) {}
+  explicit PrefetchNode(K id): key_(id), ref_count_(1) {}
+  virtual ~PrefetchNode() {}
+  virtual void Ref() {
+    ref_count_++;
+  };
+  virtual void UnRef() {
+    ref_count_--;
+  };
+  virtual K key() {
+    return key_;
+  }
+  virtual int64 ref_count() {
+    return ref_count_;
+  }
+ protected:
+   K key_;
+   int64 ref_count_;
+};
+
+template<class K>
+class PrefetchLFUNode: public PrefetchNode<K>{
+ public:
+  explicit PrefetchLFUNode(K id){
+    PrefetchNode<K>::key_ = id;
+    PrefetchNode<K>::ref_count_ = 1;
+    freq_ = 1;
+  }
+
+  PrefetchLFUNode(K id, int64 freq){
+    PrefetchNode<K>::key_ = id;
+    PrefetchNode<K>::ref_count_ = 1;
+    freq_ = freq;
+  }
+
+  void Ref() override {
+    PrefetchNode<K>::ref_count_++;
+    freq_++;
+  }
+
+  int64 freq() {
+    return freq_;
+  }
+ private:
+  int64 freq_;
 };
 
 template <class K>
@@ -99,8 +172,10 @@ class LRUCache : public BatchCache<K> {
     return i;
   }
 
-  void add_to_rank(const K* batch_ids, size_t batch_size) {
-    mutex_lock l(mu_);
+  void add_to_rank(const K* batch_ids, size_t batch_size,
+                   bool use_locking=true) {
+    mutex temp_mu;
+    auto lock = BatchCache<K>::maybe_lock_cache(mu_, temp_mu, use_locking);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];
       typename std::map<K, LRUNode *>::iterator it = mp.find(id);
@@ -127,10 +202,54 @@ class LRUCache : public BatchCache<K> {
 
   void add_to_rank(const K* batch_ids, size_t batch_size,
                     const int64* batch_version,
-                    const int64* batch_freqs) {
+                    const int64* batch_freqs,
+                    bool use_locking = true) {
     //TODO: add to rank accroding to the version of ids
     add_to_rank(batch_ids, batch_size);
   }
+
+  void add_to_prefetch_list(const K* batch_ids, const size_t batch_size) {
+    mutex_lock l(mu_);
+    for (size_t i = 0; i < batch_size; ++i) {
+      K id = batch_ids[i];
+      auto it_prefetch = prefetch_id_table.find(id);
+      if (it_prefetch == prefetch_id_table.end()) {
+        auto it_cache = mp.find(id);
+        if (it_cache != mp.end()) {
+          LRUNode *node = it_cache->second;
+          node->pre->next = node->next;
+          node->next->pre = node->pre;
+          delete node;
+          mp.erase(id);
+        }
+        prefetch_id_table[id] = new PrefetchNode<K>(id);
+      } else {
+        it_prefetch->second->Ref();
+      }
+    }
+  }
+
+  void add_to_cache(const K* batch_ids, const size_t batch_size) {
+    mutex_lock l(mu_);
+    std::vector<K> ids_to_cache(batch_size);
+    int64 nums_to_cache = 0;
+    for (size_t i = 0; i < batch_size; ++i) {
+      K id = batch_ids[i];
+      auto it_prefetch = prefetch_id_table.find(id);
+      if (it_prefetch == prefetch_id_table.end()) {
+        LOG(FATAL)<<"The id should be prefetched before being used.";
+      }
+      it_prefetch->second->UnRef();
+      if (it_prefetch->second->ref_count() == 0) {
+        delete it_prefetch->second;
+        prefetch_id_table.erase(id);
+        ids_to_cache[nums_to_cache] = id;
+        nums_to_cache++;
+      }
+    }
+    add_to_rank(ids_to_cache.data(), nums_to_cache, false);
+  }
+
  private:
   class LRUNode {
    public:
@@ -139,7 +258,8 @@ class LRUCache : public BatchCache<K> {
      LRUNode(K id) : id(id), pre(nullptr), next(nullptr) {}
   };
   LRUNode *head, *tail;
-  std::map<K, LRUNode *> mp;
+  std::map<K, LRUNode*> mp;
+  std::unordered_map<K, PrefetchNode<K>*> prefetch_id_table;
   mutex mu_;
 };
 
@@ -202,16 +322,22 @@ class LFUCache : public BatchCache<K> {
           if (freq_table[st_freq-1].second == 0) {
             ++st_freq;
           } else {
+            min_freq = st_freq;
             break;
           }
+        }
+        if (st_freq > max_freq) {
+          reset_min_and_max_freq();
         }
       }
     }
     return true_size;
   }
 
-  void add_to_rank(const K *batch_ids, size_t batch_size) {
-    mutex_lock l(mu_);
+  void add_to_rank(const K *batch_ids, size_t batch_size,
+                   bool use_locking=true) {
+    mutex temp_mu;
+    auto lock = BatchCache<K>::maybe_lock_cache(mu_, temp_mu, use_locking);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];
       auto it = key_table.find(id);
@@ -246,8 +372,10 @@ class LFUCache : public BatchCache<K> {
 
   void add_to_rank(const K *batch_ids, const size_t batch_size,
                    const int64* batch_versions,
-                   const int64* batch_freqs) {
-    mutex_lock l(mu_);
+                   const int64* batch_freqs,
+                   bool use_locking = true) {
+    mutex temp_mu;
+    auto lock = BatchCache<K>::maybe_lock_cache(mu_, temp_mu, use_locking);
     for (size_t i = 0; i < batch_size; ++i) {
       K id = batch_ids[i];
       auto it = key_table.find(id);
@@ -257,10 +385,16 @@ class LFUCache : public BatchCache<K> {
           min_freq = freq;
         }
 
-        if (freq >= max_freq) {
+        if (freq > max_freq) {
           max_freq = freq;
-          freq_table.resize(max_freq, std::pair<std::list<LFUNode>*, int64>(
-           new std::list<LFUNode>, 0));
+          int64 prev_size = freq_table.size();
+          if (max_freq > prev_size) {
+            freq_table.resize(max_freq, std::pair<std::list<LFUNode>*, int64>(
+                nullptr, 0));
+            for (int64 j = prev_size; j < max_freq; j++) {
+              freq_table[j].first = new std::list<LFUNode>;
+            }
+          }
         }
         freq_table[freq-1].first->emplace_front(LFUNode(id, freq));
         freq_table[freq-1].second++;
@@ -281,11 +415,7 @@ class LFUCache : public BatchCache<K> {
 
         if (freq_table[last_freq-1].second == 0) {
           if (min_freq == last_freq){
-            for (size_t j = last_freq + 1; j < max_freq; j++) {
-              if(freq_table[j-1].second != 0) {
-                min_freq = j;
-              }
-            }
+            update_min_freq();
           }
         }
        
@@ -297,8 +427,98 @@ class LFUCache : public BatchCache<K> {
     }
   }
 
+  void add_to_prefetch_list(const K* batch_ids, const size_t batch_size) {
+    mutex_lock l(mu_);
+    for (size_t i = 0; i < batch_size; ++i) {
+      K id = batch_ids[i];
+      auto it_prefetch = prefetch_id_table.find(id);
+      if (it_prefetch == prefetch_id_table.end()) {
+        auto it_cache = key_table.find(id);
+        if (it_cache != key_table.end()) {
+          auto cache_node = it_cache->second;
+          int64 freq = cache_node->freq;
+          freq_table[freq - 1].first->erase(cache_node);
+          freq_table[freq - 1].second--;
+          key_table.erase(id);
+          if (freq_table[freq - 1].second == 0) {
+            if (freq == max_freq) {
+              update_max_freq();
+            }
+            if (freq == min_freq) {
+              update_min_freq();
+            }
+          }
+          prefetch_id_table[id] = new PrefetchLFUNode<K>(id, freq);
+        } else {
+          prefetch_id_table[id] = new PrefetchLFUNode<K>(id);
+        }
+      } else {
+        it_prefetch->second->Ref();
+      }
+    }
+  }
+
+  void add_to_cache(const K* batch_ids, const size_t batch_size) {
+    mutex_lock l(mu_);
+    std::vector<K> ids_to_cache(batch_size);
+    std::vector<int64> freqs_to_cache(batch_size);
+    int64 nums_to_cache = 0;
+    for (size_t i = 0; i < batch_size; ++i) {
+      K id = batch_ids[i];
+      auto it_prefetch = prefetch_id_table.find(id);
+      if (it_prefetch == prefetch_id_table.end()) {
+        LOG(FATAL)<<"The id should be prefetched before being used.";
+      }
+      it_prefetch->second->UnRef();
+      if (it_prefetch->second->ref_count() == 0) {
+        int64 freq = it_prefetch->second->freq();
+        delete it_prefetch->second;
+        prefetch_id_table.erase(id);
+        ids_to_cache[nums_to_cache] = id;
+        freqs_to_cache[nums_to_cache] = freq;
+        nums_to_cache++;
+      }
+    }
+    const int64* versions_to_cache = nullptr;
+    add_to_rank(ids_to_cache.data(), nums_to_cache,
+                versions_to_cache, freqs_to_cache.data(),
+                false);
+  }
+
 
  private:
+  void reset_min_and_max_freq() {
+    min_freq = std::numeric_limits<size_t>::max();
+    max_freq = 0;
+  }
+
+  void update_min_freq() {
+    size_t i;
+    for (i = min_freq + 1; i <= max_freq; i++) {
+      if(freq_table[i-1].second != 0) {
+        min_freq = i;
+        break;
+      }
+    }
+    if (i > max_freq) {
+      reset_min_and_max_freq();
+    }
+  }
+
+  void update_max_freq() {
+    size_t i;
+    for (i = max_freq - 1; i >=min_freq; i--) {
+      if(freq_table[i-1].second != 0) {
+        max_freq = i;
+        break;
+      }
+    }
+    if (i < min_freq) {
+      reset_min_and_max_freq();
+    }
+  }
+
+
   class LFUNode {
    public:
     K key;
@@ -309,6 +529,7 @@ class LFUCache : public BatchCache<K> {
   size_t max_freq;
   std::vector<std::pair<std::list<LFUNode>*, int64>> freq_table;
   std::unordered_map<K, typename std::list<LFUNode>::iterator> key_table;
+  std::unordered_map<K, PrefetchLFUNode<K>*> prefetch_id_table;
   mutex mu_;
 };
 

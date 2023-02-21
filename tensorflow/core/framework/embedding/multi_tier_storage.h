@@ -338,13 +338,19 @@ class MultiTierStorage : public Storage<K, V> {
     }
   }
 
-  void ReleaseValuePtrs(std::vector<ValuePtr<V>*>& value_ptrs,
+  void ReleaseValuePtrs(std::deque<ValuePtr<V>*>& value_ptrs,
                         Allocator* allocator) {
-    for (int i = 0; i < value_ptrs.size(); i++) {
-      value_ptrs[i]->Destroy(allocator);
-      delete value_ptrs[i];
+    constexpr int CAP_INVALID_VALUEPTR = 64 * 1024;
+    if (value_ptrs.size() > CAP_INVALID_VALUEPTR) {
+      int64 num_of_deleted_value_ptrs =
+          value_ptrs.size() - CAP_INVALID_VALUEPTR;
+      for (int i = 0; i < num_of_deleted_value_ptrs; i++) {
+        ValuePtr<V>* value_ptr = value_ptrs.front();
+        value_ptr->Destroy(allocator);
+        delete value_ptr;
+        value_ptrs.pop_front();
+      }
     }
-    value_ptrs.clear();
   }
 
   void ReleaseInvalidValuePtr() {
@@ -353,7 +359,7 @@ class MultiTierStorage : public Storage<K, V> {
 
  protected:
   std::vector<KVInterfaceDescriptor<K, V>> kvs_;
-  std::vector<ValuePtr<V>*> value_ptr_out_of_date_;
+  std::deque<ValuePtr<V>*> value_ptr_out_of_date_;
   BatchCache<K>* cache_ = nullptr;
 
   EvictionManager<K, V>* eviction_manager_;

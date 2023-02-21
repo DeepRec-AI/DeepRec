@@ -132,8 +132,8 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
   Status BatchCommit(const std::vector<K>& keys,
       const std::vector<ValuePtr<V>*>& value_ptrs) override {
     int batch_size = keys.size();
-    Allocator* cpu_allocator = ev_allocator();
-    V** value_address = (V **)cpu_allocator->AllocateRaw(
+    Allocator* cpu_alloc = cpu_allocator();
+    V** value_address = (V **)cpu_alloc->AllocateRaw(
         Allocator::kAllocatorAlignment, sizeof(V*) * batch_size);
     V** dev_value_address;
     V* batch_data_place;
@@ -142,7 +142,7 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
         Allocator::kAllocatorAlignment, batch_size * sizeof(V*));
     dev_batch_data_place = (V*)gpu_alloc_->AllocateRaw(
         Allocator::kAllocatorAlignment, sizeof(V) * batch_size * total_dims_);
-    batch_data_place = (V *)cpu_allocator->AllocateRaw(
+    batch_data_place = (V *)cpu_alloc->AllocateRaw(
         Allocator::kAllocatorAlignment, sizeof(V) * batch_size * total_dims_);
 
     // Copy GPU addresses V*
@@ -192,8 +192,8 @@ class LocklessHashMapCPU : public KVInterface<K, V> {
     gpu_alloc_->DeallocateRaw(dev_value_address);
     gpu_alloc_->DeallocateRaw(dev_batch_data_place);
 
-    cpu_allocator->DeallocateRaw(batch_data_place);
-    cpu_allocator->DeallocateRaw(value_address);
+    cpu_alloc->DeallocateRaw(batch_data_place);
+    cpu_alloc->DeallocateRaw(value_address);
 
     return Status::OK();
   }
