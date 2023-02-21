@@ -26,7 +26,8 @@ sess_config.graph_options.optimizer_options.do_smart_stage = True
 
 ```python
 sess_config = tf.ConfigProto()
-sess_config.graph_options.optimizer_options.do_smart_stage_gpu = True
+sess_config.graph_options.optimizer_options.do_smart_stage = True
+sess_config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
 ```
 
 ## Example
@@ -51,8 +52,8 @@ target = tf.concat([tf.as_string(xx[0]), [xx[1], xx[1]]], 0)
 config = tf.ConfigProto()
 # enable smart stage
 config.graph_options.optimizer_options.do_smart_stage = True
-# For GPU training, consider using the following options instead of do_smart_stage for better performance
-# config.graph_options.optimizer_options.do_smart_stage_gpu = True
+# For GPU training, consider enabling the following options for better performance
+# config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
 # mark target node
 tf.train.mark_target_node([target])
 
@@ -79,7 +80,7 @@ The Aliyun ECS instance is ecs.hfg7.8xlarge
 |      |      case       | global steps/sec |
 | :--: | :-------------: | :--------------: |
 | DLRM | w/o smart stage |  201 (baseline)  |
-| DLRM | w/o smart stage |  212 (+ 1.05x)   |
+| DLRM | w/  smart stage |  212 (+ 1.05x)   |
 
 - GPU scenario
 

@@ -682,7 +682,8 @@ def main(tf_config=None, server=None):
     if args.smartstaged and not args.tf:
         '''Smart staged Feature'''
         next_element = tf.staged(next_element, num_threads=4, capacity=40)
-        sess_config.graph_options.optimizer_options.do_smart_stage_gpu = True
+        sess_config.graph_options.optimizer_options.do_smart_stage = True
+        sess_config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
         hooks.append(tf.make_prefetch_hook())
     if args.op_fusion and not args.tf:
         '''Auto Graph Fusion'''

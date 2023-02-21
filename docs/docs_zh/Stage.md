@@ -41,9 +41,9 @@ sess_config.session_stage_subgraph_thread_pool[0].global_name = "StageThreadPool
 - GPU Multi-Stream Stage(可选)
 ```python
 sess_config = tf.ConfigProto()
-sess_config.graph_options.rewrite_options.use_multi_stream = (rewriter_config_pb2.RewriterConfig.ON) # 开启 DeepRec 的GPU Multi-Stream功能
+sess_config.graph_options.rewrite_options.use_multi_stream = (rewriter_config_pb2.RewriterConfig.ON) # 开启GPU Multi-Stream功能
 sess_config.graph_options.rewrite_options.multi_stream_opts.multi_stream_num = 2 # 设定可用的stream数量, 其中0号stream提供给计算主图使用
-sess_config.graph_options.optimizer_options.stage_multi_stream = True # 开启Stage功能Multi-Stream支持
+sess_config.graph_options.optimizer_options.stage_multi_stream = True # 开启GPU Multi-Stream Stage
 ```
 > GPU Multi-Stream Stage功能还可以通过开启GPU MPS来实现更好的性能, 请见[GPU-MultiStream](./GPU-MultiStream.md).
 

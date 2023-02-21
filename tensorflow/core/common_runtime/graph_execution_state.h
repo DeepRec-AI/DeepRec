@@ -180,10 +180,6 @@ class GraphExecutionState {
                     subgraph::RewriteGraphMetadata* out_rewrite_metadata);
 
   Status PipelineGraph(std::unique_ptr<Graph>* graph, int32 micro_batch_num);
-  // SmartStage Graph for Runtime
-  Status SmartStageGraph(std::unique_ptr<Graph>* graph,
-                         const std::vector<std::string>& target_nodes,
-                         const bool do_smart_stage_gpu);
 
   Status OptimizeGraph(
       const BuildGraphOptions& options, std::unique_ptr<Graph>* optimized_graph,

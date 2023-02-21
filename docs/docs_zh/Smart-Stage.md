@@ -22,7 +22,8 @@ ConfigProro中定义了如下配置选项
 
 ```python
 sess_config = tf.ConfigProto()
-sess_config.graph_options.optimizer_options.do_smart_stage_gpu = True # 针对GPU训练优化的选项
+sess_config.graph_options.optimizer_options.do_smart_stage = True
+sess_config.graph_options.optimizer_options.stage_subgraph_on_cpu = True # 针对GPU训练优化的选项
 ```
 
 ## 代码示例
@@ -47,8 +48,8 @@ target = tf.concat([tf.as_string(xx[0]), [xx[1], xx[1]]], 0)
 config = tf.ConfigProto()
 # enable smart stage
 config.graph_options.optimizer_options.do_smart_stage = True
-# 对于GPU训练，可以考虑使用以下选项替代do_smart_stage来获得更好地性能
-# config.graph_options.optimizer_options.do_smart_stage_gpu = True
+# 对于GPU训练，可以考虑开启以下选项来获得更好的性能
+# config.graph_options.optimizer_options.stage_subgraph_on_cpu = True
 # mark target 节点
 tf.train.mark_target_node([target])
 
@@ -71,7 +72,7 @@ with tf.train.MonitoredTrainingSession(config=config,
 |      |      case       | global steps/sec |
 | :--: | :-------------: | :--------------: |
 | DLRM | w/o smart stage |  201 (baseline)  |
-| DLRM | w/o smart stage |  212 (+ 1.05x)   |
+| DLRM | w/  smart stage |  212 (+ 1.05x)   |
 
 ## 性能对比（GPU场景）
 
