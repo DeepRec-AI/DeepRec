@@ -58,6 +58,7 @@ class EmbeddingVar : public ResourceBase {
       default_value_no_permission_(nullptr),
       value_len_(0),
       alloc_(alloc),
+      default_value_alloc_(alloc),
       emb_config_(emb_cfg) {
     if (IsMultiLevel() || emb_config_.record_freq) {
       add_freq_fn_ = [](ValuePtr<V>* value_ptr, int freq, int64 filter_freq) {
@@ -125,7 +126,7 @@ class EmbeddingVar : public ResourceBase {
 #endif  // GOOGLE_CUDA
     } else {
       alloc_ = ev_allocator();
-      default_value_ = TypedAllocator::Allocate<V>(alloc_,
+      default_value_ = TypedAllocator::Allocate<V>(default_value_alloc_,
           default_tensor.NumElements(), AllocationAttributes());
 
       auto default_tensor_flat = default_tensor.flat<V>();
@@ -632,7 +633,7 @@ class EmbeddingVar : public ResourceBase {
     if (embedding::StorageType::HBM_DRAM == storage_type_) {
       alloc_->DeallocateRaw(dev_addr_buffer_);
     }
-    TypedAllocator::Deallocate(alloc_, default_value_,
+    TypedAllocator::Deallocate(default_value_alloc_, default_value_,
         value_len_ * emb_config_.default_value_dim);
     if (default_value_no_permission_) {
       TypedAllocator::Deallocate(alloc_, default_value_no_permission_,
@@ -681,6 +682,7 @@ class EmbeddingVar : public ResourceBase {
   int64 dev_addr_buffer_size_;
   int64 value_len_;
   Allocator* alloc_;
+  Allocator* default_value_alloc_;
   embedding::StorageManager<K, V>* storage_manager_;
   embedding::StorageType storage_type_;
   EmbeddingConfig emb_config_;
