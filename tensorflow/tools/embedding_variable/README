@@ -1,0 +1,13 @@
+Checkpoint Transform Tool
+
+Description:
+
+  modify tensor name in TF checkpoint, only modify *.index file.
+
+Build Tool:
+
+  bazel build --cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" --host_cxxopt="-D_GLIBCXX_USE_CXX11_ABI=0" -c opt  --config=opt //tensorflow/tools/embedding_variable:ev_ckpt_transformer
+
+Usage:
+
+  bazel-bin/tensorflow/tools/embedding_variable/ev_ckpt_transformer config.json

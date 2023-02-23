@@ -1,0 +1,9 @@
+{
+  "checkpoint_path_prefix": "./ckpt/best_checkpoint/best",
+  "output_file": "1.index",
+  "tensor_rename_map": {
+    "tanm": "tensor1_new",
+    "tensor2": "tensor2_new",
+    "tensor3": "tensor3_new"
+  }
+}
