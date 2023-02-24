@@ -2374,6 +2374,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
   def testEmbeddingVariableCustomDimForSaveAndRestore(self):
     print("testEmbeddingVariableCustomForSaveAndRestore")
     checkpoint_directory = self.get_temp_dir()
+    os.environ["TF_EV_RESTORE_CUSTOM_DIM"] = "True"
     with ops.Graph().as_default() as g, ops.device('/cpu:0'):
         var = variable_scope.get_embedding_variable("var_1",
                 embedding_dim = 3,
@@ -2445,6 +2446,7 @@ class EmbeddingVariableTest(test_util.TensorFlowTestCase):
           emb_val_2 = sess.run(emb2)
           self.assertAllEqual(emb_ori[:,0:2], emb_val)
           self.assertAllEqual(emb_ori_2[:,0:2], emb_val_2)
+    del os.environ["TF_EV_RESTORE_CUSTOM_DIM"]
 
 if __name__ == "__main__":
   googletest.main()

@@ -664,7 +664,9 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     int64 newDim = ev->ValueLen();
     size_t value_unit_bytes_new = sizeof(V) * newDim;
     int64 idx = 0;
-
+    bool restore_customDim;
+    TF_CHECK_OK(ReadBoolFromEnvVar(
+                                  "TF_EV_RESTORE_CUSTOM_DIM", false, &restore_customDim));
     size_t key_bytes_read = 0;
     size_t value_bytes_read = 0;
     size_t version_bytes_read = 0;
@@ -710,7 +712,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
       if (key_bytes_read > 0) {
         read_key_num = key_bytes_read / sizeof(K);
         VLOG(2) << "repartition, read_key_num:" << read_key_num;
-        if (value_shape.dim_size(1) != newDim) {
+        if (restore_customDim && value_shape.dim_size(1) != newDim) {
           VLOG(2) << "restore, read_value_reshape dim: from "
                   << value_shape.dim_size(1) << " to " << newDim;
           if (read_key_num * value_unit_bytes != value_bytes_read) {
@@ -883,7 +885,9 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
   int64 newDim = ev->ValueLen();
   size_t value_unit_bytes_new = sizeof(V) * newDim;
   int64 idx = 0;
-
+  bool restore_customDim;
+  TF_CHECK_OK(ReadBoolFromEnvVar(
+                                "TF_EV_RESTORE_CUSTOM_DIM", false, &restore_customDim));
   size_t key_bytes_read = 0;
   size_t value_bytes_read = 0;
   size_t version_bytes_read = 0;
@@ -934,7 +938,7 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
       read_key_num = key_bytes_read / sizeof(K);
       VLOG(2) << "restore, read_key_num:" << read_key_num;
 
-      if (value_shape.dim_size(1) != newDim) {
+      if (restore_customDim && value_shape.dim_size(1) != newDim) {
         VLOG(2) << "restore, read_value_reshape dim: from "
                 << value_shape.dim_size(1) << " to " << newDim;
         if (read_key_num * value_unit_bytes != value_bytes_read) {
@@ -1154,7 +1158,9 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     int64 newDim = ev->ValueLen();
     size_t value_unit_bytes_new = sizeof(V) * newDim;
     int64 idx = 0;
-
+    bool restore_customDim;
+    TF_CHECK_OK(ReadBoolFromEnvVar(
+			          "TF_EV_RESTORE_CUSTOM_DIM", false, &restore_customDim));
     for (;  ; orig_partnum++) {
       string part_id = std::to_string(orig_partnum);
       string pre_subname = name_string.substr(0, name_string.find(part_str));
@@ -1369,7 +1375,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
           if (key_bytes_read > 0) {
             read_key_num = key_bytes_read / sizeof(K);
             VLOG(2) << "restore, read_key_num:" << read_key_num;
-            if (value_shape.dim_size(1) != newDim) {
+            if (restore_customDim && value_shape.dim_size(1) != newDim) {
               VLOG(2) << "restore, read_value_reshape dim: from "
                       << value_shape.dim_size(1) << " to " << newDim;
               if (read_key_num * value_unit_bytes != value_bytes_read) {
