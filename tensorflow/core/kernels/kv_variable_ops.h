@@ -1153,7 +1153,7 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
     restore_buff.freq_buffer = new char[buffer_size];
     int64 newDim = ev->ValueLen();
     size_t value_unit_bytes_new = sizeof(V) * newDim;
-    int64 idx = 0
+    int64 idx = 0;
 
     for (;  ; orig_partnum++) {
       string part_id = std::to_string(orig_partnum);
