@@ -106,6 +106,7 @@ input:
       - `--ev_elimination`: Set Feature Elimination of EmbeddingVariable Feature. Options: [None, 'l2', 'gstep'], default is `None`.
       - `--ev_filter`: Set Feature Filter of EmbeddingVariable Feature. Options: [None, 'counter', 'cbf'], default to `None`.
       - `--dynamic_ev`: Whether to enable Dynamic-dimension Embedding Variable. Default is `False`. (Not really enabled)
+      - `--group_embedding`: Use GroupEmbedding features.
       - `--multihash`: Whether to enable Multi-Hash Variable. Default is `False`. (Not really enabled)
       - `--incremental_ckpt`: Set time of save Incremental Checkpoint. Default is `0`.
       - `--workqueue`: Whether to enable WorkQueue. Default is `False`.

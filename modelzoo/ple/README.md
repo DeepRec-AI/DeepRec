@@ -79,6 +79,7 @@ The following is a brief directory structure and description for this example:
       - `--smartstaged`: Whether to enable SmartStaged feature of DeepRec, Default is `True`.
       - `--micro_batch`: Set num for Auto Micro Batch. Default is `0`. (Not really enabled)
       - `--ev`: Whether to enable DeepRec EmbeddingVariable. Default is `False`.
+      - `--group_embedding`: Use GroupEmbedding features.
       - `--adaptive_emb`: Whether to enable Adaptive Embedding. Default is `False`.
       - `--ev_elimination`: Set Feature Elimination of EmbeddingVariable Feature. Options: [None, 'l2', 'gstep'], default is `None`.
       - `--ev_filter`: Set Feature Filter of EmbeddingVariable Feature. Options: [None, 'counter', 'cbf'], default to `None`.

@@ -1005,7 +1005,6 @@ def set_env_for_DeepRec():
     os.environ['MALLOC_CONF']= \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
 
-
 if __name__ == '__main__':
     parser = get_arg_parser()
     args = parser.parse_args()
