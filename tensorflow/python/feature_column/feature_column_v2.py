@@ -4566,7 +4566,7 @@ class EmbeddingColumn(
       raise TypeError("MultiHashVariableCategoricalColumn currently not supported")
     else:
       embedding_weights = variable_scope.get_variable(
-        name='embedding_weights',
+        name='%s_embedding_weights' % self.name,
         shape=embedding_shape,
         dtype=dtypes.float32,
         initializer=self.initializer,

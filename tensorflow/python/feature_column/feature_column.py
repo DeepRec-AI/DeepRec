@@ -195,40 +195,41 @@ def _internal_input_layer(features,
   if ops.GraphKeys.MODEL_VARIABLES not in weight_collections:
     weight_collections.append(ops.GraphKeys.MODEL_VARIABLES)
 
+  
+
   def _get_logits():  # pylint: disable=missing-docstring
     builder = _LazyBuilder(features, adaptive_mask_tensors)
     output_tensors = []
     ordered_columns = []
+    group_embedding_tensor = gec._get_global_group_embedding_scope(builder, weight_collections, trainable)
+
     for column in sorted(feature_columns, key=lambda x: x.name):
       group_name = getattr(column, 'group_name', '')
-      if group_name != '':
-        continue
       ordered_columns.append(column)
       with variable_scope.variable_scope(
           None, default_name=column._var_scope_name):  # pylint: disable=protected-access
-        tensor = column._get_dense_tensor(  # pylint: disable=protected-access
-            builder,
-            weight_collections=weight_collections,
-            trainable=trainable)
-        output_shape = column._output_shape(tensor)  # pylint: disable=protected-access
-        batch_size = array_ops.shape(tensor)[0]
-        output_tensor = array_ops.reshape(
-            tensor, shape=output_shape)
-        output_tensors.append(output_tensor)
-        if cols_to_vars is not None:
-          # Retrieve any variables created (some _DenseColumn's don't create
-          # variables, in which case an empty list is returned).
-          cols_to_vars[column] = ops.get_collection(
-              ops.GraphKeys.GLOBAL_VARIABLES,
-              scope=variable_scope.get_variable_scope().name)
-        if cols_to_output_tensors is not None:
-          cols_to_output_tensors[column] = output_tensor
-        ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
-    
-    for fused_scope in gec._global_group_embedding_scope_list():
-      output_tensors.extend(fused_scope._get_dense_tensor(
-                                builder, weight_collections, trainable))
-      ordered_columns.append(fused_scope.embedding_columns)
+        if group_name != '':
+          output_tensors.append(group_embedding_tensor[column])
+        else:
+          tensor = column._get_dense_tensor(  # pylint: disable=protected-access
+              builder,
+              weight_collections=weight_collections,
+              trainable=trainable)
+          output_shape = column._output_shape(tensor)  # pylint: disable=protected-access
+          batch_size = array_ops.shape(tensor)[0]
+          output_tensor = array_ops.reshape(
+              tensor, shape=output_shape)
+          output_tensors.append(output_tensor)
+          if cols_to_vars is not None:
+            # Retrieve any variables created (some _DenseColumn's don't create
+            # variables, in which case an empty list is returned).
+            cols_to_vars[column] = ops.get_collection(
+                ops.GraphKeys.GLOBAL_VARIABLES,
+                scope=variable_scope.get_variable_scope().name)
+          if cols_to_output_tensors is not None:
+            cols_to_output_tensors[column] = output_tensor
+          ops.add_to_collections(ops.GraphKeys.ASYNC_EMBEDDING_OUTPUT_TENSORS, output_tensor)
+      
     _verify_static_batch_size_equality(output_tensors, ordered_columns)
     return array_ops.concat(output_tensors, -1)
     
