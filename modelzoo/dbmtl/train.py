@@ -364,99 +364,193 @@ def build_model_input(filename, batch_size, num_epochs):
 
 def build_feature_cols():
     feature_cols = []
-    for column_name in ALL_FEATURE_COLUMNS:
-        if column_name in NOT_USED_CATEGORY:
-            continue
-        if column_name in HASH_INPUTS:
-            print('Column name = ', column_name, ' hash bucket size = ', HASH_BUCKET_SIZES[column_name])
-            categorical_column = tf.feature_column.categorical_column_with_hash_bucket(
-                column_name,
-                hash_bucket_size=HASH_BUCKET_SIZES[column_name],
-                dtype=tf.string)
-            
-            if not args.tf:
-                '''Feature Elimination of EmbeddingVariable Feature'''
-                if args.ev_elimination == 'gstep':
-                    # Feature elimination based on global steps
-                    evict_opt = tf.GlobalStepEvict(steps_to_live=4000)
-                elif args.ev_elimination == 'l2':
-                    # Feature elimination based on l2 weight
-                    evict_opt = tf.L2WeightEvict(l2_weigt_threshold=1.0)
-                else:
-                    evict_opt = None
-                '''Feature Filter of EmbeddingVariable Feature'''
-                if args.ev_filter == 'cbf':
-                    # CBF-based feature filter
-                    filter_option = tf.CBFFilter(
-                        filter_freq=3,
-                        max_element_size=2**30,
-                        false_positive_probability=0.01,
-                        counter_type=tf.int64)
-                elif args.ev_filter == 'counter':
-                    # Counter-based feature filter
-                    filter_option = tf.CounterFilter(filter_freq=3)
-                else:
-                    filter_option = None
-                ev_opt = tf.EmbeddingVariableOption(
-                    evict_option=evict_opt, filter_option=filter_option)
-
-                if args.ev:
-                    '''Embedding Variable Feature'''
-                    categorical_column = tf.feature_column.categorical_column_with_embedding(
-                        column_name, dtype=tf.string, ev_option=ev_opt)
-                elif args.adaptive_emb:
-                    '''                 Adaptive Embedding Feature Part 2 of 2
-                    Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
-                    'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
-                    For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
-                    tensor with shape [batch_size].
-                    '''
-
-                    categorical_column = tf.feature_column.categorical_column_with_adaptive_embedding(
+    if args.group_embedding:
+        with tf.feature_column.group_embedding_column_scope(name="categorical"):
+            for column_name in ALL_FEATURE_COLUMNS:
+                if column_name in NOT_USED_CATEGORY:
+                    continue
+                if column_name in HASH_INPUTS:
+                    print('Column name = ', column_name, ' hash bucket size = ', HASH_BUCKET_SIZES[column_name])
+                    categorical_column = tf.feature_column.categorical_column_with_hash_bucket(
                         column_name,
                         hash_bucket_size=HASH_BUCKET_SIZES[column_name],
-                        dtype=tf.string,
-                        ev_option=ev_opt)
-                elif args.dynamic_ev:
-                    '''Dynamic-dimension Embedding Variable'''
-                    print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
-                    sys.exit()
-            
-            if args.tf or not args.emb_fusion:
-                embedding_column = tf.feature_column.embedding_column(
-                    categorical_column, 
-                    dimension=EMBEDDING_DIM, 
-                    combiner='mean')
+                        dtype=tf.string)
+                    
+                    if not args.tf:
+                        '''Feature Elimination of EmbeddingVariable Feature'''
+                        if args.ev_elimination == 'gstep':
+                            # Feature elimination based on global steps
+                            evict_opt = tf.GlobalStepEvict(steps_to_live=4000)
+                        elif args.ev_elimination == 'l2':
+                            # Feature elimination based on l2 weight
+                            evict_opt = tf.L2WeightEvict(l2_weigt_threshold=1.0)
+                        else:
+                            evict_opt = None
+                        '''Feature Filter of EmbeddingVariable Feature'''
+                        if args.ev_filter == 'cbf':
+                            # CBF-based feature filter
+                            filter_option = tf.CBFFilter(
+                                filter_freq=3,
+                                max_element_size=2**30,
+                                false_positive_probability=0.01,
+                                counter_type=tf.int64)
+                        elif args.ev_filter == 'counter':
+                            # Counter-based feature filter
+                            filter_option = tf.CounterFilter(filter_freq=3)
+                        else:
+                            filter_option = None
+                        ev_opt = tf.EmbeddingVariableOption(
+                            evict_option=evict_opt, filter_option=filter_option)
+
+                        if args.ev:
+                            '''Embedding Variable Feature'''
+                            categorical_column = tf.feature_column.categorical_column_with_embedding(
+                                column_name, dtype=tf.string, ev_option=ev_opt)
+                        elif args.adaptive_emb:
+                            '''                 Adaptive Embedding Feature Part 2 of 2
+                            Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                            'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
+                            For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
+                            tensor with shape [batch_size].
+                            '''
+
+                            categorical_column = tf.feature_column.categorical_column_with_adaptive_embedding(
+                                column_name,
+                                hash_bucket_size=HASH_BUCKET_SIZES[column_name],
+                                dtype=tf.string,
+                                ev_option=ev_opt)
+                        elif args.dynamic_ev:
+                            '''Dynamic-dimension Embedding Variable'''
+                            print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
+                            sys.exit()
+                    
+                    if args.tf or not args.emb_fusion:
+                        embedding_column = tf.feature_column.embedding_column(
+                            categorical_column, 
+                            dimension=EMBEDDING_DIM, 
+                            combiner='mean')
+                    else:
+                        '''Embedding Fusion Feature'''
+                        embedding_column = tf.feature_column.embedding_column(
+                            categorical_column,
+                            dimension=EMBEDDING_DIM,
+                            combiner='mean',
+                            do_fusion=args.emb_fusion)
+
+                    feature_cols.append(embedding_column)
+
+                elif column_name in IDENTITY_INPUTS:
+                    column = tf.feature_column.categorical_column_with_identity(column_name, 50)
+
+                    if args.tf or not args.emb_fusion:
+                        embedding_column = tf.feature_column.embedding_column(
+                            column, 
+                            dimension=EMBEDDING_DIM, 
+                            combiner='mean')
+                    else:
+                        '''Embedding Fusion Feature'''
+                        embedding_column = tf.feature_column.embedding_column(
+                            column,
+                            dimension=EMBEDDING_DIM,
+                            combiner='mean',
+                            do_fusion=args.emb_fusion)
+
+                    feature_cols.append(embedding_column)
+                else:
+                    raise ValueError('Unexpected column name occured')
+    else:
+        for column_name in ALL_FEATURE_COLUMNS:
+            if column_name in NOT_USED_CATEGORY:
+                continue
+            if column_name in HASH_INPUTS:
+                print('Column name = ', column_name, ' hash bucket size = ', HASH_BUCKET_SIZES[column_name])
+                categorical_column = tf.feature_column.categorical_column_with_hash_bucket(
+                    column_name,
+                    hash_bucket_size=HASH_BUCKET_SIZES[column_name],
+                    dtype=tf.string)
+                
+                if not args.tf:
+                    '''Feature Elimination of EmbeddingVariable Feature'''
+                    if args.ev_elimination == 'gstep':
+                        # Feature elimination based on global steps
+                        evict_opt = tf.GlobalStepEvict(steps_to_live=4000)
+                    elif args.ev_elimination == 'l2':
+                        # Feature elimination based on l2 weight
+                        evict_opt = tf.L2WeightEvict(l2_weigt_threshold=1.0)
+                    else:
+                        evict_opt = None
+                    '''Feature Filter of EmbeddingVariable Feature'''
+                    if args.ev_filter == 'cbf':
+                        # CBF-based feature filter
+                        filter_option = tf.CBFFilter(
+                            filter_freq=3,
+                            max_element_size=2**30,
+                            false_positive_probability=0.01,
+                            counter_type=tf.int64)
+                    elif args.ev_filter == 'counter':
+                        # Counter-based feature filter
+                        filter_option = tf.CounterFilter(filter_freq=3)
+                    else:
+                        filter_option = None
+                    ev_opt = tf.EmbeddingVariableOption(
+                        evict_option=evict_opt, filter_option=filter_option)
+
+                    if args.ev:
+                        '''Embedding Variable Feature'''
+                        categorical_column = tf.feature_column.categorical_column_with_embedding(
+                            column_name, dtype=tf.string, ev_option=ev_opt)
+                    elif args.adaptive_emb:
+                        '''                 Adaptive Embedding Feature Part 2 of 2
+                        Expcet the follow code, a dict, 'adaptive_mask_tensors', is need as the input of 
+                        'tf.feature_column.input_layer(adaptive_mask_tensors=adaptive_mask_tensors)'.
+                        For column 'COL_NAME',the value of adaptive_mask_tensors['$COL_NAME'] is a int32
+                        tensor with shape [batch_size].
+                        '''
+
+                        categorical_column = tf.feature_column.categorical_column_with_adaptive_embedding(
+                            column_name,
+                            hash_bucket_size=HASH_BUCKET_SIZES[column_name],
+                            dtype=tf.string,
+                            ev_option=ev_opt)
+                    elif args.dynamic_ev:
+                        '''Dynamic-dimension Embedding Variable'''
+                        print("Dynamin-dimension Embedding Variable isn't really enabled in model.")
+                        sys.exit()
+                
+                if args.tf or not args.emb_fusion:
+                    embedding_column = tf.feature_column.embedding_column(
+                        categorical_column, 
+                        dimension=EMBEDDING_DIM, 
+                        combiner='mean')
+                else:
+                    '''Embedding Fusion Feature'''
+                    embedding_column = tf.feature_column.embedding_column(
+                        categorical_column,
+                        dimension=EMBEDDING_DIM,
+                        combiner='mean',
+                        do_fusion=args.emb_fusion)
+
+                feature_cols.append(embedding_column)
+
+            elif column_name in IDENTITY_INPUTS:
+                column = tf.feature_column.categorical_column_with_identity(column_name, 50)
+
+                if args.tf or not args.emb_fusion:
+                    embedding_column = tf.feature_column.embedding_column(
+                        column, 
+                        dimension=EMBEDDING_DIM, 
+                        combiner='mean')
+                else:
+                    '''Embedding Fusion Feature'''
+                    embedding_column = tf.feature_column.embedding_column(
+                        column,
+                        dimension=EMBEDDING_DIM,
+                        combiner='mean',
+                        do_fusion=args.emb_fusion)
+
+                feature_cols.append(embedding_column)
             else:
-                '''Embedding Fusion Feature'''
-                embedding_column = tf.feature_column.embedding_column(
-                    categorical_column,
-                    dimension=EMBEDDING_DIM,
-                    combiner='mean',
-                    do_fusion=args.emb_fusion)
-
-            feature_cols.append(embedding_column)
-
-        elif column_name in IDENTITY_INPUTS:
-            column = tf.feature_column.categorical_column_with_identity(column_name, 50)
-
-            if args.tf or not args.emb_fusion:
-                embedding_column = tf.feature_column.embedding_column(
-                    column, 
-                    dimension=EMBEDDING_DIM, 
-                    combiner='mean')
-            else:
-                '''Embedding Fusion Feature'''
-                embedding_column = tf.feature_column.embedding_column(
-                    column,
-                    dimension=EMBEDDING_DIM,
-                    combiner='mean',
-                    do_fusion=args.emb_fusion)
-
-            feature_cols.append(embedding_column)
-        else:
-            raise ValueError('Unexpected column name occured')
-    
+                raise ValueError('Unexpected column name occured')
     return feature_cols
 
 def train(sess_config,
@@ -799,6 +893,10 @@ def get_arg_parser():
                         help='Whether to enable shuffle operation for Parquet Dataset. Default to False.',
                         type=boolean_string,
                         default=False)
+    parser.add_argument("--group_embedding", \
+                        help='Whether to enable Group Embedding. Defualt to False.',
+                        action='store_true')
+
     return parser
 
 # parse distributed training configuration and generate cluster information
@@ -857,19 +955,23 @@ def generate_cluster_info(TF_CONFIG):
 
 def set_env_for_DeepRec():
     '''
-    Set some ENV for these DeepRec's features enabled by ENV. 
+    Set some ENV for these DeepRec's features enabled by ENV.
     More Detail information is shown in https://deeprec.readthedocs.io/zh/latest/index.html.
     START_STATISTIC_STEP & STOP_STATISTIC_STEP: On CPU platform, DeepRec supports memory optimization
-        in both stand-alone and distributed trainging. It's default to open, and the 
-        default start and stop steps of collection is 1000 and 1100. Reduce the initial 
+        in both stand-alone and distributed trainging. It's default to open, and the
+        default start and stop steps of collection is 1000 and 1100. Reduce the initial
         cold start time by the following settings.
     MALLOC_CONF: On CPU platform, DeepRec can use memory optimization with the jemalloc library.
         Please preload libjemalloc.so by `LD_PRELOAD=./libjemalloc.so.2 python ...`
+    DNNL_MAX_CPU_ISA: Specify the highest instruction set used by oneDNN (when the version is less than 2.5.0),
+        it will be set to AVX512_CORE_AMX to enable Intel CPU's feature.
     '''
     os.environ['START_STATISTIC_STEP'] = '100'
     os.environ['STOP_STATISTIC_STEP'] = '110'
-    os.environ['MALLOC_CONF']= \
+    os.environ['MALLOC_CONF'] = \
         'background_thread:true,metadata_thp:auto,dirty_decay_ms:20000,muzzy_decay_ms:20000'
+    if args.group_embedding:
+        tf.config.experimental.enable_group_embedding(fusion_type="localized")
 
 def check_stock_tf():
     import pkg_resources
@@ -879,7 +981,7 @@ def check_stock_tf():
 def check_DeepRec_features():
     return args.smartstaged or args.emb_fusion or args.op_fusion or args.micro_batch or args.bf16 or \
            args.ev or args.adaptive_emb or args.dynamic_ev or (args.optimizer == 'adamasync') or \
-           args.incremental_ckpt  or args.workqueue
+           args.incremental_ckpt  or args.workqueue and args.group_embedding
 
 if __name__ == '__main__':
     parser = get_arg_parser()
