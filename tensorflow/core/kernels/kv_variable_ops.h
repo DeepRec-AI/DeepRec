@@ -611,9 +611,11 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     if (!st.ok()) {
       return st;
     }
-    st = reader->LookupTensorShape(tensor_version, &version_shape);
-    if (!st.ok()) {
-      return st;
+    if (!reset_version) {
+      st = reader->LookupTensorShape(tensor_version, &version_shape);
+      if (!st.ok()) {
+        return st;
+      }
     }
 
     st = reader->LookupTensorShape(tensor_freq, &freq_shape);
@@ -625,7 +627,7 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
       }
     }
 
-    reader->LookupHeader(tensor_key, sizeof(K) * key_shape.dim_size(0));
+    st = reader->LookupHeader(tensor_key, sizeof(K) * key_shape.dim_size(0));
     if (!st.ok()) {
       return st;
     }
@@ -634,10 +636,12 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
     if (!st.ok()) {
       return st;
     }
-    st = reader->LookupHeader(tensor_version,
-        sizeof(int64) * version_shape.dim_size(0));
-    if (!st.ok()) {
-      return st;
+    if (!reset_version) {
+      st = reader->LookupHeader(tensor_version,
+          sizeof(int64) * version_shape.dim_size(0));
+      if (!st.ok()) {
+        return st;
+      }
     }
     st = reader->LookupHeader(tensor_freq,
         sizeof(int64) * freq_shape.dim_size(0));

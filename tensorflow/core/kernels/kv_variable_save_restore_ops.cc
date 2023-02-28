@@ -330,6 +330,10 @@ class KvResourceImportV3Op: public AsyncOpKernel {
                     "partition_num must >= 1, ",
                     std::to_string(partition_num_)));
     OP_REQUIRES_OK(c, c->GetAttr("reset_version", &reset_version_));
+    bool reset_version = false;
+    TF_CHECK_OK(ReadBoolFromEnvVar(
+      "TF_EV_RESET_VERSION", false, &reset_version));
+    reset_version_ = reset_version_ || reset_version;
 
     TF_CHECK_OK(ReadBoolFromEnvVar("TF_ENABLE_EV_ASYNC_RESTORE", true,
                                    &ev_async_restore_));
