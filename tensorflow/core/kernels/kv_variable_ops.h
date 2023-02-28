@@ -157,12 +157,6 @@ class EVOffsetDumpIterator: public  DumpIterator<T> {
   int64 keys_idx_;
 };
 
-struct TmpValueBuffer {
-  char* tmp_value_buffer = nullptr;
-
-  ~TmpValueBuffer() { delete tmp_value_buffer; }
-};
-
 template <class K, class V>
 Status GetInputEmbeddingVar(OpKernelContext* ctx, int input,
                             EmbeddingVar<K, V>** var) {
@@ -721,22 +715,21 @@ Status DynamicRestoreValue(EmbeddingVar<K, V>* ev, BundleReader* reader,
                 "but got read_key_num * value_unit_bytes != value_bytes_read!");
           }
 
-          TmpValueBuffer tmp_buffer;
-          tmp_buffer.tmp_value_buffer = new char[buffer_size];
+	  std::unique_ptr<char[]> tmp_ptr(new char[buffer_size]);
           size_t read_once = std::min(value_unit_bytes, value_unit_bytes_new);
           for (int i = 0; i < read_key_num; ++i) {
-            memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new,
+            memcpy(tmp_ptr.get() + i * value_unit_bytes_new,
                    restore_buff.value_buffer + i * value_unit_bytes, read_once);
             if (value_shape.dim_size(1) >= newDim) continue;
             auto p = ev->GetDefaultValue(idx);
             ++idx;
-            memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new +
+            memcpy(tmp_ptr.get() + i * value_unit_bytes_new +
                        value_unit_bytes,
                    p + value_unit_bytes,
                    value_unit_bytes_new - value_unit_bytes);
           }
-          auto tmp = tmp_buffer.tmp_value_buffer;
-          tmp_buffer.tmp_value_buffer = restore_buff.value_buffer;
+          auto tmp = tmp_ptr.release();
+          tmp_ptr.reset(restore_buff.value_buffer);
           restore_buff.value_buffer = tmp;
         }
         st = ev->Import(restore_buff, read_key_num, kSavedPartitionNum,
@@ -947,21 +940,20 @@ Status EVRestoreNoPartition(EmbeddingVar<K, V>* ev, BundleReader* reader,
               "but got read_key_num * value_unit_bytes != value_bytes_read!");
         }
 
-        TmpValueBuffer tmp_buffer;
-        tmp_buffer.tmp_value_buffer = new char[buffer_size];
+	std::unique_ptr<char[]> tmp_ptr(new char[buffer_size]);
         size_t read_once = std::min(value_unit_bytes, value_unit_bytes_new);
         for (int i = 0; i < read_key_num; ++i) {
-          memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new,
+          memcpy(tmp_ptr.get() + i * value_unit_bytes_new,
                  restore_buff.value_buffer + i * value_unit_bytes, read_once);
           if (value_shape.dim_size(1) >= newDim) continue;
           auto p = ev->GetDefaultValue(idx);
           ++idx;
-          memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new +
+          memcpy(tmp_ptr.get() + i * value_unit_bytes_new +
                      value_unit_bytes,
                  p + value_unit_bytes, value_unit_bytes_new - value_unit_bytes);
         }
-        auto tmp = tmp_buffer.tmp_value_buffer;
-        tmp_buffer.tmp_value_buffer = restore_buff.value_buffer;
+        auto tmp = tmp_ptr.release();
+        tmp_ptr.reset(restore_buff.value_buffer);
         restore_buff.value_buffer = tmp;
       }
       st = ev->Import(restore_buff, read_key_num, 1, 0, 1, false);
@@ -1385,24 +1377,23 @@ Status EVRestoreDynamically(EmbeddingVar<K, V>* ev,
                     "!= value_bytes_read!");
               }
 
-              TmpValueBuffer tmp_buffer;
-              tmp_buffer.tmp_value_buffer = new char[buffer_size];
+	      std::unique_ptr<char[]> tmp_ptr(new char[buffer_size]);
               size_t read_once =
                   std::min(value_unit_bytes, value_unit_bytes_new);
               for (int i = 0; i < read_key_num; ++i) {
-                memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new,
+                memcpy(tmp_ptr.get() + i * value_unit_bytes_new,
                        restore_buff.value_buffer + i * value_unit_bytes,
                        read_once);
                 if (value_shape.dim_size(1) >= newDim) continue;
                 auto p = ev->GetDefaultValue(idx);
                 ++idx;
-                memcpy(tmp_buffer.tmp_value_buffer + i * value_unit_bytes_new +
+                memcpy(tmp_ptr.get() + i * value_unit_bytes_new +
                            value_unit_bytes,
                        p + value_unit_bytes,
                        value_unit_bytes_new - value_unit_bytes);
               }
-              auto tmp = tmp_buffer.tmp_value_buffer;
-              tmp_buffer.tmp_value_buffer = restore_buff.value_buffer;
+              auto tmp = tmp_ptr.release();
+              tmp_ptr.reset(restore_buff.value_buffer);
               restore_buff.value_buffer = tmp;
             }
 
