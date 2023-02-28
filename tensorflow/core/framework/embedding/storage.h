@@ -48,14 +48,14 @@ template<typename K, typename V>
 struct KVInterfaceDescriptor {
   KVInterfaceDescriptor(KVInterface<K, V>* kv,
                     Allocator* allocator,
-                    mutex mu) : kv_(kv),
+                    mutex& mu) : kv_(kv),
                                  allocator_(allocator),
                                  mu_(mu) {}
   ~KVInterfaceDescriptor() {}
 
   KVInterface<K, V>* kv_;
   Allocator* allocator_;
-  mutex mu_;
+  mutex& mu_;
 };
 
 template<typename K, typename V>
