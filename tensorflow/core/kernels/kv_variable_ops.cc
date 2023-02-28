@@ -192,9 +192,12 @@ class InitializeKvVariableOp : public OpKernel {
       filter_freq_ = 0;
     }
 
-    if ((filter_freq_ != 0 && max_element_size_ == 0)
-         || steps_to_live_ != 0 || record_freq_
-         || record_version_ || storage_type > 5) {
+    OP_REQUIRES_OK(c, c->GetAttr("layout", &layout_));
+    if (!layout_.empty()) {
+      // use layout by user configuration
+    } else if ((filter_freq_ != 0 && max_element_size_ == 0)
+               || steps_to_live_ != 0 || record_freq_
+               || record_version_ || storage_type > 5) {
       if (block_num_ > 1 || (filter_freq_ != 0 && storage_type <= 5)) {
         layout_ = "normal";
       } else {
@@ -210,6 +213,13 @@ class InitializeKvVariableOp : public OpKernel {
     }
 
     CHECK(block_num_ == 1 || layout_ != "normal_contiguous");
+
+    if ("compact" == layout_) {
+      OP_REQUIRES(c, shape_.dim_size(0) == 1 &&
+            storage_type_ == embedding::StorageType::DRAM,
+          errors::InvalidArgument("embedding_dim must be 1 and storage type"
+                                  " should be DRAM when layout is 'compact'."));
+    }
 
     if (steps_to_live_ == kEmbeddingVarUseDB ||
         steps_to_live_ == kInitializableEmbeddingVarUseDB) {

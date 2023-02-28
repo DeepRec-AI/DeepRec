@@ -157,9 +157,13 @@ class Storage {
   inline int64 GetOffset(int64 index) { return alloc_len_ * index; }
   inline int64 GetTotalDims() { return total_dims_; }
   inline int64 ComputeAllocLen(int64 value_len) {
-    return (value_len * sizeof(V) % 16 == 0)
-        ? value_len
-        : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
+    if (LayoutType::COMPACT == storage_config_.layout_type) {
+      return value_len;
+    } else {
+      return (value_len * sizeof(V) % 16 == 0)
+          ? value_len
+          : value_len + (16 - (sizeof(V) * value_len) % 16) / sizeof(V);
+    }
   }
   inline LayoutType GetLayoutType() { return storage_config_.layout_type; }
   inline embedding::StorageType GetStorageType() { return storage_config_.type; }

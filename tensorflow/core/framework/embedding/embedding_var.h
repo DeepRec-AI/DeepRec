@@ -95,7 +95,8 @@ class EmbeddingVar : public ResourceBase {
         default_tensor.NumElements() / emb_config_.default_value_dim;
 
     if (LayoutType::NORMAL_CONTIGUOUS == storage_manager_->GetLayoutType() ||
-        LayoutType::NORMAL_CONTIGUOUS_GPU == storage_manager_->GetLayoutType()) {
+        LayoutType::NORMAL_CONTIGUOUS_GPU == storage_manager_->GetLayoutType() ||
+        LayoutType::COMPACT == storage_manager_->GetLayoutType()) {
       storage_manager_->SetAllocLen(value_len_, emb_config_.slot_num + 1);
     }
 

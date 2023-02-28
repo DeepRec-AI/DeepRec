@@ -293,6 +293,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
     self._default_value_dim = evconfig.default_value_dim
     self._default_value_no_permission = evconfig.default_value_no_permission
     self._storage_cache_strategy = evconfig.storage_cache_strategy
+    self._layout = evconfig.layout
 
     if self._primary is None:
       self._is_primary = True
@@ -396,7 +397,7 @@ class EmbeddingVariable(resource_variable_ops.ResourceVariable):
                     false_positive_probability = self._false_positive_probability,
                     counter_type = self._counter_type,
                     max_freq = 99999,
-                    layout = "",
+                    layout = self._layout,
                     storage_type = self._storage_type,
                     storage_path = self._storage_path,
                     storage_size = self._storage_size,
