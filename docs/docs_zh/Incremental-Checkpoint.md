@@ -40,6 +40,38 @@ with tf.train.MonitoredTrainingSession(checkpoint_dir=path,
     time.sleep(1)
 ```
 
+使用Estimator
+
+用户在构造`EstimatorSpec`的时候配置相关对象与参数，即
+`tf.train.Saver` 和 `tf.train.Scaffold` 设置 `incremental_save_restore=True`，`tf.train.CheckpointSaverHook` 设置增量保存的最小间隔时间`incremental_save_secs`
+
+```
+def model_fn(self, features, labels, mode, params):
+
+  ...
+
+  scaffold = tf.train.Scaffold(
+               saver=tf.train.Saver(
+                 sharded=True,
+                 incremental_save_restore=True),
+               incremental_save_restore=True)
+
+  ...
+
+  return tf.estimator.EstimatorSpec(
+           mode,
+           loss=loss,
+           train_op=train_op,
+           training_hooks=[logging_hook],
+           training_chief_hooks=[
+             tf.train.CheckpointSaverHook(
+               checkpoint_dir=params['model_dir'],
+               save_secs=params['save_checkpoints_secs'],
+               save_steps=params['save_checkpoints_steps'],
+               scaffold=scaffold,
+               incremental_save_secs=120)])
+```
+
 ## 模型导出
 在默认情况下，无法将增量checkpoint相关子图导出到SavedModel中，如果用户希望在Serving中通过“增量模型更新”来支持秒级更新，就需要将增量相关子图导出到SavedModel。目前需要使用DeepRec提供的[Estimator](https://github.com/AlibabaPAI/estimator)来导出。
 
@@ -48,7 +80,7 @@ with tf.train.MonitoredTrainingSession(checkpoint_dir=path,
 estimator.export_saved_model(
     export_dir_base,
     serving_input_receiver_fn,
-    ... 
+    ...
     save_incr_model=True)
 ```
 

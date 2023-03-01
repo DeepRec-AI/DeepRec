@@ -47,6 +47,39 @@ with tf.train.MonitoredTrainingSession(checkpoint_dir=path,
     time.sleep(1)
 ```
 
+Estimator
+
+Configure parameters when constructing `EstimatorSpec`
+
+`tf.train.Saver` and `tf.train.Scaffold` set `incremental_save_restore=True`，`tf.train.CheckpointSaverHook` set save incremental checkpoint interval `incremental_save_secs`
+
+```
+def model_fn(self, features, labels, mode, params):
+
+  ...
+
+  scaffold = tf.train.Scaffold(
+               saver=tf.train.Saver(
+                 sharded=True,
+                 incremental_save_restore=True),
+               incremental_save_restore=True)
+
+  ...
+
+  return tf.estimator.EstimatorSpec(
+           mode,
+           loss=loss,
+           train_op=train_op,
+           training_hooks=[logging_hook],
+           training_chief_hooks=[
+             tf.train.CheckpointSaverHook(
+               checkpoint_dir=params['model_dir'],
+               save_secs=params['save_checkpoints_secs'],
+               save_steps=params['save_checkpoints_steps'],
+               scaffold=scaffold,
+               incremental_save_secs=120)])
+```
+
 ## Model Export
 
 By default, incremental checkpoint subgraphs cannot be exported to SavedModel. If users want to support second-level updates through "incremental model update" in Serving, they need to export incremental checkpoint subgraphs to SavedModel. You need to use the [Estimator](https://github.com/AlibabaPAI/estimator) provided by DeepRec to export incremental checkpoint subgraphs.
@@ -56,7 +89,7 @@ Example：
 estimator.export_saved_model(
     export_dir_base,
     serving_input_receiver_fn,
-    ... 
+    ...
     save_incr_model=True)
 ```
 
