@@ -622,8 +622,8 @@ def set_virtual_device_configuration(device, virtual_devices):
   """
   context.context().set_virtual_device_configuration(device, virtual_devices)
 
-@tf_export('config.experimental.enable_group_embedding')
-def enable_group_embedding(fusion_type="collective"):
+@tf_export('config.experimental.enable_distributed_strategy')
+def enable_distributed_strategy(strategy="collective"):
   """Initialize required env for Fuison embedding lookup
 
   This function will enable group embedding lookup module in later
@@ -631,28 +631,26 @@ def enable_group_embedding(fusion_type="collective"):
 
   The following example demonstrates the useage of this interface
   ```
-  tf.config.experimental.enable_group_embedding(fusion_type="collective")
+  tf.config.experimental.enable_distributed_strategy(strategy="collective")
   ```
   """
-  if fusion_type == "collective":
+  if strategy == "collective":
     try:
       import horovod.tensorflow as hvd
       hvd.init()
     except:
-      raise ImportError("While param `fusion_type` in enable_group_embedding"
+      raise ImportError("While param `strategy` in enable_distributed_strategy"
                         "is given `collective`, horovod module initialize error,"
                         "please double check")
      
     try:
       from sparse_operation_kit import experiment as sok
       sok.init()
-      group_embedding_ops_utils.set_group_lookup_fusion_type(fusion_type)
+      group_embedding_ops_utils.set_group_lookup_strategy(strategy)
     except:
-      raise ImportError("While param `fusion_type` in enable_group_embedding"
+      raise ImportError("While param `strategy` in enable_distributed_strategy"
                         "is given `collective`, sok module initialize error,"
                         "please double check")
-  elif fusion_type == "localized":
-    group_embedding_ops_utils.set_group_lookup_fusion_type(fusion_type)
   else:
-    raise ValueError("param `fusion_type` is given {}, Currently only support \
-                     `collective`".format(fusion_type))
+    raise ValueError("param `strategy` is given {}, Currently only support \
+                     `collective`".format(strategy))

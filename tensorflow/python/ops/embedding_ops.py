@@ -1696,8 +1696,8 @@ def group_embedding_lookup_sparse(params,
     raise ValueError("len of combiners must be equal to len of params")
 
   ## Currently not doing unique
-  fusion_type = group_embedding_ops_utils.get_group_lookup_fusion_type()
-  if fusion_type == group_embedding_ops_utils.FUSIONTYPE.COLLECTIVE:
+  strategy = group_embedding_ops_utils.get_group_lookup_strategy()
+  if strategy == group_embedding_ops_utils.STRATEGY.COLLECTIVE:
     for index, param in enumerate(params):
       if isinstance(param, variables.PartitionedVariable):
         raise TypeError("PartitionedVariable not support in"
@@ -1708,22 +1708,24 @@ def group_embedding_lookup_sparse(params,
       from sparse_operation_kit import experiment as sok
     except:
       raise ImportError("sparse_operation_kit is not found while "
-                        "group_embedding fusion_type is given `collective`")
+                        "group_embedding strategy is given `collective`")
     with ops.name_scope(name, "group_embedding_lookup",
                         params + sp_ids) as name_scope:
       emb_vec = sok.lookup_sparse(params, sp_ids, combiners)
 
-  elif fusion_type == group_embedding_ops_utils.FUSIONTYPE.LOCALIZED:  
+  elif strategy == group_embedding_ops_utils.STRATEGY.LOCALIZED:  
     
-    emb_vec = []
+    emb_vec = [None for _ in range(len(params))]
 
     ev_group_id_map = {}
     tf_group_id_map = {}
     ev_group_id = 0
     tf_group_id = 0
     is_ev_list = [False for _ in range(len(params))]
+    params_idx_map = {}
 
     for index, param in enumerate(params):
+      params_idx_map[param] = index
       sp_id = sp_ids[index]
       if not isinstance(sp_id, sparse_tensor.SparseTensor):
         try: #assume RaggedTensor
@@ -1751,6 +1753,8 @@ def group_embedding_lookup_sparse(params,
       ev_handlers = [[] for _ in range(ev_group_id)]
       ev_dimensions = [0 for _ in range(ev_group_id)]
       ev_combiners = ["mean" for _ in range(ev_group_id)]
+      output_index_list = [[] for _ in range(ev_group_id)]
+
       for index, ev_flag in enumerate(is_ev_list):
         if not ev_flag:
           continue
@@ -1767,17 +1771,21 @@ def group_embedding_lookup_sparse(params,
         ev_sp_values[group_id].append(sp_id.values)
         ev_sp_indices[group_id].append(sp_id.indices)
         ev_sp_dense_shape[group_id].append(sp_id.dense_shape)
+        output_index_list[group_id].append(params_idx_map[param])
       
       for group_id in range(ev_group_id):
         dim = ev_dimensions[group_id]
+        output_index = output_index_list[group_id]
         with ops.name_scope(name, "localized_group_embedding_lookup_ev_dim{}".format(dim),
                             params + sp_ids) as name_scope:
-          emb_vec.extend(group_embedding_lookup.multi_kv_resource_gather(ev_handlers[group_id],
+          outputs = group_embedding_lookup.multi_kv_resource_gather(ev_handlers[group_id],
                                                                     ev_sp_values[group_id],
                                                                     ev_sp_indices[group_id],
                                                                     ev_sp_dense_shape[group_id],
                                                                     ev_combiners[group_id],
-                                                                    dim)[0])
+                                                                    dim)[0]
+          for idx, output in zip(output_index, outputs):
+            emb_vec[idx] = output
     
     if tf_group_id > 0:
       tf_sp_values = [[] for _ in range(tf_group_id)]
@@ -1786,6 +1794,7 @@ def group_embedding_lookup_sparse(params,
       tf_handlers = [[] for _ in range(tf_group_id)]
       tf_dimensions = [0 for _ in range(tf_group_id)]
       tf_combiners = ["mean" for _ in range(tf_group_id)]
+      output_index_list = [[] for _ in range(tf_group_id)]
 
       for index, ev_flag in enumerate(is_ev_list):
         if ev_flag:
@@ -1802,20 +1811,24 @@ def group_embedding_lookup_sparse(params,
         tf_sp_values[group_id].append(sp_id.values)
         tf_sp_indices[group_id].append(sp_id.indices)
         tf_sp_dense_shape[group_id].append(sp_id.dense_shape)
+        output_index_list[group_id].append(params_idx_map[param])
       
       for group_id in range(tf_group_id):
         dim = tf_dimensions[group_id]
+        output_index = output_index_list[group_id]
         with ops.name_scope(name, "localized_group_embedding_lookup_variable_dim{}".format(dim),
                             params + sp_ids) as name_scope:
-          emb_vec.extend(group_embedding_lookup.multi_embedding_sparse_look_up(tf_handlers[group_id],
+          outputs = group_embedding_lookup.multi_embedding_sparse_look_up(tf_handlers[group_id],
                                                                                 tf_sp_values[group_id],
                                                                                 tf_sp_indices[group_id],
                                                                                 tf_sp_dense_shape[group_id],
                                                                                 tf_combiners[group_id],
-                                                                                dim)[0])
+                                                                                dim)[0]
+          for idx, output in zip(output_index, outputs):
+            emb_vec[idx] = output
                                                                 
-  elif fusion_type == group_embedding_ops_utils.FUSIONTYPE.UNKNOWN:
-    raise ValueError("Unrecognized fusion_type, expected collective, given{}".format(fusion_type))
+  elif strategy == group_embedding_ops_utils.STRATEGY.UNKNOWN:
+    raise ValueError("Unrecognized strategy, expected collective, given{}".format(strategy))
 
   return emb_vec
 

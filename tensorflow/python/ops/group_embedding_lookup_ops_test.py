@@ -224,5 +224,4 @@ class GroupEmbeddingGPUTest(test_util.TensorFlowTestCase):
       print(sess.run([emb, train_op,loss]))
 
 if __name__ == "__main__":
-    config.enable_group_embedding(fusion_type="localized")
     googletest.main()

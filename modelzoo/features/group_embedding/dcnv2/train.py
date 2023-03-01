@@ -63,7 +63,7 @@ os.environ["TF_GPU_THREAD_MODE"] = "global"
 import horovod.tensorflow as hvd
 
 #Enable group_embedding_lookup
-tf.config.experimental.enable_group_embedding(fusion_type="collective")
+tf.config.experimental.enable_distributed_strategy(strategy="collective")
 
 # Set to INFO for tracking training, default is WARN. ERROR for least messages
 tf.logging.set_verbosity(tf.logging.INFO)
