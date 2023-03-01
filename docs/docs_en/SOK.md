@@ -16,7 +16,53 @@ SOK is compatible with DP training provided by common synchronized training fram
 
  	
 ## API
-### Initialize
+- SOK is compatible with Horovod as a communication tool. First, it is initialized through the initialization function of SOK, and then two different embedding layers of sok are selected for embedding. In the process of backpropagation, we could select the optimizer optimized by SOK and some additional functions in Utilizers.
+- Users can use either GroupEmbedding API in DeepRec, or use the original interface of SOK.
+
+### GroupEmbedding API in DeepRec
+
+#### Initialize
+The GroupEmbedding interface provides localized and distributed training modes. We can use SOK in the distributed mode, first we need to enable the settings `tf.config.experimental.enable_distributed_strategy(strategy="collective")`，it would initialize Horovod and SOK related modules.
+
+```python
+import tensorflow as tf
+tf.config.experimental.enable_distributed_strategy(strategy="collective")
+```
+
+#### Embeddings
+GroupEmbedding provide two level of API. The one is `tf.nn.group_embedding_lookup_sparse`  and the other is `tf.feature_column.group_embedding_column_scope` whis is based on feature_column API。
+
+**group_embedding_lookup_sparse**
+
+```python
+def group_embedding_lookup_sparse(params,
+                                  sp_ids,
+                                  combiners,
+                                  partition_strategy="mod",
+                                  sp_weights=None,
+                                  name=None):
+```
+
+- `params` : List, This parameter could receive one or more EmbeddingVariables or native Tensorflow Variable.
+- `sp_ids` : List | Tuple , SparseTensor sp_ids ​​is the ID used for EmbeddingLookup, the length must be consistent with params.
+- `combiners` : List | Tuple，The pooling method of embedding values.Currently support `mean` and `sum`.
+- `partition_strategy` : str，Currently not supported.
+- `sp_weights` : List | Typle the weight of sp_ids values.(Currently not supported.)
+- `name` : str group name
+
+**group_embedding_column_scope**
+
+```python
+def group_embedding_column_scope(name=None):
+```
+- `name` ： The name of scope.
+
+We need to initialize a context `group_embedding_column_scope`
+, and complete the construction of `EmbeddingColumn` in that context. Later, the EmbeddingColumn Lookup would be simultaneously aggregate by `tf.feature_column.input_layer`. It is worth noting that the underlying implementation of this function is designed for `tf.RaggedTensor`。Although the IDS for EmbeddingLookup also supports `SparseTensor`, it will still be converted to `RaggedTensor` in the end, which will introduce a certain performance overhead.
+
+### Original API in SOK
+
+#### Initialize
 ```python
 sparse_operation_kit.core.initialize.Init(**kwargs)
 ```
@@ -29,9 +75,10 @@ with tf.Session() as sess:
     sess.run(sok_init)
     ...
 ```
-### Embeddings
+#### Embeddings
 Embeddings includes sparse embedding and dense embedding. The `sok.DistributedEmbedding` is equivalent to `tf.nn.embedding_lookup_sparse` and `sok.All2AllDenseEmbedding` is equivalent to `tf.nn.embedding_lookup`.
-#### Distributed Sparse Embedding
+
+**Distributed Sparse Embedding**
 ```python
 class sparse_operation_kit.embeddings.distributed_embedding.DistributedEmbedding(combiner, max_vocabulary_size_per_gpu, embedding_vec_size, slot_num, max_nnz, max_feature_num=1, use_hashtable=True, **kwargs)
 ```
@@ -54,7 +101,8 @@ Parameters:
 - `key_dtype (tf.dtypes = tf.int64)` – the data type of input keys. By default, it is tf.int64.
 
 - `embedding_initializer (string or an instance of tf.keras.initializers.Initializer)` – the initializer used to generate initial value for embedding variable. By default, it will use random_uniform where minval=-0.05, maxval=0.05.
-#### All2All Dense Embedding
+
+**All2All Dense Embedding**
 ```python
 classsparse_operation_kit.embeddings.all2all_dense_embedding.All2AllDenseEmbedding(max_vocabulary_size_per_gpu, embedding_vec_size, slot_num, nnz_per_slot, dynamic_input=False, use_hashtable=True, **kwargs)
 ```
@@ -78,13 +126,16 @@ Parameters
 
 - `embedding_initializer (string or an instance of tf.keras.initializers.Initializer)` – the initializer used to generate initial value for embedding variable. By default, it will use random_uniform where minval=-0.05, maxval=0.05.
 
-### Optimizers
+#### Optimizers
 The unique and unsorted_segment_sum are replaced with GPU implementations.
-#### Adam optimizer
+
+**Adam optimizer**
 `classsparse_operation_kit.tf.keras.optimizers.adam.Adam(*args, **kwargs)`
-#### Local update Adam optimizer
+
+**Local update Adam optimizer**
 `classsparse_operation_kit.tf.keras.optimizers.lazy_adam.LazyAdamOptimizer(*args, **kwargs)`
-### Utilizers
+
+#### Utilizers
 `sparse_operation_kit.optimizers.utils.split_embedding_variable_from_others(variables)`
 This function is used to split embedding variables from other variables.
 
@@ -101,4 +152,5 @@ Returns
 - `other_variables (tuple)` – all normal variables in the input variable-list.
 
 ## Detailed Doc
-For detailed introduction, user can refer [SparseOperationKit documents](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/master/index.html).
+- For detailed introduction of GroupEmbedding, user can refer [GroupEmbedding documents](./Group-Embedding.md)
+- For detailed introduction, user can refer [SparseOperationKit documents](https://nvidia-merlin.github.io/HugeCTR/sparse_operation_kit/master/index.html).
