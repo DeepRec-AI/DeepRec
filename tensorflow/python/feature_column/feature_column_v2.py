@@ -4241,22 +4241,24 @@ class GroupEmbeddingScope(group_embedding_column.GroupEmbeddingScopeBase):
     self.embedding_columns.append(embedding_column)
   
   def _get_dense_tensor(self, inputs, weight_collections=None, trainable=None):
-    with ops.name_scope(self.name):
-      embedding_weights = []
-      sp_ids = []
-      combiners = []
-      output_tensors = []
-      for index, ec in enumerate(self.embedding_columns):
-        sp_id = ec.categorical_column._get_sparse_tensors(
-            inputs, weight_collections, trainable).id_tensor
-        sp_ids.append(sp_id)
-        combiners.append(ec.combiner)
+    # with ops.name_scope(self.name):
+    embedding_weights = []
+    sp_ids = []
+    combiners = []
+    output_tensors = []
+    for index, ec in enumerate(self.embedding_columns):
+      sp_id = ec.categorical_column._get_sparse_tensors(
+          inputs, weight_collections, trainable).id_tensor
+      sp_ids.append(sp_id)
+      combiners.append(ec.combiner)
+      with variable_scope.variable_scope(
+                None, default_name=ec._var_scope_name):
         embedding_weight = ec.create_embedding(weight_collections, trainable)
-        embedding_weights.append(embedding_weight)
- 
-      output_tensors.extend(embedding_ops.group_embedding_lookup_sparse(
-                                embedding_weights, sp_ids, combiners))
-      return output_tensors
+      embedding_weights.append(embedding_weight)
+
+    output_tensors.extend(embedding_ops.group_embedding_lookup_sparse(
+                              embedding_weights, sp_ids, combiners))
+    return output_tensors
 
 class EmbeddingColumn(
     DenseColumn,
@@ -4484,7 +4486,7 @@ class EmbeddingColumn(
         trainable=(trainable and self.trainable),
         collections=weight_collections)
       return self._get_dense_tensor_internal_adaptive_helper(sparse_tensors,
-                                                             hash_embeddings, ev_embeddings)
+                                                            hash_embeddings, ev_embeddings)
     elif isinstance(self.categorical_column, EmbeddingCategoricalColumn) \
       or is_sequence_embedding or is_weight_embedding:
       embedding_weights = variable_scope.get_embedding_variable_internal(
@@ -4547,13 +4549,14 @@ class EmbeddingColumn(
         partitioner = None
       else:
         partitioner = partitioned_variables.fixed_size_partitioner(self.categorical_column.partition_num)
+
     if isinstance(self.categorical_column, AdaptiveEmbeddingCategoricalColumn):
       raise TypeError("AdaptiveEmbeddingCategoricalColumn currently not supported")
       
     elif isinstance(self.categorical_column, EmbeddingCategoricalColumn) \
       or is_sequence_embedding or is_weight_embedding:
       embedding_weights = variable_scope.get_embedding_variable_internal(
-        name='%s_embedding_weights' % self.name,
+        name='embedding_weights',
         embedding_dim=self.dimension,
         initializer=self.initializer,
         trainable=self.trainable and trainable,
@@ -4566,7 +4569,7 @@ class EmbeddingColumn(
       raise TypeError("MultiHashVariableCategoricalColumn currently not supported")
     else:
       embedding_weights = variable_scope.get_variable(
-        name='%s_embedding_weights' % self.name,
+        name='embedding_weights',
         shape=embedding_shape,
         dtype=dtypes.float32,
         initializer=self.initializer,

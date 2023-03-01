@@ -21,26 +21,26 @@ from __future__ import print_function
 from enum import Enum, unique
 
 @unique
-class FUSIONTYPE(Enum):
+class STRATEGY(Enum):
   COLLECTIVE = "collective"
   DISTRIBUTED = "ps"
   LOCALIZED = "localized"
   UNKNOWN = "unknown"
 
-_group_lookup_fusion_type = FUSIONTYPE.UNKNOWN
+_group_lookup_strategy = STRATEGY.LOCALIZED
 
-def set_group_lookup_fusion_type(fusion_type):
-  def str_to_fusion_type(fusion_type):
-    if fusion_type == "collective":
-      return FUSIONTYPE.COLLECTIVE
-    elif fusion_type == "ps":
-      return FUSIONTYPE.DISTRIBUTED
-    elif fusion_type == "localized":
-      return FUSIONTYPE.LOCALIZED
+def set_group_lookup_strategy(strategy):
+  def str_to_strategy(strategy):
+    if strategy == "collective":
+      return STRATEGY.COLLECTIVE
+    elif strategy == "ps":
+      return STRATEGY.DISTRIBUTED
+    elif strategy == "localized":
+      return STRATEGY.LOCALIZED
 
-  global _group_lookup_fusion_type
-  _group_lookup_fusion_type = str_to_fusion_type(fusion_type)
+  global _group_lookup_strategy
+  _group_lookup_strategy = str_to_strategy(strategy)
 
-def get_group_lookup_fusion_type():
-  global _group_lookup_fusion_type
-  return _group_lookup_fusion_type
+def get_group_lookup_strategy():
+  global _group_lookup_strategy
+  return _group_lookup_strategy

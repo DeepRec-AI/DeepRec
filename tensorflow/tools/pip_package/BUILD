@@ -311,5 +311,6 @@ sh_binary(
         "@sparsehash_c11//:dense_hash_map",
         "@com_github_google_leveldb//:leveldb",
         "@hugectr//:hugectr",
+        "//tensorflow/core/kernels:gpu_device_array"
     ]
 )
